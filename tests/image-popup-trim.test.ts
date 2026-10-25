@@ -32,7 +32,7 @@ test("zooming in, turning, a flip or a smaller Free trim saves a new picture; a 
   assert.equal(makesNewPicture("original", { ...uncut(), flipX: true }), true);
   assert.equal(makesNewPicture("free", uncut()), false);
   assert.equal(makesNewPicture("free", { ...uncut(), rect: { x: 0, y: 0, w: 1, h: 0.9 } }), true);
-  // The dot shows where a shape crops, or Original zoomed in; Free has corners instead.
+  // The focus square moves where a shape crops, or Original zoomed in; Free has corners instead.
   assert.equal(squareApplies("original", uncut()), false);
   assert.equal(squareApplies("original", { ...uncut(), zoom: 1.5 }), true);
   assert.equal(squareApplies("4:3", uncut()), true);

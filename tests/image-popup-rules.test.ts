@@ -57,6 +57,8 @@ test("the square centred on a point gives the object-position that shows it, in 
   // Zoomed in (a quarter each way), both move; the square's left edge sits at (1 − w) × focus.
   assert.deepEqual(squareFocus({ w: 0.25, h: 0.25 }, { x: 0.125, y: 0.875 }, was), { x: 0, y: 100 });
   assert.deepEqual(squareFocus({ w: 0.25, h: 0.25 }, { x: 0.35, y: 0.5 }, was), { x: 30, y: 50 });
+  // A square that fills the picture both ways keeps the focus it had.
+  assert.deepEqual(squareFocus({ w: 1, h: 1 }, { x: 0.1, y: 0.9 }, { x: 37, y: 61 }), { x: 37, y: 61 });
 });
 
 test("the message is blue for this spot only, yellow when a new picture is saved", () => {

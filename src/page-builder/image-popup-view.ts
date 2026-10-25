@@ -170,6 +170,8 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     const area = cutArea(size(), state.shape, state.focus, state.cut);
     const at = { left: `${area.x * pw}px`, top: `${area.y * ph}px`, width: `${area.w * pw}px`, height: `${area.h * ph}px` };
     Object.assign(frame.style, at); Object.assign(handles.style, at);
+    // A square as tall as the picture cannot move up or down: a vertical swipe on it scrolls the sheet (slice 94).
+    frame.classList.toggle("image-popup__frame--full-height", area.h >= 1 - 1e-6);
   }
   const drawPreviews = () => previews.draw(state, size());
   picture.addEventListener("load", () => { layoutPicture(); drawPreviews(); });
@@ -180,9 +182,10 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     free: { role: "group", "aria-roledescription": "trim area", "aria-label": "Trim area. Arrow keys move it. Alt and arrow keys change its size." },
   };
   const frameNames = ["tabindex", "role", "aria-roledescription", "aria-label", "aria-valuemin", "aria-valuemax", "aria-valuenow", "aria-valuetext", "aria-describedby", "aria-hidden"];
-  // Only what differs changes: dropping `tabindex` for a moment would take the keyboard focus off the square.
-  function frameAs(part: keyof typeof frameRoles | undefined) {
-    const wanted: Record<string, string> = part ? { tabindex: "0", "aria-describedby": hint.id, ...frameRoles[part] } : { "aria-hidden": "true" };
+  // Only what differs changes: dropping `tabindex` for a moment would take the keyboard focus off the
+  // square, and dropping its value would have a screen reader hear it go and come back.
+  function frameAs(part: keyof typeof frameRoles | undefined, values: Record<string, string> = {}) {
+    const wanted: Record<string, string> = part ? { tabindex: "0", "aria-describedby": hint.id, ...frameRoles[part], ...values } : { "aria-hidden": "true" };
     for (const name of frameNames) if (!(name in wanted)) frame.removeAttribute(name);
     for (const [name, value] of Object.entries(wanted)) if (frame.getAttribute(name) !== value) frame.setAttribute(name, value);
   }
@@ -199,12 +202,9 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     const applies = squareApplies(state.shape, state.cut), free = state.shape === "free";
     // A shape: the frame is the focus square, dragged or moved by arrow keys. Free: the frame is the
     // trim, moved by dragging or arrow keys, sized by its corners or Alt and arrow keys.
-    frameAs(applies ? "square" : free ? "free" : undefined);
-    if (applies) {
-      const across = Math.round(state.focus.x), down = Math.round(state.focus.y);
-      frame.setAttribute("aria-valuenow", String(across));
-      frame.setAttribute("aria-valuetext", `${across}% across, ${down}% down. Arrow keys move it.`);
-    }
+    const across = Math.round(state.focus.x), down = Math.round(state.focus.y);
+    if (applies) frameAs("square", { "aria-valuenow": String(across), "aria-valuetext": `${across}% across, ${down}% down. Arrow keys move it.` });
+    else frameAs(free ? "free" : undefined);
     frame.classList.toggle("image-popup__frame--square", applies);
     frame.classList.toggle("image-popup__frame--free", free);
     picbox.classList.toggle("image-popup__picbox--free", free);

@@ -86,6 +86,25 @@ test("Image → Square, drag the square, Close: the page has the shape and objec
   await expect.poll(() => source(page)).toBe(before);
 });
 
+test("a press on the picture beside the square centres the square there", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  await openPopup(page);
+  await chooseShape(page, "Square");
+  const box = (await popup(page).locator(".image-popup__picbox").boundingBox())!, held = (await square(page).boundingBox())!;
+  // Right of the square, half way to the picture's edge: the square centres there, as far as its room allows.
+  const x = (held.x + held.width + box.x + box.width) / 2, y = box.y + box.height * 0.5;
+  expect(box.x + box.width - (held.x + held.width)).toBeGreaterThan(8);
+  await page.mouse.click(x, y);
+  const moved = (await square(page).boundingBox())!;
+  expect(Math.abs(moved.x + moved.width / 2 - Math.min(x, box.x + box.width - held.width / 2))).toBeLessThanOrEqual(2);
+  expect(moved.x).toBeGreaterThan(held.x);
+  const across = Math.round((moved.x - box.x) / (box.width - moved.width) * 100);
+  await expect(square(page)).toHaveAttribute("aria-valuetext", new RegExp(`^${across}% across, 50% down`));
+  await expect(square(page)).toBeFocused();
+  await expect(frame(page).locator(".hero img")).toHaveCSS("object-position", `${across}% 50%`);
+});
+
 test("Replace in the popup closes it and places the chosen picture at once; one Undo restores the original", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = await source(page);
@@ -286,11 +305,23 @@ test.describe("on a touch phone", () => {
     await expect.poll(() => rows.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
     await expect(square(page)).toHaveAttribute("aria-valuetext", where!);
     await expect(popup(page).locator(".image-popup__message")).toBeInViewport({ ratio: 1 });
-    // A tap on the picture beside the square still moves the square there.
+    // The square is as tall as the picture, so it cannot move up or down: a swipe up on it scrolls the sheet too.
+    await rows.evaluate(element => element.scrollTo(0, 0));
+    await expect.poll(() => rows.evaluate(element => element.scrollTop)).toBe(0);
+    const held = (await square(page).boundingBox())!;
+    expect(Math.abs(held.height - well.height)).toBeLessThanOrEqual(1);
+    const mx = Math.round(held.x + held.width / 2);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: mx, y }] });
+    for (let step = 1; step <= 10; step++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: mx, y: y - step * 10 }] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect.poll(() => rows.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+    await expect(square(page)).toHaveAttribute("aria-valuetext", where!);
+    // A tap on the picture beside the square still moves the square there: at a tenth across it goes to the left edge.
     await rows.evaluate(element => element.scrollTo(0, 0));
     const picture = (await popup(page).locator(".image-popup__picbox").boundingBox())!;
     await page.touchscreen.tap(picture.x + picture.width * 0.1, picture.y + picture.height * 0.15);
-    await expect(square(page)).not.toHaveAttribute("aria-valuetext", where!);
+    await expect(square(page)).toHaveAttribute("aria-valuetext", /^0% across, 50% down/);
+    expect(Math.abs((await square(page).boundingBox())!.x - picture.x)).toBeLessThanOrEqual(1);
     await expect(square(page)).toBeFocused();
 
     // A phone on its side: the whole sheet scrolls; a swipe on the picture moves it, not the square; the message stays uncovered.
