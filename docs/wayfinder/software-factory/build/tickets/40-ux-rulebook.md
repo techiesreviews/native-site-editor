@@ -92,3 +92,10 @@ Review decisions:
 - Round 2, fixed: B1 links Lex's request 01; S4's screen-reader clause cites components 101; the rulebook test added (its first run caught U8 without an in-repo source, now the page builder README's Feel section).
 - Round 3, fixed: every rule opens with one plain line and keeps detail below it (for the one-line list shown to Lex); B11 names the Edit component mode spec; L12 allows 3:1 for large text and leaves the focus ring to `eye`; the test checks this table and GitHub's repeated-heading anchors; kitchen station 4 points to the rulebook.
 - Declined: Lex's look at the rule list (Done when item 3) is the lead's step before landing, not the builder's; a note in `tickets/07-recipe-v1.md` is outside this ticket's Files, and its "until the UX rulebook exists" condition now ends by itself.
+
+### Follow-ups
+
+- Spec (P2): 38c2bacb:docs/agents/ux-rulebook.md:192 — P2: B12 says that after adding, "a filter that would hide it is cleared (no "Added to … – Show" line, per S4)". Its ch
+- Spec (P3): 38c2bacb:docs/agents/kitchen.md:83 — P3: The ticket's Files lists kitchen "stations 3 and 8", but station 4 was edited too. The edit is in-file and sensible. Th
+- Validation gaps (gap): `tests/ux-rulebook.test.ts` checks rule structure and links, but nothing checks that a `script: spec` rule's wording matches what its named spec asserts. That i
+
