@@ -21,3 +21,4 @@ Lighthouse scores a page on performance, accessibility, best practices and SEO. 
 - Overlap with existing work: the media manager already makes trimmed copies and alt text fields; "Prebuilts are CSS-first" already favours CSS over JS.
 
 ## Comments
+- 2026-10-25: picked up as the [site quality map](../../../wayfinder/site-quality/map.md).
