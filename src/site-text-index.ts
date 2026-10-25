@@ -233,10 +233,13 @@ export function createSiteTextIndex(ports: SiteTextIndexPorts) {
     return ready ? undefined : "The site's links could not be fully read. Refresh the repository and try again.";
   }
 
+  /** Rendering the Pages tree, or letting the site go, consumes queued title work. */
+  function clearPendingTitles() {
+    pendingNativePageTitles = undefined;
+  }
+
   return {
     nativeTextIndexScopeKey, startNativeTextIndex, wantNativeTextIndex, nativeTextIndexGate, afterNativePaint, noteNativePainted,
-    flushPendingNativePageTitles, ensureNativeTextIndex,
-    /** Rendering the Pages tree, or letting the site go, consumes queued title work. */
-    clearPendingTitles: () => { pendingNativePageTitles = undefined; },
+    flushPendingNativePageTitles, ensureNativeTextIndex, clearPendingTitles,
   };
 }
