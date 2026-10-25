@@ -1,7 +1,7 @@
 ---
 title: Prove typing together on the real stack
 type: prototype (HITL)
-status: open
+status: closed
 assignee: Lex + claude (prototype)
 blocked_by: [08-grill-shared-editing-mechanism]
 ---
@@ -36,3 +36,17 @@ It is a throwaway on a `prototype/am-12-typing-together-poc` branch, run locally
   - **Preview shows carets only:** a thin line and name chip, with a tint for a selection, and no element outlines (commit `fc473f01`).
   - **Deployed** as the separate Worker `am-typing-together-poc` at https://am-typing-together-poc.lexvd.workers.dev (commit `cdfffcf0`). The live two-window check passes and the room stores 0 keys.
   - **Delete it** once Lex has tried it: `npx wrangler delete --name am-typing-together-poc`.
+- 2026-10-25, Lex tried it remotely: "typing together this feels great". He asked for a caret with a small circle on top, with the name on hover; the first letter by default; an AI agent shows a tiny icon of its model in the circle, "really small" ([his reference](../prototypes/12-caret-circle-reference.png)). He also asked how it works technically with the stack (answered in chat).
+
+## Resolution (2026-10-25)
+
+Proven, and approved by Lex. [ADR 0003](../../../adr/0003-shared-editing-over-a-store-nothing-relay.md) holds, with the four rules added in its Proven section.
+
+**Look of other people and agents while they type**, in the code pane and on the page:
+- a thin caret in their colour;
+- a small circle on top showing their first letter (an agent's circle shows a tiny icon of its model or program instead: Claude, OpenAI, Gemini and so on);
+- the full name on hover;
+- a light tint for their selection;
+- no element highlight.
+
+The section outline for agents (ticket 05) stays. The throwaway Worker `am-typing-together-poc` (also serving `/mockups/`) is deleted when the map hands off: `npx wrangler delete --name am-typing-together-poc`.

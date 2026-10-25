@@ -31,6 +31,8 @@ Built in stages: (1) several agents at once and seeing them work; (2) typing in 
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Prove typing together on the real stack](tickets/12-prototype-typing-together-poc.md#resolution-2026-10-25): works and "feels great"; four rules added to ADR 0003; others show as a caret with a small first-letter circle (a tiny model icon for agents), name on hover
+- [Mock up several agents working while Lex works](tickets/10-prototype-agents-working-while-lex-works.md#resolution-2026-10-25): stage-1 mock-up approved; Ask agent stays icon-only
 - [Decide how Lex asks agents to do something](tickets/06-grill-asking-with-a-pin.md#resolution-2026-10-24): pins are conversations that take follow-ups; no chat panel; an agent-agnostic helper starts any coding agent through ACP and connects through the MCP (no new button); six new agent abilities; the pin takes the agent's colour
 - [Decide what Lex sees when files change outside the editor](tickets/09-grill-outside-changes-live.md#resolution-2026-10-24): updates in place with a brief author chip; three-way merge into unsaved changes; on a true clash the latest shows, with Lex's words one Undo away; folders merge too
 - [Decide how shared editing works and what it may cost](tickets/08-grill-shared-editing-mechanism.md#resolution-2026-10-24): Yjs in the browsers over the existing relay, encrypted, storing nothing (ADR 0003); typing sent live; whoever saves saves all, naming authors; one relay for edits, presence, preview and GitHub push news
