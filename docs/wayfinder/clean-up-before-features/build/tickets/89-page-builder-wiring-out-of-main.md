@@ -57,3 +57,6 @@ No visible change: click-to-type, drags, inserts, the palette, Page Structure an
 - Tests (lead-89/20261025T031601Z): `forEachAwait` races for `openNativePageSettings` and for `openNativeSiteSettings` (race `ensureNativeTextIndex` and `loadSiteSettings`, `workspaceSession.next()` at each wait; `.page` / `.site` never called, no errors).
 - Test: `writeNativePageMeta` on the open, mounted page goes through `guardedEdits.now` with group `page-meta:<path>:<field>`, and `group = false` passes `undefined`.
 - Test: `componentPorts().openFile` opens again when a shared history session differs (`shareHistory`, then `openFile` with the file mounted under another session calls `restoreFile`; disposing the share empties `nativeHistoryShares`).
+- Validation gaps (gap): `tests/page-builder-host.test.ts:1952`: the test "making the host reads none of main.ts's later consts" only makes the late getters throw. The arrows for functi
+- Validation gaps (gap): `writeNativePageMeta` refreshing the Pages tree goes untested: the fixture's `workspace.explorerDropdown` is always `undefined`. Add a case where `workspace` re
+- Validation gaps (gap): The ticket's Follow-ups already list three more: `forEachAwait` races for `openNativePageSettings` and `openNativeSiteSettings`; `writeNativePageMeta` going thr
