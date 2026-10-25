@@ -1,7 +1,7 @@
 ---
 title: main.ts is 6,220 lines; ticket 08 wanted about 500
-status: needs-triage
-assignee:
+status: closed
+assignee: lead-85
 blocked_by: []
 ---
 
@@ -55,3 +55,4 @@ accept the size after the quick wins.
   Sol (no defects); full native-save 740 / 85 / 0 on the stack. Next decision
   is Lex's.
 - 2026-10-22: in the clean-up build ([README](../../../wayfinder/clean-up-before-features/build/README.md#8-maints-to-about-500-lines)): Lex wants about 500 lines (cbf ticket 05). A ceiling test (slice 10) drops after each slice; the cuts are slices 11, 21, 25, 26, 31, 32, 53, 70 and 80–84; slice 85 brings it to about 500 and closes this note.
+- 2026-10-25: closed by slice 85 ([ticket](../../../wayfinder/clean-up-before-features/build/tickets/85-main-ts-wiring-only.md)): `src/main.ts` is 531 lines, ceiling 540 (tests/main-ts-ceiling.test.ts). The site preview, the toast, the draft views, the agent menu, the lazy loaders, `lazyModule`, `storage` and `options` left it for their own modules; what is left is imports, host state, construction in order and `boot()`; the ticket's Done section lists the remaining blocks.

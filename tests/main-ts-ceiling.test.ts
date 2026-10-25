@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { parse, ts, walk, type TS } from "./support/source-guard.ts";
 
-const CEILING = 860;
+const CEILING = 540;
 
 function checkCeiling(count: number, ceiling: number): void {
   assert.ok(count <= ceiling, `src/main.ts has ${count} lines, above the ceiling of ${ceiling}`);
@@ -40,7 +40,7 @@ test("larger reductions suggest the count rounded up to a multiple of 10", () =>
   }
 });
 
-// The setup, media, Pages & files, workspace and page-builder hosts' members are consts destructured part way down main.ts, not hoisted
+// The setup, media, Pages & files, workspace and page-builder hosts', the site preview's and the lazy loaders' members are consts destructured part way down main.ts, not hoisted
 // functions: above that line they may only be used inside a function that runs later, and
 // a hoisted function that reaches one may not be called there.
 function calledOnTheSpot(fn: TS.Node): boolean {
@@ -90,13 +90,15 @@ function hostMembersUsedEarly(source: string, host = "setup"): string[] {
   return [...early.values()];
 }
 
-test("setup, media, Pages & files, workspace and page-builder host members are used before their destructuring only inside functions", () => {
+test("setup, media, Pages & files, workspace, page-builder, site preview and lazy loader members are used before their destructuring only inside functions", () => {
   const source = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
   assert.deepEqual(hostMembersUsedEarly(source), []);
   assert.deepEqual(hostMembersUsedEarly(source, "media"), []);
   assert.deepEqual(hostMembersUsedEarly(source, "pagesAndFiles"), []);
   assert.deepEqual(hostMembersUsedEarly(source, "workspace"), []);
   assert.deepEqual(hostMembersUsedEarly(source, "pageBuilder"), []);
+  assert.deepEqual(hostMembersUsedEarly(source, "sitePreview"), []);
+  assert.deepEqual(hostMembersUsedEarly(source, "lazyLoaders"), []);
 });
 
 test("a setup host member passed by value, called on the spot or reached through an early call above its destructuring is named", () => {
@@ -112,13 +114,14 @@ test("a setup host member passed by value, called on the spot or reached through
   assert.deepEqual(hostMembersUsedEarly(source), ["showGetStarted (line 1)", "startSitePanel (line 2)", "takeStartingPoint (line 3)", "writeStartingPoint via early() (line 4)"]);
 });
 
-// The media, Pages & files, workspace and page-builder hosts, the agent's commands, site loading and the text index read main.ts's `let` state when they run: such a value goes in
-// as a getter (and a setter where the host writes it, as the Pages & files and page-builder hosts' `fileGeneration` and the text index's
+// The media, Pages & files, workspace, page-builder and agent menu hosts, the agent's commands, site loading, the text index, the site preview,
+// the draft views and the lazy loaders read main.ts's `let` state when they run: such a value goes in
+// as a getter (and a setter where the host writes it, as the Pages & files and page-builder hosts' and the draft views' `fileGeneration` and the text index's
 // `nativePreviewBehind`: a getter alone still type-checks, then throws on the first write), never as a
 // copy taken when the host is made. A `const` declared after the call is not there yet when the host is made
 // (CODING_STANDARDS "Module order holds"): it goes in as an arrow, never by name.
 // The `let` state each factory writes through its ports, so needs a getter and a setter.
-const WRITTEN: Record<string, string> = { createPagesAndFilesHost: "fileGeneration", createSiteTextIndex: "nativePreviewBehind", createPageBuilderHost: "fileGeneration" };
+const WRITTEN: Record<string, string> = { createPagesAndFilesHost: "fileGeneration", createSiteTextIndex: "nativePreviewBehind", createPageBuilderHost: "fileGeneration", createDraftViews: "fileGeneration" };
 function letsHandedByValue(source: string, factory = "createPagesAndFilesHost"): string[] {
   const tree = parse(source, "src/main.ts");
   const lets = new Set<string>(), consts = new Map<string, number>();
@@ -156,10 +159,10 @@ function letsHandedByValue(source: string, factory = "createPagesAndFilesHost"):
   return found;
 }
 
-test("main.ts hands the media, Pages & files, workspace and page-builder hosts, the agent's commands, site loading and the text index their let state through accessors and later consts through arrows", () => {
+test("main.ts hands its hosts, the agent's commands, site loading, the text index, the site preview, the draft views and the lazy loaders their let state through accessors and later consts through arrows", () => {
   const source = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
   assert.deepEqual(letsHandedByValue(source), []);
-  for (const factory of ["createMediaHost", "createWorkspaceMount", "createAgentCommands", "createSiteLoading", "createSiteTextIndex", "createPageBuilderHost"]) assert.deepEqual(letsHandedByValue(source, factory), [], factory);
+  for (const factory of ["createMediaHost", "createWorkspaceMount", "createAgentCommands", "createSiteLoading", "createSiteTextIndex", "createPageBuilderHost", "createSitePreview", "createDraftViews", "createAgentMenuHost", "createLazyLoaders"]) assert.deepEqual(letsHandedByValue(source, factory), [], factory);
 });
 
 test("a const handed to the agent's commands by name before it is declared is named", () => {
