@@ -56,3 +56,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation: `RESULT: ok unit 79/79 (2 files)` from `scripts/agents/kit unit --affected`; `npm run lint` and `npm run check` exit 0.
 - Lex's look at the sample: the lead adds the date here.
 - Docs: the `kit score` line in `docs/agents/agent-scripts.md`; `docs/agents/kitchen.md` station 10 shows the page at each milestone and at the end in place of the planned mark.
+
+### Follow-ups
+
+- Spec (P3): 227833ca7:scripts/agents/score-page.mjs:67 — P3 ticket: the comment at lines 59–61 says "Only the build's own tickets are pieces", but `pieceStates` turns every
+- Spec (P3): 227833ca7:scripts/agents/kit.d/score:167 — P3 ticket: with a `wontfix` record, the RESULT line says `score demo 6 pieces` while the page header says "5 pieces r
+- Standards (P3): 227833ca7:scripts/agents/kit.d/score:100 — P3 fault: `catch { /* No corrections recorded. */ }` treats every read error as "no log". A finished build's `feedbac
+- Standards (P3): 227833ca7:scripts/agents/score-page.mjs:96 — P3 fault: `if (!text) return { entries: [], unreadable: false }` makes a zero-byte `feedback.md` count as clean on 
+- Validation gaps (gap): No test for a finished build that has a `scoreboard.json` but no `feedback.md`, or an empty one. Add an `fs` fixture map `foxtrot` with only `build/scoreboard.j
+- Validation gaps (gap): No test for a record whose slug matches no build ticket. Add `records/99-stray.json` to a copy of the fixture and assert what the tiles and the "N of M pieces d
+- Validation gaps (gap): The where caption's choice of most-used phase only covers "building". Add a `scorePage` case where review or fix minutes are largest and assert "most of it revi
+
