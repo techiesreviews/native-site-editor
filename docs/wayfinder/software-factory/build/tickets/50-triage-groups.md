@@ -1,8 +1,8 @@
 ---
 title: "Triage groups: one builder takes a whole group"
 type: task (AFK)
-status: open
-assignee: sf-50 (this session)
+status: closed
+assignee: sf-50
 builder: claude
 blocked_by: [30-kit-next]
 ---
@@ -35,3 +35,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf50 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/50-triage-groups.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-sf50 --timeout 2h`.
 - Report: unit and tickets check `RESULT:` lines, review decisions, PR and merge SHA.
+
+## Done (2026-10-25)
+
+- `tickets.mjs` reads an optional `group:` slug (lowercase letters, digits, single hyphens); an empty value means no group, and `check` fails on a malformed or duplicate one with its file and line.
+- `kit next` treats the tickets of one map sharing a `group:` as one hand-out. It waits (`waits: group <slug> tickets=… waits for <NN-slug> (blocked)`) while any member not closed or `wontfix` is blocked from outside the group or not open; a blocker inside the group counts as met and orders the slices. A ready group prints one `next: group <slug> tickets=<a,b,c> builder=… owner=<prefix>-g-<slug>` line, counts once toward the cap and meets the `src/main.ts` and shared-file rules with the union of its Files, running or newly picked. A member needing Lex, differing builders, a partial claim or a `blocked_by` cycle make the group wait.
+- `--start` claims every ticket of the group in one commit (`docs: claim <map> group <slug>`), makes one `build/<prefix>-g-<slug>` worktree and starts one `slice-<prefix>g-<slug>` job running `kit next --run-group`, which runs `kit slice` for each ticket in order and stops at the first failure. Running group jobs are read back with all their `--ticket` files.
+- Kitchen station 4 says when to group (shared cause, same files) and when not (same area only); `issue-tracker.md` documents `group:`; `agent-scripts.md` extends the `kit next` line.
+- Tests: `tests/agent-tickets.test.ts` (group parsed, defaults empty, malformed and duplicate fail); `tests/kit-next.test.ts` (a group with one ticket blocked from outside waits, then becomes one line in `blocked_by` order; a running group takes one slot and the union of Files drives the shared-file rule for running and picked groups; `--start` claims in one commit, starts one job, and `--run-group` runs slices in order and stops at the first failure; human, mixed-builder, partly claimed and cyclic groups wait).
