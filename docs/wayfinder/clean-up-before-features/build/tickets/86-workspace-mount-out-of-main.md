@@ -1,7 +1,7 @@
 ---
 title: "Workspace mount and close leave main.ts"
 type: task (AFK)
-status: open
+status: closed
 assignee: lead-86
 builder: claude
 blocked_by: [70-pass-throughs-and-discard]
@@ -58,3 +58,4 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation gaps (gap): The site actions' `siteFiles` changed from `nativeSiteFiles` passed by value to `() => ports.site.files()`, citing CODING_STANDARDS "Receivers travel with metho
 - Validation gaps (gap): tests/kit-size.test.ts has no boundary case for the new budget where the rounded boot equals 362 KB and the runner says OVER (see the P2 above). Add it as descr
 
+- Landed: PR #167 (merge 3413660), 2026-10-25; boot budget 362 KB (Lex).

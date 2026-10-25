@@ -2,7 +2,7 @@
 title: "Workspace mount, palette, component tools and rail: main.ts is wiring"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-85 (this session)
 builder: claude
 blocked_by: [11-lazy-media-and-pages, 25-boot-and-snapshot, 26-github-retries-and-toast, 31-native-site-runtime, 32-one-overlay-for-agents-and-media, 41-is-a-file-rule, 53-agent-wiring-out-of-main, 70-pass-throughs-and-discard, 80-version-and-history-out-of-main, 81-code-panes-out-of-main, 82-setup-and-login-out-of-main, 83-repositories-and-account-out-of-main, 84-files-and-pages-out-of-main, 86-workspace-mount-out-of-main, 87-site-loading-out-of-main, 88-media-wiring-out-of-main, 89-page-builder-wiring-out-of-main]
 ---
