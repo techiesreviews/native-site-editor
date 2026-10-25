@@ -18,5 +18,9 @@ With the way decided (ticket 01) and the facts in hand (tickets 02–04), ask Le
    - A: they stay per project only.
    - B: they stay per project, and `kit score` can also show one table across all projects.
    - **Recommended: B.** Choosing builders "from numbers" works better with every project's numbers, and the records do not move.
+6. **What the `lex-coding` skill says about the kit.** Its "Check branches before declaring it missing" rule (`~/.codex/skills/lex-coding/SKILL.md`) sends agents to this repo's `origin/dev` and accepts "a compatible project-local kit", which is how the old copies started.
+   - A: replace it with: "Every project runs the shared kit through `scripts/agents/kit`. If it is missing or `kit doctor` says it is behind, run `kit init` or `kit update`; never copy kit files by hand. Project checks live in the project's own commands and settings file."
+   - B: keep today's wording and add a pointer to the shared kit.
+   - **Recommended: A**, worded to match ticket 01's answers; the lead drafts it, Lex approves it, and it ships as the last build ticket once every chosen project runs the shared kit.
 
-Then hand off the build plan: build tickets in `build/` for the settings file, the shared kit's home, `kit init`, `kit update` and each project's move, with the kit rule in the `lex-coding` skill updated last.
+Then hand off the build plan: build tickets in `build/` for the settings file, the shared kit's home, `kit init`, `kit update` and each project's move, with the `lex-coding` kit rule from question 6 updated last.
