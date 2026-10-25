@@ -170,12 +170,20 @@ test("arrow keys move the square; Close keeps the change as one Undo step; Escap
   await square(page).focus();
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowLeft");
+  // The square keeps the keyboard focus between moves.
+  await expect(square(page)).toBeFocused();
+  await expect(square(page)).toHaveAttribute("aria-valuetext", /^46% across, 50% down/);
+  // The 4:5 square is as tall as the picture: up and down do nothing, as a drag does.
+  const box = (await popup(page).locator(".image-popup__picbox").boundingBox())!, held = (await square(page).boundingBox())!;
+  expect(Math.abs(held.height - box.height)).toBeLessThanOrEqual(1);
   await page.keyboard.press("Shift+ArrowUp");
-  await expect(square(page)).toHaveAttribute("aria-valuetext", /^46% across, 40% down/);
-  await expect(frame(page).locator(".hero img")).toHaveCSS("object-position", "46% 40%");
+  await page.keyboard.press("ArrowUp");
+  await expect(square(page)).toHaveAttribute("aria-valuetext", /^46% across, 50% down/);
+  expect((await square(page).boundingBox())!.y).toBeCloseTo(held.y, 1);
+  await expect(frame(page).locator(".hero img")).toHaveCSS("object-position", "46% 50%");
   await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(popup(page)).toHaveCount(0);
-  await expect.poll(() => heroTag(page)).toContain("aspect-ratio: 4 / 5; object-fit: cover; object-position: 46% 40%");
+  await expect.poll(() => heroTag(page)).toContain("aspect-ratio: 4 / 5; object-fit: cover; object-position: 46% 50%");
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
   // Escape after the keys keeps them too. The hint seen last time is now only the square's description (slice 109).
@@ -437,6 +445,25 @@ test("a replaced see-through picture is on the checkerboard and an opaque one is
   await expect(popup(page).locator(".image-popup__where")).toHaveText(/quarters/i);
   await expect(marked).toHaveCount(0);
   expect(await popup(page).locator(".image-popup__picbox").evaluate(element => getComputedStyle(element).backgroundImage)).toBe("none");
+
+  // The one frame changes part with the shape: the focus square (a slider), Free's trim area, the square
+  // again with its value, and under Original only a picture of what shows, out of the tab order.
+  const frameOnPicture = popup(page).locator(".image-popup__frame");
+  const valueNames = ["aria-valuenow", "aria-valuetext", "aria-valuemin", "aria-valuemax"];
+  const attributes = () => frameOnPicture.evaluate(element => Object.fromEntries([...element.attributes].map(item => [item.name, item.value])));
+  await chooseShape(page, "Square");
+  await expect(frameOnPicture).toHaveAttribute("role", "slider");
+  await expect(frameOnPicture).toHaveAttribute("aria-valuenow", "50");
+  await chooseShape(page, "Free");
+  await expect(frameOnPicture).toHaveAttribute("role", "group");
+  for (const name of valueNames) expect(await attributes()).not.toHaveProperty(name);
+  await chooseShape(page, "Square");
+  await expect(frameOnPicture).toHaveAttribute("role", "slider");
+  await expect(frameOnPicture).toHaveAttribute("aria-valuenow", "50");
+  await expect(frameOnPicture).toHaveAttribute("aria-valuetext", /^50% across, 50% down/);
+  await chooseShape(page, "Original");
+  await expect(frameOnPicture).toHaveAttribute("aria-hidden", "true");
+  for (const name of ["tabindex", "role", ...valueNames]) expect(await attributes()).not.toHaveProperty(name);
 
   await chooseShape(page, "Free");
   const corner = popup(page).locator(".image-popup__corner--nw");
@@ -784,6 +811,10 @@ test("zooming and moving step by step never shows the page's own picture between
   }
   await page.mouse.up();
   await expect(square(page)).not.toHaveAttribute("aria-valuetext", /^50% across/);
+  // The focus kept is the one that shows the square where it now sits.
+  const moved = (await square(page).boundingBox())!;
+  const across = Math.round((moved.x - box.x) / (box.width - moved.width) * 100);
+  await expect(square(page)).toHaveAttribute("aria-valuetext", new RegExp(`^${across}% across`));
   // After the first trim the page's own picture never comes back while the popup is open.
   await expectOwnNeverBack(hero, own);
   await popup(page).getByRole("button", { name: "Close", exact: true }).click();
