@@ -34,11 +34,13 @@ A finished build plan, with a board mock-up Lex has approved, for the atomic des
 - **Charting answers (Lex, 2026-10-25):** the destination above; keep the order (agents and multiplayer first, its new parts move in later); the board lives inside the editor, built from real parts, on the preview editor only.
 - **Lex in plain words:** one question round at a time, each question with a recommended answer; technical questions too, explained plainly with file paths.
 - **Skills:** `grilling` with `domain-modeling` for grilling tickets; `research` for research tickets (findings on `research/ac-NN-<slug>` branches, never merged); `prototype` for the board mock-up; `good-css` for anything CSS.
+- **Build plan:** [build/README.md](build/README.md).
 - **To find takeable tickets:** `node scripts/agents/tickets.mjs frontier atomic-catalogue`.
 
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Hand off the atomic catalogue build plan](tickets/12-task-hand-off-build-plan.md#resolution-2026-10-25): build/ with 49 slices (foundations, atoms, molecules, replacements gated on Approve, organisms one at a time, close-out); starts after the agents and multiplayer release
 - [Mock up the catalogue board](tickets/08-prototype-board.md#resolution-2026-10-25): approved; only an Approve button, and approving a part starts its slice that swaps every copy in the editor for it
 - [Decide how the board looks and how Lex uses it](tickets/07-grill-board-look-and-use.md#resolution-2026-10-25): Paper-like endless canvas, values to atoms to molecules to organisms to mock-ups; part frames with options by states, light and dark; outline left, live options and Approve right; `/catalogue.html`; `light-dark()` first; mock-ups live on the canvas
 - [Decide the one-way check on one-offs](tickets/10-grill-one-way-check.md#resolution-2026-10-25): seven raw-value kinds per CSS file in one committed count file; `kit pr` css tier blocks a rise unless waived, lowers rewrite the file
