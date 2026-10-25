@@ -9,20 +9,35 @@ The chat project's sync is the only reader of chats; it records each correction 
 `~/Projects/chat/memory/corrections/<slug>.md` ([factory 10](../../wayfinder/software-factory/tickets/10-grill-central-memory.md#resolution-2026-10-22), item 1).
 This routine reads that list and never writes there.
 
+In even ISO weeks the sweep holds its top 3 for this routine, so this routine **always sends that
+Monday's one message to Lex**: the sweep's top 3, plus the learning proposals when there are any
+([factory 06](../../wayfinder/software-factory/tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22), item 4).
+Every stop after step 1 (an ✗ that `kit doctor` cannot fix, `kit learn` failing or finding nothing, `kit pr`
+failing) still sends it: the sweep's top 3, then one plain line saying the learning list did not come
+this time and why.
+
 ## Steps
 
-1. **Week.** `date +%V`; an odd ISO week ends the routine here.
+1. **Week.** `date +%V`; an odd ISO week ends the routine here (the sweep sent its own message). After a
+   53-week year, week 53 and week 1 are both odd, so learning waits three weeks once; that is accepted.
 2. **Worktree.** `git -C /home/ubulex/Projects/native-site-editor-dev fetch -q origin`, then
    `ASE_OWNER=learning scripts/agents/worktree.sh docs/learning-YYYY-MM-DD origin/dev`. Work only there
    (`git -C <worktree>` or `cd <worktree> || exit 1`); run `scripts/agents/kit doctor` and fix every ✗ in
    the environment, never by editing repo files.
-3. **Gather.** `scripts/agents/kit learn` (default `--since 14d`). `RESULT: ok learn nothing recorded yet`
-   ends the routine: no file, no PR, and the sweep's message goes out alone. Otherwise read its bundle,
+   **Sweep's top 3.** Read today's `docs/work/sweeps/YYYY-MM-DD.md` from `origin/dev`, or from the
+   sweep's branch `origin/docs/sweep-YYYY-MM-DD` while its PR is open, and keep its marked top 3 with
+   their recommended fixes. If neither has today's sweep file, the message says the sweep's list is
+   missing.
+3. **Gather.** `scripts/agents/kit learn --since <date of the newest docs/work/learning/YYYY-MM-DD.md>`
+   (inclusive, so a correction from that Monday after its run is seen now); with no earlier learning file,
+   plain `scripts/agents/kit learn` (default `--since 14d`). `RESULT: ok learn nothing recorded yet`
+   ends the learning part: no file, no PR; go to step 8. Otherwise read its bundle,
    `.scratch/learn/<date>/bundle.md` in the main root: groups given more than once with their count,
    kinds, dates, sources and `covered?`, then lines given once and malformed lines.
 4. **Judge.** Apply the `retro` skill (`~/.codex/skills/retro/SKILL.md`) to the bundle instead of a
    session log. Confirm each group: split one that joined two different asks, join two that are the
-   same ask, and drop a pair that is one correction recorded in both lists. Open each `covered?` rule:
+   same ask, and drop a pair that is one correction recorded in both lists. Drop a group the newest
+   learning file already proposed unless it has a line dated after that file. Open each `covered?` rule:
    if it already says what Lex asked, the group is covered and the proposal asks why it did not hold.
 5. **Propose.** For each correction given more than once, one action:
    - a **hook**, **lint rule** or **kit check** ([guardrails.md](../guardrails.md)) when the mistake is
@@ -34,9 +49,11 @@ This routine reads that list and never writes there.
    whether it is covered, and its one proposed action. Lines given once are left out.
 7. **Land it.** Commit only that file, then `scripts/agents/kit pr --title "docs: learning YYYY-MM-DD"`
    (docs tier).
-8. **Tell Lex.** Add the proposals to the sweep's single Monday message, in plain words: each repeated
-   correction, what would change for him, and the question "Which of these should I add?". No file
-   paths unless he asks. Checks he picks become tickets; rulebook lines he picks are added after his yes.
+8. **Tell Lex.** One short message in plain words: first the sweep's top 3, each with its recommended
+   fix, and "Which of these become tickets?"; then each repeated correction, what would change for him,
+   and "Which of these should I add?" (or the one line saying why there is no learning list). No file
+   paths unless he asks. The lead opens the sweep tickets he picks. Checks he picks become tickets;
+   rulebook lines he picks are added after his yes.
 9. **Clean up.** After the PR merges, from outside the worktree:
    `git -C /home/ubulex/Projects/native-site-editor-dev worktree remove <worktree>`; keep the branch.
 
