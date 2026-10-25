@@ -42,5 +42,6 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Recommendation: one shared kit that every project pulls, version pinned per project, with `kit init` only for setup.
 - New map `docs/wayfinder/kitchen-everywhere/map.md` with five tickets: two grillings for Lex (how the kitchen is copied; rollout order and branch rules) and three research tickets (what each project needs, what the old copies changed, how a project pulls the shared kit). No build tickets.
 - The software-factory map's Not yet specified line for copying points to the research and the new map.
+- Commits: `d8c7b4635` (research, map, tickets), `eabef5e76` (review fixes round 1: `worktrees.mjs` assumption named; scoreboard roll-up asked in ticket 05).
 - Checks: `node scripts/agents/tickets.mjs check`; `node scripts/agents/tickets.mjs frontier kitchen-everywhere` lists 01, 02 and 03.
 - Feature list: no change (docs only, nothing a user sees).
