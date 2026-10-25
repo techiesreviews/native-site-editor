@@ -57,7 +57,8 @@ export async function runStep(page: Page, source: string, record?: Recorder) {
         if (wait > 0) await page.waitForTimeout(wait);
         frames.push(await page.screenshot({ animations: "allow", scale: "css" }));
       }
-      await record?.(step.name, frames);
+      if (!record) throw new Error(`record ${step.name}: no recorder to save the strip`);
+      await record(step.name, frames);
       return;
     }
     case "expect":

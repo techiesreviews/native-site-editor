@@ -67,3 +67,18 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - Class checks take only class assignments in scripts, and in CSS only selectors that the base file lacks.
   - Each run gets its own bundle folder, with a random suffix after the time.
   - Tests are typed against a declared shape of the `kit ux` module.
+- Fix round 3:
+  - Text and class checks compare every changed source file with its base, so a re-edited line's existing class or prose is not new.
+  - Untracked and tracked file lists keep non-ASCII paths unquoted.
+  - The diff summary is plain text whatever the colour settings.
+  - A signal that arrives after the last try, or that kills a git step, still ends in `fail ux interrupted by <signal>`.
+  - `record` without a recorder fails instead of dropping its frames.
+  - The docs name the `<time>-XXXXXX` folders.
+  - Tests cover:
+    - untracked files;
+    - `Phone: no` trying 1280 only;
+    - a trimmed image named in `bundle.md` and left out of the folder;
+    - re-edited script lines;
+    - the screen list matching `kit shots`;
+    - `parseArgs` error messages.
+
