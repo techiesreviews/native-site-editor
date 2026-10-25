@@ -177,6 +177,7 @@
   touch-action: none;
 }
 .image-popup__frame--square { cursor: grab; }
+.image-popup__frame--square.image-popup__frame--full-height { touch-action: pan-y; }
 .image-popup__frame--free { cursor: move; }
 /* The frame is clipped with the picture, so its focus ring sits just inside it. */
 .image-popup .image-popup__frame:focus-visible { outline-offset: -4px; }

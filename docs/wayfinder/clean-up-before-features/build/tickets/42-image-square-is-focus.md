@@ -14,7 +14,7 @@ Lex (2026-10-25): "For the image drag, the dot feels not needed, can we remove t
 ## Decided behaviour
 
 - The framing view shows only the square; there is no focus dot.
-- Dragging the square moves the focus point: its centre is the `object-position` written, as the dot's position is today.
+- Dragging the square moves the focus point: the `object-position` written is the one that shows exactly the square, so the page matches the frame.
 - Keyboard moves (arrow keys) move the square the same way; Undo restores the previous position in one step.
 - Nothing else in the image bar changes.
 
@@ -24,7 +24,7 @@ The image framing UI and its controller, `src/page-builder/place-frame.ts` if th
 
 ## Done when
 
-- A spec drags the square and the saved `object-position` follows its centre; no focus-dot element exists.
+- A spec drags the square and the saved `object-position` is the one that shows exactly the square; no focus-dot element exists.
 - `kit shots --compare` of the image framing view (light, dark, 390 and 1280 px) shows the dot gone and nothing else moved.
 - `npm run check`, `kit unit --affected`, `kit specs --affected` green.
 
@@ -43,5 +43,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Arrow keys (Shift for bigger steps) move the focus as before, with the square keeping keyboard focus between moves; Close or Escape keeps the change as one Undo step. Free trimming, Zoom, Turn, Replace and the previews are unchanged. `dotApplies` is now `squareApplies`.
 - Tests: unit `squareFocus` cases (`tests/image-popup-rules.test.ts`); `tests/native-save/native-image-popup.spec.ts` drags the square, checks that no `.image-popup__dot` exists and that the saved `object-position` matches the square's position, and moves the zoomed square in steps within its room. The keyboard, touch and social-image specs now use the "Focus point" slider.
 - Shots: `kit shots --steps .scratch/shots-42-square.json --compare dev --width 390,1280` (light and dark): the dot is gone and the popup layout is unchanged, with no layout findings.
-- Feature list: F-media-17 updated (Try, Good, Files).
+- A square as tall as the picture lets a vertical swipe on it scroll the phone sheet (`touch-action: pan-y`), because it can't move up or down anyway; a square that can move both ways takes the finger.
+- More tests: a desktop press beside the square centres the square there; a phone tap at a tenth across moves it to the left edge (`0% across`); a swipe up on a full-height square scrolls the sheet without moving it; a unit case for a square filling both axes. The slider's value attributes are no longer removed and re-added on every redraw.
+- Commit: 3c8a462de (first build).
+- `kit size`: `RESULT: ok size boot 358 KB (±0 KB) vs dev@56a2e6e, budget 362 KB`.
+- `kit ux --features F-media-17 --no-review`: `RESULT: ok ux 1 features tried, 2 scripted findings`. The try passed (its steps now choose Square). One finding is the "Only changes this spot" tooltip, which was already this long and now says "square" (90 characters); the other matched a line of code. The reviewer's F-media-17 verdict runs through agent.sh, so it is left to the slice.
+- Feature list: F-media-17 updated (Try, Good, Files, Steps).
 
