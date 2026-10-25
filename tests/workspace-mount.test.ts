@@ -99,8 +99,9 @@ const { createWorkspaceMount } = await import("../src/workspace-mount.ts");
 // eslint-disable-next-line no-restricted-syntax -- the fakes implement only the members the workspace calls.
 const fake = <T>(value: object) => value as unknown as T;
 const scope: DraftScope = { account: "lex", repoId: 7, repo: "lex/site", branch: "main" };
-const repository = { id: 7, name: "site", full_name: "lex/site" } as Repository;
-const snapshot = { branch: "main", commit: "0123456789abcdef" } as Snapshot;
+// Only the fields the workspace reads.
+const repository = fake<Repository>({ id: 7, name: "site", full_name: "lex/site" });
+const snapshot = fake<Snapshot>({ branch: "main", commit: "0123456789abcdef" });
 
 function setup() {
   made.length = 0;
@@ -114,8 +115,9 @@ function setup() {
   const elements = new Map<string, FakeElement>();
   const byId = (id: string) => { let found = elements.get(id); if (!found) { found = new FakeElement(); found.id = id; elements.set(id, found); } return found; };
   const app = new FakeElement();
+  const info: SessionInfo = { configured: true, user: { login: "lex", avatar_url: "" }, installUrl: null };
   const state = {
-    info: { configured: true, user: { login: "lex", avatar_url: "" }, installUrl: null } as SessionInfo,
+    info,
     repositories: [repository], fileGeneration: 0, nativePreviewBehind: false, engaged: true, native: false,
     scope: scope as DraftScope | undefined, shown: undefined as WorkspaceScope | undefined,
     nativePreview: undefined as WorkspaceMountPorts["nativePreview"], pageStructure: undefined as WorkspaceMountPorts["pageStructure"],
@@ -168,7 +170,7 @@ function setup() {
       filesTreeController: { refresh: say("filesTree.refresh") },
     },
     setup: {
-      setupController: fake<WorkspaceMountPorts["setup"]["setupController"]>({ mount: async () => {}, dispose: say("setupController.dispose") }),
+      setupController: fake<WorkspaceMountPorts["setup"]["setupController"]>({ mount: async () => { calls.push("setupController.mount"); }, dispose: say("setupController.dispose") }),
       setupEntry: { remove: say("setupEntry.remove") },
       startSitePanel: () => new Promise<HTMLElement>((resolve) => { state.startSite = resolve; }),
     },
@@ -182,7 +184,7 @@ function setup() {
     get componentTools() { return state.componentTools; }, set componentTools(value) { state.componentTools = value; },
     get nativePreviewBehind() { return state.nativePreviewBehind; }, get nativeMountListener() { return state.mountListener; },
     get boot() { return fake<WorkspaceMountPorts["boot"]>({ ensureList: async () => {}, reset: say("boot.reset") }); },
-    get agentController() { return fake<WorkspaceMountPorts["agentController"]>({ ensure: async () => {}, dismiss: async () => {}, answer: async () => {}, destroy: say("agent.destroy") }); },
+    get agentController() { return fake<WorkspaceMountPorts["agentController"]>({ ensure: async () => { calls.push("agent.ensure"); }, dismiss: async () => {}, answer: async () => {}, destroy: say("agent.destroy") }); },
     get workspaceBoot() { return { dropGuess: say("dropGuess") }; },
     account: {
       reload: async () => { calls.push("refreshRepositoryList"); },
@@ -230,14 +232,14 @@ function setup() {
       writeMeta: async () => undefined,
       settings: async () => {},
       navigation: async () => {},
-      siteSettings: async () => {},
+      siteSettings: async () => { calls.push("siteSettings"); },
     },
   } satisfies WorkspaceMountPorts;
   const workspace = createWorkspaceMount(ports);
   return { workspace, ports, state, calls, appStore, byId, proof, unmounted: () => unmountedText, viewLoader: () => viewLoader, mounted: () => mounted };
 }
 const flush = async () => { for (let i = 0; i < 5; i++) await new Promise<void>((resolve) => setImmediate(resolve)); };
-const directory = { entries: [{}, {}] } as Directory;
+const directory = fake<Directory>({ entries: [{}, {}] });
 
 test("mountWorkspace hands the preview, Page Structure and the component tools to the host through its setters", () => {
   const { workspace, state, calls, byId } = setup();
@@ -291,19 +293,37 @@ test("the repository menu's account and sign-out actions reach the ports read wh
   assert.deepEqual(calls.filter((call) => /switchAccount|refreshRepositoryList|disconnect/.test(call)), ["switchAccount ana", "refreshRepositoryList", "disconnect"]);
 });
 
+test("a finished-elsewhere note, the repository menu opening and Site settings reach their ports", async () => {
+  const { workspace, calls, byId } = setup();
+  workspace.mountWorkspace();
+  (last("menu").options as { onNote(note: unknown): void }).onNote({ repo: "lex/other" });
+  assert.ok(calls.includes("finishedWork.open"));
+  assert.ok(last("menu").calls.includes("close"));
+  assert.ok(last("dropdown").calls.includes("open"));
+  assert.equal(focused, byId("explorer-toggle"));
+  // The menu's panel opening loads the agent connection and the Setup checklist; closing it does not.
+  const panel = byId("repository-actions");
+  panel.dispatch("toggle");
+  panel.open = true;
+  panel.dispatch("toggle");
+  byId("site-settings-toggle").dispatch("click");
+  await flush();
+  assert.deepEqual(calls.filter((call) => /^(agent\.ensure|setupController\.mount|siteSettings)$/.test(call)), ["agent.ensure", "setupController.mount", "siteSettings"]);
+});
+
 test("closeWorkspace closes what is open and clears the host's state through its setters", () => {
   const { workspace, state, calls } = setup();
   workspace.mountWorkspace();
   void workspace.openCodeEditor({ key: "k", path: "index.html", source: "" });
   workspace.activeFileContext = { path: "index.html", baseSha: null, language: "html", readOnly: false, original: "", content: "" };
-  const preview = last("preview"), dropdown = last("dropdown"), menu = last("menu"), sidebar = last("sidebar"), rail = last("rail");
+  const preview = last("preview"), dropdown = last("dropdown"), menu = last("menu"), sidebar = last("sidebar"), rail = last("rail"), actions = last("siteActions");
   calls.length = 0;
   workspace.closeWorkspace();
   assert.equal(calls[0], "dropGuess");
   for (const call of ["palette.dispose", "agent.destroy", "setupController.dispose", "setupEntry.remove", "history.destroy", "editor disposed",
     "deactivateNative", "linkedStyles.clearSources", "clearDrafts", "mediaHistoryHome.clear", "parkedSteps.clear", "nextLoad", "boot.reset",
     "appStore.reset", "repositoryIndex.clear", "cleanSources.clear"]) assert.ok(calls.includes(call), call);
-  for (const record of [preview, dropdown, menu, sidebar, rail]) assert.ok(record.calls.some((call) => call === "destroy" || call === "dispose"), record.kind);
+  for (const record of [preview, dropdown, menu, sidebar, rail, actions]) assert.ok(record.calls.some((call) => call === "destroy" || call === "dispose"), record.kind);
   assert.equal(state.nativePreview, undefined);
   assert.deepEqual(state.repositories, []);
   assert.equal(state.fileGeneration, 1);

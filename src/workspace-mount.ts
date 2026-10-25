@@ -2,9 +2,10 @@
 // panes and the file's source editor (openCodeEditor), a folder's summary
 // (showDirectory), and everything open going before the login page shows
 // (closeWorkspace). It owns the workspace's controls (the repository menu, the
-// explorer, the selects), the code panes and the source editor's state; the
-// host (src/main.ts) keeps the session, the site, the preview, Page Structure
-// and the component tools, and hands them in as live ports.
+// explorer, the selects), the code panes and the source editor's state. The
+// host (src/main.ts) keeps the session and the site, and owns the preview,
+// Page Structure and the component tools: this module mounts those three and
+// hands them back through the host's setters. Everything comes in as live ports.
 
 import { batch } from "@preact/signals-core";
 import type { EditorContext, Directory, Repository, SessionInfo } from "../shared/types";

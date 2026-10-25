@@ -266,13 +266,13 @@ Frequently used top-level functions and constants in src/main.ts (28). Descripti
 | --- | --- |
 | `appStore` | Holds reactive repository, snapshot, file and selection state. |
 | `lazyModule` | Caches lazy imports; clears failed loads for retry. |
-| `mountWorkspace` | Mounts editor DOM and controls (workspace-mount.ts). |
+| `mountWorkspace` | Mounts editor DOM and controls (`workspace`, workspace-mount.ts). |
 | `mountComponentTools` | Supplies live host ports to component tools. |
 | `guardedEdits` | Runs proved edits as one undoable transaction. |
 | `blockMoves` | Coordinates guarded block moves across pages and templates. |
 | `pageStructureController` | Owns Page Structure, edit-bar models and text edits. |
 | `draftScope` | Identifies the current account, repository and branch. |
-| `setupScope` | Current account/repository/branch scope key (workspace-mount.ts). |
+| `setupScope` | Current account/repository/branch key (`workspace`, workspace-mount.ts). |
 | `nativeModeActive` | Reports whether a native site is active. |
 | `runtime` | Owns the open site: sources, files, reset (native-site-runtime.ts). |
 | `nativePageStyles` | Lists the shown page's shared stylesheets with imports. |
