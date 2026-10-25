@@ -5,13 +5,21 @@ import { refusalsSaid } from "../src/components/refusal-note.ts";
 import type { AnnouncePorts } from "../src/announce.ts";
 import type { ToastAction } from "../src/components/toast.ts";
 
-// The toast needs a browser: it stands in, recording what it shows; `loads` counts the module's loads.
+// The toast needs a browser: it stands in, recording what it shows. Each import of it resolves to a fresh
+// address, so `loads` counts the imports asked for, not just the first.
 interface Stubs { shown: [string, ToastAction | undefined][]; loads: number }
 const stubs: Stubs = { shown: [], loads: 0 };
 (globalThis as Record<string, unknown>).announceStubs = stubs;
-registerHooks({ load: (url, context, next) => (url.endsWith("/src/components/toast.ts")
+let imports = 0;
+registerHooks({
+  resolve: (specifier, context, next) => {
+    const resolved = next(specifier, context);
+    return resolved.url.endsWith("/src/components/toast.ts") ? { ...resolved, url: `${resolved.url}?import=${++imports}` } : resolved;
+  },
+  load: (url, context, next) => (/\/src\/components\/toast\.ts\?import=\d+$/.test(url)
   ? { format: "module", source: "globalThis.announceStubs.loads++; export const showToast = (text, action) => { globalThis.announceStubs.shown.push([text, action]); };", shortCircuit: true }
-  : next(url, context)) });
+  : next(url, context)),
+});
 const { createAnnounce } = await import("../src/announce.ts");
 
 // #status, and the editor's newest Undo step for each path (`steps`); `undone` records what Undo ran.
@@ -48,7 +56,21 @@ test("a toast said over before its module loads is not shown", async () => {
   status.textContent = "Refused meanwhile.";
   await settle();
   assert.deepEqual(stubs.shown, []);
-  assert.ok(stubs.loads <= 1);
+});
+
+test("the toast is imported once per announcer, however often it is asked for before it arrives", async () => {
+  const { showToast, status } = setup();
+  const before = stubs.loads;
+  status.textContent = "A.";
+  showToast("A.");
+  showToast("A.");
+  await settle();
+  assert.equal(stubs.loads, before + 1);
+  assert.deepEqual(stubs.shown, [["A.", undefined], ["A.", undefined]]);
+  // Once loaded, it is shown at once, with no import.
+  showToast("A.");
+  assert.equal(stubs.loads, before + 1);
+  assert.equal(stubs.shown.length, 3);
 });
 
 test("the toast's Undo takes back the step it names while it is the newest, else refuses", async () => {

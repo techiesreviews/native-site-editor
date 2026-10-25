@@ -26,6 +26,11 @@ const stubModules: Record<string, string> = {
   "src/components/spotlight.ts": loaded("spotlight", "export const spotlight = 1;"),
   "src/components/setup-wizard.ts": loaded("setup-wizard", "export const wizard = 1;"),
   "src/components/setup-checklist.ts": loaded("setup-checklist", "export const checklist = 1;"),
+  "src/components/get-started.ts": loaded("get-started", "export const getStarted = 1;"),
+  "src/components/start-site.ts": loaded("start-site", "export const startSite = 1;"),
+  "src/components/confirm-dialog.ts": loaded("confirm-dialog", "export const confirmDialog = 1;"),
+  "src/components/commit-history.ts": loaded("commit-history", "export const commitHistory = 1;"),
+  "src/agent-site.ts": loaded("agent-site", "export const agentSite = 1;"),
   "src/components/agent-menu.ts": loaded("agent-menu", `export const createAgentMenu = ${made("agent-menu")};`),
   "src/agent-records.ts": loaded("agent-records", 'export const indexedDbAgentRecords = () => "records";'),
   "src/page-builder/media-picker.ts": loaded("media-picker", `export const isMediaLibraryPath = () => true; export const configureMediaPicker = ${made("media-picker")};`),
@@ -47,11 +52,12 @@ function setup() {
     textKey: () => "", route: () => undefined, openFile: () => undefined, pageStyles: () => [], find: async () => undefined,
     readTexts: async () => ({ texts: new Map(), unreadable: [] }), unreadable: () => {}, changed: () => {}, closed: () => {},
   });
-  const late = { setupPorts: 0 };
+  // `guardedEdits`: what main.ts holds now, read when a loader runs.
+  const late = { setupPorts: 0, guardedEdits: {} as LazyLoadersPorts["guardedEdits"] }; // eslint-disable-line no-restricted-syntax -- a sentinel handed on, never called here.
   const stamp = (load: number): SessionStamp => ({ load, scope: undefined, holds: () => true, changed: () => undefined });
   const ports = {
     runtime, appStore: createAppStore(createDraftStore()), currentLoad: () => 7, stampOf: stamp, loadNativeAssets: async () => {},
-    get guardedEdits() { return {} as LazyLoadersPorts["guardedEdits"]; }, // eslint-disable-line no-restricted-syntax -- handed on, never called here.
+    get guardedEdits() { return late.guardedEdits; },
     get mediaController() {
       // eslint-disable-next-line no-restricted-syntax -- only the workspace context and usage are read.
       return { workspaceContext: (_library: unknown, pin?: unknown) => { calls.push(`context ${pin ?? "shown"}`); return Promise.resolve({}); },
@@ -82,19 +88,33 @@ test("setup's actions are made once, with their ports read when they first load,
   assert.equal(loaders.agentPrompts?.setupPrompt(choice), "prompt");
 });
 
+test("Get started and Start your site load with setup's actions; the dialogs, History and the agent's site on their own", async () => {
+  const { loaders, late } = setup();
+  const [getStarted, startSite] = await Promise.all([loaders.loadGetStarted(), loaders.loadStartSite()]);
+  assert.deepEqual([getStarted, startSite].map((module) => Object.keys(module)), [["getStarted"], ["startSite"]]);
+  assert.equal(late.setupPorts, 1);
+  assert.deepEqual(stubs.made.map(([name]) => name), ["setup-actions"]);
+  const [dialog, history, site] = await Promise.all([loaders.loadConfirmDialog(), loaders.loadHistory(), loaders.loadAgentSite()]);
+  assert.deepEqual([dialog, history, site].map((module) => Object.keys(module)), [["confirmDialog"], ["commitHistory"], ["agentSite"]]);
+  assert.equal(late.setupPorts, 1);
+});
+
 test("the agent copy is there once the spotlight has loaded", async () => {
   const { loaders } = setup();
   await loaders.loadSpotlight();
   assert.deepEqual(loaders.onboardingCopy?.AGENT_EXPLAINER, ["copy"]);
 });
 
-test("the settings load after Pages' actions and restore through a stamp of the load they were opened in", async () => {
-  const { loaders, calls } = setup();
+test("the settings load after Pages' actions, with the guarded edits held then, and restore through a stamp of the load they were opened in", async () => {
+  const { loaders, calls, late } = setup();
+  // Made later than the loaders (main.ts declares it further down): the one there when they load.
+  late.guardedEdits = { ...late.guardedEdits };
   await loaders.loadSiteSettings();
   const [[name, ports]] = stubs.made as [string, Parameters<typeof import("../src/native-settings.ts").createNativeSettings>[0]][];
   assert.equal(name, "native-settings");
   assert.deepEqual(calls, ["pages actions"]);
   assert.equal(ports.generation, 7);
+  assert.equal(ports.guardedEdits, late.guardedEdits);
   assert.equal(ports.nativePageLabelOf("about.html"), "label about.html");
   assert.equal(ports.setupScope(), "o/site@main");
   await ports.restoreFile("index.html", 3);
