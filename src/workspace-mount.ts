@@ -330,7 +330,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     ports.element("repository-menu").append(repositoryMenu.root);
     ports.element("site-settings-toggle").addEventListener("click", () => void ports.page.siteSettings());
     ports.mediaController.disposeGallery();
-    siteActions = mountSiteActions({ statusHost: ports.element("change-status"), menuHost: ports.element("site-actions"), siteFiles: ports.site.files, announce: ports.announce });
+    siteActions = mountSiteActions({ statusHost: ports.element("change-status"), menuHost: ports.element("site-actions"), siteFiles: () => ports.site.files(), announce: ports.announce });
     const menuPanel = ports.element("repository-actions");
     menuPanel.addEventListener("toggle", () => {
       if (menuPanel.matches(":popover-open")) { void ports.agentController.ensure().catch(ports.errorMessage); void ports.setup.setupController.mount().catch(ports.errorMessage); }
