@@ -141,6 +141,8 @@ test("feature headings are well-formed, unique and grouped by area", () => {
 });
 
 // Committed, staged and new files, leaving out ignored ones (.scratch/, node_modules/) that CI never has.
+// New files count so a builder's unstaged source and steps files pass before the runner commits them;
+// one never committed still fails in CI.
 const repo = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
   cwd: root, encoding: "utf8",
 }).split("\0").filter(Boolean);
@@ -157,13 +159,22 @@ test("every Steps is the feature's own steps file, or none yet", () => {
   assert.deepEqual(listed.flatMap((entry) => stepsProblems(entry, repo)), []);
 });
 
+function ruleProblems(listed: Feature[], rulebook: string): string[] {
+  const rules = new Set([...rulebook.matchAll(/^- \*\*([SLBU]\d+)\*\* /gm)].map((match) => match[1]));
+  if (rules.size === 0) return ["No rules found in the UX rulebook"];
+  return listed.flatMap(({ id, fields }) =>
+    rulebookIds(fields.get("Good") ?? "").filter((rule) => !rules.has(rule)).map((rule) => `${id}: no rule ${rule}`));
+}
+
 test("rulebook ids in Good exist in the UX rulebook", () => {
   const rulebook = readFileSync(new URL("docs/agents/ux-rulebook.md", root), "utf8");
-  const rules = new Set([...rulebook.matchAll(/^- \*\*([SLBU]\d+)\*\* /gm)].map((match) => match[1]));
-  assert.ok(rules.size > 0, "No rules found in the UX rulebook");
-  const problems = listed.flatMap(({ id, fields }) =>
-    rulebookIds(fields.get("Good") ?? "").filter((rule) => !rules.has(rule)).map((rule) => `${id}: no rule ${rule}`));
-  assert.deepEqual(problems, []);
+  assert.deepEqual(ruleProblems(listed, rulebook), []);
+});
+
+test("rule checks report an unknown id and a rulebook without rules", () => {
+  const listed = features("## Edit bar\n### F-bar-02 x\n- Good: b (B1, B99)");
+  assert.deepEqual(ruleProblems(listed, "- **B1** x"), ["F-bar-02: no rule B99"]);
+  assert.deepEqual(ruleProblems(listed, "# UX rulebook\n- B1 x"), ["No rules found in the UX rulebook"]);
 });
 
 test("the parser reports malformed entries", () => {
