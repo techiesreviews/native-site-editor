@@ -327,7 +327,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const url = createUrlChange({
         label: "URL", ariaLabel: "URL", initial: options.route, buttons: true,
         plan: (value) => handlers.planUrl(options.path, value),
-        ...(handlers.typedUrl ? { convert: (text: string, typing: boolean) => handlers.typedUrl!(options.path, text, typing) } : {}),
+        ...(handlers.typedUrl ? { typedUrl: (text: string, typing: boolean) => handlers.typedUrl!(options.path, text, typing) } : {}),
         apply: async (value, keep) => {
           const fieldsChanged = title.value !== values.title || description.value !== values.description || socialTitle.value !== initialSocialTitle || socialDescription.value !== initialSocialDescription || titleLink.checked !== initialTitleLink || descriptionLink.checked !== initialDescriptionLink || image.value !== values["og:image"] || canonical.value !== values.canonical || hidden.checked !== /\b(noindex|none)\b/i.test(values.robots) || theme.value !== values["theme-color"];
           if (fieldsChanged) return "Apply page details before changing the URL, so those edits are kept.";

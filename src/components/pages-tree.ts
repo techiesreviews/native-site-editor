@@ -442,7 +442,7 @@ export function createPagesTree(options: {
       initial: page.route,
       buttons: true,
       plan: (value) => options.planUrl!(target, value),
-      ...(options.typedUrl ? { convert: (text: string, typing: boolean) => options.typedUrl!(target, text, typing) } : {}),
+      ...(options.typedUrl ? { typedUrl: (text: string, typing: boolean) => options.typedUrl!(target, text, typing) } : {}),
       apply: async (value, keep) => {
         const error = await options.changeUrl!(target, value, keep);
         if (!error && !done) { done = true; cancelUrl(false); }

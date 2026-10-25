@@ -128,6 +128,12 @@ test("Page settings URL changes a page's URL: links in pages and the header nav 
   await expect(message).toHaveText("Moves notes/first-note/index.html to notes/bad-url/index.html; updates 2 links in 2 files.");
   await url.fill("/notes/About_Us.v2/");
   await expect(url).toHaveValue("/notes/about-us-v2/");
+  // Typed in the middle, the caret stays after what was typed.
+  await url.fill("/notes/x/");
+  await url.evaluate((field: HTMLInputElement) => field.setSelectionRange(7, 7));
+  await url.pressSequentially("A b");
+  await expect(url).toHaveValue("/notes/a-bx/");
+  expect(await url.evaluate((field: HTMLInputElement) => field.selectionStart)).toBe(10);
   await url.fill("/");
   await expect(url).toHaveAttribute("aria-invalid", "true");
   await expect(message).toHaveText("/ is the home page's URL.");
