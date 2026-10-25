@@ -1,8 +1,8 @@
 ---
 title: One visual page per build
 type: task (AFK)
-status: open
-assignee: sf-23 (this session)
+status: closed
+assignee: sf-23
 builder: claude
 blocked_by: [21-kit-records-every-piece, 22-one-feedback-log]
 ---
@@ -43,3 +43,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf23 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/23-one-page-per-build.md --builder claude-opus-5-5 --no-pr`; `scripts/agents/kit wait job slice-sf23 --timeout 2h`; Lex's look; `scripts/agents/kit fix --note <his changes>` if any; the same `kit slice` command without `--no-pr` lands it.
 - Report: unit `RESULT:` lines, page path, `kit shots` contact sheet and findings, Lex's comments on the sample, review decisions, PR and merge SHA.
+
+## Done (2026-10-25)
+
+- `kit score <map> --html [--out FILE]` writes one self-contained HTML page (inline CSS and SVG, no network, light and dark) to the main root `.scratch/scoreboard/<map>/page.html` (or FILE) and prints `page: <path>` (stderr with `--json`). `--html` without a map, or `--out` without `--html`, exits 2. The page builder is `scripts/agents/score-page.mjs`; colours come from the validated dataviz palette (kinds of finding: categorical slots 1–4 plus gray; phases: one-hue blue ramp).
+- Sections in order, each with a one-sentence caption that changes with the data: **Where the build is** (done / running / waiting on Lex / not started tiles; done = merged, or a closed build ticket with no record; waiting on Lex = ticket `ready-for-human` or `needs-info`; minutes per piece split into building, review, fixing, landing); **What reviews caught** (findings per piece by kind over every review round, declined ones lighter, serious / minor / style instead of P-codes); **What Lex had to correct** (feedback log lines by kind as a share of all, each with its fix: ticket number, title and state, PR, or "No fix yet"); **Ladder** (rung 1–4, and finished builds in a row without a UX correction out of 5; a finished build is a map with a committed `build/scoreboard.json`, oldest first by last merge; `too-much`, `below-bar` and `felt-wrong` are UX corrections; up a rung after 5, down one for a UX problem found after release); **Builders** (per kind of job and builder: pieces, median minutes, rounds and findings per piece, build cost per piece; at 10 or more pieces of a kind a "To bring to Lex" sentence names the best builder, fewest findings, and the cheapest, lowest known dollars; never applied). Charts have a "Show the numbers as a table" view.
+- Tests (`tests/kit-score.test.ts`): from `tests/fixtures/scoreboard/` (5 records, 7 build tickets, a 3-line feedback log, 4 finished builds whose time order differs from their names), the page has all five sections in order with captions, no URLs, `src`, `href` or `@import`, no P-codes, tiles 4 / 1 / 1 / 1, the ladder at 3 of 5, fix links with ticket titles, correction bars at one third each, and no builder advice; `--out` and `--json`; bad option combinations exit 2. A second test shows the advice at 10 pieces of a kind but not at 9 (best and cheapest apart and the same builder), plus the ladder moving up after 5 clean builds and down after a UX problem found after release.
+- Page check: `scripts/agents/kit shots --spec .scratch/score-page.spec.ts` opened the fixture page and the real software-factory page at 390 and 1280 px in light and dark, with tables open: `RESULT: ok shots raw spec`, 0 layout findings, no sideways scrolling; contact sheets `/home/ubulex/Projects/native-site-editor/.scratch/shots/sf-23/20261025-122342/contact-1.webp` and `contact-2.webp`.
+- Docs: the `kit score` line in `docs/agents/agent-scripts.md`; `docs/agents/kitchen.md` station 10 shows the page at each milestone and at the end in place of the planned mark.
