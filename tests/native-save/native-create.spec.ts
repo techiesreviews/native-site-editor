@@ -318,6 +318,18 @@ test("a page, a subpage under it and another are made in place as folders of the
   await slug.pressSequentially("Second Take!");
   await expect(slug).toHaveValue("second-take");
   await expect(editRow(page).locator(".pages-edit__message")).toBeEmpty();
+  // Typed in the middle, the caret stays after what was typed.
+  await slug.fill("abcd");
+  await slug.press("ArrowLeft");
+  await slug.press("ArrowLeft");
+  await slug.pressSequentially(" !x");
+  await expect(slug).toHaveValue("ab-xcd");
+  // A dash waiting at the end goes once the field is left.
+  await slug.fill("About ");
+  await expect(slug).toHaveValue("about-");
+  await title.focus();
+  await expect(slug).toHaveValue("about");
+  await slug.fill("second-take");
   await title.fill("Another title");
   await expect(editRow(page).locator(".pages-edit__message")).toBeEmpty();
   await page.keyboard.press("Escape");

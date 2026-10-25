@@ -27,17 +27,22 @@ export type UrlPlan =
 let serial = 0;
 
 /**
- * Shows in `input` what `convert` makes of its text, the caret where the text
- * before it went. Not while composing (an accent or a character is being
- * built); the next input after it converts.
+ * Makes `input` show what `convert` makes of its text as it is typed, the
+ * caret after what the text before it became, then calls `typed`. Not while
+ * composing (an accent or a character is being built): when it ends.
  */
-export function convertAsTyped(input: HTMLInputElement, convert: (text: string) => string, event?: Event) {
-  if (event instanceof InputEvent && event.isComposing) return;
-  const value = convert(input.value);
-  if (value === input.value) return;
-  const caret = Math.min(convert(input.value.slice(0, input.selectionStart ?? input.value.length)).length, value.length);
-  input.value = value;
-  input.setSelectionRange(caret, caret);
+export function convertWhileTyping(input: HTMLInputElement, convert: (text: string) => string, typed: () => void) {
+  const update = () => {
+    const value = convert(input.value);
+    if (value !== input.value) {
+      const caret = Math.min(convert(input.value.slice(0, input.selectionStart ?? input.value.length)).length, value.length);
+      input.value = value;
+      input.setSelectionRange(caret, caret);
+    }
+    typed();
+  };
+  input.addEventListener("input", (event) => { if (!(event instanceof InputEvent && event.isComposing)) update(); });
+  input.addEventListener("compositionend", update);
 }
 
 /**
@@ -135,10 +140,7 @@ export function createUrlChange(options: {
     options.cancel();
   }
 
-  input.addEventListener("input", (event) => {
-    convertAsTyped(input, (text) => convert(text, true), event);
-    check();
-  });
+  convertWhileTyping(input, (text) => convert(text, true), check);
   form.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     event.preventDefault();

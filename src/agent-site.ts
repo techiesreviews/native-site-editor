@@ -23,13 +23,13 @@ import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./d
 import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
 import { changedSinceRead } from "../shared/agent-edit";
 import { applyReplacements } from "../shared/agent-replacements";
+import { toPageAddress } from "../shared/site-rules";
 import type { AgentTextCommit } from "./editor-workspace";
 import type { AgentRecords } from "./agent-records";
 import type { createAgentOwner } from "./agent-owner";
 import { listChanges } from "./file-changes";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
 import { buildNativePagesTree, firstHeadingText, nativeTreePages, type NativePageNode } from "./native-pages";
-import { toPageAddress } from "../shared/site-rules";
 import { startTagAttribute, locateNativeElement, locateNativeElementRange, parseMarked } from "./native-source-location";
 import { removeEdit } from "./native-structure";
 import type { createGuardedEdits, EditorWorkspace, GuardedEdits, NodeRef, Outcome, Reads } from "./guarded-edit";
