@@ -73,3 +73,36 @@ test("private locator cache preserves source ranges and isolates mutable parses"
     await browser.close();
   }
 });
+
+// Ticket 38: a page and its templates, read in turns, keep their parses (eight are kept).
+test("a page and three templates read in turns keep their parses; a ninth source pushes the oldest out", async () => {
+  const bundle = await build({
+    stdin: { contents: `import * as locator from './src/native-source-location'; globalThis.locator = locator;`, resolveDir: process.cwd() },
+    bundle: true, write: false, format: "iife", platform: "browser",
+  });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    const result = await page.evaluate(`(() => {
+      const { locateNativeElementRange } = globalThis.locator;
+      const sources = [
+        '<!doctype html><html><body><main><site-card>One</site-card><section-hero></section-hero></main></body></html>',
+        '<article><slot></slot></article>', '<section class="hero"><slot name="title"></slot></section>', '<footer><p>Footer</p></footer>',
+      ];
+      // The same frozen range comes back only when the source's parse was kept.
+      const ranges = () => sources.map(html => locateNativeElementRange(html, [0]));
+      const first = ranges();
+      const turns = [ranges(), ranges(), ranges()];
+      const kept = turns.every(turn => turn.every((range, index) => range === first[index]));
+      const frozen = first.every(range => range && Object.isFrozen(range));
+      // Five more sources make nine: the page, read longest ago, is parsed again.
+      for (let n = 0; n < 5; n++) locateNativeElementRange('<p>' + n + '</p>', [0]);
+      const pushedOut = locateNativeElementRange(sources[0], [0]) !== first[0];
+      return { kept, frozen, pushedOut };
+    })()`);
+    assert.deepEqual(result, { kept: true, frozen: true, pushedOut: true });
+  } finally {
+    await browser.close();
+  }
+});
