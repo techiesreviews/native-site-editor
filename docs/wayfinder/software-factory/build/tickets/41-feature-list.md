@@ -90,3 +90,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Evidence (round 3): `kit unit tests/features-list.test.ts tests/code-map.test.ts` → `RESULT: ok unit
   12/12 (2 files)`; `kit unit --affected` → `RESULT: ok unit 9/9 (1 files)`; `npm run check` and
   `npm run lint` pass.
+
+### Follow-ups
+
+- Spec (P2): 1bacff0c:docs/agents/features.md:1058 — P2 fault: F-agent-02 tells the user to "With an agent connected… press Wait for MCP", and Good says "The agent waits for
+- Spec (P3): 1bacff0c:docs/agents/features.md:1052 — P3 fault: F-agent-01 says "Three actions only (Connect to MCP, Wait for MCP, Disconnect MCP)". In the code these are one
+- Spec (P2): 1bacff0c:docs/wayfinder/software-factory/build/tickets/41-feature-list.md:1260 — P2 ticket: runner.md "Review and close" asks the Done section to record the com
+- Spec (P3): c8e3c5ff:docs/agents/features.md:37 — P3 ticket: the ticket's "Decided behaviour" fixes a five-field entry format (Try, Good, Files, Phone, Steps). The list add
+- Validation gaps (gap): `headingProblems` reports "outside a feature area" for an entry under a `##` heading that is not in AREAS, or under no heading at all. No unit case covers this.
+- Validation gaps (gap): No unit case shows that a malformed heading (no id) adds only its "Heading not…" problem. Without one, a regression in the slug-pairing and count-up checks coul
+
