@@ -2,7 +2,7 @@
 title: "Media wiring leaves main.ts"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-88 (this session)
 builder: claude
 blocked_by: [86-workspace-mount-out-of-main]
 ---
