@@ -84,7 +84,7 @@ test("Done writes only what changed", () => {
   const other = { kind: "other" as const, value: "3 / 2" };
   assert.equal(frameChange({ shape: other, focus: { x: 50, y: 50 } }, { shape: { ...other }, focus: { x: 50, y: 50 } }), undefined);
   assert.deepEqual(frameChange({ shape: other, focus: { x: 50, y: 50 } }, { shape: other, focus: { x: 60, y: 50 } }), { focus: { x: 60, y: 50 } });
-  // An unreadable focus (lengths) is kept unless the dot moved from the middle.
+  // An unreadable focus (lengths) is kept unless the square moved from the middle.
   assert.equal(frameChange({ shape: "square", focus: undefined }, { shape: "square", focus: { x: 50, y: 50 } }), undefined);
   // A replacement writes the centred focus even when unmoved; Original has none to write.
   assert.deepEqual(frameChange({ shape: "square", focus: { x: 20, y: 20 } }, { shape: "square", focus: { x: 50, y: 50 } }, true), { focus: { x: 50, y: 50 } });

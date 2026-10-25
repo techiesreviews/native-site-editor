@@ -241,11 +241,16 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
   await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
   await expect(field).toHaveValue(first);
 
-  // Move the frame to the top, Done: the field holds the picture until Apply.
+  // Drag the frame from its middle up past the picture's top, Done: the field holds the picture until Apply.
   await image.click();
   await expect(square).toBeFocused();
-  for (let step = 0; step < 5; step++) await page.keyboard.press("Shift+ArrowUp");
+  const picbox = (await popup.locator(".image-popup__picbox").boundingBox())!, held = (await square.boundingBox())!;
+  await page.mouse.move(held.x + held.width / 2, held.y + held.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(held.x + held.width / 2, picbox.y - 20, { steps: 4 });
+  await page.mouse.up();
   await expect(square).toHaveAttribute("aria-valuetext", /^50% across, 0% down/);
+  expect(Math.abs((await square.boundingBox())!.y - picbox.y)).toBeLessThanOrEqual(1);
   await popup.getByRole("button", { name: "Done", exact: true }).click();
   await expect(popup).toHaveCount(0);
   await expect(field).toHaveValue("/images/sharing-source.png");

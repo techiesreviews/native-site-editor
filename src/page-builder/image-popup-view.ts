@@ -296,7 +296,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     if ((event.target as Element).closest(".image-popup__menu")) return;
     if (event.target === frame && squareApplies(state.shape, state.cut)) {
       const next = nudgeFocus(state.focus, event.key, event.shiftKey, cutArea(size(), state.shape, state.focus, state.cut));
-      if (next) { event.preventDefault(); events.focus(next); }
+      if (next) { event.preventDefault(); if (next.x !== state.focus.x || next.y !== state.focus.y) events.focus(next); }
     }
     if (event.target === frame && state.shape === "free") {
       const next = nudgeFree(state.cut.rect, event.key, event.shiftKey, event.altKey);

@@ -1,6 +1,6 @@
 // The Social image popup (media build slice 44; ticket 09 "Components, sharing and backgrounds"):
 // Settings' Image button opens the image popup fixed to the 1200 × 630 sharing shape. The focus
-// dot moves the sharing copy's frame, Zoom trims it closer, Replace chooses another still picture,
+// square moves the sharing copy's frame, Zoom trims it closer, Replace chooses another still picture,
 // and the preview is a link card. Done hands the picture and its frame back to the settings dialog,
 // whose Apply makes the sharing copy (slice 36) under a fresh name; ✕ or Escape change nothing.
 // Loaded when the button is first pressed.
