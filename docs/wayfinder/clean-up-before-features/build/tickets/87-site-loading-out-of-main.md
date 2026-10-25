@@ -1,8 +1,8 @@
 ---
 title: "Site loading and the text index leave main.ts"
 type: task (AFK)
-status: open
-assignee: lead-87 (this session)
+status: closed
+assignee: lead-87
 builder: claude
 blocked_by: [70-pass-throughs-and-discard]
 ---
@@ -37,3 +37,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected`, `kit size`.
 - Review: `ASE_REVIEW_MODEL=claude-opus-5-5 kit review --ticket <this ticket>` (read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: `main.ts` lines before and after and the new ceiling, the module created, unit and specs `RESULT:` lines, `kit size` delta, review folder and decisions, PR and merge SHA.
+
+## Done (2026-10-25)
+
+No visible change: boot order, first paint and the text index behave as before.
+
+- `src/site-loading.ts` (`createSiteLoading`): reading the page on show's files and stylesheets (`readNativeShownFiles`, `readNativeStyleFiles`, `loadNativeShownFiles`, `loadNativeStyleFiles`), assets (`loadNativeAssets`, `readBlob`, `forgetDraftedAssets`), component styles, `listRepositoryFiles`, `nativeSiteFiles`, `activateNativeSite`, the top bar's `updateCurrentPageLabel`, the file readers (`readFile`, `readFiles`, `readNativeTexts`) and unreadable-file warnings (`noteNativeUnreadable`, `nativePreviewUnreadable`, `showNativeWarnings`).
+- `src/site-text-index.ts` (`createSiteTextIndex`): the text index (`nativeTextIndexScopeKey`, `startNativeTextIndex`, `wantNativeTextIndex`, `ensureNativeTextIndex`, `nativeTextIndexGate`), the first-paint wait (`afterNativePaint`, `noteNativePainted`), the Pages titles held while a row is in use (its pointer listeners, `flushPendingNativePageTitles`, `clearPendingTitles`, which replaces main.ts's two writes of `pendingNativePageTitles`) and `isNativeTextFile`.
+- Bodies moved as they were plus `ports.` prefixes; the one other change is the `scope` parameter type of `startNativeTextIndex` and `indexNativeTextFiles`, now `DraftScope | undefined` (was `ReturnType<typeof draftScope>`). `setCurrentPage` and `options` stay in main.ts: they drive the editor, History and linked styles, not site loading.
+- main.ts makes both right after the site runtime, before anything hands their functions on; later consts and `let` state (`repositoryIndex`, `previewSelection`, `versions`, `mediaController`, `pagesAndFiles`, `pagesController`, `nativePreview`, `pageStructure`, `componentTools`, `nativePreviewBehind`) go in as getters (a setter for `nativePreviewBehind`), the text index's start as an arrow.
+- main.ts 2,863 → 2,181 lines; ceiling 2,190. `kit size`: boot 354 KB (+1 KB; the main chunk +0.8 KB gzip, port names), budget 355 KB.
+- Tests: `tests/site-loading.test.ts` (no home page, the first read of what the page on show needs, an unreadable needed page, unreadable stylesheet warnings, component styles, the page label, one fetch per blob) and `tests/site-text-index.test.ts` (what the index reads, its key, unreadable files, a commit changing mid-read, the deferred start, titles held while a row is busy), ports typed with `satisfies`; `tests/main-ts-ceiling.test.ts` also checks both factories get `let` state through accessors and later consts through arrows. `docs/agents/code-map.md` names both modules and the moved functions.

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { parse, ts, walk, type TS } from "./support/source-guard.ts";
 
-const CEILING = 2870;
+const CEILING = 2190;
 
 function checkCeiling(count: number, ceiling: number): void {
   assert.ok(count <= ceiling, `src/main.ts has ${count} lines, above the ceiling of ${ceiling}`);
@@ -109,7 +109,7 @@ test("a setup host member passed by value, called on the spot or reached through
   assert.deepEqual(hostMembersUsedEarly(source), ["showGetStarted (line 1)", "startSitePanel (line 2)", "takeStartingPoint (line 3)", "writeStartingPoint via early() (line 4)"]);
 });
 
-// The Pages & files host and the agent's commands read main.ts's `let` state when they run: such a value goes in
+// The Pages & files host, the agent's commands, site loading and the text index read main.ts's `let` state when they run: such a value goes in
 // as a getter (and a setter where the host writes it, as the Pages & files host's `fileGeneration`), never as a
 // copy taken when the host is made. A `const` declared after the call is not there yet when the host is made
 // (CODING_STANDARDS "Module order holds"): it goes in as an arrow, never by name.
@@ -144,10 +144,10 @@ function letsHandedByValue(source: string, factory = "createPagesAndFilesHost"):
   return found;
 }
 
-test("main.ts hands the Pages & files host and the agent's commands their let state through accessors and later consts through arrows", () => {
+test("main.ts hands the Pages & files host, the agent's commands, site loading and the text index their let state through accessors and later consts through arrows", () => {
   const source = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
   assert.deepEqual(letsHandedByValue(source), []);
-  assert.deepEqual(letsHandedByValue(source, "createAgentCommands"), []);
+  for (const factory of ["createAgentCommands", "createSiteLoading", "createSiteTextIndex"]) assert.deepEqual(letsHandedByValue(source, factory), [], factory);
 });
 
 test("a const handed to the agent's commands by name before it is declared is named", () => {
