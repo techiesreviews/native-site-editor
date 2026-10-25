@@ -109,7 +109,7 @@ The frontier decides; this is one order that keeps to the rules (at most 5 at on
 - **Acts like a user, cheaply:** each feature's try is a scripted steps file (Playwright, through `kit shots --steps`) with stills and a short frame strip for motion; the model never drives the browser, it only judges the bundle. One reviewer call per slice, bundle under 60 KB of text plus at most 12 images.
 - **`broken` blocks landing; `looks off` gets one fix round** and then becomes a follow-up the lead weighs, like a P2.
 - **The feature-list guard** treats `src/**/*.css`, `src/components/**`, `src/ui/**`, `src/page-builder/**` (not `rules/`), `src/icons.ts` and `index.html` as visible; a slice with no user-visible effect writes `Feature list: no change (<reason>)` in its Done instead.
-- **Every other Monday:** one weekly T3 schedule (Mondays 09:00 Europe/Amsterdam); chat learning runs on even ISO weeks. *Check with Lex* which week starts.
+- **Every other Monday:** one weekly T3 schedule (Mondays 09:00 Europe/Amsterdam); chat learning runs on even ISO weeks. Lex said yes on 2026-10-25; T3 schedule "Monday sweep" created, first run 2026-10-26 09:00.
 - **A usage-limit refusal gives the review budget slot back** (no review happened).
 - **Kit defaults follow the pins:** with no `ASE_REVIEW_MODEL`, `kit review` uses `claude-opus-5-5`; fresh `kit fix` builders default to `claude-opus-5-5`. Sol is used only when named.
 - **The context card in every project** ships as one standalone script in the kit; this repo's hooks use it at once. Adding it to Lex's user-level hooks (`~/.claude/settings.json`, `~/.codex/`) so every project gets it is his settings: the lead asks him first. *Check with Lex.*
