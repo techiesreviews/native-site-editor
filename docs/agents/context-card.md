@@ -11,7 +11,9 @@ The chat project's memory sync writes the notes
 [`scripts/agents/context-card.mjs`](../../scripts/agents/context-card.mjs) is plain Node with no
 imports from this repo, so any project can call it by absolute path. It matches the working
 directory against the `Workspace` column of the README's project map (a folder inside the
-workspace, or a sibling worktree named `<workspace>-*`, counts; the most specific row wins) and
+workspace up to that folder's own repository, or a sibling worktree named `<workspace>-*`,
+counts; the most specific row wins, so an unmapped repo under a catch-all row such as
+`~/Projects` gets no card) and
 prints at most 30 lines, each cut to 160 characters with `…`:
 
 - a title line, then the note's Current thinking, Recent decisions (newest 5) and Open questions;
