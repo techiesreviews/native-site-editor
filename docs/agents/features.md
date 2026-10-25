@@ -782,9 +782,9 @@ its number unused.
 - Steps: `scripts/agents/shots/features/F-media-16.json`
 
 ### F-media-17 Image popup: shape and focus point
-- Try: Double-click a picture on the page, pick Square and move the focus dot.
-- Good: Changes apply at once; Close or Escape keeps them as one Undo step; a bottom sheet with 44 px targets on a phone (B11, U4).
-- Files: `src/page-builder/image-popup.ts`, `src/page-builder/image-popup-view.ts`, `src/page-builder/image-popup-rules.ts`, `src/page-builder/shape-menu.ts`
+- Try: Double-click a picture on the page, pick Square and drag the square on the picture.
+- Good: The square is the focus point, with no separate dot; the page shows just what the square shows; changes apply at once; Close or Escape keeps them as one Undo step; a bottom sheet with 44 px targets on a phone (B11, U4).
+- Files: `src/page-builder/image-popup.ts`, `src/page-builder/image-popup-view.ts`, `src/page-builder/image-popup-rules.ts`, `src/page-builder/image-popup.css`, `src/page-builder/shape-menu.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-image-popup.spec.ts`
 - Steps: `scripts/agents/shots/features/F-media-17.json`

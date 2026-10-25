@@ -215,9 +215,9 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
   expect(box.y).toBeGreaterThanOrEqual(0); expect(box.y + box.height).toBeLessThanOrEqual(view.height);
   expect(await popup.locator(".image-popup").evaluate(element => getComputedStyle(element).backgroundColor))
     .toBe(await panel(page).evaluate(element => getComputedStyle(element).backgroundColor));
-  const dot = popup.getByRole("slider", { name: "Focus dot" });
-  await expect(dot).toBeFocused();
-  await expect(dot).toHaveAttribute("aria-valuetext", /^50% across, 50% down/);
+  const square = popup.getByRole("slider", { name: "Focus point" });
+  await expect(square).toBeFocused();
+  await expect(square).toHaveAttribute("aria-valuetext", /^50% across, 50% down/);
   // Escape leaves everything as it was, and the settings stay open.
   await page.keyboard.press("Shift+ArrowUp");
   await page.keyboard.press("Escape");
@@ -228,7 +228,7 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
 
   // Done and then the settings' Cancel change nothing.
   await image.click();
-  await expect(dot).toBeFocused();
+  await expect(square).toBeFocused();
   await page.keyboard.press("Shift+ArrowDown");
   await popup.getByRole("button", { name: "Done", exact: true }).click();
   await expect(field).toHaveValue("/images/sharing-source.png");
@@ -243,16 +243,16 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
 
   // Move the frame to the top, Done: the field holds the picture until Apply.
   await image.click();
-  await expect(dot).toBeFocused();
+  await expect(square).toBeFocused();
   for (let step = 0; step < 5; step++) await page.keyboard.press("Shift+ArrowUp");
-  await expect(dot).toHaveAttribute("aria-valuetext", /^50% across, 0% down/);
+  await expect(square).toHaveAttribute("aria-valuetext", /^50% across, 0% down/);
   await popup.getByRole("button", { name: "Done", exact: true }).click();
   await expect(popup).toHaveCount(0);
   await expect(field).toHaveValue("/images/sharing-source.png");
   await expect(panel(page)).toContainText("Sharing frame chosen. Apply to save it.");
   // Re-opened before Apply, the moved frame is still there.
   await image.click();
-  await expect(dot).toHaveAttribute("aria-valuetext", /^50% across, 0% down/);
+  await expect(square).toHaveAttribute("aria-valuetext", /^50% across, 0% down/);
   await popup.getByRole("button", { name: "Close without changes", exact: true }).click();
   await panel(page).getByRole("button", { name: "Apply site settings", exact: true }).click();
   await expect(panel(page)).not.toBeVisible();
@@ -270,7 +270,7 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
   await page.getByRole("button", { name: "Site settings", exact: true }).click();
   await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
   await image.click();
-  await expect(dot).toHaveAttribute("aria-valuetext", /^50% across, 0% down/);
+  await expect(square).toHaveAttribute("aria-valuetext", /^50% across, 0% down/);
   await page.keyboard.press("Escape");
   await panel(page).getByRole("button", { name: "Cancel", exact: true }).click();
   // One Undo puts the first copy back.
@@ -288,8 +288,8 @@ test("a press on the Social image layer's backdrop closes it unchanged; Site set
   const value = await field.inputValue();
   await panel(page).getByRole("button", { name: "Change default social image", exact: true }).click();
   const popup = page.getByRole("dialog", { name: "Social image", exact: true });
-  const dot = popup.getByRole("slider", { name: "Focus dot" });
-  await expect(dot).toBeFocused();
+  const square = popup.getByRole("slider", { name: "Focus point" });
+  await expect(square).toBeFocused();
   // The fixture's picture is see-through around its green square: the picture and the link card sit on
   // slice 106's checkerboard.
   await expect(popup.locator(".image-popup__pic[data-transparent]")).toHaveCount(1);

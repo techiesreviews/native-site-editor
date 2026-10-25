@@ -70,8 +70,8 @@ export function makesNewPicture(shape: PopupShape, cut: PopupCut) {
   return cut.zoom > 1.001;
 }
 
-/** Whether the focus dot means anything: a shape that crops the picture, or Original zoomed in. Free has corners instead. */
-export const dotApplies = (shape: PopupShape, cut: PopupCut) => shape !== "free" && (shapeRatio(shape) !== undefined || cut.zoom > 1.001);
+/** Whether the focus square means anything: a shape that crops the picture, or Original zoomed in. Free has corners instead. */
+export const squareApplies = (shape: PopupShape, cut: PopupCut) => shape !== "free" && (shapeRatio(shape) !== undefined || cut.zoom > 1.001);
 
 /** The trim Done saves, in the records' form; nothing when only the place's shape or focus changes. */
 export function popupTrim(size: PictureSize, shape: PopupShape, focus: PlaceFocus, cut: PopupCut): MediaTrim | undefined {

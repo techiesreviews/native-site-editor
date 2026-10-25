@@ -122,12 +122,12 @@
   height: 152px;
   border-radius: var(--radius);
   background: var(--image-popup-well);
-  /* A vertical swipe on the picture scrolls the sheet; the dot, the Free frame and its corners take the finger. */
+  /* A vertical swipe on the picture scrolls the sheet; the focus square, the Free frame and its corners take the finger. */
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
 }
-/* The picture box does not clip: the dot's and Free's corners' grab areas reach past its edges;
+/* The picture box does not clip: Free's corners' grab areas reach past its edges;
    the picture and the frame's wash clip to it. */
 .image-popup__picbox {
   position: absolute;
@@ -167,16 +167,19 @@
 .image-popup__pic[hidden],
 .image-popup__row[hidden],
 .image-popup__item[hidden] { display: none; }
-/* Free trimming: the frame is the trim, moved by dragging, sized by its four corners: 12 px
-   circles with a 1 px blue ring and a 44 px grab area, as the WordPress media editor's. */
+/* A shape: the frame is the focus square, dragged to what matters most. Free trimming: the frame
+   is the trim, moved by dragging, sized by its four corners: 12 px circles with a 1 px blue ring
+   and a 44 px grab area, as the WordPress media editor's. */
 .image-popup__corner { display: none; }
+.image-popup__frame--square,
 .image-popup__frame--free {
   pointer-events: auto;
-  cursor: move;
   touch-action: none;
 }
+.image-popup__frame--square { cursor: grab; }
+.image-popup__frame--free { cursor: move; }
 /* The frame is clipped with the picture, so its focus ring sits just inside it. */
-.image-popup .image-popup__frame--free:focus-visible { outline-offset: -4px; }
+.image-popup .image-popup__frame:focus-visible { outline-offset: -4px; }
 .image-popup__picbox--free .image-popup__corner {
   position: absolute;
   z-index: 1;
@@ -252,33 +255,6 @@
 .image-popup__turn {
   display: flex;
   flex: none;
-}
-.image-popup__dot {
-  position: absolute;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  margin: -22px 0 0 -22px;
-  border-radius: 50%;
-  cursor: grab;
-  touch-action: none;
-}
-.image-popup__dot[hidden] { display: none; }
-.image-popup__dot::after {
-  content: "";
-  width: 10px;
-  height: 10px;
-  box-sizing: border-box;
-  border: 2px solid var(--on-media);
-  border-radius: 50%;
-  background: var(--primary);
-  box-shadow: 0 1px 4px oklch(from var(--shadow-ink) l c h / 0.45);
-}
-.image-popup .image-popup__dot:focus-visible { outline: none; }
-.image-popup__dot:focus-visible::after {
-  box-shadow: 0 0 0 3px var(--focus), 0 1px 4px oklch(from var(--shadow-ink) l c h / 0.45);
 }
 .image-popup__shape {
   position: absolute;

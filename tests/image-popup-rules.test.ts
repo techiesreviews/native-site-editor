@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { POPUP_SHAPES, keepsPopupChanges, focusApplies, focusAt, frameBadge, frameChange, nudgeFocus, placePopup, popupMessage, pictureHint, placeShapeOf, seenHints, shapeLabel, shapeRatio, sheetScroll } from "../src/page-builder/image-popup-rules";
+import { POPUP_SHAPES, keepsPopupChanges, focusApplies, frameBadge, frameChange, nudgeFocus, placePopup, popupMessage, pictureHint, placeShapeOf, seenHints, shapeLabel, shapeRatio, sheetScroll, squareFocus } from "../src/page-builder/image-popup-rules";
 import { readPlaceFrame, writePlaceFrame } from "../src/page-builder/place-frame";
 import type { MediaRecords } from "../shared/media-records";
 
@@ -13,7 +13,7 @@ test("the shape menu lists the prototype's shapes in order; Free follows for pic
   assert.equal(placeShapeOf("free"), "original");
   assert.deepEqual(frameChange({ shape: "square", focus: undefined }, { shape: "free", focus: { x: 50, y: 50 } }), { shape: "original" });
   assert.equal(pictureHint("free"), "Drag the corners to trim.");
-  assert.equal(pictureHint("original", true), "Drag the dot to what matters most.");
+  assert.equal(pictureHint("original", true), "Drag the square to what matters most.");
   assert.equal(shapeLabel({ kind: "other", value: " 3 / 2 " }), "Custom (3 / 2)");
 });
 
@@ -39,7 +39,7 @@ test("the badge says Trimmed for a trimmed copy, else the shape", () => {
   assert.equal(frameBadge(readPlaceFrame(tag, records, "index.html")), "Trimmed");
 });
 
-test("arrow keys move the dot 2 %, Shift 10 %, within the picture; other keys do nothing", () => {
+test("arrow keys move the focus 2 %, Shift 10 %, within the picture; other keys do nothing", () => {
   assert.deepEqual(nudgeFocus({ x: 72, y: 40 }, "ArrowLeft"), { x: 70, y: 40 });
   assert.deepEqual(nudgeFocus({ x: 72, y: 40 }, "ArrowDown", true), { x: 72, y: 50 });
   assert.deepEqual(nudgeFocus({ x: 1, y: 99 }, "ArrowLeft"), { x: 0, y: 99 });
@@ -47,18 +47,23 @@ test("arrow keys move the dot 2 %, Shift 10 %, within the picture; other keys do
   assert.equal(nudgeFocus({ x: 50, y: 50 }, "Enter"), undefined);
 });
 
-test("a press puts the dot under the pointer, in whole percentages kept on the picture", () => {
-  const box = { left: 100, top: 50, width: 200, height: 100 };
-  assert.deepEqual(focusAt({ x: 150, y: 75 }, box), { x: 25, y: 25 });
-  assert.deepEqual(focusAt({ x: 0, y: 500 }, box), { x: 0, y: 100 });
-  assert.deepEqual(focusAt({ x: 10, y: 10 }, { left: 0, top: 0, width: 0, height: 0 }), { x: 50, y: 50 });
+test("the square centred on a point gives the object-position that shows it, in whole percentages kept on the picture", () => {
+  // A square half the picture's width, its full height: only the focus across moves.
+  const area = { w: 0.5, h: 1 }, was = { x: 50, y: 30 };
+  assert.deepEqual(squareFocus(area, { x: 0.25, y: 0.9 }, was), { x: 0, y: 30 });
+  assert.deepEqual(squareFocus(area, { x: 0.5, y: 0.5 }, was), { x: 50, y: 30 });
+  assert.deepEqual(squareFocus(area, { x: 0.6, y: 0.5 }, was), { x: 70, y: 30 });
+  assert.deepEqual(squareFocus(area, { x: 2, y: -1 }, was), { x: 100, y: 30 });
+  // Zoomed in (a quarter each way), both move; the square's left edge sits at (1 − w) × focus.
+  assert.deepEqual(squareFocus({ w: 0.25, h: 0.25 }, { x: 0.125, y: 0.875 }, was), { x: 0, y: 100 });
+  assert.deepEqual(squareFocus({ w: 0.25, h: 0.25 }, { x: 0.35, y: 0.5 }, was), { x: 30, y: 50 });
 });
 
 test("the message is blue for this spot only, yellow when a new picture is saved", () => {
   assert.deepEqual([popupMessage({ newPicture: false }).tone, popupMessage({ newPicture: false }).text], ["info", "Only changes this spot"]);
   assert.deepEqual([popupMessage({ newPicture: true }).tone, popupMessage({ newPicture: true }).text], ["new", "Saves a new picture for this spot"]);
   assert.equal(popupMessage({ newPicture: true, recrop: true }).text, "Updates this spot's trimmed picture");
-  assert.equal(pictureHint("square"), "Drag the dot to what matters most.");
+  assert.equal(pictureHint("square"), "Drag the square to what matters most.");
   assert.equal(pictureHint("original"), "The whole picture shows.");
 });
 
@@ -126,7 +131,7 @@ test("component shape opens first, crops at its ratio, names the badge and notes
 
 test("each hint under the picture shows only the first time: the stored list is read safely", () => {
   assert.deepEqual([...seenHints(null)], []);
-  assert.deepEqual([...seenHints(JSON.stringify(["Drag the dot to what matters most.", 3, null]))], ["Drag the dot to what matters most."]);
+  assert.deepEqual([...seenHints(JSON.stringify(["Drag the square to what matters most.", 3, null]))], ["Drag the square to what matters most."]);
   assert.deepEqual([...seenHints("{not json")], []);
   assert.deepEqual([...seenHints(JSON.stringify({ hint: "x" }))], []);
 });

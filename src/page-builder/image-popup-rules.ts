@@ -1,5 +1,5 @@
 // The image popup's rules (media-manager ticket 09 "Entry point and popup", build slice 39):
-// its shapes and badge, the part of the picture a place shows, the focus dot's keys,
+// its shapes and badge, the part of the picture a place shows, the focus square's keys,
 // the one-line message, where the popup stands and what Done writes. No DOM here.
 import type { ComponentPicture } from "./component-shapes";
 import type { PlaceFocus, PlaceFrameChange, PlaceShape } from "./place-frame";
@@ -34,11 +34,11 @@ export function frameBadge(frame: { shape: PopupShape; trimmed: boolean }) {
   return frame.trimmed ? "Trimmed" : typeof frame.shape === "string" ? shapeLabel(frame.shape) : frame.shape.kind === "component" ? frame.shape.badge : "Custom";
 }
 
-/** Whether the focus dot means anything: a shape that crops (Original shows the whole picture). */
+/** Whether the focus square means anything: a shape that crops (Original shows the whole picture). */
 export const focusApplies = (shape: PopupShape) => shapeRatio(shape) !== undefined;
 const clamp = (value: number, low = 0, high = 1) => Math.min(high, Math.max(low, value));
 
-/** Arrow keys move the dot 2 % (Shift: 10 %), kept on the picture; other keys do nothing. */
+/** Arrow keys move the focus 2 % (Shift: 10 %), kept on the picture; other keys do nothing. */
 export function nudgeFocus(focus: PlaceFocus, key: string, shift = false): PlaceFocus | undefined {
   const step = shift ? 10 : 2;
   const move: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
@@ -46,17 +46,21 @@ export function nudgeFocus(focus: PlaceFocus, key: string, shift = false): Place
   return by && { x: Math.round(clamp(focus.x + by[0], 0, 100)), y: Math.round(clamp(focus.y + by[1], 0, 100)) };
 }
 
-/** The dot placed where the pointer is over the picture, in whole percentages. */
-export function focusAt(point: { x: number; y: number }, box: { left: number; top: number; width: number; height: number }): PlaceFocus {
-  const at = (value: number, size: number) => size > 0 ? Math.round(clamp(value / size) * 100) : 50;
-  return { x: at(point.x - box.left, box.width), y: at(point.y - box.top, box.height) };
+/**
+ * The focus that puts the square (`area`, the part the place shows, in shares of the picture) with its
+ * centre at `centre` (shares of the picture), kept on the picture, in whole percentages: the
+ * `object-position` that shows just that part. An axis the square fills keeps `was`.
+ */
+export function squareFocus(area: { w: number; h: number }, centre: { x: number; y: number }, was: PlaceFocus): PlaceFocus {
+  const at = (middle: number, size: number, keep: number) => size < 1 - 1e-6 ? Math.round(clamp((middle - size / 2) / (1 - size)) * 100) : keep;
+  return { x: at(centre.x, area.w, was.x), y: at(centre.y, area.h, was.y) };
 }
 
 /** The one-line message: blue when only this spot changes, yellow when a new picture is saved. */
 export function popupMessage(state: { newPicture: boolean; recrop?: boolean }) {
   if (state.newPicture) return { tone: "new" as const, text: state.recrop ? "Updates this spot's trimmed picture" : "Saves a new picture for this spot",
     tip: "Zooming in, turning or trimming saves a new picture in Media, used only here. Other places keep the original." };
-  return { tone: "info" as const, text: "Only changes this spot", tip: "The shape and the dot only change how the picture fits this spot. Nothing new is saved." };
+  return { tone: "info" as const, text: "Only changes this spot", tip: "The shape and the square only change how the picture fits this spot. Nothing new is saved." };
 }
 
 /** The hints already shown in this browser (stored as a JSON list): each shows under the picture only the first time it applies (slice 109). */
@@ -67,13 +71,13 @@ export function seenHints(stored: string | null) {
   } catch { return new Set<string>(); }
 }
 
-/** The focus dot's hint: its description for screen readers, never shown under the picture. */
-export const DOT_HINT = "Drag the dot to what matters most.";
+/** The focus square's hint: its description for screen readers, never shown under the picture. */
+export const SQUARE_HINT = "Drag the square to what matters most.";
 
 /** The hint under the picture. */
 export function pictureHint(shape: PopupShape, zoomed = false) {
   if (shape === "free") return "Drag the corners to trim.";
-  return focusApplies(shape) || zoomed ? DOT_HINT : "The whole picture shows.";
+  return focusApplies(shape) || zoomed ? SQUARE_HINT : "The whole picture shows.";
 }
 
 /** The shape a place keeps: Free trimming leaves the trimmed copy its own shape, as Original. */
@@ -88,7 +92,7 @@ export function frameChange(start: { shape: PopupShape; focus: PlaceFocus | unde
   if (!sameShape && typeof now.shape !== "string" && now.shape.kind === "component") change.shape = "component";
   if (change.shape === "original" && now.component) change.originalUnderComponent = true;
   // A replacement always writes the focus: it starts in the middle for the new picture. A focus
-  // the popup cannot read (lengths) started the dot in the middle and is kept unless it moved.
+  // the popup cannot read (lengths) started the square in the middle and is kept unless it moved.
   const from = start.focus ?? { x: 50, y: 50 };
   const moved = from.x !== now.focus.x || from.y !== now.focus.y;
   if (focusApplies(now.shape) && (replaced || moved)) change.focus = { ...now.focus };
