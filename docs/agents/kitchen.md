@@ -89,13 +89,17 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 
 ### 5. Hand-out
 
-- **Use today:** the lead reads the frontier, fills in `assignee:` and pushes `dev`, makes the
-  slice's worktree and starts `kit bg slice-<NN> -- scripts/agents/kit slice …` itself. No runner
-  subagents; a helper agent only for a slice that is stuck and needs judgment. While a build runs,
-  a T3 `schedule_task` heartbeat every 30 minutes, deleted when the build ends.
-- **Limits:** at most 5 helpers at once, at most 2 slices in `src/main.ts`, plus the build's own rules.
-- **Planned:** `kit next` picks the ticket and builder by fixed rules
-  ([factory 05](../wayfinder/software-factory/tickets/05-grill-hand-out.md#resolution-2026-10-22)).
+- **Use:** `scripts/agents/kit next [map…]` picks the tickets and builders by fixed rules
+  ([factory 05](../wayfinder/software-factory/tickets/05-grill-hand-out.md#resolution-2026-10-22));
+  `kit next <map> --start` claims them on `dev`, makes each worktree and starts its
+  `kit slice` under `kit bg`; the lead then runs the printed `kit wait job` lines in the
+  background. Delegated (`opencode/…`) tickets are only claimed; the lead sends them with T3
+  `delegate_task`. No runner subagents; a helper agent only for a slice that is stuck and needs
+  judgment. While a build runs, a T3 `schedule_task` heartbeat every 30 minutes, deleted when the
+  build ends.
+- **Limits** (`kit next` applies them): at most 5 slices at once, at most 2 in `src/main.ts`, no
+  shared file, `runs_alone: true` tickets alone in their map, nothing from a build whose README
+  still says `**Not started:**`; the build's other rules stay with the lead.
 - **Done when:** every frontier ticket the limits allow is claimed and running, or waits on Lex.
 
 ### 6. Build

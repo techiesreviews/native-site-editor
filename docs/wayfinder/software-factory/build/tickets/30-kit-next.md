@@ -1,8 +1,8 @@
 ---
 title: "kit next picks the ticket and builder by fixed rules"
 type: task (AFK)
-status: open
-assignee: sf-30 (this session)
+status: closed
+assignee: sf-30
 builder: claude
 blocked_by: []
 ---
@@ -43,3 +43,24 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf30 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/30-kit-next.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-sf30 --timeout 2h`.
 - Report: unit `RESULT:` lines, the real `kit next` output, review decisions, PR and merge SHA.
+
+## Done (2026-10-25)
+
+- New `scripts/agents/kit next [map…] [--start] [--max N]`. It reads the frontier from `origin/dev` in the dev worktree (after a fetch) and the running `slice-*` jobs of every worktree (`kit bg --list` there; each job's recorded `--ticket` gives its map, Files and `runs_alone`). It prints `running:`, `next: <ticket> builder=<model> owner=<owner> why=slot k/max[, src/main.ts j/2]` and `waits: <ticket> <reason>` lines, then `RESULT: ok next <n> ready, <m> waiting`.
+- Rules in the ticket's order. Claimed tickets are skipped silently; non-AFK tickets wait with `needs Lex (type: …)`; build tickets of a README with `**Not started:**` wait. Tickets picked in the same run count as running for the cap, `src/main.ts`, shared files and `runs_alone`. `src/main.ts` is left out of the shared-file rule, so the two-slice limit can apply. `--max` above 5 is clamped to 5.
+- Builders: `claude`, `sol` or no builder → `claude-opus-5-5`; `opencode/<model>` → `delegate opencode/<model>`; anything else as written. The pin table sits in one place in the command, quoted from kitchen.md. Owners are `<prefix>-<NN>` from the build README's `prefix:` line, else the map name.
+- `--start` refuses a dev worktree that is not on `dev`, has tracked changes or is ahead of `origin/dev`. Per ticket it fast-forwards, rechecks the ticket (a claim that came in meanwhile becomes a `waits:` line), fills `assignee:`, commits `docs: claim <map> <NN>` and pushes. A rejected push rebases and retries once; a rebase conflict aborts and fails. Then `worktree.sh build/<owner>-<slug> origin/dev` and, in that worktree, `ASE_REVIEW_MODEL=claude-opus-5-5 ASE_OWNER=<owner> kit bg slice-<prefix><NN> -- scripts/agents/kit slice --ticket … --builder <model>`, printing `wait: KIT_ROOT=<worktree> scripts/agents/kit wait job … --timeout 2h`. Delegated tickets are only claimed (`delegate:` line).
+- `tickets.mjs`: `parseTicket` also reads `type`, `runs_alone` (must be `true` or `false`) and `files` (new exported `parseFiles`: backtick or plain paths in `## Files`; globs and placeholders become their directory, find-it-with lines their paths' directory, `./` for the whole repo). The CLI output is unchanged; `tickets.mjs check` still passes on all 521 tickets.
+- Docs: the `kit next` line in agent-scripts.md, station 5 in kitchen.md (no longer planned), and `runs_alone:` plus the build README's `prefix:` / `**Not started:**` lines in issue-tracker.md.
+- Tests: `tests/kit-next.test.ts` (9 cases over temp git repos with a bare origin, a fake `kit bg` and a fake `worktree.sh`). They cover rule 1 (non-AFK, claimed, not started) with ordering and builder mapping (`sol` → Claude, delegate, as written), cap 5 with jobs in several worktrees and `--max`, two in `src/main.ts`, shared files (exact, glob, find-it-with, newly picked), `runs_alone` both ways, ticket problems, `--start` (claims pushed, worktree, job started with its env), a push race that rebases and retries once, and a conflicting claim that aborts. `tests/agent-tickets.test.ts` adds `type`/`runs_alone` and `parseFiles` cases.
+- Real `dev` (`scripts/agents/kit next software-factory`, 2026-10-25): every open ticket is already claimed and running, so nothing is handed out:
+
+  ```
+  running: slice-sf21 docs/wayfinder/software-factory/build/tickets/21-kit-records-every-piece.md
+  running: slice-sf30 docs/wayfinder/software-factory/build/tickets/30-kit-next.md
+  running: slice-sf41 docs/wayfinder/software-factory/build/tickets/41-feature-list.md
+  RESULT: ok next 0 ready, 0 waiting
+  ```
+
+  The software-factory build README has no `prefix:` line yet, so new owners would be `software-factory-NN`. The lead adds `prefix: sf` (outside this slice's Files).
+
