@@ -111,8 +111,9 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
   when boot code moves, `kit shots` for every visible change ([local-testing.md](local-testing.md)).
   T3 `preview_*` tools to try a change by hand.
 - **Planned:** one kit tool that acts like a user: scripted checks first, then the Opus UX reviewer
-  tries the touched features from a plain feature list and reports fine / looks off / broken with
+  tries the touched features from the [feature list](features.md) and reports fine / looks off / broken with
   screenshots ([factory 03](../wayfinder/software-factory/tickets/03-grill-checking-skill.md#resolution-2026-10-22)).
+  A visible change adds or updates its entries in [features.md](features.md).
 - **Done when:** every check's `RESULT:` line is ok and quoted in the report; a visible change has
   its contact sheet.
 
