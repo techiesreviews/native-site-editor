@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-canvas-06","steps":["press Tab","press Tab","press Tab","press Tab","press Enter","expect visible \"No heading or label\"","click \"Move up\"","press Alt+ArrowUp","record keys 600","press Alt+ArrowDown","expect visible \"Move down\""]}
+{"screen":"editor","name":"F-canvas-06","steps":["press Tab","press Tab","press Tab","press Tab","press Enter","expect visible \"No heading or label\"","click \"Move up\"","press Alt+ArrowUp","record up 600","press Alt+ArrowDown","record down 600"]}
