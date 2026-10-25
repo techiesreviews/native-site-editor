@@ -1,6 +1,6 @@
 # Chat learning routine
 
-A scheduled session runs this every other Monday, after the [sweep](sweep.md), in even ISO weeks
+A scheduled session runs this at 11:00 Europe/Amsterdam on Mondays of even ISO weeks, two hours after the [sweep](sweep.md)
 ([kitchen.md](../kitchen.md#weekly-routines)). It turns corrections Lex gave more than once into
 **proposals** for an automatic check or a UX rulebook line. **Nothing is added until Lex picks**
 ([factory 06](../../wayfinder/software-factory/tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22), item 2).
@@ -24,12 +24,16 @@ this time and why.
    `ASE_OWNER=learning scripts/agents/worktree.sh docs/learning-YYYY-MM-DD origin/dev`. Work only there
    (`git -C <worktree>` or `cd <worktree> || exit 1`); run `scripts/agents/kit doctor` and fix every ✗ in
    the environment, never by editing repo files.
-   **Sweep's top 3.** Read today's `docs/work/sweeps/YYYY-MM-DD.md` from `origin/dev`, or from the
-   sweep's branch `origin/docs/sweep-YYYY-MM-DD` while its PR is open, and keep its marked top 3 with
-   their recommended fixes. If neither has today's sweep file, the message says the sweep's list is
-   missing.
-3. **Gather.** `scripts/agents/kit learn --since <date of the newest docs/work/learning/YYYY-MM-DD.md>`
-   (inclusive, so a correction from that Monday after its run is seen now); with no earlier learning file,
+   **Sweep's top 3.** Wait for the sweep's branch, checking every 5 minutes until 13:00:
+   `scripts/agents/kit bg sweep-wait -- bash -c 'until git fetch -q origin && git rev-parse -q --verify origin/docs/sweep-YYYY-MM-DD >/dev/null; do [[ $(date +%H%M) < 1300 ]] || exit 1; sleep 300; done'`,
+   then `scripts/agents/kit wait job sweep-wait --timeout 2h30m`. Read today's `docs/work/sweeps/YYYY-MM-DD.md`
+   from that branch (or `origin/dev` once merged) and keep its marked top 3 with their recommended fixes.
+   Only when the wait fails does the message say the sweep's list is missing.
+3. **Gather.** Find the newest learning file: the latest date among `docs/work/learning/YYYY-MM-DD.md` on
+   `origin/dev` and the `origin/docs/learning-YYYY-MM-DD` branches holding that file (a learning PR may
+   still be open: `git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/docs/learning-*'`).
+   Run `scripts/agents/kit learn --since <its date>` (inclusive, so a correction from that Monday after
+   its run is seen now); with no earlier learning file,
    plain `scripts/agents/kit learn` (default `--since 14d`). `RESULT: ok learn nothing recorded yet`
    ends the learning part: no file, no PR; go to step 8. Otherwise read its bundle,
    `.scratch/learn/<date>/bundle.md` in the main root: groups given more than once with their count,
@@ -37,7 +41,8 @@ this time and why.
 4. **Judge.** Apply the `retro` skill (`~/.codex/skills/retro/SKILL.md`) to the bundle instead of a
    session log. Confirm each group: split one that joined two different asks, join two that are the
    same ask, and drop a pair that is one correction recorded in both lists. Drop a group the newest
-   learning file already proposed unless it has a line dated after that file. Open each `covered?` rule:
+   learning file (read from wherever step 3 found it) already proposed unless it has a line dated after
+   that file. Open each `covered?` rule:
    if it already says what Lex asked, the group is covered and the proposal asks why it did not hold.
 5. **Propose.** For each correction given more than once, one action:
    - a **hook**, **lint rule** or **kit check** ([guardrails.md](../guardrails.md)) when the mistake is
