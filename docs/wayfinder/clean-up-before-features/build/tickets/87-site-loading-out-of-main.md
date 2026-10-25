@@ -48,3 +48,10 @@ No visible change: boot order, first paint and the text index behave as before.
 - main.ts makes both right after the site runtime, before anything hands their functions on; later consts and `let` state (`repositoryIndex`, `previewSelection`, `versions`, `mediaController`, `pagesAndFiles`, `pagesController`, `nativePreview`, `pageStructure`, `componentTools`, `nativePreviewBehind`) go in as getters (a setter for `nativePreviewBehind`), the text index's start as an arrow.
 - main.ts 2,863 → 2,181 lines; ceiling 2,190. `kit size`: boot 354 KB (+1 KB; the main chunk +0.8 KB gzip, port names), budget 355 KB.
 - Tests: `tests/site-loading.test.ts` (no home page, the first read of what the page on show needs, an unreadable needed page, unreadable stylesheet warnings, component styles, the page label, one fetch per blob) and `tests/site-text-index.test.ts` (what the index reads, its key, unreadable files, a commit changing mid-read, the deferred start, titles held while a row is busy), ports typed with `satisfies`; `tests/main-ts-ceiling.test.ts` also checks both factories get `let` state through accessors and later consts through arrows. `docs/agents/code-map.md` names both modules and the moved functions.
+
+### Follow-ups
+
+- Spec (P3): a30587b2:docs/wayfinder/clean-up-before-features/build/tickets/87-site-loading-out-of-main.md:41 — P3: The `## Done (2026-10-25)` section covers behaviour, file
+- Validation gaps (gap): `loadNativeAssets` is only tested on its `fontsOnly` path. The full path has no unit test: the `scanMediaReferences` dynamic import, the `CANVAS_AUDIO_MAX_BYTES
+- Validation gaps (gap): The supersession tests only leave through `workspaceSession.next(undefined)`. None cover a new site load inside the same session (`runtime.begin()` bumping `run
+
