@@ -28,6 +28,8 @@ tickets ([factory 06](../../wayfinder/software-factory/tickets/06-grill-sweeps-a
 7. **Tell Lex.** One short message in plain words: the top 3, each with its recommended fix, and the
    question "Which of these become tickets?". No file paths unless he asks. The lead opens the tickets he
    picks.
+8. **Clean up.** After the PR merges, from outside the worktree:
+   `git -C /home/ubulex/Projects/native-site-editor-dev worktree remove <worktree>`; keep the branch.
 
 ## Never
 
