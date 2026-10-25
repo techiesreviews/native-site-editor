@@ -2,7 +2,7 @@
 title: "kit ux, scripted half: touched features, tries, checks, bundle"
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-42 (this session)
 builder: claude
 blocked_by: [41-feature-list]
 ---
