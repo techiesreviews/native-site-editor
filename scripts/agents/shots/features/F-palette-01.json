@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-palette-01","steps":["press Control+k","type \"About\" in Search commands","press Enter","expect visible \"About · Larkspur Studio\"","press Control+p"]}
+{"screen":"editor","name":"F-palette-01","steps":["press Control+k","type \"About\" in Search commands","press Enter","expect visible \"About · Larkspur Studio\"","press Control+p","expect visible \"Go to\"","type \"robots\" in Search commands","expect visible \"robots.txt\"","record files 600"]}
