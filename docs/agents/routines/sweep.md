@@ -8,7 +8,8 @@ tickets ([factory 06](../../wayfinder/software-factory/tickets/06-grill-sweeps-a
 
 1. **Worktree.** `git -C /home/ubulex/Projects/native-site-editor-dev fetch -q origin`, then
    `ASE_OWNER=sweep scripts/agents/worktree.sh docs/sweep-YYYY-MM-DD origin/dev`. Work only there
-   (`git -C <worktree>` or `cd <worktree> || exit 1`); run `scripts/agents/kit doctor` and fix every ✗.
+   (`git -C <worktree>` or `cd <worktree> || exit 1`); run `scripts/agents/kit doctor` and fix every ✗ in
+   the environment (Node, dependencies, login), never by editing repo files.
 2. **Numbers.** `scripts/agents/kit sweep` (default `--since 7d`). Read its bundle,
    `.scratch/sweep/<date>/bundle.md` in the main root: biggest source files and growth, `src/main.ts`
    lines, hand-typed CSS values, tests that failed then passed in `kit pr` runs, known failures, review
@@ -27,7 +28,8 @@ tickets ([factory 06](../../wayfinder/software-factory/tickets/06-grill-sweeps-a
    (docs tier). Nothing else changes.
 7. **Tell Lex.** One short message in plain words: the top 3, each with its recommended fix, and the
    question "Which of these become tickets?". No file paths unless he asks. The lead opens the tickets he
-   picks.
+   picks. Lex gets one message per Monday: when `learning.md` runs next in this session (even ISO
+   weeks), hold the top 3 and send them in that routine's single message; otherwise send now.
 8. **Clean up.** After the PR merges, from outside the worktree:
    `git -C /home/ubulex/Projects/native-site-editor-dev worktree remove <worktree>`; keep the branch.
 
