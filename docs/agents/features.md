@@ -114,7 +114,7 @@ its number unused.
 - Steps: none yet
 
 ### F-repo-02 Find a repository
-- Try: Type part of a name in Find a repository in the project menu.
+- Try: With six or more repositories, type part of a name in Find a repository in the project menu.
 - Good: The list narrows as you type, grouped by owner with the personal account first.
 - Files: `src/components/repository-menu.ts`
 - Phone: yes
@@ -167,14 +167,6 @@ its number unused.
 - Files: `src/finished-elsewhere.ts`, `src/background-page.ts`, `src/background-site.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-switch-mid-work.spec.ts`
-- Steps: none yet
-
-### F-repo-09 Download site
-- Try: Open the project menu and press Download site.
-- Good: A zip of the repository downloads; the button shows it is preparing on itself.
-- Files: `src/components/site-actions.ts`, `src/site-download.ts`, `src/zip.ts`
-- Phone: yes
-- Spec: `tests/native-save/native-change-status.spec.ts`
 - Steps: none yet
 
 ## Pages and files
@@ -1005,7 +997,7 @@ its number unused.
 
 ### F-publish-03 Change status
 - Try: Publish on a site with a deploy workflow.
-- Good: Saved, then building, then live with View live site; a failure links to its run; the state shows on the button itself (S4).
+- Good: The button reads Saved, then Deploying…, then Published with View live site in its menu; Deploy failed links to its run; the state shows on the button itself (S4).
 - Files: `src/deploy-status.ts`, `src/components/site-actions.ts`, `worker/change-status.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-change-status.spec.ts`
@@ -1034,7 +1026,6 @@ its number unused.
 - Phone: yes
 - Spec: `tests/native-save/native-discard.spec.ts`
 - Steps: none yet
-
 
 ## Agents menu and agent connection
 

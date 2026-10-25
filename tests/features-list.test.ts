@@ -106,7 +106,7 @@ function rulebookIds(good: string): string[] {
 const markdown = readFileSync(new URL("docs/agents/features.md", root), "utf8");
 const listed = features(markdown);
 
-test("feature headings are well-formed, unique and grouped by area", () => {
+function headingProblems(listed: Feature[], markdown: string): string[] {
   const problems = listed.flatMap(shapeProblems);
   const ids = new Map<string, number>();
   for (const { id } of listed) ids.set(id, (ids.get(id) ?? 0) + 1);
@@ -128,11 +128,16 @@ test("feature headings are well-formed, unique and grouped by area", () => {
     if (number <= (last.get(area) ?? 0)) problems.push(`${id}: numbers in ${area} must count up`);
     last.set(area, number);
   }
+  const headings = new Set(markdown.split("\n"));
   for (const area of AREAS) {
-    if (!markdown.includes(`\n## ${area}\n`)) problems.push(`Area missing: ${area}`);
+    if (!headings.has(`## ${area}`)) problems.push(`Area missing: ${area}`);
     else if (!listed.some((entry) => entry.area === area)) problems.push(`Area has no entries: ${area}`);
   }
-  assert.deepEqual(problems, []);
+  return problems;
+}
+
+test("feature headings are well-formed, unique and grouped by area", () => {
+  assert.deepEqual(headingProblems(listed, markdown), []);
 });
 
 // Committed, staged and new files, leaving out ignored ones (.scratch/, node_modules/) that CI never has.
@@ -178,6 +183,23 @@ test("the parser reports malformed entries", () => {
   assert.deepEqual(rulebookIds(good.fields.get("Good") ?? ""), ["B1", "L12"]);
   assert.equal(features("### F-bar-03 x").length, 1);
   assert.deepEqual(backticked("`src/{a,b}.ts`, `src/c.ts`"), ["src/{a,b}.ts", "src/c.ts"]);
+});
+
+test("heading checks refuse duplicates, numbers out of order and a prefix in another area", () => {
+  const fields = ["- Try: a", "- Good: b", "- Files: `src/a.ts`", "- Phone: no", "- Spec: none", "- Steps: none yet"];
+  const markdown = [
+    ...AREAS.filter((area) => area !== "Edit bar").flatMap((area, n) => [`## ${area}`, `### F-a${"abcdefghijklmn"[n]}-01 x`, ...fields]),
+    "## Edit bar", "### F-bar-02 x", ...fields, "### F-bar-01 x", ...fields, "### F-bar-02 x", ...fields,
+    "### F-code-03 x", ...fields,
+  ].join("\n");
+  assert.deepEqual(headingProblems(features(markdown), markdown), [
+    "F-bar-02: used 2 times",
+    "F-code-03: area Edit bar and prefix F-code do not pair one to one",
+    "F-bar-01: numbers in Edit bar must count up",
+  ]);
+  const empty = "## Edit bar\n";
+  assert.ok(headingProblems([], empty).includes("Area has no entries: Edit bar"));
+  assert.ok(headingProblems([], empty).includes("Area missing: Phone layout"));
 });
 
 test("Files, Spec and Steps refuse paths of the wrong kind or missing from the repository", () => {
