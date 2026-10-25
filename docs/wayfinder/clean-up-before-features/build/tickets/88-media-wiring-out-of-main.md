@@ -60,3 +60,12 @@ No visible change: Media, the pickers, uploads, discarding an upload and the usa
 - Fewer media-host ports (`src/controllers/media-host.ts`, CODING_STANDARDS "Controllers"): group the forwarded reads (`entryAt`, `findEntry`, `readFile`, `readBlob`, `listRepositoryFiles`) under one `reads` port; `setupScope` and `cleanUp` duplicate data the controller already gets. Fold into TD 12.
 - `tests/media-host.test.ts`: each `setup()` leaves an `effect` and a 400 ms timer running; return a `dispose` from `createMediaHost` or stub `refreshUsage` in `setup()`.
 - Kit: `kit fix` writes each follow-up cut off at a fixed length; write them in full (seen on slice 88).
+- Standards (P3): 0f6ad38a:src/controllers/media-host.ts:139 — P3: CODING_STANDARDS "Controllers" says ports cost bytes and asks for few, short port names. `MediaHostPorts` adds 
+- Standards (P3): 0f6ad38a:src/controllers/media-host.ts:356 — P3: CODING_STANDARDS "Controllers" (unit tests assert behaviour through the real controller). The usage-check `effe
+- Validation gaps (gap): `viewingVersion` read at call time: pass `versions` as a mutable `{ view?: unknown }`. Assert `mediaPorts.viewingVersion()` is false, set `view = {}`, then asse
+- Validation gaps (gap): The Optimise `review` callback in `uploadFilesTo` (`media-host.ts:206-210`): today the test only checks it is a function (`tests/media-host.test.ts:1029`). Call
+- Validation gaps (gap): The `context` option handed to `addFilesTo` (`media-host.ts:204`): capture `given.context` in `stubs.adding`. Assert `context()` returns `mediaController.worksp
+- Validation gaps (gap): The `own.text` fallback in `measureAway` (`media-host.ts:267`): make the background-page stub's `work` call `own.text("other.html")` for a file the pin doesn't 
+- Validation gaps (gap): The forwarding ports, as one table-driven test: `refreshDescriptions`: renders the edit bar only with a selection. `change`: calls `pageStructureController.edit
+- Validation gaps (gap): `imagePopup.bar`, `imagePopup.frame` and `mediaPlay` (`send`, `box`, `frame`, `watch`): stub `late.elements.main.querySelector(".native-preview-frame")` and a `
+- Validation gaps (gap): `mediaPorts.workspace()` with no snapshot: set `appStore.snapshot.value = undefined` and assert it returns `undefined`.
