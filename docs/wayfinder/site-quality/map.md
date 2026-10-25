@@ -43,6 +43,7 @@ The rules are kept up to date as the specs change.
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Measure the starter today and find how Lighthouse fits the kit](tickets/03-research-lighthouse-today.md#resolution-2026-10-25): 100 accessibility and best practices; mobile home page 85 from layout shift; new sites 92 SEO from a relative canonical; `kit lighthouse` on the Node API, about 75 s in `kit pr`
 - [Find which website rules apply to native sites and who can meet them](tickets/01-research-spec-for-native-sites.md#resolution-2026-10-25): of 177 spec rules, 38 the editor can meet automatically, 10 need words, 29 depend on the host; canonical and descriptions fail on new sites; script-hidden sections slow the first screen; GitHub Pages allows no headers
 - [Find what actually gets a site found and quoted by AI search](tickets/02-research-geo.md#resolution-2026-10-25): GEO is still SEO; proven: let AI search crawlers in, words in the HTML, honest sitemap; llms.txt has no evidence; starter blocks AI quoting and hides its menu behind a script
 

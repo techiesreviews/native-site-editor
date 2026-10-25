@@ -2,7 +2,7 @@
 title: Decide what the editor fixes by itself
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [01-research-spec-for-native-sites, 03-research-lighthouse-today]
 ---
 

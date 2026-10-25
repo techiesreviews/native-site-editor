@@ -2,7 +2,7 @@
 title: Decide how the rules stay up to date
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [01-research-spec-for-native-sites]
 ---
 

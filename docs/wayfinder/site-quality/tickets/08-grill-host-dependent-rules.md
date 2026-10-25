@@ -2,7 +2,7 @@
 title: Decide how host-dependent rules are handled
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [01-research-spec-for-native-sites]
 ---
 

@@ -2,7 +2,7 @@
 title: Decide what the editor does for GEO
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [02-research-geo]
 ---
 

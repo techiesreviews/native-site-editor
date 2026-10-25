@@ -2,7 +2,7 @@
 title: Decide the target scores and rule sources
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [03-research-lighthouse-today]
 ---
 
