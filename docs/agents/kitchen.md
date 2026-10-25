@@ -191,15 +191,17 @@ Up one rung after 5 builds in a row with no UX correction from Lex; down one run
 finds a UX problem after release. The lead brings each move to Lex. Rungs 2–4 need the planned UX
 review and checking tool.
 
-## Weekly routines (planned)
+## Weekly routines
 
 Scheduled with T3 `schedule_task` at a fixed time (Europe/Amsterdam); one short message to Lex
 carries both results ([factory 06](../wayfinder/software-factory/tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22)).
 
-- **Sweep, Mondays 09:00:** `improve-codebase-architecture` plus guardrail candidates. It lists bad
+- **Sweep, Mondays 09:00:** [routines/sweep.md](routines/sweep.md). `kit sweep` gathers the week's
+  numbers into a small bundle; the session applies `improve-codebase-architecture` (list only) plus
+  guardrail candidates and writes `docs/work/sweeps/YYYY-MM-DD.md` through `kit pr`. It lists bad
   patterns and changes nothing; Lex gets the top 3, each with a recommended fix, and picks which
   become tickets.
-- **Chat learning, every other Monday after the sweep:** `retro` reads the corrections list the
+- **Chat learning, every other Monday after the sweep (planned):** `retro` reads the corrections list the
   chat project's sync collects in `~/Projects/chat/memory/` (factory 10). A correction Lex gave
   more than once becomes an automatic check ([guardrails.md](guardrails.md): hook, lint rule or kit
   check) or a UX rulebook line, after Lex has seen the list.

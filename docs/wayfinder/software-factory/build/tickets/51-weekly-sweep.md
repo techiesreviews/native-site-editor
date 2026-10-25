@@ -1,8 +1,8 @@
 ---
 title: "The weekly sweep, Mondays 09:00"
 type: task (AFK)
-status: open
-assignee: sf-51 (this session)
+status: closed
+assignee: sf-51
 builder: claude
 blocked_by: [21-kit-records-every-piece, 22-one-feedback-log]
 ---
@@ -38,3 +38,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf51 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/51-weekly-sweep.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-sf51 --timeout 2h`.
 - Report: unit `RESULT:` lines, real sweep RESULT and bundle headings, review decisions, PR and merge SHA; the lead adds the schedule id.
+
+## Done (2026-10-25)
+
+- `scripts/agents/kit sweep [--since 7d|Nd|YYYY-MM-DD]` reads the checkout's HEAD and the week's records and writes the main root `.scratch/sweep/<date>/bundle.md` (under 40 KB, least useful sections trimmed first): the 20 biggest code files and their growth against the last commit before the window, the 10 fastest growers, `src/main.ts` lines, hand-typed values in `src/**/*.css` (raw px spacing and timings as `kit ux` counts them, raw radii, bespoke shadows) and their change, tests that failed then passed across a worktree's `kit pr` runs (`.scratch/pr/*/unit.log` or the unit log it names, and the Playwright reports `specs.log` names; flaky counts), `tests/known-failures.json`, review findings by kind and severity (scoreboard records), Lex's corrections (build feedback logs) and open tech-debt issues untouched for 30 days. It prints each heading with its size and `RESULT: ok sweep bundle <path>`.
+- Flipped tests come from `kit pr` runs only: reading every unit log counted 142 red-then-green steps from normal test-first building on the real data; `kit pr` runs gave 2.
+- `docs/agents/routines/sweep.md` is the scheduled session's prompt (worktree, `kit sweep`, `improve-codebase-architecture` list only, guardrail candidates, `docs/work/sweeps/YYYY-MM-DD.md` through `kit pr`, one message with the top 3); `docs/work/sweeps/README.md` says what the folder holds; kitchen "Weekly routines" drops the sweep's planned mark (chat learning stays planned); agent-scripts.md has the `kit sweep` line.
+- Tests (`tests/kit-sweep.test.ts`): a temp repo with three dated commits, a second worktree, `kit pr` logs inside and outside the window, scoreboard records and a feedback log prove every bundle line exactly, plus a 4,000-test week trimmed under 40 KB, the CSS counting rules and `--since` errors.
+- Real run on `dev` (6b675a6d8): `RESULT: ok sweep bundle /home/ubulex/Projects/native-site-editor/.scratch/sweep/2026-10-25/bundle.md`, 3,983 bytes: src/main.ts (36 bytes), Biggest source files (968), Biggest growth (481), Hand-typed values in src/**/*.css (965), Tests that failed then passed in kit pr runs (427), Known failures (54), Review findings by kind (787), Lex's corrections (53), Tech-debt issues untouched 30+ days (47).
+- Validation: `RESULT: ok unit 4/4 (1 files)` (`kit unit --affected`); `RESULT: ok unit 67/67 (3 files)` (kit-doctor, kit-deps, kit-ux); `npm run lint` and `npm run check` pass.
+- Feature list: no change (kit and docs only).
