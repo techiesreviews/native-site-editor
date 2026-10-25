@@ -2,7 +2,7 @@
 title: Scripted tries for the rest of the feature list
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-45 (this session)
 builder: claude
 blocked_by: [42-kit-ux-scripted]
 ---
