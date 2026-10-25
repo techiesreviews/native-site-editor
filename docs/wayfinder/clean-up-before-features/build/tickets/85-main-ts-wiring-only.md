@@ -72,3 +72,11 @@ No visible change: the preview, the toast and its Undo, new, uploaded and delete
   - `tests/lazy-loaders.test.ts`: setup's actions made once with their ports read on first load, the checklist and wizard waiting for them and the wizard bringing the agent prompt; Get started and Start your site loading with setup's actions (made once), the confirm dialog, History and the agent's site on their own; the agent copy after the spotlight; the settings after Pages' actions, with the guarded edits held when they load (not when the loaders were made), the load number, page labels, setup scope and a restore through the load's stamp; the media picker reading the shown and pinned workspaces and the usage check; the agent menu with the browser's records; a failed chunk import handed to chunk recovery and retried; a refused browser store keeping nothing. The lazily loaded modules are stubs.
   - `tests/select-options.test.ts`: a select's options replaced in order.
 - Validation: `kit unit --affected` `RESULT: ok unit 45/45 (8 files)`; the neighbouring host and guard tests (code map, component mode, guarded reads, media kinds, exports, the page-builder, workspace, media, site loading, text index and Pages & files hosts, agent text commits, editor workspace, review findings) 401/401; `npm test` 5584/5584; `npm run check` and `npm run lint` green; `kit specs --affected` `RESULT: ok specs 61/61 passed`; `kit size` `RESULT: ok size boot 358 KB (+1 KB) vs dev@da78179, budget 362 KB`.
+
+### Follow-ups
+
+- Spec (P2): c5057cf2:docs/wayfinder/clean-up-before-features/build/tickets/85-main-ts-wiring-only.md:47 — P2: The `## Done (2026-10-25)` section lists behaviour, modules, t
+- Validation gaps (gap): `src/browser-storage.ts`: tests/lazy-loaders.test.ts only tests the refused-store fallback. Add a test that `storage("local")` returns `globalThis.localStorage`
+- Validation gaps (gap): `src/lazy-module.ts` has its only tests inside tests/lazy-loaders.test.ts. The ticket asks for "unit tests for each new module". Either move the retry test into
+- Validation gaps (gap): `src/lazy-loaders.ts:570-571`: `nativeUrlPlan` and `changeNativeUrl` are new arrows that read `ports.pagesAndFiles.pageActions!` when called. In the settings te
+
