@@ -45,3 +45,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `tests/kit-pr.test.ts`: the path list (rules excluded) and the guard's Done-section parsing; a CSS-only PR without the list or the Done line stops before push with the message; it proceeds with a features.md change, with the Done line and with a `*-lead` waiver, each named in the body; page-builder rules, docs-only and tests-only PRs are untouched; a release dry-run prints no guard line; `## Done when`, nested brackets in the reason and a deleted features.md are covered.
 - Docs: `kit pr` line in agent-scripts.md, runner.md Land, kitchen.md station 9.
 - Feature list: no change (kit and docs only)
+
+### Follow-ups
+
+- Validation gaps (gap): No test for a deleted visible file. `featureListGuard` treats a `D` row such as `src/ui/menu.ts` as visible, which is the right call since removing a feature sh
+- Validation gaps (gap): No test for a guard waiver with `--no-merge`. The waiver should show only as the body's `Feature list: waived (…)` line, with no `Merged without a feature-list 
+- Validation gaps (gap): No test for a ticket with CRLF line endings. Add a case that runs `featureListGuard(css, { ticketText: "## Done (2026-10-25)\r\n\r\nFeature list: no change (crl
+
