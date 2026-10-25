@@ -48,8 +48,9 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 ### 1. Idea
 
 - **Use:** Lex's T3 chat; `kit status` and `node scripts/agents/tickets.mjs frontier` for what is
-  already open. **Planned:** a context card of about 30 lines read fresh from Lex's central memory at
-  session start ([factory 10](../wayfinder/software-factory/tickets/10-grill-central-memory.md#resolution-2026-10-22)).
+  already open; the [context card](context-card.md) (about 30 lines read fresh from Lex's central
+  memory, printed at session start and by `kit card`;
+  [factory 10](../wayfinder/software-factory/tickets/10-grill-central-memory.md#resolution-2026-10-22)).
 - **Decides:** Lex, whether it is worth doing; the lead proposes where it goes.
 - **Done when:** the idea has a home on `dev`: a new map, a ticket in an existing map or build, or
   a tech-debt issue.

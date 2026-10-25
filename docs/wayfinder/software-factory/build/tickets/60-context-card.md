@@ -1,8 +1,8 @@
 ---
 title: A context card at every session start
 type: task (AFK)
-status: open
-assignee: sf-60 (this session)
+status: closed
+assignee: sf-60
 builder: claude
 blocked_by: []
 ---
@@ -38,3 +38,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf60 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/60-context-card.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-sf60 --timeout 2h`.
 - Report: unit and doctor `RESULT:` lines, the real card, review decisions, PR and merge SHA; `decide: ask Lex to install the user-level hook`.
+
+## Done (2026-10-25)
+
+- `scripts/agents/context-card.mjs` (plain Node, no repo imports) matches the working directory against the README project map: the workspace or a folder inside it, or a sibling worktree `<workspace>-*`; the most specific row wins and a mapped sibling such as `native-site-editor-starter` keeps its own slug. It prints a title line, Current thinking, the newest 5 Recent decisions, Open questions, the 14-day corrections line when the file exists and "More: ask for the full note.", at most 30 lines of at most 160 characters. No folder, row or note prints `context card: no notes for this project yet` and exits 0; a real run takes about 60 ms. `--cwd` picks the folder; `--hook` takes the SessionStart payload's `cwd` and prints `additionalContext` JSON.
+- `kit card` prints the card for the worktree with a `RESULT: ok card <n> lines` (or `card no notes`) line.
+- `run.sh context-card` runs the script (5 s limit, never blocks); both `.claude/settings.json` and `.codex/hooks.json` add it to SessionStart after `session-env`.
+- Docs: `docs/agents/context-card.md` (format, the user-level hook for other projects, which skips repos with their own copy), one Hooks line in `guardrails.md`, a `kit card` line in `agent-scripts.md`, station 1 in `kitchen.md` no longer planned.
+- Tests: `tests/kit-card.test.ts` (workspace and sibling-worktree slugs, mapped sibling wins, 160-character cut, 30-line limit with footer, newest-5 order, corrections counts in the 14-day window, the one line for missing note, slug and folder, hook JSON through `run.sh`, `kit card`); `tests/agent-hooks.test.ts` checks both configs list `session-env` then `context-card` in SessionStart. `kit unit --affected` 241/241; `kit doctor` 7/7; `npm run lint` and `npm run check` pass.
+- Real `kit card` in this worktree printed the native-site-editor card (14 lines, updated 2026-10-22, corrections 10, repeated 2).
