@@ -113,7 +113,7 @@ const allowlist: AllowlistEntry[] = [
   { file: "src/boot-memory.ts", match: { rule: "same-workspace", function: "memoryMatches" }, reason: `${FOLLOW_UP} boot memory also requires the remembered repository name (slice 21 kept that rule beside \`same\`).` },
   { file: "src/agent-recovery.ts", match: { rule: "load-compare", function: "current" }, reason: `${OWN} the agent recovery's own reconnect counter.` },
   { file: "src/agent-recovery.ts", match: { rule: "load-compare", function: "attemptAlone" }, reason: `${OWN} the agent recovery's own reconnect counter.`, count: 2 },
-  { file: "src/main.ts", match: { rule: "load-compare", function: "showDirectory" }, reason: FILE_SELECTION },
+  { file: "src/workspace-mount.ts", match: { rule: "load-compare", function: "showDirectory" }, reason: FILE_SELECTION },
   { file: "src/controllers/source-pane-controller.ts", match: { rule: "load-compare", function: "openEntry" }, reason: FILE_SELECTION, count: 3 },
   { file: "src/controllers/source-pane-controller.ts", match: { rule: "load-compare", function: "mountSource" }, reason: FILE_SELECTION, count: 2 },
   { file: "src/workspace-boot.ts", match: { rule: "load-compare", function: "restoreFile" }, reason: FILE_SELECTION, count: 4 },

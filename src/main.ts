@@ -1,9 +1,8 @@
 import { rootRoute, siteAddress } from "../shared/site-path-prefix";
 import { MEDIA_RECORDS_PATH } from "../shared/media-records-path";
 import { mediaOwnOrigins } from "./page-builder/media-origins";
-import { dismissRefusalNote, refuse } from "./components/refusal-note";
+import { refuse } from "./components/refusal-note";
 import "./components/refusal-note.css";
-import { createRowMenu } from "./components/row-menu";
 import { elementMenuItems as collectElementMenuItems, type ElementMenuTarget } from "./components/element-menu";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { nativeChoiceMarkup, placeholderImageCreates } from "./page-builder/native-elements";
@@ -24,7 +23,7 @@ import "./utilities.css";
 import "./style.css";
 import "./theme.css";
 import { node, button } from "./ui/dom";
-import { reported, setErrorReporter } from "./ui/report-failure";
+import { setErrorReporter } from "./ui/report-failure";
 import {
   retainWorkspaceLink,
   resumeWorkspaceLink,
@@ -37,11 +36,6 @@ import type { SharedContext } from "./agent-site";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
 import { nativeShownFiles, withSiteIndexed } from "./native-boot";
 import { draftKey } from "./drafts";
-import { mountDropdown } from "./components/dropdown";
-import { createRepositoryMenu } from "./components/repository-menu";
-import { mountSiteActions } from "./components/site-actions";
-import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
-import { mountBlockRail } from "./components/block-rail";
 import { createNativePreview, routeStylesheets, type NativeStructureItem, type PressedBlock } from "./components/native-preview";
 import { trackDrag, type DragPress } from "./page-builder/insert-drag";
 import type { DraggedBlock } from "./page-builder/drop-target";
@@ -52,17 +46,16 @@ import "./components/pages-tree.css";
 import "./components/phone-sheet.css";
 import "./components/files-tree.css";
 import { createWorkspaceBoot } from "./workspace-boot";
+import { createWorkspaceMount } from "./workspace-mount";
 
 import { formatBytes, uploadBytes, uploadDataUrl, uploadKey } from "./uploads";
 import { firstHeadingText, nativeLinkSuggestions, nativePageLabel } from "./native-pages";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, wrapperAround, type ElementRange } from "./native-source-location";
-import { positionText } from "./page-builder/insert-target";
 import { itemsSlotRule } from "./page-builder/block-insert";
 import { createBlockMoves, type MoveAt } from "./page-builder/block-move";
 import { componentLabel, nativeInsertEdit, isSectionTemplate } from "./native-insert";
-import { isImagePath, structureLabel } from "./native-structure";
+import { isImagePath } from "./native-structure";
 import { gridOfItem } from "./page-builder/card-source";
-import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import * as sourceEditor from "./components/source-editor";
 import { createMediaHistoryHome } from "./page-builder/media-history-home";
 import type { MediaWorkspaceBatch } from "./page-builder/media-workspace";
@@ -77,9 +70,7 @@ import { createGitHubReads } from "./github-reads";
 import { RepositoryIndex } from "./repository-loading";
 import { CleanSourceCache } from "./clean-source-cache";
 import { createNativeSiteRuntime } from "./native-site-runtime";
-import { iconMarkup } from "./icons";
 import { createCommandPaletteController } from "./controllers/command-palette-controller";
-import { createCodePanesController } from "./controllers/code-panes-controller";
 import { createLinkedStylesController } from "./controllers/linked-styles-controller";
 import { createSourcePaneController } from "./controllers/source-pane-controller";
 import { createComponentTools, type ComponentTools, type PreparedComponentLoader } from "./page-builder/components";
@@ -93,12 +84,10 @@ import { createParkedSteps, parkedTransitions } from "./guarded-edit/parked";
 import { createEditorWorkspace } from "./editor-workspace";
 import { createFinishedElsewhere, openLink } from "./finished-elsewhere";
 import { createAgentPresence } from "./agent-presence";
-import { createWorkspaceSession, draftScopeOf, holdsDraftScope, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
+import { createWorkspaceSession, draftScopeOf, holdsDraftScope, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { AnnounceAs } from "./components/toast-rules";
 import type { ToastAction } from "./components/toast";
 import type {
-  EditorContext,
-  Directory,
   Repository,
   SessionInfo,
   TreeEntry,
@@ -109,22 +98,12 @@ const element = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T;
 // #status, the notice bar and the GitHub reads.
 const { status, settleStatus, clearError, placeNotice, errorMessage, api, apiResponse, postApi } = createGitHubReads({
-  app, element, explorer: () => explorerDropdown, trackRead: (read) => codePanes.trackRead(read), handleChunkLoadFailure,
+  app, element, explorer: () => workspace.explorerDropdown, trackRead: (read) => codePanes.trackRead(read), handleChunkLoadFailure,
   expired: () => renderLogin("expired"),
   // As say() in src/components/toast.ts, which loads on first use.
   say: (text, action) => { element("status").textContent = text; showToast(text, action); },
 });
 setErrorReporter(errorMessage);
-let repositorySelect: HTMLSelectElement;
-let branchSelect: HTMLSelectElement;
-let refreshButton: HTMLButtonElement;
-let content: HTMLDivElement;
-let files: HTMLElement;
-let explorerDropdown: ReturnType<typeof mountDropdown> | undefined;
-let repositoryMenu: ReturnType<typeof createRepositoryMenu> | undefined;
-let siteActions: ReturnType<typeof mountSiteActions> | undefined;
-let sidebarResize: SidebarResize | undefined;
-let blockRail: ReturnType<typeof mountBlockRail> | undefined;
 // The source editor without Monaco (src/components/source-editor.ts): drafts,
 // Undo/Redo and edits from the preview work from its draft store at once;
 // Monaco is only the code pane's view, loaded later.
@@ -158,7 +137,7 @@ const runtime = createNativeSiteRuntime({
   },
 });
 // Work finished on another project or branch, counted in the repository menu until it is opened (src/finished-elsewhere.ts).
-const finishedWork = createFinishedElsewhere({ draw: (notes) => repositoryMenu?.setNotes(notes), open: (scope) => openLink(scope), showing: (scope) => holdsDraftScope(workspaceSession.current().scope, scope), follow: (commit, scope) => { if (runtime.engaged) siteActions?.track(commit, () => holdsDraftScope(workspaceSession.current().scope, scope)); } });
+const finishedWork = createFinishedElsewhere({ draw: (notes) => workspace.repositoryMenu?.setNotes(notes), open: (scope) => openLink(scope), showing: (scope) => holdsDraftScope(workspaceSession.current().scope, scope), follow: (commit, scope) => { if (runtime.engaged) workspace.siteActions?.track(commit, () => holdsDraftScope(workspaceSession.current().scope, scope)); } });
 // Reading and opening the native site, its assets, the file readers and warnings (src/site-loading.ts).
 // Made before anything hands its functions on: later consts and `let` state go in as getters, the text index as an arrow.
 const { readFile, readFiles, readBlob, readNativeTexts, noteNativeUnreadable, nativePreviewUnreadable, showNativeWarnings, updateCurrentPageLabel,
@@ -225,7 +204,7 @@ const loadSetupActions = lazyModule(async () => {
     get repositories() { return repositories; }, set repositories(value) { repositories = value; },
     get wizardCreated() { return setup.wizardCreated; }, set wizardCreated(value) { setup.wizardCreated = value; },
     get waitingForRepositories() { return setup.waitingForRepositories; }, set waitingForRepositories(value) { setup.waitingForRepositories = value; },
-    get repositorySelect() { return repositorySelect; }, get repositoryMenu() { return repositoryMenu; },
+    get repositorySelect() { return workspace.repositorySelect; }, get repositoryMenu() { return workspace.repositoryMenu; },
     boot, appStore, guardedEdits, nativeBaseSources: runtime.base.sources, repositoryIndex, setupController,
     api, readFiles, readFile, readBlob, branchText, draftScope, draftStore, pathNow,
     rememberStartingPoint, rememberPartialStart, rememberRepositories, repositoryOptions,
@@ -268,380 +247,6 @@ const loadSiteSettings = lazyModule(async () => {
 });
 // What agents are shown and how their commands run (src/agent-site.ts), loaded when one asks.
 const loadAgentSite = lazyModule(() => import("./agent-site"));
-// The code panes' Monaco load gate and resize handles (src/controllers/code-panes-controller.ts).
-const codePanes = createCodePanesController({
-  load: () => import("./components/code-editor"),
-  onChunkFailure: (error) => void handleChunkLoadFailure(error),
-  mountCodeResize,
-  mountCodeWidthResize,
-});
-// Undo or Redo of a file no pane shows still redraws the preview and syncs the framed instance.
-editorModule.onUnmountedText(({ scope, path }) => {
-  const live = draftScope();
-  if (!live || draftKey(live, path) !== draftKey(scope, path)) return;
-  filesTreeController.refresh();
-  if (nativeModeActive()) updateNativePreviewSources();
-  componentTools?.refresh();
-});
-// A pane that needs the code now (Review, focusing the code) asks for Monaco.
-editorModule.setViewLoader(() => codePanes.want().then((module) => module.monacoView));
-let disposeEditor: (() => void) | undefined;
-// The live primary keeps its journal even when a completed operation releases its alias.
-let primaryHistoryScope: { key: string; session: string; proof: { isCurrent(): boolean } } | undefined;
-let activeFileContext: EditorContext["file"] = null;
-let editorRequest = 0;
-
-// A guarded edit's step binds only its own new and moved-in paths to the anchor page's journal.
-const nativeHistoryAliases = new Map<string, { stamp: SessionStamp; session: string }>();
-// The guarded edit module, told of each file a pane mounts (`pane`: the stylesheet pane, which follows the page opened).
-let nativeMountListener: ((path: string, pane: boolean) => void) | undefined;
-// Edit component's shares (components' shareHistory): a template records its steps in a page's journal, the latest share first.
-const nativeHistoryShares = new Map<string, { stamp: SessionStamp; session: string }[]>();
-function nativeHistorySession(scope: NonNullable<ReturnType<typeof draftScope>>, path: string) {
-  const key = draftKey(scope, path), share = nativeHistoryShares.get(key)?.at(-1), alias = nativeHistoryAliases.get(key);
-  const live = (bound: typeof alias): bound is NonNullable<typeof alias> => !!bound && bound.stamp.holds();
-  return live(share) ? share.session : live(alias) ? alias.session : key;
-}
-
-function closeEditor() {
-  primaryHistoryScope = undefined;
-  editorRequest++;
-  disposeEditor?.();
-  disposeEditor = undefined;
-}
-
-// Mounts the file's source editor at once (toolbar, drafts, Undo/Redo, Save);
-// its code shows once Monaco is here.
-function openCodeEditor(
-  file: import("./components/source-editor").SourceFile,
-  beforeMount?: () => boolean,
-) {
-  closeEditor();
-  const request = editorRequest;
-  if (!info.user) return Promise.resolve();
-  if (beforeMount && !beforeMount()) {
-    content.replaceChildren(node("p", "empty-message", "The source changed while its editor opened. Select it again."));
-    return Promise.resolve();
-  }
-  const defer = codePanes.deferPane(nativeModeActive());
-  const historyScope = file.scope ? nativeHistorySession(file.scope, file.path) : undefined;
-  disposeEditor = editorModule.mountSourceEditor(
-    content,
-    { ...(file.scope ? { ...file, historyScope } : file), loadingMessage: defer ? "The code loads once the page is on screen." : "Opening editor…" },
-    element("editor-toolbar-host"),
-  );
-  const historyHost = editorModule.captureHistoryHost(file.path), liveScope = draftScope();
-  if (appStore.openFile.value === file.path && historyHost) {
-    mediaHistoryHome.adopt((undo, redo, dispose) => editorModule.recordHistoryAction(file.path, undo, redo, dispose));
-    if (file.scope) parkedSteps.adopt(file.scope, file.path, (undo, redo, dispose) => editorModule.recordHistoryAction(file.path, undo, redo, dispose));
-  }
-  primaryHistoryScope = file.scope && historyScope && appStore.openFile.value === file.path && historyHost && liveScope &&
-    draftKey(liveScope, file.path) === draftKey(file.scope, file.path)
-    ? { key: draftKey(file.scope, file.path), session: historyScope, proof: historyHost } : undefined;
-  nativeMountListener?.(file.path, false);
-  finishedWork.shown(file.scope, element("editor-toolbar-host"));
-  void codePanes.whenDue(defer).catch((error) => {
-    if (request !== editorRequest) return;
-    content.querySelector(".code-editor__body")?.replaceChildren(
-      node("p", "empty-message", "The code editor could not load."),
-      button("Retry editor", () => void codePanes.want().catch(errorMessage)),
-    );
-    errorMessage(error);
-  });
-  return Promise.resolve();
-}
-
-function mountWorkspace() {
-  app.className = "";
-  app.innerHTML = `
-    <header class="topbar">
-      <div id="repository-menu"></div>
-      <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> ${iconMarkup("caret-down", 12, "icon--after")}</button>
-      <div class="topbar-actions">
-        <div id="setup-checklist"></div>
-        <div id="change-status"></div>
-        <div id="editor-toolbar-host" class="editor-toolbar-host"></div>
-        <div id="changes" class="changes-window" popover="auto" role="dialog" aria-label="History"></div>
-      </div>
-    </header>
-    <div id="notice" class="notice" role="alert" hidden></div>
-    <div id="explorer" class="explorer" role="region" aria-label="Pages & files">
-      <div class="explorer-head">
-        <div id="explorer-tabs" class="explorer-tabs" role="tablist" aria-label="Pages, media or files" hidden>
-          <button type="button" id="explorer-tab-pages" class="explorer-tab" role="tab" aria-controls="explorer-pages" aria-selected="true">Pages</button>
-          <button type="button" id="explorer-tab-media" class="explorer-tab" role="tab" aria-controls="explorer-media" aria-selected="false" tabindex="-1">Media</button>
-          <button type="button" id="explorer-tab-files" class="explorer-tab" role="tab" aria-controls="explorer-files" aria-selected="false" tabindex="-1">Files</button>
-        </div>
-        <button type="button" id="site-settings-toggle" class="icon-button explorer-settings" aria-label="Site settings" title="Site settings">${iconMarkup("gear")}</button>
-      </div>
-      <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden><p class="muted sidebar-hint">Loading pages…</p></div>
-      <div id="explorer-media" class="explorer-panel" aria-labelledby="explorer-tab-media" hidden><p class="muted sidebar-hint">Loading media…</p></div>
-      <div id="explorer-files" class="explorer-panel" aria-labelledby="explorer-tab-files">
-        <div class="files-heading explorer-heading"><span class="explorer-heading__start"><h2 class="explorer-heading__title">Files</h2><span id="files-count" class="explorer-heading__count"></span></span><span id="revision" hidden>—</span><button type="button" id="new-at-root" class="explorer-new" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">+ New</button></div>
-        <nav id="files" aria-label="Repository files"></nav>
-      </div>
-    </div>
-    <div class="workspace">
-      <button type="button" id="sheet-handle" class="sheet-handle" aria-expanded="false" aria-controls="structure-sidebar code-split" title="Pull up or tap for the page structure and code"><span class="sheet-handle__grip"></span>Page structure and code</button>
-      <aside class="sidebar" aria-label="Page structure">
-        <div class="sidebar-heading"><span class="eyebrow">PAGE STRUCTURE</span><button type="button" id="add-panel-toggle" class="structure-add" title="Add to the page" hidden>${iconMarkup("plus")} Add</button></div>
-        <div id="structure" class="page-structure"></div>
-      </aside>
-      <main id="main">
-        <div id="code-split" class="code-split">
-          <div class="code-pane"><div class="code-pane__title"><span id="primary-title"></span></div><div id="content" class="workspace-content"></div></div>
-          <div class="code-pane" id="secondary-pane" hidden><div class="code-pane__title"><span id="secondary-title"></span><span id="secondary-rules" class="code-pane__rules"></span></div><div id="content-secondary" class="workspace-content"></div></div>
-        </div>
-      </main>
-    </div>
-    <span id="status" class="sr-only" role="status" aria-live="polite"></span>
-  `;
-  element("changes").addEventListener("toggle", () => {
-    document.getElementById("history-button")?.setAttribute("aria-expanded", String(element("changes").matches(":popover-open")));
-  });
-  repositoryMenu = createRepositoryMenu({
-    installUrl: info.installUrl,
-    accounts: info.accounts ?? (info.user ? [{ ...info.user, current: true }] : []),
-    onOpen: () => void boot.ensureList(),
-    onReload: () => void refreshRepositoryList(),
-    onAccessChanged: () => void refreshRepositoryList(),
-    onSwitchAccount: (login) => void switchAccount(login),
-    onSignOut: reported(disconnect), onNote: (note) => { finishedWork.open(note); handOver(); },
-  });
-  element("repository-menu").append(repositoryMenu.root);
-  element("site-settings-toggle").addEventListener("click", () => void openNativeSiteSettings());
-  mediaController.disposeGallery();
-  siteActions = mountSiteActions({ statusHost: element("change-status"), menuHost: element("site-actions"), siteFiles: nativeSiteFiles, announce });
-  const menuPanel = element("repository-actions");
-  menuPanel.addEventListener("toggle", () => {
-    if (menuPanel.matches(":popover-open")) { void agentController.ensure().catch(errorMessage); void setupController.mount().catch(errorMessage); }
-  });
-  repositorySelect = element<HTMLSelectElement>("repository");
-  blockRail = mountBlockRail(app.querySelector<HTMLElement>(".workspace")!, element<HTMLButtonElement>("add-panel-toggle"), {
-    onPick: kind => {
-      // The click's page, selection and repository, held while typing finishes and the insert code loads.
-      const since = guardedEdits.stamp(), at = blockInsertPorts.target();
-      void finishRailTyping(() => since.holds()).then(async finished => {
-        if (!since.holds()) return;
-        if (!finished) { blockInsertPorts.refuse(STILL_UPDATING); return; }
-        const blocks = await loadBlockInsert();
-        if (since.holds()) await blocks.click(kind, at, since);
-      }).catch(errorMessage);
-    },
-    onUp: () => nativePreview?.selectParent(),
-    // The drag's targets and drawing load with the first press on a block;
-    // the press's repository, branch and session hold through both loads.
-    // In Edit component mode, into the template edited (its items slots are its own <slot> elements).
-    drag: kind => {
-      const since = guardedEdits.stamp();
-      const template = componentTools?.mode.now();
-      const block = { kind: "new", block: kind, ...(template ? { template: true } : {}) } as const;
-      // In Edit component mode Page Structure takes it into the template edited, as the canvas does.
-      return loadBlockDrag().then(drag => since.holds() ? nativePreview?.blockDrag(block, {
-        tree: structureDrop(drag, block, template),
-        drop: (target, where, painted, pointer) => {
-          const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" && !template ? { slot: target.container.slot } : {}) };
-          const at = blockInsertPorts.target();
-          if (template && at?.path !== template.template) { refuse("Edit component mode was left meanwhile: nothing was added.", { pointer }); return; }
-          if (since.holds()) void finishRailTyping(() => since.holds()).then(async finished => {
-            if (!since.holds()) return;
-            if (!finished) { blockInsertPorts.refuse(STILL_UPDATING, pointer); return; }
-            const blocks = await loadBlockInsert();
-            if (since.holds()) await blocks.drop(kind, place, painted, at, pointer, since);
-          }).catch(errorMessage);
-        },
-        announce,
-      }, drag.createBlockDrag, template?.template) : undefined);
-    },
-  });
-  sidebarResize = mountSidebarResize(
-    app.querySelector<HTMLElement>(".workspace")!,
-    app.querySelector<HTMLElement>(".sidebar")!,
-  );
-  // Phones: Page structure and the code fold into a sheet under the page (phone-sheet.css); its handle loads on the first phone-wide window.
-  const phone = matchMedia("(max-width: 650px) and (min-height: 500px)");
-  const sheet = () => {
-    if (!phone.matches) return;
-    phone.removeEventListener("change", sheet);
-    void import("./components/phone-sheet").then((module) => module.mountPhoneSheet(app.querySelector<HTMLElement>(".workspace")!, element<HTMLButtonElement>("sheet-handle"))).catch(errorMessage);
-  };
-  phone.addEventListener("change", sheet);
-  sheet();
-  branchSelect = element<HTMLSelectElement>("branch");
-  refreshButton = element<HTMLButtonElement>("refresh");
-  content = element<HTMLDivElement>("content");
-  files = element("files");
-  // Choosing a project or branch, or refreshing, hands over to the explorer to pick a file.
-  const handOver = () => {
-    repositoryMenu?.close();
-    element("explorer-toggle").focus();
-    explorerDropdown?.open();
-  };
-  repositorySelect.addEventListener("change", () => {
-    void chooseRepository();
-    handOver();
-  });
-  branchSelect.addEventListener("change", () => {
-    batch(() => {
-      appStore.branch.value = branchSelect.value || undefined;
-      void loadSnapshot();
-    });
-    handOver();
-  });
-  refreshButton.addEventListener("click", () => {
-    void loadSnapshot();
-    handOver();
-  });
-  explorerDropdown = mountDropdown({
-    trigger: element<HTMLButtonElement>("explorer-toggle"),
-    panel: element("explorer"),
-    below: app.querySelector<HTMLElement>(".topbar")!,
-    anchor: "--explorer",
-  });
-  mountExplorer();
-  codePanes.mountResize(element("main"), element("code-split"), element("secondary-pane"));
-  // A selection inside a component's template gets Select card once the runtime says which card.
-  // A remount must not leave the old pane (parked or shown) behind.
-  nativePreview?.destroy();
-  previewElementMenu?.close(false);
-  previewElementMenu?.element.remove();
-  previewElementMenu = createRowMenu(app);
-  nativePreview = createNativePreview(element("main"), {
-    onShortcut: name => paletteController.shortcut(name),
-    onRefusalNoteAction: dismissRefusalNote,
-    onMediaEnded: (id) => mediaController.mediaEnded(id),
-    ...previewSelection.handlers(),
-    onDismissContextMenu: () => previewElementMenu?.close(false),
-    // The right-clicked element as the edit bar takes it (a shared template's part maps to its instance).
-    onContextMenu: (point, anchor, selection) => {
-      const target = componentTools?.mode.opened() ? selection : componentTools?.instanceSelection(selection);
-      const entries = target ? elementMenuItems(target) : [];
-      if (entries.length) previewElementMenu?.open(anchor, entries, point, "Element actions");
-    },
-    // The images of a page shown by following a link are read when it shows.
-    // A page the text index has not read yet is read when it shows.
-    onRouteShown: (route) => {
-      componentTools?.mode.sync();
-      if (!runtime.site) return;
-      if (nativePreviewBehind) updateNativePreviewSources();
-      void loadNativeAssets(nativeRouteShownSources(route));
-      void loadNativeShownFiles(route);
-    },
-    cards,
-    onComponentStyles: (tags) => void loadNativeComponentStyles(tags),
-    onDefaultStyles: (styles) => linkedStyles.updateBodyStyles({ rules: styles.selectors, cascade: styles.cascade }),
-    onFormat: (format) => pageStructureController.nativeFormatActions[format]?.(),
-    onImageDrop: (target, files) => void mediaController.chooseImage(target, files),
-    onImageEdit: (target) => void mediaController.chooseImage(target),
-    onTextEdit: (edit) => void pageStructureController.applyNativeTextEdit(edit),
-    onTyping: (at, left) => left ? workingPart.left(at, pageStructureController.textEdits()) : workingPart.typed(at),
-    insertChoices: nativeSectionChoices,
-    insertPointFor: nativeElementAddPoint,
-    insertDestinationText: point => point ? nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
-    onInsert: (point, choice) => void insertNativeComponent(point, choice),
-    onNewComponent: (tag, point) => componentTools?.newComponent(tag, point) ?? Promise.resolve(false),
-    onStructure: (structure) => {
-      if (!structure) { pageStructure?.update(undefined); return; }
-      codePanes.notePreviewPainted();
-      noteNativePainted();
-      const path = structure.path, source = structure.paintedSource, scope = draftScope();
-      // A row's move holds the workspace from this paint, and the page's editor model if it is mounted.
-      const paint = { since: guardedEdits.stamp(), model: scope && editorModule?.isMounted(path) ? editorModule.captureFileModelState(scope, path) : undefined };
-      const capture = (item: NativeStructureItem) => {
-        nativeStructurePaintedSources.set(item, source);
-        nativeStructurePaints.set(item, paint);
-        item.children.forEach(capture);
-      };
-      const shown = structure;
-      shown.items.forEach(capture);
-      pageStructure?.update(shown);
-    },
-    // Alt+arrows on the canvas: the edit bar's step for the selection.
-    onMove: (direction) => pageStructureController.nativeElementMoveAction?.(direction),
-    onBlockPress: dragPageBlock,
-    onDismissRequest: (id) => void agentController.dismiss(id),
-    onAnswerRequest: async (id, text) => {
-      await agentController.answer(id, text);
-    },
-    // The Add panel docks over the page structure sidebar; under a phone's sheet (folded or not), over the page and sheet.
-    addPanelDock: () => {
-      const area = app.querySelector<HTMLElement>(".workspace")?.getBoundingClientRect();
-      const sheet = getComputedStyle(element("sheet-handle")).display !== "none";
-      const side = app.querySelector<HTMLElement>(sheet ? ".workspace > main" : ".workspace > .sidebar")?.getBoundingClientRect();
-      return area && { left: side?.left ?? area.left, top: side?.top ?? area.top, bottom: Math.min(area.bottom, innerHeight), width: side?.width ?? 320 };
-    },
-  });
-  nativePreview.attachAddButton(element<HTMLButtonElement>("add-panel-toggle"));
-  pageStructure = createPageStructure(element("structure"), {
-    menuItems: (path, item, opening, template) => {
-      const painted = template ? template.source : nativeStructurePaintedSources.get(item);
-      const fresh = () => painted !== undefined && runtime.source(path) === painted && !versions.view;
-      if (!fresh()) {
-        if (opening) announce("The source changed. Wait for the preview before using this action.");
-        return [];
-      }
-      return elementMenuItems({ path, node: template ? template.node : item.node, tag: item.tag, paintedSource: painted, renameChip: template?.chip }).map(entry => ({ ...entry, run: () => {
-        if (!fresh()) { announce("The source changed. Wait for the preview before using this action."); return; }
-        entry.run();
-      } }));
-    },
-    pageSource: (path) => runtime.source(path),
-    label: (item) => {
-      const component = Boolean(runtime.site && Object.hasOwn(runtime.site.components, item.tag));
-      return { ...structureLabel(item, component), component };
-    },
-    onSelect: (path, node, edit) => nativePreview?.selectNode({ path, node }, edit),
-    onRemove: (path, node, source) => pageStructureController.removeRow(path, node, source),
-    componentSlots: (path, node) => componentTools?.structure(path, node),
-    textRow: (path, node, tag) => TEXT_LINE_TAGS.has(tag) ? componentTools?.textRow(path, node) : undefined,
-    templateRows: (path, node) => componentTools?.templateRows(path, node),
-    componentFieldsRevision: nativeComponentFieldsRevision,
-    pageMeta: nativePageMeta,
-    onPageSettings: (path) => void openNativePageSettings(path),
-    onNavigation: (path) => void openNativeNavigation(path),
-    onPageMeta: (path, field, value) => void writeNativePageMeta(path, field, value).then((error) => { if (error) errorMessage(new Error(error)); }),
-    pageUrl: (path) => {
-      const route = nativeRouteForPath(path);
-      if (!route) return undefined;
-      return route === "/" ? { route, fixed: "The home page's URL is always /." } : { route };
-    },
-    planUrl: (file, value) => {
-      // The sidebar's URL field is hidden while Page settings holds the URL; this keeps it calm if it shows again.
-      if (pagesAndFiles.pageActions) return pagesAndFiles.pageActions.urlPlan(file, value);
-      if (value === nativeRouteForPath(file)) return { ok: false, error: "", unchanged: true };
-      void loadPagesActions().then(() => pageStructure?.refreshMeta()).catch(errorMessage);
-      return { ok: false, error: "Loading page actions…", pending: true };
-    },
-    applyUrl: async (file, value, keep) => {
-      const since = guardedEdits.stamp("repository");
-      await loadPagesActions();
-      return since.holds() ? pagesAndFiles.pageActions!.changeUrl(file, value, keep) : "The repository changed meanwhile. Try again.";
-    },
-    onPageMetaClose: (path) => editorModule?.closeActiveEditGroup(path),
-    // A row's Alt+arrows, by the Block move module. In Edit component mode a row of the template
-    // edited (`template`: the bytes it was painted from) moves in it while that mode lasts. A page
-    // that is not open opens first (the model held from the paint is then not its editor's).
-    onMove: (path, item, direction, template) => {
-      const paint = nativeStructurePaints.get(item), opens = !editorModule?.isMounted(path) || appStore.openFile.value !== path;
-      const stale = !opens ? STRUCTURE_MOVE_STALE : pageStructureController.isNativeSectionTag(item.tag) ? SECTION_OPEN_STALE : BLOCK_OPEN_STALE;
-      const at = { path, node: item.node, painted: template ? template.painted : nativeStructurePaintedSources.get(item) };
-      return pageStructureController.moveBlock(at, direction, template
-        ? { guard: () => componentTools?.mode.now()?.template === path, stale }
-        : { since: paint?.since, guard: () => opens || !paint?.model || paint.model.isCurrent(), stale });
-    },
-    // A row drags as its block does on the page: the same targets, in the tree as well.
-    itemsSlots: nativeMoveItems,
-    // In Edit component mode a row of the template edited (`template`: the bytes it was painted from).
-    onRowDrag: (press, item, template) => dragPageBlock(press, {
-      node: item.node, tag: item.tag, cls: item.className ?? "", band: !template && pageStructureController.isNativeSectionTag(item.tag),
-      painted: template ? template.painted : nativeStructurePaintedSources.get(item), ...(template ? { template: true } : {}),
-    }),
-    announce,
-  });
-  componentTools?.destroy();
-  componentTools = mountComponentTools();
-  paletteController.mount();
-}
 
 // The command palette (⌘K, ⌘P) and the keyboard shortcuts sheet (?), with
 // the editor's commands calling what its own controls call
@@ -658,10 +263,10 @@ const paletteController = createCommandPaletteController({
   index: ensureNativeTextIndex,
   stamp: () => guardedEdits.stamp("repository"),
   isMounted: path => Boolean(editorModule?.isMounted(path)),
-  beginNewPage: () => { explorerDropdown?.open(); pagesController.selectTab("pages"); },
+  beginNewPage: () => { workspace.explorerDropdown?.open(); pagesController.selectTab("pages"); },
   startNewPage: () => {
     const since = guardedEdits.stamp("repository");
-    void ensureExplorer().then(() => { if (since.holds() && explorerDropdown?.isOpen()) pagesAndFiles.pagesTree?.startNew("/"); }).catch(errorMessage);
+    void ensureExplorer().then(() => { if (since.holds() && workspace.explorerDropdown?.isOpen()) pagesAndFiles.pagesTree?.startNew("/"); }).catch(errorMessage);
   },
   actions: {
     open: (path) => {
@@ -677,15 +282,15 @@ const paletteController = createCommandPaletteController({
     history: (direction) => void editorModule?.runVisualHistory(direction, appStore.openFile.value),
     toggleCode: () => codePanes.heightResize()?.toggle(),
     codeHidden: () => element("main").classList.contains("code-collapsed"),
-    toggleStructure: () => sidebarResize?.toggle(),
+    toggleStructure: () => workspace.sidebarResize?.toggle(),
     structureHidden: () => Boolean(app.querySelector(".workspace--sidebar-collapsed")),
     newFile: () => {
-      explorerDropdown?.open();
+      workspace.explorerDropdown?.open();
       if (runtime.site) pagesController.selectTab("files");
       openCreate("", element("new-at-root"));
     },
     showPagesAndFiles: () => {
-      explorerDropdown?.open();
+      workspace.explorerDropdown?.open();
       element("explorer").querySelector<HTMLElement>("[role='tab'][aria-selected='true'], [role='treeitem'][tabindex='0']")?.focus();
     },
     announce,
@@ -840,13 +445,15 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
 // A rail click or drop ends typing first, as Escape does: the runtime's
 // answer follows its text edit, whose queue is then drained. False when the
 // page did not answer: inserting before the typed text lands could move it.
-const STILL_UPDATING = "The page is still updating. Try again in a moment.";
 async function finishRailTyping(current: () => boolean) {
   if (nativePreview && !await nativePreview.finishTyping()) return false;
   if (current()) await pageStructureController.textEdits();
   return true;
 }
 
+// The guarded edit module, told of each file a pane mounts (`pane`: the stylesheet pane, which follows the page opened).
+// It is set while the guarded edit module is made, before the workspace host.
+let nativeMountListener: ((path: string, pane: boolean) => void) | undefined;
 // The guarded edit module (src/guarded-edit.ts) over this host: one way to
 // prove nothing changed since a plan read the files, then write one undo
 // step (the editor's range step, or its commit through the draft receipt).
@@ -880,7 +487,7 @@ const editorWorkspace = createEditorWorkspace({
   closePane: () => linkedStyles.closeSecondary(),
   afterFileChanges: () => afterFileChanges(),
   openAfter: (path, keepExplorer) => openAfter(path, keepExplorer, true),
-  showRow: focus => { if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") pagesController.renderTree(focus); },
+  showRow: focus => { if (workspace.explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") pagesController.renderTree(focus); },
   status: () => element("status").textContent ?? "",
   select: (request, reveal) => nativePreview?.selectAfterUpdate(request, reveal ? { reveal: "center" } : undefined),
   flash: request => nativePreview?.flashInsert(request),
@@ -1006,7 +613,7 @@ const loadBlockInsert = lazyModule(async () => (await import("./controllers/bloc
 const versions = createVersionView({
   appStore, workspaceSession, guardedEdits, editorModule,
   get nativePreview() { return nativePreview; },
-  currentLoad, setupScope, draftScope, draftStore, nativeEffectiveSource: path => runtime.source(path), updateNativePreviewSources, loadHistory, loadConfirmDialog,
+  currentLoad, setupScope: () => setupScope(), draftScope, draftStore, nativeEffectiveSource: path => runtime.source(path), updateNativePreviewSources, loadHistory, loadConfirmDialog,
   api, postApi, status, errorMessage, refuse,
   restoreFile: (path, at, options) => restoreFile(path, at, options),
   loadSnapshot: path => loadSnapshot(path),
@@ -1016,9 +623,9 @@ const versions = createVersionView({
 const linkedStyles = createLinkedStylesController({
   appStore, workspaceSession, editorModule,
   get info() { return info; }, get nativeSite() { return runtime.site; },
-  get primaryHistoryScope() { return primaryHistoryScope; }, get nativeVariantFiles() { return nativeVariantFiles; },
+  get primaryHistoryScope() { return workspace.primaryHistoryScope; }, get nativeVariantFiles() { return nativeVariantFiles; },
   element, nativeModeActive, nativeSources: () => runtime.sources(), nativePageStyles, nativeEffectiveSource: path => runtime.source(path), nativeComponentTagForPath, nativeCssWorkspace,
-  nativeHistorySession, draftScope, draftStore, findEntry, readFile, errorMessage, updateNativePreviewSources,
+  nativeHistorySession: (scope, path) => nativeHistorySession(scope, path), draftScope, draftStore, findEntry, readFile, errorMessage, updateNativePreviewSources,
   applyWidth: () => codePanes.applyWidth(),
   refreshFiles: () => filesTreeController.refresh(),
   mounted: (path, pane) => nativeMountListener?.(path, pane),
@@ -1168,13 +775,6 @@ function wholeWrapper(inner: string, tags: string[]) {
 }
 // Elements a link inside can be removed from, keeping its text.
 const nativeLinkParents = new Set([...TEXT_LINE_TAGS].filter((tag) => tag !== "a" && tag !== "button"));
-const nativeStructurePaintedSources = new WeakMap<NativeStructureItem, string | undefined>();
-// The workspace and the page's editor model when a Structure row was painted, for its moves.
-const nativeStructurePaints = new WeakMap<NativeStructureItem, { since: Stamp; model?: { isCurrent(): boolean } }>();
-// A Structure row's stale words: the page open, or opening for the move.
-const STRUCTURE_MOVE_STALE = "The source changed. Wait for the preview before moving this element.";
-const SECTION_OPEN_STALE = "The source changed while its editor opened. Select the section again before moving it.";
-const BLOCK_OPEN_STALE = "The source changed while its editor opened. Select the element again before moving it.";
 
 const pageStructureController = createPageStructureController({
   get nativePreview() { return nativePreview; },
@@ -1269,8 +869,6 @@ function nativePictureSources(source: string, node: readonly number[]) {
     && Boolean(startTagAttribute(source, item.tag, "srcset")?.value.trim()));
 }
 
-let previewElementMenu: ReturnType<typeof createRowMenu> | undefined;
-window.addEventListener("blur", () => previewElementMenu?.close(false));
 function elementMenuItems(target: ElementMenuTarget) {
   const providers = [
     (target: ElementMenuTarget) => componentTools?.menuItems(target) ?? [],
@@ -1348,7 +946,7 @@ async function writeNativePageMeta(path: string, field: PageMetaField, value: st
     : await guardedEdits.run(plan);
   if (outcome.message) return outcome.message;
   updateCurrentPageLabel();
-  if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") pagesController.renderTree();
+  if (workspace.explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") pagesController.renderTree();
   if (outcome.ok && outcome.status === "applied") element("status").textContent = value.trim() ? `${field === "title" ? "Title" : "Description"} updated` : `${field === "title" ? "Title" : "Description"} removed`;
   return undefined;
 }
@@ -1522,7 +1120,7 @@ async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
       // Pictures not added yet go to Media's Optimise sheet, still bound for this folder (on show only).
       review: element("explorer-tabs").hidden ? undefined : (images, into, reasons) => {
         if (!pin.here()) return;
-        explorerDropdown?.open(); pagesController.selectTab("media");
+        workspace.explorerDropdown?.open(); pagesController.selectTab("media");
         void mediaController.reviewInGallery(images, into, reasons).catch(errorMessage);
       } }).then((paths) => { if (!pin.here()) finishedWork.add(pin.scope, "added", { count: paths.length }); return paths; });
   } catch (error) { errorMessage(error); return []; }
@@ -1594,7 +1192,7 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
     url: () => nativeSiteSettings(runtime.textSource(NATIVE_CONFIG_PATH)).url,
     settled: () => runtime.state.textIndexing ?? Promise.resolve(), changed: () => {},
   },
-  cleanUp: { place: setupScope },
+  cleanUp: { place: () => setupScope() },
   // Improve images opens each page so its pictures are measured; the canvas draws it a moment later (at most 5 s).
   showPage: async path => {
     if (appStore.openFile.value !== path) await openAfter(path, true, true);
@@ -1733,47 +1331,11 @@ function options(
   );
 }
 
-// Everything open goes before the login page shows (renderLogin, src/setup-host.ts).
-function closeWorkspace() {
-  workspaceBoot.dropGuess();
-  paletteController.dispose();
-  agentController.destroy();
-  setupController.dispose();
-  setupEntry.remove();
-  versions.history.destroy();
-  activeFileContext = null;
-  explorerDropdown?.destroy();
-  explorerDropdown = undefined;
-  sidebarResize?.dispose();
-  sidebarResize = undefined;
-  blockRail?.dispose();
-  blockRail = undefined;
-  closeEditor();
-  deactivateNative();
-  nativePreview?.destroy();
-  nativePreview = undefined;
-  linkedStyles.clearSources();
-  editorModule?.clearDrafts();
-  mediaHistoryHome.clear();
-  parkedSteps.clear();
-  nextLoad();
-  fileGeneration++;
-  repositoryMenu?.destroy();
-  repositoryMenu = undefined;
-  siteActions?.destroy();
-  siteActions = undefined;
-  repositories = [];
-  boot.reset();
-  appStore.reset();
-  repositoryIndex.clear();
-  cleanSources.clear();
-}
-
 // Login, Start your site, the Setup checklist and wizard, and Get started (src/setup-host.ts).
 const setup = createSetupHost({
-  app, element, appStore, workspaceSession, closeWorkspace, setupScope, draftScope, draftStore, nativeEffectiveSource: (path, scope) => runtime.source(path, scope), api,
-  get info() { return info; }, get repositories() { return repositories; }, get content() { return content; },
-  get repositoryMenu() { return repositoryMenu; }, get nativeEngaged() { return runtime.engaged; },
+  app, element, appStore, workspaceSession, closeWorkspace: () => closeWorkspace(), setupScope: () => setupScope(), draftScope, draftStore, nativeEffectiveSource: (path, scope) => runtime.source(path, scope), api,
+  get info() { return info; }, get repositories() { return repositories; }, get content() { return workspace.content; },
+  get repositoryMenu() { return workspace.repositoryMenu; }, get nativeEngaged() { return runtime.engaged; },
   get agentPrompts() { return agentPrompts; }, get onboardingCopy() { return onboardingCopy; },
   get boot() { return boot; }, get agentController() { return agentController; },
   loadRepositories: (prefetched) => loadRepositories(prefetched),
@@ -1785,58 +1347,6 @@ const {
   rememberRepositories, knownRepositories, rememberStartingPoint, takeStartingPoint,
   rememberPartialStart, readPartialStart, forgetPartialStart, offerFinishStarter, removeFinishStarter, writeStartingPoint,
 } = setup;
-
-/** Account, repository and branch the checklist is of. */
-function setupScope() { return setupKeyOf(shownScope()); }
-
-function showDirectory(directory: Directory, path = "") {
-  fileGeneration++;
-  setCurrentPage();
-  finishedWork.shown(draftScope(), element("editor-toolbar-host"));
-  if (!path && !runtime.engaged && appStore.repository.value && appStore.snapshot.value) {
-    const host = content, at = workspaceSession.begin(), fileEpoch = fileGeneration;
-    void startSitePanel().then((panel) => {
-      if (host === content && at.holds() && fileGeneration === fileEpoch) host.replaceChildren(panel);
-    }).catch(errorMessage);
-    return;
-  }
-  const panel = node("section", "directory-summary");
-  panel.append(
-    node("span", "badge", runtime.engaged ? "✦ Native site" : "Explore this folder"),
-    node(
-      "h1",
-      "",
-      path.split("/").at(-1) || appStore.repository.value?.name || "Your project",
-    ),
-    node(
-      "p",
-      "intro",
-      runtime.engaged
-        ? `${directory.entries.length} entries. Pages, components and styles render live in the preview.`
-        : `${directory.entries.length} entries. Add index.html at the top of the repository to preview this project in the browser.`,
-    ),
-  );
-  const meta = node("dl", "project-meta");
-  for (const [label, value] of [
-    ["Repository", appStore.repository.value?.full_name ?? ""],
-    ["Branch", appStore.snapshot.value?.branch ?? ""],
-    ["Revision", appStore.snapshot.value?.commit.slice(0, 12) ?? ""],
-    ["Folder", path || "/"],
-  ]) {
-    const row = node("div");
-    row.append(node("dt", "", label), node("dd", "", value));
-    meta.append(row);
-  }
-  panel.append(
-    meta,
-    node(
-      "div",
-      "next-step",
-      "Open a file to edit it. Drafts are saved in this browser; publish selected files when they are ready.",
-    ),
-  );
-  content.replaceChildren(panel);
-}
 
 
 function imagesSignature() {
@@ -1865,17 +1375,42 @@ const pagesAndFiles = createPagesAndFilesHost({
   currentLoad, stampOf, draftScope, entryAt, findEntry, readFile, readFiles, readMediaText, mediaOrigins, ensureNativeTextIndex,
   nativeRouteForPath, nativeRouteInfo, nativeTitles, nativeNavigationTarget, writeNativePageMeta, refreshNativeRoutes, forgetDraftedAssets,
   loadNativeComponentStyles, updateAgentContext, updateCurrentPageLabel, updateNativePreviewSources, updatePreview: updateNativePreview, setCurrentPage,
-  showDirectory, openNewDraft, discardUpload, uploadFilesTo, nativeFallbackPage, nativeModeActive, nativeComponentTagForPath,
+  showDirectory: (...args) => showDirectory(...args), openNewDraft, discardUpload, uploadFilesTo, nativeFallbackPage, nativeModeActive, nativeComponentTagForPath,
   startNativeTextIndex, openNativePageSettings, openNativeNavigation, flushPendingNativePageTitles,
   // Declared further down: read at call time.
   restoreFile: (...args) => restoreFile(...args), loadSnapshot: (...args) => loadSnapshot(...args), openEntry: (...args) => openEntry(...args),
-  get explorerDropdown() { return explorerDropdown; }, get files() { return files; }, get pageStructure() { return pageStructure; },
-  get siteActions() { return siteActions; }, clearPendingTitles,
+  get explorerDropdown() { return workspace.explorerDropdown; }, get files() { return workspace.files; }, get pageStructure() { return pageStructure; },
+  get siteActions() { return workspace.siteActions; }, clearPendingTitles,
   get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
 });
 const { loadPagesActions, loadFileOps, pagesController, savePublish, filesTreeController, mountExplorer, ensureExplorer,
   openCreate, treeState, pathNow, nativePathExists, nativeSiteReadForCreate, branchText, branchPathProblem, discardedNewPages, afterFileChanges,
   openAfter, undoFileChanges, discardFileChange } = pagesAndFiles;
+
+// The workspace's screen, the code panes and the source editor, a folder's summary, and closing it all (src/workspace-mount.ts).
+// By value: consts declared above and hoisted functions; `let` state goes in as accessors (tests/main-ts-ceiling.test.ts).
+const workspace = createWorkspaceMount({
+  app, element, appStore, editorModule, workspaceSession, runtime, finishedWork, mediaHistoryHome, parkedSteps, guardedEdits, blockInsertPorts,
+  mediaController, paletteController, previewSelection, pageStructureController, linkedStyles, versions, cards, pagesAndFiles, setupController,
+  setupEntry, repositoryIndex, cleanSources, filesTreeController, nativeAddPoints,
+  draftScope, shownScope, nativeModeActive, nextLoad, setCurrentPage, deactivateNative, updateNativePreviewSources, errorMessage, announce,
+  openNativeSiteSettings, nativeSiteFiles, finishRailTyping, loadBlockInsert, loadBlockDrag, structureDrop, dragPageBlock, mountExplorer,
+  elementMenuItems, nativeRouteShownSources, loadNativeAssets, loadNativeShownFiles, loadNativeComponentStyles, noteNativePainted,
+  nativeSectionChoices, nativeElementAddPoint, insertNativeComponent, nativeComponentFieldsRevision, nativePageMeta, openNativePageSettings,
+  openNativeNavigation, writeNativePageMeta, nativeRouteForPath, loadPagesActions, nativeMoveItems, mountComponentTools, startSitePanel,
+  get info() { return info; }, get repositories() { return repositories; }, set repositories(value) { repositories = value; },
+  get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
+  get nativePreview() { return nativePreview; }, set nativePreview(value) { nativePreview = value; },
+  get pageStructure() { return pageStructure; }, set pageStructure(value) { pageStructure = value; },
+  get componentTools() { return componentTools; }, set componentTools(value) { componentTools = value; },
+  get nativePreviewBehind() { return nativePreviewBehind; }, get nativeMountListener() { return nativeMountListener; },
+  // Declared further down: read at call time.
+  get boot() { return boot; }, get agentController() { return agentController; }, get workspaceBoot() { return workspaceBoot; },
+  refreshRepositoryList: () => refreshRepositoryList(), switchAccount: (login) => switchAccount(login), disconnect: () => disconnect(),
+  chooseRepository: () => chooseRepository(), loadSnapshot: () => loadSnapshot(),
+});
+const { codePanes, nativeHistoryAliases, nativeHistoryShares, nativeHistorySession, closeEditor, openCodeEditor, mountWorkspace, closeWorkspace,
+  setupScope, showDirectory } = workspace;
 
 type Toast = typeof import("./components/toast");
 let toast: Toast | undefined, toastLoad: Promise<Toast> | undefined;
@@ -1907,11 +1442,11 @@ function undoAction(path: string) {
 // Opening a file in the source pane (src/controllers/source-pane-controller.ts).
 const sourcePane = createSourcePaneController({
   appStore, workspaceSession, editorModule, linkedStyles, savePublish, versions, previewSelection, nativeBaseSources: runtime.base.sources, nativeVariantFiles,
-  get info() { return info; }, get content() { return content; }, get explorerDropdown() { return explorerDropdown; },
+  get info() { return info; }, get content() { return workspace.content; }, get explorerDropdown() { return workspace.explorerDropdown; },
   get nativeSite() { return runtime.site; }, get nativePreview() { return nativePreview; },
   get componentTools() { return componentTools; }, get pageStructure() { return pageStructure; },
   fileGeneration: () => fileGeneration, nextFileGeneration: () => ++fileGeneration,
-  setActiveFileContext: (value) => { activeFileContext = value; },
+  setActiveFileContext: (value) => { workspace.activeFileContext = value; },
   openCodeEditor, element, status, settleStatus, errorMessage, readFile, entryAt, draftScope, draftStore, openAfter, setCurrentPage, showDeletedFile,
   isNativeTextFile, nativeModeActive, nativeRouteForPath, nativeComponentTagForPath, nativeFallbackPage, nativeCssWorkspace,
   updateNativePreviewSources, discardedNewPages, showDirectory, updateAgentContext, updateCurrentPageLabel, discardFileChange,
@@ -1952,7 +1487,7 @@ const agentSiteHost = createAgentSiteHost({
       repository: { id: appStore.repository.value.id, fullName: appStore.repository.value.full_name },
       branch: appStore.snapshot.value.branch,
       commit: appStore.snapshot.value.commit,
-      file: activeFileContext,
+      file: workspace.activeFileContext,
       drafts: draftStore().list(scope),
       mountedSource: (path) => runtime.source(path, scope),
       native: site && {
@@ -2001,7 +1536,7 @@ async function openNewDraft(draft: SavedDraft, options: { keepExplorer?: boolean
     return;
   const at = workspaceSession.begin(),
     selection = ++fileGeneration;
-  if (!options.keepExplorer) explorerDropdown?.close();
+  if (!options.keepExplorer) workspace.explorerDropdown?.close();
   setCurrentPage(draft.path);
   // A binary or large file moved or copied here: its text is not held.
   if (draft.upload) {
@@ -2009,7 +1544,7 @@ async function openNewDraft(draft: SavedDraft, options: { keepExplorer?: boolean
     return;
   }
   if (draft.opaque) {
-    content.replaceChildren(node("p", "empty-message", `${draft.path} is ${draft.movedFrom ? `${draft.movedFrom} moved here` : "a copy of another file"}. Its content is not shown in the editor; publish to keep the change.`));
+    workspace.content.replaceChildren(node("p", "empty-message", `${draft.path} is ${draft.movedFrom ? `${draft.movedFrom} moved here` : "a copy of another file"}. Its content is not shown in the editor; publish to keep the change.`));
     status(`Selected ${draft.path}.`);
     return;
   }
@@ -2035,7 +1570,7 @@ function showUpload(draft: SavedDraft) {
   const discard = button("Discard", () => { void discardUpload(draft.path).then(() => openAfter(undefined)); }, "button secondary");
   discard.setAttribute("aria-label", `Discard ${draft.path}`);
   panel.append(discard);
-  content.replaceChildren(panel);
+  workspace.content.replaceChildren(panel);
   status(`Selected ${draft.path}.`);
 }
 
@@ -2051,7 +1586,7 @@ function showDeletedFile(path: string) {
   const restore = button("Restore", () => undoFileChanges({ restore: [path] }), "button primary");
   restore.setAttribute("aria-label", `Restore ${path}`);
   panel.append(restore);
-  content.replaceChildren(panel);
+  workspace.content.replaceChildren(panel);
   status(`${path} is deleted in your changes.`);
 }
 
@@ -2061,9 +1596,9 @@ const workspaceBoot = createWorkspaceBoot({
   get user() { return info?.user; },
   get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
   get repositories() { return repositories; },
-  get content() { return content; }, get files() { return files; }, get refreshButton() { return refreshButton; },
-  get branchSelect() { return branchSelect; }, get repositorySelect() { return repositorySelect; },
-  get repositoryMenu() { return repositoryMenu; }, get explorerDropdown() { return explorerDropdown; }, get siteActions() { return siteActions; },
+  get content() { return workspace.content; }, get files() { return workspace.files; }, get refreshButton() { return workspace.refreshButton; },
+  get branchSelect() { return workspace.branchSelect; }, get repositorySelect() { return workspace.repositorySelect; },
+  get repositoryMenu() { return workspace.repositoryMenu; }, get explorerDropdown() { return workspace.explorerDropdown; }, get siteActions() { return workspace.siteActions; },
   get nativeSite() { return runtime.site; }, get nativeSourcesRequest() { return runtime.state.request; },
   get nativePaintedRequest() { return runtime.state.paintedRequest; }, get nativePaintedPaths() { return runtime.state.paintedPaths; },
   source: () => location.origin + location.pathname,
@@ -2086,10 +1621,10 @@ const { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccoun
   get boot() { return boot; }, get user() { return info?.user; },
   get repositories() { return repositories; }, set repositories(value) { repositories = value; },
   get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
-  get content() { return content; }, get files() { return files; }, get refreshButton() { return refreshButton; },
-  get branchSelect() { return branchSelect; }, get repositorySelect() { return repositorySelect; },
-  get repositoryMenu() { return repositoryMenu; }, get siteActions() { return siteActions; },
-  nextLoad, chooseRepository, storage, options, status, clearError, errorMessage, announce, setCurrentPage, openExplorer: () => explorerDropdown?.open(),
+  get content() { return workspace.content; }, get files() { return workspace.files; }, get refreshButton() { return workspace.refreshButton; },
+  get branchSelect() { return workspace.branchSelect; }, get repositorySelect() { return workspace.repositorySelect; },
+  get repositoryMenu() { return workspace.repositoryMenu; }, get siteActions() { return workspace.siteActions; },
+  nextLoad, chooseRepository, storage, options, status, clearError, errorMessage, announce, setCurrentPage, openExplorer: () => workspace.explorerDropdown?.open(),
   removeFinishStarter, showGetStarted, knownRepositories, rememberRepositories,
 });
 
@@ -2123,10 +1658,10 @@ const agentController = createAgentController<HTMLElement>({
     // Ask agent shows in the edit bar while an agent is connected.
     onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
     onRequests: (requests) => nativePreview?.setRequests(requests),
-    onQuestions: (count) => repositoryMenu?.setQuestions(count),
+    onQuestions: (count) => workspace.repositoryMenu?.setQuestions(count),
     // A question in the selector's list: its pin, card open, answer box focused.
     onShowRequest: (id) => {
-      repositoryMenu?.close();
+      workspace.repositoryMenu?.close();
       nativePreview?.showRequest(id);
     },
   }),
@@ -2159,13 +1694,13 @@ const boot = createBootController({
   storage,
   setTimer: (callback, ms) => setTimeout(callback, ms),
   clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
-  menu: () => repositoryMenu,
+  menu: () => workspace.repositoryMenu,
   applyList: (next) => {
     repositories = next;
     rememberRepositories(next);
     repositoryOptions();
-    repositorySelect.disabled = !next.length;
-    if (appStore.repository.value) repositorySelect.value = String(appStore.repository.value.id);
+    workspace.repositorySelect.disabled = !next.length;
+    if (appStore.repository.value) workspace.repositorySelect.value = String(appStore.repository.value.id);
   },
 });
 
