@@ -39,6 +39,7 @@ A finished build plan, with a board mock-up Lex has approved, for the atomic des
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Take stock of every editor part and its copies after the clean-up](tickets/04-research-parts-inventory.md#resolution-2026-10-25): 1,395 raw values (1,502 with z-index and font sizes); about 300 copies across 16 part types; proposal of 14 atoms, 10 molecules, 15 organisms merging into 24 parts; icons all Phosphor drawn 6 ways
 - [List every toast and explainer line with where its feedback belongs](tickets/03-research-toasts-and-explainers.md#resolution-2026-10-25): 95 toasts (83 need nothing), nearly all through `announce()`/`say()`; 56 explainers (37 go); 14 counts (5 go); move GitHub Try again and Media Replace's Undo before removing
 - [Find how to build a zoomable board of live parts inside the editor](tickets/02-research-board-on-a-canvas.md#resolution-2026-10-25): real parts on a CSS-transform board, iframes for menus, dialogs and phone width; one `src/catalogue/parts.ts`; separate `catalogue.html` built only for the preview editor (0 boot bytes); dark mode to `light-dark()` first
 - [Find how the techies.tools Framework becomes the editor's shared values](tickets/01-research-techies-framework.md#resolution-2026-10-25): colours already match; Framework has spacing and pill radius but no motion, layers or shadows; manual-mode spacing fits; 14 vs 16 px root trap; commit its export and generate theme.css's shared values with a kit check
