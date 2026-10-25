@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "@playwright/test";
-import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveEdit, nativeMoveDestinationValid, nativeMovableBlock, nativeEditInside, applyGuardedSourceEdit } from "../src/page-builder/native-operations.ts";
+import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveEdit, nativeMoveDestinationValid, nativeMovableBlock, nativeEditInside, nativeOutline, applyGuardedSourceEdit } from "../src/page-builder/native-operations.ts";
 import { nativeElementMovePlan } from "../src/page-builder/block-move-rules.ts";
 
 test("definition-item auto-closing cannot turn preview paths into different source targets", async () => {
@@ -477,4 +477,25 @@ test("structural lines change depth while pre, textarea, script, style and opaqu
 test("inside a pre the moved element's line breaks stay as content", () => {
   exactMove('<main>\n  <pre>\n  <b>A</b>\n</pre>\n  <div>\n    <p>B</p>\n  </div>\n</main>', [0, 0, 0], [0, 1], 1,
     '<main>\n  <pre>\n  \n</pre>\n  <div>\n    <p>B</p>\n    <b>A</b>\n  </div>\n</main>', 1);
+});
+
+test("operations on one source share its kept tree and leave it as they found it (ticket 38)", () => {
+  const source = '<!doctype html><html><body><main><section class="a"><h2>A</h2><p>One</p></section><section class="b"><h2>B</h2><ul><li>x</li><li>y</li></ul></section></main></body></html>';
+  // Five other sources push `source`'s tree out of the four kept, so the next read parses it afresh.
+  const flush = () => { for (let n = 0; n < 5; n++) nativeOutline(`<main><p>${n}</p></main>`); };
+  const operations = {
+    move: () => nativeMoveEdit(source, [0, 1], { parent: [0], index: 0 }),
+    moveInto: () => nativeMoveEdit(source, [0, 0, 1], { parent: [0, 1], index: 1 }),
+    valid: () => nativeMoveDestinationValid(source, [0, 1, 1, 0], { parent: [0, 1, 1], index: 2 }),
+    movable: () => nativeMovableBlock(source, [0, 1, 1]),
+    destinations: () => nativeDestinations(source, "index.html", [0, 0, 1]),
+    insert: () => nativeMarkupInsertEdit(source, [0, 1], 1, "<p>New</p>"),
+    outline: () => JSON.stringify(nativeOutline(source), (key, value) => key === "parent" ? undefined : value),
+  };
+  const fresh = Object.fromEntries(Object.entries(operations).map(([name, run]) => { flush(); return [name, run()]; }));
+  assert.ok(fresh.move && fresh.insert && fresh.outline);
+  // Every operation again, in turns, over the one kept tree.
+  for (let turn = 0; turn < 3; turn++) for (const [name, run] of Object.entries(operations)) assert.deepEqual(run(), fresh[name], `${name}, turn ${turn}`);
+  const moved = applyGuardedSourceEdit(source, fresh.move!);
+  assert.match(moved, /<main><section class="b">[\s\S]*<section class="a">/);
 });

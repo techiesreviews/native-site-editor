@@ -8,5 +8,5 @@ Kinds: `too-much` too much text or decoration · `below-bar` looks below the bar
 - 2026-10-25 · too-much · Image drag: the dot is not needed; use only the square, as the focus point. · after release: no · fix: open
 - 2026-10-25 · felt-wrong · A typed new page URL should be converted to the URL rules, not refused. · after release: no · fix: open
 - 2026-10-25 · too-much · Not everything needs to be mentioned in a toast; remove them. · after release: no · fix: open
-- 2026-10-25 · felt-wrong · Undo feels slow. · after release: no · fix: open
-- 2026-10-25 · felt-wrong · After a change, the editor pauses before I can continue editing; making changes feels delayed overall. · after release: no · fix: open
+- 2026-10-25 · felt-wrong · Undo feels slow. · after release: no · fix: [38](tickets/38-edits-feel-instant.md)
+- 2026-10-25 · felt-wrong · After a change, the editor pauses before I can continue editing; making changes feels delayed overall. · after release: no · fix: [38](tickets/38-edits-feel-instant.md)

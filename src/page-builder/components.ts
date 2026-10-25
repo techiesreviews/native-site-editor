@@ -326,9 +326,10 @@ export function createComponentTools(deps: ComponentDeps) {
     const sources = deps.sources(), source = sources[path];
     if (source === undefined || !nodePath.length) return undefined;
     const key = `${path}\n${nodePath.join()}`, known = instances.get(key);
-    let found = known && known.site === site() && known.source === source && (!known.found || (sources[known.found.templatePath] ?? "") === known.found.template)
-      ? known.found : readInstanceAt(path, source, nodePath);
-    if (found !== known?.found) {
+    const fresh = known && known.site === site() && known.source === source && (!known.found || (sources[known.found.templatePath] ?? "") === known.found.template);
+    let found = fresh ? known.found : readInstanceAt(path, source, nodePath);
+    // A read that found no instance (most rows) is kept too.
+    if (!fresh) {
       if (instances.size > 2000) instances.clear();
       instances.set(key, { site: site(), source, found });
     }
