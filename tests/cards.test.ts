@@ -288,9 +288,9 @@ test("guarded card actions on the memory workspace with the browser parser", asy
         const rerouted = cardsFixture(branch, { routes: { "/": "index.html" }, components: site.components });
         const unlisted = cardsFixture({ ...branch, "index.html": plain }, { routes: { "/": "index.html" }, components: site.components });
         let current = listed.ports;
+        // Anonymous functions here and below: a named one gets tsx's `__name` helper, which the page lacks.
         const cards = cardsCreate(new Proxy(listed.ports, { get: [(_target: unknown, key: string) => current[key as keyof typeof current]][0]! }));
         const card = { path: "index.html", node: [0, 0, 1, 1] };
-        // An anonymous function: a named one gets tsx's `__name` helper, which the page lacks.
         const read = [() => {
           const link = cards.linkPages(card);
           return { offer: cards.cardOffer("/work/"), routes: link && Object.keys(link.routes), folder: link?.folder ?? null, inGrid: link?.inGrid };
