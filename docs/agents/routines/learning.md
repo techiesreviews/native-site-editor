@@ -24,11 +24,13 @@ this time and why.
    `ASE_OWNER=learning scripts/agents/worktree.sh docs/learning-YYYY-MM-DD origin/dev`. Work only there
    (`git -C <worktree>` or `cd <worktree> || exit 1`); run `scripts/agents/kit doctor` and fix every ✗ in
    the environment, never by editing repo files.
-   **Sweep's top 3.** Wait for the sweep's branch, checking every 5 minutes until 13:00:
-   `scripts/agents/kit bg sweep-wait -- bash -c 'until git fetch -q origin && git rev-parse -q --verify origin/docs/sweep-YYYY-MM-DD >/dev/null; do [[ $(date +%H%M) < 1300 ]] || exit 1; sleep 300; done'`,
-   then `scripts/agents/kit wait job sweep-wait --timeout 2h30m`. Read today's `docs/work/sweeps/YYYY-MM-DD.md`
-   from that branch (or `origin/dev` once merged) and keep its marked top 3 with their recommended fixes.
-   Only when the wait fails does the message say the sweep's list is missing.
+   **Sweep's top 3.** Wait for the sweep's merged file on `origin/dev`, checking every 5 minutes until
+   13:00 (`kit pr` pushes the branch before review, and deletes it on merge):
+   `scripts/agents/kit bg sweep-wait -- bash -c 'until git fetch -q origin && git cat-file -e origin/dev:docs/work/sweeps/YYYY-MM-DD.md; do [[ $(date +%H%M) < 1300 ]] || exit 1; sleep 300; done'`,
+   then `scripts/agents/kit wait job sweep-wait --timeout 2h30m`. Keep the file's marked top 3 with their
+   recommended fixes. If the wait fails, read the file from the sweep's branch `origin/docs/sweep-YYYY-MM-DD`
+   instead, and the message says that list is not yet reviewed; only when neither has it does the
+   message say the sweep's list is missing.
 3. **Gather.** Find the newest learning file: the latest date among `docs/work/learning/YYYY-MM-DD.md` on
    `origin/dev` and the `origin/docs/learning-YYYY-MM-DD` branches holding that file (a learning PR may
    still be open: `git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/docs/learning-*'`).
@@ -41,9 +43,8 @@ this time and why.
 4. **Judge.** Apply the `retro` skill (`~/.codex/skills/retro/SKILL.md`) to the bundle instead of a
    session log. Confirm each group: split one that joined two different asks, join two that are the
    same ask, and drop a pair that is one correction recorded in both lists. Drop a group the newest
-   learning file (read from wherever step 3 found it) already proposed unless it has a line dated after
-   that file. Open each `covered?` rule:
-   if it already says what Lex asked, the group is covered and the proposal asks why it did not hold.
+   learning file (read from wherever step 3 found it) already proposed unless it has a line dated on or
+   after that file's date that the file does not list. Open each `covered?` rule: if it already says what Lex asked, the group is covered and the proposal asks why it did not hold.
 5. **Propose.** For each correction given more than once, one action:
    - a **hook**, **lint rule** or **kit check** ([guardrails.md](../guardrails.md)) when the mistake is
      mechanical: name the check, what it catches and the file it lives in;
