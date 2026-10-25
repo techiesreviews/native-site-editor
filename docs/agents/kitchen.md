@@ -209,10 +209,12 @@ carries both results ([factory 06](../wayfinder/software-factory/tickets/06-gril
   guardrail candidates and writes `docs/work/sweeps/YYYY-MM-DD.md` through `kit pr`. It lists bad
   patterns and changes nothing; Lex gets the top 3, each with a recommended fix, and picks which
   become tickets.
-- **Chat learning, every other Monday after the sweep (planned):** `retro` reads the corrections list the
-  chat project's sync collects in `~/Projects/chat/memory/` (factory 10). A correction Lex gave
-  more than once becomes an automatic check ([guardrails.md](guardrails.md): hook, lint rule or kit
-  check) or a UX rulebook line, after Lex has seen the list.
+- **Chat learning, every other Monday after the sweep (even ISO weeks):** [routines/learning.md](routines/learning.md).
+  `kit learn` groups the corrections the chat project's sync collects in `~/Projects/chat/memory/`
+  (factory 10) with the build feedback logs; the session applies `retro` and writes
+  `docs/work/learning/YYYY-MM-DD.md` through `kit pr`. Each correction Lex gave more than once gets one
+  proposed automatic check ([guardrails.md](guardrails.md): hook, lint rule or kit check) or UX rulebook
+  line; nothing is added until Lex picks.
 
 ## Always waits for Lex
 
