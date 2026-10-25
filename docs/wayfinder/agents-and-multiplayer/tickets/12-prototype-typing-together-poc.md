@@ -31,3 +31,4 @@ It is a throwaway on a `prototype/am-12-typing-together-poc` branch, run locally
     - `kit shots` only knows the editor's screens.
   - **Run locally:** `cd prototypes/typing-together-poc && npm start` in the branch's worktree, then open the two printed links.
   - **Waiting:** Lex trying it, and his OK to deploy it to a throwaway `workers.dev` address.
+- 2026-10-25, Lex: deploy to a throwaway `workers.dev` address: yes. "For the poc we don't need to highlight the whole element, just show the cursor and caret where some one else is working." The same holds for people in the editor: a caret and name chip where they work, with no element highlight. Agents keep the section outline from ticket 05.
