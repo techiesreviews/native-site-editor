@@ -39,7 +39,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 ## Done (2026-10-25)
 
-`docs/agents/ux-rulebook.md` holds 40 rules: Say less 7 (S1–S7), Looks 12 (L1–L12), Behaviour 13 (B1–B13), Bugs a user sees 8 (U1–U8). Each has a why with its source link and a check tag: `script: layout` (`kit shots` layout findings), `script: colours` (`scripts/check-colours.mjs`), `script: spec` (a browser spec pins it), the planned `script: text` / `frames` / `drag` from slice 42, or `eye`. Extra sources beyond research 01: `docs/editor-colors.md`, the media audit, the factory map's no-toasts decision (Lex, 2026-10-23) and the `good-css` skill. The Astro interaction contract is no longer on this machine (no `interaction-contract.md` anywhere under `/`), so no rule cites it; the rulebook says so. Kitchen station 3 replaces the stopgap sentence with "follow the rulebook", station 8's UX review points to it, and `AGENTS.md` has the UX line under Review.
+`docs/agents/ux-rulebook.md` holds 40 rules: Say less 7 (S1–S7), Looks 12 (L1–L12), Behaviour 13 (B1–B13), Bugs a user sees 8 (U1–U8). Each has a why with its source link and a check tag: `script: layout` (`kit shots` layout findings), `script: colours` (`scripts/check-colours.mjs`), `script: spec` (names the browser specs that pin today's cases; new cases still need `eye`), the planned `script: text` / `frames` / `drag` from slice 42, or `eye`. Extra sources beyond research 01: `docs/editor-colors.md`, the media audit, the factory map's no-toasts decision and Lex's requests 01–02 (2026-10-23), and the `good-css` skill. B1 follows Lex's click-to-type request (clean-up 28, 2026-10-23), which replaced components 79's click-selects, double-click-edits. The Astro interaction contract is no longer on this machine (no `interaction-contract.md` anywhere under `/`), so no rule cites it; the rulebook says so. Kitchen station 3 replaces the stopgap sentence with "follow the rulebook", station 8's UX review points to it, and `AGENTS.md` has the UX line under Review.
 
 Coverage, 35 of 35 placed (A8, not reproducible, left out):
 
@@ -69,7 +69,7 @@ Coverage, 35 of 35 placed (A8, not reproducible, left out):
 | C6 Files tab | media 124 | L1, L3, L9, S7 |
 | C7 Pages tab | media 125 | L1, L3, L9 |
 | C8 Discard into the Publish menu | components 87 | L10 |
-| D1 Click selects, double-click edits | components 79 | B1 |
+| D1 Click selects, double-click edits | components 79, since replaced by clean-up 28 | B1 |
 | D2 Delete key, no row delete | components 81 | B2, B10 |
 | D3 Move any element | components 82 | B3 |
 | D4 Make component on containers only | components 80 | B5, B4 |
@@ -81,6 +81,6 @@ Coverage, 35 of 35 placed (A8, not reproducible, left out):
 | D10 Rename renames the CSS | components 76 | B9, B10 |
 | D11 Image placeholder first | components 105 | B7, B6 |
 
-Rules sourced only outside the 35 (agent-found or house rules): L2, L12, U5–U8, and S7's audit half. Lead PRs #90, #109 and #110 (requester not recorded) are cited as supporting, never as the only source.
+Rules sourced only outside the 35 (agent-found or house rules): L2, L12, U6–U8, U5 in part (components 85 and 96 beside item B3's 89), and S7's audit half. Lead PRs #109 and #110 (requester not recorded) are cited as supporting, never as the only source.
 
-Tests: docs only. Every relative link and anchor in `ux-rulebook.md` (71) and `kitchen.md` (22) resolves (checked with a one-off node script); the three commit links resolve on GitHub. `node scripts/agents/tickets.mjs check` passes (521 tickets); `kit unit --affected`: none affected; the docs guard tests (`agent-scripts`, `code-map`, `mcp-runtime`) pass 74 of 74; `npm run lint` passes.
+Tests: docs only. Every relative link and anchor in `ux-rulebook.md` and `kitchen.md` resolves (checked with a one-off node script, rerun after the review fixes); the three commit links resolve on GitHub; every spec file the rulebook names exists. `node scripts/agents/tickets.mjs check` passes (521 tickets); `kit unit --affected`: none affected; the docs guard tests (`agent-scripts`, `code-map`, `mcp-runtime`) pass 74 of 74; `npm run lint` passes.
