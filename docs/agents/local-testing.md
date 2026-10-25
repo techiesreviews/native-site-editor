@@ -56,7 +56,7 @@ Playwright logs as binary; use `grep -a` or the JSON results.
 fresh `npm run build:ui`; check that `<outprefix>.served` names the built
 `dist/assets/index-*.js`. Compare before and after in one sitting, alternating
 builds: runs from different sittings differ by about 30 ms.
-For boot bytes against dev (the 355 KB budget), `scripts/agents/kit size` is
+For boot bytes against dev (the 362 KB budget), `scripts/agents/kit size` is
 enough; it caches results per commit.
 
 ## Preview and CI deploys
