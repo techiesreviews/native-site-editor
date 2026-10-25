@@ -1,8 +1,8 @@
 ---
 title: A visible change cannot land without a feature-list update
 type: task (AFK)
-status: open
-assignee: sf-44 (this session)
+status: closed
+assignee: sf-44
 builder: claude
 blocked_by: [41-feature-list, 21-kit-records-every-piece]
 ---
@@ -36,3 +36,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf44 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/44-feature-list-guard.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-sf44 --timeout 2h`.
 - Report: unit `RESULT:` lines, review decisions, PR and merge SHA.
+
+## Done (2026-10-25)
+
+- `scripts/agents/pr-tier.mjs` holds the one visible-path list (`visiblePaths`, `visiblePath`) beside the tiers, for `kit pr` now and `kit ux` later, and `featureListGuard`, which passes a visible change only with a `docs/agents/features.md` change, a `Feature list: no change (<reason>)` line in the ticket's last `## Done`, or a lead's `--waive`.
+- `kit pr` runs the guard right after the tier line, before any check, push or CI. A visible change with none of the three prints `problem: visible change without a feature-list update; …` and ends `RESULT: fail features: …`. Otherwise the `Feature list:` result (updated, no change with its reason, or waived with its reason) goes in the PR body under the tier line. PRs with no visible path get no line.
+- The `kit slice` builder brief asks for a features.md update or the Done line when a change is visible.
+- `tests/kit-pr.test.ts`: the path list (rules excluded) and the guard's Done-section parsing; a CSS-only PR without the list or the Done line stops before push with the message; it proceeds with a features.md change, with the Done line and with a `*-lead` waiver, each named in the body; page-builder rules, docs-only and tests-only PRs are untouched.
+- Docs: `kit pr` line in agent-scripts.md, runner.md Land, kitchen.md station 9.
+- Feature list: no change (kit and docs only)
