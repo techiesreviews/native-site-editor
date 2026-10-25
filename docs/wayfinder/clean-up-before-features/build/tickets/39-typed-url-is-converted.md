@@ -45,3 +45,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - The Change URL field shows no "Enter to change, Esc to cancel" tip any more (UX rule S1); Page settings and the Pages tab keep their Cancel and Change URL buttons, which now have the row to themselves.
 - Size: `kit size` boot 358 KB (±0 KB vs dev), budget 362 KB.
 - Feature list: F-pages-03 and F-pages-05 updated.
+
+### UX follow-ups
+
+- UX (looks off): F-pages-01 the 390 px tree reads well as one list, but each row shows a + and a ⋯ at 24 px instead of one 44 px ⋯ on touch (U6), and the Publish button carries a count (S2) (.scratch/ux/lead-39/20261025-230057-WNkeQU/pages-F-pages-05-390-light-moved-strip.webp)
+- UX (looks off): F-pages-03 the scripted check says the empty-page picks are cut off by the bottom sheet at 390 px (L5), and the toast after making a page reads at 1.6–1.9:1 in light (S4, L12) (.scratch/ux/lead-39/20261025-230057-WNkeQU/F-pages-03-contact.webp)
+- UX (looks off): F-pages-04 after the rename or duplicate a toast pops up, and it reads at 1.9–2.0:1 in dark at 390 px (S4, L12) (.scratch/ux/lead-39/20261025-230057-WNkeQU/F-pages-04-contact.webp)
+- UX (looks off): F-pages-05 the Change URL form names the new URL and offers the redirect, but its line under the field shows file paths like "about/index.html" (S7); after the move a toast with link and file counts appears, low-contrast while it fades in (S4, L12); Publish carries a count (S2) (.scratch/ux/lead-39/20261025-230057-WNkeQU/pages-F-pages-05-390-light-moved-strip.webp)
+- UX (looks off): F-pages-06 the dropped page lands under Work as a subpage, then a "URL changed…" toast with counts appears (S4) (.scratch/ux/lead-39/20261025-230057-WNkeQU/pages-F-pages-06-1280-light-drop-strip.webp)
+- UX (looks off): F-pages-12 the head follows, but a "Page settings applied as a draft. Publish to keep them." toast appears (S4, B6) and at 390 px it sits over the canvas's "First item" card (U5) (.scratch/ux/lead-39/20261025-230057-WNkeQU/pages-F-pages-12-390-light-apply-strip.webp)
+- UX (looks off): F-pages-15 the shared header updates to About / Our work, but a "Navigation applied as a draft. Publish to keep it." toast appears (S4, B6) and at 390 px it covers the "First item" card (U5) (.scratch/ux/lead-39/20261025-230057-WNkeQU/pages-F-pages-15-390-light-apply-strip.webp)
