@@ -1,0 +1,1 @@
+{"screen":"structure","name":"F-structure-01","steps":["expect visible \"Site header\"","expect visible \"Recent work\""]}

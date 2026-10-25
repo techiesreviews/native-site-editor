@@ -7,7 +7,11 @@ export type Step =
   | { kind: "hover"; target: string | number }
   | { kind: "press"; key: string }
   | { kind: "scroll"; direction: "down" | "up" }
-  | { kind: "wait"; text: string };
+  | { kind: "wait"; text: string }
+  | { kind: "drag"; name: string; target: string; edge?: Edge }
+  | { kind: "record"; name: string; ms: number }
+  | { kind: "expect"; text: string };
+export type Edge = "top" | "bottom" | "left" | "right";
 export type Scenario = { screen: Screen; name?: string; steps: string[] };
 export type Options = { screens: Screen[]; widths: number[]; themes: Theme[]; steps?: string; spec?: string; out?: string; files?: boolean };
 
@@ -59,6 +63,10 @@ export function parseStep(source: string): Step {
   if ((match = /^press (\S+)$/.exec(source))) return { kind: "press", key: match[1] };
   if ((match = /^scroll (down|up)$/.exec(source))) return { kind: "scroll", direction: match[1] as "down" | "up" };
   if ((match = /^wait for "([^"]+)"$/.exec(source))) return { kind: "wait", text: match[1] };
+  if ((match = /^drag "([^"]+)" to "([^"]+)"(?: edge (top|bottom|left|right))?$/.exec(source))) return { kind: "drag", name: match[1], target: match[2], ...(match[3] ? { edge: match[3] as Edge } : {}) };
+  // The name becomes part of the strip's file name.
+  if ((match = /^record ([a-zA-Z0-9][a-zA-Z0-9_-]*) ([1-9]\d{2,3})$/.exec(source))) return { kind: "record", name: match[1], ms: Number(match[2]) };
+  if ((match = /^expect visible "([^"]+)"$/.exec(source))) return { kind: "expect", text: match[1] };
   throw new Error(`Unknown step: ${source}`);
 }
 

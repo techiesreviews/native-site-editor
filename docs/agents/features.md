@@ -177,7 +177,7 @@ its number unused.
 - Files: `src/components/pages-tree.ts`, `src/components/pages-tree.css`, `src/controllers/pages-controller.ts`, `src/controllers/pages-state.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-pages-look.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-01.json`
 
 ### F-pages-02 Open a page
 - Try: Click a page in Pages, or follow a link in the preview.
@@ -233,7 +233,7 @@ its number unused.
 - Files: `src/controllers/files-tree-controller.ts`, `src/components/files-tree.css`, `src/components/file-type-icons.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-files-tab.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-08.json`
 
 ### F-pages-09 New file or folder
 - Try: Press + New in Files and make a stylesheet and a folder.
@@ -281,7 +281,7 @@ its number unused.
 - Files: `src/components/site-settings.ts`, `src/page-builder/site-identity.ts`, `src/page-builder/site-address-rewrite.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-site-settings.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-14.json`
 
 ### F-pages-15 Navigation
 - Try: Open Navigation and rename, reorder and add pages and an outside link.
@@ -363,7 +363,7 @@ its number unused.
 - Files: `src/page-builder/add-panel.ts`, `src/page-builder/add-catalog.ts`, `src/page-builder/thumbnail.ts`, `src/components/insert-controls.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-add-panel.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-canvas-08.json`
 
 ### F-canvas-09 Add a list item or card
 - Try: Hover a list or grid and press the Add after its last item.
@@ -511,7 +511,7 @@ its number unused.
 - Files: `src/components/page-structure.ts`, `src/components/page-structure.css`, `src/native-structure.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-page-structure.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-structure-01.json`
 
 ### F-structure-02 Edit text in a row
 - Try: Click a row once, then again; or press Enter on it.
@@ -527,7 +527,7 @@ its number unused.
 - Files: `src/page-builder/tree-drop.ts`, `src/components/structure-follow.ts`
 - Phone: no
 - Spec: `tests/native-save/native-structure-drag.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-structure-03.json`
 
 ### F-structure-04 Row menu and keys
 - Try: Open a row's ⋯ or right-click it; press Delete and Alt+Down on a focused row.
@@ -659,7 +659,7 @@ its number unused.
 - Files: `src/page-builder/media-library-view.ts`, `src/page-builder/media-library-shell.ts`, `src/page-builder/media-library-grid.ts`, `src/page-builder/media-picker.css`
 - Phone: yes
 - Spec: `tests/native-save/native-media-tab.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-01.json`
 
 ### F-media-02 Search and Filter
 - Try: Type in the search, then pick a kind in Filter.
@@ -667,7 +667,7 @@ its number unused.
 - Files: `src/page-builder/media-library-filter.ts`, `src/page-builder/media-library-input.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-search-pause.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-02.json`
 
 ### F-media-03 Add media
 - Try: Press + or drop pictures, a video and a PDF onto Media.
@@ -691,7 +691,7 @@ its number unused.
 - Files: `src/page-builder/media-library-details.ts`, `src/page-builder/media-file-details.ts`, `src/page-builder/media-detail.css`
 - Phone: yes
 - Spec: `tests/native-save/native-media-screen.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-05.json`
 
 ### F-media-06 Usage
 - Try: Hover or tap a tile's usage, then a page name.
@@ -731,7 +731,7 @@ its number unused.
 - Files: `src/page-builder/media-library-shell.ts`, `src/page-builder/media-collection-choices.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-tiles.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-10.json`
 
 ### F-media-11 Remove and Recently removed
 - Try: Remove a used file, then restore it from Recently removed.
@@ -747,7 +747,7 @@ its number unused.
 - Files: `src/page-builder/media-library-clean-up.ts`, `src/page-builder/media-clean-up.ts`, `src/page-builder/media-clean-up-review.ts`, `src/page-builder/media-clean-up-menu.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-cleanup.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-12.json`
 
 ### F-media-13 Improve images
 - Try: Open More and choose Improve images.
@@ -755,7 +755,7 @@ its number unused.
 - Files: `src/page-builder/media-library-improve.ts`, `src/page-builder/improve-images.ts`, `src/page-builder/improve-heavy.ts`, `src/page-builder/improve-images-run.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-improve-images.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-13.json`
 
 ### F-media-14 Optimise before adding
 - Try: Drop a large photo and choose Review… to open Optimise.
@@ -779,7 +779,7 @@ its number unused.
 - Files: `src/page-builder/media-picker.ts`, `src/page-builder/media-place.ts`, `src/page-builder/media-picker-close.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-picker.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-16.json`
 
 ### F-media-17 Image popup: shape and focus point
 - Try: Double-click a picture on the page, pick Square and move the focus dot.
@@ -787,7 +787,7 @@ its number unused.
 - Files: `src/page-builder/image-popup.ts`, `src/page-builder/image-popup-view.ts`, `src/page-builder/image-popup-rules.ts`, `src/page-builder/shape-menu.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-image-popup.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-17.json`
 
 ### F-media-18 Image popup: trim, zoom and turn
 - Try: In the popup choose Free, zoom in, turn, and open the large editor.
@@ -985,7 +985,7 @@ its number unused.
 - Files: `src/components/publish-menu.ts`, `src/components/publish-menu.css`, `src/controllers/save-publish-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-save.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-publish-01.json`
 
 ### F-publish-02 Save to GitHub
 - Try: Edit, then Publish.

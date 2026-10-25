@@ -1,0 +1,1 @@
+{"screen":"site-settings","name":"F-pages-14","steps":["expect visible \"Site name\"","expect visible \"Site address\""]}

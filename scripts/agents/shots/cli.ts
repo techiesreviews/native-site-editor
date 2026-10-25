@@ -7,6 +7,8 @@ import { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } from "../kit-lib.m
 import { findingsSections } from "./findings-list";
 import { contactOutput, parseArgs, parseSteps, screens, type Shot } from "./core";
 
+const featuresFolder = "scripts/agents/shots/features";
+
 const help = `Usage: kit shots <screen...> [--width 390,1280] [--theme light|dark] [--out dir] [--files]
        kit shots --steps .scratch/scenario.json|yaml [matrix flags] [--out dir]
        kit shots --spec .scratch/example.spec.ts [--out dir]
@@ -16,12 +18,16 @@ No screen: list screens and fail. Default matrix: 390,768,1280 x light,dark.
 Contact sheets first: at most 1600 x 2400 px, 300 KB each; whole rows split into contact-N.webp.
 --files lists every file path; default prints only the file count and index.json.
 Default output: <kitMainRoot>/.scratch/shots/<owner>/<YYYYMMDD-HHMMSS>/.
-Steps files must resolve under this checkout's or main checkout's .scratch/.
+Steps files must resolve under this checkout's or main checkout's .scratch/,
+or this checkout's ${featuresFolder}/ (feature tries; kit ux runs them).
 JSON: {"screen":"media-gallery","steps":["hover first tile"],"name":"after"}
 YAML subset: one mapping with screen/name scalars and an indented steps list;
 plain, single-quoted or JSON double-quoted strings, comments on separate lines.
 Steps: click "<name>"; type "<text>" in <label>; hover first|last|nth N tile;
-hover "<name>"; press <key>; scroll down|up; wait for "<text>".
+hover "<name>"; press <key>; scroll down|up; wait for "<text>";
+drag "<name>" to "<target>" [edge top|bottom|left|right] (pointer to 3 px inside that edge);
+record <name> <ms> (8 frames over 100-9999 ms, saved as <shot>-<name>-strip.webp);
+expect visible "<text>" (fails the try: expect visible "<text>" failed: nothing visible says "<text>").
 nth is 1-based. 'search' means the searchbox. Button names can match a substring.
 Before/after: use name "before" and "after" with the same screen, width, theme
 and --out across runs; contact sheet includes both. Each screen retries at most once.
@@ -43,12 +49,12 @@ async function run(command: string, args: string[], env: NodeJS.ProcessEnv, diag
   } finally { signals.forEach((signal, index) => process.off(signal, handlers[index])); }
 }
 
-async function scratchFile(file: string, checkouts: string[] = [kitRoot(), kitMainRoot()]) {
+async function scratchFile(file: string, folders: string[] = [join(kitRoot(), ".scratch"), join(kitMainRoot(), ".scratch")], refusal = "Scenario file must live under .scratch/") {
   const path = await realpath(resolve(file));
-  const roots = await Promise.all(checkouts.map(async root => {
-    try { return await realpath(join(root, ".scratch")); } catch { return join(root, ".scratch"); }
+  const roots = await Promise.all(folders.map(async folder => {
+    try { return await realpath(folder); } catch { return folder; }
   }));
-  if (!roots.some(root => { const part = relative(root, path); return part && !part.startsWith("..") && !isAbsolute(part); })) throw new Error("Scenario file must live under .scratch/");
+  if (!roots.some(root => { const part = relative(root, path); return part && !part.startsWith("..") && !isAbsolute(part); })) throw new Error(refusal);
   return path;
 }
 
@@ -64,11 +70,12 @@ async function main() {
     out = resolve(options.out ?? join(kitMainRoot(), ".scratch/shots", owner, stamp));
     let scenarios = options.screens.map(screen => ({ screen, steps: [] as string[] }));
     if (options.steps) {
-      const file = await scratchFile(options.steps);
+      // Committed feature tries live beside the scratch scenarios.
+      const file = await scratchFile(options.steps, [join(root, ".scratch"), join(kitMainRoot(), ".scratch"), join(root, featuresFolder)], `Scenario file must live under .scratch/ or ${featuresFolder}/`);
       if (!/\.(json|ya?ml)$/.test(file)) throw new Error("--steps accepts .json, .yaml or .yml");
       scenarios = [parseSteps(await readFile(file, "utf8"), /\.ya?ml$/.test(file))];
     }
-    const spec = options.spec ? await scratchFile(options.spec, [root]) : undefined;
+    const spec = options.spec ? await scratchFile(options.spec, [join(root, ".scratch")]) : undefined;
     if (spec && !spec.endsWith(".spec.ts")) throw new Error("--spec needs a .spec.ts file");
     const fixture = await realpath(process.env.ASE_NATIVE_SAVE_FIXTURE ?? join(homedir(), "Projects/native-site-editor-starter"));
     if (!(await stat(fixture)).isDirectory()) throw new Error(`Fixture missing: ${fixture}`);

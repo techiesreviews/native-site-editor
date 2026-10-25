@@ -1,0 +1,1 @@
+{"screen":"pages","name":"F-pages-01","steps":["expect visible \"New page\"","expect visible \"About\""]}

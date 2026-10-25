@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expandMatrix, makeIndex, type Options, type Scenario, type Shot } from "./core";
 import { runScenario } from "./scenarios";
-import { runStep } from "./steps";
+import { frameStrip, runStep } from "./steps";
 import { checkLayout } from "./layout-check";
 import { smallWebp, writeContacts, writeIndex } from "./output";
 
@@ -29,19 +29,26 @@ test("named screens on the real starter", { tag: "@actual" }, async ({ browser, 
           failingStep = name;
           return test.step(name, action);
         };
+        const stem = `${scenario.screen}${scenario.name ? `-${scenario.name}` : ""}-${width}-${theme}`;
+        const strips: Shot["files"] = [];
+        const record = async (name: string, frames: Buffer[]) => {
+          const webp = await frameStrip(encoder, frames);
+          const path = `${stem}-${name}-strip.webp`;
+          await writeFile(join(out, path), webp);
+          strips.push({ path, bytes: webp.length });
+        };
         try {
           await runScenario(page, scenario.screen, step);
-          for (const source of scenario.steps) await step(source, () => runStep(page, source));
+          for (const source of scenario.steps) await step(source, () => runStep(page, source, record));
           await step("fonts ready", () => page.evaluate(() => document.fonts.ready.then(() => {})));
           shot.layout = await step("checkLayout", () => checkLayout(page));
-          const stem = `${scenario.screen}${scenario.name ? `-${scenario.name}` : ""}-${width}-${theme}`;
           const png = await step("screenshot", () => page.screenshot({ fullPage: true, animations: "disabled" }));
           shot.height = png.readUInt32BE(20);
           await writeFile(join(out, `${stem}.png`), png);
           shot.files = [{ path: `${stem}.png`, bytes: png.length }];
           const webp = await step("encode WebP", () => smallWebp(encoder, png, 40_000));
           await writeFile(join(out, `${stem}.webp`), webp);
-          shot.files.push({ path: `${stem}.webp`, bytes: webp.length });
+          shot.files.push({ path: `${stem}.webp`, bytes: webp.length }, ...strips);
           shot.ok = true;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
