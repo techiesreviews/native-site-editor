@@ -81,9 +81,12 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 - **Use:** `to-tickets`; a build folder in the style of
   [the clean-up build](../wayfinder/clean-up-before-features/build/README.md): README with rules,
   gates and waves; one slice per ticket with size, Files, Done when, kit commands and the evidence
-  its builder reports; a visible ticket follows the [UX rulebook](ux-rulebook.md). **Planned:** `triage` groups new problems (Lex's feedback, sweep findings,
-  failing tests) by shared cause so one builder takes a whole group
-  ([factory 06](../wayfinder/software-factory/tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22)).
+  its builder reports; a visible ticket follows the [UX rulebook](ux-rulebook.md). `triage` sorts new problems (Lex's feedback, sweep findings,
+  failing tests) before hand-out
+  ([factory 06](../wayfinder/software-factory/tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22)):
+  when two or more new tickets share a cause and touch the same files, give each `group: <slug>`
+  and list the group in one row of the build README; `kit next` then hands the whole group to one
+  builder. Tickets that only sit in the same area stay apart.
 - **Decides:** the lead; choices Lex should see are marked "Check with Lex".
 - **Done when:** `node scripts/agents/tickets.mjs check` passes and the frontier shows the first wave.
 
