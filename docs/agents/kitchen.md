@@ -124,9 +124,10 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
   pins above. A visible change also gets the Opus UX review of its contact sheet; **planned** as a
   kit command ([factory 02](../wayfinder/software-factory/tickets/02-grill-ux-confidence-ladder.md#resolution-2026-10-22)).
 - **Decides:** the lead weighs each finding; a rejected finding is written down with its reason.
-- **Evidence:** the main root's `.scratch/reviews/<owner>/<time>/`; decisions in the ticket's Done.
-  **Planned:** findings recorded by kind (real fault, mismatch with the ticket, timing/race, style)
-  ([factory 04](../wayfinder/software-factory/tickets/04-grill-scoreboard.md#resolution-2026-10-22)).
+- **Evidence:** the main root's `.scratch/reviews/<owner>/<time>/`, with `findings.json` listing each
+  finding's kind (real fault, mismatch with the ticket, timing/race, style) and the builder's declined
+  findings with reasons ([factory 04](../wayfinder/software-factory/tickets/04-grill-scoreboard.md#resolution-2026-10-22));
+  decisions in the ticket's Done.
 - **Done when:** the `kit pr` gate has nothing blocking.
 
 ### 9. Land
