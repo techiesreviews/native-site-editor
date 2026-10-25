@@ -2,7 +2,7 @@
 title: Mock up several agents working while Lex works
 type: prototype (HITL)
 status: open
-assignee:
+assignee: Lex + claude (prototype)
 blocked_by: [05-grill-several-agents-at-once, 06-grill-asking-with-a-pin]
 ---
 
