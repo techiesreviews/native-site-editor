@@ -276,6 +276,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
         navigation: (path) => { ports.element("explorer-toggle").focus(); void ports.openNativeNavigation(path); },
         canAddToNavigation: () => Boolean(ports.nativeNavigationTarget(ports.runtime.site?.routes["/"])),
         planUrl: (target, value) => (target.file ? pageActions!.urlPlan(target.file, value) : { ok: false, error: "This row has no page." }),
+        typedUrl: (target, text, typing) => (target.file ? pageActions!.urlTyped(target.file, text, typing) : text),
         changeUrl: (target, value, keep) => (target.file ? pageActions!.changeUrl(target.file, value, keep) : Promise.resolve("This row has no page.")),
         moveTo: (target) => void pageActions!.moveTo(target),
         dropProblem: (source, parent) => pageActions!.dropProblem(source, parent),

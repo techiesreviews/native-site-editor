@@ -329,6 +329,16 @@ test("a page, a subpage under it and another are made in place as folders of the
   await expect(slug).toHaveValue("about-");
   await title.focus();
   await expect(slug).toHaveValue("about");
+  // While an accent is being composed the field waits; it converts when the composition ends.
+  await slug.fill("");
+  await slug.evaluate((field: HTMLInputElement) => {
+    field.dispatchEvent(new CompositionEvent("compositionstart"));
+    field.value = "Cafe\u0301";
+    field.dispatchEvent(new InputEvent("input", { isComposing: true }));
+  });
+  await expect(slug).toHaveValue("Cafe\u0301");
+  await slug.evaluate((field) => field.dispatchEvent(new CompositionEvent("compositionend")));
+  await expect(slug).toHaveValue("cafe");
   await slug.fill("second-take");
   await title.fill("Another title");
   await expect(editRow(page).locator(".pages-edit__message")).toBeEmpty();

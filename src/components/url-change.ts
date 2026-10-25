@@ -48,8 +48,8 @@ export function convertWhileTyping(input: HTMLInputElement, convert: (text: stri
 /**
  * A page's URL, editable: the field, what the typed URL would do (checked as
  * typed), and "Keep the old URL working" when the page is live. Enter
- * applies, Escape cancels. The Page block of the sidebar and the Pages tab
- * both use it.
+ * applies, Escape cancels. Page settings and the Pages tab use it (and the
+ * sidebar's Page block, hidden while Page settings is there).
  */
 export function createUrlChange(options: {
   /** The label shown before the field (none: the field is labelled by `ariaLabel` only). */
@@ -63,6 +63,8 @@ export function createUrlChange(options: {
   cancel: () => void;
   /** Shows Cancel and Change URL buttons under the message (the Pages tab). */
   buttons?: boolean;
+  /** The typed text made to meet the address rule (`typing`: more is coming); without it, only the folders of the URL now are known. */
+  convert?: (text: string, typing: boolean) => string;
 }) {
   const id = `url-change-${++serial}`;
   const form = node("form", "url-change");
@@ -107,8 +109,9 @@ export function createUrlChange(options: {
   let pending = false;
   keep.addEventListener("change", () => { keepTouched = true; });
 
-  // The URL typed, made to meet the address rule; the page's URL now stays as it is.
-  const convert = (text: string, typing = false) => toPageRoute(text, { kept: initial.split("/"), typing });
+  // The URL typed, made to meet the address rule; folders the site has stay as they are.
+  const convert = (text: string, typing = false) => options.convert?.(text, typing)
+    ?? toPageRoute(text, { starts: (start) => initial.slice(1).startsWith(start), own: initial.split("/").filter(Boolean).at(-1) }, { typing });
 
   function check() {
     const planned = options.plan(convert(input.value));

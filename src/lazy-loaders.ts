@@ -85,6 +85,7 @@ export function createLazyLoaders(ports: LazyLoadersPorts) {
       appStore, guardedEdits: ports.guardedEdits, nativeAssets: runtime.state.assets, setupScope,
       nativePageLabelOf: (file) => ports.pagesController.pageLabel(file),
       nativeUrlPlan: (file, value) => ports.pagesAndFiles.pageActions!.urlPlan(file, value),
+      nativeUrlTyped: (file, text, typing) => ports.pagesAndFiles.pageActions!.urlTyped(file, text, typing),
       changeNativeUrl: (file, value, keep, since, baseline) => ports.pagesAndFiles.pageActions!.changeUrl(file, value, keep, since, baseline),
       restoreFile: (path, epoch) => ports.restoreFile(path, stampOf(epoch)), nativeSiteReadForCreate,
       choosePath: (place, accept) => ports.mediaController.choosePath(place, undefined, accept), nativeEffectiveSource: path => runtime.source(path), loadNativeAssets,

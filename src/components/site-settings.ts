@@ -24,6 +24,8 @@ export interface SiteSettingsHandlers {
   prefix: () => string;
   applyPage: (path: string, fields: Partial<Record<HeadField, string>>, socialTrim?: MediaTrim) => Promise<string | undefined>;
   planUrl: (path: string, value: string) => UrlPlan;
+  /** The URL typed for the page `path` as its field shows it, made to meet the address rule (`typing`: more is coming). */
+  typedUrl?: (path: string, text: string, typing: boolean) => string;
   applyUrl: (path: string, value: string, keep: boolean) => Promise<string | undefined>;
   /** `confirm`: asks in the dialog before Apply goes on (a new address's folder moves the site's links); false on Cancel. */
   applySite: (values: SiteSettingsValues, confirm?: (message: string) => Promise<boolean>) => Promise<string | undefined>;
@@ -325,6 +327,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const url = createUrlChange({
         label: "URL", ariaLabel: "URL", initial: options.route, buttons: true,
         plan: (value) => handlers.planUrl(options.path, value),
+        ...(handlers.typedUrl ? { convert: (text: string, typing: boolean) => handlers.typedUrl!(options.path, text, typing) } : {}),
         apply: async (value, keep) => {
           const fieldsChanged = title.value !== values.title || description.value !== values.description || socialTitle.value !== initialSocialTitle || socialDescription.value !== initialSocialDescription || titleLink.checked !== initialTitleLink || descriptionLink.checked !== initialDescriptionLink || image.value !== values["og:image"] || canonical.value !== values.canonical || hidden.checked !== /\b(noindex|none)\b/i.test(values.robots) || theme.value !== values["theme-color"];
           if (fieldsChanged) return "Apply page details before changing the URL, so those edits are kept.";

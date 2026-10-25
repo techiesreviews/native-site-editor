@@ -84,6 +84,8 @@ export function createPagesTree(options: {
   canAddToNavigation?: () => boolean;
   /** What changing a page's URL to the typed value does. */
   planUrl?: (target: NativePagesTarget, value: string) => UrlPlan;
+  /** The URL typed for a page as its field shows it, made to meet the address rule (`typing`: more is coming). */
+  typedUrl?: (target: NativePagesTarget, text: string, typing: boolean) => string;
   /** Changes a page's URL; resolves to an error message, or nothing when done. */
   changeUrl?: (target: NativePagesTarget, value: string, keep: boolean) => Promise<string | undefined>;
   /** Move to…: the caller asks where. */
@@ -440,6 +442,7 @@ export function createPagesTree(options: {
       initial: page.route,
       buttons: true,
       plan: (value) => options.planUrl!(target, value),
+      ...(options.typedUrl ? { convert: (text: string, typing: boolean) => options.typedUrl!(target, text, typing) } : {}),
       apply: async (value, keep) => {
         const error = await options.changeUrl!(target, value, keep);
         if (!error && !done) { done = true; cancelUrl(false); }
