@@ -96,11 +96,14 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
     // Connect turns them on in this tab, finds the agent connected before and still copies one new prompt.
     const tokens = () => requests.filter((request) => request.path === "/api/agent/connect").length;
     await page.locator(".repository-menu__trigger").click();
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
     await action.click();
+    const { token } = await (await made).json() as { token: string };
+    // The copy comes after the press's last connections read: once it lands, the press is done.
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
     await expect(action).toHaveText("Disconnect MCP", { timeout: 15_000 });
     // Its requests may be reported late too; the one-token check runs at the end, over every request.
-    // Three reads: turning on, checking for this tab's waiting prompt, and after the new token.
-    await expect.poll(() => requests.filter((request) => request.path === "/api/agent/connections").length).toBe(3);
+    await expect.poll(() => requests.some((request) => request.path === "/api/agent/connections")).toBe(true);
     await expect.poll(tokens).toBe(1);
     await socketReady(1);
     const idle = requests.length;

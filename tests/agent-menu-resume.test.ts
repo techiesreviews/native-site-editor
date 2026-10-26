@@ -68,7 +68,9 @@ for (const how of ["switch", "destroy", "disconnect"] as const) {
 
 // The agent menu's Connect to MCP press with agents off (turnOn): the connection is found
 // reconnecting, its retry leaves the menu `after`, and the press then prompts, copies or is stuck.
-function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "connected" | "reconnecting") {
+// "other-owner": another tab of this browser holds the socket and an agent uses the site's connection;
+// "taken-over": another tab holds it with no connection of the site at all.
+function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "connected" | "other-owner" | "taken-over" | "reconnecting") {
   let site = "main", pinned = "", activation = 0, remote = false, retried = false;
   const writes: string[] = [];
   const live = (at: number) => remote && activation === at && site === pinned;
@@ -81,7 +83,8 @@ function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "
     state: () => retried ? after : "reconnecting",
     retry: race.port("retry", async () => { retried = true; }),
     retryWaits: () => false,
-    waits: now => now === "waiting",
+    offer: now => now === "waiting" ? "wait" : now === "connected" || now === "other-owner" ? "disconnect" : "connect",
+    fresh: now => now === "idle" || now === "other-owner" || now === "taken-over",
     prompt: async () => { writes.push("POST /api/agent/connect"); },
     copyAgain: async () => { writes.push("copy"); },
     stuck: () => { writes.push("stuck"); },
@@ -99,8 +102,9 @@ function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "
 }
 
 test("Connect to MCP finding a reconnect: undisturbed, it retries and then prompts, copies again or shows the press stuck", async () => {
-  // Connected (an agent already uses the site's connection): the press still copies a prompt.
-  for (const [after, write] of [["idle", "POST /api/agent/connect"], ["waiting", "copy"], ["connected", "copy"], ["reconnecting", "stuck"]] as const) {
+  // An agent already uses the site's connection (here or in the tab holding the socket): the press
+  // still copies a prompt; another tab holding it with nothing connected: a new prompt.
+  for (const [after, write] of [["idle", "POST /api/agent/connect"], ["waiting", "copy"], ["connected", "copy"], ["other-owner", "copy"], ["taken-over", "POST /api/agent/connect"], ["reconnecting", "stuck"]] as const) {
     const run = press({ port: (_name, work) => work }, after);
     await run.done;
     assert.deepEqual(run.writes, [write], after);
@@ -109,7 +113,7 @@ test("Connect to MCP finding a reconnect: undisturbed, it retries and then promp
 
 for (const how of ["off", "switch", "again"] as const) {
   test(`Connect to MCP finding a reconnect: a ${how} at any await makes no prompt, no copy and no stuck dot`, async () => {
-    for (const after of ["idle", "waiting", "connected", "reconnecting"] as const) {
+    for (const after of ["idle", "waiting", "connected", "other-owner", "taken-over", "reconnecting"] as const) {
       const points = await forEachAwait(race => press(race, after), run => run.disturb(how), run => {
         assert.deepEqual(run.writes, [], `${after}: nothing written after the ${how}`);
       });

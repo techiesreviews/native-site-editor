@@ -29,11 +29,12 @@ export async function resumeAgents(ports: {
 /**
  * Connect to MCP with remote agents off: turns them on, reads the connections, opens the socket,
  * and, finding a reconnect left from before the press, retries it at once rather than waiting out
- * its backoff. Then it makes a prompt (idle), copies the waiting one again (also when an agent
- * already uses the site's connection: the press still hands over a prompt, this tab's own if it
- * still waits, otherwise a new one), or, still reconnecting with no recorded retry time to wait
- * for, marks the press stuck. A turn-off, another turn-on or a site move while it waits ends it
- * with no write.
+ * its backoff. Then it branches on what the button would offer, as the menu's own press does:
+ * Wait for MCP or Disconnect MCP (a token waits, or an agent already uses the site's connection,
+ * in this tab or another tab that holds the socket) copies a prompt again, this tab's own if it
+ * still waits, otherwise a new one; Connect to MCP makes a new prompt when idle or when another
+ * tab receives, or, still reconnecting with no recorded retry time to wait for, marks the press
+ * stuck. A turn-off, another turn-on or a site move while it waits ends it with no write.
  */
 export async function turnOnAgents(ports: {
   /** Turns remote agents on for the open site and returns this activation. */
@@ -52,8 +53,10 @@ export async function turnOnAgents(ports: {
   retry(): Promise<void>;
   /** Whether a recorded retry time is still ahead (the button waits for it). */
   retryWaits(): boolean;
-  /** Whether the button offers Wait for MCP in `state`. */
-  waits(state: string): boolean;
+  /** What the button offers in `state`. */
+  offer(state: string): "connect" | "wait" | "disconnect";
+  /** Whether a press offering Connect to MCP in `state` makes a new prompt (idle, another tab receives). */
+  fresh(state: string): boolean;
   /** Makes a new prompt. */
   prompt(): Promise<void>;
   /** Copies this tab's waiting prompt again, or makes a new one. */
@@ -69,8 +72,8 @@ export async function turnOnAgents(ports: {
   if (ports.state() === "reconnecting") await ports.retry();
   if (!ports.live(at)) return;
   const now = ports.state();
-  if (now === "idle") await ports.prompt();
-  else if (now === "connected" || ports.waits(now)) await ports.copyAgain();
+  if (ports.offer(now) !== "connect") await ports.copyAgain();
+  else if (ports.fresh(now)) await ports.prompt();
   else if (now === "reconnecting" && !ports.retryWaits()) ports.stuck();
 }
 
