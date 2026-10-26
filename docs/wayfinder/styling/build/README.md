@@ -27,7 +27,7 @@ Find takeable slices with `node scripts/agents/tickets.mjs frontier styling`.
 
 ## Gate
 
-**Nothing here starts before the [site structure build](../../site-structure/build/README.md)'s last release** (Lex's order: agents and multiplayer, catalogue, detail pass, site quality, site structure, then this). The exception, if Lex agrees (question 1), is stages 1 and 2, which would start right after the catalogue release.
+**Nothing here starts before the [site structure build](../../site-structure/build/README.md)'s last release** (Lex's order: agents and multiplayer, catalogue, detail pass, site quality, site structure, then this). The exception (Lex, 2026-10-26) is stages 1 and 2, which start right after the catalogue release, beside the detail pass.
 
 This build also leans on other maps' slices. `blocked_by` can't point to another map, so each slice names them in its text and the lead checks them before claiming:
 
@@ -143,6 +143,8 @@ The frontier decides; this is one order that keeps to the rules.
 - **Phone (30):** the panel opens as a bottom sheet with the same controls in one column. The prototypes were desktop only, so `kit shots` at 390 shows Lex at the end check (question 3).
 
 ## Questions for Lex (asked at hand-off)
+
+Lex answered all three on 2026-10-26: as recommended.
 
 1. **Start the Components fixes earlier?** They fix your list from 2026-10-15 and need only the catalogue's rebuilt Components screens (slice 64). Recommendation: let stages 1 and 2 start right after the catalogue release, beside the detail pass. The panel waits its turn.
 2. **The rem / px / em setting: per person or per site?** Recommendation: per person, kept in your browser like the canvas width. rem is the right default for every site, and the unit is only a typing shortcut: what gets saved is written out in full either way.
