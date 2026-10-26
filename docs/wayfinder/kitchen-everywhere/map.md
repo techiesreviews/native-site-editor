@@ -21,7 +21,7 @@ A decided and ticketed plan for running every one of Lex's code projects the way
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
-- [Decide how the kitchen reaches other projects](tickets/01-grill-how-the-kitchen-is-copied.md#resolution-2026-10-26): one shared kit in its own repo, every project always on the newest; `kit init` only sets up; no OpenAI reviews, second opinions from Grok (one count for the computer, weekly usage view) and free OpenCode; one shared rulebook plus per-project extras
+- [Decide how the kitchen reaches other projects](tickets/01-grill-how-the-kitchen-is-copied.md#resolution-2026-10-26): one shared kit in its own repo, every project always on the newest; `kit init` only sets up; no OpenAI reviews; every change gets a second look from the newest fit model per review kind (code, UX, DX, agent), Grok or free OpenCode, Grok counted once for the computer with a weekly usage view; one shared rulebook plus per-project extras
 
 ## Not yet specified
 

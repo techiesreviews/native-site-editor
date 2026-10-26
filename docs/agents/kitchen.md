@@ -37,7 +37,7 @@ review needs `ASE_REVIEW_MODEL` only for the second opinions below; `kit slice` 
 | Review, every change | `claude-opus-5-5`, medium | default (`kit review`), fresh read-only session |
 | Second opinion: final version of a big, delicate slice, once | off since 2026-10-26: no OpenAI reviews (Lex); use Grok | was `ASE_REVIEW_MODEL=gpt-6.1-sol kit review --ticket <t>` |
 | Second opinion: routine, and the weekly sample of 2–3 Claude-approved slices | off since 2026-10-26: no OpenAI reviews (Lex); use Grok | was `ASE_REVIEW_MODEL=gpt-6-luna kit review` |
-| Second opinion: other family | `grok-4.7` | `ASE_REVIEW_MODEL=grok-4.7 kit review --ticket <t>`; free OpenCode reviews wait on a kit path ([kitchen-everywhere 01](../wayfinder/kitchen-everywhere/tickets/01-grill-how-the-kitchen-is-copied.md#resolution-2026-10-26)) |
+| Second look, every change, after Claude's review | newest fit model per review kind (code, UX, DX, agent): `grok-4.7` or a free OpenCode model | Grok: `ASE_REVIEW_MODEL=grok-4.7 kit review --ticket <t>`; free OpenCode reviews wait on a kit path ([kitchen-everywhere 01](../wayfinder/kitchen-everywhere/tickets/01-grill-how-the-kitchen-is-copied.md#resolution-2026-10-26)) |
 | UX and design review | `claude-opus-5-5`, medium | see Review |
 
 Sol never builds. `kit review` counts GPT and Grok reviews per week and refuses at the limit;
