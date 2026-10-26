@@ -34,15 +34,18 @@ A build plan for a new way to see and shape a site:
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Decide how the site map looks and behaves](tickets/04-grill-map-behaviour.md#resolution-2026-10-26): same-size top-screen tiles, four zoom levels, only the selected page's links, names then pictures, snapdom now; a site overview card with score filters
+- [Decide how pages are rearranged and added in the map](tickets/05-grill-rearranging.md#resolution-2026-10-26): drag onto a page moves it through Change URL with Undo; reasons on the tile; alphabetical order; add in place and stay in the map
+- [Decide how search in Pages and files works](tickets/06-grill-search.md#resolution-2026-10-26): one grouped list across Pages, Media and Files; lights up pages in the map; one shared matcher, word starts first, middle letters too
+- [Decide the project overview's scope and order](tickets/07-grill-project-overview.md#resolution-2026-10-26): GitHub first, list in IndexedDB keyed like WorkspaceScope; every visit starts there; hidden after Sign out; Not opened yet cards; one ring per card
+- [Prototype the site map](tickets/08-prototype-site-map.md#resolution-2026-10-26): Lex: "looks good"; the prototype is the build's reference
 - [Find how a zoomable map can show real pages](tickets/01-research-zoomable-map.md#resolution-2026-10-26): pictures, not live frames (0.34 GB vs 2.3 GB at 500 pages); four zoom levels, live page only up close (max 3); pictures taken in the page's own frame, stored in IndexedDB; the catalogue board becomes a shared lazy `src/board/`
 - [Find what rearranging and search need from today's code](tickets/02-research-structure-and-search.md#resolution-2026-10-26): moving is built (Pages drag via Change URL); map needs stay-in-map add and full move check; links cheap but too many to draw; search needs no index, one shared matcher
 - [Find what building the project overview takes now](tickets/03-research-project-overview.md#resolution-2026-10-26): build for GitHub first, project list in IndexedDB keyed like WorkspaceScope; pictures from the preview frame; one ring per card; 16 local-folders details overtaken
 
 ## Not yet specified
 
-- **Links between pages in the map:** show which page links to which (menu, in-text links), or only the parent/child tree.
 - **Very large sites:** how the map behaves with hundreds of pages, or blog posts in bulk.
-- **Order against local folders:** the overview replaces the sign-in screen in the local-folders design. Does map 5 build the overview for GitHub projects first and local folders add theirs, or does local folders come first?
 
 ## Out of scope
 
