@@ -1,8 +1,8 @@
 ---
 title: Decide how the kitchen reaches other projects
 type: grilling (HITL)
-status: open
-assignee:
+status: closed
+assignee: Lex + claude (grilling)
 blocked_by: []
 ---
 
@@ -33,3 +33,22 @@ Ask Lex one at a time, each with the recommended answer:
    - A: one shared rulebook plus a short per-project extras file.
    - B: each project keeps its own full copy.
    - **Recommended: A**, as `docs/agents/runner-extras-template.md` already does for build slices.
+
+## Comments
+
+- 2026-10-26, with Lex:
+  - **How a project gets the kitchen:** one shared kit (recommended).
+  - **Where it lives:** its own repo (recommended).
+  - **Updates:** "Always the newest", not the recommended pinned version.
+  - **Review budget:** "We can use grok, but not openai any more, unless it's a way cheaper plan. I am using gpt to create assets and that sort of things. So reviewing will reach my limit fast, while I need to use it for other things as well. I am not clear as to how the usage will be in the end." Follow-up on counting Grok: one count for the computer with a weekly usage view, "and use opencode".
+  - **Rulebook:** one shared rulebook plus a per-project extras file (recommended).
+
+## Resolution (2026-10-26)
+
+Decided with Lex:
+
+1. **One shared kit that every project pulls.** Each project keeps only its own commands (like `specs`, `shots`, `preview`) and one settings file. A small `kit init` only writes the settings file, hooks and docs stubs; it does not copy the kit.
+2. **The shared kit lives in its own repo** (for example `techiesreviews/agent-kit`). This editor becomes one of its users and its first one, so the editor's commands keep working the same.
+3. **Every project always runs the newest shared kit.** No pinned versions and no "N versions behind". A bad kit change reaches every project at once, so the kit repo's own checks, and a run against this editor, gate each kit change before it lands; going back is a revert in the kit repo. [Ticket 04](04-research-how-projects-pull-the-kit.md) compares ways to pull with this in mind (no per-project pin needed).
+4. **Reviews: no OpenAI models any more** (Sol and Luna), unless a much cheaper plan comes along; Lex's GPT plan is kept for making assets. Second opinions go to Grok and the free OpenCode model. Grok is counted once for the whole computer with a weekly cap, and the weekly sweep shows how many Grok reviews were used, so the cap can be set from real use. `kit review` has no OpenCode path yet; adding one is a build ticket. The rulebook's Sol and Luna rows in [kitchen.md](../../../agents/kitchen.md) are marked off from today.
+5. **One shared rulebook plus a short per-project extras file**, as `docs/agents/runner-extras-template.md` already does for build slices.

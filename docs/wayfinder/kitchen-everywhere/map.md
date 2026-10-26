@@ -12,7 +12,7 @@ A decided and ticketed plan for running every one of Lex's code projects the way
 ## Notes
 
 - **Source:** [Copying the kitchen to Lex's other projects](../software-factory/research/70-copy-the-kitchen.md) (2026-10-25): which kit commands are neutral and which are the editor's own, what each assumes, Lex's projects today, and three ways compared.
-- **Recommended way:** one shared kit that every project pulls, with a small `kit init` to set a project up; a version pinned per project and updated on purpose. Ticket 01 asks Lex.
+- **Recommended way:** one shared kit that every project pulls, with a small `kit init` to set a project up; a version pinned per project and updated on purpose. Lex chose the shared kit but with every project always on the newest (ticket 01).
 - **Why now:** `chat`, `techies-playground` and `techies-reviews` already run hand copies from about 2026-10-17 that missed 127 kit commits; none has the hooks, `slice`, `pr`, `next` or the rulebook.
 - **Planning only.** No build tickets until Lex has answered the grilling tickets; the build plan is handed off at the end, like [the factory's](../software-factory/tickets/08-handoff-plan.md).
 - **Lex is the head chef:** ask in plain words with file pointers and a recommended answer. `lex-coding` and Agent Kit (`scripts/agents/kit`) apply to every coding step; this repo stays the kit's first user, so the editor's own commands (`shots`, `specs`, `size`, `preview`, `ux` tries) keep working the same.
@@ -21,6 +21,7 @@ A decided and ticketed plan for running every one of Lex's code projects the way
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Decide how the kitchen reaches other projects](tickets/01-grill-how-the-kitchen-is-copied.md#resolution-2026-10-26): one shared kit in its own repo, every project always on the newest; `kit init` only sets up; no OpenAI reviews, second opinions from Grok (one count for the computer, weekly usage view) and free OpenCode; one shared rulebook plus per-project extras
 
 ## Not yet specified
 

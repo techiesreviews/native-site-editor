@@ -35,9 +35,9 @@ review needs `ASE_REVIEW_MODEL` only for the second opinions below; `kit slice` 
 | Builder, every slice | `claude-opus-5-5`, high | `kit slice --builder claude-opus-5-5`; `builder: sol` lines in tickets are superseded |
 | Builder, tiny fully specified fix | free OpenCode model | T3 `delegate_task`, only once T3 lists a verified zero-cost model |
 | Review, every change | `claude-opus-5-5`, medium | default (`kit review`), fresh read-only session |
-| Second opinion: final version of a big, delicate slice, once | `gpt-6.1-sol`, medium | `ASE_REVIEW_MODEL=gpt-6.1-sol kit review --ticket <t>` |
-| Second opinion: routine, and the weekly sample of 2–3 Claude-approved slices | `gpt-6-luna`, low | same, `ASE_REVIEW_MODEL=gpt-6-luna` |
-| Second opinion: other family | `grok-4.7` | same, `ASE_REVIEW_MODEL=grok-4.7` |
+| Second opinion: final version of a big, delicate slice, once | off since 2026-10-26: no OpenAI reviews (Lex); use Grok | was `ASE_REVIEW_MODEL=gpt-6.1-sol kit review --ticket <t>` |
+| Second opinion: routine, and the weekly sample of 2–3 Claude-approved slices | off since 2026-10-26: no OpenAI reviews (Lex); use Grok | was `ASE_REVIEW_MODEL=gpt-6-luna kit review` |
+| Second opinion: other family | `grok-4.7` | `ASE_REVIEW_MODEL=grok-4.7 kit review --ticket <t>`; free OpenCode reviews wait on a kit path ([kitchen-everywhere 01](../wayfinder/kitchen-everywhere/tickets/01-grill-how-the-kitchen-is-copied.md#resolution-2026-10-26)) |
 | UX and design review | `claude-opus-5-5`, medium | see Review |
 
 Sol never builds. `kit review` counts GPT and Grok reviews per week and refuses at the limit;
