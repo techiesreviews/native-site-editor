@@ -2,6 +2,7 @@ import { connectionPrompt } from "../agent-prompts";
 import { recordFailure, recoveryHolds } from "../agent-recovery";
 import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
+import { icon } from "../icons";
 import { REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, type AgentCommand, type AgentElement, type AgentRequest } from "../../shared/agent";
 import { answerRequest, createRequestTools } from "../agent-watch";
 import { workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
@@ -238,6 +239,8 @@ export function createAgentMenu(options: {
   const root = node("div", "agent-menu");
   const action = button("", () => void act(), "text-button agent-menu__action");
   const actionLabel = node("span", "agent-menu__label", "Connect to MCP");
+  // Beside Wait for MCP only, so people see it copies something (Lex, 2026-10-26).
+  const copyIcon = icon("copy", 14, "icon--after");
   // The questions waiting for the user, as on the project selector's tile.
   const count = node("span", "agent-menu__count");
   count.setAttribute("aria-hidden", "true");
@@ -473,7 +476,8 @@ export function createAgentMenu(options: {
     }
     // Until the moment passes or the state moves on (an agent connected meanwhile).
     const shown = confirmed && confirmed.until > Date.now() && confirmed.offer === offered ? confirmed.label : undefined;
-    actionLabel.textContent = shown ?? (offered === "disconnect" ? "Disconnect MCP" : offered === "wait" ? "Wait for MCP" : "Connect to MCP");
+    const label = shown ?? (offered === "disconnect" ? "Disconnect MCP" : offered === "wait" ? "Wait for MCP" : "Connect to MCP");
+    actionLabel.replaceChildren(label, ...(offered === "wait" && !shown ? [copyIcon] : []));
     const asked = offered === "disconnect" ? lastQuestions : 0;
     root.classList.toggle("is-asking", asked > 0);
     count.hidden = !asked;
