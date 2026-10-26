@@ -21,6 +21,7 @@ Show every agent working while Lex works, each in its own colour and name ([appr
 - The agent's dot shows on its section's row in Page Structure and on another page's row in Pages and files.
 - Reading the site tells each agent who works on what.
 - No progress bars, status text or toasts.
+- Takes in clean-up [35, the agent's name on its chip](../../../clean-up-before-features/build/tickets/35-agent-name-on-presence.md) (Lex 2026-10-26: later, here): with no name given, the chip shows the MCP client's name (`clientInfo.name` in `worker/app.ts`, e.g. "Claude Code"), then "Agent".
 
 ## Files
 

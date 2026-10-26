@@ -1,7 +1,7 @@
 ---
 title: "The agent's own name on its presence chip"
 type: task (AFK)
-status: needs-triage
+status: closed
 assignee:
 builder: claude
 blocked_by: [33-agent-presence-on-section]
@@ -22,3 +22,7 @@ Follow-up from [Agent presence on a section](33-agent-presence-on-section.md) (2
 - `src/agent-transport.ts` / `src/components/agent-menu.ts`: keep the name for the connection.
 - `src/agent-presence.ts` and `src/main.ts`: pass it to `nativePreview.agentPresence(request, name)` (the runtime already draws any name it is sent, up to 60 characters).
 - Tests: a unit test for the name's path; a step in `tests/native-save/native-agent-presence.spec.ts` that the chip shows the spec client's name.
+
+## Decision
+
+- 2026-10-26, Lex: later. The chip keeps saying "Agent" for now; this moves to [docs/wayfinder/agents-and-multiplayer](../../../agents-and-multiplayer/map.md), where [slice 11, several agents](../../../agents-and-multiplayer/build/tickets/11-several-agents-presence.md) gives each agent its own name and colour. Closed here, not built in the clean-up.
