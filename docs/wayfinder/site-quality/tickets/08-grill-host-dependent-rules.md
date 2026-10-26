@@ -18,6 +18,6 @@ Lex: yes, as recommended.
   - `_headers`: security headers and caching (long cache for hashed media, short for pages);
   - `_redirects`: generated from Change URL's redirect list.
 - **Both hosts:** a proper `404.html` from the site's own layout, made once when it is missing and then editable like any page.
-- **GitHub Pages:** headers can't be set, so they are left out without a message. Change URL keeps its redirect pages. The fixed 600 s cache stays.
+- **GitHub Pages:** headers can't be set, so they are left out without a message. Change URL forwards moved pages with small forwarding pages (correction from the build plan: none exist today, since Change URL only writes `_redirects`, which GitHub Pages ignores; build slice 31 adds them). The fixed 600 s cache stays.
 - **Nothing to set up by hand:** the editor doesn't ask the user to change host settings. Host-dependent rules the host can't meet are not counted against the site's quality.
 - **Noted:** the workers.dev preview answered plain HTTP without redirecting. That is for the preview Worker in map 1 (build slice 35, Hot preview link), not for users' sites.

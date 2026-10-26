@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 05 Slim top bar</title>
+<style>
+/* Throwaway prototype for site-quality ticket 05. Tokens copied from
+   src/theme.css (light), with a dark pair through light-dark(). */
+:root {
+  color-scheme: light dark;
+  --primary: light-dark(oklch(50% 0.18 262.9), oklch(72% 0.13 262.9));
+  --primary-hover: light-dark(oklch(42.5% 0.18 262.9), oklch(78% 0.12 262.9));
+  --on-primary: light-dark(oklch(98.9% 0.003 275.8), oklch(16% 0.04 262.9));
+  --background: light-dark(oklch(97% 0.019 275.5), oklch(15% 0.025 265));
+  --surface: light-dark(oklch(98.9% 0.003 275.8), oklch(19% 0.03 265));
+  --surface-subtle: light-dark(oklch(95.4% 0.019 275.5), oklch(22% 0.032 265));
+  --surface-raised: light-dark(oklch(88.3% 0.048 274.7), oklch(27% 0.035 265));
+  --surface-toolbar: light-dark(oklch(92% 0.019 275.5), oklch(17% 0.028 265));
+  --text: light-dark(oklch(15.3% 0.06 262.9), oklch(95% 0.01 265));
+  --muted: light-dark(oklch(40.4% 0.045 262.9), oklch(74% 0.03 265));
+  --line: light-dark(oklch(88.3% 0.048 274.7), oklch(30% 0.03 265));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --question: light-dark(oklch(66% 0.18 48), oklch(74% 0.15 55));
+  --success: light-dark(oklch(52% 0.13 145), oklch(74% 0.14 145));
+  --shadow: 0 12px 32px light-dark(oklch(15.3% 0.06 262.9 / 0.18), oklch(0% 0 0 / 0.5));
+  --focus-ring: 2px solid var(--primary);
+  --type-small: 12px;
+  --type-base: 13px;
+  --type-title: 15px;
+  --radius-small: 4px;
+  --radius: 6px;
+  --radius-panel: 8px;
+  --size-icon: 24px;
+  --size-compact: 28px;
+  --size-control: 32px;
+
+  font: 14px/1.5 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  color: var(--text);
+  background: var(--background);
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px 28px 48px; font-size: var(--type-base); }
+button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+svg { display: block; flex: none; fill: currentColor; }
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-inline-size: 1180px;
+  margin-inline: auto;
+  margin-block-end: 20px;
+}
+.page-head h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.page-head__tools { display: flex; gap: 8px; }
+
+.version {
+  max-inline-size: 1180px;
+  margin: 0 auto 28px;
+}
+.version__label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.version__label b { color: var(--text); font-size: var(--type-title); letter-spacing: 0; }
+.frame {
+  border-radius: var(--radius-panel);
+  overflow: clip;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+/* ---------- Shared bar parts ---------- */
+.bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  block-size: var(--bar-height);
+  padding-inline: 12px;
+  background: var(--surface);
+  border-block-end: 1px solid var(--line);
+}
+.bar__start, .bar__end { display: flex; align-items: center; gap: 6px; min-inline-size: 0; }
+.bar__end { justify-content: end; }
+
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--size-compact);
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  white-space: nowrap;
+  min-inline-size: 0;
+}
+.icon-button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--size-compact);
+  block-size: var(--size-compact);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+}
+.icon-button[aria-expanded="true"] { background: var(--current); color: var(--text); }
+@media (hover: hover) and (pointer: fine) {
+  .ghost:hover, .icon-button:hover { background: var(--hover); color: var(--text); }
+  .save:hover { background: var(--primary-hover); }
+}
+.ghost:active, .icon-button:active { background: var(--hover); }
+
+.tile {
+  display: grid;
+  place-items: center;
+  inline-size: 22px;
+  block-size: 22px;
+  border-radius: var(--radius-small);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+  font-size: var(--type-small);
+}
+.project__owner { color: var(--muted); }
+.project__name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.caret { color: var(--muted); }
+.slash { color: var(--control-line); font-size: 18px; font-weight: 300; }
+.picker { font-weight: 500; }
+.picker[data-moved] { background: var(--current); transition: background 600ms ease-out; }
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-inline: 4px 8px;
+  color: var(--muted);
+  font-size: var(--type-small);
+  white-space: nowrap;
+}
+.status::before {
+  content: "";
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--size-compact);
+  padding-inline: 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+/* B and C: the save state lives on the Save button itself. */
+.save--merged { padding-inline: 10px 12px; }
+.save--merged::before {
+  content: "";
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.85;
+}
+.save--merged[data-state="saved"] {
+  background: transparent;
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+.save--merged[data-state="saved"]::before { background: var(--success); opacity: 1; }
+.divider { inline-size: 1px; block-size: 18px; background: var(--line); margin-inline: 4px; }
+
+/* The inbox dot: something waits. Never a number. */
+.inbox-button::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--question);
+  box-shadow: 0 0 0 2px var(--surface);
+  scale: 1;
+  transition: scale 200ms ease-out;
+}
+body:not([data-waiting]) .inbox-button::after { scale: 0; }
+
+/* ---------- Today (72 px) ---------- */
+.bar--today { --bar-height: 72px; padding-inline: 28px; gap: 24px; }
+.bar--today .tile { inline-size: 35px; block-size: 35px; border-radius: 10px; font-size: 18px; }
+.bar--today .project { gap: 12px; block-size: 48px; padding-inline: 6px 10px; }
+.bar--today .project__identity { display: grid; text-align: start; line-height: 1.25; }
+.bar--today .project__owner { font-size: var(--type-small); }
+.bar--today .picker { block-size: var(--size-control); padding-inline: 12px; font-size: var(--type-title); }
+.bar--today .bar__end { gap: 14px; }
+.checklist {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--size-control);
+  padding-inline: 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: light-dark(oklch(96% 0.04 62), oklch(30% 0.05 55));
+  color: light-dark(oklch(42% 0.13 45), oklch(85% 0.08 60));
+  font-size: var(--type-small);
+  font-weight: 500;
+}
+.bar--today .save { block-size: var(--size-control); padding-inline: 14px; }
+
+/* ---------- A (48 px): today's layout, one row lower ---------- */
+.bar--a { --bar-height: 48px; padding-inline: 16px; }
+
+/* ---------- B (44 px): project / page on the left ---------- */
+.bar--b { --bar-height: 44px; grid-template-columns: minmax(0, 1fr) auto; }
+.bar--b .bar__start { gap: 2px; }
+
+/* ---------- C (40 px): just the tile, page centred, icons ---------- */
+.bar--c { --bar-height: 40px; padding-inline: 8px; }
+.bar--c .project { padding-inline: 4px 6px; gap: 4px; }
+.bar--c .tile { inline-size: 24px; block-size: 24px; }
+.bar--c .save { block-size: 26px; padding-inline: 8px 10px; font-size: var(--type-small); }
+
+/* ---------- The faint workspace under each bar ---------- */
+.workspace {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  block-size: 150px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+.workspace__side {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--surface-subtle);
+}
+.workspace__side i, .workspace__canvas i {
+  display: block;
+  block-size: 8px;
+  border-radius: 4px;
+  background: var(--line);
+}
+.workspace__canvas {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  grid-template-rows: auto auto 1fr;
+  gap: 10px 24px;
+  padding: 18px 28px;
+  background: var(--background);
+}
+.workspace__canvas .h { block-size: 16px; inline-size: 70%; background: color-mix(in oklch, var(--text) 18%, transparent); }
+.workspace__canvas .pic {
+  grid-row: 1 / -1;
+  grid-column: 2;
+  block-size: auto;
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--primary) 18%, var(--surface-subtle));
+}
+/* Where an inbox item goes: a ring on the spot, with its name. */
+.target {
+  position: absolute;
+  display: none;
+  border-radius: var(--radius);
+  outline: 2px solid var(--question);
+  outline-offset: 3px;
+}
+.target span {
+  position: absolute;
+  inset-block-start: -26px;
+  inset-inline-start: -3px;
+  padding: 1px 8px;
+  border-radius: var(--radius-small);
+  background: var(--question);
+  color: oklch(20% 0.04 45);
+  font-size: var(--type-small);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.frame[data-target] .workspace { opacity: 1; }
+.frame[data-target] .target { display: block; animation: ring 900ms ease-out; }
+.frame[data-target="picture"] .target { inset: 18px 28px 18px auto; inline-size: calc((100% - 80px) * 1 / 2.4); }
+.frame[data-target="title"] .target { inset: 18px auto auto 28px; inline-size: 40%; block-size: 16px; }
+.frame[data-target="agent"] .target { inset: 44px auto auto 28px; inline-size: 30%; block-size: 8px; }
+.frame[data-target="host"] .target { inset: 14px auto auto 16px; inline-size: 188px; block-size: 8px; }
+.frame[data-target="host"] .workspace__canvas .target,
+.frame[data-target]:not([data-target="host"]) .workspace__side .target { display: none; }
+@keyframes ring { from { outline-offset: 12px; outline-color: transparent; } }
+
+/* ---------- Inbox popover ---------- */
+.inbox {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  inline-size: 340px;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow), 0 0 0 1px var(--line);
+}
+.inbox__title {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.inbox ul { list-style: none; margin: 0; padding: 0; display: grid; }
+.inbox li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--radius);
+  transition: opacity 200ms ease-out, translate 200ms ease-out;
+}
+.inbox li[data-leaving] { opacity: 0; translate: 12px 0; }
+.inbox li > svg { margin-inline-start: 8px; color: var(--muted); }
+.inbox li[data-kind="agent"] > svg { color: var(--question); }
+.item {
+  display: grid;
+  gap: 0;
+  padding: 7px 4px;
+  border: 0;
+  background: transparent;
+  text-align: start;
+  min-inline-size: 0;
+}
+.item b { font-weight: 500; }
+.item small { color: var(--muted); font-size: var(--type-small); }
+.wave {
+  margin-inline-end: 6px;
+  block-size: 24px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--type-small);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+@media (hover: hover) and (pointer: fine) {
+  .inbox li:has(.item:hover) { background: var(--hover); }
+  .wave:hover { color: var(--text); background: var(--surface-subtle); }
+}
+.inbox__empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 8px;
+  color: var(--muted);
+}
+.inbox__empty svg { color: var(--success); }
+.inbox:has(li) .inbox__empty { display: none; }
+
+.reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--size-control);
+  padding-inline: 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+</style>
+</head>
+<body data-waiting>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="caret" viewBox="0 0 256 256"><path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/></symbol>
+  <symbol id="history" viewBox="0 0 256 256"><path d="M136,80v43.47l36.12,21.67a8,8,0,0,1-8.24,13.720l-40-24A8,8,0,0,1,120,128V80a8,8,0,0,1,16,0Zm-8-48A95.44,95.44,0,0,0,60.08,60.15C52.81,67.51,46.35,74.590,40,82V64a8,8,0,0,0-16,0v40a8,8,0,0,0,8,8H72a8,8,0,0,0,0-16H49c7.15-8.42,14.27-16.35,22.39-24.57a80,80,0,1,1,1.66,114.75,8,8,0,1,0-11,11.64A96,96,0,1,0,128,32Z"/></symbol>
+  <symbol id="undo" viewBox="0 0 256 256"><path d="M232,144a64.07,64.07,0,0,1-64,64H80a8,8,0,0,1,0-16h88a48,48,0,0,0,0-96H51.31l34.35,34.34a8,8,0,0,1-11.32,11.32l-48-48a8,8,0,0,1,0-11.32l48-48A8,8,0,0,1,85.66,45.66L51.31,80H168A64.070,64.07,0,0,1,232,144Z"/></symbol>
+  <symbol id="tray" viewBox="0 0 256 256"><path d="M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm0,16V152h-28.7A15.86,15.86,0,0,0,168,156.69L148.69,176H107.31L88,156.69A15.86,15.86,0,0,0,76.69,152H48V48Zm0,160H48V168H76.69L96,187.31A15.86,15.86,0,0,0,107.31,192h41.38A15.86,15.86,0,0,0,160,187.31L179.31,168H208v40Z"/></symbol>
+  <symbol id="image" viewBox="0 0 256 256"><path d="M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM48,48H208v77.38l-24.69-24.7a16,16,0,0,0-22.62,0L53.37,208H48ZM208,208H76l96-96,36,36v60ZM96,120A24,24,0,1,0,72,96,24,24,0,0,0,96,120Zm0-32a8,8,0,1,1-8,8A8,8,0,0,1,96,88Z"/></symbol>
+  <symbol id="file" viewBox="0 0 256 256"><path d="M213.66,82.34l-56-56A8,8,0,0,0,152,24H56A16,16,0,0,0,40,40V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V88A8,8,0,0,0,213.66,82.34ZM160,51.31,188.69,80H160ZM200,216H56V40h88V88a8,8,0,0,0,8,8h48V216Z"/></symbol>
+  <symbol id="sparkle" viewBox="0 0 256 256"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></symbol>
+  <symbol id="checks" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H128a8,8,0,0,1,0-16h88A8,8,0,0,1,224,128ZM128,72h88a8,8,0,0,0,0-16H128a8,8,0,0,0,0,16Zm88,112H128a8,8,0,0,0,0,16h88a8,8,0,0,0,0-16ZM82.34,42.34,56,68.69,45.66,58.34A8,8,0,0,0,34.34,69.66l16,16a8,8,0,0,0,11.32,0l32-32A8,8,0,0,0,82.34,42.34Zm0,64L56,132.69,45.66,122.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32,0l32-32a8,8,0,0,0-11.32-11.32Zm0,64L56,196.69,45.66,186.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32,0l32-32a8,8,0,0,0-11.32-11.32Z"/></symbol>
+  <symbol id="check" viewBox="0 0 256 256"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></symbol>
+  <symbol id="moon" viewBox="0 0 256 256"><path d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.090,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.34A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.34Z"/></symbol>
+</svg>
+
+<header class="page-head">
+  <h1>Slim top bar</h1>
+  <div class="page-head__tools">
+    <button type="button" class="reset" id="reset">Refill inbox</button>
+    <button type="button" class="reset" id="theme"><svg width="16" height="16"><use href="#moon"/></svg>Dark</button>
+  </div>
+</header>
+
+<section class="version">
+  <h2 class="version__label"><b>Today</b> 72 px</h2>
+  <div class="frame">
+    <div class="bar bar--today">
+      <div class="bar__start">
+        <button type="button" class="ghost project"><span class="tile">T</span><span class="project__identity"><span class="project__owner">techiesreviews</span><span class="project__name">techies-site</span></span><svg class="caret" width="12" height="12"><use href="#caret"/></svg></button>
+      </div>
+      <button type="button" class="ghost picker">Home <svg class="caret" width="12" height="12"><use href="#caret"/></svg></button>
+      <div class="bar__end">
+        <button type="button" class="checklist"><svg width="16" height="16"><use href="#checks"/></svg>2 of 4 set up</button>
+        <span class="status">Live</span>
+        <button type="button" class="icon-button" aria-label="Undo" title="Undo"><svg width="16" height="16"><use href="#undo"/></svg></button>
+        <button type="button" class="ghost"><svg width="16" height="16"><use href="#history"/></svg>History</button>
+        <button type="button" class="save">Save <svg width="12" height="12"><use href="#caret"/></svg></button>
+      </div>
+    </div>
+    <div class="workspace" aria-hidden="true"><div class="workspace__side"><i style="inline-size:60%"></i><i></i><i style="inline-size:80%"></i><i style="inline-size:70%"></i></div><div class="workspace__canvas"><i class="h"></i><i></i><i style="inline-size:85%"></i><i class="pic"></i></div></div>
+  </div>
+</section>
+
+<section class="version" data-version="a">
+  <h2 class="version__label"><b>A</b> 48 px · today's layout, one row lower; checklist into the inbox</h2>
+  <div class="frame">
+    <div class="bar bar--a">
+      <div class="bar__start">
+        <button type="button" class="ghost project"><span class="tile">T</span><span class="project__owner">techiesreviews /</span><span class="project__name">techies-site</span><svg class="caret" width="12" height="12"><use href="#caret"/></svg></button>
+      </div>
+      <button type="button" class="ghost picker" data-picker>Home <svg class="caret" width="12" height="12"><use href="#caret"/></svg></button>
+      <div class="bar__end">
+        <span class="status">Live</span>
+        <button type="button" class="icon-button" aria-label="Undo" title="Undo"><svg width="16" height="16"><use href="#undo"/></svg></button>
+        <button type="button" class="ghost"><svg width="16" height="16"><use href="#history"/></svg>History</button>
+        <button type="button" class="icon-button inbox-button" aria-label="Inbox" title="Inbox" aria-expanded="false"><svg width="17" height="17"><use href="#tray"/></svg></button>
+        <button type="button" class="save">Save <svg width="12" height="12"><use href="#caret"/></svg></button>
+      </div>
+    </div>
+    <div class="workspace" aria-hidden="true"><div class="workspace__side"><i style="inline-size:60%"></i><i></i><i style="inline-size:80%"></i><i style="inline-size:70%"></i><b class="target"><span>Site settings · Host</span></b></div><div class="workspace__canvas"><i class="h"></i><i></i><i style="inline-size:85%"></i><i class="pic"></i><b class="target"><span></span></b></div></div>
+  </div>
+</section>
+
+<section class="version" data-version="b">
+  <h2 class="version__label"><b>B</b> 44 px · project / page on the left; save state on the Save button; icons</h2>
+  <div class="frame">
+    <div class="bar bar--b">
+      <div class="bar__start">
+        <button type="button" class="ghost project"><span class="tile">T</span><span class="project__name">techies-site</span></button>
+        <span class="slash" aria-hidden="true">/</span>
+        <button type="button" class="ghost picker" data-picker>Home <svg class="caret" width="12" height="12"><use href="#caret"/></svg></button>
+      </div>
+      <div class="bar__end">
+        <button type="button" class="icon-button" aria-label="Undo" title="Undo"><svg width="16" height="16"><use href="#undo"/></svg></button>
+        <button type="button" class="icon-button" aria-label="History" title="History"><svg width="16" height="16"><use href="#history"/></svg></button>
+        <button type="button" class="icon-button inbox-button" aria-label="Inbox" title="Inbox" aria-expanded="false"><svg width="17" height="17"><use href="#tray"/></svg></button>
+        <span class="divider" aria-hidden="true"></span>
+        <button type="button" class="save save--merged" data-save>Save 3 changes</button>
+      </div>
+    </div>
+    <div class="workspace" aria-hidden="true"><div class="workspace__side"><i style="inline-size:60%"></i><i></i><i style="inline-size:80%"></i><i style="inline-size:70%"></i><b class="target"><span>Site settings · Host</span></b></div><div class="workspace__canvas"><i class="h"></i><i></i><i style="inline-size:85%"></i><i class="pic"></i><b class="target"><span></span></b></div></div>
+  </div>
+</section>
+
+<section class="version" data-version="c">
+  <h2 class="version__label"><b>C</b> 40 px · just the project tile; page centred; all icons, small Save</h2>
+  <div class="frame">
+    <div class="bar bar--c">
+      <div class="bar__start">
+        <button type="button" class="ghost project" aria-label="techies-site" title="techiesreviews / techies-site"><span class="tile">T</span><svg class="caret" width="12" height="12"><use href="#caret"/></svg></button>
+      </div>
+      <button type="button" class="ghost picker" data-picker>Home <svg class="caret" width="12" height="12"><use href="#caret"/></svg></button>
+      <div class="bar__end">
+        <button type="button" class="icon-button" aria-label="Undo" title="Undo"><svg width="16" height="16"><use href="#undo"/></svg></button>
+        <button type="button" class="icon-button" aria-label="History" title="History"><svg width="16" height="16"><use href="#history"/></svg></button>
+        <button type="button" class="icon-button inbox-button" aria-label="Inbox" title="Inbox" aria-expanded="false"><svg width="17" height="17"><use href="#tray"/></svg></button>
+        <button type="button" class="save save--merged" data-save>Save</button>
+      </div>
+    </div>
+    <div class="workspace" aria-hidden="true"><div class="workspace__side"><i style="inline-size:60%"></i><i></i><i style="inline-size:80%"></i><i style="inline-size:70%"></i><b class="target"><span>Site settings · Host</span></b></div><div class="workspace__canvas"><i class="h"></i><i></i><i style="inline-size:85%"></i><i class="pic"></i><b class="target"><span></span></b></div></div>
+  </div>
+</section>
+
+<div class="inbox" id="inbox" popover="auto" role="dialog" aria-label="Inbox">
+  <h3 class="inbox__title">Inbox</h3>
+  <ul id="inbox-list"></ul>
+  <p class="inbox__empty"><svg width="16" height="16"><use href="#check"/></svg>All done</p>
+</div>
+
+<script>
+const ITEMS = [
+  { id: "picture", kind: "picture", icon: "image", what: "Picture without a description", where: "About page", page: "About", spot: "About · team picture", wave: "Decorative" },
+  { id: "title", kind: "page", icon: "file", what: "Page without a title", where: "/blog/new", page: "Blog / New", spot: "Page title" },
+  { id: "agent", kind: "agent", icon: "sparkle", what: "Agent question", where: "Hero heading", page: "Home", spot: "Hero heading · question" },
+  { id: "host", kind: "setup", icon: "checks", what: "Setup: connect a host", where: "Site settings", page: null, spot: "Site settings · Host" },
+];
+let items = [...ITEMS];
+let openFrom = null;
+const inbox = document.getElementById("inbox");
+const list = document.getElementById("inbox-list");
+
+function render() {
+  list.replaceChildren(...items.map((item) => {
+    const li = document.createElement("li");
+    li.dataset.kind = item.kind;
+    li.innerHTML = `<svg width="16" height="16"><use href="#${item.icon}"/></svg><button type="button" class="item"><b>${item.what}</b><small>${item.where}</small></button>`;
+    li.querySelector(".item").addEventListener("click", () => go(item));
+    if (item.wave) {
+      const wave = document.createElement("button");
+      wave.type = "button";
+      wave.className = "wave";
+      wave.textContent = item.wave;
+      wave.addEventListener("click", () => {
+        li.dataset.leaving = "";
+        setTimeout(() => { items = items.filter((x) => x !== item); render(); }, 200);
+      });
+      li.append(wave);
+    }
+    return li;
+  }));
+  document.body.toggleAttribute("data-waiting", items.length > 0);
+}
+
+function go(item) {
+  const frame = openFrom.closest(".frame");
+  inbox.hidePopover();
+  for (const f of document.querySelectorAll(".frame")) delete f.dataset.target;
+  const picker = frame.querySelector("[data-picker]");
+  if (picker && item.page) {
+    picker.firstChild.textContent = item.page + " ";
+    picker.dataset.moved = "";
+    setTimeout(() => delete picker.dataset.moved, 700);
+  }
+  frame.querySelector(".workspace__canvas .target span").textContent = item.spot;
+  void frame.offsetWidth;
+  frame.dataset.target = item.id;
+}
+
+for (const trigger of document.querySelectorAll(".inbox-button")) {
+  trigger.addEventListener("click", () => {
+    if (inbox.matches(":popover-open") && openFrom === trigger) return inbox.hidePopover();
+    openFrom = trigger;
+    inbox.showPopover();
+    place();
+    trigger.setAttribute("aria-expanded", "true");
+  });
+}
+inbox.addEventListener("toggle", (event) => {
+  if (event.newState === "closed") openFrom?.setAttribute("aria-expanded", "false");
+});
+function place() {
+  const box = openFrom.getBoundingClientRect();
+  inbox.style.top = `${box.bottom + 6}px`;
+  inbox.style.left = `${Math.max(8, box.right - inbox.offsetWidth)}px`;
+}
+addEventListener("scroll", () => { if (inbox.matches(":popover-open")) place(); }, { passive: true });
+
+// B and C: the Save button carries the save state. Click to see it saved.
+for (const save of document.querySelectorAll("[data-save]")) {
+  const unsaved = save.textContent;
+  save.addEventListener("click", () => {
+    const saved = save.dataset.state === "saved";
+    save.dataset.state = saved ? "" : "saved";
+    save.textContent = saved ? unsaved : "Live";
+  });
+}
+
+document.getElementById("reset").addEventListener("click", () => {
+  items = [...ITEMS];
+  for (const f of document.querySelectorAll(".frame")) delete f.dataset.target;
+  for (const p of document.querySelectorAll("[data-picker]")) p.firstChild.textContent = "Home ";
+  render();
+});
+
+const theme = document.getElementById("theme");
+theme.addEventListener("click", () => {
+  const dark = document.documentElement.dataset.theme !== "dark";
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  theme.lastChild.textContent = dark ? "Light" : "Dark";
+});
+
+render();
+</script>
+</body>
+</html>

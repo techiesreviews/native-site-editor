@@ -42,6 +42,7 @@ The rules are kept up to date as the specs change.
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Hand off the site quality build plan](tickets/09-task-hand-off-build-plan.md#resolution-2026-10-26): 26 slices in five stages, two releases (site output, then the Inbox); after the detail pass; slim top bar added as catalogue slice 66
 - [Decide the target scores and rule sources](tickets/04-grill-target-scores.md#resolution-2026-10-26): strict 100 for accessibility, best practices and SEO; speed 99 (middle of 5 runs) on phone and laptop; good-css for all site CSS; `kit lighthouse` checks
 - [Decide what the editor fixes by itself](tickets/05-grill-automatic-fixes.md#resolution-2026-10-26): six fixes on every save; missing descriptions from the page's first sentences; an Inbox in a slimmer top bar for what needs the user (top bar prototype, then a catalogue slice)
 - [Decide how the rules stay up to date](tickets/06-grill-keeping-rules-current.md#resolution-2026-10-26): a monthly research agent compares the spec, Lighthouse and vendor crawler docs, and proposes changes to Lex in T3; nothing changes without his OK

@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [64-organism-components, 30-swap-icon, 34-swap-spinner-progress, 36-swap-field-row-search, 39-swap-tabs, 40-swap-empty-card, 42-swap-agents]
+blocked_by: [66-organism-top-bar, 64-organism-components, 30-swap-icon, 34-swap-spinner-progress, 36-swap-field-row-search, 39-swap-tabs, 40-swap-empty-card, 42-swap-agents]
 ---
 
 ## Goal
