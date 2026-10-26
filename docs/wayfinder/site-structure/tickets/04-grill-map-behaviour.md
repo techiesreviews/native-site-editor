@@ -25,5 +25,5 @@ Lex, after trying the [site map prototype](../prototypes/08-site-map.html) (also
 - **First visit:** names at once, then pictures fill in, nearest to view first. Pictures are kept in IndexedDB, keyed by project, page and a fingerprint of the sources.
 - **Picture tool:** snapdom now (loaded only in the picture frame), switching to the browser's HTML-in-Canvas once it ships everywhere.
 - **The site's own overview:** a corner card on the map with the five site scores, the number of pages in words, and recent changes. Clicking a score lights up the pages below 90 in it.
-- **Canvas:** the catalogue board becomes a shared, lazily loaded  module that serves both (research 01's list of needs).
+- **Canvas:** the catalogue board becomes a shared, lazily loaded `src/board/` module that serves both (research 01's list of needs).
 - **Not in the prototype, for the build:** scrolling inside a live page up close (the wheel zooms today); a phone layout; Safari and Firefox checks.
