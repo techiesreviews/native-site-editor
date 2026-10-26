@@ -57,3 +57,16 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Other tests: `tests/agent-menu-resume.test.ts` adds the connected, `other-owner` (connection in use: copy) and `taken-over` (nothing connected: new prompt) rows, each with its off/switch/again races. `native-agent-quiet.spec.ts` waits for the press's prompt on the clipboard, then expects one token from the press and none after a reload (it was "no new token for a connected agent"). `native-agent-live.spec.ts` waits for Copied, then checks one token and only connections reads.
 - Feature list: F-agent-01 Good and Files updated.
 - Not covered: real Safari, and T3 Code itself (the checks used a webview harness that copies its settings).
+
+### Follow-ups
+
+- Spec (P3): 1c6331914:docs/wayfinder/clean-up-before-features/build/tickets/99-mcp-connect-copies-again.md:42 — P3 ticket: runner.md:67 asks the Done section for "behaviour
+- Standards (P2): 1c6331914:src/components/agent-menu.ts:750 — P2 race: `copyPrompt` takes its proof (`activation`, repo, `tokenId`) before `await slot.put(...)`. After the await
+- Standards (P2): 1c6331914:src/components/agent-menu.ts:772 — P2 fault: the write-back of the newer prompt is an unbounded `navigator.clipboard.writeText` started outside any pr
+- Standards (P3): 1c6331914:src/components/agent-menu.ts:1009 — P3 style: the settle-matrix row "a newer press that made no prompt (its token request failed) → as 'still the newe
+- Standards (P3): 1c6331914:src/components/agent-menu.ts:744 — P3 race: `landing` is cleared on turn-off and Disconnect (:642, :709), but the `.finally` of a write still pending 
+- Validation gaps (gap): No spec for proof loss inside the copy deadline (defect at :750). Add to tests/native-save/native-mcp-menu.spec.ts: an init script makes `clipboard.write` never
+- Validation gaps (gap): No spec for the "newer press that made no prompt" row. Using `lateClipboard(page, 1_000)`, press once and wait for `data-state="failed"`. Route the next `POST /
+- Validation gaps (gap): No spec where the late write-back is refused. Use `lateClipboard` with `writeText` refusing after the second press's copy. Release the first write and assert th
+- Validation gaps (gap): tests/agent-menu-resume.test.ts:86-87 hand-copies `offer`/`fresh` and does not import the menu's real `offer`/`elsewhere`. The `taking-over` state and "`taken-o
+
