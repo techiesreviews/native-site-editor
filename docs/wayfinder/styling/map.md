@@ -44,12 +44,14 @@ A build plan for styling without writing CSS:
 - [Answer the styling questions from how components and variants work today](tickets/09-research-answers-from-the-code.md#resolution-2026-10-26): 7 of 12 settled by the code; open: screen sizes, hover and focus, starter CSS, site styles in chips, swatch click, plus new looks and editing site classes
 - [Find how the best visual styling panels work and what they write](tickets/01-research-panel-patterns.md#resolution-2026-10-26): same seven groups everywhere; only DevTools edits real stylesheets; recommend DevTools honesty with Webflow controls, tokens first, clean good-css output
 - [Find what the Components section gets wrong and why the old style panel went](tickets/02-research-components-and-old-panel.md#resolution-2026-10-26): root causes for all four faults plus seven more; old panel went for boot size and couldn't style components; reuse cascade and the old CSS writer; styles go in the component's own file, variants as :host([data-…])
+- [Prototype the styling panel](tickets/03-prototype-styling-panel.md#resolution-2026-10-26): unblockwp layout, one Bricks chip selector for classes, looks and states with scope on each chip, one "Site styles" chip, free fields with one variable list, canvas sizes as built, rem default
+- [Decide what the panel controls](tickets/04-grill-panel-scope.md#resolution-2026-10-26): seven groups, states and modern selectors in the selector field, one state plus one part, canvas bar sizes unchanged, site-wide and element both
+- [Decide where the panel writes its CSS](tickets/05-grill-where-styles-go.md#resolution-2026-10-26): component file, looks as :host([data-…]), site classes and tokens in place, old CSS writer back, no conversion of existing CSS, MCP uses the same writer
+- [Decide the Components section fixes](tickets/06-grill-components-fixes.md#resolution-2026-10-26): all eleven faults fixed, selector list and swatches first
 
 ## Not yet specified
 
-- **States and sizes:** hover and focus styles, and phone versus desktop (container or media queries) in the panel.
-- **Variants:** does the panel edit a component's data-attribute variants, or make new ones?
-- **Agents:** can an agent use the same panel actions (MCP), so the CSS written is the same either way?
+- Nothing open. The build plan comes next (ticket 07).
 
 ## Out of scope
 
