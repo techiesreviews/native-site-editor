@@ -22,6 +22,9 @@ A decided and ticketed plan for running every one of Lex's code projects the way
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
 - [Decide how the kitchen reaches other projects](tickets/01-grill-how-the-kitchen-is-copied.md#resolution-2026-10-26): one shared kit in its own repo, every project always on the newest; `kit init` only sets up; no OpenAI reviews; every change gets a second look from the newest fit model per review kind (code, UX, DX, agent), Grok or free OpenCode, Grok counted once for the computer with a weekly usage view; one shared rulebook plus per-project extras
+- [Find what each of Lex's projects needs from the kitchen](tickets/02-research-what-each-project-needs.md#resolution-2026-10-26): techies-playground small; techies-reviews, creator-studio-poc, TechiesTools medium; static sites small; two kit copies at risk of loss (unpushed branch, uncommitted chat); four landing-branch names; two projects track work in GitHub Issues; the editor saves straight to main on two sites
+- [Find what the three old kit copies changed](tickets/03-research-old-kit-copies.md#resolution-2026-10-26): copies are the 2026-10-17 kit plus own checks; keep their own commands, bring in three fixes (review files kept on failure, `wait ci --sha`, doctor runs every `--help`), drop the rest; a swap breaks mostly on settings and a few path traps
+- [Find how a project pulls the shared kit](tickets/04-research-how-projects-pull-the-kit.md#resolution-2026-10-26): one kit checkout on the machine plus a small launcher per project, updated by a 15-minute timer; CI clones the newest; paths and hooks stay the same; settings file `scripts/agents/kit.json` sketched
 
 ## Not yet specified
 
