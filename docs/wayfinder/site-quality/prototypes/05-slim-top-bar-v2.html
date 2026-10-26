@@ -1,0 +1,930 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 05 Slim top bar v2: B and C with Pages, Media and Files</title>
+<style>
+/* Throwaway prototype for site-quality ticket 05, round 3. Tokens copied from
+   src/theme.css (light), with a dark pair through light-dark(). Explorer look from
+   src/style.css (.explorer) and src/components/pages-tree.css. */
+:root {
+  color-scheme: light dark;
+  --primary: light-dark(oklch(50% 0.18 262.9), oklch(72% 0.13 262.9));
+  --primary-hover: light-dark(oklch(42.5% 0.18 262.9), oklch(78% 0.12 262.9));
+  --on-primary: light-dark(oklch(98.9% 0.003 275.8), oklch(16% 0.04 262.9));
+  --background: light-dark(oklch(97% 0.019 275.5), oklch(15% 0.025 265));
+  --surface: light-dark(oklch(98.9% 0.003 275.8), oklch(19% 0.03 265));
+  --surface-subtle: light-dark(oklch(95.4% 0.019 275.5), oklch(22% 0.032 265));
+  --text: light-dark(oklch(15.3% 0.06 262.9), oklch(95% 0.01 265));
+  --muted: light-dark(oklch(40.4% 0.045 262.9), oklch(74% 0.03 265));
+  --line: light-dark(oklch(88.3% 0.048 274.7), oklch(30% 0.03 265));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --question: light-dark(oklch(66% 0.18 48), oklch(74% 0.15 55));
+  --success: light-dark(oklch(52% 0.13 145), oklch(74% 0.14 145));
+  --shadow: 0 12px 32px light-dark(oklch(15.3% 0.06 262.9 / 0.18), oklch(0% 0 0 / 0.5));
+  --focus-ring: 2px solid var(--primary);
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --type-small: 12px;
+  --type-base: 13px;
+  --type-title: 15px;
+  --radius-small: 4px;
+  --radius: 6px;
+  --radius-panel: 8px;
+  --size-compact: 28px;
+  --size-control: 32px;
+
+  font: 14px/1.5 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  color: var(--text);
+  background: var(--background);
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px 24px 40px; font-size: var(--type-base); }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+:is(button, input, summary):focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+svg { display: block; flex: none; fill: currentColor; }
+[hidden] { display: none !important; }
+
+/* ---------- Page head ---------- */
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  max-inline-size: 1240px;
+  margin: 0 auto 16px;
+}
+.page-head h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.page-head__tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--size-control);
+  padding-inline: 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+.switch {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+.switch button {
+  block-size: 28px;
+  padding-inline: 12px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.switch button[aria-pressed="true"] { background: var(--current); color: var(--text); font-weight: 600; }
+
+/* ---------- One mock editor ---------- */
+.editor {
+  --bar-height: 44px;
+  position: relative;
+  display: grid;
+  grid-template-rows: var(--bar-height) minmax(0, 1fr);
+  max-inline-size: 1240px;
+  block-size: 680px;
+  margin-inline: auto;
+  border-radius: var(--radius-panel);
+  overflow: clip;
+  background: var(--background);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.editor[data-version="c"] { --bar-height: 40px; }
+
+.bar {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding-inline: 8px 12px;
+  background: var(--surface);
+  border-block-end: 1px solid var(--line);
+}
+.editor[data-version="b"] .bar { grid-template-columns: minmax(0, 1fr) auto; }
+.bar__start, .bar__end { display: flex; align-items: center; gap: 4px; min-inline-size: 0; }
+.bar__end { justify-content: end; }
+
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--size-compact);
+  padding-inline: 6px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  white-space: nowrap;
+  min-inline-size: 0;
+}
+.icon-button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--size-compact);
+  block-size: var(--size-compact);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+}
+:is(.ghost, .icon-button)[aria-expanded="true"] { background: var(--current); color: var(--text); }
+@media (hover: hover) and (pointer: fine) {
+  .ghost:hover, .icon-button:hover { background: var(--hover); color: var(--text); }
+  .save:hover { background: var(--primary-hover); }
+  .save[data-state="saved"]:hover { background: var(--hover); }
+}
+.ghost:active, .icon-button:active { background: var(--hover); }
+
+.tile {
+  display: grid;
+  place-items: center;
+  inline-size: 22px;
+  block-size: 22px;
+  border-radius: var(--radius-small);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+  font-size: var(--type-small);
+}
+.project__name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.caret { color: var(--muted); }
+.slash { color: var(--control-line); font-size: 18px; font-weight: 300; }
+.picker { font-weight: 500; max-inline-size: 360px; }
+.picker__label { overflow: hidden; text-overflow: ellipsis; }
+.picker__label .folder-part { color: var(--muted); font-weight: 400; }
+.editor[data-version="c"] .picker { background: var(--surface-subtle); padding-inline: 12px 10px; }
+
+.save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--size-compact);
+  padding-inline: 10px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.save::before {
+  content: "";
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.85;
+}
+.save[data-state="saved"] {
+  background: transparent;
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+.save[data-state="saved"]::before { background: var(--success); opacity: 1; }
+.editor[data-version="c"] .save { block-size: 26px; padding-inline: 8px 10px; font-size: var(--type-small); }
+.divider { inline-size: 1px; block-size: 18px; background: var(--line); margin-inline: 4px; }
+
+/* The inbox dot: something waits. Never a number. */
+.inbox-button::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--question);
+  box-shadow: 0 0 0 2px var(--surface);
+  transition: scale 200ms ease-out;
+}
+body:not([data-waiting]) .inbox-button::after { scale: 0; }
+
+/* ---------- The workspace under the bar ---------- */
+.work {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  min-block-size: 0;
+}
+.structure {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 14px 10px;
+  background: var(--surface);
+  border-inline-end: 1px solid var(--line);
+}
+.eyebrow {
+  margin: 0 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.structure__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  block-size: 30px;
+  padding-inline: 6px;
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+.structure__row::before {
+  content: "";
+  inline-size: 12px;
+  block-size: 9px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+  opacity: 0.6;
+}
+.structure__row.is-current { background: var(--current); color: var(--text); font-weight: 500; }
+.stage { min-inline-size: 0; padding: 20px 28px; overflow: clip; }
+
+/* A fake site page, drawn in the editor's preview. */
+.site {
+  display: grid;
+  gap: 18px;
+  max-inline-size: 860px;
+  margin-inline: auto;
+  padding: 18px 28px 28px;
+  border-radius: var(--radius-panel);
+  background: light-dark(#fff, oklch(22% 0.02 265));
+  box-shadow: 0 0 0 1px var(--line);
+}
+.site__nav { display: flex; align-items: center; gap: 18px; font-size: var(--type-small); color: var(--muted); }
+.site__nav b { margin-inline-end: auto; color: var(--text); font-size: var(--type-base); }
+.site__hero { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; align-items: center; }
+.site__hero h2 { margin: 0 0 8px; font-size: 26px; line-height: 1.15; }
+.site__hero p { margin: 0 0 6px; color: var(--muted); }
+.site__pic {
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, oklch(72% 0.09 200), oklch(55% 0.12 262));
+}
+.site__cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.site__cards i { display: block; block-size: 64px; border-radius: var(--radius); background: var(--surface-subtle); }
+
+/* A code file shown instead of the page. */
+.code {
+  margin: 0;
+  max-inline-size: 860px;
+  margin-inline: auto;
+  padding: 16px 20px;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+  font: 13px/1.7 var(--font-mono);
+  color: var(--muted);
+  white-space: pre;
+  overflow: auto;
+}
+.code b { color: var(--primary); font-weight: 400; }
+
+/* Where an inbox item goes: a ring on the spot, with its name. */
+[data-ring] {
+  position: relative;
+  border-radius: var(--radius);
+  outline: 2px solid var(--question);
+  outline-offset: 3px;
+  animation: ring 900ms ease-out;
+}
+[data-ring]::after {
+  content: attr(data-ring);
+  position: absolute;
+  inset-block-end: calc(100% + 6px);
+  inset-inline-start: -3px;
+  padding: 1px 8px;
+  border-radius: var(--radius-small);
+  background: var(--question);
+  color: oklch(20% 0.04 45);
+  font: 600 var(--type-small)/1.5 Inter, ui-sans-serif, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}
+@keyframes ring { from { outline-offset: 12px; outline-color: transparent; } }
+
+/* ---------- Panels that open from the bar ---------- */
+.panel {
+  position: absolute;
+  z-index: 4;
+  inset-block-start: calc(var(--bar-height) + 6px);
+  margin: 0;
+  padding: 6px;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow), 0 0 0 1px var(--line);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .panel:not([hidden]) { animation: panel-in 150ms ease-out; }
+}
+@keyframes panel-in { from { opacity: 0; translate: 0 -4px; } }
+
+.menu { inset-inline-start: 8px; inline-size: 260px; }
+.menu__who { display: flex; align-items: center; gap: 10px; padding: 8px 8px 10px; border-block-end: 1px solid var(--line); margin-block-end: 4px; }
+.menu__who .tile { inline-size: 32px; block-size: 32px; border-radius: var(--radius); font-size: var(--type-title); }
+.menu__who small { display: block; color: var(--muted); font-size: var(--type-small); }
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  inline-size: 100%;
+  block-size: 32px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: start;
+}
+.menu__item svg { color: var(--muted); }
+.menu__sep { block-size: 1px; margin: 4px 0; background: var(--line); }
+
+.settings { inset-inline-start: 8px; inline-size: 380px; padding: 14px 16px 16px; display: grid; gap: 12px; }
+/* C: Site settings opens from the explorer's gear, so it opens centred like the explorer. */
+.editor[data-version="c"] .settings { inset-inline: 0; margin-inline: auto; }
+.settings h3 { margin: 0; font-size: var(--type-title); }
+.settings label { display: grid; gap: 4px; color: var(--muted); font-size: var(--type-small); }
+.settings input[type="text"] {
+  block-size: var(--size-control);
+  padding-inline: 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  color: var(--text);
+  font-size: var(--type-base);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+.settings .check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: var(--type-base); }
+
+.inbox { inset-inline-end: 8px; inline-size: 340px; }
+.panel-title {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.inbox ul { list-style: none; margin: 0; padding: 0; display: grid; }
+.inbox li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--radius);
+  transition: opacity 200ms ease-out, translate 200ms ease-out;
+}
+.inbox li[data-leaving] { opacity: 0; translate: 12px 0; }
+.inbox li > svg { margin-inline-start: 8px; color: var(--muted); }
+.inbox li[data-kind="agent"] > svg { color: var(--question); }
+.item { display: grid; padding: 7px 4px; border: 0; background: transparent; text-align: start; min-inline-size: 0; }
+.item b { font-weight: 500; }
+.item small { color: var(--muted); font-size: var(--type-small); }
+.wave {
+  margin-inline-end: 6px;
+  block-size: 24px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--type-small);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+@media (hover: hover) and (pointer: fine) {
+  .inbox li:has(.item:hover), .menu__item:hover { background: var(--hover); }
+  .wave:hover { color: var(--text); background: var(--surface-subtle); }
+}
+.inbox__empty { display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 8px; color: var(--muted); }
+.inbox__empty svg { color: var(--success); }
+.inbox:has(li) .inbox__empty { display: none; }
+
+/* ---------- Pages, Media and Files ---------- */
+.explorer {
+  inset-block-end: 12px;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px 12px;
+  overflow: clip;
+}
+/* B: opens from the left edge, under the project / page path. */
+.editor[data-version="b"] .explorer { inset-inline-start: 8px; inline-size: min(760px, 100% - 16px); }
+/* C: centred under the page picker, Media's width so tabs never resize it (today's box). */
+.editor[data-version="c"] .explorer { inset-inline: 0; margin-inline: auto; inline-size: min(1040px, 100% - 32px); }
+
+.explorer-head { display: flex; align-items: center; gap: 8px; padding-block-end: 10px; }
+.search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+  block-size: var(--size-control);
+  padding-inline: 10px;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+.search:focus-within { outline: var(--focus-ring); outline-offset: 1px; }
+.search input { flex: 1; min-inline-size: 0; border: 0; background: transparent; outline: none; color: var(--text); }
+.new {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  block-size: var(--size-compact);
+  padding-inline: 8px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  font-size: var(--type-small);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--control-line);
+  white-space: nowrap;
+}
+/* B: one segmented control. */
+.segments { display: inline-flex; padding: 2px; border-radius: var(--radius); background: var(--surface-subtle); flex: none; }
+.segments button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: 28px;
+  padding-inline: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+}
+.segments button[aria-selected="true"] { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px light-dark(oklch(15% 0.06 263 / 0.12), oklch(0% 0 0 / 0.5)); }
+/* C: today's underlined tabs, with search, New and Site settings on the same row. */
+.tabs { display: flex; align-self: stretch; border-block-end: 1px solid var(--control-line); flex: none; }
+.tabs button {
+  min-block-size: var(--size-control);
+  padding-inline: 14px;
+  margin-block-end: -1px;
+  border: 0;
+  border-block-end: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.tabs button[aria-selected="true"] { color: var(--text); border-block-end-color: var(--primary); font-weight: 600; }
+
+.explorer-body { flex: 1; min-block-size: 0; overflow: auto; margin-inline: -4px; padding-inline: 4px; }
+
+.tree, .tree ul { list-style: none; margin: 0; padding: 0; }
+.tree ul { padding-inline-start: 20px; }
+.row, .tree summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  min-block-size: var(--size-control);
+  padding-inline: 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: start;
+  white-space: nowrap;
+  cursor: pointer;
+  list-style: none;
+}
+.tree summary::-webkit-details-marker { display: none; }
+.tree summary::before {
+  content: "";
+  inline-size: 0;
+  block-size: 0;
+  border-block: 4px solid transparent;
+  border-inline-start: 5px solid var(--muted);
+  transition: rotate 150ms ease-out;
+}
+.tree details[open] > summary::before { rotate: 90deg; }
+.row svg, .tree summary svg { color: var(--muted); }
+.row.is-current { background: var(--current); font-weight: 600; }
+@media (hover: hover) and (pointer: fine) {
+  .row:hover, .tree summary:hover { background: var(--hover); }
+  .row.is-current:hover { background: var(--current); }
+}
+.row__label { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+.row__url { margin-inline-start: auto; padding-inline-start: 12px; color: var(--muted); font: var(--type-small)/1 var(--font-mono); }
+/* A page with an open inbox item: a small dot, nothing else. */
+.row[data-waiting] .row__label::after {
+  content: "";
+  display: inline-block;
+  inline-size: 7px;
+  block-size: 7px;
+  margin-inline-start: 8px;
+  border-radius: 50%;
+  background: var(--question);
+  vertical-align: 2px;
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 2px;
+}
+.tile-media {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: start;
+  font-size: var(--type-small);
+  color: var(--muted);
+}
+.tile-media i {
+  display: block;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius);
+  background: var(--swatch);
+}
+.tile-media[aria-pressed="true"] i { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tile-media[aria-pressed="true"] { color: var(--text); }
+.tile-media span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-media[data-waiting] span::after {
+  content: "";
+  display: inline-block;
+  inline-size: 7px;
+  block-size: 7px;
+  margin-inline-start: 6px;
+  border-radius: 50%;
+  background: var(--question);
+}
+.nothing { margin: 8px 6px; color: var(--muted); }
+</style>
+</head>
+<body data-waiting>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="caret" viewBox="0 0 256 256"><path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/></symbol>
+  <symbol id="history" viewBox="0 0 256 256"><path d="M136,80v43.47l36.12,21.67a8,8,0,0,1-8.24,13.720l-40-24A8,8,0,0,1,120,128V80a8,8,0,0,1,16,0Zm-8-48A95.44,95.44,0,0,0,60.08,60.15C52.81,67.51,46.35,74.590,40,82V64a8,8,0,0,0-16,0v40a8,8,0,0,0,8,8H72a8,8,0,0,0,0-16H49c7.15-8.42,14.27-16.35,22.39-24.57a80,80,0,1,1,1.66,114.75,8,8,0,1,0-11,11.64A96,96,0,1,0,128,32Z"/></symbol>
+  <symbol id="undo" viewBox="0 0 256 256"><path d="M232,144a64.07,64.07,0,0,1-64,64H80a8,8,0,0,1,0-16h88a48,48,0,0,0,0-96H51.31l34.35,34.34a8,8,0,0,1-11.32,11.32l-48-48a8,8,0,0,1,0-11.32l48-48A8,8,0,0,1,85.66,45.66L51.31,80H168A64.070,64.07,0,0,1,232,144Z"/></symbol>
+  <symbol id="tray" viewBox="0 0 256 256"><path d="M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm0,16V152h-28.7A15.86,15.86,0,0,0,168,156.69L148.69,176H107.31L88,156.69A15.86,15.86,0,0,0,76.69,152H48V48Zm0,160H48V168H76.69L96,187.31A15.86,15.86,0,0,0,107.31,192h41.38A15.86,15.86,0,0,0,160,187.31L179.31,168H208v40Z"/></symbol>
+  <symbol id="image" viewBox="0 0 256 256"><path d="M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM48,48H208v77.38l-24.69-24.7a16,16,0,0,0-22.62,0L53.37,208H48ZM208,208H76l96-96,36,36v60ZM96,120A24,24,0,1,0,72,96,24,24,0,0,0,96,120Zm0-32a8,8,0,1,1-8,8A8,8,0,0,1,96,88Z"/></symbol>
+  <symbol id="file" viewBox="0 0 256 256"><path d="M213.66,82.34l-56-56A8,8,0,0,0,152,24H56A16,16,0,0,0,40,40V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V88A8,8,0,0,0,213.66,82.34ZM160,51.31,188.69,80H160ZM200,216H56V40h88V88a8,8,0,0,0,8,8h48V216Z"/></symbol>
+  <symbol id="sparkle" viewBox="0 0 256 256"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></symbol>
+  <symbol id="checks" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H128a8,8,0,0,1,0-16h88A8,8,0,0,1,224,128ZM128,72h88a8,8,0,0,0,0-16H128a8,8,0,0,0,0,16Zm88,112H128a8,8,0,0,0,0,16h88a8,8,0,0,0,0-16ZM82.34,42.34,56,68.69,45.66,58.34A8,8,0,0,0,34.34,69.66l16,16a8,8,0,0,0,11.32,0l32-32A8,8,0,0,0,82.34,42.34Zm0,64L56,132.69,45.66,122.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32,0l32-32a8,8,0,0,0-11.32-11.32Zm0,64L56,196.69,45.66,186.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32,0l32-32a8,8,0,0,0-11.32-11.32Z"/></symbol>
+  <symbol id="check" viewBox="0 0 256 256"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></symbol>
+  <symbol id="moon" viewBox="0 0 256 256"><path d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.090,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.34A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.34Z"/></symbol>
+  <symbol id="gear" viewBox="0 0 256 256"><path d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm88-29.84q.06-2.160,0-4.32l14.92-18.64a8,8,0,0,0,1.48-7.06,107.21,107.21,0,0,0-10.88-26.25,8,8,0,0,0-6-3.93l-23.72-2.64q-1.48-1.56-3-3L186,40.54a8,8,0,0,0-3.94-6,107.71,107.71,0,0,0-26.25-10.87,8,8,0,0,0-7.06,1.49L130.16,40Q128,40,125.84,40L107.2,25.11a8,8,0,0,0-7.06-1.48A107.6,107.6,0,0,0,73.89,34.51a8,8,0,0,0-3.93,6L67.32,64.27q-1.56,1.49-3,3L40.54,70a8,8,0,0,0-6,3.94,107.71,107.71,0,0,0-10.87,26.25,8,8,0,0,0,1.49,7.06L40,125.84Q40,128,40,130.16L25.11,148.8a8,8,0,0,0-1.48,7.06,107.21,107.21,0,0,0,10.88,26.25,8,8,0,0,0,6,3.930l23.72,2.64q1.490,1.56,3,3L70,215.46a8,8,0,0,0,3.94,6,107.71,107.71,0,0,0,26.25,10.87,8,8,0,0,0,7.06-1.49L125.84,216q2.16.06,4.32,0l18.64,14.92a8,8,0,0,0,7.06,1.48,107.21,107.21,0,0,0,26.25-10.88,8,8,0,0,0,3.93-6l2.64-23.72q1.56-1.48,3-3L215.46,186a8,8,0,0,0,6-3.94,107.71,107.71,0,0,0,10.87-26.25,8,8,0,0,0-1.49-7.06Zm-16.1-6.5a73.93,73.93,0,0,1,0,8.68,8,8,0,0,0,1.74,5.48l14.19,17.73a91.57,91.57,0,0,1-6.23,15L187,173.11a8,8,0,0,0-5.1,2.64,74.11,74.11,0,0,1-6.14,6.14,8,8,0,0,0-2.64,5.1l-2.51,22.58a91.32,91.32,0,0,1-15,6.23l-17.74-14.19a8,8,0,0,0-5-1.75h-.48a73.93,73.93,0,0,1-8.68,0,8,8,0,0,0-5.48,1.74L100.45,215.8a91.570,91.57,0,0,1-15-6.23L82.89,187a8,8,0,0,0-2.64-5.1,74.11,74.11,0,0,1-6.14-6.14,8,8,0,0,0-5.1-2.64L46.43,170.6a91.32,91.32,0,0,1-6.23-15l14.19-17.74a8,8,0,0,0,1.74-5.48,73.93,73.93,0,0,1,0-8.68,8,8,0,0,0-1.74-5.48L40.2,100.45a91.57,91.57,0,0,1,6.23-15L69,82.89a8,8,0,0,0,5.1-2.64,74.11,74.11,0,0,1,6.14-6.14A8,8,0,0,0,82.89,69L85.4,46.43a91.32,91.32,0,0,1,15-6.23l17.74,14.19a8,8,0,0,0,5.48,1.74,73.93,73.93,0,0,1,8.68,0,8,8,0,0,0,5.48-1.74L155.55,40.2a91.57,91.57,0,0,1,15,6.23L173.11,69a8,8,0,0,0,2.64,5.1,74.11,74.11,0,0,1,6.14,6.14,8,8,0,0,0,5.1,2.64l22.58,2.51a91.32,91.32,0,0,1,6.23,15l-14.19,17.74A8,8,0,0,0,199.87,123.66Z"/></symbol>
+  <symbol id="folder" viewBox="0 0 256 256"><path d="M216,72H131.31L104,44.69A15.86,15.86,0,0,0,92.69,40H40A16,16,0,0,0,24,56V200.62A15.4,15.4,0,0,0,39.38,216H216.89A15.13,15.13,0,0,0,232,200.89V88A16,16,0,0,0,216,72ZM40,56H92.69l16,16H40ZM216,200H40V88H216Z"/></symbol>
+  <symbol id="search" viewBox="0 0 256 256"><path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"/></symbol>
+  <symbol id="plus" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></symbol>
+  <symbol id="file-code" viewBox="0 0 256 256"><path d="M181.66,146.34a8,8,0,0,1,0,11.32l-24,24a8,8,0,0,1-11.32-11.32L164.69,152l-18.35-18.34a8,8,0,0,1,11.32-11.32Zm-72-24a8,8,0,0,0-11.32,0l-24,24a8,8,0,0,0,0,11.32l24,24a8,8,0,0,0,11.32-11.32L91.31,152l18.35-18.34A8,8,0,0,0,109.66,122.34ZM216,88V216a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V40A16,16,0,0,1,56,24h96a8,8,0,0,1,5.66,2.34l56,56A8,8,0,0,1,216,88Zm-56-8h28.69L160,51.31Zm40,136V96H152a8,8,0,0,1-8-8V40H56V216H200Z"/></symbol>
+  <symbol id="caret-right" viewBox="0 0 256 256"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></symbol>
+</svg>
+
+<header class="page-head">
+  <h1>Slim top bar, with Pages, Media and Files</h1>
+  <div class="page-head__tools">
+    <div class="switch" role="group" aria-label="Version">
+      <button type="button" data-pick="b" aria-pressed="true">B · 44 px</button>
+      <button type="button" data-pick="c" aria-pressed="false">C · 40 px</button>
+    </div>
+    <button type="button" class="tool" id="reset">Refill inbox</button>
+    <button type="button" class="tool" id="theme"><svg width="16" height="16"><use href="#moon"/></svg><span>Dark</span></button>
+  </div>
+</header>
+
+<div class="editor" id="editor" data-version="b">
+  <div class="bar" id="bar"></div>
+  <div class="work">
+    <aside class="structure" aria-label="Page structure">
+      <p class="eyebrow">PAGE STRUCTURE</p>
+      <div class="structure__row">Header</div>
+      <div class="structure__row is-current">Hero</div>
+      <div class="structure__row">Cards</div>
+      <div class="structure__row">Footer</div>
+    </aside>
+    <div class="stage" id="stage"></div>
+  </div>
+
+  <div class="panel menu" id="menu" hidden role="menu" aria-label="Project"></div>
+  <div class="panel settings" id="settings" hidden role="dialog" aria-label="Site settings">
+    <h3>Site settings</h3>
+    <label>Site name<input type="text" value="Techies site"></label>
+    <label>Public address<input type="text" value="https://techies.review"></label>
+    <label>Language<input type="text" value="English" data-spot="language"></label>
+    <label>Host<input type="text" value="" placeholder="GitHub Pages or Cloudflare" data-spot="host"></label>
+    <label class="check"><input type="checkbox" checked> Keep AI training robots out</label>
+  </div>
+  <div class="panel inbox" id="inbox" hidden role="dialog" aria-label="Inbox">
+    <h3 class="panel-title">Inbox</h3>
+    <ul id="inbox-list"></ul>
+    <p class="inbox__empty"><svg width="16" height="16"><use href="#check"/></svg>All done</p>
+  </div>
+  <div class="panel explorer" id="explorer" hidden role="dialog" aria-label="Pages, media and files">
+    <div class="explorer-head" id="explorer-head"></div>
+    <div class="explorer-body" id="explorer-body"></div>
+  </div>
+</div>
+
+<script>
+const PAGES = [
+  { title: "Home", url: "/" },
+  { title: "About", url: "/about" },
+  { title: "Blog", url: "/blog", children: [
+    { title: "New post", url: "/blog/new", untitled: true },
+    { title: "Hello world", url: "/blog/hello-world" },
+  ] },
+  { title: "Services", url: "/services", children: [
+    { title: "Reviews", url: "/services/reviews" },
+  ] },
+  { title: "Contact", url: "/contact" },
+];
+const MEDIA = [
+  { name: "hero.jpg", swatch: "linear-gradient(135deg, oklch(72% 0.09 200), oklch(55% 0.12 262))" },
+  { name: "team.jpg", swatch: "linear-gradient(135deg, oklch(78% 0.1 70), oklch(60% 0.14 30))", waitingFor: "picture" },
+  { name: "office.jpg", swatch: "linear-gradient(160deg, oklch(80% 0.05 140), oklch(52% 0.09 160))" },
+  { name: "logo.svg", swatch: "radial-gradient(circle at 50% 50%, oklch(50% 0.18 263) 0 28%, oklch(94% 0.02 263) 29%)" },
+  { name: "blog-cover.jpg", swatch: "linear-gradient(200deg, oklch(70% 0.12 320), oklch(48% 0.12 290))" },
+  { name: "portrait-anna.jpg", swatch: "linear-gradient(135deg, oklch(84% 0.05 50), oklch(62% 0.08 40))" },
+  { name: "map.png", swatch: "repeating-linear-gradient(45deg, oklch(88% 0.03 120) 0 10px, oklch(82% 0.04 120) 10px 20px)" },
+  { name: "pattern.svg", swatch: "repeating-radial-gradient(circle at 30% 30%, oklch(62% 0.13 262) 0 4px, oklch(90% 0.03 262) 4px 12px)" },
+];
+const FILES = [
+  { folder: "components", files: ["site-header.html", "site-footer.html", "hero.html", "cards.html"] },
+  { folder: "styles", files: ["site.css", "tokens.css"] },
+  { folder: "about", files: ["index.html"] },
+  { folder: "blog", files: ["index.html", "new.html", "hello-world.html"] },
+  { file: "index.html" },
+  { file: "robots.txt" },
+  { file: "sitemap.xml" },
+];
+const ITEMS = [
+  { id: "picture", kind: "picture", icon: "image", what: "Picture without a description", where: "About page", page: "About", spot: "picture", label: "About · team picture", wave: "Decorative" },
+  { id: "title", kind: "page", icon: "file", what: "Page without a title", where: "/blog/new", page: "New post", spot: "heading", label: "Page title" },
+  { id: "agent", kind: "agent", icon: "sparkle", what: "Agent question", where: "Hero heading", page: "Home", spot: "heading", label: "Hero heading · question" },
+  { id: "host", kind: "setup", icon: "checks", what: "Setup: connect a host", where: "Site settings", page: null, spot: "host", label: "Host" },
+];
+
+const state = { version: "b", tab: "pages", page: "Home", file: null, media: null, query: "", saved: false };
+let items = [...ITEMS];
+const editor = document.getElementById("editor");
+const bar = document.getElementById("bar");
+const stage = document.getElementById("stage");
+const panels = { menu: document.getElementById("menu"), settings: document.getElementById("settings"), inbox: document.getElementById("inbox"), explorer: document.getElementById("explorer") };
+const icon = (id, size = 16) => `<svg width="${size}" height="${size}"><use href="#${id}"/></svg>`;
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+function pickerLabel() {
+  if (state.file) {
+    const [folder, name] = state.file.includes("/") ? state.file.split("/") : [null, state.file];
+    return folder ? `<span class="folder-part">${folder} / </span>${name}` : name;
+  }
+  return state.page;
+}
+
+function renderBar() {
+  const project = state.version === "b"
+    ? `<button type="button" class="ghost" data-open="menu" aria-expanded="false"><span class="tile">T</span><span class="project__name">techies-site</span></button>`
+    : `<button type="button" class="ghost" data-open="menu" aria-expanded="false"><span class="tile">T</span><span class="project__name">techies-site</span>${icon("caret", 12).replace("<svg", '<svg class="caret"')}</button>`;
+  const picker = `<button type="button" class="ghost picker" data-open="explorer" aria-expanded="false"><span class="picker__label">${pickerLabel()}</span>${icon("caret", 12).replace("<svg", '<svg class="caret"')}</button>`;
+  const save = `<button type="button" class="save" data-save data-state="${state.saved ? "saved" : ""}">${state.saved ? "Live" : state.version === "b" ? "Save 3 changes" : "Save"}</button>`;
+  const tools = `
+    <button type="button" class="icon-button" aria-label="Undo" title="Undo">${icon("undo")}</button>
+    <button type="button" class="icon-button" aria-label="History" title="History">${icon("history")}</button>
+    <button type="button" class="icon-button inbox-button" data-open="inbox" aria-label="Inbox" title="Inbox" aria-expanded="false">${icon("tray", 17)}</button>`;
+  bar.innerHTML = state.version === "b"
+    ? `<div class="bar__start">${project}<span class="slash" aria-hidden="true">/</span>${picker}</div>
+       <div class="bar__end">${tools}<span class="divider" aria-hidden="true"></span>${save}</div>`
+    : `<div class="bar__start">${project}</div>${picker}<div class="bar__end">${tools}${save}</div>`;
+}
+
+function renderStage() {
+  if (state.file) {
+    stage.innerHTML = `<pre class="code">${state.file.endsWith(".css")
+      ? `<b>.site-header</b> {\n  display: flex;\n  gap: var(--space-4);\n  padding-block: var(--space-3);\n}\n\n<b>.hero</b> {\n  display: grid;\n  grid-template-columns: 1.2fr 1fr;\n}`
+      : `&lt;<b>header</b> class="site-header"&gt;\n  &lt;<b>a</b> href="/"&gt;Techies&lt;/a&gt;\n  &lt;<b>nav</b>&gt;…&lt;/nav&gt;\n&lt;/header&gt;`}</pre>`;
+    return;
+  }
+  const heading = state.page === "New post" ? "" : state.page === "Home" ? "Honest reviews by people who fix things" : state.page;
+  stage.innerHTML = `
+    <div class="site">
+      <div class="site__nav"><b>Techies</b><span>About</span><span>Blog</span><span>Services</span><span>Contact</span></div>
+      <div class="site__hero">
+        <div><h2 data-spot="heading">${heading || "&nbsp;"}</h2><p>We test the tools so you don't have to.</p><p>Plain words, real results.</p></div>
+        <div class="site__pic" data-spot="picture"></div>
+      </div>
+      <div class="site__cards"><i></i><i></i><i></i></div>
+    </div>`;
+}
+
+function waitingPages() { return new Set(items.map((i) => i.page).filter(Boolean)); }
+function waitingMedia(name) { return MEDIA.find((m) => m.name === name)?.waitingFor && items.some((i) => i.id === "picture"); }
+
+function renderExplorerHead() {
+  const head = document.getElementById("explorer-head");
+  const tabs = [["pages", "Pages", "file"], ["media", "Media", "image"], ["files", "Files", "folder"]];
+  const placeholder = { pages: "Search pages", media: "Search media", files: "Search files" }[state.tab];
+  const search = `<label class="search">${icon("search", 14)}<input type="search" id="explorer-search" aria-label="${placeholder}" placeholder="${placeholder}" value="${esc(state.query)}"></label>`;
+  const newLabel = { pages: "New page", media: "Add", files: "New" }[state.tab];
+  const newButton = `<button type="button" class="new">${icon("plus", 12)}${newLabel}</button>`;
+  if (state.version === "b") {
+    head.innerHTML = `<div class="segments" role="tablist" aria-label="Pages, media or files">${tabs.map(([id, label, ic]) =>
+      `<button type="button" role="tab" data-tab="${id}" aria-selected="${state.tab === id}">${icon(ic, 14)}${label}</button>`).join("")}</div>${search}${newButton}`;
+  } else {
+    head.innerHTML = `<div class="tabs" role="tablist" aria-label="Pages, media or files">${tabs.map(([id, label]) =>
+      `<button type="button" role="tab" data-tab="${id}" aria-selected="${state.tab === id}">${label}</button>`).join("")}</div>${search}${newButton}
+      <button type="button" class="icon-button" data-open="settings" aria-label="Site settings" title="Site settings" data-spot="gear">${icon("gear", 17)}</button>`;
+  }
+}
+
+function matches(text) { return !state.query || text.toLowerCase().includes(state.query.toLowerCase()); }
+
+function renderExplorerBody() {
+  const body = document.getElementById("explorer-body");
+  const waiting = waitingPages();
+  if (state.tab === "pages") {
+    const row = (p) => `<button type="button" class="row${!state.file && state.page === p.title ? " is-current" : ""}" data-page="${p.title}"${waiting.has(p.title) ? " data-waiting" : ""}>${icon("file", 15)}<span class="row__label">${p.untitled ? "Untitled" : p.title}</span><span class="row__url">${p.url}</span></button>`;
+    const keep = (p) => matches(p.title + " " + p.url) || (p.children || []).some(keep);
+    const list = (pages) => pages.filter(keep).map((p) => p.children
+      ? `<li>${row(p)}<ul>${list(p.children)}</ul></li>`
+      : `<li>${row(p)}</li>`).join("");
+    const html = list(PAGES);
+    body.innerHTML = html ? `<ul class="tree">${html}</ul>` : `<p class="nothing">No page matches</p>`;
+  } else if (state.tab === "media") {
+    const tiles = MEDIA.filter((m) => matches(m.name)).map((m) =>
+      `<button type="button" class="tile-media" data-media="${m.name}" aria-pressed="${state.media === m.name}"${waitingMedia(m.name) ? " data-waiting" : ""} style="--swatch: ${m.swatch}"><i></i><span>${m.name}</span></button>`).join("");
+    body.innerHTML = tiles ? `<div class="media-grid">${tiles}</div>` : `<p class="nothing">No media matches</p>`;
+  } else {
+    const fileRow = (path, name) => `<button type="button" class="row${state.file === path ? " is-current" : ""}" data-file="${path}">${icon("file-code", 15)}<span class="row__label">${name}</span></button>`;
+    const html = FILES.map((f) => {
+      if (f.file) return matches(f.file) ? `<li>${fileRow(f.file, f.file)}</li>` : "";
+      const kids = f.files.filter((n) => matches(f.folder + "/" + n));
+      if (!kids.length) return "";
+      const open = state.query || state.file?.startsWith(f.folder + "/") || f.folder === "components";
+      return `<li><details${open ? " open" : ""}><summary>${icon("folder", 15)}<span class="row__label">${f.folder}</span></summary><ul>${kids.map((n) => `<li>${fileRow(f.folder + "/" + n, n)}</li>`).join("")}</ul></details></li>`;
+    }).join("");
+    body.innerHTML = html ? `<ul class="tree">${html}</ul>` : `<p class="nothing">No file matches</p>`;
+  }
+}
+
+function renderMenu() {
+  const settings = state.version === "b"
+    ? `<button type="button" class="menu__item" role="menuitem" data-open="settings" data-spot="settings-item">${icon("gear")}Site settings</button>` : "";
+  panels.menu.innerHTML = `
+    <div class="menu__who"><span class="tile">T</span><div><b>techies-site</b><small>techiesreviews</small></div></div>
+    <button type="button" class="menu__item" role="menuitem">${icon("folder")}Switch project</button>
+    ${settings}
+    <button type="button" class="menu__item" role="menuitem">${icon("file")}Download site</button>
+    <div class="menu__sep"></div>
+    <button type="button" class="menu__item" role="menuitem">Sign out</button>`;
+}
+
+function renderInbox() {
+  const list = document.getElementById("inbox-list");
+  list.replaceChildren(...items.map((item) => {
+    const li = document.createElement("li");
+    li.dataset.kind = item.kind;
+    li.innerHTML = `${icon(item.icon)}<button type="button" class="item"><b>${item.what}</b><small>${item.where}</small></button>`;
+    li.querySelector(".item").addEventListener("click", () => go(item));
+    if (item.wave) {
+      const wave = document.createElement("button");
+      wave.type = "button";
+      wave.className = "wave";
+      wave.textContent = item.wave;
+      wave.addEventListener("click", () => {
+        li.dataset.leaving = "";
+        setTimeout(() => { items = items.filter((x) => x !== item); renderAll(); }, 200);
+      });
+      li.append(wave);
+    }
+    return li;
+  }));
+  document.body.toggleAttribute("data-waiting", items.length > 0);
+}
+
+function renderAll() {
+  renderBar();
+  renderStage();
+  renderMenu();
+  renderInbox();
+  renderExplorerHead();
+  renderExplorerBody();
+  syncExpanded();
+}
+
+/* ---------- Opening and closing panels ---------- */
+let openName = null;
+function open(name) {
+  const again = openName === name;
+  closeAll();
+  if (again) return;
+  if (name === "explorer") { state.query = ""; renderExplorerHead(); renderExplorerBody(); }
+  panels[name].hidden = false;
+  openName = name;
+  syncExpanded();
+  if (name === "explorer") document.getElementById("explorer-search")?.focus({ preventScroll: true });
+}
+function closeAll() {
+  for (const p of Object.values(panels)) p.hidden = true;
+  openName = null;
+  syncExpanded();
+}
+function syncExpanded() {
+  for (const b of bar.querySelectorAll("[data-open]")) b.setAttribute("aria-expanded", String(b.dataset.open === openName));
+}
+function clearRings() { for (const el of document.querySelectorAll("[data-ring]")) delete el.dataset.ring; }
+function ring(el, label) {
+  if (!el) return;
+  el.dataset.ring = label;
+  el.style.animation = "none";
+  void el.offsetWidth;
+  el.style.animation = "";
+}
+
+function go(item) {
+  closeAll();
+  clearRings();
+  if (item.page) {
+    state.page = item.page;
+    state.file = null;
+    renderBar();
+    renderStage();
+    ring(stage.querySelector(`[data-spot="${item.spot}"]`), item.label);
+  } else {
+    // Site settings: from the project menu in B, from the explorer's gear in C. The ring
+    // lands on the field itself, so both open Site settings straight away.
+    open("settings");
+    ring(panels.settings.querySelector('[data-spot="host"]').closest("label"), item.label);
+  }
+}
+
+document.addEventListener("click", (event) => {
+  const opener = event.target.closest("[data-open]");
+  if (opener) { event.stopPropagation(); open(opener.dataset.open); return; }
+  const tab = event.target.closest("[data-tab]");
+  if (tab) { state.tab = tab.dataset.tab; state.query = ""; renderExplorerHead(); renderExplorerBody(); return; }
+  const page = event.target.closest("[data-page]");
+  if (page) { state.page = page.dataset.page; state.file = null; clearRings(); closeAll(); renderBar(); renderStage(); return; }
+  const file = event.target.closest("[data-file]");
+  if (file) { state.file = file.dataset.file; clearRings(); closeAll(); renderBar(); renderStage(); return; }
+  const media = event.target.closest("[data-media]");
+  if (media) { state.media = state.media === media.dataset.media ? null : media.dataset.media; renderExplorerBody(); return; }
+  const save = event.target.closest("[data-save]");
+  if (save) { state.saved = !state.saved; renderBar(); syncExpanded(); return; }
+  if (openName && !event.target.closest(".panel")) closeAll();
+});
+document.addEventListener("input", (event) => {
+  if (event.target.id !== "explorer-search") return;
+  state.query = event.target.value;
+  renderExplorerBody();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && openName) { closeAll(); }
+});
+
+for (const pick of document.querySelectorAll("[data-pick]")) {
+  pick.addEventListener("click", () => {
+    state.version = pick.dataset.pick;
+    editor.dataset.version = state.version;
+    for (const p of document.querySelectorAll("[data-pick]")) p.setAttribute("aria-pressed", String(p === pick));
+    closeAll();
+    clearRings();
+    renderAll();
+  });
+}
+document.getElementById("reset").addEventListener("click", (event) => {
+  event.stopPropagation();
+  items = [...ITEMS];
+  Object.assign(state, { page: "Home", file: null, media: null, query: "", saved: false });
+  closeAll();
+  clearRings();
+  renderAll();
+});
+const theme = document.getElementById("theme");
+theme.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const dark = document.documentElement.dataset.theme !== "dark";
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  theme.querySelector("span").textContent = dark ? "Light" : "Dark";
+});
+
+renderAll();
+</script>
+</body>
+</html>
