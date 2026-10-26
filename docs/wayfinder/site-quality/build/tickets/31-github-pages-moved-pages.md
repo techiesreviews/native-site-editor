@@ -17,6 +17,7 @@ On GitHub Pages, an old address still leads to the moved page ([ticket 08](../..
 - When the site publishes to GitHub Pages, Change URL and move also write a small page at the old address: `meta refresh` 0 to the new address, a `canonical` to it, `noindex`, and a plain link.
 - Moving again, or moving back, updates or removes these pages, with no chains, following the `_redirects` rules.
 - The editor reads these pages as redirect pages: they do not show in Pages as pages.
+- They are left out where the site's page list is made (`deriveNativeRoutes`, `shared/native-routes.ts`), not only in the Pages tree, so the site map (site-structure build slice 13) never draws them and moving a page back onto its old address replaces its forwarding page.
 
 ## Files
 

@@ -34,6 +34,7 @@ A build plan for a new way to see and shape a site:
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Hand off the site structure build plan](tickets/09-task-hand-off-build-plan.md#resolution-2026-10-26): 19 slices in four stages (foundations, search, site map, project overview), three releases; after site quality; waits in text on catalogue 05 and 66 and site-quality 31, 63, 65
 - [Decide how the site map looks and behaves](tickets/04-grill-map-behaviour.md#resolution-2026-10-26): same-size top-screen tiles, four zoom levels, only the selected page's links, names then pictures, snapdom now; a site overview card with score filters
 - [Decide how pages are rearranged and added in the map](tickets/05-grill-rearranging.md#resolution-2026-10-26): drag onto a page moves it through Change URL with Undo; reasons on the tile; alphabetical order; add in place and stay in the map
 - [Decide how search in Pages and files works](tickets/06-grill-search.md#resolution-2026-10-26): one grouped list across Pages, Media and Files; lights up pages in the map; one shared matcher, word starts first, middle letters too
