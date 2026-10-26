@@ -2,7 +2,7 @@
 title: Three fixes from the old copies
 type: task (AFK)
 status: open
-assignee:
+assignee: runner-ke10
 builder: claude
 blocked_by: []
 ---

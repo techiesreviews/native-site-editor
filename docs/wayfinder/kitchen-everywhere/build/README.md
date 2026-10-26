@@ -2,7 +2,7 @@
 
 prefix: ke
 
-**Not started:** starts once the clean-up release is live in production (Lex, 2026-10-26); then only slices 10–24, inside this repo.
+Started 2026-10-26: the clean-up release is live (Worker 972eddd7) and Lex's first-hour check passed. Slices 10–24 only, inside this repo.
 
 Builds what the [map](../map.md) decided: one shared Agent Kit in its own repo that every project runs, always the newest; one settings file and a folder of own commands per project; `kit init` to set a project up; a shared rulebook with per-project extras; reviews without OpenAI models, with a second look on every change; then each of Lex's chosen projects moves over, and the `lex-coding` rule changes last. Every decision comes from the map's closed tickets; this build does not reopen them:
 
