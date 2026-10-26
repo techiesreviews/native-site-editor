@@ -54,4 +54,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Standards (P3): 836c6ecc7:scripts/agents/kit.d/review:120 — P3 style: `saveReviewEvidence` returns `evidence`, but the caller ignores that value and reads the folder from the s
 - Validation gaps (gap): `tests/kit-doctor.test.ts`: every new help test sets `KIT_COMMANDS_DIR`, so the default path (`${KIT_COMMANDS_DIR:-$(dirname -- "${BASH_SOURCE[0]}")}` at `scrip
 - Validation gaps (gap): `tests/kit-wait.test.ts`: the new SHA test proves that `--sha` stays on its commit, and the existing branch test proves that branch waits follow the newer head.
+- Spec (P2): 432074b46:docs/wayfinder/kitchen-everywhere/build/tickets/10-fixes-from-old-copies.md:53 — P2 ticket: All four `### Follow-ups` lines (53–56) stop mid-word: "`k
+- Standards (P3): 69ea19120:scripts/agents/kit.d/review:124 — P3 fault: The open follow-up is still in the code. One `try` (119–133) covers both `saveReviewEvidence` and the late
+- Standards (P2): 69ea19120:scripts/agents/kit.d/doctor:136 — P2 fault: `agent.sh:21` gates every `build`/`review` on `kit doctor --quiet`, and `kit fix` starts its builder throu
+- Standards (P3): 753e640b4:scripts/agents/kit.d/doctor:144 — P3 fault: `code=$(< "$help_dir/$index.code")` runs under `set -euo pipefail`. If a `.code` file is missing (the subs
+- Validation gaps (gap): No test covers the agent.sh gate together with the new `help` check. Add a test in `tests/kit-doctor.test.ts` or the agent.sh test: in a fixture worktree with a
+- Validation gaps (gap): No test sets `KIT_COMMANDS_DIR` unset, so the default `$(dirname -- "${BASH_SOURCE[0]}")` path at `doctor:125` is never tested (this is the third follow-up, unr
+- Validation gaps (gap): The "kept in" message has no test for scoring throwing after a successful save. Add a `tests/kit-review.test.ts` case that stubs `KIT_LIB_MJS` with a `kitScore`
 
