@@ -29,9 +29,11 @@ export async function resumeAgents(ports: {
 /**
  * Connect to MCP with remote agents off: turns them on, reads the connections, opens the socket,
  * and, finding a reconnect left from before the press, retries it at once rather than waiting out
- * its backoff. Then it makes a prompt (idle), copies the waiting one again, or, still reconnecting
- * with no recorded retry time to wait for, marks the press stuck. A turn-off, another turn-on or a
- * site move while it waits ends it with no write.
+ * its backoff. Then it makes a prompt (idle), copies the waiting one again (also when an agent
+ * already uses the site's connection: the press still hands over a prompt, this tab's own if it
+ * still waits, otherwise a new one), or, still reconnecting with no recorded retry time to wait
+ * for, marks the press stuck. A turn-off, another turn-on or a site move while it waits ends it
+ * with no write.
  */
 export async function turnOnAgents(ports: {
   /** Turns remote agents on for the open site and returns this activation. */
@@ -54,7 +56,7 @@ export async function turnOnAgents(ports: {
   waits(state: string): boolean;
   /** Makes a new prompt. */
   prompt(): Promise<void>;
-  /** Copies the waiting prompt again. */
+  /** Copies this tab's waiting prompt again, or makes a new one. */
   copyAgain(): Promise<void>;
   /** Shows that the press found the reconnect still under way. */
   stuck(): void;
@@ -68,7 +70,7 @@ export async function turnOnAgents(ports: {
   if (!ports.live(at)) return;
   const now = ports.state();
   if (now === "idle") await ports.prompt();
-  else if (ports.waits(now)) await ports.copyAgain();
+  else if (now === "connected" || ports.waits(now)) await ports.copyAgain();
   else if (now === "reconnecting" && !ports.retryWaits()) ports.stuck();
 }
 
