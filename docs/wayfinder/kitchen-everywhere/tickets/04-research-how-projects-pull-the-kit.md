@@ -2,7 +2,7 @@
 title: Find how a project pulls the shared kit
 type: research (AFK)
 status: open
-assignee:
+assignee: claude (research subagent)
 blocked_by: [01-grill-how-the-kitchen-is-copied]
 ---
 

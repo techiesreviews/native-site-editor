@@ -2,7 +2,7 @@
 title: Find what each of Lex's projects needs from the kitchen
 type: research (AFK)
 status: open
-assignee:
+assignee: claude (research subagent)
 blocked_by: []
 ---
 

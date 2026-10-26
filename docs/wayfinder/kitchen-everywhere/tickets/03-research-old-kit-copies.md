@@ -2,7 +2,7 @@
 title: Find what the three old kit copies changed
 type: research (AFK)
 status: open
-assignee:
+assignee: claude (research subagent)
 blocked_by: []
 ---
 
