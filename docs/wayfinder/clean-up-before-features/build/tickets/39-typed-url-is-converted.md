@@ -55,3 +55,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - UX (looks off): F-pages-06 the dropped page lands under Work as a subpage, then a "URL changed…" toast with counts appears (S4) (.scratch/ux/lead-39/20261025-230057-WNkeQU/pages-F-pages-06-1280-light-drop-strip.webp)
 - UX (looks off): F-pages-12 the head follows, but a "Page settings applied as a draft. Publish to keep them." toast appears (S4, B6) and at 390 px it sits over the canvas's "First item" card (U5) (.scratch/ux/lead-39/20261025-230057-WNkeQU/pages-F-pages-12-390-light-apply-strip.webp)
 - UX (looks off): F-pages-15 the shared header updates to About / Our work, but a "Navigation applied as a draft. Publish to keep it." toast appears (S4, B6) and at 390 px it covers the "First item" card (U5) (.scratch/ux/lead-39/20261025-230057-WNkeQU/pages-F-pages-15-390-light-apply-strip.webp)
+
+### Follow-ups
+
+- Spec (P2): 11fc817:src/components/url-change.ts:113 — P2 ticket: The ticket says "Wherever a new page address is typed… the input is converted to the rules". When a caller
+- Spec (P3): 84d6d8674:src/page-builder/page-choices.ts:92 — P3 fault: `createPageOffer` now builds the route from `toPageAddress(title)`, which drops marks inside words. A 
+- Standards (P3): 84d6d8674:tests/agent-site.test.ts:110 — P3 style: The new fake is typed with a bare `as AgentSiteActions`. If the `AgentSiteActions` methods it uses change (fo
+- Validation gaps (gap): Nothing tests the Pages tab Change URL wiring (`pages-and-files-host.ts` `typedUrl` → `pages-tree.ts` → `createUrlChange`). `native-page-urls.spec.ts` only cove
+- Validation gaps (gap): Nothing covers the sidebar Page block's fallback converter (`createUrlChange` with no `typedUrl`). Add a unit or spec case on a site with an `Old_Folder/`: type
+- Validation gaps (gap): The ticket says "converts to nothing keeps Create disabled", but there is no evidence for the New page URL field. Add a step to `native-create.spec.ts`: `pressS
+- Validation gaps (gap): The case where an existing folder's name is half typed is only unit-tested for `/Old_Folder/moved` through the controller. No browser spec types `/Old` in a fie
+
