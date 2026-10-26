@@ -2,7 +2,7 @@
 title: Decide which projects get the kitchen, in what order
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [01-grill-how-the-kitchen-is-copied, 02-research-what-each-project-needs, 03-research-old-kit-copies, 04-research-how-projects-pull-the-kit]
 ---
 
