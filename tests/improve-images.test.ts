@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { improveImagesPlan, improvePlanCache, IMPROVE_HEAVY_BYTES, leavePictureAlone, pictureLeftAlone } from "../src/page-builder/improve-images";
+import { improveImagesPlan, IMPROVE_HEAVY_BYTES, leavePictureAlone, pictureLeftAlone, type ImprovePlanCache } from "../src/page-builder/improve-images";
 import { parseMediaRecords } from "../shared/media-records";
 import { gifLoopingVideo } from "../src/page-builder/looping-video";
 import { descendants, parseSource } from "../src/page-builder/source-tree";
@@ -279,7 +279,7 @@ test("sub-folder Improve images resolves local pictures and keeps route labels u
 });
 
 test("a kept plan cache finds what a fresh plan finds after a page changes, and rereads only that page (ticket 38)", () => {
-  const input = fixture(), cache = improvePlanCache();
+  const input = fixture(), cache: ImprovePlanCache = new Map();
   assert.deepEqual(improveImagesPlan({ ...input, cache }), improveImagesPlan(input));
   const kept = new Map([...cache].map(([key, entry]) => [key, entry.value]));
   const changed = { ...input, sources: { ...input.sources, "index.html": input.sources["index.html"]!.replace("</site-shell>", '<img src="/images/new.png"></site-shell>') } };
@@ -289,7 +289,7 @@ test("a kept plan cache finds what a fresh plan finds after a page changes, and 
 });
 
 test("a kept plan cache reads every file's references again for another site address, keeping parses and tokens (ticket 38)", () => {
-  const input = fixture(), cache = improvePlanCache();
+  const input = fixture(), cache: ImprovePlanCache = new Map();
   improveImagesPlan({ ...input, cache });
   const kept = new Map([...cache].map(([key, entry]) => [key, entry.value]));
   const moved = { ...input, site: { prefix: "/sub", origins: ["https://example.org"] } };
