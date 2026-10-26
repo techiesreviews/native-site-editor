@@ -26,10 +26,11 @@ A decided and ticketed plan for running every one of Lex's code projects the way
 - [Find what the three old kit copies changed](tickets/03-research-old-kit-copies.md#resolution-2026-10-26): copies are the 2026-10-17 kit plus own checks; keep their own commands, bring in three fixes (review files kept on failure, `wait ci --sha`, doctor runs every `--help`), drop the rest; a swap breaks mostly on settings and a few path traps
 - [Find how a project pulls the shared kit](tickets/04-research-how-projects-pull-the-kit.md#resolution-2026-10-26): one kit checkout on the machine plus a small launcher per project, updated by a 15-minute timer; CI clones the newest; paths and hooks stay the same; settings file `scripts/agents/kit.json` sketched
 - [Decide which projects get the kitchen, in what order](tickets/05-grill-rollout.md#resolution-2026-10-26): editor, old copies, active projects, static sites; full kitchen where agents build, light for static sites; each project names its landing branch; GitHub Issues move to ticket files; per-project records plus one combined table; `lex-coding` says never copy, run `kit init`; at-risk `chat` and `techies-reviews` work backed up
+- [Hand off the kitchen-everywhere build plan](tickets/06-handoff-plan.md#resolution-2026-10-26): [build plan](build/README.md) with 24 slices, not started until Lex says; kit made project-neutral here first (settings file, own-commands folder, `KIT_HOME`, one Grok count, OpenCode reviews, second look per kind, the three old-copy fixes, rulebook, launcher, `kit update`, `kit init`, combined score), then the move to its own repo and the timer, then each project in the decided order, `lex-coding` last; repo, timer, every other project and the skill wording wait for Lex
 
 ## Not yet specified
 
-- Nothing the build needs; all five planning tickets are closed.
+- Nothing the build needs; all six planning tickets are closed.
 
 ## Out of scope
 

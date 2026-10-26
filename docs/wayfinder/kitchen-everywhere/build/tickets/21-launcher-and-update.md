@@ -1,0 +1,41 @@
+---
+title: The launcher and kit update, tried here
+type: task (AFK)
+status: open
+assignee:
+builder: claude
+blocked_by: [14-settings-for-other-projects]
+---
+
+## Goal
+
+The pieces that let every project run one kit copy on the machine, always the newest, built and tested here before the kit moves: a small launcher per project, `kit update` that unpacks the newest kit, and hooks that never go quiet when the kit is missing (research 04, "How way D would work"; [ticket 04 resolution](../../tickets/04-research-how-projects-pull-the-kit.md#resolution-2026-10-26); [ticket 01 resolution](../../tickets/01-grill-how-the-kitchen-is-copied.md#resolution-2026-10-26) point 3).
+
+## Decided behaviour
+
+- **Machine copy:** clean, read-only kits under `~/.local/share/agent-kit/<commit>/` with a `current` link to the newest; kit work happens elsewhere (`~/Projects/agent-kit` after ticket 30).
+- **`kit update`** fetches the kit repo's `main`, unpacks the newest commit into a new folder and swaps `current` in one step; folders older than a day go. `kit update --previous` points `current` back one commit for every project at once (the emergency switch); the normal way back is a revert in the kit repo. The repo URL is a setting of the launcher; until ticket 30, tests use a local bare repo.
+- **The launcher** (a template `scripts/agents/launcher/kit` of about 20 lines, written into projects by `kit init` and into this repo by ticket 30): reads `current` once, sets `KIT_HOME` to that exact folder for the whole command (a long slice keeps one version), and runs the kit's front door. An already set `KIT_HOME` wins (trying a kit branch). With no machine copy (GitHub Actions, a cloud session, a new laptop) it clones the newest kit `--depth 1` into `${XDG_CACHE_HOME:-~/.cache}/agent-kit` first, outside every project folder.
+- **The hook launcher** (template `scripts/agents/launcher/hooks-run.sh`) finds the kit the same way and runs the kit's `hooks/run.sh`; it never goes through the front door (no `RESULT:` line in session context). **It never fails silently** (README helper decision 7): with no kit it prints "Agent Kit not found: guards are off; run `scripts/agents/kit doctor`" as SessionStart context and on every guarded call, and does not block the session.
+- **`kit version` and `kit doctor`** print the kit's commit and age beside the project's; `doctor` warns after a day without an update and fails when the hooks cannot reach a kit (its live `bash-guard` probe).
+
+## Files
+
+- `scripts/agents/kit.d/update` (new), `tests/kit-update.test.ts` (new)
+- `scripts/agents/launcher/kit`, `scripts/agents/launcher/hooks-run.sh` (new templates), `tests/kit-launcher.test.ts` (new)
+- `scripts/agents/kit.d/version`, `scripts/agents/kit.d/doctor`, `scripts/agents/hooks/run.sh`
+- `tests/kit-doctor.test.ts`, `tests/agent-scripts.test.ts`
+- `docs/agents/agent-scripts.md`
+
+## Done when
+
+- Tests with a local bare repo and temp `XDG_DATA_HOME`/`XDG_CACHE_HOME` prove: `kit update` unpacks and swaps; a command started before an update finishes on its old folder; `--previous` goes back one; no machine copy → one shallow clone into the cache and none inside the project; `KIT_HOME` set wins; the hook launcher with no kit prints the warning and exits without blocking; `doctor` warns on a two-day-old copy and fails when hooks cannot reach a kit.
+- `scripts/agents/kit unit --affected` green. This repo's own `scripts/agents/kit` is unchanged until ticket 30.
+
+## Kit commands and evidence
+
+Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). Kit and docs only; writes nothing in Lex's real `~/.local` folders during tests.
+
+- `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke21 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/21-launcher-and-update.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke21 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
+- Second look: as the README says (by hand before 17 lands, by `kit slice` after).
+- Report: unit `RESULT:` lines, the warning text as printed, review decisions, PR and merge SHA.
