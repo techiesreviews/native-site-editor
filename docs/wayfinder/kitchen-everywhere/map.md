@@ -25,12 +25,11 @@ A decided and ticketed plan for running every one of Lex's code projects the way
 - [Find what each of Lex's projects needs from the kitchen](tickets/02-research-what-each-project-needs.md#resolution-2026-10-26): techies-playground small; techies-reviews, creator-studio-poc, TechiesTools medium; static sites small; two kit copies at risk of loss (unpushed branch, uncommitted chat); four landing-branch names; two projects track work in GitHub Issues; the editor saves straight to main on two sites
 - [Find what the three old kit copies changed](tickets/03-research-old-kit-copies.md#resolution-2026-10-26): copies are the 2026-10-17 kit plus own checks; keep their own commands, bring in three fixes (review files kept on failure, `wait ci --sha`, doctor runs every `--help`), drop the rest; a swap breaks mostly on settings and a few path traps
 - [Find how a project pulls the shared kit](tickets/04-research-how-projects-pull-the-kit.md#resolution-2026-10-26): one kit checkout on the machine plus a small launcher per project, updated by a 15-minute timer; CI clones the newest; paths and hooks stay the same; settings file `scripts/agents/kit.json` sketched
+- [Decide which projects get the kitchen, in what order](tickets/05-grill-rollout.md#resolution-2026-10-26): editor, old copies, active projects, static sites; full kitchen where agents build, light for static sites; each project names its landing branch; GitHub Issues move to ticket files; per-project records plus one combined table; `lex-coding` says never copy, run `kit init`; at-risk `chat` and `techies-reviews` work backed up
 
 ## Not yet specified
 
-- Whether the scoreboard and feedback logs stay per project or also roll up into one view across projects (asked in [ticket 05](tickets/05-grill-rollout.md)).
-- Whether Lex's static sites (`native-site-editor-starter`, `lexvd-site`, `dogsfitandfun`, `techies-reviews`) want the full kitchen or only `review`, `pr` and the hooks (asked in [ticket 05](tickets/05-grill-rollout.md)).
-- How the `lex-coding` skill's kit section changes once the shared kit exists (today it points agents at this repo's `origin/dev`; asked in [ticket 05](tickets/05-grill-rollout.md)).
+- Nothing the build needs; all five planning tickets are closed.
 
 ## Out of scope
 
