@@ -93,12 +93,20 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 ### 5. Hand-out
 
 - **Use:** `scripts/agents/kit next [map…]` picks the tickets and builders by fixed rules
-  ([factory 05](../wayfinder/software-factory/tickets/05-grill-hand-out.md#resolution-2026-10-22));
-  `kit next <map> --start` claims them on `dev`, makes each worktree and starts its
-  `kit slice` under `kit bg`; the lead then runs the printed `kit wait job` lines in the
-  background. Delegated (`opencode/…`) tickets are only claimed; the lead sends them with T3
-  `delegate_task`. No runner subagents; a helper agent only for a slice that is stuck and needs
-  judgment.
+  ([factory 05](../wayfinder/software-factory/tickets/05-grill-hand-out.md#resolution-2026-10-22)).
+  The lead claims each `next:` ticket on `dev` (assignee, commit, push) and starts it as **its own T3
+  thread**: one `delegate_task` per ticket (or group) with `isolation: "worktree"`, `mode: "async"`,
+  the ticket's builder as `target`, and this brief:
+
+  > Build slice `<ticket path>` in native-site-editor, owner `<owner>`. Follow docs/agents/runner.md from Setup to
+  > Report with Agent Kit (`scripts/agents/kit`); builder `<model>`, `ASE_REVIEW_MODEL=claude-opus-5-5`. Last line: PR <full URL>, head <SHA>, checks and reviews <state>.
+
+  The child thread runs the slice from setup to `kit pr`, links only its own PR and settles when T3 sees it merged.
+  Delegated (`opencode/…`) tickets go the same way with their free model.
+- **The lead's thread is the overview** (Lex, 2026-10-26): pinned (`t3_thread_organize pin`), no PR
+  links, no long jobs of its own. It follows each child's `next` notice, relays what matters to Lex,
+  asks his decisions and keeps the map; jobs started in a lead turn die when that turn ends (each
+  turn is its own systemd scope), so building, checks and landing live in the child threads.
 - **Heartbeat** (while a build runs): the lead creates a T3 `schedule_task` every 30 minutes, bound
   to the lead's thread, with this prompt: "In the dev worktree run
   `scripts/agents/kit heartbeat <map> --start` and post its `done:` and `running/next:` lines to

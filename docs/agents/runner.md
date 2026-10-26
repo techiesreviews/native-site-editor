@@ -1,7 +1,7 @@
 # Build slice runner
 
-The steps one slice runs through, end to end. The lead starts each slice with `kit slice` ([kitchen.md](kitchen.md),
-station 5); a helper continues a stuck slice from here. Command options live in [agent-scripts.md](agent-scripts.md#kit)
+The steps one slice runs through, end to end. The lead starts each slice as its own T3 thread ([kitchen.md](kitchen.md),
+station 5) with the brief in station 5; a helper continues a stuck slice from here. Command options live in [agent-scripts.md](agent-scripts.md#kit)
 and each `--help`. A build's own `runner-extras.md` (next to its map) wins where it differs.
 
 ## Rules
@@ -10,7 +10,8 @@ and each `--help`. A build's own `runner-extras.md` (next to its map) wins where
 - **No own subagents** (Agent/Task or T3 delegated tasks); the builder CLI (`agent.sh build`) is allowed.
 - **No preview deploys** (`kit preview`, `deploy-preview.sh`, `npm run deploy:*`, wrangler); the lead deploys.
 - **Never touch `main`** or production. **The merged PR is the finish line** (`kit pr`, see Land).
-- **Report once, at the end.** Never end your turn while your own background job still runs.
+- **Report once, at the end.** Never end your turn while your own background job still runs (it dies with the turn).
+- **Your PR is your thread's:** link it (T3 `link_pull_request`) once `kit pr` opens it; T3 settles your thread on merge.
 
 ## Sources
 
@@ -21,9 +22,8 @@ and each `--help`. A build's own `runner-extras.md` (next to its map) wins where
 
 ## Setup
 
-- `git -C <dev worktree> fetch -q origin`, then
-  `ASE_OWNER=<owner> scripts/agents/worktree.sh build/<owner>-<slug> origin/dev`.
-  Work only in the returned worktree; use `git -C <worktree>` or guard every `cd` with `|| exit 1`.
+- In a T3 child thread your checkout is the build worktree: `git fetch -q origin && git switch -c build/<owner>-<slug> origin/dev`.
+  Elsewhere: `ASE_OWNER=<owner> scripts/agents/worktree.sh build/<owner>-<slug> origin/dev`. Use `git -C` or `cd … || exit 1`.
 - Run `scripts/agents/kit doctor` first and fix every ✗. Node PATH comes from SessionStart (Claude sets it;
   other CLIs get an export instruction).
 - Starter slices use a starter worktree on `origin/dev` (integration branch `dev`). Prototypes live on
