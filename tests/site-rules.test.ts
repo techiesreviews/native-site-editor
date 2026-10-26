@@ -57,9 +57,15 @@ test("a typed URL is converted part by part; folders the site has stay", () => {
   assert.equal(toPageRoute("/Notes/Old_Sub/x/", site), "/notes/Old_Sub/x/");
   // Only as a folder: a page named like it (`Notes.html`) is no folder `Notes/`.
   assert.equal(toPageRoute("/Notes/x/", site), "/notes/x/");
-  // The page's own last part stays wherever it goes; another last part meets the rule.
+  // The page's own last part stays wherever it goes; a folder the site has stays (the planner finds it taken); another last part meets the rule.
   assert.equal(toPageRoute("/notes/About_Us.v2/", { ...site, own: "About_Us.v2" }), "/notes/About_Us.v2/");
-  assert.equal(toPageRoute("/Old_Folder/", site), "/old-folder/");
+  assert.equal(toPageRoute("/Old_Folder/", site), "/Old_Folder/");
+  assert.equal(toPageRoute("/Old_Folder", site), "/Old_Folder");
+  assert.equal(toPageRoute("/Older_Folder/", site), "/older-folder/");
+  // Typed and closed by `/`, a name is shown as it is saved (a dash before the `/` still waits while typing, for an edit in the middle).
+  for (const text of ["/Old_Folder/", "/Notes/Old_Sub/", "/New_Folder/", "/notes/About Us/", "/Old/", "/notes/About/"]) {
+    for (const at of [site, { ...site, own: "About_Us.v2" }]) assert.equal(toPageRoute(text, at, { typing: true }), toPageRoute(text, at), text);
+  }
   // While typing: a dash at the end of a part, the start of .html at the end, and the start of a name the site has.
   const typing = { typing: true };
   assert.equal(toPageRoute("/notes/about ", site, typing), "/notes/about-");
@@ -72,6 +78,21 @@ test("a typed URL is converted part by part; folders the site has stay", () => {
   assert.equal(toPageRoute("/Old_Folder/", site, typing), "/Old_Folder/");
   assert.equal(toPageRoute("/Ol d", site, typing), "/ol-d");
   assert.equal(toPageRoute("/notes.", site), "/notes");
+  // Before `.html` the name is whole, as it is saved.
+  for (const text of ["/about-.html", "/about -.h", "/about_."]) assert.equal(toPageRoute(text, site, typing), text.replace(/[-_ ]+\./, "."), text);
+  assert.equal(toPageRoute("/about-.html", site), "/about.html");
+  // The caret goes after what the text before it became: that is a start of the whole text's conversion.
+  const own = { ...site, own: "About_Us.v2" } satisfies TypedRouteSite;
+  for (const [text, caret, at] of [
+    ["/notes/Old_Sub/x/", "/notes/Old_".length, site],
+    ["/Notes/Old_Sub/x/", "/Notes/Old_".length, site],
+    ["/notes/About_Us.v2/", "/notes/About_".length, own],
+    ["/notes/a b/", "/notes/a ".length, site],
+    ["/notes/about-.html", "/notes/about-.".length, site],
+  ] as const) {
+    const before = toPageRoute(text.slice(0, caret), at, typing);
+    assert.ok(toPageRoute(text, at, typing).startsWith(before), `${text} at ${caret}: ${before}`);
+  }
 });
 
 test("make component checks the name, then the element, with one wording each", () => {

@@ -54,10 +54,12 @@ export interface TypedRouteSite {
 /**
  * A typed page URL made to meet the rule part by part, as the move planner
  * checks it: `/Notes/About Us/` is `/notes/about-us/`. A folder the site has
- * at the converted path so far stays as it is (`/Old_Folder/x/`), and so do
- * the page's own last part and a `.html` at the end. While `typing`, a dash
- * at the end of a part stays, and so do the start of `.html` and a last part
- * that begins the name of a folder there, so `Old_Folder` can be typed out.
+ * at the converted path so far stays as it is (`/Old_Folder/x/`, and
+ * `/Old_Folder/` itself, which the planner then finds taken), and so do the
+ * page's own last part and a `.html` at the end. While `typing`, a dash at
+ * the end of a part stays, and so do the start of `.html` and a last part
+ * that begins the page's own name or a folder's there, so `Old_Folder` can be
+ * typed out.
  */
 export function toPageRoute(text: string, site: TypedRouteSite, { typing = false }: { typing?: boolean } = {}): string {
   const parts = text.split("/");
@@ -69,10 +71,12 @@ export function toPageRoute(text: string, site: TypedRouteSite, { typing = false
   return parts.map((part, index) => {
     if (!part) return part;
     const path = `${above}${part}`;
-    const kept = index === named ? part === site.own || (typing && beginsFolder(path)) : folder(path);
     const last = index === parts.length - 1;
+    // Half typed (not closed by `/` yet), the start of a name the site has stays.
+    const kept = folder(path) || index === named && (part === site.own || typing && last && (Boolean(site.own?.startsWith(part)) || beginsFolder(path)));
     const suffix = !kept && last ? ((typing ? /\.(?:h(?:t(?:ml?)?)?)?$/i : /\.html$/i).exec(part)?.[0] ?? "") : "";
-    const made = kept ? part : toPageAddress(part.slice(0, part.length - suffix.length), { typing }) + suffix.toLowerCase();
+    // Before `.html`, the name is whole: no dash waits there.
+    const made = kept ? part : toPageAddress(part.slice(0, part.length - suffix.length), { typing: typing && !suffix }) + suffix.toLowerCase();
     above = `${above}${made}/`;
     return made;
   }).join("/");

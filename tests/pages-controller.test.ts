@@ -53,6 +53,15 @@ test("a typed URL keeps a folder the site has, named against the rule, and the p
   assert.equal(h.controller.typedUrl(target.file, "/New_Folder/x/", false), "/new-folder/x/");
 });
 
+test("a folder the site has, typed as the new URL, shows as it is saved and is refused as taken", () => {
+  const h = fixture({ "Old_Folder/index.html": "<html><head><title>Old</title></head><body><h1>Old</h1></body></html>" });
+  assert.equal(h.controller.typedUrl(target.file, "/Old_Folder/", true), "/Old_Folder/");
+  assert.equal(h.controller.typedUrl(target.file, "/Old_Folder/", false), "/Old_Folder/");
+  const plan = h.controller.urlPlan(target.file, "/Old_Folder/");
+  assert.equal(plan.ok, false);
+  assert.equal(plan.ok ? "" : plan.error, "The URL /Old_Folder/ is taken by Old_Folder/index.html.");
+});
+
 test("a pasted URL finds a folder the site has under the parts converted above it", () => {
   const h = fixture({ "notes/Old_Sub/index.html": "<html><head><title>Old</title></head><body><h1>Old</h1></body></html>" });
   const typed = h.controller.typedUrl(target.file, "/Notes/Old_Sub/x/", false);
