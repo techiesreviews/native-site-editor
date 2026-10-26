@@ -87,3 +87,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Round 3: the spec's verdict paired its two budgets across different rounds (the best keystroke of one round, the best task of another); one round must now meet both, tested in `tests/latency-budget.test.ts` (a round 150/0 and a round 20/80 fail). `tests/native-source-location-cache.test.ts` shows a page and three templates read in turns keep their parses and a ninth source pushes the oldest out (it fails with the old two-entry cache). Optional nits taken: Clean up takes its plan cache before any wait, so a request a place switch overtook fills only the old one; the usage controller's comment says a kept text is only compared, never served; line references in this section corrected.
 - Feature list: no change (speed only; nothing a user sees changes)
 
+### Follow-ups
+
+- Spec (P3): 3fd736c09:docs/wayfinder/clean-up-before-features/build/tickets/38-edits-feel-instant.md:84 — P3 ticket: the "Commits:" line names `be8d9c73c` and `5e825224a`, 
+- Spec (P3): 3fd736c09:docs/wayfinder/clean-up-before-features/build/tickets/38-edits-feel-instant.md:77-78 — P3 ticket: round 3 says the line references were corrected, but
+- Validation gaps (gap): The Done section says "No action sends a network request in the 1.5 s after it (no save, session check or reload), and Undo waits on nothing", but nothing in th
+- Validation gaps (gap): `tests/media-usage.test.ts` "a kept check reads again only the files whose text changed…" changes the site address but then only checks `cache.references`. `med
+- Validation gaps (gap): The new early return in `slotMenu` (`src/page-builder/components.ts:557-559`) moved the mode check ahead of the source and stamp reads. No test in the change sh
+
