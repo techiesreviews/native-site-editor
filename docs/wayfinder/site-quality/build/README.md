@@ -23,7 +23,7 @@ Find takeable slices with `node scripts/agents/tickets.mjs frontier site-quality
 
 ## Gate
 
-**Nothing here starts before the [detail pass](../../detail-pass/map.md) is released to production** (Lex's order: agents and multiplayer, catalogue, detail pass, then this). The detail pass itself waits for the [atomic catalogue build](../../atomic-catalogue/build/README.md)'s last release, which brings the slim top bar (catalogue slice 66) the Inbox sits in. The lead checks `kit status` before claiming the first slice (see Lex's question 1 below about starting the kit checks earlier).
+**Nothing here starts before the [detail pass](../../detail-pass/map.md) is released to production**, except slices 10 and 11 (checks only), which start right after the catalogue release (Lex, 2026-10-26) (Lex's order: agents and multiplayer, catalogue, detail pass, then this). The detail pass itself waits for the [atomic catalogue build](../../atomic-catalogue/build/README.md)'s last release, which brings the slim top bar (catalogue slice 66) the Inbox sits in. The lead checks `kit status` before claiming the first slice.
 
 ## Two releases
 
@@ -136,6 +136,6 @@ The frontier decides; this is one order that keeps to the rules.
 
 ## Questions for Lex (asked at hand-off)
 
-1. **Start the kit checks early?** Slices 10 and 11 add checks only and change nothing visible. Recommendation: let them start as soon as the catalogue is released, beside the detail pass, so scores are watched from then on; everything else waits for the detail pass.
-2. **Written component copies in the code pane (15):** asked again 2026-10-26, after Lex asked whether this is about the editor or the website (the editor's code view; the published site is unchanged for visitors). each page's HTML will carry a copy of its header, footer and so on. Recommendation: folded to one line named after the component and read-only; you change the component itself, and every page follows on save.
+1. **Start the kit checks early?** Answered 2026-10-26, Lex: "yes": slices 10 and 11 start right after the catalogue release, beside the detail pass. Slices 10 and 11 add checks only and change nothing visible. Recommendation: let them start as soon as the catalogue is released, beside the detail pass, so scores are watched from then on; everything else waits for the detail pass.
+2. **Written component copies in the code pane (15):** answered 2026-10-26, Lex: "yes, I want an atomic design, component structure. This is what I would like to do going forwards." Folded to one read-only line per component. Asked again 2026-10-26, after Lex asked whether this is about the editor or the website (the editor's code view; the published site is unchanged for visitors). each page's HTML will carry a copy of its header, footer and so on. Recommendation: folded to one line named after the component and read-only; you change the component itself, and every page follows on save.
 3. **Moved pages on GitHub Pages (31):** answered 2026-10-26, Lex: "yes" (forwarding pages, hidden from Pages). Ticket 08 said Change URL keeps its redirect pages there, but today it only writes `_redirects`, which GitHub Pages ignores, so old addresses give a "not found". Recommendation: on GitHub Pages, Change URL also leaves a tiny forwarding page at the old address (hidden from Pages).

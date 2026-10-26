@@ -54,6 +54,9 @@ The rules are kept up to date as the specs change.
 
 ## Not yet specified
 
+- **A score overview per page (Lex, 2026-10-26):** "perhaps we could have a visual overview per page in the page overview of the score, so people know what can be improved, but it should not be distracting". Where it shows and how the score is measured in the editor are asked in the next round; it becomes a slice after the Inbox ones.
+- **Site components in atomic design (Lex, 2026-10-26):** "I want an atomic design, component structure. This is what I would like to do going forwards." Taken to mean the site's own components, not only the editor's parts; charted with map 6 (styling and components).
+
 - **Multilingual sites:** hreflang and language versions. Probably later.
 - **Privacy and consent:** analytics and cookie rules from the spec's Privacy category, if sites use them.
 

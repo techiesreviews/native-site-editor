@@ -131,7 +131,7 @@ Lex's end check and a release follow wave 0, the replacement slices, and wave 3 
 | [62 Rebuild from parts: History](tickets/62-organism-history.md) | S | visible | – | 61 |
 | [63 Rebuild from parts: Add panel and empty page](tickets/63-organism-add-panel.md) | M | visible | – | 62 |
 | [64 Rebuild from parts: Component panel, Edit component mode, canvas bar](tickets/64-organism-components.md) | L | visible | – | 63 |
-| [66 Rebuild from parts: Top bar, slimmer](tickets/66-organism-top-bar.md) | M | visible | – | 64 |
+| [66 Rebuild from parts: Top bar, slimmer](tickets/66-organism-top-bar.md) | L | visible | – | 64 |
 
 ## Close-out
 
