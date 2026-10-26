@@ -15,7 +15,7 @@ Tickets live in [tickets/](tickets/), one slice each, numbered by stage: 10s sta
 
 ## Gate
 
-**Nothing here starts before the clean-up build ([clean-up-before-features](../../clean-up-before-features/build/README.md)) is released to production.** These slices build on its agent command path (slices 50–53), presence (33), background pages (27, 34), the MCP menu (29) and the site runtime (31). The lead checks that `kit status` shows the clean-up released before claiming slice 10.
+**Nothing here starts before the clean-up build ([clean-up-before-features](../../clean-up-before-features/build/README.md)) is released to production, and the kitchen-everywhere slices 10–24 ([its build](../../kitchen-everywhere/build/README.md)) have landed on `dev` (Lex, 2026-10-26: kit changes first).** These slices build on its agent command path (slices 50–53), presence (33), background pages (27, 34), the MCP menu (29) and the site runtime (31). The lead checks that `kit status` shows the clean-up released before claiming slice 10.
 
 ## Three stages, each shipped on its own
 

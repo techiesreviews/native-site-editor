@@ -2,7 +2,7 @@
 
 prefix: ke
 
-**Not started:** waiting for Lex to say when this build begins.
+**Not started:** starts once the clean-up release is live in production (Lex, 2026-10-26); then only slices 10–24, inside this repo.
 
 Builds what the [map](../map.md) decided: one shared Agent Kit in its own repo that every project runs, always the newest; one settings file and a folder of own commands per project; `kit init` to set a project up; a shared rulebook with per-project extras; reviews without OpenAI models, with a second look on every change; then each of Lex's chosen projects moves over, and the `lex-coding` rule changes last. Every decision comes from the map's closed tickets; this build does not reopen them:
 
@@ -17,7 +17,7 @@ Tickets live in [tickets/](tickets/), one slice each, numbered by group: 10s get
 
 ## When it starts
 
-When Lex says so; the lead then removes the **Not started** line. Nothing Lex sees in the editor changes: this build is kit, docs and other projects' agent setup only.
+Decided with Lex on 2026-10-26: right after the clean-up release is live in production, and before the [agents and multiplayer build](../../agents-and-multiplayer/build/README.md). The lead then removes the **Not started** line and builds **slices 10–24 only** (this editor's repo). Slices 30 and later (the kit's own repo, the timer, other projects, the `lex-coding` rule) wait for Lex's go, asked once 10–24 have landed. Nothing Lex sees in the editor changes: this build is kit, docs and other projects' agent setup only.
 
 ## Rules for the whole build
 
