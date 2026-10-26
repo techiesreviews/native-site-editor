@@ -93,6 +93,26 @@ test("make_component opens the guarded page, forwards its request and reports fl
   });
 });
 
+test("create_page with no slug makes one from the title: separators a dash, other marks dropped", async () => {
+  const requests: unknown[] = [];
+  const command: AgentCommand = {
+    id: "page-1", operation: "create_page", path: "index.html", branch: "dev", commit: "c",
+    content: "", args: { title: "Don't Stop" }, state: "pending", createdAt: 1,
+  };
+  const actions = {
+    open: async () => true,
+    isMounted: () => true,
+    text: async () => "<html></html>",
+    createPage: async (request: Parameters<AgentSiteActions["createPage"]>[0]) => {
+      requests.push(request);
+      return { file: `${request.slug}/index.html`, route: `${request.parent}${request.slug}/` };
+    },
+  } as AgentSiteActions;
+  const outcome = await applySiteCommand(actions, command);
+  assert.deepEqual(requests, [{ parent: "/", title: "Don't Stop", slug: "dont-stop" }]);
+  assert.equal(outcome.result?.route, "/dont-stop/");
+});
+
 test("make_component reports refusals as conflicts and never calls the action for missing elements or stale pages", async () => {
   const source = "<body><main><section></section></main></body>";
   const command: AgentCommand = {
