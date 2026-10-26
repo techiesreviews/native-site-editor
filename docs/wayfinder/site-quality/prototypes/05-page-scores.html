@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PROTOTYPE (throwaway) · 05 Page scores in top bar B</title>
+<title>PROTOTYPE (throwaway) · 05 Page scores in top bar B (v4)</title>
 <style>
 /* Throwaway prototype for site-quality ticket 05, round 4: page scores in version B.
    Built on 05-slim-top-bar-v2.html (tokens from src/theme.css, explorer from src/style.css). */
@@ -74,23 +74,6 @@ svg { display: block; flex: none; fill: currentColor; }
   background: var(--surface);
   box-shadow: inset 0 0 0 1px var(--control-line);
 }
-.switch {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--control-line);
-}
-.switch button {
-  block-size: 28px;
-  padding-inline: 12px;
-  border: 0;
-  border-radius: var(--radius-small);
-  background: transparent;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.switch button[aria-pressed="true"] { background: var(--current); color: var(--text); font-weight: 600; }
 
 /* ---------- One mock editor ---------- */
 .editor {
@@ -610,7 +593,6 @@ body:not([data-waiting]) .inbox-button::after { scale: 0; }
 .ring .arc { stroke: var(--ring); stroke-linecap: round; }
 .ring[data-band="improve"] { --ring: var(--question); }
 .ring[data-band="poor"] { --ring: var(--poor); }
-body[data-perfect="hidden"] .ring[data-band="good"] svg { visibility: hidden; }
 @media (hover: hover) and (pointer: fine) { .ring:hover { background: var(--hover); } }
 /* The four numbers, on hover or keyboard focus only. */
 .ring::after {
@@ -648,8 +630,7 @@ body[data-perfect="hidden"] .ring[data-band="good"] svg { visibility: hidden; }
 .gauge__dial .track { stroke: color-mix(in oklch, var(--ring) 16%, transparent); }
 .gauge__dial .arc { stroke: var(--ring); stroke-linecap: round; transition: stroke-dasharray 400ms ease-out; }
 .gauge__dial b { font-size: 18px; font-weight: 600; color: var(--ring); font-variant-numeric: tabular-nums; }
-.gauge span { font-size: var(--type-small); color: var(--muted); }
-.measured { margin: -6px 0 0; text-align: center; color: var(--muted); font-size: var(--type-small); }
+.gauge__label { font-size: var(--type-small); color: var(--muted); }
 .improve h4 {
   margin: 0 0 4px;
   padding-inline: 6px;
@@ -720,9 +701,123 @@ th[aria-sort="descending"] .sort svg { rotate: 180deg; }
 .num { color: var(--muted); }
 .num[data-band="improve"] { color: var(--question); font-weight: 600; }
 .num[data-band="poor"] { color: var(--poor); font-weight: 600; }
+
+/* ---------- v4: live scores, filters, prompts, Site health in the Inbox ---------- */
+/* A fake change on the page, re-scored at once. */
+/* Right-aligned, so it stays clickable beside the open Pages panel. */
+.try { display: flex; align-items: center; justify-content: end; gap: 8px; margin: -8px 0 10px; font-size: var(--type-small); color: var(--muted); }
+.try button {
+  block-size: 26px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--type-small);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+@media (hover: hover) and (pointer: fine) { .try button:hover { background: var(--surface-subtle); } }
+.site__map {
+  display: grid;
+  place-items: center;
+  block-size: 92px;
+  border-radius: var(--radius);
+  background: repeating-linear-gradient(45deg, oklch(88% 0.03 120) 0 10px, oklch(82% 0.04 120) 10px 20px);
+  color: oklch(35% 0.05 120);
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+.ring[data-pending] svg { opacity: 0.4; }
+@media (prefers-reduced-motion: no-preference) {
+  .ring[data-pending] svg { animation: pending 600ms ease-in-out infinite alternate; }
+  .ring[data-fresh] svg, .gauge[data-fresh] .gauge__dial { animation: fresh 500ms ease-out; }
+}
+@keyframes pending { to { opacity: 1; } }
+@keyframes fresh { from { scale: 1.3; } }
+
+/* The four rings double as filters. */
+.gauge { padding: 6px 4px; border: 0; border-radius: var(--radius); background: transparent; color: inherit; }
+.gauge[aria-pressed="true"] { background: var(--current); }
+.gauge[aria-pressed="true"] .gauge__label { color: var(--text); font-weight: 600; }
+@media (hover: hover) and (pointer: fine) { .gauge:hover { background: var(--hover); } }
+.improve { display: grid; gap: 10px; }
+.improve__head h4 { margin: 0; }
+.copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: 26px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: var(--type-small);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.copy[data-done] { background: var(--good); }
+.copy--small { block-size: 24px; padding-inline: 8px; background: transparent; color: var(--primary); box-shadow: inset 0 0 0 1px var(--control-line); }
+.copy--small[data-done] { background: transparent; color: var(--good); }
+@media (hover: hover) and (pointer: fine) {
+  .copy:not(.copy--small):hover { background: var(--primary-hover); }
+  .copy--small:hover { background: var(--hover); }
+}
+.prompt-wrap { display: grid; justify-items: start; gap: 6px; }
+.prompt { inline-size: 100%; }
+.prompt summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: var(--radius-small);
+  color: var(--muted);
+  font-size: var(--type-small);
+  cursor: pointer;
+  list-style: none;
+}
+.prompt summary::-webkit-details-marker { display: none; }
+.prompt summary svg { transition: rotate 150ms ease-out; }
+.prompt[open] summary svg { rotate: 90deg; }
+.prompt pre {
+  margin: 6px 0 0;
+  max-block-size: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  font: 12px/1.6 var(--font-mono);
+  white-space: pre-wrap;
+}
+
+/* Site health: the page details view, for the whole site. */
+.health { display: grid; gap: 16px; align-content: start; }
+.health .gauges { inline-size: min(100%, 520px); margin-inline: auto; }
+.topic summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 6px; border-radius: var(--radius); cursor: pointer; list-style: none; }
+.topic summary::-webkit-details-marker { display: none; }
+.topic summary > svg:first-child { color: var(--muted); }
+.topic summary b { font-weight: 500; }
+.topic summary small { color: var(--muted); font-weight: 400; }
+.topic .chev { color: var(--muted); transition: rotate 150ms ease-out; }
+.topic[open] .chev { rotate: 90deg; }
+@media (hover: hover) and (pointer: fine) { .topic summary:hover, .topic li:has(.item:hover) { background: var(--hover); } }
+.topic ul { list-style: none; margin: 0 0 4px; padding: 0 0 0 32px; display: grid; }
+.topic li { border-radius: var(--radius); }
+.health td.act { inline-size: 1%; padding-inline: 8px 0; }
+.health .section {
+  margin: 0;
+  padding-inline: 6px;
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.inbox li[data-kind="health"] > svg { color: var(--primary); }
+.inbox ul { max-block-size: 440px; overflow: auto; }
 </style>
 </head>
-<body data-waiting data-perfect="faint">
+<body data-waiting>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="caret" viewBox="0 0 256 256"><path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/></symbol>
@@ -749,10 +844,6 @@ th[aria-sort="descending"] .sort svg { rotate: 180deg; }
 <header class="page-head">
   <h1>Page scores, in top bar B</h1>
   <div class="page-head__tools">
-    <div class="switch" role="group" aria-label="Rings on pages with nothing to improve">
-      <button type="button" data-perfect="faint" aria-pressed="true">Perfect pages: faint ring</button>
-      <button type="button" data-perfect="hidden" aria-pressed="false">No ring</button>
-    </div>
     <button type="button" class="tool" id="reset">Refill inbox</button>
     <button type="button" class="tool" id="theme"><svg width="16" height="16"><use href="#moon"/></svg><span>Dark</span></button>
   </div>
@@ -781,7 +872,7 @@ th[aria-sort="descending"] .sort svg { rotate: 180deg; }
     <label class="check"><input type="checkbox" checked> Keep AI training robots out</label>
   </div>
   <div class="panel inbox" id="inbox" hidden role="dialog" aria-label="Inbox">
-    <div class="panel-head"><h3 class="panel-title">Inbox</h3><button type="button" class="link" data-open="health">Site health</button></div>
+    <div class="panel-head"><h3 class="panel-title">Inbox</h3></div>
     <ul id="inbox-list"></ul>
     <p class="inbox__empty"><svg width="16" height="16"><use href="#check"/></svg>All done</p>
   </div>
@@ -794,18 +885,20 @@ th[aria-sort="descending"] .sort svg { rotate: 180deg; }
 
 <script>
 const CATS = [["perf", "Performance"], ["a11y", "Accessibility"], ["bp", "Best practices"], ["seo", "SEO"]];
+const TARGETS = { perf: 99, a11y: 100, bp: 100, seo: 100 };
+const SITE = { name: "techies-site", address: "https://techies.review" };
 /* base: the scores once everything is fixed. Each open improvement takes its points off. */
 const PAGES = [
-  { title: "Home", url: "/", base: { perf: 100, a11y: 100, bp: 100, seo: 100 } },
-  { title: "About", url: "/about", base: { perf: 98, a11y: 100, bp: 100, seo: 100 } },
-  { title: "Blog", url: "/blog", base: { perf: 100, a11y: 100, bp: 100, seo: 100 }, children: [
-    { title: "New post", url: "/blog/new", untitled: true, base: { perf: 100, a11y: 100, bp: 100, seo: 100 } },
-    { title: "Hello world", url: "/blog/hello-world", base: { perf: 99, a11y: 100, bp: 100, seo: 100 } },
+  { title: "Home", url: "/", file: "index.html", base: { perf: 100, a11y: 100, bp: 100, seo: 100 } },
+  { title: "About", url: "/about/", file: "about/index.html", base: { perf: 98, a11y: 100, bp: 100, seo: 100 } },
+  { title: "Blog", url: "/blog/", file: "blog/index.html", base: { perf: 100, a11y: 100, bp: 100, seo: 100 }, children: [
+    { title: "New post", url: "/blog/new/", file: "blog/new.html", untitled: true, base: { perf: 100, a11y: 100, bp: 100, seo: 100 } },
+    { title: "Hello world", url: "/blog/hello-world/", file: "blog/hello-world.html", base: { perf: 99, a11y: 100, bp: 100, seo: 100 } },
   ] },
-  { title: "Services", url: "/services", base: { perf: 99, a11y: 100, bp: 100, seo: 100 }, children: [
-    { title: "Reviews", url: "/services/reviews", base: { perf: 100, a11y: 100, bp: 100, seo: 100 } },
+  { title: "Services", url: "/services/", file: "services/index.html", base: { perf: 99, a11y: 100, bp: 100, seo: 100 }, children: [
+    { title: "Reviews", url: "/services/reviews/", file: "services/reviews.html", base: { perf: 100, a11y: 100, bp: 100, seo: 100 } },
   ] },
-  { title: "Contact", url: "/contact", base: { perf: 97, a11y: 100, bp: 100, seo: 100 } },
+  { title: "Contact", url: "/contact/", file: "contact/index.html", base: { perf: 97, a11y: 100, bp: 100, seo: 100 } },
 ];
 const ALL_PAGES = PAGES.flatMap((p) => [p, ...(p.children || [])]);
 const MEDIA = [
@@ -813,8 +906,8 @@ const MEDIA = [
   { name: "team.jpg", swatch: "linear-gradient(135deg, oklch(78% 0.1 70), oklch(60% 0.14 30))", waitingFor: "picture" },
   { name: "services-hero.jpg", swatch: "linear-gradient(160deg, oklch(80% 0.05 140), oklch(52% 0.09 160))" },
   { name: "logo.svg", swatch: "radial-gradient(circle at 50% 50%, oklch(50% 0.18 263) 0 28%, oklch(94% 0.02 263) 29%)" },
-  { name: "blog-cover.jpg", swatch: "linear-gradient(200deg, oklch(70% 0.12 320), oklch(48% 0.12 290))" },
-  { name: "portrait-anna.jpg", swatch: "linear-gradient(135deg, oklch(84% 0.05 50), oklch(62% 0.08 40))" },
+  { name: "blog-cover.jpg", swatch: "linear-gradient(200deg, oklch(70% 0.12 320), oklch(48% 0.12 290))", waitingFor: "picture-blog" },
+  { name: "portrait-anna.jpg", swatch: "linear-gradient(135deg, oklch(84% 0.05 50), oklch(62% 0.08 40))", waitingFor: "picture-reviews" },
   { name: "map.png", swatch: "repeating-linear-gradient(45deg, oklch(88% 0.03 120) 0 10px, oklch(82% 0.04 120) 10px 20px)" },
   { name: "pattern.svg", swatch: "repeating-radial-gradient(circle at 30% 30%, oklch(62% 0.13 262) 0 4px, oklch(90% 0.03 262) 4px 12px)" },
 ];
@@ -823,42 +916,67 @@ const FILES = [
   { folder: "styles", files: ["site.css", "tokens.css"] },
   { folder: "about", files: ["index.html"] },
   { folder: "blog", files: ["index.html", "new.html", "hello-world.html"] },
+  { folder: "services", files: ["index.html", "reviews.html"] },
   { file: "index.html" },
   { file: "robots.txt" },
   { file: "sitemap.xml" },
 ];
+/* The rule behind each kind of finding, in the words the prompt uses. */
+const RULES = {
+  picture: "Every picture that carries meaning has a short text description (alt). A purely decorative picture gets an empty alt=\"\". (Lighthouse: image-alt)",
+  embed: "An embed from another site loads only when it scrolls into view (loading=\"lazy\" on the iframe), or shows a still picture that opens the map. (Lighthouse: third-party code, total blocking time)",
+  jump: "Nothing added by a script pushes content down while the page loads; reserve its space in CSS. (Lighthouse: cumulative layout shift at most 0.1)",
+  title: "Every page has its own descriptive <title>. (Lighthouse: document-title)",
+  linkText: "Link text says where the link goes, not \"click here\". (Lighthouse: link-text)",
+};
 /* Inbox items. Site improvements carry the points they cost a page (hit). */
-const ITEMS = [
-  { id: "picture", kind: "picture", icon: "image", what: "Picture without a description", where: "About · team.jpg", page: "About", spot: "picture", label: "About · team picture", wave: "Decorative", hit: { a11y: 12 } },
-  { id: "map-embed", kind: "page", icon: "file", what: "Embedded map slows the page", where: "Services · map from another site", page: "Services", spot: "cards", label: "Services · map", hit: { perf: 10 } },
-  { id: "jump", kind: "page", icon: "file", what: "Layout jumps while loading", where: "Services · banner added by a script", page: "Services", spot: "heading", label: "Services · banner", hit: { perf: 7 } },
-  { id: "title", kind: "page", icon: "file", what: "Page without a title", where: "/blog/new", page: "New post", spot: "heading", label: "Page title", hit: { seo: 9 } },
-  { id: "link-text", kind: "page", icon: "file", what: "Link says only “click here”", where: "Hello world · second card", page: "Hello world", spot: "cards", label: "Hello world · link", hit: { seo: 8 } },
+const IMPROVEMENTS = {
+  picture: { id: "picture", kind: "picture", icon: "image", what: "Picture without a description", where: "About · team.jpg", page: "About", spot: "picture", spotName: "team.jpg in the hero", label: "About · team picture", wave: "Decorative", rule: "picture", hit: { a11y: 12 } },
+  "picture-blog": { id: "picture-blog", kind: "picture", icon: "image", what: "Picture without a description", where: "Hello world · blog-cover.jpg", page: "Hello world", spot: "picture", spotName: "blog-cover.jpg at the top", label: "Hello world · cover", wave: "Decorative", rule: "picture", hit: { a11y: 8 } },
+  "picture-reviews": { id: "picture-reviews", kind: "picture", icon: "image", what: "Picture without a description", where: "Reviews · portrait-anna.jpg", page: "Reviews", spot: "picture", spotName: "portrait-anna.jpg beside the quote", label: "Reviews · portrait", wave: "Decorative", rule: "picture", hit: { a11y: 8 } },
+  "map-embed": { id: "map-embed", kind: "page", icon: "file", what: "Embedded map slows the page", where: "Services · map from another site", page: "Services", spot: "cards", spotName: "the map in the cards row", label: "Services · map", rule: "embed", hit: { perf: 10 } },
+  jump: { id: "jump", kind: "page", icon: "file", what: "Layout jumps while loading", where: "Services · banner added by a script", page: "Services", spot: "heading", spotName: "the banner a script adds above the heading", label: "Services · banner", rule: "jump", hit: { perf: 7 } },
+  title: { id: "title", kind: "page", icon: "file", what: "Page without a title", where: "/blog/new/", page: "New post", spot: "heading", spotName: "the page title", label: "Page title", rule: "title", hit: { seo: 9 } },
+  "link-text": { id: "link-text", kind: "page", icon: "file", what: "Link says only “click here”", where: "Hello world · second card", page: "Hello world", spot: "cards", spotName: "the link in the second card", label: "Hello world · link", rule: "linkText", hit: { seo: 8 } },
+  "home-map": { id: "home-map", kind: "page", icon: "file", what: "Embedded map slows the page", where: "Home · map from another site", page: "Home", spot: "map", spotName: "the map under the hero", label: "Home · map", rule: "embed", hit: { perf: 14 } },
+};
+const OTHER_ITEMS = [
   { id: "agent", kind: "agent", icon: "sparkle", what: "Agent question", where: "Home · hero heading", page: "Home", spot: "heading", label: "Hero heading · question" },
   { id: "host", kind: "setup", icon: "checks", what: "Setup: connect a host", where: "Site settings", page: null, spot: "host", label: "Host" },
 ];
+const START = ["picture", "picture-blog", "picture-reviews", "map-embed", "jump", "title", "link-text"];
+const freshItems = () => [...START.map((id) => IMPROVEMENTS[id]), ...OTHER_ITEMS];
 
-const state = { tab: "pages", page: "Home", file: null, media: null, query: "", saved: false, details: null, sort: { key: "lowest", dir: "ascending" } };
-let items = [...ITEMS];
+const freshState = () => ({ tab: "pages", page: "Home", file: null, media: null, query: "", saved: false, details: null, filter: null, siteFilter: null, sort: { key: "lowest", dir: "ascending" }, pending: null, fresh: null, prompts: {} });
+const state = freshState();
+let items = freshItems();
 const editor = document.getElementById("editor");
 const bar = document.getElementById("bar");
 const stage = document.getElementById("stage");
 const panels = Object.fromEntries(["menu", "settings", "inbox", "explorer", "health"].map((id) => [id, document.getElementById(id)]));
 const icon = (id, size = 16) => `<svg width="${size}" height="${size}"><use href="#${id}"/></svg>`;
-const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const pageByTitle = (t) => ALL_PAGES.find((p) => p.title === t);
 const nameOf = (p) => (p.untitled ? "Untitled" : p.title);
+const has = (id) => items.some((i) => i.id === id);
 
 /* ---------- Scores ---------- */
-function openImprovements(page) { return items.filter((i) => i.page === page.title && i.hit); }
+const improvements = () => items.filter((i) => i.hit);
+function openImprovements(page) { return improvements().filter((i) => i.page === page.title); }
 function scores(page) {
   const s = { ...page.base };
   for (const item of openImprovements(page)) for (const [cat, n] of Object.entries(item.hit)) s[cat] -= n;
   return s;
 }
+function siteScores() {
+  const rows = ALL_PAGES.map(scores);
+  return Object.fromEntries(CATS.map(([k]) => [k, Math.round(rows.reduce((t, r) => t + r[k], 0) / rows.length)]));
+}
 const lowest = (s) => Math.min(...CATS.map(([k]) => s[k]));
 // Lighthouse's bands: 90-100 good, 50-89 needs work, 0-49 poor.
 const bandOf = (n) => (n < 50 ? "poor" : n < 90 ? "improve" : "good");
+const catOf = (item) => Object.keys(item.hit)[0];
+const catLabel = (k) => CATS.find(([key]) => key === k)[1];
 function rowBand(page) {
   const low = lowest(scores(page));
   if (low < 50) return "poor";
@@ -867,12 +985,74 @@ function rowBand(page) {
 function ringButton(page) {
   const s = scores(page);
   const tip = CATS.map(([k, label]) => `${label}  ${s[k]}`).join("\n");
-  const fill = lowest(s);
-  return `<button type="button" class="ring" data-scores="${esc(page.title)}" data-band="${rowBand(page)}" data-tip="${tip}" aria-label="Scores for ${esc(nameOf(page))}: ${CATS.map(([k, l]) => `${l} ${s[k]}`).join(", ")}">
-    <svg viewBox="0 0 16 16"><circle class="track" cx="8" cy="8" r="6" pathLength="100"/><circle class="arc" cx="8" cy="8" r="6" pathLength="100" stroke-dasharray="${fill} 100"/></svg></button>`;
+  const flags = `${state.pending === page.title ? " data-pending" : ""}${state.fresh === page.title ? " data-fresh" : ""}`;
+  return `<button type="button" class="ring" data-scores="${esc(page.title)}" data-band="${rowBand(page)}" data-tip="${tip}"${flags} aria-label="Scores for ${esc(nameOf(page))}: ${CATS.map(([k, l]) => `${l} ${s[k]}`).join(", ")}">
+    <svg viewBox="0 0 16 16"><circle class="track" cx="8" cy="8" r="6" pathLength="100"/><circle class="arc" cx="8" cy="8" r="6" pathLength="100" stroke-dasharray="${lowest(s)} 100"/></svg></button>`;
 }
-function gauge(label, n) {
-  return `<div class="gauge" data-band="${bandOf(n)}"><div class="gauge__dial"><svg viewBox="0 0 36 36"><circle class="track" cx="18" cy="18" r="16" pathLength="100"/><circle class="arc" cx="18" cy="18" r="16" pathLength="100" stroke-dasharray="${n} 100"/></svg><b>${n}</b></div><span>${label}</span></div>`;
+/* A ring with its number; clicking it filters the list below to that category. */
+function gauge(k, n, filter, scope, fresh) {
+  return `<button type="button" class="gauge" data-band="${bandOf(n)}" data-filter="${k}" data-scope="${scope}" aria-pressed="${filter === k}"${fresh ? " data-fresh" : ""}><span class="gauge__dial"><svg viewBox="0 0 36 36"><circle class="track" cx="18" cy="18" r="16" pathLength="100"/><circle class="arc" cx="18" cy="18" r="16" pathLength="100" stroke-dasharray="${n} 100"/></svg><b>${n}</b></span><span class="gauge__label">${catLabel(k)}</span></button>`;
+}
+
+/* ---------- Prompts, made from the findings (no AI) ---------- */
+const scoreLine = (s) => CATS.map(([k, l]) => `${l} ${s[k]}`).join(", ");
+const targetLine = () => CATS.map(([k, l]) => `${l} ${TARGETS[k]}`).join(", ");
+function pagePrompt(page, filter = null) {
+  const found = openImprovements(page).filter((i) => !filter || catOf(i) === filter);
+  const lines = [
+    `Improve the page "${nameOf(page)}" of the site ${SITE.name}.`,
+    `Address: ${SITE.address}${page.url}`,
+    `File: ${page.file}`,
+    "",
+    `Targets (Lighthouse, phone and laptop): ${targetLine()}.`,
+    `Scores now: ${scoreLine(scores(page))}.`,
+    "",
+  ];
+  if (!found.length) lines.push(filter ? `Nothing to fix in ${catLabel(filter)}.` : "Nothing to fix.");
+  else {
+    lines.push(filter ? `Fix these (${catLabel(filter)} only):` : "Fix these:");
+    found.forEach((i, n) => lines.push(`${n + 1}. ${i.what}: ${i.spotName}.`, `   Rule: ${RULES[i.rule]}`));
+  }
+  lines.push("", "Keep the page's look and words unless a fix needs a change. Follow the good-css rules for any CSS. Change only this page's file.");
+  return lines.join("\n");
+}
+function topics(filter = null) {
+  const groups = new Map();
+  for (const i of improvements()) {
+    if (filter && catOf(i) !== filter) continue;
+    if (!groups.has(i.what)) groups.set(i.what, { what: i.what, icon: i.icon, rule: i.rule, cat: catOf(i), items: [] });
+    groups.get(i.what).items.push(i);
+  }
+  return [...groups.values()];
+}
+function sitePrompt(filter = null) {
+  const found = topics(filter);
+  const lines = [
+    `Improve the whole site ${SITE.name} (${SITE.address}).`,
+    "",
+    `Targets for every page (Lighthouse, phone and laptop): ${targetLine()}.`,
+    `Site average now: ${scoreLine(siteScores())}.`,
+    "",
+  ];
+  if (!found.length) lines.push(filter ? `Nothing to fix in ${catLabel(filter)}.` : "Nothing to fix.");
+  else {
+    lines.push(filter ? `Fix these, topic by topic (${catLabel(filter)} only):` : "Fix these, topic by topic:");
+    found.forEach((t, n) => {
+      lines.push(`${n + 1}. ${t.what}`, `   Rule: ${RULES[t.rule]}`);
+      for (const i of t.items) { const p = pageByTitle(i.page); lines.push(`   - ${nameOf(p)} (${p.file}): ${i.spotName}`); }
+    });
+  }
+  lines.push("", "Keep each page's look and words unless a fix needs a change. Follow the good-css rules for any CSS. Fix shared parts (components, styles) once, not per page.");
+  return lines.join("\n");
+}
+function promptBlock(key, text, label) {
+  return `<div class="prompt-wrap"><button type="button" class="copy" data-copy="${esc(key)}">${label}</button>
+    <details class="prompt" data-prompt="${esc(key)}"${state.prompts[key] ? " open" : ""}><summary>${icon("caret-right", 11)}Show prompt</summary><pre>${esc(text)}</pre></details></div>`;
+}
+function promptFor(key) {
+  if (key === "site") return sitePrompt(state.siteFilter);
+  if (key.startsWith("details:")) return pagePrompt(pageByTitle(key.slice(8)), state.filter);
+  return pagePrompt(pageByTitle(key.slice(5)));
 }
 
 /* ---------- Bar and stage ---------- */
@@ -899,6 +1079,12 @@ function renderBar() {
       <button type="button" class="save" data-save data-state="${state.saved ? "saved" : ""}">${state.saved ? "Live" : "Save 3 changes"}</button>
     </div>`;
 }
+/* Fake edits on two pages, so a change can be seen re-scoring at once. */
+function tryChange() {
+  if (state.page === "About") return `<div class="try">Try a change:<button type="button" data-change="picture">${has("picture") ? "Add a picture description" : "Remove the picture description"}</button></div>`;
+  if (state.page === "Home") return `<div class="try">Try a change:<button type="button" data-change="home-map">${has("home-map") ? "Remove the map" : "Add an embedded map"}</button></div>`;
+  return "";
+}
 function renderStage() {
   if (state.file) {
     stage.innerHTML = `<pre class="code">${state.file.endsWith(".css")
@@ -907,19 +1093,20 @@ function renderStage() {
     return;
   }
   const heading = state.page === "New post" ? "" : state.page === "Home" ? "Honest reviews by people who fix things" : state.page;
-  stage.innerHTML = `
+  stage.innerHTML = `${tryChange()}
     <div class="site">
       <div class="site__nav"><b>Techies</b><span>About</span><span>Blog</span><span>Services</span><span>Contact</span></div>
       <div class="site__hero">
         <div><h2 data-spot="heading">${heading || "&nbsp;"}</h2><p>We test the tools so you don't have to.</p><p>Plain words, real results.</p></div>
         <div class="site__pic" data-spot="picture"></div>
       </div>
+      ${state.page === "Home" && has("home-map") ? `<div class="site__map" data-spot="map">Map from another site</div>` : ""}
       <div class="site__cards" data-spot="cards"><i></i><i></i><i></i></div>
     </div>`;
 }
 
 /* ---------- Pages, Media and Files (with page details) ---------- */
-function waitingMedia(m) { return m.waitingFor && items.some((i) => i.id === m.waitingFor); }
+function waitingMedia(m) { return m.waitingFor && has(m.waitingFor); }
 function matches(text) { return !state.query || text.toLowerCase().includes(state.query.toLowerCase()); }
 
 function renderExplorerHead() {
@@ -942,14 +1129,18 @@ function renderExplorerHead() {
 function renderDetails(body) {
   const page = pageByTitle(state.details);
   const s = scores(page);
-  const open = openImprovements(page);
-  const catName = (item) => CATS.find(([k]) => k in item.hit)[1];
+  const shown = openImprovements(page).filter((i) => !state.filter || catOf(i) === state.filter);
+  const fresh = state.fresh === page.title;
+  const empty = state.filter ? `Nothing to improve in ${catLabel(state.filter)}` : "Nothing to improve";
   body.innerHTML = `<div class="details">
-    <div class="gauges">${CATS.map(([k, label]) => gauge(label, s[k])).join("")}</div>
-    <p class="measured">Measured on this computer · just now</p>
-    <div class="improve"><h4>What to improve</h4>${open.length
-      ? `<ul>${open.map((i) => `<li>${icon(i.icon)}<button type="button" class="item" data-go="${i.id}"><b>${i.what}</b><small>${i.where}</small></button><span class="improve__cat">${catName(i)}</span></li>`).join("")}</ul>`
-      : `<p class="all-good">${icon("check")}Nothing to improve</p>`}</div>
+    <div class="improve">
+      <div class="improve__head"><h4>What to improve${state.filter ? ` · ${catLabel(state.filter)}` : ""}</h4></div>
+      <div class="gauges">${CATS.map(([k]) => gauge(k, s[k], state.filter, "page", fresh)).join("")}</div>
+      ${shown.length
+        ? `<ul>${shown.map((i) => `<li>${icon(i.icon)}<button type="button" class="item" data-go="${i.id}"><b>${i.what}</b><small>${i.where}</small></button><span class="improve__cat">${catLabel(catOf(i))}</span></li>`).join("")}</ul>`
+        : `<p class="all-good">${icon("check")}${empty}</p>`}
+    </div>
+    ${promptBlock(`details:${page.title}`, pagePrompt(page, state.filter), state.filter ? `Copy prompt · ${catLabel(state.filter)}` : "Copy prompt")}
   </div>`;
 }
 
@@ -981,10 +1172,11 @@ function renderExplorerBody() {
   }
 }
 
-/* ---------- Site health ---------- */
+/* ---------- Site health: page details, for the whole site ---------- */
 function renderHealth() {
+  const avg = siteScores();
+  const found = topics(state.siteFilter);
   const rows = ALL_PAGES.map((p) => ({ page: p, s: scores(p) }));
-  const avg = Object.fromEntries(CATS.map(([k]) => [k, Math.round(rows.reduce((t, r) => t + r.s[k], 0) / rows.length)]));
   const { key, dir } = state.sort;
   const value = (r) => (key === "lowest" ? lowest(r.s) : key === "page" ? nameOf(r.page) : r.s[key]);
   rows.sort((a, b) => {
@@ -994,13 +1186,24 @@ function renderHealth() {
   });
   const th = (k, label) => `<th${key === k ? ` aria-sort="${dir}"` : ""}><button type="button" class="sort" data-sort="${k}">${label}${icon("arrow-up", 11)}</button></th>`;
   const num = (n) => `<td class="num" data-band="${bandOf(n)}">${n}</td>`;
+  const pagesWord = (n) => (n === 1 ? "1 page" : `${n} pages`);
+  const empty = state.siteFilter ? `Nothing to improve in ${catLabel(state.siteFilter)}` : "Nothing to improve";
   panels.health.innerHTML = `
-    <div class="panel-head"><h3 class="panel-title">Site health</h3><button type="button" class="link" data-sort="lowest">Lowest first</button></div>
+    <div class="panel-head"><h3 class="panel-title">Site health</h3></div>
+    <div class="gauges">${CATS.map(([k]) => gauge(k, avg[k], state.siteFilter, "site", state.fresh)).join("")}</div>
+    <div class="improve">
+      <div class="improve__head"><h4>What to improve${state.siteFilter ? ` · ${catLabel(state.siteFilter)}` : ""}</h4></div>
+      ${found.length ? found.map((t) => `<details class="topic">
+        <summary>${icon(t.icon)}<b>${t.what} <small>· ${pagesWord(t.items.length)}</small></b><span class="improve__cat">${catLabel(t.cat)}</span>${icon("caret-right", 12).replace("<svg", '<svg class="chev"')}</summary>
+        <ul>${t.items.map((i) => `<li><button type="button" class="item" data-go="${i.id}"><b>${esc(nameOf(pageByTitle(i.page)))}</b><small>${i.where.split(" · ")[1] || pageByTitle(i.page).url}</small></button></li>`).join("")}</ul>
+      </details>`).join("") : `<p class="all-good">${icon("check")}${empty}</p>`}
+    </div>
+    ${promptBlock("site", sitePrompt(state.siteFilter), state.siteFilter ? `Copy site prompt · ${catLabel(state.siteFilter)}` : "Copy site prompt")}
+    <h4 class="section">Pages</h4>
     <table>
-      <thead><tr>${th("page", "Page")}${CATS.map(([k, l]) => th(k, l)).join("")}</tr></thead>
+      <thead><tr>${th("page", "Page")}${CATS.map(([k, l]) => th(k, l)).join("")}<th></th></tr></thead>
       <tbody>
-        <tr class="site-row"><td>Whole site</td>${CATS.map(([k]) => num(avg[k])).join("")}</tr>
-        ${rows.map((r) => `<tr><td><button type="button" class="health-page" data-scores="${esc(r.page.title)}"><span>${esc(nameOf(r.page))}</span><small>${r.page.url}</small></button></td>${CATS.map(([k]) => num(r.s[k])).join("")}</tr>`).join("")}
+        ${rows.map((r) => `<tr><td><button type="button" class="health-page" data-scores="${esc(r.page.title)}"><span>${esc(nameOf(r.page))}</span><small>${r.page.url}</small></button></td>${CATS.map(([k]) => num(r.s[k])).join("")}<td class="act">${openImprovements(r.page).length ? `<button type="button" class="copy copy--small" data-copy="page:${esc(r.page.title)}">Copy prompt</button>` : ""}</td></tr>`).join("")}
       </tbody>
     </table>`;
 }
@@ -1018,7 +1221,7 @@ function renderMenu() {
 }
 function renderInbox() {
   const list = document.getElementById("inbox-list");
-  list.replaceChildren(...items.map((item) => {
+  const rows = items.map((item) => {
     const li = document.createElement("li");
     li.dataset.kind = item.kind;
     li.innerHTML = `${icon(item.icon)}<button type="button" class="item" data-go="${item.id}"><b>${item.what}</b><small>${item.where}</small></button>`;
@@ -1035,7 +1238,16 @@ function renderInbox() {
       li.append(wave);
     }
     return li;
-  }));
+  });
+  // Site health sits at the top while anything on the site can be improved.
+  if (improvements().length) {
+    const li = document.createElement("li");
+    li.dataset.kind = "health";
+    const s = siteScores();
+    li.innerHTML = `${icon("gauge")}<button type="button" class="item" data-open="health"><b>Site health</b><small>${scoreLine(s)}</small></button>`;
+    rows.unshift(li);
+  }
+  list.replaceChildren(...rows);
   document.body.toggleAttribute("data-waiting", items.length > 0);
 }
 
@@ -1084,6 +1296,7 @@ function ring(el, label) {
   el.style.animation = "";
 }
 function showDetails(title) {
+  if (state.details !== title) state.filter = null;
   state.details = title;
   state.tab = "pages";
   open("explorer", { keepDetails: true });
@@ -1102,14 +1315,55 @@ function go(item) {
     ring(panels.settings.querySelector('[data-spot="host"]').closest("label"), item.label);
   }
 }
+/* A change re-scores the page it touched at once, after a short pause; no save needed. */
+let changeTimer;
+function change(id) {
+  const page = IMPROVEMENTS[id].page;
+  state.pending = page;
+  renderExplorerBody();
+  clearTimeout(changeTimer);
+  changeTimer = setTimeout(() => {
+    items = has(id) ? items.filter((i) => i.id !== id) : [IMPROVEMENTS[id], ...items];
+    state.pending = null;
+    state.fresh = page;
+    state.saved = false;
+    renderAll();
+    setTimeout(() => { state.fresh = null; }, 600);
+  }, 300);
+}
+async function copy(button) {
+  const text = promptFor(button.dataset.copy);
+  const label = button.textContent;
+  let done = true;
+  try { await navigator.clipboard.writeText(text); } catch { done = false; }
+  if (!done) {
+    // No clipboard here: open the prompt so it can be selected by hand.
+    const details = button.parentElement.querySelector("details.prompt");
+    if (details) { details.open = true; state.prompts[details.dataset.prompt] = true; }
+  }
+  button.textContent = done ? "Copied" : "Select the text below";
+  button.toggleAttribute("data-done", done);
+  setTimeout(() => { button.textContent = label; button.removeAttribute("data-done"); }, 1500);
+}
 
 document.addEventListener("click", (event) => {
   const t = event.target;
+  const changer = t.closest("[data-change]");
+  if (changer) { change(changer.dataset.change); return; }
+  const copier = t.closest("[data-copy]");
+  if (copier) { copy(copier); return; }
+  const filter = t.closest("[data-filter]");
+  if (filter) {
+    const k = filter.dataset.filter;
+    if (filter.dataset.scope === "site") { state.siteFilter = state.siteFilter === k ? null : k; renderHealth(); }
+    else { state.filter = state.filter === k ? null : k; renderExplorerBody(); }
+    return;
+  }
   const opener = t.closest("[data-open]");
   if (opener) { event.stopPropagation(); open(opener.dataset.open); return; }
   const scoresFor = t.closest("[data-scores]");
   if (scoresFor) { showDetails(scoresFor.dataset.scores); return; }
-  if (t.closest("[data-back]")) { state.details = null; renderExplorerHead(); renderExplorerBody(); return; }
+  if (t.closest("[data-back]")) { state.details = null; state.filter = null; renderExplorerHead(); renderExplorerBody(); return; }
   const goTo = t.closest("[data-go]");
   if (goTo) { go(items.find((i) => i.id === goTo.dataset.go)); return; }
   const sort = t.closest("[data-sort]");
@@ -1132,6 +1386,10 @@ document.addEventListener("click", (event) => {
   if (t.closest("[data-save]")) { state.saved = !state.saved; renderBar(); syncExpanded(); return; }
   if (openName && !t.closest(".panel")) closeAll();
 });
+document.addEventListener("toggle", (event) => {
+  const d = event.target;
+  if (d instanceof HTMLDetailsElement && d.matches(".prompt")) state.prompts[d.dataset.prompt] = d.open;
+}, true);
 document.addEventListener("input", (event) => {
   if (event.target.id !== "explorer-search") return;
   state.query = event.target.value;
@@ -1141,17 +1399,10 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && openName) closeAll();
 });
 
-for (const pick of document.querySelectorAll("button[data-perfect]")) {
-  pick.addEventListener("click", (event) => {
-    event.stopPropagation();
-    document.body.dataset.perfect = pick.dataset.perfect;
-    for (const p of document.querySelectorAll("button[data-perfect]")) p.setAttribute("aria-pressed", String(p === pick));
-  });
-}
 document.getElementById("reset").addEventListener("click", (event) => {
   event.stopPropagation();
-  items = [...ITEMS];
-  Object.assign(state, { page: "Home", file: null, media: null, query: "", saved: false, details: null, sort: { key: "lowest", dir: "ascending" } });
+  items = freshItems();
+  Object.assign(state, freshState());
   closeAll();
   clearRings();
   renderAll();

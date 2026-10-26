@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [10-kit-lighthouse, 11-kit-site-rules, 16-save-writes-components, 21-site-language, 24-ai-training-switch, 25-llms-txt, 26-structured-data, 27-pictures-first-screen, 30-cloudflare-headers, 31-github-pages-moved-pages, 32-not-found-page, 42-inbox-page-dots, 43-inbox-agent-items, 44-inbox-setup-checklist, 50-good-css-for-site-css, 51-monthly-rule-check]
+blocked_by: [10-kit-lighthouse, 11-kit-site-rules, 16-save-writes-components, 21-site-language, 24-ai-training-switch, 25-llms-txt, 26-structured-data, 27-pictures-first-screen, 30-cloudflare-headers, 31-github-pages-moved-pages, 32-not-found-page, 43-inbox-agent-items, 44-inbox-setup-checklist, 50-good-css-for-site-css, 51-monthly-rule-check, 62-score-parity, 65-site-health, 66-helper-lighthouse]
 ---
 
 ## Goal
@@ -14,8 +14,9 @@ Finish the build. Size: S.
 ## Decided behaviour
 
 - Every budget in `lighthouse-budget.json` and every rule in `kit site-rules` that this build owns is enforced; nothing left as `todo`.
-- `docs/agents/code-map.md`, `docs/mcp.md`, `docs/agents/agent-scripts.md#kit`, `CONTEXT.md` (Inbox, and any new term) are current.
+- `docs/agents/code-map.md`, `docs/mcp.md`, `docs/agents/agent-scripts.md#kit`, `CONTEXT.md` (Inbox, Site health, and any new term) are current.
 - Close the backlog issue `docs/work/site-quality/issues/01-lighthouse-rules.md` with a pointer to this build.
+- The parity check (slice 62) passes at release.
 - Report the release-run scores (every page, phone and laptop, 5 runs) to Lex.
 
 ## Files
@@ -28,7 +29,7 @@ The docs above, `docs/work/site-quality/issues/01-lighthouse-rules.md`, the buil
 
 ## Kit commands and evidence
 
-Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). `kit doctor` first, then `kit bg slice-sq-59 -- scripts/agents/kit slice --ticket <this ticket> --builder claude-opus-5-5`; `kit wait job slice-sq-59 --timeout 2h`.
+Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). `kit doctor` first, then `kit bg slice-sq-69 -- scripts/agents/kit slice --ticket <this ticket> --builder claude-opus-5-5`; `kit wait job slice-sq-69 --timeout 2h`.
 
 - `kit unit --affected`, `kit specs --affected` and `npm run check` green, with `RESULT:` lines quoted in Done.
 - `kit size` against dev: boot bytes unchanged or lower.

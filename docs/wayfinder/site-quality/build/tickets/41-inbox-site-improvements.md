@@ -15,12 +15,13 @@ The things only the user can supply, found on every page, not only the open one 
 
 - Items: a picture without a description (wave-off: Decorative, writing the markup the Media manager writes today), a page without a title, a link or button with no name, a vague link word ("read more"), a skipped heading level (with today's one-press fix), a video without subtitles (wave-off: No speech).
 - Found by the same checks the edit bar runs today (`src/controllers/page-structure-controller.ts`), run over all pages from the drafts and the repository, in the background, after load and after each change.
+- **One list (DRY):** the checks move into the shared rule module `shared/site-score/` (slice 11), so the Inbox, the score rings (63) and page details (64) show the same findings.
 - Missing descriptions are not items (slice 22 writes them).
 - Privacy page and security contact are not items yet (map: not yet specified).
 
 ## Files
 
-Expected: `src/inbox/site-checks.ts`, `src/controllers/page-structure-controller.ts` (shared checks moved, not copied), tests.
+Expected: `src/inbox/site-checks.ts`, `shared/site-score/` (the checks), `src/controllers/page-structure-controller.ts` (shared checks moved, not copied), tests.
 
 ## Done when
 

@@ -14,6 +14,7 @@ A kit check for the 38 specification.website rules the editor can meet automatic
 ## Decided behaviour
 
 - Reads the generated site from slice 10's `--site new|edited` (same server) and checks each of the 38 rules from the files: for example a full `canonical` and `og:url` on every page that can be found, `<html lang>`, one `h1`, `sitemap.xml` listing exactly the findable pages, a `Sitemap:` line in `robots.txt`, JSON-LD that parses with the right types, `width`/`height` on pictures, `llms.txt`, and `_headers` when the site publishes to Cloudflare.
+- **One rule list (DRY):** the rules live in `shared/site-score/`, a module this kit check and the editor's in-browser score engine (slice 60) both import. No second copy anywhere.
 - Each rule has an id from the spec, the slice that makes it pass, and a state. A rule whose slice has not landed prints `todo (slice NN)`; each later slice flips its rules to enforced.
 - The pinned copy of the spec's `llms-full.txt` is committed next to the rules, so the monthly check (slice 51) sees changes as a diff.
 - Runs inside `kit lighthouse` (same trigger, same sweep and release), as its own section and its own `RESULT:` line. No network at check time.
@@ -21,7 +22,7 @@ A kit check for the 38 specification.website rules the editor can meet automatic
 
 ## Files
 
-`scripts/agents/site-rules.mjs`, `scripts/agents/site-rules/` (the rule list and the pinned `llms-full.txt`), `scripts/agents/kit.d/lighthouse`, `tests/kit-site-rules.test.ts`.
+`scripts/agents/site-rules.mjs`, `shared/site-score/` (the rule list), `scripts/agents/site-rules/` (the pinned `llms-full.txt`), `scripts/agents/kit.d/lighthouse`, `tests/kit-site-rules.test.ts`.
 
 ## Done when
 
