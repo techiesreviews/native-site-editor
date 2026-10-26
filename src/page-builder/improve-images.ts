@@ -57,7 +57,6 @@ interface Input {
   cache?: ImprovePlanCache;
 }
 export type ImprovePlanCache = Map<string, { source: string; key: string; value: unknown }>;
-export const improvePlanCache = (): ImprovePlanCache => new Map();
 /** `read` of `file`'s `source`, kept in `cache` under `kind` while the source and `key` are the same. */
 function kept<T>(cache: ImprovePlanCache | undefined, kind: string, file: string, source: string, key: string, read: () => T): T {
   const known = cache?.get(`${kind}:${file}`);
