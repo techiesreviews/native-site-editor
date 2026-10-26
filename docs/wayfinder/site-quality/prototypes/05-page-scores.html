@@ -742,29 +742,28 @@ th[aria-sort="descending"] .sort svg { rotate: 180deg; }
 @media (hover: hover) and (pointer: fine) { .gauge:hover { background: var(--hover); } }
 .improve { display: grid; gap: 10px; }
 .improve__head h4 { margin: 0; }
-/* One prompt icon wherever a prompt is made (Lex, 2026-10-26: "a recognizable pattern").
-   Copying shows on the icon itself; with an agent connected, the agent icon sits beside it. */
-.prompt-actions { display: inline-flex; align-items: center; gap: 2px; margin-inline-start: auto; }
-.prompt-icon {
+/* "Let AI fix it" (Lex, 2026-10-26): the AI star and the words, right after the page name.
+   One control: with an agent connected it sends the prompt, otherwise it copies it.
+   Feedback lives on the button itself. */
+.ai-fix {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 6px;
-  min-inline-size: var(--size-compact);
+  flex: none;
   block-size: var(--size-compact);
-  padding-inline: 6px;
+  padding-inline: 8px 10px;
   border: 0;
   border-radius: var(--radius);
-  background: transparent;
+  background: var(--current);
   color: var(--primary);
   font-size: var(--type-small);
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
 }
-.prompt-icon--small { min-inline-size: 24px; block-size: 24px; padding-inline: 4px; }
-.prompt-icon[data-send] { color: var(--muted); }
-.prompt-icon[data-done] { color: var(--good); }
-@media (hover: hover) and (pointer: fine) { .prompt-icon:hover { background: var(--hover); } .prompt-icon[data-send]:hover { color: var(--text); } }
+.ai-fix--icon { inline-size: 24px; block-size: 24px; padding: 0; justify-content: center; }
+.ai-fix[data-done] { color: var(--good); background: color-mix(in oklch, var(--good) 14%, transparent); }
+@media (hover: hover) and (pointer: fine) { .ai-fix:hover { background: color-mix(in oklch, var(--primary) 24%, transparent); } }
+.title-row { display: flex; align-items: center; gap: 10px; min-inline-size: 0; }
 .prompt { inline-size: 100%; }
 .prompt summary {
   display: inline-flex;
@@ -839,7 +838,6 @@ th[aria-sort="descending"] .sort svg { rotate: 180deg; }
   <symbol id="caret-right" viewBox="0 0 256 256"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></symbol>
   <symbol id="arrow-left" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z"/></symbol>
   <symbol id="gauge" viewBox="0 0 256 256"><path d="M128,40A104,104,0,0,0,24,144v24a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V144A104,104,0,0,0,128,40Zm88,128H40V144a88,88,0,0,1,176,0Zm-50.34-90.34a8,8,0,0,1,0,11.31l-27.4,27.4a16,16,0,1,1-11.31-11.31l27.4-27.4A8,8,0,0,1,165.66,77.66Z"/></symbol>
-  <symbol id="prompt" viewBox="0 0 256 256"><g fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><path d="M44,48H212a12,12,0,0,1,12,12V172a12,12,0,0,1-12,12H112L68,220V184H44a12,12,0,0,1-12-12V60A12,12,0,0,1,44,48Z"/><path d="M80,96l28,20L80,136"/><path d="M128,140h44"/></g></symbol>
   <symbol id="arrow-up" viewBox="0 0 256 256"><path d="M205.66,117.66a8,8,0,0,1-11.32,0L136,59.31V216a8,8,0,0,1-16,0V59.31L61.66,117.66a8,8,0,0,1-11.32-11.32l72-72a8,8,0,0,1,11.32,0l72,72A8,8,0,0,1,205.66,117.66Z"/></symbol>
 </svg>
 
@@ -1057,11 +1055,10 @@ function sitePrompt(filter = null) {
   lines.push("", "Keep each page's look and words unless a fix needs a change. Follow the good-css rules for any CSS. Fix shared parts (components, styles) once, not per page.");
   return lines.join("\n");
 }
-/* The prompt icon (copies), plus the agent icon when an agent is connected (sends). */
-function promptActions(key, small = false) {
-  const size = small ? " prompt-icon--small" : "";
-  return `<span class="prompt-actions"><button type="button" class="prompt-icon${size}" data-copy="${esc(key)}" aria-label="Copy prompt" title="Copy prompt">${icon("prompt", small ? 16 : 18)}</button>${agentOn
-    ? `<button type="button" class="prompt-icon${size}" data-send="${esc(key)}" aria-label="Send prompt to Claude" title="Send prompt to Claude">${icon("sparkle", small ? 15 : 16)}</button>` : ""}</span>`;
+/* "Let AI fix it": sends to the connected agent, or copies the prompt. Icon only on narrow rows. */
+function aiFix(key, iconOnly = false) {
+  const label = "Let AI fix it";
+  return `<button type="button" class="ai-fix${iconOnly ? " ai-fix--icon" : ""}" data-fix="${esc(key)}" aria-label="${label}" title="${label}">${icon("sparkle", 14)}${iconOnly ? "" : `<span>${label}</span>`}</button>`;
 }
 /* The readable copy of the same prompt, folded under the view. */
 function promptPreview(key, text) {
@@ -1132,7 +1129,7 @@ function renderExplorerHead() {
   if (state.details) {
     const page = pageByTitle(state.details);
     head.innerHTML = `<button type="button" class="ghost back" data-back>${icon("arrow-left", 14)}Pages</button>
-      <div class="details__title"><b>${esc(nameOf(page))}</b></div>${promptActions(`details:${page.title}`)}`;
+      <div class="title-row"><div class="details__title"><b>${esc(nameOf(page))}</b></div>${openImprovements(page).length ? aiFix(`details:${page.title}`) : ""}</div>`;
     return;
   }
   const tabs = [["pages", "Pages", "file"], ["media", "Media", "image"], ["files", "Files", "folder"]];
@@ -1207,7 +1204,7 @@ function renderHealth() {
   const pagesWord = (n) => (n === 1 ? "1 page" : `${n} pages`);
   const empty = state.siteFilter ? `Nothing to improve in ${catLabel(state.siteFilter)}` : "Nothing to improve";
   panels.health.innerHTML = `
-    <div class="panel-head"><h3 class="panel-title">Site health</h3>${promptActions("site")}</div>
+    <div class="panel-head"><div class="title-row"><h3 class="panel-title">Site health</h3>${aiFix("site")}</div></div>
     <div class="gauges">${CATS.map(([k]) => gauge(k, avg[k], state.siteFilter, "site", state.fresh)).join("")}</div>
     <div class="improve">
       <div class="improve__head"><h4>What to improve${state.siteFilter ? ` · ${catLabel(state.siteFilter)}` : ""}</h4></div>
@@ -1221,7 +1218,7 @@ function renderHealth() {
     <table>
       <thead><tr>${th("page", "Page")}${CATS.map(([k, l]) => th(k, l)).join("")}<th></th></tr></thead>
       <tbody>
-        ${rows.map((r) => `<tr><td><button type="button" class="health-page" data-scores="${esc(r.page.title)}"><span>${esc(nameOf(r.page))}</span><small>${r.page.url}</small></button></td>${CATS.map(([k]) => num(r.s[k])).join("")}<td class="act">${openImprovements(r.page).length ? promptActions(`page:${r.page.title}`, true) : ""}</td></tr>`).join("")}
+        ${rows.map((r) => `<tr><td><button type="button" class="health-page" data-scores="${esc(r.page.title)}"><span>${esc(nameOf(r.page))}</span><small>${r.page.url}</small></button></td>${CATS.map(([k]) => num(r.s[k])).join("")}<td class="act">${openImprovements(r.page).length ? aiFix(`page:${r.page.title}`, true) : ""}</td></tr>`).join("")}
       </tbody>
     </table>`;
 }
@@ -1349,11 +1346,11 @@ function change(id) {
     setTimeout(() => { state.fresh = null; }, 600);
   }, 300);
 }
-/* Feedback lives on the icon: a check and a new label for a moment, then back. */
-function flash(button, label, wide = false) {
+/* Feedback lives on the button: a check and a new label for a moment, then back. */
+function flash(button, label) {
   const before = { html: button.innerHTML, label: button.getAttribute("aria-label"), title: button.title };
-  const small = button.classList.contains("prompt-icon--small");
-  button.innerHTML = icon("check", small ? 15 : 16) + (wide ? `<span>${label}</span>` : "");
+  const iconOnly = button.classList.contains("ai-fix--icon");
+  button.innerHTML = icon("check", 14) + (iconOnly ? "" : `<span>${label}</span>`);
   button.setAttribute("aria-label", label);
   button.title = label;
   button.toggleAttribute("data-done", true);
@@ -1363,29 +1360,27 @@ function flash(button, label, wide = false) {
     button.setAttribute("aria-label", before.label);
     button.title = before.title;
     button.removeAttribute("data-done");
-  }, wide ? 1600 : 1200);
+  }, 1600);
 }
-async function copy(button) {
-  const text = promptFor(button.dataset.copy);
-  try { await navigator.clipboard.writeText(text); } catch {
+async function fix(button) {
+  const key = button.dataset.fix;
+  /* Simulated send: the real build uses map 1's asking-agents flow. */
+  if (agentOn) { flash(button, "Sent to Claude"); return; }
+  try { await navigator.clipboard.writeText(promptFor(key)); } catch {
     // No clipboard here: open the readable prompt so it can be selected by hand.
-    const details = document.querySelector(`details.prompt[data-prompt="${CSS.escape(button.dataset.copy)}"]`);
+    const details = document.querySelector(`details.prompt[data-prompt="${CSS.escape(key)}"]`);
     if (details) { details.open = true; state.prompts[details.dataset.prompt] = true; }
     return;
   }
   flash(button, "Copied");
 }
-/* Simulated: the real build sends it through map 1's asking-agents flow. */
-function send(button) { flash(button, "Sent to Claude", true); }
 
 document.addEventListener("click", (event) => {
   const t = event.target;
   const changer = t.closest("[data-change]");
   if (changer) { change(changer.dataset.change); return; }
-  const copier = t.closest("[data-copy]");
-  if (copier) { copy(copier); return; }
-  const sender = t.closest("[data-send]");
-  if (sender) { send(sender); return; }
+  const fixer = t.closest("[data-fix]");
+  if (fixer) { fix(fixer); return; }
   const filter = t.closest("[data-filter]");
   if (filter) {
     const k = filter.dataset.filter;

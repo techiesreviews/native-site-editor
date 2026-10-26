@@ -1,6 +1,6 @@
 # Build: site quality
 
-Lex's fourth build (order of 2026-10-23): every site made in the editor scores Lighthouse 100 for accessibility, best practices, SEO and Agents and 99 for speed by default, is found and quoted by AI search, and stays that way while Lex edits, with the rules kept current every month. The editor does it by itself on every save, with nothing marked "by agent"; what only the user can supply goes to a new **Inbox** in the top bar, and every page shows its five scores (Lighthouse's four plus Agents, its Agentic Browsing category), measured in the user's own browser to match Lighthouse, with one prompt icon to copy a fix-it prompt or send it to a connected agent. Every decision comes from the [map](../map.md)'s closed tickets; this build does not reopen them.
+Lex's fourth build (order of 2026-10-23): every site made in the editor scores Lighthouse 100 for accessibility, best practices, SEO and Agents and 99 for speed by default, is found and quoted by AI search, and stays that way while Lex edits, with the rules kept current every month. The editor does it by itself on every save, with nothing marked "by agent"; what only the user can supply goes to a new **Inbox** in the top bar, and every page shows its five scores (Lighthouse's four plus Agents, its Agentic Browsing category), measured in the user's own browser to match Lighthouse, with one "Let AI fix it" button that copies a fix-it prompt or sends it to a connected agent. Every decision comes from the [map](../map.md)'s closed tickets; this build does not reopen them.
 
 Research is on branches that are never merged (`git show origin/<branch>:<path>`):
 
@@ -115,7 +115,7 @@ The planned slice 42 (a dot on pages with an open item) is folded into slice 63:
 | [61 The whole site, scored in the background](tickets/61-whole-site-scores.md) | M | – | – | 60 |
 | [62 The kit keeps the scores in step with Lighthouse](tickets/62-score-parity.md) | M | – | – | 10, 60 |
 | [63 Pages and files: a score ring on every page](tickets/63-score-rings.md) | S–M | visible | – | 61, 41 |
-| [64 Page details: scores, What to improve and the prompt icon](tickets/64-page-details-scores.md) | M–L | visible | – | 63 |
+| [64 Page details: scores, What to improve and Let AI fix it](tickets/64-page-details-scores.md) | M–L | visible | – | 63 |
 | [65 Site health: an Inbox item for the whole site](tickets/65-site-health.md) | M–L | visible | – | 40, 64 |
 | [66 Real Lighthouse through the helper](tickets/66-helper-lighthouse.md) | M | – | – | 60 (and agents build slice 16, released) |
 | [67 Send the prompt to a connected agent](tickets/67-send-prompt-to-agent.md) | S | visible | – | 64, 65 (and agents build slice 13, released) |
@@ -150,7 +150,7 @@ The frontier decides; this is one order that keeps to the rules.
 - **One rule list (11, 41, 60):** `shared/site-score/` holds every rule once; `kit site-rules`, the Inbox's site improvements and the browser score engine all import it, so a rule changed for a Lighthouse update changes everywhere.
 - **Site scores (65):** each site ring is the average of the pages' scores in that category; Lighthouse has no site score of its own.
 - **Five scores (10, 60, 62–66):** Lighthouse's experimental Agentic Browsing category is the fifth score, shown as **Agents**, with target 100 and exact parity like accessibility (ticket 10 follow-up, replacing ticket 04's "watched, no target").
-- **One prompt icon (64, 65, 67):** a single catalogue icon marks every place a prompt can be made (page details and Site health headers, Site health rows); it copies on click with feedback on the icon. A connected agent adds an agent icon beside it.
+- **"Let AI fix it" (64, 65, 67):** one button, the AI star (sparkle, already a catalogue icon) followed by "Let AI fix it", right after the page name in page details and after "Site health" (icon only on narrow Site health rows). It is a catalogue button with an icon, not a new part. Without an agent it copies the prompt; with one connected it sends it (slice 67). Feedback on the button itself ([ticket 10 second follow-up](../../tickets/10-grill-page-scores.md#second-follow-up-2026-10-26); this replaced the earlier prompt icon).
 - **Exact numbers (66):** real Lighthouse through the helper replaces the engine's numbers silently; the engine stays the default because it needs nothing installed.
 - **Wave-offs (40):** stored in `.editor/config.json`, so other editors and agents see them; "Decorative" writes the picture markup the Media manager writes today.
 

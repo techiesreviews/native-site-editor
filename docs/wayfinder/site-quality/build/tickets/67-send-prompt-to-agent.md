@@ -9,7 +9,7 @@ blocked_by: [64-page-details-scores, 65-site-health]
 
 ## Goal
 
-When an agent is connected, the prompt from page details or Site health goes straight to it, instead of only being copied ([ticket 10 follow-up](../../tickets/10-grill-page-scores.md#follow-up-2026-10-26); Lex: "yes!"). Size: S.
+When an agent is connected, "Let AI fix it" sends the prompt from page details or Site health straight to it instead of copying it ([ticket 10 follow-up](../../tickets/10-grill-page-scores.md#follow-up-2026-10-26), Lex: "yes!"; [ticket 10 second follow-up](../../tickets/10-grill-page-scores.md#second-follow-up-2026-10-26)). Size: S.
 
 ## Gate outside this map
 
@@ -17,10 +17,10 @@ When an agent is connected, the prompt from page details or Site health goes str
 
 ## Decided behaviour
 
-- **With an agent connected:** an agent icon sits right next to the prompt icon (slices 64 and 65), wherever the prompt icon is (page details header, Site health header, Site health rows). It is the same icon-only Ask agent control as on pins (agents build slice 13: "Ask agent stays icon-only").
-- Clicking it sends the same prompt the prompt icon would copy, filter included, through the asking-agents flow. It becomes an ask that shows the agent's colour and name chip while it works, and turns grey when done, like a pin. The page findings stay linked, so the ring and the list update as the agent's changes land (slice 60 re-scores on every change).
-- **With no agent connected:** only the prompt icon shows. No disabled icon, and no explainer.
-- Feedback stays on the icon itself; no toast.
+- **One button, no extra icon:** the same "Let AI fix it" button from slices 64 and 65 (page details header, Site health header, Site health rows) changes what it does. With an agent connected it sends; with none it copies. There is no separate agent icon.
+- Clicking it with an agent connected sends the same prompt it would copy, filter included, through the asking-agents flow (agents build slice 13). The button itself shows "Sent to <agent>" with a check for a moment. It becomes an ask that shows the agent's colour and name chip while it works, and turns grey when done, like a pin. The page findings stay linked, so the ring and the list update as the agent's changes land (slice 60 re-scores on every change).
+- **With no agent connected:** the button copies, as in slices 64 and 65. No disabled state, and no explainer.
+- Feedback stays on the button itself; no toast.
 
 ## Files
 
@@ -28,7 +28,7 @@ Expected: `src/site-score/page-details.ts`, `src/site-score/site-health.ts`, the
 
 ## Done when
 
-- With a fake connected agent, the agent icon sends the page prompt (and, from Site health, the site prompt) and the ask shows the agent's chip. With no agent, the icon is absent.
+- With a fake connected agent, "Let AI fix it" sends the page prompt (and, from Site health, the site prompt) and the ask shows the agent's chip. With no agent, the same button copies.
 
 ## Kit commands and evidence
 
