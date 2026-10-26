@@ -2,7 +2,7 @@
 title: Prototype the site map
 type: prototype (HITL)
 status: open
-assignee:
+assignee: Lex + claude (prototype)
 blocked_by: [04-grill-map-behaviour, 05-grill-rearranging]
 ---
 

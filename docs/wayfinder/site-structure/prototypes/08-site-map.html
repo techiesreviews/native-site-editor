@@ -1,0 +1,1242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 08 Site map</title>
+<style>
+/* Throwaway prototype for site-structure ticket 08: the zoomable site map, in top bar B.
+   Tokens and parts copied from site-quality/prototypes/05-page-scores.html (src/theme.css).
+   Built on round-1 recommendations Q1–Q7 (Lex has not answered yet). */
+:root {
+  color-scheme: light dark;
+  --primary: light-dark(oklch(50% 0.18 262.9), oklch(72% 0.13 262.9));
+  --primary-hover: light-dark(oklch(42.5% 0.18 262.9), oklch(78% 0.12 262.9));
+  --on-primary: light-dark(oklch(98.9% 0.003 275.8), oklch(16% 0.04 262.9));
+  --background: light-dark(oklch(97% 0.019 275.5), oklch(15% 0.025 265));
+  --surface: light-dark(oklch(98.9% 0.003 275.8), oklch(19% 0.03 265));
+  --surface-subtle: light-dark(oklch(95.4% 0.019 275.5), oklch(22% 0.032 265));
+  --text: light-dark(oklch(15.3% 0.06 262.9), oklch(95% 0.01 265));
+  --muted: light-dark(oklch(40.4% 0.045 262.9), oklch(74% 0.03 265));
+  --line: light-dark(oklch(88.3% 0.048 274.7), oklch(30% 0.03 265));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --question: light-dark(oklch(66% 0.18 48), oklch(74% 0.15 55));
+  --poor: light-dark(oklch(55% 0.2 27), oklch(70% 0.17 25));
+  --good: light-dark(oklch(52% 0.13 145), oklch(74% 0.14 145));
+  --dot: light-dark(oklch(80% 0.03 270), oklch(32% 0.03 265));
+  --shadow: 0 12px 32px light-dark(oklch(15.3% 0.06 262.9 / 0.18), oklch(0% 0 0 / 0.5));
+  --shadow-small: 0 1px 3px light-dark(oklch(15.3% 0.06 262.9 / 0.12), oklch(0% 0 0 / 0.4));
+  --focus-ring: 2px solid var(--primary);
+  --type-small: 12px;
+  --type-base: 13px;
+  --type-title: 15px;
+  --radius-small: 4px;
+  --radius: 6px;
+  --radius-panel: 8px;
+  --size-compact: 28px;
+  --size-control: 32px;
+
+  font: 14px/1.5 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  color: var(--text);
+  background: var(--background);
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px 24px 40px; font-size: var(--type-base); }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+:is(button, input):focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+svg { display: block; flex: none; fill: currentColor; }
+[hidden] { display: none !important; }
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  max-inline-size: 1240px;
+  margin: 0 auto 16px;
+}
+.page-head h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--size-control);
+  padding-inline: 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+  white-space: nowrap;
+}
+@media (hover: hover) and (pointer: fine) { .tool:hover { background: var(--surface-subtle); } }
+
+/* ---------- The mock editor ---------- */
+.editor {
+  position: relative;
+  display: grid;
+  grid-template-rows: 44px minmax(0, 1fr);
+  max-inline-size: 1240px;
+  block-size: 720px;
+  margin-inline: auto;
+  border-radius: var(--radius-panel);
+  overflow: clip;
+  background: var(--background);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.bar {
+  position: relative;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding-inline: 8px 12px;
+  background: var(--surface);
+  border-block-end: 1px solid var(--line);
+}
+.bar__start, .bar__end { display: flex; align-items: center; gap: 4px; min-inline-size: 0; }
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--size-compact);
+  padding-inline: 6px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  white-space: nowrap;
+  min-inline-size: 0;
+}
+.icon-button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--size-compact);
+  block-size: var(--size-compact);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+}
+.icon-button:disabled { opacity: 0.4; cursor: default; }
+:is(.ghost, .icon-button)[aria-expanded="true"], .icon-button[aria-pressed="true"] { background: var(--current); color: var(--text); }
+@media (hover: hover) and (pointer: fine) {
+  .ghost:hover, .icon-button:not(:disabled):hover { background: var(--hover); color: var(--text); }
+  .save:hover { background: var(--primary-hover); }
+  .save[data-state="saved"]:hover { background: var(--hover); }
+}
+.tile-mark {
+  display: grid;
+  place-items: center;
+  inline-size: 22px;
+  block-size: 22px;
+  border-radius: var(--radius-small);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+  font-size: var(--type-small);
+}
+.project__name { font-weight: 600; }
+.slash { color: var(--control-line); font-size: 18px; font-weight: 300; }
+.picker { font-weight: 500; }
+.caret { color: var(--muted); }
+.inbox-button::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--question);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--size-compact);
+  margin-inline-start: 4px;
+  padding-inline: 10px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.save::before { content: ""; inline-size: 7px; block-size: 7px; border-radius: 50%; background: currentColor; opacity: 0.85; }
+.save[data-state="saved"] { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--control-line); }
+.save[data-state="saved"]::before { background: var(--good); opacity: 1; }
+
+/* ---------- Work area: left panel + page ---------- */
+.work { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); min-block-size: 0; }
+.panel-left {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  inline-size: 300px;
+  min-block-size: 0;
+  background: var(--surface);
+  border-inline-end: 1px solid var(--line);
+}
+.panel-left[hidden] { display: none; }
+.panel-head { display: flex; align-items: center; gap: 6px; padding: 10px 10px 6px; }
+.segments {
+  display: inline-grid;
+  grid-auto-flow: column;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.segments button {
+  block-size: 26px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+.segments button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.panel-tools { display: flex; align-items: center; gap: 6px; padding: 0 10px 8px; }
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-inline-size: 0;
+  block-size: var(--size-compact);
+  padding-inline: 8px;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--muted);
+}
+.search:focus-within { outline: var(--focus-ring); outline-offset: 1px; }
+.search input { flex: 1; min-inline-size: 0; border: 0; background: transparent; outline: 0; color: var(--text); }
+.map-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--size-compact);
+  padding-inline: 8px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--current);
+  color: var(--text);
+  font-weight: 500;
+}
+@media (hover: hover) and (pointer: fine) { .map-open:hover { background: color-mix(in oklch, var(--primary) 24%, transparent); } }
+.tree { overflow: auto; padding: 0 6px 10px; }
+.tree ul { list-style: none; margin: 0; padding: 0; }
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding-inline-start: calc(var(--depth, 0) * 14px);
+}
+.row > button:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+  block-size: 30px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: start;
+}
+.row > button:first-child span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row > button:first-child small { color: var(--muted); font-size: var(--type-small); margin-inline-start: auto; }
+.row svg { color: var(--muted); }
+.row.is-current > button:first-child { background: var(--current); }
+@media (hover: hover) and (pointer: fine) { .row > button:first-child:hover { background: var(--hover); } }
+
+.stage { overflow: auto; padding: 24px; background: var(--background); }
+.stage .page-frame {
+  max-inline-size: 760px;
+  margin-inline: auto;
+  border-radius: var(--radius-panel);
+  overflow: clip;
+  background: white;
+  color: #1b1f2e;
+  box-shadow: var(--shadow-small), 0 0 0 1px var(--line);
+}
+
+/* ---------- Rings (from the page scores prototype) ---------- */
+.ring {
+  --ring: color-mix(in oklch, var(--muted) 45%, transparent);
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  inline-size: 22px;
+  block-size: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+.ring svg { inline-size: 14px; block-size: 14px; rotate: -90deg; fill: none; stroke-width: 2.5; }
+.ring .track { stroke: color-mix(in oklch, var(--text) 10%, transparent); }
+.ring .arc { stroke: var(--ring); stroke-linecap: round; }
+.ring[data-band="improve"] { --ring: var(--question); }
+.ring[data-band="poor"] { --ring: var(--poor); }
+.ring::after {
+  content: attr(data-tip);
+  position: absolute;
+  inset-block-start: calc(100% + 6px);
+  inset-inline-end: -8px;
+  z-index: 20;
+  display: none;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  background: var(--text);
+  color: var(--surface);
+  font-size: var(--type-small);
+  line-height: 1.5;
+  white-space: pre;
+  text-align: start;
+  pointer-events: none;
+}
+.ring:is(:hover, :focus-visible)::after { display: block; }
+
+/* ---------- The map ---------- */
+.map {
+  position: absolute;
+  inset: 44px 0 0;
+  z-index: 4;
+  overflow: hidden;
+  background-color: var(--background);
+  background-image: radial-gradient(circle, var(--dot) 1.2px, transparent 1.4px);
+  background-size: var(--dot-size, 20px) var(--dot-size, 20px);
+  background-position: var(--dot-x, 0) var(--dot-y, 0);
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+.map[data-panning] { cursor: grabbing; }
+.map[hidden] { display: none; }
+.world {
+  position: absolute;
+  inset: 0 auto auto 0;
+  transform-origin: 0 0;
+}
+/* A layer while the camera moves; dropped when it rests, so close-up pages redraw sharp. */
+.world[data-moving] { will-change: transform; }
+.links { position: absolute; inset: 0 auto auto 0; overflow: visible; pointer-events: none; }
+.links path { fill: none; vector-effect: non-scaling-stroke; }
+.links .edge { stroke: var(--control-line); stroke-width: 1.5; }
+.links .link { stroke: var(--primary); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: 0.85; }
+
+.tile {
+  position: absolute;
+  inset: 0 auto auto 0;
+  inline-size: 240px;
+  block-size: 150px;
+  cursor: pointer;
+  transition: opacity 200ms ease-out;
+}
+.tile__body {
+  position: relative;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 0 0 1px var(--line), var(--shadow-small);
+}
+.tile[data-selected] .tile__body { box-shadow: 0 0 0 calc(2.5px / var(--k)) var(--primary), var(--shadow-small); }
+.tile[data-drop="ok"] .tile__body { box-shadow: 0 0 0 calc(3px / var(--k)) var(--primary); }
+.tile[data-drop="ok"] .tile__body::after { content: ""; position: absolute; inset: 0; background: color-mix(in oklch, var(--primary) 18%, transparent); }
+.tile[data-drop="no"] .tile__body { box-shadow: 0 0 0 calc(3px / var(--k)) var(--poor); }
+.tile[data-dragging] { z-index: 10; opacity: 0.9; cursor: grabbing; }
+.tile[data-dragging] .tile__body { box-shadow: 0 0 0 calc(2px / var(--k)) var(--primary), var(--shadow); }
+.tile[data-shake] .tile__body { animation: shake 360ms ease-in-out; }
+@keyframes shake { 20%, 60% { translate: -6px 0; } 40%, 80% { translate: 6px 0; } }
+.tile[data-dim] { opacity: 0.22; }
+.tile[data-hit] .tile__body { box-shadow: 0 0 0 calc(3px / var(--k)) var(--question), var(--shadow-small); }
+.tile[data-new] .tile__body { animation: pop 300ms ease-out; }
+@keyframes pop { from { scale: 0.85; opacity: 0; } }
+
+/* Page pictures and live pages are drawn at 600 × 375 and scaled to the tile. */
+.pic, .live {
+  position: absolute;
+  inset: 0 auto auto 0;
+  inline-size: 600px;
+  block-size: 375px;
+  transform: scale(0.4);
+  transform-origin: 0 0;
+}
+.live { opacity: 0; transition: opacity 250ms ease-out; overflow: hidden; background: white; pointer-events: none; }
+.tile[data-live] .live { opacity: 1; pointer-events: auto; }
+.map[data-level="name"] .pic { display: none; }
+.map[data-level="name"] .tile__body { background: hsl(var(--hue) 55% 62%); box-shadow: none; }
+.map:not([data-level="live"]) .live { display: none; }
+.tile[data-pending] .pic, .tile[data-pending] .live { display: none; }
+.tile[data-pending] .tile__body {
+  background: linear-gradient(100deg, var(--surface-subtle) 30%, var(--surface) 50%, var(--surface-subtle) 70%) 0 0 / 300% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+@keyframes shimmer { to { background-position: -300% 0; } }
+.tile[data-fresh] .pic { animation: fade-in 400ms ease-out; }
+@keyframes fade-in { from { opacity: 0; } }
+
+/* Mini page drawing (the picture). */
+.pic { background: white; }
+.pic .p-head { display: flex; align-items: center; gap: 14px; block-size: 46px; padding-inline: 24px; background: hsl(var(--hue) 45% 22%); }
+.pic .p-head i { display: block; block-size: 10px; border-radius: 5px; background: hsl(var(--hue) 30% 80% / 0.7); }
+.pic .p-head i:first-child { inline-size: 70px; block-size: 16px; background: hsl(var(--hue) 70% 72%); margin-inline-end: auto; }
+.pic .p-hero { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; padding: 28px 24px; background: hsl(var(--hue) 60% 96%); }
+.pic .p-hero b { display: block; block-size: 26px; inline-size: 85%; border-radius: 6px; background: hsl(var(--hue) 40% 25%); margin-block-end: 14px; }
+.pic .p-hero i { display: block; block-size: 10px; border-radius: 5px; background: hsl(var(--hue) 15% 75%); margin-block-end: 9px; }
+.pic .p-hero u { display: block; inline-size: 120px; block-size: 30px; border-radius: 6px; background: hsl(var(--hue) 70% 50%); margin-block-start: 16px; }
+.pic .p-img { border-radius: 10px; background: linear-gradient(135deg, hsl(var(--hue) 65% 70%), hsl(calc(var(--hue) + 40) 60% 55%)); }
+.pic .p-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 22px 24px; }
+.pic .p-cards i { display: block; block-size: 80px; border-radius: 8px; background: hsl(var(--hue) 20% 93%); box-shadow: inset 0 0 0 1px hsl(var(--hue) 20% 86%); }
+
+/* The real page (live). */
+.site { font: 15px/1.55 Georgia, "Iowan Old Style", serif; color: #1b1f2e; background: white; }
+.site header { display: flex; align-items: center; gap: 18px; padding: 12px 24px; background: hsl(var(--hue) 45% 22%); color: white; font: 600 14px/1.3 ui-sans-serif, system-ui, sans-serif; }
+.site header strong { margin-inline-end: auto; font-size: 17px; color: hsl(var(--hue) 70% 78%); }
+.site header span { opacity: 0.85; font-weight: 500; }
+.site .hero { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; padding: 26px 24px 20px; background: hsl(var(--hue) 60% 96%); }
+.site h1 { margin: 0 0 8px; font: 700 28px/1.15 ui-sans-serif, system-ui, sans-serif; color: hsl(var(--hue) 40% 20%); }
+.site p { margin: 0 0 10px; }
+.site .cta { display: inline-block; margin-block-start: 6px; padding: 7px 14px; border-radius: 6px; background: hsl(var(--hue) 70% 45%); color: white; font: 600 13px/1.2 ui-sans-serif, system-ui, sans-serif; }
+.site .img { border-radius: 10px; background: linear-gradient(135deg, hsl(var(--hue) 65% 70%), hsl(calc(var(--hue) + 40) 60% 55%)); min-block-size: 150px; }
+.site .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 18px 24px 24px; }
+.site .cards div { padding: 10px 12px; border-radius: 8px; background: hsl(var(--hue) 20% 96%); box-shadow: inset 0 0 0 1px hsl(var(--hue) 20% 88%); font-size: 13px; }
+.site .cards b { display: block; font: 600 13px/1.3 ui-sans-serif, system-ui, sans-serif; margin-block-end: 4px; }
+
+/* ---------- Map overlay (screen space): labels, add buttons, notes ---------- */
+.overlay { position: absolute; inset: 0; pointer-events: none; }
+.label {
+  position: absolute;
+  inset: 0 auto auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: var(--type-small);
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+.label__title { overflow: hidden; text-overflow: ellipsis; }
+.label .ring { pointer-events: auto; inline-size: 18px; block-size: 18px; }
+.label .menu-mark { color: var(--muted); }
+.label input {
+  inline-size: 120px;
+  block-size: 24px;
+  padding-inline: 6px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--primary);
+  pointer-events: auto;
+  font-size: var(--type-small);
+}
+.label[data-dim] { opacity: 0.25; }
+.address { position: absolute; inset: 0 auto auto 0; color: var(--muted); font-size: 11px; white-space: nowrap; text-align: center; }
+.add {
+  position: absolute;
+  inset: 0 auto auto 0;
+  display: grid;
+  place-items: center;
+  inline-size: 22px;
+  block-size: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-small);
+  pointer-events: auto;
+}
+.note {
+  position: absolute;
+  inset: 0 auto auto 0;
+  padding: 3px 8px;
+  border-radius: var(--radius-small);
+  background: var(--text);
+  color: var(--surface);
+  font-size: var(--type-small);
+  white-space: nowrap;
+  translate: -50% 0;
+  animation: fade-in 200ms ease-out;
+}
+.note[data-kind="no"] { background: var(--poor); color: white; }
+
+/* Toolbar and the site's own overview float over the map. */
+.map-bar {
+  position: absolute;
+  inset-block-start: 12px;
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow), 0 0 0 1px var(--line);
+  cursor: default;
+}
+.map-bar .search { inline-size: 220px; flex: none; }
+.map-bar .zoom { min-inline-size: 44px; text-align: center; color: var(--muted); font-size: var(--type-small); font-variant-numeric: tabular-nums; }
+.map-bar .sep { inline-size: 1px; block-size: 18px; background: var(--line); margin-inline: 2px; }
+.map-bar .tool { block-size: var(--size-compact); box-shadow: none; padding-inline: 8px; }
+@media (hover: hover) and (pointer: fine) { .map-bar .tool:hover { background: var(--hover); } }
+
+.overview {
+  position: absolute;
+  inset-block-start: 12px;
+  inset-inline-start: 12px;
+  z-index: 6;
+  inline-size: 290px;
+  padding: 12px 14px;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow), 0 0 0 1px var(--line);
+  cursor: default;
+}
+.overview h3 { margin: 0; font-size: var(--type-title); font-weight: 600; }
+.overview .sub { margin: 0 0 10px; color: var(--muted); font-size: var(--type-small); }
+.gauges { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-block-end: 10px; }
+.gauge {
+  --ring: var(--good);
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  font-size: 10.5px;
+  line-height: 1.2;
+  color: var(--muted);
+  text-align: center;
+}
+.gauge[data-band="improve"] { --ring: var(--question); }
+.gauge[data-band="poor"] { --ring: var(--poor); }
+.gauge[aria-pressed="true"] { background: var(--current); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .gauge:hover { background: var(--hover); } }
+.gauge__dial { position: relative; display: grid; place-items: center; inline-size: 38px; block-size: 38px; }
+.gauge__dial svg { position: absolute; inset: 0; rotate: -90deg; fill: none; stroke-width: 3.5; }
+.gauge__dial .track { stroke: color-mix(in oklch, var(--ring) 16%, transparent); }
+.gauge__dial .arc { stroke: var(--ring); stroke-linecap: round; }
+.gauge__dial b { font-size: 12.5px; font-weight: 600; color: var(--ring); font-variant-numeric: tabular-nums; }
+.recent { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; border-block-start: 1px solid var(--line); padding-block-start: 8px; }
+.recent li { display: flex; gap: 8px; font-size: var(--type-small); }
+.recent li span { color: var(--muted); margin-inline-start: auto; white-space: nowrap; }
+.recent__title { margin: 0 0 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+
+/* Inbox (minimal here). */
+.inbox {
+  position: absolute;
+  inset-block-start: 48px;
+  inset-inline-end: 12px;
+  z-index: 8;
+  inline-size: 300px;
+  padding: 6px;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow), 0 0 0 1px var(--line);
+}
+.inbox h3 { margin: 0; padding: 6px 8px; font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.inbox p { display: flex; gap: 8px; align-items: center; margin: 0; padding: 7px 8px; border-radius: var(--radius); }
+.inbox p small { display: block; color: var(--muted); font-size: var(--type-small); }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="caret" viewBox="0 0 256 256"><path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/></symbol>
+  <symbol id="history" viewBox="0 0 256 256"><path d="M136,80v43.47l36.12,21.67a8,8,0,0,1-8.24,13.720l-40-24A8,8,0,0,1,120,128V80a8,8,0,0,1,16,0Zm-8-48A95.44,95.44,0,0,0,60.08,60.15C52.81,67.51,46.35,74.590,40,82V64a8,8,0,0,0-16,0v40a8,8,0,0,0,8,8H72a8,8,0,0,0,0-16H49c7.15-8.42,14.27-16.35,22.39-24.57a80,80,0,1,1,1.66,114.75,8,8,0,1,0-11,11.64A96,96,0,1,0,128,32Z"/></symbol>
+  <symbol id="undo" viewBox="0 0 256 256"><path d="M232,144a64.07,64.07,0,0,1-64,64H80a8,8,0,0,1,0-16h88a48,48,0,0,0,0-96H51.31l34.35,34.34a8,8,0,0,1-11.32,11.32l-48-48a8,8,0,0,1,0-11.32l48-48A8,8,0,0,1,85.66,45.66L51.31,80H168A64.070,64.07,0,0,1,232,144Z"/></symbol>
+  <symbol id="tray" viewBox="0 0 256 256"><path d="M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm0,16V152h-28.7A15.86,15.86,0,0,0,168,156.69L148.69,176H107.31L88,156.69A15.86,15.86,0,0,0,76.69,152H48V48Zm0,160H48V168H76.69L96,187.31A15.86,15.86,0,0,0,107.31,192h41.38A15.86,15.86,0,0,0,160,187.31L179.31,168H208v40Z"/></symbol>
+  <symbol id="image" viewBox="0 0 256 256"><path d="M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32ZM48,48H208v77.38l-24.69-24.7a16,16,0,0,0-22.62,0L53.37,208H48ZM208,208H76l96-96,36,36v60ZM96,120A24,24,0,1,0,72,96,24,24,0,0,0,96,120Zm0-32a8,8,0,1,1-8,8A8,8,0,0,1,96,88Z"/></symbol>
+  <symbol id="file" viewBox="0 0 256 256"><path d="M213.66,82.34l-56-56A8,8,0,0,0,152,24H56A16,16,0,0,0,40,40V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V88A8,8,0,0,0,213.66,82.34ZM160,51.31,188.69,80H160ZM200,216H56V40h88V88a8,8,0,0,0,8,8h48V216Z"/></symbol>
+  <symbol id="sparkle" viewBox="0 0 256 256"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></symbol>
+  <symbol id="check" viewBox="0 0 256 256"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></symbol>
+  <symbol id="moon" viewBox="0 0 256 256"><path d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.090,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.34A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.34Z"/></symbol>
+  <symbol id="folder" viewBox="0 0 256 256"><path d="M216,72H131.31L104,44.69A15.86,15.86,0,0,0,92.69,40H40A16,16,0,0,0,24,56V200.62A15.4,15.4,0,0,0,39.38,216H216.89A15.13,15.13,0,0,0,232,200.89V88A16,16,0,0,0,216,72ZM40,56H92.69l16,16H40ZM216,200H40V88H216Z"/></symbol>
+  <symbol id="search" viewBox="0 0 256 256"><path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"/></symbol>
+  <symbol id="plus" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></symbol>
+  <symbol id="i-tree" viewBox="0 0 256 256"><path d="M104,40h48a8,8,0,0,1,8,8V80a8,8,0,0,1-8,8H136v24h64a8,8,0,0,1,8,8v24h8a8,8,0,0,1,8,8v32a8,8,0,0,1-8,8H184a8,8,0,0,1-8-8V152a8,8,0,0,1,8-8h8V128H136v16h8a8,8,0,0,1,8,8v32a8,8,0,0,1-8,8H112a8,8,0,0,1-8-8V152a8,8,0,0,1,8-8h8V128H64v16h8a8,8,0,0,1,8,8v32a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V152a8,8,0,0,1,8-8h8V120a8,8,0,0,1,8-8h64V88H104a8,8,0,0,1-8-8V48A8,8,0,0,1,104,40Zm8,16V72h32V56Zm8,104v16h16V160ZM48,160v16H64V160Zm144,0v16h16V160Z"/></symbol>
+  <symbol id="menu-mark" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM40,72H216a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16ZM216,184H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Z"/></symbol>
+  <symbol id="minus" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128Z"/></symbol>
+  <symbol id="close" viewBox="0 0 256 256"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></symbol>
+  <symbol id="fit" viewBox="0 0 256 256"><path d="M216,48V88a8,8,0,0,1-16,0V56H168a8,8,0,0,1,0-16h40A8,8,0,0,1,216,48ZM88,200H56V168a8,8,0,0,0-16,0v40a8,8,0,0,0,8,8H88a8,8,0,0,0,0-16Zm120-40a8,8,0,0,0-8,8v32H168a8,8,0,0,0,0,16h40a8,8,0,0,0,8-8V168A8,8,0,0,0,208,160ZM88,40H48a8,8,0,0,0-8,8V88a8,8,0,0,0,16,0V56H88a8,8,0,0,0,0-16Z"/></symbol>
+</svg>
+
+<header class="page-head">
+  <h1>Site map</h1>
+  <div>
+    <button type="button" class="tool" id="theme">Dark</button>
+  </div>
+</header>
+
+<div class="editor" id="editor">
+  <div class="bar" id="bar">
+    <div class="bar__start">
+      <button type="button" class="ghost"><span class="tile-mark">T</span><span class="project__name">techies-site</span></button>
+      <span class="slash" aria-hidden="true">/</span>
+      <button type="button" class="ghost picker" id="picker" aria-expanded="true"><span id="picker-label">Home</span><svg class="caret" width="12" height="12"><use href="#caret"/></svg></button>
+    </div>
+    <div class="bar__end">
+      <button type="button" class="icon-button" id="undo-button" aria-label="Undo" title="Undo" disabled><svg width="16" height="16"><use href="#undo"/></svg></button>
+      <button type="button" class="icon-button" aria-label="History" title="History"><svg width="16" height="16"><use href="#history"/></svg></button>
+      <button type="button" class="icon-button inbox-button" id="inbox-button" aria-label="Inbox" title="Inbox" aria-expanded="false"><svg width="17" height="17"><use href="#tray"/></svg></button>
+      <button type="button" class="save" id="save" data-state="saved">Live</button>
+    </div>
+  </div>
+
+  <div class="work">
+    <aside class="panel-left" id="panel" aria-label="Pages, media and files">
+      <div class="panel-head">
+        <div class="segments" role="tablist" aria-label="Pages, media or files">
+          <button type="button" role="tab" aria-selected="true">Pages</button>
+          <button type="button" role="tab" aria-selected="false">Media</button>
+          <button type="button" role="tab" aria-selected="false">Files</button>
+        </div>
+      </div>
+      <div class="panel-tools">
+        <label class="search"><svg width="14" height="14"><use href="#search"/></svg><input id="panel-search" type="search" placeholder="Search pages / media / files" aria-label="Search pages, media and files"></label>
+        <button type="button" class="map-open" id="map-open" title="Site map"><svg width="16" height="16"><use href="#i-tree"/></svg>Map</button>
+      </div>
+      <nav class="tree" id="tree" aria-label="Pages"></nav>
+    </aside>
+    <div class="stage" id="stage"></div>
+  </div>
+
+  <section class="map" id="map" hidden aria-label="Site map" data-level="picture">
+    <div class="world" id="world">
+      <svg class="links" id="links" width="1" height="1"></svg>
+    </div>
+    <div class="overlay" id="overlay"></div>
+
+    <div class="map-bar" id="map-bar">
+      <label class="search"><svg width="14" height="14"><use href="#search"/></svg><input id="map-search" type="search" placeholder="Search pages" aria-label="Search pages"></label>
+      <span class="sep" aria-hidden="true"></span>
+      <button type="button" class="icon-button" id="zoom-out" aria-label="Zoom out" title="Zoom out"><svg width="14" height="14"><use href="#minus"/></svg></button>
+      <span class="zoom" id="zoom-level">100%</span>
+      <button type="button" class="icon-button" id="zoom-in" aria-label="Zoom in" title="Zoom in"><svg width="14" height="14"><use href="#plus"/></svg></button>
+      <button type="button" class="icon-button" id="zoom-fit" aria-label="Fit the whole site" title="Fit the whole site"><svg width="15" height="15"><use href="#fit"/></svg></button>
+      <span class="sep" aria-hidden="true"></span>
+      <button type="button" class="tool" id="first-visit">Simulate first visit</button>
+      <button type="button" class="icon-button" id="map-close" aria-label="Close the map" title="Close the map (Esc)"><svg width="14" height="14"><use href="#close"/></svg></button>
+    </div>
+
+    <aside class="overview" id="overview" aria-label="This site"></aside>
+  </section>
+
+  <div class="inbox" id="inbox" hidden role="dialog" aria-label="Inbox">
+    <h3>Inbox</h3>
+    <p><svg width="16" height="16"><use href="#sparkle"/></svg><span>Site health<small>5 pages can be improved</small></span></p>
+    <p><svg width="16" height="16"><use href="#image"/></svg><span>Picture without a description<small>About</small></span></p>
+  </div>
+</div>
+
+<script>
+/* ---------- Data ---------- */
+const CATS = ["Performance", "Accessibility", "Best practices", "SEO", "Agents"];
+const TEXT = {
+  home: ["Websites that stay fast", "We build and look after small, fast websites for people who would rather do their own work.", ["Web design", "Hosting", "Reviews"]],
+  about: ["About us", "A small studio in Utrecht. We write plain HTML and CSS, and we test everything on a slow phone first.", ["Our story", "How we work", "Team"]],
+  team: ["The team", "Four people who care about fast pages: two designers, a developer and someone who answers the phone.", ["Lex", "Anna", "Sam"]],
+  services: ["What we do", "From a first sketch to a site that keeps scoring well. Pick one service or all three.", ["Web design", "Hosting", "Reviews"]],
+  web: ["Web design", "Pages that load before you blink, built from parts you can change yourself.", ["Sketch", "Build", "Hand over"]],
+  hosting: ["Hosting", "Your site on GitHub Pages or Cloudflare, with no server to look after.", ["GitHub Pages", "Cloudflare", "Backups"]],
+  reviews: ["Site reviews", "We read your site like a search robot and a visitor, and tell you what to fix first.", ["Speed", "Words", "Pictures"]],
+  blog: ["Blog", "Notes on building small sites that last.", ["Hello world", "Big launch", "Speed tips"]],
+  hello: ["Hello world", "The first post: why we started writing things down.", ["Why", "What next", "Say hi"]],
+  launch: ["Big launch", "We moved every client site to plain HTML. Here is what happened to the scores.", ["Before", "After", "Lessons"]],
+  newpost: ["New post", "A draft about structured data, still without a title in its page details.", ["Draft", "Notes", "Links"]],
+  speed: ["Speed tips", "Five things that make a page feel instant, none of which need a framework.", ["Pictures", "Fonts", "Scripts"]],
+  static: ["Why static sites", "No database, no plugins to update, nothing to break at night.", ["Cheaper", "Safer", "Faster"]],
+  contact: ["Contact", "Send us a note, or call between nine and five.", ["Email", "Phone", "Visit"]],
+  privacy: ["Privacy", "We keep no visitor data. This page explains what that means.", ["Cookies", "Analytics", "Your rights"]],
+};
+let pages = [
+  { id: "home", title: "Home", slug: "", parent: null, hue: 262, menu: true, s: [98, 100, 100, 100, 100], links: ["about", "services", "blog", "contact", "web", "launch"] },
+  { id: "about", title: "About", slug: "about", parent: "home", hue: 200, menu: true, s: [97, 88, 100, 100, 100], links: ["team", "contact"] },
+  { id: "team", title: "Team", slug: "team", parent: "home", hue: 172, s: [99, 100, 100, 100, 100], links: ["about", "contact"] },
+  { id: "services", title: "Services", slug: "services", parent: "home", hue: 28, menu: true, s: [82, 100, 100, 100, 96], links: ["web", "hosting", "reviews", "contact"] },
+  { id: "web", title: "Web design", slug: "web-design", parent: "services", hue: 28, s: [99, 100, 100, 100, 100], links: ["contact", "reviews"] },
+  { id: "hosting", title: "Hosting", slug: "hosting", parent: "services", hue: 48, s: [100, 100, 100, 100, 100], links: ["contact"] },
+  { id: "reviews", title: "Reviews", slug: "reviews", parent: "services", hue: 12, s: [98, 100, 96, 100, 100], links: ["contact", "speed"] },
+  { id: "blog", title: "Blog", slug: "blog", parent: "home", hue: 330, menu: true, s: [97, 100, 100, 100, 100], links: ["hello", "launch", "newpost", "speed", "static"] },
+  { id: "hello", title: "Hello world", slug: "hello-world", parent: "blog", hue: 330, s: [99, 100, 100, 92, 100], links: ["about"] },
+  { id: "launch", title: "Big launch", slug: "big-launch", parent: "blog", hue: 300, s: [76, 100, 100, 100, 100], links: ["services", "hosting"] },
+  { id: "newpost", title: "New post", slug: "new-post", parent: "blog", hue: 350, s: [98, 100, 100, 84, 100], links: [] },
+  { id: "speed", title: "Speed tips", slug: "speed-tips", parent: "blog", hue: 316, s: [99, 100, 100, 100, 100], links: ["reviews", "web"] },
+  { id: "static", title: "Why static sites", slug: "why-static-sites", parent: "blog", hue: 340, s: [100, 100, 100, 100, 100], links: ["hosting"] },
+  { id: "contact", title: "Contact", slug: "contact", parent: "home", hue: 140, menu: true, s: [100, 100, 100, 100, 73], links: ["privacy"] },
+  { id: "privacy", title: "Privacy", slug: "privacy", parent: "home", hue: 220, s: [100, 100, 86, 100, 100], links: [] },
+];
+let recent = [
+  { what: "About · team picture added", when: "2 h ago" },
+  { what: "Blog · Speed tips published", when: "yesterday" },
+  { what: "Services · prices changed", when: "3 days ago" },
+];
+const byId = (id) => pages.find((p) => p.id === id);
+const childrenOf = (id) => pages.filter((p) => p.parent === id).sort((a, b) => a.title.localeCompare(b.title));
+const isInside = (id, ancestor) => { for (let p = byId(id); p; p = byId(p.parent)) if (p.id === ancestor) return true; return false; };
+function address(p) {
+  const parts = [];
+  for (let q = p; q && q.id !== "home"; q = byId(q.parent)) parts.unshift(q.slug);
+  return parts.length ? `/${parts.join("/")}/` : "/";
+}
+const lowest = (p) => Math.min(...p.s);
+const band = (n) => (n < 50 ? "poor" : n < 90 ? "improve" : "ok");
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const icon = (id, size = 16) => `<svg width="${size}" height="${size}"><use href="#${id}"/></svg>`;
+function ring(p) {
+  const n = lowest(p), C = 2 * Math.PI * 5.5;
+  const tip = CATS.map((c, i) => `${c}  ${p.s[i]}`).join("\n");
+  return `<button type="button" class="ring" data-band="${band(n)}" data-tip="${tip}" aria-label="Scores for ${esc(p.title)}: ${CATS.map((c, i) => `${c} ${p.s[i]}`).join(", ")}"><svg viewBox="0 0 14 14"><circle class="track" cx="7" cy="7" r="5.5"/><circle class="arc" cx="7" cy="7" r="5.5" stroke-dasharray="${(n / 100) * C} ${C}"/></svg></button>`;
+}
+
+/* ---------- Page drawings ---------- */
+const menuPages = () => pages.filter((p) => p.menu);
+function pictureHTML(p) {
+  const nav = menuPages().slice(0, 5).map(() => `<i style="inline-size:${46 + (p.hue % 3) * 6}px"></i>`).join("");
+  return `<div class="p-head"><i></i>${nav}</div>
+    <div class="p-hero"><div><b></b><i style="inline-size:92%"></i><i style="inline-size:80%"></i><i style="inline-size:64%"></i><u></u></div><div class="p-img"></div></div>
+    <div class="p-cards"><i></i><i></i><i></i></div>`;
+}
+function liveHTML(p) {
+  const [h1, intro, cards] = TEXT[p.id] ?? [p.title, "A new page. Write something here.", ["One", "Two", "Three"]];
+  return `<div class="site" style="--hue:${p.hue}">
+    <header><strong>Techies</strong>${menuPages().map((m) => `<span>${esc(m.title)}</span>`).join("")}</header>
+    <div class="hero"><div><h1>${esc(h1)}</h1><p>${esc(intro)}</p><span class="cta">Get in touch</span></div><div class="img"></div></div>
+    <div class="cards">${cards.map((c) => `<div><b>${esc(c)}</b>Short words about ${esc(c.toLowerCase())}, kept plain and quick to read.</div>`).join("")}</div>
+  </div>`;
+}
+
+/* ---------- Editor (map closed) ---------- */
+const state = { page: "home", changes: 0, undo: [], query: "", focusCat: null, selected: null };
+const $ = (id) => document.getElementById(id);
+function renderTree() {
+  const q = $("panel-search").value.trim().toLowerCase();
+  const rows = [];
+  const walk = (id, depth) => {
+    const p = byId(id);
+    const show = !q || matches(p, q);
+    if (show) rows.push(`<li class="row${state.page === p.id ? " is-current" : ""}" style="--depth:${q ? 0 : depth}"><button type="button" data-open-page="${p.id}">${icon("file", 15)}<span>${esc(p.title)}</span><small>${address(p)}</small></button>${ring(p)}</li>`);
+    for (const c of childrenOf(id)) walk(c.id, depth + 1);
+  };
+  walk("home", 0);
+  $("tree").innerHTML = `<ul>${rows.join("")}</ul>`;
+}
+function renderStage() {
+  const p = byId(state.page);
+  $("stage").innerHTML = `<div class="page-frame">${liveHTML(p)}</div>`;
+  $("picker-label").textContent = p.title;
+}
+function renderSave() {
+  const s = $("save");
+  s.dataset.state = state.changes ? "" : "saved";
+  s.textContent = state.changes ? `Save ${state.changes} change${state.changes === 1 ? "" : "s"}` : "Live";
+  $("undo-button").disabled = state.undo.length === 0;
+}
+$("tree").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-open-page]");
+  if (!b) return;
+  state.page = b.dataset.openPage;
+  renderTree(); renderStage();
+});
+$("panel-search").addEventListener("input", renderTree);
+$("picker").addEventListener("click", () => {
+  const panel = $("panel");
+  panel.hidden = !panel.hidden;
+  $("picker").setAttribute("aria-expanded", String(!panel.hidden));
+});
+$("inbox-button").addEventListener("click", () => {
+  const box = $("inbox");
+  box.hidden = !box.hidden;
+  $("inbox-button").setAttribute("aria-expanded", String(!box.hidden));
+});
+
+/* ---------- Map: layout ---------- */
+const W = 240, H = 150, GAP_X = 48, GAP_Y = 120;
+const map = $("map"), world = $("world"), overlay = $("overlay"), linksSvg = $("links");
+const cam = { x: 0, y: 0, k: 0.3 };
+const tiles = new Map();   // id -> element
+const labels = new Map();  // id -> { label, address }
+let notes = [];            // { id, text, kind, until }
+let hovered = null, hoverTimer = 0;
+let editing = null;
+
+/* Home on top, its pages in a row, everything deeper stacked in a column under its parent
+   (as sitemap tools do), so the map stays wide enough to read at "fit". */
+const STACK_GAP = 70, INDENT = 40;
+function layout(animate = true) {
+  const target = new Map();
+  const stack = (id, x, y) => {
+    target.set(id, { x, y });
+    let cursor = y + H + STACK_GAP;
+    for (const k of childrenOf(id)) cursor += stack(k.id, x + INDENT, cursor);
+    return cursor - y;
+  };
+  const depthBelow = (id) => Math.max(0, ...childrenOf(id).map((k) => 1 + depthBelow(k.id)));
+  target.set("home", { x: 0, y: 0 });
+  const top = childrenOf("home");
+  const widths = top.map((p) => W + INDENT * depthBelow(p.id));
+  const total = widths.reduce((a, w) => a + w, 0) + GAP_X * (top.length - 1);
+  let x = 0;
+  top.forEach((p, i) => { stack(p.id, x, H + GAP_Y); x += widths[i] + GAP_X; });
+  target.set("home", { x: total / 2 - W / 2, y: 0 });
+  const start = performance.now();
+  for (const p of pages) {
+    const t = target.get(p.id);
+    if (!t) continue;
+    if (p.x === undefined) { const par = byId(p.parent); p.x = par?.x ?? t.x; p.y = par?.y ?? t.y; }
+    p.from = { x: p.x, y: p.y }; p.to = t;
+  }
+  if (!animate) { for (const p of pages) { p.x = p.to.x; p.y = p.to.y; } dirty(); return; }
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / 320), e = 1 - (1 - t) ** 3;
+    for (const p of pages) { p.x = p.from.x + (p.to.x - p.from.x) * e; p.y = p.from.y + (p.to.y - p.from.y) * e; }
+    render();
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function bounds() {
+  const xs = pages.map((p) => p.to?.x ?? p.x), ys = pages.map((p) => p.to?.y ?? p.y);
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs) + W, y1: Math.max(...ys) + H + 40 };
+}
+
+/* ---------- Map: tiles ---------- */
+function ensureTiles() {
+  for (const p of pages) {
+    if (tiles.has(p.id)) continue;
+    const el = document.createElement("div");
+    el.className = "tile";
+    el.dataset.id = p.id;
+    el.style.setProperty("--hue", p.hue);
+    el.innerHTML = `<div class="tile__body"><div class="pic">${pictureHTML(p)}</div><div class="live"></div></div>`;
+    world.append(el);
+    tiles.set(p.id, el);
+    const label = document.createElement("div");
+    label.className = "label";
+    const addr = document.createElement("div");
+    addr.className = "address";
+    overlay.append(label, addr);
+    labels.set(p.id, { label, addr });
+    if (p.isNew) { el.dataset.new = ""; setTimeout(() => delete el.dataset.new, 400); }
+  }
+  for (const [id, el] of tiles) if (!byId(id)) { el.remove(); tiles.delete(id); const l = labels.get(id); l.label.remove(); l.addr.remove(); labels.delete(id); }
+  renderLabels();
+}
+function renderLabels() {
+  for (const p of pages) {
+    const { label } = labels.get(p.id);
+    if (editing === p.id) {
+      if (!label.querySelector("input")) {
+        label.innerHTML = `<input value="${esc(p.title)}" aria-label="Page name">`;
+        const input = label.querySelector("input");
+        input.addEventListener("pointerdown", (e) => e.stopPropagation());
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); if (e.key === "Escape") { input.value = p.title; input.blur(); } e.stopPropagation(); });
+        input.addEventListener("blur", () => commitName(p, input.value));
+        requestAnimationFrame(() => { input.focus(); input.select(); });
+      }
+      continue;
+    }
+    label.innerHTML = `${p.menu ? `<svg class="menu-mark" width="11" height="11" aria-label="In the menu"><title>In the menu</title><use href="#menu-mark"/></svg>` : ""}<span class="label__title">${esc(p.title)}</span>${ring(p)}`;
+  }
+}
+function commitName(p, value) {
+  const name = value.trim() || "Untitled";
+  p.title = name;
+  p.slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "untitled";
+  editing = null;
+  renderLabels(); renderTree(); layout();
+}
+
+/* ---------- Map: rendering ---------- */
+let raf = 0, restTimer = 0;
+function dirty() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); }); }
+function levelFor(k) { const w = W * k; return w < 48 ? "name" : w < 600 ? "picture" : "live"; }
+function render() {
+  const { x, y, k } = cam;
+  const t = `translate(${x}px, ${y}px) scale(${k})`;
+  if (world.style.transform !== t) {
+    world.style.transform = t;
+    world.dataset.moving = "";
+    clearTimeout(restTimer);
+    restTimer = setTimeout(() => delete world.dataset.moving, 160);
+  }
+  world.style.setProperty("--k", k);
+  map.style.setProperty("--dot-size", `${Math.max(8, 20 * k * 2)}px`);
+  map.style.setProperty("--dot-x", `${x}px`);
+  map.style.setProperty("--dot-y", `${y}px`);
+  const level = levelFor(k);
+  if (map.dataset.level !== level) map.dataset.level = level;
+  $("zoom-level").textContent = `${Math.round(k * 100)}%`;
+
+  // Tree lines, then the selected page's links.
+  let d = "";
+  for (const p of pages) {
+    const par = byId(p.parent);
+    if (!par) continue;
+    const cx = p.x + (p.dx ?? 0), cy = p.y + (p.dy ?? 0);
+    if (par.id === "home") { const px = par.x + W / 2, py = par.y + H, mid = py + GAP_Y / 2; d += `M${px},${py}V${mid}H${cx + W / 2}V${cy}`; }
+    else d += `M${par.x + INDENT / 2},${par.y + H}V${cy + H / 2}H${cx}`;
+  }
+  let l = "";
+  const sel = state.selected && byId(state.selected);
+  if (sel) for (const id of sel.links) {
+    const t = byId(id);
+    if (!t) continue;
+    const ax = sel.x + W / 2, ay = sel.y + H / 2, bx = t.x + W / 2, by = t.y + H / 2;
+    const bend = Math.max(60, Math.abs(bx - ax) * 0.25);
+    l += `M${ax},${ay}C${ax},${ay - bend} ${bx},${by - bend} ${bx},${by}`;
+  }
+  linksSvg.innerHTML = `<path class="edge" d="${d}"/><path class="link" d="${l}"/>`;
+
+  // Tiles and their screen-space labels.
+  const vw = map.clientWidth, vh = map.clientHeight;
+  const q = state.query;
+  const visible = [];
+  for (const p of pages) {
+    const el = tiles.get(p.id);
+    if (!el) continue;
+    const tx = p.x + (p.dx ?? 0), ty = p.y + (p.dy ?? 0);
+    el.style.transform = `translate(${tx}px, ${ty}px)`;
+    const sx = x + tx * k, sy = y + ty * k, sw = W * k, sh = H * k;
+    const onScreen = sx + sw > 0 && sx < vw && sy + sh > 0 && sy < vh;
+    el.style.visibility = onScreen || p.dragging ? "visible" : "hidden";   // culling
+    if (onScreen) visible.push({ p, dist: Math.hypot(sx + sw / 2 - vw / 2, sy + sh / 2 - vh / 2) });
+    const dim = (q && !matches(p, q)) || (state.focusCat !== null && p.s[state.focusCat] >= 90);
+    el.toggleAttribute("data-dim", dim);
+    el.toggleAttribute("data-hit", Boolean(q && matches(p, q)) || (state.focusCat !== null && p.s[state.focusCat] < 90));
+    el.toggleAttribute("data-selected", state.selected === p.id);
+    const { label, addr } = labels.get(p.id);
+    const lw = Math.max(sw, Math.min(150, (W + GAP_X) * k - 6));
+    label.style.inlineSize = `${lw}px`;
+    label.style.transform = `translate(${sx + sw / 2 - lw / 2}px, ${sy + sh + 4}px)`;
+    label.toggleAttribute("data-dim", dim);
+    label.hidden = !onScreen && !p.dragging;
+    const showAddr = (state.selected === p.id || level === "live") && editing !== p.id;
+    addr.hidden = !showAddr || !onScreen;
+    if (showAddr) { addr.textContent = address(p); addr.style.inlineSize = `${lw}px`; addr.style.transform = `translate(${sx + sw / 2 - lw / 2}px, ${sy + sh + 26}px)`; }
+  }
+  // Live pages: only up close, at most three, nearest the middle first.
+  const live = new Set(level === "live" ? visible.sort((a, b) => a.dist - b.dist).slice(0, 3).map((v) => v.p.id) : []);
+  for (const p of pages) {
+    const el = tiles.get(p.id);
+    if (!el) continue;
+    if (live.has(p.id) && !p.pending) {
+      const box = el.querySelector(".live");
+      if (!box.dataset.ready) { box.innerHTML = liveHTML(p); box.dataset.ready = "1"; }
+      if (!el.hasAttribute("data-live")) requestAnimationFrame(() => el.setAttribute("data-live", ""));
+    } else el.removeAttribute("data-live");
+  }
+  renderAdd();
+  renderNotes();
+}
+const addButton = document.createElement("button");
+addButton.type = "button"; addButton.className = "add"; addButton.title = "Add a page here"; addButton.hidden = true;
+addButton.innerHTML = icon("plus", 12);
+addButton.addEventListener("pointerenter", () => clearTimeout(hoverTimer));
+addButton.addEventListener("pointerleave", () => leaveTile());
+addButton.addEventListener("pointerdown", (e) => e.stopPropagation());
+addButton.addEventListener("click", () => { const p = byId(addButton.dataset.for); if (p) addPage(p); });
+overlay.append(addButton);
+function renderAdd() {
+  const p = hovered && byId(hovered);
+  if (!p || map.dataset.level === "name" || drag || editing) { addButton.hidden = true; return; }
+  addButton.hidden = false;
+  addButton.dataset.for = p.id;
+  addButton.setAttribute("aria-label", `Add a page under ${p.title}`);
+  const sx = cam.x + (p.x + W) * cam.k, sy = cam.y + (p.y + H / 2) * cam.k;
+  addButton.style.transform = `translate(${sx + 6}px, ${sy - 11}px)`;
+}
+function renderNotes() {
+  const now = performance.now();
+  for (const n of notes) if (n.until <= now || !byId(n.id)) n.el?.remove();
+  notes = notes.filter((n) => n.until > now && byId(n.id));
+  for (const n of notes) {
+    const p = byId(n.id);
+    if (!n.el) {
+      n.el = document.createElement("div");
+      n.el.className = "note"; n.el.dataset.kind = n.kind; n.el.textContent = n.text;
+      overlay.append(n.el);
+    }
+    const sx = cam.x + (p.x + W / 2) * cam.k;
+    const sy = n.kind === "no" ? cam.y + (p.y + H / 2) * cam.k - 12 : cam.y + (p.y + H) * cam.k + 26;
+    n.el.style.transform = `translate(${sx}px, ${sy}px)`;
+  }
+}
+function note(id, text, kind = "ok", ms = 3200) {
+  for (const n of notes) if (n.id === id) n.el?.remove();
+  notes = notes.filter((n) => n.id !== id);
+  notes.push({ id, text, kind, until: performance.now() + ms });
+  dirty();
+  setTimeout(dirty, ms + 20);
+}
+
+/* ---------- Map: camera ---------- */
+const clampK = (k) => Math.min(4, Math.max(0.05, k));
+function zoomAt(sx, sy, factor) {
+  const k2 = clampK(cam.k * factor);
+  const wx = (sx - cam.x) / cam.k, wy = (sy - cam.y) / cam.k;
+  cam.k = k2; cam.x = sx - wx * k2; cam.y = sy - wy * k2;
+  dirty();
+}
+let anim = 0;
+function animateTo(to, ms = 320) {
+  cancelAnimationFrame(anim);
+  const from = { ...cam }, start = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / ms), e = 1 - (1 - t) ** 3;
+    cam.x = from.x + (to.x - from.x) * e; cam.y = from.y + (to.y - from.y) * e; cam.k = from.k + (to.k - from.k) * e;
+    render();
+    if (t < 1) anim = requestAnimationFrame(step);
+  };
+  anim = requestAnimationFrame(step);
+}
+function fitCam() {
+  const b = bounds(), vw = map.clientWidth, vh = map.clientHeight;
+  const left = 320, top = 64, pad = 28;
+  const k = clampK(Math.min((vw - left - pad) / (b.x1 - b.x0), (vh - top - pad) / (b.y1 - b.y0)));
+  return { k, x: left + ((vw - left - pad) - (b.x1 - b.x0) * k) / 2 - b.x0 * k, y: top + ((vh - top - pad) - (b.y1 - b.y0) * k) / 2 - b.y0 * k };
+}
+function focusCam(p, width = 380) {
+  const k = clampK(width / W), vw = map.clientWidth, vh = map.clientHeight;
+  return { k, x: vw / 2 + 140 - (p.x + W / 2) * k, y: vh / 2 + 10 - (p.y + H / 2) * k };
+}
+map.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const r = map.getBoundingClientRect();
+  if (e.ctrlKey || Math.abs(e.deltaY) >= Math.abs(e.deltaX)) zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0018)));
+  else { cam.x -= e.deltaX; dirty(); }
+}, { passive: false });
+$("zoom-in").addEventListener("click", () => { const k = clampK(cam.k * 1.6), cx = map.clientWidth / 2, cy = map.clientHeight / 2; animateTo({ k, x: cx - (cx - cam.x) * (k / cam.k), y: cy - (cy - cam.y) * (k / cam.k) }); });
+$("zoom-out").addEventListener("click", () => { const k = clampK(cam.k / 1.6), cx = map.clientWidth / 2, cy = map.clientHeight / 2; animateTo({ k, x: cx - (cx - cam.x) * (k / cam.k), y: cy - (cy - cam.y) * (k / cam.k) }); });
+$("zoom-fit").addEventListener("click", () => animateTo(fitCam()));
+
+/* ---------- Map: pointer (pan, select, drag to move) ---------- */
+let pan = null, drag = null;
+const toWorld = (e) => { const r = map.getBoundingClientRect(); return { x: (e.clientX - r.left - cam.x) / cam.k, y: (e.clientY - r.top - cam.y) / cam.k }; };
+function tileAt(w, skip) {
+  return pages.find((p) => p.id !== skip && w.x >= p.x && w.x <= p.x + W && w.y >= p.y && w.y <= p.y + H + 30);
+}
+map.addEventListener("pointerdown", (e) => {
+  if (e.target.closest(".map-bar, .overview, .ring, input")) return;
+  const tileEl = e.target.closest(".tile");
+  if (tileEl) {
+    const p = byId(tileEl.dataset.id), w = toWorld(e);
+    drag = { p, startX: e.clientX, startY: e.clientY, offX: w.x - p.x, offY: w.y - p.y, moved: false, target: null };
+  } else {
+    map.setPointerCapture(e.pointerId);
+    pan = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, moved: false };
+    map.dataset.panning = "";
+  }
+});
+map.addEventListener("pointermove", (e) => {
+  if (pan) {
+    cam.x = pan.cx + e.clientX - pan.x; cam.y = pan.cy + e.clientY - pan.y;
+    if (Math.hypot(e.clientX - pan.x, e.clientY - pan.y) > 3) pan.moved = true;
+    dirty();
+    return;
+  }
+  if (drag) {
+    if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 5) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      map.setPointerCapture(e.pointerId);
+      if (drag.p.id === "home") { refuse(drag.p, "Home stays at the top"); drag = null; return; }
+      drag.p.dragging = true;
+      tiles.get(drag.p.id).dataset.dragging = "";
+      hovered = null;
+    }
+    const w = toWorld(e);
+    drag.p.dx = w.x - drag.offX - drag.p.x; drag.p.dy = w.y - drag.offY - drag.p.y;
+    const t = tileAt(w, drag.p.id);
+    for (const el of tiles.values()) delete el.dataset.drop;
+    drag.target = t ?? null;
+    if (t && t.id !== drag.p.parent) tiles.get(t.id).dataset.drop = moveProblem(drag.p, t) ? "no" : "ok";
+    dirty();
+    return;
+  }
+  const el = e.target.closest(".tile");
+  if (el && hovered !== el.dataset.id) { clearTimeout(hoverTimer); hovered = el.dataset.id; dirty(); }
+  else if (!el && hovered && !e.target.closest(".add")) leaveTile();
+});
+function leaveTile() { clearTimeout(hoverTimer); hoverTimer = setTimeout(() => { hovered = null; dirty(); }, 250); }
+map.addEventListener("pointerup", (e) => {
+  if (pan) { if (!pan.moved) { state.selected = null; dirty(); } pan = null; delete map.dataset.panning; return; }
+  if (!drag) return;
+  const { p, moved, target } = drag;
+  drag = null;
+  for (const el of tiles.values()) delete el.dataset.drop;
+  if (!moved) { state.selected = state.selected === p.id ? null : p.id; dirty(); return; }
+  delete tiles.get(p.id).dataset.dragging;
+  p.dragging = false;
+  // Fold the drag offset into the position so the tile glides from where it was dropped.
+  p.x += p.dx ?? 0; p.y += p.dy ?? 0; p.dx = 0; p.dy = 0;
+  if (target && target.id !== p.parent) {
+    const problem = moveProblem(p, target);
+    if (problem) { layout(); refuse(target, problem); return; }
+    movePage(p, target.id, true);
+  } else layout();
+});
+map.addEventListener("dblclick", (e) => {
+  const el = e.target.closest(".tile");
+  if (el) openInEditor(el.dataset.id);
+});
+function moveProblem(p, target) {
+  if (target.id === p.id || isInside(target.id, p.id)) return "Can't go inside itself";
+  if (childrenOf(target.id).some((c) => c.slug === p.slug)) return `A page named ${p.title} is already there`;
+  return null;
+}
+function refuse(p, text) {
+  const el = tiles.get(p.id);
+  delete el.dataset.shake; void el.offsetWidth; el.dataset.shake = "";
+  setTimeout(() => delete el.dataset.shake, 400);
+  note(p.id, text, "no", 2400);
+}
+function movePage(p, parent, record) {
+  const from = p.parent;
+  p.parent = parent;
+  if (record) {
+    state.undo.push({ type: "move", id: p.id, from });
+    state.changes++;
+    recent.unshift({ what: `${p.title} moved under ${byId(parent).title}`, when: "just now" });
+    note(p.id, `Now ${address(p)} · the old address keeps working`, "ok", 3600);
+  }
+  layout(); renderTree(); renderSave(); renderOverview();
+}
+function addPage(parent) {
+  let n = 1, slug = "untitled";
+  while (childrenOf(parent.id).some((c) => c.slug === slug)) slug = `untitled-${++n}`;
+  const p = { id: `new-${Date.now()}`, title: n > 1 ? `Untitled ${n}` : "Untitled", slug, parent: parent.id, hue: (parent.hue + 24) % 360, s: [100, 100, 100, 100, 100], links: [], isNew: true };
+  pages.push(p);
+  state.undo.push({ type: "add", id: p.id });
+  state.changes++;
+  recent.unshift({ what: `New page under ${parent.title}`, when: "just now" });
+  editing = p.id;
+  hovered = null;
+  ensureTiles(); layout(); renderTree(); renderSave(); renderOverview();
+}
+$("undo-button").addEventListener("click", () => {
+  const op = state.undo.pop();
+  if (!op) return;
+  state.changes = Math.max(0, state.changes - 1);
+  recent.shift();
+  if (op.type === "move") movePage(byId(op.id), op.from, false);
+  if (op.type === "add") { pages = pages.filter((p) => p.id !== op.id); if (editing === op.id) editing = null; ensureTiles(); layout(); renderTree(); }
+  renderSave(); renderOverview();
+});
+
+/* ---------- Search ---------- */
+function matches(p, q) {
+  const words = p.title.toLowerCase().split(/[\s-]+/);
+  return words.some((w) => w.startsWith(q)) || p.title.toLowerCase().includes(q) || address(p).includes(q);
+}
+$("map-search").addEventListener("input", (e) => { state.query = e.target.value.trim().toLowerCase(); dirty(); });
+$("map-search").addEventListener("keydown", (e) => {
+  e.stopPropagation();
+  if (e.key === "Escape") { e.target.value = ""; state.query = ""; dirty(); }
+  if (e.key !== "Enter" || !state.query) return;
+  const hit = pages.find((p) => matches(p, state.query));
+  if (hit) { state.selected = hit.id; animateTo(focusCam(hit)); }
+});
+
+/* ---------- The site's own overview ---------- */
+function renderOverview() {
+  const C = 2 * Math.PI * 16;
+  const avg = CATS.map((_, i) => Math.round(pages.reduce((s, p) => s + p.s[i], 0) / pages.length));
+  $("overview").innerHTML = `
+    <h3>techies-site</h3>
+    <p class="sub">${pages.length} pages · techies.review</p>
+    <div class="gauges">${CATS.map((c, i) => {
+      const below = pages.filter((p) => p.s[i] < 90).length;
+      return `<button type="button" class="gauge" data-cat="${i}" data-band="${band(avg[i])}" aria-pressed="${state.focusCat === i}" title="${below ? `Show the pages below 90 for ${c}` : `Every page is 90 or above for ${c}`}">
+        <span class="gauge__dial"><svg viewBox="0 0 38 38"><circle class="track" cx="19" cy="19" r="16"/><circle class="arc" cx="19" cy="19" r="16" stroke-dasharray="${(avg[i] / 100) * C} ${C}"/></svg><b>${avg[i]}</b></span>${c}</button>`;
+    }).join("")}</div>
+    <p class="recent__title">Recent changes</p>
+    <ul class="recent">${recent.slice(0, 3).map((r) => `<li>${esc(r.what)}<span>${r.when}</span></li>`).join("")}</ul>`;
+}
+$("overview").addEventListener("click", (e) => {
+  const g = e.target.closest(".gauge");
+  if (!g) return;
+  const i = Number(g.dataset.cat);
+  state.focusCat = state.focusCat === i ? null : i;
+  renderOverview(); dirty();
+});
+
+/* ---------- First visit: names first, pictures fill in nearest first ---------- */
+$("first-visit").addEventListener("click", () => {
+  for (const p of pages) { p.pending = true; const el = tiles.get(p.id); el.dataset.pending = ""; el.querySelector(".live").removeAttribute("data-ready"); el.querySelector(".live").innerHTML = ""; }
+  const vw = map.clientWidth, vh = map.clientHeight;
+  const order = [...pages].sort((a, b) => {
+    const d = (p) => Math.hypot(cam.x + (p.x + W / 2) * cam.k - vw / 2, cam.y + (p.y + H / 2) * cam.k - vh / 2);
+    return d(a) - d(b);
+  });
+  order.forEach((p, i) => setTimeout(() => {
+    p.pending = false;
+    const el = tiles.get(p.id);
+    if (!el) return;
+    delete el.dataset.pending;
+    el.dataset.fresh = "";
+    setTimeout(() => delete el.dataset.fresh, 450);
+    dirty();
+  }, 250 + i * (2800 / order.length)));
+  dirty();
+});
+
+/* ---------- Open and close ---------- */
+function openMap() {
+  map.hidden = false;
+  ensureTiles();
+  layout(false);
+  Object.assign(cam, fitCam());
+  renderOverview();
+  render();
+  $("map-search").value = $("panel-search").value;
+  state.query = $("map-search").value.trim().toLowerCase();
+  dirty();
+}
+function closeMap() { map.hidden = true; hovered = null; }
+function openInEditor(id) { state.page = id; closeMap(); renderTree(); renderStage(); }
+$("map-open").addEventListener("click", openMap);
+$("map-close").addEventListener("click", closeMap);
+document.addEventListener("keydown", (e) => {
+  if (map.hidden || e.target.matches("input")) return;
+  if (e.key === "Escape") { if (state.selected || state.focusCat !== null) { state.selected = null; state.focusCat = null; renderOverview(); dirty(); } else closeMap(); }
+  if (e.key === "+" || e.key === "=") $("zoom-in").click();
+  if (e.key === "-") $("zoom-out").click();
+  if (e.key === "0") $("zoom-fit").click();
+});
+addEventListener("resize", () => { if (!map.hidden) dirty(); });
+
+/* ---------- Theme ---------- */
+$("theme").addEventListener("click", () => {
+  const dark = document.documentElement.dataset.theme !== "dark";
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  $("theme").textContent = dark ? "Light" : "Dark";
+});
+
+renderTree(); renderStage(); renderSave();
+if (location.hash === "#map") openMap();
+</script>
+</body>
+</html>
