@@ -55,3 +55,11 @@ Lex, on prototype v4: "1. can we have a prompt icon somewhere in the top, so we 
 - **Parity:** accessibility, best practices and SEO must match real Lighthouse exactly; speed within 3 points.
 - **Agentic Browsing:** Lighthouse's new category becomes a fifth ring ("Agents"), in Pages tooltips, page details, Site health and the prompts. It is checked for parity like the others, with a target of 100. This replaces ticket 04's "watched, no target". Because the category is still experimental, the monthly check (ticket 06) follows its changes.
 - **Send to agent:** when an agent is connected, an agent icon next to the prompt icon sends the same prompt to it through map 1's asking-agents flow. Without an agent, only the prompt icon shows.
+
+### Second follow-up (2026-10-26)
+
+Lex, on prototype v5: "change the icon to use the star AI, move it close to the page name, and make the button say, let AI fix it, after the icon. The rest as recommended."
+
+- **One button, "✦ Let AI fix it":** the AI star (sparkle) icon followed by the words "Let AI fix it". It sits right after the page name in page details, after "Site health" in the site view, and on each Site health page row (icon only there if space is short). The speech-bubble prompt icon is dropped.
+- **What it does:** with an agent connected, it sends the prompt to the agent (map 1's asking-agents flow). Without one, it copies the prompt so it can be pasted into any AI, and the button itself says "Copied" for a moment. This merges the separate prompt and agent icons into one control, since the star now means AI everywhere.
+- "Show prompt" stays under the header for reading the prompt first.
