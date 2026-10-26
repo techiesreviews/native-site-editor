@@ -57,3 +57,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - UX (looks off): F-media-17 at 390 px the popup opens as a bottom sheet and the blue square is the only focus mark, with no separate dot, but a line under the controls reads "Only changes this spot", which explains the edit (S1) (seen in the F-media-18 strip: .scratch/ux/lead-42/20261025-222625-HZR5pv/image-popup-F-media-18-bug-popup-flicker-390-light-move-strip.webp)
 - UX (looks off): F-media-18 the page never shows through while the square moves, but the Preview thumbnail jumps in size between frames: it is large in frame 1 and tiny from frame 2 on in the light strip, and frame 2 is bigger than the rest in the dark strip, so moving does not draw smoothly (U3). Free, zoom and turn are not shown (.scratch/ux/lead-42/20261025-222625-HZR5pv/image-popup-F-media-18-bug-popup-flicker-390-light-move-strip.webp)
+
+### Follow-ups
+
+- Spec (P2): d79fd51fd:docs/wayfinder/clean-up-before-features/build/tickets/42-image-square-is-focus.md:51 — P2 ticket: runner.md:67 says the `## Done` section must record 
+- Spec (P3): c9e71098e:docs/wayfinder/clean-up-before-features/build/tickets/42-image-square-is-focus.md:53 — P3 ticket: under "Kit commands and evidence" the ticket asks fo
+- Validation gaps (gap): `nudgeFocus` has no unit case for a square that fills only the width (for example `{ w: 1, h: 0.4 }`, with ArrowLeft keeping x and ArrowDown moving y). Only the
+- Validation gaps (gap): No spec checks that, after arrow keys on a zoomed Original square, the square's drawn position still matches the focus. Existing specs check this for drags only
+- Validation gaps (gap): At high zoom the square can get smaller than the 44 px phone target that F-media-17's "Good" line requires (U4). The old dot had a fixed 44 px grab area. No spe
+
