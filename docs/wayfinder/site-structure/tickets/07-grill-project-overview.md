@@ -2,7 +2,7 @@
 title: Decide the project overview's scope and order
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [03-research-project-overview]
 ---
 

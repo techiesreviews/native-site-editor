@@ -34,6 +34,9 @@ A build plan for a new way to see and shape a site:
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Find how a zoomable map can show real pages](tickets/01-research-zoomable-map.md#resolution-2026-10-26): pictures, not live frames (0.34 GB vs 2.3 GB at 500 pages); four zoom levels, live page only up close (max 3); pictures taken in the page's own frame, stored in IndexedDB; the catalogue board becomes a shared lazy `src/board/`
+- [Find what rearranging and search need from today's code](tickets/02-research-structure-and-search.md#resolution-2026-10-26): moving is built (Pages drag via Change URL); map needs stay-in-map add and full move check; links cheap but too many to draw; search needs no index, one shared matcher
+- [Find what building the project overview takes now](tickets/03-research-project-overview.md#resolution-2026-10-26): build for GitHub first, project list in IndexedDB keyed like WorkspaceScope; pictures from the preview frame; one ring per card; 16 local-folders details overtaken
 
 ## Not yet specified
 

@@ -2,7 +2,7 @@
 title: Decide how the site map looks and behaves
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [01-research-zoomable-map, 02-research-structure-and-search]
 ---
 

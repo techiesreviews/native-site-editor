@@ -2,7 +2,7 @@
 title: Decide how pages are rearranged and added in the map
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [02-research-structure-and-search]
 ---
 

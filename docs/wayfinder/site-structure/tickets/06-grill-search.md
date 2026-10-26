@@ -2,7 +2,7 @@
 title: Decide how search in Pages and files works
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [02-research-structure-and-search]
 ---
 
