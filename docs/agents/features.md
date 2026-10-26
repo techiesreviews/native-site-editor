@@ -1039,8 +1039,8 @@ its number unused.
 
 ### F-agent-02 Wait for MCP and Disconnect MCP
 - Try: With an agent connected, open the project menu and press Wait for MCP; later Disconnect MCP.
-- Good: The agent waits for requests; Disconnect ends every agent on the connection at once.
-- Files: `src/components/agent-menu.ts`, `src/agent-watch.ts`
+- Good: The agent waits for requests; Disconnect ends every agent on the connection at once. A copy icon sits beside Wait for MCP (not beside Copied, Connect to MCP or Disconnect MCP).
+- Files: `src/components/agent-menu.ts`, `src/agent-watch.ts`, `src/icons.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-mcp-menu.spec.ts`
 - Steps: `scripts/agents/shots/features/F-agent-02.json`
