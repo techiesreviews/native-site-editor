@@ -144,5 +144,5 @@ The frontier decides; this is one order that keeps to the rules.
 
 ## Questions for Lex (asked at hand-off)
 
-1. **Start search earlier?** Search in Pages and files is your ask from 2026-10-16, and it only needs the new left panel (catalogue slice 66). Recommendation: let slices 11, 20 and 21 start right after the catalogue release, beside the detail pass. The rest waits for site quality.
-2. **Two GitHub accounts on one computer:** list both accounts' sites on one overview, or only the signed-in account's? Recommendation: one list of all of them; clicking another account's site switches to that account.
+1. **Start search earlier?** Answered 2026-10-26, Lex: as recommended (slices 11, 20 and 21 start right after the catalogue release). Search in Pages and files is your ask from 2026-10-16, and it only needs the new left panel (catalogue slice 66). Recommendation: let slices 11, 20 and 21 start right after the catalogue release, beside the detail pass. The rest waits for site quality.
+2. **Two GitHub accounts on one computer:** answered 2026-10-26, Lex: as recommended (one list; clicking switches account). List both accounts' sites on one overview, or only the signed-in account's? Recommendation: one list of all of them; clicking another account's site switches to that account.
