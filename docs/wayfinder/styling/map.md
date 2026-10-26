@@ -40,6 +40,8 @@ A build plan for styling without writing CSS:
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Find how Bricks, Core Framework, ACSS and WordPress block styles work](tickets/08-research-bricks-acss-wp.md#resolution-2026-10-26): free fields with suggestions, right-click variable picker, Bricks chip selector with states, variants as WordPress-style buttons written as data attributes, code in the bottom editor
+- [Answer the styling questions from how components and variants work today](tickets/09-research-answers-from-the-code.md#resolution-2026-10-26): 7 of 12 settled by the code; open: screen sizes, hover and focus, starter CSS, site styles in chips, swatch click, plus new looks and editing site classes
 - [Find how the best visual styling panels work and what they write](tickets/01-research-panel-patterns.md#resolution-2026-10-26): same seven groups everywhere; only DevTools edits real stylesheets; recommend DevTools honesty with Webflow controls, tokens first, clean good-css output
 - [Find what the Components section gets wrong and why the old style panel went](tickets/02-research-components-and-old-panel.md#resolution-2026-10-26): root causes for all four faults plus seven more; old panel went for boot size and couldn't style components; reuse cascade and the old CSS writer; styles go in the component's own file, variants as :host([data-…])
 
