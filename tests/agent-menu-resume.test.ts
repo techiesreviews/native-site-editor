@@ -68,7 +68,7 @@ for (const how of ["switch", "destroy", "disconnect"] as const) {
 
 // The agent menu's Connect to MCP press with agents off (turnOn): the connection is found
 // reconnecting, its retry leaves the menu `after`, and the press then prompts, copies or is stuck.
-function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "reconnecting") {
+function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "connected" | "reconnecting") {
   let site = "main", pinned = "", activation = 0, remote = false, retried = false;
   const writes: string[] = [];
   const live = (at: number) => remote && activation === at && site === pinned;
@@ -99,7 +99,8 @@ function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "
 }
 
 test("Connect to MCP finding a reconnect: undisturbed, it retries and then prompts, copies again or shows the press stuck", async () => {
-  for (const [after, write] of [["idle", "POST /api/agent/connect"], ["waiting", "copy"], ["reconnecting", "stuck"]] as const) {
+  // Connected (an agent already uses the site's connection): the press still copies a prompt.
+  for (const [after, write] of [["idle", "POST /api/agent/connect"], ["waiting", "copy"], ["connected", "copy"], ["reconnecting", "stuck"]] as const) {
     const run = press({ port: (_name, work) => work }, after);
     await run.done;
     assert.deepEqual(run.writes, [write], after);
@@ -108,7 +109,7 @@ test("Connect to MCP finding a reconnect: undisturbed, it retries and then promp
 
 for (const how of ["off", "switch", "again"] as const) {
   test(`Connect to MCP finding a reconnect: a ${how} at any await makes no prompt, no copy and no stuck dot`, async () => {
-    for (const after of ["idle", "waiting", "reconnecting"] as const) {
+    for (const after of ["idle", "waiting", "connected", "reconnecting"] as const) {
       const points = await forEachAwait(race => press(race, after), run => run.disturb(how), run => {
         assert.deepEqual(run.writes, [], `${after}: nothing written after the ${how}`);
       });

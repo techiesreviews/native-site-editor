@@ -93,12 +93,15 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
       }
     };
 
-    // Connect turns them on in this tab and finds the agent connected before.
+    // Connect turns them on in this tab, finds the agent connected before and still copies one new prompt.
+    const tokens = () => requests.filter((request) => request.path === "/api/agent/connect").length;
     await page.locator(".repository-menu__trigger").click();
     await action.click();
     await expect(action).toHaveText("Disconnect MCP", { timeout: 15_000 });
-    // Its read may be reported late too; the no-new-token check runs at the end, over every request.
-    await expect.poll(() => requests.some((request) => request.path === "/api/agent/connections")).toBe(true);
+    // Its requests may be reported late too; the one-token check runs at the end, over every request.
+    // Three reads: turning on, checking for this tab's waiting prompt, and after the new token.
+    await expect.poll(() => requests.filter((request) => request.path === "/api/agent/connections").length).toBe(3);
+    await expect.poll(tokens).toBe(1);
     await socketReady(1);
     const idle = requests.length;
     await idleFor(65_000);
@@ -120,7 +123,7 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
     await idleFor(65_000);
     expect(http(after), "idle after a reload").toEqual([]);
     expect({ sockets, ready }, "one socket after the reload, never reconnected").toEqual({ sockets: 2, ready: 2 });
-    expect(requests.filter((request) => request.path === "/api/agent/connect"), "no new token for a connected agent").toEqual([]);
+    expect(tokens(), "the press's one prompt; no new token afterwards").toBe(1);
     expect((await client.listTools()).tools.length).toBeGreaterThan(0);
   } finally {
     await client.close();

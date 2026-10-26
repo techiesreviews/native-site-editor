@@ -58,7 +58,8 @@ test("live commands correlate results; visible and hidden idle sends no HTTP; an
   await connect(page);
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "connected");
   await expect.poll(() => handshakes.length).toBe(1);
-  expect(requests).toEqual(["/api/agent/connections"]);
+  // The press reads the connections, then still makes and copies a prompt beside the connected agent.
+  await expect.poll(() => requests).toEqual(["/api/agent/connections", "/api/agent/connections", "/api/agent/connect", "/api/agent/connections"]);
   // A second tab already showing the page before the owner's edit (its editor holds the old text).
   const second = await context.newPage();
   await open(second, baseURL);

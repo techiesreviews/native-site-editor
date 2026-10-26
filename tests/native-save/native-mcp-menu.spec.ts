@@ -395,6 +395,32 @@ test("Connect to MCP from off copies a prompt even when another browser's token 
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
 });
 
+test("Connect to MCP from off copies a prompt even when an agent already uses the site's connection", async ({ page, baseURL }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  // Another browser of the same signed-in session: its prompt, which an agent has already used.
+  await open(page, baseURL);
+  const other = await page.request.post(`${baseURL}/api/agent/connect`, { headers: { Origin: baseURL! }, data: { repo: "native-demo-user/native-demo", repoId: 501, branch: "main" } });
+  const elsewhere = (await other.json() as { token: string }).token;
+  const { client } = await agent(baseURL, elsewhere, "earlier-agent");
+  try {
+    await client.callTool({ name: "get_site", arguments: {} });
+    await page.locator(".repository-menu__trigger").click();
+    const action = page.locator(".agent-menu__action");
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
+    await expect(action).toHaveText("Connect to MCP");
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    expect(token).not.toBe(elsewhere);
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+    // The copied prompt works beside the earlier agent; the button then offers Disconnect MCP.
+    const { client: next, call } = await agent(baseURL, token, "next-agent");
+    try { expect((await call("get_site")).repository).toBe("native-demo-user/native-demo"); } finally { await next.close().catch(() => undefined); }
+    await expect(action).toHaveText("Disconnect MCP");
+  } finally { await client.close().catch(() => undefined); }
+});
+
 test("unused tokens never fill the site's five connections: five reloads, each pressing Wait for MCP, still copy a working prompt", async ({ page, context, baseURL }) => {
   test.setTimeout(180_000);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);

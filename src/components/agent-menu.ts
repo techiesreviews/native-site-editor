@@ -563,8 +563,8 @@ export function createAgentMenu(options: {
       }
     });
   }
-  // Connect to MCP while remote agents are off: an agent connected before
-  // is used again (it may need resuming); otherwise a new prompt is made.
+  // Connect to MCP while remote agents are off: an agent connected before is used again (it may
+  // need resuming), and the press still copies a prompt for the next agent.
   async function turnOn(slot: Copy, task?: string) {
     if (!options.repository() || changing) return;
     await turnOnAgents({
