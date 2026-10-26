@@ -9,7 +9,7 @@ blocked_by: [30-site-map, 13-move-and-add-checks]
 
 ## Goal
 
-Lines only where they help ([ticket 04](../../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26); research 02, section 2: 1,000 to 8,000 links would be noise). Size: S–M.
+Lines only where they help ([ticket 04](../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26); research 02, section 2: 1,000 to 8,000 links would be noise). Size: S–M.
 
 ## Decided behaviour
 

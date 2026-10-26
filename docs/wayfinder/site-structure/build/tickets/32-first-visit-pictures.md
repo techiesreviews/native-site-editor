@@ -9,7 +9,7 @@ blocked_by: [30-site-map]
 
 ## Goal
 
-On a browser that has no pictures yet, the map shows every page's name at once and fills in pictures, nearest to the view first ([ticket 04](../../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26)). Size: S–M.
+On a browser that has no pictures yet, the map shows every page's name at once and fills in pictures, nearest to the view first ([ticket 04](../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26)). Size: S–M.
 
 ## Decided behaviour
 

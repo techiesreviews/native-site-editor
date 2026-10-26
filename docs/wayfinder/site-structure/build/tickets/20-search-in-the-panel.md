@@ -9,7 +9,7 @@ blocked_by: [11-one-search-matcher]
 
 ## Goal
 
-One search field in the left panel finds pages, pictures and files as you type ([ticket 06](../../../tickets/06-grill-search.md#resolution-2026-10-26)). Lex asked for search in Pages and files on 2026-10-16. Size: M.
+One search field in the left panel finds pages, pictures and files as you type ([ticket 06](../../tickets/06-grill-search.md#resolution-2026-10-26)). Lex asked for search in Pages and files on 2026-10-16. Size: M.
 
 **Waits for** [atomic-catalogue build slice 66](../../../atomic-catalogue/build/tickets/66-organism-top-bar.md) (top bar version B, whose left panel has the search field slot) to be released.
 

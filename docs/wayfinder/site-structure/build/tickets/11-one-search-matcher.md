@@ -9,7 +9,7 @@ blocked_by: []
 
 ## Goal
 
-Replace the editor's six separate matchers with one shared module ([ticket 06](../../../tickets/06-grill-search.md#resolution-2026-10-26); research `git show origin/research/ss-02-structure-and-search:docs/wayfinder/site-structure/research/02-structure-and-search.md`, section 3). Size: M.
+Replace the editor's six separate matchers with one shared module ([ticket 06](../../tickets/06-grill-search.md#resolution-2026-10-26); research `git show origin/research/ss-02-structure-and-search:docs/wayfinder/site-structure/research/02-structure-and-search.md`, section 3). Size: M.
 
 ## Decided behaviour
 

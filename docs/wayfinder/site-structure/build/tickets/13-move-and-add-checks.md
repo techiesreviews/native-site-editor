@@ -9,7 +9,7 @@ blocked_by: []
 
 ## Goal
 
-Small changes to the existing move and add code so the site map can use it as it is ([ticket 05](../../../tickets/05-grill-rearranging.md#resolution-2026-10-26); research 02, section 1, "What the map needs from this code"). Size: S–M.
+Small changes to the existing move and add code so the site map can use it as it is ([ticket 05](../../tickets/05-grill-rearranging.md#resolution-2026-10-26); research 02, section 1, "What the map needs from this code"). Size: S–M.
 
 ## Decided behaviour
 

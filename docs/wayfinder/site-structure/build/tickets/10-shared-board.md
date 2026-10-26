@@ -9,7 +9,7 @@ blocked_by: []
 
 ## Goal
 
-Turn the catalogue board's canvas into one shared module, `src/board/`, that the catalogue uses and the editor can load lazily for the site map ([ticket 04](../../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26); research `git show origin/research/ss-01-zoomable-map:docs/wayfinder/site-structure/research/01-zoomable-map.md`, section "What the catalogue board must offer"). Size: L.
+Turn the catalogue board's canvas into one shared module, `src/board/`, that the catalogue uses and the editor can load lazily for the site map ([ticket 04](../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26); research `git show origin/research/ss-01-zoomable-map:docs/wayfinder/site-structure/research/01-zoomable-map.md`, section "What the catalogue board must offer"). Size: L.
 
 **Waits for** [atomic-catalogue build slice 05](../../../atomic-catalogue/build/tickets/05-catalogue-board.md) (the board itself) to be released; written here because `blocked_by` can't point to another map.
 

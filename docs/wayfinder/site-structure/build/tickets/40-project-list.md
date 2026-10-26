@@ -9,7 +9,7 @@ blocked_by: []
 
 ## Goal
 
-The data the project overview needs: one record per project, in IndexedDB, built so local folders can add theirs later without rework ([ticket 07](../../../tickets/07-grill-project-overview.md#resolution-2026-10-26); research `git show origin/research/ss-03-project-overview:docs/wayfinder/site-structure/research/03-project-overview.md`, sections 1–2). Size: M.
+The data the project overview needs: one record per project, in IndexedDB, built so local folders can add theirs later without rework ([ticket 07](../../tickets/07-grill-project-overview.md#resolution-2026-10-26); research `git show origin/research/ss-03-project-overview:docs/wayfinder/site-structure/research/03-project-overview.md`, sections 1–2). Size: M.
 
 ## Decided behaviour
 

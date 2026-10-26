@@ -9,7 +9,7 @@ blocked_by: [40-project-list, 12-page-pictures]
 
 ## Goal
 
-A home screen of all your sites, built for GitHub projects first, from the local-folders design ([local-folders ticket 12](../../../local-folders/tickets/12-prototype-project-overview.md#resolution-2026-10-14), mock-up `combined-v2.html` on local branch `prototype/lf-12-project-overview`) with research 03's 16 updates ([ticket 07](../../../tickets/07-grill-project-overview.md#resolution-2026-10-26)). Size: L. *main.ts*.
+A home screen of all your sites, built for GitHub projects first, from the local-folders design ([local-folders ticket 12](../../../local-folders/tickets/12-prototype-project-overview.md#resolution-2026-10-14), mock-up `combined-v2.html` on local branch `prototype/lf-12-project-overview`) with research 03's 16 updates ([ticket 07](../../tickets/07-grill-project-overview.md#resolution-2026-10-26)). Size: L. *main.ts*.
 
 ## Decided behaviour
 

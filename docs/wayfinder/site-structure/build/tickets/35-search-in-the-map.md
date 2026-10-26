@@ -9,7 +9,7 @@ blocked_by: [30-site-map, 11-one-search-matcher]
 
 ## Goal
 
-The same search, on the map ([ticket 06](../../../tickets/06-grill-search.md#resolution-2026-10-26)). Size: S.
+The same search, on the map ([ticket 06](../../tickets/06-grill-search.md#resolution-2026-10-26)). Size: S.
 
 ## Decided behaviour
 

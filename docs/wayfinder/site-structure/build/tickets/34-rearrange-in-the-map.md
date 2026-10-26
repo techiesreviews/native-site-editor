@@ -9,7 +9,7 @@ blocked_by: [30-site-map, 13-move-and-add-checks]
 
 ## Goal
 
-Drag a page onto another to move it under it, and add pages in place ([ticket 05](../../../tickets/05-grill-rearranging.md#resolution-2026-10-26); [prototype](../../prototypes/08-site-map.html)). Size: M–L.
+Drag a page onto another to move it under it, and add pages in place ([ticket 05](../../tickets/05-grill-rearranging.md#resolution-2026-10-26); [prototype](../../prototypes/08-site-map.html)). Size: M–L.
 
 ## Decided behaviour
 
