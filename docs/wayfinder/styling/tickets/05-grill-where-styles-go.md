@@ -3,7 +3,7 @@ title: Decide where the panel writes its CSS
 type: grilling (HITL)
 status: open
 assignee: 
-blocked_by: [02-research-components-and-old-panel]
+blocked_by: [02-research-components-and-old-panel, 09-research-answers-from-the-code]
 ---
 
 ## Question
