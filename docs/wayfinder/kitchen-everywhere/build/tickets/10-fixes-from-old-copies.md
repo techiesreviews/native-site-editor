@@ -1,8 +1,8 @@
 ---
 title: Three fixes from the old copies
 type: task (AFK)
-status: open
-assignee: runner-ke10
+status: closed
+assignee: build/runner-ke10-fixes-from-old-copies
 builder: claude
 blocked_by: []
 ---
@@ -37,3 +37,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke10 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/10-fixes-from-old-copies.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke10 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit and doctor `RESULT:` lines, review decisions, PR and merge SHA.
+
+## Done (2026-10-26)
+
+- `kit review` removes its temporary review folder only after every evidence copy and `findings.json` are saved; when saving fails it keeps the folder and prints `problem: review files kept in <path>` (the RESULT line still names the failure and the evidence folder).
+- `kit wait ci --sha <sha>` stays on the asked commit after a cancelled run and reports that run's failure; branch and PR waits still follow a newer head as "superseded".
+- `kit doctor` has an eighth check, `help`: every kit command must exit 0 with a `Usage:` line from `--help` within `KIT_HELP_TIMEOUT` seconds (default 10). The helps run side by side (real run about 1 s for 23 commands); each broken one is named with `(exit N)`, `(no usage)` or `(timed out)`. RESULT now reads `doctor 8/8 checks passed`.
+- Tests: `tests/kit-review.test.ts` (a good save leaves no `kit-review-*` folder; an unreadable `diff.patch` keeps the folder, names it and keeps `out.md`), `tests/kit-wait.test.ts` (a `--sha` wait on a cancelled run with a newer branch head fails on the asked commit and never reads the branch head; the existing branch test still follows it), `tests/kit-doctor.test.ts` (fixture uses a two-command set; failing, silent and hanging helps are each named; every real command passes the help check).
+- `docs/agents/agent-scripts.md`: the doctor, review and wait lines.
+- Validation: `RESULT: ok unit 104/104 (3 files)`; `RESULT: ok doctor 8/8 checks passed` (real run); `npm run lint` exit 0.
+- Feature list: no change (agent kit only, nothing a site editor user sees).
