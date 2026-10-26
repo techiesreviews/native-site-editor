@@ -29,7 +29,6 @@ The rules are kept up to date as the specs change.
   - Privacy, Resilience, Internationalisation.
 
   Machine-readable forms: `llms-full.txt`, `.md` per page, and an MCP server at `mcp.specification.website/mcp` with a URL audit tool. Checked 2026-10-25.
-- **Target scores:** proposed 90+ performance and 100 for accessibility, best practices and SEO. Lex named sources rather than numbers, so this is confirmed in the first grilling round.
 - **Inputs:**
   - the [direct-hosting goal](../../adr/0001-the-repository-is-the-site.md) (a repo is the site, any static host, no build);
   - the publishing plan (GitHub Pages default, Cloudflare);
@@ -43,6 +42,8 @@ The rules are kept up to date as the specs change.
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Decide the target scores and rule sources](tickets/04-grill-target-scores.md#resolution-2026-10-26): strict 100 for accessibility, best practices and SEO; speed 99 (middle of 5 runs) on phone and laptop; good-css for all site CSS; `kit lighthouse` checks
+- [Decide what the editor fixes by itself](tickets/05-grill-automatic-fixes.md#resolution-2026-10-26): six fixes on every save; missing descriptions from the page's first sentences; an Inbox in a slimmer top bar for what needs the user (top bar prototype, then a catalogue slice)
 - [Decide how the rules stay up to date](tickets/06-grill-keeping-rules-current.md#resolution-2026-10-26): a monthly research agent compares the spec, Lighthouse and vendor crawler docs, and proposes changes to Lex in T3; nothing changes without his OK
 - [Decide what the editor does for GEO](tickets/07-grill-geo-choices.md#resolution-2026-10-26): AI search robots always in; AI training robots one switch per site, blocked by default; starter's ai-input=no goes; llms.txt made automatically
 - [Decide how host-dependent rules are handled](tickets/08-grill-host-dependent-rules.md#resolution-2026-10-26): Cloudflare gets _headers and _redirects; both hosts get 404.html; GitHub Pages leaves headers out quietly; nothing to set up by hand
@@ -52,7 +53,6 @@ The rules are kept up to date as the specs change.
 
 ## Not yet specified
 
-- **Missing words:** a page with no title or description. Does the editor write one from the page's content by itself, or leave it empty and show it in place? Sharpens with research 01 and Lex's "nothing marked by agent".
 - **Multilingual sites:** hreflang and language versions. Probably later.
 - **Privacy and consent:** analytics and cookie rules from the spec's Privacy category, if sites use them.
 
