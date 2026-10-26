@@ -1,0 +1,1427 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 03 Styling panel</title>
+<style>
+/* Throwaway prototype for styling ticket 03. Editor tokens from src/theme.css
+   (as in site-quality 05-page-scores.html); the site's own tokens from the
+   starter's styles/tokens.css. The CSS the panel writes follows good-css:
+   logical properties, tokens through var(), oklch, hover inside a hover media
+   query, focus with :focus-visible, a container query for narrow sizes. */
+:root {
+  color-scheme: light dark;
+  --primary: light-dark(oklch(50% 0.18 262.9), oklch(72% 0.13 262.9));
+  --primary-hover: light-dark(oklch(42.5% 0.18 262.9), oklch(78% 0.12 262.9));
+  --on-primary: light-dark(oklch(98.9% 0.003 275.8), oklch(16% 0.04 262.9));
+  --background: light-dark(oklch(97% 0.019 275.5), oklch(15% 0.025 265));
+  --surface: light-dark(oklch(98.9% 0.003 275.8), oklch(19% 0.03 265));
+  --surface-subtle: light-dark(oklch(95.4% 0.019 275.5), oklch(22% 0.032 265));
+  --text: light-dark(oklch(15.3% 0.06 262.9), oklch(95% 0.01 265));
+  --muted: light-dark(oklch(40.4% 0.045 262.9), oklch(74% 0.03 265));
+  --line: light-dark(oklch(88.3% 0.048 274.7), oklch(30% 0.03 265));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --changed: light-dark(oklch(66% 0.18 48), oklch(74% 0.15 55));
+  --success: light-dark(oklch(52% 0.13 145), oklch(74% 0.14 145));
+  --shadow: 0 12px 32px light-dark(oklch(15.3% 0.06 262.9 / 0.18), oklch(0% 0 none / 0.5));
+  --focus-ring: 2px solid var(--primary);
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --type-small: 12px;
+  --type-base: 13px;
+  --type-title: 15px;
+  --radius-small: 4px;
+  --radius: 6px;
+  --radius-panel: 8px;
+  --size-compact: 28px;
+
+  font: 14px/1.5 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  color: var(--text);
+  background: var(--background);
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px 24px 48px; font-size: var(--type-base); }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+:is(button, input, select, summary):focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+svg { display: block; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+[hidden] { display: none !important; }
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-inline-size: 1360px;
+  margin: 0 auto 16px;
+}
+.page-head h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.plain {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: 30px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+
+/* ---------- Editor frame ---------- */
+.editor {
+  display: grid;
+  grid-template-rows: 44px minmax(0, 1fr);
+  block-size: 780px;
+  max-inline-size: 1360px;
+  margin-inline: auto;
+  border-radius: var(--radius-panel);
+  overflow: clip;
+  box-shadow: 0 0 0 1px var(--line), var(--shadow);
+  background: var(--background);
+}
+.bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding-inline: 8px 12px;
+  background: var(--surface);
+  border-block-end: 1px solid var(--line);
+}
+.bar__start, .bar__end { display: flex; align-items: center; gap: 4px; min-inline-size: 0; }
+.ghost, .icon-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--size-compact);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  white-space: nowrap;
+}
+.ghost { padding-inline: 6px 8px; }
+.icon-button { justify-content: center; inline-size: var(--size-compact); padding: 0; color: var(--muted); }
+:is(.ghost, .icon-button)[aria-pressed="true"],
+:is(.ghost, .icon-button)[aria-expanded="true"] { background: var(--current); color: var(--text); }
+@media (hover: hover) and (pointer: fine) {
+  :is(.ghost, .icon-button, .plain):hover { background: var(--hover); color: var(--text); }
+  .save:hover { background: var(--primary-hover); }
+  .save[data-state="saved"]:hover { background: var(--hover); }
+}
+:is(.ghost, .icon-button, .plain):active { background: var(--hover); }
+.tile {
+  display: grid;
+  place-items: center;
+  inline-size: 22px;
+  block-size: 22px;
+  border-radius: var(--radius-small);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+  font-size: var(--type-small);
+}
+.slash { color: var(--control-line); font-size: 18px; font-weight: 300; }
+.save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: var(--size-compact);
+  padding-inline: 10px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 500;
+}
+.save::before { content: ""; inline-size: 7px; block-size: 7px; border-radius: 50%; background: currentColor; opacity: 0.85; }
+.save[data-state="saved"] { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--control-line); }
+.save[data-state="saved"]::before { background: var(--success); opacity: 1; }
+
+.work {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 0;
+  grid-template-rows: minmax(0, 1fr);
+  min-block-size: 0;
+}
+.work[data-panel="open"] { grid-template-columns: 200px minmax(0, 1fr) 340px; }
+
+.structure {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 14px 10px;
+  background: var(--surface);
+  border-inline-end: 1px solid var(--line);
+}
+.eyebrow-ui {
+  margin: 0 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.structure button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  block-size: 30px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  text-align: start;
+}
+.structure button[data-depth="1"] { padding-inline-start: 24px; }
+.structure button[aria-current="true"] { background: var(--current); color: var(--text); font-weight: 500; }
+@media (hover: hover) and (pointer: fine) { .structure button:hover { background: var(--hover); color: var(--text); } }
+
+.stage {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-inline-size: 0;
+  min-block-size: 0;
+  background: var(--surface-subtle);
+}
+.stage__tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-block-end: 1px solid var(--line);
+  background: var(--surface);
+}
+.seg {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+.seg button {
+  min-inline-size: 0;
+  block-size: 24px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--type-small);
+  white-space: nowrap;
+}
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 500; box-shadow: 0 1px 2px oklch(0% 0 none / 0.12), 0 0 0 1px var(--control-line); }
+@media (hover: hover) and (pointer: fine) { .seg button:not([aria-pressed="true"]):hover { color: var(--text); } }
+.seg button:active { background: var(--hover); }
+.seg--fill { display: flex; }
+.seg--fill button { flex: 1; }
+
+.canvas-scroll { overflow: auto; min-block-size: 0; }
+.canvas { position: relative; padding: 20px 24px 60px; }
+
+/* The edit bar and selection, as in the editor. */
+.selbox {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 2px;
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.selbox__chip {
+  position: absolute;
+  inset-block-end: calc(100% + 4px);
+  inset-inline-start: -4px;
+  padding: 1px 6px;
+  border-radius: var(--radius-small);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.editbar {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow), 0 0 0 1px var(--line);
+  white-space: nowrap;
+}
+.editbar__name { padding-inline: 8px 6px; font-weight: 600; }
+.editbar__sep { inline-size: 1px; block-size: 18px; margin-inline: 4px; background: var(--line); }
+.editbar select, .ctl select {
+  block-size: 26px;
+  padding-inline: 6px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: var(--surface-subtle);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+  font-size: var(--type-small);
+}
+.editbar .letter { inline-size: var(--size-compact); font-weight: 700; justify-content: center; padding: 0; }
+.editbar .letter--i { font-style: italic; font-weight: 500; font-family: Georgia, serif; }
+
+/* ---------- Right panel ---------- */
+.panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-inline-size: 0;
+  min-block-size: 0;
+  background: var(--surface);
+  border-inline-start: 1px solid var(--line);
+  overflow: clip;
+}
+.panel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px 6px 14px;
+}
+.panel__title { display: flex; align-items: baseline; gap: 8px; min-inline-size: 0; flex: 1; }
+.panel__title b { font-size: var(--type-title); font-weight: 600; }
+.selector {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: var(--radius-small);
+  background: var(--surface-subtle);
+  font: 12px/1.5 var(--font-mono);
+  color: var(--muted);
+}
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding-inline: 10px;
+  border-block-end: 1px solid var(--line);
+}
+.tabs button {
+  block-size: 32px;
+  padding-inline: 8px;
+  border: 0;
+  border-block-end: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.tabs button[aria-selected="true"] { color: var(--text); font-weight: 500; border-block-end-color: var(--primary); }
+.tabs button:disabled { opacity: 0.4; cursor: default; }
+@media (hover: hover) and (pointer: fine) { .tabs button:not(:disabled):hover { color: var(--text); } }
+.panel__body { position: relative; overflow: auto; padding: 12px 14px 32px; display: grid; align-content: start; gap: 12px; }
+
+.scope { display: grid; gap: 4px; }
+.scope label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+  cursor: pointer;
+}
+.scope label:has(input:checked) { box-shadow: inset 0 0 0 1.5px var(--primary); background: var(--current); }
+.scope code { margin-inline-start: auto; font: 11px var(--font-mono); color: var(--muted); white-space: nowrap; }
+.scope input { accent-color: var(--primary); margin: 0; }
+
+.rowpair { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: 8px; }
+.rowpair > span { color: var(--muted); font-size: var(--type-small); }
+
+details.group { border-block-start: 1px solid var(--line); padding-block-start: 8px; }
+details.group > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  list-style: none;
+  cursor: pointer;
+  font-weight: 600;
+  padding-block: 2px 6px;
+}
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary::after { content: "–"; color: var(--muted); }
+details.group:not([open]) > summary::after { content: "+"; }
+details.group > summary .dot { inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--changed); margin-inline: 6px auto; }
+.ctls { display: grid; gap: 8px; }
+.ctl { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 8px; }
+.ctl > span { color: var(--muted); font-size: var(--type-small); }
+.ctl[data-own] > span { color: var(--text); }
+.ctl[data-own] > span::after { content: ""; display: inline-block; inline-size: 5px; block-size: 5px; margin-inline-start: 5px; border-radius: 50%; background: var(--changed); vertical-align: middle; }
+.ctl__line { display: flex; align-items: center; gap: 6px; min-inline-size: 0; }
+.ctl__line select { flex: 1; min-inline-size: 0; font-family: var(--font-mono); }
+.custom {
+  inline-size: 84px;
+  block-size: 26px;
+  padding-inline: 6px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+  font: 12px var(--font-mono);
+}
+
+.swatches { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.swatch {
+  inline-size: 22px;
+  block-size: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--text) 18%, transparent);
+}
+.swatch[aria-pressed="true"] { outline: 2px solid var(--primary); outline-offset: 2px; }
+.swatch--none { background: repeating-linear-gradient(45deg, transparent 0 4px, var(--control-line) 4px 5px); }
+.swatch-pick { position: relative; inline-size: 22px; block-size: 22px; border-radius: 50%; overflow: clip; box-shadow: inset 0 0 0 1px var(--control-line); background: conic-gradient(oklch(70% 0.15 0), oklch(70% 0.15 120), oklch(70% 0.15 240), oklch(70% 0.15 360)); }
+.swatch-pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.swatch-name { font: 11px var(--font-mono); color: var(--muted); margin-inline-start: 4px; }
+
+/* The box model for spacing. */
+.box {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: auto auto auto;
+  gap: 4px;
+  align-items: center;
+  justify-items: center;
+  padding: 6px;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  outline: 1px dashed var(--control-line);
+  outline-offset: -1px;
+}
+.box__label { justify-self: start; grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
+.box__inner {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  justify-items: center;
+  gap: 4px;
+  inline-size: 100%;
+  padding: 6px;
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+.box__core { inline-size: 54px; block-size: 22px; border-radius: 3px; background: var(--current); }
+.box select { font: 11px var(--font-mono); block-size: 24px; max-inline-size: 92px; }
+
+/* Code views. */
+.file { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font: 12px var(--font-mono); }
+.code {
+  margin: 0;
+  padding: 10px 0;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font: 12px/1.65 var(--font-mono);
+  overflow-x: auto;
+  min-block-size: max-content;
+  white-space: pre;
+}
+.code .ln { display: block; padding-inline: 12px; border-inline-start: 3px solid transparent; }
+.code .ln.chg { border-inline-start-color: var(--changed); background: color-mix(in oklch, var(--changed) 12%, transparent); }
+.code .ln.cur { background: color-mix(in oklch, var(--primary) 7%, transparent); }
+.code .ln.cur.chg { background: color-mix(in oklch, var(--changed) 14%, transparent); }
+:is(.code, .cp) .s { color: var(--primary); font-weight: 600; }
+:is(.code, .cp) .p { color: var(--muted); }
+:is(.code, .cp) .at { color: light-dark(oklch(48% 0.16 320), oklch(76% 0.12 320)); }
+.sw {
+  display: inline-block;
+  inline-size: 10px;
+  block-size: 10px;
+  margin-inline: 1px 4px;
+  border-radius: 2px;
+  vertical-align: -1px;
+  box-shadow: inset 0 0 0 1px oklch(0% 0 none / 0.2);
+}
+
+/* Site design. */
+.tokens { display: grid; gap: 6px; }
+.token {
+  display: grid;
+  grid-template-columns: 28px 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.token code { font: 12px var(--font-mono); }
+.token .val { font: 11px var(--font-mono); color: var(--muted); }
+.pick {
+  position: relative;
+  inline-size: 26px;
+  block-size: 26px;
+  border-radius: var(--radius-small);
+  overflow: clip;
+  box-shadow: inset 0 0 0 1px oklch(0% 0 none / 0.2);
+}
+.pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.pick span { position: absolute; inset: 0; pointer-events: none; }
+.pick[data-dark] span { background-image: linear-gradient(135deg, transparent 70%, oklch(0% 0 none / 0.35) 70%); }
+.scale { display: flex; flex-wrap: wrap; gap: 4px 10px; font: 11px var(--font-mono); color: var(--muted); }
+.scale b { color: var(--text); font-weight: 500; }
+
+/* ---------- The site preview (the site's own CSS, scoped to .pv) ---------- */
+.pv {
+  container: site / inline-size;
+  inline-size: 100%;
+  margin-inline: auto;
+  border-radius: 6px;
+  overflow: clip;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--text-m);
+  line-height: 1.5;
+  box-shadow: 0 0 0 1px var(--line), 0 6px 24px oklch(0% 0 none / 0.08);
+}
+.pv[data-width="narrow"] { inline-size: 360px; }
+.pv-page { max-inline-size: var(--page-width); margin-inline: auto; padding-inline: var(--space-l); }
+.pv a { color: inherit; }
+.pv .logo { font-weight: 700; text-decoration: none; }
+.pv nav { display: flex; gap: var(--space-s); font-size: var(--text-s); }
+.pv nav a { text-decoration: none; color: var(--muted); }
+.pv .eyebrow { margin: 0; font-size: var(--text-s); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.pv .actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-block-start: var(--space-m); }
+.pv .button { text-decoration: none; }
+.pv .work-list h2 { margin-block: var(--space-xl) var(--space-s); font-size: var(--text-2xl); }
+.pv .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr)); gap: var(--space-s); }
+.pv article h3 { margin: 0; font-size: var(--text-xl); }
+.pv article .note { margin: 0; font-size: var(--text-s); color: var(--muted); }
+.pv article .body { margin: 0; color: var(--muted); }
+.pv footer a { color: var(--accent); }
+.pv [data-sel] { cursor: pointer; }
+@media (hover: hover) and (pointer: fine) {
+  .pv [data-sel]:hover { outline: 1px dashed var(--primary); outline-offset: 2px; }
+}
+
+/* ---------- Components code pane demo ---------- */
+.demo {
+  max-inline-size: 1360px;
+  margin: 28px auto 0;
+  display: grid;
+  gap: 10px;
+}
+.demo h2 { margin: 0; font-size: var(--type-title); font-weight: 600; }
+.demo__frame {
+  border-radius: var(--radius-panel);
+  overflow: clip;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.demo__tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-block-end: 1px solid var(--line);
+}
+.demo__tools .tab { font: 12px var(--font-mono); padding: 3px 8px; border-radius: var(--radius-small); background: var(--current); }
+.demo__tools label { display: flex; align-items: center; gap: 6px; margin-inline-start: auto; color: var(--muted); font-size: var(--type-small); }
+.demo__tools select { block-size: 26px; border: 0; border-radius: var(--radius-small); background: var(--surface-subtle); box-shadow: inset 0 0 0 1px var(--control-line); font: 12px var(--font-mono); }
+.cp { position: relative; padding: 10px 0 14px; font: 12.5px/1.7 var(--font-mono); }
+.cp .row { display: grid; grid-template-columns: 40px minmax(0, 1fr); }
+.cp .row.focus { background: color-mix(in oklch, var(--primary) 8%, transparent); }
+.cp .num { padding-inline-end: 12px; text-align: end; color: var(--control-line); user-select: none; }
+.cp .txt { white-space: pre; }
+.cp input.typing {
+  inline-size: 100%;
+  padding: 0;
+  border: 0;
+  background: color-mix(in oklch, var(--primary) 6%, transparent);
+  font: inherit;
+  white-space: pre;
+}
+.cp input.typing:focus-visible { outline: 0; box-shadow: inset 2px 0 0 var(--primary); }
+.sugg {
+  position: absolute;
+  z-index: 5;
+  inline-size: 360px;
+  max-block-size: 260px;
+  overflow: auto;
+  padding: 4px;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow), 0 0 0 1px var(--line);
+  font: 12px/1.4 var(--font-mono);
+}
+.sugg__head { padding: 6px 8px 2px; font: 600 11px/1.4 Inter, ui-sans-serif, sans-serif; letter-spacing: 0.04em; color: var(--muted); }
+.sugg button {
+  display: grid;
+  grid-template-columns: 16px auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  text-align: start;
+}
+.sugg button[aria-selected="true"] { background: var(--current); }
+.sugg .sw { inline-size: 14px; block-size: 14px; margin: 0; border-radius: 3px; }
+.sugg .mini { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: end; color: var(--muted); font-size: 11px; }
+</style>
+<style id="applied"></style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></symbol>
+  <symbol id="i-tray" viewBox="0 0 24 24"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M4 13l2-8h12l2 8v6H4z"/></symbol>
+  <symbol id="i-brush" viewBox="0 0 24 24"><path d="M14.5 4.5l5 5L11 18l-5-5z"/><path d="M6 13c-2 0-3 1.5-3 3.5V20h3.5c2 0 3.5-1 3.5-3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+</svg>
+
+<header class="page-head">
+  <h1>Styling panel</h1>
+  <button type="button" class="plain" id="theme"><svg width="16" height="16"><use href="#i-moon"/></svg><span>Dark</span></button>
+</header>
+
+<div class="editor">
+  <div class="bar">
+    <div class="bar__start">
+      <button type="button" class="ghost"><span class="tile">L</span><b>larkspur-studio</b></button>
+      <span class="slash" aria-hidden="true">/</span>
+      <button type="button" class="ghost">Home <svg width="12" height="12"><use href="#i-caret"/></svg></button>
+    </div>
+    <div class="bar__end">
+      <button type="button" class="icon-button" id="undo" aria-label="Undo" title="Undo"><svg width="17" height="17"><use href="#i-undo"/></svg></button>
+      <button type="button" class="icon-button" aria-label="History" title="History"><svg width="17" height="17"><use href="#i-history"/></svg></button>
+      <button type="button" class="icon-button" aria-label="Inbox" title="Inbox"><svg width="17" height="17"><use href="#i-tray"/></svg></button>
+      <button type="button" class="save" id="save" data-state="saved">Live</button>
+    </div>
+  </div>
+  <div class="work" id="work" data-panel="closed">
+    <nav class="structure" aria-label="Page structure" id="structure"></nav>
+    <div class="stage">
+      <div class="stage__tools">
+        <div class="seg" id="width" role="group" aria-label="Preview width">
+          <button type="button" data-width="wide" aria-pressed="true">Wide</button>
+          <button type="button" data-width="narrow" aria-pressed="false">Narrow</button>
+        </div>
+        <button type="button" class="ghost" id="open-site"><svg width="16" height="16"><use href="#i-sliders"/></svg>Site design</button>
+      </div>
+      <div class="canvas-scroll" id="scroll">
+        <div class="canvas" id="canvas">
+          <div class="pv site-tokens" id="pv">
+            <div class="pv-page">
+              <div data-c="site-header">
+                <header data-sel="header"><a class="logo" href="#">Larkspur Studio</a><nav><a href="#">Work</a><a href="#">About</a><a href="#">Contact</a></nav></header>
+              </div>
+              <main>
+                <div data-c="section-hero" data-layout="">
+                  <section data-sel="hero">
+                    <p class="eyebrow">Garden design</p>
+                    <h1 data-sel="heading">Gardens that grow with you.</h1>
+                    <p class="lead" data-sel="lead">We plan, plant and look after small city gardens, so they still look right in ten years.</p>
+                    <div class="actions">
+                      <a class="button" href="#" data-sel="button">Get in touch</a>
+                      <a class="button" href="#" data-variant="outline" data-sel="button">See our work</a>
+                    </div>
+                  </section>
+                </div>
+                <section class="work-list">
+                  <h2>Recent work</h2>
+                  <div class="card-grid">
+                    <div data-c="card-project" data-tone=""><article data-sel="card"><p class="note">Courtyard</p><h3>A shady yard in Bow</h3><p class="body">Ferns, a bench and a small pond in four square metres.</p></article></div>
+                    <div data-c="card-project" data-tone="highlight"><article data-sel="card"><p class="note">Roof terrace</p><h3>Wind-proof planting</h3><p class="body">Grasses and herbs that stand up to the fifth floor.</p></article></div>
+                    <div data-c="card-project" data-tone=""><article data-sel="card"><p class="note">Front garden</p><h3>Bins out of sight</h3><p class="body">A hedge, a path and room for two bikes.</p></article></div>
+                  </div>
+                </section>
+              </main>
+              <div data-c="site-footer">
+                <footer data-sel="footer"><span>© 2026 Larkspur Studio</span><a href="#">Instagram</a></footer>
+              </div>
+            </div>
+          </div>
+          <div class="selbox" id="selbox" hidden><span class="selbox__chip" id="chip"></span></div>
+          <div class="editbar" id="editbar" hidden></div>
+        </div>
+      </div>
+    </div>
+    <aside class="panel" id="panel" aria-label="Style" hidden></aside>
+  </div>
+</div>
+
+<section class="demo" aria-labelledby="demo-title">
+  <h2 id="demo-title">Components · Project card</h2>
+  <div class="demo__frame">
+    <div class="demo__tools">
+      <span class="tab">card-project.css</span>
+      <label>Selector <select id="demo-selector"></select></label>
+    </div>
+    <div class="cp" id="cp"></div>
+  </div>
+</section>
+
+<script>
+/* ---------- Site design values (styles/tokens.css) ---------- */
+const FONTS = {
+  sans: ["System sans", 'ui-sans-serif, system-ui, "Segoe UI", sans-serif'],
+  humanist: ["Humanist", '"Gill Sans", Seravek, "Segoe UI", sans-serif'],
+  serif: ["Serif", 'Georgia, "Iowan Old Style", serif'],
+  rounded: ["Rounded", 'ui-rounded, "Nunito", system-ui, sans-serif'],
+};
+const COLOR_NAMES = ["brand", "accent", "on-accent", "ink", "muted", "surface", "page", "line"];
+const SITE0 = {
+  colors: {
+    brand: { light: "#2f6d3a" },
+    ink: { light: "#20231f", dark: "#e6e9e2" },
+    muted: { light: "#5c665a", dark: "#a8b1a5" },
+    surface: { light: "#ffffff", dark: "#20241e" },
+    page: { light: "#f6f7f3", dark: "#161915" },
+    line: { light: "#e2e6de", dark: "#353b32" },
+  },
+  fontBody: "sans",
+  fontDisplay: "sans",
+  typeBase: 16,
+  typeRatio: 1.2,
+  space: 1,
+  corners: "soft",
+  shadows: "soft",
+};
+
+function hexToOklch(hex) {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  const [r, g, b] = c;
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const L = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+  const A = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const B = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  const C = Math.hypot(A, B);
+  let h = (Math.atan2(B, A) * 180) / Math.PI;
+  if (h < 0) h += 360;
+  return `oklch(${(L * 100).toFixed(1)}% ${C.toFixed(3)} ${C < 0.003 ? "none" : h.toFixed(1)})`;
+}
+const px = (n) => `${Math.round(n)}px`;
+function scales(site) {
+  const b = site.typeBase, r = site.typeRatio;
+  const text = {
+    s: px(b / r), m: px(b), l: px(b * r), xl: px(b * r ** 2), "2xl": px(b * r ** 3),
+    "3xl": `clamp(${px(b * r ** 3)}, ${(b * r ** 4 / 11).toFixed(1)}vw, ${px(b * r ** 4)})`,
+    "4xl": `clamp(${px(b * r ** 4)}, ${(b * r ** 5.5 / 11).toFixed(1)}vw, ${px(b * r ** 5.5)})`,
+  };
+  const base = { "3xs": 4, "2xs": 8, xs: 12, s: 16, m: 20, l: 24, xl: 32, "2xl": 40, "3xl": 48, "4xl": 56, "5xl": 80 };
+  const space = Object.fromEntries(Object.entries(base).map(([k, v]) => [k, px(v * site.space)]));
+  const radius = { square: { s: "0px", m: "2px", l: "4px" }, soft: { s: "4px", m: "12px", l: "16px" }, round: { s: "8px", m: "20px", l: "28px" } }[site.corners];
+  radius.full = "999px";
+  const shadow = {
+    none: { s: "none", m: "none", l: "none" },
+    soft: { s: "0 1px 2px oklch(0% 0 none / 0.08)", m: "0 4px 12px oklch(0% 0 none / 0.1)", l: "0 12px 32px oklch(0% 0 none / 0.14)" },
+    strong: { s: "0 1px 3px oklch(0% 0 none / 0.18)", m: "0 6px 18px oklch(0% 0 none / 0.22)", l: "0 16px 40px oklch(0% 0 none / 0.28)" },
+  }[site.shadows];
+  return { text, space, radius, shadow };
+}
+function tokenDecls(site) {
+  const { text, space, radius, shadow } = scales(site);
+  const c = site.colors;
+  const pair = (n) => `light-dark(${hexToOklch(c[n].light)}, ${hexToOklch(c[n].dark)})`;
+  return [
+    ["/* Colour */"],
+    ["--brand", hexToOklch(c.brand.light)],
+    ["--accent", "light-dark(var(--brand), oklch(from var(--brand) 80% c h))"],
+    ["--on-accent", "light-dark(oklch(100% 0 none), oklch(17% 0.01 130))"],
+    ["--ink", pair("ink")], ["--muted", pair("muted")], ["--surface", pair("surface")],
+    ["--page", pair("page")], ["--line", pair("line")],
+    ["/* Type */"],
+    ["--font-body", FONTS[site.fontBody][1]], ["--font-display", FONTS[site.fontDisplay][1]],
+    ...Object.entries(text).map(([k, v]) => [`--text-${k}`, v]),
+    ["/* Space */"],
+    ...Object.entries(space).map(([k, v]) => [`--space-${k}`, v]),
+    ["/* Shape */"],
+    ...Object.entries(radius).map(([k, v]) => [`--radius-${k}`, v]),
+    ...Object.entries(shadow).map(([k, v]) => [`--shadow-${k}`, v]),
+    ["/* Measure */"],
+    ["--page-width", "960px"], ["--reading-width", "64ch"],
+  ];
+}
+
+/* ---------- What can be selected, and where its CSS lives ---------- */
+/* Each scope is one rule in the component's own stylesheet: the class, or a
+   data-attribute variant (components-and-builder). `apply` is the same rule
+   scoped to this preview. */
+const P = '.pv [data-c="section-hero"]';
+const ELEMENTS = {
+  header: {
+    name: "Site header", file: "components/site-header/site-header.css",
+    scopes: [{ label: "Site header", sel: "header", apply: '.pv [data-c="site-header"] header' }],
+  },
+  hero: {
+    name: "Hero", file: "components/section-hero/section-hero.css",
+    variant: { label: "Layout", attr: "data-layout", on: "wrapper", options: [["", "Default"], ["centered", "Centered"]] },
+    scopes: [
+      { label: "Every hero", sel: "section", apply: `${P} section` },
+      { label: "Only this variant (centered)", chip: '[data-layout="centered"]', sel: ':host([data-layout="centered"]) section', apply: `${P}[data-layout="centered"] section`, needs: "centered" },
+      { label: "Only this variant (default)", chip: ':not([data-layout])', sel: ':host(:not([data-layout="centered"])) section', apply: `${P}:not([data-layout="centered"]) section`, needs: "" },
+    ],
+  },
+  heading: { name: "Heading", file: "components/section-hero/section-hero.css", text: true, scopes: [{ label: "Hero heading", sel: "h1", apply: `${P} h1` }] },
+  lead: { name: "Lead text", file: "components/section-hero/section-hero.css", text: true, scopes: [{ label: "Hero lead", sel: ".lead", apply: `${P} .lead` }] },
+  button: {
+    name: "Button", file: "components/section-hero/section-hero.css", link: true,
+    variant: { label: "Style", attr: "data-variant", on: "self", options: [["", "Filled"], ["outline", "Outline"]] },
+    scopes: [
+      { label: "This button style", sel: ".button", apply: `${P} .button` },
+      { label: "Only this variant (outline)", chip: '[data-variant="outline"]', sel: '.button[data-variant="outline"]', apply: `${P} .button[data-variant="outline"]`, needs: "outline" },
+      { label: "Only this variant (filled)", chip: ':not([data-variant])', sel: ".button:not([data-variant])", apply: `${P} .button:not([data-variant])`, needs: "" },
+    ],
+  },
+  card: {
+    name: "Project card", file: "components/card-project/card-project.css",
+    variant: { label: "Tone", attr: "data-tone", on: "wrapper", options: [["", "Default"], ["highlight", "Highlight"]] },
+    scopes: [
+      { label: "Every project card", sel: "article", apply: '.pv [data-c="card-project"] article' },
+      { label: "Only this variant (highlight)", chip: '[data-tone="highlight"]', sel: ':host([data-tone="highlight"]) article', apply: '.pv [data-c="card-project"][data-tone="highlight"] article', needs: "highlight" },
+      { label: "Only this variant (default)", chip: ':not([data-tone])', sel: ':host(:not([data-tone="highlight"])) article', apply: '.pv [data-c="card-project"]:not([data-tone="highlight"]) article', needs: "" },
+    ],
+  },
+  footer: { name: "Site footer", file: "components/site-footer/site-footer.css", scopes: [{ label: "Site footer", sel: "footer", apply: '.pv [data-c="site-footer"] footer' }] },
+};
+const FILE_ORDER = {
+  "components/site-header/site-header.css": ["header:0"],
+  "components/section-hero/section-hero.css": ["hero:0", "hero:1", "hero:2", "heading:0", "lead:0", "button:0", "button:2", "button:1"],
+  "components/card-project/card-project.css": ["card:0", "card:2", "card:1"],
+  "components/site-footer/site-footer.css": ["footer:0"],
+};
+
+const empty = () => ({ all: {}, narrow: {} });
+const rule = (base, extra = {}) => ({ def: { all: base, narrow: extra.narrow ?? {} }, hover: { all: extra.hover ?? {}, narrow: {} }, focus: { all: extra.focus ?? {}, narrow: {} } });
+const RULES0 = {
+  "header:0": rule({ display: "flex", "align-items": "center", "justify-content": "space-between", gap: "var(--space-l)", "padding-block": "var(--space-s)" }),
+  "hero:0": rule({ display: "flex", "flex-direction": "column", gap: "var(--space-s)", "padding-block": "var(--space-2xl)" }),
+  "hero:1": rule({ "align-items": "center", "text-align": "center" }),
+  "heading:0": rule({ "margin-block": "0", "max-inline-size": "20ch", "font-family": "var(--font-display)", "font-size": "var(--text-4xl)", "line-height": "1.1" }),
+  "lead:0": rule({ "margin-block": "0", "max-inline-size": "60ch", "font-size": "var(--text-l)", "line-height": "1.6", color: "var(--muted)" }),
+  "button:0": rule(
+    { display: "inline-block", "padding-block": "var(--space-xs)", "padding-inline": "var(--space-m)", "border-width": "2px", "border-color": "var(--accent)", "border-radius": "var(--radius-full)", "background-color": "var(--accent)", color: "var(--on-accent)", "font-weight": "600" },
+    { hover: { "background-color": "color-mix(in oklch, var(--accent) 85%, var(--ink))" }, focus: { outline: "2px solid var(--accent)", "outline-offset": "3px" } }),
+  "button:1": rule({ "background-color": "transparent", color: "var(--accent)" }, { hover: { "background-color": "var(--surface)" } }),
+  "card:0": rule({ display: "grid", gap: "var(--space-xs)", "padding-block": "var(--space-l)", "padding-inline": "var(--space-l)", "border-width": "1px", "border-color": "var(--line)", "border-radius": "var(--radius-m)", "background-color": "var(--surface)" }),
+  "hero:2": rule({}),
+  "button:2": rule({}),
+  "card:2": rule({}),
+  "card:1": rule({ "border-color": "var(--brand)", "background-color": "color-mix(in oklch, var(--brand) 8%, var(--surface))" }),
+  "footer:0": rule({ display: "flex", "justify-content": "space-between", gap: "var(--space-s)", "padding-block": "var(--space-xl)", color: "var(--muted)", "font-size": "var(--text-s)" }),
+};
+
+/* ---------- State ---------- */
+let state = {
+  rules: structuredClone(RULES0),
+  changed: [],
+  site: structuredClone(SITE0),
+  variants: { hero: "", cards: ["", "highlight", ""], buttons: ["", "outline"] },
+};
+const ui = { el: null, node: null, scope: 0, state: "def", size: "all", tab: "style", panel: false, width: "wide", custom: null, dragging: false };
+const undo = [];
+function remember() { undo.push(JSON.stringify(state)); if (undo.length > 60) undo.shift(); }
+
+/* ---------- CSS generation ---------- */
+const ORDER = ["display", "flex-direction", "align-items", "justify-content", "gap", "margin-block", "margin-block-start", "margin-block-end", "padding-block", "padding-inline", "inline-size", "max-inline-size", "min-block-size", "font-family", "font-size", "font-weight", "line-height", "text-align", "color", "background-color", "border", "border-color", "border-radius", "box-shadow", "outline", "outline-offset"];
+function decls(map) {
+  const out = [];
+  const m = { ...map };
+  if ("border-width" in m) {
+    const w = m["border-width"];
+    m.border = w === "0" ? "0" : `${w} solid ${m["border-color"] ?? "currentColor"}`;
+    delete m["border-width"]; delete m["border-color"];
+  }
+  const keys = Object.keys(m).sort((a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99));
+  for (const k of keys) out.push([k, m[k]]);
+  return out;
+}
+const changedKey = (rk, st, sz, prop) => `${rk}|${st}|${sz}|${["border-width", "border-color"].includes(prop) ? "border" : prop}`;
+const isChanged = (rk, st, sz, prop) => state.changed.includes(changedKey(rk, st, sz, prop));
+
+/* Lines of a component file: [{text, changed, cur}]. */
+function fileLines(file) {
+  const lines = [];
+  const curKey = ui.el ? `${ui.el}:${ui.scope}` : "";
+  const push = (text, changed = false, cur = false) => lines.push({ text, changed, cur });
+  const block = (rk, sel, st, sz, indent) => {
+    const map = state.rules[rk][st][sz];
+    const list = decls(map);
+    if (!list.length) return false;
+    const cur = rk === curKey;
+    const pseudo = st === "hover" ? ":hover" : st === "focus" ? ":focus-visible" : "";
+    const selector = sel.split(",").map((s) => s.trim() + pseudo).join(", ");
+    push(`${indent}${selector} {`, false, cur);
+    for (const [k, v] of list) push(`${indent}  ${k}: ${v};`, isChanged(rk, st, sz, k), cur);
+    push(`${indent}}`, false, cur);
+    return true;
+  };
+  for (const rk of FILE_ORDER[file]) {
+    const [el, i] = rk.split(":");
+    const sel = ELEMENTS[el].scopes[i].sel;
+    for (const sz of ["all", "narrow"]) {
+      const ind = sz === "narrow" ? "  " : "";
+      const start = lines.length;
+      if (sz === "narrow") push("@container (inline-size < 40rem) {");
+      let wrote = block(rk, sel, "def", sz, ind);
+      if (decls(state.rules[rk].hover[sz]).length) {
+        if (wrote) push("");
+        push(`${ind}@media (hover: hover) and (pointer: fine) {`);
+        block(rk, sel, "hover", sz, ind + "  ");
+        push(`${ind}}`);
+        wrote = true;
+      }
+      if (decls(state.rules[rk].focus[sz]).length) { if (wrote) push(""); block(rk, sel, "focus", sz, ind); wrote = true; }
+      if (sz === "narrow") { if (wrote) push("}"); else lines.length = start; }
+      if (wrote) push("");
+    }
+  }
+  while (lines.length && !lines.at(-1).text) lines.pop();
+  return lines;
+}
+
+function appliedCss() {
+  let css = `.site-tokens {\n${tokenDecls(state.site).filter((d) => d.length === 2).map(([k, v]) => `  ${k}: ${v};`).join("\n")}\n  --card-gap: var(--space-xs);\n  --card-tint: color-mix(in oklch, var(--brand) 8%, var(--surface));\n}\n`;
+  for (const [rk, r] of Object.entries(state.rules)) {
+    const [el, i] = rk.split(":");
+    const a = ELEMENTS[el].scopes[i].apply;
+    for (const sz of ["all", "narrow"]) {
+      const open = sz === "narrow" ? "@container site (inline-size < 40rem) {" : "";
+      let part = "";
+      const body = (map) => decls(map).map(([k, v]) => `${k}: ${v};`).join(" ");
+      if (decls(r.def[sz]).length) part += `${a} { ${body(r.def[sz])} }\n`;
+      if (decls(r.hover[sz]).length) part += `@media (hover: hover) and (pointer: fine) { ${a}:hover { ${body(r.hover[sz])} } }\n${a}[data-force="hover"] { ${body(r.hover[sz])} }\n`;
+      if (decls(r.focus[sz]).length) part += `${a}:focus-visible, ${a}[data-force="focus"] { ${body(r.focus[sz])} }\n`;
+      if (part) css += open ? `${open}\n${part}}\n` : part;
+    }
+  }
+  return css;
+}
+
+/* ---------- Rendering helpers ---------- */
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const COLOR_VARS = [...COLOR_NAMES, "card-tint"];
+function colourise(text) {
+  let h = esc(text);
+  h = h.replace(/var\(--([a-z0-9-]+)\)/g, (m, n) => (COLOR_VARS.includes(n) ? `<span class="sw site-tokens" style="background:var(--${n})"></span>${m}` : m));
+  if (/^\s*@/.test(text)) return `<span class="at">${h}</span>`;
+  if (/\{\s*$/.test(text)) return `<span class="s">${h}</span>`;
+  return h.replace(/^(\s*)([a-z-]+)(:)/, '$1<span class="p">$2</span>$3');
+}
+function codeHtml(lines) {
+  return lines.map((l) => `<span class="ln${l.changed ? " chg" : ""}${l.cur ? " cur" : ""}">${colourise(l.text) || " "}</span>`).join("");
+}
+const icon = (id, size = 16) => `<svg width="${size}" height="${size}"><use href="#i-${id}"/></svg>`;
+
+/* ---------- Values the controls offer ---------- */
+function tokenOptions(kind) {
+  const s = scales(state.site);
+  if (kind === "space") return [["0", "0"], ...Object.entries(s.space).map(([k, v]) => [`var(--space-${k})`, `space-${k} · ${v}`])];
+  if (kind === "text") return Object.entries(s.text).map(([k, v]) => [`var(--text-${k})`, `text-${k} · ${v.startsWith("clamp") ? "grows" : v}`]);
+  if (kind === "radius") return [["0", "0"], ...Object.entries(s.radius).map(([k, v]) => [`var(--radius-${k})`, `radius-${k} · ${v}`])];
+  if (kind === "shadow") return [["none", "none"], ...["s", "m", "l"].map((k) => [`var(--shadow-${k})`, `shadow-${k}`])];
+  if (kind === "font") return [["var(--font-body)", `font-body · ${FONTS[state.site.fontBody][0]}`], ["var(--font-display)", `font-display · ${FONTS[state.site.fontDisplay][0]}`]];
+  if (kind === "width") return [["auto", "auto"], ["100%", "100%"], ["fit-content", "fit-content"]];
+  if (kind === "measure") return [["none", "none"], ["20ch", "20ch"], ["40ch", "40ch"], ["60ch", "60ch"], ["var(--reading-width)", "reading-width · 64ch"]];
+  if (kind === "height") return [["auto", "auto"], ["var(--space-5xl)", "space-5xl"], ["50svb", "50svb"]];
+  return [];
+}
+
+const rk = () => `${ui.el}:${ui.scope}`;
+function own(prop) { return state.rules[rk()][ui.state][ui.size][prop]; }
+function effective(prop) {
+  const r = state.rules[rk()];
+  return own(prop) ?? r[ui.state].all[prop] ?? r.def[ui.size][prop] ?? r.def.all[prop];
+}
+function ctlRow(label, prop, inner) {
+  return `<div class="ctl"${own(prop) !== undefined && ui.state + ui.size !== "defall" ? " data-own" : ""}${isChanged(rk(), ui.state, ui.size, prop) ? " data-own" : ""}><span>${label}</span>${inner}</div>`;
+}
+function seg(label, prop, options) {
+  const v = effective(prop);
+  return ctlRow(label, prop, `<div class="seg seg--fill" role="group" aria-label="${label}">${options.map(([val, text]) => `<button type="button" data-prop="${prop}" data-val="${esc(val)}" aria-pressed="${v === val}">${text}</button>`).join("")}</div>`);
+}
+function tok(label, prop, kind) {
+  const v = effective(prop);
+  const options = tokenOptions(kind);
+  const known = ui.custom !== prop && (v === undefined || options.some(([val]) => val === v));
+  const opts = `${v === undefined ? '<option value="" selected>—</option>' : ""}${options.map(([val, text]) => `<option value="${esc(val)}"${val === v ? " selected" : ""}>${esc(text)}</option>`).join("")}<option value="__custom"${known ? "" : " selected"}>Custom…</option>`;
+  return ctlRow(label, prop, `<div class="ctl__line"><select data-prop="${prop}" aria-label="${label}">${opts}</select>${known ? "" : `<input class="custom" data-custom="${prop}" value="${esc(v ?? "")}" aria-label="${label}, custom">`}</div>`);
+}
+function swatches(label, prop, withNone) {
+  const v = effective(prop);
+  const names = COLOR_NAMES;
+  const m = /^var\(--([a-z-]+)\)$/.exec(v ?? "");
+  const named = m ? m[1] : v === "transparent" ? "transparent" : v ? "custom" : "";
+  return ctlRow(label, prop, `<div class="swatches">${withNone ? `<button type="button" class="swatch swatch--none" data-prop="${prop}" data-val="transparent" aria-pressed="${v === "transparent"}" title="transparent" aria-label="transparent"></button>` : ""}${names.map((n) => `<button type="button" class="swatch site-tokens" style="background:var(--${n})" data-prop="${prop}" data-val="var(--${n})" aria-pressed="${named === n}" title="${n}" aria-label="${n}"></button>`).join("")}<span class="swatch-pick" title="Custom colour"><input type="color" data-colour="${prop}" aria-label="${label}, custom colour"></span><span class="swatch-name">${esc(named === "custom" ? v : named)}</span></div>`);
+}
+
+/* ---------- Panel ---------- */
+const panel = document.getElementById("panel");
+function renderPanel() {
+  document.getElementById("work").dataset.panel = ui.panel ? "open" : "closed";
+  panel.hidden = !ui.panel;
+  if (!ui.panel) return;
+  const el = ui.el && ELEMENTS[ui.el];
+  if (!el) ui.tab = "site";
+  const scope = el?.scopes[ui.scope];
+  const key = `${ui.tab}|${ui.el}|${ui.scope}`;
+  const keep = panel.dataset.key === key ? panel.querySelector(".panel__body")?.scrollTop ?? 0 : null;
+  panel.dataset.key = key;
+  panel.innerHTML = `
+    <div class="panel__head">
+      <div class="panel__title">${el ? `<b>${el.name}</b><code class="selector" title="${esc(scope.sel)}">${esc(scope.sel)}</code>` : "<b>Site design</b>"}</div>
+      <button type="button" class="icon-button" data-close aria-label="Close">${icon("x")}</button>
+    </div>
+    <div class="tabs" role="tablist">
+      ${[["style", "Style"], ["code", "Code"], ["site", "Site design"]].map(([id, t]) => `<button type="button" role="tab" data-tab="${id}" aria-selected="${ui.tab === id}"${!el && id !== "site" ? " disabled" : ""}>${t}</button>`).join("")}
+    </div>
+    <div class="panel__body">${ui.tab === "style" ? styleTab(el) : ui.tab === "code" ? codeTab(el) : siteTab()}</div>`;
+  /* The Code tab opens at the rule being styled. */
+  const body = panel.querySelector(".panel__body");
+  const cur = body.querySelector(".ln.chg.cur") ?? body.querySelector(".ln.cur");
+  if (keep !== null) body.scrollTop = keep;
+  else if (cur) body.scrollTop = Math.max(0, cur.getBoundingClientRect().top - body.getBoundingClientRect().top - 60);
+}
+function groupDot(props) {
+  return props.some((p) => isChanged(rk(), ui.state, ui.size, p)) ? '<span class="dot"></span>' : "";
+}
+function styleTab(el) {
+  const shown = [0, variantScope()].filter((i) => i >= 0);
+  const scopes = shown.length > 1 ? `<div class="scope" role="radiogroup" aria-label="What to style">${shown.map((i) => { const s = el.scopes[i]; return `<label><input type="radio" name="scope" value="${i}"${i === ui.scope ? " checked" : ""}>${s.label}${s.chip ? `<code>${esc(s.chip)}</code>` : ""}</label>`; }).join("")}</div>` : "";
+  const flex = ["flex", "grid"].includes(effective("display"));
+  return `${scopes}
+    <div class="rowpair"><span>State</span><div class="seg seg--fill" role="group" aria-label="State">${[["def", "Default"], ["hover", "Hover"], ["focus", "Focus"]].map(([v, t]) => `<button type="button" data-state="${v}" aria-pressed="${ui.state === v}">${t}</button>`).join("")}</div></div>
+    <div class="rowpair"><span>Size</span><div class="seg seg--fill" role="group" aria-label="Size">${[["all", "All sizes"], ["narrow", "Narrow"]].map(([v, t]) => `<button type="button" data-size="${v}" aria-pressed="${ui.size === v}">${t}</button>`).join("")}</div></div>
+    <details class="group" open><summary>Layout${groupDot(["display", "flex-direction", "gap", "align-items", "justify-content"])}</summary><div class="ctls">
+      ${seg("Display", "display", [["block", "Block"], ["inline-block", "Inline"], ["flex", "Flex"], ["grid", "Grid"]])}
+      ${flex ? seg("Direction", "flex-direction", [["row", "Row"], ["column", "Column"]]) : ""}
+      ${flex ? tok("Gap", "gap", "space") : ""}
+      ${flex ? seg("Align", "align-items", [["start", "Start"], ["center", "Center"], ["end", "End"], ["stretch", "Fill"]]) : ""}
+      ${flex ? seg("Justify", "justify-content", [["start", "Start"], ["center", "Center"], ["end", "End"], ["space-between", "Apart"]]) : ""}
+    </div></details>
+    <details class="group" open><summary>Spacing${groupDot(["margin-block-start", "margin-block-end", "padding-block", "padding-inline"])}</summary>
+      <div class="box">
+        <span class="box__label">Outside</span>
+        <span></span>${boxSelect("margin-block-start", "Space above")}<span></span>
+        <div class="box__inner">
+          <span></span>${boxSelect("padding-block", "Inside, top and bottom")}<span></span>
+          ${boxSelect("padding-inline", "Inside, sides")}<span class="box__core"></span><span></span>
+        </div>
+        <span></span>${boxSelect("margin-block-end", "Space below")}<span></span>
+      </div>
+    </details>
+    <details class="group"${["heading", "lead", "card"].includes(ui.el) ? " open" : ""}><summary>Size${groupDot(["inline-size", "max-inline-size", "min-block-size"])}</summary><div class="ctls">
+      ${tok("Width", "inline-size", "width")}
+      ${tok("Max width", "max-inline-size", "measure")}
+      ${tok("Min height", "min-block-size", "height")}
+    </div></details>
+    <details class="group"${el.text || ui.el === "button" ? " open" : ""}><summary>Type${groupDot(["font-family", "font-size", "font-weight", "line-height", "text-align"])}</summary><div class="ctls">
+      ${tok("Font", "font-family", "font")}
+      ${tok("Size", "font-size", "text")}
+      ${seg("Weight", "font-weight", [["400", "400"], ["500", "500"], ["600", "600"], ["700", "700"]])}
+      ${seg("Line height", "line-height", [["1.1", "1.1"], ["1.3", "1.3"], ["1.6", "1.6"]])}
+      ${seg("Align", "text-align", [["start", "Start"], ["center", "Center"], ["end", "End"]])}
+    </div></details>
+    <details class="group" open><summary>Colour${groupDot(["color", "background-color"])}</summary><div class="ctls">
+      ${swatches("Text", "color", false)}
+      ${swatches("Background", "background-color", true)}
+    </div></details>
+    <details class="group"${["button", "card"].includes(ui.el) ? " open" : ""}><summary>Border &amp; corners${groupDot(["border-width", "border-color", "border-radius"])}</summary><div class="ctls">
+      ${seg("Border", "border-width", [["0", "None"], ["1px", "1px"], ["2px", "2px"], ["3px", "3px"]])}
+      ${effective("border-width") && effective("border-width") !== "0" ? swatches("Colour", "border-color", false) : ""}
+      ${tok("Corners", "border-radius", "radius")}
+    </div></details>
+    <details class="group"${ui.el === "card" ? " open" : ""}><summary>Effects${groupDot(["box-shadow"])}</summary><div class="ctls">
+      ${tok("Shadow", "box-shadow", "shadow")}
+    </div></details>`;
+}
+function boxSelect(prop, label) {
+  const v = effective(prop);
+  const options = tokenOptions("space");
+  const known = v === undefined || options.some(([val]) => val === v);
+  const mark = isChanged(rk(), ui.state, ui.size, prop) ? ' style="box-shadow: inset 0 0 0 1.5px var(--changed)"' : "";
+  return `<select data-prop="${prop}" aria-label="${label}" title="${label}"${mark}>${v === undefined ? '<option value="" selected>—</option>' : ""}${options.map(([val, text]) => `<option value="${esc(val)}"${val === v ? " selected" : ""}>${esc(text.split(" · ")[0])}</option>`).join("")}${known ? "" : `<option selected>${esc(v)}</option>`}</select>`;
+}
+function codeTab(el) {
+  return `<div class="file"><span>${el.file}</span></div><pre class="code">${codeHtml(fileLines(el.file))}</pre>`;
+}
+function tokensLines() {
+  const now = tokenDecls(state.site), before = tokenDecls(SITE0);
+  const lines = [{ text: ":root {" }];
+  now.forEach((d, i) => lines.push(d.length === 1 ? { text: `  ${d[0]}` } : { text: `  ${d[0]}: ${d[1]};`, changed: before[i][1] !== d[1] }));
+  lines.push({ text: "}" });
+  return lines;
+}
+function siteTab() {
+  const c = state.site.colors;
+  const { text, space } = scales(state.site);
+  const segS = (key, options) => `<div class="seg seg--fill" role="group">${options.map(([v, t]) => `<button type="button" data-site="${key}" data-val="${v}" aria-pressed="${String(state.site[key]) === String(v)}">${t}</button>`).join("")}</div>`;
+  const fontSel = (key) => `<select data-site-font="${key}">${Object.entries(FONTS).map(([k, [n]]) => `<option value="${k}"${state.site[key] === k ? " selected" : ""}>${n}</option>`).join("")}</select>`;
+  const colour = (n) => {
+    const v = c[n];
+    if (!v) return `<div class="token"><span class="pick site-tokens"><span style="background:var(--${n})"></span></span><span></span><code>--${n}</code><span class="val">follows brand</span></div>`;
+    return `<div class="token">
+      <label class="pick" title="${n}, light"><span style="background:${v.light}"></span><input type="color" value="${v.light}" data-site-colour="${n}" data-mode="light" aria-label="${n}, light"></label>
+      ${v.dark ? `<label class="pick" data-dark title="${n}, dark"><span style="background:${v.dark}"></span><input type="color" value="${v.dark}" data-site-colour="${n}" data-mode="dark" aria-label="${n}, dark"></label>` : "<span></span>"}
+      <code>--${n}</code><span class="val">${hexToOklch(v.light).replace("oklch", "")}</span></div>`;
+  };
+  return `
+    <details class="group" open><summary>Colours</summary><div class="tokens">${["brand", "accent", "ink", "muted", "surface", "page", "line"].map(colour).join("")}</div></details>
+    <details class="group" open><summary>Fonts</summary><div class="ctls">
+      <div class="ctl"><span>Text</span>${fontSel("fontBody")}</div>
+      <div class="ctl"><span>Headings</span>${fontSel("fontDisplay")}</div>
+    </div></details>
+    <details class="group" open><summary>Type scale</summary><div class="ctls">
+      <div class="ctl"><span>Base</span>${segS("typeBase", [[15, "15px"], [16, "16px"], [17, "17px"], [18, "18px"]])}</div>
+      <div class="ctl"><span>Steps</span>${segS("typeRatio", [[1.125, "Close"], [1.2, "Even"], [1.25, "Wide"]])}</div>
+      <div class="scale">${Object.entries(text).map(([k, v]) => `<span>${k} <b>${v.startsWith("clamp") ? v.replace(/clamp\((\d+px).*?(\d+px)\)/, "$1–$2") : v}</b></span>`).join("")}</div>
+    </div></details>
+    <details class="group" open><summary>Spacing</summary><div class="ctls">
+      <div class="ctl"><span>Density</span>${segS("space", [[0.8, "Compact"], [1, "Even"], [1.25, "Airy"]])}</div>
+      <div class="scale">${Object.entries(space).map(([k, v]) => `<span>${k} <b>${v}</b></span>`).join("")}</div>
+    </div></details>
+    <details class="group" open><summary>Corners and shadows</summary><div class="ctls">
+      <div class="ctl"><span>Corners</span>${segS("corners", [["square", "Square"], ["soft", "Soft"], ["round", "Round"]])}</div>
+      <div class="ctl"><span>Shadows</span>${segS("shadows", [["none", "None"], ["soft", "Soft"], ["strong", "Strong"]])}</div>
+    </div></details>
+    <details class="group"><summary>tokens.css</summary><pre class="code">${codeHtml(tokensLines())}</pre></details>`;
+}
+
+/* ---------- Selection, edit bar, structure ---------- */
+const pv = document.getElementById("pv");
+const canvas = document.getElementById("canvas");
+const selbox = document.getElementById("selbox");
+const editbar = document.getElementById("editbar");
+function variantValue(el, node) {
+  const v = ELEMENTS[el].variant;
+  if (!v) return "";
+  return (v.on === "wrapper" ? node.closest("[data-c]") : node).getAttribute(v.attr) ?? "";
+}
+function renderEditBar() {
+  if (!ui.node) { editbar.hidden = true; selbox.hidden = true; return; }
+  const el = ELEMENTS[ui.el];
+  const v = el.variant;
+  const cur = variantValue(ui.el, ui.node);
+  editbar.innerHTML = `<span class="editbar__name">${el.name}</span>
+    ${v ? `<select data-variant aria-label="${v.label}" title="${v.label}">${v.options.map(([val, t]) => `<option value="${val}"${val === cur ? " selected" : ""}>${v.label}: ${t}</option>`).join("")}</select>` : ""}
+    ${el.text ? '<button type="button" class="ghost letter" aria-label="Bold">B</button><button type="button" class="ghost letter letter--i" aria-label="Italic">I</button>' : ""}
+    ${el.link ? `<button type="button" class="icon-button" aria-label="Link" title="Link">${icon("link")}</button>` : ""}
+    <button type="button" class="icon-button" aria-label="Move up" title="Move up">${icon("up")}</button>
+    <button type="button" class="icon-button" aria-label="Move down" title="Move down">${icon("down")}</button>
+    <span class="editbar__sep"></span>
+    <button type="button" class="icon-button" data-style aria-label="Style" title="Style" aria-expanded="${ui.panel && ui.tab !== "site"}">${icon("brush")}</button>`;
+  editbar.hidden = false;
+  selbox.hidden = false;
+  document.getElementById("chip").textContent = el.name;
+  place();
+}
+function place() {
+  if (!ui.node) return;
+  const c = canvas.getBoundingClientRect(), r = ui.node.getBoundingClientRect();
+  Object.assign(selbox.style, { insetInlineStart: `${r.left - c.left}px`, insetBlockStart: `${r.top - c.top}px`, inlineSize: `${r.width}px`, blockSize: `${r.height}px` });
+  const h = editbar.offsetHeight;
+  const above = r.top - c.top - h - 28;
+  const top = above > 4 ? above : r.bottom - c.top + 10;
+  const left = Math.max(8, Math.min(r.left - c.left, c.width - editbar.offsetWidth - 8));
+  Object.assign(editbar.style, { insetInlineStart: `${left}px`, insetBlockStart: `${top}px` });
+}
+/* The scope for the selected element's own variant, or -1. */
+function variantScope() {
+  if (!ui.node || !ELEMENTS[ui.el].variant) return -1;
+  const v = variantValue(ui.el, ui.node);
+  return ELEMENTS[ui.el].scopes.findIndex((s, i) => i > 0 && s.needs === v);
+}
+function select(node) {
+  const el = node.dataset.sel;
+  if (ui.el !== el) { ui.scope = 0; ui.state = "def"; ui.size = "all"; }
+  ui.el = el; ui.node = node; ui.custom = null;
+  if (ui.scope > 0) ui.scope = variantScope();
+  if (ui.scope < 0) ui.scope = 0;
+  if (ui.panel && ui.tab === "site") ui.tab = "style";
+  render();
+}
+const STRUCT = [["header", 0, "Site header"], ["hero", 0, "Hero"], ["heading", 1, "Heading"], ["lead", 1, "Lead text"], ["button", 1, "Button"], ["card", 0, "Project card"], ["footer", 0, "Site footer"]];
+function renderStructure() {
+  document.getElementById("structure").innerHTML = `<p class="eyebrow-ui">PAGE STRUCTURE</p>${STRUCT.map(([k, d, t]) => `<button type="button" data-pick="${k}" data-depth="${d}" aria-current="${ui.el === k}">${t}</button>`).join("")}`;
+}
+function applyVariants() {
+  const hero = pv.querySelector('[data-c="section-hero"]');
+  hero.setAttribute("data-layout", state.variants.hero);
+  pv.querySelectorAll('[data-c="card-project"]').forEach((n, i) => n.setAttribute("data-tone", state.variants.cards[i]));
+  pv.querySelectorAll(".button").forEach((n, i) => (state.variants.buttons[i] ? n.setAttribute("data-variant", state.variants.buttons[i]) : n.removeAttribute("data-variant")));
+}
+function applyForce() {
+  pv.querySelectorAll("[data-force]").forEach((n) => n.removeAttribute("data-force"));
+  if (!ui.el || !ui.panel || ui.state === "def") return;
+  pv.querySelectorAll(ELEMENTS[ui.el].scopes[ui.scope].apply).forEach((n) => n.setAttribute("data-force", ui.state));
+}
+function renderSave() {
+  const n = state.changed.length;
+  const save = document.getElementById("save");
+  save.dataset.state = n ? "" : "saved";
+  save.textContent = n ? `Save ${n} change${n === 1 ? "" : "s"}` : "Live";
+}
+function render() {
+  document.getElementById("applied").textContent = appliedCss();
+  applyVariants();
+  pv.dataset.width = ui.width;
+  document.querySelectorAll("#width button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.width === ui.width)));
+  renderStructure();
+  renderPanel();
+  applyForce();
+  renderSave();
+  requestAnimationFrame(renderEditBar);
+}
+
+/* ---------- Changes ---------- */
+function setProp(prop, val) {
+  remember();
+  const bucket = state.rules[rk()][ui.state][ui.size];
+  const key = changedKey(rk(), ui.state, ui.size, prop);
+  if (val === "" || val === undefined) delete bucket[prop]; else bucket[prop] = val;
+  if (prop === "border-width" && val !== "0" && !effectiveBorderColor()) bucket["border-color"] = "var(--line)";
+  const keys = key.endsWith("|border") ? ["border-width", "border-color"] : [prop];
+  const same = keys.every((k) => bucket[k] === RULES0[rk()][ui.state][ui.size][k]);
+  state.changed = state.changed.filter((k) => k !== key);
+  if (!same) state.changed.push(key);
+  render();
+}
+function effectiveBorderColor() {
+  const r = state.rules[rk()];
+  return r[ui.state][ui.size]["border-color"] ?? r.def.all["border-color"];
+}
+function setSite(mutate, remembered = false) {
+  if (!remembered) remember();
+  mutate(state.site);
+  const changedSite = JSON.stringify(state.site) !== JSON.stringify(SITE0);
+  state.changed = state.changed.filter((k) => k !== "site");
+  if (changedSite) state.changed.push("site");
+  render();
+}
+
+panel.addEventListener("click", (e) => {
+  const t = e.target.closest("button");
+  if (!t) return;
+  if (t.dataset.close !== undefined) { ui.panel = false; render(); return; }
+  if (t.dataset.tab) { ui.tab = t.dataset.tab; render(); return; }
+  if (t.dataset.state) { ui.state = t.dataset.state; render(); return; }
+  if (t.dataset.size) { ui.size = t.dataset.size; if (ui.size === "narrow") ui.width = "narrow"; render(); return; }
+  if (t.dataset.prop) { setProp(t.dataset.prop, t.dataset.val); return; }
+  if (t.dataset.site) { const key = t.dataset.site; const v = t.dataset.val; setSite((s) => { s[key] = isNaN(Number(v)) ? v : Number(v); }); }
+});
+panel.addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.name === "scope") { ui.scope = Number(t.value); render(); return; }
+  if (t.matches("select[data-prop]")) {
+    if (t.value === "__custom") { ui.custom = t.dataset.prop; render(); requestAnimationFrame(() => panel.querySelector(`[data-custom="${t.dataset.prop}"]`)?.select()); return; }
+    ui.custom = null;
+    setProp(t.dataset.prop, t.value); return;
+  }
+  if (t.matches("[data-custom]")) { setProp(t.dataset.custom, t.value.trim()); return; }
+  if (t.matches("[data-colour]")) { setProp(t.dataset.colour, hexToOklch(t.value)); return; }
+  if (t.matches("[data-site-font]")) { setSite((s) => { s[t.dataset.siteFont] = t.value; }); return; }
+  if (t.matches("[data-site-colour]")) { const was = ui.dragging; ui.dragging = false; setSite((s) => { s.colors[t.dataset.siteColour][t.dataset.mode] = t.value; }, was); }
+});
+/* Live colour while dragging in the colour picker, without filling Undo. */
+panel.addEventListener("input", (e) => {
+  const t = e.target;
+  if (t.matches("[data-site-colour]")) {
+    if (!ui.dragging) { remember(); ui.dragging = true; }
+    state.site.colors[t.dataset.siteColour][t.dataset.mode] = t.value;
+    t.previousElementSibling.style.background = t.value;
+    document.getElementById("applied").textContent = appliedCss();
+  }
+});
+
+pv.addEventListener("click", (e) => {
+  e.preventDefault();
+  const n = e.target.closest("[data-sel]");
+  if (n) select(n);
+});
+document.getElementById("structure").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pick]");
+  if (b) select(pv.querySelector(`[data-sel="${b.dataset.pick}"]`));
+});
+editbar.addEventListener("click", (e) => {
+  if (e.target.closest("[data-style]")) { ui.panel = !(ui.panel && ui.tab !== "site"); ui.tab = "style"; render(); }
+});
+editbar.addEventListener("change", (e) => {
+  if (!e.target.matches("[data-variant]")) return;
+  remember();
+  const val = e.target.value;
+  if (ui.el === "hero") state.variants.hero = val;
+  if (ui.el === "card") state.variants.cards[[...pv.querySelectorAll('[data-c="card-project"]')].indexOf(ui.node.closest("[data-c]"))] = val;
+  if (ui.el === "button") state.variants.buttons[[...pv.querySelectorAll(".button")].indexOf(ui.node)] = val;
+  state.changed = state.changed.filter((k) => k !== `variant|${ui.el}`);
+  if (JSON.stringify(state.variants) !== JSON.stringify({ hero: "", cards: ["", "highlight", ""], buttons: ["", "outline"] })) state.changed.push(`variant|${ui.el}`);
+  applyVariants();
+  if (ui.scope > 0) ui.scope = Math.max(0, variantScope());
+  render();
+});
+document.getElementById("open-site").addEventListener("click", () => { ui.panel = true; ui.tab = "site"; render(); });
+document.getElementById("width").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-width]");
+  if (b) { ui.width = b.dataset.width; render(); }
+});
+document.getElementById("undo").addEventListener("click", () => {
+  const prev = undo.pop();
+  if (prev) { state = JSON.parse(prev); render(); }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && ui.panel && !e.target.closest(".cp")) { ui.panel = false; render(); }
+});
+new ResizeObserver(() => requestAnimationFrame(place)).observe(canvas);
+
+const theme = document.getElementById("theme");
+theme.addEventListener("click", () => {
+  const dark = document.documentElement.dataset.theme !== "dark" && !(document.documentElement.dataset.theme === undefined && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  theme.querySelector("span").textContent = dark ? "Light" : "Dark";
+});
+
+/* ---------- Components code pane: token suggestions, swatches, own selectors ---------- */
+const demo = {
+  lines: [
+    ":host {",
+    "  --card-gap: var(--space-xs);",
+    "  --card-tint: color-mix(in oklch, var(--brand) 8%, var(--surface));",
+    "  display: block;",
+    "}",
+    "",
+    "article {",
+    "  display: grid;",
+    "  gap: var(--card-gap);",
+    "  padding: var(--space-l);",
+    "  border: 1px solid var(--line);",
+    "  border-radius: var(--radius-m);",
+    "  background: var(--surface);",
+    "}",
+    "",
+    "h3 {",
+    "  margin: 0;",
+    "  font-size: var(--text-xl);",
+    "}",
+    "",
+    ".note,",
+    ".body {",
+    "  margin: 0;",
+    "  color: var(--muted);",
+    "}",
+    "",
+    ':host([data-tone="highlight"]) article {',
+    "  background: var(--card-tint);",
+    "}",
+  ],
+  inputAt: 13,
+  value: "  ",
+  focusRule: "",
+  pick: 0,
+  open: false,
+};
+function suggestions(prefix) {
+  const s = scales(state.site);
+  const own = [];
+  for (const l of demo.lines) { const m = /^\s*--([a-z0-9-]+):\s*(.+);/.exec(l); if (m) own.push({ name: m[1], value: m[2], colour: COLOR_VARS.includes(m[1]) }); }
+  const tokens = [
+    ...COLOR_NAMES.map((n) => ({ name: n, colour: true })),
+    ...Object.entries(s.space).map(([k, v]) => ({ name: `space-${k}`, value: v })),
+    ...Object.entries(s.text).map(([k, v]) => ({ name: `text-${k}`, value: v.startsWith("clamp") ? "grows" : v })),
+    ...Object.entries(s.radius).map(([k, v]) => ({ name: `radius-${k}`, value: v })),
+    ...["s", "m", "l"].map((k) => ({ name: `shadow-${k}`, value: "shadow" })),
+    { name: "font-body", value: FONTS[state.site.fontBody][0] }, { name: "font-display", value: FONTS[state.site.fontDisplay][0] },
+  ];
+  /* Offer what fits the property being typed: colours for colour properties,
+     spaces for spacing, and so on. */
+  const prop = (/^\s*([a-z-]+)\s*:/.exec(demo.value) ?? [])[1] ?? "";
+  const kind = /color|background|border-color|outline-color|fill|stroke/.test(prop) ? "colour"
+    : /gap|padding|margin|inset/.test(prop) ? "space-" : /font-size/.test(prop) ? "text-" : /radius/.test(prop) ? "radius-" : /shadow/.test(prop) ? "shadow-" : /font-family/.test(prop) ? "font-" : "";
+  const fits = (t) => !kind || (kind === "colour" ? t.colour : t.name.startsWith(kind) || (!t.colour && /^var\(--/.test(t.value ?? "") && t.value.includes(kind)));
+  const f = (list) => list.filter((t) => fits(t) && (t.name.startsWith(prefix) || (prefix.length > 1 && t.name.includes(prefix))));
+  return { own: f(own), tokens: f(tokens) };
+}
+function renderDemo() {
+  const cp = document.getElementById("cp");
+  const selectors = demo.lines.filter((l) => /\{\s*$/.test(l) && !/^\s/.test(l)).map((l) => l.replace(/\s*\{\s*$/, ""));
+  const own = [...new Set(selectors.concat(demo.lines.filter((l) => /,\s*$/.test(l) && !/^\s/.test(l)).map((l) => l.replace(/,\s*$/, ""))))];
+  const sel = document.getElementById("demo-selector");
+  sel.innerHTML = `<option value="">—</option>${own.map((s) => `<option${s === demo.focusRule ? " selected" : ""}>${esc(s)}</option>`).join("")}`;
+  let inRule = false;
+  const rows = [];
+  demo.lines.forEach((l, i) => {
+    if (!/^\s/.test(l) && l.trim()) inRule = l.replace(/\s*[{,]\s*$/, "") === demo.focusRule || (inRule && /,\s*$/.test(demo.lines[i - 1] ?? ""));
+    const focus = demo.focusRule && inRule;
+    if (i === demo.inputAt) rows.push(`<div class="row"><span class="num">${i + 1}</span><input class="typing" id="typing" value="${esc(demo.value)}" spellcheck="false" autocomplete="off" aria-label="Type CSS" aria-autocomplete="list"></div>`);
+    rows.push(`<div class="row${focus ? " focus" : ""}"><span class="num">${i + 1 + (i >= demo.inputAt ? 1 : 0)}</span><span class="txt">${colourise(l) || " "}</span></div>`);
+    if (l.trim() === "}") inRule = false;
+  });
+  cp.innerHTML = rows.join("") + '<div class="sugg" id="sugg" role="listbox" hidden></div>';
+  const input = document.getElementById("typing");
+  input.addEventListener("input", () => { demo.value = input.value; demo.pick = 0; renderSugg(); });
+  input.addEventListener("keydown", onTypingKey);
+  input.addEventListener("blur", () => setTimeout(() => { document.getElementById("sugg").hidden = true; }, 150));
+}
+let suggList = [];
+function renderSugg() {
+  const box = document.getElementById("sugg");
+  const input = document.getElementById("typing");
+  const m = /var\(--([a-z0-9-]*)$/.exec(demo.value.slice(0, input.selectionStart ?? demo.value.length));
+  if (!m) { box.hidden = true; suggList = []; return; }
+  const { own, tokens } = suggestions(m[1]);
+  suggList = [...own, ...tokens];
+  if (!suggList.length) { box.hidden = true; return; }
+  const row = (t, i) => `<button type="button" role="option" data-i="${i}" aria-selected="${i === demo.pick}">${t.colour ? `<span class="sw site-tokens" style="background:var(--${t.name})"></span>` : "<span></span>"}<span>--${t.name}</span><span class="mini">${esc(t.value ?? "")}</span></button>`;
+  box.innerHTML = `${own.length ? `<div class="sugg__head">THIS FILE</div>${own.map((t, i) => row(t, i)).join("")}` : ""}<div class="sugg__head">TOKENS.CSS</div>${tokens.map((t, i) => row(t, i + own.length)).join("")}`;
+  box.hidden = false;
+  const r = input.getBoundingClientRect(), c = document.getElementById("cp").getBoundingClientRect();
+  const ch = 7.5;
+  box.style.insetInlineStart = `${Math.min(r.left - c.left + 40 + demo.value.length * ch, c.width - 370)}px`;
+  box.style.insetBlockStart = `${r.bottom - c.top + 4}px`;
+  box.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+}
+function accept(i) {
+  const t = suggList[i];
+  if (!t) return;
+  demo.value = demo.value.replace(/var\(--([a-z0-9-]*)$/, `var(--${t.name});`);
+  commitLine();
+}
+function commitLine() {
+  if (!demo.value.trim()) return;
+  demo.lines.splice(demo.inputAt, 0, demo.value);
+  demo.inputAt += 1;
+  demo.value = "  ";
+  renderDemo();
+  document.getElementById("typing").focus();
+}
+function onTypingKey(e) {
+  const box = document.getElementById("sugg");
+  const open = !box.hidden;
+  if (open && e.key === "ArrowDown") { e.preventDefault(); demo.pick = (demo.pick + 1) % suggList.length; renderSugg(); }
+  else if (open && e.key === "ArrowUp") { e.preventDefault(); demo.pick = (demo.pick - 1 + suggList.length) % suggList.length; renderSugg(); }
+  else if (open && (e.key === "Enter" || e.key === "Tab")) { e.preventDefault(); accept(demo.pick); }
+  else if (open && e.key === "Escape") { e.preventDefault(); box.hidden = true; }
+  else if (e.key === "Enter") { e.preventDefault(); commitLine(); }
+}
+document.getElementById("cp").addEventListener("mousedown", (e) => {
+  const b = e.target.closest(".sugg button");
+  if (b) { e.preventDefault(); accept(Number(b.dataset.i)); }
+});
+document.getElementById("demo-selector").addEventListener("change", (e) => { demo.focusRule = e.target.value; renderDemo(); });
+
+render();
+renderDemo();
+</script>
+</body>
+</html>

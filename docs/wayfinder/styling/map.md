@@ -40,6 +40,8 @@ A build plan for styling without writing CSS:
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Find how the best visual styling panels work and what they write](tickets/01-research-panel-patterns.md#resolution-2026-10-26): same seven groups everywhere; only DevTools edits real stylesheets; recommend DevTools honesty with Webflow controls, tokens first, clean good-css output
+- [Find what the Components section gets wrong and why the old style panel went](tickets/02-research-components-and-old-panel.md#resolution-2026-10-26): root causes for all four faults plus seven more; old panel went for boot size and couldn't style components; reuse cascade and the old CSS writer; styles go in the component's own file, variants as :host([data-…])
 
 ## Not yet specified
 
