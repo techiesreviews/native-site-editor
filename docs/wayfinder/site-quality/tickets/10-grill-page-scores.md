@@ -45,3 +45,13 @@ Lex, on the prototype: "1. perfect pages, faint is great 2. we don't need to sho
   - clicking a ring filters it, as on a page;
   - **Copy site prompt** covers everything; each page row has its own **Copy prompt**;
   - it also stays reachable from the project menu.
+
+### Follow-up (2026-10-26)
+
+Lex, on prototype v4: "1. can we have a prompt icon somewhere in the top, so we have a recognizable pattern? the page, only show the name. 2. yes that, and also agentic scoring has been added. 3. yes!"
+
+- **Prompt icon:** one prompt icon is used everywhere a prompt can be made, so it becomes a recognisable pattern. It sits at the top of page details and of Site health, next to the title, and replaces the "Copy prompt" buttons. Clicking it copies the prompt, with feedback on the icon itself. Page rows in Site health use the same icon.
+- **Page details header:** shows only the page name, not its address or file.
+- **Parity:** accessibility, best practices and SEO must match real Lighthouse exactly; speed within 3 points.
+- **Agentic Browsing:** Lighthouse's new category becomes a fifth ring ("Agents"), in Pages tooltips, page details, Site health and the prompts. It is checked for parity like the others, with a target of 100. This replaces ticket 04's "watched, no target". Because the category is still experimental, the monthly check (ticket 06) follows its changes.
+- **Send to agent:** when an agent is connected, an agent icon next to the prompt icon sends the same prompt to it through map 1's asking-agents flow. Without an agent, only the prompt icon shows.
