@@ -9,7 +9,7 @@ blocked_by: [41-project-overview]
 
 ## Goal
 
-Who sees which projects ([ticket 07](../../../tickets/07-grill-project-overview.md#resolution-2026-10-26); research 03, section 2). Size: S–M.
+Who sees which projects ([ticket 07](../../tickets/07-grill-project-overview.md#resolution-2026-10-26); research 03, section 2). Size: S–M.
 
 ## Decided behaviour
 

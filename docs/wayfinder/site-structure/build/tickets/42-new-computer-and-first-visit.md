@@ -9,7 +9,7 @@ blocked_by: [41-project-overview]
 
 ## Goal
 
-What the overview shows before anything was opened on this browser ([ticket 07](../../../tickets/07-grill-project-overview.md#resolution-2026-10-26)). Size: M.
+What the overview shows before anything was opened on this browser ([ticket 07](../../tickets/07-grill-project-overview.md#resolution-2026-10-26)). Size: M.
 
 ## Decided behaviour
 

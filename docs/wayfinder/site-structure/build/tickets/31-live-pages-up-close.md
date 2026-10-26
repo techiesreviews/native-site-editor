@@ -9,7 +9,7 @@ blocked_by: [30-site-map]
 
 ## Goal
 
-Zoomed in close, the real page fades in over its picture and can be read ([ticket 04](../../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26); research 01, "Zoom levels for the map"). Size: M.
+Zoomed in close, the real page fades in over its picture and can be read ([ticket 04](../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26); research 01, "Zoom levels for the map"). Size: M.
 
 ## Decided behaviour
 

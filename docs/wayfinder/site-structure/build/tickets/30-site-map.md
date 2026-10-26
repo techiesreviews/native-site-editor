@@ -9,7 +9,7 @@ blocked_by: [10-shared-board, 12-page-pictures]
 
 ## Goal
 
-A full-screen map of every page, opened from the Pages part of the left panel ([ticket 04](../../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26), [ticket 08](../../../tickets/08-prototype-site-map.md#resolution-2026-10-26); the [prototype](../../prototypes/08-site-map.html) is the reference). Size: L.
+A full-screen map of every page, opened from the Pages part of the left panel ([ticket 04](../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26), [ticket 08](../../tickets/08-prototype-site-map.md#resolution-2026-10-26); the [prototype](../../prototypes/08-site-map.html) is the reference). Size: L.
 
 ## Decided behaviour
 
