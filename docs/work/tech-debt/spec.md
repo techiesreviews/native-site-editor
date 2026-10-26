@@ -20,6 +20,11 @@ the slice tickets `p5-16` to `p5-22`, the review results in the root
 | 09 | Three flaky browser specs | ready-for-agent |
 | 10 | Known limits of the preview preload and the Page Structure editor | needs-triage |
 | 11 | Undo and Redo give no feedback when the history cannot move | needs-triage |
+| 14 | A line limit for every source file, not only main.ts (sweep 2026-10-26) | ready-for-agent |
+| 15 | The workspace host files share one state owner instead of 50-odd ports (sweep 2026-10-26) | ready-for-agent |
+| 16 | Split the preview runtime into typed modules under the line limit (sweep 2026-10-26) | ready-for-agent |
+| 17 | Replace the kit's hand-made record lock with a system lock (sweep 2026-10-26) | ready-for-agent |
+| 18 | Toasts are opt-in, and a lint rule stops new ones (learning 2026-10-26) | ready-for-agent |
 
 Process notes (not code debt):
 

@@ -32,6 +32,11 @@ machine (searched 2026-10-25); the parts carried over live in the build tickets 
   and Media's "Enter opens details · Arrow keys browse" footer ([39925ac8](https://github.com/techiesreviews/native-site-editor/commit/39925ac8));
   the MCP menu is three actions, "no explainer or what soever needed" ([Lex's request 02](../work/lex-requests/issues/02-simple-mcp-menu.md)).
   Check: `script: text`.
+- **S1a** An action with a clear icon shows the icon alone.
+  Its name goes in the tooltip and the accessible label, not beside it.
+  Why: Lex, 2026-10-25, on the asking-agents mock-up: "remove the text with ask agent, just show the
+  icon"; the MCP menu's explainers before it (2026-10-23) ([learning 2026-10-26](../work/learning/2026-10-26.md), item 1).
+  Check: `eye`, at mock-up review (kitchen station 3) and UX review.
 - **S2** No counts, badges or dots on tabs, buttons or the page button.
   A count lives inside the menu that acts on it ("Clean up (2)" in More).
   Why: Lex removed the Media tab's number and the page button's blue dot, reversing map ticket 11 and slices 49, 74 and 121
