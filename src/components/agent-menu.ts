@@ -579,7 +579,8 @@ export function createAgentMenu(options: {
       // recovery's to report: the dot shows it.
       retry: async () => { await transport?.retry().catch(() => undefined); },
       retryWaits: () => (transportState?.retryAt ?? 0) > Date.now(),
-      waits: now => offer(now as ReturnType<typeof state>) === "wait",
+      offer: now => offer(now as ReturnType<typeof state>),
+      fresh: now => now === "idle" || elsewhere(now),
       prompt: () => start(slot, task),
       // A token already waits (another tab's, another browser's, or this tab's own), or an agent
       // already uses the site's connection: Connect to MCP still copies a prompt, this tab's own if
@@ -654,7 +655,8 @@ export function createAgentMenu(options: {
       // Every check holds the site this prompt is for, read before the first await.
       const current = () => live(at) && sameRepository(options.repository(), repo);
       const own = () => hub.grants.filter((grant) => sameBranch(grant, branchOf(repo)));
-      const drop = (before: number) => revokeUnused({ grants: own(), before, live: current, revoke: (id) => api("revoke", { id }) });
+      // A token whose copy may still land late is kept from the stale clean-up (not when the site is full).
+      const drop = (before: number) => revokeUnused({ grants: own().filter(grant => before === Infinity || !landing.has(grant.id)), before, live: current, revoke: (id) => api("revoke", { id }) });
       await drop(Date.now() - FRESH_TOKEN_MS);
       if (!current()) return;
       const made = () => api("connect", { repo: repo.fullName, repoId: repo.id, branch: repo.branch });
@@ -721,18 +723,40 @@ export function createAgentMenu(options: {
     const ours = read && token && liveGrants().some((grant) => grant.id === tokenId && unused(grant));
     if (ours) { goal = task; await copyPrompt(slot); } else await start(slot, task);
   }
+  /** Prompts handed to the clipboard, counted; the last one confirmed on it; tokens whose copy
+   * timed out but may still land (an Electron permission answered late). */
+  let prompts = 0, copied: { prompt: number; text: string } | undefined;
+  const landing = new Set<string>();
   /** Puts this tab's prompt in the copy its press began. */
   async function copyPrompt(slot: Copy) {
-    const repo = options.repository();
+    const repo = options.repository(), id = tokenId;
     if (!token || !repo) return;
+    const prompt = ++prompts, text = connectionPrompt(`${location.origin}/mcp`, token, repo.fullName, goal);
+    const late = (write: Promise<void>) => {
+      if (id) landing.add(id);
+      write.then(() => landedLate(prompt, text, repo), () => undefined);
+    };
     try {
-      await slot.put(connectionPrompt(`${location.origin}/mcp`, token, repo.fullName, goal));
+      await slot.put(text, late);
+      copied = { prompt, text };
       confirmOnButton("Copied");
     } catch {
       // Clipboard refused: nothing was copied, so the dot shows a problem until the next press.
       failedOn = repo;
       paint();
     }
+  }
+  /** A write given up on landed after all (reserveCopy's late rows): the newest prompt this menu
+   * copied goes back on the clipboard; or, still the newest prompt, it counts as copied. */
+  function landedLate(prompt: number, text: string, repo: NonNullable<ReturnType<typeof options.repository>>) {
+    if (disposed || copied?.prompt === prompt) return;
+    if (prompt !== prompts) {
+      if (copied && copied.prompt > prompt) void navigator.clipboard.writeText(copied.text).catch(() => undefined);
+      return;
+    }
+    copied = { prompt, text };
+    if (failedOn && sameRepository(failedOn, repo)) failedOn = undefined;
+    confirmOnButton("Copied");
   }
 
   // One connections read at a time (src/agent-resume.ts).
@@ -949,6 +973,14 @@ function forgetWatch() {
  *   request is never answered) → `writeText` now, also bounded: Copied (the hanging-write spec), or
  *   the problem dot when it does not settle either (the never-settles spec). The button is pressable
  *   again (`changing` ends before the copy), so the next press tries again.
+ * A write given up on cannot be cancelled; `put` hands it to `late`, and the menu keeps its token
+ * from the stale-token clean-up. When it lands after all:
+ * - its prompt is still the menu's newest → Copied, and the problem dot it caused clears (the
+ *   late-landing spec, first press).
+ * - its prompt is already confirmed (writeText landed first) → nothing: the same text.
+ * - a newer prompt was copied since → that newest prompt is written back (the late-landing spec,
+ *   second press); a newer press that copied nothing leaves the late prompt, whose token was kept.
+ * - it is refused after all, or never settles → nothing.
  * The press's own agent API calls end by API_DEADLINE; the transport's module load is not bounded. */
 function reserveCopy() {
   let give!: (text: string) => void, refuse!: (reason?: unknown) => void;
@@ -961,23 +993,26 @@ function reserveCopy() {
     written.catch(() => undefined);
   } catch { /* No ClipboardItem here: `put` writes the text. */ }
   return {
-    async put(value: string) {
+    /** `late` receives each write given up on at COPY_DEADLINE, which may still land. */
+    async put(value: string, late: (write: Promise<void>) => void) {
       give(value);
       try {
         if (!written) throw new Error("No clipboard write began.");
-        await settled(written);
-      } catch { await settled(navigator.clipboard.writeText(value)); }
+        await settled(written, late);
+      } catch { await settled(navigator.clipboard.writeText(value), late); }
     },
     skip: () => refuse(),
   };
 }
 /** How long a clipboard write may take once it has its text before it counts as refused. */
 const COPY_DEADLINE = 3_000;
-/** `write`, or a rejection once COPY_DEADLINE passes without it settling. */
-function settled(write: Promise<void>) {
+/** `write`, or a rejection once COPY_DEADLINE passes without it settling (then `late` gets it). */
+function settled(write: Promise<void>, late: (write: Promise<void>) => void) {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("The clipboard did not answer.")), COPY_DEADLINE); });
-  return Promise.race([write, late]).finally(() => clearTimeout(timer));
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => { late(write); reject(new Error("The clipboard did not answer.")); }, COPY_DEADLINE);
+  });
+  return Promise.race([write, deadline]).finally(() => clearTimeout(timer));
 }
 type Copy = ReturnType<typeof reserveCopy>;
 /** A press that may copy a prompt: its copy begins now and is dropped when no prompt came of it. */

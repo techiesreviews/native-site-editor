@@ -444,6 +444,71 @@ test("no clipboard write ever settles: Connect to MCP ends on the problem dot, n
   expect(await page.evaluate(() => (window as Window & { agentLabels?: string[] }).agentLabels)).not.toContain("Copied");
 });
 
+/** Clipboard writes begun in a press are held until `releaseWrite()` lets the oldest one land (an
+ * Electron permission answered late); `writeText` is refused for its first `refusals` calls. */
+async function lateClipboard(page: Page, refusals: number) {
+  await page.addInitScript(count => {
+    const clipboard = navigator.clipboard, host = window as Window & { releaseWrite?: () => void; landed?: number; texts?: number };
+    const write = clipboard.write.bind(clipboard), writeText = clipboard.writeText.bind(clipboard), held: (() => void)[] = [];
+    host.landed = 0;
+    host.texts = 0;
+    Object.defineProperty(clipboard, "write", { configurable: true, value: (items: ClipboardItems) => new Promise<void>((resolve, reject) => {
+      held.push(() => { void write(items).then(() => { host.landed!++; resolve(); }, reject); });
+    }) });
+    Object.defineProperty(clipboard, "writeText", { configurable: true, value: (text: string) =>
+      ++host.texts! <= count ? Promise.reject(new DOMException("Denied", "NotAllowedError")) : writeText(text) });
+    host.releaseWrite = () => held.shift()?.();
+  }, refusals);
+}
+const late = (page: Page, key: "landed" | "texts") => page.evaluate(name => (window as Window & Record<string, unknown>)[name] as number, key);
+
+test("a copy that lands after its deadline: the problem dot it caused clears and the button confirms Copied", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await lateClipboard(page, 1_000);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  await expect(menu).toHaveAttribute("data-state", "failed", { timeout: 15_000 });
+  // The permission is answered at last: the press's own write lands.
+  await page.evaluate(() => (window as Window & { releaseWrite?: () => void }).releaseWrite!());
+  await expect.poll(() => late(page, "landed")).toBe(1);
+  await expect(action).toHaveText("Copied");
+  await expect(menu).toHaveAttribute("data-state", "waiting");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+});
+
+test("an older copy that lands after a newer prompt was copied: the newer prompt goes back on the clipboard and works", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await lateClipboard(page, 1);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
+  const connect = () => page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  let made = connect();
+  await action.click();
+  const first = await (await made).json() as { token: string; id: string };
+  await expect(menu).toHaveAttribute("data-state", "failed", { timeout: 15_000 });
+  // Revoked elsewhere meanwhile, so the next press makes a new token: the late copy would hold a dead prompt.
+  expect((await page.request.post(`${baseURL}/api/agent/revoke`, { headers: { Origin: baseURL! }, data: { id: first.id } })).ok()).toBe(true);
+  made = connect();
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  expect(token).not.toBe(first.token);
+  await expect(action).toHaveText("Copied", { timeout: 15_000 });
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+  // The first press's write lands now, over the newer prompt; the menu writes the newer one back.
+  const texts = await late(page, "texts");
+  await page.evaluate(() => (window as Window & { releaseWrite?: () => void }).releaseWrite!());
+  await expect.poll(() => late(page, "landed")).toBe(1);
+  await expect.poll(() => late(page, "texts")).toBe(texts + 1);
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+  const { client, call } = await agent(baseURL, token, "after-late-copy");
+  try { expect((await call("get_site")).repository).toBe("native-demo-user/native-demo"); } finally { await client.close().catch(() => undefined); }
+});
+
 test("a browser without ClipboardItem: Connect to MCP copies the prompt once its token is known", async ({ page, context, baseURL }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.addInitScript(() => { delete (window as Partial<Window & typeof globalThis>).ClipboardItem; });
