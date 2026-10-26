@@ -639,6 +639,7 @@ export function createAgentMenu(options: {
     window.removeEventListener("focus", wake);
     for (const grant of hub.grants) declined.add(grant.id);
     hub = { grants: [] };
+    landing.clear();
     paint();
   }
   // A task the copied prompt asks for first (Start your site's Build it with an agent).
@@ -705,6 +706,7 @@ export function createAgentMenu(options: {
       const at = activation, shown = pinned ?? options.repository();
       if (shown) await api("revoke", { all: true, repoId: shown.id, branch: shown.branch });
       token = tokenId = undefined;
+      landing.clear();
       changing = false;
       // Turned off or another site shown meanwhile: that site's own state stays as it is.
       if (live(at)) turnOff(true);
@@ -723,22 +725,30 @@ export function createAgentMenu(options: {
     const ours = read && token && liveGrants().some((grant) => grant.id === tokenId && unused(grant));
     if (ours) { goal = task; await copyPrompt(slot); } else await start(slot, task);
   }
-  /** Prompts handed to the clipboard, counted; the last one confirmed on it; tokens whose copy
-   * timed out but may still land (an Electron permission answered late). */
-  let prompts = 0, copied: { prompt: number; text: string } | undefined;
-  const landing = new Set<string>();
+  /** A prompt handed to the clipboard, numbered, with the proof it was made under: the
+   * activation, the site and its token. */
+  interface Prompt { number: number; text: string; at: number; repo: NonNullable<ReturnType<typeof options.repository>>; id: string }
+  /** Prompts handed out so far; the last one confirmed on the clipboard. */
+  let prompts = 0, copied: Prompt | undefined;
+  /** Tokens whose copy timed out but may still land (an Electron permission answered late), with
+   * how many such writes wait: kept from this tab's stale clean-up until those writes settle, or
+   * until Disconnect MCP or a turn-off. */
+  const landing = new Map<string, number>();
   /** Puts this tab's prompt in the copy its press began. */
   async function copyPrompt(slot: Copy) {
     const repo = options.repository(), id = tokenId;
-    if (!token || !repo) return;
-    const prompt = ++prompts, text = connectionPrompt(`${location.origin}/mcp`, token, repo.fullName, goal);
+    if (!token || !id || !repo) return;
+    const prompt: Prompt = { number: ++prompts, text: connectionPrompt(`${location.origin}/mcp`, token, repo.fullName, goal), at: activation, repo, id };
     const late = (write: Promise<void>) => {
-      if (id) landing.add(id);
-      write.then(() => landedLate(prompt, text, repo), () => undefined);
+      landing.set(id, (landing.get(id) ?? 0) + 1);
+      write.then(() => landedLate(prompt), () => undefined).finally(() => {
+        const left = (landing.get(id) ?? 0) - 1;
+        if (left > 0) landing.set(id, left); else landing.delete(id);
+      });
     };
     try {
-      await slot.put(text, late);
-      copied = { prompt, text };
+      await slot.put(prompt.text, late);
+      copied = prompt;
       confirmOnButton("Copied");
     } catch {
       // Clipboard refused: nothing was copied, so the dot shows a problem until the next press.
@@ -746,16 +756,25 @@ export function createAgentMenu(options: {
       paint();
     }
   }
-  /** A write given up on landed after all (reserveCopy's late rows): the newest prompt this menu
-   * copied goes back on the clipboard; or, still the newest prompt, it counts as copied. */
-  function landedLate(prompt: number, text: string, repo: NonNullable<ReturnType<typeof options.repository>>) {
-    if (disposed || copied?.prompt === prompt) return;
-    if (prompt !== prompts) {
-      if (copied && copied.prompt > prompt) void navigator.clipboard.writeText(copied.text).catch(() => undefined);
+  /** Whether `prompt` still works where it was made: the same activation and site, and its token
+   * still among the site's connections as last read. */
+  const stands = (prompt: Prompt) => live(prompt.at) && sameRepository(options.repository(), prompt.repo) && liveGrants().some(grant => grant.id === prompt.id);
+  /** A write given up on landed after all (reserveCopy's late rows). The proof is read fresh
+   * (another tab may have revoked the token): still the newest prompt and still working, it counts
+   * as copied; superseded, the newest prompt goes back on the clipboard if it still works. Otherwise
+   * nothing: the button claims no copy. */
+  async function landedLate(prompt: Prompt) {
+    if (disposed || copied === prompt) return;
+    const read = await readConnections(true);
+    if (disposed || copied === prompt || !read) return;
+    if (prompt.number !== prompts) {
+      const newest = copied;
+      if (newest && newest.number > prompt.number && stands(newest)) void navigator.clipboard.writeText(newest.text).catch(() => undefined);
       return;
     }
-    copied = { prompt, text };
-    if (failedOn && sameRepository(failedOn, repo)) failedOn = undefined;
+    if (!stands(prompt)) return;
+    copied = prompt;
+    if (failedOn && sameRepository(failedOn, prompt.repo)) failedOn = undefined;
     confirmOnButton("Copied");
   }
 
@@ -963,7 +982,8 @@ function forgetWatch() {
 
 /** A clipboard write begun now, inside the user's press (Safari refuses one begun after an await;
  * Chrome after a few seconds), that lands once `put` gives it the text; `skip` leaves the clipboard
- * as it was. Settle matrix (each row has a spec in tests/native-save/native-mcp-menu.spec.ts):
+ * as it was. Settle matrix (each row has a spec in tests/native-save/native-mcp-menu.spec.ts unless
+ * it says otherwise):
  * - put, write lands → Copied (the slow-server spec, two quick presses included).
  * - put, write refused or no ClipboardItem → `writeText` now: Copied (the refusing-browser and
  *   no-ClipboardItem specs), or the problem dot when it is refused too (the refused-copy spec).
@@ -973,14 +993,23 @@ function forgetWatch() {
  *   request is never answered) → `writeText` now, also bounded: Copied (the hanging-write spec), or
  *   the problem dot when it does not settle either (the never-settles spec). The button is pressable
  *   again (`changing` ends before the copy), so the next press tries again.
- * A write given up on cannot be cancelled; `put` hands it to `late`, and the menu keeps its token
- * from the stale-token clean-up. When it lands after all:
- * - its prompt is still the menu's newest → Copied, and the problem dot it caused clears (the
+ * A write given up on cannot be cancelled, so it is the one exception to "a timed-out result writes
+ * nothing": the browser may still put its prompt on the clipboard. `put` hands it to `late`; the
+ * menu keeps its token from this tab's stale clean-up while it waits, and when it lands
+ * (`landedLate`) re-reads the connections and claims a copy only with fresh proof (same activation,
+ * same site, its token still a connection):
+ * - still the newest prompt, proof holds → Copied, and the problem dot it caused clears (the
  *   late-landing spec, first press).
- * - its prompt is already confirmed (writeText landed first) → nothing: the same text.
- * - a newer prompt was copied since → that newest prompt is written back (the late-landing spec,
- *   second press); a newer press that copied nothing leaves the late prompt, whose token was kept.
- * - it is refused after all, or never settles → nothing.
+ * - already confirmed (writeText landed first) → nothing: the same text (the already-confirmed spec).
+ * - a newer prompt was copied since → that one is written back if its proof holds (the late-landing
+ *   spec, second press).
+ * - proof gone (Disconnect MCP, a turn-off, another site, the token revoked by another tab) →
+ *   nothing; the clipboard holds the late prompt, the button claims no copy (the after-Disconnect
+ *   and other-tab specs).
+ * - a newer press that made no prompt (its token request failed) → as "still the newest prompt",
+ *   when its turn-off left the activation unchanged (no spec).
+ * - refused after all → nothing (the refused-late spec); never settles → its token stays kept until
+ *   Disconnect MCP or a turn-off (the never-settles spec).
  * The press's own agent API calls end by API_DEADLINE; the transport's module load is not bounded. */
 function reserveCopy() {
   let give!: (text: string) => void, refuse!: (reason?: unknown) => void;
