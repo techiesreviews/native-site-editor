@@ -273,149 +273,6 @@ svg { display: block; flex: none; fill: none; stroke: currentColor; stroke-width
 .editbar .letter { inline-size: var(--size-compact); font-weight: 700; justify-content: center; padding: 0; }
 .editbar .letter--i { font-style: italic; font-weight: 500; font-family: Georgia, serif; }
 
-/* ---------- Right panel ---------- */
-.panel {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  min-inline-size: 0;
-  min-block-size: 0;
-  background: var(--surface);
-  border-inline-start: 1px solid var(--line);
-  overflow: clip;
-}
-.panel__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 8px 6px 14px;
-}
-.panel__title { display: flex; align-items: baseline; gap: 8px; min-inline-size: 0; flex: 1; }
-.panel__title b { font-size: var(--type-title); font-weight: 600; }
-.selector {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 1px 6px;
-  border-radius: var(--radius-small);
-  background: var(--surface-subtle);
-  font: 12px/1.5 var(--font-mono);
-  color: var(--muted);
-}
-.tabs {
-  display: flex;
-  gap: 2px;
-  padding-inline: 10px;
-  border-block-end: 1px solid var(--line);
-}
-.tabs button {
-  block-size: 32px;
-  padding-inline: 8px;
-  border: 0;
-  border-block-end: 2px solid transparent;
-  background: transparent;
-  color: var(--muted);
-}
-.tabs button[aria-selected="true"] { color: var(--text); font-weight: 500; border-block-end-color: var(--primary); }
-.tabs button:disabled { opacity: 0.4; cursor: default; }
-@media (hover: hover) and (pointer: fine) { .tabs button:not(:disabled):hover { color: var(--text); } }
-.panel__body { position: relative; overflow: auto; padding: 12px 14px 32px; display: grid; align-content: start; gap: 12px; }
-
-.scope { display: grid; gap: 4px; }
-.scope label {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: var(--radius);
-  box-shadow: inset 0 0 0 1px var(--control-line);
-  cursor: pointer;
-}
-.scope label:has(input:checked) { box-shadow: inset 0 0 0 1.5px var(--primary); background: var(--current); }
-.scope code { margin-inline-start: auto; font: 11px var(--font-mono); color: var(--muted); white-space: nowrap; }
-.scope input { accent-color: var(--primary); margin: 0; }
-
-.rowpair { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: 8px; }
-.rowpair > span { color: var(--muted); font-size: var(--type-small); }
-
-details.group { border-block-start: 1px solid var(--line); padding-block-start: 8px; }
-details.group > summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  list-style: none;
-  cursor: pointer;
-  font-weight: 600;
-  padding-block: 2px 6px;
-}
-details.group > summary::-webkit-details-marker { display: none; }
-details.group > summary::after { content: "–"; color: var(--muted); }
-details.group:not([open]) > summary::after { content: "+"; }
-details.group > summary .dot { inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--changed); margin-inline: 6px auto; }
-.ctls { display: grid; gap: 8px; }
-.ctl { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 8px; }
-.ctl > span { color: var(--muted); font-size: var(--type-small); }
-.ctl[data-own] > span { color: var(--text); }
-.ctl[data-own] > span::after { content: ""; display: inline-block; inline-size: 5px; block-size: 5px; margin-inline-start: 5px; border-radius: 50%; background: var(--changed); vertical-align: middle; }
-.ctl__line { display: flex; align-items: center; gap: 6px; min-inline-size: 0; }
-.ctl__line select { flex: 1; min-inline-size: 0; font-family: var(--font-mono); }
-.custom {
-  inline-size: 84px;
-  block-size: 26px;
-  padding-inline: 6px;
-  border: 0;
-  border-radius: var(--radius-small);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--control-line);
-  font: 12px var(--font-mono);
-}
-
-.swatches { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.swatch {
-  inline-size: 22px;
-  block-size: 22px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--text) 18%, transparent);
-}
-.swatch[aria-pressed="true"] { outline: 2px solid var(--primary); outline-offset: 2px; }
-.swatch--none { background: repeating-linear-gradient(45deg, transparent 0 4px, var(--control-line) 4px 5px); }
-.swatch-pick { position: relative; inline-size: 22px; block-size: 22px; border-radius: 50%; overflow: clip; box-shadow: inset 0 0 0 1px var(--control-line); background: conic-gradient(oklch(70% 0.15 0), oklch(70% 0.15 120), oklch(70% 0.15 240), oklch(70% 0.15 360)); }
-.swatch-pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.swatch-name { font: 11px var(--font-mono); color: var(--muted); margin-inline-start: 4px; }
-
-/* The box model for spacing. */
-.box {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  grid-template-rows: auto auto auto;
-  gap: 4px;
-  align-items: center;
-  justify-items: center;
-  padding: 6px;
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-  outline: 1px dashed var(--control-line);
-  outline-offset: -1px;
-}
-.box__label { justify-self: start; grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
-.box__inner {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  justify-items: center;
-  gap: 4px;
-  inline-size: 100%;
-  padding: 6px;
-  border-radius: var(--radius-small);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--control-line);
-}
-.box__core { inline-size: 54px; block-size: 22px; border-radius: 3px; background: var(--current); }
-.box select { font: 11px var(--font-mono); block-size: 24px; max-inline-size: 92px; }
-
 /* Code views. */
 .file { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font: 12px var(--font-mono); }
 .code {
@@ -503,31 +360,6 @@ details.group > summary .dot { inline-size: 6px; block-size: 6px; border-radius:
 @media (hover: hover) and (pointer: fine) {
   .pv [data-sel]:hover { outline: 1px dashed var(--primary); outline-offset: 2px; }
 }
-
-/* ---------- Components code pane demo ---------- */
-.demo {
-  max-inline-size: 1360px;
-  margin: 28px auto 0;
-  display: grid;
-  gap: 10px;
-}
-.demo h2 { margin: 0; font-size: var(--type-title); font-weight: 600; }
-.demo__frame {
-  border-radius: var(--radius-panel);
-  overflow: clip;
-  background: var(--surface);
-  box-shadow: 0 0 0 1px var(--line);
-}
-.demo__tools {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-block-end: 1px solid var(--line);
-}
-.demo__tools .tab { font: 12px var(--font-mono); padding: 3px 8px; border-radius: var(--radius-small); background: var(--current); }
-.demo__tools label { display: flex; align-items: center; gap: 6px; margin-inline-start: auto; color: var(--muted); font-size: var(--type-small); }
-.demo__tools select { block-size: 26px; border: 0; border-radius: var(--radius-small); background: var(--surface-subtle); box-shadow: inset 0 0 0 1px var(--control-line); font: 12px var(--font-mono); }
 .cp { position: relative; padding: 10px 0 14px; font: 12.5px/1.7 var(--font-mono); }
 .cp .row { display: grid; grid-template-columns: 40px minmax(0, 1fr); }
 .cp .row.focus { background: color-mix(in oklch, var(--primary) 8%, transparent); }
@@ -570,8 +402,312 @@ details.group > summary .dot { inline-size: 6px; block-size: 6px; border-radius:
 .sugg button[aria-selected="true"] { background: var(--current); }
 .sugg .sw { inline-size: 14px; block-size: 14px; margin: 0; border-radius: 3px; }
 .sugg .mini { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: end; color: var(--muted); font-size: 11px; }
+/* ---------- Right panel, in the unblockwp style ---------- */
+:root { --danger: light-dark(oklch(54% 0.2 27), oklch(72% 0.16 27)); }
+.work[data-panel="open"] { grid-template-columns: 200px minmax(0, 1fr) 316px; }
+.panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-inline-size: 0;
+  min-block-size: 0;
+  background: var(--surface);
+  border-inline-start: 1px solid var(--line);
+  overflow: clip;
+}
+.panel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 14px;
+  border-block-end: 1px solid var(--line);
+}
+.panel__title { display: grid; min-inline-size: 0; flex: 1; line-height: 1.3; }
+.panel__title b { font-size: var(--type-title); font-weight: 600; }
+.panel__title .comp { font: 11px var(--font-mono); color: var(--muted); }
+.panel__body { position: relative; overflow: auto; padding-block-end: 48px; }
+
+.fields { display: grid; gap: 10px; padding: 12px 14px; }
+.frow { display: grid; grid-template-columns: 84px minmax(0, 1fr); align-items: center; gap: 8px; }
+.frow--stack { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.flabel { color: var(--muted); font-size: var(--type-small); }
+.fsel, .fin {
+  inline-size: 100%;
+  min-inline-size: 0;
+  block-size: 30px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+  font: 12.5px var(--font-mono);
+}
+.fin:focus-visible, .fsel:focus-visible { outline: 0; box-shadow: inset 0 0 0 1.5px var(--primary); }
+.fin::placeholder { color: var(--muted); font-style: italic; opacity: 0.75; }
+.fin[aria-invalid="true"] { box-shadow: inset 0 0 0 1.5px var(--danger); color: var(--danger); }
+
+.chipfield {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-block-size: 32px;
+  padding: 3px;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+.chipfield:focus-within { box-shadow: inset 0 0 0 1.5px var(--primary); }
+.chipfield__in {
+  flex: 1;
+  min-inline-size: 72px;
+  block-size: 24px;
+  padding-inline: 4px;
+  border: 0;
+  background: transparent;
+  font: 12.5px var(--font-mono);
+}
+.chipfield__in:focus-visible { outline: 0; }
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  block-size: 24px;
+  padding-inline: 8px 3px;
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+  font: 12px var(--font-mono);
+}
+.tag:not(:has(button)) { padding-inline-end: 8px; }
+.tag__x, .clr {
+  display: grid;
+  place-items: center;
+  inline-size: 20px;
+  block-size: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+}
+
+.sec {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  border-block: 1px solid var(--line);
+}
+.sec__title { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; }
+.bp { display: flex; gap: 2px; }
+
+.selhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 10px 6px 14px; }
+.selhead__tools { display: flex; align-items: center; gap: 4px; }
+.statebtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  block-size: 26px;
+  padding-inline: 8px 6px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--type-small);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+}
+.statebtn code { font: 12px var(--font-mono); color: var(--primary); }
+.statebtn .dot, .mi .dot { inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--primary); }
+.codebtn { inline-size: auto; padding-inline: 6px; }
+.codebtn code { font: 600 12px var(--font-mono); }
+.chipfield--sel { margin-inline: 14px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  block-size: 24px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.chip code { font: 12px var(--font-mono); }
+.chip[aria-checked="true"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.chip--site { background: transparent; color: var(--muted); box-shadow: none; outline: 1px dashed var(--control-line); outline-offset: -1px; }
+.chip--site[aria-expanded="true"] { color: var(--text); }
+.chip--add { inline-size: 24px; padding: 0; justify-content: center; background: transparent; color: var(--muted); box-shadow: none; }
+.chip__x { display: grid; place-items: center; margin-inline-end: -4px; color: inherit; opacity: 0.8; }
+
+.looks { display: grid; gap: 6px; padding: 12px 14px 2px; }
+.looks__row { display: flex; flex-wrap: wrap; gap: 6px; }
+.look {
+  min-inline-size: 76px;
+  block-size: 30px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+  font-size: 12px;
+}
+.look[aria-checked="true"] { box-shadow: inset 0 0 0 2px var(--primary); font-weight: 600; }
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 14px 8px;
+  padding-inline: 10px;
+  block-size: 32px;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+  color: var(--muted);
+}
+.search:focus-within { box-shadow: inset 0 0 0 1.5px var(--primary); }
+.search input { flex: 1; min-inline-size: 0; border: 0; background: transparent; }
+.search input::placeholder { font-style: italic; color: var(--muted); }
+.search input:focus-visible { outline: 0; }
+
+details.group { border-block-start: 1px solid var(--line); }
+details.group > summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 9px 10px 9px 14px;
+  list-style: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+details.group > summary::-webkit-details-marker { display: none; }
+details.group > summary > span { flex: 1; }
+details.group > summary > svg { color: var(--muted); transition: rotate 150ms ease-out; }
+details.group[open] > summary > svg { rotate: 180deg; }
+.props { display: grid; gap: 6px; padding: 0 14px 12px; }
+.prop { display: grid; grid-template-columns: 98px minmax(0, 1fr); align-items: center; gap: 8px; }
+.plabel { color: var(--muted); font-size: var(--type-small); }
+.prop[data-set] .plabel { color: var(--primary); font-weight: 500; }
+.fbox { position: relative; display: flex; align-items: center; min-inline-size: 0; }
+.fbox .fin { padding-inline-end: 26px; }
+.fbox .fsw ~ .fin { padding-inline-start: 28px; }
+.fsw {
+  position: absolute;
+  inset-inline-start: 8px;
+  inline-size: 14px;
+  block-size: 14px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px oklch(0% 0 none / 0.2);
+  pointer-events: none;
+}
+.fbox .clr { position: absolute; inset-inline-end: 4px; }
+@media (hover: hover) and (pointer: fine) {
+  :is(.clr, .tag__x):hover { background: var(--hover); color: var(--text); }
+  .chip:not([aria-checked="true"]):hover { background: var(--hover); }
+  .look:not([aria-checked="true"]):hover { box-shadow: inset 0 0 0 1px var(--primary); }
+  .statebtn:hover { color: var(--text); }
+}
+
+/* Site design keeps its old controls. */
+.ctls { display: grid; gap: 8px; padding: 0 14px 12px; }
+.ctl { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 8px; }
+.ctl > span { color: var(--muted); font-size: var(--type-small); }
+.ctl select { block-size: 26px; padding-inline: 6px; border: 0; border-radius: var(--radius-small); background: var(--surface-subtle); box-shadow: inset 0 0 0 1px var(--control-line); font-size: var(--type-small); }
+.tokens { padding: 0 14px 12px; }
+
+/* ---------- Popovers: suggestions, variables, menus ---------- */
+.pop {
+  position: fixed;
+  z-index: 50;
+  inline-size: 264px;
+  max-block-size: 320px;
+  overflow: auto;
+  padding: 4px;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow), 0 0 0 1px var(--line);
+  font-size: 12px;
+}
+.pop__head { padding: 6px 8px 2px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.opt {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  text-align: start;
+  font: 12px var(--font-mono);
+}
+.opt[aria-selected="true"], .opt[aria-pressed="true"] { background: var(--current); }
+.opt[aria-pressed="true"] { box-shadow: inset 2px 0 0 var(--primary); }
+.opt .mini { max-inline-size: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.opt .sw { inline-size: 14px; block-size: 14px; margin: 0; border-radius: 3px; }
+.sw2 { display: inline-flex; inline-size: 16px; block-size: 14px; border-radius: 3px; overflow: clip; box-shadow: inset 0 0 0 1px oklch(0% 0 none / 0.2); }
+.sw2 i { flex: 1; }
+.vpop { inline-size: 300px; max-block-size: 400px; display: grid; grid-template-rows: auto minmax(0, 1fr); padding: 0; overflow: clip; }
+.vpop .search { margin: 8px; }
+.vlist { overflow: auto; padding: 0 4px 6px; }
+.mi {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  text-align: start;
+}
+.mi code { font: 12px var(--font-mono); color: var(--muted); }
+.mi[aria-checked="true"] { background: var(--current); font-weight: 500; }
+.mi .dot { margin-inline-start: auto; }
+.srule { display: flex; justify-content: space-between; gap: 12px; padding: 5px 8px; font: 12px var(--font-mono); }
+.srule span { color: var(--muted); font-size: 11px; }
+@media (hover: hover) and (pointer: fine) {
+  :is(.opt, .mi):not([aria-selected="true"], [aria-pressed="true"], [aria-checked="true"]):hover { background: var(--hover); }
+}
+
+/* ---------- The bottom code pane (the editor's existing code editor) ---------- */
+.editor { block-size: 900px; }
+.stage { grid-template-rows: auto minmax(0, 1fr) 250px; }
+.codepane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-block-size: 0;
+  border-block-start: 1px solid var(--line);
+  background: var(--surface);
+}
+.codepane__head { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-block-end: 1px solid var(--line); }
+.codetabs { display: flex; gap: 2px; }
+.codetabs button {
+  block-size: 26px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+  font: 12px var(--font-mono);
+}
+.codetabs button[aria-selected="true"] { background: var(--current); color: var(--text); }
+.demo-sel { display: flex; align-items: center; gap: 6px; margin-inline-start: auto; color: var(--muted); font-size: var(--type-small); }
+.demo-sel select { block-size: 26px; border: 0; border-radius: var(--radius-small); background: var(--surface-subtle); box-shadow: inset 0 0 0 1px var(--control-line); font: 12px var(--font-mono); }
+.codepane__body { position: relative; overflow: auto; min-block-size: 0; }
+.code--pane { border-radius: 0; box-shadow: none; background: transparent; counter-reset: ln; min-block-size: 100%; }
+.code--pane .ln { padding-inline: 0 12px; }
+.code--pane .ln::before { counter-increment: ln; content: counter(ln); display: inline-block; inline-size: 30px; margin-inline-end: 12px; text-align: end; color: var(--control-line); }
+.codepane[data-flash] .ln.cur { animation: flash 900ms ease-out; }
+@keyframes flash { from { background: color-mix(in oklch, var(--primary) 32%, transparent); } }
+
 </style>
 <style id="applied"></style>
+<style id="preview"></style>
 </head>
 <body>
 
@@ -587,6 +723,11 @@ details.group > summary .dot { inline-size: 6px; block-size: 6px; border-radius:
   <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
   <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-half" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></symbol>
 </svg>
 
 <header class="page-head">
@@ -655,21 +796,27 @@ details.group > summary .dot { inline-size: 6px; block-size: 6px; border-radius:
           <div class="editbar" id="editbar" hidden></div>
         </div>
       </div>
+      <section class="codepane" id="codepane" aria-label="Code">
+        <div class="codepane__head">
+          <div class="codetabs" role="tablist" aria-label="Open files">
+            <button type="button" role="tab" data-ctab="file" aria-selected="true" id="cfile-tab">section-hero.css</button>
+            <button type="button" role="tab" data-ctab="demo" aria-selected="false">card-project.css · typing</button>
+          </div>
+          <label class="demo-sel" id="demo-sel" hidden>Selector <select id="demo-selector"></select></label>
+        </div>
+        <div class="codepane__body" id="cbody">
+          <pre class="code code--pane" id="ccode"></pre>
+          <div class="cp" id="cp" hidden></div>
+        </div>
+      </section>
     </div>
     <aside class="panel" id="panel" aria-label="Style" hidden></aside>
   </div>
 </div>
 
-<section class="demo" aria-labelledby="demo-title">
-  <h2 id="demo-title">Components · Project card</h2>
-  <div class="demo__frame">
-    <div class="demo__tools">
-      <span class="tab">card-project.css</span>
-      <label>Selector <select id="demo-selector"></select></label>
-    </div>
-    <div class="cp" id="cp"></div>
-  </div>
-</section>
+<div class="pop" id="sugg-pop" role="listbox" aria-label="Suggestions" hidden></div>
+<div class="pop vpop" id="vars-pop" role="dialog" aria-label="Variables" hidden></div>
+<div class="pop" id="menu-pop" role="menu" hidden></div>
 
 <script>
 /* ---------- Site design values (styles/tokens.css) ---------- */
@@ -757,55 +904,70 @@ function tokenDecls(site) {
 }
 
 /* ---------- What can be selected, and where its CSS lives ---------- */
-/* Each scope is one rule in the component's own stylesheet: the class, or a
-   data-attribute variant (components-and-builder). `apply` is the same rule
-   scoped to this preview. */
+/* Each scope is one rule in the component's own stylesheet: the part's own
+   selector, a data-attribute variant (components-and-builder), or a class.
+   `apply` is the same rule scoped to this preview. */
 const P = '.pv [data-c="section-hero"]';
+const HERO = "components/section-hero/section-hero.css";
+const CARD = "components/card-project/card-project.css";
+const HEADER = "components/site-header/site-header.css";
+const FOOTER = "components/site-footer/site-footer.css";
 const ELEMENTS = {
   header: {
-    name: "Site header", file: "components/site-header/site-header.css",
-    scopes: [{ label: "Site header", sel: "header", apply: '.pv [data-c="site-header"] header' }],
+    name: "Site header", comp: "site-header", file: HEADER,
+    site: [["a", "styles/elements.css"], ["a:focus-visible", "styles/elements.css"]],
+    scopes: [{ sel: "header", apply: '.pv [data-c="site-header"] header' }],
   },
   hero: {
-    name: "Hero", file: "components/section-hero/section-hero.css",
+    name: "Hero", comp: "section-hero", file: HERO,
     variant: { label: "Layout", attr: "data-layout", on: "wrapper", options: [["", "Default"], ["centered", "Centered"]] },
+    site: [["section", "styles/sections.css"]],
     scopes: [
-      { label: "Every hero", sel: "section", apply: `${P} section` },
-      { label: "Only this variant (centered)", chip: '[data-layout="centered"]', sel: ':host([data-layout="centered"]) section', apply: `${P}[data-layout="centered"] section`, needs: "centered" },
-      { label: "Only this variant (default)", chip: ':not([data-layout])', sel: ':host(:not([data-layout="centered"])) section', apply: `${P}:not([data-layout="centered"]) section`, needs: "" },
+      { sel: "section", apply: `${P} section` },
+      { sel: ':host([data-layout="centered"]) section', apply: `${P}[data-layout="centered"] section`, needs: "centered" },
     ],
   },
-  heading: { name: "Heading", file: "components/section-hero/section-hero.css", text: true, scopes: [{ label: "Hero heading", sel: "h1", apply: `${P} h1` }] },
-  lead: { name: "Lead text", file: "components/section-hero/section-hero.css", text: true, scopes: [{ label: "Hero lead", sel: ".lead", apply: `${P} .lead` }] },
+  heading: { name: "Heading", comp: "section-hero", file: HERO, text: true, site: [["h1, h2, h3", "styles/elements.css"]], scopes: [{ sel: "h1", apply: `${P} h1` }] },
+  lead: { name: "Lead text", comp: "section-hero", file: HERO, text: true, site: [["p", "styles/elements.css"]], scopes: [{ sel: ".lead", apply: `${P} .lead` }] },
   button: {
-    name: "Button", file: "components/section-hero/section-hero.css", link: true,
+    name: "Button", comp: "section-hero", file: HERO, link: true,
     variant: { label: "Style", attr: "data-variant", on: "self", options: [["", "Filled"], ["outline", "Outline"]] },
+    site: [["a", "styles/elements.css"], ["a:focus-visible", "styles/elements.css"]],
     scopes: [
-      { label: "This button style", sel: ".button", apply: `${P} .button` },
-      { label: "Only this variant (outline)", chip: '[data-variant="outline"]', sel: '.button[data-variant="outline"]', apply: `${P} .button[data-variant="outline"]`, needs: "outline" },
-      { label: "Only this variant (filled)", chip: ':not([data-variant])', sel: ".button:not([data-variant])", apply: `${P} .button:not([data-variant])`, needs: "" },
+      { sel: ".button", apply: `${P} .button` },
+      { sel: '.button[data-variant="outline"]', apply: `${P} .button[data-variant="outline"]`, needs: "outline" },
     ],
   },
   card: {
-    name: "Project card", file: "components/card-project/card-project.css",
+    name: "Project card", comp: "card-project", file: CARD,
     variant: { label: "Tone", attr: "data-tone", on: "wrapper", options: [["", "Default"], ["highlight", "Highlight"]] },
+    site: [[".card-grid > *", "styles/sections.css"]],
     scopes: [
-      { label: "Every project card", sel: "article", apply: '.pv [data-c="card-project"] article' },
-      { label: "Only this variant (highlight)", chip: '[data-tone="highlight"]', sel: ':host([data-tone="highlight"]) article', apply: '.pv [data-c="card-project"][data-tone="highlight"] article', needs: "highlight" },
-      { label: "Only this variant (default)", chip: ':not([data-tone])', sel: ':host(:not([data-tone="highlight"])) article', apply: '.pv [data-c="card-project"]:not([data-tone="highlight"]) article', needs: "" },
+      { sel: "article", apply: '.pv [data-c="card-project"] article' },
+      { sel: ':host([data-tone="highlight"]) article', apply: '.pv [data-c="card-project"][data-tone="highlight"] article', needs: "highlight" },
     ],
   },
-  footer: { name: "Site footer", file: "components/site-footer/site-footer.css", scopes: [{ label: "Site footer", sel: "footer", apply: '.pv [data-c="site-footer"] footer' }] },
+  footer: { name: "Site footer", comp: "site-footer", file: FOOTER, site: [["a", "styles/elements.css"]], scopes: [{ sel: "footer", apply: '.pv [data-c="site-footer"] footer' }] },
 };
 const FILE_ORDER = {
-  "components/site-header/site-header.css": ["header:0"],
-  "components/section-hero/section-hero.css": ["hero:0", "hero:1", "hero:2", "heading:0", "lead:0", "button:0", "button:2", "button:1"],
-  "components/card-project/card-project.css": ["card:0", "card:2", "card:1"],
-  "components/site-footer/site-footer.css": ["footer:0"],
+  [HEADER]: ["header:0"],
+  [HERO]: ["hero:0", "hero:1", "heading:0", "lead:0", "button:0", "button:1"],
+  [CARD]: ["card:0", "card:1"],
+  [FOOTER]: ["footer:0"],
 };
+/* Narrow reuses the query the component already has (the starter's 720 px);
+   the card has none, so it gets a container query (research 09, question 2). */
+const NARROW = { [HEADER]: "@media (max-width: 720px)", [HERO]: "@media (max-width: 720px)", [CARD]: "@container (inline-size < 30rem)", [FOOTER]: "@media (max-width: 720px)" };
+const HOST = { [CARD]: [":host {", "  display: block;", "  container-type: inline-size;", "  --card-gap: var(--space-xs);", "  --card-tint: color-mix(in oklch, var(--brand) 8%, var(--surface));", "}"] };
+const OWN_VARS = { card: [{ name: "card-gap", value: "var(--space-xs)" }, { name: "card-tint", value: "color-mix(in oklch, var(--brand) 8%, var(--surface))", colour: true }] };
 
-const empty = () => ({ all: {}, narrow: {} });
-const rule = (base, extra = {}) => ({ def: { all: base, narrow: extra.narrow ?? {} }, hover: { all: extra.hover ?? {}, narrow: {} }, focus: { all: extra.focus ?? {}, narrow: {} } });
+const STATES = [["def", "Normal", ""], ["hover", "Hover", ":hover"], ["focus", "Focus", ":focus-visible"], ["active", "Pressed", ":active"]];
+const rule = (base = {}, extra = {}) => ({
+  def: { all: base, narrow: extra.narrow ?? {} },
+  hover: { all: extra.hover ?? {}, narrow: {} },
+  focus: { all: extra.focus ?? {}, narrow: {} },
+  active: { all: {}, narrow: {} },
+});
 const RULES0 = {
   "header:0": rule({ display: "flex", "align-items": "center", "justify-content": "space-between", gap: "var(--space-l)", "padding-block": "var(--space-s)" }),
   "hero:0": rule({ display: "flex", "flex-direction": "column", gap: "var(--space-s)", "padding-block": "var(--space-2xl)" }),
@@ -816,75 +978,123 @@ const RULES0 = {
     { display: "inline-block", "padding-block": "var(--space-xs)", "padding-inline": "var(--space-m)", "border-width": "2px", "border-color": "var(--accent)", "border-radius": "var(--radius-full)", "background-color": "var(--accent)", color: "var(--on-accent)", "font-weight": "600" },
     { hover: { "background-color": "color-mix(in oklch, var(--accent) 85%, var(--ink))" }, focus: { outline: "2px solid var(--accent)", "outline-offset": "3px" } }),
   "button:1": rule({ "background-color": "transparent", color: "var(--accent)" }, { hover: { "background-color": "var(--surface)" } }),
-  "card:0": rule({ display: "grid", gap: "var(--space-xs)", "padding-block": "var(--space-l)", "padding-inline": "var(--space-l)", "border-width": "1px", "border-color": "var(--line)", "border-radius": "var(--radius-m)", "background-color": "var(--surface)" }),
-  "hero:2": rule({}),
-  "button:2": rule({}),
-  "card:2": rule({}),
-  "card:1": rule({ "border-color": "var(--brand)", "background-color": "color-mix(in oklch, var(--brand) 8%, var(--surface))" }),
+  "card:0": rule({ display: "grid", gap: "var(--card-gap)", "padding-block": "var(--space-l)", "padding-inline": "var(--space-l)", "border-width": "1px", "border-color": "var(--line)", "border-radius": "var(--radius-m)", "background-color": "var(--surface)" }),
+  "card:1": rule({ "border-color": "var(--brand)", "background-color": "var(--card-tint)" }),
   "footer:0": rule({ display: "flex", "justify-content": "space-between", gap: "var(--space-s)", "padding-block": "var(--space-xl)", color: "var(--muted)", "font-size": "var(--text-s)" }),
 };
+
+/* The controls, grouped as in unblockwp. Every value is a free text field. */
+const GROUPS = [
+  ["Layout", [["display", "Display"], ["flex-direction", "Direction"], ["align-items", "Align items"], ["justify-content", "Justify"], ["gap", "Gap"]]],
+  ["Sizing", [["inline-size", "Width"], ["max-inline-size", "Max width"], ["min-block-size", "Min height"]]],
+  ["Spacing", [["padding-block", "Padding block"], ["padding-inline", "Padding inline"], ["margin-block", "Margin block"], ["margin-block-start", "Margin top"], ["margin-block-end", "Margin bottom"]]],
+  ["Borders", [["border-width", "Border width"], ["border-color", "Border colour"], ["border-radius", "Radius"]]],
+  ["Typography", [["font-family", "Font family"], ["font-size", "Font size"], ["font-weight", "Font weight"], ["line-height", "Line height"], ["letter-spacing", "Letter spacing"], ["text-align", "Text align"]]],
+  ["Colours", [["color", "Text colour"], ["background-color", "Background"]]],
+  ["Effects", [["box-shadow", "Shadow"], ["opacity", "Opacity"], ["outline", "Outline"], ["outline-offset", "Outline offset"]]],
+];
+const KIND = {
+  gap: "space", "padding-block": "space", "padding-inline": "space", "margin-block": "space", "margin-block-start": "space", "margin-block-end": "space",
+  "font-size": "type", "font-family": "type", "line-height": "type", "letter-spacing": "type", "font-weight": "type",
+  "border-radius": "shape", "box-shadow": "shape", "border-width": "shape", outline: "shape", "outline-offset": "space",
+  color: "colour", "background-color": "colour", "border-color": "colour",
+  "inline-size": "measure", "max-inline-size": "measure", "min-block-size": "measure",
+};
+const KEYWORDS = {
+  display: ["block", "inline-block", "flex", "inline-flex", "grid", "none"],
+  "flex-direction": ["row", "column", "row-reverse", "column-reverse"],
+  "align-items": ["start", "center", "end", "stretch", "baseline"],
+  "justify-content": ["start", "center", "end", "space-between", "space-around"],
+  "text-align": ["start", "center", "end", "justify"],
+  "font-weight": ["400", "500", "600", "700"],
+  "line-height": ["1", "1.1", "1.3", "1.5", "normal"],
+  "letter-spacing": ["normal", "-0.02em", "0.02em", "0.08em"],
+  "inline-size": ["auto", "100%", "fit-content", "min-content"],
+  "max-inline-size": ["none", "20ch", "40ch", "60ch"],
+  "min-block-size": ["auto", "50svb", "100svb"],
+  "border-width": ["0", "1px", "2px"],
+  color: ["currentColor", "inherit"],
+  "background-color": ["transparent", "currentColor"],
+  "border-color": ["currentColor", "transparent"],
+  "box-shadow": ["none"],
+  opacity: ["1", "0.8", "0.5"],
+  "margin-block": ["0", "auto"],
+  "margin-block-start": ["0", "auto"],
+  "margin-block-end": ["0", "auto"],
+  outline: ["none", "2px solid currentColor"],
+};
+const PLACEHOLDER = { display: "block", "font-weight": "normal", "line-height": "normal", "letter-spacing": "normal", "text-align": "start", opacity: "1", "inline-size": "auto", "max-inline-size": "none", "box-shadow": "none" };
+const UNITLESS = new Set(["font-weight", "line-height", "opacity", "z-index", "flex-grow", "flex-shrink", "order"]);
 
 /* ---------- State ---------- */
 let state = {
   rules: structuredClone(RULES0),
   changed: [],
   site: structuredClone(SITE0),
-  variants: { hero: "", cards: ["", "highlight", ""], buttons: ["", "outline"] },
+  variants: {},
+  extra: {},
 };
-const ui = { el: null, node: null, scope: 0, state: "def", size: "all", tab: "style", panel: false, width: "wide", custom: null, dragging: false };
+let VARIANTS0 = {};
+const ui = {
+  el: null, node: null, nid: null, scope: 0, state: "def", size: "all", tab: "style", panel: false, width: "wide",
+  dragging: false, open: {}, search: "", invalid: null, pop: null, adding: null, ctab: "file", tags: {}, ids: {}, follow: false,
+};
 const undo = [];
-function remember() { undo.push(JSON.stringify(state)); if (undo.length > 60) undo.shift(); }
+function remember() { undo.push(JSON.stringify(state)); if (undo.length > 80) undo.shift(); }
 
 /* ---------- CSS generation ---------- */
-const ORDER = ["display", "flex-direction", "align-items", "justify-content", "gap", "margin-block", "margin-block-start", "margin-block-end", "padding-block", "padding-inline", "inline-size", "max-inline-size", "min-block-size", "font-family", "font-size", "font-weight", "line-height", "text-align", "color", "background-color", "border", "border-color", "border-radius", "box-shadow", "outline", "outline-offset"];
+const ORDER = ["display", "flex-direction", "align-items", "justify-content", "gap", "margin-block", "margin-block-start", "margin-block-end", "padding-block", "padding-inline", "inline-size", "max-inline-size", "min-block-size", "font-family", "font-size", "font-weight", "line-height", "letter-spacing", "text-align", "color", "background-color", "border", "border-width", "border-color", "border-radius", "box-shadow", "opacity", "outline", "outline-offset"];
 function decls(map) {
-  const out = [];
   const m = { ...map };
   if ("border-width" in m) {
     const w = m["border-width"];
     m.border = w === "0" ? "0" : `${w} solid ${m["border-color"] ?? "currentColor"}`;
     delete m["border-width"]; delete m["border-color"];
   }
-  const keys = Object.keys(m).sort((a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99));
-  for (const k of keys) out.push([k, m[k]]);
-  return out;
+  return Object.keys(m).sort((a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99)).map((k) => [k, m[k]]);
 }
-const changedKey = (rk, st, sz, prop) => `${rk}|${st}|${sz}|${["border-width", "border-color"].includes(prop) ? "border" : prop}`;
-const isChanged = (rk, st, sz, prop) => state.changed.includes(changedKey(rk, st, sz, prop));
+const changedKey = (key, st, sz, prop) => `${key}|${st}|${sz}|${["border-width", "border-color"].includes(prop) ? "border" : prop}`;
+const isChanged = (key, st, sz, prop) => state.changed.includes(changedKey(key, st, sz, prop === "border" ? "border-width" : prop));
+const has = (key, st, sz) => state.rules[key] && decls(state.rules[key][st][sz]).length > 0;
 
-/* Lines of a component file: [{text, changed, cur}]. */
+/* Lines of a component file: [{text, changed, cur, mine}]. */
 function fileLines(file) {
   const lines = [];
-  const curKey = ui.el ? `${ui.el}:${ui.scope}` : "";
-  const push = (text, changed = false, cur = false) => lines.push({ text, changed, cur });
-  const block = (rk, sel, st, sz, indent) => {
-    const map = state.rules[rk][st][sz];
-    const list = decls(map);
+  const curKey = ui.el && ELEMENTS[ui.el].file === file ? rk() : "";
+  const push = (text, changed = false, cur = false, mine = false) => lines.push({ text, changed, cur, mine });
+  /* `st` is the state a block shows; `src` the bucket its declarations come
+     from (Focus shares Hover's look unless it has its own). */
+  const block = (key, sel, st, sz, ind, src = st) => {
+    const list = decls(state.rules[key][src][sz]);
     if (!list.length) return false;
-    const cur = rk === curKey;
-    const pseudo = st === "hover" ? ":hover" : st === "focus" ? ":focus-visible" : "";
-    const selector = sel.split(",").map((s) => s.trim() + pseudo).join(", ");
-    push(`${indent}${selector} {`, false, cur);
-    for (const [k, v] of list) push(`${indent}  ${k}: ${v};`, isChanged(rk, st, sz, k), cur);
-    push(`${indent}}`, false, cur);
+    const mine = key === curKey;
+    const cur = mine && sz === ui.size && (ui.state === st || (src === "hover" && ui.state === "hover"));
+    const pseudo = STATES.find((s) => s[0] === st)[2];
+    push(`${ind}${sel.split(",").map((s) => s.trim() + pseudo).join(", ")} {`, false, cur, mine);
+    for (const [k, v] of list) push(`${ind}  ${k}: ${v};`, isChanged(key, src, sz, k), cur, mine);
+    push(`${ind}}`, false, cur, mine);
     return true;
   };
-  for (const rk of FILE_ORDER[file]) {
-    const [el, i] = rk.split(":");
+  if (HOST[file]) { HOST[file].forEach((t) => push(t)); push(""); }
+  for (const key of FILE_ORDER[file]) {
+    if (!state.rules[key]) continue;
+    const [el, i] = key.split(":");
     const sel = ELEMENTS[el].scopes[i].sel;
     for (const sz of ["all", "narrow"]) {
       const ind = sz === "narrow" ? "  " : "";
       const start = lines.length;
-      if (sz === "narrow") push("@container (inline-size < 40rem) {");
-      let wrote = block(rk, sel, "def", sz, ind);
-      if (decls(state.rules[rk].hover[sz]).length) {
+      if (sz === "narrow") push(`${NARROW[file]} {`);
+      let wrote = block(key, sel, "def", sz, ind);
+      if (has(key, "hover", sz)) {
         if (wrote) push("");
-        push(`${ind}@media (hover: hover) and (pointer: fine) {`);
-        block(rk, sel, "hover", sz, ind + "  ");
+        push(`${ind}@media (hover: hover) {`);
+        block(key, sel, "hover", sz, ind + "  ");
         push(`${ind}}`);
+        if (!has(key, "focus", sz)) block(key, sel, "focus", sz, ind, "hover");
         wrote = true;
       }
-      if (decls(state.rules[rk].focus[sz]).length) { if (wrote) push(""); block(rk, sel, "focus", sz, ind); wrote = true; }
+      if (has(key, "focus", sz)) { if (wrote) push(""); block(key, sel, "focus", sz, ind); wrote = true; }
+      if (has(key, "active", sz)) { if (wrote) push(""); block(key, sel, "active", sz, ind); wrote = true; }
       if (sz === "narrow") { if (wrote) push("}"); else lines.length = start; }
       if (wrote) push("");
     }
@@ -895,21 +1105,27 @@ function fileLines(file) {
 
 function appliedCss() {
   let css = `.site-tokens {\n${tokenDecls(state.site).filter((d) => d.length === 2).map(([k, v]) => `  ${k}: ${v};`).join("\n")}\n  --card-gap: var(--space-xs);\n  --card-tint: color-mix(in oklch, var(--brand) 8%, var(--surface));\n}\n`;
-  for (const [rk, r] of Object.entries(state.rules)) {
-    const [el, i] = rk.split(":");
-    const a = ELEMENTS[el].scopes[i].apply;
+  const body = (map) => decls(map).map(([k, v]) => `${k}: ${v};`).join(" ");
+  for (const [key, r] of Object.entries(state.rules)) {
+    const [el, i] = key.split(":");
+    const s = ELEMENTS[el]?.scopes[i];
+    if (!s) continue;
+    const a = s.apply;
     for (const sz of ["all", "narrow"]) {
-      const open = sz === "narrow" ? "@container site (inline-size < 40rem) {" : "";
       let part = "";
-      const body = (map) => decls(map).map(([k, v]) => `${k}: ${v};`).join(" ");
       if (decls(r.def[sz]).length) part += `${a} { ${body(r.def[sz])} }\n`;
-      if (decls(r.hover[sz]).length) part += `@media (hover: hover) and (pointer: fine) { ${a}:hover { ${body(r.hover[sz])} } }\n${a}[data-force="hover"] { ${body(r.hover[sz])} }\n`;
+      if (decls(r.hover[sz]).length) {
+        part += `@media (hover: hover) { ${a}:hover { ${body(r.hover[sz])} } }\n${a}[data-force="hover"] { ${body(r.hover[sz])} }\n`;
+        if (!decls(r.focus[sz]).length) part += `${a}:focus-visible, ${a}[data-force="focus"] { ${body(r.hover[sz])} }\n`;
+      }
       if (decls(r.focus[sz]).length) part += `${a}:focus-visible, ${a}[data-force="focus"] { ${body(r.focus[sz])} }\n`;
-      if (part) css += open ? `${open}\n${part}}\n` : part;
+      if (decls(r.active[sz]).length) part += `${a}:active, ${a}[data-force="active"] { ${body(r.active[sz])} }\n`;
+      if (part) css += sz === "narrow" ? `@container site (inline-size < 40rem) {\n${part}}\n` : part;
     }
   }
   return css;
 }
+
 
 /* ---------- Rendering helpers ---------- */
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -926,138 +1142,6 @@ function codeHtml(lines) {
 }
 const icon = (id, size = 16) => `<svg width="${size}" height="${size}"><use href="#i-${id}"/></svg>`;
 
-/* ---------- Values the controls offer ---------- */
-function tokenOptions(kind) {
-  const s = scales(state.site);
-  if (kind === "space") return [["0", "0"], ...Object.entries(s.space).map(([k, v]) => [`var(--space-${k})`, `space-${k} · ${v}`])];
-  if (kind === "text") return Object.entries(s.text).map(([k, v]) => [`var(--text-${k})`, `text-${k} · ${v.startsWith("clamp") ? "grows" : v}`]);
-  if (kind === "radius") return [["0", "0"], ...Object.entries(s.radius).map(([k, v]) => [`var(--radius-${k})`, `radius-${k} · ${v}`])];
-  if (kind === "shadow") return [["none", "none"], ...["s", "m", "l"].map((k) => [`var(--shadow-${k})`, `shadow-${k}`])];
-  if (kind === "font") return [["var(--font-body)", `font-body · ${FONTS[state.site.fontBody][0]}`], ["var(--font-display)", `font-display · ${FONTS[state.site.fontDisplay][0]}`]];
-  if (kind === "width") return [["auto", "auto"], ["100%", "100%"], ["fit-content", "fit-content"]];
-  if (kind === "measure") return [["none", "none"], ["20ch", "20ch"], ["40ch", "40ch"], ["60ch", "60ch"], ["var(--reading-width)", "reading-width · 64ch"]];
-  if (kind === "height") return [["auto", "auto"], ["var(--space-5xl)", "space-5xl"], ["50svb", "50svb"]];
-  return [];
-}
-
-const rk = () => `${ui.el}:${ui.scope}`;
-function own(prop) { return state.rules[rk()][ui.state][ui.size][prop]; }
-function effective(prop) {
-  const r = state.rules[rk()];
-  return own(prop) ?? r[ui.state].all[prop] ?? r.def[ui.size][prop] ?? r.def.all[prop];
-}
-function ctlRow(label, prop, inner) {
-  return `<div class="ctl"${own(prop) !== undefined && ui.state + ui.size !== "defall" ? " data-own" : ""}${isChanged(rk(), ui.state, ui.size, prop) ? " data-own" : ""}><span>${label}</span>${inner}</div>`;
-}
-function seg(label, prop, options) {
-  const v = effective(prop);
-  return ctlRow(label, prop, `<div class="seg seg--fill" role="group" aria-label="${label}">${options.map(([val, text]) => `<button type="button" data-prop="${prop}" data-val="${esc(val)}" aria-pressed="${v === val}">${text}</button>`).join("")}</div>`);
-}
-function tok(label, prop, kind) {
-  const v = effective(prop);
-  const options = tokenOptions(kind);
-  const known = ui.custom !== prop && (v === undefined || options.some(([val]) => val === v));
-  const opts = `${v === undefined ? '<option value="" selected>—</option>' : ""}${options.map(([val, text]) => `<option value="${esc(val)}"${val === v ? " selected" : ""}>${esc(text)}</option>`).join("")}<option value="__custom"${known ? "" : " selected"}>Custom…</option>`;
-  return ctlRow(label, prop, `<div class="ctl__line"><select data-prop="${prop}" aria-label="${label}">${opts}</select>${known ? "" : `<input class="custom" data-custom="${prop}" value="${esc(v ?? "")}" aria-label="${label}, custom">`}</div>`);
-}
-function swatches(label, prop, withNone) {
-  const v = effective(prop);
-  const names = COLOR_NAMES;
-  const m = /^var\(--([a-z-]+)\)$/.exec(v ?? "");
-  const named = m ? m[1] : v === "transparent" ? "transparent" : v ? "custom" : "";
-  return ctlRow(label, prop, `<div class="swatches">${withNone ? `<button type="button" class="swatch swatch--none" data-prop="${prop}" data-val="transparent" aria-pressed="${v === "transparent"}" title="transparent" aria-label="transparent"></button>` : ""}${names.map((n) => `<button type="button" class="swatch site-tokens" style="background:var(--${n})" data-prop="${prop}" data-val="var(--${n})" aria-pressed="${named === n}" title="${n}" aria-label="${n}"></button>`).join("")}<span class="swatch-pick" title="Custom colour"><input type="color" data-colour="${prop}" aria-label="${label}, custom colour"></span><span class="swatch-name">${esc(named === "custom" ? v : named)}</span></div>`);
-}
-
-/* ---------- Panel ---------- */
-const panel = document.getElementById("panel");
-function renderPanel() {
-  document.getElementById("work").dataset.panel = ui.panel ? "open" : "closed";
-  panel.hidden = !ui.panel;
-  if (!ui.panel) return;
-  const el = ui.el && ELEMENTS[ui.el];
-  if (!el) ui.tab = "site";
-  const scope = el?.scopes[ui.scope];
-  const key = `${ui.tab}|${ui.el}|${ui.scope}`;
-  const keep = panel.dataset.key === key ? panel.querySelector(".panel__body")?.scrollTop ?? 0 : null;
-  panel.dataset.key = key;
-  panel.innerHTML = `
-    <div class="panel__head">
-      <div class="panel__title">${el ? `<b>${el.name}</b><code class="selector" title="${esc(scope.sel)}">${esc(scope.sel)}</code>` : "<b>Site design</b>"}</div>
-      <button type="button" class="icon-button" data-close aria-label="Close">${icon("x")}</button>
-    </div>
-    <div class="tabs" role="tablist">
-      ${[["style", "Style"], ["code", "Code"], ["site", "Site design"]].map(([id, t]) => `<button type="button" role="tab" data-tab="${id}" aria-selected="${ui.tab === id}"${!el && id !== "site" ? " disabled" : ""}>${t}</button>`).join("")}
-    </div>
-    <div class="panel__body">${ui.tab === "style" ? styleTab(el) : ui.tab === "code" ? codeTab(el) : siteTab()}</div>`;
-  /* The Code tab opens at the rule being styled. */
-  const body = panel.querySelector(".panel__body");
-  const cur = body.querySelector(".ln.chg.cur") ?? body.querySelector(".ln.cur");
-  if (keep !== null) body.scrollTop = keep;
-  else if (cur) body.scrollTop = Math.max(0, cur.getBoundingClientRect().top - body.getBoundingClientRect().top - 60);
-}
-function groupDot(props) {
-  return props.some((p) => isChanged(rk(), ui.state, ui.size, p)) ? '<span class="dot"></span>' : "";
-}
-function styleTab(el) {
-  const shown = [0, variantScope()].filter((i) => i >= 0);
-  const scopes = shown.length > 1 ? `<div class="scope" role="radiogroup" aria-label="What to style">${shown.map((i) => { const s = el.scopes[i]; return `<label><input type="radio" name="scope" value="${i}"${i === ui.scope ? " checked" : ""}>${s.label}${s.chip ? `<code>${esc(s.chip)}</code>` : ""}</label>`; }).join("")}</div>` : "";
-  const flex = ["flex", "grid"].includes(effective("display"));
-  return `${scopes}
-    <div class="rowpair"><span>State</span><div class="seg seg--fill" role="group" aria-label="State">${[["def", "Default"], ["hover", "Hover"], ["focus", "Focus"]].map(([v, t]) => `<button type="button" data-state="${v}" aria-pressed="${ui.state === v}">${t}</button>`).join("")}</div></div>
-    <div class="rowpair"><span>Size</span><div class="seg seg--fill" role="group" aria-label="Size">${[["all", "All sizes"], ["narrow", "Narrow"]].map(([v, t]) => `<button type="button" data-size="${v}" aria-pressed="${ui.size === v}">${t}</button>`).join("")}</div></div>
-    <details class="group" open><summary>Layout${groupDot(["display", "flex-direction", "gap", "align-items", "justify-content"])}</summary><div class="ctls">
-      ${seg("Display", "display", [["block", "Block"], ["inline-block", "Inline"], ["flex", "Flex"], ["grid", "Grid"]])}
-      ${flex ? seg("Direction", "flex-direction", [["row", "Row"], ["column", "Column"]]) : ""}
-      ${flex ? tok("Gap", "gap", "space") : ""}
-      ${flex ? seg("Align", "align-items", [["start", "Start"], ["center", "Center"], ["end", "End"], ["stretch", "Fill"]]) : ""}
-      ${flex ? seg("Justify", "justify-content", [["start", "Start"], ["center", "Center"], ["end", "End"], ["space-between", "Apart"]]) : ""}
-    </div></details>
-    <details class="group" open><summary>Spacing${groupDot(["margin-block-start", "margin-block-end", "padding-block", "padding-inline"])}</summary>
-      <div class="box">
-        <span class="box__label">Outside</span>
-        <span></span>${boxSelect("margin-block-start", "Space above")}<span></span>
-        <div class="box__inner">
-          <span></span>${boxSelect("padding-block", "Inside, top and bottom")}<span></span>
-          ${boxSelect("padding-inline", "Inside, sides")}<span class="box__core"></span><span></span>
-        </div>
-        <span></span>${boxSelect("margin-block-end", "Space below")}<span></span>
-      </div>
-    </details>
-    <details class="group"${["heading", "lead", "card"].includes(ui.el) ? " open" : ""}><summary>Size${groupDot(["inline-size", "max-inline-size", "min-block-size"])}</summary><div class="ctls">
-      ${tok("Width", "inline-size", "width")}
-      ${tok("Max width", "max-inline-size", "measure")}
-      ${tok("Min height", "min-block-size", "height")}
-    </div></details>
-    <details class="group"${el.text || ui.el === "button" ? " open" : ""}><summary>Type${groupDot(["font-family", "font-size", "font-weight", "line-height", "text-align"])}</summary><div class="ctls">
-      ${tok("Font", "font-family", "font")}
-      ${tok("Size", "font-size", "text")}
-      ${seg("Weight", "font-weight", [["400", "400"], ["500", "500"], ["600", "600"], ["700", "700"]])}
-      ${seg("Line height", "line-height", [["1.1", "1.1"], ["1.3", "1.3"], ["1.6", "1.6"]])}
-      ${seg("Align", "text-align", [["start", "Start"], ["center", "Center"], ["end", "End"]])}
-    </div></details>
-    <details class="group" open><summary>Colour${groupDot(["color", "background-color"])}</summary><div class="ctls">
-      ${swatches("Text", "color", false)}
-      ${swatches("Background", "background-color", true)}
-    </div></details>
-    <details class="group"${["button", "card"].includes(ui.el) ? " open" : ""}><summary>Border &amp; corners${groupDot(["border-width", "border-color", "border-radius"])}</summary><div class="ctls">
-      ${seg("Border", "border-width", [["0", "None"], ["1px", "1px"], ["2px", "2px"], ["3px", "3px"]])}
-      ${effective("border-width") && effective("border-width") !== "0" ? swatches("Colour", "border-color", false) : ""}
-      ${tok("Corners", "border-radius", "radius")}
-    </div></details>
-    <details class="group"${ui.el === "card" ? " open" : ""}><summary>Effects${groupDot(["box-shadow"])}</summary><div class="ctls">
-      ${tok("Shadow", "box-shadow", "shadow")}
-    </div></details>`;
-}
-function boxSelect(prop, label) {
-  const v = effective(prop);
-  const options = tokenOptions("space");
-  const known = v === undefined || options.some(([val]) => val === v);
-  const mark = isChanged(rk(), ui.state, ui.size, prop) ? ' style="box-shadow: inset 0 0 0 1.5px var(--changed)"' : "";
-  return `<select data-prop="${prop}" aria-label="${label}" title="${label}"${mark}>${v === undefined ? '<option value="" selected>—</option>' : ""}${options.map(([val, text]) => `<option value="${esc(val)}"${val === v ? " selected" : ""}>${esc(text.split(" · ")[0])}</option>`).join("")}${known ? "" : `<option selected>${esc(v)}</option>`}</select>`;
-}
-function codeTab(el) {
-  return `<div class="file"><span>${el.file}</span></div><pre class="code">${codeHtml(fileLines(el.file))}</pre>`;
-}
 function tokensLines() {
   const now = tokenDecls(state.site), before = tokenDecls(SITE0);
   const lines = [{ text: ":root {" }];
@@ -1079,25 +1163,227 @@ function siteTab() {
       <code>--${n}</code><span class="val">${hexToOklch(v.light).replace("oklch", "")}</span></div>`;
   };
   return `
-    <details class="group" open><summary>Colours</summary><div class="tokens">${["brand", "accent", "ink", "muted", "surface", "page", "line"].map(colour).join("")}</div></details>
-    <details class="group" open><summary>Fonts</summary><div class="ctls">
+    <details class="group" open><summary><span>Colours</span>${icon("caret", 14)}</summary><div class="tokens">${["brand", "accent", "ink", "muted", "surface", "page", "line"].map(colour).join("")}</div></details>
+    <details class="group" open><summary><span>Fonts</span>${icon("caret", 14)}</summary><div class="ctls">
       <div class="ctl"><span>Text</span>${fontSel("fontBody")}</div>
       <div class="ctl"><span>Headings</span>${fontSel("fontDisplay")}</div>
     </div></details>
-    <details class="group" open><summary>Type scale</summary><div class="ctls">
+    <details class="group" open><summary><span>Type scale</span>${icon("caret", 14)}</summary><div class="ctls">
       <div class="ctl"><span>Base</span>${segS("typeBase", [[15, "15px"], [16, "16px"], [17, "17px"], [18, "18px"]])}</div>
       <div class="ctl"><span>Steps</span>${segS("typeRatio", [[1.125, "Close"], [1.2, "Even"], [1.25, "Wide"]])}</div>
       <div class="scale">${Object.entries(text).map(([k, v]) => `<span>${k} <b>${v.startsWith("clamp") ? v.replace(/clamp\((\d+px).*?(\d+px)\)/, "$1–$2") : v}</b></span>`).join("")}</div>
     </div></details>
-    <details class="group" open><summary>Spacing</summary><div class="ctls">
+    <details class="group" open><summary><span>Spacing</span>${icon("caret", 14)}</summary><div class="ctls">
       <div class="ctl"><span>Density</span>${segS("space", [[0.8, "Compact"], [1, "Even"], [1.25, "Airy"]])}</div>
       <div class="scale">${Object.entries(space).map(([k, v]) => `<span>${k} <b>${v}</b></span>`).join("")}</div>
     </div></details>
-    <details class="group" open><summary>Corners and shadows</summary><div class="ctls">
+    <details class="group" open><summary><span>Corners and shadows</span>${icon("caret", 14)}</summary><div class="ctls">
       <div class="ctl"><span>Corners</span>${segS("corners", [["square", "Square"], ["soft", "Soft"], ["round", "Round"]])}</div>
       <div class="ctl"><span>Shadows</span>${segS("shadows", [["none", "None"], ["soft", "Soft"], ["strong", "Strong"]])}</div>
     </div></details>
-    <details class="group"><summary>tokens.css</summary><pre class="code">${codeHtml(tokensLines())}</pre></details>`;
+  `;
+}
+
+/* ---------- Values the fields suggest ---------- */
+function designValues(prop) {
+  const s = scales(state.site);
+  const kind = KIND[prop];
+  if (kind === "colour") return [...COLOR_NAMES.map((n) => ({ value: `var(--${n})`, label: n, colour: n })), ...(ui.el === "card" ? [{ value: "var(--card-tint)", label: "card-tint", colour: "card-tint" }] : [])];
+  if (kind === "space" && prop !== "outline-offset") return [...(ui.el === "card" ? [{ value: "var(--card-gap)", label: "card-gap" }] : []), ...Object.entries(s.space).map(([k, v]) => ({ value: `var(--space-${k})`, label: v }))];
+  if (prop === "font-size") return Object.entries(s.text).map(([k, v]) => ({ value: `var(--text-${k})`, label: v.startsWith("clamp") ? "grows" : v }));
+  if (prop === "font-family") return [{ value: "var(--font-body)", label: FONTS[state.site.fontBody][0] }, { value: "var(--font-display)", label: FONTS[state.site.fontDisplay][0] }];
+  if (prop === "border-radius") return Object.entries(s.radius).map(([k, v]) => ({ value: `var(--radius-${k})`, label: v }));
+  if (prop === "box-shadow") return ["s", "m", "l"].map((k) => ({ value: `var(--shadow-${k})`, label: "shadow" }));
+  if (prop === "max-inline-size" || prop === "inline-size") return [{ value: "var(--reading-width)", label: "64ch" }, { value: "var(--page-width)", label: "960px" }];
+  return [];
+}
+function valuesInFile(prop) {
+  const file = ELEMENTS[ui.el].file;
+  const out = [];
+  for (const key of FILE_ORDER[file]) {
+    const r = state.rules[key];
+    if (!r) continue;
+    for (const st of Object.values(r)) for (const b of Object.values(st)) if (b[prop] !== undefined) out.push(b[prop]);
+  }
+  return [...new Set(out)];
+}
+function suggGroups(prop, q) {
+  const design = designValues(prop);
+  const used = valuesInFile(prop).filter((v) => !design.some((d) => d.value === v)).map((v) => ({ value: v }));
+  const kw = (KEYWORDS[prop] ?? []).filter((v) => !used.some((u) => u.value === v)).map((v) => ({ value: v }));
+  const f = (list) => list.filter((x) => !q || x.value.includes(q) || (x.label ?? "").includes(q));
+  return [["Design values", f(design)], ["In this file", f(used)], ["Keywords", f(kw)]].filter(([, l]) => l.length);
+}
+
+/* What a typed value becomes: a bare number gets px, `--x` becomes var(--x),
+   a simple sum becomes calc() (research 08). */
+function normalise(prop, raw) {
+  let v = raw.trim().replace(/;+$/, "");
+  if (!v) return "";
+  if (/^-?(\d+\.?\d*|\.\d+)$/.test(v) && Number(v) !== 0 && !UNITLESS.has(prop)) v += "px";
+  v = v.replace(/(^|[^(\w-])(--[a-z0-9-]+)/g, "$1var($2)");
+  if (/\s[+\-*/]\s/.test(v) && !/^[a-z-]+\(/.test(v) && !v.includes(",")) v = `calc(${v})`;
+  return v;
+}
+
+/* ---------- Scopes ---------- */
+const rk = () => `${ui.el}:${ui.scope}`;
+function own(prop) { return state.rules[rk()]?.[ui.state][ui.size][prop]; }
+function effective(prop) {
+  const r = state.rules[rk()];
+  if (!r) return undefined;
+  const base = ui.scope ? state.rules[`${ui.el}:0`] : null;
+  /* A variant or class rule sits on top of the element's own rule, so the
+     placeholder shows what applies from there. */
+  return own(prop) ?? r[ui.state].all[prop] ?? (ui.state === "focus" ? r.hover[ui.size][prop] ?? r.hover.all[prop] : undefined) ?? r.def[ui.size][prop] ?? r.def.all[prop] ?? base?.def[ui.size][prop] ?? base?.def.all[prop];
+}
+const title = (slug) => slug.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase());
+function vTarget(el = ui.el, node = ui.node) {
+  const v = ELEMENTS[el].variant;
+  if (!v || !node) return null;
+  return v.on === "wrapper" ? node.closest("[data-c]") : node;
+}
+function currentVariant() {
+  const t = vTarget();
+  return t ? t.getAttribute(ELEMENTS[ui.el].variant.attr) ?? "" : "";
+}
+/* The chips this element shows: its own selector, the variant it has set,
+   and any class added to it. */
+function visibleScopes() {
+  const el = ELEMENTS[ui.el];
+  const cur = currentVariant();
+  return el.scopes.map((s, i) => i).filter((i) => {
+    const s = el.scopes[i];
+    if (!state.rules[`${ui.el}:${i}`]) return false;
+    if (i === 0) return true;
+    if (s.cls) return ui.node.classList.contains(s.cls);
+    return s.needs !== undefined && s.needs === cur;
+  });
+}
+function chipLabel(el, i) {
+  const s = el.scopes[i];
+  if (s.cls) return `.${s.cls}`;
+  if (s.needs !== undefined) return `${el.variant.label}: ${(el.variant.options.find(([v]) => v === s.needs) ?? [, title(s.needs)])[1]}`;
+  return s.sel;
+}
+function stateHas(st, key = rk()) {
+  return ["all", "narrow"].some((sz) => has(key, st, sz));
+}
+
+/* ---------- Panel ---------- */
+const panel = document.getElementById("panel");
+const work = document.getElementById("work");
+function renderPanel() {
+  work.dataset.panel = ui.panel ? "open" : "closed";
+  panel.hidden = !ui.panel;
+  if (!ui.panel) return;
+  const el = ui.el && ELEMENTS[ui.el];
+  if (!el) ui.tab = "site";
+  const key = `${ui.tab}|${ui.el}`;
+  const keep = panel.dataset.key === key ? panel.querySelector(".panel__body")?.scrollTop ?? 0 : 0;
+  panel.dataset.key = key;
+  panel.innerHTML = `
+    <div class="panel__head">
+      <div class="panel__title">${el && ui.tab === "style" ? `<b>${el.name}</b><span class="comp">${el.file.split("/").pop()}</span>` : "<b>Site design</b><span class=\"comp\">tokens.css</span>"}</div>
+      <div class="seg" role="tablist">${[["style", "Style"], ["site", "Site design"]].map(([id, t]) => `<button type="button" role="tab" data-tab="${id}" aria-selected="${ui.tab === id}" aria-pressed="${ui.tab === id}"${!el && id === "style" ? " disabled" : ""}>${t}</button>`).join("")}</div>
+      <button type="button" class="icon-button" data-close aria-label="Close">${icon("x")}</button>
+    </div>
+    <div class="panel__body">${ui.tab === "style" ? styleTab(el) : siteTab()}</div>`;
+  panel.querySelector(".panel__body").scrollTop = keep;
+  if (ui.search) filterControls();
+}
+function styleTab(el) {
+  const node = ui.node;
+  const tag = node.tagName.toLowerCase();
+  const tags = [...new Set([tag, ...(el.text ? ["h1", "h2", "h3", "p"] : el.link ? ["a", "button"] : ["section", "div", "article", "header", "footer"])])];
+  const classes = [...node.classList];
+  const extra = state.extra[ui.nid] ?? [];
+  const st = STATES.find((s) => s[0] === ui.state);
+  return `
+    <div class="fields">
+      <div class="frow"><label class="flabel" for="f-tag">HTML tag</label><select id="f-tag" class="fsel" data-tag>${tags.map((t) => `<option${t === (ui.tags[ui.nid] ?? tag) ? " selected" : ""}>${t}</option>`).join("")}</select></div>
+      <div class="frow frow--stack"><label class="flabel" for="f-id">id</label><input id="f-id" class="fin" data-idfield value="${esc(ui.ids[ui.nid] ?? "")}" spellcheck="false" autocomplete="off"></div>
+      <div class="frow frow--stack"><label class="flabel" for="f-class">class</label><div class="chipfield">${classes.map((c) => `<span class="tag">${esc(c)}${extra.includes(c) ? `<button type="button" class="tag__x" data-unclass="${esc(c)}" aria-label="Remove ${esc(c)}">${icon("x", 12)}</button>` : ""}</span>`).join("")}<input id="f-class" class="chipfield__in" data-addclass placeholder="${classes.length ? "" : "add a class"}" spellcheck="false" autocomplete="off" aria-label="Add a class"></div></div>
+    </div>
+    <div class="sec">
+      <span class="sec__title">${icon("half", 14)}STYLES</span>
+      <div class="bp" role="group" aria-label="Screen size">
+        <button type="button" class="icon-button" data-size="all" aria-pressed="${ui.size === "all"}" title="All sizes" aria-label="All sizes">${icon("monitor")}</button>
+        <button type="button" class="icon-button" data-size="narrow" aria-pressed="${ui.size === "narrow"}" title="Narrow" aria-label="Narrow">${icon("phone")}</button>
+      </div>
+    </div>
+    <div class="selhead">
+      <span class="flabel">CSS selectors</span>
+      <span class="selhead__tools">
+        <button type="button" class="statebtn" data-statebtn aria-haspopup="menu" aria-expanded="${ui.pop === "state"}" title="State">${st[2] ? `<code>${st[2]}</code>` : "Normal"}${STATES.some(([s]) => s !== "def" && stateHas(s)) ? '<span class="dot"></span>' : ""}${icon("caret", 12)}</button>
+        <button type="button" class="icon-button codebtn" data-code title="Code" aria-label="Code"><code>*{}</code></button>
+      </span>
+    </div>
+    <div class="chipfield chipfield--sel" role="radiogroup" aria-label="Selector">
+      ${visibleScopes().map((i) => `<button type="button" class="chip" role="radio" aria-checked="${ui.scope === i}" data-scope="${i}" title="${esc(el.scopes[i].sel)}">${el.scopes[i].needs !== undefined ? esc(chipLabel(el, i)) : `<code>${esc(chipLabel(el, i))}</code>`}</button>`).join("")}
+      <button type="button" class="chip chip--site" data-sitestyles aria-haspopup="dialog" aria-expanded="${ui.pop === "site"}">site styles</button>
+      ${ui.adding ? `<input class="chipfield__in" data-adding="${ui.adding}" placeholder="${ui.adding === "look" ? "name of the look" : "class name"}" spellcheck="false" autocomplete="off" aria-label="${ui.adding === "look" ? "New look" : "Add a class"}">` : `<button type="button" class="chip chip--add" data-plus aria-haspopup="menu" aria-expanded="${ui.pop === "plus"}" aria-label="Add" title="Add">${icon("plus", 14)}</button>`}
+    </div>
+    ${el.variant ? looksRow(el) : ""}
+    <div class="search">${icon("search", 15)}<input type="search" data-search placeholder="Search controls…" value="${esc(ui.search)}" aria-label="Search controls" autocomplete="off"></div>
+    ${GROUPS.map(groupHtml).join("")}`;
+}
+function looksRow(el) {
+  const cur = currentVariant();
+  return `<div class="looks"><span class="flabel">${el.variant.label}</span><div class="looks__row" role="radiogroup" aria-label="${el.variant.label}">${el.variant.options.map(([v, t]) => `<button type="button" class="look" role="radio" aria-checked="${cur === v}" data-look="${esc(v)}">${esc(t)}</button>`).join("")}</div></div>`;
+}
+function groupHtml([name, props]) {
+  const set = props.filter(([p]) => own(p) !== undefined);
+  const open = ui.open[name] ?? (set.length > 0 || (name === "Typography" && (ELEMENTS[ui.el].text || ui.el === "button")));
+  return `<details class="group" data-group="${name}"${open ? " open" : ""}><summary><span>${name}</span>${set.length ? `<button type="button" class="clr" data-cleargroup="${name}" aria-label="Clear ${name}" title="Clear">${icon("x", 13)}</button>` : ""}${icon("caret", 14)}</summary><div class="props">${props.map(([p, l]) => propRow(p, l)).join("")}</div></details>`;
+}
+function propRow(p, label) {
+  const mine = own(p);
+  const eff = effective(p);
+  const inv = ui.invalid?.prop === p ? ui.invalid.text : null;
+  const val = inv ?? mine ?? "";
+  const sw = KIND[p] === "colour" ? `<span class="fsw site-tokens" style="background:${esc(mine ?? eff ?? "transparent")}"></span>` : "";
+  return `<div class="prop"${mine !== undefined ? " data-set" : ""} data-label="${esc(label.toLowerCase())} ${p}"><label class="plabel" for="f-${p}">${label}</label><div class="fbox">${sw}<input id="f-${p}" class="fin" data-field="${p}" value="${esc(val)}" placeholder="${esc(eff ?? PLACEHOLDER[p] ?? "")}" spellcheck="false" autocomplete="off" aria-haspopup="listbox"${inv !== null ? ' aria-invalid="true"' : ""}>${mine !== undefined ? `<button type="button" class="clr" data-clear="${p}" aria-label="Clear ${label}" title="Clear">${icon("x", 13)}</button>` : ""}</div></div>`;
+}
+function filterControls() {
+  const q = ui.search.trim().toLowerCase();
+  panel.querySelectorAll("details.group").forEach((g) => {
+    let any = false;
+    g.querySelectorAll(".prop").forEach((row) => { const hit = !q || row.dataset.label.includes(q); row.hidden = !hit; any ||= hit; });
+    g.hidden = !any;
+    if (q && any) g.open = true;
+  });
+}
+
+/* ---------- Bottom code pane ---------- */
+const codepane = document.getElementById("codepane");
+const ccode = document.getElementById("ccode");
+const cbody = document.getElementById("cbody");
+function currentFile() {
+  if (ui.panel && ui.tab === "site") return "styles/tokens.css";
+  return ui.el ? ELEMENTS[ui.el].file : HERO;
+}
+function renderCode() {
+  const file = currentFile();
+  const tab = document.getElementById("cfile-tab");
+  tab.textContent = file.split("/").pop();
+  tab.title = file;
+  document.querySelectorAll("[data-ctab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ctab === ui.ctab)));
+  ccode.hidden = ui.ctab !== "file";
+  document.getElementById("cp").hidden = ui.ctab !== "demo";
+  document.getElementById("demo-sel").hidden = ui.ctab !== "demo";
+  if (ui.ctab !== "file") return;
+  const lines = file === "styles/tokens.css" ? tokensLines() : fileLines(file);
+  ccode.innerHTML = lines.map((l) => `<span class="ln${l.changed ? " chg" : ""}${l.cur ? " cur" : ""}"${l.mine ? " data-mine" : ""}>${colourise(l.text) || " "}</span>`).join("");
+  if (ui.follow) { ui.follow = false; revealCurrent(false); }
+}
+function revealCurrent(flash) {
+  const target = ccode.querySelector(".ln.chg.cur") ?? ccode.querySelector(".ln.cur") ?? ccode.querySelector(".ln[data-mine]");
+  if (target) {
+    const top = target.offsetTop - ccode.offsetTop;
+    if (flash || top < cbody.scrollTop || top > cbody.scrollTop + cbody.clientHeight - 40) cbody.scrollTop = Math.max(0, top - 40);
+  }
+  if (flash) { codepane.dataset.flash = ""; setTimeout(() => delete codepane.dataset.flash, 900); }
 }
 
 /* ---------- Selection, edit bar, structure ---------- */
@@ -1105,24 +1391,19 @@ const pv = document.getElementById("pv");
 const canvas = document.getElementById("canvas");
 const selbox = document.getElementById("selbox");
 const editbar = document.getElementById("editbar");
-function variantValue(el, node) {
-  const v = ELEMENTS[el].variant;
-  if (!v) return "";
-  return (v.on === "wrapper" ? node.closest("[data-c]") : node).getAttribute(v.attr) ?? "";
-}
 function renderEditBar() {
   if (!ui.node) { editbar.hidden = true; selbox.hidden = true; return; }
   const el = ELEMENTS[ui.el];
   const v = el.variant;
-  const cur = variantValue(ui.el, ui.node);
+  const cur = currentVariant();
   editbar.innerHTML = `<span class="editbar__name">${el.name}</span>
-    ${v ? `<select data-variant aria-label="${v.label}" title="${v.label}">${v.options.map(([val, t]) => `<option value="${val}"${val === cur ? " selected" : ""}>${v.label}: ${t}</option>`).join("")}</select>` : ""}
+    ${v ? `<select data-variant aria-label="${v.label}" title="${v.label}">${v.options.map(([val, t]) => `<option value="${esc(val)}"${val === cur ? " selected" : ""}>${v.label}: ${esc(t)}</option>`).join("")}</select>` : ""}
     ${el.text ? '<button type="button" class="ghost letter" aria-label="Bold">B</button><button type="button" class="ghost letter letter--i" aria-label="Italic">I</button>' : ""}
     ${el.link ? `<button type="button" class="icon-button" aria-label="Link" title="Link">${icon("link")}</button>` : ""}
     <button type="button" class="icon-button" aria-label="Move up" title="Move up">${icon("up")}</button>
     <button type="button" class="icon-button" aria-label="Move down" title="Move down">${icon("down")}</button>
     <span class="editbar__sep"></span>
-    <button type="button" class="icon-button" data-style aria-label="Style" title="Style" aria-expanded="${ui.panel && ui.tab !== "site"}">${icon("brush")}</button>`;
+    <button type="button" class="icon-button" data-style aria-label="Style" title="Style" aria-expanded="${ui.panel && ui.tab === "style"}">${icon("brush")}</button>`;
   editbar.hidden = false;
   selbox.hidden = false;
   document.getElementById("chip").textContent = el.name;
@@ -1138,34 +1419,39 @@ function place() {
   const left = Math.max(8, Math.min(r.left - c.left, c.width - editbar.offsetWidth - 8));
   Object.assign(editbar.style, { insetInlineStart: `${left}px`, insetBlockStart: `${top}px` });
 }
-/* The scope for the selected element's own variant, or -1. */
-function variantScope() {
-  if (!ui.node || !ELEMENTS[ui.el].variant) return -1;
-  const v = variantValue(ui.el, ui.node);
-  return ELEMENTS[ui.el].scopes.findIndex((s, i) => i > 0 && s.needs === v);
-}
 function select(node) {
   const el = node.dataset.sel;
-  if (ui.el !== el) { ui.scope = 0; ui.state = "def"; ui.size = "all"; }
-  ui.el = el; ui.node = node; ui.custom = null;
-  if (ui.scope > 0) ui.scope = variantScope();
-  if (ui.scope < 0) ui.scope = 0;
+  if (ui.el !== el) { ui.scope = 0; ui.state = "def"; ui.size = "all"; ui.open = {}; }
+  ui.el = el; ui.node = node; ui.nid = node.dataset.nid; ui.invalid = null; ui.adding = null;
+  if (!visibleScopes().includes(ui.scope)) ui.scope = 0;
   if (ui.panel && ui.tab === "site") ui.tab = "style";
+  closePops();
   render();
 }
 const STRUCT = [["header", 0, "Site header"], ["hero", 0, "Hero"], ["heading", 1, "Heading"], ["lead", 1, "Lead text"], ["button", 1, "Button"], ["card", 0, "Project card"], ["footer", 0, "Site footer"]];
 function renderStructure() {
   document.getElementById("structure").innerHTML = `<p class="eyebrow-ui">PAGE STRUCTURE</p>${STRUCT.map(([k, d, t]) => `<button type="button" data-pick="${k}" data-depth="${d}" aria-current="${ui.el === k}">${t}</button>`).join("")}`;
 }
+/* Variants are data attributes on the instance, kept per target in state. */
 function applyVariants() {
-  const hero = pv.querySelector('[data-c="section-hero"]');
-  hero.setAttribute("data-layout", state.variants.hero);
-  pv.querySelectorAll('[data-c="card-project"]').forEach((n, i) => n.setAttribute("data-tone", state.variants.cards[i]));
-  pv.querySelectorAll(".button").forEach((n, i) => (state.variants.buttons[i] ? n.setAttribute("data-variant", state.variants.buttons[i]) : n.removeAttribute("data-variant")));
+  pv.querySelectorAll("[data-vid]").forEach((n) => {
+    const m = state.variants[n.dataset.vid] ?? {};
+    for (const a of (n.dataset.vattrs ?? "").split(" ").filter(Boolean)) if (!(a in m)) n.removeAttribute(a);
+    for (const [a, v] of Object.entries(m)) n.setAttribute(a, v);
+    n.dataset.vattrs = Object.keys(m).join(" ");
+  });
+}
+function applyClasses() {
+  pv.querySelectorAll("[data-nid]").forEach((n) => {
+    for (const c of (n.dataset.extra ?? "").split(" ").filter(Boolean)) n.classList.remove(c);
+    const now = state.extra[n.dataset.nid] ?? [];
+    now.forEach((c) => n.classList.add(c));
+    n.dataset.extra = now.join(" ");
+  });
 }
 function applyForce() {
   pv.querySelectorAll("[data-force]").forEach((n) => n.removeAttribute("data-force"));
-  if (!ui.el || !ui.panel || ui.state === "def") return;
+  if (!ui.el || !ui.panel || ui.tab !== "style" || ui.state === "def") return;
   pv.querySelectorAll(ELEMENTS[ui.el].scopes[ui.scope].apply).forEach((n) => n.setAttribute("data-force", ui.state));
 }
 function renderSave() {
@@ -1177,12 +1463,16 @@ function renderSave() {
 function render() {
   document.getElementById("applied").textContent = appliedCss();
   applyVariants();
+  applyClasses();
+  if (ui.el && !state.rules[rk()]) ui.scope = 0;
   pv.dataset.width = ui.width;
   document.querySelectorAll("#width button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.width === ui.width)));
   renderStructure();
   renderPanel();
   applyForce();
+  renderCode();
   renderSave();
+  if (!vars.el.hidden) { renderVars(); const f = panel.querySelector(`[data-field="${vars.field}"]`); if (f) placePop(vars.el, f); else closeVars(); }
   requestAnimationFrame(renderEditBar);
 }
 
@@ -1192,52 +1482,260 @@ function setProp(prop, val) {
   const bucket = state.rules[rk()][ui.state][ui.size];
   const key = changedKey(rk(), ui.state, ui.size, prop);
   if (val === "" || val === undefined) delete bucket[prop]; else bucket[prop] = val;
-  if (prop === "border-width" && val !== "0" && !effectiveBorderColor()) bucket["border-color"] = "var(--line)";
+  if (prop === "border-width" && val && val !== "0" && !bucket["border-color"] && !state.rules[rk()].def.all["border-color"]) bucket["border-color"] = "var(--line)";
   const keys = key.endsWith("|border") ? ["border-width", "border-color"] : [prop];
-  const same = keys.every((k) => bucket[k] === RULES0[rk()][ui.state][ui.size][k]);
+  const base = RULES0[rk()]?.[ui.state][ui.size] ?? {};
   state.changed = state.changed.filter((k) => k !== key);
-  if (!same) state.changed.push(key);
+  if (!keys.every((k) => bucket[k] === base[k])) state.changed.push(key);
+  ui.follow = true;
   render();
 }
-function effectiveBorderColor() {
-  const r = state.rules[rk()];
-  return r[ui.state][ui.size]["border-color"] ?? r.def.all["border-color"];
+function commit(prop, raw) {
+  const v = normalise(prop, raw);
+  if (v && !CSS.supports(prop, v)) { ui.invalid = { prop, text: raw }; render(); refocus(prop); return; }
+  ui.invalid = null;
+  if ((own(prop) ?? "") === v) { render(); return; }
+  setProp(prop, v);
+}
+function refocus(prop) {
+  const f = panel.querySelector(`[data-field="${prop}"]`);
+  if (f) { quiet = true; f.focus(); f.setSelectionRange(f.value.length, f.value.length); quiet = false; }
+}
+function setVariantValue(val) {
+  const t = vTarget();
+  const v = ELEMENTS[ui.el].variant;
+  const vid = t.dataset.vid;
+  const m = (state.variants[vid] ??= {});
+  if (val) m[v.attr] = val; else delete m[v.attr];
+  const key = `variant|${vid}|${v.attr}`;
+  state.changed = state.changed.filter((k) => k !== key);
+  if ((VARIANTS0[vid]?.[v.attr] ?? "") !== (val ?? "")) state.changed.push(key);
+  applyVariants();
+}
+function chooseVariant(val) {
+  remember();
+  const wasVariant = ui.scope > 0 && ELEMENTS[ui.el].scopes[ui.scope].needs !== undefined;
+  setVariantValue(val);
+  if (wasVariant || !visibleScopes().includes(ui.scope)) {
+    const i = ELEMENTS[ui.el].scopes.findIndex((s, j) => s.needs !== undefined && s.needs === val && state.rules[`${ui.el}:${j}`]);
+    ui.scope = wasVariant && i > 0 ? i : 0;
+  }
+  render();
+}
+/* "+ New look": a new variant value and its first rule, in the component's
+   own file (research 09, question 6b). */
+function createLook(raw) {
+  const slug = raw.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  ui.adding = null;
+  if (!slug) { render(); return; }
+  const el = ELEMENTS[ui.el];
+  el.variant ??= { label: "Look", attr: "data-look", on: "wrapper", options: [["", "Default"]] };
+  const v = el.variant;
+  if (!v.options.some(([x]) => x === slug)) v.options.push([slug, title(slug)]);
+  let i = el.scopes.findIndex((s) => s.needs === slug);
+  if (i < 0) {
+    const base = el.scopes[0];
+    el.scopes.push({
+      sel: v.on === "self" ? `${base.sel}[${v.attr}="${slug}"]` : `:host([${v.attr}="${slug}"]) ${base.sel}`,
+      apply: v.on === "self" ? `${base.apply}[${v.attr}="${slug}"]` : base.apply.replace(/(\[data-c="[^"]+"\])/, `$1[${v.attr}="${slug}"]`),
+      needs: slug,
+    });
+    i = el.scopes.length - 1;
+    FILE_ORDER[el.file].push(`${ui.el}:${i}`);
+  }
+  remember();
+  state.rules[`${ui.el}:${i}`] ??= rule();
+  setVariantValue(slug);
+  state.changed.push(`look|${ui.el}|${slug}`);
+  ui.scope = i;
+  render();
+}
+/* A class added to the element becomes a chip with its own rule. */
+function addClass(raw) {
+  const cls = raw.trim().replace(/^\./, "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "");
+  ui.adding = null;
+  if (!cls || ui.node.classList.contains(cls)) { render(); return; }
+  const el = ELEMENTS[ui.el];
+  let i = el.scopes.findIndex((s) => s.cls === cls);
+  if (i < 0) {
+    el.scopes.push({ cls, sel: `.${cls}`, apply: el.scopes[0].apply.replace(/\s+\S+$/, ` .${cls}`) });
+    i = el.scopes.length - 1;
+    FILE_ORDER[el.file].push(`${ui.el}:${i}`);
+  }
+  remember();
+  state.rules[`${ui.el}:${i}`] ??= rule();
+  (state.extra[ui.nid] ??= []).push(cls);
+  state.changed.push(`class|${ui.nid}|${cls}`);
+  ui.scope = i;
+  render();
+}
+function removeClass(cls) {
+  remember();
+  state.extra[ui.nid] = (state.extra[ui.nid] ?? []).filter((c) => c !== cls);
+  state.changed = state.changed.filter((k) => k !== `class|${ui.nid}|${cls}`);
+  if (ELEMENTS[ui.el].scopes[ui.scope].cls === cls) ui.scope = 0;
+  render();
 }
 function setSite(mutate, remembered = false) {
   if (!remembered) remember();
   mutate(state.site);
-  const changedSite = JSON.stringify(state.site) !== JSON.stringify(SITE0);
   state.changed = state.changed.filter((k) => k !== "site");
-  if (changedSite) state.changed.push("site");
+  if (JSON.stringify(state.site) !== JSON.stringify(SITE0)) state.changed.push("site");
   render();
 }
 
+/* ---------- Popovers ---------- */
+const sugg = { el: document.getElementById("sugg-pop"), field: null, pick: -1, list: [] };
+const vars = { el: document.getElementById("vars-pop"), field: null, q: "" };
+const menu = document.getElementById("menu-pop");
+let quiet = false;
+function placePop(pop, anchor, alignEnd = false) {
+  const r = anchor.getBoundingClientRect();
+  /* Below the anchor when it fits, otherwise above it: never over it. */
+  const h = pop.offsetHeight;
+  const below = r.bottom + 4 + h <= innerHeight - 8;
+  pop.style.insetBlockStart = `${below ? r.bottom + 4 : Math.max(8, r.top - 4 - h)}px`;
+  const w = pop.offsetWidth;
+  pop.style.insetInlineStart = `${Math.max(8, Math.min(alignEnd ? r.right - w : r.left, innerWidth - w - 8))}px`;
+}
+function openSugg(input) {
+  sugg.field = input.dataset.field;
+  const typed = input.value !== (own(sugg.field) ?? "") ? input.value.trim() : "";
+  const groups = suggGroups(sugg.field, typed);
+  sugg.list = groups.flatMap(([, l]) => l);
+  if (!sugg.list.length) { closeSugg(); return; }
+  if (sugg.pick >= sugg.list.length) sugg.pick = -1;
+  let n = 0;
+  sugg.el.innerHTML = groups.map(([h, l]) => `<div class="pop__head">${h}</div>${l.map((x) => {
+    const i = n++;
+    return `<button type="button" class="opt" role="option" data-i="${i}" aria-selected="${i === sugg.pick}">${x.colour ? `<span class="sw site-tokens" style="background:var(--${x.colour})"></span>` : "<span></span>"}<span>${esc(x.value)}</span><span class="mini">${esc(x.label ?? "")}</span></button>`;
+  }).join("")}`).join("");
+  sugg.el.hidden = false;
+  placePop(sugg.el, input);
+  sugg.el.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+}
+function closeSugg() { sugg.el.hidden = true; sugg.pick = -1; }
+function varGroups(prop) {
+  const decl = tokenDecls(state.site).filter((d) => d.length === 2).map(([k, v]) => ({ name: k.slice(2), value: v }));
+  const lightHex = (n) => state.site.colors[n]?.light;
+  const groups = [
+    ["This component", OWN_VARS[ui.el] ?? []],
+    ["Colours", decl.filter((t) => COLOR_NAMES.includes(t.name)).map((t) => ({ ...t, colour: true, value: lightHex(t.name) ?? "from brand" }))],
+    ["Type", decl.filter((t) => /^(text|font)-/.test(t.name))],
+    ["Space", decl.filter((t) => t.name.startsWith("space-"))],
+    ["Shape", decl.filter((t) => /^(radius|shadow)-/.test(t.name))],
+    ["Measure", decl.filter((t) => /width$/.test(t.name))],
+  ].filter(([, l]) => l.length);
+  const fit = { colour: "Colours", type: "Type", space: "Space", shape: "Shape", measure: "Measure" }[KIND[prop]];
+  const rank = (g) => (g === "This component" ? 0 : g === fit ? 1 : 2);
+  return groups.sort((a, b) => rank(a[0]) - rank(b[0]));
+}
+function openVars(input, q) {
+  closeSugg();
+  vars.field = input.dataset.field;
+  vars.q = q;
+  vars.el.innerHTML = `<div class="search">${icon("search", 15)}<input type="search" class="vsearch" placeholder="Search variables" value="${esc(q)}" aria-label="Search variables" autocomplete="off"></div><div class="vlist" id="vlist"></div>`;
+  vars.el.hidden = false;
+  renderVars();
+  placePop(vars.el, input);
+  const s = vars.el.querySelector(".vsearch");
+  s.focus();
+  s.setSelectionRange(s.value.length, s.value.length);
+}
+function renderVars() {
+  const list = vars.el.querySelector("#vlist");
+  if (!list) return;
+  const q = vars.q.replace(/^-+/, "").toLowerCase();
+  const cur = own(vars.field);
+  list.innerHTML = varGroups(vars.field).map(([h, l]) => {
+    const items = l.filter((t) => !q || t.name.includes(q));
+    if (!items.length) return "";
+    return `<div class="pop__head">${h}</div>${items.map((t) => `<button type="button" class="opt" data-var="${t.name}" aria-pressed="${cur === `var(--${t.name})`}">${t.colour ? `<span class="sw2"><i class="site-tokens" style="color-scheme:light;background:var(--${t.name})"></i><i class="site-tokens" style="color-scheme:dark;background:var(--${t.name})"></i></span>` : "<span></span>"}<span>--${t.name}</span><span class="mini">${esc(String(t.value).replace(/^light-dark\(/, "").slice(0, 28))}</span></button>`).join("")}`;
+  }).join("") || '<div class="pop__head">—</div>';
+}
+function closeVars() { vars.el.hidden = true; clearPreview(); }
+function preview(prop, val) {
+  const s = ELEMENTS[ui.el].scopes[ui.scope];
+  const force = ui.state === "def" ? "" : `[data-force="${ui.state}"]`;
+  document.getElementById("preview").textContent = `${s.apply}${force} { ${prop}: ${val} !important; }`;
+}
+function clearPreview() { document.getElementById("preview").textContent = ""; }
+function openMenu(kind, anchor) {
+  ui.pop = kind;
+  if (kind === "state") {
+    menu.setAttribute("role", "menu");
+    menu.innerHTML = STATES.map(([s, t, ps]) => `<button type="button" class="mi" role="menuitemradio" aria-checked="${ui.state === s}" data-pickstate="${s}">${t}${ps ? `<code>${ps}</code>` : ""}${s !== "def" && stateHas(s) ? '<span class="dot"></span>' : ""}</button>`).join("");
+  } else if (kind === "plus") {
+    menu.setAttribute("role", "menu");
+    menu.innerHTML = `<button type="button" class="mi" role="menuitem" data-add="class">Add class</button><button type="button" class="mi" role="menuitem" data-add="look">New look</button>`;
+  } else {
+    menu.setAttribute("role", "dialog");
+    menu.innerHTML = `<div class="pop__head">Site styles</div>${ELEMENTS[ui.el].site.map(([sel, file]) => `<div class="srule"><code>${esc(sel)}</code><span>${esc(file)}</span></div>`).join("")}`;
+  }
+  menu.hidden = false;
+  menu.style.inlineSize = kind === "site" ? "264px" : "200px";
+  placePop(menu, anchor, kind === "state");
+  panel.querySelectorAll("[aria-expanded]").forEach((b) => b.setAttribute("aria-expanded", String(
+    (kind === "state" && b.matches("[data-statebtn]")) || (kind === "plus" && b.matches("[data-plus]")) || (kind === "site" && b.matches("[data-sitestyles]")))));
+}
+function closeMenu() {
+  menu.hidden = true;
+  ui.pop = null;
+  panel.querySelectorAll("[data-statebtn], [data-plus], [data-sitestyles]").forEach((b) => b.setAttribute("aria-expanded", "false"));
+}
+function closePops() { closeSugg(); closeVars(); closeMenu(); }
+
+/* ---------- Events: panel ---------- */
 panel.addEventListener("click", (e) => {
   const t = e.target.closest("button");
   if (!t) return;
-  if (t.dataset.close !== undefined) { ui.panel = false; render(); return; }
-  if (t.dataset.tab) { ui.tab = t.dataset.tab; render(); return; }
-  if (t.dataset.state) { ui.state = t.dataset.state; render(); return; }
-  if (t.dataset.size) { ui.size = t.dataset.size; if (ui.size === "narrow") ui.width = "narrow"; render(); return; }
-  if (t.dataset.prop) { setProp(t.dataset.prop, t.dataset.val); return; }
+  if (t.dataset.close !== undefined) { ui.panel = false; closePops(); render(); return; }
+  if (t.dataset.tab) { ui.tab = t.dataset.tab; closePops(); render(); return; }
+  if (t.dataset.size) { ui.size = t.dataset.size; ui.width = ui.size === "narrow" ? "narrow" : "wide"; render(); return; }
+  if (t.dataset.scope) { ui.scope = Number(t.dataset.scope); ui.invalid = null; render(); return; }
+  if (t.dataset.look !== undefined) { lookPrev = null; chooseVariant(t.dataset.look); return; }
+  if (t.dataset.clear) { e.preventDefault(); ui.invalid = null; setProp(t.dataset.clear, ""); return; }
+  if (t.dataset.cleargroup) {
+    e.preventDefault();
+    remember();
+    const props = GROUPS.find(([n]) => n === t.dataset.cleargroup)[1].map(([p]) => p);
+    const bucket = state.rules[rk()][ui.state][ui.size];
+    const base = RULES0[rk()]?.[ui.state][ui.size] ?? {};
+    for (const p of props) {
+      delete bucket[p];
+      const key = changedKey(rk(), ui.state, ui.size, p);
+      state.changed = state.changed.filter((k) => k !== key);
+      if (base[p] !== undefined) state.changed.push(key);
+    }
+    ui.follow = true;
+    render();
+    return;
+  }
+  if (t.dataset.unclass) { removeClass(t.dataset.unclass); return; }
+  if (t.dataset.code !== undefined) { ui.ctab = "file"; renderCode(); revealCurrent(true); return; }
+  if (t.dataset.statebtn !== undefined) { ui.pop === "state" ? closeMenu() : openMenu("state", t); return; }
+  if (t.dataset.plus !== undefined) { ui.pop === "plus" ? closeMenu() : openMenu("plus", t); return; }
+  if (t.dataset.sitestyles !== undefined) { ui.pop === "site" ? closeMenu() : openMenu("site", t); return; }
   if (t.dataset.site) { const key = t.dataset.site; const v = t.dataset.val; setSite((s) => { s[key] = isNaN(Number(v)) ? v : Number(v); }); }
 });
-panel.addEventListener("change", (e) => {
-  const t = e.target;
-  if (t.name === "scope") { ui.scope = Number(t.value); render(); return; }
-  if (t.matches("select[data-prop]")) {
-    if (t.value === "__custom") { ui.custom = t.dataset.prop; render(); requestAnimationFrame(() => panel.querySelector(`[data-custom="${t.dataset.prop}"]`)?.select()); return; }
-    ui.custom = null;
-    setProp(t.dataset.prop, t.value); return;
-  }
-  if (t.matches("[data-custom]")) { setProp(t.dataset.custom, t.value.trim()); return; }
-  if (t.matches("[data-colour]")) { setProp(t.dataset.colour, hexToOklch(t.value)); return; }
-  if (t.matches("[data-site-font]")) { setSite((s) => { s[t.dataset.siteFont] = t.value; }); return; }
-  if (t.matches("[data-site-colour]")) { const was = ui.dragging; ui.dragging = false; setSite((s) => { s.colors[t.dataset.siteColour][t.dataset.mode] = t.value; }, was); }
+panel.addEventListener("toggle", (e) => {
+  const g = e.target.closest?.("details.group[data-group]");
+  if (g) ui.open[g.dataset.group] = g.open;
+}, true);
+panel.addEventListener("focusin", (e) => {
+  const f = e.target.closest("[data-field]");
+  if (f && !quiet) { sugg.pick = -1; closeVars(); openSugg(f); }
 });
-/* Live colour while dragging in the colour picker, without filling Undo. */
 panel.addEventListener("input", (e) => {
   const t = e.target;
+  if (t.matches("[data-search]")) { ui.search = t.value; filterControls(); return; }
+  if (t.matches("[data-field]")) {
+    if (ui.invalid?.prop === t.dataset.field) { ui.invalid = null; t.removeAttribute("aria-invalid"); }
+    const m = /(?:^|[\s(,])--([a-z0-9-]*)$/.exec(t.value);
+    if (m) { openVars(t, m[1]); return; }
+    sugg.pick = -1;
+    openSugg(t);
+  }
   if (t.matches("[data-site-colour]")) {
     if (!ui.dragging) { remember(); ui.dragging = true; }
     state.site.colors[t.dataset.siteColour][t.dataset.mode] = t.value;
@@ -1245,7 +1743,115 @@ panel.addEventListener("input", (e) => {
     document.getElementById("applied").textContent = appliedCss();
   }
 });
+panel.addEventListener("keydown", (e) => {
+  const f = e.target.closest("[data-field]");
+  if (f) {
+    if ((e.shiftKey && e.key === "F10") || e.key === "ContextMenu") { e.preventDefault(); openVars(f, ""); return; }
+    const open = !sugg.el.hidden;
+    if (open && e.key === "ArrowDown") { e.preventDefault(); sugg.pick = (sugg.pick + 1) % sugg.list.length; openSugg(f); return; }
+    if (open && e.key === "ArrowUp") { e.preventDefault(); sugg.pick = (sugg.pick - 1 + sugg.list.length) % sugg.list.length; openSugg(f); return; }
+    if (e.key === "Enter") { e.preventDefault(); const v = open && sugg.pick >= 0 ? sugg.list[sugg.pick].value : f.value; closeSugg(); commit(f.dataset.field, v); refocus(f.dataset.field); return; }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); f.value = own(f.dataset.field) ?? ""; ui.invalid = null; f.removeAttribute("aria-invalid"); closeSugg(); return; }
+    return;
+  }
+  if (e.target.matches("[data-adding]")) {
+    if (e.key === "Enter") { e.preventDefault(); e.target.dataset.adding === "look" ? createLook(e.target.value) : addClass(e.target.value); }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); ui.adding = null; render(); }
+    return;
+  }
+  if (e.target.matches("[data-addclass]") && e.key === "Enter") { e.preventDefault(); addClass(e.target.value); requestAnimationFrame(() => panel.querySelector("[data-addclass]")?.focus()); }
+});
+panel.addEventListener("contextmenu", (e) => {
+  const f = e.target.closest("[data-field]");
+  if (!f) return;
+  e.preventDefault();
+  quiet = true; f.focus(); quiet = false;
+  openVars(f, "");
+});
+panel.addEventListener("focusout", (e) => {
+  const f = e.target.closest("[data-field]");
+  if (!f) return;
+  setTimeout(() => {
+    if (!f.isConnected || document.activeElement === f || vars.el.contains(document.activeElement)) return;
+    const prop = f.dataset.field;
+    if (f.value.trim() !== (own(prop) ?? "") && ui.invalid?.prop !== prop) commit(prop, f.value);
+    closeSugg();
+  }, 120);
+});
+panel.addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.matches("[data-tag]")) { ui.tags[ui.nid] = t.value; return; }
+  if (t.matches("[data-idfield]")) { ui.ids[ui.nid] = t.value.trim(); return; }
+  if (t.matches("[data-site-font]")) { setSite((s) => { s[t.dataset.siteFont] = t.value; }); return; }
+  if (t.matches("[data-site-colour]")) { const was = ui.dragging; ui.dragging = false; setSite((s) => { s.colors[t.dataset.siteColour][t.dataset.mode] = t.value; }, was); }
+});
+/* Hovering a look shows it on the page, as WordPress block styles do. */
+panel.addEventListener("mouseover", (e) => {
+  const b = e.target.closest("[data-look]");
+  if (!b || !ui.node) return;
+  const t = vTarget();
+  const attr = ELEMENTS[ui.el].variant.attr;
+  lookPrev ??= { t, attr, val: t.getAttribute(attr) };
+  if (b.dataset.look) t.setAttribute(attr, b.dataset.look); else t.removeAttribute(attr);
+  place();
+});
+let lookPrev = null;
+panel.addEventListener("mouseout", (e) => {
+  const b = e.target.closest("[data-look]");
+  if (!b || b.contains(e.relatedTarget) || !lookPrev) return;
+  const { t, attr, val } = lookPrev;
+  lookPrev = null;
+  if (val === null) t.removeAttribute(attr); else t.setAttribute(attr, val);
+  place();
+});
 
+/* Suggestions and variables keep the field's focus while clicked. */
+sugg.el.addEventListener("mousedown", (e) => {
+  const b = e.target.closest("[data-i]");
+  e.preventDefault();
+  if (!b) return;
+  const prop = sugg.field;
+  closeSugg();
+  commit(prop, sugg.list[Number(b.dataset.i)].value);
+  refocus(prop);
+});
+vars.el.addEventListener("input", (e) => { if (e.target.matches(".vsearch")) { vars.q = e.target.value; renderVars(); } });
+vars.el.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); const prop = vars.field; closeVars(); refocus(prop); }
+  if (e.key === "Enter") { const b = vars.el.querySelector("[data-var]"); if (b) { e.preventDefault(); b.click(); } }
+});
+vars.el.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-var]");
+  if (!b) return;
+  const v = `var(--${b.dataset.var})`;
+  clearPreview();
+  ui.invalid = null;
+  setProp(vars.field, own(vars.field) === v ? "" : v);
+});
+vars.el.addEventListener("mouseover", (e) => { const b = e.target.closest("[data-var]"); if (b) preview(vars.field, `var(--${b.dataset.var})`); });
+vars.el.addEventListener("mouseleave", clearPreview);
+menu.addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.pickstate) { ui.state = b.dataset.pickstate; ui.invalid = null; closeMenu(); render(); return; }
+  if (b.dataset.add === "class") { closeMenu(); panel.querySelector("[data-addclass]")?.focus(); return; }
+  if (b.dataset.add === "look") { closeMenu(); ui.adding = "look"; render(); panel.querySelector("[data-adding]")?.focus(); }
+});
+document.addEventListener("mousedown", (e) => {
+  if (!menu.hidden && !menu.contains(e.target) && !e.target.closest("[data-statebtn], [data-plus], [data-sitestyles]")) closeMenu();
+  if (!vars.el.hidden && !vars.el.contains(e.target) && !e.target.closest(`[data-field="${vars.field}"]`)) closeVars();
+  if (!sugg.el.hidden && !sugg.el.contains(e.target) && !e.target.closest("[data-field]")) closeSugg();
+});
+/* Popovers follow their field or button while the panel scrolls. */
+panel.addEventListener("scroll", () => {
+  const field = (id) => panel.querySelector(`[data-field="${id}"]`);
+  if (!sugg.el.hidden && field(sugg.field)) placePop(sugg.el, field(sugg.field));
+  if (!vars.el.hidden && field(vars.field)) placePop(vars.el, field(vars.field));
+  const anchor = { state: "[data-statebtn]", plus: "[data-plus]", site: "[data-sitestyles]" }[ui.pop];
+  if (!menu.hidden && anchor && panel.querySelector(anchor)) placePop(menu, panel.querySelector(anchor), ui.pop === "state");
+}, true);
+
+/* ---------- Events: page, edit bar, code pane ---------- */
 pv.addEventListener("click", (e) => {
   e.preventDefault();
   const n = e.target.closest("[data-sel]");
@@ -1256,32 +1862,26 @@ document.getElementById("structure").addEventListener("click", (e) => {
   if (b) select(pv.querySelector(`[data-sel="${b.dataset.pick}"]`));
 });
 editbar.addEventListener("click", (e) => {
-  if (e.target.closest("[data-style]")) { ui.panel = !(ui.panel && ui.tab !== "site"); ui.tab = "style"; render(); }
+  if (e.target.closest("[data-style]")) { ui.panel = !(ui.panel && ui.tab === "style"); ui.tab = "style"; closePops(); render(); }
 });
-editbar.addEventListener("change", (e) => {
-  if (!e.target.matches("[data-variant]")) return;
-  remember();
-  const val = e.target.value;
-  if (ui.el === "hero") state.variants.hero = val;
-  if (ui.el === "card") state.variants.cards[[...pv.querySelectorAll('[data-c="card-project"]')].indexOf(ui.node.closest("[data-c]"))] = val;
-  if (ui.el === "button") state.variants.buttons[[...pv.querySelectorAll(".button")].indexOf(ui.node)] = val;
-  state.changed = state.changed.filter((k) => k !== `variant|${ui.el}`);
-  if (JSON.stringify(state.variants) !== JSON.stringify({ hero: "", cards: ["", "highlight", ""], buttons: ["", "outline"] })) state.changed.push(`variant|${ui.el}`);
-  applyVariants();
-  if (ui.scope > 0) ui.scope = Math.max(0, variantScope());
-  render();
-});
-document.getElementById("open-site").addEventListener("click", () => { ui.panel = true; ui.tab = "site"; render(); });
+editbar.addEventListener("change", (e) => { if (e.target.matches("[data-variant]")) chooseVariant(e.target.value); });
+document.getElementById("open-site").addEventListener("click", () => { ui.panel = true; ui.tab = "site"; closePops(); render(); });
 document.getElementById("width").addEventListener("click", (e) => {
   const b = e.target.closest("[data-width]");
   if (b) { ui.width = b.dataset.width; render(); }
 });
+document.querySelector(".codetabs").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-ctab]");
+  if (b) { ui.ctab = b.dataset.ctab; renderCode(); }
+});
 document.getElementById("undo").addEventListener("click", () => {
   const prev = undo.pop();
-  if (prev) { state = JSON.parse(prev); render(); }
+  if (prev) { state = JSON.parse(prev); ui.invalid = null; render(); }
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && ui.panel && !e.target.closest(".cp")) { ui.panel = false; render(); }
+  if (e.key !== "Escape" || e.target.closest(".cp")) return;
+  if (!menu.hidden || !vars.el.hidden || !sugg.el.hidden) { closePops(); return; }
+  if (ui.panel) { ui.panel = false; render(); }
 });
 new ResizeObserver(() => requestAnimationFrame(place)).observe(canvas);
 
@@ -1291,6 +1891,22 @@ theme.addEventListener("click", () => {
   document.documentElement.dataset.theme = dark ? "dark" : "light";
   theme.querySelector("span").textContent = dark ? "Light" : "Dark";
 });
+
+/* ---------- Start: ids for nodes and variant targets ---------- */
+pv.querySelectorAll("[data-sel]").forEach((n, i) => { n.dataset.nid = String(i); });
+pv.querySelectorAll('[data-c], .button').forEach((n, i) => {
+  n.dataset.vid = String(i);
+  const m = {};
+  for (const a of ["data-layout", "data-tone", "data-variant"]) {
+    if (!n.hasAttribute(a)) continue;
+    const v = n.getAttribute(a);
+    if (v) m[a] = v; else n.removeAttribute(a);
+  }
+  n.dataset.vattrs = Object.keys(m).join(" ");
+  if (Object.keys(m).length) state.variants[n.dataset.vid] = m;
+});
+VARIANTS0 = structuredClone(state.variants);
+
 
 /* ---------- Components code pane: token suggestions, swatches, own selectors ---------- */
 const demo = {
