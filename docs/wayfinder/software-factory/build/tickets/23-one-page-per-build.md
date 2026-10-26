@@ -54,7 +54,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - `scorePage` directly: advice at 10 pieces of a kind but not at 9 (best and cheapest apart and the same builder; a partial price shows `>=$0.50` and is never the cheapest); the ladder moving up after 5 clean builds, down after a UX problem found after release, and skipping an unreadable log.
 - Page check: `scripts/agents/kit shots --spec .scratch/score-page.spec.ts` opened the fixture page and the real software-factory page at 390 and 1280 px in light and dark, with tables open: `RESULT: ok shots raw spec`, 0 layout findings, no sideways scrolling; contact sheets `/home/ubulex/Projects/native-site-editor/.scratch/shots/sf-23/20261025-124441/contact-1.webp` and `contact-2.webp`.
 - Validation: `RESULT: ok unit 79/79 (2 files)` from `scripts/agents/kit unit --affected`; `npm run lint` and `npm run check` exit 0.
-- Lex's look at the sample: the lead adds the date here.
+- Lex has seen the sample (2026-10-26): the real `clean-up-before-features` page, shown in chat. Asked whether it helps him understand a build, he chose **"More visual"** (more pictures and charts, less text to read); no further notes. Follow-up: [24 The build page, more visual](24-build-page-more-visual.md).
 - Docs: the `kit score` line in `docs/agents/agent-scripts.md`; `docs/agents/kitchen.md` station 10 shows the page at each milestone and at the end in place of the planned mark.
 
 ### Follow-ups

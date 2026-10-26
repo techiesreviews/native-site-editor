@@ -50,6 +50,7 @@ From the clean-up README's "Follow-ups seen during the build" and the Follow-ups
 | [21 The kit records every piece; `kit score`](tickets/21-kit-records-every-piece.md) | M–L | claude | 20, 13 |
 | [22 One feedback log per build; `kit feedback`](tickets/22-one-feedback-log.md) | S–M | claude | – |
 | [23 One visual page per build](tickets/23-one-page-per-build.md) | M | claude | 21, 22 |
+| [24 The build page, more visual](tickets/24-build-page-more-visual.md) | M | claude | 23 |
 
 ## 3. Hand-out (ticket 05)
 
