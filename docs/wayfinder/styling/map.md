@@ -48,10 +48,11 @@ A build plan for styling without writing CSS:
 - [Decide what the panel controls](tickets/04-grill-panel-scope.md#resolution-2026-10-26): seven groups, states and modern selectors in the selector field, one state plus one part, canvas bar sizes unchanged, site-wide and element both
 - [Decide where the panel writes its CSS](tickets/05-grill-where-styles-go.md#resolution-2026-10-26): component file, looks as :host([data-…]), site classes and tokens in place, old CSS writer back, no conversion of existing CSS, MCP uses the same writer
 - [Decide the Components section fixes](tickets/06-grill-components-fixes.md#resolution-2026-10-26): all eleven faults fixed, selector list and swatches first
+- [Hand off the styling build plan](tickets/07-task-hand-off-build-plan.md#resolution-2026-10-26): 21 slices in 4 stages, Components fixes released first, panel lazy behind the brush, one writer for panel, code editor and MCP
 
 ## Not yet specified
 
-- Nothing open. The build plan comes next (ticket 07).
+- Nothing open. Three hand-off questions for Lex are in [build/README.md](build/README.md#questions-for-lex-asked-at-hand-off).
 
 ## Out of scope
 
