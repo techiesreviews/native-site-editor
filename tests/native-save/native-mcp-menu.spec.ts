@@ -158,6 +158,42 @@ test("a lost connection returns the button to Connect to MCP with no toast or te
   } finally { await client.close().catch(() => undefined); }
 });
 
+test("a lost connection with this tab's agent connected: Connect to MCP copies a new prompt and the agent keeps working", async ({ page, context, baseURL }) => {
+  let cut = false;
+  const sockets: WebSocketRoute[] = [];
+  await context.routeWebSocket("**/api/agent/relay?*", route => {
+    if (cut) { void route.close(); return; }
+    sockets.push(route);
+    route.connectToServer();
+  });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action");
+  const connect = () => page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  let made = connect();
+  await action.click();
+  const { token: first } = await (await made).json() as { token: string };
+  const { client, call } = await agent(baseURL, first, "lost-agent");
+  try {
+    await call("get_site");
+    await expect.poll(async () => { await refresh(page); return action.textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+    cut = true;
+    for (const socket of sockets) await socket.close();
+    await expect(action).toHaveText("Connect to MCP", { timeout: 15_000 });
+    // The relay answers again; the press turns agents back on here and still hands over a prompt.
+    cut = false;
+    made = connect();
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    expect(token).not.toBe(first);
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+    expect((await call("get_site")).repository, "the earlier agent keeps working").toBe("native-demo-user/native-demo");
+    await expect(action).toHaveText("Disconnect MCP");
+  } finally { await client.close().catch(() => undefined); }
+});
+
 test("reduced motion: the dot does not pulse while waiting or reconnecting", async ({ page, context, baseURL }) => {
   let cut = false;
   const sockets: WebSocketRoute[] = [];
@@ -362,6 +398,50 @@ test("a browser that refuses the waiting copy: Connect to MCP writes the prompt 
   const { token } = await (await made).json() as { token: string };
   await expect(action).toHaveText("Copied");
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+});
+
+// As in an Electron webview whose clipboard permission request is never answered (T3 Code's
+// integrated browser, Lex 2026-10-26): the write begun in the press never settles.
+test("a clipboard write that never settles: Connect to MCP copies through writeText, confirmed on the button", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.clipboard, "write", { configurable: true, value: () => new Promise(() => {}) });
+  });
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action");
+  await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  await expect(action).toHaveText("Copied");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+});
+
+test("no clipboard write ever settles: Connect to MCP ends on the problem dot, never Copied, and the next press tries again", async ({ page, baseURL }) => {
+  await page.addInitScript(() => {
+    const host = window as Window & { writes?: number };
+    host.writes = 0;
+    for (const name of ["write", "writeText"]) Object.defineProperty(navigator.clipboard, name, { configurable: true, value: () => { host.writes!++; return new Promise(() => {}); } });
+  });
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
+  await action.evaluate(element => {
+    const host = window as Window & { agentLabels?: string[] };
+    host.agentLabels = [];
+    new MutationObserver(() => host.agentLabels!.push(element.textContent ?? "")).observe(element, { subtree: true, childList: true, characterData: true });
+  });
+  await action.click();
+  await expect(menu).toHaveAttribute("data-state", "failed", { timeout: 15_000 });
+  await onlyLabel(page, "Connect to MCP");
+  expect((await dot(page)).color).toBe(await danger(page));
+  // Pressable again: the next press begins another copy (and ends on the dot again).
+  const before = await page.evaluate(() => (window as Window & { writes?: number }).writes);
+  await action.click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { writes?: number }).writes)).toBeGreaterThan(before!);
+  await expect(menu).toHaveAttribute("data-state", "failed", { timeout: 15_000 });
+  expect(await page.evaluate(() => (window as Window & { agentLabels?: string[] }).agentLabels)).not.toContain("Copied");
 });
 
 test("a browser without ClipboardItem: Connect to MCP copies the prompt once its token is known", async ({ page, context, baseURL }) => {
