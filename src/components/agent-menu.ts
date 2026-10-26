@@ -579,10 +579,11 @@ export function createAgentMenu(options: {
       // recovery's to report: the dot shows it.
       retry: async () => { await transport?.retry().catch(() => undefined); },
       retryWaits: () => (transportState?.retryAt ?? 0) > Date.now(),
-      // A token already waits (another tab's, another browser's, or this tab's own): Connect to MCP
-      // still copies a prompt, this tab's own if it still waits, otherwise a new one.
       waits: now => offer(now as ReturnType<typeof state>) === "wait",
       prompt: () => start(slot, task),
+      // A token already waits (another tab's, another browser's, or this tab's own), or an agent
+      // already uses the site's connection: Connect to MCP still copies a prompt, this tab's own if
+      // it still waits, otherwise a new one.
       copyAgain: () => copyAgain(slot, task),
       // Still reconnecting (another tab of this browser holds the attempt, or it failed again): the
       // press made no prompt, so the dot shows a problem until the reconnect ends or the next press.
@@ -944,9 +945,10 @@ function forgetWatch() {
  *   no-ClipboardItem specs), or the problem dot when it is refused too (the refused-copy spec).
  * - skip (token request failed, another site shown, owner paused) → the write is refused, the
  *   clipboard keeps what it held (the failed-first-prompt, site-switch and owner-pause specs).
- * - put, write never settles (no browser seen doing so; no spec) → neither Copied nor the problem
- *   dot, and the clipboard as the browser leaves it; the button is pressable again (`changing`
- *   ends before the copy), so the next press tries again.
+ * - put, write not settled within COPY_DEADLINE (an Electron webview whose clipboard permission
+ *   request is never answered) → `writeText` now, also bounded: Copied (the hanging-write spec), or
+ *   the problem dot when it does not settle either (the never-settles spec). The button is pressable
+ *   again (`changing` ends before the copy), so the next press tries again.
  * The press's own agent API calls end by API_DEADLINE; the transport's module load is not bounded. */
 function reserveCopy() {
   let give!: (text: string) => void, refuse!: (reason?: unknown) => void;
@@ -963,11 +965,19 @@ function reserveCopy() {
       give(value);
       try {
         if (!written) throw new Error("No clipboard write began.");
-        await written;
-      } catch { await navigator.clipboard.writeText(value); }
+        await settled(written);
+      } catch { await settled(navigator.clipboard.writeText(value)); }
     },
     skip: () => refuse(),
   };
+}
+/** How long a clipboard write may take once it has its text before it counts as refused. */
+const COPY_DEADLINE = 3_000;
+/** `write`, or a rejection once COPY_DEADLINE passes without it settling. */
+function settled(write: Promise<void>) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("The clipboard did not answer.")), COPY_DEADLINE); });
+  return Promise.race([write, late]).finally(() => clearTimeout(timer));
 }
 type Copy = ReturnType<typeof reserveCopy>;
 /** A press that may copy a prompt: its copy begins now and is dropped when no prompt came of it. */
