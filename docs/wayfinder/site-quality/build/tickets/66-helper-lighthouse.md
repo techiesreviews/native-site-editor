@@ -17,7 +17,7 @@ When the helper from the agents and multiplayer build is running on the user's c
 
 ## Decided behaviour
 
-- The helper finds the computer's Chrome and runs the same pinned Lighthouse version as `kit lighthouse`, on the page as the site-output step would write it (served by the helper on a local port, or the hot preview link from agents build slice 35 when it is on; the slice picks one in `decide`).
+- The helper finds the computer's Chrome and runs the same pinned Lighthouse version as `kit lighthouse`, with all five categories (Agentic Browsing included, as slice 10 calls it), on the page as the site-output step would write it (served by the helper on a local port, or the hot preview link from agents build slice 35 when it is on; the slice picks one in `decide`).
 - It runs after the editor's own score has settled, for the open page, and for the whole site when Site health is open.
 - Its numbers replace the engine's for that page until the next change; nothing tells the user which one they see, and no "estimated" mark (Lex). With no helper or no Chrome, the engine's numbers stay, silently.
 - Costs nothing: no cloud service, no key.

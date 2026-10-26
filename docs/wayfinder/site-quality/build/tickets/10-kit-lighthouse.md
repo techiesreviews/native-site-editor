@@ -19,8 +19,8 @@ A kit command that runs Lighthouse on a site made by the editor and fails when a
 - **Budgets** in `scripts/agents/lighthouse-budget.json`:
   - accessibility, best practices and SEO: 100 on every run;
   - performance: the middle score of 5 runs at 99 or more, on phone and laptop; the middle CLS ≤ 0.1 and LCP ≤ 2.5 s;
-  - Agentic Browsing: printed, never gated.
-- **Enforced as the fixes land:** the budget file lists which categories are enforced. This slice enforces accessibility and best practices (100 today). Slices 20 and 22 switch on SEO, slice 16 switches on performance. Until then those lines print as `todo (slice NN)`, never as a pass.
+  - Agentic Browsing (shown in the editor as **Agents**): 100 on every run, like accessibility ([ticket 10 follow-up](../../tickets/10-grill-page-scores.md#follow-up-2026-10-26) replaced ticket 04's "watched, no target"). The category is experimental: if the pinned Lighthouse has no stable category id for it, or it only runs behind a flag, the slice decides how to call it, records that in `decide`, and pins the id in the budget file.
+- **Enforced as the fixes land:** the budget file lists which categories are enforced. This slice enforces accessibility and best practices (100 today), and Agents if the new site scores 100 on it today; otherwise Agents prints `todo` and the slice names the failing audits for the lead. Slices 20 and 22 switch on SEO, slice 16 switches on performance. Until then those lines print as `todo (slice NN)`, never as a pass.
 - One line per page and form, naming the top failing audit and its selector when it fails; `RESULT:` closing line; JSON reports in `.scratch/lighthouse/<stamp>/`.
 - **Where it runs:**
   - `kit pr`, through a new "site" trigger in `scripts/agents/pr-tier.mjs` (paths: `fixtures/actual-starter/**`, `shared/starting-point.ts`, `src/page-builder/site-head.ts`, `src/native-settings.ts`, the site-output step from slice 12, the Add and insert code), 3 runs, about 75 s;
@@ -34,7 +34,7 @@ A kit command that runs Lighthouse on a site made by the editor and fails when a
 
 ## Done when
 
-- `kit lighthouse` on today's new site passes accessibility and best practices and prints SEO and performance as `todo`.
+- `kit lighthouse` on today's new site passes accessibility and best practices, prints SEO and performance as `todo`, and prints Agents as a pass or `todo` with its failing audits.
 - `tests/kit-lighthouse.test.ts` covers the middle of 5, the every-run rule, the enforced list and the failing-audit line.
 - `kit pr` on a change to `shared/starting-point.ts` runs it; a change elsewhere does not.
 

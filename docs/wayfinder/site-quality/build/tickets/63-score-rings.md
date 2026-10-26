@@ -13,9 +13,9 @@ One small ring at the end of every page row in Pages and files, showing how the 
 
 ## Decided behaviour
 
-- About 14 px, filled to the page's lowest of its four scores. No number in the row.
+- About 14 px, filled to the page's lowest of its five scores (performance, accessibility, best practices, SEO, Agents). No number in the row.
 - Faint grey on a perfect page (Lex: "faint is great"); amber below 90 or while the page has an open site improvement; red below 50 (Lighthouse's colour bands).
-- Hover or keyboard focus shows the four numbers in a tooltip (catalogue tooltip part).
+- Hover or keyboard focus shows the five numbers in a tooltip (catalogue tooltip part).
 - Agent questions do not colour it; they stay Inbox items (slice 43).
 - Clicking the ring opens the page's details (slice 64; until it lands, the ring only shows its tooltip).
 - A page without a score yet has no ring.

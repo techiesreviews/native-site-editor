@@ -14,9 +14,9 @@ Site health is an item in the Inbox, not a button, and opens a whole-site view t
 ## Decided behaviour
 
 - The item sits at the top of the Inbox while anything on the site can be improved, and goes when nothing can.
-- The view: four site rings (each the average of the pages' scores in that category), then findings grouped by topic ("Pictures without a description · 3 pages"), then every page with its four scores, lowest first; clicking a column sorts by it.
+- The view: a header with the title and the prompt icon from slice 64 next to it; five site rings (Agents included) (each the average of the pages' scores in that category), then findings grouped by topic ("Pictures without a description · 3 pages"), then every page with its five scores, lowest first; clicking a column sorts by it.
 - Clicking a ring filters the topics and pages to that category, as on a page.
-- **Copy site prompt** covers everything (or the filtered category); each page row has its own **Copy prompt**. Both use slice 64's builder.
+- **Prompts:** the prompt icon in the header copies the site prompt, covering everything (or the filtered category); each page row has the same prompt icon for that page's prompt ([ticket 10 follow-up](../../tickets/10-grill-page-scores.md#follow-up-2026-10-26)). No Copy prompt buttons. Both use slice 64's builder.
 - Clicking a page opens its details (slice 64); clicking a topic lists its spots.
 - Also reachable from the project menu.
 
@@ -26,7 +26,7 @@ Expected: `src/site-score/site-health.ts` (+ CSS), `src/inbox/` (the item), the 
 
 ## Done when
 
-- On a fixture site with problems on three pages, the item shows, the view groups them by topic, the filter and both prompts work, and fixing the last problem removes the item.
+- On a fixture site with problems on three pages, the item shows, the view groups them by topic, the filter and both prompt icons work, and fixing the last problem removes the item.
 
 ## Kit commands and evidence
 

@@ -13,8 +13,8 @@ A kit check that compares the editor's scores with real Lighthouse and fails whe
 
 ## Decided behaviour
 
-- `kit lighthouse --parity` runs the editor's engine (headless, through the same Playwright Chromium) and real Lighthouse on the same pages of the fixture sites (new, edited, and a broken fixture with one failure in every category), and compares them per category and per finding.
-- **Gap (proposed; the slice confirms it with measurements, and widening it later needs Lex):** accessibility, best practices and SEO must be equal, with the same failing audits; speed within 3 points.
+- `kit lighthouse --parity` runs the editor's engine (headless, through the same Playwright Chromium) and real Lighthouse on the same pages of the fixture sites (new, edited, and a broken fixture with one failure in every category, Agents included), and compares them per category and per finding.
+- **Gap (Lex, 2026-10-26: "yes that"):** accessibility, best practices, SEO and Agents (Agentic Browsing) must be equal, with the same failing audits; speed within 3 points. The slice confirms the speed gap with measurements; widening any gap later needs Lex.
 - Runs in `kit pr` when `shared/site-score/`, `src/site-score/` or the Lighthouse or axe-core pin changes; in the weekly sweep; at release.
 - **Lighthouse updates:** the monthly check (slice 51) proposes the new version; the slice that bumps the pin runs the parity check, and its differences are the work list. axe-core moves with Lighthouse's pin, never on its own.
 

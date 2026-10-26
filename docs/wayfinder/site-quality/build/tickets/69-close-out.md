@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [10-kit-lighthouse, 11-kit-site-rules, 16-save-writes-components, 21-site-language, 24-ai-training-switch, 25-llms-txt, 26-structured-data, 27-pictures-first-screen, 30-cloudflare-headers, 31-github-pages-moved-pages, 32-not-found-page, 43-inbox-agent-items, 44-inbox-setup-checklist, 50-good-css-for-site-css, 51-monthly-rule-check, 62-score-parity, 65-site-health, 66-helper-lighthouse]
+blocked_by: [10-kit-lighthouse, 11-kit-site-rules, 16-save-writes-components, 21-site-language, 24-ai-training-switch, 25-llms-txt, 26-structured-data, 27-pictures-first-screen, 30-cloudflare-headers, 31-github-pages-moved-pages, 32-not-found-page, 43-inbox-agent-items, 44-inbox-setup-checklist, 50-good-css-for-site-css, 51-monthly-rule-check, 62-score-parity, 65-site-health, 66-helper-lighthouse, 67-send-prompt-to-agent]
 ---
 
 ## Goal
@@ -13,7 +13,7 @@ Finish the build. Size: S.
 
 ## Decided behaviour
 
-- Every budget in `lighthouse-budget.json` and every rule in `kit site-rules` that this build owns is enforced; nothing left as `todo`.
+- Every budget in `lighthouse-budget.json` (Agents included) and every rule in `kit site-rules` that this build owns is enforced; nothing left as `todo`.
 - `docs/agents/code-map.md`, `docs/mcp.md`, `docs/agents/agent-scripts.md#kit`, `CONTEXT.md` (Inbox, Site health, and any new term) are current.
 - Close the backlog issue `docs/work/site-quality/issues/01-lighthouse-rules.md` with a pointer to this build.
 - The parity check (slice 62) passes at release.
