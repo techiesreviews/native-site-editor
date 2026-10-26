@@ -47,3 +47,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `docs/agents/agent-scripts.md`: the doctor, review and wait lines.
 - Validation: `RESULT: ok unit 110/110 (3 files)`; `RESULT: ok doctor 8/8 checks passed` (real run); `npm run lint` exit 0.
 - Feature list: no change (agent kit only, nothing a site editor user sees).
+
+### Follow-ups
+
+- Standards (P3): 836c6ecc7:scripts/agents/kit.d/review:132 — P3 fault: one `try` (lines 119–133) wraps both the save step and the follow-up calls `countsLine(record)` and `kitSc
+- Standards (P3): 836c6ecc7:scripts/agents/kit.d/review:120 — P3 style: `saveReviewEvidence` returns `evidence`, but the caller ignores that value and reads the folder from the s
+- Validation gaps (gap): `tests/kit-doctor.test.ts`: every new help test sets `KIT_COMMANDS_DIR`, so the default path (`${KIT_COMMANDS_DIR:-$(dirname -- "${BASH_SOURCE[0]}")}` at `scrip
+- Validation gaps (gap): `tests/kit-wait.test.ts`: the new SHA test proves that `--sha` stays on its commit, and the existing branch test proves that branch waits follow the newer head.
+
