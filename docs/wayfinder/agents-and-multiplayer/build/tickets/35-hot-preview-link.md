@@ -21,7 +21,7 @@ Show a site to a customer as it is being edited.
 - Site scripts run on the preview domain, never the editor's.
 - Self-hosters use their own `workers.dev` address or domain.
 - **No custom domain (Lex, 2026-10-25):** a separate preview Worker on its own `workers.dev` address, with a path per site (README, lead decisions).
-- Mock-up for Tuesday 3 Nov: [15-outside-changes-and-preview-link.html](../../prototypes/15-outside-changes-and-preview-link.html)
+- Mock-up approved by Lex (2026-10-27): [15-outside-changes-and-preview-link.html](../../prototypes/15-outside-changes-and-preview-link.html)
 
 ## Files
 

@@ -20,7 +20,7 @@ Remove every toast, explainer line and unneeded count ([ticket 09](../../tickets
 - The 37 explainer lines and 5 counts marked "nothing" go, including the count on Publish.
 - Confirm on the preview, then fix: the drag keyboard tip (`src/page-builder/insert-drag.ts:186`) and the keystroke toast in component slot fields (`src/page-builder/components.ts:434`).
 - `showToast()` and its CSS are deleted once nothing calls them.
-- Mock-up for Tuesday 3 Nov: [09-feedback-in-place.html](../../prototypes/09-feedback-in-place.html)
+- Mock-up approved with changes by Lex (2026-10-27), changes applied, confirm 3 Nov: [09-feedback-in-place.html](../../prototypes/09-feedback-in-place.html)
 
 ## Files
 

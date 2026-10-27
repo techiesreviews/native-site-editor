@@ -14,7 +14,7 @@ Someone with access to the repository who opens the same project joins the live 
 ## Decided behaviour
 
 [Ticket 07, item 4](../../tickets/07-grill-synced-session.md#resolution-2026-10-24): own sign-in, own Save and agents, and the same live page.
-- Mock-up for Tuesday 3 Nov: [14-share-live.html](../../prototypes/14-share-live.html)
+- Mock-up approved with changes by Lex (2026-10-27), changes applied, confirm 3 Nov: [14-share-live.html](../../prototypes/14-share-live.html)
 
 ## Files
 

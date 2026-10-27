@@ -19,7 +19,7 @@ What Lex sees when a page changes outside the editor.
 - With unsaved changes, a three-way merge against each draft's starting text; different lines merge by themselves.
 - On a true clash the latest version shows, and Lex's clashing words stay one Undo away.
 - In a live room, the outside change enters as one more participant.
-- Mock-up for Tuesday 3 Nov: [15-outside-changes-and-preview-link.html](../../prototypes/15-outside-changes-and-preview-link.html)
+- Mock-up approved by Lex (2026-10-27): [15-outside-changes-and-preview-link.html](../../prototypes/15-outside-changes-and-preview-link.html)
 
 ## Files
 

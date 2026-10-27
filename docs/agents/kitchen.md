@@ -78,6 +78,9 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 - **Planned:** mock-ups assembled from approved parts of the atomic catalogue, an interactive
   canvas of every editor part ([factory 09](../wayfinder/software-factory/tickets/09-grill-atomic-catalogue.md#resolution-2026-10-22);
   its own build after the clean-up).
+- **Show and tell** (Lex, 2026-10-27): a mock-up of something that already exists has a Today / After
+  switch, with today's real screen against the change, plus demo buttons that play each step with the
+  feedback shown in place.
 - **Mock-ups ahead:** the week before, the lead prepares mock-ups for the next visible changes in the
   queue (the running build's next stage, then the next build), so Lex approves them in one batch in
   the Tuesday pack and no slice waits for sign-off.
