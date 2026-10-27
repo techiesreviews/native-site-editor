@@ -2,7 +2,7 @@
 title: The editor values slice 11 left in shared code
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-25
 builder: claude
 blocked_by: [14-settings-for-other-projects, 18-full-follow-ups]
 ---
