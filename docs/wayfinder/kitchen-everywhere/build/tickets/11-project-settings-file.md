@@ -121,3 +121,20 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - `kit next --help`: byte-for-byte the same.
   - The grep (`grep -rn "origin/dev\|native-site-editor" scripts/agents/kit.d scripts/agents/*.mjs scripts/agents/*.sh`) finds 20 lines, all listed above: `kit.d/ux` 17, 61; `kit.d/learn` 15, 90; `kit.d/specs` 16, 121; `kit.d/size` 16; `kit.d/preview` 2, 13, 112, 206, 207; `worktrees.mjs` 71, 121, 124, 155; `deploy-preview.sh` 2; `context-card.mjs` 68, 69; `shots.sh` 8.
 - **Feature list:** no change (kit plumbing for agents; no editor UI).
+
+### Follow-ups
+
+- Spec (P2): 09fcc62ba:scripts/agents/pr-tier.mjs:64 — P2 ticket: the ticket's Decided behaviour says "Every hard-coded editor value goes", and it names `pr-tier.mjs`. `clas
+- Spec (P2): 09fcc62ba:scripts/agents/kit.d/pr:235 — P2 fault: the `colours` step is still hard-wired to `node scripts/check-colours.mjs` and runs on every css-tier PR. A pr
+- Spec (P3): 8eca5b3ff:docs/agents/runner.md:73 — P3 ticket: the runner guide is part of the spec, and it still says the visible paths live in `pr-tier.mjs`. They are now `p
+- Standards (P3): 0b9a6bea2:scripts/agents/unit.sh:15 — P3 fault: a missing `unit.run` (line 15) or `unit.files` (line 18) exits 2. `agent-scripts.md` says "2 usage error", and r
+- Standards (P3): 09fcc62ba:scripts/agents/kit-lib.sh:29 — P3 fault: if `jq` is missing, `kit_settings_problems` prints `scripts/agents/kit.json is unreadable: …jq: command not f
+- Standards (P3): 09fcc62ba:scripts/agents/kit.d/doctor:116 — P3 fault: the `node_modules` messages on lines 116 and 120 still say "restore node_modules in the dev worktree" and 
+- Standards (P3): 09fcc62ba:scripts/agents/kit.d/pr:234 — P3 fault: `checks.extra` written as a string (`"extra": "npm run test:kit-clean"`) is dropped without warning and logged
+- Validation gaps (gap): `worktree.sh` with `sharedNodeModules` set: nothing tests that the link goes to the realpath of a symlinked folder, or that a missing folder exits 1 before `git
+- Validation gaps (gap): `kit pr` refusing to run on a branch named after `branches.release` when that isn't `main`: in the `prod` repo of "kit pr pairs --release…", `git switch -c prod
+- Validation gaps (gap): `kit status` with a broken or incomplete file (the exit-1 path at `status:1023`): add a `repo(t, '{ "project": ')` case asserting exit 1 and a `RESULT: fail` li
+- Validation gaps (gap): `kit feedback <map>` without `maps`: add a case asserting its `no "maps" folder in scripts/agents/kit.json` line and the exit code.
+- Validation gaps (gap): A full-suite `unit.sh` run with no file arguments, driven by `unit.files`: in `tests/kit-unit.test.ts`, run `unit.sh` with no args against a settings glob that 
+- Validation gaps (gap): Doctor on a project with no `sharedNodeModules` and an installed `node_modules`: assert `✓ node_modules: … (not shared: no sharedNodeModules in scripts/agents/k
+
