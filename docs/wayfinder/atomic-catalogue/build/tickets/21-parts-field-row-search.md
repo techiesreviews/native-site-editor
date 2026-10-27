@@ -17,6 +17,7 @@ Add the Field row (label with field) and Search field to the board as catalogue 
 - Options and merges from research 04's proposal (`git show origin/research/ac-04-parts-inventory:docs/wayfinder/atomic-catalogue/research/04-parts-inventory.md`, "Proposed catalogue" and "Label with field (missing)"): Field row from label, a field, hint and error; Search field from Text field, search icon and Close button.
 - Uses only shared tokens (slices 02 and 03); every state on the board (normal, hover, pressed, focus, disabled, busy where it applies), light and dark, 390 and 1280 wide.
 - Registered in `src/catalogue/parts.ts`.
+- Mock-up for Tuesday 3 Nov: [10-first-parts-and-edit-bar.html](../../prototypes/10-first-parts-and-edit-bar.html)
 
 ## Files
 

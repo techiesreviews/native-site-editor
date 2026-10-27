@@ -17,6 +17,7 @@ Add the Icon to the board as catalogue parts. This slice adds them only; it does
 - Options and merges from research 04's proposal (`git show origin/research/ac-04-parts-inventory:docs/wayfinder/atomic-catalogue/research/04-parts-inventory.md`, "Proposed catalogue" and "Icons"): name; sizes from a small set; before or after words; one way to draw Phosphor Regular icons instead of six.
 - Uses only shared tokens (slices 02 and 03); every state on the board (normal, hover, pressed, focus, disabled, busy where it applies), light and dark, 390 and 1280 wide.
 - Registered in `src/catalogue/parts.ts`.
+- Mock-up for Tuesday 3 Nov: [10-first-parts-and-edit-bar.html](../../prototypes/10-first-parts-and-edit-bar.html)
 
 ## Files
 

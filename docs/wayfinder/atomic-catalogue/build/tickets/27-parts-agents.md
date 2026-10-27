@@ -15,6 +15,7 @@ Bring the agents and multiplayer build's new parts onto the board ([ticket 05, i
 
 - The pin (waiting, agent colour with name chip, orange question, grey done), the name chip, the caret with its first-letter circle and tiny model icon (name on hover), and the agent outline, as built by the agents build (its slices 11, 13, 22, 23).
 - Same rules as the other part slices ([ticket 11](../../tickets/11-grill-extendable-parts.md#resolution-2026-10-25)); the preview-side drawing in `src/components/native-preview-runtime.js` reuses the same tokens.
+- Mock-up for Tuesday 3 Nov: [10-first-parts-and-edit-bar.html](../../prototypes/10-first-parts-and-edit-bar.html)
 
 ## Files
 

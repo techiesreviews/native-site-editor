@@ -17,6 +17,7 @@ Rebuild this screen area from catalogue parts only, one organism at a time ([tic
 - Behaviour stays exactly as it is; every existing spec for the area stays green.
 - The organism gets its own frame on the board (Organisms area), and Lex approves it there like a part.
 - Its one-offs count drops to (near) zero; any remainder is listed with its reason.
+- Mock-up for Tuesday 3 Nov: [10-first-parts-and-edit-bar.html](../../prototypes/10-first-parts-and-edit-bar.html)
 
 ## Files
 

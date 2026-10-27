@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 10 First parts and the edit bar</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 3 Nov review
+  (kitchen rule "mock-ups ahead", 2026-10-27).
+  Question: is this the right look for the first catalogue parts (icon, buttons, fields, badge, spinner, tooltip, field row, menu, dialog, tabs, empty state, tile, notice, agent parts) in light and dark, and for the edit bar rebuilt from them? Catalogue build part slices 10-14, 20-27 and organism 50.
+-->
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(oklch(97% 0.012 275), oklch(17% 0.012 265));
+  --surface: light-dark(oklch(99% 0.003 276), oklch(22% 0.015 265));
+  --raised: light-dark(oklch(95.4% 0.019 275), oklch(26% 0.02 265));
+  --toolbar: light-dark(oklch(92% 0.019 275), oklch(20% 0.015 265));
+  --text: light-dark(oklch(15.3% 0.06 263), oklch(94% 0.01 265));
+  --muted: light-dark(oklch(40% 0.045 263), oklch(72% 0.03 265));
+  --line: light-dark(oklch(88.3% 0.048 275), oklch(34% 0.03 265));
+  --action: light-dark(oklch(50% 0.18 263), oklch(72% 0.13 263));
+  --on-action: light-dark(oklch(99% 0.003 276), oklch(16% 0.03 263));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --danger: light-dark(oklch(50% 0.17 25), oklch(74% 0.13 25));
+  --danger-surface: light-dark(oklch(96% 0.03 25), oklch(27% 0.05 25));
+  --warn-surface: light-dark(oklch(96% 0.03 75), oklch(28% 0.05 75));
+  --warn-text: light-dark(oklch(38% 0.07 75), oklch(84% 0.09 80));
+  --ok: light-dark(oklch(46% 0.12 145), oklch(76% 0.13 145));
+  --ok-surface: light-dark(oklch(96% 0.03 145), oklch(27% 0.05 145));
+  --lex: light-dark(oklch(52% 0.2 262), oklch(73% 0.14 262));
+  --anna: light-dark(oklch(50% 0.22 305), oklch(74% 0.15 305));
+  --agent: light-dark(oklch(48% 0.13 150), oklch(75% 0.15 150));
+  --guest: light-dark(oklch(56% 0.16 55), oklch(78% 0.14 60));
+  --sam: light-dark(oklch(52% 0.14 200), oklch(76% 0.12 200));
+  --on-color: light-dark(oklch(100% 0 none), oklch(16% 0 none));
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius-small: 4px;
+  --radius: 6px;
+  --radius-panel: 8px;
+  --radius-dialog: 12px;
+  --shadow: 0 6px 24px light-dark(oklch(15% 0.06 263 / 0.16), oklch(0% 0 none / 0.5));
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; padding: 1rem; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-tap-highlight-color: transparent; }
+main { max-inline-size: 76rem; margin-inline: auto; display: grid; gap: 0.9rem; }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: 1.15rem; text-wrap: balance; }
+.intro { color: var(--muted); max-inline-size: 64ch; text-wrap: pretty; }
+.tag { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 0.1em 0.5em; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); vertical-align: middle; margin-inline-start: 0.4em; }
+svg.i { inline-size: 1rem; block-size: 1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Demo strip: controls for the demo, not editor UI */
+.strip { border: 1.5px dashed var(--line); border-radius: var(--radius-panel); padding: 0.7rem; display: grid; gap: 0.55rem; background: color-mix(in oklch, var(--bg) 60%, var(--raised)); }
+.strip h2 { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+.strip .buttons { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.strip .caption { font-weight: 600; text-wrap: pretty; min-block-size: 1.45em; }
+
+button { font: inherit; color: inherit; }
+.btn, .strip button { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); min-block-size: 2rem; padding: 0.25rem 0.7rem; cursor: pointer; white-space: nowrap; }
+.btn--primary { background: var(--action); border-color: var(--action); color: var(--on-action); font-weight: 600; }
+.btn--quiet { background: transparent; border-color: transparent; }
+.btn--danger { color: var(--danger); }
+.icon-btn { display: inline-grid; place-items: center; inline-size: 2rem; block-size: 2rem; border-radius: var(--radius); border: 1px solid transparent; background: transparent; color: var(--text); cursor: pointer; padding: 0; position: relative; }
+.icon-btn:disabled, .btn:disabled { opacity: 0.4; cursor: default; }
+:is(.btn, .icon-btn, .strip button, .menu-item):focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+:is(.btn, .icon-btn, .strip button):active:not(:disabled) { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) {
+  :is(.btn, .strip button):hover:not(:disabled) { background: color-mix(in oklch, var(--text) 7%, var(--surface)); }
+  .btn--primary:hover:not(:disabled) { background: color-mix(in oklch, black 12%, var(--action)); }
+  .icon-btn:hover:not(:disabled), .menu-item:hover { background: var(--hover); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :is(.btn, .icon-btn, .strip button) { transition: transform 160ms var(--ease-out), background-color 160ms var(--ease-out); }
+}
+
+/* Editor frame */
+.editor { border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface); display: grid; container-type: inline-size; }
+.editor > :first-child { border-start-start-radius: inherit; border-start-end-radius: inherit; }
+.editor > :last-child { border-end-start-radius: inherit; border-end-end-radius: inherit; }
+.topbar { display: flex; align-items: center; gap: 0.35rem; block-size: 44px; padding-inline: 0.5rem; background: var(--toolbar); border-block-end: 1px solid var(--line); min-inline-size: 0; }
+.topbar .spacer { flex: 1; }
+.project { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 600; border: 0; background: transparent; border-radius: var(--radius); padding: 0.3rem 0.5rem; cursor: pointer; min-inline-size: 0; }
+.project span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mark { inline-size: 1.1rem; block-size: 1.1rem; border-radius: 4px; background: var(--action); flex: none; }
+.save-dot { position: absolute; inset-block-start: 4px; inset-inline-end: 4px; inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--on-action); }
+.canvas { background: var(--raised); padding: clamp(0.6rem, 2cqi, 1.25rem); }
+.site { background: light-dark(white, oklch(19% 0.01 265)); color: light-dark(oklch(22% 0.02 140), oklch(92% 0.01 140)); border-radius: var(--radius); padding: clamp(1rem, 4cqi, 2.5rem); display: grid; gap: 0.6rem; box-shadow: 0 1px 3px light-dark(oklch(0% 0 none / 0.08), oklch(0% 0 none / 0.4)); font-family: Georgia, "Iowan Old Style", serif; }
+.site h2 { font-size: clamp(1.4rem, 1rem + 2cqi, 2.1rem); line-height: 1.15; text-wrap: balance; position: relative; }
+.site p { max-inline-size: 58ch; text-wrap: pretty; }
+
+/* Menus */
+.menu { position: absolute; z-index: 5; min-inline-size: 15rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-panel); box-shadow: var(--shadow); padding: 4px; display: grid; }
+.menu[hidden] { display: none; }
+.menu-item { display: flex; align-items: center; gap: 0.55rem; inline-size: 100%; border: 0; background: transparent; border-radius: var(--radius-small); padding: 0.4rem 0.55rem; cursor: pointer; text-align: start; font-size: 0.875rem; min-block-size: 2rem; }
+.menu-item .meta { margin-inline-start: auto; color: var(--muted); font-size: 0.8rem; }
+.menu-item.is-done { color: var(--ok); }
+.menu hr { border: 0; border-block-start: 1px solid var(--line); margin: 4px 2px; }
+
+/* People */
+.who { display: inline-grid; place-items: center; inline-size: 1.5rem; block-size: 1.5rem; border-radius: 50%; background: var(--c); color: var(--on-color); font-size: 0.72rem; font-weight: 700; flex: none; box-shadow: 0 0 0 2px var(--toolbar); }
+.who svg { inline-size: 0.85rem; block-size: 0.85rem; }
+.people { display: inline-flex; align-items: center; }
+.people .who + .who { margin-inline-start: -0.3rem; }
+.chip { display: inline-flex; align-items: center; gap: 0.3rem; font: 600 0.72rem/1.2 system-ui, sans-serif; color: var(--on-color); background: var(--c); border-radius: 99px; padding: 0.15rem 0.5rem; white-space: nowrap; }
+.chip button { all: unset; display: inline-grid; place-items: center; cursor: pointer; border-radius: 50%; inline-size: 1.1rem; block-size: 1.1rem; }
+.chip button:focus-visible { outline: 2px solid currentColor; }
+.chip svg { inline-size: 0.8rem; block-size: 0.8rem; }
+
+.panes { display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); align-items: start; }
+.label { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-block-end: 0.35rem; }
+.fade-out { animation: fadeout 2.4s var(--ease-out) forwards; }
+@keyframes fadeout { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .fade-out { animation-duration: 0.01s; animation-delay: 2s; } }
+
+
+.sheet { display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr)); }
+.sheet[data-show="light"] .col.dark, .sheet[data-show="dark"] .col.light { display: none; }
+.col { border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface); color: var(--text); padding: 0.9rem; display: grid; gap: 1.1rem; align-content: start; container-type: inline-size; }
+.col.light { color-scheme: light; }
+.col.dark { color-scheme: dark; }
+.col > h2 { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.group { display: grid; gap: 0.5rem; }
+.group > h3 { font-size: 0.85rem; display: flex; align-items: baseline; gap: 0.5rem; }
+.group > h3 small { font-weight: 500; color: var(--muted); font-size: 0.72rem; }
+.line { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.cap { font-size: 0.7rem; color: var(--muted); inline-size: 4.2rem; flex: none; }
+/* Button part */
+.p-btn { display: inline-flex; align-items: center; gap: 0.35rem; font: 500 13px/1 system-ui, sans-serif; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); color: var(--text); padding-inline: 0.65rem; block-size: 32px; cursor: pointer; white-space: nowrap; }
+.p-btn[data-size="compact"] { block-size: 26px; padding-inline: 0.5rem; font-size: 12px; }
+.p-btn[data-size="touch"] { block-size: 44px; padding-inline: 0.9rem; font-size: 14px; }
+.p-btn[data-tone="primary"] { background: var(--action); border-color: var(--action); color: var(--on-action); font-weight: 600; }
+.p-btn[data-tone="quiet"] { background: transparent; border-color: transparent; }
+.p-btn[data-tone="danger"] { color: var(--danger); border-color: color-mix(in oklch, var(--danger) 40%, var(--line)); }
+.p-btn.is-hover { background: color-mix(in oklch, var(--text) 7%, var(--surface)); }
+.p-btn[data-tone="primary"].is-hover { background: color-mix(in oklch, black 12%, var(--action)); }
+.p-btn[data-tone="quiet"].is-hover { background: var(--hover); }
+.p-btn.is-pressed { transform: scale(0.97); }
+.p-btn.is-focus, .p-icon.is-focus, .p-field.is-focus { outline: 2px solid var(--action); outline-offset: 2px; }
+.p-btn:disabled { opacity: 0.4; cursor: default; }
+.p-btn svg { inline-size: 15px; block-size: 15px; }
+.spin { inline-size: 13px; block-size: 13px; border-radius: 50%; border: 2px solid color-mix(in oklch, currentColor 30%, transparent); border-block-start-color: currentColor; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { rotate: 1turn; } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2.4s; } }
+.p-icon { display: inline-grid; place-items: center; inline-size: 32px; block-size: 32px; border-radius: var(--radius); border: 1px solid transparent; background: transparent; color: var(--text); cursor: pointer; padding: 0; }
+.p-icon[data-shape="round"] { border-radius: 50%; }
+.p-icon[data-size="compact"] { inline-size: 26px; block-size: 26px; }
+.p-icon[data-size="touch"] { inline-size: 44px; block-size: 44px; }
+.p-icon.is-hover { background: var(--hover); }
+.p-icon svg { inline-size: 16px; block-size: 16px; }
+@media (hover: hover) and (pointer: fine) { .p-btn:hover:not(:disabled) { background: color-mix(in oklch, var(--text) 7%, var(--surface)); } .p-btn[data-tone="primary"]:hover { background: color-mix(in oklch, black 12%, var(--action)); } .p-icon:hover { background: var(--hover); } }
+.p-btn:focus-visible, .p-icon:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+.p-btn:active:not(:disabled), .p-icon:active { transform: scale(0.97); }
+/* Fields */
+.p-field { display: inline-flex; align-items: center; gap: 0.35rem; block-size: 32px; padding-inline: 0.5rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); font: 13px/1 system-ui, sans-serif; min-inline-size: 10rem; }
+.p-field[data-look="inline"] { border-color: transparent; background: transparent; border-block-end-color: var(--line); border-radius: 0; }
+.p-field.is-invalid { border-color: var(--danger); }
+.p-field .ph { color: var(--muted); }
+.p-field .x { margin-inline-start: auto; color: var(--muted); }
+.p-field svg { inline-size: 14px; block-size: 14px; }
+.p-select::after { content: ""; margin-inline-start: auto; inline-size: 0.45rem; block-size: 0.45rem; border-inline-end: 1.5px solid var(--muted); border-block-end: 1.5px solid var(--muted); rotate: 45deg; translate: 0 -2px; }
+.tick, .radio { display: inline-grid; place-items: center; inline-size: 16px; block-size: 16px; border: 1.5px solid var(--muted); border-radius: 4px; color: var(--on-action); }
+.radio { border-radius: 50%; }
+.tick.on, .tick.mixed, .radio.on { background: var(--action); border-color: var(--action); }
+.tick svg { inline-size: 12px; block-size: 12px; stroke-width: 3; }
+.tick.mixed::after { content: ""; inline-size: 8px; block-size: 2px; background: var(--on-action); border-radius: 1px; }
+.radio.on::after { content: ""; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--on-action); }
+.switch { inline-size: 30px; block-size: 18px; border-radius: 99px; background: color-mix(in oklch, var(--text) 22%, transparent); position: relative; display: inline-block; }
+.switch::after { content: ""; position: absolute; inset-block-start: 2px; inset-inline-start: 2px; inline-size: 14px; block-size: 14px; border-radius: 50%; background: white; box-shadow: 0 1px 2px oklch(0% 0 none / 0.3); }
+.switch.on { background: var(--action); }
+.switch.on::after { inset-inline-start: 14px; }
+.lbl { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 13px; }
+/* Badge, heading, key */
+.badge { font: 600 11px/1 system-ui, sans-serif; padding: 0.25rem 0.45rem; border-radius: 99px; background: var(--raised); color: var(--muted); }
+.badge[data-tone="component"] { background: light-dark(oklch(96% 0.03 300), oklch(30% 0.06 300)); color: light-dark(oklch(42% 0.17 300), oklch(82% 0.1 300)); }
+.badge[data-tone="ok"] { background: var(--ok-surface); color: var(--ok); }
+.badge[data-tone="danger"] { background: var(--danger-surface); color: var(--danger); }
+.sh { font: 600 11px/1 system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+kbd { font: 600 11px/1 var(--mono); border: 1px solid var(--line); border-block-end-width: 2px; border-radius: 4px; padding: 0.2rem 0.35rem; background: var(--surface); color: var(--text); }
+.progress { inline-size: 10rem; block-size: 4px; border-radius: 99px; background: color-mix(in oklch, var(--text) 12%, transparent); overflow: clip; }
+.progress i { display: block; block-size: 100%; inline-size: 62%; background: var(--action); border-radius: inherit; }
+.tip { position: relative; display: inline-grid; justify-items: center; gap: 4px; }
+.tip span { font: 500 12px/1.2 system-ui, sans-serif; background: light-dark(oklch(22% 0.03 263), oklch(92% 0.01 265)); color: light-dark(white, oklch(18% 0.02 263)); border-radius: var(--radius-small); padding: 0.3rem 0.45rem; white-space: nowrap; }
+.tip span kbd { background: transparent; color: inherit; border-color: currentColor; opacity: 0.8; margin-inline-start: 0.3rem; }
+.frow { display: grid; grid-template-columns: 6.5rem 1fr; gap: 0.5rem; align-items: center; font-size: 13px; }
+.frow > span { color: var(--muted); }
+.menu.inline { position: static; box-shadow: var(--shadow); min-inline-size: 13rem; inline-size: max-content; max-inline-size: 100%; }
+.menu-item kbd { margin-inline-start: auto; }
+.menu-item.danger { color: var(--danger); }
+.menu-item .chev { margin-inline-start: auto; color: var(--muted); }
+.dlg { border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow); padding: 1rem; display: grid; gap: 0.7rem; max-inline-size: 20rem; }
+.dlg h4 { margin: 0; font-size: 0.95rem; }
+.dlg p { font-size: 13px; color: var(--muted); }
+.dlg .acts { display: flex; justify-content: flex-end; gap: 0.4rem; }
+.tabs { display: flex; gap: 0.2rem; border-block-end: 1px solid var(--line); }
+.tabs button { all: unset; font: 500 13px/1 system-ui, sans-serif; padding: 0.55rem 0.6rem; color: var(--muted); border-block-end: 2px solid transparent; cursor: pointer; }
+.tabs button[aria-selected="true"] { color: var(--text); border-block-end-color: var(--action); }
+.segd { display: inline-flex; padding: 2px; border-radius: var(--radius); background: var(--raised); gap: 2px; }
+.segd button { all: unset; font: 500 12px/1 system-ui, sans-serif; padding: 0.4rem 0.6rem; border-radius: 4px; cursor: pointer; color: var(--muted); }
+.segd button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px oklch(0% 0 none / 0.15); }
+.empty { display: grid; justify-items: center; gap: 0.45rem; text-align: center; padding: 1rem; border: 1px dashed var(--line); border-radius: var(--radius-panel); color: var(--muted); font-size: 13px; }
+.tile { display: grid; gap: 0.3rem; inline-size: 9rem; border: 1px solid var(--line); border-radius: var(--radius-panel); padding: 0.4rem; background: var(--surface); font-size: 12px; }
+.tile .pic { block-size: 4.5rem; border-radius: var(--radius-small); background: linear-gradient(135deg, oklch(75% 0.09 60), oklch(55% 0.1 30)); }
+.tile.is-sel { outline: 2px solid var(--action); outline-offset: 1px; }
+.notice { display: flex; gap: 0.45rem; align-items: center; font-size: 12.5px; border-radius: var(--radius); padding: 0.4rem 0.5rem; background: var(--danger-surface); color: var(--danger); }
+.notice[data-tone="warn"] { background: var(--warn-surface); color: var(--warn-text); }
+.notice[data-tone="ok"] { background: var(--ok-surface); color: var(--ok); }
+.notice svg { inline-size: 14px; block-size: 14px; }
+.notice .p-btn { margin-inline-start: auto; }
+.pin { display: inline-grid; place-items: center; inline-size: 26px; block-size: 26px; border-radius: 50% 50% 50% 4px; background: var(--c); color: var(--on-color); font: 700 12px/1 system-ui, sans-serif; rotate: -45deg; }
+.pin > * { rotate: 45deg; }
+.pin svg { inline-size: 13px; block-size: 13px; }
+.pinwrap { display: inline-flex; align-items: center; gap: 0.35rem; }
+.rcaret { position: relative; display: inline-block; block-size: 1.3em; border-inline-start: 2px solid var(--c); margin-inline-start: 0.6rem; vertical-align: middle; }
+.rcaret i { position: absolute; inset-block-end: 100%; inset-inline-start: -0.6rem; inline-size: 1.1rem; block-size: 1.1rem; border-radius: 50%; background: var(--c); color: var(--on-color); font: 700 0.6rem/1.1rem system-ui, sans-serif; text-align: center; font-style: normal; }
+.aout { outline: 2px dashed var(--agent); outline-offset: 3px; border-radius: 3px; padding: 0.15rem 0.3rem; font-size: 13px; position: relative; }
+/* Organism: edit bar over a selected heading */
+.org { border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface); padding: 0.9rem; display: grid; gap: 0.6rem; }
+.org > h2 { font-size: 0.95rem; }
+.stage { background: var(--raised); border-radius: var(--radius); padding: 3.6rem clamp(0.6rem, 3vw, 2rem) 1.5rem; position: relative; }
+.stage .site { position: relative; }
+.stage .site h2.sel { outline: 2px solid var(--action); outline-offset: 4px; }
+.ebar { position: absolute; inset-block-end: calc(100% + 12px); inset-inline-start: 0; display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-panel); box-shadow: var(--shadow); font-family: system-ui, sans-serif; max-inline-size: 100%; flex-wrap: wrap; }
+.ebar .sep { inline-size: 1px; align-self: stretch; background: var(--line); margin-inline: 3px; }
+.ebar .p-field { min-inline-size: 7.5rem; block-size: 28px; }
+.ebar .p-icon { inline-size: 28px; block-size: 28px; }
+.ebar .menu { position: absolute; inset-block-start: calc(100% + 6px); inset-inline-start: 0; }
+@media (width < 34rem) { .stage { padding-block-start: 6rem; } }
+
+</style>
+</head>
+<body>
+
+<main>
+  <header style="display:grid;gap:0.3rem">
+    <h1>First parts, and the edit bar built from them <span class="tag">mock-up for Tuesday 3 Nov</span></h1>
+    <p class="intro">Catalogue build, part slices 10 to 14 and 20 to 27, then organism 50 (the edit bar). Approving this look on Tuesday lets the parts go straight into the editor. The board then only confirms what was built. The parts use only the shared values (slices 02 and 03), and each one shows its states.</p>
+  </header>
+  <section class="strip" aria-labelledby="s1">
+    <h2 id="s1">Demo switch (not part of the editor). Hover, press and tab through the parts too.</h2>
+    <div class="buttons">
+      <span style="display:inline-flex;gap:.3rem"><button type="button" data-show="both" aria-pressed="true">Light and dark</button><button type="button" data-show="light" aria-pressed="false">Light</button><button type="button" data-show="dark" aria-pressed="false">Dark</button></span>
+      <button type="button" data-act="menu">Open the edit bar's ⋯ menu</button>
+    </div>
+    <p class="caption" id="caption" aria-live="polite">Each column is the same set, once in light and once in dark.</p>
+  </section>
+  <section class="org" aria-labelledby="orgh">
+    <h2 id="orgh">Organism 50 · the edit bar, from parts only</h2>
+    <div class="stage">
+      <div class="site"><h2 class="sel" id="selH">Fresh bread every morning
+        <div class="ebar" role="toolbar" aria-label="Edit bar">
+          <span class="p-field p-select" style="min-inline-size:7rem">Heading 2</span>
+          <span class="sep"></span>
+          <button type="button" class="p-icon" aria-label="Bold" data-icon="bold"></button>
+          <button type="button" class="p-icon" aria-label="Italic" data-icon="italic"></button>
+          <button type="button" class="p-icon" aria-label="Link" data-icon="link"></button>
+          <span class="sep"></span>
+          <button type="button" class="p-btn" data-tone="quiet" data-size="compact" data-icon="sparkle">Ask AI</button>
+          <span class="sep"></span>
+          <span style="position:relative"><button type="button" class="p-icon" id="moreBtn" aria-label="More" aria-haspopup="menu" aria-expanded="false" data-icon="dots"></button>
+          <div class="menu" id="moreMenu" role="menu" hidden></div></span>
+        </div></h2>
+        <p>Sourdough, rye and seeded loaves from our oven on the corner.</p></div>
+    </div>
+  </section>
+  <div class="sheet" id="sheet" data-show="both"></div>
+</main>
+
+<script>
+const ICONS = {
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>',
+  caret: '<path d="m6 9 6 6 6-6"/>',
+  check: '<path d="m5 12 5 5 9-10"/>',
+  link: '<path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1"/><path d="M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/>',
+  live: '<circle cx="12" cy="12" r="3"/><path d="M6.3 6.3a8 8 0 0 0 0 11.4M17.7 6.3a8 8 0 0 1 0 11.4"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
+  files: '<path d="M4 4h6l2 3h8v13H4z"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  plug: '<path d="M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0zM12 17v5"/>',
+  dots: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
+  close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  retry: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+  download: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/>',
+  warn: '<path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18h.01"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  bold: '<path d="M7 5h6a4 4 0 0 1 0 8H7zM7 13h7a4 4 0 0 1 0 8H7z"/>',
+  italic: '<path d="M14 4h-4M14 20h-4M15 4l-6 16"/>',
+  sparkle: '<path d="M12 3c.6 4.3 2.7 6.4 7 7-4.3.6-6.4 2.7-7 7-.6-4.3-2.7-6.4-7-7 4.3-.6 6.4-2.7 7-7Z"/>',
+  pin: '<path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>',
+  claude: '<path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/>',
+};
+const icon = (n, cls = "i") => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
+document.querySelectorAll("[data-icon]").forEach((el) => el.insertAdjacentHTML("afterbegin", icon(el.dataset.icon)));
+const themeButtons = document.querySelectorAll("[data-theme-set]");
+themeButtons.forEach((b) => b.addEventListener("click", () => {
+  const t = b.dataset.themeSet;
+  if (t === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  themeButtons.forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const caption = (text) => { const c = document.getElementById("caption"); if (c) c.textContent = text; };
+
+
+const I = (n) => icon(n);
+const tones = ["primary", "secondary", "quiet", "danger"];
+function sheet() {
+  const btnRows = tones.map((t) => `<div class="line"><span class="cap">${t}</span><button type="button" class="p-btn" data-tone="${t}">Save</button><button type="button" class="p-btn is-hover" data-tone="${t}">Hover</button><button type="button" class="p-btn is-pressed" data-tone="${t}">Pressed</button><button type="button" class="p-btn is-focus" data-tone="${t}">Focus</button><button type="button" class="p-btn" data-tone="${t}" disabled>Disabled</button></div>`).join("");
+  return `
+  <div class="group"><h3>Icon <small>slice 10</small></h3><div class="line">${["undo","redo","files","image","gear","search","link","sparkle","pin","trash"].map(I).join("")}</div></div>
+  <div class="group"><h3>Button <small>slice 11 · tones and states</small></h3>${btnRows}
+    <div class="line"><span class="cap">sizes</span><button type="button" class="p-btn" data-size="compact">Compact</button><button type="button" class="p-btn">Control</button><button type="button" class="p-btn" data-size="touch">Touch</button></div>
+    <div class="line"><span class="cap">icon, busy</span><button type="button" class="p-btn">${I("plus")}Add page</button><button type="button" class="p-btn">Open ${I("caret")}</button><button type="button" class="p-btn" data-tone="primary" disabled><span class="spin"></span>Saving</button></div></div>
+  <div class="group"><h3>Icon button, Close button <small>slice 11</small></h3><div class="line"><button type="button" class="p-icon" aria-label="Undo">${I("undo")}</button><button type="button" class="p-icon is-hover" aria-label="Hover">${I("redo")}</button><button type="button" class="p-icon is-focus" aria-label="Focus">${I("gear")}</button><button type="button" class="p-icon" data-shape="round" aria-label="Round">${I("plus")}</button><button type="button" class="p-icon" data-size="compact" aria-label="Compact">${I("dots")}</button><button type="button" class="p-icon" data-size="touch" aria-label="Touch">${I("search")}</button><button type="button" class="p-icon" aria-label="Close">${I("close")}</button></div></div>
+  <div class="group"><h3>Fields <small>slice 12</small></h3>
+    <div class="line"><span class="p-field"><span class="ph">Page title</span></span><span class="p-field is-focus">About us</span><span class="p-field is-invalid">about us!</span></div>
+    <div class="line"><span class="p-field">${I("search")}<span>bread</span><span class="x">${I("close")}</span></span><span class="p-field" data-look="inline">Inline field</span><span class="p-field p-select">Heading 2</span></div>
+    <div class="line"><span class="lbl"><span class="tick on">${I("check")}</span>Shown</span><span class="lbl"><span class="tick"></span>Hidden</span><span class="lbl"><span class="tick mixed"></span>Some</span><span class="lbl"><span class="radio on"></span>Left</span><span class="lbl"><span class="radio"></span>Right</span><span class="lbl"><span class="switch on"></span>Live</span><span class="lbl"><span class="switch"></span>Off</span></div></div>
+  <div class="group"><h3>Badge, Section heading, Keyboard key <small>slice 13 · words only, no counts</small></h3><div class="line"><span class="badge">Draft</span><span class="badge" data-tone="component">Component</span><span class="badge" data-tone="ok">Saved</span><span class="badge" data-tone="danger">Broken link</span><span class="sh">Page structure</span><kbd>Ctrl</kbd><kbd>K</kbd></div></div>
+  <div class="group"><h3>Spinner, Progress bar <small>slice 14</small></h3><div class="line"><span class="spin"></span><span class="progress"><i></i></span></div></div>
+  <div class="group"><h3>Tooltip <small>slice 20</small></h3><div class="line"><span class="tip"><span>Undo<kbd>Ctrl Z</kbd></span><button type="button" class="p-icon" aria-label="Undo">${I("undo")}</button></span></div></div>
+  <div class="group"><h3>Field row, Search field <small>slice 21</small></h3><div class="frow"><span>Site address</span><span class="p-field">bakery.nl</span></div><div class="frow"><span>Show in menu</span><span class="lbl"><span class="switch on"></span></span></div><span class="p-field" style="min-inline-size:100%">${I("search")}<span class="ph">Search pages and files</span><kbd style="margin-inline-start:auto">/</kbd></span></div>
+  <div class="group"><h3>Menu item, Menu <small>slice 22</small></h3><div class="menu inline" role="menu"><button type="button" class="menu-item">${I("copy")}Duplicate<kbd>Ctrl D</kbd></button><button type="button" class="menu-item">${I("check")}Show in menu</button><button type="button" class="menu-item">${I("files")}Move to<span class="chev">›</span></button><hr><button type="button" class="menu-item danger">${I("trash")}Remove</button></div></div>
+  <div class="group"><h3>Dialog <small>slice 23</small></h3><div class="dlg" role="dialog" aria-label="Remove page"><h4>Remove “About us”?</h4><p>Links to it will stop working.</p><div class="acts"><button type="button" class="p-btn">Keep</button><button type="button" class="p-btn" data-tone="danger">Remove</button></div></div></div>
+  <div class="group"><h3>Tabs, Segmented group <small>slice 24</small></h3><div class="tabs" role="tablist"><button type="button" role="tab" aria-selected="true">Pages</button><button type="button" role="tab" aria-selected="false">Media</button><button type="button" role="tab" aria-selected="false">Files</button></div><span class="segd"><button type="button" aria-pressed="true">All</button><button type="button" aria-pressed="false">Tablet</button><button type="button" aria-pressed="false">Mobile</button></span></div>
+  <div class="group"><h3>Empty state, Card or tile <small>slice 25</small></h3><div class="line" style="align-items:stretch"><div class="empty" style="flex:1 1 12rem">${I("image")}<span>No pictures yet</span><button type="button" class="p-btn" data-size="compact">${I("plus")}Add</button></div><div class="tile is-sel"><span class="pic"></span><span>loaves.jpg</span></div></div></div>
+  <div class="group"><h3>In-place notice <small>slice 26</small></h3><div class="notice">${I("warn")}<span>GitHub isn't answering.</span><button type="button" class="p-btn" data-size="compact">Try again</button></div><div class="notice" data-tone="warn">${I("warn")}<span>No site address yet.</span></div><div class="notice" data-tone="ok">${I("check")}<span>Published</span></div></div>
+  <div class="group"><h3>Agent parts <small>slice 27 · from the agents build</small></h3><div class="line" style="row-gap:1.2rem;padding-block-start:.6rem"><span class="pinwrap"><span class="pin" style="--c:var(--agent)"><span>${I("claude")}</span></span><span class="chip" style="--c:var(--agent)">Claude</span></span><span class="pin" style="--c:oklch(70% 0.16 55)"><span>?</span></span><span class="pin" style="--c:color-mix(in oklch, var(--muted) 45%, var(--surface))"><span>${I("check")}</span></span><span class="chip" style="--c:var(--anna)">Anna</span><span style="font-size:13px">typing<span class="rcaret" style="--c:var(--anna)"><i>A</i></span></span><span class="aout">Agent is changing this</span></div></div>`;
+}
+const sh = document.getElementById("sheet");
+sh.innerHTML = `<section class="col light" aria-label="Light"><h2>Light</h2>${sheet()}</section><section class="col dark" aria-label="Dark"><h2>Dark</h2>${sheet()}</section>`;
+document.querySelectorAll("[data-show]").forEach((b) => b.addEventListener("click", () => { sh.dataset.show = b.dataset.show; document.querySelectorAll("[data-show]").forEach((o) => o.setAttribute("aria-pressed", String(o === b))); caption(b.dataset.show === "both" ? "Each column is the same set, once in light and once in dark." : `${b.textContent} only.`); }));
+const moreBtn = document.getElementById("moreBtn"), moreMenu = document.getElementById("moreMenu");
+moreMenu.innerHTML = `<button type="button" class="menu-item" role="menuitem">${I("copy")}Duplicate<kbd>Ctrl D</kbd></button><button type="button" class="menu-item" role="menuitem">${I("pin")}Ask an agent here</button><button type="button" class="menu-item" role="menuitem">${I("files")}Show in code</button><hr><button type="button" class="menu-item danger" role="menuitem">${I("trash")}Remove</button>`;
+function openMore(open) { moreMenu.hidden = !open; moreBtn.setAttribute("aria-expanded", String(open)); }
+moreBtn.addEventListener("click", () => openMore(moreMenu.hidden));
+document.querySelector('[data-act="menu"]').addEventListener("click", () => { openMore(true); caption("The ⋯ menu is the Menu part, with Menu items, key hints and a danger item."); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") openMore(false); });
+
+</script>
+</body>
+</html>
