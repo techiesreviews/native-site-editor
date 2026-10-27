@@ -19,7 +19,7 @@ Typing together in the code pane, with others' carets.
 - Others show as a thin caret in their colour with a small circle on top: their first letter, or for an agent a tiny icon of its program (Claude, OpenAI, Gemini, …; from `clientInfo.name` or the helper).
 - The full name shows on hover, and a selection shows as a light tint.
 - The caret look is shared with slice 23 ([Lex's reference](../../prototypes/12-caret-circle-reference.png)).
-- Mock-up for Tuesday 3 Nov: [13-code-pane-and-undo.html](../../prototypes/13-code-pane-and-undo.html)
+- Mock-up approved by Lex (2026-10-27): [13-code-pane-and-undo.html](../../prototypes/13-code-pane-and-undo.html)
 
 ## Files
 

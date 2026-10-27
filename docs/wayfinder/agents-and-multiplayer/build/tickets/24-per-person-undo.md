@@ -19,7 +19,7 @@ Undo with several editors.
 - An agent's change is undone from its pin or chip (slice 15).
 - A guest's or collaborator's change can be undone from its brief author outline while it shows.
 - A change that landed on another page undoes on that page (clean-up slice 34).
-- Mock-up for Tuesday 3 Nov: [13-code-pane-and-undo.html](../../prototypes/13-code-pane-and-undo.html)
+- Mock-up approved by Lex (2026-10-27): [13-code-pane-and-undo.html](../../prototypes/13-code-pane-and-undo.html)
 
 ## Files
 
