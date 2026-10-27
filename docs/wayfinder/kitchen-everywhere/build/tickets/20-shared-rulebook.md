@@ -125,3 +125,9 @@ repo, update, launcher and doctor must require `docs/kitchen.md`. This editor ru
 Commits: 69e9fbd76 (rulebook split, `kit rulebook`, pins in `kit next`), 29138c63d and 45be55810
 (review fixes: section links, broken settings and no-`jq` failures, help lines, wording, tests), and
 this round (opencode pin delegates, final-newline handling, pin-source note, tests).
+
+### Follow-ups
+
+- Spec (P3): 69e9fbd76:scripts/agents/docs/kitchen.md:140 — P3 ticket: the ticket says the shared rulebook should work for any project, and pins should come from the rulebook with the extras winning. Station 6 still hard-codes `kit slice --ticket <t> --builder claude-opus-5-5`. A project whose extras override the "Builder, every slice" row (as `kitchen-extras-template.md:34` invites) would read one builder in the pins table and another in station 6. Fix: say "`--builder <builder pin>` (Who cooks)" instead of naming the model.
+- Validation gaps (gap): `tests/kit-next.test.ts` has no test for an extras pin row whose model is not in backticks, such as `| Builder, every slice | opencode/x, high | here |`. The regex at `scripts/agents/kit.d/next:1012` (diff line) skips that row without a word and keeps the shared pin. Add a test that pins down what should happen: fail with "malformed pin row", or at least prove the shared pin is kept on purpose.
+
