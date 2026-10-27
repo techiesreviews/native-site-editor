@@ -42,8 +42,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ## Done (2026-10-27)
 
 - `scripts/agents/launcher/kit` keeps the picked folder in `folder` before resolving it, so the message names it. Before: `RESULT: fail no Agent Kit at  (removed while starting)`; after: `RESULT: fail no Agent Kit at <data>/agent-kit/<commit> (removed while starting)`.
-- Nit: a fresh clone that fails the whole-kit check now ends `(the clone of <repo> holds no whole kit)` instead of `no machine copy; cannot clone …`; a clone that fails still says `cannot clone`.
+- Nit: a fresh clone that fails the whole-kit check now ends `(the clone of <repo> holds no whole kit)` instead of `no machine copy; cannot clone …`; a clone that fails still says `cannot clone`, and a whole clone that cannot be moved into place ends `(cannot place the clone at <folder>)`.
 - `docs/agents/agent-scripts.md`: a child picks again from `current` or the cache clone; the hook launcher also needs `hooks/run.sh`; a person's `KIT_HOME` wins over a different `KIT_HOME_PINNED`; both failure messages named.
 - `tests/kit-launcher.test.ts`, four new tests: a picked folder removed just before the resolve step (an exported `cd` function removes it) is named (failed before the fix with the empty folder); a pinned whole kit without `hooks/run.sh` is kept by `kit where` while the hook runs `current`'s guard; a removed pinned cache folder is cloned fresh from the newest kit and the hook then runs its guard; a person's whole `KIT_HOME` beside a different `KIT_HOME_PINNED` wins for both launchers. The two "cannot clone" tests now use an unreachable repo (an empty repo clones, so it now gets the clearer clone message), and the half-kit clone test expects the new message.
-- `scripts/agents/kit unit --affected`: `RESULT: ok unit 20/20 (1 files)`; `npm run lint` exit 0.
+- Fix round test: a whole clone whose `mv` meets a folder that is not a kit (an exported `mv` function makes one) ends `cannot place the clone at <folder>`, not the half-kit message (failed before the fix). The new tests check that `chmod` succeeded.
+- `scripts/agents/kit unit --affected`: `RESULT: ok unit 21/21 (1 files)`; `npm run lint` exit 0.
+- Commits: 251155ea1 (build); the review fix round follows it.
+- Review decisions: the clone message is now set only when the whole-kit check fails, with a separate placement message (fixed, with a test); the Done section gained this commits line and these decisions (fixed); the stale lines in ticket 39 (Decided behaviour `:20`, Done `:49`) were left alone because ticket 39 is outside this ticket's Files.
 - Feature list: no change (agent tooling only; nothing in the editor changes).
