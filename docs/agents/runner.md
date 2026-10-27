@@ -61,7 +61,7 @@ Open a single PNG only for a specific finding, never the same PNG twice. At most
 
 ## Review and close
 
-`kit slice` reviews, runs `kit fix` rounds and has the builder close the ticket. Manual fallback: one Claude review,
+`kit slice` reviews, runs `kit fix` rounds, takes the second look (Grok or a free OpenCode model per review kind, findings weighed like Claude's; `second look: skipped (<reason>)` when none can run) and has the builder close the ticket. Manual fallback: one Claude review,
 `scripts/agents/kit review --ticket <ticket>` in the background (evidence: main root `.scratch/reviews/<owner>/`). Verify
 findings, fix and commit real defects; re-review after substantial fixes; record rejected findings with reasons. Defects carry severity after the location: P0 = data loss, security hole, broken build/tests or wholly broken change; P1 = wrong user/runner behaviour or a broken "Done when" item; P2 = minor real defect; P3 = cosmetic/style (validation gaps have no severity). After the severity each defect names one kind (`P2 fault:`, `P1 ticket:`, `P2 race:`, `P3 style:`); a missing kind is `unsorted`, which is recorded in `findings.json` but never blocks on its own. All findings block until three completed fix rounds, then only P0/P1 defects, defects without readable severity and unreadable reviews block. Then
 append `## Done (YYYY-MM-DD)` to the ticket (behaviour, commits, tests, review decisions, evidence), set `status: closed`, `assignee: <owner>`.
