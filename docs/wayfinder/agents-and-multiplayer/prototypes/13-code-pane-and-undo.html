@@ -7,7 +7,7 @@
 <!--
   THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 3 Nov review
   (kitchen rule "mock-ups ahead", 2026-10-27).
-  Question: do others' carets in the code pane (circle with letter or model icon that widens to show the full name on hover, tinted selection) and per-person Undo (agent from its chip, person from its outline) read clearly? Agents build slices 22 and 24.
+  Question: do others' carets in the code pane (circle with letter or model icon that widens to show the full name on hover, tinted selection) and per-person Undo (agent from its chip, person from the undo at the end of their caret's name tag; typing shows no outline) read clearly? Agents build slices 22 and 24.
 -->
 <style>
 :root {
@@ -131,23 +131,29 @@ button { font: inherit; color: inherit; }
 .rc__flag:not([data-letter]) .rc__mark { background: var(--c); border-radius: 50%; }
 .rc__mark b { font: inherit; background: var(--c); padding-inline: 0.06rem; }
 .rc__mark svg { inline-size: 0.7rem; block-size: 0.7rem; stroke-width: 2.4; }
-.rc__name { opacity: 0; translate: -0.55rem 0; filter: blur(3px); }
 .rc__flag[data-letter] .rc__name { margin-inline-start: -0.36rem; }
+/* Undo for that person's last text change: a small icon button at the end of the opened tag. */
+.rc__undo { all: unset; display: grid; place-items: center; flex: none; inline-size: 0.95rem; block-size: 0.95rem; margin-inline: 0.2rem -0.3rem; border-radius: 50%; cursor: pointer; }
+.rc__undo svg { inline-size: 0.65rem; block-size: 0.65rem; stroke-width: 2.6; }
+.rc__undo:focus-visible { outline: 1.5px solid currentColor; outline-offset: -1.5px; }
+.rc__undo:active { background: color-mix(in oklch, currentColor 30%, transparent); }
+:is(.rc__name, .rc__undo) { opacity: 0; translate: -0.55rem 0; filter: blur(3px); }
 .rc:focus-visible { outline: none; }
 .rc:focus-visible .rc__flag { outline: 2px solid var(--c); outline-offset: 2px; }
 .rc:focus-visible .rc__flag, .rc:focus-within .rc__flag { clip-path: inset(0 0 0 0 round 0.575rem); }
-.rc:focus-visible .rc__name, .rc:focus-within .rc__name { opacity: 1; translate: 0 0; filter: blur(0); }
+.rc:focus-visible :is(.rc__name, .rc__undo), .rc:focus-within :is(.rc__name, .rc__undo) { opacity: 1; translate: 0 0; filter: blur(0); }
 @media (hover: hover) and (pointer: fine) {
   .rc:hover .rc__flag { clip-path: inset(0 0 0 0 round 0.575rem); }
-  .rc:hover .rc__name { opacity: 1; translate: 0 0; filter: blur(0); }
+  .rc:hover :is(.rc__name, .rc__undo) { opacity: 1; translate: 0 0; filter: blur(0); }
+  .rc__undo:hover { background: color-mix(in oklch, currentColor 20%, transparent); }
 }
-.rc__name { transition: opacity 200ms var(--ease-out); }
+:is(.rc__name, .rc__undo) { transition: opacity 200ms var(--ease-out); }
 @media (prefers-reduced-motion: no-preference) {
   .rc__flag { transition: clip-path 200ms var(--ease-out); }
-  .rc__name { transition: opacity 200ms var(--ease-out), translate 240ms var(--ease-out), filter 240ms var(--ease-out); }
+  :is(.rc__name, .rc__undo) { transition: opacity 200ms var(--ease-out), translate 240ms var(--ease-out), filter 240ms var(--ease-out); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rc__name { translate: 0 0; filter: none; }
+  :is(.rc__name, .rc__undo) { translate: 0 0; filter: none; }
 }
 .sel { background: color-mix(in oklch, var(--c) 22%, transparent); border-radius: 2px; }
 .me { display: inline-block; inline-size: 0; block-size: 1.2em; vertical-align: text-bottom; border-inline-start: 2px solid var(--text); margin-inline: -1px; animation: blink 1s steps(1) infinite; }
@@ -165,7 +171,7 @@ button { font: inherit; color: inherit; }
 <main>
   <header style="display:grid;gap:0.3rem">
     <h1>Code pane and Undo, together <span class="tag">mock-up for Tuesday 3 Nov</span></h1>
-    <p class="intro">Agents build, slices 22 and 24. Anna and Claude work in the same section as Lex. Their carets show in the code pane with a small circle on top. Lex's Undo only takes back his own typing. An agent's change is undone from its chip, and a person's change from its outline while that shows.</p>
+    <p class="intro">Agents build, slices 22 and 24. Anna and Claude work in the same section as Lex. Their carets show in the code pane with a small circle on top. Lex's Undo only takes back his own typing. An agent's change is undone from its chip, and a person's typing from the name tag on their caret.</p>
   </header>
   <section class="strip" aria-labelledby="s1">
     <h2 id="s1">Try it (demo buttons, not part of the editor). Hover a circle in the code to see the name.</h2>
@@ -243,7 +249,7 @@ const C = { anna: "var(--anna)", agent: "var(--agent)", guest: "var(--guest)" };
 const NAMES = { anna: "Anna", agent: "Claude (agent)" };
 let S;
 function reset() {
-  S = { heading: [["Fresh bread every morning", "base"]], para: [["Sourdough, rye and seeded loaves from our oven on the corner.", "base"]], cta: "Order now", carets: { anna: ["para", 1], agent: null }, me: ["heading"], sel: false, agentChange: null, annaOutline: false, lexUndo: [] };
+  S = { heading: [["Fresh bread every morning", "base"]], para: [["Sourdough, rye and seeded loaves from our oven on the corner.", "base"]], cta: "Order now", carets: { anna: ["para", 1], agent: null }, me: ["heading"], sel: false, agentChange: null, annaUndo: false, lexUndo: [] };
   caption("Lex's caret is the plain one. Anna and Claude each have their own colour.");
   render();
 }
@@ -253,7 +259,9 @@ function flag(who) {
   const inner = who === "agent" ? icon("claude") : `<b>${NAMES[who][0]}</b>`;
   const person = who !== "agent";
   const rest = person ? NAMES[who].slice(1) : NAMES[who];
-  return `<span class="rc" style="--c:${C[who]}" tabindex="0" aria-label="${NAMES[who]}"><span class="rc__flag"${person ? " data-letter" : ""}><span class="rc__mark">${inner}</span><span class="rc__name" aria-hidden="true">${rest}</span></span></span>`;
+  // While Anna's last text change can be undone, her opened tag ends with an undo button.
+  const undo = who === "anna" && S.annaUndo ? `<button type="button" class="rc__undo" data-undo-anna aria-label="Undo Anna's change">${icon("undo")}</button>` : "";
+  return `<span class="rc" style="--c:${C[who]}" tabindex="0" aria-label="${NAMES[who]}"><span class="rc__flag"${person ? " data-letter" : ""}><span class="rc__mark">${inner}</span><span class="rc__name" aria-hidden="true">${rest}</span>${undo}</span></span>`;
 }
 function lineText(f) {
   let out = "";
@@ -278,9 +286,8 @@ function render() {
   ];
   code.innerHTML = lines.map((l, i) => `<div class="ln"><i>${i + 1}</i><span>${l}</span></div>`).join("");
   const site = document.getElementById("site");
-  const annaChip = S.annaOutline ? `<span class="chip" style="--c:${C.anna}">Anna<button type="button" data-undo-anna aria-label="Undo Anna's change">${icon("undo")}</button></span>` : "";
   const agentChip = S.agentChange ? `<span class="chip" style="--c:${C.agent}">${icon("claude")}Claude<button type="button" data-undo-agent aria-label="Undo Claude's change">${icon("undo")}</button></span>` : "";
-  site.innerHTML = `<h2>${esc(text("heading"))}</h2><p class="${S.annaOutline ? "outline" : ""}" style="--c:${C.anna}">${esc(text("para"))}${annaChip}</p><span class="cta ${S.agentChange ? "outline" : ""}" style="--c:${C.agent}">${esc(S.cta)}${agentChip}</span>`;
+  site.innerHTML = `<h2>${esc(text("heading"))}</h2><p>${esc(text("para"))}</p><span class="cta ${S.agentChange ? "outline" : ""}" style="--c:${C.agent}">${esc(S.cta)}${agentChip}</span>`;
   document.getElementById("undoBtn").disabled = !S.lexUndo.length;
   const save = document.getElementById("saveBtn");
   save.querySelector(".save-dot")?.remove();
@@ -298,9 +305,8 @@ const acts = {
     S.carets.anna = ["para"]; S.sel = false;
     caption("Anna types at the end of the paragraph. Her caret moves with her words.");
     await typeInto("para", "anna", " Baked by hand since 1987.");
-    S.annaOutline = true; render();
-    caption("Her change shows a brief outline in her colour. While it shows, Lex can undo it from there.");
-    setTimeout(() => { S.annaOutline = false; render(); }, 6000);
+    S.annaUndo = true; render();
+    caption("Typing shows only her caret, no outline. Her name tag on the caret now ends with an undo.");
   },
   async lex() {
     S.me = ["heading"];
@@ -333,7 +339,12 @@ document.getElementById("undoBtn").addEventListener("click", () => acts.undo());
 document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); acts.undo(); } });
 document.getElementById("site").addEventListener("click", (e) => {
   if (e.target.closest("[data-undo-agent]")) { S.cta = S.agentChange.before; S.agentChange = null; S.carets.agent = null; render(); caption("Claude's change is undone. Lex's and Anna's words stay."); }
-  if (e.target.closest("[data-undo-anna]")) { S.para = S.para.filter((s) => s[1] !== "anna"); S.annaOutline = false; render(); caption("Anna's change is undone from its outline. Lex's words stay."); }
+});
+document.getElementById("code").addEventListener("click", (e) => {
+  if (!e.target.closest("[data-undo-anna]")) return;
+  S.para = S.para.filter((s) => s[1] !== "anna"); S.annaUndo = false; render();
+  if (e.detail === 0) document.querySelector('#code .rc[aria-label="Anna"]')?.focus();
+  caption("Anna's change is undone from her caret's name tag. Lex's words stay.");
 });
 reset();
 
