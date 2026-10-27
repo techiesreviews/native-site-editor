@@ -2,7 +2,7 @@
 title: Settings for projects unlike the editor
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-14
 builder: claude
 blocked_by: [13-helpers-through-kit-home]
 ---
