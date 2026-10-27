@@ -1,8 +1,8 @@
 ---
 title: Own commands in the project's own folder
 type: task (AFK)
-status: open
-assignee: ke-12
+status: closed
+assignee: build/ke-12-own-commands-folder
 builder: claude
 blocked_by: [11-project-settings-file]
 ---
@@ -39,3 +39,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke12 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/12-own-commands-folder.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke12 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, the four `--help` checks, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- `scripts/agents/kit` reads the shared `scripts/agents/kit.d/` and the folder `commands` names in `scripts/agents/kit.json` (relative to the project's top folder, or absolute); bare `kit` lists "Shared commands" and "Project commands" apart. On a shared name the shared command runs. `KIT_COMMANDS_DIR` replaces both folders and lists one plain "Commands" group.
+- `specs`, `shots`, `size` and `preview` moved unchanged to `scripts/agents/project.d/`; their helpers stay in `scripts/agents/`. `kit.json` `commands` is now `scripts/agents/project.d`. `shots/compare.mjs` runs `project.d/shots`.
+- `kit doctor` has a tenth check, `commands`: it fails when a project command takes a shared name (`ok in both <shared file> and <project file>; fix: rename the project command`) or the named folder is missing; the `--help` check covers both folders.
+- `kit ux` takes screenshots through the project's own `shots` (`KIT_UX_SHOTS`, else `KIT_COMMANDS_DIR`, else the `commands` folder) and fails `ux needs a project shots command (…)` before trying anything when there is none.
+- Tests: `tests/kit.test.ts` (project command runs, two groups, shared name wins, `KIT_COMMANDS_DIR` replaces both), `tests/kit-doctor.test.ts` (clash names both files, missing folder, real shared and project helps), `tests/kit-ux.test.ts` (no folder, no `shots`, project `shots.mjs` used). The fake-project fixtures in `kit-specs`, `kit-size` and `kit-preview` tests name `project.d` through `KIT_COMMANDS_DIR`; `kit-shots-compare` follows the move.
+- Docs: `docs/agents/agent-scripts.md` (two folders, `commands` key, doctor and ux lines), `docs/agents/code-map.md`.
+- Feature list: no change (agent kit tooling only, nothing an editor user sees).
+- Validation: `scripts/agents/kit unit --affected` `RESULT: ok unit 179/179 (7 files)`; all `tests/kit*.test.ts` plus docs guards `RESULT: ok unit 748/748 (32 files)`; `kit doctor` `RESULT: ok doctor 10/10 checks passed`; `kit specs|shots|size|preview --help` exit 0; `npm run check` and `npm run lint` pass.

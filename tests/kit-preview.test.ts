@@ -5,10 +5,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
 
-const preview = resolve("scripts/agents/kit.d/preview");
+const preview = resolve("scripts/agents/project.d/preview");
 const kit = resolve("scripts/agents/kit");
 const wrapper = resolve("scripts/agents/deploy-preview.sh");
 const version = "12345678-abcd-1234-abcd-123456789abc";
@@ -111,7 +111,8 @@ async function fixture(t: TestContext) {
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const key of Object.keys(env)) if (key.startsWith("KIT_") || key.startsWith("FAKE_") || key.startsWith("GIT_") || key === "ASE_PREVIEW_TIMEOUT") delete env[key];
   Object.assign(env, {
-    PATH: `${bin}:${process.env.PATH}`, KIT_ROOT: root, KIT_MAIN_ROOT: main, ASE_OWNER: "kit-preview-test",
+    // The fake project has no settings file naming its commands folder, so name this project's.
+    PATH: `${bin}:${process.env.PATH}`, KIT_ROOT: root, KIT_MAIN_ROOT: main, KIT_COMMANDS_DIR: dirname(preview), ASE_OWNER: "kit-preview-test",
     KIT_PREVIEW_LOCK: join(dir, "preview.lock"), KIT_PREVIEW_URL: `http://127.0.0.1:${address.port}/`,
     KIT_PREVIEW_VERIFY_MS: "300", KIT_PREVIEW_INTERVAL_MS: "20", FAKE_CALLS: join(dir, "calls.jsonl"),
     GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0",

@@ -5,7 +5,7 @@
   "worktreePrefix": "native-site-editor-",
   "sharedNodeModules": "/home/ubulex/Projects/native-site-editor-dev/node_modules",
   "branches": { "land": "dev", "release": "main", "ci": "dev" },
-  "commands": "scripts/agents/kit.d",
+  "commands": "scripts/agents/project.d",
   "checks": {
     "check": "npm run check",
     "test": "npm test",
