@@ -44,7 +44,8 @@ review needs `ASE_REVIEW_MODEL` only for the second opinions below; `kit slice` 
 | Second look, every change, after Claude's review | newest fit model per review kind (code, UX, DX, agent): `grok-4.7` or a free OpenCode model | Grok: `ASE_REVIEW_MODEL=grok-4.7 kit review --ticket <t>`; free OpenCode reviews wait on a kit path ([kitchen-everywhere 01](../wayfinder/kitchen-everywhere/tickets/01-grill-how-the-kitchen-is-copied.md#resolution-2026-10-26)) |
 | UX and design review | `claude-opus-5-5`, medium | see Review |
 
-Sol never builds. `kit review` counts GPT and Grok reviews per week and refuses at the limit;
+Sol never builds. `kit review` counts GPT and Grok reviews per week for the whole computer (one count
+whatever project asks; the Tuesday sweep shows the week's Grok use by project) and refuses at the limit;
 on a usage-limit `problem:` line, tell Lex the reset time and carry on with Claude.
 
 ## Stations
