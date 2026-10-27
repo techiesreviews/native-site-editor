@@ -2,7 +2,7 @@
 title: The project settings file, this editor first
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-11
 builder: claude
 blocked_by: [10-fixes-from-old-copies]
 ---
