@@ -85,4 +85,16 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - The review brief reads `standards` from the top folder of the worktree it was given. Because of that, the temp repo in `tests/agent-scripts.test.ts` now carries a settings file too (the only test outside `tests/kit*.test.ts` that needed one).
   - The layout paragraph in `agent-scripts.md` now points to the settings file.
   - New tests cover `worktree.sh`, sweep's missing-key lines, `kit pr`'s release pairing, the `deps add` prefix, a trailing-slash `maps` (heartbeat and `scoreMap`) and bash/node agreement on `mainRoot`.
+- **Review round 2 fixes:**
+  - `kit pr` resolves its default `--base` after reading the settings file, so a settings problem fails with exit 1, not as a usage error.
+  - `kit score` lists records without a maps folder; only `--snapshot` and `--html` need one.
+  - Doctor's fix tells the user to edit an existing file rather than add it.
+  - The review brief takes its default scope and standards from the same checkout.
+  - A bad `paths` pattern names its `kit.json` key.
+  - New tests:
+    - `kit next --start` on a project that lands on `main`.
+    - `kit next --help` with this editor's file and with a broken one.
+    - The no-maps lines of `next`, `heartbeat`, `tickets.mjs` and `score`.
+    - `kit pr` running two `checks.extra` commands in order and skipping a missing `lint`.
+- **Still open, outside this ticket's Files:** `scripts/agents/worktrees.mjs` (lines 71, 121, 124) protects only `native-site-editor-dev` or branch `dev` and hard-codes `origin/dev`/`origin/main`, so a project landing on `main` loses dev-worktree protection in `worktrees.sh`. `kit.d/learn`'s `defaultSlug` should read `project`. No ticket covers these yet; the lead needs to file one (`worktrees.mjs` should use `kitDevRoot()`, `kitBranch("land")` and `kitBranch("release")`).
 - **Feature list:** no change (kit plumbing for agents; no editor UI).
