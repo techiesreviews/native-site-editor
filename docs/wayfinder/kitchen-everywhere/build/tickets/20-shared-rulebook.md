@@ -56,11 +56,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   shared part plus `No project extras: …` (`RESULT: ok rulebook shared only`); an unreadable extras
   file, a broken settings file (`cannot read scripts/agents/kit.json: <jq error>`) or no `jq` fails
   after the shared part; a kit without `docs/kitchen.md` fails before it; any argument is a usage
-  error (exit 2).
+  error (exit 2). A file without a final newline still leaves the next line and `RESULT:` on their own lines.
 - **`kit next`** reads its builder and reviewer from the shared rulebook's "Builder, every slice" and
   "Review, every change" rows in `$KIT_HOME/docs/kitchen.md`; the same row in the extras wins; a
   missing file or row fails before any hand-out (`kit next --help` says so). `--run-group` has its
-  builder already and never reads the rulebook. The station 5 brief names `ASE_REVIEW_MODEL=<review pin>`. Before and after on this build's own map
+  builder already and never reads the rulebook. The pin applies before the `opencode/` check, so an
+  `opencode/<model>` builder pin delegates the tickets it builds (claimed, never started). Pins are
+  read from the running kit and checkout, not from `origin/dev` (`--help` and agent-scripts.md say so). The station 5 brief names `ASE_REVIEW_MODEL=<review pin>`. Before and after on this build's own map
   (`kit next kitchen-everywhere`): identical, `next: …/28-kit-home-test-env-and-gaps.md
   builder=claude-opus-5-5 owner=ke-28 why=slot 1/5`, six `waits:` lines, `RESULT: ok next 1 ready, 6 waiting`.
 - **`docs/agents/kitchen.md`** is the pointer: run `kit rulebook`, where both files are, and one heading
@@ -99,10 +101,11 @@ Tests: `tests/kit-rulebook.test.ts` (new: output of both parts here and in a tem
 path, no extras, missing extras or a folder, usage and help, every link and anchor in the four files,
 the pointer keeps every old heading, the shared rulebook names no editor-only fact and links only
 inside the kit, the two pin rows exist, a kit with no shared rulebook, a broken settings file and a
-`PATH` without `jq` fail, an empty `rulebookExtras` reads as unset; the link check also covers `runner.md` and `agent-scripts.md`);
+`PATH` without `jq` fail, an empty `rulebookExtras` reads as unset, files without a final newline
+keep `RESULT:` on its own line; the link check also covers `runner.md` and `agent-scripts.md`);
 `tests/kit-next.test.ts` (pins from a `KIT_HOME` rulebook reach `next:` and `ASE_REVIEW_MODEL`,
 extras builder and reviewer rows win through `--start`, an extras builder row alone keeps the
-shared reviewer, a missing rulebook, extras or pin fails, a
+shared reviewer, an `opencode/` builder pin only claims and delegates, `--help` names the pin rows, a missing rulebook, extras or pin fails, a
 group run works with a kit that has no `docs/`; the real-kit-home test links `docs` too). The
 extras link the issue tracker's Wayfinding operations and Build files sections; the pointer sends
 the feature list and `kit ux` (stations 7, 11) to the extras' Visible changes section.
@@ -113,3 +116,12 @@ all pass; `node scripts/agents/tickets.mjs check` passes (775 tickets); `npm run
 `npm run check` exit 0; `kit doctor` 11/11.
 
 Feature list: no change (kit and docs only; nothing in the editor changes).
+
+Known limit, for ticket 30: `kit update` (`has_kit`), the launcher (`whole`) and `kit doctor` still
+accept a kit without `docs/kitchen.md`, while `kit next` now needs it; once the kit moves to its own
+repo, update, launcher and doctor must require `docs/kitchen.md`. This editor runs its kit from
+`scripts/agents`, which has it.
+
+Commits: 69e9fbd76 (rulebook split, `kit rulebook`, pins in `kit next`), 29138c63d and 45be55810
+(review fixes: section links, broken settings and no-`jq` failures, help lines, wording, tests), and
+this round (opencode pin delegates, final-newline handling, pin-source note, tests).
