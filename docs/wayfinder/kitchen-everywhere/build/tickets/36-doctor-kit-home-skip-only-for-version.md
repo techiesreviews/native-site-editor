@@ -1,7 +1,7 @@
 ---
 title: Doctor skips a failing kit home only when version caused it
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-36
 builder: claude
 blocked_by: [27-doctor-commands-on-broken-settings]
@@ -38,3 +38,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke36 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/36-doctor-kit-home-skip-only-for-version.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke36 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit, doctor and status `RESULT:` lines, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- `kit doctor` skips a failing `kit home` under `KIT_DOCTOR_SKIP=help` only when the copy's `kit version` fails as `version --help` did: both time out, or both exit with the same status and print the same output, reading the copy's path as the kit's and leaving out the RESULT line the front door adds. A missing helper, another exit status, a `version (no usage)` help or a home that cannot be copied keeps `✗ kit home`, so `agent.sh build` is refused (exit 3). The copy's `kit version` now runs within `KIT_HELP_TIMEOUT` (default 10, as before), so a hanging version hangs in both.
+- `docs/agents/agent-scripts.md`: the doctor gate wording says when `kit home` is skipped, and a resume gates as a build only when its `status.json` records `kind: build`.
+- Tests (`tests/kit-doctor.test.ts`): a copy that fails through a missing helper, or with the same words but another exit, refuses `agent.sh build` with `✗ kit home`; a `version` whose help and copy both hang skips both (`skipped help, kit home`) while a copy that fails fast does not; `version (no usage)` with a copyable failing home still fails `kit home`; a real front-door copy whose error names its own path is matched and skipped; a run without `--quiet` puts the `problem: help` line between `✓ commands` and `✓ kit home` with no `✓ help` or `✗ help`; a resumed build with a full `status.json` starts its builder with `--resume <session>` and no `KIT_DOCTOR_SKIP`. The missing-helper and hang cases fail on the old doctor.
+- Validation: `RESULT: ok unit 57/57 (1 files)` (`kit unit --affected`); `tests/kit-settings.test.ts`, `tests/kit-tests-clean.test.ts`, `tests/agent-scripts.test.ts` pass 60/60; `npm run lint` exit 0; `RESULT: ok doctor 11/11 checks passed`; `RESULT: ok status all 770 tickets, 592 closed, 0 open PRs`.
+- Feature list: no change (kit-internal doctor gate, nothing a site editor user sees).
