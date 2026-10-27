@@ -1,7 +1,7 @@
 ---
 title: The playwright setting reaches project commands
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-32
 builder: claude
 blocked_by: [14-settings-for-other-projects]
@@ -33,3 +33,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke32 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/32-playwright-setting-reaches-commands.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke32 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- `scripts/agents/kit`: when `KIT_PLAYWRIGHT_MODULE` is unset or empty and `scripts/agents/kit.json` has `playwright`, the front door exports `KIT_PLAYWRIGHT_MODULE` as that path, made absolute against `KIT_ROOT` (as `kit doctor` reads it). A set variable wins; no setting, or no jq, leaves it unset.
+- `tests/kit-settings.test.ts`: "the playwright setting reaches project commands as KIT_PLAYWRIGHT_MODULE, unless the variable is set" runs a project command through the front door for a relative setting (absolute path), an absolute one (as given), a caller's variable (kept) and no setting (unset); it fails without the front-door change. The shared test env now clears `KIT_PLAYWRIGHT_MODULE`.
+- `docs/agents/agent-scripts.md` unchanged: it already says project commands read the setting and that `KIT_PLAYWRIGHT_MODULE` wins over the file.
+- Feature list: no change (agent tooling only).
