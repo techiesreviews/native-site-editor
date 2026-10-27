@@ -2,7 +2,7 @@
 title: Settings for projects unlike the editor
 type: task (AFK)
 status: closed
-assignee: build/ke-14-settings-for-other-projects
+assignee: ke-14
 builder: claude
 blocked_by: [13-helpers-through-kit-home]
 ---
@@ -85,17 +85,18 @@ Left for later: `agent-run.mjs`'s build contract still says "npm run check" and 
 - `projectCommand` follows `KIT_COMMANDS_DIR` like the kit front door; bare `unit.sh` runs from the project's top folder, where `kit unit --list`'s paths start.
 - Tests: seven workflow shapes (deploy-only, scheduled, path-filtered push, inline and list `push`, `pull_request_target`, `pull_request`) decide whether `kit pr` waits and what `landed.ci` records; the slice wording with and without `tsconfig.json`; a `.ts` helper under `test/` is not selected; a fix round with an unreadable settings file still starts with `run doctor first.`; the doctor RESULT counts `checks.doctor` and `playwright` (13/13) but not the grok note.
 
+- **Second look: skipped (Grok cap).** The run on 2026-10-27 (`--base a6a7097b1^`, evidence `.scratch/reviews/review/ke14-second-look/20261027T120431Z` in the main checkout) stopped after ten turns with `402 Payment Required: Grok Build usage balance exhausted`, while the kit's own count said `grok 5/8 in 2026-W44`; no findings came back. Claude's two P2s below go to [ticket 29](29-pr-ci-filters-and-claim-owner.md) and [ticket 32](32-playwright-setting-reaches-commands.md); the P3 on `assignee:` is fixed in the same docs PR (back to `ke-14`), and its cause in `kit slice` goes to ticket 29. The Follow-ups below were cut mid-sentence (the cause is [ticket 18](18-full-follow-ups.md)); they are rewritten in full here from `.scratch/reviews/build/ke-14-settings-for-other-projects/20261027T114732Z/result.md`.
+
 ### Follow-ups
 
-- Spec (P2): 8926c2f:scripts/agents/kit.d/pr:96 — P2 fault: `runsOnPullRequests` treats any block-form `push` that has a `branches`, `branches-ignore`, `paths` or `paths-ign
-- Spec (P3): 8926c2f:scripts/agents/kit.d/pr:86 — P3 fault: the inline form returns true for any `push` text. So the flow-mapping form `on: { push: { branches: [main] } }`, 
-- Spec (P2): e3439f2:docs/agents/agent-scripts.md:49 — P2 ticket: the doc says `playwright` is a module path "that `kit doctor` checks and project commands read". Nothing in
-- Spec (P3): e3439f2:scripts/agents/kit.d/pr:220 — P3 fault: when land and release are both `main`, the `--base main` guard is relaxed, but `--release` is still accepted. It
-- Spec (P3): e3439f2:docs/wayfinder/kitchen-everywhere/build/tickets/14-settings-for-other-projects.md:5 — P3 ticket: `assignee:` was changed from the claim owner `ke-14` to
-- Spec (P3): 8926c2f:docs/wayfinder/kitchen-everywhere/build/tickets/14-settings-for-other-projects.md:54 — P3 ticket: the Done "No CI" bullet still quotes `ci: none (no .gi
-- Spec (P3): e3439f2:scripts/agents/kit.d/doctor:60 — P3 race: doctor now fetches `origin <land>` on every `agent.sh` start, in up to 5 worktrees at once. All of them share 
-- Validation gaps (gap): tests/kit-pr.test.ts: add `push:\n    branches-ignore: [main]`, `push:\n    branches: ['']` and `on: { push: { branches: [main] } }` to the workflow-shape table
-- Validation gaps (gap): tests/kit-pr.test.ts: with land and release both `main`, `kit pr --release --base main --dry-run` should be refused with a clear line, not open a `main` → `main
-- Validation gaps (gap): tests/kit-doctor.test.ts: a `checks.doctor` command that exits non-zero (not timed out) shows `✗ <command>: exit N: <last line>` and is named in `RESULT: fail d
-- Validation gaps (gap): No test proves that a project setting only `playwright` (no `KIT_PLAYWRIGHT_MODULE` in the environment) makes that path visible to a project command. Add one th
-
+- Spec (P2, → [ticket 29](29-pr-ci-filters-and-claim-owner.md)): 8926c2f:scripts/agents/kit.d/pr:96 — `runsOnPullRequests` treats any block-form `push` with a `branches`, `branches-ignore`, `paths` or `paths-ignore` child as "not CI". Many of those run on PR branches (`push: branches: ['**']`, `push: branches-ignore: [main]`, a `paths-ignore` filter the PR does not hit); for them `kit pr` prints `ci: none …`, records `landed.ci: "none"` and merges without waiting, so a failing CI run no longer stops the landing. Fix: count as "not CI" only `branches`/`tags` filters that cannot match a feature branch; count `branches-ignore`, `paths` and `paths-ignore` pushes as CI.
+- Spec (P3, → ticket 29): 8926c2f:scripts/agents/kit.d/pr:86 — the inline form returns true for any `push` text, so the flow form `on: { push: { branches: [main] } }`, a deploy-only workflow, still waits 30 minutes for runs that never come. Fix: apply the same filter check to an inline `{ … }` `push:` entry.
+- Spec (P2, → [ticket 32](32-playwright-setting-reaches-commands.md)): e3439f2:docs/agents/agent-scripts.md:49 — the doc says `playwright` is a module path "that `kit doctor` checks and project commands read", but only `kit.d/doctor:149` reads it and the front door does not export it as `KIT_PLAYWRIGHT_MODULE`; a project setting only `playwright` gets a green doctor line while its commands do not find Playwright. Fix: the front door exports `KIT_PLAYWRIGHT_MODULE` from the setting when unset, resolved against the top folder.
+- Spec (P3, not ticketed): e3439f2:scripts/agents/kit.d/pr:220 — with land and release both `main` the `--base main` guard is relaxed, but `--release` is still accepted and would open a `main` → `main` PR. Fix: refuse `--release` when `branches.release` equals `branches.land`.
+- Spec (P3, fixed in the second-look docs PR; cause → ticket 29): e3439f2:docs/wayfinder/kitchen-everywhere/build/tickets/14-settings-for-other-projects.md:5 — `assignee:` became the branch name `build/ke-14-settings-for-other-projects` instead of the claim owner `ke-14`, which `kit status`'s "who" column and `kit next`'s claim checks read. The `kit slice` brief sets `assignee: ${kitOwner()}`, and `kitOwner()` falls back to the branch name without `ASE_OWNER` or `.scratch/owner`.
+- Spec (P3, not ticketed): 8926c2f:docs/wayfinder/kitchen-everywhere/build/tickets/14-settings-for-other-projects.md:54 — the Done "No CI" bullet quotes `ci: none (no .github/workflows); landing after review`; the code and agent-scripts.md print `ci: none (no workflow in .github/workflows runs on pull requests); landing after review` (round 3 above says so). The Unit tests bullet says a folder pattern takes "every JS/TS file under it"; round 3 limits it to `.js`, `.mjs` and `.cjs`.
+- Spec (P3, not ticketed): e3439f2:scripts/agents/kit.d/doctor:60 — doctor now fetches `origin <land>` on every `agent.sh` start, in up to 5 worktrees at once, all sharing `refs/remotes/origin/<land>`, so a concurrent `kit pr` `git fetch -q origin` is more likely to hit "cannot lock ref". Fix: retry `kit pr`'s fetch once on a ref-lock error, or serialise the doctor fetch.
+- Validation gap (→ ticket 29): tests/kit-pr.test.ts — add `push: branches-ignore: [main]`, `push: branches: ['**']` and `on: { push: { branches: [main] } }` to the workflow-shape table; the first two wait (`wait ci --pr 73`, `landed.ci: "pass"`), the third does not.
+- Validation gap (not ticketed): tests/kit-pr.test.ts — with land and release both `main`, `kit pr --release --base main --dry-run` should be refused with a clear line.
+- Validation gap (not ticketed): tests/kit-doctor.test.ts — a `checks.doctor` command that exits non-zero (not timed out) shows `✗ <command>: exit N: <last line>` and is named in `RESULT: fail doctor … failed: …`; the tests cover pass and timeout only.
+- Validation gap (→ ticket 32): no test proves that a project setting only `playwright` (no `KIT_PLAYWRIGHT_MODULE` in the environment) makes that path visible to a project command run through the front door.

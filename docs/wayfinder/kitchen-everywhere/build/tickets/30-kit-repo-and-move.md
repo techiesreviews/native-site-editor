@@ -5,7 +5,7 @@ status: open
 assignee:
 builder: claude
 runs_alone: true
-blocked_by: [17-second-look-per-kind, 20-shared-rulebook, 21-launcher-and-update, 22-kit-init, 23-issues-to-ticket-files, 24-combined-score-table]
+blocked_by: [17-second-look-per-kind, 29-pr-ci-filters-and-claim-owner, 20-shared-rulebook, 21-launcher-and-update, 22-kit-init, 23-issues-to-ticket-files, 24-combined-score-table]
 ---
 
 ## Goal
