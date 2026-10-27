@@ -84,3 +84,18 @@ Left for later: `agent-run.mjs`'s build contract still says "npm run check" and 
 - A folder pattern in `unit.files` (`test/`) takes only the `.js`, `.mjs` and `.cjs` files under it, as `node --test` runs a test folder; TypeScript tests there need a glob.
 - `projectCommand` follows `KIT_COMMANDS_DIR` like the kit front door; bare `unit.sh` runs from the project's top folder, where `kit unit --list`'s paths start.
 - Tests: seven workflow shapes (deploy-only, scheduled, path-filtered push, inline and list `push`, `pull_request_target`, `pull_request`) decide whether `kit pr` waits and what `landed.ci` records; the slice wording with and without `tsconfig.json`; a `.ts` helper under `test/` is not selected; a fix round with an unreadable settings file still starts with `run doctor first.`; the doctor RESULT counts `checks.doctor` and `playwright` (13/13) but not the grok note.
+
+### Follow-ups
+
+- Spec (P2): 8926c2f:scripts/agents/kit.d/pr:96 — P2 fault: `runsOnPullRequests` treats any block-form `push` that has a `branches`, `branches-ignore`, `paths` or `paths-ign
+- Spec (P3): 8926c2f:scripts/agents/kit.d/pr:86 — P3 fault: the inline form returns true for any `push` text. So the flow-mapping form `on: { push: { branches: [main] } }`, 
+- Spec (P2): e3439f2:docs/agents/agent-scripts.md:49 — P2 ticket: the doc says `playwright` is a module path "that `kit doctor` checks and project commands read". Nothing in
+- Spec (P3): e3439f2:scripts/agents/kit.d/pr:220 — P3 fault: when land and release are both `main`, the `--base main` guard is relaxed, but `--release` is still accepted. It
+- Spec (P3): e3439f2:docs/wayfinder/kitchen-everywhere/build/tickets/14-settings-for-other-projects.md:5 — P3 ticket: `assignee:` was changed from the claim owner `ke-14` to
+- Spec (P3): 8926c2f:docs/wayfinder/kitchen-everywhere/build/tickets/14-settings-for-other-projects.md:54 — P3 ticket: the Done "No CI" bullet still quotes `ci: none (no .gi
+- Spec (P3): e3439f2:scripts/agents/kit.d/doctor:60 — P3 race: doctor now fetches `origin <land>` on every `agent.sh` start, in up to 5 worktrees at once. All of them share 
+- Validation gaps (gap): tests/kit-pr.test.ts: add `push:\n    branches-ignore: [main]`, `push:\n    branches: ['']` and `on: { push: { branches: [main] } }` to the workflow-shape table
+- Validation gaps (gap): tests/kit-pr.test.ts: with land and release both `main`, `kit pr --release --base main --dry-run` should be refused with a clear line, not open a `main` → `main
+- Validation gaps (gap): tests/kit-doctor.test.ts: a `checks.doctor` command that exits non-zero (not timed out) shows `✗ <command>: exit N: <last line>` and is named in `RESULT: fail d
+- Validation gaps (gap): No test proves that a project setting only `playwright` (no `KIT_PLAYWRIGHT_MODULE` in the environment) makes that path visible to a project command. Add one th
+
