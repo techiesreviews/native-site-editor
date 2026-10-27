@@ -2,7 +2,7 @@
 title: A broken --help does not stop the fix builder
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-19
 builder: claude
 blocked_by: []
 ---
