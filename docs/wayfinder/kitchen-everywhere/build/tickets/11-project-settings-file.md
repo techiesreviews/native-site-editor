@@ -2,7 +2,7 @@
 title: The project settings file, this editor first
 type: task (AFK)
 status: closed
-assignee: build/ke-11-project-settings-file
+assignee: ke-11
 builder: claude
 blocked_by: [10-fixes-from-old-copies]
 ---
@@ -108,4 +108,16 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
     - `checks.extra` on a non-kit diff.
     - Sweep corrections under `notes/maps`.
 - **Still open, outside this ticket's Files:** `scripts/agents/worktrees.mjs` (lines 71, 121, 124) protects only `native-site-editor-dev` or branch `dev` and hard-codes `origin/dev`/`origin/main`, so a project landing on `main` loses dev-worktree protection in `worktrees.sh`. `kit.d/learn`'s `defaultSlug` should read `project`, and `kit.d/learn` line 271 should read `maps` instead of `join(root, "docs/wayfinder")`. `kit.d/slice` line 42 refuses the literal `dev`/`main` instead of `kitBranch("land")`/`kitBranch("release")`. `docs/agents/runner.md` line 73 still says the visible paths live in `pr-tier.mjs` (they are `paths.visible` in `kit.json`). No ticket covers these yet; the lead needs to file one (`worktrees.mjs` should use `kitDevRoot()`, `kitBranch("land")` and `kitBranch("release")`).
+- **PR review fixes (PR #200):**
+  - P0: `tickets.mjs` reads `maps` from the settings file of the repo it runs in. The two `tests/agent-tickets.test.ts` cases that start it in a temp git repo passed locally only because the `kit` wrapper exports `KIT_ROOT`; under plain `npm test` (as CI runs it) they failed. Both temp repos now carry a `kit.json` and drop `KIT_ROOT`/`KIT_MAIN_ROOT`/`KIT_DEV_ROOT`. A new case pins the `no scripts/agents/kit.json` failure. Proved: the old test file fails 2/14 without `KIT_ROOT`; `npm test` without the kit roots passes 5911/5911.
+  - P3: `kit wait ci --pr N` and `--sha S` no longer read the settings file (they take their branch from GitHub). Pinned in `kit-settings.test.ts` together with `branches.ci` winning over `land`; the test fails without the fix.
+  - Validation gap: `kit-next.test.ts` now covers a settings file without `sharedFile` (`src/main.ts` waits like any shared file).
+  - P3 ticket: `assignee` is back to `ke-11`; the evidence below is pasted in.
+- **Commits:** `09fcc62ba` the settings file; `fb2a8c4e3`, `c1e720b92`, `0b9a6bea2` review rounds 1–3; then the PR review fixes.
+- **Evidence:**
+  - Unit: `RESULT: ok unit 742/742 (31 files)` (`tests/kit*.test.ts`, `agent-tickets`, `agent-scripts`); `npm test` with no `KIT_*` roots: 5911 pass, 0 fail.
+  - Doctor before: `RESULT: ok doctor 8/8 checks passed`. After: the same lines plus `✓ settings: scripts/agents/kit.json (native-site-editor, lands on dev)`, `RESULT: ok doctor 9/9 checks passed`.
+  - `kit status kitchen-everywhere` before and after: the same rows and columns. The only differences come from dev moving meanwhile (new tickets 18 and 19, `origin/dev` 270d9cb) and this PR being open.
+  - `kit next --help`: byte-for-byte the same.
+  - The grep (`grep -rn "origin/dev\|native-site-editor" scripts/agents/kit.d scripts/agents/*.mjs scripts/agents/*.sh`) finds 20 lines, all listed above: `kit.d/ux` 17, 61; `kit.d/learn` 15, 90; `kit.d/specs` 16, 121; `kit.d/size` 16; `kit.d/preview` 2, 13, 112, 206, 207; `worktrees.mjs` 71, 121, 124, 155; `deploy-preview.sh` 2; `context-card.mjs` 68, 69; `shots.sh` 8.
 - **Feature list:** no change (kit plumbing for agents; no editor UI).
