@@ -20,6 +20,7 @@ People without an account edit with Lex through a link. Stage 3 starts only afte
 - Only Lex saves, publishes, changes files or settings, and uses agents.
 - The session lasts while his tab is open; Stop sharing or closing the tab ends it and kills the link. Every share makes a new link.
 - Guests' changes become his unsaved changes and briefly show their author's colour.
+- Mock-up for Tuesday 3 Nov: [14-share-live.html](../../prototypes/14-share-live.html)
 
 ## Files
 
