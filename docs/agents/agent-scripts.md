@@ -21,8 +21,9 @@ copy: `kitSettings()` in `kit-lib.mjs`, `kit_setting <jq path>` in `kit-lib.sh`.
 lacks them. The other keys are optional and a missing one turns its feature off with a plain line:
 `mainRoot` (else the main worktree), `devRoot` (`next` and `heartbeat` say they need one),
 `worktreePrefix`, `sharedNodeModules`, `branches.release` and `branches.ci` (else `land`), `checks`
-(`check`, `test`, `lint`, `extra` for `kit pr`; a missing one is skipped), `unit` (`run`, `files`,
-`docsGuards`), `paths` (`docs`, `tests`, `css`, `visible` regular expressions for `kit pr`'s tiers
+(`check`, `test`, `lint`, `extra` for `kit pr`; a missing one is skipped; each is split on spaces,
+with no quoting), `unit` (`run`, a Node test-runner command to which `unit.sh` adds `--test-timeout`
+and the files; `files`; `docsGuards`), `paths` (`docs`, `tests`, `css`, `visible` regular expressions for `kit pr`'s tiers
 and feature-list guard), `featureList`, `techDebt`, `standards` (the review brief), `maps`,
 `sharedFile`, `preview` (`status` skips the preview row without it) and `rulebookExtras`. Environment
 overrides keep winning over the file: `KIT_MAIN_ROOT`, `KIT_DEV_ROOT`, `KIT_PREVIEW_URL`.
@@ -183,4 +184,4 @@ Tests: `ASE_LOCK_DIR` overrides `/tmp`; `ASE_POOL` is a test-only pool override 
 
 Each run of `full-suite.sh` writes to its own `.scratch/native-save/full-<time>-<pid>/` (printed at start): read `shard-k.log` there for progress, and `scripts/agents/suite-summary.mjs <run>/results-shard-*.json` for the combined result. Server output persists in `.scratch/<project>/server-<port>.log`, including stderr, even when the server dies. Configured JSON defaults to `.scratch/<selected-project>/results-<port>.json` (the first project, or native-save, for a multi-project run). CLI `--reporter` overrides the config: include `json` explicitly and set `PLAYWRIGHT_JSON_OUTPUT_FILE` to the desired path, as `full-suite.sh` does.
 
-The scripts assume Lex's layout: worktrees are siblings named `native-site-editor-*` under `~/Projects`, the dev worktree is `~/Projects/native-site-editor-dev`, and the native-static fixture lives in the root checkout's `.scratch/native-static-preview`.
+The layout comes from `scripts/agents/kit.json` (see [Kit](#kit)): worktrees are siblings named `<worktreePrefix><branch>` (slashes as dashes), the dev worktree is `devRoot` and the native-static fixture lives in the `mainRoot` checkout's `.scratch/native-static-preview`. This editor's values, for example, are `native-site-editor-`, `~/Projects/native-site-editor-dev` and `~/Projects/native-site-editor`.
