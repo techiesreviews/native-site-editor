@@ -38,3 +38,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke29 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/29-pr-ci-filters-and-claim-owner.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke29 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, each new workflow shape's answer, review decisions, PR and merge SHA.
+
+## Comments
+
+- Lead, 2026-10-27: slices in T3 threads now run `kit slice` under `systemd-run --user --unit=kit-slice-<owner>` (app restarts kill `kit bg` jobs). `kit next` does not see those units, so it reports "claimed by ke-21, no running job found" and hands out tickets that share files with the running slice. Count `kit-slice-*` systemd units as running slices (and their files) here, next to the owner fix.
