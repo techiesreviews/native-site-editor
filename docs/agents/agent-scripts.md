@@ -69,8 +69,8 @@ picks it exports `KIT_HOME_PINNED`, so a child (a builder session, a `kit bg` jo
 has since removed picks again from `current` or the cache clone, while a person's `KIT_HOME` that holds no kit
 still fails (and theirs wins over a different `KIT_HOME_PINNED`). Both launchers take only a whole kit, as
 `kit update` checks it (`kit` executable and `kit-lib.sh`); the hook launcher also needs `hooks/run.sh`, so a
-pinned folder without it is kept for commands while hooks look up `current` or the cache clone again. A picked folder removed while
-the launcher starts ends `(removed while starting)`, naming the folder. With no
+pinned folder without it is kept for commands while hooks look up `current` or the cache clone again. A folder
+the kit launcher picked that is removed while it starts ends `(removed while starting)`, naming the folder. With no
 machine copy (GitHub Actions, a cloud session, a new laptop) it clones the newest kit `--depth 1` into
 `${XDG_CACHE_HOME:-~/.cache}/agent-kit`, outside every project, and reuses that clone (never refreshed in
 place; `kit version` and `kit doctor` warn once it is a day old, and `kit update` then fills the machine copy; a
