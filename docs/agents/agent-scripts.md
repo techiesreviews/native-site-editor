@@ -24,7 +24,9 @@ folder (`git rev-parse --show-toplevel`, or `KIT_ROOT`), so each worktree reads 
 copy: `kitSettings()` in `kit-lib.mjs`, `kit_setting <jq path>` in `kit-lib.sh`. Only `project` and
 `branches.land` are required; `kit doctor` fails with what to add when the file is missing, broken or
 lacks them. The other keys are optional and a missing one turns its feature off with a plain line:
-`commands` (the project's own commands folder; without it only shared commands), `mainRoot` (else the main worktree), `devRoot` (`next` and `heartbeat` say they need one),
+`commands` (the project's own commands folder, relative to the top folder or absolute; without it
+only shared commands), `mainRoot` (else the main worktree), `devRoot` (`next` and `heartbeat` say
+they need one),
 `worktreePrefix`, `sharedNodeModules`, `branches.release` and `branches.ci` (else `land`), `checks`
 (`check`, `test`, `lint` for `kit pr`, a missing one is skipped; `extra`, kit-plumbing checks run
 only when kit files change), `unit` (`run`, a Node test-runner command to which `unit.sh` adds
