@@ -62,4 +62,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation gaps (gap): No test has a non-integer count in the machine ledger. Add to tests/agent-scripts.test.ts: write `{ [week]: { grok: { a: "3" } } }` to `path`, then assert that 
 - Validation gaps (gap): No test covers a restore that itself fails. In the "machine ledger write that fails" test, make the failing `renameSync` also create `${legacy}.lock` and pass `
 - Validation gaps (gap): No test covers the sweep's second read, when the state folder appears during the first read without the lock (kit.d/sweep, the `!locked && existsSync(dirname(pa
+- Spec (P3): 21951a702:docs/wayfinder/kitchen-everywhere/build/tickets/15-machine-wide-state.md:57 — P3 ticket: the text of every `### Follow-ups` line (57–64) is cut off mi
+- Standards (P3): 8e8b1fd2f:scripts/agents/agent-run.mjs:348 — P3 race: `restoreLegacyLedger` runs after `withLedger` has already released the machine lock. In that gap, a second
+- Standards (P3): 8e8b1fd2f:scripts/agents/agent-run.mjs:225 — P3 fault: `withReviewLock`'s `finally { rmSync(lock) }` can throw after `renameSync` has already saved the machine 
+- Standards (P3): 8e8b1fd2f:scripts/agents/kit.d/sweep:322 — P3 fault: in the sweep, an old per-project file whose `grok` count is not a whole number (for example `"3"` or `-1`) 
+- Validation gaps (gap): No test runs a second review in the gap between a failed machine-ledger write and the restore. Add to the "machine ledger write that fails" test in tests/agent-
+- Validation gaps (gap): No sweep test has an old file with a malformed grok count. Add to tests/kit-sweep.test.ts: write `{ [week]: { grok: "3" } }` to `repo/.scratch/review-budget.jso
+- Validation gaps (gap): No test covers the lock-folder removal failing after a successful write. Add to tests/agent-scripts.test.ts: fake `rmSync` to throw only for `${path}.lock`, the
 
