@@ -46,7 +46,7 @@ test("every relative link and anchor in the rulebook and the kitchen resolves", 
     for (const [, target] of read(path).matchAll(/\]\(([^)\s]+)\)/g)) {
       if (/^https?:/.test(target)) continue;
       const [file, anchor] = target.split("#");
-      const full = resolve(root, dirname(path), file);
+      const full = file ? resolve(root, dirname(path), file) : resolve(root, path);
       assert.ok(existsSync(full), `${path}: missing ${target}`);
       if (anchor) assert.ok(anchors(readFileSync(full, "utf8")).includes(anchor), `${path}: no heading for ${target}`);
     }
