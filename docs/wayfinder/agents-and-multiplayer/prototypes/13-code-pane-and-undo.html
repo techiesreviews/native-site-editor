@@ -7,7 +7,7 @@
 <!--
   THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 3 Nov review
   (kitchen rule "mock-ups ahead", 2026-10-27).
-  Question: do others' carets in the code pane (circle with letter or model icon, name on hover, tinted selection) and per-person Undo (agent from its chip, person from its outline) read clearly? Agents build slices 22 and 24.
+  Question: do others' carets in the code pane (circle with letter or model icon that widens to show the full name on hover, tinted selection) and per-person Undo (agent from its chip, person from its outline) read clearly? Agents build slices 22 and 24.
 -->
 <style>
 :root {
@@ -124,10 +124,23 @@ button { font: inherit; color: inherit; }
 .tg { color: light-dark(oklch(45% 0.15 250), oklch(75% 0.12 250)); }
 .at { color: light-dark(oklch(48% 0.13 30), oklch(78% 0.1 40)); }
 .rc { position: relative; display: inline-block; inline-size: 0; block-size: 1.2em; vertical-align: text-bottom; border-inline-start: 2px solid var(--c); margin-inline: -1px; }
-.rc__flag { position: absolute; inset-block-end: 100%; inset-inline-start: -0.62rem; inline-size: 1.15rem; block-size: 1.15rem; border-radius: 50%; display: grid; place-items: center; background: var(--c); color: var(--on-color); font: 700 0.62rem/1 system-ui, sans-serif; cursor: default; translate: 0 2px; }
-.rc__flag svg { inline-size: 0.7rem; block-size: 0.7rem; stroke-width: 2.4; }
-.rc__name { position: absolute; inset-block-end: calc(100% + 1.2rem); inset-inline-start: -0.6rem; background: var(--c); color: var(--on-color); font: 600 0.72rem/1 system-ui, sans-serif; padding: 0.25rem 0.45rem; border-radius: var(--radius-small); white-space: nowrap; opacity: 0; pointer-events: none; z-index: 2; }
-.rc:hover .rc__name, .rc:focus-within .rc__name { opacity: 1; }
+/* The flag is the whole pill (mark + name), clipped to a circle; hover or focus unclips it. */
+.rc__flag { position: absolute; inset-block-end: 100%; inset-inline-start: -0.62rem; z-index: 2; display: flex; align-items: center; block-size: 1.15rem; padding-inline-end: 0.5rem; border-radius: 0.575rem; background: var(--c); color: var(--on-color); white-space: nowrap; cursor: default; translate: 0 2px; clip-path: inset(0 calc(100% - 1.15rem) 0 0 round 0.575rem); }
+.rc__mark { inline-size: 1.15rem; display: grid; place-items: center; flex: none; font: 700 0.62rem/1 system-ui, sans-serif; }
+.rc__mark svg { inline-size: 0.7rem; block-size: 0.7rem; stroke-width: 2.4; }
+.rc__name { font: 600 0.68rem/1 system-ui, sans-serif; opacity: 0; }
+.rc:focus-visible { outline: none; }
+.rc:focus-visible .rc__flag { outline: 2px solid var(--c); outline-offset: 2px; }
+.rc:focus-visible .rc__flag, .rc:focus-within .rc__flag { clip-path: inset(0 0 0 0 round 0.575rem); }
+.rc:focus-visible .rc__name, .rc:focus-within .rc__name { opacity: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .rc:hover .rc__flag { clip-path: inset(0 0 0 0 round 0.575rem); }
+  .rc:hover .rc__name { opacity: 1; }
+}
+.rc__name { transition: opacity 150ms var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .rc__flag { transition: clip-path 200ms var(--ease-out); }
+}
 .sel { background: color-mix(in oklch, var(--c) 22%, transparent); border-radius: 2px; }
 .me { display: inline-block; inline-size: 0; block-size: 1.2em; vertical-align: text-bottom; border-inline-start: 2px solid var(--text); margin-inline: -1px; animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
@@ -230,7 +243,7 @@ const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">":
 const text = (f) => S[f].map((s) => s[0]).join("");
 function flag(who) {
   const inner = who === "agent" ? icon("claude") : "A";
-  return `<span class="rc" style="--c:${C[who]}" tabindex="0" aria-label="${NAMES[who]}"><span class="rc__flag">${inner}</span><span class="rc__name">${NAMES[who]}</span></span>`;
+  return `<span class="rc" style="--c:${C[who]}" tabindex="0" aria-label="${NAMES[who]}"><span class="rc__flag"><span class="rc__mark">${inner}</span><span class="rc__name">${NAMES[who]}</span></span></span>`;
 }
 function lineText(f) {
   let out = "";
