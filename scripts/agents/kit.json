@@ -14,7 +14,7 @@
   },
   "unit": {
     "run": "./node_modules/.bin/tsx --test --test-reporter=spec",
-    "files": "tests/*.test.ts",
+    "files": "tests/**/*.test.ts",
     "docsGuards": ["tests/agent-scripts.test.ts", "tests/code-map.test.ts", "tests/mcp-runtime.test.ts"]
   },
   "paths": {

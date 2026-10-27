@@ -29,6 +29,7 @@ The settings file can describe every chosen project, not only this editor: other
 - `scripts/agents/review-brief.mjs`, `scripts/agents/hooks/bash-guard.sh`
 - `tests/kit-pr.test.ts`, `tests/kit-unit.test.ts`, `tests/kit-doctor.test.ts`, `tests/kit-status.test.ts`, `tests/kit-review.test.ts`, `tests/agent-scripts.test.ts`, `tests/kit-settings.test.ts`
 - `docs/agents/agent-scripts.md` (the settings keys)
+- `scripts/agents/kit.json` (this editor's `unit.files`, added in review so `kit unit --affected` keeps its reach)
 
 ## Done when
 
@@ -58,7 +59,7 @@ Tests (temp repos with the research 04 `techies-playground` settings: land `main
 
 Feature list: no change (kit and docs only; nothing in the editor changes).
 
-Left for later: `agent-run.mjs`'s build contract still says "npm run check" and "npm run lint" for every project, and `docs/agents/guardrails.md` still names only `port.sh` for servers (both outside this ticket). This editor's `unit.files` (`tests/*.test.ts`, in `kit.json`, outside this ticket) no longer lets `--affected` pick the nested `tests/slot-ghosts/validation.test.ts`, which `npm test` never ran either; `"tests/**/*.test.ts"` would bring it back.
+Left for later: `agent-run.mjs`'s build contract still says "npm run check" and "npm run lint" for every project, and `docs/agents/guardrails.md` still names only `port.sh` for servers (both outside this ticket). With no remote, `kit unit --affected` and `kit review` still default to `origin/<land>` and fail; they need a local-land default like `kit status`.
 
 ### Review fixes (2026-10-27)
 
@@ -67,3 +68,11 @@ Left for later: `agent-run.mjs`'s build contract still says "npm run check" and 
 - `unit.sh` with no files runs what `kit unit --list` selects, so ignored build output is left out by both (test: an ignored `src/dist/x.test.js`); `agent-unit-timeout`'s full-suite case now runs in a small git repo with its own settings. The import scan and folder patterns share one extension list (`.cjs`, `.mts`, `.cts` included).
 - `bash-guard` passes the server hint through the environment, so backslashes survive (test).
 - Tests for a timed-out `checks.doctor` command, a failed fetch on a passing base, and `--base main` with land and release both `main` (and still refused when land is `dev`).
+
+### Review fixes, round 2 (2026-10-27)
+
+- This editor's `unit.files` is now `tests/**/*.test.ts`, so `kit unit --affected` still reaches the nested `tests/slot-ghosts/validation.test.ts` as before; the full `kit unit` run gains that one passing file (`npm test` is unchanged).
+- `kit pr` reads `.github/workflows` again on every merge attempt, so a workflow the base gains during a "behind" rebase is waited for; with no workflow the PR body's skipped line says `no CI workflow runs them` instead of claiming CI runs them (the editor's wording with a workflow is unchanged; naming only the set checks there is ticket 25's).
+- The slice builder contract says `run <checks.check> before handing back` instead of "when types moved", since `checks.check` can be any command.
+- Tests: `kit pr` with the playground settings and a workflow waits for CI and records `ci: pass`; a workflow arriving on a behind retry is waited for; the no-CI body line; `kit status` with no remote shows a closed ticket's local commit with no PR or CI; doctor in an `allowMainCheckout` main checkout 2 commits behind, on a feature branch and on an unrelated one; bare `unit.sh` without `unit.files` exits 2 with its line.
+- Tests outside the Files list were touched because the scripts they cover changed: `kit-slice.test.ts` and `kit-fix.test.ts` (settings-driven brief wording), `agent-unit-timeout.test.ts` (`unit.sh` now selects through `kit unit`, so its case needs a git repo with settings).
