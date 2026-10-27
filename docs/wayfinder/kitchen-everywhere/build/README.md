@@ -28,7 +28,7 @@ Decided with Lex on 2026-10-26: right after the clean-up release is live in prod
 - **Other projects** (40–47): after Lex's OK the lead starts one T3 thread per project, working in that project's folder with that project's kit (set up by `kit init`) and landing with that project's own `kit pr` into its landing branch. Nothing reaches another project's landing branch except through a reviewed PR. The thread reports back here; the lead closes the ticket with a small docs PR on `dev`.
 - **Editor saves stay untouched.** On sites the Native Site Editor saves to (`techies-reviews`, `lexvd-site`), its commits keep going straight to `main` (ticket 05 point 3): no branch rule that demands PRs on `main`, no hook or kit check that flags those commits.
 - **The hooks never fail silently** (research 04 risk): a missing or broken kit is said out loud at session start and by `kit doctor`, never just turned off (ticket 21).
-- **One kit file, one slice at a time:** the `blocked_by` lines chain every pair of slices that share a kit file (the front door `scripts/agents/kit`, `kit-lib.*`, `kit.d/review`, `kit.d/doctor`, `kit.d/pr`, `kit.d/sweep`); the only slices that run side by side are 15 with 21, and 23 with 24, which touch different kit files apart from small additions to `docs/agents/agent-scripts.md` and `tests/agent-scripts.test.ts`; the second to land brings the first in before its `kit pr`.
+- **One kit file, one slice at a time:** the `blocked_by` lines chain every pair of slices that share a kit file (the front door `scripts/agents/kit`, `kit-lib.*`, `kit.d/review`, `kit.d/doctor`, `kit.d/pr`, `kit.d/sweep`); the only slices that run side by side are 15 with 21, 23 with 24, and the review fixes 25 (`kit pr`, `pr-tier.mjs`, `worktrees.mjs`, `learn`, `slice`) and 26 (`unit.sh`, `kit-lib.sh`, `doctor`) beside the slices of their time that leave those files alone, which touch different kit files apart from small additions to `docs/agents/agent-scripts.md`, `tests/agent-scripts.test.ts` and `tests/kit-settings.test.ts`; the second to land brings the first in before its `kit pr`.
 - **The kitchen moves with the code.** A slice that changes how agents work rewrites its own lines in `docs/agents/kitchen.md` and `docs/agents/agent-scripts.md#kit`; a new kit command gets its `kit.d/<command>` with a `# kit:` summary and its own `tests/kit-<command>.test.ts`.
 - **Lex's settings and other projects wait for Lex** (the kitchen's "Always waits for Lex"): anything under `~/.config`, `~/.claude`, `~/.codex`, `~/.codex/skills`, T3 schedules or another project's files is prepared by a slice and done by the lead after his yes.
 
@@ -49,9 +49,11 @@ Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **C
 | [14 Settings for projects unlike the editor](tickets/14-settings-for-other-projects.md) | M | claude | 13 |
 | [15 One Grok count for the computer, its weekly use in the sweep](tickets/15-machine-wide-state.md) | M | claude | 14 |
 | [16 An OpenCode path in `kit review`](tickets/16-opencode-review-path.md) | M | claude | 15 |
-| [17 A second look on every change, per review kind](tickets/17-second-look-per-kind.md) | M | claude | 14, 16 |
+| [17 A second look on every change, per review kind](tickets/17-second-look-per-kind.md) | M | claude | 14, 16, 25 |
 | [18 Follow-ups written in full (second look on 10)](tickets/18-full-follow-ups.md) | S | claude | – |
 | [19 A broken `--help` does not stop the fix builder (second look on 10)](tickets/19-doctor-gate-and-fix-builder.md) | S–M | claude | – |
+| [25 The editor values slice 11 left in shared code (review of 11)](tickets/25-editor-values-left-after-11.md) | M | claude | 14, 18 |
+| [26 Settings problems say the right thing, and their untested paths get tests (review of 11)](tickets/26-settings-messages-and-tests.md) | S–M | claude | 15, 19, 21 |
 
 ## 2. Setup pieces (tickets 01, 05; research 04)
 
@@ -96,8 +98,8 @@ Each move waits for Lex's OK and for the one before it, so a problem in one proj
 The frontier decides; this is one order that keeps to the rules (at most 5 at once).
 
 1. 10, then 11, 12 and 13 one at a time (they share the front door and the kit library).
-2. 14; then 15 and 21 side by side.
-3. 16, then 17.
+2. 14; then 15 and 21 side by side, with 25 once 18 is in.
+3. 16, then 17 (after 25); 26 beside them once 15, 19 and 21 are in.
 4. 20, then 22, then 23 and 24.
 5. 30 alone, after Lex's OK; then 31 after Lex's OK.
 6. 40 to 46, one after another, each after Lex's OK; 47 whenever Lex builds in `camframe` again.
