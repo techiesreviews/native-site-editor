@@ -2,7 +2,7 @@
 title: The launchers recover a retired kit folder and accept only a whole kit
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-39
 builder: claude
 blocked_by: [21-launcher-and-update]
 ---
