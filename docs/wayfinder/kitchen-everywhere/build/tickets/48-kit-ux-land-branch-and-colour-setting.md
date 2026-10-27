@@ -1,7 +1,7 @@
 ---
 title: "`kit ux` takes its base and colour check from the settings (second look on 25)"
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-48
 builder: claude
 blocked_by: [25-editor-values-left-after-11]
@@ -39,3 +39,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke48 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/48-kit-ux-land-branch-and-colour-setting.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke48 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, the `grep` output, the before-and-after L2 findings on the editor, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- `kit ux --base` now defaults to `origin/<branches.land>` from `scripts/agents/kit.json`, the same as `kit pr` and `kit review`. If the setting is missing and no `--base` is given, it fails with `RESULT: fail ux needs --base (no branches.land in scripts/agents/kit.json)`. The settings are read leniently, one key at a time, as before, so a file with no `project` key still works.
+- Raw-colour (L2) findings now come from the project's `checks.css` command, which runs with the changed CSS files as arguments and keeps its output in `colours.log` beside the raw tries. When the command fails, each `file:line: text` line it prints becomes one L2 finding (`raw colour <text>`). A failed run that names no line becomes one finding with its first line and the log. With no `checks.css`, stdout and the bundle say `colours: skipped (no checks.css in scripts/agents/kit.json)`. `kit.d/ux` no longer contains any editor path: `grep -n "origin/dev\|check-colours" scripts/agents/kit.d/ux` finds nothing. Ticket 25's wider grep finds only comments and the editor's own commands (`shots.sh`, `deploy-preview.sh`).
+- This editor's `checks.css` (`node scripts/check-colours.mjs`) checks all of `src/` except `theme.css` and ignores the file arguments. On a clean base it reports the same L2 findings as before: `- L2 src/plain.css:1: raw colour #fff` for a raw colour, and nothing for a line on the allow list. The old code passes the same test, which shows the findings did not change.
+- Tests in `tests/kit-ux.test.ts`: the fixture now has this editor's settings (land `dev`, its `checks.css`, an empty allow list). New tests cover: lands on `main` with no `origin/dev`, so the run diffs against `origin/main`, plus the missing-land line; another project's own `checks.css` is given the changed CSS files and its failure line becomes an L2 finding; no `checks.css` gives the skipped line and no L2; the editor's raw-versus-allowed case; the output parser. Run against the old `kit ux`, the `parseArgs` default, land-on-main, own-`checks.css` and parser tests fail (4 of 34); the editor raw-versus-allowed test passes on both by design.
+- `scripts/agents/kit unit --affected`: `RESULT: ok unit 34/34`; docs guards 37/37; `npm run lint` and `npm run check` clean.
+- Feature list: no change (agent kit tooling, nothing a user sees).
