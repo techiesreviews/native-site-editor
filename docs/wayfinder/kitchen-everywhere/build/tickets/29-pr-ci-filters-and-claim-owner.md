@@ -21,14 +21,15 @@ Claude's P3 on the same ticket: its `assignee` became the branch name `build/ke-
 
 ## Files
 
-- `scripts/agents/kit.d/pr`, `scripts/agents/kit.d/slice`
-- `tests/kit-pr.test.ts`, `tests/kit-slice.test.ts`
+- `scripts/agents/kit.d/pr`, `scripts/agents/kit.d/slice`, `scripts/agents/kit.d/next` (the lead's comment below)
+- `tests/kit-pr.test.ts`, `tests/kit-slice.test.ts`, `tests/kit-next.test.ts`
 - `docs/agents/agent-scripts.md` (the `kit pr` CI line)
 
 ## Done when
 
 - The workflow-shape table in `tests/kit-pr.test.ts` ("only a workflow that runs for a PR branch is CI to wait for…") gains `push:\n    branches-ignore: [main]`, `push:\n    branches: ['**']`, `push:\n    paths: [src/**]`, `push:\n    branches: [main]\n    paths: [src/**]`, `on: { push: { branches: [main] } }` and `on: { push: { branches: ['**'] } }`: the first three and the last wait (`wait ci --pr …` called, `landed.ci: "pass"`), the fourth and fifth do not (`landed.ci: "none"`); the seven existing shapes keep their answers.
 - `tests/kit-slice.test.ts`: a ticket with `assignee: ke-99` run from a worktree with no `ASE_OWNER` and no `.scratch/owner` gets a brief that keeps `ke-99`; an empty `assignee:` still gets `kitOwner()`.
+- `tests/kit-next.test.ts`: a running `kit-slice-<owner>` systemd user unit whose command names `--ticket <file>` counts as a running slice (a `running:` line, its Files block overlapping tickets, its claim no longer "no running job found"); with no such unit, or `systemctl` missing, `kit next` answers as today.
 - `scripts/agents/kit unit --affected` green; this editor's own `kit pr` still waits for its CI.
 
 ## Kit commands and evidence
