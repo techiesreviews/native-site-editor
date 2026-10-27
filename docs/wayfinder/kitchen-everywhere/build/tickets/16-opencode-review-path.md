@@ -2,7 +2,7 @@
 title: An OpenCode path in kit review
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-16
 builder: claude
 blocked_by: [15-machine-wide-state]
 ---
