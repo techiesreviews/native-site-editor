@@ -2,7 +2,7 @@
 title: An emergency `kit update --previous` holds, and checks the kit it goes back to
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-38
 builder: claude
 blocked_by: [21-launcher-and-update]
 ---
