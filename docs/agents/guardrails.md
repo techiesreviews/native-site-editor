@@ -7,7 +7,7 @@ Automated checks for mistakes made during Phase 5 (retro, 2026-10-08). Each one 
 ## Hooks
 
 Claude Code loads `.claude/settings.json`; Codex loads `.codex/hooks.json`. Both call
-`scripts/agents/hooks/run.sh`, which runs the guard scripts beside it (behind a hook launcher, the kit's own). Only the
+`scripts/agents/hooks/run.sh`, which runs the guard scripts in its own folder (behind a hook launcher, the kit's copy). Only the
 context card and the bash guard's server hint read the project, found from `CLAUDE_PROJECT_DIR` when set,
 otherwise from `git rev-parse --show-toplevel` in the session cwd. The shared scripts enforce:
 
