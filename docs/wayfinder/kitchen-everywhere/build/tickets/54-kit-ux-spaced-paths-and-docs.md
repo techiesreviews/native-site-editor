@@ -2,6 +2,7 @@
 title: "`kit ux` keeps colour findings in paths with spaces, and its docs say the CSS-first rule (second look on 48)"
 type: task (AFK)
 status: open
+assignee: ke-54
 builder: claude
 blocked_by: [48-kit-ux-land-branch-and-colour-setting]
 ---
