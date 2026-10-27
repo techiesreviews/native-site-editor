@@ -1,7 +1,7 @@
 ---
 title: Out of credit is its own result, and a CLI's own error is the last problem line
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-33
 builder: claude
 blocked_by: [16-opencode-review-path]
@@ -43,3 +43,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke33 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/33-out-of-credit-and-last-problem.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke33 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, each new case's result, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- An empty account is its own result. Grok's closing lines and OpenCode's error events or closing lines with HTTP 402, "Payment Required" or "balance exhausted" give `problem: <grok|opencode> out of credit: <message>` as the last problem line (`outOfCreditProblem`, `opencodeOutOfCredit` in `scripts/agents/agent-run.mjs`). Only unindented plain-text closing lines of a failed call count, so a diff or report quoting "402 Payment Required" is not matched. A usage-limit refusal keeps its `usage limit` line and exit.
+- `kit review` ends such a failed run with `RESULT: skip review out of credit (<model>)` and exit 3, and gives the weekly count back even after earlier turns. `docs/agents/agent-scripts.md` lists the exit codes (0 reviewed, 1 failed, 2 invalid arguments, 3 skipped out of credit).
+- An OpenCode call that exits non-zero after an error event that is not a limit names `problem: OpenCode reported an error: <message>` as its last problem line instead of `opencode failed (<status>)` (`errorProblem` on the adapter); a failed call's result is no longer read, so the error is not printed twice.
+- The OpenCode export opens its temp file inside the `try`, so a failed open still removes its folder; a last text part without `messageID` is the report alone.
+- Tests: `tests/kit-review.test.ts` adds a Grok 402 after one turn (exit 3, skip RESULT, count back to 1), OpenCode 402 error event and bare `402` stderr line (exit 3, skip RESULT), a diff and report quoting "402 Payment Required" passing for Grok and OpenCode, `error-502-exit1` (last problem `OpenCode reported an error: Bad gateway`) and `ASE_OPENCODE_EXPORT_TIMEOUT_MS=abc` through the front door (exit 1, named problem, no `opencode run`). `tests/agent-scripts.test.ts` adds `outOfCreditProblem`, `opencodeOutOfCredit`, `opencodeErrorProblem` and the two text parts without `messageID` case.
+- Feature list: no change (kit-only; no editor change a user can see).
