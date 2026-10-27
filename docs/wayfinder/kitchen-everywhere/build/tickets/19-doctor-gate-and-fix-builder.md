@@ -1,7 +1,7 @@
 ---
 title: A broken --help does not stop the fix builder
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-19
 builder: claude
 blocked_by: []
@@ -36,3 +36,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke19 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/19-doctor-gate-and-fix-builder.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke19 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- `kit doctor` honours `KIT_DOCTOR_SKIP=help` (no other name): a broken `--help` prints `problem: help: <commands>; fix: …` (also under `--quiet`), is left out of the count, and the RESULT ends `; skipped help (KIT_DOCTOR_SKIP)`. Every other check still runs and fails as before; a working help check is still counted.
+- `agent.sh` sets `KIT_DOCTOR_SKIP=help` for `build` and for a `--resume` whose `status.json` records `kind: build`; it clears it for reviews, so a caller's value never loosens a review gate. When a build passes with a problem line, `agent.sh` repeats it on stderr with "building in <worktree> despite the problem above" and starts the builder.
+- Tests (`tests/kit-doctor.test.ts`): in a fixture worktree with one broken help, `agent.sh build` and a resumed build get past the gate and name it, `agent.sh review` (even with `KIT_DOCTOR_SKIP=help` set by the caller) and a resumed review exit 3, and `kit doctor` still fails `help`; doctor with the skip passes quietly with the problem line and still fails other checks; the real-commands test now runs `kit doctor` through the front door with `KIT_COMMANDS_DIR` unset and expects `✓ help:` with the real count.
+- Docs: `docs/agents/agent-scripts.md` (doctor line and the `agent.sh` gate paragraph).
+- Feature list: no change (kit plumbing, nothing a site editor user sees).
+- Validation: `kit unit --affected` RESULT: ok unit 44/44; `kit unit tests/agent-scripts.test.ts` RESULT: ok unit 32/32; `npm run lint` passes.
