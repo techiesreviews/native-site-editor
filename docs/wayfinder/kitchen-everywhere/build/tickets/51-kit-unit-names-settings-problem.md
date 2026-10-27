@@ -2,6 +2,7 @@
 title: "`kit unit` with named files says which setting is wrong, and its untested paths get tests (second looks on 26 and 37)"
 type: task (AFK)
 status: open
+assignee: ke-51
 builder: claude
 blocked_by: [27-doctor-commands-on-broken-settings, 37-unit-sh-from-its-own-folder]
 ---

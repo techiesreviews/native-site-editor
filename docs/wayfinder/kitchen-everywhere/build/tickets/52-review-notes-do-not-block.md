@@ -2,6 +2,7 @@
 title: "Reviewer notes and headings without a severity do not block a slice"
 type: task (AFK)
 status: open
+assignee: ke-52
 builder: claude
 blocked_by: [17-second-look-per-kind]
 ---

@@ -73,6 +73,7 @@ Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **C
 | [52 Reviewer notes and headings without a severity do not block a slice](tickets/52-review-notes-do-not-block.md) | S | claude | 17 |
 | [53 A ticket's Done names commits that can be found on dev](tickets/53-done-commits-match-dev.md) | S–M | claude | 35 |
 | [54 `kit ux` keeps colour findings in paths with spaces, and its docs say the CSS-first rule (second look on 48)](tickets/54-kit-ux-spaced-paths-and-docs.md) | S | claude | 48 |
+| [55 `kit ux` names a path followed by a space (follow-up on 54)](tickets/55-kit-ux-path-before-a-space.md) | S | claude | 54 |
 
 ## 2. Setup pieces (tickets 01, 05; research 04)
 
@@ -88,7 +89,7 @@ Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **C
 
 | Slice | Size | Builder | Blocked by |
 | --- | --- | --- | --- |
-| [30 The kit moves to its own repo; this editor runs it through the launcher](tickets/30-kit-repo-and-move.md) | L | claude, **waits for Lex** | 17, 20, 21, 22, 23, 24, 29, 38, 39, 48, 49, 51, 52, 53, 54 |
+| [30 The kit moves to its own repo; this editor runs it through the launcher](tickets/30-kit-repo-and-move.md) | L | claude, **waits for Lex** | 17, 20, 21, 22, 23, 24, 29, 38, 39, 48, 49, 51, 52, 53, 54, 55 |
 | [31 The 15-minute update timer](tickets/31-update-timer.md) | S | claude, **waits for Lex** | 30 |
 
 ## 4. Each project's move, in the decided order (ticket 05; research 02, 03)
@@ -118,7 +119,7 @@ The frontier decides; this is one order that keeps to the rules (at most 5 at on
 
 1. 10, then 11, 12 and 13 one at a time (they share the front door and the kit library).
 2. 14; then 15 and 21 side by side, with 25 once 18 is in.
-3. 16, then 17 (after 25); 26 beside them once 15, 19 and 21 are in; 27 after 26 (both change `kit.d/doctor`); 28 any time after 14 (kit tests only, beside the others); 32 any time after 14 (the front door, which no other open slice changes); 29 after 17 (both change `kit pr` and `kit slice`), and before 30, so projects 40–47 never land past a CI run that could fail; 33 now, beside 21 (it shares only small additions to `tests/agent-scripts.test.ts` and `docs/agents/agent-scripts.md`), and before 17, so a second look that meets an empty Grok account says skipped and falls back; 34 after 17 (both change `kit.d/review`); 35 after 29 (`kit pr`); 36 after 27 (`kit.d/doctor`); 37 after 26 (`unit.sh`); 38 and 39 now, side by side and beside the others (`kit.d/update` and the launchers, which no other open slice changes), and before 30, which moves both files. 48 and 49 now, side by side and beside 26 and 33 (`kit.d/ux` and `launcher/kit`, which no other open slice changes; they share only small additions to `docs/agents/agent-scripts.md`), and before 30. 51 after 27 (`tests/kit-doctor.test.ts`; `kit.d/unit`, which no other open slice changes); 52 after 17 (`review-findings.mjs`, read by `kit.d/pr` and `kit.d/slice`); 53 after 35 (`kit pr`, the last in the 17, 29, 35 chain); 54 now (`kit.d/ux`, which no other open slice changes); all four before 30.
+3. 16, then 17 (after 25); 26 beside them once 15, 19 and 21 are in; 27 after 26 (both change `kit.d/doctor`); 28 any time after 14 (kit tests only, beside the others); 32 any time after 14 (the front door, which no other open slice changes); 29 after 17 (both change `kit pr` and `kit slice`), and before 30, so projects 40–47 never land past a CI run that could fail; 33 now, beside 21 (it shares only small additions to `tests/agent-scripts.test.ts` and `docs/agents/agent-scripts.md`), and before 17, so a second look that meets an empty Grok account says skipped and falls back; 34 after 17 (both change `kit.d/review`); 35 after 29 (`kit pr`); 36 after 27 (`kit.d/doctor`); 37 after 26 (`unit.sh`); 38 and 39 now, side by side and beside the others (`kit.d/update` and the launchers, which no other open slice changes), and before 30, which moves both files. 48 and 49 now, side by side and beside 26 and 33 (`kit.d/ux` and `launcher/kit`, which no other open slice changes; they share only small additions to `docs/agents/agent-scripts.md`), and before 30. 51 after 27 (`tests/kit-doctor.test.ts`; `kit.d/unit`, which no other open slice changes); 52 after 17 (`review-findings.mjs`, read by `kit.d/pr` and `kit.d/slice`); 53 after 35 (`kit pr`, the last in the 17, 29, 35 chain); 54 now (`kit.d/ux`, which no other open slice changes); 55 after 54 (`kit.d/ux`); all five before 30.
 4. 20, then 22, then 23 and 24.
 5. 30 alone; then 31 (Lex's OK for both given 2026-10-27).
 6. 40 to 46, one after another (Lex's one OK, 2026-10-27), stopping at the first problem; 47 whenever Lex builds in `camframe` again.
