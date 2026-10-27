@@ -129,8 +129,14 @@ button { font: inherit; color: inherit; }
 .field { display: grid; gap: 0.25rem; font-size: 0.8rem; color: var(--muted); }
 .field input { font: inherit; font-size: 0.9rem; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.4rem 0.55rem; min-block-size: 2rem; }
 .field input:focus-visible { outline: 2px solid var(--action); outline-offset: 1px; }
-.site h2.outline { outline: 2px solid var(--c); outline-offset: 4px; border-radius: 2px; margin-block-start: 1.4rem; }
-.site h2 .chip { position: absolute; inset-block-start: -1.5rem; inset-inline-end: 0; font-family: system-ui, sans-serif; }
+/* Typing shows only the caret. A picture or look change gets a brief author outline with chip and undo. */
+.pic { position: relative; justify-self: start; inline-size: min(100%, 15rem); margin: 0.2rem 0 0; }
+.pic img { display: block; inline-size: 100%; aspect-ratio: 8 / 5; object-fit: cover; border-radius: var(--radius-small); }
+.author-box { position: absolute; inset: 0; outline: 2px solid var(--c); outline-offset: 4px; border-radius: var(--radius-small); pointer-events: none; animation: fadeout 6s var(--ease-out) forwards; }
+.author-box .chip { position: absolute; inset-block-start: 0.4rem; inset-inline-end: 0.4rem; pointer-events: auto; }
+.author-box:focus-within { animation-play-state: paused; }
+@media (hover: hover) and (pointer: fine) { .author-box:hover { animation-play-state: paused; } }
+@media (prefers-reduced-motion: reduce) { .author-box { animation-duration: 0.01s; animation-delay: 4s; } }
 .site h2[contenteditable="true"]:focus-visible { outline: 2px solid var(--guest); outline-offset: 4px; }
 /* Guest and Lex carets on the page: same look as mock-up 13 */
 .rc { position: relative; display: inline-block; inline-size: 0; block-size: 1.2em; vertical-align: text-bottom; border-inline-start: 2px solid var(--c); margin-inline: -1px; }
@@ -141,23 +147,29 @@ button { font: inherit; color: inherit; }
 .rc__flag:not([data-letter]) .rc__mark { background: var(--c); border-radius: 50%; }
 .rc__mark b { font: inherit; background: var(--c); padding-inline: 0.06rem; }
 .rc__mark svg { inline-size: 0.7rem; block-size: 0.7rem; stroke-width: 2.4; }
-.rc__name { opacity: 0; translate: -0.55rem 0; filter: blur(3px); }
 .rc__flag[data-letter] .rc__name { margin-inline-start: -0.36rem; }
+/* Undo for that person's last text change: a small icon button at the end of the opened tag. */
+.rc__undo { all: unset; display: grid; place-items: center; flex: none; inline-size: 0.95rem; block-size: 0.95rem; margin-inline: 0.2rem -0.3rem; border-radius: 50%; cursor: pointer; }
+.rc__undo svg { inline-size: 0.65rem; block-size: 0.65rem; stroke-width: 2.6; }
+.rc__undo:focus-visible { outline: 1.5px solid currentColor; outline-offset: -1.5px; }
+.rc__undo:active { background: color-mix(in oklch, currentColor 30%, transparent); }
+:is(.rc__name, .rc__undo) { opacity: 0; translate: -0.55rem 0; filter: blur(3px); }
 .rc:focus-visible { outline: none; }
 .rc:focus-visible .rc__flag { outline: 2px solid var(--c); outline-offset: 2px; }
 .rc:focus-visible .rc__flag, .rc:focus-within .rc__flag { clip-path: inset(0 0 0 0 round 0.575rem); }
-.rc:focus-visible .rc__name, .rc:focus-within .rc__name { opacity: 1; translate: 0 0; filter: blur(0); }
+.rc:focus-visible :is(.rc__name, .rc__undo), .rc:focus-within :is(.rc__name, .rc__undo) { opacity: 1; translate: 0 0; filter: blur(0); }
 @media (hover: hover) and (pointer: fine) {
   .rc:hover .rc__flag { clip-path: inset(0 0 0 0 round 0.575rem); }
-  .rc:hover .rc__name { opacity: 1; translate: 0 0; filter: blur(0); }
+  .rc:hover :is(.rc__name, .rc__undo) { opacity: 1; translate: 0 0; filter: blur(0); }
+  .rc__undo:hover { background: color-mix(in oklch, currentColor 20%, transparent); }
 }
-.rc__name { transition: opacity 200ms var(--ease-out); }
+:is(.rc__name, .rc__undo) { transition: opacity 200ms var(--ease-out); }
 @media (prefers-reduced-motion: no-preference) {
   .rc__flag { transition: clip-path 200ms var(--ease-out); }
-  .rc__name { transition: opacity 200ms var(--ease-out), translate 240ms var(--ease-out), filter 240ms var(--ease-out); }
+  :is(.rc__name, .rc__undo) { transition: opacity 200ms var(--ease-out), translate 240ms var(--ease-out), filter 240ms var(--ease-out); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rc__name { translate: 0 0; filter: none; }
+  :is(.rc__name, .rc__undo) { translate: 0 0; filter: none; }
 }
 
 </style>
@@ -176,6 +188,7 @@ button { font: inherit; color: inherit; }
       <button type="button" data-act="open">Anna opens the link</button>
       <button type="button" data-act="join">Anna joins</button>
       <button type="button" data-act="edit">Anna edits the heading</button>
+      <button type="button" data-act="pic">Anna swaps the picture</button>
       <button type="button" data-act="sam">Sam (has access) opens the project</button>
       <button type="button" data-act="stop">Lex: Stop sharing</button>
       <button type="button" data-act="reset">Reset</button>
@@ -197,7 +210,7 @@ button { font: inherit; color: inherit; }
           <button type="button" class="icon-btn" aria-label="Undo" data-icon="undo"></button>
           <button type="button" class="btn btn--primary" id="saveBtn" style="position:relative">Save</button>
         </div>
-        <div class="canvas"><div class="site"><h2 id="lexHeading">Fresh bread every morning</h2><p>Sourdough, rye and seeded loaves from our oven on the corner.</p></div></div>
+        <div class="canvas"><div class="site"><h2 id="lexHeading">Fresh bread every morning</h2><p>Sourdough, rye and seeded loaves from our oven on the corner.</p><figure class="pic" id="lexPic"><img id="lexImg" alt=""></figure></div></div>
       </div>
     </div>
     <div>
@@ -254,11 +267,22 @@ const caption = (text) => { const c = document.getElementById("caption"); if (c)
 
 let S;
 const linkUrl = "editor.techies.tools/live/7Kq2…#k=9fT…";
+const svgUrl = (svg) => "data:image/svg+xml," + encodeURIComponent(svg);
+const PICS = [
+  { alt: "A sourdough loaf on a board", src: svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 100"><rect width="160" height="100" fill="oklch(90% 0.04 80)"/><rect y="72" width="160" height="28" fill="oklch(62% 0.08 60)"/><ellipse cx="80" cy="62" rx="52" ry="24" fill="oklch(52% 0.12 55)"/><path d="M52 56q9-8 18 0M74 52q9-8 18 0M96 56q8-7 16 0" stroke="oklch(82% 0.08 75)" stroke-width="3" fill="none" stroke-linecap="round"/></svg>`) },
+  { alt: "Three seeded rolls in a basket", src: svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 100"><rect width="160" height="100" fill="oklch(88% 0.05 150)"/><path d="M20 66h120l-12 28H32z" fill="oklch(58% 0.09 70)"/><circle cx="54" cy="60" r="17" fill="oklch(60% 0.12 60)"/><circle cx="80" cy="54" r="19" fill="oklch(55% 0.12 55)"/><circle cx="106" cy="60" r="17" fill="oklch(60% 0.12 60)"/><g fill="oklch(92% 0.03 85)"><circle cx="50" cy="56" r="1.6"/><circle cx="58" cy="60" r="1.6"/><circle cx="76" cy="48" r="1.6"/><circle cx="85" cy="54" r="1.6"/><circle cx="102" cy="56" r="1.6"/><circle cx="110" cy="61" r="1.6"/></g></svg>`) },
+];
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 // Caret flag, same markup as mock-up 13: first letter in the circle, the rest slides out.
 function flag(who) {
   const name = who === "lex" ? "Lex" : S.guestName;
   return `<span class="rc" style="--c:var(--${who})" tabindex="0" aria-label="${esc(name)}"><span class="rc__flag" data-letter><span class="rc__mark"><b>${esc(name[0])}</b></span><span class="rc__name" aria-hidden="true">${esc(name.slice(1))}</span></span></span>`;
+}
+// While Anna's last text change can be undone, her tag in Lex's editor ends with an undo button.
+function syncUndo(rc, on) {
+  const btn = rc.querySelector(".rc__undo");
+  if (on && !btn) rc.firstElementChild.insertAdjacentHTML("beforeend", `<button type="button" class="rc__undo" data-undo-text aria-label="Undo ${esc(S.guestName)}'s change">${icon("undo")}</button>`);
+  if (!on && btn) btn.remove();
 }
 // Puts a caret at a text offset; keeps the same caret element while typing so hover stays open.
 function placeCaret(el, text, at, who) {
@@ -266,6 +290,7 @@ function placeCaret(el, text, at, who) {
   if (!rc) { el.textContent = ""; el.insertAdjacentHTML("afterbegin", flag(who)); rc = el.firstElementChild; }
   [...el.childNodes].forEach((n) => { if (n !== rc) n.remove(); });
   rc.before(text.slice(0, at)); rc.after(text.slice(at));
+  if (who === "guest") syncUndo(rc, S.textUndo !== null);
 }
 function caretOffset(el) {
   const s = getSelection();
@@ -283,7 +308,7 @@ function lexCaretInGuest() {
 let typing = 0;
 function reset() {
   typing++;
-  S = { sharing: false, copied: false, guestState: "none", guestName: "", heading: "Fresh bread every morning", annaMark: false, sam: false, dirty: false, carets: false, annaAt: 0 };
+  S = { sharing: false, copied: false, guestState: "none", guestName: "", heading: "Fresh bread every morning", textUndo: null, pic: 0, picUndo: null, picMark: false, sam: false, dirty: false, carets: false, annaAt: 0 };
   caption("Lex is editing alone.");
   render();
 }
@@ -304,9 +329,10 @@ function render() {
   document.getElementById("lexPeople").innerHTML = people.join("");
   const h = document.getElementById("lexHeading");
   if (S.carets && S.guestState === "joined") placeCaret(h, S.heading, S.annaAt, "guest"); else h.textContent = S.heading;
-  h.classList.toggle("outline", S.annaMark);
-  h.style.setProperty("--c", "var(--guest)");
-  if (S.annaMark) h.insertAdjacentHTML("beforeend", `<span class="chip" style="--c:var(--guest)">${S.guestName}</span>`);
+  setPic(document.getElementById("lexImg"));
+  const pic = document.getElementById("lexPic"), box = pic.querySelector(".author-box");
+  if (S.picMark && !box) pic.insertAdjacentHTML("beforeend", `<span class="author-box" style="--c:var(--guest)"><span class="chip" style="--c:var(--guest)">${esc(S.guestName)}<button type="button" data-undo-pic aria-label="Undo ${esc(S.guestName)}'s change">${icon("undo")}</button></span></span>`);
+  if (!S.picMark && box) box.remove();
   const save = document.getElementById("saveBtn");
   save.querySelector(".save-dot")?.remove();
   if (S.dirty) save.insertAdjacentHTML("beforeend", '<span class="save-dot" aria-hidden="true"></span>');
@@ -319,24 +345,28 @@ function render() {
   else if (S.guestState === "name") g.innerHTML = `<form class="join" id="joinForm"><h3>Edit Bakery site with Lex</h3><label class="field">Your name<input id="nameIn" autocomplete="given-name" value="${S.guestName}"></label><button type="submit" class="btn btn--primary">Join</button></form>`;
   else {
     // Rebuild only when the frame changes, so the caret element survives each typed letter.
-    const view = `<div class="editor" style="border:0;border-radius:0"><div class="topbar"><span class="project" style="cursor:default"><span class="mark"></span><span>Bakery site</span></span><span class="spacer"></span><span class="people"><span class="who" style="--c:var(--lex)" title="Lex">L</span>${S.sam ? '<span class="who" style="--c:var(--sam)" title="Sam">S</span>' : ""}</span><button type="button" class="icon-btn" aria-label="Undo">${icon("undo")}</button></div><div class="canvas"><div class="site"><h2 id="guestHeading" contenteditable="true" spellcheck="false"></h2><p id="guestPara">Sourdough, rye and seeded loaves from our oven on the corner.</p></div></div></div>`;
+    const view = `<div class="editor" style="border:0;border-radius:0"><div class="topbar"><span class="project" style="cursor:default"><span class="mark"></span><span>Bakery site</span></span><span class="spacer"></span><span class="people"><span class="who" style="--c:var(--lex)" title="Lex">L</span>${S.sam ? '<span class="who" style="--c:var(--sam)" title="Sam">S</span>' : ""}</span><button type="button" class="icon-btn" aria-label="Undo">${icon("undo")}</button></div><div class="canvas"><div class="site"><h2 id="guestHeading" contenteditable="true" spellcheck="false"></h2><p id="guestPara">Sourdough, rye and seeded loaves from our oven on the corner.</p><figure class="pic"><img id="guestImg" alt=""></figure></div></div></div>`;
     if (g.dataset.view !== view) { g.innerHTML = view; g.dataset.view = view; }
     const gh = document.getElementById("guestHeading");
     if (gh.textContent !== S.heading) gh.textContent = S.heading;
     lexCaretInGuest();
+    setPic(document.getElementById("guestImg"));
   }
 }
-function guestTyped(text) {
-  S.heading = text; S.annaMark = true; S.carets = true; S.annaAt = text.length; S.dirty = true; render();
-  clearTimeout(window.markT); window.markT = setTimeout(() => { S.annaMark = false; S.carets = false; render(); }, 2600);
+function setPic(img) { const p = PICS[S.pic]; if (img.getAttribute("src") !== p.src) { img.src = p.src; img.alt = p.alt; } }
+// Anna's typing shows only her caret, which stays until she leaves or sharing stops. No outline.
+function guestTyped(text, at = text.length) {
+  if (S.textUndo === null) S.textUndo = S.heading;
+  S.heading = text; S.carets = true; S.annaAt = at; S.dirty = true; render();
 }
 const acts = {
   async share() { S.sharing = true; S.copied = true; openMenu(true); render(); caption("The link is copied. The menu item says so; nothing else pops up."); setTimeout(() => { S.copied = false; render(); }, 2500); },
   async open() { if (!S.sharing) await acts.share(); S.guestState = "name"; openMenu(false); render(); caption("Anna opens the link. She only types a name."); },
   async join() { if (S.guestState !== "name") await acts.open(); S.guestName = document.getElementById("nameIn")?.value.trim() || "Anna"; S.guestState = "joined"; render(); caption("Anna is in. Her browser has no Save, files, settings or agents."); },
-  async edit() { if (S.guestState !== "joined") await acts.join(); const run = ++typing; const base = S.heading.replace(/ in Leiden$/, ""); let text = base; caption("Anna's edit becomes Lex's unsaved change, briefly outlined in her colour. Only Lex saves."); for (const ch of " in Leiden") { if (run !== typing || S.guestState !== "joined") return; text += ch; guestTyped(text); await sleep(90); } },
+  async edit() { if (S.guestState !== "joined") await acts.join(); const run = ++typing; const base = S.heading.replace(/ in Leiden$/, ""); let text = base; caption("Anna's edit becomes Lex's unsaved change. Only her caret shows, and it stays. Only Lex saves."); for (const ch of " in Leiden") { if (run !== typing || S.guestState !== "joined") return; text += ch; guestTyped(text); await sleep(90); } },
+  async pic() { if (S.guestState !== "joined") await acts.join(); S.picUndo = S.pic; S.pic = 1 - S.pic; S.picMark = false; S.dirty = true; render(); S.picMark = true; render(); caption("Anna swaps the picture. A picture or look change gets a brief outline in her colour, with her name and undo."); },
   async sam() { S.sam = true; render(); caption("Sam has access to the repository, so Sam joins without a link and has their own Save and agents."); },
-  async stop() { if (!S.sharing) return; S.sharing = false; if (S.guestState !== "none") S.guestState = "ended"; openMenu(false); render(); caption("Sharing stopped. The link no longer works; closing Lex's tab does the same. Sam stays, since Sam has access."); },
+  async stop() { if (!S.sharing) return; S.sharing = false; if (S.guestState !== "none") S.guestState = "ended"; S.carets = false; S.textUndo = null; openMenu(false); render(); caption("Sharing stopped. The link no longer works; closing Lex's tab does the same. Sam stays, since Sam has access."); },
   async reset() { openMenu(false); reset(); },
 };
 const projectBtn = document.getElementById("projectBtn"), menu = document.getElementById("projectMenu");
@@ -346,7 +376,17 @@ menu.addEventListener("click", (e) => { const m = e.target.closest("[data-m]")?.
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") openMenu(false); });
 document.addEventListener("click", (e) => { if (!e.target.closest(".anchor") && !e.target.closest(".strip")) openMenu(false); });
 document.getElementById("guest").addEventListener("submit", (e) => { e.preventDefault(); acts.join(); });
-document.getElementById("guest").addEventListener("input", (e) => { if (e.target.id === "guestHeading") { typing++; S.heading = e.target.textContent; S.annaMark = true; S.carets = true; S.annaAt = caretOffset(e.target); S.dirty = true; const h = document.getElementById("lexHeading"); placeCaret(h, S.heading, S.annaAt, "guest"); h.classList.add("outline"); h.style.setProperty("--c", "var(--guest)"); lexCaretInGuest(); const save = document.getElementById("saveBtn"); if (!save.querySelector(".save-dot")) save.insertAdjacentHTML("beforeend", '<span class="save-dot" aria-hidden="true"></span>'); clearTimeout(window.markT); window.markT = setTimeout(() => { S.annaMark = false; S.carets = false; render(); }, 2600); } });
+document.getElementById("guest").addEventListener("input", (e) => { if (e.target.id === "guestHeading") { typing++; guestTyped(e.target.textContent, caretOffset(e.target)); } });
+const lexSite = document.getElementById("lexHeading").parentElement;
+lexSite.addEventListener("click", (e) => {
+  if (e.target.closest("[data-undo-text]")) {
+    typing++; S.heading = S.textUndo; S.textUndo = null; S.annaAt = S.heading.length; render();
+    if (e.detail === 0) document.querySelector("#lexHeading .rc")?.focus();
+    caption(`${S.guestName}'s change is undone from her caret. Lex's words stay.`);
+  }
+  if (e.target.closest("[data-undo-pic]")) { S.pic = S.picUndo; S.picMark = false; render(); caption(`${S.guestName}'s picture change is undone from her chip. Her words stay.`); }
+});
+lexSite.addEventListener("animationend", (e) => { if (e.target.classList.contains("author-box")) { S.picMark = false; render(); } });
 document.querySelector(".strip").addEventListener("click", (e) => { const b = e.target.closest("[data-act]"); if (b) acts[b.dataset.act](); });
 reset();
 
