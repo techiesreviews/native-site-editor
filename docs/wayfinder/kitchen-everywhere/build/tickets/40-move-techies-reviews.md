@@ -34,3 +34,7 @@ In `~/Projects/techies-reviews`: `scripts/agents/` (old copy out; launcher, `kit
 Agent Kit is required. After Lex's OK the lead starts a T3 thread in `~/Projects/techies-reviews` with builder `claude-opus-5-5`: `~/.local/share/agent-kit/current/kit init --light --land main`, then `scripts/agents/kit doctor`, its own `kit specs`, `kit shots`, `kit size`, `kit review` and `kit pr` into `main`. The lead closes this ticket here with a docs PR.
 
 - Report: Lex's answers (dates), the project's PR URL and merge SHA, `doctor` and own-check `RESULT:` lines, the deploy file list check, review decisions, the editor-save check.
+
+## Comments
+
+- Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.

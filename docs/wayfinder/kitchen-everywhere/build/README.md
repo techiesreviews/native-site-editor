@@ -2,6 +2,8 @@
 
 prefix: ke
 
+**Ready (guess, low confidence, 2026-10-27):** slices 10–24 built ~31 Oct (nothing for Lex to release); 30 onwards ~7 Nov, then one project at a time to ~21 Nov.
+
 Started 2026-10-26: the clean-up release is live (Worker 972eddd7) and Lex's first-hour check passed. Slices 10–24 only, inside this repo.
 
 Builds what the [map](../map.md) decided: one shared Agent Kit in its own repo that every project runs, always the newest; one settings file and a folder of own commands per project; `kit init` to set a project up; a shared rulebook with per-project extras; reviews without OpenAI models, with a second look on every change; then each of Lex's chosen projects moves over, and the `lex-coding` rule changes last. Every decision comes from the map's closed tickets; this build does not reopen them:
@@ -17,14 +19,14 @@ Tickets live in [tickets/](tickets/), one slice each, numbered by group: 10s get
 
 ## When it starts
 
-Decided with Lex on 2026-10-26: right after the clean-up release is live in production, and before the [agents and multiplayer build](../../agents-and-multiplayer/build/README.md). The lead then removes the **Not started** line and builds **slices 10–24 only** (this editor's repo). Slices 30 and later (the kit's own repo, the timer, other projects, the `lex-coding` rule) wait for Lex's go, asked once 10–24 have landed. Nothing Lex sees in the editor changes: this build is kit, docs and other projects' agent setup only.
+Decided with Lex on 2026-10-26: right after the clean-up release is live in production, and before the [agents and multiplayer build](../../agents-and-multiplayer/build/README.md). The lead then removes the **Not started** line and builds **slices 10–24 only** (this editor's repo). Slices 30 and later (the kit's own repo, the timer, other projects, the `lex-coding` rule) had to wait for Lex's go; he gave one OK for all of them on 2026-10-27 (Tuesday pack, Q3): in order, once 10–24 have landed, stopping at the first problem. Closing GitHub Issues (44, 47) still comes to him separately, in the Tuesday pack for that project. Nothing Lex sees in the editor changes: this build is kit, docs and other projects' agent setup only.
 
 ## Rules for the whole build
 
 - **Agent Kit is required** for every slice and every model: `scripts/agents/kit` ([agent-scripts.md](../../../agents/agent-scripts.md#kit), [runner.md](../../../agents/runner.md), [kitchen.md](../../../agents/kitchen.md)). `kit doctor` first; `kit slice` under `kit bg`; `kit unit --affected` while building; `kit review`; `kit pr` into `dev`. Each ticket names its commands and the evidence its builder reports. A kit command that cannot run is said in the report, never skipped silently or claimed.
 - **Prepare here, move last** (helper decision 1). Tickets 10–24 change the kit inside this repo, where `kit slice`, `kit pr` and CI already work, and the editor keeps working the same after each one. Ticket 30 then moves the shared part to its own repo. After 30, a kit change is a PR into the kit repo through that repo's own `kit pr`, and its CI also runs this editor's `npm test` and `npm run lint` against the changed kit (ticket 01 point 3: that gate stands in for a version pin).
 - **The editor works the same after every slice.** Same commands, same output, same evidence folders; proven by the existing kit tests and one real `kit doctor` and `kit status` run per slice.
-- **Waiting for Lex:** tickets with `type: task (HITL)` are never handed out by `kit next`. The lead asks Lex in plain words, writes his answer with its date under the ticket's `## Comments`, and only then starts it. These are: creating the kit repo (30), the user-level timer (31), every change in another project (40–47), and the `lex-coding` wording (50).
+- **Waiting for Lex:** tickets with `type: task (HITL)` are never handed out by `kit next`. The lead asks Lex in plain words (in the Tuesday pack, [kitchen.md](../../../agents/kitchen.md#tuesday-review)), writes his answer with its date under the ticket's `## Comments`, and only then starts it. These are: creating the kit repo (30), the user-level timer (31), every change in another project (40–47), and the `lex-coding` wording (50).
 - **Other projects** (40–47): after Lex's OK the lead starts one T3 thread per project, working in that project's folder with that project's kit (set up by `kit init`) and landing with that project's own `kit pr` into its landing branch. Nothing reaches another project's landing branch except through a reviewed PR. The thread reports back here; the lead closes the ticket with a small docs PR on `dev`.
 - **Editor saves stay untouched.** On sites the Native Site Editor saves to (`techies-reviews`, `lexvd-site`), its commits keep going straight to `main` (ticket 05 point 3): no branch rule that demands PRs on `main`, no hook or kit check that flags those commits.
 - **The hooks never fail silently** (research 04 risk): a missing or broken kit is said out loud at session start and by `kit doctor`, never just turned off (ticket 21).
@@ -102,17 +104,18 @@ The frontier decides; this is one order that keeps to the rules (at most 5 at on
 2. 14; then 15 and 21 side by side, with 25 once 18 is in.
 3. 16, then 17 (after 25); 26 beside them once 15, 19 and 21 are in; 27 after 26 (both change `kit.d/doctor`).
 4. 20, then 22, then 23 and 24.
-5. 30 alone, after Lex's OK; then 31 after Lex's OK.
-6. 40 to 46, one after another, each after Lex's OK; 47 whenever Lex builds in `camframe` again.
+5. 30 alone; then 31 (Lex's OK for both given 2026-10-27).
+6. 40 to 46, one after another (Lex's one OK, 2026-10-27), stopping at the first problem; 47 whenever Lex builds in `camframe` again.
 7. 50 last, with Lex's approved wording.
 
 ## Waiting for Lex
 
-- **When the build begins** (the Not started line).
+- **Given 2026-10-27 (Tuesday pack, Q3):** one OK for 30, 31, 40–46 and 50, in order, stopping at the first problem. The questions inside 40, 43, 44 and 46 take their recommended answers mid-week when easy to undo, and are listed in the next Tuesday pack so he can reverse them. What still waits for a Tuesday:
 - **30:** creating the public repo `techiesreviews/agent-kit` (the name is his to change) and turning on its CI.
 - **31:** a user-level `systemd` timer on his computer that updates the kit every 15 minutes.
-- **40–47:** every change in another project, each its own OK. Questions inside them: what happens to `techies-reviews`' `feat/melapress-course` first (40); `creator-studio-poc`'s landing branch, `dev` or `main`, and whether to wait for its server move (43); which of `TechiesTools`' own agent rules stay as its extras, and closing its 19 GitHub Issues (44); the starter in or out (46); closing `camframe`'s 12 Issues (47).
-- **50:** the `lex-coding` wording, drafted by the lead.
+- **40–47:** every change in another project (OK given for 40–46). Questions inside them: what happens to `techies-reviews`' `feat/melapress-course` first (40); `creator-studio-poc`'s landing branch, `dev` or `main`, and whether to wait for its server move (43); which of `TechiesTools`' own agent rules stay as its extras, and closing its 19 GitHub Issues (44); the starter in or out (46); closing `camframe`'s 12 Issues (47).
+- **50:** the `lex-coding` wording, drafted by the lead; the wording itself goes into a Tuesday pack.
+- **Still his, each in its Tuesday pack:** closing `TechiesTools`' 19 and `camframe`'s 12 GitHub Issues (outward-facing).
 - The helper decisions below.
 
 ## Helper decisions (made in planning; check with Lex)
@@ -121,12 +124,12 @@ The frontier decides; this is one order that keeps to the rules (at most 5 at on
 2. **Own commands live in `scripts/agents/project.d/`** in every project, named in the settings file. A different name from the shared `kit.d/` keeps the two apart before the move and avoids a rename after it; the old copies' own commands move there too.
 3. **The shared rulebook ships inside the kit.** `kit rulebook` prints it followed by the project's extras file; each project's `docs/agents/kitchen.md` becomes a short pointer that `kit init` writes. This editor's facts (pins it alone uses, previews, feature list, release steps) move to `docs/agents/kitchen-extras.md`.
 4. **One second look per change**, its kind chosen from the changed paths (agent setup, then UX, then DX, then code). The table of which model looks at which kind lives in the kit, one place for every project, with the date it was last checked. If the chosen model cannot run (Grok's weekly count used up, OpenCode down), the other family takes the look; only when both fail does the change land with "second look: skipped (reason)" in its report.
-5. **Grok's weekly cap stays at today's 8** until the Monday sweep has shown a few weeks of real use; then Lex sets it.
+5. **Grok's weekly cap stays at today's 8** until the Tuesday sweep has shown a few weeks of real use; then Lex sets it.
 6. **A machine-wide project list** (`~/.local/state/agent-kit/projects.json`, written by `kit init`) tells the combined table and the sweep where each project lives. Scoreboards and feedback logs stay in each project (ticket 05 point 5); the combined table reads them where they are.
 7. **A missing kit warns, it does not block.** The hook launcher prints a clear warning at session start and on each guarded command ("Agent Kit not found: guards are off; run `scripts/agents/kit doctor`"), and `kit doctor` fails. The other way, blocking every command until the kit is back, is safer but can lock a session; Lex can pick it.
 8. **`techies-reviews` keeps its own checks** (`specs`, `shots`, `size` for the course, lab and CSM pages, research 03) beside the light kitchen; they are its own commands, not part of the shared kit, and dropping them would lose working checks.
 9. **The starter is recommended to stay out.** Every new site the editor creates is a copy of `native-site-editor-starter` (`docs/native-starter-source.md`), so kit files there would land in every user's site.
 10. **Moves run one after another** in the decided order, each after Lex's OK.
 11. **GitHub Issues become `needs-triage` tickets** in a `docs/wayfinder/backlog/` map in their project, one file each with the Issue's title, text, labels and link.
-12. **Machine-wide lines go in this editor's Monday sweep only** (Grok use for the week, kit problems per project); other projects get no sweep of their own unless Lex asks.
+12. **Machine-wide lines go in this editor's Tuesday sweep only** (Grok use for the week, kit problems per project); other projects get no sweep of their own unless Lex asks.
 13. **Until the timer is on** (31), the lead runs `kit update` by hand after each kit merge; `kit doctor` warns when the machine copy is more than a day old.

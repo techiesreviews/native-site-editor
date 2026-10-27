@@ -5,6 +5,8 @@ charted: 2026-10-25
 tracker: local markdown (tickets live in tickets/ with a blocked_by line in each)
 ---
 
+**Ready (guess, low confidence, 2026-10-27):** live ~1 Dec (Lex's walk-through ~17 Nov on the preview, fixes built the week after).
+
 ## Destination
 
 A build plan of fix groups, each with a builder and its evidence, plus new UX rulebook lines so the details stay right. It sweeps three areas, each released as its own phase:
@@ -16,7 +18,7 @@ A build plan of fix groups, each with a builder and its evidence, plus new UX ru
 ## Notes
 
 - **Planning only.** Third in Lex's order of 2026-10-23, after [agents and multiplayer](../agents-and-multiplayer/map.md) and the [atomic catalogue](../atomic-catalogue/map.md).
-- **Gate:** the sweeps run after the catalogue build is released, because that build rebuilds most screens ([Wait for the catalogue build release](tickets/01-task-catalogue-released.md)).
+- **Gate:** the sweeps run once the catalogue build's frontier is empty (built and on preview, waiting for Lex's Tuesday end check), because that build rebuilds most screens ([Wait for the catalogue build release](tickets/01-task-catalogue-released.md); Tuesday rules of 2026-10-27, [kitchen.md](../../agents/kitchen.md#tuesday-review)). Lex's walk-through (04) and the grilling (06, 07) go into a Tuesday pack; the detail pass's releases wait for his written go-ahead on a Tuesday.
 - **Charting answers (Lex, 2026-10-25):**
   - all three areas, "we can release for each phase";
   - three sweeps: the acts-like-a-user checking tool across the feature list ([factory ticket 03](../software-factory/tickets/03-grill-checking-skill.md#resolution-2026-10-22); `kit ux`, factory build slice 42); agents doing real tasks through the MCP; Lex's own walk-through on laptop and iPhone;

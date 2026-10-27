@@ -33,3 +33,7 @@ The `lex-coding` skill stops sending agents to this repo's `origin/dev` for the 
 Agent Kit is required. The skill file is outside every repo, so the lead edits it directly after approval; this ticket's Comments and Done land on `dev` with `scripts/agents/kit pr` after `node scripts/agents/tickets.mjs check`.
 
 - Report: Lex's approval (date), the before-and-after lines, the `doctor` `RESULT:` line, the PR URL and merge SHA.
+
+## Comments
+
+- Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.

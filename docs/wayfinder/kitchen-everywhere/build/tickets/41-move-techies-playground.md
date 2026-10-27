@@ -33,3 +33,7 @@ In `~/Projects/techies-playground`: `scripts/agents/` (old copy out; launcher, `
 Agent Kit is required. After Lex's OK the lead starts a T3 thread in `~/Projects/techies-playground` with builder `claude-opus-5-5`: `~/.local/share/agent-kit/current/kit init --land main`, then `scripts/agents/kit doctor`, `kit unit`, `kit build`, `kit review` and `kit pr` into `main`. The lead closes this ticket here with a docs PR.
 
 - Report: Lex's OK (date), the PR URL and merge SHA, `doctor`, `unit` and `build` `RESULT:` lines, the `npm test` file list check, review decisions.
+
+## Comments
+
+- Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.

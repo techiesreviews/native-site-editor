@@ -30,3 +30,7 @@ Ticket 05 puts `native-site-editor-starter` with the static sites on the light k
 Agent Kit is required. If out, the lead's docs change lands with `scripts/agents/kit pr` into `dev` after `node scripts/agents/tickets.mjs check`. If in, as ticket 45 after the editor ticket lands.
 
 - Report: Lex's answer (date), the PR URL and merge SHA.
+
+## Comments
+
+- Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.

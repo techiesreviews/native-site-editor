@@ -15,7 +15,7 @@ Kit fixes reach every project and worktree within about 15 minutes of landing, w
 
 - **A `systemd --user` timer** (`agent-kit-update.timer` and its `.service` in `~/.config/systemd/user/`) runs `kit update` every 15 minutes, starting at login. Lex's machine already uses `systemd-run --user` for long jobs.
 - **The kit repo holds the two unit files** and `kit update --install-timer` writes and enables them; `--remove-timer` takes them out. The lead runs the install after Lex's yes.
-- **A stalled timer is seen:** `kit doctor` warns after a day without an update (ticket 21), and the Monday sweep's kit-problem line names it (ticket 24).
+- **A stalled timer is seen:** `kit doctor` warns after a day without an update (ticket 21), and the Tuesday sweep's kit-problem line names it (ticket 24).
 
 ## Files
 
@@ -32,3 +32,7 @@ Kit fixes reach every project and worktree within about 15 minutes of landing, w
 Agent Kit is required. Built in the kit repo (`~/Projects/agent-kit`) with its own `kit doctor`, `kit unit --affected`, `kit review` and `kit pr`; builder `claude-opus-5-5` in a T3 thread started by the lead.
 
 - Report: Lex's OK (date), the kit repo PR and merge SHA, the `list-timers` line, and the `kit version` line showing a fresh kit commit.
+
+## Comments
+
+- Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.
