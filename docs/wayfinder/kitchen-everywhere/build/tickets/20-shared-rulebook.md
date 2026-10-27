@@ -99,9 +99,10 @@ Tests: `tests/kit-rulebook.test.ts` (new: output of both parts here and in a tem
 path, no extras, missing extras or a folder, usage and help, every link and anchor in the four files,
 the pointer keeps every old heading, the shared rulebook names no editor-only fact and links only
 inside the kit, the two pin rows exist, a kit with no shared rulebook, a broken settings file and a
-`PATH` without `jq` fail; the link check also covers `runner.md` and `agent-scripts.md`);
+`PATH` without `jq` fail, an empty `rulebookExtras` reads as unset; the link check also covers `runner.md` and `agent-scripts.md`);
 `tests/kit-next.test.ts` (pins from a `KIT_HOME` rulebook reach `next:` and `ASE_REVIEW_MODEL`,
-extras builder and reviewer rows win through `--start`, a missing rulebook, extras or pin fails, a
+extras builder and reviewer rows win through `--start`, an extras builder row alone keeps the
+shared reviewer, a missing rulebook, extras or pin fails, a
 group run works with a kit that has no `docs/`; the real-kit-home test links `docs` too). The
 extras link the issue tracker's Wayfinding operations and Build files sections; the pointer sends
 the feature list and `kit ux` (stations 7, 11) to the extras' Visible changes section.
