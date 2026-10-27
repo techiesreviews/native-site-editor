@@ -151,9 +151,10 @@ with `--resume`. OpenCode reviews only: `opencode run --pure --agent ase-review 
 with the brief on stdin; `OPENCODE_CONFIG_CONTENT` defines `ase-review` with every permission denied but
 read/grep/glob/list, and `OPENCODE_DISABLE_PROJECT_CONFIG=1` and `OPENCODE_DISABLE_CLAUDE_CODE=1` keep the
 project's OpenCode config and Claude Code files out (the user's global `~/.config/opencode` config still loads, but its tools
-are denied too); effort is not passed (`--effort` is refused and `effort` is recorded as `null`), and a model without a
+are denied too); effort is not passed (a given `--effort`, as `kit ux` always sends, is ignored and `effort` is recorded as `null`), and a model without a
 `provider/` part is refused before any call. The report is the text of the last
-message in its JSON events; the session id comes from those events and is resumed with `--session`. A failed CLI's own failure (timeout, usage limit or exit status)
+message in its JSON events; the session id comes from those events and is resumed with `--session`; `opencode export` writes to a
+file, since through a pipe the CLI exits before a large export is written out. A failed CLI's own failure (timeout, usage limit or exit status)
 is the last `problem:` line. The lead commits builders' unstaged work.
 
 `ASE_AGENT_TIMEOUT` defaults to `90m`, with legacy `SOL_TIMEOUT` as fallback.
