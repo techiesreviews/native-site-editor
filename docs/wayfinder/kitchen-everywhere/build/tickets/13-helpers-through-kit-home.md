@@ -1,7 +1,7 @@
 ---
 title: Shared commands find their helpers through KIT_HOME
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-13
 builder: claude
 blocked_by: [12-own-commands-folder]
@@ -38,3 +38,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke13 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/13-helpers-through-kit-home.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke13 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit and doctor `RESULT:` lines, the `grep` output, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- The front door sets and exports `KIT_HOME`: an already set value wins (made absolute), else the folder holding the front door. It reads `kit-lib.sh` and the shared `kit.d/` from there and points `KIT_LIB`/`KIT_LIB_MJS` at it; a `KIT_HOME` without `kit-lib.sh` fails `RESULT: fail no kit at KIT_HOME <path>` (exit 2). Outside git, the project is the folder around the front door, not around `KIT_HOME`.
+- `kit-lib.sh` has `kit_home`, `kit-lib.mjs` has `kitHome()`: `KIT_HOME`, else the library's own folder.
+- Shared helpers come from `KIT_HOME`: `kit card` runs `$KIT_HOME/context-card.mjs`; `kit pr` runs `tickets.mjs check` and the focused `unit.sh` from it (a home inside the project keeps the short `scripts/agents/unit.sh` in the PR body); `kit next --start` starts the job through `$KIT_HOME/kit`; `kit version` shows the commit of `KIT_HOME` (`none` for a copy outside git). The other shared commands already reach their helpers beside themselves (`../kit-lib.mjs`, `../tickets.mjs`, `../unit.sh` …), which is the kit's own folder. `kit unit` loads its import scan (`specs-affected.mjs`, which needs the TypeScript parser) only for `--affected`, so `kit unit --help` runs from a kit copy without `node_modules`.
+- `kit doctor` has an eleventh check, `kit home`: it copies `KIT_HOME` to a temporary folder and runs `kit version` from the copy with `KIT_HOME` pointing at it; `✓ kit home: a copy of <home> runs kit version`, else `✗ kit home: a copy of <home> fails kit version: <last line>; fix: reach shared helpers through KIT_HOME, not scripts/agents/`.
+- `grep -rn "scripts/agents/" scripts/agents/kit.d` now finds only project paths and text: `next` (the bg job runs the worktree's own front door `scripts/agents/kit`, which keeps the inherited `KIT_HOME`; its `wait:` line), `doctor` (the project's `hooks/run.sh` and `hooks/bash-guard.sh`; fix texts naming `kit.json`, `worktree.sh`, `kit.d`), `kit.json` in usage and messages (`next`, `heartbeat`, `sweep`, `status`, `pr`, `review`, `unit`, `ux`, `wait`), the `scripts/agents/kit preview` hint in `heartbeat`, the builder briefs in `slice` and `fix`, and the `# shellcheck source=` comments in `card`, `version`, `deps`, `doctor`.
+- Tests: `tests/kit.test.ts` copies `scripts/agents/` without `project.d/` to a temp folder, sets `KIT_HOME` to it and runs `kit version`, `kit status`, `kit unit --help`, `kit review --help`, `kit next --help` and a project command (which sees the copy as `KIT_HOME` and `KIT_LIB`) from a temp git project holding only `kit.json`, the front door and `project.d/`; a missing `KIT_HOME` fails. `tests/kit-doctor.test.ts` expects 11 checks with `✓ kit home` and fails a copy whose `kit version` fails. `tests/kit-pr.test.ts` points `KIT_HOME` at the fixture's `scripts/agents` (its fake `unit.sh` and `tickets.mjs`, with the real `kit.d` and library linked beside them); `tests/kit-card.test.ts` breaks the card through a `KIT_HOME` without `context-card.mjs`.
+- Feature list: no change (agent kit tooling only, nothing an editor user sees).
+- Validation: `scripts/agents/kit unit --affected` `RESULT: ok unit 315/315 (14 files)` (the clean guard ran 1216 kit tests from 35 files); `kit doctor` `RESULT: ok doctor 11/11 checks passed`; `npm run check` and `npm run lint` pass.
