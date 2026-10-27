@@ -1,7 +1,7 @@
 ---
 title: Doctor's commands check says so when the settings file is broken
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-27
 builder: claude
 blocked_by: [26-settings-messages-and-tests]
@@ -35,3 +35,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke27 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/27-doctor-commands-on-broken-settings.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke27 --timeout 2h`. While building: `scripts/agents/kit unit --affected`, then `scripts/agents/kit unit tests/kit*.test.ts`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, before-and-after `doctor` lines, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- `kit doctor` (`scripts/agents/kit.d/doctor`) now remembers when `scripts/agents/kit.json` is missing or unreadable (bad JSON, or not one JSON object). The `commands` line then fails with `project folder not checked (scripts/agents/kit.json unreadable), <n> shared; fix: run kit doctor after fixing scripts/agents/kit.json` (or `missing`). It no longer claims there is no `"commands"` key. The shared folder is still counted and every shared command is still checked for `--help`. A readable file without `commands` keeps the old pass line, and `KIT_COMMANDS_DIR` behaves as before.
+- Tests: `tests/kit-doctor.test.ts` covers a readable file with no `commands` (pass line), `{ "commands": ` (fail line, no `no "commands"` text, help still checked) and a missing file. `tests/kit.test.ts` runs `kit specs --help` through the front door with this repo's real `kit.json`, and the two-groups test runs `kit --help` and finds both `Shared commands:` and `Project commands:`.
+- The real `kit doctor` on this editor prints the same output as before: `✓ commands: 20 shared, 4 in scripts/agents/project.d`, `RESULT: ok doctor 11/11 checks passed`.
+- Feature list: no change (kit-internal doctor message; no editor UI).
