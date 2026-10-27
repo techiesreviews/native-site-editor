@@ -1,7 +1,7 @@
 ---
 title: One shared rulebook plus per-project extras
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-20
 builder: claude
 blocked_by: [17-second-look-per-kind]
@@ -42,3 +42,66 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke20 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/20-shared-rulebook.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke20 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: from ticket 17 on, `kit slice` runs it.
 - Report: the section map, `kit next` before and after, unit `RESULT:` lines, review decisions, PR and merge SHA.
+
+## Done (2026-10-28)
+
+- **Shared rulebook** `scripts/agents/docs/kitchen.md`, worded for any project: "the landing branch"
+  (`branches.land`), "the project's checks" (`checks`), the shared file (`sharedFile`), the
+  after-merge step, release steps and visible-change checks named by the extras. It links only inside
+  the kit; project docs are named by path.
+- **This editor's extras** `docs/agents/kitchen-extras.md` (already named by `rulebookExtras` in
+  `kit.json`); template for other projects `scripts/agents/docs/kitchen-extras-template.md`.
+- **`kit rulebook`** (`scripts/agents/kit.d/rulebook`) prints the shared rulebook, a blank line, then the
+  extras (relative or absolute path); `RESULT: ok rulebook shared and <file>`. No `rulebookExtras`:
+  shared part plus `No project extras: …` (`RESULT: ok rulebook shared only`); an unreadable extras
+  file, or no `jq`, fails after the shared part; any argument is a usage error (exit 2).
+- **`kit next`** reads its builder and reviewer from the shared rulebook's "Builder, every slice" and
+  "Review, every change" rows in `$KIT_HOME/docs/kitchen.md`; the same row in the extras wins; a
+  missing file or row fails before any hand-out. Before and after on this build's own map
+  (`kit next kitchen-everywhere`): identical, `next: …/28-kit-home-test-env-and-gaps.md
+  builder=claude-opus-5-5 owner=ke-28 why=slot 1/5`, six `waits:` lines, `RESULT: ok next 1 ready, 6 waiting`.
+- **`docs/agents/kitchen.md`** is the pointer: run `kit rulebook`, where both files are, and one heading
+  per old heading (every old anchor still resolves) linking to its new place. `AGENTS.md` is unchanged.
+- **Links:** `runner.md` and `agent-scripts.md` point at the shared rulebook; `agent-scripts.md#kit`
+  marks each shared command `(shared)` (own: `specs`, `shots`, `size`, `preview`, unmarked), adds the
+  `kit rulebook` line, says where `kit next`'s pins come from and what `rulebookExtras` is;
+  `code-map.md` has a Kitchen rulebook row.
+
+Section map (old `kitchen.md` → new place):
+
+| Old section | Shared rulebook | Extras |
+| --- | --- | --- |
+| Intro | Head chef, stations, planned items | Why each station exists: factory map and build (Where the rules came from) |
+| House rules | All five rules; `dev` → the landing branch | Landing branch `dev` |
+| Who cooks (pins) | Whole table and the Sol/Grok count note | History links: kitchen-everywhere 01, 17 |
+| 1. Idea | All | Factory 10 link |
+| 2. Map and questions | All; issue-tracker by path | Issue tracker link |
+| 3. Mock-up | Prototype, show and tell, mock-ups ahead, decides, done | `kit shots`, `?proto=`, planned atomic catalogue (factory 09) |
+| 4. Tickets | All | Clean-up build example, factory 06 |
+| 5. Hand-out | Brief (`<project>`), lead thread, heartbeat (after-merge step), limits (shared file) | `src/main.ts`, `kit preview` as the after-merge step, factory 05 |
+| 6. Build | All; runner guide by path | Runner link |
+| 7. Checks | `kit unit`, the project's checks, `preview_*`, visible-change check | `npm run check`, `kit specs`, `kit size`, `kit shots`, features.md, `kit ux`, factory 03 |
+| 8. Review | All; UX gate named by the extras | `kit ux` as the gate, factory 02, 04 |
+| 9. Land | All; feature-list guard where `featureList` is set | features.md guard |
+| 10. Preview, note, scoreboard | Note, feedback log, scoreboard, build page (now "After a merge") | `kit preview`, its RESULT line, Cloudflare token note |
+| 11. Lex's end check | All; the whole user-level check where the project has one | Preview, `kit ux --all`, iPhone, `--after-release` on production |
+| 12. Release | `kit pr --release`, rollout checklist | `npm run deploy:techies`, NATIVE-PROJECT.md, first-hour check |
+| UX confidence ladder | All | |
+| Weekly routines | All; routine files by path | Routine links |
+| Tuesday review | All; "lands on `dev` or preview" → the landing branch or a preview | |
+| Small chores | All; `npm run check` → the project's checks | |
+| (new) | | The starter (runner.md's starter worktree line) |
+
+Tests: `tests/kit-rulebook.test.ts` (new: output of both parts here and in a temp project, absolute
+path, no extras, missing extras or a folder, usage and help, every link and anchor in the four files,
+the pointer keeps every old heading, the shared rulebook names no editor-only fact and links only
+inside the kit, the two pin rows exist); `tests/kit-next.test.ts` (pins from a `KIT_HOME` rulebook
+reach `next:` and `ASE_REVIEW_MODEL`, an extras row wins, a missing rulebook, extras or pin fails; the
+real-kit-home test links `docs` too).
+
+Validation: `scripts/agents/kit unit --affected` `RESULT: ok unit 50/50 (2 files)`; docs guards and
+neighbours (`agent-scripts`, `code-map`, `mcp-runtime`, `ux-rulebook`, `kit-doctor`, `agent-tickets`)
+all pass; `node scripts/agents/tickets.mjs check` passes (775 tickets); `npm run lint` and
+`npm run check` exit 0; `kit doctor` 11/11.
+
+Feature list: no change (kit and docs only; nothing in the editor changes).
