@@ -2,7 +2,7 @@
 title: Follow-ups written in full
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-18
 builder: claude
 blocked_by: []
 ---
