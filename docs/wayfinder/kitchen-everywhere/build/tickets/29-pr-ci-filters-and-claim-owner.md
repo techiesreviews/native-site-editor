@@ -2,7 +2,7 @@
 title: kit pr waits for push workflows that may run on a PR branch, and a slice keeps its claim owner
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-29
 builder: claude
 blocked_by: [17-second-look-per-kind]
 ---
