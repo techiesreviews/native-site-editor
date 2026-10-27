@@ -73,4 +73,16 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - `kit pr`'s `colours` step (`scripts/check-colours.mjs`).
   - The `slice` and `fix` brief text (`npm run check`, `npm run lint`, `docs/agents/features.md`), which is outside this ticket's files.
   - The front door still lists `kit.d/` itself, and nothing reads the `commands` and `rulebookExtras` keys yet (that is launcher work).
+  - In `pr-tier.mjs`: `cleanGuard` (`^scripts/agents/`, `^tests/kit-`) and `unitTest` (`tests/*.test.ts`).
+  - In `kit pr`: the `tests` folder it reads for focused unit files, and its "CI still runs … no Sol review" line.
+  - In `sweep`: the "Hand-typed values in src/**/*.css" section.
+- **Review round 1 fixes:**
+  - `worktree.sh` makes the static-preview link again even before main builds the fixture.
+  - `kitSettings()` strips trailing slashes from `maps` once, for every reader.
+  - Bash `kit_main_root` takes `mainRoot` only from a valid file, as node does.
+  - `deps add` lets `KIT_DEV_ROOT` win even without a usable file.
+  - `unit.sh` prints the settings problem before asking for `unit.run`.
+  - The review brief reads `standards` from the top folder of the worktree it was given. Because of that, the temp repo in `tests/agent-scripts.test.ts` now carries a settings file too (the only test outside `tests/kit*.test.ts` that needed one).
+  - The layout paragraph in `agent-scripts.md` now points to the settings file.
+  - New tests cover `worktree.sh`, sweep's missing-key lines, `kit pr`'s release pairing, the `deps add` prefix, a trailing-slash `maps` (heartbeat and `scoreMap`) and bash/node agreement on `mainRoot`.
 - **Feature list:** no change (kit plumbing for agents; no editor UI).
