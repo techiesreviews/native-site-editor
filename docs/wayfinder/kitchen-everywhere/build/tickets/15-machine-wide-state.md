@@ -2,7 +2,7 @@
 title: One Grok count for the computer, its weekly use in the sweep
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-15
 builder: claude
 blocked_by: [14-settings-for-other-projects]
 ---
