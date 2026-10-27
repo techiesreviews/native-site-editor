@@ -1,7 +1,7 @@
 ---
 title: Settings problems say the right thing, and the untested settings paths get tests
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-26
 builder: claude
 blocked_by: [15-machine-wide-state, 19-doctor-gate-and-fix-builder, 21-launcher-and-update]
@@ -43,3 +43,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke26 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/26-settings-messages-and-tests.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke26 --timeout 2h`. While building: `scripts/agents/kit unit --affected`, then `scripts/agents/kit unit tests/kit*.test.ts`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, before-and-after `doctor` lines, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- A settings problem is a failure, not a usage error: `unit.sh` exits 1 without `unit.run`, when `kit unit --list` fails (no `unit.files`) and when `unit.files` matches nothing. `kit unit` sets status 1 once its arguments parse, so a missing or broken `scripts/agents/kit.json`, a missing `unit.files` and a `--base` git cannot find exit 1 with a `problem:` line and no `Usage:`; argument errors and a missing named test file still exit 2.
+- Missing `jq` is named: `kit_settings_problems` prints `jq is not installed; install jq` first, and `kit_setting` says the same on stderr and returns 1. Doctor reads settings through a wrapper that tolerates this, prints `✗ settings: jq is not installed, so scripts/agents/kit.json cannot be read; fix: install jq` and runs its other checks; the front door (`scripts/agents/kit`, one line beyond the Files list) treats an unreadable `commands` as unset, so `kit doctor` still starts without jq.
+- Doctor's shared-folder lines name the setting: `shared <path> is missing or dangling; fix: restore it or fix sharedNodeModules in scripts/agents/kit.json` and `node_modules differs from sharedNodeModules (<path>)`.
+- Tests: `kit-settings` (`kit unit --affected` on a broken file; `unit.sh` without `unit.run` status 1; `worktree.sh` links the realpath of a symlinked `sharedNodeModules` and refuses a missing one with no worktree or branch), `kit-unit` (no `unit.files` and no `unit.run` exit 1 without usage; a bad `--base` exits 1; `unit.sh` with no files runs only the file its `unit.files` glob matches), `kit-doctor` (exact shared-folder lines; installed `node_modules` without `sharedNodeModules` passes as not shared; a `PATH` without jq, direct and through the front door), `kit-status` (broken file exits 1 with `RESULT: fail status scripts/agents/kit.json is unreadable: …`, no network calls), `kit-feedback` (no `maps` exits 1 with `no "maps" folder in scripts/agents/kit.json; this command needs one`, writes nothing).
+- `scripts/agents/kit unit tests/kit*.test.ts`: `RESULT: ok unit 841/841 (31 files)`; `kit unit --affected`: `RESULT: ok unit 102/102 (5 files)`; `npm run check` and `npm run lint` pass. A real `kit doctor` here prints the same 13 lines as before, `RESULT: ok doctor 11/11 checks passed`.
+- Feature list: no change (kit messages and tests only; nothing in the editor changes).
