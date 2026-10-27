@@ -13,7 +13,7 @@ One kitchen rulebook for every project, plus a short extras file per project, as
 
 ## Decided behaviour
 
-- **The shared rulebook** holds the stations, house rules, pins, the UX ladder, weekly routines and "Always waits for Lex", worded for any project: it says "the project's landing branch" and "the project's checks" where it now says `dev`, `npm run check`, previews or the feature list. It lives with the shared kit, at `scripts/agents/docs/kitchen.md` until the move (ticket 30), and goes to the kit repo with it (README helper decision 3).
+- **The shared rulebook** holds the stations, house rules, pins, the UX ladder, weekly routines, "Tuesday review" (with its hard-to-undo list) and "Small chores on free models", worded for any project: it says "the project's landing branch" and "the project's checks" where it now says `dev`, `npm run check`, previews or the feature list. It lives with the shared kit, at `scripts/agents/docs/kitchen.md` until the move (ticket 30), and goes to the kit repo with it (README helper decision 3).
 - **This editor's facts move to `docs/agents/kitchen-extras.md`** (named by `rulebookExtras` in `kit.json`): previews and `kit preview`, the feature list and `kit ux`, `src/main.ts` as the shared file, release to production, the starter worktrees. Short; it wins over the shared rulebook where they differ.
 - **`kit rulebook`** prints the shared rulebook followed by the project's extras. `docs/agents/kitchen.md` becomes a short pointer ("run `scripts/agents/kit rulebook`", plus where both files are), and `AGENTS.md` keeps pointing at it, so nothing that links there breaks.
 - **`kit next` reads the builder pins** from the shared rulebook (today from `docs/agents/kitchen.md`).

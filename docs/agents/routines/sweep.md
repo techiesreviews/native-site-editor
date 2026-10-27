@@ -1,6 +1,6 @@
 # Weekly sweep routine
 
-A scheduled session runs this every Monday at 09:00 Europe/Amsterdam ([kitchen.md](../kitchen.md#weekly-routines)).
+A scheduled session runs this every Tuesday at 07:00 Europe/Amsterdam, before Lex reviews (moved from Monday 09:00 on 2026-10-27) ([kitchen.md](../kitchen.md#weekly-routines)).
 It **lists bad patterns and changes nothing**: no code edits, no tickets. Lex picks which items become
 tickets ([factory 06](../../wayfinder/software-factory/tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22), items 1 and 4).
 
@@ -28,7 +28,7 @@ tickets ([factory 06](../../wayfinder/software-factory/tickets/06-grill-sweeps-a
    (docs tier). Nothing else changes.
 7. **Tell Lex.** One short message in plain words: the top 3, each with its recommended fix, and the
    question "Which of these become tickets?". No file paths unless he asks. The lead opens the tickets he
-   picks. Lex gets one message per Monday: if `docs/agents/routines/learning.md` exists and this is
+   picks. Lex gets it in that day's Tuesday pack ([kitchen.md](../kitchen.md#tuesday-review)), one message: if `docs/agents/routines/learning.md` exists and this is
    an even ISO week, hold the top 3 for that routine's single message; otherwise send now.
 8. **Clean up.** After the PR merges, from outside the worktree:
    `git -C /home/ubulex/Projects/native-site-editor-dev worktree remove <worktree>`; keep the branch.

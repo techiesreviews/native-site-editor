@@ -1,6 +1,6 @@
 # Chat learning routine
 
-A scheduled session runs this at 11:00 Europe/Amsterdam on Mondays of even ISO weeks, two hours after the [sweep](sweep.md)
+A scheduled session runs this on Tuesdays of even ISO weeks, right after the [sweep](sweep.md) in the same 07:00 run (moved from Monday on 2026-10-27)
 ([kitchen.md](../kitchen.md#weekly-routines)). It turns corrections Lex gave more than once into
 **proposals** for an automatic check or a UX rulebook line. **Nothing is added until Lex picks**
 ([factory 06](../../wayfinder/software-factory/tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22), item 2).
@@ -10,7 +10,7 @@ The chat project's sync is the only reader of chats; it records each correction 
 This routine reads that list and never writes there.
 
 In even ISO weeks the sweep holds its top 3 for this routine, so this routine **always sends that
-Monday's one message to Lex**: the sweep's top 3, plus the learning proposals when there are any
+the Tuesday pack**: the sweep's top 3, plus the learning proposals when there are any
 ([factory 06](../../wayfinder/software-factory/tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22), item 4).
 Every stop after step 1 (an ✗ that `kit doctor` cannot fix, `kit learn` failing or finding nothing, `kit pr`
 failing) still sends it: the sweep's top 3, then one plain line saying the learning list did not come
@@ -34,7 +34,7 @@ this time and why.
 3. **Gather.** Find the newest learning file: the latest date among `docs/work/learning/YYYY-MM-DD.md` on
    `origin/dev` and the `origin/docs/learning-YYYY-MM-DD` branches holding that file (a learning PR may
    still be open: `git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/docs/learning-*'`).
-   Run `scripts/agents/kit learn --since <its date>` (inclusive, so a correction from that Monday after
+   Run `scripts/agents/kit learn --since <its date>` (inclusive, so a correction from that Tuesday after
    its run is seen now); with no earlier learning file,
    plain `scripts/agents/kit learn` (default `--since 14d`). `RESULT: ok learn nothing recorded yet`
    or `RESULT: ok learn 0 repeated of N groups` ends the learning part: no file, no PR; go to step 8,
