@@ -23,7 +23,8 @@ Every change gets a second look after Claude's review, in addition to it, from w
 
 - `scripts/agents/second-look.json` (new)
 - `scripts/agents/kit.d/review`, `scripts/agents/kit.d/slice`, `scripts/agents/kit.d/pr`, `scripts/agents/pr-tier.mjs` (the kind)
-- `tests/kit-review.test.ts`, `tests/kit-slice.test.ts`, `tests/kit-pr.test.ts`
+- `scripts/agents/kit.d/fix` (the skip reason only, see Comments)
+- `tests/kit-review.test.ts`, `tests/kit-slice.test.ts`, `tests/kit-pr.test.ts`, `tests/kit-fix.test.ts`
 - `docs/agents/kitchen.md` (Who cooks), `docs/agents/agent-scripts.md`, `docs/agents/runner.md` (one line in Review and close)
 
 ## Done when
@@ -39,3 +40,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke17 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/17-second-look-per-kind.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke17 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: the lead runs it by hand one last time on this slice (README).
 - Report: the first table with how each pick was made, unit `RESULT:` lines, review decisions, PR and merge SHA.
+
+## Comments
+
+**Lead, 2026-10-27 (hand-out):**
+
+- Grok has no paid credit today. When Grok's review ends `RESULT: skip review out of credit (…)` (ticket 33, exit 3) or its weekly count is used up, the second look falls back to the free OpenCode model (`opencode/deepseek-v4.1-flash-free`). Only when both cannot run does the report say `second look: skipped (<reason>)` (README "Builders and review"). It never falls back to Codex or any OpenAI model (no OpenAI reviews); the table holds no OpenAI model, and a test proves an `opencode/…` or `grok-…` pick never reaches Codex.
+- Ticket 33's follow-up fits here: `kit slice` (`requireSuccess`) and `kit fix` show only `command exited 3` / `review failed (3)` instead of the skip reason. Both read `^RESULT: (?:fail|skip) (.+)$` and name it (for example "skip review out of credit"); a `tests/kit-slice.test.ts` and a `tests/kit-fix.test.ts` case prove it. `kit.d/fix` is added to Files for this only.
+- Slice 26 runs beside this one (`unit.sh`, `kit.d/unit`, `kit-lib.sh`, `kit.d/doctor` and their tests): leave those files alone. Both may add lines to `docs/agents/agent-scripts.md`; the later to land rebases onto the earlier.
+- The editor works the same after the slice: one real `kit doctor` and `kit status` run go in the Done as evidence.
