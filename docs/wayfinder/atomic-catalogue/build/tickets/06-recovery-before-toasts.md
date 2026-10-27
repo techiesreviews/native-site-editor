@@ -16,7 +16,7 @@ Move the two recoveries that live only in toasts before the toasts go ([ticket 0
 - **GitHub not answering:** the failed page or Files panel itself shows **Try again** (today only the toast from `src/github-reads.ts:80` / `src/read-retry.ts` has it).
 - **Media Replace:** its Undo is reachable outside the modal dialog, on the tile or detail picture (`src/page-builder/media-library-replace.ts:128`); the top-bar Undo also takes it back once the dialog closes.
 - No new toast or explainer text.
-- Mock-up approved with changes by Lex (2026-10-27), changes applied, confirm 3 Nov: [09-feedback-in-place.html](../../prototypes/09-feedback-in-place.html)
+- Mock-up approved by Lex (2026-10-27, with his change): [09-feedback-in-place.html](../../prototypes/09-feedback-in-place.html)
 
 ## Files
 
