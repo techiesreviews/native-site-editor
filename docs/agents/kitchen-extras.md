@@ -40,7 +40,8 @@ This editor's own facts for the shared rulebook ([`scripts/agents/docs/kitchen.m
 - **After each merge** the lead runs `kit preview`: it deploys `origin/dev` to the preview editor
   ([preview-editor.techies.tools](https://preview-editor.techies.tools)); CI cannot until Lex adds the
   Cloudflare token. Done when `RESULT: ok preview <version> <sha>` and the note is sent (station 10).
-  The heartbeat's after-merge step is the same `kit preview`.
+  The heartbeat's after-merge step is the same `kit preview`. New work that starts while a release
+  waits for Lex goes to `dev` and its preview the same way (station 11).
 - **End check:** Lex tries the change on the preview (station 11). A problem he finds on production
   adds `--after-release` to its feedback line.
 
