@@ -21,7 +21,7 @@ People without an account edit with Lex through a link. Stage 3 starts only afte
 - The session lasts while his tab is open; Stop sharing or closing the tab ends it and kills the link. Every share makes a new link.
 - Guests' changes become his unsaved changes. Typing shows only the guest's caret, which stays while she is in the session. A styling, picture or look change briefly shows an outline in her colour with her author chip (Lex, 2026-10-27).
 - While a guest types, her caret shows in the page text in her colour, and she sees Lex's. It uses the shared caret look from ticket 23 and mock-up 13 (Lex, 2026-10-27: "we see the caret when people are typing somewhere").
-- Mock-up approved with changes by Lex (2026-10-27), changes applied, confirm 3 Nov: [14-share-live.html](../../prototypes/14-share-live.html)
+- Mock-up approved by Lex (2026-10-27, after his changes): [14-share-live.html](../../prototypes/14-share-live.html)
 
 ## Files
 
