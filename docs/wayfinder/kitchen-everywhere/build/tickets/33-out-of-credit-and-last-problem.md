@@ -2,7 +2,7 @@
 title: Out of credit is its own result, and a CLI's own error is the last problem line
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-33
 builder: claude
 blocked_by: [16-opencode-review-path]
 ---
