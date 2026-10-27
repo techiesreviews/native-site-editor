@@ -1,7 +1,7 @@
 ---
 title: The editor values slice 11 left in shared code
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-25
 builder: claude
 blocked_by: [14-settings-for-other-projects, 18-full-follow-ups]
@@ -46,3 +46,19 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke25 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/25-editor-values-left-after-11.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke25 --timeout 2h`. While building: `scripts/agents/kit unit --affected`, then `scripts/agents/kit unit tests/kit*.test.ts`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, the `grep` output, before-and-after `kit pr --dry-run` plans, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- `kit pr`'s colour step runs `checks.css` (this editor: `node scripts/check-colours.mjs`); without it the css tier prints `colours: skipped (no checks.css in scripts/agents/kit.json)`.
+- `paths.kit` decides when `checks.extra` runs and `paths.unitTests` which tracked files are unit tests for the focused run, in any folder. Without `paths.unitTests` the step prints `unit: skipped (no paths.unitTests …)`; without `paths.kit` a full-tier PR with `checks.extra` prints `kit-clean: skipped (no paths.kit …)`.
+- `checks.extra` may be one string; anything but a string or a list of strings fails with `RESULT: fail guards: checks.extra must be a list of commands`.
+- The PR body's CI line names only the checks the settings set (`CI still runs check, unit tests, lint and browser tests` here) and no longer says "no Sol review".
+- `worktrees.sh` protects the `devRoot` worktree and the land and release branches, reads merge state from `origin/<land>` and `origin/<release>`, and its closing hint names them. It lists this editor's dev checkout and hint as before.
+- `kit learn` takes its default slug from `project` and its feedback logs from `maps`; without `maps` it prints `feedback: skipped (no maps in scripts/agents/kit.json)`.
+- `kit next` takes a running slice's map from the `maps` folder, so a `runs_alone` ticket waits in a project whose maps are not `docs/wayfinder`.
+- `kit slice` refuses the land and release branches from the settings (the message names them).
+- This editor's `kit.json` gains `checks.css`, `paths.kit` and `paths.unitTests` with today's values. Its css, kit, tests and docs plans and focused unit files are the same as before (old and new `pr-tier.mjs` compared on this checkout).
+- Docs: the new keys in `docs/agents/agent-scripts.md`; `docs/agents/runner.md` names `paths.visible` and `featureList`.
+- Tests: kit-pr (no `checks.css`, `paths.kit` and a string `checks.extra` in a repo with `tools/kit/` and `spec/`, focused files from `spec/`, missing keys, bad `checks.extra`), kit-settings (`prod` branch refused), agent-worktrees (`devRoot` and the land branch of a `land: main` repo protected, `dev` not), kit-learn (`project` and `maps`; each test root now has a settings file), kit-slice (`land: main` refuses `main`), kit-next (maps `plans`, a running slice holds a `runs_alone` ticket). The next and slice tests fail on the old code.
+- Still in shared code: `kit.d/ux` defaults `--base origin/dev` and reads `scripts/check-colours.mjs` itself (outside this ticket's Files).
+- Feature list: no change (kit plumbing only; nothing in the editor changes).

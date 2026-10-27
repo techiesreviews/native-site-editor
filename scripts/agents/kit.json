@@ -10,6 +10,7 @@
     "check": "npm run check",
     "test": "npm test",
     "lint": "npm run lint",
+    "css": "node scripts/check-colours.mjs",
     "extra": ["npm run test:kit-clean"]
   },
   "unit": {
@@ -21,6 +22,8 @@
     "docs": ["^docs/", "(?i:\\.md)$"],
     "tests": ["^(tests|fixtures)/"],
     "css": ["(?i:\\.css)$"],
+    "kit": ["^scripts/agents/", "^tests/kit-.*\\.test\\.ts$"],
+    "unitTests": ["^tests/[^/]+\\.test\\.ts$"],
     "visible": ["^src/.+(?i:\\.css)$", "^src/components/", "^src/ui/", "^src/page-builder/(?!rules/)", "^src/icons\\.ts$", "^index\\.html$"]
   },
   "featureList": "docs/agents/features.md",
