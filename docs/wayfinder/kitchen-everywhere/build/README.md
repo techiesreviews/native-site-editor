@@ -30,7 +30,7 @@ Decided with Lex on 2026-10-26: right after the clean-up release is live in prod
 - **Other projects** (40–47): after Lex's OK the lead starts one T3 thread per project, working in that project's folder with that project's kit (set up by `kit init`) and landing with that project's own `kit pr` into its landing branch. Nothing reaches another project's landing branch except through a reviewed PR. The thread reports back here; the lead closes the ticket with a small docs PR on `dev`.
 - **Editor saves stay untouched.** On sites the Native Site Editor saves to (`techies-reviews`, `lexvd-site`), its commits keep going straight to `main` (ticket 05 point 3): no branch rule that demands PRs on `main`, no hook or kit check that flags those commits.
 - **The hooks never fail silently** (research 04 risk): a missing or broken kit is said out loud at session start and by `kit doctor`, never just turned off (ticket 21).
-- **One kit file, one slice at a time:** the `blocked_by` lines chain every pair of slices that share a kit file (the front door `scripts/agents/kit`, `kit-lib.*`, `kit.d/review`, `kit.d/doctor`, `kit.d/pr`, `kit.d/sweep`); the only slices that run side by side are 15 with 21, 23 with 24, and the review fixes 25 (`kit pr`, `pr-tier.mjs`, `worktrees.mjs`, `learn`, `slice`), 26 (`unit.sh`, `kit-lib.sh`, `doctor`), 28 (kit tests only) and 32 (the front door alone) beside the slices of their time that leave those files alone, which touch different kit files apart from small additions to `docs/agents/agent-scripts.md`, `tests/agent-scripts.test.ts` and `tests/kit-settings.test.ts`; the second to land brings the first in before its `kit pr`.
+- **One kit file, one slice at a time:** the `blocked_by` lines chain every pair of slices that share a kit file (the front door `scripts/agents/kit`, `kit-lib.*`, `kit.d/review`, `kit.d/doctor`, `kit.d/pr`, `kit.d/sweep`); the only slices that run side by side are 15 with 21, 23 with 24, and the review fixes 25 (`kit pr`, `pr-tier.mjs`, `worktrees.mjs`, `learn`, `slice`), 26 (`unit.sh`, `kit-lib.sh`, `doctor`), 28 (kit tests only) 32 (the front door alone), 33 (`agent-run.mjs`, `kit.d/review`) and 37 (`unit.sh`) beside the slices of their time that leave those files alone, which touch different kit files apart from small additions to `docs/agents/agent-scripts.md`, `tests/agent-scripts.test.ts` and `tests/kit-settings.test.ts`; the second to land brings the first in before its `kit pr`.
 - **The kitchen moves with the code.** A slice that changes how agents work rewrites its own lines in `docs/agents/kitchen.md` and `docs/agents/agent-scripts.md#kit`; a new kit command gets its `kit.d/<command>` with a `# kit:` summary and its own `tests/kit-<command>.test.ts`.
 - **Lex's settings and other projects wait for Lex** (the kitchen's hard-to-undo list in "Tuesday review"): anything under `~/.config`, `~/.claude`, `~/.codex`, `~/.codex/skills`, T3 schedules or another project's files is prepared by a slice and done by the lead after his yes.
 
@@ -38,7 +38,7 @@ Decided with Lex on 2026-10-26: right after the clean-up release is live in prod
 
 Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **Claude Opus 5.5 builds** every slice (`kit slice --builder claude-opus-5-5`, high); **Claude Opus 5.5 reviews** every slice (`ASE_REVIEW_MODEL=claude-opus-5-5`, read-only, separate session). **No OpenAI models** build or review (ticket 01 point 4).
 
-**Second look on every change, after Claude's review** (ticket 01 point 4): until ticket 17 lands, `kit slice` cannot run it before landing, so the lead runs it right after each slice merges, `ASE_REVIEW_MODEL=grok-4.7 scripts/agents/kit review --ticket <ticket>` on the slice's branch, and turns any P0–P2 finding into a fix ticket in this build; if Grok's weekly count is used up, the ticket's Done says "second look: skipped (Grok cap)". From 17 on, `kit slice` and `kit pr` run the second look themselves, before landing.
+**Second look on every change, after Claude's review** (ticket 01 point 4): until ticket 17 lands, `kit slice` cannot run it before landing, so the lead runs it right after each slice merges, `ASE_REVIEW_MODEL=grok-4.7 scripts/agents/kit review --ticket <ticket>` on the slice's branch, and turns any P0–P2 finding into a fix ticket in this build; if Grok cannot run (weekly count used up, or out of paid credit as on 2026-10-27), the free OpenCode model takes the look (`ASE_REVIEW_MODEL=opencode/deepseek-v4.1-flash-free`, since ticket 16), and only when both fail does the ticket's Done say "second look: skipped (<reason>)". A slice range older than ticket 16 is reviewed with today's kit (`KIT_HOME=<a copy of dev's scripts/agents> <that copy>/kit review --base <first commit>^` at the slice's last commit): the kit at those commits sends `opencode/…` to Codex (ticket 34). From 17 on, `kit slice` and `kit pr` run the second look themselves, before landing.
 
 ## 1. Ready inside this repo, the editor working the same (tickets 01, 05; research 03, 04)
 
@@ -51,7 +51,7 @@ Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **C
 | [14 Settings for projects unlike the editor](tickets/14-settings-for-other-projects.md) | M | claude | 13 |
 | [15 One Grok count for the computer, its weekly use in the sweep](tickets/15-machine-wide-state.md) | M | claude | 14 |
 | [16 An OpenCode path in `kit review`](tickets/16-opencode-review-path.md) | M | claude | 15 |
-| [17 A second look on every change, per review kind](tickets/17-second-look-per-kind.md) | M | claude | 14, 16, 25 |
+| [17 A second look on every change, per review kind](tickets/17-second-look-per-kind.md) | M | claude | 14, 16, 25, 33 |
 | [18 Follow-ups written in full (second look on 10)](tickets/18-full-follow-ups.md) | S | claude | – |
 | [19 A broken `--help` does not stop the fix builder (second look on 10)](tickets/19-doctor-gate-and-fix-builder.md) | S–M | claude | – |
 | [25 The editor values slice 11 left in shared code (review of 11)](tickets/25-editor-values-left-after-11.md) | M | claude | 14, 18 |
@@ -60,6 +60,11 @@ Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **C
 | [28 Kit tests ignore a person's `KIT_HOME`, and its untested paths get tests (review and second look on 13)](tickets/28-kit-home-test-env-and-gaps.md) | S | claude | 14 |
 | [29 `kit pr` waits for push workflows that may run on a PR branch, and a slice keeps its claim owner (review of 14)](tickets/29-pr-ci-filters-and-claim-owner.md) | S–M | claude | 17 |
 | [32 The `playwright` setting reaches project commands (review of 14)](tickets/32-playwright-setting-reaches-commands.md) | S | claude | 14 |
+| [33 Out of credit is its own result, and a CLI's own error is the last problem line (16 follow-up, second look on 16)](tickets/33-out-of-credit-and-last-problem.md) | M | claude | 16 |
+| [34 Review counts cannot be dodged, doubled or lifted (second looks on 15 and 16)](tickets/34-review-counts-honest.md) | M | claude | 17 |
+| [35 Follow-ups keep the ticket's line endings and match old cuts through an emoji (second look on 18)](tickets/35-follow-ups-line-endings-and-old-cuts.md) | S | claude | 29 |
+| [36 Doctor skips a failing `kit home` only when `version` caused it (second look on 19)](tickets/36-doctor-kit-home-skip-only-for-version.md) | S | claude | 27 |
+| [37 `unit.sh` works when run from its own folder (second look on 14)](tickets/37-unit-sh-from-its-own-folder.md) | S | claude | 26 |
 
 ## 2. Setup pieces (tickets 01, 05; research 04)
 
@@ -105,7 +110,7 @@ The frontier decides; this is one order that keeps to the rules (at most 5 at on
 
 1. 10, then 11, 12 and 13 one at a time (they share the front door and the kit library).
 2. 14; then 15 and 21 side by side, with 25 once 18 is in.
-3. 16, then 17 (after 25); 26 beside them once 15, 19 and 21 are in; 27 after 26 (both change `kit.d/doctor`); 28 any time after 14 (kit tests only, beside the others); 32 any time after 14 (the front door, which no other open slice changes); 29 after 17 (both change `kit pr` and `kit slice`), and before 30, so projects 40–47 never land past a CI run that could fail.
+3. 16, then 17 (after 25); 26 beside them once 15, 19 and 21 are in; 27 after 26 (both change `kit.d/doctor`); 28 any time after 14 (kit tests only, beside the others); 32 any time after 14 (the front door, which no other open slice changes); 29 after 17 (both change `kit pr` and `kit slice`), and before 30, so projects 40–47 never land past a CI run that could fail; 33 now, beside 21 (it shares only small additions to `tests/agent-scripts.test.ts` and `docs/agents/agent-scripts.md`), and before 17, so a second look that meets an empty Grok account says skipped and falls back; 34 after 17 (both change `kit.d/review`); 35 after 29 (`kit pr`); 36 after 27 (`kit.d/doctor`); 37 after 26 (`unit.sh`).
 4. 20, then 22, then 23 and 24.
 5. 30 alone; then 31 (Lex's OK for both given 2026-10-27).
 6. 40 to 46, one after another (Lex's one OK, 2026-10-27), stopping at the first problem; 47 whenever Lex builds in `camframe` again.

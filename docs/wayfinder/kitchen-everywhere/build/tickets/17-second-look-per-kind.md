@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [14-settings-for-other-projects, 16-opencode-review-path, 25-editor-values-left-after-11]
+blocked_by: [14-settings-for-other-projects, 16-opencode-review-path, 25-editor-values-left-after-11, 33-out-of-credit-and-last-problem]
 ---
 
 ## Goal
@@ -16,7 +16,7 @@ Every change gets a second look after Claude's review, in addition to it, from w
 - **One table in the kit**, `scripts/agents/second-look.json`: for each kind (`code`, `ux`, `dx`, `agent`) the model to ask, the other family as fallback, and the date the pick was last checked. One place for every project; the lead updates it when new models appear (README helper decision 4). The first picks are made in this slice from `grok models` and `opencode models`, newest fit model per kind, and written in the Done with how they were chosen.
 - **The kind comes from the changed paths**, through settings `paths` (ticket 11): agent setup (`scripts/agents/`, `.claude/`, `.codex/`, `AGENTS.md`, `docs/agents/`) first, then UX (`paths.visible`), then DX (build, scripts, docs for developers), else code. One second look per change.
 - **`kit review --second-look`** runs it; `kit slice` and `kit pr` run it once after Claude's review passes. Its findings are weighed like Claude's (same severities, same fix rounds).
-- **If it cannot run:** Grok's weekly count used up or OpenCode down → the fallback family takes it; if both fail, the change lands and the report says `second look: skipped (<reason>)`. It never blocks on availability.
+- **If it cannot run:** Grok's weekly count used up, out of credit (ticket 33's `out of credit` result) or OpenCode down → the fallback family takes it; if both fail, the change lands and the report says `second look: skipped (<reason>)`. It never blocks on availability.
 - **The kitchen's pins table** says this in its "Second look" row. After it lands, the lead drops the "lead runs it by hand" note from this build's README.
 
 ## Files
