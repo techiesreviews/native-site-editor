@@ -51,3 +51,15 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - **Docs:** `docs/agents/agent-scripts.md` (`kit review` budgets, `kit sweep` section) and `docs/agents/kitchen.md` (the per-week counts line under Who cooks).
 - Validation: `RESULT: ok unit 305/305 (13 files)` from `scripts/agents/kit unit --affected`; `npm run check` and `npm run lint` pass.
 - Feature list: no change (kit and docs only, nothing in the editor).
+
+### Follow-ups
+
+- Spec (P3): 8b5f9ee76:docs/wayfinder/kitchen-everywhere/build/tickets/15-machine-wide-state.md:50 — P3 ticket: the Done record's Commits: line names 35e17a1da, beb66680c an
+- Standards (P3): 8b5f9ee76:scripts/agents/agent-run.mjs:344 — P3 fault: the code checks the shape of the machine ledger's weeks and families, but never checks a project's count.
+- Standards (P3): 8b5f9ee76:scripts/agents/agent-run.mjs:306 — P3 fault: `restoreLegacyLedger` writes the old file directly with `writeFileSync` (lines 306 and 314). `withLedger`
+- Standards (P3): 8b5f9ee76:scripts/agents/kit.d/sweep:339 — P3 fault: a count that is not a whole number shows as `0` with no note. The section's own comment says a wrong shape 
+- Standards (P3): 8b5f9ee76:tests/agent-scripts.test.ts:342 — P3 style: CODING_STANDARDS.md "Test fixtures": "Type fakes with `satisfies` or a declared type; document deliberate 
+- Validation gaps (gap): No test has a non-integer count in the machine ledger. Add to tests/agent-scripts.test.ts: write `{ [week]: { grok: { a: "3" } } }` to `path`, then assert that 
+- Validation gaps (gap): No test covers a restore that itself fails. In the "machine ledger write that fails" test, make the failing `renameSync` also create `${legacy}.lock` and pass `
+- Validation gaps (gap): No test covers the sweep's second read, when the state folder appears during the first read without the lock (kit.d/sweep, the `!locked && existsSync(dirname(pa
+
