@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 64 Components: canvas bar and Edit component mode, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 10 Nov review
+  (kitchen station 3, "Show and tell": a Today / After switch with demo steps).
+  Ticket: docs/wayfinder/atomic-catalogue/build/tickets/64-organism-components.md.
+  Today: the real canvas bar and Edit component mode, values and markup copied from
+  src/components/canvas-bar.ts and .css, src/page-builder/canvas-model.ts (Desktop, Tablet 768, Mobile 390,
+  240 px narrowest), src/page-builder/edit-component-mode.ts and .css, src/page-builder/components.ts and
+  components.css (Used on, Done, the Detach question), src/components/create-dialog.css, the frame and shade
+  in src/components/native-preview-runtime.js, and src/theme.css (dev, 2026-10-27).
+  Not shown, on purpose: the old Component panel (components.ts createComponentTools' "component-panel").
+  page-builder-host.ts sets structureFields: true, so today's editor never shows it; an instance's fields
+  live in Page Structure (mock-up 51).
+  The bar's fit stages are a container query here; the editor measures them (edit-mode-bar-fit.ts).
+  After: the same screen built only from the catalogue parts approved in 10-first-parts-and-edit-bar.html
+  (icon button, button, field, badge, tooltip, menu, dialog), plus the segmented group from research ac-04's
+  proposed catalogue. The bar's sizes stay exactly as today (styling map decision). Colours and type
+  unchanged; spacing and the 120/150/180/200 ms values from slices 02 and 03.
+-->
+<style>
+/* ---------- Shared values: src/theme.css, light and dark written once with light-dark() ---------- */
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+  --color-component: oklch(55% 0.2 300);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --surface-toolbar: light-dark(oklch(from var(--color-primary-lighter) 92% c h), oklch(from var(--color-primary-darker) l min(c, 0.025) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --danger: oklch(from var(--color-success) l c 25);
+  --danger-bg: oklch(from var(--success-bg) l c 25);
+  --danger-fg: oklch(from var(--success-fg) l c 25);
+  --component: light-dark(var(--color-component), oklch(from var(--color-component) 72% 0.16 h));
+  --component-surface: light-dark(oklch(from var(--color-component) 96% 0.03 h), oklch(from var(--color-component) 28% 0.05 h));
+  --component-text: light-dark(oklch(from var(--color-component) 42% 0.17 h), oklch(from var(--color-component) 85% 0.1 h));
+  --slot-surface: oklch(from var(--color-component) 47% 0.21 h);
+  --agent-presence: var(--color-success);
+  --on-media: oklch(100% 0 none);
+  --preview-paper: oklch(100% 0 none);
+  --panel-surface: var(--surface-raised);
+  --pressed: light-dark(var(--primary), var(--color-primary-light));
+  --on-pressed: light-dark(var(--on-primary), var(--color-primary-darkest));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px; --type-heading: 20px;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px;
+  --panel-padding: 6px;
+
+  /* After only: the catalogue's new shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; font-size: var(--type-base); -webkit-tap-highlight-color: transparent; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:is(button, select, a, [tabindex]):focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.icon { inline-size: 16px; block-size: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.icon[data-s="12"] { inline-size: 12px; block-size: 12px; }
+.icon[data-s="14"] { inline-size: 14px; block-size: 14px; }
+.icon[data-s="20"] { inline-size: 20px; block-size: 20px; }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main.mock { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+.mock > header { display: grid; gap: var(--space-3xs); }
+.mock h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 72ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 50; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; text-wrap: pretty; max-inline-size: 80ch; }
+.demo { border: 1.5px dashed var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); }
+.demo h2 { margin: 0; font-size: var(--type-small); color: var(--muted); font-weight: 600; }
+.demo .steps { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.demo .steps button { min-block-size: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); font-size: var(--type-small); font-weight: 600; }
+.demo .steps button[aria-pressed="true"] { background: var(--current); border-color: transparent; }
+.demo .steps button:disabled { opacity: 0.5; cursor: default; }
+.demo .says { margin: 0; min-block-size: 1.5em; color: var(--muted); text-wrap: pretty; }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+.app { position: relative; border: 1px solid var(--line); border-radius: var(--radius-panel); overflow: clip; background: var(--surface); container: app / inline-size; }
+.site { background: var(--preview-paper); color: oklch(24% 0.03 60); font-family: Georgia, "Iowan Old Style", serif; }
+.site-head, .site-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; font: 600 13px/1.3 system-ui, sans-serif; color: oklch(30% 0.04 60); flex-wrap: wrap; }
+.site-head nav { display: flex; gap: 12px; font-weight: 500; flex-wrap: wrap; }
+.site-foot { font-weight: 400; color: oklch(45% 0.03 60); border-block-start: 1px solid oklch(92% 0.01 60); }
+.logo { display: inline-flex; align-items: center; gap: 6px; }
+.logo::before { content: ""; inline-size: 18px; block-size: 18px; border-radius: 50%; background: oklch(70% 0.12 60); }
+.hero { display: grid; gap: 8px; padding: clamp(14px, 4cqi, 32px) 16px; background: oklch(96% 0.025 75); position: relative; }
+.hero h3 { margin: 0; font-size: clamp(18px, 1rem + 2cqi, 28px); line-height: 1.15; }
+.hero p { margin: 0; font-size: 14px; color: oklch(40% 0.03 60); }
+.hero .cta { justify-self: start; font: 600 12px/1 system-ui, sans-serif; padding: 8px 12px; border-radius: 6px; background: oklch(45% 0.1 50); color: white; }
+.pic { block-size: 72px; border-radius: 6px; background: linear-gradient(135deg, oklch(75% 0.09 60), oklch(55% 0.1 30)); }
+
+/* =====================  AFTER: catalogue parts (as in 10-first-parts-and-edit-bar.html)  ===================== */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), box-shadow var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  .p-press:active:not(:disabled, [aria-disabled="true"]) { scale: 0.97; }
+}
+/* Button: tones primary, secondary, quiet, danger, component, component-quiet; sizes icon, compact, control, touch */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: var(--size-control); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; white-space: nowrap; background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+.p-button[data-size="icon"] { min-block-size: var(--size-icon); padding-inline: var(--space-2xs); font-size: var(--type-small); gap: var(--space-3xs); }
+.p-button[data-size="compact"] { min-block-size: var(--size-compact); padding-inline: var(--space-xs); }
+.p-button[data-size="touch"] { min-block-size: var(--size-touch); padding-inline: var(--space-m); }
+.p-button[data-tone="primary"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-button[data-tone="quiet"] { background: transparent; box-shadow: none; color: var(--link); }
+.p-button[data-tone="danger"] { background: var(--danger-bg); color: var(--danger-fg); box-shadow: none; }
+.p-button[data-tone="component"] { background: var(--component); color: var(--surface); box-shadow: none; }
+.p-button[data-tone="component-quiet"] { background: transparent; color: var(--component-text); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--component) 40%, transparent); }
+.p-button:disabled, .p-button[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.p-button:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.p-button[data-tone="primary"]:active:not(:disabled) { background: var(--primary-hover); }
+.p-button[data-tone="quiet"]:active:not(:disabled) { background: var(--hover); }
+.p-button[data-tone="component"]:active:not(:disabled) { background: color-mix(in oklch, var(--component) 86%, var(--text)); }
+.p-button[data-tone="component-quiet"]:is(:active, [aria-expanded="true"]):not(:disabled) { background: color-mix(in oklch, var(--component) 14%, transparent); }
+@media (hover: hover) and (pointer: fine) {
+  .p-button:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .p-button[data-tone="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
+  .p-button[data-tone="quiet"]:hover:not(:disabled) { background: var(--hover); }
+  .p-button[data-tone="danger"]:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--danger-bg); }
+  .p-button[data-tone="component"]:hover:not(:disabled) { background: color-mix(in oklch, var(--component) 86%, var(--text)); }
+  .p-button[data-tone="component-quiet"]:hover:not(:disabled) { background: color-mix(in oklch, var(--component) 14%, transparent); }
+}
+.p-button[aria-pressed="true"]:not(:disabled) { background: var(--pressed); color: var(--on-pressed) !important; box-shadow: none; }
+/* Icon button: icon 24, compact 28, control 32 (44 on touch screens) */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.p-icon-button[data-size="icon"] { inline-size: var(--size-icon); block-size: var(--size-icon); border-radius: var(--radius-small); }
+.p-icon-button[data-size="compact"] { inline-size: var(--size-compact); block-size: var(--size-compact); }
+.p-icon-button[aria-pressed="true"] { background: var(--pressed); color: var(--on-pressed); }
+.p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled, [aria-pressed="true"]) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Field: one part, inline or boxed, one focus and one error look; sizes icon 24, compact 28, control 32 */
+.p-field { inline-size: 100%; min-inline-size: 0; block-size: var(--size-control); padding-inline: var(--space-xs); border: 0; border-radius: var(--radius-small) var(--radius-small) 0 0; background: transparent; box-shadow: inset 0 -1px 0 var(--control-line); caret-color: var(--primary); font-size: var(--type-base); }
+.p-field[data-size="compact"] { block-size: var(--size-compact); }
+.p-field[data-size="icon"] { block-size: var(--size-icon); font-size: var(--type-small); padding-inline: var(--space-2xs); }
+.p-field[data-look="boxed"] { border-radius: var(--radius); background: var(--surface-input); box-shadow: inset 0 0 0 1px var(--control-line); }
+.p-field:focus-visible, .p-field:focus { outline: none; background-color: color-mix(in oklch, var(--primary) 7%, var(--surface-input)); box-shadow: inset 0 -2px 0 var(--primary); }
+.p-field[data-look="boxed"]:focus { box-shadow: inset 0 0 0 1px var(--control-line), inset 0 -2px 0 var(--primary); }
+.p-field[aria-invalid="true"] { box-shadow: inset 0 -2px 0 var(--danger); }
+.p-field::placeholder { color: var(--muted); }
+@media (hover: hover) and (pointer: fine) { .p-field:hover:not(:focus) { background-color: var(--hover); } }
+@media (prefers-reduced-motion: no-preference) { .p-field { transition: background-color var(--dur-hover) var(--ease-out), box-shadow var(--dur-hover) var(--ease-out); } }
+/* Search field: a boxed field with the search icon in front (research ac-04, molecule) */
+.p-search { position: relative; display: block; }
+.p-search > .icon { position: absolute; inset-inline-start: var(--space-xs); inset-block-start: 50%; translate: 0 -50%; color: var(--muted); pointer-events: none; }
+.p-search > .p-field { padding-inline-start: calc(var(--space-xs) + 16px + var(--space-2xs)); }
+/* Badge: words only, pill corner from --radius-full, tones and kinds by data attribute */
+.p-badge { display: inline-flex; align-items: center; gap: var(--space-3xs); block-size: 18px; padding-inline: var(--space-2xs); border-radius: var(--radius-full); font-size: var(--type-badge); font-weight: 600; white-space: nowrap; background: var(--surface-subtle); color: var(--link); flex: none; border: 0; }
+.p-badge[data-tone="component"] { background: var(--component-surface); color: var(--component-text); }
+.p-badge[data-tone="slot"] { background: var(--slot-surface); color: var(--on-media); }
+.p-badge[data-kind="tag"] { block-size: auto; padding: 0; background: none; font: var(--type-small) / 1.3 var(--font-mono); font-weight: 400; color: var(--component-text); }
+button.p-badge:active { filter: brightness(0.95); }
+@media (hover: hover) and (pointer: fine) { button.p-badge:hover { background: linear-gradient(var(--hover) 0 0), var(--component-surface); } }
+/* Section heading, with an optional end slot */
+.p-heading > * { text-transform: none; letter-spacing: normal; }
+.p-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); margin: 0; font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+/* Keyboard key */
+.p-kbd { font: inherit; font-size: var(--type-small); font-weight: 500; color: var(--muted); white-space: nowrap; }
+/* Tooltip: words plus an optional key; one floating tip, shown on mouse hover or keyboard focus */
+.p-tooltip { position: fixed; z-index: 100; display: inline-flex; gap: var(--space-2xs); align-items: center; padding: var(--space-3xs) var(--space-xs); border-radius: var(--radius); background: var(--text); color: var(--surface); font-size: var(--type-small); font-weight: 600; white-space: nowrap; pointer-events: none; opacity: 0; }
+.p-tooltip.is-shown { opacity: 1; }
+.p-tooltip kbd { font: inherit; font-weight: 500; opacity: 0.75; }
+@media (prefers-reduced-motion: no-preference) { .p-tooltip { transition: opacity var(--dur-tooltip) var(--ease-out); } }
+/* Menu: one item part with icon, words, key, check, danger */
+.p-menu { padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); box-shadow: var(--shadow); min-inline-size: 12rem; display: grid; gap: var(--space-4xs); color: var(--text); }
+.p-menu-item { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: var(--space-xs); inline-size: 100%; min-block-size: var(--size-control); border: 0; background: transparent; padding: 0 var(--space-xs); border-radius: var(--radius); text-align: start; font-size: var(--type-base); }
+.p-menu-item:not(:has(> .icon:first-child)) { grid-template-columns: 1fr auto; }
+.p-menu-item kbd, .p-menu-item .meta { font: inherit; font-size: var(--type-small); color: var(--muted); white-space: nowrap; }
+.p-menu-item[aria-checked="true"] { background: var(--current); font-weight: 600; }
+.p-menu-item[data-tone="danger"] { color: var(--danger-fg); }
+.p-menu-item:focus-visible { outline-offset: -2px; background: var(--hover); }
+.p-menu-item:active { background: var(--hover); }
+.p-menu hr { border: 0; border-block-start: 1px solid var(--line); margin: var(--space-4xs) var(--space-3xs); }
+.p-menu .p-heading { padding: var(--space-xs) var(--space-xs) var(--space-4xs); }
+@media (hover: hover) and (pointer: fine) { .p-menu-item:hover { background: var(--hover); } }
+@media (prefers-reduced-motion: no-preference) {
+  .p-menu { transition: opacity var(--dur-menu) var(--ease-out), translate var(--dur-menu) var(--ease-out); }
+  @starting-style { .p-menu { opacity: 0; translate: 0 -4px; } }
+}
+/* Dialog: one backdrop */
+.p-backdrop { position: absolute; inset: 0; z-index: 60; display: grid; place-items: center; padding: var(--space-s); background: oklch(from var(--shadow-color) l c h / 0.45); }
+.p-dialog { inline-size: min(26rem, 100%); padding: var(--space-m); border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow); display: grid; gap: var(--space-s); }
+.p-dialog h3 { margin: 0; font-size: var(--type-title); }
+.p-dialog p { margin: 0; color: var(--muted); font-size: var(--type-small); }
+.p-row { display: flex; gap: var(--space-xs); justify-content: end; flex-wrap: wrap; }
+/* Segmented group (research ac-04: Tabs and segmented group): pressed item raised */
+.p-seg { display: inline-flex; gap: var(--space-4xs); padding: var(--space-4xs); border-radius: var(--radius); background: var(--hover); flex: none; }
+.p-seg > .p-icon-button { inline-size: 28px; block-size: var(--size-icon); border-radius: var(--radius-small); }
+.p-seg > .p-icon-button[aria-pressed="true"] { background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow-small); }
+@media (pointer: coarse) { .p-seg > .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Empty state: icon, words, one next step; a large variant for a whole page */
+.p-empty { display: grid; justify-items: center; gap: var(--space-xs); padding: var(--space-l) var(--space-m); text-align: center; color: var(--muted); inline-size: 100%; }
+.p-empty > .icon { inline-size: 24px; block-size: 24px; }
+.p-empty p { margin: 0; text-wrap: balance; }
+.p-empty[data-size="large"] { gap: var(--space-s); padding: var(--space-l); border: 2px dashed color-mix(in oklch, var(--component) 45%, transparent); border-radius: var(--radius-dialog); background: color-mix(in oklch, var(--surface) 88%, transparent); color: var(--text); }
+.p-empty[data-size="large"] h3 { margin: 0; font-size: var(--type-heading); font-weight: 700; }
+.p-empty[data-size="large"] > p { color: var(--muted); max-inline-size: 46ch; }
+.p-empty .mark { display: grid; place-items: center; inline-size: 40px; block-size: 40px; border-radius: 50%; background: var(--component-surface); color: var(--component-text); }
+/* Card or tile: media slot, title, end slot, selected; plain or raised */
+.p-tile { display: grid; gap: var(--space-xs); inline-size: 100%; margin: 0; padding: var(--space-xs); border: 0; border-radius: var(--radius-panel); background: transparent; text-align: start; color: inherit; }
+.p-tile[data-look="raised"] { background: var(--surface); box-shadow: inset 0 0 0 1px var(--control-line); }
+.p-tile .media { display: block; overflow: clip; border-radius: var(--radius); border: 1px solid var(--control-line); background: var(--preview-paper); }
+.p-tile .title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 var(--space-xs); min-inline-size: 0; padding-inline: var(--space-4xs); }
+.p-tile .title > :first-child { font-weight: 600; }
+.p-tile[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.p-tile:focus-visible { outline-offset: -2px; }
+.p-tile:focus-visible .media { border-color: var(--component); }
+.p-tile:active:not([aria-disabled="true"]) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-tile:hover:not([aria-disabled="true"]) { background: var(--hover); }
+  .p-tile[data-look="raised"]:hover:not([aria-disabled="true"]) { background: var(--surface); box-shadow: inset 0 0 0 1px var(--component), var(--shadow-small); }
+  .p-tile:hover:not([aria-disabled="true"]) .media { border-color: var(--component); }
+}
+/* Notice: feedback in place */
+.p-notice { display: flex; gap: var(--space-xs); align-items: start; padding: var(--space-xs) var(--space-s); border-radius: var(--radius-panel); font-size: var(--type-base); background: var(--warning-bg); color: var(--warning-fg); }
+.p-notice[data-tone="danger"] { background: var(--panel-surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--danger), var(--shadow-small); max-inline-size: 16rem; }
+.p-notice p { margin: 0; }
+.p-button[aria-current="true"] { background: var(--current); color: var(--text); font-weight: 600; }
+.p-badge[data-tone="pressed"] { background: var(--pressed); color: var(--on-pressed); font: 600 var(--type-small) / 16px var(--font-mono); font-variant-numeric: tabular-nums; block-size: 20px; padding-inline: var(--space-xs); }
+
+/* ---------- The canvas in the mock ---------- */
+.app { display: flex; flex-direction: column; min-block-size: 34rem; }
+.barwrap { container: bar / inline-size; }
+.site { position: relative; }
+.site-head, .hero, .loaves, .site-foot { position: relative; }
+.loaves { padding: 14px 16px; display: grid; gap: 6px; font: 14px/1.4 Georgia, serif; }
+.loaves b { font-size: 16px; }
+.site .is-sel { outline: 2px solid var(--primary); outline-offset: -2px; }
+.shade { position: absolute; inset: 0; z-index: 1; background: oklch(18% 0.03 290 / 0.42); }
+.site .is-framed { z-index: 2; background: var(--preview-paper); outline: 2px solid var(--component); outline-offset: 0; box-shadow: 0 0 0 6px color-mix(in oklch, var(--component) 22%, transparent); border-radius: 6px; }
+.layer { position: absolute; z-index: 30; }
+.dlg { position: absolute; inset: 0; z-index: 60; }
+
+/* =====================  TODAY: real editor CSS  ===================== */
+/* src/components/canvas-bar.css */
+.canvas-bar { display: flex; flex: none; align-items: center; gap: 12px; min-block-size: 36px; padding: 4px 8px 4px 10px; border-block-end: 1px solid var(--control-line); background: var(--surface-toolbar); color: var(--text); font-size: var(--type-small); }
+.canvas-bar--component { border-block-end-color: color-mix(in oklch, var(--component) 35%, transparent); background: var(--component-surface); }
+.canvas-bar--component .canvas-devices { background: color-mix(in oklch, var(--component) 12%, transparent); }
+.canvas-bar--component :is(.canvas-device, .canvas-crumb):hover { background: color-mix(in oklch, var(--component) 14%, transparent); }
+.canvas-component, .canvas-component-end { display: flex; flex: none; align-items: center; gap: 8px; min-inline-size: 0; color: var(--component-text); }
+.canvas-bar--component .canvas-tools { margin-inline-start: auto; }
+.canvas-component { flex: 1 0 auto; flex-shrink: 1; }
+.canvas-component__used { display: inline-flex; flex: none; align-items: center; gap: 4px; block-size: var(--size-icon); padding: 0 6px 0 8px; border: 1px solid color-mix(in oklch, var(--component) 40%, transparent); border-radius: 999px; background: transparent; color: var(--component-text); white-space: nowrap; transition: background-color 120ms ease-out; }
+.canvas-component__used:hover, .canvas-component__used[aria-expanded="true"] { background: color-mix(in oklch, var(--component) 14%, transparent); }
+.canvas-component__used:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.canvas-component__used .icon { transition: transform 120ms ease-out; }
+.canvas-component__used[aria-expanded="true"] .icon { transform: rotate(180deg); }
+.canvas-component__used-short { display: none; }
+.canvas-component__done { display: inline-flex; align-items: center; block-size: var(--size-icon); padding: 0 6px; border: 0; border-radius: var(--radius); background: var(--component); color: var(--surface); font-weight: 600; transition: background-color 120ms ease-out; }
+.canvas-component__done-label { max-inline-size: 48px; margin: 0 2px 0 5px; overflow: hidden; white-space: nowrap; }
+.canvas-component__done:is(:hover, :focus-visible) { background: color-mix(in oklch, var(--component) 86%, var(--text)); }
+.canvas-component__done:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.canvas-crumbs { flex: 1; min-inline-size: 0; overflow-x: auto; scrollbar-width: none; }
+.canvas-crumbs__list { display: flex; align-items: center; margin: 0; padding: 0; list-style: none; white-space: nowrap; }
+.canvas-crumbs__item { display: flex; flex: none; align-items: center; }
+.canvas-crumbs__separator { padding: 0 2px; color: var(--muted); opacity: 0.7; }
+.canvas-crumb { block-size: var(--size-icon); padding: 0 6px; border: 0; border-radius: var(--radius-small); background: transparent; color: var(--muted); font: var(--type-small) / 1 var(--font-mono); }
+.canvas-crumb:hover { background: var(--hover); color: var(--text); }
+.canvas-crumb:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.canvas-crumb[aria-current="true"] { background: var(--current); color: var(--text); font-weight: 600; }
+.canvas-crumb--component { color: var(--component-text); font-weight: 600; }
+.canvas-crumb--component[aria-current="true"] { background: color-mix(in oklch, var(--component) 18%, transparent); color: var(--component-text); }
+.canvas-tools { display: flex; flex: none; align-items: center; gap: 6px; }
+.canvas-devices { display: flex; gap: 2px; padding: 2px; border-radius: var(--radius); background: var(--hover); }
+.canvas-device { display: grid; place-items: center; inline-size: 28px; block-size: var(--size-icon); padding: 0; border: 0; border-radius: var(--radius-small); background: transparent; color: var(--muted); transition: background-color 120ms ease-out, color 120ms ease-out; }
+.canvas-device:active { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .canvas-device:hover { background: var(--hover); color: var(--text); } }
+@media (hover: none), (pointer: coarse) { .canvas-device { min-inline-size: 44px; min-block-size: 44px; } }
+.canvas-device:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+.canvas-devices .canvas-device[aria-pressed="true"] { background: var(--panel-surface); box-shadow: var(--shadow-small); color: var(--text); }
+.canvas-width { position: relative; display: flex; align-items: center; }
+.canvas-width__input { inline-size: 64px; block-size: var(--size-icon); padding: 0 24px 0 6px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-input); color: var(--text); font: var(--type-small) / 1 var(--font-mono); font-variant-numeric: tabular-nums; text-align: end; }
+.canvas-width__input:focus { border-color: var(--focus); outline: 1px solid var(--focus); }
+.canvas-width__unit { position: absolute; inset-inline-end: 6px; color: var(--muted); font: var(--type-small) / 1 var(--font-mono); pointer-events: none; }
+.canvas-host { --canvas-gutter: 28px; position: relative; flex: 1; display: flex; justify-content: center; transition: padding 180ms ease-out; background: var(--surface); }
+.canvas-host.is-framed { padding: 16px var(--canvas-gutter); background: radial-gradient(circle, color-mix(in oklch, var(--text) 16%, transparent) 1px, transparent 1.5px) 0 0 / 16px 16px, var(--surface-subtle); }
+.canvas-stage { position: relative; display: flex; inline-size: 100%; max-inline-size: 100%; min-inline-size: 0; transition: inline-size 200ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.canvas-stage > .site { flex: 1; min-inline-size: 0; }
+.canvas-host.is-framed .site { border-radius: var(--radius-small); box-shadow: 0 0 0 1px var(--control-line), var(--shadow-small); }
+.canvas-handle { position: absolute; inset-block: 0; z-index: 3; display: none; inline-size: 18px; cursor: ew-resize; touch-action: none; }
+.canvas-host.is-framed .canvas-handle { display: block; }
+.canvas-handle--left { inset-inline-start: -20px; }
+.canvas-handle--right { inset-inline-end: -20px; }
+.canvas-handle:focus-visible { outline: none; }
+.canvas-handle__grip { position: absolute; inset-block-start: 50%; inset-inline-start: 50%; inline-size: 4px; block-size: 40px; border-radius: 999px; background: var(--muted); opacity: 0.45; transform: translate(-50%, -50%); transition: width 120ms ease-out, height 120ms ease-out, opacity 120ms ease-out, background-color 120ms ease-out; }
+.canvas-handle:is(:hover, :focus-visible) .canvas-handle__grip, .canvas-host.is-resizing .canvas-handle .canvas-handle__grip { inline-size: 6px; block-size: 56px; background: var(--primary); opacity: 1; }
+.canvas-size { position: absolute; inset-block-start: 8px; inset-inline-start: 50%; z-index: 4; padding: 2px 8px; border-radius: 999px; background: var(--pressed); color: var(--on-pressed); font: 600 var(--type-small) / 16px var(--font-mono); font-variant-numeric: tabular-nums; opacity: 0; pointer-events: none; transform: translateX(-50%); transition: opacity 120ms ease-out; }
+.canvas-host.is-resizing .canvas-size { opacity: 1; }
+.canvas-host.is-resizing .canvas-stage { transition: none; }
+@media (prefers-reduced-motion: reduce) { .canvas-host, .canvas-stage, .canvas-device, .canvas-handle__grip, .canvas-size, .canvas-component__used, .canvas-component__used .icon, .canvas-component__done { transition: none; } }
+/* src/page-builder/edit-component-mode.css */
+.canvas-bar--component:has(.edit-mode__title) .canvas-crumbs { display: none; }
+.edit-mode__title { display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--component-text); }
+.edit-mode__verb { font-weight: 600; }
+.edit-mode__tag { font: 600 var(--type-small) / 1 var(--font-mono); padding: 1px 3px; border-radius: 3px; cursor: default; }
+.edit-mode__tag:focus-visible, .edit-mode__tag--renaming { outline: var(--focus-ring); outline-offset: 0; }
+.edit-mode__tag--renaming { cursor: text; }
+.edit-mode__name { outline: none; }
+.edit-mode__dot { color: color-mix(in oklch, var(--component-text) 55%, transparent); }
+.edit-mode__note { display: inline-flex; flex: none; align-items: center; min-inline-size: 96px; max-inline-size: 340px; border-radius: var(--radius); background: color-mix(in oklch, var(--component) 12%, transparent); }
+.edit-mode__note-text { display: inline-flex; align-items: baseline; gap: 6px; min-inline-size: 0; flex: 1; padding: 2px 4px 2px 8px; border: 0; border-radius: var(--radius); background: transparent; color: var(--component-text); }
+.edit-mode__note-kind { flex: none; font-weight: 600; }
+.edit-mode__note-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edit-mode__note-count { display: none; }
+.edit-mode__note-dismiss { display: inline-grid; flex: none; place-items: center; inline-size: 22px; block-size: 22px; padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--component-text); }
+:is(.edit-mode__note-text, .edit-mode__note-dismiss):hover { background: color-mix(in oklch, var(--component) 14%, transparent); }
+:is(.edit-mode__note-text, .edit-mode__note-dismiss):focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+/* src/components/dropdown.css panel + edit-component-mode.css notes, components.css Used on */
+.dropdown-panel { padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); box-shadow: var(--shadow); }
+.edit-mode__notes.dropdown-panel { max-inline-size: min(420px, calc(100vw - 24px)); margin: 0; padding: 8px 12px 8px 26px; color: var(--text); font-size: var(--type-small); line-height: 1.4; }
+.component-menu { min-inline-size: 220px; max-inline-size: min(360px, calc(100vw - 16px)); padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); }
+.component-menu__item { display: flex; align-items: center; justify-content: space-between; gap: 12px; inline-size: 100%; min-block-size: var(--size-control); padding: 0 8px; border: 0; border-radius: var(--radius); background: transparent; color: var(--text); font-size: var(--type-base); text-align: start; }
+.component-menu__item + .component-menu__item { margin-block-start: 2px; }
+.component-menu__item:hover { background: var(--hover); }
+.component-menu__item:focus-visible { background: var(--hover); outline: var(--focus-ring); outline-offset: -2px; }
+.component-menu__meta { flex: none; font-size: var(--type-small); color: var(--muted); }
+/* Fit stages (the editor measures them; a container query here) */
+@container bar (inline-size < 640px) {
+  .canvas-bar--component:has(.edit-mode__title) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 8px; }
+  .canvas-bar--component:has(.edit-mode__title) .canvas-component { flex-wrap: wrap; }
+  .canvas-bar--component:has(.edit-mode__title) .canvas-tools { grid-column: 1 / -1; margin-inline-start: 0; }
+  .canvas-bar--component:has(.edit-mode__title) .edit-mode__dot { display: none; }
+  .canvas-component__used-label, .edit-mode__note-kind, .edit-mode__note-label { display: none; }
+  .canvas-component__used-short { display: inline; }
+  .edit-mode__note { min-inline-size: 0; }
+  .edit-mode__note-count { display: inline-flex; align-items: center; gap: 4px; }
+}
+/* src/components/create-dialog.css + src/style.css .button */
+.create-dialog-wrap { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; background: oklch(from var(--shadow-color) l c h / 0.45); }
+.create-dialog { inline-size: min(560px, calc(100% - 32px)); padding: 0; border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.create-dialog__form { display: flex; flex-direction: column; gap: 14px; padding: 16px; }
+.create-dialog__title { margin: 0; font-size: var(--type-title); font-weight: 600; }
+.create-dialog__result { margin: 0; font-size: var(--type-small); line-height: 1.5; color: var(--muted); }
+.create-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.button { min-block-size: var(--size-control); border: 0; padding: 6px 14px; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; }
+.button.primary { background: var(--primary); color: var(--on-primary); }
+.button.secondary { background: var(--surface); color: inherit; }
+@media (hover: hover) and (pointer: fine) { .button.primary:hover { background: var(--primary-hover); } .button.secondary:hover { background: linear-gradient(var(--hover) 0 0), var(--surface); } }
+
+/* =====================  AFTER: canvas bar and Edit component mode built from catalogue parts  ===================== */
+/* Layout only; every control is a part. Sizes as today: 36 px bar, 24 px controls, 28 px device buttons. */
+.cb { display: flex; align-items: center; gap: var(--space-s); min-block-size: 36px; padding: var(--space-3xs) var(--space-xs) var(--space-3xs) 10px; border-block-end: 1px solid var(--control-line); background: var(--surface-toolbar); font-size: var(--type-small); }
+.cb.is-component { border-block-end-color: color-mix(in oklch, var(--component) 35%, transparent); background: var(--component-surface); }
+.cb.is-component .p-seg { background: color-mix(in oklch, var(--component) 12%, transparent); }
+.cb-crumbs { flex: 1; min-inline-size: 0; overflow-x: auto; scrollbar-width: none; }
+.cb-crumbs ol { display: flex; align-items: center; margin: 0; padding: 0; list-style: none; white-space: nowrap; }
+.cb-crumbs li { display: flex; flex: none; align-items: center; }
+.cb-sep { padding-inline: var(--space-4xs); color: var(--muted); opacity: 0.7; }
+.cb .cb-crumb { font-family: var(--font-mono); font-weight: 400; color: var(--muted); }
+.cb .cb-crumb[aria-current="true"] { color: var(--text); font-weight: 600; }
+.cb .cb-crumb.is-component { color: var(--component-text); font-weight: 600; }
+.cb .cb-crumb.is-component[aria-current="true"] { background: color-mix(in oklch, var(--component) 18%, transparent); color: var(--component-text); }
+.cb-lead { display: flex; flex: 1 0 auto; flex-shrink: 1; align-items: center; gap: var(--space-xs); min-inline-size: 0; color: var(--component-text); }
+.cb-title { display: inline-flex; flex: none; align-items: center; gap: var(--space-3xs); }
+.cb-title b { font-weight: 600; }
+.cb-tag { font: 600 var(--type-small) / 1 var(--font-mono); padding: 1px 3px; border-radius: var(--radius-small); }
+.cb-tag:focus-visible, .cb-tag.is-renaming { outline: var(--focus-ring); outline-offset: 0; }
+.cb-tag [contenteditable] { outline: none; }
+.cb-dot { color: color-mix(in oklch, var(--component-text) 55%, transparent); }
+.cb-lead .p-button { font-weight: 400; }
+.cb-note { display: inline-flex; flex: none; align-items: center; gap: var(--space-4xs); max-inline-size: 340px; min-inline-size: 0; }
+.cb-note .p-button { min-inline-size: 0; flex: 1; justify-content: start; }
+.cb-note .p-button .label { overflow: hidden; text-overflow: ellipsis; font-weight: 400; }
+.cb-note .p-icon-button { color: var(--component-text); }
+.cb .p-button[data-tone="component-quiet"][aria-expanded="true"] .icon:last-child { rotate: 180deg; }
+@media (prefers-reduced-motion: no-preference) { .cb .p-button .icon:last-child { transition: rotate var(--dur-hover) var(--ease-out); } }
+.cb-tools { display: flex; flex: none; align-items: center; gap: var(--space-2xs); }
+.cb.is-component .cb-tools { margin-inline-start: auto; }
+.cb-width { position: relative; display: flex; align-items: center; }
+.cb-width .p-field { inline-size: 64px; padding-inline: var(--space-2xs) var(--space-l); font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: end; }
+.cb-width span { position: absolute; inset-inline-end: var(--space-2xs); color: var(--muted); font: var(--type-small) / 1 var(--font-mono); pointer-events: none; }
+.cb .short { display: none; }
+@container bar (inline-size < 640px) {
+  .cb.is-component:has(.cb-title) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2xs) var(--space-xs); }
+  .cb.is-component .cb-lead { flex-wrap: wrap; }
+  .cb.is-component .cb-tools { grid-column: 1 / -1; margin-inline-start: 0; }
+  .cb .cb-dot, .cb .long, .cb-note .p-button > :not(.icon) { display: none; }
+  .cb .short { display: inline; }
+}
+.ch { --canvas-gutter: 28px; position: relative; flex: 1; display: flex; justify-content: center; background: var(--surface); }
+.ch.is-framed { padding: var(--space-m) var(--canvas-gutter); background: radial-gradient(circle, color-mix(in oklch, var(--text) 16%, transparent) 1px, transparent 1.5px) 0 0 / 16px 16px, var(--surface-subtle); }
+.ch-stage { position: relative; display: flex; inline-size: 100%; max-inline-size: 100%; min-inline-size: 0; }
+.ch-stage > .site { flex: 1; min-inline-size: 0; }
+.ch.is-framed .site { border-radius: var(--radius-small); box-shadow: 0 0 0 1px var(--control-line), var(--shadow-small); }
+@media (prefers-reduced-motion: no-preference) { .ch { transition: padding var(--dur-tooltip) var(--ease-out); } .ch-stage { transition: inline-size var(--dur-menu) var(--ease-out); } }
+.ch.is-resizing .ch-stage { transition: none; }
+.ch-handle { position: absolute; inset-block: 0; z-index: 3; display: none; inline-size: 18px; cursor: ew-resize; touch-action: none; }
+.ch.is-framed .ch-handle { display: block; }
+.ch-handle.left { inset-inline-start: -20px; }
+.ch-handle.right { inset-inline-end: -20px; }
+.ch-handle i { position: absolute; inset-block-start: 50%; inset-inline-start: 50%; inline-size: 4px; block-size: 40px; border-radius: var(--radius-full); background: var(--muted); opacity: 0.45; translate: -50% -50%; }
+.ch-handle:focus-visible { outline: none; }
+.ch-handle:focus-visible i { outline: var(--focus-ring); outline-offset: 2px; }
+.ch-handle:is(:focus-visible, :active) i, .ch.is-resizing .ch-handle i { inline-size: 6px; block-size: 56px; background: var(--primary); opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .ch-handle:hover i { inline-size: 6px; block-size: 56px; background: var(--primary); opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) { .ch-handle i { transition: inline-size var(--dur-hover) var(--ease-out), block-size var(--dur-hover) var(--ease-out), opacity var(--dur-hover) var(--ease-out), background-color var(--dur-hover) var(--ease-out); } }
+.ch-size { position: absolute; inset-block-start: var(--space-xs); inset-inline-start: 50%; z-index: 4; translate: -50% 0; opacity: 0; pointer-events: none; }
+.ch.is-resizing .ch-size { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) { .ch-size { transition: opacity var(--dur-hover) var(--ease-out); } }
+.notes-list { margin: 0; padding: var(--space-xs) var(--space-s) var(--space-xs) 26px; font-size: var(--type-small); line-height: 1.4; max-inline-size: min(420px, calc(100vw - 24px)); display: block; }
+</style>
+</head>
+<body data-mode="after">
+<main class="mock">
+  <header>
+    <h1>Components: canvas bar and Edit component mode, rebuilt from parts <span class="tag">mock-up for Tuesday 10 Nov</span></h1>
+    <p class="intro">The canvas bar sits over the page: where you are (body › main › …) and the page sizes. When you edit a component it turns violet and holds the component's name, where it's used and Done. This build keeps all of that exactly as it is, sizes included (Desktop, Tablet 768, Mobile 390, a typed width, dragging the edge), and only swaps the controls for the shared catalogue parts. The old Component panel isn't shown: today's editor no longer uses it (its fields live in Page Structure, mock-up 51).</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+  </div>
+  <p class="summary today">Today: the real canvas bar and Edit component mode, copied from the editor's stylesheets.</p>
+  <p class="summary after">Same colours, words and sizes. 7 button styles become 3 parts, 2 menu styles become 1, the width box takes the shared field; 9 of 10 hover effects also showed on touch screens, now none do; 4 motion timings and 2 easing curves become the shared ones.</p>
+
+  <section class="demo" aria-label="Demo steps">
+    <h2>Play a step (these buttons are not part of the editor)</h2>
+    <div class="steps">
+      <button type="button" data-step="select">Select a component</button>
+      <button type="button" data-step="edit">Edit it</button>
+      <button type="button" data-step="usedon">See where it's used</button>
+      <button type="button" data-step="rename">Rename it</button>
+      <button type="button" data-step="make">Make a component (with a note)</button>
+      <button type="button" data-step="dismiss">Dismiss the note</button>
+      <button type="button" data-step="done">Done</button>
+      <button type="button" data-step="tablet">Tablet 768</button>
+      <button type="button" data-step="drag">Drag the edge</button>
+      <button type="button" data-step="typed">Type a width</button>
+      <button type="button" data-step="detach">Disconnect an instance</button>
+      <button type="button" data-step="reset">Start again</button>
+    </div>
+    <p class="says" aria-live="polite">Click the crumbs, the size buttons and the width box, drag the frame's edge, or play a step.</p>
+  </section>
+
+  <div class="app" id="app">
+    <div class="barwrap" id="bar"></div>
+    <div id="host">
+      <div id="stage">
+        <div class="site" id="site"></div>
+      </div>
+    </div>
+    <div class="layer" id="layer" hidden></div>
+    <div class="dlg" id="dlg" hidden></div>
+  </div>
+
+  <ul class="changes after">
+    <li>crumbs, Used on, the note and Done are the Button</li>
+    <li>sizes are the segmented group, names in tooltips</li>
+    <li>width box is the Field</li>
+    <li>Used on and notes open the Menu</li>
+    <li>the Detach question is the Dialog</li>
+  </ul>
+</main>
+<script>
+// ---- Shared mock-up plumbing (not part of the editor) ----
+const ICONS = {
+  "caret-down": '<path d="m6 9 6 6 6-6"/>',
+  "caret-right": '<path d="m9 6 6 6-6 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  check: '<path d="m5 12 5 5 9-10"/>',
+  dots: '<path d="M6 12h.01M12 12h.01M18 12h.01" stroke-width="2.6"/>',
+  component: '<path d="M12 2.8 15.2 6 12 9.2 8.8 6Z M18 8.8 21.2 12 18 15.2 14.8 12Z M12 14.8 15.2 18 12 21.2 8.8 18Z M6 8.8 9.2 12 6 15.2 2.8 12Z"/>',
+  pencil: '<path d="M4 20h4L19 9l-4-4L4 16z M13.5 6.5l4 4"/>',
+  detach: '<path d="M9 7 7.5 5.5a4 4 0 0 0-5.6 5.6L4 13M15 17l1.5 1.5a4 4 0 0 0 5.6-5.6L20 11M8 4V2M16 20v2M4 8H2M20 16h2"/>',
+  brackets: '<path d="M8 5 3 12l5 7M16 5l5 7-5 7"/>',
+  heading: '<path d="M5 5h14M12 5v14M9 19h6"/>',
+  paragraph: '<path d="M13 4v16M17 4v16M19 4H10a4 4 0 0 0 0 8h3"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/>',
+  button: '<rect x="3" y="7" width="18" height="10" rx="3"/><path d="M8 12h8"/>',
+  section: '<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/>',
+  div: '<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2.4"/>',
+  main: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 8h18"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  media: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/>',
+  desktop: '<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/>',
+  tablet: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M11 18h2"/>',
+  mobile: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  make: '<path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4M12 9v6M9 12h6"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
+};
+const icon = (name, size = 16) => `<svg class="icon" data-s="${size}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] ?? ""}</svg>`;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+let mode = document.body.dataset.mode;
+const onModeChange = [];
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  mode = document.body.dataset.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  hideTip();
+  onModeChange.forEach((fn) => fn(mode));
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+// After only: one floating tooltip (the catalogue Tooltip) for anything with data-tip,
+// on mouse hover or keyboard focus. Today keeps the browser's own title box.
+const tip = document.createElement("span");
+tip.className = "p-tooltip"; tip.setAttribute("role", "tooltip"); tip.id = "mock-tip";
+document.body.append(tip);
+const finePointer = matchMedia("(hover: hover) and (pointer: fine)");
+function showTip(el) {
+  if (mode !== "after" || !el.dataset.tip) return;
+  const [words, key] = el.dataset.tip.split("|");
+  tip.innerHTML = esc(words) + (key ? ` <kbd>${esc(key)}</kbd>` : "");
+  const r = el.getBoundingClientRect();
+  tip.classList.add("is-shown");
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = r.left + r.width / 2 - w / 2; x = Math.max(6, Math.min(x, innerWidth - w - 6));
+  let y = r.top - h - 6; if (y < 6) y = r.bottom + 6;
+  tip.style.left = `${x}px`; tip.style.top = `${y}px`;
+}
+function hideTip() { tip.classList.remove("is-shown"); }
+document.addEventListener("pointerover", (e) => { const el = e.target.closest?.("[data-tip]"); if (el && finePointer.matches) showTip(el); });
+document.addEventListener("pointerout", (e) => { if (e.target.closest?.("[data-tip]")) hideTip(); });
+document.addEventListener("focusin", (e) => { const el = e.target.closest?.("[data-tip]"); if (el && el.matches(":focus-visible")) showTip(el); else hideTip(); });
+document.addEventListener("focusout", hideTip);
+document.addEventListener("scroll", hideTip, true);
+// The demo strip: one step at a time; the pressed step shows which one played.
+const says = document.querySelector(".demo .says");
+let busy = false;
+function demoSay(text) { if (says) says.textContent = text; }
+function bindSteps(steps) {
+  document.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", async () => {
+    if (busy) return;
+    busy = true;
+    document.querySelectorAll("[data-step]").forEach((o) => { o.setAttribute("aria-pressed", String(o === b)); o.disabled = o !== b; });
+    try { await steps[b.dataset.step](); } finally {
+      busy = false;
+      document.querySelectorAll("[data-step]").forEach((o) => { o.disabled = false; });
+    }
+  }));
+}
+
+const DEVICES = [["desktop", "Desktop", "fill"], ["tablet", "Tablet", 768], ["mobile", "Mobile", 390]];
+const S0 = { sel: "h1", width: "fill", mode: null, used: false, notesOpen: false, renaming: false, resizing: false, dialog: false };
+const S = structuredClone(S0);
+const COMPS = { "site-header": { node: "header", pages: [["Home", "/", 1], ["Our loaves", "/loaves/", 1], ["Visit", "/visit/", 1]] }, "section-loaves": { node: "sec2", pages: [["Home", "/", 1]] } };
+const CRUMBS = { h1: [["main", "element"], ["section.hero", "element"], ["h1", "element"]], header: [["site-header", "component"]], sec2: [["main", "element"], ["section-loaves", "component"]] };
+const m = (today, after) => (mode === "today" ? today : after);
+const bar = document.getElementById("bar"), host = document.getElementById("host"), stage = document.getElementById("stage"), site = document.getElementById("site"), layer = document.getElementById("layer"), dlg = document.getElementById("dlg"), app = document.getElementById("app");
+
+function available() { return host.clientWidth - 2 * 28; }
+function shownWidth() { return Math.round(S.width === "fill" ? host.clientWidth : Math.min(S.width, available())); }
+const deviceFor = (w) => (w === "fill" ? "desktop" : w === 768 ? "tablet" : w === 390 ? "mobile" : null);
+
+function crumbsHtml() {
+  const items = [["body", "page"], ...(CRUMBS[S.sel] ?? [])];
+  return items.map(([label, kind], i) => {
+    const last = i === items.length - 1;
+    const sep = i ? `<span class="${m("canvas-crumbs__separator", "cb-sep")}" aria-hidden="true">›</span>` : "";
+    const title = i === 0 ? "Select nothing: the page's body" : last ? "The selected element (Esc or Ctrl/⌘+↑ selects its parent)" : `Select this ${kind === "component" ? "component" : "element"}`;
+    return `<li class="${m("canvas-crumbs__item", "")}">${sep}${m(
+      `<button type="button" class="canvas-crumb canvas-crumb--${kind}" ${last ? 'aria-current="true"' : ""} title="${title}" data-crumb="${label}">${label}</button>`,
+      `<button type="button" class="p-button p-press cb-crumb ${kind === "component" ? "is-component" : ""}" data-size="icon" data-tone="quiet" ${last ? 'aria-current="true"' : ""} data-tip="${title}" data-crumb="${label}">${label}</button>`)}</li>`;
+  }).join("");
+}
+function toolsHtml() {
+  const dev = deviceFor(S.width);
+  const btns = DEVICES.map(([id, label, w]) => {
+    const name = w === "fill" ? `${label}, fills the canvas` : `${label}, ${w} px`;
+    return m(`<button type="button" class="canvas-device" data-device="${id}" aria-label="${name}" title="${name}" aria-pressed="${dev === id}">${icon(id, 16)}</button>`,
+      `<button type="button" class="p-icon-button p-press" data-device="${id}" aria-label="${name}" data-tip="${name}" aria-pressed="${dev === id}">${icon(id, 16)}</button>`);
+  }).join("");
+  return m(`<div class="canvas-tools"><div class="canvas-devices" role="group" aria-label="Breakpoint">${btns}</div><label class="canvas-width"><input class="canvas-width__input" id="w" type="text" inputmode="numeric" aria-label="Frame width in pixels" title="Frame width: type a width and press Enter" value="${shownWidth()}"><span class="canvas-width__unit">px</span></label></div>`,
+    `<div class="cb-tools"><div class="p-seg" role="group" aria-label="Breakpoint">${btns}</div><label class="cb-width"><input class="p-field" data-look="boxed" data-size="icon" id="w" type="text" inputmode="numeric" aria-label="Frame width in pixels" data-tip="Frame width|Enter" value="${shownWidth()}"><span>px</span></label></div>`);
+}
+function modeHtml() {
+  const tag = S.mode.tag, c = COMPS[S.mode.base] ?? COMPS["site-header"], n = c.pages.length;
+  const where = `${n} page${n === 1 ? "" : "s"}`;
+  const tagEl = m(`<code class="edit-mode__tag ${S.renaming ? "edit-mode__tag--renaming" : ""}" tabindex="0" aria-current="true" aria-label="<${tag}>, the component edited. Double-click or F2 to rename it." title="Double-click to rename the component" id="tag">&lt;<span class="edit-mode__prefix" aria-hidden="true"></span><span class="edit-mode__name" ${S.renaming ? 'contenteditable="true"' : ""} id="tagName">${tag}</span>&gt;</code>`,
+    `<code class="cb-tag ${S.renaming ? "is-renaming" : ""}" tabindex="0" aria-current="true" aria-label="<${tag}>, the component edited. Double-click or F2 to rename it." data-tip="Rename|F2" id="tag">&lt;<span ${S.renaming ? 'contenteditable="true"' : ""} id="tagName">${tag}</span>&gt;</code>`);
+  const title = m(`<span class="edit-mode__title">${icon("component", 12)}<span class="edit-mode__verb">Editing</span>${tagEl}</span>`, `<span class="cb-title">${icon("component", 12)}<b>Editing</b>${tagEl}</span>`);
+  const dot = m(`<span class="edit-mode__dot" aria-hidden="true">·</span>`, `<span class="cb-dot" aria-hidden="true">·</span>`);
+  const used = m(`<button type="button" class="canvas-component__used" aria-haspopup="menu" aria-expanded="${S.used}" aria-label="used on ${where}" data-act="used"><span class="canvas-component__used-label">used on ${where}</span><span class="canvas-component__used-short">${where}</span>${icon("caret-down", 12)}</button>`,
+    `<button type="button" class="p-button p-press" data-size="icon" data-tone="component-quiet" aria-haspopup="menu" aria-expanded="${S.used}" aria-label="used on ${where}" data-act="used"><span class="long">used on ${where}</span><span class="short">${where}</span>${icon("caret-down", 12)}</button>`);
+  const notes = S.mode.notes;
+  const note = notes.length ? m(`<span class="edit-mode__note" role="note"><button type="button" class="edit-mode__note-text" aria-label="Note: ${esc(notes.join("; "))} (${notes.length} note)" title="${esc(notes.join("\n"))}" data-act="notes" aria-expanded="${S.notesOpen}"><span class="edit-mode__note-kind">Note</span><span class="edit-mode__note-label">${esc(notes[0])}</span><span class="edit-mode__note-count">${icon("info", 12)}<span>${notes.length}</span></span></button><button type="button" class="edit-mode__note-dismiss" aria-label="Dismiss the notes" title="Dismiss" data-act="dismiss">${icon("x", 12)}</button></span>`,
+    `<span class="cb-note" role="note"><button type="button" class="p-button p-press" data-size="icon" data-tone="component-quiet" aria-label="Note: ${esc(notes.join("; "))}" data-tip="Notes" data-act="notes" aria-expanded="${S.notesOpen}">${icon("info", 12)}<b>Note</b><span class="label">${esc(notes[0])}</span></button><button type="button" class="p-icon-button p-press" data-size="icon" aria-label="Dismiss the notes" data-tip="Dismiss" data-act="dismiss">${icon("x", 12)}</button></span>`) : "";
+  const done = m(`<button type="button" class="canvas-component__done" aria-label="Done editing component" title="Done" data-act="done" id="done">${icon("check", 16)}<span class="canvas-component__done-label">Done</span></button>`,
+    `<button type="button" class="p-button p-press" data-size="icon" data-tone="component" aria-label="Done editing component" data-tip="Done" data-act="done" id="done">${icon("check", 16)}Done</button>`);
+  return m(`<div class="canvas-component">${title}${dot}${used}${note ? dot + note : ""}</div><div class="canvas-component-end">${done}</div>`,
+    `<div class="cb-lead">${title}${dot}${used}${note ? dot + note : ""}</div>${done}`);
+}
+function renderBar() {
+  const comp = !!S.mode;
+  bar.innerHTML = m(`<div class="canvas-bar ${comp ? "canvas-bar--component" : ""}"><nav class="canvas-crumbs" aria-label="Selected element and its ancestors"><ol class="canvas-crumbs__list">${crumbsHtml()}</ol></nav>${comp ? modeHtml() : ""}${toolsHtml()}</div>`,
+    `<div class="cb ${comp ? "is-component" : ""}">${comp ? "" : `<nav class="cb-crumbs" aria-label="Selected element and its ancestors"><ol>${crumbsHtml()}</ol></nav>`}${comp ? modeHtml() : ""}${toolsHtml()}</div>`);
+}
+const SITE = `<div class="site-head" data-node="header"><span class="logo">Bakery</span><nav><span>Our loaves</span><span>Visit</span></nav></div>
+  <div class="hero" data-node="sec1"><h3 data-node="h1">Fresh bread every morning</h3><p>Baked before sunrise in Utrecht.</p><span class="cta">See our loaves</span></div>
+  <div class="loaves" data-node="sec2"><b>Our loaves</b><span>Sourdough, rye and spelt, every day.</span></div>
+  <div class="site-foot">© Bakery</div>`;
+function renderCanvas() {
+  const framed = S.width !== "fill";
+  host.className = m(`canvas-host ${framed ? "is-framed" : ""} ${S.resizing ? "is-resizing" : ""}`, `ch ${framed ? "is-framed" : ""} ${S.resizing ? "is-resizing" : ""}`);
+  stage.className = m("canvas-stage", "ch-stage");
+  stage.style.inlineSize = framed ? `${S.width}px` : "";
+  if (!site.innerHTML) site.innerHTML = SITE;
+  stage.querySelectorAll(".canvas-handle, .ch-handle, .canvas-size, .ch-size").forEach((el) => el.remove());
+  for (const side of ["left", "right"]) stage.insertAdjacentHTML("beforeend", m(`<div class="canvas-handle canvas-handle--${side}" role="slider" tabindex="0" aria-label="Frame width" data-side="${side}"><span class="canvas-handle__grip"></span></div>`, `<div class="ch-handle ${side}" role="slider" tabindex="0" aria-label="Frame width" data-side="${side}"><i></i></div>`));
+  stage.insertAdjacentHTML("beforeend", m(`<div class="canvas-size">${shownWidth()} px</div>`, `<span class="p-badge ch-size" data-tone="pressed">${shownWidth()} px</span>`));
+  site.querySelectorAll("[data-node]").forEach((el) => { el.classList.toggle("is-sel", !S.mode && el.dataset.node === S.sel); el.classList.toggle("is-framed", !!S.mode && el.dataset.node === (COMPS[S.mode.base]?.node)); });
+  site.querySelector(".shade")?.remove();
+  if (S.mode) site.insertAdjacentHTML("afterbegin", '<div class="shade"></div>');
+}
+function renderLayer() {
+  layer.hidden = !(S.used || S.notesOpen);
+  if (layer.hidden) { layer.innerHTML = ""; return; }
+  const anchor = bar.querySelector(`[data-act="${S.used ? "used" : "notes"}"]`);
+  if (S.used) {
+    const c = COMPS[S.mode.base];
+    layer.innerHTML = m(`<div class="component-menu" role="menu" aria-label="Used on">${c.pages.map(([n, r, k]) => `<button type="button" class="component-menu__item" role="menuitem"><span class="component-menu__name">${n}</span><span class="component-menu__meta">${r} · ${k}×</span></button>`).join("")}</div>`,
+      `<div class="p-menu" role="menu" aria-label="Used on">${c.pages.map(([n, r, k]) => `<button type="button" class="p-menu-item p-press" role="menuitem"><span>${n}</span><span class="meta">${r} · ${k}×</span></button>`).join("")}</div>`);
+  } else {
+    layer.innerHTML = m(`<ul class="edit-mode__notes dropdown-panel" aria-label="Notes">${S.mode.notes.map((t) => `<li class="edit-mode__notes-item">${esc(t)}</li>`).join("")}</ul>`,
+      `<div class="p-menu"><ul class="notes-list" aria-label="Notes">${S.mode.notes.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></div>`);
+  }
+  const a = app.getBoundingClientRect(), r = anchor.getBoundingClientRect();
+  const w = layer.firstElementChild.offsetWidth;
+  layer.style.left = `${Math.max(4, Math.min(r.left - a.left, a.width - w - 4))}px`;
+  layer.style.top = `${r.bottom - a.top + 4}px`;
+}
+function renderDialog() {
+  dlg.hidden = !S.dialog;
+  if (!S.dialog) { dlg.innerHTML = ""; return; }
+  const text = "This Site header becomes plain markup in index.html: later changes to the component no longer reach it. Undo brings the instance back.";
+  dlg.innerHTML = m(`<div class="create-dialog-wrap"><div class="create-dialog" role="dialog" aria-modal="true" aria-labelledby="dt"><form class="create-dialog__form" onsubmit="return false"><h2 class="create-dialog__title" id="dt">Detach this Site header?</h2><p class="create-dialog__result">${text}</p><div class="create-dialog__actions"><button type="button" class="button secondary" data-act="dlg-close">Cancel</button><button type="submit" class="button primary" data-act="dlg-close">Detach</button></div></form></div></div>`,
+    `<div class="p-backdrop"><div class="p-dialog" role="dialog" aria-modal="true" aria-labelledby="dt"><h3 id="dt">Detach this Site header?</h3><p>${text}</p><div class="p-row"><button type="button" class="p-button p-press" data-act="dlg-close">Cancel</button><button type="button" class="p-button p-press" data-tone="primary" data-act="dlg-close">Detach</button></div></div></div>`);
+  dlg.querySelector('[data-act="dlg-close"]:last-child')?.focus();
+}
+function render() { renderBar(); renderCanvas(); renderLayer(); renderDialog(); }
+function setWidth(w) { S.width = w === "fill" ? "fill" : Math.max(240, Math.round(w)); render(); }
+
+app.addEventListener("click", (e) => {
+  const d = e.target.closest("[data-device]"); if (d) { setWidth(DEVICES.find(([id]) => id === d.dataset.device)[2]); return; }
+  const c = e.target.closest("[data-crumb]"); if (c) { const map = { body: null, main: "h1", "section.hero": "h1", h1: "h1", "site-header": "header", "section-loaves": "sec2" }; S.sel = map[c.dataset.crumb] ?? S.sel; render(); return; }
+  const a = e.target.closest("[data-act]"); if (!a) { if (!e.target.closest("#layer")) { S.used = S.notesOpen = false; renderBar(); renderLayer(); } return; }
+  const act = a.dataset.act;
+  if (act === "used") { S.used = !S.used; S.notesOpen = false; renderBar(); renderLayer(); }
+  if (act === "notes") { S.notesOpen = !S.notesOpen; S.used = false; renderBar(); renderLayer(); }
+  if (act === "dismiss") { S.mode.notes = []; S.notesOpen = false; renderBar(); renderLayer(); bar.querySelector("#done")?.focus(); }
+  if (act === "done") { const node = COMPS[S.mode.base].node; S.mode = null; S.used = S.notesOpen = false; S.sel = node; render(); }
+  if (act === "dlg-close") { S.dialog = false; render(); }
+});
+site.addEventListener("click", (e) => { if (S.mode) return; const n = e.target.closest("[data-node]"); if (n) { S.sel = n.dataset.node === "sec1" ? "h1" : n.dataset.node; render(); } });
+bar.addEventListener("dblclick", (e) => { if (e.target.closest("#tag")) startRename(); });
+bar.addEventListener("keydown", (e) => {
+  if (e.target.id === "w" && e.key === "Enter") { const v = Number(e.target.value.replace(/px$/i, "")); if (v) setWidth(v); }
+  if (e.target.id === "tag" && e.key === "F2") startRename();
+  if (e.target.id === "tagName" && (e.key === "Enter" || e.key === "Escape")) { e.preventDefault(); endRename(e.key === "Enter"); }
+});
+function startRename() { S.renaming = true; renderBar(); const n = bar.querySelector("#tagName"); n.focus(); getSelection().selectAllChildren(n); }
+function endRename(keep) { const n = bar.querySelector("#tagName"); if (keep && n?.textContent.trim()) S.mode.tag = n.textContent.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-"); S.renaming = false; renderBar(); bar.querySelector("#tag")?.focus(); }
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (S.dialog) { S.dialog = false; render(); } else if (S.used || S.notesOpen) { S.used = S.notesOpen = false; renderBar(); renderLayer(); } } });
+// Dragging an edge: the frame follows the pointer, the size pill shows while it moves.
+stage.addEventListener("pointerdown", (e) => {
+  const h = e.target.closest("[data-side]"); if (!h) return;
+  const side = h.dataset.side === "right" ? 1 : -1, x0 = e.clientX, w0 = shownWidth();
+  h.setPointerCapture(e.pointerId); S.resizing = true; if (S.width === "fill") S.width = w0; render();
+  const move = (ev) => { S.width = Math.max(240, Math.min(available(), Math.round(w0 + 2 * side * (ev.clientX - x0)))); render(); };
+  const up = () => { S.resizing = false; render(); removeEventListener("pointermove", move); removeEventListener("pointerup", up); };
+  addEventListener("pointermove", move); addEventListener("pointerup", up);
+});
+onModeChange.push(render);
+addEventListener("resize", () => render());
+
+// ---- Demo steps ----
+const slow = () => !matchMedia("(prefers-reduced-motion: reduce)").matches;
+function reset() { Object.assign(S, structuredClone(S0)); site.innerHTML = ""; render(); }
+function enter(base, notes = []) { S.mode = { base, tag: base, notes }; S.used = S.notesOpen = false; render(); }
+bindSteps({
+  async select() { reset(); await sleep(200); S.sel = "header"; render(); demoSay("The crumb names the component in violet."); },
+  async edit() { reset(); S.sel = "header"; render(); await sleep(300); enter("site-header"); demoSay("The bar turns violet: the component's name, where it's used, and Done. The rest of the page is shaded."); },
+  async usedon() { reset(); enter("site-header"); await sleep(300); S.used = true; renderBar(); renderLayer(); demoSay("Used on lists the pages; a click opens that page."); },
+  async rename() {
+    reset(); enter("site-header"); await sleep(300); startRename();
+    const n = () => bar.querySelector("#tagName"); n().textContent = "";
+    for (const ch of "site-top") { n().textContent += ch; await sleep(slow() ? 110 : 0); }
+    await sleep(300); endRename(true); demoSay("The new name shows where you typed it; Enter keeps it.");
+  },
+  async make() { reset(); S.sel = "sec2"; render(); await sleep(300); enter("section-loaves", ["Added the component loader to index.html."]); await sleep(400); S.notesOpen = true; renderBar(); renderLayer(); demoSay("Make component opens the new component; its note waits in the bar until you dismiss it."); },
+  async dismiss() { reset(); enter("section-loaves", ["Added the component loader to index.html."]); await sleep(500); S.mode.notes = []; renderBar(); bar.querySelector("#done")?.focus(); demoSay("The note goes; the focus moves to Done."); },
+  async done() { reset(); enter("site-header"); await sleep(500); S.mode = null; S.sel = "header"; render(); demoSay("Done goes back to the page with the instance selected."); },
+  async tablet() { reset(); await sleep(200); setWidth(768); demoSay("Tablet frames the page at 768 px (or as wide as the canvas allows), with a handle on each side."); },
+  async drag() {
+    reset(); setWidth(768); await sleep(400); S.resizing = true; render();
+    const from = shownWidth(), to = Math.max(300, from - 180);
+    for (let i = 1; i <= 12; i++) { S.width = Math.round(from + (to - from) * (i / 12)); render(); await sleep(slow() ? 60 : 0); }
+    await sleep(500); S.resizing = false; render(); demoSay("While you drag, the size shows above the frame; no size button stays pressed at a width of your own.");
+  },
+  async typed() {
+    reset(); await sleep(200); const w = bar.querySelector("#w"); w.focus(); w.value = "";
+    for (const ch of "600") { w.value += ch; await sleep(slow() ? 150 : 0); }
+    await sleep(300); setWidth(600); bar.querySelector("#w")?.focus(); demoSay("Enter applies a typed width.");
+  },
+  async detach() { reset(); S.sel = "header"; render(); await sleep(200); S.dialog = true; renderDialog(); demoSay("Disconnect (from Page Structure) asks first."); },
+  async reset() { reset(); demoSay("Back to the start."); },
+});
+render();
+</script>
+</body>
+</html>

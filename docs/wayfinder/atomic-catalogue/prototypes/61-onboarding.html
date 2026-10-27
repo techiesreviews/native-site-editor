@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 61 Sign in, Get started, Setup wizard and checklist, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 10 Nov review
+  (kitchen station 3 "Show and tell": Today / After switch, demo buttons that play each step).
+  Ticket: build/tickets/61-organism-onboarding.md. Behaviour stays exactly as it is.
+  Today: values and structure copied from src/style.css (login card, brand mark, spinner, cancel link,
+  .button/.primary/.secondary), src/setup-host.ts (sign-in states and words), src/components/onboarding.css
+  and get-started.ts (Get started cards, fields, options), src/components/repository-name-field.ts,
+  src/components/setup-wizard.css and .ts plus src/setup-wizard.ts (steps, cards, progress, done note,
+  celebrate page), src/components/setup-checklist.css and .ts (pill, panel, bar, items, name form)
+  (dev, 2026-10-27). Icons are hand-drawn look-alikes of the Phosphor set; names and values are made up.
+  After: the same screens built only from the parts approved in 10-first-parts-and-edit-bar.html (button,
+  icon button, field, select, badge, spinner and progress, notice, tile, menu panel, list row) on the
+  shared spacing 2/4/6/8/12/16/24 px and motion tokens.
+  Counts from those files: 7 own button looks (login-cancel, wizard-quiet, wizard__exit, setup-panel__dismiss,
+  setup-pill, setup-item__action, wizard-celebrate__open) and 2 choice-card looks (onboard-choice, wizard-card);
+  2 progress looks (checklist bar, wizard dots); 2 success lines (wizard-done, setup-panel__complete);
+  6 hover rules with no mouse check; 4 screen-width rule sets at 2 widths (650, 720 px); 8 off-scale gaps
+  (3, 10, 14, 20, 22, 28, 40, 56 px).
+  One visible change beyond looks, for Lex to confirm: the checklist pill says "Setup 2/3" today; After it
+  says "Set up" (rule S2, no counts on buttons) and the count stays inside the checklist.
+-->
+<style>
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+  --color-component: oklch(55% 0.2 300);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --component-surface: light-dark(oklch(from var(--color-component) 96% 0.03 h), oklch(from var(--color-component) 28% 0.05 h));
+  --component-text: light-dark(oklch(from var(--color-component) 42% 0.17 h), oklch(from var(--color-component) 85% 0.1 h));
+  --panel-surface: var(--surface-raised);
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px; --type-heading: 20px;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px;
+  --panel-padding: 6px;
+
+  /* After only: the catalogue's shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-size: var(--type-base); -webkit-tap-highlight-color: transparent; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, select:focus-visible, a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.icon { inline-size: 16px; block-size: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+:root { --pressed: light-dark(var(--primary), var(--color-primary-light)); --on-pressed: light-dark(var(--on-primary), var(--color-primary-darkest)); }
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+header { display: grid; gap: var(--space-3xs); }
+h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 70ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 5; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; inline-size: 100%; text-wrap: pretty; }
+.demo { display: grid; gap: var(--space-xs); padding: var(--space-s); border: 1.5px dashed var(--line); border-radius: var(--radius-panel); }
+.demo h2 { margin: 0; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.demo .steps { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.demo .steps button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 4px 10px; font-weight: 600; }
+.demo .steps button[aria-pressed="true"] { background: var(--current); border-color: var(--primary); }
+.demo .steps button:active { scale: 0.97; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); min-inline-size: 0; }
+.card h2 { margin: 0; font-size: var(--type-title); }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+.cards { display: grid; gap: var(--space-m); grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr)); align-items: start; }
+.card.wide { grid-column: 1 / -1; }
+.screen { position: relative; min-inline-size: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--background); overflow: clip; container: screen / inline-size; }
+.brand-mark { position: relative; display: grid; place-items: center; background: var(--primary); color: var(--on-primary); border-radius: 10px; inline-size: 35px; block-size: 35px; font: 30px/1 Georgia, serif; flex: none; }
+.brand-mark span { position: absolute; inset-inline-end: 3px; inset-block-start: 4px; font-size: 10px; }
+.mini-top { display: flex; align-items: center; gap: var(--space-xs); block-size: 44px; padding-inline: var(--space-s); background: var(--surface); border-block-end: 1px solid var(--line); font-weight: 600; }
+.mini-top .grow { flex: 1; min-inline-size: 0; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.mini-top .mark { inline-size: 18px; block-size: 18px; border-radius: 4px; background: var(--primary); flex: none; }
+.check-stage { position: relative; block-size: 36rem; }
+.check-stage .site { margin: var(--space-m); background: light-dark(white, oklch(20% 0.01 265)); border-radius: var(--radius); block-size: 8rem; box-shadow: var(--shadow-small); }
+
+/* =====================  TODAY: real editor CSS  ===================== */
+/* src/style.css buttons */
+.today .button { min-block-size: var(--size-control); border: 0; padding: 6px 14px; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+.today .primary { background: var(--primary); color: var(--on-primary); }
+.today .secondary { background: var(--surface); color: inherit; }
+.today .primary:active:not(:disabled) { background: var(--primary-hover); }
+.today .secondary:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+@media (hover: hover) and (pointer: fine) {
+  .today .primary:hover:not(:disabled) { background: var(--primary-hover); }
+  .today .secondary:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+}
+.today .text-link { border: 0; background: none; padding: 0; color: var(--link); text-decoration: underline; }
+/* Sign in: style.css */
+.today.login-page { min-block-size: 26rem; display: grid; place-items: center; padding: 32px 20px; background: var(--background); }
+.today .login-card { inline-size: min(100%, 360px); padding: 24px; background: var(--panel-surface); border-radius: var(--radius-dialog); box-shadow: var(--shadow); }
+.today .brand { display: flex; gap: 12px; align-items: center; font-size: var(--type-title); white-space: nowrap; text-decoration: none; color: inherit; }
+.today .login-brand { margin-block-end: 16px; justify-content: center; }
+.today .login-brand .brand-mark { inline-size: var(--size-control); block-size: var(--size-control); border-radius: var(--radius); font-size: var(--type-title); }
+.today .login-card h1 { font-size: var(--type-title); font-weight: 600; line-height: 1.3; text-align: center; margin: 0 0 16px; }
+.today .login-button { inline-size: 100%; }
+.today .login-action { min-block-size: calc(var(--size-control) + 20px); }
+.today .login-state { color: var(--muted); font-size: var(--type-small); text-align: center; margin: 8px 0; }
+.today .login-busy { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0; min-block-size: var(--size-control); }
+.today .login-cancel { display: block; margin: 2px auto 0; padding: 0; border: 0; background: none; color: var(--link); font-size: var(--type-small); text-decoration: underline; }
+.today .login-spinner { flex-shrink: 0; inline-size: 18px; block-size: 18px; border: 2px solid var(--control-line); border-block-start-color: var(--primary); border-radius: 50%; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .today .login-spinner { animation: none; border-block-start-color: var(--control-line); border-inline-end-color: var(--primary); } }
+@media (max-width: 650px) { .today .login-card { padding: 20px; } }
+/* Get started: onboarding.css */
+.today.get-started { max-inline-size: 880px; margin: 0 auto; padding: 56px 32px 48px; }
+.today.get-started h1 { font-size: var(--type-heading); margin: 8px 0 12px; }
+.today.get-started .intro-label { color: var(--muted); }
+.today.get-started .intro { max-inline-size: 560px; margin-block-end: 28px; font-size: var(--type-title); line-height: 1.6; color: var(--text); }
+.today .get-started__columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.today .onboard-card { display: flex; flex-direction: column; gap: 12px; min-inline-size: 0; margin: 0; padding: 20px; border-radius: var(--radius-panel); background: var(--panel-surface); }
+.today .onboard-card__title { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--type-title); font-weight: 600; }
+.today :is(.onboard-card__note, .onboard-field__hint, .onboard-option__hint) { margin: 0; font-size: var(--type-small); line-height: 1.5; color: var(--muted); }
+.today .onboard-card__text { margin: 0; font-size: var(--type-base); line-height: 1.5; color: var(--muted); }
+.today .onboard-field { display: flex; flex-direction: column; gap: 4px; min-inline-size: 0; }
+.today :is(.onboard-field__label, .onboard-group > legend) { padding: 0; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.today .onboard-input { inline-size: 100%; block-size: var(--size-control); padding: 0 8px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-input); color: var(--text); font-size: var(--type-base); }
+.today .onboard-input:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
+.today .onboard-group { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.today .onboard-group > legend { margin-block-end: 4px; }
+.today .onboard-option { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; border-radius: var(--radius); font-size: var(--type-base); cursor: pointer; }
+.today .onboard-option:hover { background: var(--hover); }
+.today .onboard-option:has(input:checked) { background: var(--current); }
+.today .onboard-option:has(input:focus-visible) { outline: var(--focus-ring); outline-offset: -1px; }
+.today .onboard-option input { margin: 3px 0 0; accent-color: var(--primary); }
+.today .onboard-option__text { display: flex; flex-direction: column; gap: 1px; min-inline-size: 0; }
+.today .onboard-option__label { font-weight: 600; }
+.today .onboard-message { min-block-size: 1.5em; margin: 0; font-size: var(--type-small); color: var(--muted); }
+.today .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+@media (max-width: 720px) {
+  .today.get-started { padding: 32px 16px; }
+  .today .get-started__columns { grid-template-columns: minmax(0, 1fr); }
+}
+/* Setup wizard: setup-wizard.css */
+.today.wizard { display: flex; flex-direction: column; background: var(--background); min-block-size: 34rem; }
+.today .wizard__top { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; }
+.today .wizard__brand { display: inline-flex; align-items: center; gap: 8px; font-size: var(--type-base); font-weight: 600; }
+.today .wizard__brand .brand-mark { inline-size: var(--size-compact); block-size: var(--size-compact); border-radius: var(--radius); font-size: var(--type-title); }
+.today .wizard__exit { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); }
+.today .wizard__exit:hover { background: var(--hover); color: var(--text); }
+.today .wizard__exit:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.today .wizard__body { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 40px; inline-size: min(100%, 1040px); margin: 0 auto; padding: 24px 24px 56px; flex: 1; }
+.today .wizard__compact { display: none; margin: 0; padding: 0 20px; font-size: var(--type-base); color: var(--muted); }
+.today .wizard__compact strong { color: var(--text); }
+.today .wizard__steps { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.today .wizard__step { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: var(--radius); font-size: var(--type-base); color: var(--muted); }
+.today .wizard__step[aria-current="step"] { background: var(--current); color: var(--text); font-weight: 600; }
+.today .wizard__badge { display: inline-grid; place-items: center; flex-shrink: 0; inline-size: 24px; block-size: 24px; border-radius: 50%; border: 1px solid var(--control-line); font-size: var(--type-small); font-weight: 600; }
+.today .wizard__step[aria-current="step"] .wizard__badge { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.today .wizard__step.is-done .wizard__badge { background: var(--success-bg); border-color: transparent; color: var(--success-fg); }
+.today .wizard__panel { display: flex; flex-direction: column; gap: 16px; min-inline-size: 0; padding: 24px; border-radius: var(--radius-dialog); background: var(--panel-surface); box-shadow: var(--shadow); align-self: start; }
+.today .wizard__title { margin: 0; font-size: var(--type-title); font-weight: 600; line-height: 1.3; }
+.today .wizard__content { display: flex; flex-direction: column; gap: 16px; min-inline-size: 0; }
+.today .wizard__footer { display: flex; justify-content: flex-end; gap: 8px; padding-block-start: 8px; }
+.today .wizard__footer:empty { display: none; }
+.today .wizard-hint { margin: 0; font-size: var(--type-small); line-height: 1.5; color: var(--muted); }
+.today .wizard-done { display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--success-bg); color: var(--success-fg); font-size: var(--type-base); }
+.today .wizard-quiet { padding: 0; border: 0; background: none; color: var(--link); font-size: var(--type-small); text-decoration: underline; align-self: flex-start; }
+.today .wizard-form { display: flex; flex-direction: column; gap: 16px; max-inline-size: 560px; }
+.today .wizard-points { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.today .wizard-points > legend { grid-column: 1 / -1; }
+.today .wizard-card { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--control-line); border-radius: var(--radius-panel); background: var(--surface-input); cursor: pointer; }
+.today .wizard-card:hover { background: linear-gradient(var(--hover) 0 0), var(--surface-input); }
+.today .wizard-card:has(input:checked) { border-color: var(--primary); background: var(--current); }
+.today .wizard-card:has(input:focus-visible) { outline: var(--focus-ring); outline-offset: 2px; }
+.today .wizard-card input { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
+.today .wizard-card__label { font-size: var(--type-base); font-weight: 600; }
+.today .wizard-progress { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: var(--type-base); }
+.today .wizard-progress__item { padding-inline-start: 22px; position: relative; }
+.today .wizard-progress__item::before { content: ""; position: absolute; inset-inline-start: 2px; inset-block-start: 5px; inline-size: 10px; block-size: 10px; border-radius: 50%; border: 2px solid var(--primary); }
+.today .wizard-progress__item.is-done { color: var(--muted); }
+.today .wizard-progress__item.is-done::before { background: var(--primary); }
+.today .wizard-progress__item.is-later { color: var(--muted); }
+.today .wizard-progress__item.is-later::before { border-color: var(--control-line); }
+.today .wizard__panel--celebrate { align-items: center; gap: 12px; text-align: center; }
+.today .wizard__panel--celebrate .wizard__title { font-size: var(--type-heading); }
+.today .wizard-celebrate__mark { display: grid; place-items: center; inline-size: 64px; block-size: 64px; border-radius: 50%; background: var(--current); color: var(--primary); }
+.today .wizard-celebrate__name { margin: 0; font-size: var(--type-title); font-weight: 600; }
+.today .wizard-celebrate__open { align-self: center; min-inline-size: 200px; margin-block-start: 8px; font-size: var(--type-title); }
+@media (max-width: 720px) {
+  .today .wizard__top { padding: 12px 16px; }
+  .today .wizard__compact { display: block; }
+  .today .wizard__body { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 16px 16px 40px; }
+  .today .wizard__aside { display: none; }
+  .today .wizard__panel { padding: 16px; }
+  .today .wizard-points { grid-template-columns: minmax(0, 1fr); }
+  .today .wizard__footer { justify-content: space-between; }
+}
+/* Checklist: setup-checklist.css, dropdown.css */
+.today .setup-pill { display: inline-flex; align-items: center; gap: 6px; min-block-size: var(--size-control); padding: 4px 12px; border: 0; border-radius: 999px; background: var(--current); color: var(--text); font-size: var(--type-small); font-weight: 600; white-space: nowrap; }
+.today .setup-pill:hover { background: color-mix(in oklch, var(--primary) 24%, transparent); }
+.today .setup-pill[aria-expanded="true"] { background: var(--pressed); color: var(--on-pressed); }
+.today.is-complete .setup-pill { background: var(--success-bg); color: var(--success-fg); }
+.today .setup-panel { position: absolute; z-index: 3; inset-block-start: 50px; inset-inline-end: 12px; inline-size: min(360px, calc(100% - 24px)); padding: 10px; border-radius: var(--radius-panel); background: var(--panel-surface); box-shadow: var(--shadow); }
+.today .setup-panel__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.today .setup-panel__title { margin: 0; font-size: var(--type-title); font-weight: 600; }
+.today .setup-panel__dismiss { display: grid; place-items: center; inline-size: 28px; block-size: 28px; border: 0; border-radius: var(--radius); background: none; color: var(--muted); }
+.today .setup-panel__dismiss:hover { background: var(--hover); color: var(--text); }
+.today .setup-panel__summary { margin: 2px 0 8px; font-size: var(--type-small); color: var(--muted); }
+.today .setup-panel__bar { block-size: 4px; margin-block-end: 8px; border-radius: 2px; background: var(--hover); overflow: hidden; }
+.today .setup-panel__bar-fill { display: block; block-size: 100%; background: var(--primary); transition: inline-size 0.2s ease-out; }
+@media (prefers-reduced-motion: reduce) { .today .setup-panel__bar-fill { transition: none; } }
+.today .setup-panel__complete { display: flex; align-items: center; gap: 6px; margin: 6px 0 10px; font-size: var(--type-base); font-weight: 600; color: var(--success-fg); }
+.today .setup-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.today .setup-item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 4px 10px; align-items: start; padding: 8px 6px; border-radius: var(--radius); }
+.today .setup-item__mark { display: grid; place-items: center; inline-size: 18px; block-size: 18px; margin-block-start: 1px; border: 1.5px solid var(--muted); border-radius: 50%; }
+.today .setup-item.is-done .setup-item__mark { border-color: var(--color-success); background: var(--color-success); color: var(--on-primary); }
+.today .setup-item__body { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
+.today .setup-item__title { font-size: var(--type-base); font-weight: 600; }
+.today .setup-item.is-done .setup-item__title { color: var(--muted); font-weight: 500; }
+.today .setup-item__optional { margin-inline-start: 6px; font-size: var(--type-small); font-weight: 400; color: var(--muted); }
+.today .setup-item__text { font-size: var(--type-small); line-height: 1.4; color: var(--muted); }
+.today .setup-item.is-done .setup-item__text { display: none; }
+.today .setup-item__action { padding: 4px 10px; white-space: nowrap; }
+.today .setup-detail { grid-column: 2 / -1; padding-block-start: 6px; }
+.today .setup-form { display: flex; align-items: end; gap: 8px; }
+.today .setup-form .onboard-field { flex: 1; }
+.today .setup-form__message { min-block-size: 1em; margin: 6px 0 0; font-size: var(--type-small); color: var(--muted); }
+@media (max-width: 650px) {
+  .today .setup-item { grid-template-columns: 18px minmax(0, 1fr); }
+  .today .setup-item__action { grid-column: 2; justify-self: start; }
+  .today .setup-form { flex-direction: column; align-items: stretch; }
+}
+
+/* =====================  AFTER: catalogue parts  ===================== */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  .p-press:active:not(:disabled) { scale: 0.97; }
+}
+.after :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+/* Button (file 10): primary, secondary, quiet; sizes compact and control; pill shape for the checklist */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: var(--size-control); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; text-decoration: none; color: var(--text); }
+.p-button[data-size="compact"] { min-block-size: var(--size-compact); padding-inline: var(--space-xs); }
+.p-button[data-width="full"] { inline-size: 100%; }
+.p-button[data-tone="primary"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-button[data-tone="quiet"] { background: transparent; box-shadow: none; color: var(--link); }
+.p-button[data-shape="pill"] { border-radius: var(--radius-full); background: var(--current); box-shadow: none; font-size: var(--type-small); }
+.p-button[data-shape="pill"][aria-expanded="true"] { background: var(--primary); color: var(--on-primary); }
+.p-button[data-shape="pill"][data-state="done"] { background: var(--success-bg); color: var(--success-fg); }
+.p-button:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.p-button[data-tone="primary"]:active:not(:disabled) { background: var(--primary-hover); }
+.p-button[data-tone="quiet"]:active:not(:disabled) { background: var(--hover); }
+.p-button:disabled { background: var(--surface-subtle); color: var(--muted); box-shadow: none; cursor: default; }
+@media (hover: hover) and (pointer: fine) {
+  .p-button:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .p-button[data-tone="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
+  .p-button[data-tone="quiet"]:hover:not(:disabled) { background: var(--hover); }
+  .p-button[data-shape="pill"]:hover:not(:disabled, [aria-expanded="true"]) { background: color-mix(in oklch, var(--primary) 24%, transparent); }
+}
+/* Icon button (file 10) */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.p-icon-button[data-size="compact"] { inline-size: var(--size-compact); block-size: var(--size-compact); }
+.p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Field and select (file 10), boxed look; label above */
+.p-label { display: grid; gap: var(--space-3xs); min-inline-size: 0; }
+.p-label > span:first-child, .p-group > legend { padding: 0; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.p-field, .p-select { inline-size: 100%; min-inline-size: 0; block-size: var(--size-control); padding-inline: var(--space-xs); border: 0; border-radius: var(--radius); background: var(--surface-input); box-shadow: inset 0 0 0 1px var(--control-line); caret-color: var(--primary); color: var(--text); }
+.p-field:focus { outline: none; box-shadow: inset 0 0 0 1px var(--control-line), inset 0 -2px 0 var(--primary); }
+@media (prefers-reduced-motion: no-preference) { .p-field { transition: box-shadow var(--dur-hover) var(--ease-out); } }
+.p-hint { margin: 0; font-size: var(--type-small); color: var(--muted); }
+/* Option: the one list row with a radio (L3), and a tile choice with a picture */
+.p-group { display: grid; gap: var(--space-4xs); min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.p-group > legend { margin-block-end: var(--space-3xs); }
+.p-option { display: flex; align-items: start; gap: var(--space-xs); min-block-size: var(--size-control); padding: var(--space-2xs) var(--space-xs); border-radius: var(--radius); cursor: pointer; }
+.p-option:has(input:checked) { background: var(--current); }
+.p-option:has(input:focus-visible) { outline: var(--focus-ring); outline-offset: -2px; }
+.p-option:active { background: var(--current); }
+.p-option input { margin: 3px 0 0; accent-color: var(--primary); }
+.p-option span { display: grid; gap: var(--space-4xs); }
+.p-option b { font-weight: 600; }
+@media (hover: hover) and (pointer: fine) { .p-option:hover:not(:has(input:checked)) { background: var(--hover); } }
+.p-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: var(--space-s); }
+.p-tiles > legend { grid-column: 1 / -1; }
+.p-tile { position: relative; display: grid; gap: var(--space-2xs); padding: var(--space-xs); border: 1px solid var(--control-line); border-radius: var(--radius-panel); background: var(--surface-input); cursor: pointer; }
+.p-tile:has(input:checked) { border-color: var(--primary); background: var(--current); }
+.p-tile:has(input:focus-visible) { outline: var(--focus-ring); outline-offset: 2px; }
+.p-tile input { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.p-tile b { font-weight: 600; }
+@media (prefers-reduced-motion: no-preference) { .p-tile { transition: background-color var(--dur-hover) var(--ease-out), border-color var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); } .p-tile:active { scale: 0.98; } }
+@media (hover: hover) and (pointer: fine) { .p-tile:hover:not(:has(input:checked)) { background: linear-gradient(var(--hover) 0 0), var(--surface-input); } }
+/* Panel: the one raised card (login card, Get started cards, wizard panel) */
+.p-panel { display: grid; gap: var(--space-s); align-content: start; min-inline-size: 0; padding: var(--space-l); border-radius: var(--radius-dialog); background: var(--panel-surface); }
+.p-panel[data-raised] { box-shadow: var(--shadow); }
+.p-panel h2, .p-panel h3 { margin: 0; font-size: var(--type-title); display: flex; align-items: center; gap: var(--space-2xs); }
+.p-panel p { margin: 0; }
+.p-text { color: var(--muted); }
+.p-row { display: flex; gap: var(--space-xs); flex-wrap: wrap; align-items: center; }
+.p-row[data-end] { justify-content: end; }
+/* Spinner and progress (file 10) */
+.p-spinner { inline-size: 16px; block-size: 16px; border: 2px solid var(--control-line); border-block-start-color: var(--primary); border-radius: 50%; animation: spin 0.9s linear infinite; flex: none; }
+@media (prefers-reduced-motion: reduce) { .p-spinner { animation-duration: 2.4s; } }
+.p-progress { block-size: 6px; border-radius: var(--radius-full); background: var(--control-line); overflow: clip; }
+.p-progress > i { display: block; block-size: 100%; border-radius: inherit; background: var(--primary); }
+@media (prefers-reduced-motion: no-preference) { .p-progress > i { transition: inline-size var(--dur-menu) var(--ease-out); } }
+.p-steps { display: grid; gap: var(--space-2xs); margin: 0; padding: 0; list-style: none; }
+.p-steps li { display: flex; align-items: center; gap: var(--space-xs); color: var(--muted); }
+.p-steps li[aria-current="step"] { color: var(--text); font-weight: 600; }
+/* Notice (file 10) with a success tone */
+.p-notice { display: flex; gap: var(--space-xs); align-items: center; padding: var(--space-xs) var(--space-s); border-radius: var(--radius-panel); background: var(--warning-bg); color: var(--warning-fg); }
+.p-notice[data-tone="success"] { background: var(--success-bg); color: var(--success-fg); }
+.p-notice p { margin: 0; }
+/* Step list: the one list row; the mark is a badge part with a number or a check */
+.p-stepper { display: grid; gap: var(--space-4xs); margin: 0; padding: 0; list-style: none; align-content: start; }
+.p-stepper li { display: flex; align-items: center; gap: var(--space-s); min-block-size: var(--size-control); padding-inline: var(--space-xs); border-radius: var(--radius); color: var(--muted); }
+.p-stepper li[aria-current="step"] { background: var(--current); color: var(--text); font-weight: 600; }
+.p-mark { display: inline-grid; place-items: center; flex: none; inline-size: var(--size-icon); block-size: var(--size-icon); border-radius: var(--radius-full); box-shadow: inset 0 0 0 1px var(--control-line); font-size: var(--type-small); font-weight: 600; }
+.p-mark[data-small] { inline-size: 18px; block-size: 18px; }
+[aria-current="step"] > .p-mark, .p-mark[data-tone="action"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-mark[data-tone="success"] { background: var(--success-bg); color: var(--success-fg); box-shadow: none; }
+/* Menu panel (file 10) for the checklist */
+.p-menu { position: absolute; z-index: 3; inset-block-start: 50px; inset-inline-end: var(--space-s); inline-size: min(360px, 100% - 2 * var(--space-s)); padding: var(--space-xs); border-radius: var(--radius-panel); background: var(--panel-surface); box-shadow: var(--shadow); display: grid; gap: var(--space-xs); }
+@media (prefers-reduced-motion: no-preference) { .p-menu { animation: p-menu-in var(--dur-menu) var(--ease-out); } }
+@keyframes p-menu-in { from { opacity: 0; translate: 0 -4px; } }
+.p-menu-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); }
+.p-menu-head h3 { margin: 0; font-size: var(--type-title); }
+.p-check-list { display: grid; gap: var(--space-4xs); margin: 0; padding: 0; list-style: none; }
+.p-check-item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: var(--space-3xs) var(--space-s); align-items: start; padding: var(--space-xs) var(--space-2xs); border-radius: var(--radius); }
+.p-check-item > div { display: grid; gap: var(--space-4xs); min-inline-size: 0; }
+.p-check-item b { font-weight: 600; }
+.p-check-item small { color: var(--muted); font-size: var(--type-small); }
+.p-check-item[data-done] b { color: var(--muted); font-weight: 500; }
+.p-check-item[data-done] small { display: none; }
+.p-check-item .detail { grid-column: 2 / -1; }
+/* Layouts follow their own box's width (were screen-width rules at 650 and 720 px) */
+.p-get-started { max-inline-size: 880px; margin: 0 auto; padding: var(--space-l) var(--space-l) var(--space-l); display: grid; gap: var(--space-m); }
+.p-get-started h1 { font-size: var(--type-heading); margin: var(--space-xs) 0 0; }
+.p-get-started .lead { max-inline-size: 560px; font-size: var(--type-title); line-height: 1.6; margin: 0; }
+.p-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: var(--space-m); align-items: start; }
+.p-wizard { display: grid; min-block-size: 34rem; align-content: start; }
+.p-wizard-top { display: flex; align-items: center; justify-content: space-between; padding: var(--space-m) var(--space-l); }
+.p-wizard-top > span { display: inline-flex; align-items: center; gap: var(--space-xs); font-weight: 600; }
+.p-wizard-top .brand-mark { inline-size: var(--size-compact); block-size: var(--size-compact); border-radius: var(--radius); font-size: var(--type-title); }
+.p-wizard-compact { display: none; margin: 0; padding-inline: var(--space-l); color: var(--muted); }
+.p-wizard-compact strong { color: var(--text); }
+.p-wizard-body { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: var(--space-l); inline-size: min(100%, 1040px); margin-inline: auto; padding: var(--space-l) var(--space-l) var(--space-l); }
+.p-celebrate { justify-items: center; text-align: center; }
+.p-celebrate h2 { font-size: var(--type-heading); }
+.p-celebrate .big { display: grid; place-items: center; inline-size: 64px; block-size: 64px; border-radius: var(--radius-full); background: var(--current); color: var(--primary); }
+.p-sign-in { min-block-size: 26rem; display: grid; place-items: center; padding: var(--space-l) var(--space-m); }
+.p-sign-in .p-panel { inline-size: min(100%, 360px); justify-items: stretch; text-align: center; }
+.p-sign-in .brand { display: flex; gap: var(--space-s); align-items: center; justify-content: center; font-size: var(--type-title); white-space: nowrap; color: inherit; text-decoration: none; }
+.p-sign-in .brand-mark { inline-size: var(--size-control); block-size: var(--size-control); border-radius: var(--radius); font-size: var(--type-title); }
+.p-sign-in h1 { font-size: var(--type-title); margin: 0; }
+.p-sign-in .action { min-block-size: calc(var(--size-control) + 20px); display: grid; justify-items: center; align-content: start; gap: var(--space-4xs); }
+.p-sign-in .busy { display: flex; align-items: center; justify-content: center; gap: var(--space-xs); min-block-size: var(--size-control); color: var(--muted); font-size: var(--type-small); margin: 0; }
+@container screen (inline-size < 45rem) {
+  .p-get-started { padding: var(--space-l) var(--space-m); }
+  .p-wizard-top { padding: var(--space-s) var(--space-m); }
+  .p-wizard-compact { display: block; padding-inline: var(--space-m); }
+  .p-wizard-body { grid-template-columns: minmax(0, 1fr); gap: var(--space-m); padding: var(--space-m); }
+  .p-wizard-body > nav { display: none; }
+  .p-wizard-body .p-panel { padding: var(--space-m); }
+  .p-sign-in .p-panel { padding: var(--space-l) var(--space-m); }
+  .p-check-item { grid-template-columns: 18px minmax(0, 1fr); }
+  .p-check-item > .p-button { grid-column: 2; justify-self: start; }
+}
+.fill-row { display: flex; align-items: end; gap: var(--space-xs); flex-wrap: wrap; }
+.fill-row > label { flex: 1 1 10rem; }
+.art { position: relative; display: block; block-size: 64px; border-radius: var(--radius); background: var(--surface); overflow: clip; }
+.art i { position: absolute; display: block; border-radius: var(--radius-small); background: var(--control-line); }
+.art .a { inset: 6px 8px auto 8px; block-size: 6px; }
+.art.starter .b { inset: 18px 8px auto 8px; block-size: 16px; background: var(--primary); opacity: 0.55; }
+.art.starter .c { inset-inline-start: 8px; inset-block-start: 40px; inline-size: 28%; block-size: 16px; }
+.art.starter .d { inset-inline-end: 8px; inset-block-start: 40px; inline-size: 28%; block-size: 16px; }
+.art.blank .b { inset-inline-start: 8px; inset-block-start: 24px; inline-size: 50%; block-size: 8px; background: var(--primary); opacity: 0.55; }
+.art.blank .c { inset-inline-start: 8px; inset-block-start: 38px; inline-size: 70%; block-size: 5px; }
+.art.blank .d { display: none; }
+</style>
+</head>
+<body data-mode="after">
+<main>
+  <header>
+    <h1>Sign in, Get started, Setup wizard and checklist <span class="tag">mock-up for Tuesday 10 Nov</span></h1>
+    <p class="intro">The screens a new person meets: signing in with GitHub, creating or choosing a site, the three-step Setup wizard, and the small Set up your site checklist in the top bar. What they do stays the same. After rebuilds them from the approved parts, so their buttons, cards, choices and progress look like the rest of the editor.</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+  </div>
+  <p class="summary today">Today: each screen draws its own links, close buttons, choice cards, progress and “done” line.</p>
+  <p class="summary after">After: 7 own button looks become the 1 button and 1 icon button · 2 choice cards become 1 · 2 progress looks become 1 · 2 “done” lines become the notice · 8 odd gaps snap to the shared spacing · hover only with a mouse · the checklist pill says “Set up” with no count.</p>
+
+  <section class="demo" aria-labelledby="demo-title">
+    <h2 id="demo-title">Demo steps (not part of the editor). Each one jumps to its screen.</h2>
+    <div class="steps">
+      <button type="button" data-step="signin">1 · Continue with GitHub</button>
+      <button type="button" data-step="signcancel">2 · Use the button instead</button>
+      <button type="button" data-step="private">3 · Choose Private</button>
+      <button type="button" data-step="create">4 · Create repository</button>
+      <button type="button" data-step="blank">5 · Wizard: Blank page</button>
+      <button type="button" data-step="wizcreate">6 · Create site</button>
+      <button type="button" data-step="checkopen">7 · Open the checklist</button>
+      <button type="button" data-step="nameit">8 · Name it</button>
+      <button type="button" data-step="savename">9 · Save name</button>
+    </div>
+  </section>
+
+  <div class="cards">
+    <article class="card" id="card-signin"><h2>Sign in</h2><div class="screen" id="signin"></div>
+      <ul class="changes after"><li>one panel part</li><li>spinner and link from the parts</li></ul></article>
+    <article class="card" id="card-check"><h2>Set up your site checklist</h2><div class="screen check-stage" id="check"></div>
+      <ul class="changes after"><li>pill is the button part, no count</li><li>bar is the progress part</li><li>items’ buttons from the parts</li></ul></article>
+    <article class="card wide" id="card-get"><h2>Get started</h2><div class="screen" id="get"></div>
+      <ul class="changes after"><li>cards are the panel part</li><li>options are the one list row</li><li>columns follow the box’s width</li></ul></article>
+    <article class="card wide" id="card-wiz"><h2>Setup wizard</h2><div class="screen" id="wiz"></div>
+      <ul class="changes after"><li>steps are the one list row</li><li>close is the icon button</li><li>choice cards are the tile part</li><li>“done” line is the notice</li></ul></article>
+  </div>
+</main>
+
+<script>
+const ICONS = {
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  check: '<path d="m5 12 5 5 9-10"/>',
+  sparkle: '<path d="M12 3c.6 4.3 2.7 6.4 7 7-4.3.6-6.4 2.7-7 7-.6-4.3-2.7-6.4-7-7 4.3-.6 6.4-2.7 7-7Z"/>',
+  github: '<path d="M9 19c-4 1.4-4-2-6-2.5M15 21v-3.5a3 3 0 0 0-.9-2.3c2.9-.3 6-1.4 6-6.4a5 5 0 0 0-1.4-3.5 4.6 4.6 0 0 0-.1-3.5s-1.1-.3-3.6 1.4a12.4 12.4 0 0 0-6.5 0C6 1.5 4.9 1.8 4.9 1.8a4.6 4.6 0 0 0-.1 3.5 5 5 0 0 0-1.4 3.5c0 5 3.1 6.1 6 6.4a3 3 0 0 0-.9 2.3V21"/>',
+  rocket: '<path d="M5 15c-1.5 1.5-2 5-2 5s3.5-.5 5-2M9 15l-3-3 4-6c3-4 8-4 11-4 0 3 0 8-4 11l-6 4z"/><circle cx="15" cy="9" r="1.5"/>',
+};
+const icon = (n, s = 16) => `<svg class="icon" style="inline-size:${s}px;block-size:${s}px" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
+const brand = '<span class="brand-mark">n<span>✦</span></span>';
+const S = { signin: "ready", visibility: "public", gsMessage: "", point: "starter", wizStep: 2, progress: null, checkOpen: false, nameOpen: false, nameMsg: "", named: false };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const both = (fn) => ({ today: fn("today"), after: fn("after") });
+function put(id, html) { document.getElementById(id).innerHTML = `<div class="today ${html.todayClass || ""}">${html.today}</div><div class="after">${html.after}</div>`; }
+
+function renderSignin() {
+  const busy = S.signin === "auto";
+  put("signin", {
+    todayClass: "login-page",
+    today: `<main class="login-card" aria-labelledby="t-login"><a class="brand login-brand" href="#" aria-label="Native Site Editor home">${brand}<span>Native <strong>Site Editor</strong></span></a><h1 id="t-login">Welcome to Native Site Editor</h1>
+      <div class="login-action">${busy ? `<p class="login-state login-busy" role="status"><span class="login-spinner" aria-hidden="true"></span><span>Signing you in with GitHub…</span></p><button type="button" class="text-link login-cancel" data-act="signcancel">Use the button instead</button>` : `<a class="button primary login-button login-signin" href="#" data-act="signin">Continue with GitHub</a>`}</div></main>`,
+    after: `<div class="p-sign-in"><main class="p-panel" data-raised aria-labelledby="a-login"><a class="brand" href="#" aria-label="Native Site Editor home">${brand}<span>Native <strong>Site Editor</strong></span></a><h1 id="a-login">Welcome to Native Site Editor</h1>
+      <div class="action">${busy ? `<p class="busy" role="status"><span class="p-spinner" aria-hidden="true"></span>Signing you in with GitHub…</p><button type="button" class="p-button p-press" data-tone="quiet" data-size="compact" data-act="signcancel">Use the button instead</button>` : `<a class="p-button p-press" data-tone="primary" data-width="full" href="#" data-act="signin">Continue with GitHub</a>`}</div></main></div>`,
+  });
+}
+
+function renderGet() {
+  const opt = (m, name, value, label, hint) => {
+    const checked = (name === "visibility" ? S.visibility : "starter") === value ? "checked" : "";
+    return m === "today"
+      ? `<label class="onboard-option"><input type="radio" name="t-${name}" value="${value}" ${checked} data-radio="${name}"><span class="onboard-option__text"><span class="onboard-option__label">${label}</span><span class="onboard-option__hint">${hint}</span></span></label>`
+      : `<label class="p-option"><input type="radio" name="a-${name}" value="${value}" ${checked} data-radio="${name}"><span><b>${label}</b><small class="p-hint">${hint}</small></span></label>`;
+  };
+  const t = "today", a = "after";
+  put("get", {
+    todayClass: "get-started",
+    today: `<h1>Get started</h1><div class="intro-label">Signed in as lex</div><p class="intro">A site lives in a GitHub repository: its files are the site, and the editor saves your changes there. Create one for a new site, or use one you have.</p>
+      <div class="get-started__columns">
+        <form class="onboard-card" onsubmit="return false"><h2 class="onboard-card__title">Create a site</h2>
+          <label class="onboard-field"><span class="onboard-field__label">Repository name</span><input class="onboard-input" value="my-site"><span class="onboard-field__hint">github.com/lex/my-site</span></label>
+          <fieldset class="onboard-group"><legend>Visibility</legend>${opt(t, "visibility", "public", "Public", "Anyone can see the files; most free hosts need this.")}${opt(t, "visibility", "private", "Private", "Only you and people you invite.")}</fieldset>
+          <fieldset class="onboard-group"><legend>Start from</legend>${opt(t, "point", "starter", "Starter site", "A small studio site with pages, components and styles to make your own.")}${opt(t, "point", "blank", "Blank page", "One page and a stylesheet.")}</fieldset>
+          <div><button type="button" class="button primary" data-act="create">Create repository</button></div><p class="onboard-message" role="status">${S.gsMessage}</p></form>
+        <div class="onboard-card"><h2 class="onboard-card__title">Use a repository you have</h2><p class="onboard-card__text">Choose repositories on your GitHub account, or an organisation you belong to, for the editor. A repository with index.html at its top opens as a site; one without starts from the Starter site.</p>
+          <div class="actions"><a class="button primary" href="#">Give the editor access</a><button type="button" class="button secondary">Reload repositories</button></div><p class="onboard-card__note">Coming back to this tab lists them.</p></div>
+      </div>`,
+    after: `<div class="p-get-started"><div><h1>Get started</h1><p class="p-text">Signed in as lex</p></div><p class="lead">A site lives in a GitHub repository: its files are the site, and the editor saves your changes there. Create one for a new site, or use one you have.</p>
+      <div class="p-columns">
+        <form class="p-panel" onsubmit="return false"><h2>Create a site</h2>
+          <label class="p-label"><span>Repository name</span><input class="p-field" value="my-site"><span class="p-hint">github.com/lex/my-site</span></label>
+          <fieldset class="p-group"><legend>Visibility</legend>${opt(a, "visibility", "public", "Public", "Anyone can see the files; most free hosts need this.")}${opt(a, "visibility", "private", "Private", "Only you and people you invite.")}</fieldset>
+          <fieldset class="p-group"><legend>Start from</legend>${opt(a, "point", "starter", "Starter site", "A small studio site with pages, components and styles to make your own.")}${opt(a, "point", "blank", "Blank page", "One page and a stylesheet.")}</fieldset>
+          <div class="p-row"><button type="button" class="p-button p-press" data-tone="primary" data-act="create" ${S.gsMessage.startsWith("Creating") ? "disabled" : ""}>${S.gsMessage.startsWith("Creating") ? '<span class="p-spinner" aria-hidden="true"></span>' : ""}Create repository</button><p class="p-hint" role="status">${S.gsMessage}</p></div></form>
+        <div class="p-panel"><h2>Use a repository you have</h2><p class="p-text">Choose repositories on your GitHub account, or an organisation you belong to, for the editor. A repository with index.html at its top opens as a site; one without starts from the Starter site.</p>
+          <div class="p-row"><a class="p-button p-press" data-tone="primary" href="#">Give the editor access</a><button type="button" class="p-button p-press">Reload repositories</button></div><p class="p-hint">Coming back to this tab lists them.</p></div>
+      </div></div>`,
+  });
+}
+
+const WSTEPS = ["Connect GitHub", "Create your site", "Your site is ready"];
+function renderWiz() {
+  const step = S.wizStep;
+  const lines = [["Creating the repository…", "creating"], [`Adding ${S.point === "starter" ? "the Starter site" : "a blank page"}…`, "adding"], ["Done", "done"]];
+  const order = ["creating", "adding", "done"];
+  const progress = (m) => {
+    if (!S.progress) return "";
+    const at = order.indexOf(S.progress);
+    if (m === "today") return `<ol class="wizard-progress">${lines.map(([text, id], i) => `<li class="wizard-progress__item ${i < at || S.progress === "done" ? "is-done" : ""} ${i > at ? "is-later" : ""}" ${i === at && S.progress !== "done" ? 'aria-current="step"' : ""}>${text}</li>`).join("")}</ol>`;
+    return `<ol class="p-steps">${lines.map(([text], i) => { const done = i < at || S.progress === "done"; const now = i === at && S.progress !== "done"; return `<li ${now ? 'aria-current="step"' : ""}>${done ? `<span class="p-mark" data-small data-tone="success">${icon("check", 12)}</span>` : now ? '<span class="p-spinner" style="inline-size:18px;block-size:18px"></span>' : '<span class="p-mark" data-small></span>'}${text}</li>`; }).join("")}</ol>`;
+  };
+  const stepper = (m) => WSTEPS.map((title, i) => {
+    const n = i + 1, cur = n === step, done = n < step;
+    return m === "today"
+      ? `<li class="wizard__step ${done ? "is-done" : ""}" ${cur ? 'aria-current="step"' : ""}><span class="wizard__badge">${done ? icon("check", 12) : n}</span><span>${title}</span></li>`
+      : `<li ${cur ? 'aria-current="step"' : ""}><span class="p-mark" ${done ? 'data-tone="success"' : ""}>${done ? icon("check", 12) : n}</span><span>${title}</span></li>`;
+  }).join("");
+  const card = (m, value, label, hint) => m === "today"
+    ? `<label class="wizard-card"><input type="radio" name="t-wpoint" value="${value}" ${S.point === value ? "checked" : ""} data-radio="point"><span class="wizard-card__art art ${value}"><i class="a"></i><i class="b"></i><i class="c"></i><i class="d"></i></span><span class="wizard-card__label">${label}</span><span class="wizard-hint">${hint}</span></label>`
+    : `<label class="p-tile"><input type="radio" name="a-wpoint" value="${value}" ${S.point === value ? "checked" : ""} data-radio="point"><span class="art ${value}"><i class="a"></i><i class="b"></i><i class="c"></i><i class="d"></i></span><b>${label}</b><span class="p-hint">${hint}</span></label>`;
+  const busy = S.progress && S.progress !== "done";
+  const createT = `<div class="wizard-done">${icon("check")} GitHub is connected as lex. The editor can create and change your site's repository.</div>
+    <form class="wizard-form" onsubmit="return false"><label class="onboard-field"><span class="onboard-field__label">Repository name</span><input class="onboard-input" value="bakery-bloom"><span class="onboard-field__hint">github.com/lex/bakery-bloom</span></label>
+      <fieldset class="onboard-group wizard-points"><legend>Start from</legend>${card("today", "starter", "Starter site", "Pages, components and styles to make your own.")}${card("today", "blank", "Blank page", "One page and a stylesheet.")}</fieldset>
+      ${progress("today")}</form><button type="button" class="wizard-quiet">Do this with an agent</button>`;
+  const createA = `<div class="p-notice" data-tone="success">${icon("check")}<p>GitHub is connected as lex. The editor can create and change your site's repository.</p></div>
+    <form class="p-panel" style="padding:0;background:none;max-inline-size:560px" onsubmit="return false"><label class="p-label"><span>Repository name</span><input class="p-field" value="bakery-bloom"><span class="p-hint">github.com/lex/bakery-bloom</span></label>
+      <fieldset class="p-group p-tiles"><legend>Start from</legend>${card("after", "starter", "Starter site", "Pages, components and styles to make your own.")}${card("after", "blank", "Blank page", "One page and a stylesheet.")}</fieldset>
+      ${progress("after")}</form><div><button type="button" class="p-button p-press" data-tone="quiet" data-size="compact">Do this with an agent</button></div>`;
+  const readyT = `<span class="wizard-celebrate__mark">${icon("rocket", 28)}</span><h1 class="wizard__title">Your site is ready</h1><p class="wizard-celebrate__name">bakery-bloom</p><p class="wizard-hint">Created github.com/lex/bakery-bloom with your starting point as its first commit.</p><button type="button" class="button primary wizard-celebrate__open">Open the editor</button>`;
+  const readyA = `<span class="big">${icon("rocket", 28)}</span><h2>Your site is ready</h2><p style="font-weight:600;font-size:var(--type-title)">bakery-bloom</p><p class="p-hint">Created github.com/lex/bakery-bloom with your starting point as its first commit.</p><button type="button" class="p-button p-press" data-tone="primary" style="min-inline-size:200px">Open the editor</button>`;
+  const ready = step === 3;
+  put("wiz", {
+    todayClass: "wizard",
+    today: `<header class="wizard__top"><span class="wizard__brand">${brand}<span>Native Site Editor</span></span><button type="button" class="wizard__exit" aria-label="Leave setup">${icon("x")}</button></header>
+      <p class="wizard__compact"><strong>Step ${step} of 3</strong> · ${WSTEPS[step - 1]}</p>
+      <div class="wizard__body"><nav class="wizard__aside" aria-label="Setup steps"><ol class="wizard__steps">${stepper("today")}</ol></nav>
+        <div class="wizard__panel ${ready ? "wizard__panel--celebrate" : ""}">${ready ? readyT : `<h1 class="wizard__title">Create your site</h1><div class="wizard__content">${createT}</div><div class="wizard__footer"><button type="button" class="button secondary" data-act="wizback">Back</button><button type="button" class="button primary" data-act="wizcreate" ${busy ? "disabled" : ""}>Create site</button></div>`}</div></div>`,
+    after: `<div class="p-wizard"><header class="p-wizard-top"><span>${brand}Native Site Editor</span><button type="button" class="p-icon-button p-press" aria-label="Leave setup">${icon("x")}</button></header>
+      <p class="p-wizard-compact"><strong>Step ${step} of 3</strong> · ${WSTEPS[step - 1]}</p>
+      <div class="p-wizard-body"><nav aria-label="Setup steps"><ol class="p-stepper">${stepper("after")}</ol></nav>
+        <div class="p-panel ${ready ? "p-celebrate" : ""}" data-raised>${ready ? readyA : `<h2>Create your site</h2>${createA}<div class="p-row" data-end><button type="button" class="p-button p-press" data-act="wizback">Back</button><button type="button" class="p-button p-press" data-tone="primary" data-act="wizcreate" ${busy ? "disabled" : ""}>${busy ? '<span class="p-spinner" aria-hidden="true"></span>' : ""}Create site</button></div>`}</div></div></div>`,
+  });
+}
+
+const ITEMS = [
+  { id: "start", title: "Start your site", text: "Add a first page from the Starter site or a blank page.", action: "Choose a start" },
+  { id: "save", title: "Publish", text: "Keep your first version in the repository.", action: "Open Publish" },
+  { id: "name", title: "Name your site", text: "The name the editor uses for your site and its page details.", action: "Name it" },
+  { id: "agent", title: "Connect an agent", text: "Let Claude, Codex or another agent work on the site as drafts.", action: "Connect", optional: true },
+];
+function renderCheck() {
+  const done = { start: true, save: true, name: S.named, agent: false };
+  const count = ["start", "save", "name"].filter((k) => done[k]).length, total = 3, complete = count === total;
+  const items = (m) => ITEMS.map((it) => {
+    const d = done[it.id];
+    const form = it.id === "name" && S.nameOpen && !d;
+    if (m === "today") return `<li class="setup-item ${d ? "is-done" : ""}"><span class="setup-item__mark">${d ? icon("check", 12) : ""}</span><div class="setup-item__body"><span class="setup-item__title">${it.title}${it.optional ? '<span class="setup-item__optional">Optional</span>' : ""}</span><span class="setup-item__text">${it.text}</span></div>${d ? "" : `<button type="button" class="button secondary setup-item__action" ${it.id === "name" ? 'data-act="nameit"' : ""}>${it.action}</button>`}
+      ${form ? `<div class="setup-detail"><form class="setup-form" onsubmit="return false"><label class="onboard-field"><span class="onboard-field__label">Site name</span><input class="onboard-input" value="Bakery Bloom" data-name></label><button type="button" class="button primary" data-act="savename">Save name</button></form><p class="setup-form__message" role="status">${S.nameMsg}</p></div>` : ""}</li>`;
+    return `<li class="p-check-item" ${d ? "data-done" : ""}><span class="p-mark" data-small ${d ? 'data-tone="success"' : ""}>${d ? icon("check", 12) : ""}</span><div><b>${it.title}${it.optional ? ' <small style="font-weight:400">Optional</small>' : ""}</b><small>${it.text}</small></div>${d ? "" : `<button type="button" class="p-button p-press" data-size="compact" ${it.id === "name" ? 'data-act="nameit"' : ""}>${it.action}</button>`}
+      ${form ? `<div class="detail"><form class="fill-row" onsubmit="return false"><label class="p-label"><span>Site name</span><input class="p-field" value="Bakery Bloom" data-name></label><button type="button" class="p-button p-press" data-tone="primary" data-act="savename">${S.nameMsg.startsWith("Saving") ? '<span class="p-spinner" aria-hidden="true"></span>' : ""}Save name</button></form><p class="p-hint" role="status">${S.nameMsg}</p></div>` : ""}</li>`;
+  }).join("");
+  put("check", {
+    todayClass: complete ? "is-complete" : "",
+    today: `<div class="mini-top"><span class="mark"></span><span class="grow">Bakery Bloom</span><span class="setup-checklist"><button type="button" class="setup-pill" aria-expanded="${S.checkOpen}" data-act="checkopen" aria-label="${complete ? "Set up your site, done" : `Set up your site, ${count} of ${total} done`}">${complete ? icon("check", 14) : ""}<span>${complete ? "Set up" : `Setup ${count}/${total}`}</span></button></span></div><div class="site"></div>
+      ${S.checkOpen ? `<section class="setup-panel" aria-label="Set up your site"><div class="setup-panel__head"><h2 class="setup-panel__title">Set up your site</h2><button type="button" class="setup-panel__dismiss" aria-label="Dismiss the checklist" data-act="checkclose">${icon("x")}</button></div>
+        ${complete ? `<p class="setup-panel__complete">${icon("check", 14)}<span>Your site is set up</span></p>` : `<p class="setup-panel__summary">${count} of ${total} done</p>`}<div class="setup-panel__bar"><span class="setup-panel__bar-fill" style="inline-size:${(count / total) * 100}%"></span></div><ol class="setup-list">${items("today")}</ol></section>` : ""}`,
+    after: `<div class="mini-top"><span class="mark"></span><span class="grow">Bakery Bloom</span><button type="button" class="p-button p-press" data-shape="pill" ${complete ? 'data-state="done"' : ""} aria-expanded="${S.checkOpen}" data-act="checkopen" aria-label="${complete ? "Set up your site, done" : `Set up your site, ${count} of ${total} done`}">${complete ? icon("check", 14) : ""}Set up</button></div><div class="site"></div>
+      ${S.checkOpen ? `<section class="p-menu" aria-label="Set up your site"><div class="p-menu-head"><h3>Set up your site</h3><button type="button" class="p-icon-button p-press" data-size="compact" aria-label="Dismiss the checklist" data-act="checkclose">${icon("x")}</button></div>
+        ${complete ? `<div class="p-notice" data-tone="success">${icon("check", 14)}<p>Your site is set up</p></div>` : `<p class="p-hint">${count} of ${total} done</p>`}<div class="p-progress" role="progressbar" aria-valuenow="${count}" aria-valuemax="${total}" aria-label="Setup progress"><i style="inline-size:${(count / total) * 100}%"></i></div><ol class="p-check-list">${items("after")}</ol></section>` : ""}`,
+  });
+}
+function renderAll() { renderSignin(); renderGet(); renderWiz(); renderCheck(); }
+
+const ACT = {
+  async signin() { S.signin = "auto"; renderSignin(); },
+  signcancel() { S.signin = "ready"; renderSignin(); },
+  private() { S.visibility = "private"; renderGet(); },
+  async create() { if (S.gsMessage.startsWith("Creating")) return; S.gsMessage = "Creating my-site…"; renderGet(); await sleep(1100); S.gsMessage = "Created my-site. Opening it…"; renderGet(); },
+  blank() { S.wizStep = 2; S.progress = null; S.point = "blank"; renderWiz(); },
+  wizback() { S.progress = null; renderWiz(); },
+  async wizcreate() { if (S.progress && S.progress !== "done") return; S.wizStep = 2; for (const p of ["creating", "adding", "done"]) { S.progress = p; renderWiz(); await sleep(700); } S.wizStep = 3; S.progress = null; renderWiz(); },
+  checkopen() { S.checkOpen = !S.checkOpen; renderCheck(); },
+  checkclose() { S.checkOpen = false; renderCheck(); },
+  nameit() { S.checkOpen = true; S.named = false; S.nameOpen = true; S.nameMsg = ""; renderCheck(); },
+  async savename() { if (!S.nameOpen) ACT.nameit(); S.nameMsg = "Saving the name…"; renderCheck(); await sleep(700); S.nameMsg = "Name added as a draft. Publish keeps it."; renderCheck(); await sleep(900); S.named = true; S.nameOpen = false; renderCheck(); },
+};
+document.querySelector(".cards").addEventListener("click", (e) => {
+  const a = e.target.closest("[data-act]"); if (a) { e.preventDefault(); ACT[a.dataset.act](); return; }
+  if (e.target.closest('a[href="#"]')) e.preventDefault();
+});
+document.querySelector(".cards").addEventListener("change", (e) => {
+  const r = e.target.closest("[data-radio]"); if (!r) return;
+  if (r.dataset.radio === "visibility") { S.visibility = r.value; renderGet(); }
+  if (r.dataset.radio === "point") { S.point = r.value; renderWiz(); }
+});
+const CARD = { signin: "card-signin", signcancel: "card-signin", private: "card-get", create: "card-get", blank: "card-wiz", wizcreate: "card-wiz", checkopen: "card-check", nameit: "card-check", savename: "card-check" };
+document.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-step]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  const step = b.dataset.step;
+  document.getElementById(CARD[step]).scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  if (step === "checkopen") { S.checkOpen = true; renderCheck(); } else ACT[step]();
+}));
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+renderAll();
+</script>
+</body>
+</html>

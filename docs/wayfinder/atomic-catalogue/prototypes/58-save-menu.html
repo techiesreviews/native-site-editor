@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 58 Publish menu and Compare changes, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 10 Nov review
+  (kitchen station 3, "Show and tell": a Today / After switch with demo steps).
+  Ticket: docs/wayfinder/atomic-catalogue/build/tickets/58-organism-save-menu.md ("Save menu"; the button reads Publish).
+  Today: the Publish split button, its menu of changes and the Compare changes window. Structure, labels and states
+  from src/components/publish-menu.ts (Publish / Uploading… / Publishing… / Saved / Deploying… / Published /
+  Deploy failed; "All 4 changes · 45 added, 2 removed"; "3 added, 2 removed"; "New file, 42 lines"; "Uploaded,
+  240 KB"; Discard, Restore; "Discard changes"; the refusal and deploy lines; the GitHub | Draft split view and
+  the one-column view on narrow screens), values from src/components/publish-menu.css, src/components/dropdown.css,
+  src/utilities.css and src/style.css (.button, .primary, .secondary, .text-link) and src/theme.css (dev, 2026-10-27).
+  Not matched: in the editor the menu opens when the pointer rests on Publish (a click publishes) and the caret
+  opens it too; here the demo button or the caret opens it. Discard changes asks first in the editor; that
+  question is not drawn here. The deploy's own link text may differ ("View commit ↗" is used throughout).
+  After: the same menu from the approved catalogue parts of 10-first-parts-and-edit-bar.html (button with its
+  tones, badge with words, dialog, notice), shared spacing and motion values. The count on Publish goes, as
+  decided on 25 Oct (ticket 09, item 4; catalogue slice 07).
+-->
+<style>
+/* ---------- Shared values: src/theme.css, light and dark written once with light-dark() ---------- */
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --on-accent: oklch(100% 0 none);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --danger: oklch(from var(--color-success) l c 25);
+  --danger-bg: oklch(from var(--success-bg) l c 25);
+  --danger-fg: oklch(from var(--success-fg) l c 25);
+  --agent-question-strong: oklch(66% 0.18 48);
+  --panel-surface: var(--surface-raised);
+  --pressed: light-dark(var(--primary), var(--color-primary-light));
+  --on-pressed: light-dark(var(--on-primary), var(--color-primary-darkest));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px; --size-tap: 0px;
+  --panel-padding: 6px;
+
+  /* After only: the catalogue's shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+/* src/theme.css: real tap targets on touch screens and narrow editor layouts. */
+@media (hover: none), (pointer: coarse), (width <= 768px) { :root { --size-tap: var(--size-touch); } }
+* { box-sizing: border-box; }
+body { margin: 0; font-size: var(--type-base); -webkit-tap-highlight-color: transparent; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: 0.5; }
+button:focus-visible, a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.ph { inline-size: 16px; block-size: 16px; fill: currentColor; flex: none; display: block; }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+header { display: grid; gap: var(--space-3xs); }
+h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 70ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 5; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; max-inline-size: 75ch; text-wrap: pretty; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+.demo { border: 1.5px dashed var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); }
+.demo h2 { margin: 0; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.demo .steps { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.demo button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 4px 10px; min-block-size: 32px; }
+.demo button[aria-pressed="true"] { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.demo button.reset { color: var(--muted); }
+.stage { border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--background); overflow: clip; min-inline-size: 0; }
+.menus { display: flex; flex-wrap: wrap; gap: var(--space-2xs); align-items: start; padding: var(--space-xs) clamp(8px, 3vw, 28px) var(--space-l); min-block-size: 30rem; }
+.canvas-note { color: var(--muted); font-size: var(--type-small); padding: var(--space-s) clamp(8px, 3vw, 28px); margin: 0; }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+
+:root { --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; --panel-padding-roomy: 12px; --surface-toolbar: light-dark(oklch(from var(--color-primary-lighter) 92% c h), oklch(from var(--color-primary-darker) l min(c, 0.025) h)); }
+.p-topbar { min-block-size: 72px; background: var(--surface); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-s) var(--space-l); padding: var(--space-xs) clamp(var(--space-m), 3vw, 28px); }
+.topright { display: flex; justify-content: end; }
+.menus.end { justify-content: end; }
+
+/* =====================  TODAY: real editor CSS  ===================== */
+/* src/style.css .topbar, src/utilities.css + src/style.css .button, .primary, .secondary, .text-link */
+.today .topbar { min-block-size: 72px; background: var(--surface); display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; padding: 8px 28px; gap: 24px; }
+.today .topbar-actions { grid-column: 3; justify-self: end; display: flex; align-items: center; gap: 14px; }
+@media (max-width: 650px) { .today .topbar { display: flex; justify-content: end; min-block-size: 65px; flex-wrap: wrap; padding: 14px 17px; gap: 10px; } }
+.today .button { display: inline-flex; align-items: center; justify-content: center; min-block-size: var(--size-control); border: 0; padding: 6px 14px; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; text-decoration: none; }
+.today .primary { background: var(--primary); color: var(--on-primary); }
+.today .primary:active:not(:disabled) { background: var(--primary-hover); }
+.today .secondary { background: var(--surface); color: inherit; }
+.today .secondary:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+@media (hover: hover) and (pointer: fine) { .today .primary:hover:not(:disabled) { background: var(--primary-hover); } .today .secondary:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); } .today .text-link:hover { text-decoration: underline; } }
+.today :is(.primary, .secondary, .button):disabled { background: var(--surface-subtle); color: var(--muted); opacity: 1; }
+.today .text-link { font-size: inherit; color: var(--link); text-decoration: none; }
+.today .muted { color: var(--muted); }
+.today .dropdown-panel { padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); }
+/* src/components/publish-menu.css */
+.today .publish-menu { display: inline-flex; align-items: stretch; flex-shrink: 0; }
+.today .publish-menu > :is(.publish-menu__trigger, .publish-menu__more) { min-block-size: max(var(--size-control), var(--size-tap)); }
+.today .publish-menu > .publish-menu__trigger { border-start-end-radius: 0; border-end-end-radius: 0; }
+.today .publish-menu > .publish-menu__more { min-inline-size: var(--size-tap); border-start-start-radius: 0; border-end-start-radius: 0; border-inline-start: 1px solid color-mix(in oklch, var(--on-primary) 35%, transparent); padding-inline: 8px; }
+.today .publish-menu__separator { border: 0; border-block-start: 1px solid color-mix(in oklch, var(--text) 18%, transparent); margin-block: 10px; }
+.today .publish-menu__panel > .publish-menu__discard, .today .publish-menu__panel > .publish-menu__discard:disabled { inline-size: 100%; justify-content: start; color: var(--danger-fg); background: var(--danger-bg); }
+.today .publish-menu__panel > .publish-menu__discard:disabled { opacity: 0.5; }
+.today .publish-menu__panel > .publish-menu__discard:hover:enabled { background: var(--danger-bg); outline: 1px solid var(--danger); }
+.today .publish-menu__panel { inline-size: min(380px, 100%); padding: var(--panel-padding-roomy); }
+.today .publish-menu__files { display: flex; flex-direction: column; gap: 10px; margin-block: 10px 0; max-block-size: 40dvh; overflow: auto; }
+.today .publish-menu__file { display: flex; gap: 10px; align-items: start; font-size: var(--type-base); overflow-wrap: anywhere; }
+.today .publish-menu__file input { accent-color: var(--primary); margin: 3px 0 0; }
+.today .publish-menu__changes { margin: -6px 0 2px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.today .publish-menu__show-changes { min-block-size: var(--size-icon); padding: 0 6px; margin-inline-start: -6px; border: 0; border-radius: var(--radius); background: none; color: var(--link); font-size: var(--type-small); text-decoration: underline; text-underline-offset: 2px; }
+.today .publish-menu__show-changes:hover { background: var(--hover); }
+.today .publish-menu__show-changes:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.today .publish-menu__message { margin-block: 1em 0; font-size: var(--type-small); line-height: 1.6; }
+.today .publish-menu__message:empty { display: none; }
+.today .publish-menu__status { flex-shrink: 0; min-inline-size: 16px; padding: 0 4px; border-radius: var(--radius-small); font: 600 var(--type-badge)/16px var(--font-mono); text-align: center; margin-block-start: 1px; }
+.today .publish-menu__status.is-A, .today .publish-menu__status.is-R { background: var(--success-bg); color: var(--success-fg); }
+.today .publish-menu__status.is-M { background: var(--current); color: var(--link); }
+.today .publish-menu__status.is-D { background: var(--warning-bg); color: var(--warning-fg); }
+.today .publish-menu__note { font-size: var(--type-small); color: var(--muted); }
+.today .publish-menu__count { margin-inline-start: 6px; padding: 0 6px; border-radius: 999px; background: oklch(from currentColor l c h / 0.2); font-size: var(--type-badge); font-weight: 600; }
+.today .publish-menu:has(.publish-menu__trigger[data-state="live"]) > .button { background: var(--color-success); color: var(--on-primary); opacity: 1; }
+.today .publish-menu:has(.publish-menu__trigger[data-state="failed"]) > .button { background: var(--danger); color: var(--on-primary); opacity: 1; }
+.today .publish-menu__total { font-size: var(--type-base); }
+.today .publish-menu__total-summary { font-weight: 600; cursor: pointer; }
+.today .publish-menu__total-summary:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+/* Comparison dialog */
+dialog.publish-diff { --diff-add-bg: var(--success-bg); --diff-add-fg: var(--success-fg); --diff-del-bg: var(--danger-bg); --diff-del-fg: var(--danger-fg); inline-size: min(1200px, calc(100vw - 32px)); max-block-size: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+dialog.publish-diff[open] { display: flex; flex-direction: column; }
+dialog.publish-diff::backdrop { background: oklch(from var(--shadow-color) l c h / 0.45); }
+.publish-diff__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-block-end: 1px solid var(--line); background: var(--surface-toolbar); }
+.publish-diff__title { margin: 0; font-size: var(--type-title); font-weight: 600; overflow-wrap: anywhere; }
+.publish-diff__body { overflow: auto; min-block-size: 0; flex: 1; font-family: var(--font-mono); font-size: var(--type-small); line-height: 1.5; }
+.publish-diff__split { inline-size: 100%; border-collapse: collapse; table-layout: fixed; }
+.publish-diff__split th { position: sticky; inset-block-start: 0; z-index: 1; padding: 6px 10px; text-align: start; font: 600 var(--type-small)/1.4 system-ui, sans-serif; background: var(--surface-subtle); border-block-end: 1px solid var(--line); }
+.publish-diff__split th + th { border-inline-start: 1px solid var(--line); }
+.publish-diff__col-num { inline-size: 6ch; }
+.publish-diff__num { padding: 0 8px; text-align: end; vertical-align: top; color: var(--muted); user-select: none; }
+.publish-diff__code { padding: 0 10px 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; vertical-align: top; }
+.publish-diff__code + .publish-diff__num { border-inline-start: 1px solid var(--line); }
+.publish-diff__code.is-del { background: var(--diff-del-bg); color: var(--diff-del-fg); }
+.publish-diff__code.is-add { background: var(--diff-add-bg); color: var(--diff-add-fg); }
+.publish-diff__code.is-empty { background: var(--surface-subtle); }
+.publish-diff__sign { display: inline-block; inline-size: 1.5ch; user-select: none; }
+.publish-diff__gap { padding: 4px 10px; text-align: center; color: var(--muted); background: var(--surface-subtle); font-family: system-ui, sans-serif; }
+.publish-diff__unified { display: none; margin: 0; padding: 6px 0; white-space: pre; inline-size: max-content; min-inline-size: 100%; }
+.publish-menu__diff-line { display: block; padding-inline: 8px; }
+.publish-menu__diff-line.is-add { background: var(--diff-add-bg); color: var(--diff-add-fg); }
+.publish-menu__diff-line.is-del { background: var(--diff-del-bg); color: var(--diff-del-fg); }
+.publish-menu__diff-number { display: inline-block; inline-size: 4ch; text-align: end; color: var(--muted); margin-inline-end: 6px; }
+.publish-menu__diff-sign { display: inline-block; inline-size: 1.5ch; }
+.publish-menu__diff-gap { display: block; padding-inline: 8px; color: var(--muted); }
+@media (max-width: 699px) { .publish-diff__split { display: none; } .publish-diff__unified { display: block; } }
+
+/* =====================  AFTER: catalogue parts  ===================== */
+/* Shared press and hover behaviour for every pressable part */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  .p-press:active:not(:disabled) { scale: 0.97; }
+}
+:is(.p-button, .p-icon-button):focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.p-menu-item:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+/* Button (approved): tones primary, secondary, quiet; sizes compact, control, touch */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: max(var(--size-control), var(--size-tap)); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); text-decoration: none; color: inherit; }
+.p-button[data-tone="primary"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-button[data-tone="quiet"] { background: transparent; box-shadow: none; color: var(--link); }
+.p-button[data-ink="text"] { color: inherit; }
+.p-button:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.p-button[data-tone="primary"]:active:not(:disabled) { background: var(--primary-hover); }
+.p-button[data-tone="quiet"]:active:not(:disabled), .p-button[data-tone="quiet"][aria-expanded="true"] { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-button:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .p-button[data-tone="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
+  .p-button[data-tone="quiet"]:hover:not(:disabled) { background: var(--hover); }
+}
+/* Icon button (approved): icon 24, compact 28, control 32 (44 on touch screens) */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.p-icon-button[data-size="icon"] { inline-size: var(--size-icon); block-size: var(--size-icon); border-radius: var(--radius-small); }
+.p-icon-button[data-size="compact"] { inline-size: var(--size-compact); block-size: var(--size-compact); }
+.p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Badge (approved): number size for counts that Lex kept, tones by data attribute */
+.p-badge { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-3xs); block-size: 20px; padding-inline: var(--space-xs); border-radius: var(--radius-full); font-size: var(--type-small); font-weight: 600; background: var(--surface-subtle); color: var(--link); flex: none; }
+.p-badge[data-size="number"] { min-inline-size: 18px; block-size: 18px; padding-inline: var(--space-3xs); font-size: var(--type-badge); font-weight: 700; }
+.p-badge[data-tone="action"] { background: var(--primary); color: var(--on-primary); }
+.p-badge[data-tone="question"] { background: var(--agent-question-strong); color: var(--on-accent); }
+.p-badge[data-kind="dot"] { inline-size: 8px; block-size: 8px; min-inline-size: 0; padding: 0; background: var(--muted); opacity: 0.5; }
+.p-corner { position: absolute; inset-block-start: calc(-1 * var(--space-2xs)); inset-inline-end: calc(-1 * var(--space-2xs)); box-shadow: 0 0 0 2px var(--badge-ring, var(--surface)); pointer-events: none; }
+/* Spinner (approved) */
+.p-spinner { inline-size: 10px; block-size: 10px; border: 1.5px solid var(--control-line); border-block-start-color: var(--primary); border-radius: 50%; animation: spin 0.9s linear infinite; flex: none; }
+@keyframes spin { to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .p-spinner { animation-duration: 2.4s; } }
+/* Section heading (slice 13): words with an optional end slot */
+.p-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); min-block-size: var(--size-icon); padding: var(--space-3xs) var(--space-3xs) var(--space-3xs) var(--space-xs); font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.p-heading[data-look="group"] { text-transform: none; letter-spacing: 0; padding-block: var(--space-xs) var(--space-4xs); }
+.p-heading [data-end] { font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; }
+/* Menu and menu item (approved): one item part with lead, words, end */
+.p-menu { padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); inline-size: min(340px, 100%); display: grid; gap: var(--space-4xs); align-content: start; --badge-ring: var(--panel-surface); }
+.p-menu[data-size="flyout"] { inline-size: min(240px, 100%); }
+.p-menu-section { display: grid; gap: var(--space-4xs); padding-block: var(--space-2xs); }
+.p-menu-section + .p-menu-section { margin-block-start: var(--space-2xs); }
+.p-menu-list { display: grid; gap: var(--space-4xs); margin: 0; padding: 0; list-style: none; }
+.p-menu-item { display: flex; align-items: center; gap: var(--space-xs); inline-size: 100%; min-inline-size: 0; min-block-size: max(var(--size-control), var(--size-tap)); padding: var(--space-3xs) var(--space-xs); border: 0; border-radius: var(--radius); background: transparent; color: inherit; font-size: var(--type-base); text-align: start; text-decoration: none; }
+.p-menu-item[data-lines="2"] { padding-block: var(--space-2xs); }
+.p-menu-item[aria-current="true"], .p-menu-item[aria-checked="true"] { background: var(--current); font-weight: 600; }
+.p-menu-item[data-tone="quiet"] { color: var(--muted); }
+.p-menu-item:active:not(:disabled) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-menu-item:hover:not(:disabled) { background: var(--hover); }
+  .p-menu-item[data-tone="quiet"]:hover { color: var(--text); }
+}
+.p-words { display: grid; flex: 1; min-inline-size: 0; }
+.p-words > * { overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.p-words b { font-weight: 600; }
+.p-sub { font-size: var(--type-small); font-weight: 400; color: var(--muted); }
+.p-end { margin-inline-start: auto; color: var(--muted); flex: none; display: inline-flex; align-items: center; gap: var(--space-3xs); }
+.p-hint { font-size: var(--type-small); font-weight: 400; opacity: 0; }
+.p-menu-item:focus-visible .p-hint, .p-menu-item.is-hover .p-hint { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .p-menu-item:hover .p-hint { opacity: 1; } }
+@media (hover: none) { .p-hint { opacity: 1; } }
+
+.p-button[data-size="compact"] { min-block-size: max(var(--size-compact), var(--size-tap)); padding-inline: var(--space-xs); }
+.p-button[data-tone="danger"] { background: var(--danger-bg); color: var(--danger-fg); box-shadow: none; }
+.p-button[data-tone="danger"]:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--danger-bg); }
+@media (hover: hover) and (pointer: fine) { .p-button[data-tone="danger"]:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--danger-bg); } }
+.p-button[data-width="full"] { inline-size: 100%; justify-content: start; }
+.p-button:disabled { background: var(--surface-subtle); color: var(--muted); box-shadow: none; opacity: 1; }
+.p-button[data-tone="danger"]:disabled { background: var(--danger-bg); color: var(--danger-fg); opacity: 0.5; }
+/* Button option: a split button (main action plus its caret), and the result states it shows */
+.p-split { display: inline-flex; align-items: stretch; }
+.p-split > .p-button:first-child { border-start-end-radius: 0; border-end-end-radius: 0; }
+.p-split > .p-button + .p-button { border-start-start-radius: 0; border-end-start-radius: 0; min-inline-size: max(var(--size-control), var(--size-tap)); padding-inline: var(--space-xs); box-shadow: inset 1px 0 0 color-mix(in oklch, var(--on-primary) 35%, transparent); }
+.p-split:has([data-result="live"]) > .p-button { background: var(--color-success); color: var(--on-primary); }
+.p-split:has([data-result="failed"]) > .p-button { background: var(--danger); color: var(--on-primary); }
+.p-split > .p-button[data-tone="primary"]:disabled:not([data-result]) { background: var(--surface-subtle); color: var(--muted); }
+/* Badge (approved): words only, tones */
+.p-badge[data-tone="success"] { background: var(--success-bg); color: var(--success-fg); }
+.p-badge[data-tone="warning"] { background: var(--warning-bg); color: var(--warning-fg); }
+.p-badge[data-tone="current"] { background: var(--current); color: var(--link); }
+/* Notice (approved): an error stays in place until it is fixed */
+.p-notice { display: flex; gap: var(--space-xs); align-items: start; padding: var(--space-xs) var(--space-s); border-radius: var(--radius-panel); font-size: var(--type-small); background: var(--panel-surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--danger); margin-block-start: var(--space-s); }
+.p-notice .ph { color: var(--danger); margin-block-start: 2px; }
+.p-notice p { margin: 0; }
+/* Publish menu organism */
+.p-publish { inline-size: min(380px, 100%); padding: var(--space-s); }
+.p-total summary { font-weight: 600; cursor: pointer; border-radius: var(--radius-small); }
+.p-total summary:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.p-files { display: grid; gap: var(--space-xs); margin-block-start: var(--space-xs); max-block-size: 40dvh; overflow: auto; }
+.p-file { display: grid; grid-template-columns: auto auto 1fr; gap: var(--space-xs); align-items: start; font-size: var(--type-base); overflow-wrap: anywhere; }
+.p-file input { accent-color: var(--primary); margin: 3px 0 0; }
+.p-file__changes { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3xs) var(--space-xs); margin-inline-start: calc(13px + var(--space-xs)); margin-block-start: calc(-1 * var(--space-3xs)); }
+.p-file__changes .p-button { font-size: var(--type-small); font-weight: 400; }
+.p-file__changes > .p-button:first-child { margin-inline-start: calc(-1 * var(--space-xs)); }
+.p-note { font-size: var(--type-small); color: var(--muted); }
+.p-message { margin: var(--space-s) 0 0; font-size: var(--type-small); color: var(--muted); }
+.p-message a { color: var(--link); text-decoration: none; }
+.p-message a:active { text-decoration: underline; }
+@media (hover: hover) and (pointer: fine) { .p-message a:hover { text-decoration: underline; } }
+.p-sep { border: 0; border-block-start: 1px solid var(--line); margin-block: var(--space-s); }
+/* Dialog (approved): one look, one backdrop; the comparison folds to one column by its own width */
+dialog.p-dialog { inline-size: min(1200px, calc(100vw - 32px)); max-block-size: calc(100dvh - 32px); padding: 0; border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+dialog.p-dialog[open] { display: flex; flex-direction: column; }
+dialog.p-dialog::backdrop { background: oklch(from var(--shadow-color) l c h / 0.45); }
+@media (prefers-reduced-motion: no-preference) { dialog.p-dialog[open] { animation: p-rise var(--dur-menu) var(--ease-out); } }
+@keyframes p-rise { from { opacity: 0; translate: 0 6px; } }
+.p-dialog__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-s); padding: var(--space-s) var(--space-m); border-block-end: 1px solid var(--line); background: var(--surface-toolbar); }
+.p-dialog__head h2 { margin: 0; font-size: var(--type-title); overflow-wrap: anywhere; }
+.p-diff { container-type: inline-size; overflow: auto; min-block-size: 0; flex: 1; font: var(--type-small)/1.5 var(--font-mono); }
+.p-diff table { inline-size: 100%; border-collapse: collapse; table-layout: fixed; }
+.p-diff th { position: sticky; inset-block-start: 0; z-index: 1; padding: var(--space-2xs) var(--space-s); text-align: start; font: 600 var(--type-small)/1.4 Inter, ui-sans-serif, system-ui, sans-serif; background: var(--surface-subtle); border-block-end: 1px solid var(--line); }
+.p-diff th + th, .p-diff .code + .num { border-inline-start: 1px solid var(--line); }
+.p-diff col.n { inline-size: 6ch; }
+.p-diff .num { padding-inline: var(--space-xs); text-align: end; vertical-align: top; color: var(--muted); user-select: none; }
+.p-diff .code { padding-inline: var(--space-3xs) var(--space-s); white-space: pre-wrap; overflow-wrap: anywhere; vertical-align: top; }
+.p-diff .is-del { background: var(--danger-bg); color: var(--danger-fg); }
+.p-diff .is-add { background: var(--success-bg); color: var(--success-fg); }
+.p-diff .is-empty { background: var(--surface-subtle); }
+.p-diff .sign { display: inline-block; inline-size: 1.5ch; user-select: none; }
+.p-diff .gap { padding: var(--space-3xs) var(--space-s); text-align: center; color: var(--muted); background: var(--surface-subtle); font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.p-diff pre { display: none; margin: 0; padding-block: var(--space-2xs); white-space: pre; inline-size: max-content; min-inline-size: 100%; }
+.p-diff pre > span { display: block; padding-inline: var(--space-xs); }
+.p-diff pre .n { display: inline-block; inline-size: 4ch; text-align: end; color: var(--muted); margin-inline-end: var(--space-2xs); }
+@container (width < 700px) { .p-diff table { display: none; } .p-diff pre { display: block; } }
+</style>
+</head>
+<body data-mode="after">
+<main>
+  <header>
+    <h1>Publish menu and Compare changes, rebuilt from catalogue parts <span class="tag">mock-up for Tuesday 10 Nov</span></h1>
+    <p class="intro">Publish, at the top right, sends your changes to GitHub. Its menu lists the changes, lets you leave some out or undo one, and opens a window that compares a file with GitHub's copy. The button itself says how the publish and the site's update are going. Nothing it does changes: After builds it from the shared catalogue parts. Switch between Today and After, then play the steps.</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+  </div>
+  <div class="captions">
+    <p class="summary today">Today: the Publish button, its menu and the comparison window as the editor draws them now.</p>
+    <p class="summary after">Same colours. 4 button looks become 1 button with tones, the change letters (M, A, D) become word badges, the number on Publish goes (decided 25 Oct), and the comparison window uses the shared dialog. Hover reacts to a mouse only (2 rules), every button answers a press, and the small 24 px buttons in the list are 44 px on phones.</p>
+  </div>
+
+  <section class="demo" aria-labelledby="demo-title">
+    <h2 id="demo-title">Play the steps (demo buttons, not part of the editor)</h2>
+    <div class="steps">
+      <button type="button" data-step="open">Open the menu</button>
+      <button type="button" data-step="list">Show the changes</button>
+      <button type="button" data-step="untick">Leave one change out</button>
+      <button type="button" data-step="compare">Compare a file</button>
+      <button type="button" data-step="discard">Discard one file</button>
+      <button type="button" data-step="refused">GitHub changed a file</button>
+      <button type="button" data-step="publish">Publish</button>
+      <button type="button" data-step="deployfail">The site update fails</button>
+      <button type="button" class="reset" data-step="reset">Start again</button>
+    </div>
+  </section>
+
+  <div class="stage today" id="today"></div>
+  <div class="stage after" id="after"></div>
+  <ul class="changes after"><li>one button, tones</li><li>change kind in words</li><li>no number on Publish</li><li>shared dialog</li><li>error stays in place</li><li>hover only with a mouse</li><li>press feedback</li><li>44 px on phones</li></ul>
+
+  <dialog class="publish-diff" aria-labelledby="diff-title-t" id="diff-today"><header class="publish-diff__header"><h2 class="publish-diff__title" id="diff-title-t">index.html</h2><button type="button" class="button secondary" data-close>Close</button></header><div class="publish-diff__body" id="diff-body-t"></div></dialog>
+  <dialog class="p-dialog" aria-labelledby="diff-title-a" id="diff-after"><header class="p-dialog__head"><h2 id="diff-title-a">index.html</h2><button type="button" class="p-button p-press" data-close>Close</button></header><div class="p-diff" id="diff-body-a"></div></dialog>
+</main>
+<script>
+const P = {
+  "caret-down": '<path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/>',
+  "caret-right": '<path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/>',
+  "arrows-clockwise": '<path d="M224,48V96a8,8,0,0,1-8,8H168a8,8,0,0,1,0-16h28.69L182.06,73.37a79.56,79.56,0,0,0-56.13-23.43h-.45A79.52,79.52,0,0,0,69.59,72.71,8,8,0,0,1,58.41,61.27a96,96,0,0,1,135,.79L208,76.69V48a8,8,0,0,1,16,0ZM186.41,183.29a80,80,0,0,1-112.47-.66L59.31,168H88a8,8,0,0,0,0-16H40a8,8,0,0,0-8,8v48a8,8,0,0,0,16,0V179.31l14.63,14.63A95.43,95.43,0,0,0,130,222.06h.53a95.360,95.36,0,0,0,67.07-27.33,8,8,0,0,0-11.18-11.44Z"/>',
+  x: '<path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/>',
+};
+const ic = (name, size = 16) => `<svg class="ph" width="${size}" height="${size}" style="inline-size:${size}px;block-size:${size}px" viewBox="0 0 256 256" aria-hidden="true">${P[name]}</svg>`;
+
+Object.assign(P, {
+  warning: '<path d="M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8ZM120,144V104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,180Z"/>',
+});
+const WORDS = { A: "New", M: "Changed", R: "Renamed", D: "Deleted" };
+const TONES = { A: "success", R: "success", M: "current", D: "warning" };
+const FILES = () => [
+  { path: "index.html", kind: "M", added: 3, removed: 2 },
+  { path: "about/index.html", kind: "A", lines: 42 },
+  { path: "old-menu.html", kind: "D" },
+  { path: "images/loaves.jpg", kind: "A", upload: "240 KB" },
+];
+const start = () => ({ open: false, list: false, files: FILES(), unticked: new Set(), word: "Publish", pending: false, deploy: null, message: "", refused: false });
+let s = start();
+const selected = (f) => !s.unticked.has(f.path);
+function totals() {
+  const chosen = s.files.filter(selected);
+  let added = 0, removed = 0;
+  for (const f of chosen) { if (f.kind === "M") { added += f.added; removed += f.removed; } else if (f.lines) added += f.lines; }
+  const n = chosen.length, words = `${n} ${n === 1 ? "change" : "changes"}`;
+  return `${n === s.files.length ? `All ${words}` : `${words} of ${s.files.length}`} · ${added} added, ${removed} removed`;
+}
+const REFUSAL = "GitHub changed these files: index.html. Refresh and review the latest version before publishing. Your drafts are kept.";
+function deployWords() {
+  if (!s.deploy) return "";
+  return s.deploy === "saved" ? "Saved to GitHub." : s.deploy === "building" ? "Saved to GitHub. Deploying…" : s.deploy === "live" ? "Published." : "The deploy failed; the site was not updated.";
+}
+function buttonWord() {
+  if (s.pending) return s.word;
+  if (!s.deploy || s.files.length) return "Publish";
+  return { saved: "Saved", building: "Deploying…", live: "Published", failed: "Deploy failed" }[s.deploy];
+}
+const result = () => (!s.pending && !s.files.length && s.deploy) ? s.deploy : "";
+
+/* ---------- Today ---------- */
+function todayRows(f) {
+  const show = (summary) => `<button type="button" class="publish-menu__show-changes" data-act="compare" aria-haspopup="dialog" aria-label="${summary}. Show changes in ${f.path}">${summary}</button>`;
+  const discard = (text, label) => `<button type="button" class="publish-menu__show-changes publish-menu__discard" data-act="discard" data-path="${f.path}" aria-label="${label}">${text}</button>`;
+  if (f.kind === "D") return `<span class="publish-menu__note">Deleted</span>${discard("Restore", `Restore ${f.path}`)}`;
+  if (f.upload) return `<span class="publish-menu__note">Uploaded, ${f.upload}</span>${discard("Discard", `Discard ${f.path}`)}`;
+  if (f.lines) return `${show(`New file, ${f.lines} lines`)}${discard("Discard", `Discard the changes to ${f.path}`)}`;
+  return `${show(`${f.added} added, ${f.removed} removed`)}${discard("Discard", `Discard the changes to ${f.path}`)}`;
+}
+function todayHTML() {
+  const word = buttonWord(), res = result();
+  const count = word === "Publish" && s.files.length ? `<span class="publish-menu__count" aria-hidden="true">${s.files.length}</span>` : "";
+  const off = s.pending || !s.files.length;
+  const files = s.files.map((f) => `<label class="publish-menu__file"><input type="checkbox" data-act="tick" data-path="${f.path}" ${selected(f) ? "checked" : ""} ${s.pending ? "disabled" : ""}><span class="publish-menu__status is-${f.kind}" title="${WORDS[f.kind]}"><span aria-hidden="true">${f.kind}</span><span class="sr-only">${WORDS[f.kind]}:</span></span><span>${f.path}</span></label><div class="publish-menu__changes">${todayRows(f)}</div>`).join("");
+  const message = s.refused ? REFUSAL : s.pending ? "Publishing to GitHub…" : s.message ? s.message : s.deploy ? `${deployWords()} <a class="text-link" href="#" aria-label="View the commit on GitHub">View commit ↗</a>` : "";
+  const panel = `<div class="dropdown-panel publish-menu__panel" aria-label="Changes to publish">
+    ${s.files.length ? `<details class="publish-menu__total" ${s.list ? "open" : ""}><summary class="publish-menu__total-summary" data-act="list">${totals()}</summary><div class="publish-menu__files">${files}</div></details>` : ""}
+    <p class="muted publish-menu__message" role="status">${message}</p>
+    <hr class="publish-menu__separator"><button type="button" class="button publish-menu__discard" title="Discard every unsaved change on this branch" ${off ? "disabled" : ""}>Discard changes</button></div>`;
+  const button = `<div class="publish-menu"><button type="button" class="button primary publish-menu__trigger" data-act="publish" ${res ? `data-state="${res}"` : ""} ${off ? "disabled" : ""}><span>${word}</span>${count}</button><button type="button" class="button primary publish-menu__more" data-act="open" aria-label="More publish actions" aria-expanded="${s.open}" ${!s.files.length && !s.deploy ? "disabled" : ""}>${ic("caret-down", 12)}</button></div>`;
+  return `<div class="topbar"><div class="topbar-actions">${button}</div></div><div class="menus end">${s.open ? panel : `<p class="canvas-note">The menu is closed. Rest the pointer on Publish or press its caret, or use the demo button.</p>`}</div>`;
+}
+
+/* ---------- After ---------- */
+function afterRows(f) {
+  const btn = (text, label, act) => `<button type="button" class="p-button p-press" data-tone="quiet" data-size="compact" data-act="${act}" data-path="${f.path}" aria-label="${label}">${text}</button>`;
+  if (f.kind === "D") return btn("Restore", `Restore ${f.path}`, "discard");
+  if (f.upload) return `<span class="p-note">Uploaded, ${f.upload}</span>${btn("Discard", `Discard ${f.path}`, "discard")}`;
+  const summary = f.lines ? `New file, ${f.lines} lines` : `${f.added} added, ${f.removed} removed`;
+  return `${btn(summary, `${summary}. Show changes in ${f.path}`, "compare")}${btn("Discard", `Discard the changes to ${f.path}`, "discard")}`;
+}
+function afterHTML() {
+  const word = buttonWord(), res = result();
+  const off = s.pending || !s.files.length;
+  const files = s.files.map((f) => `<label class="p-file"><input type="checkbox" data-act="tick" data-path="${f.path}" ${selected(f) ? "checked" : ""} ${s.pending ? "disabled" : ""}><span class="p-badge" data-tone="${TONES[f.kind]}">${WORDS[f.kind]}</span><span>${f.path}</span></label><div class="p-file__changes">${afterRows(f)}</div>`).join("");
+  const message = s.refused ? `<div class="p-notice" role="alert">${ic("warning")}<p>${REFUSAL}</p></div>`
+    : `<p class="p-message" role="status">${s.pending ? "Publishing to GitHub…" : s.message ? s.message : s.deploy ? `${deployWords()} <a href="#" aria-label="View the commit on GitHub">View commit ↗</a>` : ""}</p>`;
+  const panel = `<div class="p-menu p-publish" aria-label="Changes to publish">
+    ${s.files.length ? `<details class="p-total" ${s.list ? "open" : ""}><summary data-act="list">${totals()}</summary><div class="p-files">${files}</div></details>` : ""}
+    ${message}
+    <hr class="p-sep"><button type="button" class="p-button p-press" data-tone="danger" data-width="full" ${off ? "disabled" : ""}>Discard changes</button></div>`;
+  const button = `<div class="p-split"><button type="button" class="p-button p-press" data-tone="primary" data-act="publish" ${res ? `data-result="${res}"` : ""} ${off ? "disabled" : ""}>${word}</button><button type="button" class="p-button p-press" data-tone="primary" data-act="open" aria-label="More publish actions" aria-expanded="${s.open}" ${!s.files.length && !s.deploy ? "disabled" : ""}>${ic("caret-down", 12)}</button></div>`;
+  return `<div class="p-topbar topright">${button}</div><div class="menus end">${s.open ? panel : `<p class="canvas-note">The menu is closed. Rest the pointer on Publish or press its caret, or use the demo button.</p>`}</div>`;
+}
+
+/* ---------- The comparison ---------- */
+const ROWS = [
+  { l: [4, "same", '<header class="site-header">'], r: [4, "same", '<header class="site-header">'] },
+  { l: [5, "same", "  <h1>Fresh bread</h1>"], r: [5, "same", "  <h1>Fresh bread</h1>"] },
+  { l: [6, "del", "  <p>Bread, every day.</p>"], r: [6, "add", "  <p>Fresh bread every morning, from six.</p>"] },
+  { l: null, r: [7, "add", '  <a href="/visit">Opening hours</a>'] },
+  { l: [7, "same", "</header>"], r: [8, "same", "</header>"] },
+  { gap: 12 },
+  { l: [20, "same", "<main>"], r: [21, "same", "<main>"] },
+  { l: [21, "del", '  <img src="images/rolls.jpg" alt="Rolls">'], r: [22, "add", '  <img src="images/loaves.jpg" alt="Loaves on a table">'] },
+  { l: [22, "same", "</main>"], r: [23, "same", "</main>"] },
+];
+const UNI = [[4, "same"], [5, "same"], [6, "del", 0], [6, "add", 0], [7, "add"], [8, "same"], ["gap"], [21, "same"], [21, "del", 7], [22, "add", 7], [23, "same"]];
+const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+const sign = (k) => k === "add" ? "+" : k === "del" ? "−" : " ";
+function unifiedLines() {
+  const out = [];
+  for (const row of ROWS) {
+    if (row.gap) { out.push({ gap: true }); continue; }
+    if (row.l && row.r && row.l[1] === "same") { out.push({ n: row.r[0], k: "same", t: row.r[2] }); continue; }
+    if (row.l) out.push({ n: row.l[0], k: "del", t: row.l[2] });
+    if (row.r) out.push({ n: row.r[0], k: "add", t: row.r[2] });
+  }
+  return out;
+}
+function diffToday() {
+  const cells = (c) => c ? `<td class="publish-diff__num">${c[0]}</td><td class="publish-diff__code is-${c[1] === "same" ? "same" : c[1]}"><span class="publish-diff__sign">${sign(c[1])}</span><span>${esc(c[2])}</span></td>` : `<td class="publish-diff__num"></td><td class="publish-diff__code is-empty"></td>`;
+  const body = ROWS.map((r) => r.gap ? `<tr><td class="publish-diff__gap" colspan="4">${r.gap} unchanged lines</td></tr>` : `<tr>${cells(r.l)}${cells(r.r)}</tr>`).join("");
+  const uni = unifiedLines().map((x) => x.gap ? `<span class="publish-menu__diff-gap">⋯\n</span>` : `<span class="publish-menu__diff-line is-${x.k}"><span class="publish-menu__diff-number">${x.n}</span><span class="publish-menu__diff-sign">${sign(x.k)}</span><span>${esc(x.t)}</span>\n</span>`).join("");
+  return `<table class="publish-diff__split"><colgroup><col class="publish-diff__col-num"><col><col class="publish-diff__col-num"><col></colgroup><thead><tr><th colspan="2" scope="col">GitHub</th><th colspan="2" scope="col">Draft</th></tr></thead><tbody>${body}</tbody></table><pre class="publish-menu__diff publish-diff__unified">${uni}</pre>`;
+}
+function diffAfter() {
+  const cells = (c) => c ? `<td class="num">${c[0]}</td><td class="code ${c[1] === "same" ? "" : "is-" + c[1]}"><span class="sign">${sign(c[1])}</span><span>${esc(c[2])}</span></td>` : `<td class="num"></td><td class="code is-empty"></td>`;
+  const body = ROWS.map((r) => r.gap ? `<tr><td class="gap" colspan="4">${r.gap} unchanged lines</td></tr>` : `<tr>${cells(r.l)}${cells(r.r)}</tr>`).join("");
+  const uni = unifiedLines().map((x) => x.gap ? `<span class="gap">⋯</span>` : `<span class="${x.k === "same" ? "" : "is-" + x.k}"><span class="n">${x.n}</span><span class="sign">${sign(x.k)}</span>${esc(x.t)}</span>`).join("");
+  return `<table><colgroup><col class="n"><col><col class="n"><col></colgroup><thead><tr><th colspan="2" scope="col">GitHub</th><th colspan="2" scope="col">Draft</th></tr></thead><tbody>${body}</tbody></table><pre>${uni}</pre>`;
+}
+let opener = null;
+function openCompare() {
+  const today = document.body.dataset.mode === "today";
+  const dlg = document.getElementById(today ? "diff-today" : "diff-after");
+  document.getElementById(today ? "diff-body-t" : "diff-body-a").innerHTML = today ? diffToday() : diffAfter();
+  dlg.showModal();
+}
+document.querySelectorAll("dialog").forEach((d) => {
+  d.addEventListener("click", (e) => { if (e.target.closest("[data-close]") || e.target === d) d.close(); });
+  d.addEventListener("close", () => { const b = document.querySelector(`.stage.${document.body.dataset.mode} [data-act="compare"]`); b?.focus(); });
+});
+
+function render() {
+  document.getElementById("today").innerHTML = todayHTML();
+  document.getElementById("after").innerHTML = afterHTML();
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let run = 0;
+async function publish() {
+  if (s.pending || !s.files.length) return;
+  const me = ++run;
+  s.open = true; s.pending = true; s.refused = false; s.message = "";
+  s.word = s.files.some((f) => f.upload && selected(f)) ? "Uploading…" : "Publishing…"; render();
+  await sleep(800); if (me !== run) return;
+  s.word = "Publishing…"; render();
+  await sleep(900); if (me !== run) return;
+  s.files = s.files.filter((f) => !selected(f)); s.unticked.clear();
+  s.pending = false; s.deploy = "saved"; render();
+  await sleep(900); if (me !== run) return;
+  s.deploy = "building"; render();
+  await sleep(1400); if (me !== run) return;
+  s.deploy = s.failNext ? "failed" : "live"; s.failNext = false; render();
+}
+function act(name, el) {
+  if (name === "open") { s.open = !s.open || el?.dataset?.step === "open"; }
+  if (name === "list") { s.open = true; s.list = el?.dataset?.step ? true : !s.list; if (!el?.dataset?.step) { /* the native toggle */ } }
+  if (name === "tick") { const p = el.dataset.path; if (el.checked) s.unticked.delete(p); else s.unticked.add(p); }
+  if (name === "untick") { s.open = true; s.list = true; s.unticked.add("about/index.html"); }
+  if (name === "compare") { if (s.files.some((f) => f.path === "index.html")) { s.open = true; s.list = true; render(); openCompare(); } return; }
+  if (name === "discard") {
+    const path = el?.dataset?.path ?? "index.html";
+    const f = s.files.find((x) => x.path === path); if (!f) { render(); return; }
+    s.open = true; s.list = true; s.files = s.files.filter((x) => x !== f); s.unticked.delete(path);
+    const label = f.kind === "D" ? `Restore ${path}` : f.upload ? `Discard ${path}` : `Discard the changes to ${path}`;
+    if (!s.refused) s.message = `${label}: done.`;
+    if (path === "index.html") s.refused = false;
+  }
+  if (name === "refused") { if (!s.files.some((f) => f.path === "index.html")) s.files.unshift(FILES()[0]); s.open = true; s.refused = true; s.message = ""; }
+  if (name === "publish") { run++; if (!s.files.length) s.files = FILES(); s.refused = false; publish(); return; }
+  if (name === "deployfail") { run++; s.failNext = true; if (!s.files.length) s.files = FILES(); s.refused = false; s.pending = false; publish(); return; }
+  if (name === "reset") { run++; s = start(); }
+  render();
+}
+document.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => {
+  act(b.dataset.step, b);
+  document.querySelectorAll("[data-step]").forEach((o) => o.setAttribute("aria-pressed", String(o === b && b.dataset.step !== "reset")));
+}));
+for (const id of ["today", "after"]) document.getElementById(id).addEventListener("click", (e) => {
+  if (e.target.closest("a")) e.preventDefault();
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  if (el.dataset.act === "list") { e.preventDefault(); act("list"); return; }
+  if (el.dataset.act === "tick") { act("tick", el); render(); return; }
+  e.preventDefault();
+  act(el.dataset.act, el);
+});
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  render();
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,819 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 54 Image popup, Media popup and large image editor, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 10 Nov review
+  (kitchen station 3, "Show and tell"), for build ticket
+  docs/wayfinder/atomic-catalogue/build/tickets/54-organism-image-popup.md.
+  Today: the Image popup, the Media popup (video) and the large image editor as they are on dev
+  (2026-10-27), values copied from src/theme.css, src/page-builder/image-popup.css,
+  image-large-editor.css, media-spot-popup.css and src/components/edit-bar.css; structure, words, titles
+  and states from src/page-builder/image-popup-view.ts, image-popup-rules.ts, image-popup-trim.ts,
+  shape-menu.ts, media-popup-frame.ts, media-spot-popup.ts and image-large-editor.ts.
+  After: the same screens from the approved catalogue parts of prototype 10 (button, icon button, field,
+  menu, dialog, tooltip) and the board's switch (08). Colours and type unchanged; spacing
+  2/4/6/8/12/16/24 and motion tokens from slices 02 and 03. The straighten ruler, the picture well and
+  the device previews stay as layout.
+  Feedback follows prototype 09 (no toasts): every change shows on the page picture and on the popup's
+  own message line; Replace shows no message, the new picture is the feedback.
+  The real popup sits beside the picture (left, right or below it) and is a bottom sheet at 700 px and
+  narrower; here it sits to the right, or below on a phone. Icons are hand-drawn stand-ins for Phosphor.
+-->
+<style>
+/* ---------- Shared values: src/theme.css, light and dark written once with light-dark() ---------- */
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --danger: oklch(from var(--color-success) l c 25);
+  --danger-bg: oklch(from var(--success-bg) l c 25);
+  --danger-fg: oklch(from var(--success-fg) l c 25);
+  --panel-surface: var(--surface-raised);
+  --pressed: light-dark(var(--primary), var(--color-primary-light));
+  --on-pressed: light-dark(var(--on-primary), var(--color-primary-darkest));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px; --type-heading: 20px;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px;
+  --panel-padding: 6px; --panel-padding-roomy: 12px;
+  /* file-type tints, src/theme.css 94-102 */
+  --tint-page: oklch(66% 0.17 45); --tint-style: oklch(62% 0.15 255); --tint-picture: oklch(64% 0.15 150);
+
+  /* After only: the catalogue's new shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-size: var(--type-base); }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, select:focus-visible, a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.icon { inline-size: 16px; block-size: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; display: block; }
+.icon[data-s="12"] { inline-size: 12px; block-size: 12px; }
+.icon[data-s="14"] { inline-size: 14px; block-size: 14px; }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+header { display: grid; gap: var(--space-3xs); }
+h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 70ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 30; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; max-inline-size: 70ch; text-wrap: pretty; }
+.demo { border: 1.5px dashed var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); }
+.demo h2 { margin: 0; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.demo .buttons { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.demo button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 4px 10px; font-weight: 600; font-size: var(--type-small); }
+.demo button[aria-pressed="true"] { background: var(--current); }
+.demo button:active { scale: 0.97; }
+.demo .now { margin: 0; color: var(--muted); font-size: var(--type-small); min-block-size: 1.5em; }
+.stage { position: relative; display: grid; justify-items: center; padding: clamp(var(--space-xs), 2vw, var(--space-l)); border-radius: var(--radius-panel); background: color-mix(in oklch, var(--background) 70%, var(--surface-subtle)); min-block-size: 30rem; }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+.mock-note { color: var(--muted); font-size: var(--type-small); padding: var(--space-m); border: 1px dashed var(--line); border-radius: var(--radius); margin-block: var(--space-s); }
+
+/* Pictures: CSS gradients stand in for photos */
+.pic { background: linear-gradient(160deg, oklch(86% 0.04 80), oklch(62% 0.06 50)); }
+
+:root { --on-media: oklch(100% 0 none); --image-control-scrim: oklch(15.28% 0.0611 262.26); --media-scrim: oklch(18.23% 0.0315 261.1); --shadow-ink: oklch(0% 0 none); --semantic-shadow: var(--shadow-color); --checkerboard: repeating-conic-gradient(oklch(97% 0 none) 0 25%, oklch(90% 0 none) 0 50%) 0 0 / 16px 16px; }
+.pic-bread { background: radial-gradient(ellipse 22% 26% at 36% 60%, oklch(68% 0.12 60) 0 70%, transparent 72%), radial-gradient(ellipse 18% 22% at 62% 52%, oklch(62% 0.13 48) 0 70%, transparent 72%), radial-gradient(circle at 80% 22%, oklch(95% 0.05 95) 0 6%, transparent 7%), linear-gradient(165deg, oklch(88% 0.04 85), oklch(60% 0.06 50)); }
+.pic-new { background: radial-gradient(circle at 30% 45%, oklch(66% 0.17 265) 0 6%, transparent 7%), radial-gradient(circle at 50% 55%, oklch(62% 0.18 275) 0 7%, transparent 8%), radial-gradient(circle at 70% 45%, oklch(68% 0.15 260) 0 6%, transparent 7%), linear-gradient(170deg, oklch(80% 0.09 150), oklch(48% 0.1 150)); }
+.pic-video { background: radial-gradient(circle at 50% 50%, oklch(100% 0 none / 0.85) 0 9%, transparent 10%), linear-gradient(160deg, oklch(45% 0.05 60), oklch(25% 0.04 50)); }
+.stage { display: block; justify-items: normal; padding: clamp(var(--space-xs), 2vw, var(--space-l)); container: stage / inline-size; overflow: clip; }
+.stage + .stage { margin-block-start: 0; }
+.mock-h { margin: 0 0 var(--space-xs); font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+/* The site page around the picture (not part of the editor) */
+.scene { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+@container stage (width >= 700px) { .scene { grid-template-columns: minmax(0, 1fr) 328px; } }
+.site { background: light-dark(white, oklch(19% 0.01 265)); color: light-dark(oklch(22% 0.02 140), oklch(92% 0.01 140)); border-radius: var(--radius); padding: clamp(1rem, 4cqi, 2rem); display: grid; gap: 0.6rem; box-shadow: 0 1px 3px oklch(0% 0 none / 0.12); font-family: Georgia, "Iowan Old Style", serif; min-inline-size: 0; }
+.site h2 { margin: 0; font-size: clamp(1.3rem, 1rem + 2cqi, 2rem); line-height: 1.15; }
+.site p { margin: 0; max-inline-size: 52ch; }
+.spot { position: relative; inline-size: min(100%, 26rem); aspect-ratio: 4 / 3; overflow: clip; outline: 2px solid var(--primary); outline-offset: 2px; }
+.spot .pic { position: absolute; inset: 0; }
+.spot-bar { position: absolute; inset-block-end: calc(100% + 6px); inset-inline-start: -2px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: var(--type-base); color: var(--text); }
+.spot-wrap { position: relative; margin-block-start: 4.4rem; }
+@container stage (width < 700px) { .stage .p-backdrop.large, .stage .today.large-backdrop { padding: 0; } }
+.stage:has(.p-backdrop.large, .large-backdrop) { min-block-size: 44rem; }
+
+/* =====================  TODAY: real editor CSS  ===================== */
+/* edit-bar.css */
+.today .edit-bar { display: flex; flex-direction: column; align-items: flex-start; }
+.today .edit-bar__label { display: inline-flex; align-items: center; block-size: 24px; padding: 0 8px; border-radius: var(--radius) var(--radius) var(--radius) 0; background: var(--panel-surface); box-shadow: var(--shadow-small); font-size: var(--type-small); font-weight: 600; }
+.today .edit-bar__controls { display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 0 var(--radius) var(--radius) var(--radius); background: var(--panel-surface); box-shadow: var(--shadow-small); }
+.today .edit-bar__button { min-height: var(--size-compact); border: 0; border-radius: var(--radius); padding: 0 7px; background: transparent; display: inline-flex; align-items: center; gap: 4px; }
+.today .edit-bar__button:hover { background: var(--hover); }
+.today .edit-bar__button[aria-expanded="true"] { background: var(--pressed); color: var(--on-pressed); }
+/* image-popup.css */
+.today.image-popup { --image-popup-surface: var(--panel-surface); --image-popup-line: color-mix(in oklch, var(--text) 12%, transparent); --image-popup-well: color-mix(in oklch, var(--text) 16%, var(--image-popup-surface)); --image-popup-wash: color-mix(in oklch, var(--image-popup-surface) 66%, transparent); --image-popup-tap: var(--size-control); position: relative; z-index: 9; display: flex; flex-direction: column; inline-size: 100%; border-radius: 10px; background: var(--image-popup-surface); color: var(--text); box-shadow: var(--shadow); font-size: var(--type-base); line-height: 1.35; }
+.today.image-popup :focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.today .image-popup__nub { position: absolute; left: -6px; top: 20px; width: 14px; height: 14px; border-radius: 2px; background: var(--image-popup-surface); transform: rotate(45deg); }
+.today .image-popup__grab { display: none; }
+.today .image-popup__head { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 6px 6px 14px; border-bottom: 1px solid var(--image-popup-line); }
+.today .image-popup__head b { font-size: var(--type-title); font-weight: 650; white-space: nowrap; }
+.today .image-popup__where { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: var(--type-small); white-space: nowrap; text-overflow: ellipsis; }
+.today .image-popup__icon { display: grid; place-items: center; width: var(--image-popup-tap); height: var(--image-popup-tap); padding: 0; border: 0; border-radius: var(--radius); background: transparent; }
+.today .image-popup__icon:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .today .image-popup__icon:hover { background: var(--hover); } }
+.today .image-popup__tools { display: flex; flex: none; }
+.today .image-popup__row { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 50px; padding: 8px 14px; border-bottom: 1px solid var(--image-popup-line); }
+.today .image-popup__row--picture { align-items: start; }
+.today .image-popup__row--picture > .image-popup__label { padding-top: 8px; }
+.today .image-popup__label { color: var(--muted); }
+.today .image-popup__well { position: relative; height: 152px; border-radius: var(--radius); background: var(--image-popup-well); display: grid; place-items: center; overflow: clip; }
+.today .image-popup__shape { position: absolute; top: 6px; left: 50%; z-index: 3; display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 8px 0 10px; border: 0; border-radius: var(--radius); background: oklch(from var(--image-control-scrim) l c h / 0.78); color: var(--on-media); font-size: var(--type-small); font-weight: 600; white-space: nowrap; transform: translateX(-50%); }
+.today .image-popup__shape:active { background: oklch(from var(--image-control-scrim) l c h / 0.9); }
+@media (hover: hover) and (pointer: fine) { .today .image-popup__shape:hover { background: oklch(from var(--image-control-scrim) l c h / 0.9); } }
+.today .image-popup__frame { border: 1.5px solid var(--on-media); box-shadow: 0 0 0 1px oklch(from var(--image-control-scrim) l c h / 0.45), 0 0 0 999px var(--image-popup-wash); }
+.today .image-popup__menu { position: absolute; top: 40px; left: 50%; translate: -50% 0; z-index: 6; min-width: 190px; padding: 4px; border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); }
+.today .image-popup__item { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 0 10px; border: 0; border-radius: var(--radius); background: transparent; text-align: left; }
+.today .image-popup__item:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .today .image-popup__item:hover { background: var(--hover); } }
+.today .image-popup__item .icon { margin-left: auto; visibility: hidden; }
+.today .image-popup__item[aria-checked="true"] { background: var(--current); font-weight: 600; }
+.today .image-popup__item[aria-checked="true"] .icon { visibility: visible; }
+.today .image-popup__under { display: flex; align-items: flex-start; gap: 8px; margin-block-start: 8px; }
+.today .image-popup__hint { min-width: 0; margin: 0; padding-top: 5px; color: var(--muted); font-size: var(--type-small); }
+.today .image-popup__link { display: inline-flex; flex: none; margin-left: auto; align-items: center; gap: 5px; min-height: 28px; padding: 0 8px; border: 0; border-radius: var(--radius); background: transparent; font-weight: 650; color: var(--link); }
+.today .image-popup__link:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .today .image-popup__link:hover { background: var(--hover); } }
+.today .image-popup__zoom { display: flex; align-items: center; gap: 8px; }
+.today .image-popup__range { --fill: 0%; flex: 1; min-width: 0; height: 28px; margin: 0; background: transparent; appearance: none; }
+.today .image-popup__range::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--primary) var(--fill), var(--image-popup-line) var(--fill)); }
+.today .image-popup__range::-webkit-slider-thumb { width: 18px; height: 18px; margin-top: -7px; border: 2px solid var(--primary); border-radius: 50%; background: var(--on-media); box-shadow: 0 1px 3px oklch(from var(--shadow-ink) l c h / 0.3); appearance: none; }
+.today .image-popup__range::-moz-range-track { height: 4px; border-radius: 2px; background: var(--image-popup-line); }
+.today .image-popup__range::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--primary); }
+.today .image-popup__range::-moz-range-thumb { width: 15px; height: 15px; border: 2px solid var(--primary); border-radius: 50%; background: var(--on-media); }
+.today .image-popup__value { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.today .image-popup__turn { display: flex; flex: none; }
+.today .image-popup__previews { display: flex; align-items: flex-end; gap: 10px; min-width: 0; }
+.today .image-popup__device { margin: 0; }
+.today .image-popup__device figcaption { display: flex; align-items: center; gap: 3px; margin-bottom: 2px; color: var(--muted); font-size: var(--type-small); line-height: 1.2; }
+.today .image-popup__screen { display: grid; place-items: center; overflow: hidden; border: 1px solid var(--image-popup-line); border-radius: 4px; background: var(--surface); }
+.today .image-popup__device--phone .image-popup__screen { border: 2px solid color-mix(in oklch, var(--text) 80%, transparent); border-radius: 6px; }
+.today .image-popup__bottom { display: flex; align-items: center; gap: 10px; padding: 8px 14px 10px; }
+.today .image-popup__message { display: flex; flex: 1; align-items: center; gap: 6px; min-width: 0; margin: 0; color: var(--muted); font-size: var(--type-base); line-height: 1.3; }
+.today .image-popup__message--new .icon { color: var(--color-warning); }
+.today .image-popup__button { min-height: var(--image-popup-tap); padding: 0 18px; border: 1px solid var(--control-line); border-radius: var(--radius); background: transparent; font-weight: 600; }
+.today .image-popup__button--primary { border-color: transparent; background: var(--primary); color: var(--on-primary); }
+.today .image-popup__button--primary:active { background: var(--primary-hover); }
+@media (hover: hover) and (pointer: fine) { .today .image-popup__button--primary:hover { background: var(--primary-hover); } }
+@container stage (width < 700px) {
+  .today.image-popup { --image-popup-tap: 44px; border-radius: 14px 14px 0 0; box-shadow: 0 -8px 32px var(--semantic-shadow); }
+  .today .image-popup__nub { display: none; }
+  .today .image-popup__grab { position: absolute; top: 6px; left: 50%; display: block; width: 36px; height: 4px; border-radius: 2px; background: var(--image-popup-line); transform: translateX(-50%); }
+  .today .image-popup__head { padding: 10px 4px 2px 14px; }
+  .today .image-popup__row { grid-template-columns: minmax(0, 1fr); gap: 4px; min-height: 0; padding: 8px 14px; }
+  .today .image-popup__row--picture > .image-popup__label { padding-top: 0; }
+  .today .image-popup__label { font-size: var(--type-small); }
+  .today .image-popup__well { height: 196px; }
+  .today .image-popup__shape { top: 4px; height: 44px; padding: 0 12px 0 14px; font-size: var(--type-base); }
+  .today :is(.image-popup__item, .image-popup__link) { min-height: 44px; }
+  .today .image-popup__range { height: 44px; }
+  .today .image-popup__bottom { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 14px 14px; border-top: 1px solid var(--image-popup-line); }
+}
+/* media-spot-popup.css */
+.today .media-spot__line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-inline-size: 0; }
+.today .media-spot__line > .image-popup__link { margin-inline-start: 0; }
+.today .media-spot__thumb { inline-size: 48px; block-size: 28px; border-radius: 4px; }
+.today .media-spot__note { color: var(--muted); font-size: var(--type-small); }
+.today .media-spot__switch { flex: none; inline-size: 18px; block-size: 18px; margin: 0; accent-color: var(--primary); }
+.today .media-spot__field { box-sizing: border-box; inline-size: 100%; min-block-size: 32px; padding: 0 10px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--image-popup-surface); color: var(--text); }
+.today .media-spot__field:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+/* image-large-editor.css */
+.today.large-backdrop { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; padding: 40px; background: oklch(from var(--semantic-shadow) l c h / 0.35); }
+.today.image-large { --image-large-area: color-mix(in oklch, var(--text) 10%, var(--surface)); --image-large-tap: 36px; inline-size: 100%; block-size: 100%; border-radius: var(--radius-dialog); background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-size: var(--type-base); line-height: 1.4; display: flex; flex-direction: column; overflow: clip; container: large / inline-size; }
+.today .image-large__head { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 18px 20px 14px 24px; }
+.today .image-large__titles { min-width: 0; margin-right: auto; }
+.today .image-large__title { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.25; }
+.today .image-large__where { display: block; color: var(--muted); font-size: var(--type-small); }
+.today .image-large__icon { display: grid; flex: none; place-items: center; width: var(--image-large-tap); height: var(--image-large-tap); padding: 0; border: 0; border-radius: var(--radius); background: transparent; }
+.today .image-large__icon:active:not(:disabled) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .today .image-large__icon:hover:not(:disabled) { background: var(--hover); } }
+.today .image-large__icon:disabled { opacity: 0.38; }
+.today .image-large__icon[aria-pressed="true"] { background: var(--pressed); color: var(--on-pressed); }
+.today .image-large__text { display: inline-flex; align-items: center; gap: 6px; min-height: var(--image-large-tap); padding: 0 12px; border: 0; border-radius: var(--radius); background: transparent; font-weight: 600; color: var(--link); }
+.today .image-large__text:disabled { color: var(--muted); opacity: 0.6; }
+@media (hover: hover) and (pointer: fine) { .today .image-large__text:hover:not(:disabled) { background: var(--hover); } }
+.today .image-large__primary { min-height: var(--image-large-tap); padding: 0 20px; border: 0; border-radius: var(--radius); background: var(--primary); font-weight: 600; color: var(--on-primary); }
+@media (hover: hover) and (pointer: fine) { .today .image-large__primary:hover { background: var(--primary-hover); } }
+.today .image-large__body { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: minmax(0, 1fr); min-height: 0; }
+.today .image-large__main { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 0 24px; }
+.today .image-large__area { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; border-radius: var(--radius-panel); background: var(--image-large-area); }
+.today .image-large__stage { container-type: size; position: relative; flex: 1; min-height: 160px; display: grid; place-items: center; overflow: hidden; }
+.today .image-large__frame { position: absolute; border: 1px solid var(--text); box-shadow: 0 0 0 4000px color-mix(in oklch, var(--image-large-area) 64%, transparent); }
+.today .image-large__handle::after { content: ""; position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border: 1.5px solid var(--primary); border-radius: 50%; background: var(--on-media); box-shadow: 0 1px 3px oklch(from var(--shadow-ink) l c h / 0.35); }
+.today .image-large__ruler-row { display: grid; flex: none; place-items: center; height: 56px; padding: 0 12px; }
+.today .image-large__side { display: flex; flex-direction: column; gap: 20px; min-height: 0; overflow: auto; padding: 4px 24px 16px 0; }
+.today .image-large__label { display: block; margin-bottom: 4px; font-size: 11px; font-weight: 600; line-height: 1.4; text-transform: uppercase; }
+.today .image-large__tools { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.today .image-large__buttons { display: flex; gap: 4px; }
+.today .image-large__shape { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; height: 40px; padding: 0 10px 0 12px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-input); text-align: start; }
+.today .image-large .image-popup__previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 12px; }
+.today .image-large__foot { display: flex; align-items: center; gap: 12px; padding: 14px 24px 20px; }
+.today .image-large__foot-group { display: flex; align-items: center; gap: 4px; }
+.today .image-large__foot-group:last-child { margin-inline-start: auto; }
+.today .image-large__iconrow { display: none; }
+@container large (width < 700px) {
+  .today.image-large { --image-large-tap: 44px; border-radius: 0; }
+  .today .image-large__head { padding: 8px 4px 6px 16px; gap: 2px; }
+  .today .image-large__body { grid-template-columns: minmax(0, 1fr); }
+  .today .image-large__main { padding: 0 12px; }
+  .today .image-large__side { display: none; }
+  .today .image-large__iconrow { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; padding: 6px 0 2px; }
+  .today .image-large__tool { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 56px; min-width: 0; border: 0; border-radius: var(--radius); background: transparent; padding: 0; }
+  .today .image-large__tool[aria-pressed="true"] { background: var(--pressed); color: var(--on-pressed); }
+  .today .image-large__tool-label { color: var(--muted); font-size: 11px; line-height: 1.2; max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .today .image-large__tool[aria-pressed="true"] .image-large__tool-label { color: inherit; }
+  .today .image-large__foot { flex-wrap: wrap; padding: 8px 8px 12px; gap: 4px; }
+  .today .image-large__foot .image-popup__message { flex-basis: 100%; order: -1; padding: 2px 8px 4px; }
+  .today .image-large__foot-group { gap: 0; }
+  .today .image-large__text { padding: 0 10px; }
+  .today .image-large__primary { padding: 0 16px; }
+}
+
+/* =====================  AFTER: catalogue parts  ===================== */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  .p-press:active:not(:disabled) { scale: 0.97; }
+}
+/* Button: tones primary, secondary, quiet, danger; sizes compact, control, touch */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: var(--size-control); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; }
+.p-button[data-size="compact"] { min-block-size: var(--size-compact); padding-inline: var(--space-xs); }
+.p-button[data-size="touch"] { min-block-size: var(--size-touch); padding-inline: var(--space-m); }
+.p-button[data-tone="primary"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-button[data-tone="quiet"] { background: transparent; box-shadow: none; color: var(--link); }
+.p-button[data-tone="danger"] { background: var(--danger-bg); color: var(--danger-fg); box-shadow: none; }
+.p-button[aria-checked="true"] { background: var(--current); box-shadow: none; }
+.p-button:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.p-button[data-tone="primary"]:active:not(:disabled) { background: var(--primary-hover); }
+.p-button[data-tone="quiet"]:active:not(:disabled) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-button:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .p-button[data-tone="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
+  .p-button[data-tone="quiet"]:hover:not(:disabled) { background: var(--hover); }
+  .p-button[aria-checked="true"]:hover { background: linear-gradient(var(--hover) 0 0), var(--current); }
+}
+@media (pointer: coarse) { .p-button { min-block-size: var(--size-touch); } }
+/* Icon button: icon 24, compact 28, control 32 (44 on touch screens) */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.p-icon-button[data-size="icon"] { inline-size: var(--size-icon); block-size: var(--size-icon); border-radius: var(--radius-small); }
+.p-icon-button[data-size="compact"] { inline-size: var(--size-compact); block-size: var(--size-compact); }
+.p-icon-button[aria-pressed="true"], .p-icon-button[aria-expanded="true"] { background: var(--hover); color: var(--text); }
+.p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Field: one part, inline or boxed, one focus and one error look */
+.p-field { inline-size: 100%; min-inline-size: 0; block-size: var(--size-control); padding-inline: var(--space-xs); border: 0; border-radius: var(--radius); background: var(--surface-input); box-shadow: inset 0 0 0 1px var(--control-line); caret-color: var(--primary); font-size: var(--type-base); }
+.p-field[data-size="compact"] { block-size: var(--size-compact); }
+.p-field:focus, .p-field.is-focus { outline: none; box-shadow: inset 0 0 0 1px var(--control-line), inset 0 -2px 0 var(--primary); background-color: color-mix(in oklch, var(--primary) 7%, var(--surface-input)); }
+.p-field[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--control-line), inset 0 -2px 0 var(--danger); }
+@media (hover: hover) and (pointer: fine) { .p-field:hover:not(:focus, .is-focus) { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--text) 32%, transparent); } }
+@media (prefers-reduced-motion: no-preference) { .p-field { transition: background-color var(--dur-hover) var(--ease-out), box-shadow var(--dur-hover) var(--ease-out); } }
+.p-field-label { display: grid; gap: var(--space-3xs); font-size: var(--type-small); color: var(--muted); }
+.p-field-note { margin: 0; font-size: var(--type-small); color: var(--muted); }
+.p-field-note[data-tone="error"] { color: var(--danger-fg); }
+/* Badge: words only, pill corner from --radius-full */
+.p-badge { display: inline-flex; align-items: center; flex: none; block-size: 18px; padding-inline: var(--space-2xs); border-radius: var(--radius-full); font-size: var(--type-badge); font-weight: 600; background: var(--surface-subtle); color: var(--link); }
+.p-badge[data-tone="success"] { background: var(--success-bg); color: var(--success-fg); }
+.p-badge[data-tone="warning"] { background: var(--warning-bg); color: var(--warning-fg); }
+.p-badge[data-tone="info"] { background: var(--current); color: var(--link); }
+/* Tooltip */
+.p-tip-anchor { position: relative; display: inline-grid; }
+.p-tooltip { position: absolute; inset-block-end: calc(100% + 6px); inset-inline-end: 0; display: inline-flex; gap: var(--space-2xs); align-items: center; padding: var(--space-3xs) var(--space-xs); border-radius: var(--radius); background: var(--text); color: var(--surface); font-size: var(--type-small); font-weight: 600; white-space: nowrap; opacity: 0; pointer-events: none; z-index: 15; }
+.p-tip-anchor:has(:focus-visible) .p-tooltip { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .p-tip-anchor:hover .p-tooltip { opacity: 1; transition-delay: 400ms; } }
+@media (prefers-reduced-motion: no-preference) { .p-tooltip { transition: opacity var(--dur-tooltip) var(--ease-out); } }
+/* Menu */
+.p-menu { position: absolute; inset-block-start: calc(100% + var(--space-3xs)); inset-inline-end: 0; z-index: 20; display: grid; gap: var(--space-4xs); min-inline-size: 13rem; padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); font-weight: 400; box-shadow: var(--shadow); }
+.p-menu-item { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: var(--space-xs); inline-size: 100%; min-block-size: var(--size-control); border: 0; background: transparent; padding-inline: var(--space-xs); border-radius: var(--radius); text-align: start; white-space: nowrap; }
+.p-menu-item__words { display: inline-flex; align-items: center; gap: var(--space-2xs); }
+.p-menu-item kbd { font: inherit; font-size: var(--type-small); color: var(--muted); }
+.p-menu-item[data-tone="danger"] { color: var(--danger-fg); }
+.p-menu-item[data-state="done"] { color: var(--success-fg); }
+.p-menu-item:active { background: var(--hover); }
+.p-menu-item:focus-visible { outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .p-menu-item:hover { background: var(--hover); } }
+@media (pointer: coarse) { .p-menu-item { min-block-size: var(--size-touch); } }
+.p-menu-sep { block-size: 1px; margin: var(--space-3xs) var(--space-4xs); background: var(--line); }
+/* Dialog: one backdrop */
+.p-backdrop { position: absolute; inset: 0; z-index: 25; display: grid; place-items: center; padding: var(--space-m); border-radius: inherit; background: oklch(from var(--shadow-color) l c h / 0.45); }
+.p-dialog { inline-size: min(420px, 100%); padding: var(--space-m); border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow); display: grid; gap: var(--space-s); }
+.p-dialog h3 { margin: 0; font-size: var(--type-title); }
+.p-row { display: flex; gap: var(--space-xs); justify-content: end; flex-wrap: wrap; }
+.p-choices { display: flex; gap: var(--space-2xs); }
+/* Tabs */
+.p-tabs { display: flex; flex: 1; gap: var(--space-4xs); min-inline-size: 0; }
+.p-tab { flex: 1; min-inline-size: 0; min-block-size: var(--size-control); padding-inline: var(--space-s); margin-block-end: -1px; border: 0; border-block-end: 2px solid transparent; background: transparent; color: var(--muted); font-weight: 600; }
+.p-tab[aria-selected="true"] { color: var(--text); border-block-end-color: var(--primary); }
+.p-tab:focus-visible { outline-offset: -2px; border-radius: var(--radius) var(--radius) 0 0; }
+.p-tab:active { color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-tab:hover { color: var(--text); } }
+@container (width >= 36rem) { .p-tab { flex: none; } }
+/* Empty state */
+.p-empty { display: grid; justify-items: center; gap: var(--space-xs); padding: var(--space-l) var(--space-m); text-align: center; color: var(--muted); }
+.p-empty .icon { inline-size: 24px; block-size: 24px; }
+.p-empty p { margin: 0; }
+/* Entry motion for menus and dialogs, only on the render that opens them */
+@media (prefers-reduced-motion: no-preference) {
+  .p-enter { animation: p-in var(--dur-menu) var(--ease-out); }
+  .p-enter.p-backdrop { animation: p-fade var(--dur-menu) var(--ease-out); }
+  .p-enter .p-dialog { animation: p-in var(--dur-menu) var(--ease-out); }
+}
+@keyframes p-in { from { opacity: 0; scale: 0.97; } }
+@keyframes p-fade { from { opacity: 0; } }
+
+/* Switch (board 08) */
+.p-switch { position: relative; flex: none; inline-size: 32px; block-size: 18px; margin: 0; padding: 0; border: 0; border-radius: var(--radius-full); background: color-mix(in oklch, var(--text) 22%, transparent); }
+.p-switch::after { content: ""; position: absolute; inset-block-start: 2px; inset-inline-start: 2px; inline-size: 14px; block-size: 14px; border-radius: var(--radius-full); background: var(--on-media); box-shadow: 0 1px 2px oklch(0% 0 none / 0.3); }
+.p-switch[aria-checked="true"] { background: var(--primary); }
+.p-switch[aria-checked="true"]::after { translate: 14px 0; }
+.p-switch:active { background: color-mix(in oklch, var(--text) 32%, transparent); }
+@media (hover: hover) and (pointer: fine) { .p-switch:hover { background: color-mix(in oklch, var(--text) 32%, transparent); } .p-switch[aria-checked="true"]:hover { background: var(--primary-hover); } }
+@media (prefers-reduced-motion: no-preference) { .p-switch { transition: background-color var(--dur-press) ease; } .p-switch::after { transition: translate var(--dur-menu) var(--ease-out); } }
+/* Button options this screen needs: on a picture, and a picker-like button with a caret */
+.p-button[data-place="picture"] { background: oklch(from var(--image-control-scrim) l c h / 0.78); color: var(--on-media); box-shadow: none; }
+.p-button[data-place="picture"]:active { background: oklch(from var(--image-control-scrim) l c h / 0.9); }
+@media (hover: hover) and (pointer: fine) { .p-button[data-place="picture"]:hover { background: oklch(from var(--image-control-scrim) l c h / 0.9); } }
+.p-button[data-tone="plain"] { background: transparent; box-shadow: none; color: inherit; }
+@media (hover: hover) and (pointer: fine) { .p-button[data-tone="plain"]:hover:not(:disabled) { background: var(--hover); } }
+.p-button[data-tone="plain"]:active { background: var(--hover); }
+.p-button:disabled, .p-icon-button:disabled { opacity: 0.45; cursor: default; }
+.p-icon-button[aria-pressed="true"] { background: var(--pressed); color: var(--on-pressed); }
+/* Slider: one look */
+.p-range { --fill: 0%; flex: 1; min-inline-size: 0; block-size: var(--size-compact); margin: 0; background: transparent; appearance: none; }
+.p-range::-webkit-slider-runnable-track { block-size: 4px; border-radius: var(--radius-full); background: linear-gradient(90deg, var(--primary) var(--fill), var(--control-line) var(--fill)); }
+.p-range::-webkit-slider-thumb { inline-size: 16px; block-size: 16px; margin-block-start: -6px; border: 2px solid var(--primary); border-radius: var(--radius-full); background: var(--on-media); box-shadow: var(--shadow-small); appearance: none; }
+.p-range::-moz-range-track { block-size: 4px; border-radius: var(--radius-full); background: var(--control-line); }
+.p-range::-moz-range-progress { block-size: 4px; border-radius: var(--radius-full); background: var(--primary); }
+.p-range::-moz-range-thumb { inline-size: 12px; block-size: 12px; border: 2px solid var(--primary); border-radius: var(--radius-full); background: var(--on-media); }
+.p-range:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-small); }
+@media (pointer: coarse) { .p-range { block-size: var(--size-touch); } }
+.p-menu[data-at="picture"] { inset-block-start: calc(var(--size-control) + var(--space-xs)); inset-inline: 50% auto; translate: -50% 0; z-index: 6; }
+.p-menu[data-at="below"] { inset-block-start: calc(100% + var(--space-3xs)); inset-inline: 0 auto; }
+.p-menu-item__words { display: inline-flex; align-items: center; gap: var(--space-2xs); }
+.p-menu-item .icon[data-check] { visibility: hidden; }
+.p-menu-item[aria-checked="true"] { background: var(--current); font-weight: 600; }
+.p-menu-item[aria-checked="true"] .icon[data-check] { visibility: visible; }
+/* Edit bar organism (prototype 10) */
+.p-edit-bar { display: flex; flex-direction: column; align-items: flex-start; }
+.p-edit-bar__label { display: inline-flex; align-items: center; block-size: var(--size-icon); padding-inline: var(--space-xs); border-radius: var(--radius) var(--radius) var(--radius) 0; background: var(--panel-surface); box-shadow: var(--shadow-small); font-size: var(--type-small); font-weight: 600; }
+.p-edit-bar__controls { display: flex; align-items: center; gap: var(--space-4xs); padding: var(--space-3xs); border-radius: 0 var(--radius) var(--radius) var(--radius); background: var(--panel-surface); box-shadow: var(--shadow-small); }
+
+/* Image popup organism, built from the parts above: layout values only */
+.after.ip { --ip-line: color-mix(in oklch, var(--text) 12%, transparent); --ip-well: color-mix(in oklch, var(--text) 16%, var(--panel-surface)); --ip-wash: color-mix(in oklch, var(--panel-surface) 66%, transparent); position: relative; z-index: 9; display: flex; flex-direction: column; inline-size: 100%; border-radius: var(--radius-dialog); background: var(--panel-surface); box-shadow: var(--shadow); line-height: 1.35; }
+.ip__nub { position: absolute; inset-inline-start: -6px; inset-block-start: var(--space-l); inline-size: 14px; block-size: 14px; border-radius: 2px; background: var(--panel-surface); rotate: 45deg; }
+.ip__grab { display: none; }
+.ip__head { display: flex; align-items: center; gap: var(--space-xs); min-inline-size: 0; padding: var(--space-2xs) var(--space-2xs) var(--space-2xs) var(--space-s); border-block-end: 1px solid var(--ip-line); }
+.ip__head b { font-size: var(--type-title); font-weight: 600; }
+.ip__where { flex: 1; min-inline-size: 0; overflow: clip; color: var(--muted); font-size: var(--type-small); white-space: nowrap; text-overflow: ellipsis; }
+.ip__row { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: var(--space-s); min-block-size: 48px; padding: var(--space-xs) var(--space-s); border-block-end: 1px solid var(--ip-line); }
+.ip__row[data-top] { align-items: start; }
+.ip__row[data-top] > .ip__label { padding-block-start: var(--space-xs); }
+.ip__label { color: var(--muted); }
+.ip__well { position: relative; block-size: 152px; border-radius: var(--radius); background: var(--ip-well); display: grid; place-items: center; overflow: clip; }
+.ip__well > .p-button { position: absolute; inset-block-start: var(--space-2xs); inset-inline-start: 50%; translate: -50% 0; z-index: 3; }
+.ip__under { display: flex; align-items: flex-start; gap: var(--space-xs); margin-block-start: var(--space-xs); }
+.ip__under p { min-inline-size: 0; margin: 0; padding-block-start: var(--space-3xs); color: var(--muted); font-size: var(--type-small); }
+.ip__under .p-button { margin-inline-start: auto; }
+.ip__zoom { display: flex; align-items: center; gap: var(--space-xs); }
+.ip__value { min-inline-size: 40px; text-align: end; font-variant-numeric: tabular-nums; }
+.ip__turn { display: flex; flex: none; }
+.ip__previews { display: flex; align-items: flex-end; gap: var(--space-s); min-inline-size: 0; }
+.ip__device { margin: 0; }
+.ip__device figcaption { display: flex; align-items: center; gap: var(--space-3xs); margin-block-end: var(--space-4xs); color: var(--muted); font-size: var(--type-small); line-height: 1.2; }
+.ip__screen { display: grid; place-items: center; overflow: clip; border: 1px solid var(--ip-line); border-radius: var(--radius-small); background: var(--surface); }
+.ip__device[data-kind="phone"] .ip__screen { border: 2px solid color-mix(in oklch, var(--text) 80%, transparent); border-radius: var(--radius); }
+.ip__bottom { display: flex; align-items: center; gap: var(--space-s); padding: var(--space-xs) var(--space-s) var(--space-s); }
+.ip__message { display: flex; flex: 1; align-items: center; gap: var(--space-2xs); min-inline-size: 0; margin: 0; color: var(--muted); }
+.ip__message[data-tone="new"] .icon { color: var(--color-warning); }
+.ip__line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3xs) var(--space-2xs); min-inline-size: 0; }
+.ip__thumb { inline-size: 48px; block-size: 28px; border-radius: var(--radius-small); }
+.ip__note { color: var(--muted); font-size: var(--type-small); }
+@container stage (width < 700px) {
+  .after.ip { border-radius: var(--radius-dialog) var(--radius-dialog) 0 0; box-shadow: 0 -8px 32px var(--shadow-color); }
+  .ip__nub { display: none; }
+  .ip__grab { position: absolute; inset-block-start: var(--space-2xs); inset-inline-start: 50%; translate: -50% 0; display: block; inline-size: 36px; block-size: 4px; border-radius: var(--radius-full); background: var(--ip-line); }
+  .ip__head { padding: var(--space-s) var(--space-3xs) var(--space-4xs) var(--space-s); }
+  .ip__row { grid-template-columns: minmax(0, 1fr); gap: var(--space-3xs); min-block-size: 0; }
+  .ip__row[data-top] > .ip__label { padding-block-start: 0; }
+  .ip__label { font-size: var(--type-small); }
+  .ip__well { block-size: 196px; }
+  .ip__bottom { flex-direction: column; align-items: stretch; gap: var(--space-xs); border-block-start: 1px solid var(--ip-line); }
+}
+/* Large editor organism */
+.p-backdrop.large { padding: 40px; z-index: 20; background: oklch(from var(--shadow-color) l c h / 0.45); }
+.after.le { --le-area: color-mix(in oklch, var(--text) 10%, var(--surface)); inline-size: 100%; block-size: 100%; border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow); line-height: 1.4; display: flex; flex-direction: column; overflow: clip; container: large / inline-size; }
+.le__head { display: flex; align-items: center; gap: var(--space-xs); min-inline-size: 0; padding: var(--space-m) var(--space-m) var(--space-s) var(--space-l); }
+.le__titles { min-inline-size: 0; margin-inline-end: auto; }
+.le__titles h2 { margin: 0; font-size: 18px; line-height: 1.25; }
+.le__titles span { display: block; color: var(--muted); font-size: var(--type-small); }
+.le__body { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: minmax(0, 1fr); min-block-size: 0; }
+.le__main { display: flex; flex-direction: column; min-inline-size: 0; min-block-size: 0; padding-inline: var(--space-l); }
+.le__area { display: flex; flex: 1; flex-direction: column; min-block-size: 0; overflow: clip; border-radius: var(--radius-panel); background: var(--le-area); }
+.le__stage { container-type: size; position: relative; flex: 1; min-block-size: 160px; display: grid; place-items: center; overflow: clip; }
+.le__frame { position: absolute; border: 1px solid var(--text); box-shadow: 0 0 0 4000px color-mix(in oklch, var(--le-area) 64%, transparent); }
+.le__handle::after { content: ""; position: absolute; inline-size: 12px; block-size: 12px; margin: -6px 0 0 -6px; border: 1.5px solid var(--primary); border-radius: var(--radius-full); background: var(--on-media); box-shadow: 0 1px 3px oklch(from var(--shadow-ink) l c h / 0.35); }
+.le__ruler-row { display: grid; flex: none; place-items: center; block-size: 56px; padding-inline: var(--space-s); }
+.le__side { display: flex; flex-direction: column; gap: var(--space-l); min-block-size: 0; overflow: auto; padding: var(--space-3xs) var(--space-l) var(--space-m) 0; }
+.le__label { display: block; margin-block-end: var(--space-3xs); font-size: var(--type-badge); font-weight: 600; text-transform: uppercase; }
+.le__tools { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-l); }
+.le__buttons { display: flex; gap: var(--space-3xs); }
+.le__side .p-button { inline-size: 100%; justify-content: space-between; font-weight: 400; background: var(--surface-input); box-shadow: inset 0 0 0 1px var(--control-line); }
+.le__side .ip__previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: var(--space-s); }
+.le__foot { display: flex; align-items: center; gap: var(--space-s); padding: var(--space-s) var(--space-l) var(--space-m); }
+.le__group { display: flex; align-items: center; gap: var(--space-3xs); }
+.le__group:last-child { margin-inline-start: auto; }
+.le__iconrow { display: none; }
+@container large (width < 700px) {
+  .after.le { border-radius: 0; }
+  .le__head { padding: var(--space-xs) var(--space-3xs) var(--space-2xs) var(--space-m); gap: var(--space-4xs); }
+  .le__body { grid-template-columns: minmax(0, 1fr); }
+  .le__main { padding-inline: var(--space-s); }
+  .le__side { display: none; }
+  .le__iconrow { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-4xs); padding-block: var(--space-2xs) var(--space-4xs); }
+  .le__tool { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3xs); block-size: 56px; min-inline-size: 0; inline-size: auto; }
+  .le__tool span { color: var(--muted); font-size: var(--type-badge); line-height: 1.2; max-inline-size: 100%; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+  .le__tool[aria-pressed="true"] span { color: inherit; }
+  .le__foot { flex-wrap: wrap; padding: var(--space-xs) var(--space-xs) var(--space-s); gap: var(--space-3xs); }
+  .le__foot .ip__message { flex-basis: 100%; order: -1; padding: var(--space-4xs) var(--space-xs) var(--space-3xs); }
+  .le__group { gap: 0; }
+}
+
+/* Shared drawing for both views: picture box, frame, ruler (layout only) */
+.picbox { position: relative; block-size: 100%; max-inline-size: 100%; overflow: clip; border-radius: 2px; }
+.picbox .pic { position: absolute; inset-block-start: 50%; inset-inline-start: 50%; translate: -50% -50%; }
+.cropframe { position: absolute; inset-block-start: 50%; translate: -50% -50%; pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) { .picbox .pic, .cropframe, .spot .pic, .shot .pic { transition: rotate var(--dur-menu) var(--ease-out), scale var(--dur-menu) var(--ease-out), inset-inline-start var(--dur-menu) var(--ease-out), block-size var(--dur-menu) var(--ease-out); } }
+.ruler { position: relative; inline-size: min(360px, 100%); block-size: 40px; border-radius: var(--radius-small); overflow: clip; mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent); }
+.ruler__strip { position: absolute; inset-block: 0; inline-size: 541px; background:
+  linear-gradient(var(--text), var(--text)) 0 100% / 1px 14px,
+  repeating-linear-gradient(90deg, var(--text) 0 1px, transparent 1px 90px) 0 calc(100% - 4px) / 100% 14px no-repeat,
+  repeating-linear-gradient(90deg, var(--muted) 0 1px, transparent 1px 45px) 0 calc(100% - 4px) / 100% 9px no-repeat,
+  repeating-linear-gradient(90deg, var(--muted) 0 1px, transparent 1px 9px) 0 calc(100% - 4px) / 100% 6px no-repeat; background-repeat: no-repeat; }
+@media (prefers-reduced-motion: no-preference) { .ruler__strip { transition: inset-inline-start var(--dur-menu) var(--ease-out); } }
+.ruler__strip span { position: absolute; inset-block-start: 1px; translate: -50% 0; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.ruler__pointer { position: absolute; inset-block-end: 4px; inset-inline-start: 50%; inline-size: 2px; block-size: 18px; margin-inline-start: -1px; background: var(--primary); }
+.ruler__reading { position: absolute; inset-block-start: 1px; inset-inline-start: 50%; translate: -50% 0; padding: 0 3px; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.shot { position: relative; overflow: clip; }
+.shot .pic { position: absolute; inset: 0; }
+</style>
+</head>
+<body data-mode="after">
+<main>
+  <header>
+    <h1>Image popup, Media popup and large image editor, rebuilt from catalogue parts <span class="tag">mock-up for Tuesday 10 Nov</span></h1>
+    <p class="intro">The Image popup opens from the edit bar's Media button on a picture: you pick its shape, move the focus square, zoom, turn or replace it, and the large editor gives room to straighten and flip. The Media popup does the same job for a video. Nothing they do changes; every change shows on the page at once and Close keeps it. After shows the same screens built only from the approved parts.</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+  </div>
+  <p class="summary today">Today: the three screens as they are now, copied from the editor's stylesheets.</p>
+  <p class="summary after">Same colours, type and layout. 11 button styles of their own become 3 shared parts, icon buttons in 3 sizes (32, 36 and 56) become 1, 10 corner sizes become the 5 shared ones, about 30 spacing values snap to the scale, and the two shape pickers become one button.</p>
+
+  <section class="demo" aria-labelledby="demo-h">
+    <h2 id="demo-h">Demo steps (not part of the editor)</h2>
+    <div class="buttons">
+      <button type="button" data-step="open">1 Open the Image popup</button>
+      <button type="button" data-step="shape">2 Pick a shape</button>
+      <button type="button" data-step="focus">3 Move the focus square</button>
+      <button type="button" data-step="zoom">4 Zoom in</button>
+      <button type="button" data-step="turn">5 Turn right</button>
+      <button type="button" data-step="replace">6 Replace</button>
+      <button type="button" data-step="large">7 Open the large editor</button>
+      <button type="button" data-step="straighten">8 Straighten</button>
+      <button type="button" data-step="flip">9 Flip side to side</button>
+      <button type="button" data-step="done">10 Done</button>
+      <button type="button" data-step="loop">11 Video: Loop silently</button>
+      <button type="button" data-step="reset">Start again</button>
+    </div>
+    <p class="now" id="now" aria-live="polite"></p>
+  </section>
+
+  <div class="stage" id="stage"></div>
+  <div class="stage" id="stage2"></div>
+  <ul class="changes after">
+    <li>head, turn, flip and zoom buttons become the shared icon button</li><li>Replace, Reset and Cancel become the shared quiet button</li><li>Done is the shared main button</li>
+    <li>one slider look</li><li>shape picker: one button, on the picture or in the side panel</li><li>the video's tick box becomes the shared switch</li><li>the video's Title becomes the shared field</li><li>corners and spacing on the shared scale</li><li>large editor icons at the shared 16 px (22 today)</li>
+  </ul>
+</main>
+
+<script>
+const P = {
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/>',
+  link: '<path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1"/><path d="M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/>',
+  dots: '<circle cx="6" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  out: '<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>',
+  caretDown: '<path d="m6 9 6 6 6-6"/>',
+  check: '<path d="m5 12 5 5 9-10"/>',
+  checkCircle: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  rotL: '<path d="M3 4v5h5"/><path d="M3.6 9A8.5 8.5 0 1 1 5 15.5"/>',
+  rotR: '<path d="M21 4v5h-5"/><path d="M20.4 9A8.5 8.5 0 1 0 19 15.5"/>',
+  flipH: '<path d="M12 3v18"/><path d="M9 7 4 17h5z"/><path d="m15 7 5 10h-5z"/>',
+  flipV: '<path d="M3 12h18"/><path d="M7 9 17 4v5z"/><path d="m7 15 10 5v-5z"/>',
+  zoomOut: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6"/>',
+  zoomIn: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4M8 11h6M11 8v6"/>',
+  phone: '<rect x="7" y="3" width="10" height="18" rx="2"/>',
+  desktop: '<rect x="3" y="4" width="18" height="12" rx="1"/><path d="M8 20h8M12 16v4"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>',
+  crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
+};
+const icon = (n, s, extra = "") => `<svg class="icon"${s ? ` style="inline-size:${s}px;block-size:${s}px"` : ""} viewBox="0 0 24 24" aria-hidden="true"${extra}>${P[n]}</svg>`;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const SHAPES = [["Original", 4 / 3], ["Square", 1], ["4:3", 4 / 3], ["16:9", 16 / 9], ["Tall 4:5", 4 / 5], ["Free", 4 / 3]];
+
+function freshState() {
+  return { mode: document.body.dataset.mode || "after", open: false, menu: false, shape: "Original", fx: 50, zoom: 100, turn: 0, flip: false, deg: 0,
+    pic: "bread", large: false, history: 0, loop: false, videoMsg: "", fresh: new Set() };
+}
+let S = freshState();
+const A = () => S.mode === "after";
+const say = (t) => { document.getElementById("now").textContent = t; };
+const ratio = () => { const r = SHAPES.find((s) => s[0] === S.shape)[1]; return S.shape === "Original" ? (S.turn % 180 ? 3 / 4 : 4 / 3) : r; };
+const picRatio = () => (S.turn % 180 ? 3 / 4 : 4 / 3);
+const saves = () => S.zoom > 100 || S.turn || S.deg || S.flip || S.shape === "Free";
+const turnLabel = () => `Turn, now ${S.turn}°${S.deg ? ` · straightened ${S.deg}°` : ""}${S.flip ? " · flipped" : ""}`;
+
+/* The picture drawn inside a box of the picture's own ratio, turned, straightened and flipped */
+function picInBox() {
+  const turned = S.turn % 180 !== 0;
+  const size = turned ? "inline-size:133.333%;block-size:75%" : "inline-size:100%;block-size:100%";
+  const extra = S.deg ? 1 + Math.abs(S.deg) / 45 : 1;
+  return `<span class="pic pic-${S.pic}" style="${size};rotate:${S.turn + S.deg}deg;scale:${S.flip ? -extra : extra} ${extra}"></span>`;
+}
+/* Frame inside the picture box: the part of the picture the spot shows */
+function frame(cls, extraStyle = "") {
+  if (S.shape === "Original" && S.zoom === 100 && !S.turn && !S.deg) return "";
+  const pr = picRatio(), r = ratio(), z = S.zoom / 100;
+  let h = 100 / z, w = (h * r) / pr; if (w > 100 / z) { w = 100 / z; h = (w * pr) / r; }
+  const x = Math.min(100 - w / 2, Math.max(w / 2, S.fx));
+  return `<span class="${cls} cropframe" style="inset-inline-start:${x}%;inline-size:${w}%;block-size:${h}%;${extraStyle}"></span>`;
+}
+/* What a visitor sees in the spot: the picture cropped to the shape */
+function shot(w, h) {
+  const r = ratio(), z = S.zoom / 100, ar = Math.min(w / h, 4);
+  return `<span class="shot" style="inline-size:${Math.min(w, h * r)}px;aspect-ratio:${r};max-block-size:${h}px"><span class="pic pic-${S.pic}" style="rotate:${S.turn + S.deg}deg;scale:${(S.flip ? -1 : 1) * z * (S.deg ? 1.2 : 1)} ${z * (S.deg ? 1.2 : 1)};transform-origin:${S.fx}% 50%"></span></span>`;
+}
+
+/* ---------- Edit bar and page ---------- */
+function editBar() {
+  const exp = S.open || S.large;
+  if (!A()) return `<div class="today edit-bar"><span class="edit-bar__label">Image</span><div class="edit-bar__controls"><button type="button" class="edit-bar__button" data-act="toggle" aria-label="Media" aria-expanded="${exp}">${icon("image")}</button><button type="button" class="edit-bar__button" aria-label="Link">${icon("link")}</button><button type="button" class="edit-bar__button" aria-label="More">${icon("dots")}</button></div></div>`;
+  return `<div class="after p-edit-bar"><span class="p-edit-bar__label">Image</span><div class="p-edit-bar__controls"><span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" data-size="compact" data-act="toggle" aria-label="Media" aria-expanded="${exp}"${exp ? ' aria-pressed="true"' : ""}>${icon("image")}</button><span class="p-tooltip" role="tooltip" style="inset-inline:0 auto">Media</span></span><button type="button" class="p-icon-button p-press" data-size="compact" aria-label="Link">${icon("link")}</button><button type="button" class="p-icon-button p-press" data-size="compact" aria-label="More">${icon("dots")}</button></div></div>`;
+}
+function page() {
+  const r = ratio(), z = S.zoom / 100;
+  return `<div class="site"><h2>Fresh bread every morning</h2><p>Our loaves come out of the oven at six. Come early for the rye.</p>
+    <div class="spot-wrap"><span class="spot-bar">${editBar()}</span><div class="spot" style="aspect-ratio:${r}"><span class="pic pic-${S.pic}" style="rotate:${S.turn + S.deg}deg;scale:${(S.flip ? -1 : 1) * z * (S.deg ? 1.2 : 1) * (S.turn % 180 ? 1.35 : 1)} ${z * (S.deg ? 1.2 : 1) * (S.turn % 180 ? 1.35 : 1)};transform-origin:${S.fx}% 50%"></span></div></div></div>`;
+}
+
+/* ---------- Image popup ---------- */
+function shapeMenu() {
+  if (!S.menu) return "";
+  const list = SHAPES.map(([n]) => n);
+  if (!A()) return `<div class="image-popup__menu" role="menu" aria-label="Shape">${list.map((n) => `<button type="button" class="image-popup__item" role="menuitemradio" aria-checked="${S.shape === n}" data-shape="${n}"><span>${n}</span>${icon("check")}</button>`).join("")}</div>`;
+  return `<div class="p-menu${S.fresh.has("menu") ? " p-enter" : ""}" data-at="picture" role="menu" aria-label="Shape" style="min-inline-size:190px">${list.map((n) => `<button type="button" class="p-menu-item" role="menuitemradio" aria-checked="${S.shape === n}" data-shape="${n}"><span>${n}</span>${icon("check", 0, " data-check")}</button>`).join("")}</div>`;
+}
+function popup() {
+  if (!S.open) return "";
+  const pr = picRatio(), msgNew = saves();
+  const hint = S.shape === "Free" ? "Drag the corners to trim." : S.shape === "Original" && S.zoom === 100 ? "The whole picture shows." : "";
+  const msg = msgNew ? "Saves a new picture for this spot" : "Only changes this spot";
+  const previews = (cls) => `<figure class="${cls}" data-kind="phone"><figcaption>${icon("phone", 12)}Phone</figcaption><span class="${A() ? "ip__screen" : "image-popup__screen"}" style="inline-size:40px;block-size:72px">${shot(36, 68)}</span></figure>
+      <figure class="${cls}" data-kind="computer"><figcaption>${icon("desktop", 12)}Computer</figcaption><span class="${A() ? "ip__screen" : "image-popup__screen"}" style="inline-size:128px;block-size:72px">${shot(80, 64)}</span></figure>`;
+  if (!A()) return `<div class="today image-popup" role="dialog" aria-labelledby="ip-title">
+    <span class="image-popup__nub" aria-hidden="true"></span><span class="image-popup__grab" aria-hidden="true"></span>
+    <div class="image-popup__head"><b id="ip-title">Image</b><span class="image-popup__where" title="media/loaves.jpg">${S.pic === "new" ? "bluebells.jpg" : "loaves.jpg"}</span><span class="image-popup__tools"><button type="button" class="image-popup__icon" data-act="large" aria-label="Open large editor" title="Open large editor">${icon("out", 18)}</button><button type="button" class="image-popup__icon" data-act="close" aria-label="Close" title="Close (Esc)">${icon("x", 18)}</button></span></div>
+    <div class="image-popup__rows">
+      <div class="image-popup__row image-popup__row--picture"><span class="image-popup__label">Picture</span><div>
+        <div class="image-popup__well"><button type="button" class="image-popup__shape" data-act="menu" aria-haspopup="menu" aria-expanded="${S.menu}" aria-label="Shape: ${S.shape}">${S.shape}${icon("caretDown", 13)}</button>${shapeMenu()}
+          <span class="picbox" style="aspect-ratio:${pr}">${picInBox()}${frame("image-popup__frame")}</span></div>
+        <div class="image-popup__under"><p class="image-popup__hint" id="ip-hint">${hint}</p><button type="button" class="image-popup__link" data-act="replace" title="Choose another picture for this spot">${icon("image", 14)}Replace</button></div></div></div>
+      <div class="image-popup__row"><span class="image-popup__label">Zoom</span><div class="image-popup__zoom"><input class="image-popup__range" type="range" min="100" max="500" step="5" value="${S.zoom}" style="--fill:${((S.zoom - 100) / 400) * 100}%" aria-label="Zoom" data-act="zoomrange"><output class="image-popup__value">${S.zoom} %</output>
+        <div class="image-popup__turn" role="group" aria-label="${turnLabel()}"><button type="button" class="image-popup__icon" data-act="turnl" aria-label="Turn left" title="Turn left (now ${S.turn}°)">${icon("rotL", 18)}</button><button type="button" class="image-popup__icon" data-act="turnr" aria-label="Turn right" title="Turn right (now ${S.turn}°)">${icon("rotR", 18)}</button></div></div></div>
+      <div class="image-popup__row"><span class="image-popup__label">Preview</span><div class="image-popup__previews">${previews("image-popup__device image-popup__device--phone").replace('image-popup__device image-popup__device--phone" data-kind="computer"', 'image-popup__device" data-kind="computer"')}</div></div>
+    </div>
+    <div class="image-popup__bottom"><p class="image-popup__message${msgNew ? " image-popup__message--new" : ""}" role="status">${icon(msgNew ? "info" : "checkCircle", 14)}${msg}</p><div class="image-popup__foot"></div></div></div>`;
+  return `<div class="after ip" role="dialog" aria-labelledby="ip-title">
+    <span class="ip__nub" aria-hidden="true"></span><span class="ip__grab" aria-hidden="true"></span>
+    <div class="ip__head"><b id="ip-title">Image</b><span class="ip__where" title="media/loaves.jpg">${S.pic === "new" ? "bluebells.jpg" : "loaves.jpg"}</span>
+      <span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" data-act="large" aria-label="Open large editor">${icon("out")}</button><span class="p-tooltip" role="tooltip">Open large editor</span></span><span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" data-act="close" aria-label="Close">${icon("x")}</button><span class="p-tooltip" role="tooltip">Close <kbd>Esc</kbd></span></span></div>
+    <div>
+      <div class="ip__row" data-top><span class="ip__label">Picture</span><div>
+        <div class="ip__well"><button type="button" class="p-button p-press" data-size="compact" data-place="picture" data-act="menu" aria-haspopup="menu" aria-expanded="${S.menu}" aria-label="Shape: ${S.shape}">${S.shape}${icon("caretDown", 14)}</button>${shapeMenu()}
+          <span class="picbox" style="aspect-ratio:${pr}">${picInBox()}${frame("image-popup__frame", "border:1.5px solid var(--on-media);box-shadow:0 0 0 1px oklch(from var(--image-control-scrim) l c h / 0.45),0 0 0 999px var(--ip-wash)")}</span></div>
+        <div class="ip__under"><p>${hint}</p><button type="button" class="p-button p-press" data-size="compact" data-tone="quiet" data-act="replace">${icon("image", 14)}Replace</button></div></div></div>
+      <div class="ip__row"><span class="ip__label">Zoom</span><div class="ip__zoom"><input class="p-range" type="range" min="100" max="500" step="5" value="${S.zoom}" style="--fill:${((S.zoom - 100) / 400) * 100}%" aria-label="Zoom" data-act="zoomrange"><output class="ip__value">${S.zoom} %</output>
+        <div class="ip__turn" role="group" aria-label="${turnLabel()}"><span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" data-act="turnl" aria-label="Turn left">${icon("rotL")}</button><span class="p-tooltip" role="tooltip">Turn left</span></span><span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" data-act="turnr" aria-label="Turn right">${icon("rotR")}</button><span class="p-tooltip" role="tooltip">Turn right</span></span></div></div></div>
+      <div class="ip__row" style="border-block-end:0"><span class="ip__label">Preview</span><div class="ip__previews">${previews("ip__device")}</div></div>
+    </div>
+    <div class="ip__bottom"><p class="ip__message" role="status"${msgNew ? ' data-tone="new"' : ""}>${icon(msgNew ? "info" : "checkCircle", 14)}${msg}</p></div></div>`;
+}
+
+/* ---------- Large editor ---------- */
+function ruler() {
+  const left = `calc(50% - ${(S.deg + 45) * 6}px)`;
+  const labels = [-45, -30, -15, 0, 15, 30, 45].map((d) => `<span style="inset-inline-start:${(d + 45) * 6}px">${d < 0 ? "−" + -d : d}°</span>`).join("");
+  return `<div class="ruler" role="group" aria-label="Straighten"><span class="ruler__strip" style="inset-inline-start:${left}">${labels}</span><span class="ruler__pointer"></span><span class="ruler__reading" style="background:${A() ? "var(--le-area)" : "var(--image-large-area)"}">${S.deg}°</span><input type="range" class="sr-only" min="-45" max="45" step="0.5" value="${S.deg}" aria-label="Straighten" aria-valuetext="${S.deg} degrees"></div>`;
+}
+function large() {
+  if (!S.large) return "";
+  const pr = picRatio();
+  const handles = (cls) => ["0% 0%", "100% 0%", "100% 100%", "0% 100%"].map((p) => { const [x, y] = p.split(" "); return `<span class="${cls}" style="position:absolute;inset-inline-start:${x};inset-block-start:${y}"></span>`; }).join("");
+  const stagePic = `<span class="picbox" style="block-size:auto;inline-size:min(86cqi, calc(78cqb * ${pr}));aspect-ratio:${pr}">${picInBox()}</span>`;
+  const fr = (cls, hcls) => `<span class="${cls}" style="inline-size:min(76cqi, calc(66cqb * ${ratio()}));aspect-ratio:${ratio()}">${handles(hcls)}</span>`;
+  const msgNew = saves(), msg = msgNew ? "Saves a new picture for this spot" : "Only changes this spot";
+  const canReset = S.zoom > 100 || S.turn || S.deg || S.flip || S.shape !== "Original";
+  const tools = [["turnl", "rotL", "Turn left", "Turn"], ["turnr", "rotR", "Turn right", "Turn"], ["flip", "flipH", "Flip side to side", "Flip"], ["flipv", "flipV", "Flip upside down", "Flip"], ["zoomout", "zoomOut", "Zoom out", "Zoom −"], ["zoomin", "zoomIn", "Zoom in", "Zoom +"]];
+  if (!A()) return `<div class="today large-backdrop"><div class="today image-large" role="dialog" aria-modal="true" aria-labelledby="le-title">
+    <div class="image-large__head"><div class="image-large__titles"><h2 class="image-large__title" id="le-title">Edit image</h2><span class="image-large__where">loaves.jpg</span></div><button type="button" class="image-large__icon" data-act="lcancel" aria-label="Close without changes" title="Close without changes">${icon("x", 22)}</button></div>
+    <div class="image-large__body"><div class="image-large__main"><div class="image-large__iconrow">${tools.map(([a, ic, l, s]) => `<button type="button" class="image-large__tool" data-act="${a}" aria-label="${l}"${a === "flip" ? ` aria-pressed="${S.flip}"` : a === "flipv" ? ' aria-pressed="false"' : ""}${a === "zoomout" && S.zoom <= 100 ? " disabled" : ""}>${icon(ic, 22)}<span class="image-large__tool-label">${s}</span></button>`).join("")}<button type="button" class="image-large__tool" aria-label="Shape: ${S.shape}">${icon("crop", 22)}<span class="image-large__tool-label">${S.shape}</span></button></div>
+      <div class="image-large__area"><div class="image-large__stage">${stagePic}${fr("image-large__frame", "image-large__handle")}</div><div class="image-large__ruler-row">${ruler()}</div></div></div>
+      <aside class="image-large__side" aria-label="Side panel">
+        <div class="image-large__tools"><div role="group" aria-labelledby="g1"><span class="image-large__label" id="g1">Turn</span><div class="image-large__buttons"><button type="button" class="image-large__icon" data-act="turnl" aria-label="Turn left" title="Turn left (Shift+R)">${icon("rotL", 22)}</button><button type="button" class="image-large__icon" data-act="turnr" aria-label="Turn right" title="Turn right (R)">${icon("rotR", 22)}</button></div></div>
+          <div role="group" aria-labelledby="g2"><span class="image-large__label" id="g2">Flip</span><div class="image-large__buttons"><button type="button" class="image-large__icon" data-act="flip" aria-pressed="${S.flip}" aria-label="Flip side to side" title="Flip side to side (H)">${icon("flipH", 22)}</button><button type="button" class="image-large__icon" aria-pressed="false" aria-label="Flip upside down" title="Flip upside down (V)">${icon("flipV", 22)}</button></div></div>
+          <div role="group" aria-labelledby="g3"><span class="image-large__label" id="g3">Zoom</span><div class="image-large__buttons"><button type="button" class="image-large__icon" data-act="zoomout" aria-label="Zoom out" title="Zoom out (−)"${S.zoom <= 100 ? " disabled" : ""}>${icon("zoomOut", 22)}</button><button type="button" class="image-large__icon" data-act="zoomin" aria-label="Zoom in" title="Zoom in (+)">${icon("zoomIn", 22)}</button></div></div></div>
+        <div><span class="image-large__label">Shape</span><button type="button" class="image-large__shape" aria-haspopup="menu">${S.shape}${icon("caretDown", 14)}</button></div>
+        <div><span class="image-large__label">Preview</span><div class="image-popup__previews"><figure class="image-popup__device image-popup__device--phone"><figcaption>${icon("phone", 12)}Phone</figcaption><span class="image-popup__screen" style="block-size:184px;max-inline-size:92px">${shot(84, 176)}</span></figure><figure class="image-popup__device"><figcaption>${icon("desktop", 12)}Computer</figcaption><span class="image-popup__screen" style="block-size:122px">${shot(120, 110)}</span></figure></div></div>
+      </aside></div>
+    <div class="image-large__foot"><div class="image-large__foot-group"><button type="button" class="image-large__text" data-act="lreset" title="Start again from the original"${canReset ? "" : " disabled"}>Reset</button><button type="button" class="image-large__icon" data-act="lundo" aria-label="Undo" title="Undo (Ctrl+Z)"${S.history ? "" : " disabled"}>${icon("undo", 22)}</button><button type="button" class="image-large__icon" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled>${icon("redo", 22)}</button></div>
+      <p class="image-popup__message${msgNew ? " image-popup__message--new" : ""}" style="justify-content:flex-end" role="status">${icon(msgNew ? "info" : "checkCircle", 14)}${msg}</p>
+      <div class="image-large__foot-group"><button type="button" class="image-large__text" data-act="lcancel">Cancel</button><button type="button" class="image-large__primary" data-act="ldone">Done</button></div></div>
+  </div></div>`;
+  const ib = (act, ic, label, extra = "") => `<span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" data-act="${act}" aria-label="${label}"${extra}>${icon(ic)}</button><span class="p-tooltip" role="tooltip" style="inset-inline:0 auto">${label}</span></span>`;
+  return `<div class="p-backdrop large${S.fresh.has("large") ? " p-enter" : ""}"><div class="after le" role="dialog" aria-modal="true" aria-labelledby="le-title">
+    <div class="le__head"><div class="le__titles"><h2 id="le-title">Edit image</h2><span>loaves.jpg</span></div>${ib("lcancel", "x", "Close without changes")}</div>
+    <div class="le__body"><div class="le__main"><div class="le__iconrow">${tools.map(([a, ic, l, s]) => `<button type="button" class="p-icon-button p-press le__tool" data-act="${a}" aria-label="${l}"${a === "flip" ? ` aria-pressed="${S.flip}"` : a === "flipv" ? ' aria-pressed="false"' : ""}${a === "zoomout" && S.zoom <= 100 ? " disabled" : ""}>${icon(ic)}<span>${s}</span></button>`).join("")}<button type="button" class="p-icon-button p-press le__tool" aria-label="Shape: ${S.shape}">${icon("crop")}<span>${S.shape}</span></button></div>
+      <div class="le__area"><div class="le__stage">${stagePic}${fr("le__frame", "le__handle")}</div><div class="le__ruler-row">${ruler()}</div></div></div>
+      <aside class="le__side" aria-label="Side panel">
+        <div class="le__tools"><div role="group" aria-labelledby="h1"><span class="le__label" id="h1">Turn</span><div class="le__buttons">${ib("turnl", "rotL", "Turn left <kbd>Shift R</kbd>")}${ib("turnr", "rotR", "Turn right <kbd>R</kbd>")}</div></div>
+          <div role="group" aria-labelledby="h2"><span class="le__label" id="h2">Flip</span><div class="le__buttons">${ib("flip", "flipH", "Flip side to side <kbd>H</kbd>", ` aria-pressed="${S.flip}"`)}${ib("flipv", "flipV", "Flip upside down <kbd>V</kbd>", ' aria-pressed="false"')}</div></div>
+          <div role="group" aria-labelledby="h3"><span class="le__label" id="h3">Zoom</span><div class="le__buttons">${ib("zoomout", "zoomOut", "Zoom out <kbd>−</kbd>", S.zoom <= 100 ? " disabled" : "")}${ib("zoomin", "zoomIn", "Zoom in <kbd>+</kbd>")}</div></div></div>
+        <div style="position:relative"><span class="le__label">Shape</span><button type="button" class="p-button p-press" aria-haspopup="menu">${S.shape}${icon("caretDown", 14)}</button></div>
+        <div><span class="le__label">Preview</span><div class="ip__previews"><figure class="ip__device" data-kind="phone"><figcaption>${icon("phone", 12)}Phone</figcaption><span class="ip__screen" style="block-size:184px;max-inline-size:92px">${shot(84, 176)}</span></figure><figure class="ip__device"><figcaption>${icon("desktop", 12)}Computer</figcaption><span class="ip__screen" style="block-size:122px">${shot(120, 110)}</span></figure></div></div>
+      </aside></div>
+    <div class="le__foot"><div class="le__group"><button type="button" class="p-button p-press" data-tone="quiet" data-act="lreset"${canReset ? "" : " disabled"}>Reset</button>${ib("lundo", "undo", "Undo <kbd>Ctrl Z</kbd>", S.history ? "" : " disabled")}${ib("lredo", "redo", "Redo <kbd>Ctrl Shift Z</kbd>", " disabled")}</div>
+      <p class="ip__message" style="justify-content:flex-end" role="status"${msgNew ? ' data-tone="new"' : ""}>${icon(msgNew ? "info" : "checkCircle", 14)}${msg}</p>
+      <div class="le__group"><button type="button" class="p-button p-press" data-tone="quiet" data-act="lcancel">Cancel</button><button type="button" class="p-button p-press" data-tone="primary" data-act="ldone">Done</button></div></div>
+  </div></div>`;
+}
+
+/* ---------- Media popup (video) ---------- */
+function videoPopup() {
+  const msg = S.videoMsg;
+  if (!A()) return `<div class="scene"><div class="site" style="font-family:inherit"><div class="spot" style="aspect-ratio:16/9;outline-offset:2px;margin-block-start:0"><span class="pic pic-video" style="position:absolute;inset:0"></span></div></div>
+    <div class="today image-popup" role="dialog" aria-labelledby="vp-title"><span class="image-popup__nub" aria-hidden="true"></span><span class="image-popup__grab" aria-hidden="true"></span>
+    <div class="image-popup__head"><b id="vp-title">Video</b><span class="image-popup__where">bakery-tour.mp4</span><span class="image-popup__tools"><button type="button" class="image-popup__icon" aria-label="Close" title="Close (Esc)">${icon("x", 18)}</button></span></div>
+    <div class="image-popup__rows">
+      <div class="image-popup__row image-popup__row--picture"><span class="image-popup__label">Video</span><div><div class="image-popup__well" style="height:auto;aspect-ratio:16/9"><span class="pic pic-video" style="position:absolute;inset:0"></span></div><div class="image-popup__under"><p class="image-popup__hint">Pause at a moment for its still picture.</p><button type="button" class="image-popup__link">${icon("image", 14)}Replace</button></div></div></div>
+      <div class="image-popup__row"><span class="image-popup__label">Still picture</span><div class="media-spot__line"><span class="media-spot__thumb pic pic-video"></span><button type="button" class="image-popup__link">Use this moment</button><button type="button" class="image-popup__link" aria-label="Choose still picture">Choose…</button></div></div>
+      <div class="image-popup__row"><span class="image-popup__label">Loop silently</span><label class="media-spot__line"><input type="checkbox" class="media-spot__switch" role="switch" aria-label="Loop silently" data-act="loop"${S.loop ? " checked" : ""}><span class="media-spot__note">Plays by itself, without sound</span></label></div>
+      <div class="image-popup__row"><span class="image-popup__label">Subtitles</span><div class="media-spot__line"><span class="media-spot__note">None yet</span><button type="button" class="image-popup__link" aria-label="Add subtitles">Add…</button></div></div>
+      <div class="image-popup__row"><span class="image-popup__label">Title</span><input class="media-spot__field" type="text" placeholder="What the video shows" aria-label="Title"></div>
+    </div>
+    <div class="image-popup__bottom"><p class="image-popup__message" role="status">${msg}</p><div class="image-popup__foot"><button type="button" class="image-popup__button image-popup__button--primary">Done</button></div></div></div></div>`;
+  return `<div class="scene"><div class="site" style="font-family:inherit"><div class="spot" style="aspect-ratio:16/9;margin-block-start:0"><span class="pic pic-video" style="position:absolute;inset:0"></span></div></div>
+    <div class="after ip" role="dialog" aria-labelledby="vp-title"><span class="ip__nub" aria-hidden="true"></span><span class="ip__grab" aria-hidden="true"></span>
+    <div class="ip__head"><b id="vp-title">Video</b><span class="ip__where">bakery-tour.mp4</span><span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" aria-label="Close">${icon("x")}</button><span class="p-tooltip" role="tooltip">Close <kbd>Esc</kbd></span></span></div>
+    <div>
+      <div class="ip__row" data-top><span class="ip__label">Video</span><div><div class="ip__well" style="block-size:auto;aspect-ratio:16/9"><span class="pic pic-video" style="position:absolute;inset:0"></span></div><div class="ip__under"><p>Pause at a moment for its still picture.</p><button type="button" class="p-button p-press" data-size="compact" data-tone="quiet">${icon("image", 14)}Replace</button></div></div></div>
+      <div class="ip__row"><span class="ip__label">Still picture</span><div class="ip__line"><span class="ip__thumb pic pic-video"></span><button type="button" class="p-button p-press" data-size="compact" data-tone="quiet">Use this moment</button><button type="button" class="p-button p-press" data-size="compact" data-tone="quiet" aria-label="Choose still picture">Choose…</button></div></div>
+      <div class="ip__row"><span class="ip__label">Loop silently</span><div class="ip__line"><button type="button" class="p-switch" role="switch" aria-checked="${S.loop}" aria-label="Loop silently" data-act="loop"></button><span class="ip__note">Plays by itself, without sound</span></div></div>
+      <div class="ip__row"><span class="ip__label">Subtitles</span><div class="ip__line"><span class="ip__note">None yet</span><button type="button" class="p-button p-press" data-size="compact" data-tone="quiet" aria-label="Add subtitles">Add…</button></div></div>
+      <div class="ip__row" style="border-block-end:0"><span class="ip__label">Title</span><input class="p-field" type="text" placeholder="What the video shows" aria-label="Title"></div>
+    </div>
+    <div class="ip__bottom"><p class="ip__message" role="status">${msg}</p><button type="button" class="p-button p-press" data-tone="primary">Done</button></div></div></div>`;
+}
+
+function render() {
+  document.getElementById("stage").innerHTML = `<p class="mock-h">Image popup${S.large ? " and the large editor" : ""}</p><div class="scene">${page()}<div>${popup()}</div></div>${large()}`;
+  document.getElementById("stage2").innerHTML = `<p class="mock-h">Media popup, for a video</p>${videoPopup()}`;
+  S.fresh.clear();
+}
+
+/* ---------- Actions ---------- */
+function act(a, e) {
+  if (a === "toggle") { S.open = !S.open; S.menu = false; }
+  else if (a === "close") { S.open = false; S.menu = false; }
+  else if (a === "menu") { S.menu = !S.menu; if (S.menu) S.fresh.add("menu"); }
+  else if (a === "turnr") { S.turn = (S.turn + 90) % 360; S.history++; }
+  else if (a === "turnl") { S.turn = (S.turn + 270) % 360; S.history++; }
+  else if (a === "flip") { S.flip = !S.flip; S.history++; }
+  else if (a === "zoomin") { S.zoom = Math.min(500, Math.round(S.zoom * 1.25 / 5) * 5); S.history++; }
+  else if (a === "zoomout") { S.zoom = Math.max(100, Math.round(S.zoom / 1.25 / 5) * 5); S.history++; }
+  else if (a === "replace") { S.open = false; S.menu = false; S.pic = S.pic === "new" ? "bread" : "new"; S.zoom = 100; S.turn = 0; S.deg = 0; S.flip = false; S.fx = 50; }
+  else if (a === "large") { S.large = true; S.menu = false; S.history = 0; S.fresh.add("large"); S.before = { ...S }; }
+  else if (a === "lcancel") { if (S.before) { const b = S.before; Object.assign(S, { zoom: b.zoom, turn: b.turn, flip: b.flip, deg: b.deg, shape: b.shape }); } S.large = false; }
+  else if (a === "ldone") { S.large = false; S.open = false; }
+  else if (a === "lreset") { Object.assign(S, { zoom: 100, turn: 0, flip: false, deg: 0, shape: "Original", fx: 50 }); S.history++; }
+  else if (a === "lundo") { if (S.lastDeg != null) { S.deg = S.lastDeg; S.lastDeg = null; } else if (S.flip) S.flip = false; S.history = Math.max(0, S.history - 1); }
+  else if (a === "loop") { S.loop = !S.loop; S.videoMsg = S.loop ? "Loops silently, over and over." : "Plays with sound when pressed."; }
+  else return false;
+  render(); return true;
+}
+let running = 0, stepId = 0;
+const wait = async (ms) => { await sleep(ms); if (stepId !== running) throw new Error("stopped"); };
+const ensureOpen = async () => { if (!S.open) { S.open = true; render(); await wait(400); } };
+const STEPS = {
+  async open() { S.large = false; S.open = true; S.menu = false; render(); say("The Media button opens the popup beside the picture. The button stays pressed while it is open."); },
+  async shape() { S.large = false; await ensureOpen(); S.menu = true; S.fresh.add("menu"); render(); await wait(900); S.shape = "Square"; render(); await wait(500); S.menu = false; render(); say("Square: the page picture and both previews take the shape at once. The line below says it only changes this spot."); },
+  async focus() { S.large = false; await ensureOpen(); if (S.shape === "Original") { S.shape = "Square"; render(); await wait(400); } for (const x of [58, 66, 72]) { S.fx = x; render(); await wait(160); } say("Moving the square picks what matters most; the page follows."); },
+  async zoom() { S.large = false; await ensureOpen(); for (let z = S.zoom; z <= 150; z += 10) { S.zoom = z; render(); await wait(70); } S.zoom = 150; render(); say("Zooming in: the line below turns to “Saves a new picture for this spot”."); },
+  async turn() { S.large = false; await ensureOpen(); S.turn = (S.turn + 90) % 360; render(); say(`Turn right: the picture turns everywhere at once. ${turnLabel()}.`); },
+  async replace() { S.large = false; await ensureOpen(); await wait(300); act("replace"); say("Replace: after choosing in the picker the new picture is on the page. That is the feedback; no message."); },
+  async large() { await ensureOpen(); act("large"); say("The large editor opens over the page with room to straighten and flip."); },
+  async straighten() {
+    if (!S.large) { await ensureOpen(); act("large"); await wait(500); }
+    S.lastDeg = S.deg; for (const d of [1.5, 3, 4.5]) { S.deg = d; render(); await wait(180); } S.history++; render(); say("Straighten: the ruler slides under the pointer and reads 4.5°. Undo is now on.");
+  },
+  async flip() { if (!S.large) { await ensureOpen(); act("large"); await wait(500); } S.flip = !S.flip; S.history++; render(); say("Flip side to side: the button stays pressed while the picture is flipped."); },
+  async done() { if (!S.large) { await ensureOpen(); act("large"); await wait(500); } await wait(300); act("ldone"); say("Done closes both; the page picture shows the change. One Undo step takes it all back."); },
+  async loop() { act("loop"); say(`Loop silently: the switch flips and the popup's own line says “${S.videoMsg}”`); },
+  async reset() { const m = S.mode; S = freshState(); S.mode = m; render(); say(""); },
+};
+document.querySelector(".demo").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-step]"); if (!b) return;
+  const id = stepId = ++running;
+  document.querySelectorAll("[data-step]").forEach((o) => o.setAttribute("aria-pressed", String(o === b && b.dataset.step !== "reset")));
+  try { await STEPS[b.dataset.step](); } catch (err) { if (err.message !== "stopped") throw err; }
+  if (id === running) b.setAttribute("aria-pressed", "false");
+});
+for (const id of ["stage", "stage2"]) {
+  document.getElementById(id).addEventListener("click", (e) => {
+    const shape = e.target.closest("[data-shape]"); if (shape) { S.shape = shape.dataset.shape; S.menu = false; render(); return; }
+    const a = e.target.closest("[data-act]"); if (a && a.dataset.act !== "zoomrange") { act(a.dataset.act, e); return; }
+    if (S.menu && !e.target.closest("[role=menu]")) { S.menu = false; render(); }
+  });
+  document.getElementById(id).addEventListener("change", (e) => { if (e.target.matches('[data-act="zoomrange"]')) { S.zoom = +e.target.value; render(); } });
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (S.menu) S.menu = false; else if (S.large) act("lcancel"); else S.open = false;
+  render();
+});
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.mode = S.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  render();
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+render();
+</script>
+</body>
+</html>

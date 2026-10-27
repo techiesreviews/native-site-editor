@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 52 Pages and Files, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 10 Nov review
+  (kitchen station 3, "Show and tell"), for build ticket
+  docs/wayfinder/atomic-catalogue/build/tickets/52-organism-pages-files.md.
+  Today: the Pages & files explorer as it is on dev (2026-10-27), values copied from src/theme.css,
+  src/style.css (.explorer, .icon-button, .files-heading, .button), src/components/pages-tree.css,
+  files-tree.css, file-row-actions.css, create-dialog.css, row-menu.css and row-action-overlay.css;
+  structure, labels and menu items from src/components/pages-tree.ts, src/workspace-mount.ts,
+  src/controllers/files-tree-controller.ts, src/pages-and-files-explorer.ts and create-dialog.ts.
+  After: the same screen from the approved catalogue parts of prototype 10 (button, icon button, field,
+  badge with words only, tooltip, menu, dialog, tabs, empty state). Colours and type unchanged; spacing
+  2/4/6/8/12/16/24 and motion tokens from slices 02 and 03. Feedback follows prototype 09 (no toasts):
+  Copy path shows "Copied" on the item; a rename, a new page or a move shows in the tree itself.
+  Icons are hand-drawn stand-ins for the editor's Phosphor set.
+-->
+<style>
+/* ---------- Shared values: src/theme.css, light and dark written once with light-dark() ---------- */
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --danger: oklch(from var(--color-success) l c 25);
+  --danger-bg: oklch(from var(--success-bg) l c 25);
+  --danger-fg: oklch(from var(--success-fg) l c 25);
+  --panel-surface: var(--surface-raised);
+  --pressed: light-dark(var(--primary), var(--color-primary-light));
+  --on-pressed: light-dark(var(--on-primary), var(--color-primary-darkest));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px; --type-heading: 20px;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px;
+  --panel-padding: 6px; --panel-padding-roomy: 12px;
+  /* file-type tints, src/theme.css 94-102 */
+  --tint-page: oklch(66% 0.17 45); --tint-style: oklch(62% 0.15 255); --tint-picture: oklch(64% 0.15 150);
+
+  /* After only: the catalogue's new shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-size: var(--type-base); }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, select:focus-visible, a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.icon { inline-size: 16px; block-size: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; display: block; }
+.icon[data-s="12"] { inline-size: 12px; block-size: 12px; }
+.icon[data-s="14"] { inline-size: 14px; block-size: 14px; }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+header { display: grid; gap: var(--space-3xs); }
+h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 70ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 30; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; max-inline-size: 70ch; text-wrap: pretty; }
+.demo { border: 1.5px dashed var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); }
+.demo h2 { margin: 0; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.demo .buttons { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.demo button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 4px 10px; font-weight: 600; font-size: var(--type-small); }
+.demo button[aria-pressed="true"] { background: var(--current); }
+.demo button:active { scale: 0.97; }
+.demo .now { margin: 0; color: var(--muted); font-size: var(--type-small); min-block-size: 1.5em; }
+.stage { position: relative; display: grid; justify-items: center; padding: clamp(var(--space-xs), 2vw, var(--space-l)); border-radius: var(--radius-panel); background: color-mix(in oklch, var(--background) 70%, var(--surface-subtle)); min-block-size: 30rem; }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+.mock-note { color: var(--muted); font-size: var(--type-small); padding: var(--space-m); border: 1px dashed var(--line); border-radius: var(--radius); margin-block: var(--space-s); }
+
+/* Pictures: CSS gradients stand in for photos */
+.pic { background: linear-gradient(160deg, oklch(86% 0.04 80), oklch(62% 0.06 50)); }
+
+/* =====================  TODAY: real editor CSS  ===================== */
+/* style.css 828-850, dropdown.css 1-13: the explorer popover */
+.today.explorer { inline-size: min(1040px, 100%); padding: var(--panel-padding-roomy); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); display: flex; flex-direction: column; align-self: start; overflow-x: clip; min-block-size: 32rem; }
+.today .explorer-head { display: flex; align-items: stretch; gap: 4px; margin-block-end: 4px; border-block-end: 1px solid var(--control-line); }
+.today .explorer-tabs { flex: 1; display: flex; gap: 2px; }
+.today .explorer-tab { min-height: var(--size-control); padding: 0 12px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: var(--type-base); font-weight: 600; }
+.today .explorer-tab:hover { color: var(--text); }
+.today .explorer-tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--primary); }
+.today .explorer-tab:focus-visible { outline: var(--focus-ring); outline-offset: -2px; border-radius: var(--radius) var(--radius) 0 0; }
+.today .icon-button { display: inline-grid; place-items: center; height: var(--size-control); width: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); }
+.today .icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .today .icon-button:hover:not(:disabled) { background: var(--hover); color: var(--text); } }
+.today .explorer-settings { flex: none; inline-size: 44px; block-size: 44px; align-self: center; }
+/* pages-tree.css 4-27, style.css 156-163: headings and the New buttons */
+.today .files-heading { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 8px; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.today .heading-start { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
+.today .pages-total { font-weight: 400; font-variant-numeric: tabular-nums; }
+.today .pages-new { display: inline-flex; align-items: center; min-height: var(--size-compact); padding: 0 10px; border: 1px solid var(--control-line); border-radius: var(--radius); background: transparent; color: var(--text); font-size: var(--type-small); font-weight: 600; }
+.today .pages-new:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .today .pages-new:hover { background: var(--hover); } }
+/* pages-tree.css 28-134: the Pages tree */
+.today .pages-tree, .today .pages-group { list-style: none; margin: 0; padding: 0; }
+.today .pages-tree li + li, .today .pages-group { margin-top: 2px; }
+.today .pages-tree { container-type: inline-size; margin: 0 -8px; padding: 2px; }
+.today .pages-group { background: linear-gradient(var(--control-line), var(--control-line)) no-repeat calc((var(--level, 1) - 1) * 20px + 12px) 0 / 1px 100%; }
+.today .pages-row { position: relative; display: flex; align-items: center; gap: 6px; min-block-size: var(--size-control); padding: 0 6px 0 calc((var(--level, 1) - 1) * 20px + 4px); border-radius: var(--radius); font-size: var(--type-base); white-space: nowrap; cursor: pointer; --row-tint: var(--panel-surface); }
+.today .pages-row:active { background: var(--hover); }
+.today .pages-row.is-current { background: var(--current); font-weight: 600; }
+.today .pages-row.is-current > .pages-icon { color: var(--link); }
+.today .pages-row:focus-visible { background: var(--hover); outline: var(--focus-ring); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .today .pages-row:not(.is-current):hover { background: var(--hover); } }
+.today .pages-twisty, .today .pages-icon { display: inline-grid; place-items: center; width: 16px; flex-shrink: 0; color: var(--muted); }
+.today .pages-twisty { border: 0; background: none; padding: 0; block-size: 16px; }
+.today .pages-row--empty .pages-label { color: var(--muted); }
+.today .pages-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.today .pages-note { flex-shrink: 0; color: var(--muted); font-size: var(--type-small); font-weight: 400; }
+.today .pages-url { flex-shrink: 1; min-width: 0; margin-left: auto; padding-left: 12px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-family: var(--font-mono); font-size: var(--type-small); font-weight: 400; }
+.today .is-current .pages-url { color: inherit; opacity: 0.8; }
+@container (width >= 30rem) { .today .pages-row > .pages-url { position: absolute; inset-block-start: 50%; inset-inline-start: clamp(14rem, 50cqi, 28rem); translate: 0 -50%; margin: 0; padding: 0; } }
+@container (width < 30rem) { .today .pages-row > .pages-url { display: none; } }
+.today .file-new { flex-shrink: 0; padding: 0 5px; border-radius: var(--radius-small); background: var(--success-bg); color: var(--success-fg); font-size: var(--type-badge); font-weight: 600; line-height: 16px; letter-spacing: 0.04em; }
+.today .pages-more { display: inline-grid; place-items: center; flex-shrink: 0; width: var(--size-icon); height: var(--size-icon); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); }
+.today .pages-more:focus-visible { outline-offset: -2px; }
+.today .pages-more:active { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .today .pages-more:hover { background: var(--hover); color: var(--text); } }
+.today .pages-row.is-drop-target, .today .file-row-line.is-drop-target { background: var(--current); outline: 2px dashed var(--primary); outline-offset: -2px; }
+.today .is-dragging { opacity: 0.5; }
+.today .pages-empty { padding: 8px; font-size: var(--type-small); color: var(--muted); }
+/* row-action-overlay.css: actions fade in over the row's end */
+.today .row-action-overlay { position: absolute; inset: 0 0 0 auto; display: inline-flex; align-items: center; gap: 2px; padding: 0 4px 0 20px; border-radius: inherit; background: linear-gradient(to right, transparent, var(--row-tint) 20px); opacity: 0; transform: translateX(40%); transition: transform 140ms ease-out, opacity 140ms ease-out; }
+.today :is(.pages-row, .file-row-line):is(:hover, :focus-within, .is-menu) .row-action-overlay { opacity: 1; transform: none; }
+.today :is(.pages-row, .file-row-line):hover { --row-tint: color-mix(in oklch, var(--text) 9%, var(--panel-surface)); }
+.today :is(.pages-row, .file-row-line).is-current, .today .file-row-line.is-selected { --row-tint: color-mix(in oklch, var(--primary) 16%, var(--panel-surface)); }
+@media (pointer: coarse) { .today .row-action-overlay { position: static; opacity: 1; transform: none; margin-inline-start: auto; background: none; padding: 0; } .today .pages-more, .today .file-more { min-width: 44px; min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .today .row-action-overlay { transition: none; transform: none; } }
+/* pages-tree.css 136-246: new page and rename in place */
+.today .pages-edit { max-inline-size: 40rem; margin: 4px 0 6px calc((var(--level, 1) - 1) * 20px + 4px); padding: 8px 10px 10px 6px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-subtle); display: flex; flex-direction: column; gap: 4px; }
+.today .pages-edit__line { display: flex; align-items: center; gap: 6px; }
+.today .pages-edit__title, .today .pages-rename, .today .file-rename__input { box-sizing: border-box; height: var(--size-compact); padding: 0 8px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-input); color: var(--text); font-size: var(--type-base); flex: 1; min-width: 0; }
+.today .pages-rename { padding: 0 6px; }
+.today :is(.pages-edit__title, .pages-rename, .file-rename__input):focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
+.today .pages-edit__url { padding-left: 22px; font-family: var(--font-mono); font-size: var(--type-small); color: var(--muted); }
+.today .pages-edit__url-button { padding: 1px 4px; margin-left: -4px; border: 0; border-radius: var(--radius-small); background: transparent; color: inherit; font: inherit; cursor: text; text-decoration: underline dotted; text-underline-offset: 3px; }
+.today .pages-edit__url-button:hover { background: var(--hover); color: var(--text); }
+.today .pages-edit__slug-text { color: var(--text); }
+.today .pages-edit__card { display: flex; align-items: flex-start; gap: 6px; padding-left: 20px; font-size: var(--type-small); line-height: 1.4; }
+.today .pages-edit__card input { flex: none; width: 14px; height: 14px; margin: 1px 0 0; accent-color: var(--primary); }
+/* row-menu.css */
+.today .pages-menu { position: absolute; inset-block-start: calc(100% + 4px); inset-inline-end: 0; z-index: 20; display: flex; flex-direction: column; gap: 2px; min-width: 170px; padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); font-size: var(--type-base); font-weight: 400; box-shadow: var(--shadow); }
+.today .pages-menu__item { min-height: var(--size-control); border: 0; border-radius: var(--radius); padding: 4px 8px; background: transparent; color: inherit; text-align: left; white-space: nowrap; display: flex; align-items: center; gap: 16px; }
+.today .pages-menu__item:hover, .today .pages-menu__item:focus-visible { background: var(--hover); }
+.today .pages-menu__item:focus-visible { outline-offset: -2px; }
+.today .row-menu__shortcut { margin-left: auto; color: var(--muted); font-size: var(--type-small); }
+/* files-tree.css + file-row-actions.css: the Files tree */
+.today .files-wrap { container-type: inline-size; margin: 0 -8px; }
+.today .file-list { list-style: none; padding: 0; margin: 0; }
+.today .file-list li + li, .today .file-list .file-list { margin-block-start: 2px; }
+.today .file-list .file-list { margin-inline-start: 12px; padding-inline-start: 7px; border-inline-start: 1px solid var(--control-line); }
+.today .file-row-line { position: relative; display: flex; align-items: center; border-radius: var(--radius); --row-tint: var(--panel-surface); }
+.today .file-row-line:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .today .file-row-line:hover { background: var(--hover); } }
+.today .file-row-line.is-selected { background: var(--current); }
+.today .file-row-line:has(> .file-row:focus-visible) { background: var(--hover); outline: var(--focus-ring); outline-offset: -2px; }
+.today .file-row { display: flex; inline-size: 100%; gap: 6px; align-items: center; min-block-size: var(--size-control); padding-block: 0; padding-inline: 4px 8px; border: 0; border-radius: var(--radius); background: transparent; font-size: var(--type-base); text-align: start; white-space: nowrap; }
+.today .file-row:focus-visible { outline: none; }
+.today .is-selected > .file-row { font-weight: 600; }
+.today .file-chev { flex: none; inline-size: 16px; block-size: 16px; display: grid; place-items: center; color: var(--muted); }
+.today .file-chev[data-open="true"] .icon { rotate: 90deg; }
+@media (prefers-reduced-motion: no-preference) { .today .file-chev .icon { transition: rotate 150ms ease-out; } }
+.today .file-icon { display: grid; place-items: center; flex: none; inline-size: 16px; color: var(--muted); }
+.today .file-icon.folder { color: var(--link); }
+.today .file-icon[data-type] { color: color-mix(in oklch, var(--file-tint, var(--muted)) 72%, var(--text)); }
+[data-type="page"] { --file-tint: var(--tint-page); } [data-type="style"] { --file-tint: var(--tint-style); } [data-type="picture"] { --file-tint: var(--tint-picture); }
+.today .filename { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+.today .file-type { display: none; }
+@container (width >= 30rem) { .today .file-type { display: block; position: absolute; inset-inline-start: calc(clamp(14rem, 50cqi, 28rem) - var(--depth, 0) * 20px); font-size: var(--type-small); font-weight: 400; color: var(--muted); } }
+.today .file-status { flex-shrink: 0; min-width: 16px; margin-left: auto; padding: 0 4px; font: 600 var(--type-badge)/16px var(--font-mono); text-align: center; }
+.today .file-status.is-A { color: var(--success-fg); } .today .file-status.is-M { color: var(--link); } .today .file-status.is-D { color: var(--warning-fg); }
+.today .is-deleted .filename { text-decoration: line-through; color: var(--muted); }
+.today .is-deleted .file-icon { opacity: 0.6; }
+.today .file-more { display: inline-grid; place-items: center; flex-shrink: 0; width: var(--size-icon); height: var(--size-icon); margin-right: 4px; padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); }
+.today .file-more:hover { background: var(--hover); color: var(--text); }
+.today .file-restore { flex-shrink: 0; min-height: var(--size-icon); padding: 0 8px; border: 0; border-radius: var(--radius); background: transparent; color: var(--link); font-size: var(--type-small); font-weight: 600; }
+.today .file-restore:hover { background: var(--hover); }
+.today .file-rename { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 3px 4px 3px 39px; }
+/* create-dialog.css */
+.today .dlg-backdrop { position: absolute; inset: 0; z-index: 25; display: grid; place-items: center; padding: 16px; border-radius: inherit; background: oklch(from var(--shadow-color) l c h / 0.45); }
+.today .create-dialog { width: min(420px, 100%); padding: 0; border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.today .create-dialog__form { display: flex; flex-direction: column; gap: 14px; padding: 16px; }
+.today .create-dialog__title { margin: 0; font-size: var(--type-title); font-weight: 600; }
+.today .create-dialog__kinds { display: flex; gap: 6px; margin: 0; padding: 0; border: 0; }
+.today .create-dialog__kind { display: inline-flex; align-items: center; gap: 6px; min-height: var(--size-control); padding: 0 10px; border-radius: var(--radius); background: var(--surface-subtle); font-size: var(--type-base); cursor: pointer; }
+.today .create-dialog__kind:hover { background: linear-gradient(var(--hover) 0 0), var(--surface-subtle); }
+.today .create-dialog__kind:has(input:checked) { background: var(--current); font-weight: 600; }
+.today .create-dialog__kind input { accent-color: var(--primary); margin: 0; }
+.today .create-dialog__field { display: flex; flex-direction: column; gap: 4px; font-size: var(--type-small); color: var(--muted); }
+.today .create-dialog__field input { width: 100%; height: var(--size-control); padding: 0 8px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-input); color: var(--text); font-size: var(--type-base); }
+.today .create-dialog__field input:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
+.today .create-dialog__result { margin: 0; font-size: var(--type-small); line-height: 1.5; color: var(--muted); }
+.today .create-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* style.css 412-444 */
+.today .button { min-height: var(--size-control); border: 0; padding: 6px 14px; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; }
+.today .primary { background: var(--primary); color: var(--on-primary); }
+.today .secondary { background: var(--surface); }
+.today .primary:active { background: var(--primary-hover); }
+.today .secondary:active { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+@media (hover: hover) and (pointer: fine) {
+  .today .primary:hover { background: var(--primary-hover); }
+  .today .secondary:hover { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+}
+
+/* =====================  AFTER: catalogue parts  ===================== */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  .p-press:active:not(:disabled) { scale: 0.97; }
+}
+/* Button: tones primary, secondary, quiet, danger; sizes compact, control, touch */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: var(--size-control); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; }
+.p-button[data-size="compact"] { min-block-size: var(--size-compact); padding-inline: var(--space-xs); }
+.p-button[data-size="touch"] { min-block-size: var(--size-touch); padding-inline: var(--space-m); }
+.p-button[data-tone="primary"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-button[data-tone="quiet"] { background: transparent; box-shadow: none; color: var(--link); }
+.p-button[data-tone="danger"] { background: var(--danger-bg); color: var(--danger-fg); box-shadow: none; }
+.p-button[aria-checked="true"] { background: var(--current); box-shadow: none; }
+.p-button:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.p-button[data-tone="primary"]:active:not(:disabled) { background: var(--primary-hover); }
+.p-button[data-tone="quiet"]:active:not(:disabled) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-button:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .p-button[data-tone="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
+  .p-button[data-tone="quiet"]:hover:not(:disabled) { background: var(--hover); }
+  .p-button[aria-checked="true"]:hover { background: linear-gradient(var(--hover) 0 0), var(--current); }
+}
+@media (pointer: coarse) { .p-button { min-block-size: var(--size-touch); } }
+/* Icon button: icon 24, compact 28, control 32 (44 on touch screens) */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.p-icon-button[data-size="icon"] { inline-size: var(--size-icon); block-size: var(--size-icon); border-radius: var(--radius-small); }
+.p-icon-button[data-size="compact"] { inline-size: var(--size-compact); block-size: var(--size-compact); }
+.p-icon-button[aria-pressed="true"], .p-icon-button[aria-expanded="true"] { background: var(--hover); color: var(--text); }
+.p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Field: one part, inline or boxed, one focus and one error look */
+.p-field { inline-size: 100%; min-inline-size: 0; block-size: var(--size-control); padding-inline: var(--space-xs); border: 0; border-radius: var(--radius); background: var(--surface-input); box-shadow: inset 0 0 0 1px var(--control-line); caret-color: var(--primary); font-size: var(--type-base); }
+.p-field[data-size="compact"] { block-size: var(--size-compact); }
+.p-field:focus, .p-field.is-focus { outline: none; box-shadow: inset 0 0 0 1px var(--control-line), inset 0 -2px 0 var(--primary); background-color: color-mix(in oklch, var(--primary) 7%, var(--surface-input)); }
+.p-field[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--control-line), inset 0 -2px 0 var(--danger); }
+@media (hover: hover) and (pointer: fine) { .p-field:hover:not(:focus, .is-focus) { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--text) 32%, transparent); } }
+@media (prefers-reduced-motion: no-preference) { .p-field { transition: background-color var(--dur-hover) var(--ease-out), box-shadow var(--dur-hover) var(--ease-out); } }
+.p-field-label { display: grid; gap: var(--space-3xs); font-size: var(--type-small); color: var(--muted); }
+.p-field-note { margin: 0; font-size: var(--type-small); color: var(--muted); }
+.p-field-note[data-tone="error"] { color: var(--danger-fg); }
+/* Badge: words only, pill corner from --radius-full */
+.p-badge { display: inline-flex; align-items: center; flex: none; block-size: 18px; padding-inline: var(--space-2xs); border-radius: var(--radius-full); font-size: var(--type-badge); font-weight: 600; background: var(--surface-subtle); color: var(--link); }
+.p-badge[data-tone="success"] { background: var(--success-bg); color: var(--success-fg); }
+.p-badge[data-tone="warning"] { background: var(--warning-bg); color: var(--warning-fg); }
+.p-badge[data-tone="info"] { background: var(--current); color: var(--link); }
+/* Tooltip */
+.p-tip-anchor { position: relative; display: inline-grid; }
+.p-tooltip { position: absolute; inset-block-end: calc(100% + 6px); inset-inline-end: 0; display: inline-flex; gap: var(--space-2xs); align-items: center; padding: var(--space-3xs) var(--space-xs); border-radius: var(--radius); background: var(--text); color: var(--surface); font-size: var(--type-small); font-weight: 600; white-space: nowrap; opacity: 0; pointer-events: none; z-index: 15; }
+.p-tip-anchor:has(:focus-visible) .p-tooltip { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .p-tip-anchor:hover .p-tooltip { opacity: 1; transition-delay: 400ms; } }
+@media (prefers-reduced-motion: no-preference) { .p-tooltip { transition: opacity var(--dur-tooltip) var(--ease-out); } }
+/* Menu */
+.p-menu { position: absolute; inset-block-start: calc(100% + var(--space-3xs)); inset-inline-end: 0; z-index: 20; display: grid; gap: var(--space-4xs); min-inline-size: 13rem; padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); font-weight: 400; box-shadow: var(--shadow); }
+.p-menu-item { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: var(--space-xs); inline-size: 100%; min-block-size: var(--size-control); border: 0; background: transparent; padding-inline: var(--space-xs); border-radius: var(--radius); text-align: start; white-space: nowrap; }
+.p-menu-item__words { display: inline-flex; align-items: center; gap: var(--space-2xs); }
+.p-menu-item kbd { font: inherit; font-size: var(--type-small); color: var(--muted); }
+.p-menu-item[data-tone="danger"] { color: var(--danger-fg); }
+.p-menu-item[data-state="done"] { color: var(--success-fg); }
+.p-menu-item:active { background: var(--hover); }
+.p-menu-item:focus-visible { outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .p-menu-item:hover { background: var(--hover); } }
+@media (pointer: coarse) { .p-menu-item { min-block-size: var(--size-touch); } }
+.p-menu-sep { block-size: 1px; margin: var(--space-3xs) var(--space-4xs); background: var(--line); }
+/* Dialog: one backdrop */
+.p-backdrop { position: absolute; inset: 0; z-index: 25; display: grid; place-items: center; padding: var(--space-m); border-radius: inherit; background: oklch(from var(--shadow-color) l c h / 0.45); }
+.p-dialog { inline-size: min(420px, 100%); padding: var(--space-m); border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow); display: grid; gap: var(--space-s); }
+.p-dialog h3 { margin: 0; font-size: var(--type-title); }
+.p-row { display: flex; gap: var(--space-xs); justify-content: end; flex-wrap: wrap; }
+.p-choices { display: flex; gap: var(--space-2xs); }
+/* Tabs */
+.p-tabs { display: flex; flex: 1; gap: var(--space-4xs); min-inline-size: 0; }
+.p-tab { flex: 1; min-inline-size: 0; min-block-size: var(--size-control); padding-inline: var(--space-s); margin-block-end: -1px; border: 0; border-block-end: 2px solid transparent; background: transparent; color: var(--muted); font-weight: 600; }
+.p-tab[aria-selected="true"] { color: var(--text); border-block-end-color: var(--primary); }
+.p-tab:focus-visible { outline-offset: -2px; border-radius: var(--radius) var(--radius) 0 0; }
+.p-tab:active { color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-tab:hover { color: var(--text); } }
+@container (width >= 36rem) { .p-tab { flex: none; } }
+/* Empty state */
+.p-empty { display: grid; justify-items: center; gap: var(--space-xs); padding: var(--space-l) var(--space-m); text-align: center; color: var(--muted); }
+.p-empty .icon { inline-size: 24px; block-size: 24px; }
+.p-empty p { margin: 0; }
+/* Entry motion for menus and dialogs, only on the render that opens them */
+@media (prefers-reduced-motion: no-preference) {
+  .p-enter { animation: p-in var(--dur-menu) var(--ease-out); }
+  .p-enter.p-backdrop { animation: p-fade var(--dur-menu) var(--ease-out); }
+  .p-enter .p-dialog { animation: p-in var(--dur-menu) var(--ease-out); }
+}
+@keyframes p-in { from { opacity: 0; scale: 0.97; } }
+@keyframes p-fade { from { opacity: 0; } }
+
+/* Pages and Files organism, built from the parts above: layout values only */
+.after.p-explorer { inline-size: min(1040px, 100%); padding: var(--space-s); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); display: flex; flex-direction: column; align-self: start; overflow-x: clip; min-block-size: 32rem; container-type: inline-size; --tree-indent: 20px; }
+.p-explorer__head { display: flex; align-items: center; gap: var(--space-3xs); margin-block-end: var(--space-3xs); border-block-end: 1px solid var(--control-line); }
+.p-explorer__heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); margin-block: var(--space-s) var(--space-xs); font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.p-explorer__heading span:last-child { font-weight: 400; font-variant-numeric: tabular-nums; }
+.p-explorer__heading > span { display: inline-flex; align-items: baseline; gap: var(--space-2xs); }
+.p-tree { list-style: none; margin: 0 calc(var(--space-xs) * -1); padding: var(--space-4xs); display: grid; gap: var(--space-4xs); container: tree / inline-size; }
+.p-tree ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-4xs); background: linear-gradient(var(--control-line), var(--control-line)) no-repeat calc((var(--level, 1) - 1) * var(--tree-indent) + var(--space-s)) 0 / 1px 100%; }
+.p-tree-row { position: relative; display: flex; align-items: center; gap: var(--space-2xs); min-block-size: var(--size-control); padding-inline: calc((var(--level, 1) - 1) * var(--tree-indent) + var(--space-3xs)) var(--space-2xs); border-radius: var(--radius); white-space: nowrap; cursor: pointer; --row-tint: var(--panel-surface); }
+.p-tree-row:active { background: var(--hover); }
+.p-tree-row[aria-current="true"] { background: var(--current); font-weight: 600; --row-tint: color-mix(in oklch, var(--primary) 16%, var(--panel-surface)); }
+.p-tree-row[aria-current="true"] > .p-tree-icon { color: var(--link); }
+.p-tree-row:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .p-tree-row:not([aria-current="true"]):hover { background: var(--hover); --row-tint: color-mix(in oklch, var(--text) 9%, var(--panel-surface)); } }
+@media (pointer: coarse) { .p-tree-row { min-block-size: var(--size-touch); } }
+.p-tree-twisty { display: grid; place-items: center; inline-size: 16px; block-size: 16px; flex: none; padding: 0; border: 0; background: none; color: var(--muted); border-radius: var(--radius-small); }
+.p-tree-twisty .icon { inline-size: 12px; block-size: 12px; }
+.p-tree-twisty[aria-expanded="true"] .icon { rotate: 90deg; }
+@media (prefers-reduced-motion: no-preference) { .p-tree-twisty .icon { transition: rotate var(--dur-press) var(--ease-out); } }
+.p-tree-icon { display: grid; place-items: center; inline-size: 16px; flex: none; color: var(--muted); }
+.p-tree-icon[data-kind="folder"] { color: var(--link); }
+.p-tree-icon[data-type] { color: color-mix(in oklch, var(--file-tint, var(--muted)) 72%, var(--text)); }
+.p-tree-label { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+.p-tree-label[data-muted] { color: var(--muted); }
+.p-tree-row[data-state="deleted"] .p-tree-label { text-decoration: line-through; color: var(--muted); }
+.p-tree-row[data-state="deleted"] .p-tree-icon { opacity: 0.6; }
+.p-tree-row[data-state="dragging"] { opacity: 0.5; }
+.p-tree-row[data-state="drop"] { background: var(--current); outline: 2px dashed var(--primary); outline-offset: -2px; }
+.p-tree-note { color: var(--muted); font-size: var(--type-small); font-weight: 400; }
+.p-tree-end { display: inline-flex; align-items: center; gap: var(--space-2xs); margin-inline-start: auto; }
+.p-tree-col { display: none; color: var(--muted); font-size: var(--type-small); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+.p-tree-col[data-mono] { font-family: var(--font-mono); }
+.p-tree-row[aria-current="true"] .p-tree-col { color: inherit; opacity: 0.8; }
+@container tree (width >= 30rem) { .p-tree-col { display: block; position: absolute; inset-block-start: 50%; inset-inline-start: clamp(14rem, 50cqi, 28rem); translate: 0 -50%; max-inline-size: calc(100cqi - clamp(14rem, 50cqi, 28rem) - var(--space-xs)); } }
+.p-row-actions { position: absolute; inset: 0 0 0 auto; display: inline-flex; align-items: center; gap: var(--space-4xs); padding-inline: var(--space-l) var(--space-3xs); border-radius: inherit; background: linear-gradient(to right, transparent, var(--row-tint) var(--space-l)); opacity: 0; }
+.p-tree-row:is(:focus-within, [data-menu]) .p-row-actions { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .p-tree-row:hover .p-row-actions { opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) { .p-row-actions { transition: opacity var(--dur-hover) var(--ease-out); } }
+@media (pointer: coarse) { .p-row-actions { position: static; opacity: 1; background: none; padding: 0; } .p-row-actions [data-only="mouse"] { display: none; } }
+.p-inline-form { display: grid; gap: var(--space-3xs); max-inline-size: 40rem; margin: var(--space-3xs) 0 var(--space-2xs) calc((var(--level, 1) - 1) * var(--tree-indent) + var(--space-3xs)); padding: var(--space-xs); border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-subtle); }
+.p-inline-form__line { display: flex; align-items: center; gap: var(--space-2xs); }
+.p-inline-form__url { padding-inline-start: var(--space-l); font-family: var(--font-mono); font-size: var(--type-small); color: var(--muted); }
+.p-inline-form__url b { font-weight: 400; color: var(--text); text-decoration: underline dotted; text-underline-offset: 3px; }
+.p-inline-form .p-check { display: flex; gap: var(--space-2xs); align-items: center; padding-inline-start: var(--space-l); font-size: var(--type-small); }
+.p-check input { margin: 0; accent-color: var(--primary); inline-size: 14px; block-size: 14px; }
+</style>
+</head>
+<body data-mode="after">
+<main>
+  <header>
+    <h1>Pages and Files, rebuilt from catalogue parts <span class="tag">mock-up for Tuesday 10 Nov</span></h1>
+    <p class="intro">This is the Pages &amp; files panel: the list of your site's pages and, on its Files tab, every file. Nothing it does changes. After shows the same panel built only from the approved parts, so its buttons, fields, menu and badges match the rest of the editor. Switch between Today and After, then press the steps below.</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+  </div>
+  <p class="summary today">Today: the panel as it is now, copied from the editor's stylesheets.</p>
+  <p class="summary after">Same colours, type and layout. 14 button styles become 3 parts, 4 field looks become 1, the row's small button was written 3 times and is now 1, and 10 hover effects that also fired on touch now need a mouse.</p>
+
+  <section class="demo" aria-labelledby="demo-h">
+    <h2 id="demo-h">Demo steps (not part of the editor)</h2>
+    <div class="buttons">
+      <button type="button" data-step="menu">1 Open a page's menu</button>
+      <button type="button" data-step="rename">2 Rename a page</button>
+      <button type="button" data-step="newpage">3 New page</button>
+      <button type="button" data-step="move">4 Drag a page into another</button>
+      <button type="button" data-step="copy">5 Files: Copy path</button>
+      <button type="button" data-step="newfile">6 Files: New file</button>
+      <button type="button" data-step="delete">7 Files: Delete a file</button>
+      <button type="button" data-step="reset">Start again</button>
+    </div>
+    <p class="now" id="now" aria-live="polite"></p>
+  </section>
+
+  <div class="stage" id="stage"></div>
+  <ul class="changes after">
+    <li>one button part for + New and Create</li><li>one small row button</li><li>one field for rename, new page and new file</li>
+    <li>Files' A, M, D letters become the same word badge Pages uses</li><li>Delete last in the menu, in red</li><li>tips name the action</li>
+    <li>row actions fade in only with a mouse; always shown on touch</li><li>every control shows a focus ring</li><li>spacing on the shared scale</li>
+  </ul>
+</main>
+
+<script>
+const P = {
+  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  folderOpen: '<path d="M3 18V7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1"/><path d="M3 18 5.5 11h16L19 18z"/>',
+  caret: '<path d="m9 6 6 6-6 6"/>',
+  caretDown: '<path d="m6 9 6 6 6-6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  dots: '<circle cx="6" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
+  house: '<path d="M4 10.5 12 4l8 6.5V20h-5v-6H9v6H4z"/>',
+  linkBreak: '<path d="m9 15-2 2a3 3 0 0 1-4.2-4.2l2-2M15 9l2-2a3 3 0 0 1 4.2 4.2l-2 2M8 3v2M3 8h2M16 21v-2M21 16h-2"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.5M12 19v2.5M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M2.5 12H5M19 12h2.5M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>',
+  check: '<path d="m5 12 5 5 9-10"/>',
+  html: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M10 12l-2 2 2 2M14 12l2 2-2 2"/>',
+  css: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 16h4"/>',
+  img: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="m8 18 3-3 2 2 1-1 2 2"/>',
+  text: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 16h6"/>',
+};
+const icon = (n, s) => `<svg class="icon"${s ? ` data-s="${s}"` : ""} viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* ---------- State (shared by Today and After) ---------- */
+function freshState() {
+  return {
+    mode: document.body.dataset.mode || "after",
+    tab: "pages", current: "home", menu: null, copied: false, fresh: new Set(),
+    rename: null, newPage: null, drag: null, dialog: null,
+    pages: [
+      { key: "home", title: "Home", route: "/", icon: "house" },
+      { key: "about", title: "About", route: "/about/" },
+      { key: "menu", title: "Menu", route: "/menu/", open: true, kids: [
+        { key: "breakfast", title: "Breakfast", route: "/menu/breakfast/" },
+        { key: "lunch", title: "Lunch", route: "/menu/lunch/" } ] },
+      { key: "blog", title: "blog", route: "/blog/", empty: true, open: true, kids: [
+        { key: "first", title: "Our first loaf", route: "/blog/first-loaf/" } ] },
+      { key: "contact", title: "Contact", route: "/contact/" },
+      { key: "404", title: "Page not found", route: "/404.html", icon: "linkBreak" },
+    ],
+    files: [
+      { path: "about", folder: true, open: false, kids: [{ path: "about/index.html", type: "page", word: "Page" }] },
+      { path: "components", folder: true, open: false, kids: [] },
+      { path: "media", folder: true, open: true, kids: [
+        { path: "media/loaves.jpg", type: "picture", word: "Picture", status: "M" },
+        { path: "media/logo.svg", type: "picture", word: "Picture" } ] },
+      { path: "404.html", type: "page", word: "Page" },
+      { path: "index.html", type: "page", word: "Page" },
+      { path: "notes.md", type: "text", word: "Text", status: "A" },
+      { path: "style.css", type: "style", word: "Style", status: "M" },
+    ],
+    selectedFile: "style.css",
+  };
+}
+let S = freshState();
+const say = (t) => { document.getElementById("now").textContent = t; };
+const base = (p) => p.split("/").pop();
+const countPages = (list) => list.reduce((n, p) => n + (p.empty ? 0 : 1) + (p.kids ? countPages(p.kids) : 0), 0);
+const countFiles = (list) => list.reduce((n, f) => n + (f.folder ? countFiles(f.kids) : 1), 0);
+const findPage = (key, list = S.pages, parent = null) => { for (const p of list) { if (p.key === key) return { p, list, parent }; if (p.kids) { const r = findPage(key, p.kids, p); if (r) return r; } } return null; };
+const findFile = (path, list = S.files) => { for (const f of list) { if (f.path === path) return { f, list }; if (f.kids) { const r = findFile(path, f.kids); if (r) return r; } } return null; };
+const STATUS = { A: ["New", "success"], M: ["Changed", "info"], D: ["Deleted", "warning"] };
+
+const PAGE_MENU = (p) => [
+  ["Page settings…"], ["Navigation…"], ...(p.kids ? [["Add subpage"]] : []), ["Rename", "F2", "rename"],
+  ...(p.key === "home" ? [] : [["Change URL…"], ["Move to…"]]), ["Duplicate"], ...(p.key === "home" ? [] : [["Delete", "Delete", "delete", true]]),
+];
+const FILE_MENU = (f) => f.folder
+  ? [["New file…"], ["New folder…"], ["Upload files…"], ["Rename", "F2"], ["Delete", "Delete", "fdelete", true], ["Copy path", "", "copy"]]
+  : [["Rename", "F2"], ["Duplicate"], ...(f.status === "M" ? [["Discard changes"]] : []), ["Delete", "Delete", "fdelete", true], ["Copy path", "", "copy"]];
+
+/* ---------- Menus ---------- */
+function menuHtml(items, label) {
+  const after = S.mode === "after", enter = S.fresh.has("menu") ? " p-enter" : "";
+  if (!after) return `<div class="pages-menu" role="menu" aria-label="${esc(label)}">${items.map(([t, k, act]) => {
+    const done = act === "copy" && S.copied;
+    return `<button type="button" class="pages-menu__item" role="menuitem" data-act="${act || ""}"><span>${done ? "Copied" : t}</span>${k ? `<span class="row-menu__shortcut" aria-hidden="true">${k}</span>` : ""}</button>`;
+  }).join("")}</div>`;
+  // After: Delete moves last, below a line, in red (UX rulebook L10); Copy path shows Copied on itself.
+  const normal = items.filter((i) => !i[3]), danger = items.filter((i) => i[3]);
+  const item = ([t, k, act, d]) => {
+    const done = act === "copy" && S.copied;
+    return `<button type="button" class="p-menu-item" role="menuitem" data-act="${act || ""}"${d ? ' data-tone="danger"' : ""}${done ? ' data-state="done"' : ""}><span class="p-menu-item__words">${done ? icon("check") + "Copied" : t}</span>${k ? `<kbd>${k}</kbd>` : "<span></span>"}</button>`;
+  };
+  return `<div class="p-menu${enter}" role="menu" aria-label="${esc(label)}">${normal.map(item).join("")}${danger.length ? `<div class="p-menu-sep" role="separator"></div>${danger.map(item).join("")}` : ""}</div>`;
+}
+
+/* ---------- Pages tree ---------- */
+function pageRows(list, level) {
+  const after = S.mode === "after";
+  return list.map((p) => {
+    const current = S.current === p.key, open = p.open !== false;
+    const ic = p.icon || (p.empty ? (open ? "folderOpen" : "folder") : "file");
+    const renaming = S.rename && S.rename.key === p.key;
+    const dragState = S.drag && S.drag.key === p.key ? "dragging" : S.drag && S.drag.on === p.key ? "drop" : "";
+    const menu = S.menu && S.menu.pane === "pages" && S.menu.key === p.key ? menuHtml(PAGE_MENU(p), `Actions for ${p.title}`) : "";
+    const label = renaming
+      ? (after ? `<input class="p-field${S.rename.focus ? " is-focus" : ""}" data-size="compact" value="${esc(S.rename.text)}" aria-label="Title of ${esc(p.title)}">` : `<input class="pages-rename" value="${esc(S.rename.text)}" aria-label="Title of ${esc(p.title)}">`)
+      : `<span class="${after ? "p-tree-label" : "pages-label"}"${after && p.empty ? " data-muted" : ""}>${esc(p.title)}</span>`;
+    const note = p.empty ? `<span class="${after ? "p-tree-note" : "pages-note"}">(no page)</span>` : "";
+    const fresh = p.isNew ? (after ? `<span class="p-badge" data-tone="success">New</span>` : `<span class="file-new">New</span>`) : "";
+    const kids = p.kids && p.kids.length ? `<ul class="${after ? "" : "pages-group"}" role="group" style="--level:${level}"${open ? "" : " hidden"}>${pageRows(p.kids, level + 1)}${S.newPage && S.newPage.parent === p.key ? newPageForm(level + 1) : ""}</ul>` : "";
+    if (!after) {
+      return `<li role="treeitem" aria-level="${level}" aria-label="${esc(p.title)}"${p.kids ? ` aria-expanded="${open}"` : ""}>
+        <div class="pages-row${current ? " is-current" : ""}${p.empty ? " pages-row--empty" : ""}${dragState === "dragging" ? " is-dragging" : ""}${dragState === "drop" ? " is-drop-target" : ""}${menu ? " is-menu" : ""}" style="--level:${level}" data-page="${p.key}" title="${esc(p.empty ? p.route + " has pages but no page of its own" : p.route.replace(/^\//, "") + "index.html")}" tabindex="0">
+          <span class="pages-twisty" data-toggle="${p.kids ? p.key : ""}" aria-hidden="true">${p.kids ? icon(open ? "caretDown" : "caret", 12) : ""}</span>
+          <span class="pages-icon" aria-hidden="true">${icon(ic, 14)}</span>${label}${note}${fresh}
+          ${renaming ? "" : `<span class="pages-url">${esc(p.route)}</span>`}
+          <span class="row-action-overlay">${p.kids ? `<button type="button" class="pages-more" tabindex="-1" aria-label="Add subpage to ${esc(p.title)}" title="Add subpage">${icon("plus")}</button>` : ""}<button type="button" class="pages-more" data-more="${p.key}" aria-label="Actions for ${esc(p.title)}" aria-haspopup="menu" aria-expanded="${!!menu}" title="Add subpage, rename, change URL, move, duplicate or delete">${icon("dots")}</button></span>
+          ${menu}
+        </div>${kids}</li>`;
+    }
+    return `<li role="none">
+      <div class="p-tree-row" role="treeitem" aria-level="${level}" style="--level:${level}" data-page="${p.key}" tabindex="0"${current ? ' aria-current="true"' : ""}${dragState ? ` data-state="${dragState}"` : ""}${menu ? " data-menu" : ""}${p.kids ? ` aria-expanded="${open}"` : ""}>
+        ${p.kids ? `<button type="button" class="p-tree-twisty" tabindex="-1" data-toggle="${p.key}" aria-label="${open ? "Close" : "Open"} ${esc(p.title)}" aria-expanded="${open}">${icon("caret")}</button>` : `<span class="p-tree-twisty" aria-hidden="true"></span>`}
+        <span class="p-tree-icon" aria-hidden="true">${icon(ic, 14)}</span>${label}${note}${fresh}
+        ${renaming ? "" : `<span class="p-tree-col" data-mono>${esc(p.route)}</span>`}
+        <span class="p-row-actions">${p.kids ? `<span class="p-tip-anchor" data-only="mouse"><button type="button" class="p-icon-button p-press" data-size="icon" tabindex="-1" aria-label="Add subpage to ${esc(p.title)}">${icon("plus")}</button><span class="p-tooltip" role="tooltip">Add subpage</span></span>` : ""}<span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" data-size="icon" data-more="${p.key}" aria-label="Actions for ${esc(p.title)}" aria-haspopup="menu" aria-expanded="${!!menu}">${icon("dots")}</button><span class="p-tooltip" role="tooltip">Actions</span></span></span>
+        ${menu}
+      </div>${kids}</li>`;
+  }).join("");
+}
+function newPageForm(level) {
+  const n = S.newPage, after = S.mode === "after";
+  const slug = n.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "…";
+  if (!after) return `<li class="pages-editing" role="none"><form class="pages-edit" style="--level:${level}" onsubmit="return false">
+      <div class="pages-edit__line"><span class="pages-icon">${icon("file", 14)}</span><input class="pages-edit__title" placeholder="My first video" value="${esc(n.title)}" aria-label="New page title"></div>
+      <div class="pages-edit__url"><button type="button" class="pages-edit__url-button" title="Change the URL">/<span class="pages-edit__slug-text">${esc(slug)}</span>/</button></div>
+      <label class="pages-edit__card"><input type="checkbox" checked><span>Add a card to "Recent work" on Home</span></label></form></li>`;
+  return `<li role="none"><form class="p-inline-form" style="--level:${level}" onsubmit="return false">
+      <div class="p-inline-form__line"><span class="p-tree-icon">${icon("file", 14)}</span><input class="p-field is-focus" data-size="compact" placeholder="My first video" value="${esc(n.title)}" aria-label="New page title"></div>
+      <div class="p-inline-form__url">/<b>${esc(slug)}</b>/</div>
+      <label class="p-check"><input type="checkbox" checked><span>Add a card to "Recent work" on Home</span></label></form></li>`;
+}
+function pagesPanel() {
+  const after = S.mode === "after", n = countPages(S.pages);
+  const top = S.newPage && !S.newPage.parent ? newPageForm(1) : "";
+  if (!after) return `<section class="pages"><div class="files-heading"><span class="heading-start"><span>Pages</span><span class="pages-total" title="${n} pages">${n}</span></span><button type="button" class="pages-new" data-act="newpage" title="New page at the top of the site">+ New page</button></div>
+    <ul class="pages-tree" role="tree" aria-label="Pages">${top}${pageRows(S.pages, 1)}</ul></section>`;
+  return `<section><div class="p-explorer__heading"><span><span>Pages</span><span>${n}</span></span><span class="p-tip-anchor"><button type="button" class="p-button p-press" data-size="compact" data-act="newpage">${icon("plus", 14)}New page</button><span class="p-tooltip" role="tooltip">New page at the top of the site</span></span></div>
+    <ul class="p-tree" role="tree" aria-label="Pages">${top}${pageRows(S.pages, 1)}</ul></section>`;
+}
+
+/* ---------- Files tree ---------- */
+const FILE_ICON = { page: "html", style: "css", picture: "img", text: "text" };
+function fileRows(list, depth) {
+  const after = S.mode === "after";
+  return list.map((f) => {
+    const name = base(f.path), sel = S.selectedFile === f.path, deleted = f.status === "D";
+    const menu = S.menu && S.menu.pane === "files" && S.menu.key === f.path ? menuHtml(FILE_MENU(f), `Actions for ${f.path}`) : "";
+    const ic = f.folder ? (f.open ? "folderOpen" : "folder") : FILE_ICON[f.type] || "file";
+    const kids = f.folder && f.open ? (f.kids.length ? `<ul class="${after ? "" : "file-list"}" role="group" style="--level:${depth + 1}">${fileRows(f.kids, depth + 1)}</ul>` : (after ? `<ul role="group"><li class="p-tree-row" style="--level:${depth + 2};cursor:default"><span class="p-tree-label" data-muted>Empty folder</span></li></ul>` : `<ul class="file-list"><li class="empty-folder" style="padding-inline-start:48px;color:var(--muted);font-size:12px;min-block-size:32px;display:flex;align-items:center">Empty folder</li></ul>`)) : "";
+    if (!after) {
+      const st = f.status ? `<span class="file-status is-${f.status}"><span aria-hidden="true">${f.status}</span><span class="sr-only">${STATUS[f.status][0]}</span></span>` : "";
+      return `<li><div class="file-row-line row-action-host${sel ? " is-selected" : ""}${menu ? " is-menu" : ""}" style="--depth:${depth}">
+        <button type="button" class="file-row${deleted ? " is-deleted" : ""}" data-file="${esc(f.path)}"${f.folder ? ` aria-expanded="${!!f.open}"` : ""} title="${esc(f.path)}${f.status === "A" ? " (new, not saved to GitHub yet)" : f.status === "M" ? " (changed, not saved to GitHub yet)" : f.status === "D" ? " (deleted, not saved to GitHub yet)" : ""}">
+          <span class="file-chev" data-open="${!!f.open}" aria-hidden="true">${f.folder ? icon("caret", 12) : ""}</span>
+          <span class="file-icon${f.folder ? " folder" : ""}"${f.type ? ` data-type="${f.type}"` : ""} aria-hidden="true">${icon(ic)}</span>
+          <span class="filename">${esc(name)}</span>${f.word ? `<span class="file-type" aria-hidden="true">${f.word}</span>` : ""}${st}
+        </button>
+        <span class="row-action-overlay">${deleted ? `<button type="button" class="file-restore" data-act="restore" data-path="${esc(f.path)}" aria-label="Restore ${esc(f.path)}">Restore</button>` : ""}${f.folder ? `<button type="button" class="file-more" style="margin-right:0" aria-label="New in ${esc(f.path)}" title="New file or folder in ${esc(f.path)}">${icon("plus")}</button>` : ""}<button type="button" class="file-more" data-more="${esc(f.path)}" aria-label="Actions for ${esc(f.path)}" aria-haspopup="menu" aria-expanded="${!!menu}" title="${deleted ? "Restore" : "Rename, duplicate, delete…"}">${icon("dots")}</button></span>
+        ${menu}</div>${kids}</li>`;
+    }
+    const st = f.status ? `<span class="p-badge" data-tone="${STATUS[f.status][1]}">${STATUS[f.status][0]}</span>` : "";
+    return `<li role="none"><div class="p-tree-row" role="treeitem" style="--level:${depth + 1}" data-file="${esc(f.path)}" tabindex="0"${sel ? ' aria-current="true"' : ""}${deleted ? ' data-state="deleted"' : ""}${menu ? " data-menu" : ""}${f.folder ? ` aria-expanded="${!!f.open}"` : ""}>
+        ${f.folder ? `<button type="button" class="p-tree-twisty" tabindex="-1" data-file="${esc(f.path)}" aria-label="${f.open ? "Close" : "Open"} ${esc(name)}" aria-expanded="${!!f.open}">${icon("caret")}</button>` : `<span class="p-tree-twisty" aria-hidden="true"></span>`}
+        <span class="p-tree-icon"${f.folder ? ' data-kind="folder"' : ""}${f.type ? ` data-type="${f.type}"` : ""} aria-hidden="true">${icon(ic)}</span>
+        <span class="p-tree-label">${esc(name)}</span>${f.word ? `<span class="p-tree-col">${f.word}</span>` : ""}<span class="p-tree-end">${st}</span>
+        <span class="p-row-actions">${deleted ? `<button type="button" class="p-button p-press" data-size="compact" data-tone="quiet" data-act="restore" data-path="${esc(f.path)}" aria-label="Restore ${esc(f.path)}">Restore</button>` : ""}${f.folder ? `<span class="p-tip-anchor" data-only="mouse"><button type="button" class="p-icon-button p-press" data-size="icon" tabindex="-1" aria-label="New in ${esc(f.path)}">${icon("plus")}</button><span class="p-tooltip" role="tooltip">New file or folder</span></span>` : ""}<span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" data-size="icon" data-more="${esc(f.path)}" aria-label="Actions for ${esc(f.path)}" aria-haspopup="menu" aria-expanded="${!!menu}">${icon("dots")}</button><span class="p-tooltip" role="tooltip">Actions</span></span></span>
+        ${menu}</div>${kids}</li>`;
+  }).join("");
+}
+function filesPanel() {
+  const after = S.mode === "after", n = countFiles(S.files);
+  if (!after) return `<div class="files-heading"><span class="heading-start"><span>Files</span><span class="pages-total" title="${n} files">${n}</span></span><button type="button" class="pages-new" data-act="newfile" title="New file or folder at the top of the repository">+ New</button></div>
+    <div class="files-wrap"><ul class="file-list" role="tree" aria-label="Repository files">${fileRows(S.files, 0)}</ul></div>`;
+  return `<div class="p-explorer__heading"><span><span>Files</span><span>${n}</span></span><span class="p-tip-anchor"><button type="button" class="p-button p-press" data-size="compact" data-act="newfile">${icon("plus", 14)}New</button><span class="p-tooltip" role="tooltip">New file or folder at the top</span></span></div>
+    <ul class="p-tree" role="tree" aria-label="Repository files">${fileRows(S.files, 0)}</ul>`;
+}
+
+/* ---------- Create dialog ---------- */
+function dialogHtml() {
+  const d = S.dialog, after = S.mode === "after";
+  if (!d) return "";
+  const result = d.name ? `Creates the empty file ${d.name}.` : "Enter a file name.";
+  if (!after) return `<div class="dlg-backdrop"><div class="create-dialog" role="dialog" aria-modal="true" aria-labelledby="cd-title"><form class="create-dialog__form" onsubmit="return false">
+      <h2 class="create-dialog__title" id="cd-title">New file or folder</h2>
+      <fieldset class="create-dialog__kinds"><legend class="sr-only">Create a</legend><label class="create-dialog__kind"><input type="radio" name="k" checked>File</label><label class="create-dialog__kind"><input type="radio" name="k">Folder</label></fieldset>
+      <label class="create-dialog__field">File name<input value="${esc(d.name)}" placeholder="notes.md, or docs/notes.md"></label>
+      <p class="create-dialog__result" aria-live="polite">${esc(result)}</p>
+      <div class="create-dialog__actions"><button type="button" class="button secondary" data-act="cancel">Cancel</button><button type="button" class="button primary" data-act="create"${d.name ? "" : " disabled"}>Create</button></div>
+    </form></div></div>`;
+  const enter = S.fresh.has("dialog") ? " p-enter" : "";
+  return `<div class="p-backdrop${enter}"><div class="p-dialog" role="dialog" aria-modal="true" aria-labelledby="cd-title">
+      <h3 id="cd-title">New file or folder</h3>
+      <div class="p-choices" role="radiogroup" aria-label="Create a"><button type="button" class="p-button p-press" role="radio" aria-checked="true">File</button><button type="button" class="p-button p-press" role="radio" aria-checked="false">Folder</button></div>
+      <label class="p-field-label">File name<input class="p-field${d.name ? " is-focus" : ""}" value="${esc(d.name)}" placeholder="notes.md, or docs/notes.md"></label>
+      <p class="p-field-note" aria-live="polite">${esc(result)}</p>
+      <div class="p-row"><button type="button" class="p-button p-press" data-act="cancel">Cancel</button><button type="button" class="p-button p-press" data-tone="primary" data-act="create"${d.name ? "" : " disabled"}>Create</button></div>
+    </div></div>`;
+}
+
+/* ---------- Whole panel ---------- */
+function render() {
+  const after = S.mode === "after", stage = document.getElementById("stage");
+  const tabs = [["pages", "Pages"], ["media", "Media"], ["files", "Files"]];
+  const body = S.tab === "pages" ? pagesPanel() : S.tab === "files" ? filesPanel() : `<p class="mock-note">The Media tab is mock-up 53.</p>`;
+  stage.innerHTML = after
+    ? `<div class="after p-explorer" role="region" aria-label="Pages &amp; files">
+        <div class="p-explorer__head"><div class="p-tabs" role="tablist" aria-label="Pages, media or files">${tabs.map(([k, t]) => `<button type="button" class="p-tab" role="tab" data-tab="${k}" aria-selected="${S.tab === k}"${S.tab === k ? "" : ' tabindex="-1"'}>${t}</button>`).join("")}</div>
+          <span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" aria-label="Site settings">${icon("gear")}</button><span class="p-tooltip" role="tooltip">Site settings</span></span></div>
+        <div role="tabpanel">${body}</div></div>${dialogHtml()}`
+    : `<div class="today explorer" role="region" aria-label="Pages &amp; files">
+        <div class="explorer-head"><div class="explorer-tabs" role="tablist" aria-label="Pages, media or files">${tabs.map(([k, t]) => `<button type="button" class="explorer-tab" role="tab" data-tab="${k}" aria-selected="${S.tab === k}"${S.tab === k ? "" : ' tabindex="-1"'}>${t}</button>`).join("")}</div>
+          <button type="button" class="icon-button explorer-settings" aria-label="Site settings" title="Site settings">${icon("gear")}</button></div>
+        <div role="tabpanel">${body}</div></div><div class="today" style="display:contents">${dialogHtml()}</div>`;
+  S.fresh.clear();
+}
+
+/* ---------- Actions (real clicks and demo steps share them) ---------- */
+function openMenu(pane, key) { S.menu = S.menu && S.menu.key === key ? null : { pane, key }; S.copied = false; if (S.menu) S.fresh.add("menu"); render(); }
+async function copyPath(path) {
+  S.copied = true; render(); say(`Copy path: the item itself says Copied. ${path} is on the clipboard.`);
+  await sleep(1300); S.copied = false; S.menu = null; render();
+}
+let running = 0, stepId = 0;
+const wait = async (ms) => { await sleep(ms); if (stepId !== running) throw new Error("stopped"); };
+async function typeText(set, text, ms = 55) { for (let i = 1; i <= text.length; i++) { set(text.slice(0, i)); render(); await wait(ms); } }
+const STEPS = {
+  async menu() { S.tab = "pages"; S.menu = null; render(); await wait(200); openMenu("pages", "about"); say("The ⋯ on a row opens its menu, under the button."); },
+  async rename() {
+    S.tab = "pages"; S.menu = null; const r = findPage("about"); if (!r) return;
+    S.rename = { key: "about", text: r.p.title, focus: true }; render(); say("Rename happens in the row.");
+    await wait(500); await typeText((t) => { S.rename.text = t; }, "About us");
+    await wait(600); r.p.title = S.rename.text; S.rename = null; render(); say("Enter: the row shows the new name. That is the feedback; no message.");
+  },
+  async newpage() {
+    S.tab = "pages"; S.menu = null; S.newPage = { parent: null, title: "" }; render(); say("+ New page opens a form at the top of the list.");
+    await wait(500); await typeText((t) => { S.newPage.title = t; }, "Opening hours");
+    await wait(700); S.pages.splice(1, 0, { key: "hours", title: "Opening hours", route: "/opening-hours/", isNew: true });
+    S.newPage = null; S.current = "hours"; render(); say("Enter: the new page arrives open and marked New.");
+  },
+  async move() {
+    S.tab = "pages"; S.menu = null; const c = findPage("contact"); if (!c) { say("Start again first: Contact has moved."); return; }
+    S.drag = { key: "contact", on: null }; render(); say("Drag Contact…"); await wait(600);
+    S.drag.on = "menu"; render(); say("…onto Menu: Menu is the drop target."); await wait(900);
+    c.list.splice(c.list.indexOf(c.p), 1); const m = findPage("menu").p; c.p.route = "/menu/contact/"; m.kids.push(c.p); m.open = true;
+    S.drag = null; S.current = "contact"; render(); say("Dropped: Contact now sits under Menu, at /menu/contact/.");
+  },
+  async copy() { S.tab = "files"; S.menu = null; S.selectedFile = "style.css"; render(); await wait(250); openMenu("files", "style.css"); await wait(700); await copyPath("style.css"); },
+  async newfile() {
+    S.tab = "files"; S.menu = null; S.dialog = { name: "" }; S.fresh.add("dialog"); render(); say("+ New opens the New file or folder dialog.");
+    await wait(500); await typeText((t) => { S.dialog.name = t; }, "today.md");
+    await wait(700); createFile();
+  },
+  async delete() {
+    S.tab = "files"; S.menu = null; const r = findFile("media/logo.svg"); if (!r) return;
+    r.f.status = "D"; S.selectedFile = r.f.path; render(); document.querySelector('#stage [data-act="restore"]')?.focus({ focusVisible: true }); say("Delete: the row stays, struck through and marked Deleted, with Restore on it until you publish.");
+  },
+  async reset() { const mode = S.mode; S = freshState(); S.mode = mode; render(); say(""); },
+};
+function createFile() {
+  if (!S.dialog || !S.dialog.name) return;
+  const name = S.dialog.name; S.dialog = null;
+  S.files.push({ path: name, type: "text", word: "Text", status: "A" }); S.files.sort((a, b) => (b.folder ? 1 : 0) - (a.folder ? 1 : 0) || a.path.localeCompare(b.path));
+  S.selectedFile = name; render(); say(`Create: ${name} appears in the list, selected and marked New.`);
+}
+
+document.querySelector(".demo").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-step]"); if (!b) return;
+  const id = stepId = ++running; S.rename = null; S.newPage = null; S.dialog = null; S.drag = null; S.copied = false;
+  document.querySelectorAll("[data-step]").forEach((o) => o.setAttribute("aria-pressed", String(o === b && b.dataset.step !== "reset")));
+  try { await STEPS[b.dataset.step](); } catch (err) { if (err.message !== "stopped") throw err; }
+  if (id === running) b.setAttribute("aria-pressed", "false");
+});
+document.getElementById("stage").addEventListener("click", (e) => {
+  const t = e.target;
+  const tab = t.closest("[data-tab]"); if (tab) { S.tab = tab.dataset.tab; S.menu = null; render(); return; }
+  const more = t.closest("[data-more]"); if (more) { openMenu(S.tab, more.dataset.more); return; }
+  const act = t.closest("[data-act]");
+  if (act) {
+    const a = act.dataset.act;
+    if (a === "copy") { copyPath(S.menu.key); return; }
+    if (a === "newpage") { S.menu = null; S.newPage = { parent: null, title: "" }; render(); return; }
+    if (a === "newfile") { S.menu = null; S.dialog = { name: "" }; S.fresh.add("dialog"); render(); return; }
+    if (a === "cancel") { S.dialog = null; render(); return; }
+    if (a === "create") { createFile(); return; }
+    if (a === "restore") { const r = findFile(act.dataset.path); if (r) { delete r.f.status; render(); say("Restore: the row is back as it was."); } return; }
+    if (a === "fdelete") { const r = findFile(S.menu.key); S.menu = null; if (r) { r.f.status = "D"; } render(); return; }
+    if (a === "rename" && S.menu) { const r = findPage(S.menu.key); S.menu = null; if (r) { S.rename = { key: r.p.key, text: r.p.title, focus: true }; } render(); return; }
+    S.menu = null; render(); return;
+  }
+  const tg = t.closest("[data-toggle]"); if (tg && tg.dataset.toggle) { const r = findPage(tg.dataset.toggle); if (r) { r.p.open = r.p.open === false; render(); } return; }
+  const pg = t.closest("[data-page]"); if (pg && !t.closest("input")) { S.current = pg.dataset.page; S.menu = null; render(); return; }
+  const fl = t.closest("[data-file]");
+  if (fl) { const r = findFile(fl.dataset.file); if (r) { if (r.f.folder) r.f.open = !r.f.open; S.selectedFile = r.f.path; } S.menu = null; render(); return; }
+  if (S.menu) { S.menu = null; render(); }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (S.menu || S.dialog || S.rename) { S.menu = null; S.dialog = null; S.rename = null; render(); }
+});
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.mode = S.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  render();
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+render();
+</script>
+</body>
+</html>

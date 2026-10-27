@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 60 Settings dialog, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 10 Nov review
+  (kitchen station 3 "Show and tell": Today / After switch, demo buttons that play each step).
+  Ticket: build/tickets/60-organism-settings.md. Behaviour stays exactly as it is.
+  Today: values and structure copied from src/components/site-settings.css and .ts (dialog shell, side
+  categories, sections, fields, favicon and social image wells, footer note, status line, Apply's footer
+  question), src/ui/inline-field.css (the settings fields are inline fields), src/style.css and src/theme.css
+  (.button, .secondary, disabled, --selected), src/page-builder/site-address-rewrite.ts (the question's words)
+  (dev, 2026-10-27). Icons are hand-drawn look-alikes of the Phosphor set. Site values are made up.
+  After: the same dialog built only from the parts approved in 10-first-parts-and-edit-bar.html (dialog,
+  icon button, button, field, list row, tile) on the shared spacing 2/4/6/8/12/16/24 px and motion tokens.
+  Counts from site-settings.css: 5 own button looks (close, link, grip, choose, image) next to the shared
+  .button/.secondary; 4 typed-in text sizes (18, 17, 14, 13 px); 7 off-scale gaps (5, 9, 10, 14, 18, 22,
+  28 px); 36 px fields and close button against the 32 px control; side tabs ~42 px tall on --selected
+  where lists use 32 px rows on --current; 2 hover rules with no mouse check; 1 screen-width rule set
+  (max-width 640 px, 16 rules, plus a matchMedia for the tab direction).
+-->
+<style>
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+  --color-component: oklch(55% 0.2 300);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --component-surface: light-dark(oklch(from var(--color-component) 96% 0.03 h), oklch(from var(--color-component) 28% 0.05 h));
+  --component-text: light-dark(oklch(from var(--color-component) 42% 0.17 h), oklch(from var(--color-component) 85% 0.1 h));
+  --panel-surface: var(--surface-raised);
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px; --type-heading: 20px;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px;
+  --panel-padding: 6px;
+
+  /* After only: the catalogue's shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-size: var(--type-base); -webkit-tap-highlight-color: transparent; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, select:focus-visible, a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.icon { inline-size: 16px; block-size: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+:root { --selected: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 35% min(c, 0.05) h)); --danger-fg: oklch(from var(--success-fg) l c 25); --danger: oklch(from var(--color-success) l c 25); }
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+header { display: grid; gap: var(--space-3xs); }
+h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 70ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 5; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; inline-size: 100%; text-wrap: pretty; }
+.demo { display: grid; gap: var(--space-xs); padding: var(--space-s); border: 1.5px dashed var(--line); border-radius: var(--radius-panel); }
+.demo h2 { margin: 0; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.demo .steps { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.demo .steps button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 4px 10px; font-weight: 600; }
+.demo .steps button[aria-pressed="true"] { background: var(--current); border-color: var(--primary); }
+.demo .steps button:active { scale: 0.97; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); min-inline-size: 0; }
+.card h2 { margin: 0; font-size: var(--type-title); }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+
+/* The editor's top bar, so opening and closing show in place. */
+.frame { min-inline-size: 0; position: relative; block-size: 42rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--background); overflow: clip; }
+.f-top { display: flex; align-items: center; gap: var(--space-xs); block-size: 44px; padding-inline: var(--space-s); background: var(--surface); border-block-end: 1px solid var(--line); font-weight: 600; }
+.f-top .mark { inline-size: 18px; block-size: 18px; border-radius: 4px; background: var(--primary); flex: none; }
+.f-top .name { min-inline-size: 0; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.f-top .opener { min-inline-size: 0; overflow: clip; margin-inline-start: auto; display: inline-flex; align-items: center; gap: var(--space-2xs); border: 0; background: transparent; border-radius: var(--radius); block-size: 32px; padding-inline: var(--space-xs); color: var(--muted); font-weight: 400; white-space: nowrap; }
+.f-top .opener + .opener { margin-inline-start: 0; }
+.f-page { margin: clamp(0.5rem, 3vw, 1.5rem); background: light-dark(white, oklch(20% 0.01 265)); border-radius: var(--radius); padding: clamp(0.75rem, 4vw, 2rem); font-family: Georgia, serif; box-shadow: var(--shadow-small); }
+.f-page h3 { margin: 0 0 var(--space-xs); font-size: clamp(1.1rem, 0.9rem + 1.5vw, 1.8rem); }
+.f-page p { margin: 0; color: var(--muted); }
+.layer { position: absolute; inset: 0; z-index: 2; }
+.layer[hidden] { display: none; }
+.thumb-pic { background: linear-gradient(135deg, oklch(75% 0.09 60), oklch(55% 0.1 30)); }
+.fav-pic { background: radial-gradient(circle at 50% 55%, oklch(70% 0.14 60) 0 45%, transparent 47%); }
+
+/* =====================  TODAY: real editor CSS (site-settings.css, inline-field.css, style.css)  ===================== */
+.today.layer { background: var(--shadow-color); }
+.today .button { min-block-size: var(--size-control); border: 0; padding: 6px 14px; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--primary); color: var(--on-primary); }
+.today .secondary { background: var(--surface); color: inherit; }
+.today .button:active:not(:disabled) { background: var(--primary-hover); }
+.today .secondary:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.today :is(.button, .secondary):disabled { background: var(--surface-subtle); color: var(--muted); cursor: default; }
+@media (hover: hover) and (pointer: fine) {
+  .today .button:hover:not(:disabled) { background: var(--primary-hover); }
+  .today .secondary:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+}
+.today .site-settings { position: absolute; inset: 0; margin: auto; inline-size: min(900px, calc(100% - 32px)); block-size: min(640px, calc(100% - 32px)); padding: 0; overflow: hidden; border: 1px solid var(--control-line); border-radius: var(--radius-dialog); background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-size: 14px; display: flex; flex-direction: column; }
+.today .site-settings__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px 18px; flex: 0 0 auto; }
+.today .site-settings__introduction { min-inline-size: 0; }
+.today .site-settings__title { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.4; }
+.today .site-settings__scope { margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.today .site-settings__body { display: grid; grid-template-columns: 184px minmax(0, 1fr); flex: 1 1 auto; min-block-size: 0; }
+.today .site-settings__categories { display: flex; flex-direction: column; gap: 4px; padding: 14px 12px; background: var(--surface-subtle); }
+.today .site-settings__category-tab { display: flex; align-items: center; gap: 10px; inline-size: 100%; padding: 10px 12px; border: 0; border-radius: var(--radius); background: transparent; color: var(--text); text-align: start; }
+.today .site-settings__category-tab:hover { background: var(--hover); }
+.today .site-settings__category-tab[aria-selected="true"] { background: var(--selected); font-weight: 600; }
+.today .site-settings__content { min-inline-size: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 24px 28px; }
+.today .site-settings__category-title { margin: 0 0 24px; font-size: 17px; font-weight: 600; }
+.today .site-settings__section { min-inline-size: 0; margin: 0 0 24px; padding: 0; border: 0; }
+.today .site-settings__legend { margin-block-end: 12px; padding: 0; font-weight: 600; font-size: 14px; color: var(--muted); }
+.today .site-settings__field { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 6px 18px; padding: 16px 0; margin: 0; border-block-end: 1px solid var(--control-line); }
+.today .site-settings__label { font-size: 14px; line-height: 1.5; align-self: start; padding-block-start: 8px; }
+.today .site-settings__input { min-inline-size: 0; inline-size: 100%; min-block-size: 36px; padding: 8px 10px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--text); font: inherit; box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--control-line) 45%, transparent); caret-color: var(--primary); transition: background-color 120ms ease-out, box-shadow 120ms ease-out; }
+.today .site-settings__input:hover:not(:focus) { background-color: var(--hover); box-shadow: inset 0 -1px 0 var(--control-line); }
+.today .site-settings__input:focus { outline: none; background-color: color-mix(in srgb, var(--primary) 7%, var(--surface-input)); box-shadow: inset 0 -2px 0 var(--primary); }
+.today textarea.site-settings__address { field-sizing: content; min-block-size: 36px; resize: none; overflow-wrap: anywhere; }
+.today .site-settings__favicon { display: flex; align-items: center; gap: 8px; min-inline-size: 0; }
+.today .site-settings__favicon-preview { flex: none; inline-size: 32px; block-size: 32px; border: 1px solid var(--control-line); border-radius: var(--radius-small); background-color: var(--surface-input); }
+.today .site-settings__field .site-settings__choose { grid-column: -2 / -1; justify-self: start; border: 1px solid var(--control-line); }
+.today .site-settings__hint { color: var(--muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.today .site-settings__field .site-settings__hint { grid-column: 2; }
+.today p.site-settings__hint { margin: 0; }
+.today .site-settings__check { display: flex; align-items: center; gap: 9px; margin: 12px 0; min-block-size: 36px; font-size: 14px; }
+.today .site-settings__check input { accent-color: var(--primary); }
+.today .site-settings__close, .today .site-settings__link { display: inline-flex; align-items: center; justify-content: center; min-block-size: 36px; border: 0; border-radius: var(--radius); background: transparent; color: var(--link); padding: 6px 10px; }
+.today .site-settings__close { flex: 0 0 auto; color: var(--text); inline-size: 36px; }
+.today .site-settings__close:hover, .today .site-settings__link:hover { background: var(--hover); }
+.today .site-settings__image-row { display: flex; align-items: center; gap: 12px; margin-block-start: 8px; }
+.today .site-settings__thumb { display: grid; place-items: center; flex: none; inline-size: 64px; block-size: 64px; border: 1px solid var(--control-line); border-radius: var(--radius); }
+.today .site-settings__image { border: 1px solid var(--control-line); }
+.today .site-settings :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.today .site-settings__footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; background: var(--surface); }
+.today .site-settings__actions { display: flex; justify-content: flex-end; gap: 8px; margin-inline-start: auto; flex-shrink: 0; }
+.today .site-settings__draft-note { margin: 0; color: var(--muted); font-size: 13px; }
+.today .site-settings__footer:has(.site-settings__status:not(:empty)) .site-settings__draft-note { display: none; }
+.today .site-settings__status { margin: 0; color: var(--danger-fg); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.today .site-settings__status:empty { display: none; }
+.today .site-settings__confirm { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.today .site-settings__confirm-text { flex: 1 1 24ch; margin: 0; font-size: 13px; line-height: 1.5; text-wrap: pretty; }
+.today .site-settings__footer:has(.site-settings__confirm) .site-settings__draft-note { display: none; }
+.today .site-settings__affected { padding-inline-start: 20px; font-size: 14px; line-height: 1.8; margin: 8px 0 0; }
+.today .site-settings button:disabled { opacity: .5; }
+@media (max-width: 640px) {
+  .today .site-settings { inline-size: calc(100% - 16px); block-size: calc(100% - 16px); }
+  .today .site-settings__top { padding: 16px; }
+  .today .site-settings__body { display: flex; flex-direction: column; }
+  .today .site-settings__categories { flex-direction: row; gap: 4px; padding: 8px 12px; flex-shrink: 0; overflow-x: auto; }
+  .today .site-settings__category-tab { inline-size: auto; flex-shrink: 0; padding: 9px 12px; }
+  .today .site-settings__content { padding: 20px 16px; }
+  .today .site-settings__field { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .today .site-settings__label { padding-block-start: 0; }
+  .today .site-settings__field .site-settings__hint { grid-column: 1; }
+  .today .site-settings__footer { padding: 12px 16px; flex-wrap: wrap; gap: 10px; }
+  .today .site-settings__status { inline-size: 100%; }
+  .today .site-settings__draft-note { display: none; }
+}
+
+/* =====================  AFTER: catalogue parts  ===================== */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  .p-press:active:not(:disabled) { scale: 0.97; }
+}
+/* Button (file 10): primary, secondary, quiet */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: var(--size-control); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; }
+.p-button[data-tone="primary"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-button[data-tone="quiet"] { background: transparent; box-shadow: none; color: var(--link); }
+.p-button:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.p-button[data-tone="primary"]:active:not(:disabled) { background: var(--primary-hover); }
+.p-button[data-tone="quiet"]:active:not(:disabled) { background: var(--hover); }
+.p-button:disabled { background: var(--surface-subtle); color: var(--muted); box-shadow: none; cursor: default; }
+@media (hover: hover) and (pointer: fine) {
+  .p-button:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .p-button[data-tone="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
+  .p-button[data-tone="quiet"]:hover:not(:disabled) { background: var(--hover); }
+}
+/* Icon button (file 10) */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Dialog (file 10): one backdrop, one box; head, body, foot */
+.after.layer { background: oklch(from var(--shadow-color) l c h / 0.45); }
+.p-dialog { position: absolute; inset: 0; margin: auto; inline-size: min(900px, 100% - 2 * var(--space-m)); block-size: min(640px, 100% - 2 * var(--space-m)); border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: clip; container: dialog / inline-size; font-size: 14px; }
+@media (prefers-reduced-motion: no-preference) { .p-dialog.is-opening { animation: p-dialog-in var(--dur-menu) var(--ease-out); } }
+@keyframes p-dialog-in { from { opacity: 0; scale: 0.985; } }
+.p-dialog-head { display: flex; align-items: start; gap: var(--space-m); padding: var(--space-l) var(--space-l) var(--space-m); }
+.p-dialog-head > div { min-inline-size: 0; }
+.p-dialog-head h3 { margin: 0; font-size: var(--type-heading); line-height: 1.3; }
+.p-dialog-head p { margin: var(--space-3xs) 0 0; color: var(--muted); font-size: var(--type-base); overflow-wrap: anywhere; }
+.p-dialog-head .p-icon-button { margin-inline-start: auto; color: var(--text); }
+.p-dialog-body { display: grid; grid-template-columns: 184px minmax(0, 1fr); flex: 1; min-block-size: 0; }
+.p-dialog-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-s) var(--space-m); padding: var(--space-m) var(--space-l); }
+.p-dialog-foot .note { margin: 0; color: var(--muted); font-size: var(--type-base); }
+.p-dialog-foot .status { margin: 0; color: var(--danger-fg); font-size: var(--type-base); overflow-wrap: anywhere; }
+.p-dialog-foot .status:empty { display: none; }
+.p-dialog-foot:has(.status:not(:empty), .question) .note { display: none; }
+.p-dialog-foot .question { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-m); }
+.p-dialog-foot .question p { flex: 1 1 24ch; margin: 0; font-size: var(--type-base); text-wrap: pretty; }
+.p-row { display: flex; gap: var(--space-xs); justify-content: end; flex-wrap: wrap; margin-inline-start: auto; }
+/* List row (file 10 menu item, L3): the side categories, 32 px, --current and 600 for the open one */
+.p-side { display: flex; flex-direction: column; gap: var(--space-4xs); padding: var(--space-s); background: var(--surface-subtle); }
+.p-list-row { display: flex; align-items: center; gap: var(--space-xs); inline-size: 100%; min-block-size: var(--size-control); padding-inline: var(--space-xs); border: 0; border-radius: var(--radius); background: transparent; color: var(--text); text-align: start; }
+.p-list-row[aria-selected="true"] { background: var(--current); font-weight: 600; }
+.p-list-row:active { background: var(--current); }
+.p-list-row:focus-visible { outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .p-list-row:hover:not([aria-selected="true"]) { background: var(--hover); } }
+@media (pointer: coarse) { .p-list-row { min-block-size: var(--size-touch); } }
+/* Form: label, field, hint; one section heading */
+.p-content { min-inline-size: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: var(--space-l); }
+.p-content h4 { margin: 0 0 var(--space-l); font-size: var(--type-title); }
+.p-section { min-inline-size: 0; margin: 0 0 var(--space-l); padding: 0; border: 0; }
+.p-section legend { margin-block-end: var(--space-s); padding: 0; font-weight: 600; color: var(--muted); }
+.p-form-row { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: var(--space-2xs) var(--space-m); padding-block: var(--space-m); border-block-end: 1px solid var(--control-line); }
+.p-form-row > .label { align-self: start; padding-block-start: var(--space-2xs); }
+.p-form-row > :not(.label) { grid-column: 2; }
+.p-hint { margin: 0; color: var(--muted); font-size: var(--type-base); overflow-wrap: anywhere; }
+.p-check { display: flex; align-items: center; gap: var(--space-xs); min-block-size: var(--size-control); margin-block: var(--space-s); }
+.p-check input { accent-color: var(--primary); }
+/* Field (file 10): inline look */
+.p-field { inline-size: 100%; min-inline-size: 0; min-block-size: var(--size-control); padding: var(--space-2xs) var(--space-xs); border: 0; border-radius: var(--radius-small) var(--radius-small) 0 0; background: transparent; box-shadow: inset 0 -1px 0 var(--control-line); caret-color: var(--primary); color: var(--text); }
+textarea.p-field { field-sizing: content; resize: none; overflow-wrap: anywhere; }
+.p-field:focus { outline: none; background-color: color-mix(in oklch, var(--primary) 7%, var(--surface-input)); box-shadow: inset 0 -2px 0 var(--primary); }
+@media (hover: hover) and (pointer: fine) { .p-field:hover:not(:focus) { background-color: var(--hover); } }
+@media (prefers-reduced-motion: no-preference) { .p-field { transition: background-color var(--dur-hover) var(--ease-out), box-shadow var(--dur-hover) var(--ease-out); } }
+/* Tile: the picture wells (favicon 32, social image 64) */
+.p-with { display: flex; align-items: center; gap: var(--space-xs); min-inline-size: 0; }
+.p-tile { flex: none; inline-size: var(--tile, 32px); block-size: var(--tile, 32px); border: 1px solid var(--control-line); border-radius: var(--radius-small); background-color: var(--surface-input); }
+.p-tile[data-size="large"] { --tile: 64px; border-radius: var(--radius); }
+.p-image-row { display: flex; align-items: center; gap: var(--space-s); margin-block-start: var(--space-xs); }
+.p-list { padding-inline-start: var(--space-l); margin: var(--space-xs) 0 0; line-height: 1.8; }
+/* The dialog's own width decides the phone layout (was a screen-width rule) */
+@container dialog (inline-size < 40rem) {
+  .p-dialog-head { padding: var(--space-m); }
+  .p-dialog-body { display: flex; flex-direction: column; }
+  .p-side { flex-direction: row; padding: var(--space-xs) var(--space-s); overflow-x: auto; flex: none; }
+  .p-list-row { inline-size: auto; flex: none; padding-inline: var(--space-s); }
+  .p-content { padding: var(--space-l) var(--space-m); }
+  .p-form-row { grid-template-columns: minmax(0, 1fr); }
+  .p-form-row > :not(.label) { grid-column: 1; }
+  .p-form-row > .label { padding-block-start: 0; }
+  .p-dialog-foot { padding: var(--space-s) var(--space-m); }
+  .p-dialog-foot .note { display: none; }
+  .p-dialog-foot .status { inline-size: 100%; }
+}
+.after .p-dialog :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.after .p-dialog .p-field:focus-visible { outline: none; }
+</style>
+</head>
+<body data-mode="after">
+<main>
+  <header>
+    <h1>Settings dialog <span class="tag">mock-up for Tuesday 10 Nov</span></h1>
+    <p class="intro">Site settings and Page settings share one dialog: categories down the side, fields on the right, Cancel and Apply at the bottom. What they do stays the same. After rebuilds the dialog from the approved parts, so its buttons, fields, side list and spacing match the rest of the editor.</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+  </div>
+  <p class="summary today">Today: the dialog has its own close, link, choose and picture buttons, its own text sizes and a taller side list.</p>
+  <p class="summary after">After: 5 own button looks become the 1 button and 1 icon button · the side list becomes the one 32 px list row · 4 typed-in text sizes and 7 odd gaps snap to the shared values · the phone layout follows the dialog's width · hover only with a mouse.</p>
+
+  <section class="demo" aria-labelledby="demo-title">
+    <h2 id="demo-title">Demo steps (not part of the editor). You can also click and type in the dialog.</h2>
+    <div class="steps">
+      <button type="button" data-step="open">1 · Open Site settings</button>
+      <button type="button" data-step="social">2 · Social</button>
+      <button type="button" data-step="pages">3 · Pages</button>
+      <button type="button" data-step="name">4 · Change the site name</button>
+      <button type="button" data-step="apply">5 · Apply</button>
+      <button type="button" data-step="address">6 · New address, Apply</button>
+      <button type="button" data-step="update">7 · Update links</button>
+      <button type="button" data-step="page">8 · Page settings, wrong address</button>
+      <button type="button" data-step="close">9 · Close</button>
+    </div>
+  </section>
+
+  <article class="card">
+    <h2>The editor, with the dialog open</h2>
+    <div class="frame" id="frame">
+      <div class="f-top"><span class="mark"></span><span class="name">Bakery Bloom</span>
+        <button type="button" class="opener" data-open="page"><svg class="icon" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>Page settings</button>
+        <button type="button" class="opener" data-open="site"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>Site settings</button></div>
+      <div class="f-page"><h3>Our loaves</h3><p>Baked every morning with flour from the mill down the road.</p></div>
+      <div class="today layer" id="today-layer" hidden></div>
+      <div class="after layer" id="after-layer" hidden></div>
+    </div>
+    <ul class="changes after"><li>one button part</li><li>side list is the one list row</li><li>fields from the one field part</li><li>shared text sizes and gaps</li><li>press feedback</li><li>focus ring on every control</li></ul>
+  </article>
+</main>
+
+<script>
+const ICONS = {
+  house: '<path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  file: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
+  checks: '<path d="M4 7h8M4 12h8M4 17h8"/><path d="m15 7 1.5 1.5L20 5M15 15l1.5 1.5L20 13"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  image: '<rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9.5" cy="9.5" r="1.5"/><path d="m20 15-4-4-8 9"/>',
+};
+const icon = (n, size = 16) => `<svg class="icon" style="inline-size:${size}px;block-size:${size}px" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* The two dialogs as site-settings.ts builds them (titles, scopes, categories, fields, hints). */
+const START = { name: "Bakery Bloom", address: "https://lex.github.io/bakery/", favicon: "images/favicon.png", social: "images/loaves.jpg", title: "Our loaves", description: "Sourdough, rye and spelt, baked every morning.", canonical: "", theme: "" };
+const values = { ...START };
+const DIALOGS = {
+  site: { title: "Site settings", scope: "Shared across your site", apply: "Apply site settings", tabs: [["General", "house"], ["Social", "link"], ["Pages", "file"]] },
+  page: { title: "Page settings", scope: "This page · /loaves/", apply: "Apply page settings", tabs: [["General", "file"], ["Search", "checks"], ["Social", "link"]] },
+};
+const state = { open: null, tab: 0, status: "", question: false, applying: false };
+const layers = { today: document.getElementById("today-layer"), after: document.getElementById("after-layer") };
+
+function field(m, key, label, hint, opts = {}) {
+  const t = m === "today";
+  const tag = opts.multi ? "textarea" : "input";
+  const cls = t ? `site-settings__input${opts.multi ? " site-settings__address" : ""}` : "p-field";
+  const control = `<${tag} class="${cls}" data-key="${key}" aria-label="${label}"${opts.multi ? ' rows="1"' : ""}${tag === "input" ? ` value="${esc(values[key])}"` : ""}${opts.placeholder ? ` placeholder="${esc(opts.placeholder)}"` : ""}>${tag === "textarea" ? esc(values[key]) + "</textarea>" : ""}`;
+  if (opts.favicon) {
+    return t
+      ? `<div class="site-settings__field"><span class="site-settings__label">${label}</span><div class="site-settings__favicon"><span class="site-settings__favicon-preview fav-pic"></span>${control}</div><button type="button" class="button secondary site-settings__choose">Choose favicon…</button><span class="site-settings__hint">${hint}</span></div>`
+      : `<div class="p-form-row"><span class="label">${label}</span><div class="p-with"><span class="p-tile fav-pic"></span>${control}</div><button type="button" class="p-button p-press" style="justify-self:start">Choose favicon…</button><span class="p-hint">${hint}</span></div>`;
+  }
+  return t
+    ? `<label class="site-settings__field"><span class="site-settings__label">${label}</span>${control}${hint ? `<span class="site-settings__hint">${hint}</span>` : ""}</label>`
+    : `<label class="p-form-row"><span class="label">${label}</span>${control}${hint ? `<span class="p-hint">${hint}</span>` : ""}</label>`;
+}
+const section = (m, legend, inner) => m === "today"
+  ? `<fieldset class="site-settings__section"><legend class="site-settings__legend">${legend}</legend>${inner}</fieldset>`
+  : `<fieldset class="p-section"><legend>${legend}</legend>${inner}</fieldset>`;
+const hintP = (m, text) => `<p class="${m === "today" ? "site-settings__hint" : "p-hint"}">${text}</p>`;
+const btn = (m, words, kind, attrs = "") => {
+  if (m === "today") return `<button type="button" class="${{ primary: "button", secondary: "button secondary", link: "site-settings__link", image: "button secondary site-settings__image" }[kind]}" ${attrs}>${words}</button>`;
+  return `<button type="button" class="p-button p-press" data-tone="${{ primary: "primary", secondary: "secondary", link: "quiet", image: "secondary" }[kind]}" ${attrs}>${words}</button>`;
+};
+
+function panel(m) {
+  const d = state.open, tab = DIALOGS[d].tabs[state.tab][0];
+  const imageRow = (place) => m === "today"
+    ? `<div class="site-settings__image-row"><span class="site-settings__thumb thumb-pic" aria-hidden="true"></span>${btn(m, "Change…", "image", `aria-label="Change ${place}"`)}</div>`
+    : `<div class="p-image-row"><span class="p-tile thumb-pic" data-size="large" aria-hidden="true"></span>${btn(m, "Change…", "image", `aria-label="Change ${place}"`)}</div>`;
+  if (d === "site") {
+    if (tab === "General") return section(m, "Site identity",
+      field(m, "name", "Site name", "Used for new page details and the site's social identity.") +
+      field(m, "address", "Site address", "Like https://name.github.io/my-site/", { multi: true }) +
+      field(m, "favicon", "Favicon", "Choose an image or paste its URL. Applied to every page's head.", { favicon: true }));
+    if (tab === "Social") return section(m, "Default share image",
+      field(m, "social", "Default social image", "Used on new pages and pages using the current default. Custom page images stay independent.") + imageRow("default social image"));
+    const pages = ["Home · /", "Our loaves · /loaves/", "About us · /about/", "Visit the bakery · /visit/"];
+    return section(m, `Affected pages (${pages.length})`, hintP(m, "Favicon and social site name apply to these pages. Their title and description stay their own.") + `<ul class="${m === "today" ? "site-settings__affected" : "p-list"}">${pages.map((p) => `<li>${p}</li>`).join("")}</ul>`)
+      + section(m, "404 page", hintP(m, "The page visitors see at a missing address. Your static host decides when to serve it.") + btn(m, "Create and open 404 page", "link"));
+  }
+  if (tab === "General") return section(m, "Page details", field(m, "title", "Title", "Shown in browser tabs and search results.") + field(m, "description", "Description", "A short summary for search results."));
+  if (tab === "Search") return section(m, "Search visibility",
+    field(m, "canonical", "Canonical URL", "The preferred full address when this content appears at multiple URLs.") +
+    (m === "today" ? `<label class="site-settings__check"><input type="checkbox"><span>Hide from search engines</span></label>` : `<label class="p-check"><input type="checkbox"><span>Hide from search engines</span></label>`) +
+    hintP(m, "Adds noindex for search engines. This does not make a page private.") +
+    field(m, "theme", "Theme colour", "A CSS colour for supported browser chrome, for example #2f6d3a."));
+  return section(m, "Share card", field(m, "social", "Social image", "Choose a site image or paste a full image URL. Sharing services favour a 1200 × 630 image.") + imageRow("social image"));
+}
+
+const QUESTION = "This updates 12 links in 4 files to the new address. Undo is available.";
+function dialogMarkup(m) {
+  const d = DIALOGS[state.open];
+  const t = m === "today";
+  const tabs = d.tabs.map(([label, ic], i) => `<button type="button" role="tab" class="${t ? "site-settings__category-tab" : "p-list-row p-press"}" aria-selected="${i === state.tab}" data-tab="${i}" tabindex="${i === state.tab ? 0 : -1}">${icon(ic, 18)}<span>${label}</span></button>`).join("");
+  const actions = state.question
+    ? `<div class="${t ? "site-settings__confirm" : "question"}" role="group"><p class="${t ? "site-settings__confirm-text" : ""}">${QUESTION}</p><div class="${t ? "site-settings__actions" : "p-row"}">${btn(m, "Cancel", "secondary", "data-answer=no")}${btn(m, "Update links", "primary", "data-answer=yes")}</div></div>`
+    : `<div class="${t ? "site-settings__actions" : "p-row"}">${btn(m, "Cancel", "secondary", "data-cancel")}${btn(m, d.apply, "primary", `data-apply${state.applying ? " disabled" : ""}`)}</div>`;
+  if (t) return `<div class="site-settings" role="dialog" aria-labelledby="t-title">
+    <div class="site-settings__top"><div class="site-settings__introduction"><h2 class="site-settings__title" id="t-title">${d.title}</h2><p class="site-settings__scope">${d.scope}</p></div><button type="button" class="site-settings__close" data-cancel aria-label="Close ${d.title.toLowerCase()}">${icon("x", 18)}</button></div>
+    <div class="site-settings__body"><div class="site-settings__categories" role="tablist" aria-label="${d.title} categories">${tabs}</div>
+      <div class="site-settings__content"><div class="site-settings__category" role="tabpanel"><h3 class="site-settings__category-title">${d.tabs[state.tab][0]}</h3>${panel(m)}</div></div></div>
+    <div class="site-settings__footer"><p class="site-settings__draft-note">Drafts until you publish</p><p class="site-settings__status" role="status">${esc(state.status)}</p>${actions}</div>
+  </div>`;
+  return `<div class="p-dialog" role="dialog" aria-labelledby="a-title">
+    <div class="p-dialog-head"><div><h3 id="a-title">${d.title}</h3><p>${d.scope}</p></div><button type="button" class="p-icon-button p-press" data-cancel aria-label="Close ${d.title.toLowerCase()}">${icon("x", 18)}</button></div>
+    <div class="p-dialog-body"><div class="p-side" role="tablist" aria-label="${d.title} categories">${tabs}</div>
+      <div class="p-content"><div role="tabpanel"><h4>${d.tabs[state.tab][0]}</h4>${panel(m)}</div></div></div>
+    <div class="p-dialog-foot"><p class="note">Drafts until you publish</p><p class="status" role="status">${esc(state.status)}</p>${actions}</div>
+  </div>`;
+}
+
+let opening = false;
+function render(focus) {
+  for (const m of ["today", "after"]) {
+    const layer = layers[m];
+    layer.hidden = !state.open;
+    if (!state.open) { layer.innerHTML = ""; continue; }
+    const scroll = layer.querySelector(".site-settings__content, .p-content")?.scrollTop ?? 0;
+    layer.innerHTML = dialogMarkup(m);
+    if (opening) layer.firstElementChild.classList.add("is-opening");
+    const content = layer.querySelector(".site-settings__content, .p-content"); if (content) content.scrollTop = scroll;
+  }
+  opening = false;
+  const layer = layers[document.body.dataset.mode];
+  if (focus) layer.querySelector(focus)?.focus({ preventScroll: true });
+}
+function open(which, tab = 0) { opening = state.open !== which; state.open = which; state.tab = tab; state.status = ""; state.question = false; render(`[data-tab="${tab}"]`); }
+function close() { state.open = null; state.status = ""; state.question = false; render(); document.querySelector(`[data-open]`)?.blur(); }
+async function apply() {
+  if (state.applying) return;
+  if (state.open === "page" && values.canonical && !/^https?:\/\//i.test(values.canonical.trim())) { state.status = "Canonical URL must start with https:// or http://."; render(); return; }
+  state.applying = true; state.status = "Applying drafts…"; render();
+  await new Promise((r) => setTimeout(r, 900));
+  state.applying = false;
+  if (state.open === "site" && values.address !== START.address) { state.status = ""; state.question = true; render("[data-answer=yes]"); return; }
+  close();
+}
+for (const layer of Object.values(layers)) {
+  layer.addEventListener("click", (e) => {
+    const tab = e.target.closest("[data-tab]"); if (tab) { state.tab = Number(tab.dataset.tab); render(`[data-tab="${state.tab}"]`); return; }
+    if (e.target.closest("[data-cancel]")) return close();
+    if (e.target.closest("[data-apply]")) return void apply();
+    const answer = e.target.closest("[data-answer]");
+    if (answer) { if (answer.dataset.answer === "no") values.address = START.address; START.address = values.address; state.question = false; if (answer.dataset.answer === "yes") close(); else render(); }
+  });
+  layer.addEventListener("input", (e) => { const key = e.target.dataset.key; if (key) values[key] = e.target.value; });
+  layer.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { close(); return; }
+    const tab = e.target.closest("[data-tab]"); if (!tab) return;
+    const n = DIALOGS[state.open].tabs.length; let next;
+    if (["ArrowDown", "ArrowRight"].includes(e.key)) next = (state.tab + 1) % n;
+    if (["ArrowUp", "ArrowLeft"].includes(e.key)) next = (state.tab - 1 + n) % n;
+    if (next !== undefined) { e.preventDefault(); state.tab = next; render(`[data-tab="${next}"]`); }
+  });
+}
+document.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => open(b.dataset.open)));
+
+const STEPS = {
+  open: () => open("site"),
+  social: () => { if (state.open !== "site") open("site"); state.tab = 1; render('[data-tab="1"]'); },
+  pages: () => { if (state.open !== "site") open("site"); state.tab = 2; render('[data-tab="2"]'); },
+  name: () => { if (state.open !== "site") open("site"); state.tab = 0; values.name = "Bloom Bakery & Café"; render('[data-key="name"]'); },
+  apply: () => { if (!state.open) open("site"); apply(); },
+  address: () => { open("site"); values.address = "https://bloombakery.nl/"; render(); apply(); },
+  update: () => { if (!state.question) return STEPS.address(); layers[document.body.dataset.mode].querySelector("[data-answer=yes]")?.click(); },
+  page: () => { open("page", 1); values.canonical = "bloombakery.nl/loaves"; render(); apply(); },
+  close: () => close(),
+};
+document.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-step]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  STEPS[b.dataset.step]();
+}));
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+open("site");
+</script>
+</body>
+</html>

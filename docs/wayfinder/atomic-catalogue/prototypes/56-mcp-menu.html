@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 56 MCP menu, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 10 Nov review
+  (kitchen station 3, "Show and tell": a Today / After switch with demo steps).
+  Ticket: docs/wayfinder/atomic-catalogue/build/tickets/56-organism-mcp-menu.md.
+  Today: the MCP item as it sits in the project menu, with its Requests flyout and "Download unsaved changes".
+  Structure, labels and states from src/components/agent-menu.ts (paint, confirmOnButton, drawWaiting: one button
+  and its dot, "Connect to MCP" / "Wait for MCP" with the copy icon / "Disconnect MCP", "Copied" for 2 s),
+  values from src/components/agent-menu.css, src/components/flyout.css, src/components/repository-menu.css,
+  src/components/dropdown.css, src/style.css and src/theme.css (dev, 2026-10-27). Phosphor Regular icons.
+  Not matched: the flyout opens on hover or focus in the editor; here a demo button opens it. The menu is drawn
+  in the page, open. The in-between states (connecting, reconnecting, taking over) share one grey pulse and are
+  played as one step.
+  After: the same item from the approved catalogue parts of 10-first-parts-and-edit-bar.html (menu, menu item,
+  badge with its dot and number sizes, spinner), shared spacing and motion values; "Copied" shows a tick on the
+  item as approved in 09-feedback-in-place.html. Rows are 44 px tall on phones.
+-->
+<style>
+/* ---------- Shared values: src/theme.css, light and dark written once with light-dark() ---------- */
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --on-accent: oklch(100% 0 none);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --danger: oklch(from var(--color-success) l c 25);
+  --danger-bg: oklch(from var(--success-bg) l c 25);
+  --danger-fg: oklch(from var(--success-fg) l c 25);
+  --agent-question-strong: oklch(66% 0.18 48);
+  --panel-surface: var(--surface-raised);
+  --pressed: light-dark(var(--primary), var(--color-primary-light));
+  --on-pressed: light-dark(var(--on-primary), var(--color-primary-darkest));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px; --size-tap: 0px;
+  --panel-padding: 6px;
+
+  /* After only: the catalogue's shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+/* src/theme.css: real tap targets on touch screens and narrow editor layouts. */
+@media (hover: none), (pointer: coarse), (width <= 768px) { :root { --size-tap: var(--size-touch); } }
+* { box-sizing: border-box; }
+body { margin: 0; font-size: var(--type-base); -webkit-tap-highlight-color: transparent; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: 0.5; }
+button:focus-visible, a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.ph { inline-size: 16px; block-size: 16px; fill: currentColor; flex: none; display: block; }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+header { display: grid; gap: var(--space-3xs); }
+h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 70ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 5; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; max-inline-size: 75ch; text-wrap: pretty; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+.demo { border: 1.5px dashed var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); }
+.demo h2 { margin: 0; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.demo .steps { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.demo button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 4px 10px; min-block-size: 32px; }
+.demo button[aria-pressed="true"] { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.demo button.reset { color: var(--muted); }
+.stage { border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--background); overflow: clip; min-inline-size: 0; }
+.menus { display: flex; flex-wrap: wrap; gap: var(--space-2xs); align-items: start; padding: var(--space-xs) clamp(8px, 3vw, 28px) var(--space-l); min-block-size: 30rem; }
+.canvas-note { color: var(--muted); font-size: var(--type-small); padding: var(--space-s) clamp(8px, 3vw, 28px); margin: 0; }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+
+/* =====================  TODAY: real editor CSS  ===================== */
+/* The project menu around the item: as in 55-project-menu.html */
+/* src/style.css .topbar (one row of three columns; flex and wrapping at 650 px and under) */
+.today .topbar { min-block-size: 72px; background: var(--surface); display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; padding: 8px 28px; gap: 24px; }
+@media (max-width: 650px) { .today .topbar { display: flex; min-block-size: 65px; flex-wrap: wrap; padding: 14px 17px; gap: 10px; } }
+.today .text-button { border: 0; background: none; padding: 5px 0; color: var(--link); font-size: var(--type-base); }
+.today .text-button:active { text-decoration: underline; }
+@media (hover: hover) and (pointer: fine) { .today .text-button:hover { text-decoration: underline; } }
+.today .button { min-block-size: var(--size-control); border: 0; padding: 6px 14px; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; }
+.today .primary { background: var(--primary); color: var(--on-primary); }
+/* src/components/repository-menu.css */
+.today .repository-menu { min-inline-size: 0; }
+.today .rm-trigger { position: relative; display: flex; align-items: center; gap: 10px; max-inline-size: min(38vw, 360px); padding: 7px 10px 7px 8px; border: 0; border-radius: var(--radius-panel); background: transparent; font-size: var(--type-title); font-weight: 600; }
+@media (max-width: 650px) { .today .rm-trigger { max-inline-size: 65vw; } }
+.today .rm-trigger:hover, .today .rm-trigger[aria-expanded="true"] { background: var(--hover); }
+.today .rm-identity { display: flex; flex-direction: column; min-inline-size: 0; text-align: start; }
+.today .rm-name, .today .rm-repository { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today .rm-repository { font-size: var(--type-small); font-weight: 400; color: var(--muted); }
+.today .rm-caret { color: var(--muted); }
+.today .rm-initial { display: inline-grid; place-items: center; flex: none; inline-size: 28px; block-size: 28px; border-radius: var(--radius); background: oklch(58% 0.12 var(--initial-hue)); color: var(--on-accent); font-size: 13px; font-weight: 700; line-height: 1; }
+.today .rm-trigger .rm-initial { inline-size: 32px; block-size: 32px; font-size: 15px; }
+.today .rm-questions, .today .rm-finished { position: absolute; inset-block-start: 3px; inset-inline-start: 30px; min-inline-size: 18px; block-size: 18px; border: 2px solid var(--surface); border-radius: 999px; padding: 0 3px; background: var(--agent-question-strong); color: var(--on-accent); font-size: var(--type-badge); font-weight: 700; line-height: 14px; text-align: center; }
+.today .rm-finished { background: var(--primary); }
+.today .rm-item .rm-finished { z-index: 2; pointer-events: none; inset-block-start: 4px; inset-inline-start: 26px; }
+.today .rm-branch-item .rm-finished { position: static; flex: none; border-color: transparent; }
+.today .rm-popover { inline-size: min(340px, 100%); }
+.today .dropdown-panel { padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); }
+.today .rm-section { padding: 6px 0; }
+.today .rm-section + .rm-section, .today .rm-agent + .rm-section { margin-block-start: 6px; }
+.today .rm-heading { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.today .rm-repos { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.today .rm-item { position: relative; display: flex; flex-wrap: wrap; align-items: center; border-radius: var(--radius); }
+.today .rm-item:hover, .today .rm-item.is-hover, .today .rm-item:focus-within { background: var(--hover); }
+.today .rm-item:has(> .rm-repo:focus-visible) { outline: var(--focus-ring); outline-offset: -2px; }
+.today .rm-repo:focus-visible { outline: none; }
+.today .rm-remove:focus-visible, .today .rm-action:focus-visible, .today .rm-account:focus-visible, .today .rm-heading-button:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.today .rm-item:has([aria-current="true"]) { background: var(--current); }
+.today .rm-repo { display: flex; flex: 1; align-items: center; gap: 10px; min-inline-size: 0; padding: 6px 8px; border: 0; border-radius: var(--radius); background: transparent; text-align: start; }
+.today .rm-repo-text { display: flex; flex: 1; flex-direction: column; min-inline-size: 0; }
+.today .rm-repo-name, .today .rm-repo-owner, .today .rm-account-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today .rm-repo-name { font-size: var(--type-base); font-weight: 600; line-height: 18px; }
+.today .rm-repo-owner { font-size: var(--type-small); line-height: 16px; color: var(--muted); }
+.today .rm-remove { position: absolute; z-index: 1; inset-block-start: 9px; inset-inline-start: 8px; display: inline-grid; place-items: center; inline-size: 28px; block-size: 28px; border: 0; border-radius: var(--radius); background: oklch(58% 0.12 var(--initial-hue)); color: var(--on-accent); opacity: 0; }
+.today .rm-item:hover .rm-remove, .today .rm-item.is-hover .rm-remove, .today .rm-remove:focus-visible, .today .rm-remove[aria-expanded="true"] { opacity: 1; }
+.today .rm-remove:hover { background: oklch(48% 0.12 var(--initial-hue)); }
+@media (hover: none) { .today .rm-remove { opacity: 1; } }
+.today .rm-confirm { flex-basis: 100%; margin: 0 8px 8px; padding: 10px; border-radius: var(--radius); background: var(--surface); }
+.today .rm-confirm p { margin: 0 0 10px; font-size: var(--type-small); line-height: 1.5; color: var(--muted); }
+.today .rm-confirm .button { display: inline-flex; align-items: center; margin-inline-end: 8px; text-decoration: none; }
+.today .rm-empty { margin: 0; padding: 6px 8px; font-size: var(--type-small); line-height: 1.5; color: var(--muted); }
+.today .rm-more { flex: none; padding-inline-end: 2px; color: var(--muted); }
+.today .rm-repo[aria-expanded="true"] .rm-more { color: var(--text); }
+.today .rm-branch-name { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today .rm-branch-item[aria-checked="true"] { background: var(--current); font-weight: 600; }
+.today .rm-action { display: flex; align-items: center; gap: 10px; inline-size: 100%; min-block-size: var(--size-control); padding: 4px 8px; border: 0; border-radius: var(--radius); background: transparent; color: inherit; font-size: var(--type-base); text-align: start; text-decoration: none; }
+.today .rm-action:hover, .today .rm-action:focus-visible { background: var(--hover); }
+.today .rm-heading-button { display: inline-grid; place-items: center; inline-size: var(--size-icon); block-size: var(--size-icon); margin: -4px -4px -4px 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); }
+.today .rm-heading-button:hover, .today .rm-heading-button:focus-visible { background: var(--hover); color: var(--text); }
+.today .rm-add, .today .rm-quiet { color: var(--muted); }
+.today .rm-add:hover, .today .rm-quiet:hover { color: var(--text); }
+.today .rm-account { display: flex; align-items: center; gap: 10px; min-block-size: var(--size-control); padding: 4px 8px; font-size: var(--type-base); }
+.today .rm-account[aria-current="true"] { border-radius: var(--radius); background: var(--current); font-weight: 600; }
+.today .rm-account .rm-initial { inline-size: 24px; block-size: 24px; border-radius: 50%; font-size: var(--type-badge); }
+.today .rm-hint { margin-inline-start: auto; font-size: var(--type-small); color: var(--muted); opacity: 0; }
+.today .rm-account:hover .rm-hint, .today .rm-account.is-hover .rm-hint, .today .rm-account:focus-visible .rm-hint { opacity: 1; }
+.today .rm-owner { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 8px 8px 2px; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.today .rm-owner:first-child { padding-block-start: 2px; }
+.today .rm-owner-kind { font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.8; }
+/* src/components/flyout.css */
+.today .flyout { inline-size: min(240px, 100%); padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); font-size: var(--type-base); }
+.today .flyout__heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-block-size: 24px; padding: 4px 4px 4px 8px; font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.today .flyout__list { display: flex; flex-direction: column; gap: 2px; }
+.today .flyout__item { display: flex; align-items: center; gap: 8px; inline-size: 100%; min-inline-size: 0; min-block-size: var(--size-control); padding: 4px 8px; border: 0; border-radius: var(--radius); background: transparent; text-align: start; }
+.today .flyout__item:hover:not(:disabled), .today .flyout__item:focus-visible { background: var(--hover); }
+.today .flyout__item:focus-visible, .today .flyout__icon-button:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.today .flyout__icon-button { flex: none; display: inline-grid; place-items: center; inline-size: var(--size-icon); block-size: var(--size-icon); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); }
+.today .flyout__icon-button:hover:not(:disabled), .today .flyout__icon-button:focus-visible { background: var(--hover); color: var(--text); }
+/* src/components/agent-menu.css: the MCP item inside this menu (ticket 56 has its states) */
+.today .agent-menu__action { display: flex; align-items: center; gap: 10px; inline-size: 100%; min-block-size: var(--size-control); padding: 4px 8px; border: 0; border-radius: var(--radius); background: transparent; color: inherit; font-size: var(--type-base); text-align: start; }
+.today .agent-menu__action:hover { background: var(--hover); }
+.today .agent-menu__action::before { content: ""; flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--muted); opacity: 0.5; }
+
+/* src/components/agent-menu.css (all of it that draws) */
+.today .agent-menu { display: block; }
+.today .agent-menu__action, .today .agent-menu__download { display: flex; align-items: center; gap: 10px; inline-size: 100%; min-block-size: var(--size-control); padding: 4px 8px; border: 0; border-radius: var(--radius); background: transparent; color: inherit; font-size: var(--type-base); text-align: start; text-decoration: none; }
+.today .agent-menu__action:hover:not(:disabled), .today .agent-menu__action:focus-visible, .today .agent-menu__download:hover:not(:disabled), .today .agent-menu__download:focus-visible { background: var(--hover); }
+.today .agent-menu__action:focus-visible, .today .agent-menu__download:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.today .agent-menu__action::before { content: ""; flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--muted); opacity: 0.5; }
+.today .agent-menu[data-offer="wait"] .agent-menu__action::before { background: var(--color-warning); opacity: 1; animation: agent-menu-pulse 1.4s ease-in-out infinite; }
+.today .agent-menu[data-offer="disconnect"] .agent-menu__action::before { background: var(--color-success); opacity: 1; }
+.today .agent-menu[data-state="connecting"] .agent-menu__action::before { animation: agent-menu-pulse 1.4s ease-in-out infinite; }
+.today .agent-menu[data-state="failed"] .agent-menu__action::before { background: var(--danger); opacity: 1; }
+@keyframes agent-menu-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .today .agent-menu:is([data-offer], [data-state]) .agent-menu__action::before { animation: none; } }
+.today .agent-menu.is-asking .agent-menu__action::before { background: var(--agent-question-strong); }
+.today .agent-menu__label { flex: 1; min-inline-size: 0; }
+.today .icon--after { display: inline-block; vertical-align: -0.125em; margin-inline: 0.3em 0; }
+.today .agent-menu__count, .today .agent-menu__question-number { flex: none; min-inline-size: 18px; block-size: 18px; border-radius: 999px; padding: 0 5px; background: var(--agent-question-strong); color: var(--on-accent); font-size: var(--type-badge); font-weight: 700; line-height: 18px; text-align: center; }
+.today .flyout.agent-menu__waiting { inline-size: min(280px, 100%); }
+.today .agent-menu__question { align-items: flex-start; }
+.today .agent-menu__question-number { margin-block-start: 1px; }
+.today .agent-menu__question-text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-inline-size: 0; }
+.today .agent-menu__question-line { font-weight: 600; overflow-wrap: anywhere; }
+.today .agent-menu__question-where { overflow: hidden; font-size: var(--type-small); color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.today .agent-menu__download { color: var(--warning-fg); }
+.today .agent-menu__question:not(.is-asking) .agent-menu__question-number { background: var(--muted); }
+
+/* =====================  AFTER: catalogue parts  ===================== */
+/* Shared press and hover behaviour for every pressable part */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  .p-press:active:not(:disabled) { scale: 0.97; }
+}
+:is(.p-button, .p-icon-button):focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.p-menu-item:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+/* Button (approved): tones primary, secondary, quiet; sizes compact, control, touch */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: max(var(--size-control), var(--size-tap)); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); text-decoration: none; color: inherit; }
+.p-button[data-tone="primary"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-button[data-tone="quiet"] { background: transparent; box-shadow: none; color: var(--link); }
+.p-button[data-ink="text"] { color: inherit; }
+.p-button:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.p-button[data-tone="primary"]:active:not(:disabled) { background: var(--primary-hover); }
+.p-button[data-tone="quiet"]:active:not(:disabled), .p-button[data-tone="quiet"][aria-expanded="true"] { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-button:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .p-button[data-tone="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
+  .p-button[data-tone="quiet"]:hover:not(:disabled) { background: var(--hover); }
+}
+/* Icon button (approved): icon 24, compact 28, control 32 (44 on touch screens) */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.p-icon-button[data-size="icon"] { inline-size: var(--size-icon); block-size: var(--size-icon); border-radius: var(--radius-small); }
+.p-icon-button[data-size="compact"] { inline-size: var(--size-compact); block-size: var(--size-compact); }
+.p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Badge (approved): number size for counts that Lex kept, tones by data attribute */
+.p-badge { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-3xs); block-size: 20px; padding-inline: var(--space-xs); border-radius: var(--radius-full); font-size: var(--type-small); font-weight: 600; background: var(--surface-subtle); color: var(--link); flex: none; }
+.p-badge[data-size="number"] { min-inline-size: 18px; block-size: 18px; padding-inline: var(--space-3xs); font-size: var(--type-badge); font-weight: 700; }
+.p-badge[data-tone="action"] { background: var(--primary); color: var(--on-primary); }
+.p-badge[data-tone="question"] { background: var(--agent-question-strong); color: var(--on-accent); }
+.p-badge[data-kind="dot"] { inline-size: 8px; block-size: 8px; min-inline-size: 0; padding: 0; background: var(--muted); opacity: 0.5; }
+.p-corner { position: absolute; inset-block-start: calc(-1 * var(--space-2xs)); inset-inline-end: calc(-1 * var(--space-2xs)); box-shadow: 0 0 0 2px var(--badge-ring, var(--surface)); pointer-events: none; }
+/* Spinner (approved) */
+.p-spinner { inline-size: 10px; block-size: 10px; border: 1.5px solid var(--control-line); border-block-start-color: var(--primary); border-radius: 50%; animation: spin 0.9s linear infinite; flex: none; }
+@keyframes spin { to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .p-spinner { animation-duration: 2.4s; } }
+/* Section heading (slice 13): words with an optional end slot */
+.p-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); min-block-size: var(--size-icon); padding: var(--space-3xs) var(--space-3xs) var(--space-3xs) var(--space-xs); font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.p-heading[data-look="group"] { text-transform: none; letter-spacing: 0; padding-block: var(--space-xs) var(--space-4xs); }
+.p-heading [data-end] { font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; }
+/* Menu and menu item (approved): one item part with lead, words, end */
+.p-menu { padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); inline-size: min(340px, 100%); display: grid; gap: var(--space-4xs); align-content: start; --badge-ring: var(--panel-surface); }
+.p-menu[data-size="flyout"] { inline-size: min(240px, 100%); }
+.p-menu-section { display: grid; gap: var(--space-4xs); padding-block: var(--space-2xs); }
+.p-menu-section + .p-menu-section { margin-block-start: var(--space-2xs); }
+.p-menu-list { display: grid; gap: var(--space-4xs); margin: 0; padding: 0; list-style: none; }
+.p-menu-item { display: flex; align-items: center; gap: var(--space-xs); inline-size: 100%; min-inline-size: 0; min-block-size: max(var(--size-control), var(--size-tap)); padding: var(--space-3xs) var(--space-xs); border: 0; border-radius: var(--radius); background: transparent; color: inherit; font-size: var(--type-base); text-align: start; text-decoration: none; }
+.p-menu-item[data-lines="2"] { padding-block: var(--space-2xs); }
+.p-menu-item[aria-current="true"], .p-menu-item[aria-checked="true"] { background: var(--current); font-weight: 600; }
+.p-menu-item[data-tone="quiet"] { color: var(--muted); }
+.p-menu-item:active:not(:disabled) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-menu-item:hover:not(:disabled) { background: var(--hover); }
+  .p-menu-item[data-tone="quiet"]:hover { color: var(--text); }
+}
+.p-words { display: grid; flex: 1; min-inline-size: 0; }
+.p-words > * { overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.p-words b { font-weight: 600; }
+.p-sub { font-size: var(--type-small); font-weight: 400; color: var(--muted); }
+.p-end { margin-inline-start: auto; color: var(--muted); flex: none; display: inline-flex; align-items: center; gap: var(--space-3xs); }
+.p-hint { font-size: var(--type-small); font-weight: 400; opacity: 0; }
+.p-menu-item:focus-visible .p-hint, .p-menu-item.is-hover .p-hint { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .p-menu-item:hover .p-hint { opacity: 1; } }
+@media (hover: none) { .p-hint { opacity: 1; } }
+
+/* The MCP item: the menu item part, its status as the badge's dot */
+.p-badge[data-kind="dot"][data-tone="wait"] { background: var(--color-warning); opacity: 1; }
+.p-badge[data-kind="dot"][data-tone="success"] { background: var(--color-success); opacity: 1; }
+.p-badge[data-kind="dot"][data-tone="danger"] { background: var(--danger); opacity: 1; }
+.p-badge[data-kind="dot"][data-tone="question"] { background: var(--agent-question-strong); opacity: 1; }
+.p-badge[data-tone="muted"] { background: var(--muted); color: var(--surface); }
+@media (prefers-reduced-motion: no-preference) { .p-badge[data-kind="dot"][data-pulse] { animation: p-pulse 1.4s ease-in-out infinite; } }
+@keyframes p-pulse { 50% { opacity: 0.35; } }
+.p-menu-item[data-tone="warning"] { color: var(--warning-fg); }
+.p-menu-item[data-tone="done"] { color: var(--success-fg); }
+.p-menu-item[data-lines="2"] { align-items: start; }
+.p-menu-item[data-lines="2"] .p-badge { margin-block-start: 1px; }
+.p-words .p-wrap { white-space: normal; overflow-wrap: anywhere; }
+.p-lead { inline-size: 16px; display: inline-grid; place-items: center; flex: none; }
+.p-topbar { min-block-size: 72px; background: var(--surface); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-s) var(--space-l); padding: var(--space-xs) clamp(var(--space-m), 3vw, 28px); }
+.p-project { gap: var(--space-xs); padding: var(--space-2xs) var(--space-xs); min-block-size: var(--size-touch); max-inline-size: min(100%, 360px); border-radius: var(--radius-panel); font-size: var(--type-title); text-align: start; --badge-ring: var(--surface); }
+.p-project .p-words { line-height: 1.35; }
+.p-initial { position: relative; display: inline-grid; place-items: center; flex: none; inline-size: 32px; block-size: 32px; border-radius: var(--radius); background: oklch(58% 0.12 var(--initial-hue)); color: var(--on-accent); font-size: var(--type-title); font-weight: 700; line-height: 1; }
+.p-initial-slot { position: relative; display: inline-grid; flex: none; }
+.p-dim { opacity: 0.55; }
+</style>
+</head>
+<body data-mode="after">
+<main>
+  <header>
+    <h1>MCP menu, rebuilt from catalogue parts <span class="tag">mock-up for Tuesday 10 Nov</span></h1>
+    <p class="intro">The MCP item lives in the project menu. One press copies a prompt that connects an AI agent to your site; its dot shows how the connection is doing, and while an agent works, the requests you sent it open beside it. Nothing it does changes: After builds it from the shared catalogue parts. Switch between Today and After, then play the steps.</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+  </div>
+  <div class="captions">
+    <p class="summary today">Today: the MCP item as the editor draws it now.</p>
+    <p class="summary after">Same colours and words. 3 row styles become 1 menu item, 2 number looks become 1 badge, and the status dot becomes the badge's dot. "Copied" gets a tick. Hover reacts to a mouse only (3 rules), every item answers a press, and rows are 44 px tall on phones (32 today).</p>
+  </div>
+
+  <section class="demo" aria-labelledby="demo-title">
+    <h2 id="demo-title">Play the steps (demo buttons, not part of the editor)</h2>
+    <div class="steps">
+      <button type="button" data-step="press">Press Connect to MCP</button>
+      <button type="button" data-step="again">Copy the prompt again</button>
+      <button type="button" data-step="connect">An agent connects</button>
+      <button type="button" data-step="ask">An agent asks a question</button>
+      <button type="button" data-step="requests">Show the requests</button>
+      <button type="button" data-step="busy">Connection reconnecting</button>
+      <button type="button" data-step="fail">Connection fails</button>
+      <button type="button" data-step="storage">Browser storage is full</button>
+      <button type="button" data-step="download">Download unsaved changes</button>
+      <button type="button" data-step="disconnect">Press Disconnect MCP</button>
+      <button type="button" class="reset" data-step="reset">Start again</button>
+    </div>
+  </section>
+
+  <div class="stage today" id="today"></div>
+  <div class="stage after" id="after"></div>
+  <ul class="changes after"><li>one menu item</li><li>one badge: dot and number</li><li>tick on Copied</li><li>hover only with a mouse</li><li>press feedback</li><li>44 px rows on phones</li></ul>
+</main>
+<script>
+const P = {
+  "caret-down": '<path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/>',
+  "caret-right": '<path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/>',
+  "arrows-clockwise": '<path d="M224,48V96a8,8,0,0,1-8,8H168a8,8,0,0,1,0-16h28.69L182.06,73.37a79.56,79.56,0,0,0-56.13-23.43h-.45A79.52,79.52,0,0,0,69.59,72.71,8,8,0,0,1,58.41,61.27a96,96,0,0,1,135,.79L208,76.69V48a8,8,0,0,1,16,0ZM186.41,183.29a80,80,0,0,1-112.47-.66L59.31,168H88a8,8,0,0,0,0-16H40a8,8,0,0,0-8,8v48a8,8,0,0,0,16,0V179.31l14.63,14.63A95.43,95.43,0,0,0,130,222.06h.53a95.360,95.36,0,0,0,67.07-27.33,8,8,0,0,0-11.18-11.44Z"/>',
+  x: '<path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/>',
+};
+const ic = (name, size = 16) => `<svg class="ph" width="${size}" height="${size}" style="inline-size:${size}px;block-size:${size}px" viewBox="0 0 256 256" aria-hidden="true">${P[name]}</svg>`;
+
+Object.assign(P, {
+  copy: '<path d="M216,32H88a8,8,0,0,0-8,8V80H40a8,8,0,0,0-8,8V216a8,8,0,0,0,8,8H168a8,8,0,0,0,8-8V176h40a8,8,0,0,0,8-8V40A8,8,0,0,0,216,32ZM160,208H48V96H160Zm48-48H176V88a8,8,0,0,0-8-8H96V48H208Z"/>',
+  check: '<path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/>',
+});
+const hue = (text) => { let h = 0; for (const c of text) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; };
+const REQUESTS = [
+  { n: 1, text: "Use a warmer photo here", question: "Which photo, loaves or rolls?", tag: "img", where: "/" },
+  { n: 2, text: "Make the heading shorter", tag: "h1", where: "/about" },
+];
+// offer: connect | wait | disconnect; state: closed | waiting | connected | connecting | failed
+const start = () => ({ offer: "connect", state: "closed", copied: false, asked: 0, flyout: false, storage: false, exporting: false });
+let s = start();
+
+function label() {
+  if (s.copied) return "Copied";
+  return s.offer === "disconnect" ? "Disconnect MCP" : s.offer === "wait" ? "Wait for MCP" : "Connect to MCP";
+}
+const disabled = () => s.state === "connecting";
+
+/* ---------- Today: agent-menu.ts inside the project menu ---------- */
+function todayHTML() {
+  const asked = s.offer === "disconnect" ? s.asked : 0;
+  const words = label();
+  const copyIcon = s.offer === "wait" && !s.copied ? ic("copy", 14).replace('class="ph"', 'class="ph icon--after"') : "";
+  const item = `<div class="agent-menu${asked ? " is-asking" : ""}" data-offer="${s.offer}" data-state="${s.state}">
+    <button type="button" class="text-button agent-menu__action" data-act="press" ${disabled() ? "disabled" : ""} aria-expanded="${s.flyout}"><span class="agent-menu__label">${words}${copyIcon}</span>${asked ? `<span class="agent-menu__count" aria-hidden="true">${asked}</span>` : ""}</button>
+    ${s.storage && s.state !== "closed" ? `<button type="button" class="text-button agent-menu__download" data-act="download" ${s.exporting ? "disabled" : ""}>Download unsaved changes</button>` : ""}</div>`;
+  const corner = asked ? `<span class="rm-questions" aria-hidden="true">${asked}</span>` : "";
+  const trigger = `<div class="repository-menu"><button type="button" class="rm-trigger" aria-expanded="true" aria-label="bakery-site — repository actions"><span class="rm-initial" style="--initial-hue:${hue("bakery-site")}" aria-hidden="true">B</span>${corner}<span class="rm-identity"><span class="rm-repository">lex</span><span class="rm-name">bakery-site</span></span><span class="rm-caret">${ic("caret-down", 12)}</span></button></div>`;
+  const panel = `<div class="rm-popover dropdown-panel" aria-label="Repository actions">
+    <section class="rm-section" style="opacity:.55"><div class="rm-heading"><span>Repositories</span></div><p class="rm-empty">… the projects (ticket 55)</p></section>
+    <div class="rm-section"><button type="button" class="text-button rm-action">Site settings</button></div>
+    <div class="rm-agent">${item}</div>
+    <section class="rm-section" style="opacity:.55"><div class="rm-heading"><span>GitHub accounts</span></div><p class="rm-empty">… the accounts (ticket 55)</p></section></div>`;
+  const reqs = REQUESTS.map((r) => {
+    const asking = r.question && s.asked;
+    return `<button type="button" class="flyout__item agent-menu__question${asking ? " is-asking" : ""}" role="menuitem"><span class="agent-menu__question-number">${r.n}</span><span class="agent-menu__question-text"><span class="agent-menu__question-line">${asking ? r.question : r.text}</span><span class="agent-menu__question-where">&lt;${r.tag}&gt; · ${r.where}</span></span></button>`;
+  }).join("");
+  const flyout = s.flyout && s.offer === "disconnect" ? `<div class="flyout agent-menu__waiting" role="menu" aria-label="Requests" data-flyout><div class="flyout__list">${reqs}</div></div>` : "";
+  return `<div class="topbar">${trigger}</div><div class="menus">${panel}${flyout}</div>`;
+}
+
+/* ---------- After: catalogue parts ---------- */
+function afterHTML() {
+  const asked = s.offer === "disconnect" ? s.asked : 0;
+  const tone = s.state === "failed" ? "danger" : asked ? "question" : s.offer === "disconnect" ? "success" : s.offer === "wait" ? "wait" : "";
+  const pulse = s.offer === "wait" || s.state === "connecting";
+  const lead = s.copied ? `<span class="p-lead">${ic("check", 14)}</span>` : `<span class="p-lead"><span class="p-badge" data-kind="dot" ${tone ? `data-tone="${tone}"` : ""} ${pulse ? "data-pulse" : ""} aria-hidden="true"></span></span>`;
+  const end = asked ? `<span class="p-badge" data-size="number" data-tone="question" aria-hidden="true">${asked}</span>` : s.offer === "wait" && !s.copied ? `<span class="p-end">${ic("copy", 14)}</span>` : "";
+  const item = `<button type="button" class="p-menu-item p-press" data-act="press" ${s.copied ? 'data-tone="done"' : ""} ${disabled() ? "disabled" : ""} aria-expanded="${s.flyout}">${lead}<span class="p-words"><span>${label()}</span></span>${end}</button>
+    ${s.storage && s.state !== "closed" ? `<button type="button" class="p-menu-item p-press" data-tone="warning" data-act="download" ${s.exporting ? "disabled" : ""}>${s.exporting ? `<span class="p-lead"><span class="p-spinner"></span></span>` : ""}<span class="p-words"><span>Download unsaved changes</span></span></button>` : ""}`;
+  const corner = asked ? `<span class="p-badge p-corner" data-size="number" data-tone="question" aria-hidden="true">${asked}</span>` : "";
+  const trigger = `<button type="button" class="p-button p-press p-project" data-tone="quiet" data-ink="text" aria-expanded="true" aria-label="bakery-site — repository actions"><span class="p-initial-slot"><span class="p-initial" style="--initial-hue:${hue("bakery-site")}" aria-hidden="true">B</span>${corner}</span><span class="p-words"><span class="p-sub">lex</span><span>bakery-site</span></span><span class="p-end">${ic("caret-down", 12)}</span></button>`;
+  const panel = `<div class="p-menu" aria-label="Repository actions">
+    <section class="p-menu-section p-dim"><div class="p-heading"><span>Repositories</span></div><p class="p-sub" style="margin:0;padding-inline:8px">… the projects (ticket 55)</p></section>
+    <div class="p-menu-section"><button type="button" class="p-menu-item p-press">Site settings</button>${item}</div>
+    <section class="p-menu-section p-dim"><div class="p-heading"><span>GitHub accounts</span></div><p class="p-sub" style="margin:0;padding-inline:8px">… the accounts (ticket 55)</p></section></div>`;
+  const reqs = REQUESTS.map((r) => {
+    const asking = r.question && s.asked;
+    return `<button type="button" class="p-menu-item p-press" data-lines="2" role="menuitem"><span class="p-badge" data-size="number" data-tone="${asking ? "question" : "muted"}">${r.n}</span><span class="p-words"><b class="p-wrap">${asking ? r.question : r.text}</b><span class="p-sub">&lt;${r.tag}&gt; · ${r.where}</span></span></button>`;
+  }).join("");
+  const flyout = s.flyout && s.offer === "disconnect" ? `<div class="p-menu" data-size="flyout" style="inline-size:min(280px,100%)" role="menu" aria-label="Requests" data-flyout><div class="p-menu-list">${reqs}</div></div>` : "";
+  return `<div class="p-topbar">${trigger}</div><div class="menus">${panel}${flyout}</div>`;
+}
+
+function placeFlyout(stage) {
+  const fly = stage.querySelector("[data-flyout]");
+  const row = stage.querySelector('[data-act="press"]');
+  if (!fly || !row) return;
+  fly.style.marginBlockStart = "0";
+  const menu = fly.previousElementSibling;
+  if (Math.abs(fly.offsetTop - menu.offsetTop) < 4) fly.style.marginBlockStart = `${row.getBoundingClientRect().top - menu.getBoundingClientRect().top - 6}px`;
+}
+function render() {
+  const t = document.getElementById("today"), a = document.getElementById("after");
+  t.innerHTML = todayHTML(); a.innerHTML = afterHTML();
+  placeFlyout(t); placeFlyout(a);
+}
+let confirmTimer, busyTimer;
+function copied() {
+  s.copied = true; render();
+  clearTimeout(confirmTimer);
+  confirmTimer = setTimeout(() => { s.copied = false; render(); }, 2000); // CONFIRM_MS in agent-menu.ts
+}
+function act(name) {
+  if (name === "press") {
+    if (s.offer === "disconnect") return act("disconnect");
+    s.offer = "wait"; s.state = "waiting"; return copied();
+  }
+  if (name === "again") { if (s.offer !== "wait") { s.offer = "wait"; s.state = "waiting"; } return copied(); }
+  if (name === "connect") { s.offer = "disconnect"; s.state = "connected"; s.copied = false; }
+  if (name === "ask") { if (s.offer !== "disconnect") { s.offer = "disconnect"; s.state = "connected"; } s.asked = 1; s.copied = false; }
+  if (name === "requests") { if (s.offer !== "disconnect") { s.offer = "disconnect"; s.state = "connected"; } s.flyout = !s.flyout; }
+  if (name === "busy") { s.state = "connecting"; s.copied = false; s.flyout = false; render(); clearTimeout(busyTimer); busyTimer = setTimeout(() => { s.state = s.offer === "disconnect" ? "connected" : "closed"; render(); }, 1600); return; }
+  if (name === "fail") { s.offer = "connect"; s.state = "failed"; s.copied = false; s.flyout = false; s.asked = 0; }
+  if (name === "storage") { s.storage = true; if (s.state === "closed") { s.offer = "wait"; s.state = "waiting"; } }
+  if (name === "download") { if (!s.storage) { s.storage = true; if (s.state === "closed") s.state = "waiting"; } s.exporting = true; render(); setTimeout(() => { s.exporting = false; render(); }, 1400); return; }
+  if (name === "disconnect") { s.offer = "connect"; s.state = "closed"; s.asked = 0; s.flyout = false; s.copied = false; }
+  if (name === "reset") { clearTimeout(confirmTimer); s = start(); }
+  render();
+}
+document.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => {
+  act(b.dataset.step);
+  document.querySelectorAll("[data-step]").forEach((o) => o.setAttribute("aria-pressed", String(o === b && b.dataset.step !== "reset")));
+}));
+for (const id of ["today", "after"]) document.getElementById(id).addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]");
+  if (el) act(el.dataset.act);
+});
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  render();
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+window.addEventListener("resize", render);
+render();
+</script>
+</body>
+</html>

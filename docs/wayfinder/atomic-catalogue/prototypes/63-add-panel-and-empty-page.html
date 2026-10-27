@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 63 Add panel and empty page, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 10 Nov review
+  (kitchen station 3, "Show and tell": a Today / After switch with demo steps).
+  Ticket: docs/wayfinder/atomic-catalogue/build/tickets/63-organism-add-panel.md.
+  Today: the real Add panel and empty page, values and markup copied from src/page-builder/add-panel.ts,
+  add-panel.css, add-panel-dialog.css, canvas-overlays.ts (the empty page), add-catalog.ts and
+  native-elements.ts (the groups and names), insert-target.ts (the "Goes …" line), src/workspace-mount.ts
+  (the "+ Add" in the sidebar heading) and src/theme.css (dev, 2026-10-27). Section names are the
+  starter's (~/Projects/native-site-editor-starter/components). Thumbnails are drawn, not live.
+  After: the same screen built only from the catalogue parts approved in 10-first-parts-and-edit-bar.html
+  (icon button, button, field, badge, tooltip, empty state), plus the search field, section heading and
+  card or tile from research ac-04's proposed catalogue. Colours and type unchanged; spacing and the
+  120/150/180/200 ms values from slices 02 and 03.
+-->
+<style>
+/* ---------- Shared values: src/theme.css, light and dark written once with light-dark() ---------- */
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+  --color-component: oklch(55% 0.2 300);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --surface-toolbar: light-dark(oklch(from var(--color-primary-lighter) 92% c h), oklch(from var(--color-primary-darker) l min(c, 0.025) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --danger: oklch(from var(--color-success) l c 25);
+  --danger-bg: oklch(from var(--success-bg) l c 25);
+  --danger-fg: oklch(from var(--success-fg) l c 25);
+  --component: light-dark(var(--color-component), oklch(from var(--color-component) 72% 0.16 h));
+  --component-surface: light-dark(oklch(from var(--color-component) 96% 0.03 h), oklch(from var(--color-component) 28% 0.05 h));
+  --component-text: light-dark(oklch(from var(--color-component) 42% 0.17 h), oklch(from var(--color-component) 85% 0.1 h));
+  --slot-surface: oklch(from var(--color-component) 47% 0.21 h);
+  --agent-presence: var(--color-success);
+  --on-media: oklch(100% 0 none);
+  --preview-paper: oklch(100% 0 none);
+  --panel-surface: var(--surface-raised);
+  --pressed: light-dark(var(--primary), var(--color-primary-light));
+  --on-pressed: light-dark(var(--on-primary), var(--color-primary-darkest));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px; --type-heading: 20px;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px;
+  --panel-padding: 6px;
+
+  /* After only: the catalogue's new shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; font-size: var(--type-base); -webkit-tap-highlight-color: transparent; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:is(button, select, a, [tabindex]):focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.icon { inline-size: 16px; block-size: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.icon[data-s="12"] { inline-size: 12px; block-size: 12px; }
+.icon[data-s="14"] { inline-size: 14px; block-size: 14px; }
+.icon[data-s="20"] { inline-size: 20px; block-size: 20px; }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main.mock { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+.mock > header { display: grid; gap: var(--space-3xs); }
+.mock h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 72ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 50; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; text-wrap: pretty; max-inline-size: 80ch; }
+.demo { border: 1.5px dashed var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); }
+.demo h2 { margin: 0; font-size: var(--type-small); color: var(--muted); font-weight: 600; }
+.demo .steps { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.demo .steps button { min-block-size: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); font-size: var(--type-small); font-weight: 600; }
+.demo .steps button[aria-pressed="true"] { background: var(--current); border-color: transparent; }
+.demo .steps button:disabled { opacity: 0.5; cursor: default; }
+.demo .says { margin: 0; min-block-size: 1.5em; color: var(--muted); text-wrap: pretty; }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+.app { position: relative; border: 1px solid var(--line); border-radius: var(--radius-panel); overflow: clip; background: var(--surface); container: app / inline-size; }
+.site { background: var(--preview-paper); color: oklch(24% 0.03 60); font-family: Georgia, "Iowan Old Style", serif; }
+.site-head, .site-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; font: 600 13px/1.3 system-ui, sans-serif; color: oklch(30% 0.04 60); flex-wrap: wrap; }
+.site-head nav { display: flex; gap: 12px; font-weight: 500; flex-wrap: wrap; }
+.site-foot { font-weight: 400; color: oklch(45% 0.03 60); border-block-start: 1px solid oklch(92% 0.01 60); }
+.logo { display: inline-flex; align-items: center; gap: 6px; }
+.logo::before { content: ""; inline-size: 18px; block-size: 18px; border-radius: 50%; background: oklch(70% 0.12 60); }
+.hero { display: grid; gap: 8px; padding: clamp(14px, 4cqi, 32px) 16px; background: oklch(96% 0.025 75); position: relative; }
+.hero h3 { margin: 0; font-size: clamp(18px, 1rem + 2cqi, 28px); line-height: 1.15; }
+.hero p { margin: 0; font-size: 14px; color: oklch(40% 0.03 60); }
+.hero .cta { justify-self: start; font: 600 12px/1 system-ui, sans-serif; padding: 8px 12px; border-radius: 6px; background: oklch(45% 0.1 50); color: white; }
+.pic { block-size: 72px; border-radius: 6px; background: linear-gradient(135deg, oklch(75% 0.09 60), oklch(55% 0.1 30)); }
+
+/* =====================  AFTER: catalogue parts (as in 10-first-parts-and-edit-bar.html)  ===================== */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), box-shadow var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  .p-press:active:not(:disabled, [aria-disabled="true"]) { scale: 0.97; }
+}
+/* Button: tones primary, secondary, quiet, danger, component, component-quiet; sizes icon, compact, control, touch */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: var(--size-control); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; white-space: nowrap; background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+.p-button[data-size="icon"] { min-block-size: var(--size-icon); padding-inline: var(--space-2xs); font-size: var(--type-small); gap: var(--space-3xs); }
+.p-button[data-size="compact"] { min-block-size: var(--size-compact); padding-inline: var(--space-xs); }
+.p-button[data-size="touch"] { min-block-size: var(--size-touch); padding-inline: var(--space-m); }
+.p-button[data-tone="primary"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-button[data-tone="quiet"] { background: transparent; box-shadow: none; color: var(--link); }
+.p-button[data-tone="danger"] { background: var(--danger-bg); color: var(--danger-fg); box-shadow: none; }
+.p-button[data-tone="component"] { background: var(--component); color: var(--surface); box-shadow: none; }
+.p-button[data-tone="component-quiet"] { background: transparent; color: var(--component-text); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--component) 40%, transparent); }
+.p-button:disabled, .p-button[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.p-button:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.p-button[data-tone="primary"]:active:not(:disabled) { background: var(--primary-hover); }
+.p-button[data-tone="quiet"]:active:not(:disabled) { background: var(--hover); }
+.p-button[data-tone="component"]:active:not(:disabled) { background: color-mix(in oklch, var(--component) 86%, var(--text)); }
+.p-button[data-tone="component-quiet"]:is(:active, [aria-expanded="true"]):not(:disabled) { background: color-mix(in oklch, var(--component) 14%, transparent); }
+@media (hover: hover) and (pointer: fine) {
+  .p-button:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .p-button[data-tone="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
+  .p-button[data-tone="quiet"]:hover:not(:disabled) { background: var(--hover); }
+  .p-button[data-tone="danger"]:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--danger-bg); }
+  .p-button[data-tone="component"]:hover:not(:disabled) { background: color-mix(in oklch, var(--component) 86%, var(--text)); }
+  .p-button[data-tone="component-quiet"]:hover:not(:disabled) { background: color-mix(in oklch, var(--component) 14%, transparent); }
+}
+.p-button[aria-pressed="true"]:not(:disabled) { background: var(--pressed); color: var(--on-pressed) !important; box-shadow: none; }
+/* Icon button: icon 24, compact 28, control 32 (44 on touch screens) */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.p-icon-button[data-size="icon"] { inline-size: var(--size-icon); block-size: var(--size-icon); border-radius: var(--radius-small); }
+.p-icon-button[data-size="compact"] { inline-size: var(--size-compact); block-size: var(--size-compact); }
+.p-icon-button[aria-pressed="true"] { background: var(--pressed); color: var(--on-pressed); }
+.p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled, [aria-pressed="true"]) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Field: one part, inline or boxed, one focus and one error look; sizes icon 24, compact 28, control 32 */
+.p-field { inline-size: 100%; min-inline-size: 0; block-size: var(--size-control); padding-inline: var(--space-xs); border: 0; border-radius: var(--radius-small) var(--radius-small) 0 0; background: transparent; box-shadow: inset 0 -1px 0 var(--control-line); caret-color: var(--primary); font-size: var(--type-base); }
+.p-field[data-size="compact"] { block-size: var(--size-compact); }
+.p-field[data-size="icon"] { block-size: var(--size-icon); font-size: var(--type-small); padding-inline: var(--space-2xs); }
+.p-field[data-look="boxed"] { border-radius: var(--radius); background: var(--surface-input); box-shadow: inset 0 0 0 1px var(--control-line); }
+.p-field:focus-visible, .p-field:focus { outline: none; background-color: color-mix(in oklch, var(--primary) 7%, var(--surface-input)); box-shadow: inset 0 -2px 0 var(--primary); }
+.p-field[data-look="boxed"]:focus { box-shadow: inset 0 0 0 1px var(--control-line), inset 0 -2px 0 var(--primary); }
+.p-field[aria-invalid="true"] { box-shadow: inset 0 -2px 0 var(--danger); }
+.p-field::placeholder { color: var(--muted); }
+@media (hover: hover) and (pointer: fine) { .p-field:hover:not(:focus) { background-color: var(--hover); } }
+@media (prefers-reduced-motion: no-preference) { .p-field { transition: background-color var(--dur-hover) var(--ease-out), box-shadow var(--dur-hover) var(--ease-out); } }
+/* Search field: a boxed field with the search icon in front (research ac-04, molecule) */
+.p-search { position: relative; display: block; }
+.p-search > .icon { position: absolute; inset-inline-start: var(--space-xs); inset-block-start: 50%; translate: 0 -50%; color: var(--muted); pointer-events: none; }
+.p-search > .p-field { padding-inline-start: calc(var(--space-xs) + 16px + var(--space-2xs)); }
+/* Badge: words only, pill corner from --radius-full, tones and kinds by data attribute */
+.p-badge { display: inline-flex; align-items: center; gap: var(--space-3xs); block-size: 18px; padding-inline: var(--space-2xs); border-radius: var(--radius-full); font-size: var(--type-badge); font-weight: 600; white-space: nowrap; background: var(--surface-subtle); color: var(--link); flex: none; border: 0; }
+.p-badge[data-tone="component"] { background: var(--component-surface); color: var(--component-text); }
+.p-badge[data-tone="slot"] { background: var(--slot-surface); color: var(--on-media); }
+.p-badge[data-kind="tag"] { block-size: auto; padding: 0; background: none; font: var(--type-small) / 1.3 var(--font-mono); font-weight: 400; color: var(--component-text); }
+button.p-badge:active { filter: brightness(0.95); }
+@media (hover: hover) and (pointer: fine) { button.p-badge:hover { background: linear-gradient(var(--hover) 0 0), var(--component-surface); } }
+/* Section heading, with an optional end slot */
+.p-heading > * { text-transform: none; letter-spacing: normal; }
+.p-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); margin: 0; font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+/* Keyboard key */
+.p-kbd { font: inherit; font-size: var(--type-small); font-weight: 500; color: var(--muted); white-space: nowrap; }
+/* Tooltip: words plus an optional key; one floating tip, shown on mouse hover or keyboard focus */
+.p-tooltip { position: fixed; z-index: 100; display: inline-flex; gap: var(--space-2xs); align-items: center; padding: var(--space-3xs) var(--space-xs); border-radius: var(--radius); background: var(--text); color: var(--surface); font-size: var(--type-small); font-weight: 600; white-space: nowrap; pointer-events: none; opacity: 0; }
+.p-tooltip.is-shown { opacity: 1; }
+.p-tooltip kbd { font: inherit; font-weight: 500; opacity: 0.75; }
+@media (prefers-reduced-motion: no-preference) { .p-tooltip { transition: opacity var(--dur-tooltip) var(--ease-out); } }
+/* Menu: one item part with icon, words, key, check, danger */
+.p-menu { padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); box-shadow: var(--shadow); min-inline-size: 12rem; display: grid; gap: var(--space-4xs); color: var(--text); }
+.p-menu-item { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: var(--space-xs); inline-size: 100%; min-block-size: var(--size-control); border: 0; background: transparent; padding: 0 var(--space-xs); border-radius: var(--radius); text-align: start; font-size: var(--type-base); }
+.p-menu-item:not(:has(> .icon:first-child)) { grid-template-columns: 1fr auto; }
+.p-menu-item kbd, .p-menu-item .meta { font: inherit; font-size: var(--type-small); color: var(--muted); white-space: nowrap; }
+.p-menu-item[aria-checked="true"] { background: var(--current); font-weight: 600; }
+.p-menu-item[data-tone="danger"] { color: var(--danger-fg); }
+.p-menu-item:focus-visible { outline-offset: -2px; background: var(--hover); }
+.p-menu-item:active { background: var(--hover); }
+.p-menu hr { border: 0; border-block-start: 1px solid var(--line); margin: var(--space-4xs) var(--space-3xs); }
+.p-menu .p-heading { padding: var(--space-xs) var(--space-xs) var(--space-4xs); }
+@media (hover: hover) and (pointer: fine) { .p-menu-item:hover { background: var(--hover); } }
+@media (prefers-reduced-motion: no-preference) {
+  .p-menu { transition: opacity var(--dur-menu) var(--ease-out), translate var(--dur-menu) var(--ease-out); }
+  @starting-style { .p-menu { opacity: 0; translate: 0 -4px; } }
+}
+/* Dialog: one backdrop */
+.p-backdrop { position: absolute; inset: 0; z-index: 60; display: grid; place-items: center; padding: var(--space-s); background: oklch(from var(--shadow-color) l c h / 0.45); }
+.p-dialog { inline-size: min(26rem, 100%); padding: var(--space-m); border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow); display: grid; gap: var(--space-s); }
+.p-dialog h3 { margin: 0; font-size: var(--type-title); }
+.p-dialog p { margin: 0; color: var(--muted); font-size: var(--type-small); }
+.p-row { display: flex; gap: var(--space-xs); justify-content: end; flex-wrap: wrap; }
+/* Segmented group (research ac-04: Tabs and segmented group): pressed item raised */
+.p-seg { display: inline-flex; gap: var(--space-4xs); padding: var(--space-4xs); border-radius: var(--radius); background: var(--hover); flex: none; }
+.p-seg > .p-icon-button { inline-size: 28px; block-size: var(--size-icon); border-radius: var(--radius-small); }
+.p-seg > .p-icon-button[aria-pressed="true"] { background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow-small); }
+@media (pointer: coarse) { .p-seg > .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Empty state: icon, words, one next step; a large variant for a whole page */
+.p-empty { display: grid; justify-items: center; gap: var(--space-xs); padding: var(--space-l) var(--space-m); text-align: center; color: var(--muted); inline-size: 100%; }
+.p-empty > .icon { inline-size: 24px; block-size: 24px; }
+.p-empty p { margin: 0; text-wrap: balance; }
+.p-empty[data-size="large"] { gap: var(--space-s); padding: var(--space-l); border: 2px dashed color-mix(in oklch, var(--component) 45%, transparent); border-radius: var(--radius-dialog); background: color-mix(in oklch, var(--surface) 88%, transparent); color: var(--text); }
+.p-empty[data-size="large"] h3 { margin: 0; font-size: var(--type-heading); font-weight: 700; }
+.p-empty[data-size="large"] > p { color: var(--muted); max-inline-size: 46ch; }
+.p-empty .mark { display: grid; place-items: center; inline-size: 40px; block-size: 40px; border-radius: 50%; background: var(--component-surface); color: var(--component-text); }
+/* Card or tile: media slot, title, end slot, selected; plain or raised */
+.p-tile { display: grid; gap: var(--space-xs); inline-size: 100%; margin: 0; padding: var(--space-xs); border: 0; border-radius: var(--radius-panel); background: transparent; text-align: start; color: inherit; }
+.p-tile[data-look="raised"] { background: var(--surface); box-shadow: inset 0 0 0 1px var(--control-line); }
+.p-tile .media { display: block; overflow: clip; border-radius: var(--radius); border: 1px solid var(--control-line); background: var(--preview-paper); }
+.p-tile .title { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 var(--space-xs); min-inline-size: 0; padding-inline: var(--space-4xs); }
+.p-tile .title > :first-child { font-weight: 600; }
+.p-tile[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.p-tile:focus-visible { outline-offset: -2px; }
+.p-tile:focus-visible .media { border-color: var(--component); }
+.p-tile:active:not([aria-disabled="true"]) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-tile:hover:not([aria-disabled="true"]) { background: var(--hover); }
+  .p-tile[data-look="raised"]:hover:not([aria-disabled="true"]) { background: var(--surface); box-shadow: inset 0 0 0 1px var(--component), var(--shadow-small); }
+  .p-tile:hover:not([aria-disabled="true"]) .media { border-color: var(--component); }
+}
+/* Notice: feedback in place */
+.p-notice { display: flex; gap: var(--space-xs); align-items: start; padding: var(--space-xs) var(--space-s); border-radius: var(--radius-panel); font-size: var(--type-base); background: var(--warning-bg); color: var(--warning-fg); }
+.p-notice[data-tone="danger"] { background: var(--panel-surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--danger), var(--shadow-small); max-inline-size: 16rem; }
+.p-notice p { margin: 0; }
+
+/* ---------- The workspace in the mock ---------- */
+.ws { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-block-size: 40rem; }
+.side { background: var(--surface-subtle); padding: 0 20px; min-inline-size: 0; }
+.canvas { background: var(--surface-subtle); padding: 16px; border-inline-start: 1px solid var(--line); min-inline-size: 0; }
+.canvas .site { border-radius: 4px; box-shadow: 0 0 0 1px var(--control-line), var(--shadow-small); overflow: clip; container-type: inline-size; }
+.page-main { position: relative; min-block-size: 27rem; display: grid; }
+.page-main:has(> .added) { min-block-size: 0; }
+.added { position: relative; }
+.added.opener { padding: 28px 16px; text-align: center; display: grid; gap: 6px; background: oklch(97% 0.01 250); }
+.added.opener h3 { margin: 0; font-size: 22px; }
+.added.opener p { margin: 0; color: oklch(40% 0.03 60); font-size: 14px; }
+.added.is-sel { outline: 2px solid var(--primary); outline-offset: -2px; }
+.flash { position: absolute; inset: 0; border-radius: 2px; box-shadow: inset 0 0 0 3px var(--component), inset 0 0 0 9px color-mix(in oklch, var(--component) 22%, transparent); background: color-mix(in oklch, var(--component) 10%, transparent); pointer-events: none; opacity: 0; animation: flash 1400ms ease-out forwards; }
+@keyframes flash { 0% { opacity: 0; } 12% { opacity: 1; } 60% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .flash { animation: none; opacity: 1; } }
+.ghost { position: absolute; z-index: 45; pointer-events: none; }
+/* The structure list beside it, read only here (mock-up 51 has it in full) */
+.mini-tree { display: grid; gap: 2px; margin: 0 -6px; }
+.mini-tree > div { display: flex; align-items: center; gap: 6px; min-block-size: 32px; padding-inline: calc(6px + var(--d, 0) * 14px) 8px; border-radius: var(--radius); font-size: var(--type-base); }
+.mini-tree .k { font-size: var(--type-small); font-weight: 600; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.mini-tree .comp .k { color: var(--component-text); }
+.mini-tree [aria-selected="true"] { background: var(--current); font-weight: 600; }
+.panel-host { position: absolute; z-index: 40; inset-block: 0; inset-inline-start: 0; inline-size: 280px; display: flex; }
+@container app (inline-size < 40rem) {
+  .ws { grid-template-columns: minmax(0, 1fr); min-block-size: 0; }
+  .side { order: 2; border-block-start: 1px solid var(--line); padding-block-end: 12px; }
+  .canvas { border-inline-start: 0; }
+  /* Mock only: on a phone the panel takes the sheet's place under the page, so the page stays in view. */
+  .panel-host { position: static; inline-size: auto; block-size: 34rem; }
+  .app:has(> .panel-host:not([hidden])) .side { display: none; }
+}
+/* Drawn thumbnails (the real ones are live, scaled renders of each section) */
+.mini { display: grid; gap: 4px; padding: 8px; block-size: 100%; min-block-size: 58px; align-content: center; background: var(--preview-paper); }
+.mini i { display: block; block-size: 6px; border-radius: 3px; background: oklch(80% 0.02 60); }
+.mini .t { block-size: 9px; inline-size: 60%; background: oklch(35% 0.04 60); }
+.mini .b { inline-size: 34px; block-size: 10px; background: oklch(45% 0.1 50); border-radius: 4px; }
+.mini .img { block-size: 30px; border-radius: 3px; background: linear-gradient(135deg, oklch(75% 0.09 60), oklch(55% 0.1 30)); }
+.mini.hero { background: oklch(96% 0.025 75); }
+.mini.intro { justify-items: center; }
+.mini.feature, .mini.split { grid-template-columns: 1fr 1fr; align-items: center; }
+.mini.contact { background: oklch(95% 0.02 200); }
+.mini.block { min-block-size: 34px; }
+.mini .dash { block-size: 18px; border: 1.5px dashed oklch(70% 0.02 60); border-radius: 3px; background: none; }
+.mini .box { block-size: 18px; border: 1.5px solid oklch(70% 0.02 60); border-radius: 3px; background: none; }
+.mini .h { font: 700 13px/1 Georgia, serif; color: oklch(30% 0.04 60); }
+
+/* =====================  TODAY: real editor CSS  ===================== */
+/* src/style.css .sidebar-heading, .eyebrow */
+.sidebar-heading { display: flex; align-items: center; justify-content: space-between; min-block-size: 36px; margin: 0 -20px 8px; padding: 4px 12px 4px 20px; }
+.eyebrow { font-size: var(--type-small); letter-spacing: 0.04em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+/* src/page-builder/add-panel.css */
+.structure-add { display: inline-flex; align-items: center; gap: 6px; min-block-size: 30px; margin: 0; border: 0; border-radius: var(--radius); padding: 0 8px; background: var(--surface-subtle); color: var(--text); font-size: var(--type-small); font-weight: 600; white-space: nowrap; }
+.structure-add:hover { background: var(--hover); }
+.structure-add.is-open { background: var(--pressed); color: var(--on-pressed); }
+.structure-add:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.pb-thumb { position: relative; display: block; overflow: hidden; inline-size: 100%; min-block-size: 40px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--preview-paper); transition: border-color 120ms ease-out; }
+.pb-drag-ghost { display: flex; align-items: center; gap: 6px; min-block-size: var(--size-control); border: 1px solid var(--line); border-radius: var(--radius); padding: 0 8px 0 6px; background: var(--surface-subtle); color: var(--component-text); font-size: var(--type-small); font-weight: 600; white-space: nowrap; box-shadow: var(--shadow-small); }
+.pb-empty { position: relative; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.pb-empty__inner { display: flex; flex-direction: column; align-items: center; gap: 10px; inline-size: 100%; max-inline-size: 760px; border: 2px dashed color-mix(in oklch, var(--component) 45%, transparent); border-radius: var(--radius-dialog); padding: 28px 24px 24px; background: color-mix(in oklch, var(--surface) 88%, transparent); color: var(--text); font-size: var(--type-base); text-align: center; backdrop-filter: blur(2px); font-family: Inter, ui-sans-serif, system-ui, sans-serif; transition: border-color 120ms ease-out, background-color 120ms ease-out; }
+.pb-empty.is-drop .pb-empty__inner { border-color: var(--component); border-style: solid; background: var(--component-surface); }
+.pb-empty__badge { display: grid; place-items: center; inline-size: 40px; block-size: 40px; border-radius: 50%; background: var(--component-surface); color: var(--component-text); }
+.pb-empty__title { margin: 0; font-size: var(--type-heading); font-weight: 700; }
+.pb-empty__text { max-inline-size: 46ch; margin: 0; color: var(--muted); }
+.pb-empty__list { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; inline-size: 100%; margin: 8px 0 0; padding: 0; list-style: none; }
+.pb-empty__pick { display: flex; flex-direction: column; gap: 8px; inline-size: 100%; margin: 0; border: 1px solid var(--control-line); border-radius: var(--radius-panel); padding: 8px; background: var(--surface); color: inherit; text-align: start; transition: border-color 120ms ease-out, box-shadow 120ms ease-out; }
+.pb-empty__pick:hover { border-color: var(--component); box-shadow: var(--shadow-small); }
+.pb-empty__pick:focus-visible, .pb-empty__browse:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.pb-empty__tag { flex: none; color: var(--component-text); font-family: var(--font-mono); font-size: var(--type-small); }
+.pb-empty__name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-weight: 600; }
+.pb-empty__browse { min-block-size: var(--size-control); margin-block-start: 4px; border: 1px solid var(--control-line); border-radius: var(--radius); padding: 0 14px; background: transparent; color: inherit; }
+.pb-empty__browse:hover { background: var(--hover); }
+@media (prefers-reduced-motion: reduce) { .pb-thumb, .pb-empty__inner, .pb-empty__pick { transition: none; } }
+/* src/page-builder/add-panel-dialog.css */
+.pb-add-panel { display: flex; flex-direction: column; inline-size: 100%; border-inline-end: 1px solid var(--control-line); border-radius: 0 var(--radius-panel) var(--radius-panel) 0; background: var(--surface); color: var(--text); font-size: var(--type-base); box-shadow: var(--shadow); animation: pb-panel-in 160ms ease-out; }
+@keyframes pb-panel-in { from { opacity: 0; transform: translateX(-12px); } }
+.pb-add-panel__head { display: flex; align-items: center; gap: 4px; padding: 12px 8px 0 16px; }
+.pb-add-panel__title { flex: 1; margin: 0; font-size: var(--type-title); font-weight: 600; }
+.pb-add-panel__close { display: grid; place-items: center; min-inline-size: var(--size-compact); block-size: var(--size-compact); margin: 0; border: 0; border-radius: var(--radius); padding: 0 6px; background: transparent; color: var(--muted); font: 600 var(--type-small) / 1 var(--font-mono); }
+.pb-add-panel__close:hover { background: var(--hover); color: var(--text); }
+.pb-add-panel__position { margin: 2px 16px 0; overflow: hidden; color: var(--muted); font-size: var(--type-small); text-overflow: ellipsis; white-space: nowrap; }
+.pb-add-panel.has-no-place .pb-add-panel__position { color: var(--warning-fg); white-space: normal; }
+.pb-add-panel__search { flex: none; block-size: var(--size-control); margin: 10px 16px 0; border: 1px solid var(--control-line); border-radius: var(--radius); padding: 0 10px; background: var(--surface-input); }
+.pb-add-panel__body { flex: 1; min-block-size: 0; margin-block-start: 8px; overflow: auto; overscroll-behavior: contain; padding: 0 8px 16px; scrollbar-gutter: stable; }
+.pb-add-group { display: flex; flex-direction: column; gap: 6px; padding-block-start: 8px; }
+.pb-add-group__title { margin: 4px 8px 2px; color: var(--muted); font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.pb-add-item { display: flex; flex-direction: column; }
+.pb-add-item__option { display: flex; flex-direction: column; gap: 8px; inline-size: 100%; margin: 0; border: 0; border-radius: var(--radius-panel); padding: 8px; background: transparent; color: inherit; text-align: start; cursor: grab; touch-action: pan-y; user-select: none; }
+.pb-add-item__option:hover { background: var(--hover); }
+.pb-add-item__option:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.pb-add-item__option:hover .pb-thumb, .pb-add-item__option:focus-visible .pb-thumb { border-color: var(--component); }
+.pb-add-item__option[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.pb-add-item__label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-inline-size: 0; padding: 0 2px; }
+.pb-add-item__name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.pb-add-item__tag { flex: none; color: var(--component-text); font-family: var(--font-mono); font-size: var(--type-small); }
+.pb-add-panel__message { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px; }
+.pb-add-panel__message p { margin: 0; color: var(--muted); }
+.pb-add-panel__clear { min-block-size: var(--size-compact); border: 1px solid var(--control-line); border-radius: var(--radius); padding: 0 10px; background: transparent; }
+.pb-add-panel__clear:hover { background: var(--hover); }
+.pb-add-panel :is(.pb-add-panel__search, .pb-add-panel__clear, .pb-add-panel__close):focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
+.pb-add-new { margin: 8px; }
+.pb-add-new__open { inline-size: 100%; min-block-size: var(--size-control); border: 1px dashed var(--control-line); border-radius: var(--radius); padding: 8px 10px; background: transparent; color: var(--component-text); text-align: start; }
+.pb-add-new__open:hover { background: var(--hover); }
+.pb-add-new__form { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--control-line); border-radius: var(--radius); padding: 10px; background: var(--surface-subtle); }
+.pb-add-new__name { inline-size: 100%; min-block-size: var(--size-control); border: 1px solid var(--control-line); border-radius: var(--radius); padding: 0 10px; background: var(--surface-input); color: var(--text); }
+.pb-add-new__tag { color: var(--component-text); font: var(--type-small) var(--font-mono); overflow-wrap: anywhere; }
+.pb-add-new__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.pb-add-new__create { min-block-size: var(--size-compact); border: 1px solid var(--component); border-radius: var(--radius); padding: 0 10px; background: var(--component); color: var(--component-surface); }
+.pb-add-new :is(button, input):focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
+@media (prefers-reduced-motion: reduce) { .pb-add-panel { animation: none; } }
+
+/* =====================  AFTER: the Add panel and empty page built from catalogue parts  ===================== */
+.ap { display: flex; flex-direction: column; gap: var(--space-xs); inline-size: 100%; border-inline-end: 1px solid var(--control-line); border-radius: 0 var(--radius-panel) var(--radius-panel) 0; background: var(--surface); box-shadow: var(--shadow); padding-block-start: var(--space-s); }
+@media (prefers-reduced-motion: no-preference) {
+  .ap { transition: opacity var(--dur-menu) var(--ease-out), translate var(--dur-menu) var(--ease-out); }
+  @starting-style { .ap { opacity: 0; translate: -12px 0; } }
+}
+.ap-head { display: flex; align-items: center; gap: var(--space-3xs); padding-inline: var(--space-m) var(--space-xs); }
+.ap-head h2 { flex: 1; margin: 0; font-size: var(--type-title); font-weight: 600; }
+.ap-where { margin: 0 var(--space-m); color: var(--muted); font-size: var(--type-small); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ap.has-no-place .ap-where { color: var(--warning-fg); white-space: normal; }
+.ap > .p-search { margin-inline: var(--space-m); }
+.ap-body { flex: 1; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: 0 var(--space-xs) var(--space-m); scrollbar-gutter: stable; display: grid; gap: var(--space-xs); align-content: start; }
+.ap-group { display: grid; gap: var(--space-2xs); }
+.ap-group .p-heading { padding: var(--space-3xs) var(--space-xs) 0; }
+.ap-new { display: grid; gap: var(--space-xs); padding: var(--space-xs); border-radius: var(--radius); background: var(--surface-subtle); box-shadow: inset 0 0 0 1px var(--control-line); }
+.ap-new .p-row { gap: var(--space-xs); }
+.ap-new-open { inline-size: 100%; justify-content: start; }
+.ap-problem { margin: 0; color: var(--warning-fg); font-size: var(--type-small); }
+.ap .p-tile { cursor: grab; touch-action: pan-y; user-select: none; }
+.p-empty[data-size="large"] { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.p-empty[data-size="large"].is-drop { border-color: var(--component); border-style: solid; background: var(--component-surface); }
+@media (prefers-reduced-motion: no-preference) { .p-empty[data-size="large"] { transition: border-color var(--dur-hover) var(--ease-out), background-color var(--dur-hover) var(--ease-out); } }
+.empty-host { position: relative; display: grid; place-items: center; padding: var(--space-l); }
+.empty-host .p-empty { max-inline-size: 760px; }
+.picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-s); inline-size: 100%; margin: var(--space-xs) 0 0; padding: 0; list-style: none; }
+.ap-ghost { display: flex; align-items: center; gap: var(--space-2xs); min-block-size: var(--size-control); padding-inline: var(--space-2xs) var(--space-xs); border-radius: var(--radius); background: var(--surface-subtle); box-shadow: inset 0 0 0 1px var(--line), var(--shadow-small); color: var(--component-text); font-size: var(--type-small); font-weight: 600; white-space: nowrap; }
+</style>
+</head>
+<body data-mode="after">
+<main class="mock">
+  <header>
+    <h1>Add panel and empty page, rebuilt from parts <span class="tag">mock-up for Tuesday 10 Nov</span></h1>
+    <p class="intro">The Add panel lists the blocks and sections you can put on a page; a page with nothing on it shows its own "Start with a section" box. This build keeps what both do exactly as it is and only swaps their buttons, search, tiles and headings for the shared catalogue parts. Switch between Today and After, then play the steps.</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+  </div>
+  <p class="summary today">Today: the real Add panel and empty page, copied from the editor's stylesheets.</p>
+  <p class="summary after">Same colours and words. 6 button styles become 2, 2 field styles become 1, 2 tile styles become 1, 3 tag styles become 1, 2 "nothing here" messages become 1 empty state; hover only with a mouse, and every control answers a press.</p>
+
+  <section class="demo" aria-label="Demo steps">
+    <h2>Play a step (these buttons are not part of the editor)</h2>
+    <div class="steps">
+      <button type="button" data-step="open">Open the Add panel</button>
+      <button type="button" data-step="search">Search</button>
+      <button type="button" data-step="nomatch">Search for something missing</button>
+      <button type="button" data-step="newc">New component</button>
+      <button type="button" data-step="refused">Point at a block that can't go here</button>
+      <button type="button" data-step="drag">Drag a section onto the page</button>
+      <button type="button" data-step="pick">Pick a section on the empty page</button>
+      <button type="button" data-step="reset">Start again</button>
+    </div>
+    <p class="says" aria-live="polite">Click "+ Add", the tiles and the buttons, or play a step.</p>
+  </section>
+
+  <div class="app" id="app">
+    <div class="ws">
+      <div class="side" id="side"></div>
+      <div class="canvas">
+        <div class="site">
+          <div class="site-head"><span class="logo">Bakery</span><nav><span>Our loaves</span><span>Visit</span></nav></div>
+          <div class="page-main" id="pageMain"></div>
+          <div class="site-foot">© Bakery</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel-host" id="panelHost" hidden></div>
+    <div class="ghost" id="ghost" hidden></div>
+  </div>
+
+  <ul class="changes after">
+    <li>tiles are the Card or tile part</li>
+    <li>search is the Search field</li>
+    <li>close is the Icon button, with its key in the tooltip</li>
+    <li>group names are the Section heading</li>
+    <li>"Start with a section" is the large Empty state</li>
+  </ul>
+</main>
+<script>
+// ---- Shared mock-up plumbing (not part of the editor) ----
+const ICONS = {
+  "caret-down": '<path d="m6 9 6 6 6-6"/>',
+  "caret-right": '<path d="m9 6 6 6-6 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  check: '<path d="m5 12 5 5 9-10"/>',
+  dots: '<path d="M6 12h.01M12 12h.01M18 12h.01" stroke-width="2.6"/>',
+  component: '<path d="M12 2.8 15.2 6 12 9.2 8.8 6Z M18 8.8 21.2 12 18 15.2 14.8 12Z M12 14.8 15.2 18 12 21.2 8.8 18Z M6 8.8 9.2 12 6 15.2 2.8 12Z"/>',
+  pencil: '<path d="M4 20h4L19 9l-4-4L4 16z M13.5 6.5l4 4"/>',
+  detach: '<path d="M9 7 7.5 5.5a4 4 0 0 0-5.6 5.6L4 13M15 17l1.5 1.5a4 4 0 0 0 5.6-5.6L20 11M8 4V2M16 20v2M4 8H2M20 16h2"/>',
+  brackets: '<path d="M8 5 3 12l5 7M16 5l5 7-5 7"/>',
+  heading: '<path d="M5 5h14M12 5v14M9 19h6"/>',
+  paragraph: '<path d="M13 4v16M17 4v16M19 4H10a4 4 0 0 0 0 8h3"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/>',
+  button: '<rect x="3" y="7" width="18" height="10" rx="3"/><path d="M8 12h8"/>',
+  section: '<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/>',
+  div: '<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2.4"/>',
+  main: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 8h18"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  media: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/>',
+  desktop: '<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/>',
+  tablet: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M11 18h2"/>',
+  mobile: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  make: '<path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4M12 9v6M9 12h6"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
+};
+const icon = (name, size = 16) => `<svg class="icon" data-s="${size}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] ?? ""}</svg>`;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+let mode = document.body.dataset.mode;
+const onModeChange = [];
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  mode = document.body.dataset.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  hideTip();
+  onModeChange.forEach((fn) => fn(mode));
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+// After only: one floating tooltip (the catalogue Tooltip) for anything with data-tip,
+// on mouse hover or keyboard focus. Today keeps the browser's own title box.
+const tip = document.createElement("span");
+tip.className = "p-tooltip"; tip.setAttribute("role", "tooltip"); tip.id = "mock-tip";
+document.body.append(tip);
+const finePointer = matchMedia("(hover: hover) and (pointer: fine)");
+function showTip(el) {
+  if (mode !== "after" || !el.dataset.tip) return;
+  const [words, key] = el.dataset.tip.split("|");
+  tip.innerHTML = esc(words) + (key ? ` <kbd>${esc(key)}</kbd>` : "");
+  const r = el.getBoundingClientRect();
+  tip.classList.add("is-shown");
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = r.left + r.width / 2 - w / 2; x = Math.max(6, Math.min(x, innerWidth - w - 6));
+  let y = r.top - h - 6; if (y < 6) y = r.bottom + 6;
+  tip.style.left = `${x}px`; tip.style.top = `${y}px`;
+}
+function hideTip() { tip.classList.remove("is-shown"); }
+document.addEventListener("pointerover", (e) => { const el = e.target.closest?.("[data-tip]"); if (el && finePointer.matches) showTip(el); });
+document.addEventListener("pointerout", (e) => { if (e.target.closest?.("[data-tip]")) hideTip(); });
+document.addEventListener("focusin", (e) => { const el = e.target.closest?.("[data-tip]"); if (el && el.matches(":focus-visible")) showTip(el); else hideTip(); });
+document.addEventListener("focusout", hideTip);
+document.addEventListener("scroll", hideTip, true);
+// The demo strip: one step at a time; the pressed step shows which one played.
+const says = document.querySelector(".demo .says");
+let busy = false;
+function demoSay(text) { if (says) says.textContent = text; }
+function bindSteps(steps) {
+  document.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", async () => {
+    if (busy) return;
+    busy = true;
+    document.querySelectorAll("[data-step]").forEach((o) => { o.setAttribute("aria-pressed", String(o === b)); o.disabled = o !== b; });
+    try { await steps[b.dataset.step](); } finally {
+      busy = false;
+      document.querySelectorAll("[data-step]").forEach((o) => { o.disabled = false; });
+    }
+  }));
+}
+
+const GROUPS = [
+  { name: "Blocks", items: [["section", "Section", "HTML"], ["div", "Div", "HTML"], ["heading", "Heading", "HTML"], ["paragraph", "Paragraph", "HTML"], ["media", "Media", "HTML"], ["button", "Button", "HTML"]] },
+  { name: "Sections", items: [["hero", "Hero", "<section-hero>"], ["intro", "Intro", "<section-intro>"], ["feature", "Feature", "<section-feature>"], ["split", "Split", "<section-split>"], ["contact", "Contact", "<section-contact>"]] },
+];
+const MINI = {
+  section: '<span class="mini block"><i class="box"></i></span>', div: '<span class="mini block"><i class="dash"></i></span>',
+  heading: '<span class="mini block"><span class="h">Heading</span></span>', paragraph: '<span class="mini block"><i></i><i style="inline-size:70%"></i></span>',
+  media: '<span class="mini block"><i class="img" style="block-size:22px"></i></span>', button: '<span class="mini block"><i class="b"></i></span>',
+  hero: '<span class="mini hero"><i class="t"></i><i style="inline-size:45%"></i><i class="b"></i></span>',
+  intro: '<span class="mini intro"><i class="t" style="inline-size:50%"></i><i style="inline-size:70%"></i><i style="inline-size:55%"></i></span>',
+  feature: '<span class="mini feature"><span style="display:grid;gap:4px"><i class="t" style="inline-size:80%"></i><i></i><i style="inline-size:70%"></i></span><i class="img"></i></span>',
+  split: '<span class="mini split"><i class="img"></i><span style="display:grid;gap:4px"><i class="t" style="inline-size:80%"></i><i></i><i style="inline-size:60%"></i></span></span>',
+  contact: '<span class="mini contact"><i class="t" style="inline-size:40%"></i><i style="inline-size:60%"></i><i style="inline-size:50%"></i></span>',
+};
+const NAME = Object.fromEntries(GROUPS.flatMap((g) => g.items.map(([k, n]) => [k, n])));
+const S = { open: false, newForm: false, newName: "new", query: "", refused: null, dropping: null, added: [], flash: null, selected: null };
+const m = (today, after) => (mode === "today" ? today : after);
+const side = document.getElementById("side"), panelHost = document.getElementById("panelHost"), pageMain = document.getElementById("pageMain"), ghost = document.getElementById("ghost"), app = document.getElementById("app");
+
+function renderSide() {
+  const rows = [
+    `<div class="comp" style="--d:0"><span class="k">${icon("component", 14)}Site header</span></div>`,
+    `<div style="--d:0"><span class="k">${icon("main", 14)}Main</span></div>`,
+    ...S.added.map((k) => `<div class="comp" style="--d:1" aria-selected="${S.selected === k}"><span class="k">${icon("component", 14)}${NAME[k]}</span></div>`),
+    `<div class="comp" style="--d:0"><span class="k">${icon("component", 14)}Site footer</span></div>`,
+  ].join("");
+  side.innerHTML = m(
+    `<div class="sidebar-heading"><span class="eyebrow">PAGE STRUCTURE</span><button type="button" id="addToggle" class="structure-add ${S.open ? "is-open" : ""}" title="Add to the page" aria-expanded="${S.open}">${icon("plus", 16)} Add</button></div><div class="mini-tree" role="tree" aria-label="Page structure">${rows}</div>`,
+    `<h2 class="p-heading" style="min-block-size:36px">Page structure <button type="button" id="addToggle" class="p-button p-press" data-size="compact" data-tone="quiet" style="color:inherit" data-tip="Add to the page" aria-expanded="${S.open}" ${S.open ? 'aria-pressed="true"' : ""}>${icon("plus", 16)}Add</button></h2><div class="mini-tree" role="tree" aria-label="Page structure">${rows}</div>`);
+}
+function tile(k, n, tag, look) {
+  const dis = S.refused === k;
+  return m(look === "pick"
+      ? `<li class="pb-empty__entry"><button type="button" class="pb-empty__pick" aria-label="Add ${n}" title="<${tag.replace(/[<>]/g, "")}></${tag.replace(/[<>]/g, "")}>" data-add="${k}"><span class="pb-thumb">${MINI[k]}</span><span class="pb-empty__name"><span>${n}</span><code class="pb-empty__tag">${esc(tag)}</code></span></button></li>`
+      : `<div class="pb-add-item" data-item="${k}"><button type="button" class="pb-add-item__option" role="option" aria-disabled="${dis}" data-add="${k}"><span class="pb-thumb">${MINI[k]}</span><span class="pb-add-item__label"><span class="pb-add-item__name">${n}</span><code class="pb-add-item__tag">${esc(tag)}</code></span></button></div>`,
+    look === "pick"
+      ? `<li><button type="button" class="p-tile p-press" data-look="raised" aria-label="Add ${n}" data-add="${k}"><span class="media">${MINI[k]}</span><span class="title"><span>${n}</span><code class="p-badge" data-kind="tag">${esc(tag)}</code></span></button></li>`
+      : `<button type="button" class="p-tile p-press" role="option" aria-disabled="${dis}" data-item="${k}" data-add="${k}"><span class="media">${MINI[k]}</span><span class="title"><span>${n}</span><code class="p-badge" data-kind="tag">${esc(tag)}</code></span></button>`);
+}
+function where() { return S.refused ? `This destination cannot accept ${NAME[S.refused]}.` : S.added.length ? "" : "Goes into the empty page"; }
+function newEntry() {
+  const tag = `<section-${S.newName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-") || "new"}>`;
+  if (!S.newForm) return m(`<div class="pb-add-new"><button type="button" class="pb-add-new__open" data-act="new">+ New component</button></div>`,
+    `<button type="button" class="p-button p-press ap-new-open" data-tone="component-quiet" data-act="new">${icon("plus", 16)}New component</button>`);
+  return m(`<div class="pb-add-new"><form class="pb-add-new__form" onsubmit="return false"><input type="text" class="pb-add-new__name" aria-label="Component name" value="${esc(S.newName)}" id="newName"><code class="pb-add-new__tag" id="newTag">${esc(tag)}</code><div class="pb-add-new__actions"><button type="button" class="pb-add-panel__clear" data-act="cancel">Cancel</button><button type="submit" class="pb-add-new__create">Create</button></div></form></div>`,
+    `<form class="ap-new" onsubmit="return false"><input type="text" class="p-field" data-look="boxed" aria-label="Component name" value="${esc(S.newName)}" id="newName"><code class="p-badge" data-kind="tag" id="newTag">${esc(tag)}</code><div class="p-row"><button type="button" class="p-button p-press" data-size="compact" data-act="cancel">Cancel</button><button type="submit" class="p-button p-press" data-size="compact" data-tone="component">Create</button></div></form>`);
+}
+function renderPanel() {
+  panelHost.hidden = !S.open;
+  if (!S.open) { panelHost.innerHTML = ""; return; }
+  const w = where();
+  const groups = GROUPS.map((g) => m(`<div class="pb-add-group" data-group><h3 class="pb-add-group__title">${g.name}</h3>${g.items.map(([k, n, t]) => tile(k, n, t)).join("")}</div>`,
+    `<div class="ap-group" role="group" aria-label="${g.name}" data-group><h3 class="p-heading">${g.name}</h3>${g.items.map(([k, n, t]) => tile(k, n, t)).join("")}</div>`)).join("");
+  panelHost.innerHTML = m(
+    `<div class="pb-add-panel ${S.refused ? "has-no-place" : ""}" role="dialog" aria-labelledby="apTitle"><div class="pb-add-panel__head"><h2 class="pb-add-panel__title" id="apTitle">Add to the page</h2><button type="button" class="pb-add-panel__close" aria-label="Close" title="Close (Esc)" data-act="close">${icon("x", 16)}</button></div>
+      <p class="pb-add-panel__position" ${w ? "" : "hidden"} id="where">${esc(w)}</p>
+      <input type="search" class="pb-add-panel__search" placeholder="Search elements and components" aria-label="Search elements and components" autocomplete="off" id="search" value="${esc(S.query)}">
+      <div class="pb-add-panel__body">${newEntry()}<div class="pb-add-panel__list" role="listbox" aria-label="Elements and components">${groups}</div><div class="pb-add-panel__message" id="msg" hidden></div></div></div>`,
+    `<div class="ap ${S.refused ? "has-no-place" : ""}" role="dialog" aria-labelledby="apTitle"><div class="ap-head"><h2 id="apTitle">Add to the page</h2><button type="button" class="p-icon-button p-press" data-size="compact" aria-label="Close" data-tip="Close|Esc" data-act="close">${icon("x", 16)}</button></div>
+      <p class="ap-where" ${w ? "" : "hidden"} id="where">${esc(w)}</p>
+      <label class="p-search">${icon("search", 16)}<input type="search" class="p-field" data-look="boxed" placeholder="Search elements and components" aria-label="Search elements and components" autocomplete="off" id="search" value="${esc(S.query)}"></label>
+      <div class="ap-body">${newEntry()}<div role="listbox" aria-label="Elements and components" style="display:grid;gap:var(--space-xs)">${groups}</div><div id="msg" hidden></div></div></div>`);
+  filter();
+}
+function filter() {
+  const q = S.query.trim().toLowerCase();
+  let shown = 0;
+  panelHost.querySelectorAll("[data-group]").forEach((g) => {
+    let any = false;
+    g.querySelectorAll("[data-item]").forEach((el) => { const k = el.dataset.item; const hit = !q || NAME[k].toLowerCase().includes(q) || k.includes(q) || g.textContent.toLowerCase().startsWith(q); el.hidden = !hit; if (hit) { any = true; shown++; } });
+    g.hidden = !any;
+  });
+  const msg = panelHost.querySelector("#msg"); if (!msg) return;
+  msg.hidden = shown > 0;
+  msg.innerHTML = shown ? "" : m(`<div class="pb-add-panel__message"><p>No items match “${esc(S.query.trim())}”.</p><button type="button" class="pb-add-panel__clear" data-act="clear">Clear search</button></div>`,
+    `<div class="p-empty">${icon("search", 24)}<p>No items match “${esc(S.query.trim())}”.</p><button type="button" class="p-button p-press" data-size="compact" data-act="clear">Clear search</button></div>`);
+}
+function renderPage() {
+  const sections = S.added.map((k) => k !== "hero"
+    ? `<div class="added opener ${S.selected === k ? "is-sel" : ""}"><h3>${k === "intro" ? "Welcome to the bakery" : NAME[k]}</h3><p>Bread, cake and coffee since 1932.</p>${S.flash === k ? '<span class="flash"></span>' : ""}</div>`
+    : `<div class="added hero ${S.selected === k ? "is-sel" : ""}"><h3>Fresh bread every morning</h3><p>Baked before sunrise in Utrecht.</p><span class="cta">See our loaves</span>${S.flash === k ? '<span class="flash"></span>' : ""}</div>`).join("");
+  if (sections) { pageMain.innerHTML = sections; return; }
+  const picks = [["hero", "Hero", "<section-hero>"], ["intro", "Intro", "<section-intro>"], ["feature", "Feature", "<section-feature>"]].map(([k, n, t]) => tile(k, n, t, "pick")).join("");
+  const title = S.dropping ? `Release to add ${NAME[S.dropping]}` : "Start with a section";
+  pageMain.innerHTML = m(
+    `<div class="pb-empty ${S.dropping ? "is-drop" : ""}"><div class="pb-empty__inner"><span class="pb-empty__badge">${icon("plus", 20)}</span><h2 class="pb-empty__title">${title}</h2><p class="pb-empty__text">This page’s &lt;main&gt; is empty. Pick a section to add it, or drag one here from the Add panel.</p><ul class="pb-empty__list" aria-label="Suggested sections">${picks}</ul><button type="button" class="pb-empty__browse" aria-haspopup="dialog" data-act="browse">Browse all sections</button></div></div>`,
+    `<div class="empty-host"><div class="p-empty ${S.dropping ? "is-drop" : ""}" data-size="large"><span class="mark">${icon("plus", 20)}</span><h3>${title}</h3><p>This page’s &lt;main&gt; is empty. Pick a section to add it, or drag one here from the Add panel.</p><ul class="picks" aria-label="Suggested sections">${picks}</ul><button type="button" class="p-button p-press" data-act="browse">Browse all sections</button></div></div>`);
+}
+function render() { renderSide(); renderPanel(); renderPage(); }
+function setOpen(open) { S.open = open; if (!open) { S.newForm = false; S.refused = null; } render(); if (open) panelHost.querySelector("#search")?.focus(); else side.querySelector("#addToggle")?.focus(); }
+function add(k) {
+  if (S.refused === k) return;
+  if (!["hero", "intro", "feature", "split", "contact"].includes(k)) { demoSay(`${NAME[k]} goes inside a section; this page has none yet.`); S.refused = k; renderPanel(); return; }
+  S.added = [k]; S.selected = S.added[0]; S.flash = S.added[0]; S.dropping = null; S.refused = null;
+  render(); setTimeout(() => { S.flash = null; }, 1500);
+}
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("#addToggle"); if (t) { setOpen(!S.open); return; }
+  const a = e.target.closest("[data-act]");
+  if (a) {
+    const act = a.dataset.act;
+    if (act === "close") setOpen(false);
+    if (act === "browse") setOpen(true);
+    if (act === "new") { S.newForm = true; renderPanel(); panelHost.querySelector("#newName")?.select(); }
+    if (act === "cancel") { S.newForm = false; renderPanel(); }
+    if (act === "clear") { S.query = ""; renderPanel(); panelHost.querySelector("#search")?.focus(); }
+    return;
+  }
+  const pick = e.target.closest("[data-add]"); if (pick) add(pick.dataset.add);
+});
+document.addEventListener("input", (e) => {
+  if (e.target.id === "search") { S.query = e.target.value; filter(); }
+  if (e.target.id === "newName") { S.newName = e.target.value; const tag = panelHost.querySelector("#newTag"); if (tag) tag.textContent = `<section-${S.newName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-") || "new"}>`; }
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S.open) setOpen(false); });
+onModeChange.push(render);
+
+// ---- Demo steps ----
+const typeInto = async (id, text, key) => { const el = () => panelHost.querySelector(`#${id}`); S[key] = ""; for (const ch of text) { S[key] += ch; if (el()) { el().value = S[key]; el().dispatchEvent(new Event("input", { bubbles: true })); } await sleep(matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 90); } };
+function reset() { Object.assign(S, { open: false, newForm: false, newName: "new", query: "", refused: null, dropping: null, added: [], flash: null, selected: null }); ghost.hidden = true; render(); }
+bindSteps({
+  async open() { reset(); await sleep(200); setOpen(true); demoSay("“+ Add” stays pressed while the panel is open; the line under the title says where a pick will go."); },
+  async search() { reset(); setOpen(true); await sleep(250); await typeInto("search", "hero", "query"); demoSay("Typing narrows the list as you go."); },
+  async nomatch() { reset(); setOpen(true); await sleep(250); await typeInto("search", "gallery", "query"); demoSay("Nothing matches: the list says so and offers to clear the search."); },
+  async newc() { reset(); setOpen(true); await sleep(250); S.newForm = true; renderPanel(); await sleep(300); await typeInto("newName", "offer", "newName"); demoSay("The new component's name shows as its tag while you type."); },
+  async refused() {
+    reset(); setOpen(true); await sleep(300);
+    S.refused = "button"; renderPanel();
+    demoSay("A block that can't go there dims, and the line under the title turns amber and says why.");
+  },
+  async drag() {
+    reset(); setOpen(true); await sleep(300);
+    const from = panelHost.querySelector('[data-add="hero"]').getBoundingClientRect(), to = pageMain.getBoundingClientRect(), a = app.getBoundingClientRect();
+    ghost.innerHTML = m(`<div class="pb-drag-ghost">${icon("component", 14)}<span>Hero</span></div>`, `<div class="ap-ghost">${icon("component", 14)}<span>Hero</span></div>`);
+    ghost.hidden = false;
+    const n = matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : 18;
+    for (let i = 0; i <= n; i++) { const t = i / n; ghost.style.left = `${from.left - a.left + 20 + (to.left + to.width / 2 - from.left - 60) * t}px`; ghost.style.top = `${from.top - a.top + 20 + (to.top + 120 - from.top) * t}px`; if (i === Math.round(n * 0.6)) { S.dropping = "hero"; renderPage(); } await sleep(30); }
+    demoSay("Over the empty page the box turns solid and names what will land.");
+    await sleep(1200); ghost.hidden = true; add("hero");
+    demoSay("Let go: the section lands, arrives selected and flashes once.");
+  },
+  async pick() { reset(); await sleep(250); add("intro"); demoSay("A pick on the empty page adds it straight away, selected, with the same flash."); },
+  async reset() { reset(); demoSay("Back to the start."); },
+});
+render();
+</script>
+</body>
+</html>

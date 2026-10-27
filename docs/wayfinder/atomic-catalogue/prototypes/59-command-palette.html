@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 59 Command palette and Keyboard shortcuts, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 10 Nov review
+  (kitchen station 3 "Show and tell": Today / After switch, demo buttons that play each step).
+  Ticket: build/tickets/59-organism-palette.md. Behaviour stays exactly as it is.
+  Today: values and structure copied from src/components/command-palette.css and .ts (search row, groups,
+  rows, key caps, footer hints, Shortcuts button, empty line, open animation), src/components/shortcut-sheet.ts
+  (header, subtitle, close, areas, rows, "or" between keys), src/page-builder/palette.ts and
+  palette-catalog.ts (command titles, icons, groups, shortcut list, placeholders), src/page-builder/commands.ts
+  (key caps: Ctrl elsewhere, symbols for arrows), src/theme.css (dev, 2026-10-27). Icons are hand-drawn
+  look-alikes of the Phosphor set the editor uses; key caps shown as on Windows and Linux.
+  After: the same screens built only from the parts approved in 10-first-parts-and-edit-bar.html (dialog,
+  field, icon button, button, badge, menu item, empty state) plus the key cap and list heading the palette
+  already shares, on the shared spacing 2/4/6/8/12/16/24 px and motion tokens (slices 02, 03).
+  Counts from command-palette.css: 2 dialog boxes and 2 backdrops written twice; 2 group-heading copies;
+  row heights 36 px (palette) and 30 px (sheet); off-scale gaps 3, 5, 7, 10, 14 px; 2 hover rules with no
+  mouse check; 1 screen-width breakpoint (560 px).
+-->
+<style>
+/* ---------- Shared values: src/theme.css, light and dark written once with light-dark() ---------- */
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+  --color-component: oklch(55% 0.2 300);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --component-surface: light-dark(oklch(from var(--color-component) 96% 0.03 h), oklch(from var(--color-component) 28% 0.05 h));
+  --component-text: light-dark(oklch(from var(--color-component) 42% 0.17 h), oklch(from var(--color-component) 85% 0.1 h));
+  --panel-surface: var(--surface-raised);
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px; --type-heading: 20px;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px;
+  --panel-padding: 6px;
+
+  /* After only: the catalogue's shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-size: var(--type-base); -webkit-tap-highlight-color: transparent; }
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, select:focus-visible, a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.icon { inline-size: 16px; block-size: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+header { display: grid; gap: var(--space-3xs); }
+h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 70ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 5; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; inline-size: 100%; text-wrap: pretty; }
+.demo { display: grid; gap: var(--space-xs); padding: var(--space-s); border: 1.5px dashed var(--line); border-radius: var(--radius-panel); }
+.demo h2 { margin: 0; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.demo .steps { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.demo .steps button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 4px 10px; font-weight: 600; }
+.demo .steps button[aria-pressed="true"] { background: var(--current); border-color: var(--primary); }
+.demo .steps button:active { scale: 0.97; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); min-inline-size: 0; }
+.card h2 { margin: 0; font-size: var(--type-title); }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+
+/* A small editor around the palette, so running a command shows its result in place. */
+.frame { position: relative; block-size: 34rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--background); overflow: clip; display: grid; grid-template-rows: auto 1fr; container-type: inline-size; }
+.f-top { display: flex; align-items: center; gap: var(--space-xs); block-size: 44px; padding-inline: var(--space-s); background: var(--surface); border-block-end: 1px solid var(--line); font-weight: 600; min-inline-size: 0; }
+.f-top .mark { inline-size: 18px; block-size: 18px; border-radius: 4px; background: var(--primary); flex: none; }
+.f-top .find { margin-inline-start: auto; display: inline-flex; align-items: center; gap: var(--space-2xs); border: 1px solid var(--control-line); background: var(--surface-input); color: var(--muted); border-radius: var(--radius); block-size: 28px; padding-inline: var(--space-xs); font-weight: 400; white-space: nowrap; }
+.f-body { display: grid; grid-template-columns: auto 1fr auto; min-block-size: 0; }
+.f-side { inline-size: clamp(7rem, 22cqi, 13rem); border-inline-end: 1px solid var(--line); background: var(--surface); padding: var(--space-xs); display: grid; align-content: start; gap: 2px; font-size: var(--type-small); overflow: clip; }
+.f-side b { color: var(--muted); font-weight: 600; padding: 4px 6px; }
+.f-side span { padding: 4px 6px; border-radius: var(--radius); white-space: nowrap; overflow: clip; text-overflow: ellipsis; }
+.f-side span:nth-of-type(2) { background: var(--current); font-weight: 600; }
+.f-canvas { padding: clamp(0.5rem, 3cqi, 1.5rem); display: grid; align-content: start; gap: var(--space-xs); min-inline-size: 0; }
+.f-canvas .site { background: light-dark(white, oklch(20% 0.01 265)); border-radius: var(--radius); padding: clamp(0.75rem, 4cqi, 2rem); display: grid; gap: var(--space-xs); font-family: Georgia, serif; box-shadow: var(--shadow-small); }
+.f-canvas h3 { margin: 0; font-size: clamp(1.1rem, 0.9rem + 2cqi, 1.8rem); }
+.f-canvas p { margin: 0; color: var(--muted); }
+.f-code { inline-size: clamp(6rem, 24cqi, 14rem); border-inline-start: 1px solid var(--line); background: var(--surface-subtle); padding: var(--space-xs); font: 11px/1.6 ui-monospace, monospace; color: var(--muted); overflow: clip; white-space: pre; }
+.frame[data-structure="off"] .f-side, .frame[data-code="off"] .f-code { display: none; }
+
+/* =====================  TODAY: real editor CSS (command-palette.css)  ===================== */
+.today.layer { position: absolute; inset: 0; z-index: 2; background: oklch(from var(--shadow-color) l c h / 0.28); }
+.today .palette-keys { display: inline-flex; flex: none; gap: 3px; }
+.today .palette-key { display: inline-grid; place-items: center; box-sizing: border-box; min-inline-size: 20px; block-size: 20px; padding: 0 5px; border: 1px solid var(--control-line); border-block-end-width: 2px; border-radius: var(--radius-small); background: var(--surface); color: var(--muted); font: 600 var(--type-badge) / 1 system-ui, sans-serif; white-space: nowrap; }
+.today .palette-key--symbol { font-size: var(--type-base); font-weight: 400; }
+.today .command-palette { position: absolute; inset: 8% 0 auto; margin: 0 auto; inline-size: min(640px, calc(100% - 32px)); max-block-size: min(560px, 84%); border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); color: var(--text); box-shadow: 0 24px 64px var(--shadow-color), 0 2px 8px var(--shadow-color); overflow: hidden; display: flex; flex-direction: column; }
+.today .command-palette__search { display: flex; align-items: center; gap: 10px; flex: none; block-size: 52px; padding: 0 14px; border-block-end: 1px solid var(--line); color: var(--muted); }
+.today .command-palette__search:focus-within { box-shadow: inset 0 -2px 0 var(--focus); }
+.today .command-palette__input { flex: 1; min-inline-size: 0; block-size: 100%; padding: 0; border: 0; background: transparent; color: var(--text); font-size: var(--type-title); outline: none; }
+.today .command-palette__input::placeholder { color: var(--muted); opacity: 1; }
+.today .command-palette__scope { flex: none; padding: 2px 8px; border-radius: var(--radius-small); background: var(--current); color: var(--text); font-size: var(--type-small); font-weight: 600; }
+.today .command-palette__list { flex: 1; min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px var(--panel-padding) var(--panel-padding); scroll-padding: 28px 0 6px; }
+.today .command-palette__group + .command-palette__group { margin-block-start: 4px; }
+.today .command-palette__heading { padding: 8px 8px 4px; color: var(--muted); font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.today .command-palette__item { display: flex; align-items: center; gap: 10px; min-block-size: 36px; padding: 0 8px; border-radius: var(--radius); cursor: pointer; user-select: none; }
+.today .command-palette__item + .command-palette__item { margin-block-start: 2px; }
+.today .command-palette__item.is-active { background: var(--current); }
+.today .command-palette__icon { display: grid; place-items: center; flex: none; inline-size: var(--size-icon); block-size: var(--size-icon); border-radius: var(--radius); background: var(--surface-subtle); color: var(--muted); }
+.today .command-palette__item.is-active .command-palette__icon { color: var(--text); }
+.today .command-palette__item.is-component .command-palette__icon { background: var(--component-surface); color: var(--component-text); }
+.today .command-palette__text { display: flex; align-items: baseline; gap: 8px; flex: 1; min-inline-size: 0; }
+.today .command-palette__title { flex: none; max-inline-size: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today .command-palette__item-hint { flex: 1; min-inline-size: 0; overflow: hidden; color: var(--muted); font-size: var(--type-small); text-overflow: ellipsis; white-space: nowrap; }
+.today .command-palette mark { background: none; color: var(--link); font-weight: 700; }
+.today .command-palette__empty { margin: 0; padding: 32px 16px; color: var(--muted); text-align: center; }
+.today .command-palette__footer { display: flex; align-items: center; gap: 14px; flex: none; padding: 7px 10px 7px 14px; border-block-start: 1px solid var(--line); background: var(--surface-subtle); color: var(--muted); font-size: var(--type-small); }
+.today .command-palette__hint { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.today .command-palette__shortcuts { display: inline-flex; align-items: center; gap: 6px; margin-inline-start: auto; block-size: var(--size-icon); padding: 0 4px 0 6px; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); }
+.today .command-palette__shortcuts:hover { background: var(--hover); color: var(--text); }
+.today .command-palette__shortcuts:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+@media (max-width: 560px) { .today .command-palette__hint:nth-child(n + 3) { display: none; } }
+/* shortcut sheet */
+.today .shortcut-sheet { position: absolute; inset: 4% 0 auto; margin: 0 auto; inline-size: min(820px, calc(100% - 32px)); max-block-size: 92%; border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); box-shadow: 0 24px 64px var(--shadow-color), 0 2px 8px var(--shadow-color); overflow: hidden; display: flex; flex-direction: column; }
+.today .shortcut-sheet__header { display: flex; align-items: center; gap: 10px; flex: none; padding: 12px 12px 12px 16px; border-block-end: 1px solid var(--line); }
+.today .shortcut-sheet__header > .icon { color: var(--muted); }
+.today .shortcut-sheet__title { margin: 0; font-size: var(--type-title); font-weight: 600; }
+.today .shortcut-sheet__subtitle { margin: 0; color: var(--muted); font-size: var(--type-small); }
+.today .shortcut-sheet__close { display: grid; place-items: center; margin-inline-start: auto; inline-size: var(--size-compact); block-size: var(--size-compact); border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.today .shortcut-sheet__close:hover { background: var(--hover); color: var(--text); }
+.today .shortcut-sheet__close:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.today .shortcut-sheet__body { overflow-y: auto; overscroll-behavior: contain; padding: 8px 16px 16px; columns: 2 300px; column-gap: 28px; }
+.today .shortcut-sheet__area { break-inside: avoid; padding-block-start: 10px; }
+.today .shortcut-sheet__area-title { margin: 0 0 4px; color: var(--muted); font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.today .shortcut-sheet__list { margin: 0; padding: 0; }
+.today .shortcut-sheet__row { display: flex; align-items: center; gap: 12px; min-block-size: 30px; border-block-end: 1px solid color-mix(in oklch, var(--line) 60%, transparent); }
+.today .shortcut-sheet__row:last-child { border-block-end: 0; }
+.today .shortcut-sheet__label { flex: 1; min-inline-size: 0; margin: 0; }
+.today .shortcut-sheet__note { display: block; color: var(--muted); font-size: var(--type-small); }
+.today .shortcut-sheet__keys { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; margin: 0; color: var(--muted); font-size: var(--type-small); }
+@media (prefers-reduced-motion: no-preference) {
+  .today .is-opening { animation: palette-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+}
+@keyframes palette-in { from { opacity: 0; transform: translateY(-6px) scale(0.985); } }
+
+/* =====================  AFTER: catalogue parts  ===================== */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  .p-press:active:not(:disabled) { scale: 0.97; }
+}
+/* Button (file 10): only the quiet tone and compact size are used here */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: var(--size-control); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; }
+.p-button[data-size="compact"] { min-block-size: var(--size-compact); padding-inline: var(--space-xs); }
+.p-button[data-tone="quiet"] { background: transparent; box-shadow: none; color: var(--muted); }
+.p-button[data-tone="quiet"]:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-button[data-tone="quiet"]:hover:not(:disabled) { background: var(--hover); color: var(--text); } }
+/* Icon button (file 10) */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.p-icon-button[data-size="compact"] { inline-size: var(--size-compact); block-size: var(--size-compact); }
+.p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Badge (file 10): words only */
+.p-badge { display: inline-flex; align-items: center; block-size: 20px; padding-inline: var(--space-xs); border-radius: var(--radius-full); font-size: var(--type-small); font-weight: 600; background: var(--current); color: var(--text); flex: none; white-space: nowrap; }
+/* Key cap: the palette's own key cap, now a catalogue part on the shared spacing */
+.p-keys { display: inline-flex; flex: none; gap: var(--space-4xs); }
+.p-key { display: inline-grid; place-items: center; min-inline-size: 20px; block-size: 20px; padding-inline: var(--space-3xs); border: 1px solid var(--control-line); border-block-end-width: 2px; border-radius: var(--radius-small); background: var(--surface); color: var(--muted); font: 600 var(--type-badge) / 1 system-ui, sans-serif; white-space: nowrap; }
+.p-key[data-kind="symbol"] { font-size: var(--type-base); font-weight: 400; }
+/* Dialog (file 10): one box and one backdrop; the list layout drops the padding */
+.p-dlg-layer { position: absolute; inset: 0; z-index: 2; background: oklch(from var(--shadow-color) l c h / 0.45); }
+.p-dialog { position: absolute; inset: 8% 0 auto; margin-inline: auto; inline-size: min(640px, 100% - 2 * var(--space-m)); max-block-size: 84%; border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: clip; container-type: inline-size; }
+.p-dialog[data-width="wide"] { inset-block-start: 4%; inline-size: min(820px, 100% - 2 * var(--space-m)); max-block-size: 92%; }
+.p-dialog-head { display: flex; align-items: center; gap: var(--space-s); flex: none; padding: var(--space-s) var(--space-s) var(--space-s) var(--space-m); border-block-end: 1px solid var(--line); }
+.p-dialog-head > .icon { color: var(--muted); }
+.p-dialog-head h3 { margin: 0; font-size: var(--type-title); }
+.p-dialog-head p { margin: 0; color: var(--muted); font-size: var(--type-small); }
+.p-dialog-head .p-icon-button { margin-inline-start: auto; }
+.p-dialog-foot { display: flex; align-items: center; gap: var(--space-s); flex: none; padding: var(--space-2xs) var(--space-xs) var(--space-2xs) var(--space-m); border-block-start: 1px solid var(--line); background: var(--surface-subtle); color: var(--muted); font-size: var(--type-small); }
+.p-dialog-foot .p-button { margin-inline-start: auto; }
+.p-hint { display: inline-flex; align-items: center; gap: var(--space-3xs); white-space: nowrap; }
+@container (inline-size < 30rem) { .p-hint:nth-child(n + 3) { display: none; } }
+@media (prefers-reduced-motion: no-preference) {
+  .p-dialog.is-opening { animation: p-dialog-in var(--dur-menu) var(--ease-out); }
+}
+@keyframes p-dialog-in { from { opacity: 0; translate: 0 -6px; scale: 0.985; } }
+/* Field (file 10), bare look for a search row; the row shows focus with the field's underline */
+.p-search { display: flex; align-items: center; gap: var(--space-s); flex: none; block-size: 52px; padding-inline: var(--space-m); border-block-end: 1px solid var(--line); color: var(--muted); }
+.p-search:focus-within { box-shadow: inset 0 -2px 0 var(--primary); }
+.p-field { flex: 1; min-inline-size: 0; block-size: 100%; padding: 0; border: 0; background: transparent; color: var(--text); font-size: var(--type-title); caret-color: var(--primary); }
+.p-field:focus { outline: none; }
+.p-field::placeholder { color: var(--muted); opacity: 1; }
+/* List heading: one part for palette groups and sheet areas */
+.p-list-heading { margin: 0; padding: var(--space-xs) var(--space-xs) var(--space-3xs); color: var(--muted); font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+/* Menu item (file 10) with an icon tile; the one list row, 32 px (44 on touch), 2 px apart */
+.p-list { flex: 1; min-block-size: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-3xs) var(--panel-padding) var(--panel-padding); scroll-padding: var(--space-l) 0 var(--space-2xs); display: grid; align-content: start; gap: var(--space-4xs); }
+.p-menu-item { display: grid; grid-template-columns: var(--size-icon) minmax(0, 1fr) auto; align-items: center; gap: var(--space-xs); min-block-size: var(--size-control); padding-inline: var(--space-xs); border-radius: var(--radius); cursor: pointer; user-select: none; }
+.p-menu-item[aria-selected="true"] { background: var(--current); }
+.p-menu-item:active { background: var(--current); }
+@media (pointer: coarse) { .p-menu-item { min-block-size: var(--size-touch); } }
+.p-menu-item .tile { display: grid; place-items: center; inline-size: var(--size-icon); block-size: var(--size-icon); border-radius: var(--radius); background: var(--surface-subtle); color: var(--muted); }
+.p-menu-item[aria-selected="true"] .tile { color: var(--text); }
+.p-menu-item[data-tone="component"] .tile { background: var(--component-surface); color: var(--component-text); }
+.p-menu-item .words { display: flex; align-items: baseline; gap: var(--space-xs); min-inline-size: 0; }
+.p-menu-item .title { flex: none; max-inline-size: 70%; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.p-menu-item .hint { flex: 1; min-inline-size: 0; overflow: clip; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--type-small); }
+.p-menu-item mark { background: none; color: var(--link); font-weight: 700; }
+/* Empty state (file 10) */
+.p-empty { display: grid; justify-items: center; gap: var(--space-xs); padding: var(--space-l) var(--space-m); text-align: center; color: var(--muted); }
+.p-empty p { margin: 0; text-wrap: balance; }
+/* Key rows in the sheet: the same 32 px row, label then keys */
+.p-sheet-body { overflow-y: auto; overscroll-behavior: contain; padding: var(--space-xs) var(--space-m) var(--space-m); columns: 2 300px; column-gap: var(--space-l); }
+.p-sheet-body section { break-inside: avoid; padding-block-start: var(--space-xs); }
+.p-sheet-body .p-list-heading { padding-inline: 0; }
+.p-key-row { display: flex; align-items: center; gap: var(--space-s); min-block-size: var(--size-control); padding-block: var(--space-3xs); border-block-end: 1px solid color-mix(in oklch, var(--line) 60%, transparent); }
+.p-key-row:last-child { border-block-end: 0; }
+.p-key-row dt { flex: 1; min-inline-size: 0; }
+.p-key-row dt small { display: block; color: var(--muted); font-size: var(--type-small); }
+.p-key-row dd { display: flex; flex-wrap: wrap; justify-content: end; align-items: center; gap: var(--space-3xs); margin: 0; color: var(--muted); font-size: var(--type-small); }
+</style>
+</head>
+<body data-mode="after">
+<main>
+  <header>
+    <h1>Command palette and Keyboard shortcuts <span class="tag">mock-up for Tuesday 10 Nov</span></h1>
+    <p class="intro">Ctrl K opens the command palette: one search box that finds pages, files, components and anything you can do right now. Its Shortcuts button (or the ? key) opens the list of every keyboard shortcut. Nothing about how they work changes. After rebuilds both from the approved parts, so the two windows share one box, one heading style and one row.</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+  </div>
+  <p class="summary today">Today: the palette and the shortcuts list each draw their own window, headings, close button and rows.</p>
+  <p class="summary after">After: 2 window copies become 1 · 2 heading styles become 1 · 2 row heights become the one 32 px row · 5 odd gap sizes snap to the shared spacing · hover only with a mouse.</p>
+
+  <section class="demo" aria-labelledby="demo-title">
+    <h2 id="demo-title">Demo steps (not part of the editor). You can also type in the palette and use the arrow keys, Enter, Tab and Esc.</h2>
+    <div class="steps">
+      <button type="button" data-step="open">1 · Press Ctrl K</button>
+      <button type="button" data-step="type">2 · Type “page”</button>
+      <button type="button" data-step="down">3 · Arrow down</button>
+      <button type="button" data-step="up">4 · Arrow up</button>
+      <button type="button" data-step="run">5 · Enter runs it</button>
+      <button type="button" data-step="goto">6 · Press Ctrl P</button>
+      <button type="button" data-step="nomatch">7 · Type “zzz”</button>
+      <button type="button" data-step="sheet">8 · Shortcuts</button>
+      <button type="button" data-step="close">9 · Esc closes</button>
+    </div>
+  </section>
+
+  <article class="card">
+    <h2>The editor, with the palette on top</h2>
+    <div class="frame" id="frame" data-structure="on" data-code="on">
+      <div class="f-top"><span class="mark"></span><span>Bakery site</span><span class="find"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>Ctrl K</span></div>
+      <div class="f-body">
+        <div class="f-side"><b>Page structure</b><span>Site header</span><span>Our loaves</span><span>Card grid</span><span>Site footer</span></div>
+        <div class="f-canvas"><div class="site"><h3>Our loaves</h3><p>Baked every morning with flour from the mill down the road.</p></div></div>
+        <div class="f-code">&lt;section&gt;
+  &lt;h2&gt;Our loaves
+  &lt;p&gt;Baked every…
+&lt;/section&gt;</div>
+      </div>
+      <div class="today layer" id="today-layer" hidden></div>
+      <div class="after p-dlg-layer" id="after-layer" hidden></div>
+    </div>
+    <ul class="changes after"><li>one window part for both</li><li>one row, 32 px</li><li>one heading style</li><li>footer hints fold by the window's width</li><li>press feedback</li><li>focus ring on every button</li></ul>
+  </article>
+</main>
+
+<script>
+const ICONS = {
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
+  publish: '<path d="M7 18a4.5 4.5 0 0 1-.5-9A6 6 0 0 1 18 8.5a4.5 4.5 0 0 1-1 9.5"/><path d="M12 20v-8M9 14.5l3-3 3 3"/>',
+  undo: '<path d="M8 13 4 9l4-4"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+  redo: '<path d="m16 13 4-4-4-4"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/>',
+  split: '<rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M3.5 13h17"/>',
+  code: '<path d="m8 8-4 4 4 4M16 8l4 4-4 4"/>',
+  sidebar: '<rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M9 4.5v15"/>',
+  structure: '<rect x="3" y="4" width="6" height="5" rx="1"/><rect x="15" y="15" width="6" height="5" rx="1"/><rect x="15" y="4" width="6" height="5" rx="1"/><path d="M9 6.5h6M12 6.5v11h3"/>',
+  "file-plus": '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M12 11v6M9 14h6"/>',
+  pages: '<path d="M4 6h10M4 11h7M4 16h5"/><circle cx="16" cy="15" r="3.5"/><path d="m18.5 17.5 2.5 2.5"/>',
+  clock: '<path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.7"/><path d="M4 4v4.7h4.7M12 8v4l3 2"/>',
+  keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="1.5"/><path d="M6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M7.5 14h9"/>',
+  file: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
+  "file-html": '<path d="M6 11V3h8l4 4v4M14 3v4h4"/><path d="M5 15l-1.5 2L5 19M19 15l1.5 2L19 19M10 20l3-6"/>',
+  "file-css": '<path d="M6 11V3h8l4 4v4M14 3v4h4"/><path d="M8 15.5a1.5 1.5 0 0 0-3 0v2a1.5 1.5 0 0 0 3 0M13 15h-2v2h2v2h-2M18 15h-2v2h2v2h-2"/>',
+  home: '<path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/>',
+  component: '<path d="M9 4h4v2.5a1.5 1.5 0 0 0 3 0V4h4v6h-2.5a1.5 1.5 0 0 0 0 3H20v7h-6v-2.5a1.5 1.5 0 0 0-3 0V20H4v-6h2.5a1.5 1.5 0 0 0 0-3H4V4z"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+};
+const icon = (n, size = 16) => `<svg class="icon" width="${size}" height="${size}" style="inline-size:${size}px;block-size:${size}px" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ICONS.file}</svg>`;
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* Commands as palette-catalog.ts and palette.ts list them (titles, icons, groups, shortcuts). */
+const frame = document.getElementById("frame");
+const on = (attr) => frame.dataset[attr] === "on";
+const flip = (attr) => { frame.dataset[attr] = on(attr) ? "off" : "on"; };
+function commands() {
+  return [
+    { id: "publish", title: "Publish changes", group: "Actions", icon: "publish" },
+    { id: "review", title: "Review changes to publish", group: "Actions", icon: "publish" },
+    { id: "undo", title: "Undo", group: "Actions", icon: "undo", keys: ["Ctrl", "Z"] },
+    { id: "redo", title: "Redo", group: "Actions", icon: "redo", keys: ["Ctrl", "Shift", "Z"] },
+    on("code") ? { id: "code", title: "Hide code", group: "Actions", icon: "split", run: () => flip("code") } : { id: "code", title: "Show code", group: "Actions", icon: "code", run: () => flip("code") },
+    on("structure") ? { id: "structure", title: "Hide page structure", group: "Actions", icon: "sidebar", run: () => flip("structure") } : { id: "structure", title: "Show page structure", group: "Actions", icon: "structure", run: () => flip("structure") },
+    { id: "new-page", title: "New page", group: "Actions", icon: "file-plus" },
+    { id: "new-file", title: "New file or folder", group: "Actions", icon: "file-plus" },
+    { id: "files", title: "Show pages and files", group: "Actions", icon: "pages" },
+    { id: "history", title: "Show history", group: "Actions", icon: "clock" },
+    { id: "palette", title: "Command palette", group: "Actions", icon: "search", keys: ["Ctrl", "K"] },
+    { id: "go", title: "Go to page or file", group: "Actions", icon: "pages", keys: ["Ctrl", "P"], run: () => openPalette("go") },
+    { id: "keys", title: "Keyboard shortcuts", group: "Actions", icon: "keyboard", keys: ["?"], run: () => openSheet() },
+    { id: "p-home", title: "Home", hint: "/", group: "Pages", icon: "home", nav: true },
+    { id: "p-loaves", title: "Our loaves", hint: "/loaves/", group: "Pages", icon: "file-html", nav: true },
+    { id: "p-about", title: "About us", hint: "/about/", group: "Pages", icon: "file-html", nav: true },
+    { id: "p-visit", title: "Visit the bakery", hint: "/visit/", group: "Pages", icon: "file-html", nav: true },
+    { id: "c-card", title: "Add Card grid", hint: "<card-grid> after the selected section", group: "Components", icon: "component", accent: true, suggested: true },
+    { id: "c-card-open", title: "Open Card grid component", hint: "components/card-grid/card-grid.html", group: "Components", icon: "component", accent: true, nav: true },
+    { id: "f-css", title: "site.css", hint: "styles", group: "Files", icon: "file-css", nav: true },
+    { id: "f-index", title: "index.html", group: "Files", icon: "file-html", nav: true },
+    { id: "f-header", title: "site-header.css", hint: "components/site-header", group: "Files", icon: "file-css", nav: true },
+  ];
+}
+const ORDER = ["Recent", "Actions", "Pages", "Components", "Files"];
+const PLACEHOLDER = { all: "Search pages, files, components and actions…", go: "Go to a page, file or component…" };
+const SHEET = [
+  ["Everywhere", [["Command palette", [["Ctrl", "K"]]], ["Go to page or file", [["Ctrl", "P"]]], ["Keyboard shortcuts", [["?"]]], ["Close a menu, popover or dialog", [["Esc"]]]]],
+  ["Editing", [["Undo", [["Ctrl", "Z"]]], ["Redo", [["Ctrl", "Shift", "Z"], ["Ctrl", "Y"]]]]],
+  ["Canvas", [["Type in the selected text", [["↵"]], "Or double-click it; a click selects"], ["Finish typing", [["↵"], ["Esc"]], "The text stays selected"], ["Bold", [["Ctrl", "B"]], "Selected text, or the whole element"], ["Italic", [["Ctrl", "I"]]], ["Link the selected text", [["Ctrl", "K"]], "With text selected; otherwise Ctrl K opens the palette"], ["Move the selected section", [["Alt", "↑"], ["Alt", "↓"]], "Also on the edit bar and in the page structure"], ["Duplicate the selected section", [["Ctrl", "D"]], "When not typing"], ["Remove the selected element", [["Del"], ["⌫"]], "When not typing"], ["Select parent", [["Shift", "↵"]], "When not typing"], ["Follow a link to its page", [["Ctrl", "Click"]]]]],
+  ["Edit bar", [["Move between controls", [["←"], ["→"]]], ["Move the section from its name", [["↑"], ["↓"]]], ["Cancel a section drag", [["Esc"]]], ["Send to the agent", [["↵"]], "Shift+Enter starts a new line"]]],
+  ["Page structure", [["Move between rows", [["↑"], ["↓"], ["Home"], ["End"]]], ["Open or close a row", [["→"], ["←"]]], ["Move a section", [["Alt", "↑"], ["Alt", "↓"]]]]],
+  ["Pages and files", [["Open", [["↵"], ["Space"]]], ["Rename", [["F2"]]], ["Delete", [["Del"]], "Files also with ⌘⌫ on a Mac"], ["Row actions menu", [["Shift", "F10"], ["Menu"]]], ["Pages or Files tab", [["←"], ["→"]]]]],
+  ["Code", [["Code editor commands", [["F1"]], "Monaco's own palette, while typing in code"], ["Find", [["Ctrl", "F"]]]]],
+  ["Panels", [["Resize the sidebar or code", [["←"], ["→"], ["↑"], ["↓"]], "On a resize handle; Shift for bigger steps"], ["Hide or show the sidebar or code", [["↵"], ["Space"]], "On its resize handle"]]],
+];
+
+const state = { view: "closed", scope: "all", query: "", active: 0, recent: [] };
+let shown = [];
+const layers = { today: document.getElementById("today-layer"), after: document.getElementById("after-layer") };
+
+function results() {
+  const text = state.query.trim().toLowerCase();
+  let pool = commands();
+  if (state.scope === "go") pool = pool.filter((c) => c.nav);
+  const groups = [];
+  if (!text) {
+    const recentItems = state.recent.map((id) => pool.find((c) => c.id === id)).filter(Boolean).slice(0, 5);
+    if (recentItems.length && state.scope === "all") groups.push(["Recent", recentItems]);
+    const rest = pool.filter((c) => !recentItems.includes(c) && (state.scope !== "all" || (c.group !== "Files" && (c.group !== "Components" || c.suggested))));
+    for (const g of ORDER) { const items = rest.filter((c) => c.group === g); if (items.length) groups.push([g, items]); }
+    return groups;
+  }
+  const hit = pool.filter((c) => c.title.toLowerCase().includes(text) || (c.hint || "").toLowerCase().includes(text));
+  for (const g of ORDER) { const items = hit.filter((c) => c.group === g); if (items.length) groups.push([g, items]); }
+  return groups;
+}
+function marked(s) {
+  const text = state.query.trim(); if (!s) return "";
+  const i = text ? s.toLowerCase().indexOf(text.toLowerCase()) : -1;
+  return i < 0 ? esc(s) : esc(s.slice(0, i)) + "<mark>" + esc(s.slice(i, i + text.length)) + "</mark>" + esc(s.slice(i + text.length));
+}
+const isSymbol = (k) => /^[↑↓←→↵⌫]$/.test(k);
+const caps = (keys, mode) => mode === "today"
+  ? `<span class="palette-keys">${keys.map((k) => `<kbd class="palette-key${isSymbol(k) ? " palette-key--symbol" : ""}">${esc(k)}</kbd>`).join("")}</span>`
+  : `<span class="p-keys">${keys.map((k) => `<kbd class="p-key"${isSymbol(k) ? ' data-kind="symbol"' : ""}>${esc(k)}</kbd>`).join("")}</span>`;
+
+function paletteMarkup(mode, groups) {
+  let index = 0;
+  const t = mode === "today";
+  const rows = groups.map(([g, items]) => {
+    const head = t ? `<div class="command-palette__heading" aria-hidden="true">${g}</div>` : `<div class="p-list-heading" aria-hidden="true">${g}</div>`;
+    const list = items.map((c) => {
+      const i = index++;
+      const sel = i === state.active;
+      const keys = c.keys ? caps(c.keys, mode) : "";
+      const label = esc([c.title, c.hint, c.keys && c.keys.join(" ")].filter(Boolean).join(", "));
+      return t
+        ? `<div class="command-palette__item${c.accent ? " is-component" : ""}${sel ? " is-active" : ""}" role="option" aria-selected="${sel}" aria-label="${label}" data-index="${i}"><span class="command-palette__icon">${icon(c.icon)}</span><span class="command-palette__text"><span class="command-palette__title">${marked(c.title)}</span>${c.hint ? `<span class="command-palette__item-hint">${marked(c.hint)}</span>` : ""}</span>${keys}</div>`
+        : `<div class="p-menu-item"${c.accent ? ' data-tone="component"' : ""} role="option" aria-selected="${sel}" aria-label="${label}" data-index="${i}"><span class="tile">${icon(c.icon)}</span><span class="words"><span class="title">${marked(c.title)}</span>${c.hint ? `<span class="hint">${marked(c.hint)}</span>` : ""}</span>${keys}</div>`;
+    }).join("");
+    return `<div role="group">${head}${list}</div>`;
+  }).join("");
+  const text = state.query.trim();
+  const emptyWords = text ? `Nothing matches “${esc(text)}”.` : "Nothing to show yet.";
+  const scopeChip = state.scope === "go" ? (t ? `<span class="command-palette__scope">Go to</span>` : `<span class="p-badge">Go to</span>`) : "";
+  const hints = [[["↑", "↓"], "move"], [["↵"], "run"], [[">"], "actions"], [["/"], "pages"]];
+  if (t) return `<div class="command-palette" role="dialog" aria-label="Command palette">
+      <div class="command-palette__search">${icon("search", 18)}${scopeChip}<input class="command-palette__input" data-input role="combobox" aria-label="Search commands" aria-expanded="true" autocomplete="off" spellcheck="false" placeholder="${PLACEHOLDER[state.scope]}"><kbd class="palette-key" aria-hidden="true">Esc</kbd></div>
+      ${shown.length ? `<div class="command-palette__list" role="listbox" aria-label="Results">${rows}</div>` : `<p class="command-palette__empty" role="status">${emptyWords}</p>`}
+      <div class="command-palette__footer">${hints.map(([k, w]) => `<span class="command-palette__hint">${k.map((x) => `<kbd class="palette-key${isSymbol(x) ? " palette-key--symbol" : ""}">${x}</kbd>`).join("")} ${w}</span>`).join("")}<button type="button" class="command-palette__shortcuts" data-open-sheet>${icon("keyboard", 14)}Shortcuts<kbd class="palette-key">?</kbd></button></div>
+    </div>`;
+  return `<div class="p-dialog" role="dialog" aria-label="Command palette">
+      <div class="p-search">${icon("search", 18)}${scopeChip}<input class="p-field" data-input role="combobox" aria-label="Search commands" aria-expanded="true" autocomplete="off" spellcheck="false" placeholder="${PLACEHOLDER[state.scope]}"><kbd class="p-key" aria-hidden="true">Esc</kbd></div>
+      ${shown.length ? `<div class="p-list" role="listbox" aria-label="Results">${rows}</div>` : `<div class="p-empty" role="status">${icon("search", 24)}<p>${emptyWords}</p></div>`}
+      <div class="p-dialog-foot">${hints.map(([k, w]) => `<span class="p-hint">${caps(k, "after")} ${w}</span>`).join("")}<button type="button" class="p-button p-press" data-tone="quiet" data-size="compact" data-open-sheet>${icon("keyboard", 14)}Shortcuts<kbd class="p-key">?</kbd></button></div>
+    </div>`;
+}
+function sheetMarkup(mode) {
+  const t = mode === "today";
+  const sub = "Press ? to show this again. Ctrl+K finds any action.";
+  const areas = SHEET.map(([area, entries]) => {
+    const rows = entries.map(([label, combos, note]) => {
+      const keys = combos.map((k) => caps(k, mode)).join(" or ");
+      return t
+        ? `<div class="shortcut-sheet__row"><dt class="shortcut-sheet__label"><span>${esc(label)}</span>${note ? `<span class="shortcut-sheet__note">${esc(note)}</span>` : ""}</dt><dd class="shortcut-sheet__keys">${keys}</dd></div>`
+        : `<div class="p-key-row"><dt>${esc(label)}${note ? `<small>${esc(note)}</small>` : ""}</dt><dd>${keys}</dd></div>`;
+    }).join("");
+    return t
+      ? `<section class="shortcut-sheet__area"><h3 class="shortcut-sheet__area-title">${area}</h3><dl class="shortcut-sheet__list">${rows}</dl></section>`
+      : `<section><h4 class="p-list-heading">${area}</h4><dl style="margin:0">${rows}</dl></section>`;
+  }).join("");
+  if (t) return `<div class="shortcut-sheet" role="dialog" aria-labelledby="sheet-today"><div class="shortcut-sheet__header">${icon("keyboard", 18)}<div><h2 class="shortcut-sheet__title" id="sheet-today">Keyboard shortcuts</h2><p class="shortcut-sheet__subtitle">${sub}</p></div><button type="button" class="shortcut-sheet__close" data-close aria-label="Close" title="Close (Esc)">${icon("x")}</button></div><div class="shortcut-sheet__body">${areas}</div></div>`;
+  return `<div class="p-dialog" data-width="wide" role="dialog" aria-labelledby="sheet-after"><div class="p-dialog-head">${icon("keyboard", 18)}<div><h3 id="sheet-after">Keyboard shortcuts</h3><p>${sub}</p></div><button type="button" class="p-icon-button p-press" data-size="compact" data-close aria-label="Close" title="Close (Esc)">${icon("x")}</button></div><div class="p-sheet-body">${areas}</div></div>`;
+}
+
+let opening = false;
+function render(keepFocus = true) {
+  const groups = state.view === "palette" ? results() : [];
+  shown = groups.flatMap(([, items]) => items);
+  if (state.active >= shown.length) state.active = 0;
+  for (const mode of ["today", "after"]) {
+    const layer = layers[mode];
+    layer.hidden = state.view === "closed";
+    if (state.view === "closed") { layer.innerHTML = ""; continue; }
+    layer.innerHTML = state.view === "palette" ? paletteMarkup(mode, groups) : sheetMarkup(mode);
+    const box = layer.firstElementChild;
+    if (opening) box.classList.add("is-opening");
+    const input = layer.querySelector("[data-input]");
+    if (input) input.value = state.query;
+  }
+  opening = false;
+  const mode = document.body.dataset.mode;
+  const layer = layers[mode];
+  layer.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+  if (keepFocus) (layer.querySelector("[data-input]") || layer.querySelector("[data-close]"))?.focus({ preventScroll: true });
+}
+function openPalette(scope = "all", query = "") { opening = state.view !== "palette"; state.view = "palette"; state.scope = scope; state.query = query; state.active = 0; render(); }
+function openSheet() { opening = true; state.view = "sheet"; render(); }
+function close() { state.view = "closed"; render(false); }
+function move(step) { if (!shown.length) return; state.active = (state.active + step + shown.length) % shown.length; render(); }
+function run() {
+  const c = shown[state.active]; if (!c) return;
+  state.recent = [c.id, ...state.recent.filter((id) => id !== c.id)];
+  close();
+  setTimeout(() => c.run?.(), 0);
+}
+function jumpGroup(step) {
+  const groups = results(); let start = 0; const starts = groups.map(([, items]) => { const s = start; start += items.length; return s; });
+  const current = starts.findLastIndex((s) => s <= state.active);
+  state.active = starts[(current + step + starts.length) % starts.length] ?? 0; render();
+}
+
+for (const layer of Object.values(layers)) {
+  layer.addEventListener("input", (e) => { if (e.target.matches("[data-input]")) { state.query = e.target.value; state.active = 0; render(); } });
+  layer.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); close(); return; }
+    if (!e.target.matches("[data-input]")) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); move(e.key === "ArrowDown" ? 1 : -1); }
+    else if (e.key === "Enter") { e.preventDefault(); run(); }
+    else if (e.key === "Tab") { e.preventDefault(); jumpGroup(e.shiftKey ? -1 : 1); }
+    else if (e.key === "Backspace" && !state.query && state.scope !== "all") { e.preventDefault(); state.scope = "all"; render(); }
+  });
+  layer.addEventListener("pointermove", (e) => { const row = e.target.closest("[data-index]"); if (row && Number(row.dataset.index) !== state.active) { state.active = Number(row.dataset.index); for (const m of ["today", "after"]) layers[m].querySelectorAll("[data-index]").forEach((r) => { const s = Number(r.dataset.index) === state.active; r.setAttribute("aria-selected", String(s)); r.classList.toggle("is-active", s); }); } });
+  layer.addEventListener("click", (e) => {
+    if (e.target === layer) return close();
+    if (e.target.closest("[data-open-sheet]")) return openSheet();
+    if (e.target.closest("[data-close]")) return close();
+    const row = e.target.closest("[data-index]"); if (row) { state.active = Number(row.dataset.index); run(); }
+  });
+}
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest?.(".layer, .p-dlg-layer")) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") { e.preventDefault(); openPalette("go"); }
+  else if (e.key === "?" && !e.target.matches?.("input, textarea")) { openSheet(); }
+});
+
+const STEPS = {
+  open: () => openPalette(),
+  type: () => { if (state.view !== "palette") openPalette(); state.query = "page"; state.active = 0; render(); },
+  down: () => { if (state.view !== "palette") STEPS.type(); move(1); },
+  up: () => { if (state.view !== "palette") STEPS.type(); move(-1); },
+  run: () => { if (state.view !== "palette") STEPS.type(); run(); },
+  goto: () => openPalette("go"),
+  nomatch: () => { if (state.view !== "palette") openPalette(); state.query = "zzz"; render(); },
+  sheet: () => openSheet(),
+  close: () => close(),
+};
+document.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-step]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  STEPS[b.dataset.step]();
+}));
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  if (state.view !== "closed") render(false);
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+openPalette();
+</script>
+</body>
+</html>
