@@ -124,22 +124,30 @@ button { font: inherit; color: inherit; }
 .tg { color: light-dark(oklch(45% 0.15 250), oklch(75% 0.12 250)); }
 .at { color: light-dark(oklch(48% 0.13 30), oklch(78% 0.1 40)); }
 .rc { position: relative; display: inline-block; inline-size: 0; block-size: 1.2em; vertical-align: text-bottom; border-inline-start: 2px solid var(--c); margin-inline: -1px; }
-/* The flag is the whole pill (mark + name), clipped to a circle; hover or focus unclips it. */
-.rc__flag { position: absolute; inset-block-end: 100%; inset-inline-start: -0.62rem; z-index: 2; display: flex; align-items: center; block-size: 1.15rem; padding-inline-end: 0.5rem; border-radius: 0.575rem; background: var(--c); color: var(--on-color); white-space: nowrap; cursor: default; translate: 0 2px; clip-path: inset(0 calc(100% - 1.15rem) 0 0 round 0.575rem); }
-.rc__mark { inline-size: 1.15rem; display: grid; place-items: center; flex: none; font: 700 0.62rem/1 system-ui, sans-serif; }
+/* The flag is the whole pill, clipped to a circle; hover or focus unclips it. For a person the circle
+   holds the first letter and the rest of the name slides out from behind it (blur, slide, fade). */
+.rc__flag { position: absolute; inset-block-end: 100%; inset-inline-start: -0.62rem; z-index: 2; display: flex; align-items: center; block-size: 1.15rem; padding-inline-end: 0.45rem; border-radius: 0.575rem; background: var(--c); color: var(--on-color); white-space: nowrap; cursor: default; translate: 0 2px; clip-path: inset(0 calc(100% - 1.15rem) 0 0 round 0.575rem); font: 700 0.66rem/1 system-ui, sans-serif; }
+.rc__mark { position: relative; z-index: 1; inline-size: 1.15rem; block-size: 100%; display: grid; place-items: center; flex: none; }
+.rc__flag:not([data-letter]) .rc__mark { background: var(--c); border-radius: 50%; }
+.rc__mark b { font: inherit; background: var(--c); padding-inline: 0.06rem; }
 .rc__mark svg { inline-size: 0.7rem; block-size: 0.7rem; stroke-width: 2.4; }
-.rc__name { font: 600 0.68rem/1 system-ui, sans-serif; opacity: 0; }
+.rc__name { opacity: 0; translate: -0.55rem 0; filter: blur(3px); }
+.rc__flag[data-letter] .rc__name { margin-inline-start: -0.36rem; }
 .rc:focus-visible { outline: none; }
 .rc:focus-visible .rc__flag { outline: 2px solid var(--c); outline-offset: 2px; }
 .rc:focus-visible .rc__flag, .rc:focus-within .rc__flag { clip-path: inset(0 0 0 0 round 0.575rem); }
-.rc:focus-visible .rc__name, .rc:focus-within .rc__name { opacity: 1; }
+.rc:focus-visible .rc__name, .rc:focus-within .rc__name { opacity: 1; translate: 0 0; filter: blur(0); }
 @media (hover: hover) and (pointer: fine) {
   .rc:hover .rc__flag { clip-path: inset(0 0 0 0 round 0.575rem); }
-  .rc:hover .rc__name { opacity: 1; }
+  .rc:hover .rc__name { opacity: 1; translate: 0 0; filter: blur(0); }
 }
-.rc__name { transition: opacity 150ms var(--ease-out); }
+.rc__name { transition: opacity 200ms var(--ease-out); }
 @media (prefers-reduced-motion: no-preference) {
   .rc__flag { transition: clip-path 200ms var(--ease-out); }
+  .rc__name { transition: opacity 200ms var(--ease-out), translate 240ms var(--ease-out), filter 240ms var(--ease-out); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rc__name { translate: 0 0; filter: none; }
 }
 .sel { background: color-mix(in oklch, var(--c) 22%, transparent); border-radius: 2px; }
 .me { display: inline-block; inline-size: 0; block-size: 1.2em; vertical-align: text-bottom; border-inline-start: 2px solid var(--text); margin-inline: -1px; animation: blink 1s steps(1) infinite; }
@@ -242,8 +250,10 @@ function reset() {
 const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const text = (f) => S[f].map((s) => s[0]).join("");
 function flag(who) {
-  const inner = who === "agent" ? icon("claude") : "A";
-  return `<span class="rc" style="--c:${C[who]}" tabindex="0" aria-label="${NAMES[who]}"><span class="rc__flag"><span class="rc__mark">${inner}</span><span class="rc__name">${NAMES[who]}</span></span></span>`;
+  const inner = who === "agent" ? icon("claude") : `<b>${NAMES[who][0]}</b>`;
+  const person = who !== "agent";
+  const rest = person ? NAMES[who].slice(1) : NAMES[who];
+  return `<span class="rc" style="--c:${C[who]}" tabindex="0" aria-label="${NAMES[who]}"><span class="rc__flag"${person ? " data-letter" : ""}><span class="rc__mark">${inner}</span><span class="rc__name" aria-hidden="true">${rest}</span></span></span>`;
 }
 function lineText(f) {
   let out = "";
