@@ -45,3 +45,9 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Docs: `docs/agents/agent-scripts.md` (doctor line and the `agent.sh` gate paragraph).
 - Feature list: no change (kit plumbing, nothing a site editor user sees).
 - Validation: `kit unit --affected` RESULT: ok unit 47/47 (1 files); `kit unit tests/agent-scripts.test.ts` RESULT: ok unit 32/32 (1 files); `npm run lint` passes.
+
+### Follow-ups
+
+- Validation gaps (gap): The `version (timed out)` branch at `scripts/agents/kit.d/doctor:256` is never tested. Only the `version (exit N)` case is. Add a test to `tests/kit-doctor.test.ts`: Give the fixture a `version` command whose help runs `sleep 5` with `KIT_HELP_TIMEOUT: "0.3"`, plus the failing `KIT_HOME` kit from the broken-version test. Run doctor with `KIT_DOCTOR_SKIP: "help"`. Assert exit 0, `problem: help: version (timed out)`, a `problem: kit home:` line, and a RESULT ending `skipped help, kit home (KIT_DOCTOR_SKIP)`.
+- Validation gaps (gap): The skip is never tested without `--quiet`. Every test uses `--quiet`, so nobody checks that the `problem: help:` line appears beside the `✓` lines while the `✓ help` line is left out. Add a test: Run `f.run([], f.build, { KIT_HELP_TIMEOUT: "0.3", KIT_DOCTOR_SKIP: "help" })` with one broken command. Assert stdout has the problem line, has no line starting `✓ help:` or `✗ help:`, and still has `✓ commands:`.
+
