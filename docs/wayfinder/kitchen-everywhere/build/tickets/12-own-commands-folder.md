@@ -2,7 +2,7 @@
 title: Own commands in the project's own folder
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-12
 builder: claude
 blocked_by: [11-project-settings-file]
 ---
