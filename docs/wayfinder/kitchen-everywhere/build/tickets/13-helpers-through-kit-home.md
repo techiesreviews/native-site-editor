@@ -2,7 +2,7 @@
 title: Shared commands find their helpers through KIT_HOME
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-13
 builder: claude
 blocked_by: [12-own-commands-folder]
 ---
