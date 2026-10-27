@@ -44,3 +44,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Tests (`tests/kit-unit.test.ts`): a new case copies `unit.sh` and its helpers into a fixture project, then runs it with no files five ways, with no `KIT_ROOT` or `KIT_LIB`: by absolute path from the top folder, as `./unit.sh` and as `bash unit.sh` from `scripts/agents`, as `bash ../scripts/agents/unit.sh` from `tests/`, and as `bash scripts/agents/unit.sh` from the top folder with `CDPATH` exported. All five run the same three files with the same summary. Before the fix the `./unit.sh` run failed with `unit.sh: kit unit --list failed`. The invalid-options case now expects exit 2 and `base not found: missing` for a missing `--base`.
 - Validation: `kit unit --affected` RESULT: ok unit 12/12 (1 files); `kit unit tests/agent-unit-timeout.test.ts` RESULT: ok unit 2/2; `npm run check` and `npm run lint` exit 0.
 - Feature list: no change (agent tooling only; nothing in the editor changes).
+
+### Follow-ups
+
+- Validation gaps (gap): `scripts/agents/kit.d/unit:123`: no test covers the branch that rethrows when git fails for a reason other than "ref not found", which keeps that case at exit 1 with no usage text. Test to add in `tests/kit-unit.test.ts`: in a fixture, remove `.git` (`rmSync(join(f.root, ".git"), { recursive: true })`), run `f.run("--affected", "--base", "HEAD")`, and assert exit 1, a `^problem: ` line, no `Usage:` on stderr and `f.executed() === 0`. Without this, a later change from `error.status !== 1` to a bare `catch` would quietly turn repo failures into usage errors.
+
