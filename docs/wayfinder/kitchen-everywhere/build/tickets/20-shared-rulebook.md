@@ -2,7 +2,7 @@
 title: One shared rulebook plus per-project extras
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-20
 builder: claude
 blocked_by: [17-second-look-per-kind]
 ---
