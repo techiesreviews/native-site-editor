@@ -31,12 +31,14 @@ project worked on there), `devRoot` (`next` and `heartbeat` say they need one),
 `worktreePrefix`, `sharedNodeModules` (without it `kit doctor` skips the `node_modules` check and
 `kit pr` skips `kit deps check`), `branches.release` and `branches.ci` (else `land`; a `release`
 equal to `land` takes ordinary PRs), `checks` (`check`, `test`, `lint`: any command, for example
-`python3 .checks/site.py`, run by `kit pr` and named by the review and fix briefs, a missing one is
+`python3 .checks/site.py`, run by `kit pr` and named by the review, slice and fix briefs, a missing one is
 skipped; `extra`, kit-plumbing checks run only when kit files change; `doctor`, one command or a
 list, each an extra `kit doctor` line that passes on exit 0), `unit` (`run`, a Node test-runner
 command such as `node --test`, to which `unit.sh` adds `--test-timeout` and the files; `files`, one
 pattern or a list, each a glob where `*` stays in a folder and `**` spans folders, or a folder ending
-in `/` for every JavaScript or TypeScript file under it, read by `kit unit` and `unit.sh`;
+in `/` for every JavaScript or TypeScript file under it, matched against git's tracked and
+untracked, not-ignored files by `kit unit` (`unit.sh` with no files runs what `kit unit --list`
+lists); the slice and fix briefs name `kit unit --affected` only when it is set;
 `docsGuards`); `checks` commands and `unit.run` are split on
 spaces, with no quoting, `paths` (`docs`, `tests`, `css`, `visible` regular expressions for `kit pr`'s tiers
 and feature-list guard), `featureList`, `techDebt`, `standards` (one file or a list, such as
@@ -45,7 +47,7 @@ and feature-list guard), `featureList`, `techDebt`, `standards` (one file or a l
 without its own: a module file or folder, relative or absolute, that `kit doctor` checks and project
 commands read), `servers` (the command `bash-guard` names for starting servers; else
 `scripts/agents/port.sh` where the project has one, else `kit bg`) and `rulebookExtras`. A project
-with no `origin` remote has no GitHub repo: `kit pr` stops with `no GitHub repo`, and `kit wait ci`,
+with no `origin` remote (git's "No such remote") has no GitHub repo: `kit pr` stops with `no GitHub repo`, and `kit wait ci`,
 `kit status` and `kit doctor` say so and carry on. Environment
 overrides keep winning over the file: `KIT_MAIN_ROOT`, `KIT_DEV_ROOT`, `KIT_PREVIEW_URL`, `KIT_PLAYWRIGHT_MODULE`. This
 editor's file holds Lex's machine folders (`/home/ubulex/...`); on another machine set those
@@ -90,7 +92,7 @@ overrides or edit the file.
 - `scripts/agents/review-brief.sh <ticket-file> [base=origin/dev]` (`kit review --ticket` builds the same brief itself) prints the standard slice brief: diff scope, ticket/linked spec, standards, finding format and the author's validation contract. Review completion accepts the first non-blank line, stripping a leading BOM or markdown fence.
 - `scripts/agents/agent.sh build|review <worktree> <brief> [--model M] [--cli codex|claude|grok] [--effort E] [--base REF] [--out DIR]` runs the selected agent; `agent.sh --resume <out-dir>` continues a stopped run. Defaults, adapters and resume below.
 - `scripts/agents/sol.sh <worktree> <brief-file> [effort=medium]` is a compatibility wrapper for `agent.sh build`; model/CLI environment overrides apply. The runner prints its artifact directory.
-- `scripts/agents/unit.sh [files...]` runs the given files, or every file matching `unit.files`, through `unit.run`; prints pass/fail counts and each failure's name and first four error lines. Preserves the command's exit status; full log: `.scratch/unit/<time>-<pid>.log`. A test that never settles fails after `ASE_UNIT_TIMEOUT_MS` (default 120000), naming the test.
+- `scripts/agents/unit.sh [files...]` runs the given files, or the files `kit unit --list` selects from `unit.files`, through `unit.run`; prints pass/fail counts and each failure's name and first four error lines. Preserves the command's exit status; full log: `.scratch/unit/<time>-<pid>.log`. A test that never settles fails after `ASE_UNIT_TIMEOUT_MS` (default 120000), naming the test.
 - `scripts/agents/shots.sh <out-dir> <scratch-spec.spec.ts>` (what `kit shots --spec` calls) runs only that `.scratch/` scenario through a dedicated Playwright config on a `port.sh` slot. Serves the real starter over fake GitHub, stops its server on completion/failure, and prints PNG paths. Fixture: `${ASE_NATIVE_SAVE_FIXTURE:-$HOME/Projects/native-site-editor-starter}`; screenshot destination: `ASE_SHOTS_OUT_DIR`. Example below.
 - `scripts/agents/suite-summary.mjs <results.json> [...]` merges shard counts and prints each failure's file, line, title and first error line; labels and separately counts matches in [tests/known-failures.json](../../tests/known-failures.json) (or the registry at `ASE_KNOWN_FAILURES`) as known flaky or known failing on dev. It exits non-zero for every failure, report error or unreadable input. Registry titles match exactly and survive line moves; line-only entries cover parameterized tests, and spec-only entries cover the file.
 - `scripts/agents/ci-fonts.conf` is a fontconfig with only DejaVu Sans, as on the CI runners; `FONTCONFIG_FILE=$PWD/scripts/agents/ci-fonts.conf` before a browser run uses it (cache in `~/.cache/fontconfig-ci`).

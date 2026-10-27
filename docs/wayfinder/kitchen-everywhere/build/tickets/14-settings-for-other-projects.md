@@ -58,4 +58,12 @@ Tests (temp repos with the research 04 `techies-playground` settings: land `main
 
 Feature list: no change (kit and docs only; nothing in the editor changes).
 
-Left for later: `kit slice`'s builder contract and `agent-run.mjs`'s build contract still say "npm run check" and "npm run lint" for every project (`kit-slice.test.ts`, outside this ticket, expects that wording with no settings file); `docs/agents/guardrails.md` still names only `port.sh` for servers. This editor's `unit.files` (`tests/*.test.ts`, in `kit.json`, outside this ticket) no longer lets `--affected` pick the nested `tests/slot-ghosts/validation.test.ts`, which `npm test` never ran either; `"tests/**/*.test.ts"` would bring it back. The `kit fix` brief's settings-driven wording has no test of its own (`kit-fix.test.ts` is outside this ticket).
+Left for later: `agent-run.mjs`'s build contract still says "npm run check" and "npm run lint" for every project, and `docs/agents/guardrails.md` still names only `port.sh` for servers (both outside this ticket). This editor's `unit.files` (`tests/*.test.ts`, in `kit.json`, outside this ticket) no longer lets `--affected` pick the nested `tests/slot-ghosts/validation.test.ts`, which `npm test` never ran either; `"tests/**/*.test.ts"` would bring it back.
+
+### Review fixes (2026-10-27)
+
+- The slice builder contract and the fix brief name `kit unit --affected` only with `unit.files`, the type check only with `checks.check`, and lint and specs only when set (one helper, `builderChecks` in `review-brief.mjs`); this editor's wording is unchanged. Tests: `kit-slice` (editor and playground wording), `kit-fix` (round brief with and without lint and unit), `kit-review` (`builderChecks`).
+- "No GitHub repo" now means only git's "No such remote" (exit 2) in `pr`, `wait ci`, `status` and `doctor`; `wait ci` asks about `KIT_ROOT`'s remote, not the folder it runs in (test: `wait ci` from a non-repo folder still reads CI).
+- `unit.sh` with no files runs what `kit unit --list` selects, so ignored build output is left out by both (test: an ignored `src/dist/x.test.js`); `agent-unit-timeout`'s full-suite case now runs in a small git repo with its own settings. The import scan and folder patterns share one extension list (`.cjs`, `.mts`, `.cts` included).
+- `bash-guard` passes the server hint through the environment, so backslashes survive (test).
+- Tests for a timed-out `checks.doctor` command, a failed fetch on a passing base, and `--base main` with land and release both `main` (and still refused when land is `dev`).
