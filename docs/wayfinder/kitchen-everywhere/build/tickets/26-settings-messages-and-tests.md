@@ -2,7 +2,7 @@
 title: Settings problems say the right thing, and the untested settings paths get tests
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-26
 builder: claude
 blocked_by: [15-machine-wide-state, 19-doctor-gate-and-fix-builder, 21-launcher-and-update]
 ---
