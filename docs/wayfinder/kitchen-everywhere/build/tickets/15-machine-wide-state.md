@@ -1,8 +1,8 @@
 ---
 title: One Grok count for the computer, its weekly use in the sweep
 type: task (AFK)
-status: open
-assignee: ke-15
+status: closed
+assignee: build/ke-15-machine-wide-state
 builder: claude
 blocked_by: [14-settings-for-other-projects]
 ---
@@ -38,3 +38,15 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke15 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/15-machine-wide-state.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke15 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, the sweep section as printed, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- **One count for the computer.** `kit review` now counts GPT and Grok reviews in `review-budget.json` in the kit's state folder (`$XDG_STATE_HOME/agent-kit` when that is an absolute path, else `~/.local/state/agent-kit`; `kitStateDir` in `kit-lib.mjs`, `kit_state_dir` in `kit-lib.sh`), as `{ week: { family: { project: count } } }`. The limit applies to the sum over projects; the rules are unchanged (Claude not counted, an empty diff or a usage-limit refusal gives the slot back). The ledger keeps this week and last (the sweep runs on Tuesdays) and drops older weeks.
+- **The old count moves once.** The first counted review in a project moves its main folder's `.scratch/review-budget.json` into the machine ledger under that project's name and deletes the old file, both under their locks. A refusal at the limit still saves what moved. If an older kit writes the old file again, only those new counts move next time. A Claude review leaves the old file alone.
+- **The sweep shows the week's Grok use.** `kit sweep` adds "Grok reviews this week": this ISO week's total against `ASE_REVIEW_BUDGET_GROK`, a line per project (projects in `projects.json` show 0), and last week's total. Until a counted review moves the old file in, the sweep reads it too (read-only, once per folder). A broken ledger shows one `unreadable` line and the rest of the bundle still comes out.
+- **Project list.** `projects.json` in the state folder is `{ "<project>": { "root": "<main folder>" } }` (`kitProjects` reads it; `kit init` will write it in ticket 22). The one-time step added this editor by hand: `~/.local/state/agent-kit/projects.json` lists `native-site-editor` at `/home/ubulex/Projects/native-site-editor`. The old `.scratch/review-budget.json` (5 Grok reviews in 2026-W44) was left in place, so older checkouts keep counting against it until this lands; the first Grok review after that moves it in.
+- **Tests** (temp `XDG_STATE_HOME`): `tests/agent-scripts.test.ts`: two projects share one count, the old file moves once and is not counted twice, a held lock on the old file moves nothing, an old-shape count is named, and the state folder agrees in Node and bash. `tests/kit-review.test.ts`: two temp projects share one Grok count end to end, a usage-limit refusal gives the shared slot back, the first counted review moves the old count once, and every existing budget test now reads the machine ledger. `tests/kit-sweep.test.ts`: the section with no ledger, with two projects plus a listed one at 0, with unmoved old files counted once, and with a broken ledger.
+- **Real run:** `scripts/agents/kit sweep` printed `## Grok reviews this week (113 bytes)`, and the bundle reads `- 5 of 8 in 2026-W44, whole computer` / `- native-site-editor: 5` / `- last week, 2026-W43: 0`.
+- **Docs:** `docs/agents/agent-scripts.md` (`kit review` budgets, `kit sweep` section) and `docs/agents/kitchen.md` (the per-week counts line under Who cooks).
+- Validation: `RESULT: ok unit 301/301 (13 files)` from `scripts/agents/kit unit --affected`; `npm run check` and `npm run lint` pass.
+- Feature list: no change (kit and docs only, nothing in the editor).
