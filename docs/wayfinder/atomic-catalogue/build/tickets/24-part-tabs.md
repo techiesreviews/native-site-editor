@@ -17,7 +17,7 @@ Add the Tabs and segmented group to the board as catalogue parts. This slice add
 - Options and merges from research 04's proposal (`git show origin/research/ac-04-parts-inventory:docs/wayfinder/atomic-catalogue/research/04-parts-inventory.md`, "Proposed catalogue" and "Tabs (missing) and toggle groups"): buttons with `role="tab"` or pressed.
 - Uses only shared tokens (slices 02 and 03); every state on the board (normal, hover, pressed, focus, disabled, busy where it applies), light and dark, 390 and 1280 wide.
 - Registered in `src/catalogue/parts.ts`.
-- Mock-up for Tuesday 3 Nov: [10-first-parts-and-edit-bar.html](../../prototypes/10-first-parts-and-edit-bar.html)
+- Mock-up approved by Lex (2026-10-27, "the after is great"): [10-first-parts-and-edit-bar.html](../../prototypes/10-first-parts-and-edit-bar.html)
 
 ## Files
 

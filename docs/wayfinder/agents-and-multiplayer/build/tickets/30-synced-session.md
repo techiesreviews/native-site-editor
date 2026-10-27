@@ -15,11 +15,12 @@ People without an account edit with Lex through a link. Stage 3 starts only afte
 
 [Ticket 07](../../tickets/07-grill-synced-session.md#resolution-2026-10-24) and CONTEXT.md "Synced session":
 
-- Share live in the project menu copies a link: a session token plus the key after `#`.
+- Share to edit in the project menu, then Copy edit link, copies a link: a session token plus the key after `#` (labels changed by Lex on 2026-10-27; no Live badge).
 - A guest types a name and edits text, pictures and sections on the pages in the session.
 - Only Lex saves, publishes, changes files or settings, and uses agents.
 - The session lasts while his tab is open; Stop sharing or closing the tab ends it and kills the link. Every share makes a new link.
 - Guests' changes become his unsaved changes and briefly show their author's colour.
+- While a guest types, her caret shows in the page text in her colour, and she sees Lex's. It uses the shared caret look from ticket 23 and mock-up 13 (Lex, 2026-10-27: "we see the caret when people are typing somewhere").
 - Mock-up approved with changes by Lex (2026-10-27), changes applied, confirm 3 Nov: [14-share-live.html](../../prototypes/14-share-live.html)
 
 ## Files
