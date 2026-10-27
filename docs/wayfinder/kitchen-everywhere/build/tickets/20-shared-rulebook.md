@@ -54,10 +54,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - **`kit rulebook`** (`scripts/agents/kit.d/rulebook`) prints the shared rulebook, a blank line, then the
   extras (relative or absolute path); `RESULT: ok rulebook shared and <file>`. No `rulebookExtras`:
   shared part plus `No project extras: …` (`RESULT: ok rulebook shared only`); an unreadable extras
-  file, or no `jq`, fails after the shared part; any argument is a usage error (exit 2).
+  file, a broken settings file (`cannot read scripts/agents/kit.json: <jq error>`) or no `jq` fails
+  after the shared part; a kit without `docs/kitchen.md` fails before it; any argument is a usage
+  error (exit 2).
 - **`kit next`** reads its builder and reviewer from the shared rulebook's "Builder, every slice" and
   "Review, every change" rows in `$KIT_HOME/docs/kitchen.md`; the same row in the extras wins; a
-  missing file or row fails before any hand-out. Before and after on this build's own map
+  missing file or row fails before any hand-out (`kit next --help` says so). `--run-group` has its
+  builder already and never reads the rulebook. The station 5 brief names `ASE_REVIEW_MODEL=<review pin>`. Before and after on this build's own map
   (`kit next kitchen-everywhere`): identical, `next: …/28-kit-home-test-env-and-gaps.md
   builder=claude-opus-5-5 owner=ke-28 why=slot 1/5`, six `waits:` lines, `RESULT: ok next 1 ready, 6 waiting`.
 - **`docs/agents/kitchen.md`** is the pointer: run `kit rulebook`, where both files are, and one heading
@@ -95,9 +98,13 @@ Section map (old `kitchen.md` → new place):
 Tests: `tests/kit-rulebook.test.ts` (new: output of both parts here and in a temp project, absolute
 path, no extras, missing extras or a folder, usage and help, every link and anchor in the four files,
 the pointer keeps every old heading, the shared rulebook names no editor-only fact and links only
-inside the kit, the two pin rows exist); `tests/kit-next.test.ts` (pins from a `KIT_HOME` rulebook
-reach `next:` and `ASE_REVIEW_MODEL`, an extras row wins, a missing rulebook, extras or pin fails; the
-real-kit-home test links `docs` too).
+inside the kit, the two pin rows exist, a kit with no shared rulebook, a broken settings file and a
+`PATH` without `jq` fail; the link check also covers `runner.md` and `agent-scripts.md`);
+`tests/kit-next.test.ts` (pins from a `KIT_HOME` rulebook reach `next:` and `ASE_REVIEW_MODEL`,
+extras builder and reviewer rows win through `--start`, a missing rulebook, extras or pin fails, a
+group run works with a kit that has no `docs/`; the real-kit-home test links `docs` too). The
+extras link the issue tracker's Wayfinding operations and Build files sections; the pointer sends
+the feature list and `kit ux` (stations 7, 11) to the extras' Visible changes section.
 
 Validation: `scripts/agents/kit unit --affected` `RESULT: ok unit 50/50 (2 files)`; docs guards and
 neighbours (`agent-scripts`, `code-map`, `mcp-runtime`, `ux-rulebook`, `kit-doctor`, `agent-tickets`)
