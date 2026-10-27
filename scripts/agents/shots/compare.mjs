@@ -28,7 +28,7 @@ export const toolingFiles = [
   "scripts/agents/kit",
   "scripts/agents/kit-lib.sh",
   "scripts/agents/kit-lib.mjs",
-  "scripts/agents/kit.d/shots",
+  "scripts/agents/project.d/shots",
   "scripts/agents/shots/",
   "tests/support/scenarios.ts",
   "tests/native-save/open-picker.ts",
@@ -337,7 +337,7 @@ async function capture(root, scenario, name, out, widths, themes, env, stamp) {
   const file = join(stepsDir, `${stamp}-${randomUUID()}.json`);
   try {
     await writeFile(file, JSON.stringify({ screen: scenario.screen, steps: scenario.steps, name }));
-    return await run(join(root, "scripts/agents/kit.d/shots"), ["--steps", file, "--out", out, ...matrixArgs(widths, themes)], {
+    return await run(join(root, "scripts/agents/project.d/shots"), ["--steps", file, "--out", out, ...matrixArgs(widths, themes)], {
       cwd: root, env: { ...env, KIT_ROOT: root }, forward: line => !line.startsWith(out) && !line.startsWith("contact:") && !/^\d+ files:/.test(line),
     });
   } finally { await rm(file, { force: true }); }

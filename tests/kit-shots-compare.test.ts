@@ -389,7 +389,7 @@ process.exitCode = failed ? 1 : 0;
 
 test("compare coordinates fake captures, remote refs, cache reuse and partial matrices", async () => {
   const dir = await temp(), repo = join(dir, "repo"), mainRoot = join(dir, "main"), out = join(dir, "out"), fixture = join(dir, "fixture");
-  await mkdir(join(repo, "scripts/agents/kit.d"), { recursive: true });
+  await mkdir(join(repo, "scripts/agents/project.d"), { recursive: true });
   await mkdir(join(repo, "node_modules"));
   await mkdir(fixture);
   const fixtureLink = join(dir, "fixture-link");
@@ -405,7 +405,7 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
   const remote = join(dir, "remote.git");
   git(repo, "clone", "--bare", "-q", repo, remote);
   git(repo, "remote", "add", "origin", remote);
-  const command = join(repo, "scripts/agents/kit.d/shots");
+  const command = join(repo, "scripts/agents/project.d/shots");
   await writeFile(command, fakeCapture);
   await chmod(command, 0o755);
   git(repo, "add", ".");
@@ -426,7 +426,7 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
   assert.match(first.stderr, /child diagnostic/);
   assert.doesNotMatch(first.stderr, /captured no ok shots/);
   const base = join(mainRoot, ".scratch/shots-base", baseSha);
-  await assert.rejects(lstat(join(base, "scripts/agents/kit.d/shots")), { code: "ENOENT" });
+  await assert.rejects(lstat(join(base, "scripts/agents/project.d/shots")), { code: "ENOENT" });
   const second = run(args);
   assert.equal(second.status, 0, second.stderr);
   assert.match(second.stdout, /base 2 cached, 0 shot; after ok/);
@@ -505,7 +505,7 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
 });
 
 test("wrapper help and rejected compare arguments never capture", () => {
-  const run = (args: string[]) => spawnSync("scripts/agents/kit.d/shots", args, { encoding: "utf8", timeout: 15_000 });
+  const run = (args: string[]) => spawnSync("scripts/agents/project.d/shots", args, { encoding: "utf8", timeout: 15_000 });
   for (const flag of ["--help", "-h"]) {
     const help = run(["--compare", "dev", flag]);
     assert.equal(help.status, 0, help.stderr);

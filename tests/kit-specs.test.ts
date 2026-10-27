@@ -10,6 +10,8 @@ import { combineOutcomes, importsOf, namedSpecs, planShards, removedStrings, rou
 import { specsDigest } from "../scripts/agents/specs-digest.mjs";
 
 const kit = resolve("scripts/agents/kit");
+// The fake projects have no settings file naming their commands folder, so name this project's.
+const commands = resolve("scripts/agents/project.d");
 const save = (name: string) => `tests/native-save/${name}.spec.ts`;
 const preview = "tests/native-preview/preview.spec.ts";
 
@@ -290,7 +292,7 @@ main().catch(error => { console.error(error); process.exit(1); });
     assert.equal(result.status, 0);
   }
   const run = (args: string[], env: NodeJS.ProcessEnv = {}) => spawnSync(kit, ["specs", ...args], {
-    cwd: root, env: { ...process.env, ASE_SPEC_SHARDS: undefined, KIT_SPECS_FREE_SLOTS: undefined, KIT_ROOT: root, KIT_SPECS_RUNNER: join(root, "fake-runner"), ...env }, encoding: "utf8", timeout: 15_000,
+    cwd: root, env: { ...process.env, ASE_SPEC_SHARDS: undefined, KIT_SPECS_FREE_SLOTS: undefined, KIT_ROOT: root, KIT_COMMANDS_DIR: commands, KIT_SPECS_RUNNER: join(root, "fake-runner"), ...env }, encoding: "utf8", timeout: 15_000,
   });
   return { root, put, git, files, base, run, calls };
 }
@@ -722,7 +724,7 @@ for (const signal of ["SIGINT", "SIGTERM"] satisfies NodeJS.Signals[]) {
     const files = largeSelection(f);
     const child = spawn(kit, ["specs", ...files, save("actual")], {
       cwd: f.root,
-      env: { ...process.env, KIT_ROOT: f.root, KIT_SPECS_RUNNER: join(f.root, "fake-runner"), ASE_SPEC_SHARDS: "2", FAKE_WAIT_FOR_SIGNAL: "1" },
+      env: { ...process.env, KIT_ROOT: f.root, KIT_COMMANDS_DIR: commands, KIT_SPECS_RUNNER: join(f.root, "fake-runner"), ASE_SPEC_SHARDS: "2", FAKE_WAIT_FOR_SIGNAL: "1" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     const closed = once(child, "close", { signal: AbortSignal.timeout(15_000) });
