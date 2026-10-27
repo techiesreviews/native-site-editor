@@ -1,7 +1,7 @@
 ---
 title: The kit launcher names the folder that vanished, and the launcher docs say what the code does (second look on 39)
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-49
 builder: claude
 blocked_by: [39-launchers-pinned-kit-and-whole-kit]
@@ -38,3 +38,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke49 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/49-launcher-names-removed-folder.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke49 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, the message before and after, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- `scripts/agents/launcher/kit` keeps the picked folder in `folder` before resolving it, so the message names it. Before: `RESULT: fail no Agent Kit at  (removed while starting)`; after: `RESULT: fail no Agent Kit at <data>/agent-kit/<commit> (removed while starting)`.
+- Nit: a fresh clone that fails the whole-kit check now ends `(the clone of <repo> holds no whole kit)` instead of `no machine copy; cannot clone …`; a clone that fails still says `cannot clone`.
+- `docs/agents/agent-scripts.md`: a child picks again from `current` or the cache clone; the hook launcher also needs `hooks/run.sh`; a person's `KIT_HOME` wins over a different `KIT_HOME_PINNED`; both failure messages named.
+- `tests/kit-launcher.test.ts`, four new tests: a picked folder removed just before the resolve step (an exported `cd` function removes it) is named (failed before the fix with the empty folder); a pinned whole kit without `hooks/run.sh` is kept by `kit where` while the hook runs `current`'s guard; a removed pinned cache folder is cloned fresh from the newest kit and the hook then runs its guard; a person's whole `KIT_HOME` beside a different `KIT_HOME_PINNED` wins for both launchers. The two "cannot clone" tests now use an unreachable repo (an empty repo clones, so it now gets the clearer clone message), and the half-kit clone test expects the new message.
+- `scripts/agents/kit unit --affected`: `RESULT: ok unit 20/20 (1 files)`; `npm run lint` exit 0.
+- Feature list: no change (agent tooling only; nothing in the editor changes).
