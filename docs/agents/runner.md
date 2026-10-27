@@ -1,7 +1,7 @@
 # Build slice runner
 
-The steps one slice runs through, end to end. The lead starts each slice as its own T3 thread ([kitchen.md](kitchen.md),
-station 5) with the brief in station 5; a helper continues a stuck slice from here. Command options live in [agent-scripts.md](agent-scripts.md#kit)
+The steps one slice runs through, end to end. The lead starts each slice as its own T3 thread ([the kitchen rulebook](../../scripts/agents/docs/kitchen.md#5-hand-out),
+station 5; `kit rulebook`) with the brief in station 5; a helper continues a stuck slice from here. Command options live in [agent-scripts.md](agent-scripts.md#kit)
 and each `--help`. A build's own `runner-extras.md` (next to its map) wins where it differs.
 
 ## Rules
@@ -36,13 +36,13 @@ and each `--help`. A build's own `runner-extras.md` (next to its map) wins where
   Codex runs them in the foreground or its background terminal. Timeout 124 means still running; wait again.
 - `kit bg --list` shows state and log paths; `kit bg --stop <name>` stops only that group. Other owned processes, logs or CI: `scripts/agents/kit wait pid|output|ci`.
   Never look up pids with `ps | grep`; never write `until … sleep` or `pgrep -f` loops.
-- **After an app restart**, reconnect with `kit bg --list` and `kit wait job <name>` first (the lead then runs `kit heartbeat <map>`, its 30-minute check-in: [kitchen.md station 5](kitchen.md#5-hand-out)); `scripts/agents/kit status [map]` shows landed work and open PRs.
+- **After an app restart**, reconnect with `kit bg --list` and `kit wait job <name>` first (the lead then runs `kit heartbeat <map>`, its 30-minute check-in: [kitchen station 5](../../scripts/agents/docs/kitchen.md#5-hand-out)); `scripts/agents/kit status [map]` shows landed work and open PRs.
   `scripts/agents/agent.sh --resume <out-dir>` continues a builder; rerunning `kit pr --ticket <ticket>` reuses the open PR and saved review.
 
 ## Build and tests
 
 - **Default:** from a clean worktree, `scripts/agents/kit bg slice-<NN> -- scripts/agents/kit slice --ticket <ticket> --builder claude-opus-5-5`
-  with `ASE_REVIEW_MODEL=claude-opus-5-5` (pins: [kitchen.md](kitchen.md#who-cooks-pins-from-2026-10-22)), then `kit wait job slice-<NN> --timeout 2h` (brief, build, commit, review, ≤3 `kit fix` rounds, `kit pr`; a rerun resumes). Every open finding blocks before three completed rounds; afterwards P2/P3 defects and validation gaps proceed as follow-ups, while P0/P1 defects, defects without readable severity and unreadable reviews leave the PR unmerged. A covering review survives ticket-only commits on resume.
+  with `ASE_REVIEW_MODEL=claude-opus-5-5` (pins: [the kitchen rulebook](../../scripts/agents/docs/kitchen.md#who-cooks-pins-from-2026-10-22)), then `kit wait job slice-<NN> --timeout 2h` (brief, build, commit, review, ≤3 `kit fix` rounds, `kit pr`; a rerun resumes). Every open finding blocks before three completed rounds; afterwards P2/P3 defects and validation gaps proceed as follow-ups, while P0/P1 defects, defects without readable severity and unreadable reviews leave the PR unmerged. A covering review survives ticket-only commits on resume.
 - Manual fallback: `builder: claude`: implement directly. Another model: write `.scratch/agent-brief.md`
   with ticket path, Files list and acceptance, and run `scripts/agents/agent.sh build "$PWD" .scratch/agent-brief.md --model
   <model> --effort <effort>` in the background. Inspect the report and diff; stay inside the ticket's Files; then commit.

@@ -231,6 +231,7 @@ One line per media-* module. Concern-level rows sit in the table above.
 | Focused ports, exclusive timing and suite shards | `scripts/agents/port.sh`; `scripts/agents/timing.sh`; `scripts/agents/full-suite.sh`; `scripts/agents/suite-summary.mjs` |
 | Cold-load measurement and worktrees | `scripts/agents/cold.sh`; `scripts/agents/worktree.sh` |
 | Agent kit: front door, commands and helpers | `scripts/agents/kit`; `scripts/agents/kit.d/` (shared commands); `scripts/agents/project.d/` (this project's own commands: specs, shots, size, preview); `scripts/agents/kit-lib.sh`; `scripts/agents/kit-lib.mjs`; `scripts/agents/pr-tier.mjs` — `classify`, `checkSteps` |
+| Kitchen rulebook, printed by kit rulebook | `scripts/agents/docs/kitchen.md` (shared); `scripts/agents/kit.d/rulebook`; `scripts/agents/docs/kitchen-extras-template.md`; `docs/agents/kitchen-extras.md` (this editor's extras); `docs/agents/kitchen.md` (pointer) |
 | Shared browser scenarios (specs and kit shots) | `tests/support/scenarios.ts` — `openEditor`, `openMedia`, `pickPicture`, `switchSiteMidUpload` |
 | Await-race helper for async writers | `tests/support/await-race.ts` — `forEachAwait` |
 
