@@ -54,6 +54,7 @@ Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **C
 | [19 A broken `--help` does not stop the fix builder (second look on 10)](tickets/19-doctor-gate-and-fix-builder.md) | S–M | claude | – |
 | [25 The editor values slice 11 left in shared code (review of 11)](tickets/25-editor-values-left-after-11.md) | M | claude | 14, 18 |
 | [26 Settings problems say the right thing, and their untested paths get tests (review of 11)](tickets/26-settings-messages-and-tests.md) | S–M | claude | 15, 19, 21 |
+| [27 Doctor's commands check says so when the settings file is broken (second look on 12)](tickets/27-doctor-commands-on-broken-settings.md) | S | claude | 26 |
 
 ## 2. Setup pieces (tickets 01, 05; research 04)
 
@@ -99,7 +100,7 @@ The frontier decides; this is one order that keeps to the rules (at most 5 at on
 
 1. 10, then 11, 12 and 13 one at a time (they share the front door and the kit library).
 2. 14; then 15 and 21 side by side, with 25 once 18 is in.
-3. 16, then 17 (after 25); 26 beside them once 15, 19 and 21 are in.
+3. 16, then 17 (after 25); 26 beside them once 15, 19 and 21 are in; 27 after 26 (both change `kit.d/doctor`).
 4. 20, then 22, then 23 and 24.
 5. 30 alone, after Lex's OK; then 31 after Lex's OK.
 6. 40 to 46, one after another, each after Lex's OK; 47 whenever Lex builds in `camframe` again.

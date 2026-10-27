@@ -9,7 +9,7 @@ blocked_by: []
 
 ## What
 
-Lex decided on 2026-10-25 to raise the boot budget (`scripts/agents/kit.d/size`, `tests/perf/byte-budget.ts`) from 355 KB to 362 KB for the clean-up: splitting `src/main.ts` into modules (clean-up slices 86–89) adds about 2 KB of port wiring per slice, and slice 86 measured 356 KB (364,582 bytes against 363,520). The budget was raised on the condition that it comes back down.
+Lex decided on 2026-10-25 to raise the boot budget (`scripts/agents/project.d/size`, `tests/perf/byte-budget.ts`) from 355 KB to 362 KB for the clean-up: splitting `src/main.ts` into modules (clean-up slices 86–89) adds about 2 KB of port wiring per slice, and slice 86 measured 356 KB (364,582 bytes against 363,520). The budget was raised on the condition that it comes back down.
 
 ## Fix
 
