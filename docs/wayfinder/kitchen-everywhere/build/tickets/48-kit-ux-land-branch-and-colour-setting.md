@@ -2,6 +2,7 @@
 title: "`kit ux` takes its base and colour check from the settings (second look on 25)"
 type: task (AFK)
 status: open
+assignee: ke-48
 builder: claude
 blocked_by: [25-editor-values-left-after-11]
 ---
