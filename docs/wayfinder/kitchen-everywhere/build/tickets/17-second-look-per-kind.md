@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [14-settings-for-other-projects, 16-opencode-review-path]
+blocked_by: [14-settings-for-other-projects, 16-opencode-review-path, 25-editor-values-left-after-11]
 ---
 
 ## Goal

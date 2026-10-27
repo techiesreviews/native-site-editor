@@ -107,7 +107,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
     - `kit review` and `unit.sh` with a bad file.
     - `checks.extra` on a non-kit diff.
     - Sweep corrections under `notes/maps`.
-- **Still open, outside this ticket's Files:** `scripts/agents/worktrees.mjs` (lines 71, 121, 124) protects only `native-site-editor-dev` or branch `dev` and hard-codes `origin/dev`/`origin/main`, so a project landing on `main` loses dev-worktree protection in `worktrees.sh`. `kit.d/learn`'s `defaultSlug` should read `project`, and `kit.d/learn` line 271 should read `maps` instead of `join(root, "docs/wayfinder")`. `kit.d/slice` line 42 refuses the literal `dev`/`main` instead of `kitBranch("land")`/`kitBranch("release")`. `docs/agents/runner.md` line 73 still says the visible paths live in `pr-tier.mjs` (they are `paths.visible` in `kit.json`). No ticket covers these yet; the lead needs to file one (`worktrees.mjs` should use `kitDevRoot()`, `kitBranch("land")` and `kitBranch("release")`).
+- **Still open, outside this ticket's Files:** `scripts/agents/worktrees.mjs` (lines 71, 121, 124) protects only `native-site-editor-dev` or branch `dev` and hard-codes `origin/dev`/`origin/main`, so a project landing on `main` loses dev-worktree protection in `worktrees.sh`. `kit.d/learn`'s `defaultSlug` should read `project`, and `kit.d/learn` line 271 should read `maps` instead of `join(root, "docs/wayfinder")`. `kit.d/slice` line 42 refuses the literal `dev`/`main` instead of `kitBranch("land")`/`kitBranch("release")`. `docs/agents/runner.md` line 73 still says the visible paths live in `pr-tier.mjs` (they are `paths.visible` in `kit.json`). Filed as [ticket 25](25-editor-values-left-after-11.md) (`worktrees.mjs` uses `kitDevRoot()`, `kitBranch("land")` and `kitBranch("release")`).
 - **PR review fixes (PR #200):**
   - P0: `tickets.mjs` reads `maps` from the settings file of the repo it runs in. The two `tests/agent-tickets.test.ts` cases that start it in a temp git repo passed locally only because the `kit` wrapper exports `KIT_ROOT`; under plain `npm test` (as CI runs it) they failed. Both temp repos now carry a `kit.json` and drop `KIT_ROOT`/`KIT_MAIN_ROOT`/`KIT_DEV_ROOT`. A new case pins the `no scripts/agents/kit.json` failure. Proved: the old test file fails 2/14 without `KIT_ROOT`; `npm test` without the kit roots passes 5911/5911.
   - P3: `kit wait ci --pr N` and `--sha S` no longer read the settings file (they take their branch from GitHub). Pinned in `kit-settings.test.ts` together with `branches.ci` winning over `land`; the test fails without the fix.
@@ -121,6 +121,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - `kit next --help`: byte-for-byte the same.
   - The grep (`grep -rn "origin/dev\|native-site-editor" scripts/agents/kit.d scripts/agents/*.mjs scripts/agents/*.sh`) finds 20 lines, all listed above: `kit.d/ux` 17, 61; `kit.d/learn` 15, 90; `kit.d/specs` 16, 121; `kit.d/size` 16; `kit.d/preview` 2, 13, 112, 206, 207; `worktrees.mjs` 71, 121, 124, 155; `deploy-preview.sh` 2; `context-card.mjs` 68, 69; `shots.sh` 8.
 - **Feature list:** no change (kit plumbing for agents; no editor UI).
+- **Second look (Grok 4.7, 2026-10-27):** two P2s and two validation gaps, evidence `.scratch/reviews/review/ke11-second-look/20261027T080225Z` in the main checkout. `kit.d/next:183` still finds a running slice's map with a `docs/wayfinder` pattern, so with another `maps` a running `runs_alone` slice stops blocking its map (→ [ticket 25](25-editor-values-left-after-11.md)). `kit unit --affected` exits 2 with `Usage:` on a settings problem instead of 1 with a `problem:` line (→ [ticket 26](26-settings-messages-and-tests.md)). Standards: none.
 
 ### Follow-ups
 
@@ -138,3 +139,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation gaps (gap): A full-suite `unit.sh` run with no file arguments, driven by `unit.files`: in `tests/kit-unit.test.ts`, run `unit.sh` with no args against a settings glob that 
 - Validation gaps (gap): Doctor on a project with no `sharedNodeModules` and an installed `node_modules`: assert `✓ node_modules: … (not shared: no sharedNodeModules in scripts/agents/k
 
+The lines above are cut at 160 characters ([ticket 18](18-full-follow-ups.md)); the full findings are in `.scratch/reviews/build/ke-11-project-settings-file/20261027T073718Z` in the main checkout. Where each went:
+
+- [Ticket 25](25-editor-values-left-after-11.md), the editor values left in shared code: both Spec P2s (`pr-tier.mjs` patterns, the colour check), `runner.md:73`, `checks.extra` as a string, the `kit pr` release-branch gap, plus the Done's `worktrees.mjs`, `learn`, `slice`, `kit pr`'s `tests` folder and "no Sol review" line.
+- [Ticket 26](26-settings-messages-and-tests.md), settings messages and tests: `unit.sh` exit 2, missing `jq`, doctor's `node_modules` messages, and the other five validation gaps.
+- Not worth a ticket yet, left here:
+  - The `slice` and `fix` brief text (`npm run check`, `npm run lint`, `docs/agents/features.md`): [ticket 14](14-settings-for-other-projects.md) already makes those briefs name only the checks that are set.
+  - `kit.d/ux` 17 and 61 (`--base origin/dev`): an editor-own command, moved by [ticket 12](12-own-commands-folder.md).
+  - The front door listing `kit.d/` and the unread `commands` and `rulebookExtras` keys: launcher work in tickets 12 and 21.
+  - `sweep`'s "Hand-typed values in src/**/*.css" section: P3, and `sweep` is busy in tickets 15 and 24; take it into 24 if it bites.
+  - The review's optional nits: the dead `[[ $main == "$path" ]]` guard in `worktree.sh:113`, the `/home/ubulex/...` paths committed in `kit.json` (`mainRoot` could go), and `kitSettings()` caching with no reset.
