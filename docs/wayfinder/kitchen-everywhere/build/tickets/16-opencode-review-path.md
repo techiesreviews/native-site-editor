@@ -1,7 +1,7 @@
 ---
 title: An OpenCode path in kit review
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-16
 builder: claude
 blocked_by: [15-machine-wide-state]
@@ -38,3 +38,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke16 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/16-opencode-review-path.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke16 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, the real OpenCode review's `RESULT:` line and evidence path, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- `ASE_REVIEW_MODEL=opencode/<model>` selects a new `opencode` adapter in `agent-run.mjs` (reviews only, like Grok; `--cli opencode` also works). It runs `opencode run --pure --agent ase-review --format json -m <model> --dir <worktree>` with the brief on stdin. `ase-review` is defined through `OPENCODE_CONFIG_CONTENT` with every permission denied except read, grep, glob and list, so the model is never offered edit, write, bash, web or task tools; `OPENCODE_DISABLE_PROJECT_CONFIG=1` and `OPENCODE_DISABLE_CLAUDE_CODE=1` keep the project's OpenCode config and Claude Code files out. OpenCode's own `--variant` names differ by provider, so effort is not passed.
+- The report is the text of the last message in OpenCode's JSON events; the session id comes from the same events and the completeness retry resumes it with `--session`. The events never name the model, so the adapter reads `opencode export <session>` and requires every assistant message to be the requested `<provider>/<model>`.
+- An OpenCode error event with HTTP 429 or a rate/usage-limit message prints `problem: opencode usage limit: <message>` as the last problem line; other error events fail the run with `problem: OpenCode reported an error: …`. OpenCode has no budget family, so `kit review` prints no `budget:` line and counts nothing.
+- Tests: `tests/agent-scripts.test.ts` checks model inference, the read-only arguments and agent permissions, resume arguments, report and model parsing, and usage-limit detection. `tests/kit-review.test.ts` runs `kit review` against a fake `opencode` CLI: a full answer saves the five evidence files and `findings.json` with severities P1 and P3; an incomplete answer is re-asked once in the same session (pass and fail); an answer from another model fails the check; a 429 refusal prints the `problem: opencode usage limit` line; a Grok review's count stays at 1 (and its used-up budget does not block OpenCode).
+- Checked by hand against the real CLI (OpenCode 1.19.4, `opencode/deepseek-v4.1-flash-free`): `ase-review` refused to create a file or run `touch` (no write or bash tools offered), read a file under `.scratch/agent/`, and the adapter's own arguments and `finish` returned the report after the `export` model check. The real `kit review` run in "Done when" is left to the slice; the builder contract forbids running kit review.
+- `scripts/agents/kit unit --affected`: `RESULT: ok unit 86/86 (3 files)`; `npm run check` and `npm run lint` pass.
+- Feature list: no change (agent tooling only; nothing a site editor user sees).
