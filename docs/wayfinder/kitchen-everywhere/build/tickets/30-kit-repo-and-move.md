@@ -37,3 +37,7 @@ The shared kit lives in its own repo, and this editor becomes its first user thr
 Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). Runs alone. After Lex's OK the lead starts it as a T3 thread with builder `claude-opus-5-5`; the editor side lands with `ASE_OWNER=ke-30 scripts/agents/kit pr --ticket docs/wayfinder/kitchen-everywhere/build/tickets/30-kit-repo-and-move.md` after `kit review` and the second look; the kit repo side lands with its own `kit pr`.
 
 - Report: Lex's OK (date), the kit repo URL and first merge SHA, its CI result, this repo's PR and merge SHA, the before-and-after `doctor`, `status`, `next` and `version` lines, the missing-kit warning as printed.
+
+## Comments
+
+- Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.

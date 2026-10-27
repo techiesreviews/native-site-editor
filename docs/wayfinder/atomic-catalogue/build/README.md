@@ -1,5 +1,7 @@
 # Build: atomic design catalogue
 
+**Ready (guess, low confidence, 2026-10-27):** live ~24 Nov (part mock-ups approved ~3 Nov, built parts confirmed on the board ~10 Nov, organisms ~17 Nov).
+
 Lex's second build after the clean-up (order of 2026-10-23): one approved set of parts that every editor screen is made from, shown on a Paper-like board on the preview editor, with the editor's shared values from the techies.tools Framework, every toast replaced by feedback in place, and a count of one-offs that only goes down. Every decision comes from the [map](../map.md)'s closed tickets; this build does not reopen them.
 
 Research is on branches that are never merged (`git show origin/<branch>:<path>`):
@@ -24,17 +26,17 @@ Find takeable slices with `node scripts/agents/tickets.mjs frontier atomic-catal
 
 ## Gate
 
-**Nothing here starts before the [agents and multiplayer build](../../agents-and-multiplayer/build/README.md) is released to production** (Lex's order; ticket 05 of this map kept it). That build's new parts (pins, name chips, carets, agent outline, the MCP menu's agent list) move onto the board in slice 27. The lead checks `kit status` before claiming slice 01.
+**Nothing here starts before the [agents and multiplayer build](../../agents-and-multiplayer/build/README.md) has an empty frontier** (built and waiting for Lex's Tuesday end check; Lex's order, ticket 05 of this map, with the Tuesday rules of 2026-10-27, [kitchen.md](../../../agents/kitchen.md#tuesday-review)). Its release still waits for Lex. That build's new parts (pins, name chips, carets, agent outline, the MCP menu's agent list) move onto the board in slice 27, which also waits for that build's release so the parts it copies are final. The lead checks `node scripts/agents/tickets.mjs frontier agents-and-multiplayer` before claiming slice 01.
 
-## Waves, each merged and checked before the next
+## Waves, each merged before the next
 
 1. **Wave 0, foundations** (01–07): `light-dark()` first, then the shared values, the one-offs count, the board page, and the toasts.
 2. **Wave 1, atoms** (10–14), and **wave 2, molecules and agent parts** (20–27). Each part slice **adds the part to the board only**; it never touches editor screens.
-3. **Replacement slices** (30–42), one per part group. Each is gated on Lex pressing **Approve** for that part on the board ([ticket 08](../tickets/08-prototype-board.md#resolution-2026-10-25)); the mark in `src/catalogue/approvals.json` is the go-ahead. A part Lex has not approved never replaces anything. The lead reads the file before claiming (until `kit next` reads it, factory ticket 05).
-4. **Wave 3, organisms** (50–64, then 66), rebuilt from parts **one at a time** (each `blocked_by` the one before). Lex approves each organism's frame on the board like a part. Slices 54–64 say "re-plan when reached".
+3. **Replacement slices** (30–42), one per part group. Each is gated on Lex's approval of that part: the part's mock-up, approved in a Tuesday pack ahead of time (kitchen "Mock-ups ahead"), lets the slice start, and Lex pressing **Approve** for the built part on the board ([ticket 08](../tickets/08-prototype-board.md#resolution-2026-10-25)); the mark in `src/catalogue/approvals.json` is the go-ahead. A part Lex has not approved never replaces anything. The lead reads the file before claiming (until `kit next` reads it, factory ticket 05).
+4. **Wave 3, organisms** (50–64, then 66), rebuilt from parts **one at a time** (each `blocked_by` the one before). Each organism lands on `dev` once its frame's mock-up is approved (in a Tuesday pack, ahead of time); Lex then confirms the built frames on the board in batches on Tuesdays, before the release. An organism he sends back gets a fix ticket. Slices 54–64 say "re-plan when reached".
 5. **Close-out** (65).
 
-Lex's end check and a release follow wave 0, the replacement slices, and wave 3 (three releases), per the kitchen's stations 10–12.
+Lex's end check and a release follow wave 0, the replacement slices, and wave 3 (three releases), per the kitchen's stations 10–12. Each end check goes into the next Tuesday pack, and the next wave starts as soon as the wave before has landed on `dev`; releases wait for his written go-ahead.
 
 ## Rules for the whole build
 
@@ -143,10 +145,10 @@ Lex's end check and a release follow wave 0, the replacement slices, and wave 3 
 
 The frontier decides; this is one order that keeps to the rules.
 
-1. 01 beside 06; then 02 and 07; then 03; then 04 and 05. Then Lex's wave-0 end check and release.
-2. 10, 13 and 14 together; then 11 and 12; then 20–27 as their parts land. Lex approves parts on the board as they appear.
-3. Each replacement slice as soon as its part is approved. Then Lex's end check and release.
-4. 50 to 64 in order, then 66 (the slim top bar), then 65. Then Lex's end check and release.
+1. 01 beside 06; then 02 and 07; then 03; then 04 and 05. Then Lex's wave-0 end check (Tuesday) and release; wave 1 starts at once.
+2. 10, 13 and 14 together; then 11 and 12; then 20–27 as their parts land. Lex approves the parts' mock-ups ahead in a Tuesday pack, and confirms the built parts on the board the next Tuesday.
+3. Each replacement slice as soon as its part is approved. Then Lex's end check (Tuesday) and release.
+4. 50 to 64 in order, then 66 (the slim top bar), then 65. Then Lex's end check (Tuesday) and release.
 
 ## Lead decisions (technical, made in planning)
 

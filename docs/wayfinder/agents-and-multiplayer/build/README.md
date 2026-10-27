@@ -1,5 +1,7 @@
 # Build: agents and multiplayer
 
+**Ready (guess, low confidence, 2026-10-27):** stage 1 live ~3 Nov, all three stages live ~10 Nov.
+
 Lex's first build after the clean-up (order of 2026-10-23): several agents and subagents working at once while he works, asking them with pins, typing together with agents and people, and files that are always the latest version. Every decision comes from the [map](../map.md)'s closed tickets and [ADR 0003](../../../adr/0003-shared-editing-over-a-store-nothing-relay.md); this build does not reopen them.
 
 Research is on branches that are never merged (`git show origin/<branch>:<path>`):
@@ -19,11 +21,13 @@ Tickets live in [tickets/](tickets/), one slice each, numbered by stage: 10s sta
 
 ## Three stages, each shipped on its own
 
-1. **Stage 1: several agents at once, and asking them** (slices 10–17). Lex's end check, then release.
-2. **Stage 2: typing together** (slices 20–26). Starts after stage 1 is released; Lex's end check, then release.
-3. **Stage 3: people and outside changes** (slices 30–36). Starts after stage 2 is released; Lex's end check, then release.
+Tuesday rules (Lex, 2026-10-27; [kitchen.md](../../../agents/kitchen.md#tuesday-review)): a stage's end check goes into the next Tuesday pack, and its release waits for Lex's written go-ahead on a Tuesday. The next stage starts as soon as the stage before has an empty frontier (built and waiting for that check), not when it is released.
 
-The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slices, and 30 and 32 wait for the last stage-2 slices. The lead does not claim a stage's first slice before the stage before it is released. Each stage follows the kitchen's stations 6–12 ([kitchen.md](../../../agents/kitchen.md)).
+1. **Stage 1: several agents at once, and asking them** (slices 10–17). Lex's end check (Tuesday), then release.
+2. **Stage 2: typing together** (slices 20–26). Starts when stage 1's frontier is empty; Lex's end check (Tuesday), then release.
+3. **Stage 3: people and outside changes** (slices 30–37). Starts when stage 2's frontier is empty; Lex's end check (Tuesday), then release.
+
+The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slices, and 30 and 32 wait for the last stage-2 slices. The lead claims a stage's first slice once those have landed on `dev`, without waiting for the release. A fault Lex finds at a Tuesday end check becomes a fix ticket in its stage and goes before the next stage's remaining slices. Each stage follows the kitchen's stations 6–12 ([kitchen.md](../../../agents/kitchen.md)).
 
 ## Rules for the whole build
 
@@ -84,7 +88,8 @@ The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slice
 | [33 Outside changes fold in](tickets/33-outside-changes-fold-in.md) | M | visible | – | 32 |
 | [34 Folder changes merge too](tickets/34-folder-changes-merge.md) | S | – | – | 33 |
 | [35 Hot preview link](tickets/35-hot-preview-link.md) | L | visible | – | 30 |
-| [36 Close-out: checklist, docs, delete the proof of concept](tickets/36-close-out.md) | S | – | – | 31, 33, 35 |
+| [37 Mock-ups on the preview site](tickets/37-mockups-on-preview.md) | S | – | – | – |
+| [36 Close-out: checklist, docs, delete the proof of concept](tickets/36-close-out.md) | S | – | – | 31, 33, 35, 37 |
 
 ## Suggested waves
 
@@ -92,9 +97,9 @@ The frontier decides; this is one order that keeps to the rules.
 
 1. 10, 11.
 2. 12, 13, 14 (all after 11).
-3. 15, 16, 17. Then Lex's stage-1 end check and release.
-4. 20; 21 alone; then 22, 24, 25, 26; 23 after 22. Then Lex's stage-2 end check and release.
-5. 30 beside 32; then 31, 33, 35; 34 once the local-folders build has shipped; last 36. Then Lex's stage-3 end check and release.
+3. 15, 16, 17. Then Lex's stage-1 end check (Tuesday) and release; stage 2 starts at once.
+4. 20; 21 alone; then 22, 24, 25, 26; 23 after 22. Then Lex's stage-2 end check (Tuesday) and release; stage 3 starts at once.
+5. 30 beside 32; then 31, 33, 35; 37 whenever a slot is free; 34 once the local-folders build has shipped; last 36. Then Lex's stage-3 end check (Tuesday) and release.
 
 ## Lead decisions (technical, made in planning; check with Lex where marked)
 
@@ -105,7 +110,7 @@ The frontier decides; this is one order that keeps to the rules.
   - A synced-session link carries the key after `#`.
   - Signed-in tabs and agents of the same workspace get the room key from the receiving tab over the existing relay handshake. Ticket 20 confirms the exchange in `decide`.
 - **The helper (16)** lives in this repository under `helper/`, as its own small Node package. It is an MCP client of the editor's `/mcp`, signing in through the same OAuth as any agent. It starts agents through ACP.
-  - **Installed (Lex, 2026-10-25: "ok"):** one `npx` command copied by Connect to MCP, published to npm as `@techiesreviews/editor-helper`. The first publish still waits for Lex's OK at build time, because publishing is outward-facing.
+  - **Installed (Lex, 2026-10-25: "ok"):** one `npx` command copied by Connect to MCP, published to npm as `@techiesreviews/editor-helper`. The first publish still waits for Lex's OK, because publishing is outward-facing: it goes into the Tuesday pack as a hard-to-undo question, and slices 17 and 20 test against the local package meanwhile.
   - **Default agent for "Pins go to":** Claude Code (Lex, 2026-10-25).
 - **Preview address (35), Lex 2026-10-25:** "keep it at workers.dev for as long as we can and skip a custom domain for now". The preview runs on a separate small preview Worker with its own `workers.dev` address, so site scripts never share an origin with the editor; each site gets a path (`/<site>/`), not a subdomain. Sites share one origin with each other, which is accepted while this is for internal use. A custom domain returns only if a real need shows up.
 - **Local folders (34)** need the local-folders build (`docs/wayfinder/local-folders/`), which is unbuilt. Slice 34 waits for it; the lead re-plans 34 if that build has not shipped when stage 3 starts.
@@ -113,7 +118,7 @@ The frontier decides; this is one order that keeps to the rules.
 
 ## Lex's checklist: the GitHub App webhook (before slice 32 lands)
 
-Slice 32 first proves the setup on a throwaway test App, including whether installations must approve again when an event is added. Then the lead hands Lex this list, with the exact values filled in by slice 32. About five minutes.
+Slice 32 first proves the setup on a throwaway test App, including whether installations must approve again when an event is added. Then the lead puts this list in the next Tuesday pack, with the exact values filled in by slice 32. About five minutes. Slices 30, 31 and 35 keep running meanwhile.
 
 1. Open github.com → **Settings → Developer settings → GitHub Apps** → the editor's App → **Edit**.
 2. Under **Webhook**, tick **Active**, set the URL the slice gives, and set a secret. The lead asks for the secret through a secret prompt, never the chat.

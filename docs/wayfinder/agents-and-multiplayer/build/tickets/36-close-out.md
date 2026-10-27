@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [31-collaborators-join, 33-outside-changes-fold-in, 35-hot-preview-link]
+blocked_by: [31-collaborators-join, 33-outside-changes-fold-in, 35-hot-preview-link, 37-mockups-on-preview]
 ---
 
 ## Goal
@@ -16,7 +16,7 @@ Finish the build.
 - Lex's webhook checklist is done and a test push reached a tab.
 - `CONTEXT.md` has Live room, Preview link and Helper; `docs/agents/code-map.md` and `docs/mcp.md` are current.
 - ADR 0003 status is set to accepted.
-- The throwaway Worker is deleted: `npx wrangler delete --name am-typing-together-poc` (ticket 12; it also serves `/mockups/`).
+- The throwaway Worker is deleted: `npx wrangler delete --name am-typing-together-poc` (ticket 12; it also serves `/mockups/`). Only after slice 37 serves every mock-up from `preview-editor.techies.tools/mockups/` (Lex, 2026-10-27, Tuesday pack Q4); check that address before deleting. Deleting is hard to undo, so it waits for Lex's go-ahead in the Tuesday pack.
 
 ## Files
 
@@ -26,7 +26,7 @@ Expected (confirm while designing): `CONTEXT.md`, `docs/agents/code-map.md`, `do
 
 - `tests/code-map.test.ts` passes.
 - The delete command's output is quoted in Done.
-- The lead tells Lex the stage-3 preview is ready for his end check.
+- The lead puts the stage-3 end check in the next Tuesday pack.
 
 ## Kit commands and evidence
 

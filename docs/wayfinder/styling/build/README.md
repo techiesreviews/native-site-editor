@@ -1,5 +1,7 @@
 # Build: styling
 
+**Ready (guess, low confidence, 2026-10-27):** Components fixes (stages 1–2) live ~17 Nov; the style panel live ~8 Dec.
+
 Lex's sixth build (order of 2026-10-23): styling without writing CSS.
 
 - **Style panel:** a panel on the right, in the unblockwp layout, that opens from the brush in the edit bar. It has one Bricks-style selector field for classes, looks and states, free fields with one list of the right variables, and real CSS written into the site's own files. The bottom code editor follows along.
@@ -27,7 +29,7 @@ Find takeable slices with `node scripts/agents/tickets.mjs frontier styling`.
 
 ## Gate
 
-**Nothing here starts before the [site structure build](../../site-structure/build/README.md)'s last release** (Lex's order: agents and multiplayer, catalogue, detail pass, site quality, site structure, then this). The exception (Lex, 2026-10-26) is stages 1 and 2, which start right after the catalogue release, beside the detail pass.
+**Nothing here starts before the [site structure build](../../site-structure/build/README.md) has an empty frontier** (built and waiting for Lex's Tuesday end check; Lex's order: agents and multiplayer, catalogue, detail pass, site quality, site structure, then this). The exception (Lex, 2026-10-26) is stages 1 and 2, which start as soon as the [atomic catalogue build](../../atomic-catalogue/build/README.md)'s frontier is empty, beside the detail pass. Releases still wait for Lex's written go-ahead on a Tuesday (Tuesday rules of 2026-10-27, [kitchen.md](../../../agents/kitchen.md#tuesday-review)). Below, "released" next to another map's slice means landed on `dev`.
 
 This build also leans on other maps' slices. `blocked_by` can't point to another map, so each slice names them in its text and the lead checks them before claiming:
 
@@ -45,7 +47,7 @@ This build also leans on other maps' slices. `blocked_by` can't point to another
 1. **Components fixes** (stages 1 and 2, without the panel): slices 12, 13, 20–25, plus 10 and 14. Slice 10 changes nothing visible, but it rides here so 14 and stage 3 can start right after.
 2. **The style panel** (stages 3 and 4, plus 11): slices 11, 30–36, 40 and 41.
 
-Then 49. Each release follows the kitchen's stations 6–12 ([kitchen.md](../../../agents/kitchen.md)), with Lex's end check before it.
+Then 49. Each release follows the kitchen's stations 6–12 ([kitchen.md](../../../agents/kitchen.md)), with Lex's end check (Tuesday) before it; the panel stages start once the Components stages have landed, without waiting for that release.
 
 ## Rules for the whole build
 
@@ -126,8 +128,8 @@ Then 49. Each release follows the kitchen's stations 6–12 ([kitchen.md](../../
 
 The frontier decides; this is one order that keeps to the rules.
 
-1. 10, 12, 13 and 24; then 14, 20, 21, 22, 23 and 25 (20 and 22 both touch the chip and suggestion code, so one after the other). Lex's end check and the Components release.
-2. 11 and 30 together; then 31, 32 and 34; then 33, 35 and 36; then 40 and 41. Lex's end check and the panel release.
+1. 10, 12, 13 and 24; then 14, 20, 21, 22, 23 and 25 (20 and 22 both touch the chip and suggestion code, so one after the other). Lex's end check (Tuesday) and the Components release.
+2. 11 and 30 together; then 31, 32 and 34; then 33, 35 and 36; then 40 and 41. Lex's end check (Tuesday) and the panel release.
 3. 49.
 
 ## Lead decisions (technical, made in planning)

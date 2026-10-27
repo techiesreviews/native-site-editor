@@ -9,14 +9,14 @@ blocked_by: [14-settings-for-other-projects]
 
 ## Goal
 
-Grok reviews are counted once for the whole computer, whatever project asks, and the Monday sweep shows how many were used that week, so Lex can set the cap from real use ([ticket 01 resolution](../../tickets/01-grill-how-the-kitchen-is-copied.md#resolution-2026-10-26) point 4). Today each project would keep its own count in its main folder's `.scratch/review-budget.json`.
+Grok reviews are counted once for the whole computer, whatever project asks, and the Tuesday sweep shows how many were used that week, so Lex can set the cap from real use ([ticket 01 resolution](../../tickets/01-grill-how-the-kitchen-is-copied.md#resolution-2026-10-26) point 4). Today each project would keep its own count in its main folder's `.scratch/review-budget.json`.
 
 ## Decided behaviour
 
 - **Machine-wide state lives in `~/.local/state/agent-kit/`** (`$XDG_STATE_HOME/agent-kit` when set): the review budget (`review-budget.json`) and the project list (`projects.json`, written by `kit init` in ticket 22; this slice adds this editor by hand in the test and a one-time step). Research 04 names this folder.
 - **One count for the computer.** `kit review` reserves and releases its Grok slot in the machine ledger; the existing rules stay (usage-limit refusal gives the slot back). The first run moves this editor's existing `.scratch/review-budget.json` count into the machine ledger, once. The cap stays at 8 a week (`ASE_REVIEW_BUDGET_GROK`) until Lex sets it from real use (README helper decision 5).
 - **Scoreboards and feedback logs do not move** (ticket 05 point 5): they stay in each project's main folder and `build/` files.
-- **The Monday sweep shows the week's Grok use:** `kit sweep` adds a short section "Grok reviews this week: N of 8, by project" read from the ledger. It runs only in this editor's sweep (README helper decision 12).
+- **The Tuesday sweep shows the week's Grok use:** `kit sweep` adds a short section "Grok reviews this week: N of 8, by project" read from the ledger. It runs only in this editor's sweep (README helper decision 12).
 
 ## Files
 
