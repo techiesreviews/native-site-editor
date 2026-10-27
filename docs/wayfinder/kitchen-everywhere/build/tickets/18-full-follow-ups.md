@@ -1,8 +1,8 @@
 ---
 title: Follow-ups written in full
 type: task (AFK)
-status: open
-assignee: ke-18
+status: closed
+assignee: build/ke-18-full-follow-ups
 builder: claude
 blocked_by: []
 ---
@@ -36,3 +36,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke18 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/18-full-follow-ups.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke18 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- `kit pr` writes each non-blocking review finding into the ticket's `### Follow-ups` in full, one bullet per finding. The PR body, the PR comment and the console list keep a 160-character short form; a cut line ends with `…`. A rerun compares full lines and adds nothing new.
+- Ticket 10's 11 follow-ups are rewritten in full from the saved `findings.json` files; a note names the landed commits (ddbf77dc3, 3cb082ba5) in place of the rebased ones they cite. The untested default `KIT_COMMANDS_DIR` path is marked fixed in 498334975; the P2 doctor gate and its test point to ticket 19; the clipped-follow-ups bullet points here.
+- Tests: `tests/kit-pr.test.ts` has a new case with a P2 finding longer than 160 characters: the ticket holds the whole text, the PR body and comment show the cut line ending in `…`, and a second run changes neither the ticket nor HEAD and posts no second comment. The existing console-cap case now expects the `…`.
+- Validation: `RESULT: ok unit 87/87 (1 files)` (`kit unit --affected`); `npm run lint` exit 0; `tickets.mjs check` 759 tickets.
+- Feature list: no change (agent kit only, nothing a site editor user sees).
