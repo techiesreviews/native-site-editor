@@ -40,10 +40,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ## Done (2026-10-28)
 
 - `kit unit` now reads `unit.sh`'s stderr while still showing it. When `unit.sh` prints no `log:` line, `kit unit` ends with `problem:` and `RESULT: fail unit <cause>`, where the cause is the last line `unit.sh` wrote to stderr, minus any `unit.sh: ` prefix. Examples: `RESULT: fail unit unit.sh needs unit.run in scripts/agents/kit.json`, `RESULT: fail unit jq is not installed; install jq`, `RESULT: fail unit scripts/agents/kit.json is unreadable: …`. `unit.sh returned no log path` now shows only when `unit.sh` printed nothing. The exit status is still 1 (`scripts/agents/kit.d/unit`).
-- Tests that failed before the fix: `kit unit <file>` without `unit.run` (`tests/kit-settings.test.ts`, and in `tests/kit-unit.test.ts` for named files and for none), with a broken `kit.json`, and without jq. Each now checks the whole `RESULT` line.
+- Tests that failed before the fix: `kit unit <file>` without `unit.run` (`tests/kit-settings.test.ts`, and in `tests/kit-unit.test.ts` for named files and for none), with a broken `kit.json`, and without jq. Each checks the `problem:` line and the whole `RESULT` line. For the broken file, the expected text is the line `unit.sh` printed in the same test.
 - Gap tests:
   - Doctor without jq, with `KIT_COMMANDS_DIR: ""` and a settings `commands` folder, prints `✓ commands: <n> shared, project folder skipped (jq is not installed)` exactly. `✓ kit home` passes.
   - The no-jq doctor test now checks the whole last line, `RESULT: fail doctor 2 failed: settings,hooks live`. The old unanchored check had hidden that `hooks live` fails too: bash-guard reads its input with jq.
   - `kit version` through the front door without jq exits 0 with `RESULT: ok version …`, and its only stderr is `jq is not installed; install jq`.
-  - With `.git` removed, `kit unit --affected --base HEAD` exits 1 with a `problem:` line, prints no `Usage:` and runs no test.
+  - With `.git` removed, `kit unit --affected --base HEAD` exits 1, prints no `Usage:` and runs no test. `GIT_CEILING_DIRECTORIES` keeps git from finding a repository around the temporary folder. A failing git call in `kit unit` now gives a one-line problem with git's own complaint, `problem: git rev-parse failed: fatal: not a git repository …`. Before, it gave a `Command failed: …` line with the cause on the next line.
+  - When `unit.sh` is killed and prints nothing (a `unit.run` that runs `kill -9 $PPID`), the result is still `RESULT: fail unit unit.sh returned no log path`, with exit 143.
+- Validation: `kit unit tests/a.test.ts` without `unit.run` used to end with `RESULT: fail unit unit.sh returned no log path`. It now ends with `RESULT: fail unit unit.sh needs unit.run in scripts/agents/kit.json`. `scripts/agents/kit unit --affected`: `RESULT: ok unit 90/90 (3 files)`.
 - Feature list: no change (agent kit messages only, nothing in the editor).
