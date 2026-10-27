@@ -17,7 +17,7 @@ Undo with several editors.
 
 - Lex's Undo undoes only his own typing (Yjs `UndoManager` tracking his origin).
 - An agent's change is undone from its pin or chip (slice 15).
-- A guest's or collaborator's change can be undone from its brief author outline while it shows.
+- A guest's or collaborator's **text** change is undone from their caret's name tag: on hover or focus the tag ends with an undo icon while that change can be undone. A styling, picture or look (variant) change is undone from its brief author outline and chip (Lex, 2026-10-27: an outline only makes sense for those, not for typing).
 - A change that landed on another page undoes on that page (clean-up slice 34).
 - Mock-up approved by Lex (2026-10-27): [13-code-pane-and-undo.html](../../prototypes/13-code-pane-and-undo.html)
 
