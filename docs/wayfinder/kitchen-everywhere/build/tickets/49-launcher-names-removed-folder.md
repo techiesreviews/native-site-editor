@@ -2,6 +2,7 @@
 title: The kit launcher names the folder that vanished, and the launcher docs say what the code does (second look on 39)
 type: task (AFK)
 status: open
+assignee: ke-49
 builder: claude
 blocked_by: [39-launchers-pinned-kit-and-whole-kit]
 ---
