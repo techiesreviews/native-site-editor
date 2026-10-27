@@ -15,7 +15,9 @@ This editor's own facts for the shared rulebook ([`scripts/agents/docs/kitchen.m
   `kit shots` for every visible change (also today's screens for a mock-up, station 3).
 - **Shared file:** `src/main.ts`; at most 2 slices in it at once (station 5).
 - **Docs the shared rulebook names:** [runner.md](runner.md) (and a build's own `runner-extras.md`),
-  [issue-tracker.md](issue-tracker.md), [ux-rulebook.md](ux-rulebook.md),
+  [issue-tracker.md](issue-tracker.md) (files and claiming, station 2:
+  [Wayfinding operations](issue-tracker.md#wayfinding-operations); the feedback log, station 10:
+  [Build files](issue-tracker.md#build-files)), [ux-rulebook.md](ux-rulebook.md),
   [context-card.md](context-card.md), [routines/sweep.md](routines/sweep.md),
   [routines/learning.md](routines/learning.md).
 

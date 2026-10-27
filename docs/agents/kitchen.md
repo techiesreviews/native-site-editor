@@ -53,8 +53,9 @@ the atomic catalogue: [extras](kitchen-extras.md#visible-changes-feature-list-an
 
 ### 7. Checks
 
-[Shared](../../scripts/agents/docs/kitchen.md#7-checks); `npm run check`, `kit specs`, `kit size`,
-`kit shots`, the feature list and `kit ux`: [extras](kitchen-extras.md#branches-checks-and-the-shared-file).
+[Shared](../../scripts/agents/docs/kitchen.md#7-checks); `npm run check`, `kit specs`, `kit size` and
+`kit shots`: [extras](kitchen-extras.md#branches-checks-and-the-shared-file); the feature list and
+`kit ux`: [extras](kitchen-extras.md#visible-changes-feature-list-and-kit-ux).
 
 ### 8. Review
 
@@ -73,7 +74,8 @@ the atomic catalogue: [extras](kitchen-extras.md#visible-changes-feature-list-an
 
 ### 11. Lex's end check
 
-[Shared](../../scripts/agents/docs/kitchen.md#11-lexs-end-check); `kit ux --all` and the preview:
+[Shared](../../scripts/agents/docs/kitchen.md#11-lexs-end-check); `kit ux --all`:
+[extras](kitchen-extras.md#visible-changes-feature-list-and-kit-ux); the preview:
 [extras](kitchen-extras.md#previews).
 
 ### 12. Release
