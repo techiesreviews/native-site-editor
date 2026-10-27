@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PROTOTYPE (throwaway) · 14 Share live</title>
+<title>PROTOTYPE (throwaway) · 14 Share to edit</title>
 <!--
   THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 3 Nov review
   (kitchen rule "mock-ups ahead", 2026-10-27).
-  Question: does Share live (project menu, link copied shown on the item, Live pill, guest name prompt, guest without Save/files/agents, Stop sharing ends the link, collaborators join with no link) feel right? Agents build slices 30 and 31.
+  Question: does Share to edit (project menu, "Share to edit" and "Copy edit link", link copied shown on the item, no Live badge, guest name prompt, guest without Save/files/agents, Stop sharing ends the link, collaborators join with no link) feel right? Agents build slices 30 and 31.
 -->
 <style>
 :root {
@@ -118,9 +118,6 @@ button { font: inherit; color: inherit; }
 
 
 .anchor { position: relative; }
-.livepill { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 600; color: var(--ok); background: var(--ok-surface); border-radius: 99px; padding: 0.2rem 0.55rem 0.2rem 0.45rem; }
-.livepill::before { content: ""; inline-size: 0.5rem; block-size: 0.5rem; border-radius: 50%; background: currentColor; }
-.livepill[hidden] { display: none; }
 .browser { border: 1px solid var(--line); border-radius: var(--radius-panel); overflow: clip; background: var(--surface); }
 .browser__bar { display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.6rem; background: var(--toolbar); border-block-end: 1px solid var(--line); font: 12px/1.3 var(--mono); color: var(--muted); min-inline-size: 0; }
 .browser__bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -142,13 +139,13 @@ button { font: inherit; color: inherit; }
 
 <main>
   <header style="display:grid;gap:0.3rem">
-    <h1>Share live: editing with someone through a link <span class="tag">mock-up for Tuesday 3 Nov</span></h1>
-    <p class="intro">Agents build, slices 30 and 31. Lex picks Share live in the project menu and sends the link. Anna types her name and edits text with him, but she can't save, change files or settings, or use agents. Someone who already has access to the repository joins on their own, with no link.</p>
+    <h1>Share to edit: editing with someone through a link <span class="tag">mock-up for Tuesday 3 Nov</span></h1>
+    <p class="intro">Agents build, slices 30 and 31. Lex picks Share to edit in the project menu and sends the link. Anna types her name and edits text with him, but she can't save, change files or settings, or use agents. Someone who already has access to the repository joins on their own, with no link.</p>
   </header>
   <section class="strip" aria-labelledby="s1">
     <h2 id="s1">Try it (demo buttons, not part of the editor). You can also use the project menu yourself.</h2>
     <div class="buttons">
-      <button type="button" data-act="share">Lex: Share live</button>
+      <button type="button" data-act="share">Lex: Share to edit</button>
       <button type="button" data-act="open">Anna opens the link</button>
       <button type="button" data-act="join">Anna joins</button>
       <button type="button" data-act="edit">Anna edits the heading</button>
@@ -169,7 +166,6 @@ button { font: inherit; color: inherit; }
             <div class="menu" id="projectMenu" role="menu" hidden style="inset-block-start:calc(100% + 4px);inset-inline-start:0"></div>
           </span>
           <span class="spacer"></span>
-          <span class="livepill" id="livePill" hidden>Live</span>
           <span class="people" id="lexPeople"></span>
           <button type="button" class="icon-btn" aria-label="Undo" data-icon="undo"></button>
           <button type="button" class="btn btn--primary" id="saveBtn" style="position:relative">Save</button>
@@ -238,16 +234,15 @@ function reset() {
 }
 function menuItems() {
   const items = [`<button type="button" class="menu-item" role="menuitem">${icon("gear")}Site settings</button>`, `<button type="button" class="menu-item" role="menuitem">${icon("download")}Download site</button>`, "<hr>"];
-  if (!S.sharing) items.push(`<button type="button" class="menu-item" role="menuitem" data-m="share">${icon("live")}Share live</button>`);
+  if (!S.sharing) items.push(`<button type="button" class="menu-item" role="menuitem" data-m="share">${icon("live")}Share to edit</button>`);
   else {
-    items.push(`<button type="button" class="menu-item ${S.copied ? "is-done" : ""}" role="menuitem" data-m="copy">${icon(S.copied ? "check" : "link")}${S.copied ? "Link copied" : "Copy live link"}</button>`);
+    items.push(`<button type="button" class="menu-item ${S.copied ? "is-done" : ""}" role="menuitem" data-m="copy">${icon(S.copied ? "check" : "link")}${S.copied ? "Link copied" : "Copy edit link"}</button>`);
     items.push(`<button type="button" class="menu-item" role="menuitem" data-m="stop">${icon("stop")}Stop sharing</button>`);
   }
   return items.join("");
 }
 function render() {
   document.getElementById("projectMenu").innerHTML = menuItems();
-  document.getElementById("livePill").hidden = !S.sharing;
   const people = [];
   if (S.guestState === "joined") people.push(`<span class="who" style="--c:var(--guest)" title="${S.guestName} (guest)">${S.guestName[0]}</span>`);
   if (S.sam) people.push('<span class="who" style="--c:var(--sam)" title="Sam (has access)">S</span>');
@@ -264,7 +259,7 @@ function render() {
   const url = document.getElementById("guestUrl");
   url.textContent = S.guestState === "none" ? "about:blank" : linkUrl;
   if (S.guestState === "none") g.innerHTML = '<p class="empty">No link opened yet</p>';
-  else if (S.guestState === "ended") g.innerHTML = '<p class="empty">This live session has ended.</p>';
+  else if (S.guestState === "ended") g.innerHTML = '<p class="empty">This edit link has ended.</p>';
   else if (S.guestState === "name") g.innerHTML = `<form class="join" id="joinForm"><h3>Edit Bakery site with Lex</h3><label class="field">Your name<input id="nameIn" autocomplete="given-name" value="${S.guestName}"></label><button type="submit" class="btn btn--primary">Join</button></form>`;
   else g.innerHTML = `<div class="editor" style="border:0;border-radius:0"><div class="topbar"><span class="project" style="cursor:default"><span class="mark"></span><span>Bakery site</span></span><span class="spacer"></span><span class="people"><span class="who" style="--c:var(--lex)" title="Lex">L</span>${S.sam ? '<span class="who" style="--c:var(--sam)" title="Sam">S</span>' : ""}</span><button type="button" class="icon-btn" aria-label="Undo">${icon("undo")}</button></div><div class="canvas"><div class="site"><h2 id="guestHeading" contenteditable="true" spellcheck="false">${S.heading}</h2><p>Sourdough, rye and seeded loaves from our oven on the corner.</p></div></div></div>`;
 }

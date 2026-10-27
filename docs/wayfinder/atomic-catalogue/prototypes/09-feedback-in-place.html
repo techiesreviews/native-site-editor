@@ -7,7 +7,7 @@
 <!--
   THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 3 Nov review
   (kitchen rule "mock-ups ahead", 2026-10-27).
-  Question: with every toast gone, does feedback on the control itself (Copied, Preparing…, Try again on the failed panel, notes that stay, Undo with no message, Replace Undo on the tile, no Publish count) read clearly? Catalogue build slices 06 and 07.
+  Question: with every toast gone, does feedback on the control itself (Copied, Preparing…, Try again on the failed panel, notes that stay, Undo with no message, Replace with no message, no Publish count) read clearly? Catalogue build slices 06 and 07.
 -->
 <style>
 :root {
@@ -157,7 +157,7 @@ button { font: inherit; color: inherit; }
 <main>
   <header style="display:grid;gap:0.3rem">
     <h1>Feedback in place, no toasts <span class="tag">mock-up for Tuesday 3 Nov</span></h1>
-    <p class="intro">Catalogue build, slices 06 and 07, the first visible changes. The 95 toasts go. Twelve need feedback on the control itself: four as a short state, eight as an error that stays until it's fixed. Try again and the media Replace Undo get their own home first. Switch between Today and After to compare.</p>
+    <p class="intro">Catalogue build, slices 06 and 07, the first visible changes. The 95 toasts go. Twelve need feedback on the control itself: four as a short state, eight as an error that stays until it's fixed. Try again gets its own home first; a replaced picture needs no message. Switch between Today and After to compare.</p>
   </header>
   <section class="strip" aria-labelledby="s1">
     <h2 id="s1">Demo switch (not part of the editor). Press the buttons inside each example.</h2>
@@ -181,7 +181,7 @@ button { font: inherit; color: inherit; }
       <div class="ui" id="socialUi"></div></article>
     <article class="card"><span class="slice">Slice 07 · Undo in the top bar, no message</span><h3>Undo</h3>
       <div class="ui" id="undoUi"></div></article>
-    <article class="card"><span class="slice">Slice 06 · Replace Undo on the tile</span><h3>Media: Replace a picture</h3>
+    <article class="card"><span class="slice">Slice 06 · Replace needs no message</span><h3>Media: Replace a picture</h3>
       <div class="ui" id="replaceUi"></div></article>
     <article class="card"><span class="slice">Slice 07 · counts and explainer lines go</span><h3>Publish count, empty panel</h3>
       <div class="ui" id="countUi"></div></article>
@@ -263,7 +263,7 @@ function renderUndo() {
 function renderReplace(state = "start") {
   const ui = document.getElementById("replaceUi");
   const replaced = state === "replaced";
-  const st = replaced && mode === "after" ? `<span class="state">${icon("check")}Replaced<button type="button" class="btn btn--quiet" data-ex="replaceUndo" style="margin-inline-start:auto;min-block-size:1.6rem;padding-inline:.4rem">${icon("undo")}Undo</button></span>` : `<span class="state">loaves.jpg</span>`;
+  const st = `<span class="state">loaves.jpg</span>`;
   ui.innerHTML = `<div style="display:flex;gap:.6rem;align-items:start;flex-wrap:wrap"><div class="tile"><span class="thumb ${replaced ? "b" : ""}"></span>${st}</div><button type="button" class="btn" data-ex="replace">Replace…</button></div>`;
 }
 function renderCount() {
@@ -291,7 +291,7 @@ document.getElementById("cards").addEventListener("click", async (e) => {
   if (ex === "social") { renderSocial(true); toast("Social image set as a draft. The image was linked without a web address. Your site has no web address yet, so sharing services may not show this image. Add it in Site settings, General, Site address, then choose the image again."); }
   if (ex === "addCard") { undoCards++; renderUndo(); toast("Card added to Our loaves", "Undo"); }
   if (ex === "undo") { undoCards = Math.max(3, undoCards - 1); renderUndo(); toast("Undid: Card added"); caption("Undo takes it back. No “Undid …” message."); }
-  if (ex === "replace") { renderReplace("replaced"); toast("Replaced loaves.jpg", "Undo"); if (mode === "after") caption("The Undo for Replace stays on the tile after the dialog closes, and the top-bar Undo takes it back too."); }
+  if (ex === "replace") { renderReplace("replaced"); toast("Replaced loaves.jpg", "Undo"); if (mode === "after") caption("The new picture takes the old one's place. That is the feedback; the top-bar Undo takes it back."); }
   if (ex === "replaceUndo") { renderReplace("start"); }
 });
 document.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
