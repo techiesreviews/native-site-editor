@@ -2,7 +2,7 @@
 title: A second look on every change, per review kind
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-17
 builder: claude
 blocked_by: [14-settings-for-other-projects, 16-opencode-review-path, 25-editor-values-left-after-11, 33-out-of-credit-and-last-problem]
 ---
