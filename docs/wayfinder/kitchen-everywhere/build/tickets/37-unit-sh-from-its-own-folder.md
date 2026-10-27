@@ -1,7 +1,7 @@
 ---
 title: unit.sh works when run from its own folder
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-37
 builder: claude
 blocked_by: [26-settings-messages-and-tests]
@@ -36,3 +36,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ## Comments
 
 - Lead, 2026-10-27 (from slice 26's decide line): one rule for `kit unit` usage mistakes. A mistyped option, a mistyped `--base` and a named test file that does not exist all exit 2 (usage error) with a `problem:` line naming the input; a test run that fails stays exit 1. Bring the `--base` case in line here and add its test.
+
+## Done (2026-10-27)
+
+- `scripts/agents/unit.sh` takes its own folder as an absolute path once, before the full suite's `cd` to the project's top folder, and uses it for `kit-lib.sh`, `kit.d/unit` and `unit-summary.mjs`. `./unit.sh` and `bash unit.sh` from `scripts/agents` now run the same full suite as the absolute-path run. The printed `log:` path stays relative to the project's top folder.
+- `kit unit --affected --base REF` with a REF git cannot find now exits 2 with `problem: base not found: REF` and the usage text, like a mistyped option or a missing named test file (`scripts/agents/kit.d/unit`). A failing test run still exits 1.
+- Tests (`tests/kit-unit.test.ts`): a new case copies `unit.sh` and its helpers into a fixture project, then runs it with no files by absolute path from the top folder, as `./unit.sh` and as `bash unit.sh` from `scripts/agents`, with no `KIT_ROOT` or `KIT_LIB`. All three run the same three files with the same summary. Before the fix the `./unit.sh` run failed with `unit.sh: kit unit --list failed`. The invalid-options case now expects exit 2 and `base not found: missing` for a missing `--base`.
+- Validation: `kit unit --affected` RESULT: ok unit 12/12 (1 files); `kit unit tests/agent-unit-timeout.test.ts` RESULT: ok unit 2/2; `npm run check` and `npm run lint` exit 0.
+- Feature list: no change (agent tooling only; nothing in the editor changes).
