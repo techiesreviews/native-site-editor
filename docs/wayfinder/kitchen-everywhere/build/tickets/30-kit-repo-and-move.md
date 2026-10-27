@@ -5,7 +5,7 @@ status: open
 assignee:
 builder: claude
 runs_alone: true
-blocked_by: [17-second-look-per-kind, 29-pr-ci-filters-and-claim-owner, 20-shared-rulebook, 21-launcher-and-update, 22-kit-init, 23-issues-to-ticket-files, 24-combined-score-table, 38-kit-update-previous-holds, 39-launchers-pinned-kit-and-whole-kit]
+blocked_by: [17-second-look-per-kind, 29-pr-ci-filters-and-claim-owner, 20-shared-rulebook, 21-launcher-and-update, 22-kit-init, 23-issues-to-ticket-files, 24-combined-score-table, 38-kit-update-previous-holds, 39-launchers-pinned-kit-and-whole-kit, 48-kit-ux-land-branch-and-colour-setting, 49-launcher-names-removed-folder]
 ---
 
 ## Goal
