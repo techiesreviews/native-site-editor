@@ -51,3 +51,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - When `unit.sh` is killed and prints nothing (a `unit.run` that runs `kill -9 $PPID`), the result is still `RESULT: fail unit unit.sh returned no log path`, with exit 143.
 - Validation: `kit unit tests/a.test.ts` without `unit.run` used to end with `RESULT: fail unit unit.sh returned no log path`. It now ends with `RESULT: fail unit unit.sh needs unit.run in scripts/agents/kit.json`. `scripts/agents/kit unit --affected`: `RESULT: ok unit 92/92 (3 files)`.
 - Feature list: no change (agent kit messages only, nothing in the editor).
+- Commits: 47a01377e (build), 22c578dbd, 778053874, e8ea192df (review fix rounds 1–3).
+- Review (Claude Opus 5.5, evidence main root `.scratch/reviews/ke-51/`): round 1 (`20261027T232317Z`) two P3 Done wording points and three test gaps (`problem:` line, the no-log fallback, `tmpdir()` inside a repo), fixed; round 2 (`20261027T232801Z`) P3 fault, a bad `ASE_UNIT_TIMEOUT_MS` stopped before the log, plus two gaps, fixed; round 3 (`20261027T233159Z`) P2 fault, every exit 2 from `unit.sh` turned into exit 1, fixed by refusing non-file paths before `unit.sh` starts. Rejected: none. After round 3 (`20261027T233637Z`) only P3s and gaps stayed open, and the one blocker was the severity-less `*Spec*` heading the parser read as a defect (ticket 52's fault), so the lead landed with `--waive`.
+- Correction to the timeout line above: `kit unit` forwards `unit.sh`'s stderr, so the raw `Usage: unit.sh …` line still shows; only the `problem:` and `RESULT` lines leave it out and the kit usage is not printed.
+
+### Follow-ups
+
+- P3 fault (`kit.d/unit:167`): when `unit.sh` ends by a signal without a log, the cause is still read from its last stderr line; use it only when the child exited with a code, else keep `unit.sh returned no log path` or name the signal. Test: a `KIT_LIB` wrapper prints a stray stderr line, `unit.run` runs `kill -TERM $PPID`, the result is not `stray`.
+- P3 ticket (`tests/kit-unit.test.ts:219`): the test title "without either usage text" overstates; rename it, and assert `Usage: unit\.sh` only if that line stops being forwarded.
+- Gap (`tests/kit-doctor.test.ts:445`): on the `KIT_COMMANDS_DIR: ""` no-jq run, also assert only `✗ settings:` names `scripts/agents/kit.json`.
