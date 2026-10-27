@@ -125,8 +125,8 @@ Both modes read the brief on stdin with cwd set to the worktree. Build appends t
 unstaged-work and validation contract. Every adapter verifies the actual model
 (Codex's `model:` log line; Claude's JSON `modelUsage` keys or `model` field; Grok's
 `modelUsage` keys, which may add a suffix such as `grok-4.7-build`; OpenCode's `opencode export --pure <session>`, where every
-assistant message must be the requested `<provider>/<model>`; the export is skipped when the run printed an error event and is
-killed after `ASE_OPENCODE_EXPORT_TIMEOUT_MS`, default 60000).
+assistant message must be the requested `<provider>/<model>`; the export is skipped when the call failed (an error event, a non-zero exit or a timeout) and is
+killed after `ASE_OPENCODE_EXPORT_TIMEOUT_MS`, default 60000, a value checked before the review starts).
 Claude aliases permit their family; full names permit a dated snapshot suffix.
 The `[1m]` context suffix is preserved for the CLI and ignored for model inference and verification.
 Missing metadata, fallback models, CLI errors and empty reports fail the run.
@@ -150,7 +150,8 @@ whose `text` is the report; a session id is assigned up front (`-s`) and resumed
 with `--resume`. OpenCode reviews only: `opencode run --pure --agent ase-review --format json -m <model> --dir <worktree>`
 with the brief on stdin; `OPENCODE_CONFIG_CONTENT` defines `ase-review` with every permission denied but
 read/grep/glob/list, and `OPENCODE_DISABLE_PROJECT_CONFIG=1` and `OPENCODE_DISABLE_CLAUDE_CODE=1` keep the
-project's OpenCode config and Claude Code files out; effort is not passed. The report is the text of the last
+project's OpenCode config and Claude Code files out (the user's global `~/.config/opencode` config still loads, but its tools
+are denied too); effort is not passed. The report is the text of the last
 message in its JSON events; the session id comes from those events and is resumed with `--session`. A failed CLI's own failure (timeout, usage limit or exit status)
 is the last `problem:` line. The lead commits builders' unstaged work.
 
