@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 55 Project menu, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 10 Nov review
+  (kitchen station 3, "Show and tell": a Today / After switch with demo steps).
+  Ticket: docs/wayfinder/atomic-catalogue/build/tickets/55-organism-project-menu.md.
+  Today: the editor's real project menu, structure, labels and states from src/components/repository-menu.ts,
+  values from src/components/repository-menu.css, src/components/flyout.css, src/components/dropdown.css,
+  src/components/agent-menu.css (the MCP item in the menu), src/style.css (.text-button, .button, .primary,
+  .topbar) and src/theme.css (dev, 2026-10-27). Icons are the editor's Phosphor Regular set.
+  Not matched: GitHub avatars are drawn as letter circles (the editor's own fallback) because this file works
+  offline; the panel is drawn in the page, open, instead of floating over it.
+  After: the same menu from the approved catalogue parts of 10-first-parts-and-edit-bar.html (menu, menu item,
+  icon button, button, badge, section heading) with the shared spacing 2/4/6/8/12/16/24 px and motion values
+  (press 150, hover 120, menu 200 ms). Rows are 44 px tall on phones (open tech-debt item, UX rulebook L3/U6).
+-->
+<style>
+/* ---------- Shared values: src/theme.css, light and dark written once with light-dark() ---------- */
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --on-accent: oklch(100% 0 none);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --danger: oklch(from var(--color-success) l c 25);
+  --danger-bg: oklch(from var(--success-bg) l c 25);
+  --danger-fg: oklch(from var(--success-fg) l c 25);
+  --agent-question-strong: oklch(66% 0.18 48);
+  --panel-surface: var(--surface-raised);
+  --pressed: light-dark(var(--primary), var(--color-primary-light));
+  --on-pressed: light-dark(var(--on-primary), var(--color-primary-darkest));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px; --size-tap: 0px;
+  --panel-padding: 6px;
+
+  /* After only: the catalogue's shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+/* src/theme.css: real tap targets on touch screens and narrow editor layouts. */
+@media (hover: none), (pointer: coarse), (width <= 768px) { :root { --size-tap: var(--size-touch); } }
+* { box-sizing: border-box; }
+body { margin: 0; font-size: var(--type-base); -webkit-tap-highlight-color: transparent; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: 0.5; }
+button:focus-visible, a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.ph { inline-size: 16px; block-size: 16px; fill: currentColor; flex: none; display: block; }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+header { display: grid; gap: var(--space-3xs); }
+h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 70ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 5; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; max-inline-size: 75ch; text-wrap: pretty; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+.demo { border: 1.5px dashed var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); }
+.demo h2 { margin: 0; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.demo .steps { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.demo button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 4px 10px; min-block-size: 32px; }
+.demo button[aria-pressed="true"] { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.demo button.reset { color: var(--muted); }
+.stage { border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--background); overflow: clip; min-inline-size: 0; }
+.menus { display: flex; flex-wrap: wrap; gap: var(--space-2xs); align-items: start; padding: var(--space-xs) clamp(8px, 3vw, 28px) var(--space-l); min-block-size: 30rem; }
+.canvas-note { color: var(--muted); font-size: var(--type-small); padding: var(--space-s) clamp(8px, 3vw, 28px); margin: 0; }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+
+/* =====================  TODAY: real editor CSS  ===================== */
+/* src/style.css .topbar (one row of three columns; flex and wrapping at 650 px and under) */
+.today .topbar { min-block-size: 72px; background: var(--surface); display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; padding: 8px 28px; gap: 24px; }
+@media (max-width: 650px) { .today .topbar { display: flex; min-block-size: 65px; flex-wrap: wrap; padding: 14px 17px; gap: 10px; } }
+.today .text-button { border: 0; background: none; padding: 5px 0; color: var(--link); font-size: var(--type-base); }
+.today .text-button:active { text-decoration: underline; }
+@media (hover: hover) and (pointer: fine) { .today .text-button:hover { text-decoration: underline; } }
+.today .button { min-block-size: var(--size-control); border: 0; padding: 6px 14px; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; }
+.today .primary { background: var(--primary); color: var(--on-primary); }
+/* src/components/repository-menu.css */
+.today .repository-menu { min-inline-size: 0; }
+.today .rm-trigger { position: relative; display: flex; align-items: center; gap: 10px; max-inline-size: min(38vw, 360px); padding: 7px 10px 7px 8px; border: 0; border-radius: var(--radius-panel); background: transparent; font-size: var(--type-title); font-weight: 600; }
+@media (max-width: 650px) { .today .rm-trigger { max-inline-size: 65vw; } }
+.today .rm-trigger:hover, .today .rm-trigger[aria-expanded="true"] { background: var(--hover); }
+.today .rm-identity { display: flex; flex-direction: column; min-inline-size: 0; text-align: start; }
+.today .rm-name, .today .rm-repository { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today .rm-repository { font-size: var(--type-small); font-weight: 400; color: var(--muted); }
+.today .rm-caret { color: var(--muted); }
+.today .rm-initial { display: inline-grid; place-items: center; flex: none; inline-size: 28px; block-size: 28px; border-radius: var(--radius); background: oklch(58% 0.12 var(--initial-hue)); color: var(--on-accent); font-size: 13px; font-weight: 700; line-height: 1; }
+.today .rm-trigger .rm-initial { inline-size: 32px; block-size: 32px; font-size: 15px; }
+.today .rm-questions, .today .rm-finished { position: absolute; inset-block-start: 3px; inset-inline-start: 30px; min-inline-size: 18px; block-size: 18px; border: 2px solid var(--surface); border-radius: 999px; padding: 0 3px; background: var(--agent-question-strong); color: var(--on-accent); font-size: var(--type-badge); font-weight: 700; line-height: 14px; text-align: center; }
+.today .rm-finished { background: var(--primary); }
+.today .rm-item .rm-finished { z-index: 2; pointer-events: none; inset-block-start: 4px; inset-inline-start: 26px; }
+.today .rm-branch-item .rm-finished { position: static; flex: none; border-color: transparent; }
+.today .rm-popover { inline-size: min(340px, 100%); }
+.today .dropdown-panel { padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); }
+.today .rm-section { padding: 6px 0; }
+.today .rm-section + .rm-section, .today .rm-agent + .rm-section { margin-block-start: 6px; }
+.today .rm-heading { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.today .rm-repos { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.today .rm-item { position: relative; display: flex; flex-wrap: wrap; align-items: center; border-radius: var(--radius); }
+.today .rm-item:hover, .today .rm-item.is-hover, .today .rm-item:focus-within { background: var(--hover); }
+.today .rm-item:has(> .rm-repo:focus-visible) { outline: var(--focus-ring); outline-offset: -2px; }
+.today .rm-repo:focus-visible { outline: none; }
+.today .rm-remove:focus-visible, .today .rm-action:focus-visible, .today .rm-account:focus-visible, .today .rm-heading-button:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.today .rm-item:has([aria-current="true"]) { background: var(--current); }
+.today .rm-repo { display: flex; flex: 1; align-items: center; gap: 10px; min-inline-size: 0; padding: 6px 8px; border: 0; border-radius: var(--radius); background: transparent; text-align: start; }
+.today .rm-repo-text { display: flex; flex: 1; flex-direction: column; min-inline-size: 0; }
+.today .rm-repo-name, .today .rm-repo-owner, .today .rm-account-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today .rm-repo-name { font-size: var(--type-base); font-weight: 600; line-height: 18px; }
+.today .rm-repo-owner { font-size: var(--type-small); line-height: 16px; color: var(--muted); }
+.today .rm-remove { position: absolute; z-index: 1; inset-block-start: 9px; inset-inline-start: 8px; display: inline-grid; place-items: center; inline-size: 28px; block-size: 28px; border: 0; border-radius: var(--radius); background: oklch(58% 0.12 var(--initial-hue)); color: var(--on-accent); opacity: 0; }
+.today .rm-item:hover .rm-remove, .today .rm-item.is-hover .rm-remove, .today .rm-remove:focus-visible, .today .rm-remove[aria-expanded="true"] { opacity: 1; }
+.today .rm-remove:hover { background: oklch(48% 0.12 var(--initial-hue)); }
+@media (hover: none) { .today .rm-remove { opacity: 1; } }
+.today .rm-confirm { flex-basis: 100%; margin: 0 8px 8px; padding: 10px; border-radius: var(--radius); background: var(--surface); }
+.today .rm-confirm p { margin: 0 0 10px; font-size: var(--type-small); line-height: 1.5; color: var(--muted); }
+.today .rm-confirm .button { display: inline-flex; align-items: center; margin-inline-end: 8px; text-decoration: none; }
+.today .rm-empty { margin: 0; padding: 6px 8px; font-size: var(--type-small); line-height: 1.5; color: var(--muted); }
+.today .rm-more { flex: none; padding-inline-end: 2px; color: var(--muted); }
+.today .rm-repo[aria-expanded="true"] .rm-more { color: var(--text); }
+.today .rm-branch-name { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today .rm-branch-item[aria-checked="true"] { background: var(--current); font-weight: 600; }
+.today .rm-action { display: flex; align-items: center; gap: 10px; inline-size: 100%; min-block-size: var(--size-control); padding: 4px 8px; border: 0; border-radius: var(--radius); background: transparent; color: inherit; font-size: var(--type-base); text-align: start; text-decoration: none; }
+.today .rm-action:hover, .today .rm-action:focus-visible { background: var(--hover); }
+.today .rm-heading-button { display: inline-grid; place-items: center; inline-size: var(--size-icon); block-size: var(--size-icon); margin: -4px -4px -4px 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); }
+.today .rm-heading-button:hover, .today .rm-heading-button:focus-visible { background: var(--hover); color: var(--text); }
+.today .rm-add, .today .rm-quiet { color: var(--muted); }
+.today .rm-add:hover, .today .rm-quiet:hover { color: var(--text); }
+.today .rm-account { display: flex; align-items: center; gap: 10px; min-block-size: var(--size-control); padding: 4px 8px; font-size: var(--type-base); }
+.today .rm-account[aria-current="true"] { border-radius: var(--radius); background: var(--current); font-weight: 600; }
+.today .rm-account .rm-initial { inline-size: 24px; block-size: 24px; border-radius: 50%; font-size: var(--type-badge); }
+.today .rm-hint { margin-inline-start: auto; font-size: var(--type-small); color: var(--muted); opacity: 0; }
+.today .rm-account:hover .rm-hint, .today .rm-account.is-hover .rm-hint, .today .rm-account:focus-visible .rm-hint { opacity: 1; }
+.today .rm-owner { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 8px 8px 2px; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.today .rm-owner:first-child { padding-block-start: 2px; }
+.today .rm-owner-kind { font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.8; }
+/* src/components/flyout.css */
+.today .flyout { inline-size: min(240px, 100%); padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); font-size: var(--type-base); }
+.today .flyout__heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-block-size: 24px; padding: 4px 4px 4px 8px; font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.today .flyout__list { display: flex; flex-direction: column; gap: 2px; }
+.today .flyout__item { display: flex; align-items: center; gap: 8px; inline-size: 100%; min-inline-size: 0; min-block-size: var(--size-control); padding: 4px 8px; border: 0; border-radius: var(--radius); background: transparent; text-align: start; }
+.today .flyout__item:hover:not(:disabled), .today .flyout__item:focus-visible { background: var(--hover); }
+.today .flyout__item:focus-visible, .today .flyout__icon-button:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.today .flyout__icon-button { flex: none; display: inline-grid; place-items: center; inline-size: var(--size-icon); block-size: var(--size-icon); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); }
+.today .flyout__icon-button:hover:not(:disabled), .today .flyout__icon-button:focus-visible { background: var(--hover); color: var(--text); }
+/* src/components/agent-menu.css: the MCP item inside this menu (ticket 56 has its states) */
+.today .agent-menu__action { display: flex; align-items: center; gap: 10px; inline-size: 100%; min-block-size: var(--size-control); padding: 4px 8px; border: 0; border-radius: var(--radius); background: transparent; color: inherit; font-size: var(--type-base); text-align: start; }
+.today .agent-menu__action:hover { background: var(--hover); }
+.today .agent-menu__action::before { content: ""; flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--muted); opacity: 0.5; }
+
+/* =====================  AFTER: catalogue parts  ===================== */
+/* Shared press and hover behaviour for every pressable part */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  .p-press:active:not(:disabled) { scale: 0.97; }
+}
+:is(.p-button, .p-icon-button):focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.p-menu-item:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+/* Button (approved): tones primary, secondary, quiet; sizes compact, control, touch */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: max(var(--size-control), var(--size-tap)); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); text-decoration: none; color: inherit; }
+.p-button[data-tone="primary"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-button[data-tone="quiet"] { background: transparent; box-shadow: none; color: var(--link); }
+.p-button[data-ink="text"] { color: inherit; }
+.p-button:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.p-button[data-tone="primary"]:active:not(:disabled) { background: var(--primary-hover); }
+.p-button[data-tone="quiet"]:active:not(:disabled), .p-button[data-tone="quiet"][aria-expanded="true"] { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-button:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .p-button[data-tone="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
+  .p-button[data-tone="quiet"]:hover:not(:disabled) { background: var(--hover); }
+}
+/* Icon button (approved): icon 24, compact 28, control 32 (44 on touch screens) */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.p-icon-button[data-size="icon"] { inline-size: var(--size-icon); block-size: var(--size-icon); border-radius: var(--radius-small); }
+.p-icon-button[data-size="compact"] { inline-size: var(--size-compact); block-size: var(--size-compact); }
+.p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Badge (approved): number size for counts that Lex kept, tones by data attribute */
+.p-badge { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-3xs); block-size: 20px; padding-inline: var(--space-xs); border-radius: var(--radius-full); font-size: var(--type-small); font-weight: 600; background: var(--surface-subtle); color: var(--link); flex: none; }
+.p-badge[data-size="number"] { min-inline-size: 18px; block-size: 18px; padding-inline: var(--space-3xs); font-size: var(--type-badge); font-weight: 700; }
+.p-badge[data-tone="action"] { background: var(--primary); color: var(--on-primary); }
+.p-badge[data-tone="question"] { background: var(--agent-question-strong); color: var(--on-accent); }
+.p-badge[data-kind="dot"] { inline-size: 8px; block-size: 8px; min-inline-size: 0; padding: 0; background: var(--muted); opacity: 0.5; }
+.p-corner { position: absolute; inset-block-start: calc(-1 * var(--space-2xs)); inset-inline-end: calc(-1 * var(--space-2xs)); box-shadow: 0 0 0 2px var(--badge-ring, var(--surface)); pointer-events: none; }
+/* Spinner (approved) */
+.p-spinner { inline-size: 10px; block-size: 10px; border: 1.5px solid var(--control-line); border-block-start-color: var(--primary); border-radius: 50%; animation: spin 0.9s linear infinite; flex: none; }
+@keyframes spin { to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .p-spinner { animation-duration: 2.4s; } }
+/* Section heading (slice 13): words with an optional end slot */
+.p-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); min-block-size: var(--size-icon); padding: var(--space-3xs) var(--space-3xs) var(--space-3xs) var(--space-xs); font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.p-heading[data-look="group"] { text-transform: none; letter-spacing: 0; padding-block: var(--space-xs) var(--space-4xs); }
+.p-heading [data-end] { font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; }
+/* Menu and menu item (approved): one item part with lead, words, end */
+.p-menu { padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); inline-size: min(340px, 100%); display: grid; gap: var(--space-4xs); align-content: start; --badge-ring: var(--panel-surface); }
+.p-menu[data-size="flyout"] { inline-size: min(240px, 100%); }
+.p-menu-section { display: grid; gap: var(--space-4xs); padding-block: var(--space-2xs); }
+.p-menu-section + .p-menu-section { margin-block-start: var(--space-2xs); }
+.p-menu-list { display: grid; gap: var(--space-4xs); margin: 0; padding: 0; list-style: none; }
+.p-menu-item { display: flex; align-items: center; gap: var(--space-xs); inline-size: 100%; min-inline-size: 0; min-block-size: max(var(--size-control), var(--size-tap)); padding: var(--space-3xs) var(--space-xs); border: 0; border-radius: var(--radius); background: transparent; color: inherit; font-size: var(--type-base); text-align: start; text-decoration: none; }
+.p-menu-item[data-lines="2"] { padding-block: var(--space-2xs); }
+.p-menu-item[aria-current="true"], .p-menu-item[aria-checked="true"] { background: var(--current); font-weight: 600; }
+.p-menu-item[data-tone="quiet"] { color: var(--muted); }
+.p-menu-item:active:not(:disabled) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-menu-item:hover:not(:disabled) { background: var(--hover); }
+  .p-menu-item[data-tone="quiet"]:hover { color: var(--text); }
+}
+.p-words { display: grid; flex: 1; min-inline-size: 0; }
+.p-words > * { overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.p-words b { font-weight: 600; }
+.p-sub { font-size: var(--type-small); font-weight: 400; color: var(--muted); }
+.p-end { margin-inline-start: auto; color: var(--muted); flex: none; display: inline-flex; align-items: center; gap: var(--space-3xs); }
+.p-hint { font-size: var(--type-small); font-weight: 400; opacity: 0; }
+.p-menu-item:focus-visible .p-hint, .p-menu-item.is-hover .p-hint { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .p-menu-item:hover .p-hint { opacity: 1; } }
+@media (hover: none) { .p-hint { opacity: 1; } }
+/* A row that holds a menu item plus its own icon button (repositories: remove ×) */
+.p-menu-row { border-radius: var(--radius); }
+.p-menu-row__line { position: relative; display: flex; align-items: center; }
+.p-menu-row > .p-menu-row__line > .p-menu-item.p-menu-item { background: transparent; }
+.p-menu-row:has([aria-current="true"]) { background: var(--current); }
+.p-menu-row:has(.p-menu-item:active), .p-menu-row.is-hover, .p-menu-row:focus-within { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .p-menu-row:hover { background: var(--hover); } .p-menu-row:has([aria-current="true"]):hover { background: color-mix(in oklch, var(--current), var(--hover)); } }
+/* Letter tile: one part, sizes 24 / 28 / 32, square or round, hue from the name */
+.p-initial { position: relative; display: inline-grid; place-items: center; flex: none; inline-size: var(--initial-size, 28px); block-size: var(--initial-size, 28px); border-radius: var(--radius); background: oklch(58% 0.12 var(--initial-hue)); color: var(--on-accent); font-size: var(--type-base); font-weight: 700; line-height: 1; }
+.p-initial[data-size="24"] { --initial-size: 24px; border-radius: 50%; font-size: var(--type-badge); }
+.p-initial[data-size="32"] { --initial-size: 32px; font-size: var(--type-title); }
+.p-initial-slot { position: relative; display: inline-grid; flex: none; }
+/* Remove × over the tile: the icon button part in the tile's colour */
+.p-menu-row .p-remove { position: absolute; z-index: 1; inset-inline-start: var(--space-xs); inset-block-start: 50%; translate: 0 -50%; inline-size: var(--size-compact); block-size: var(--size-compact); background: oklch(58% 0.12 var(--initial-hue)); color: var(--on-accent); opacity: 0; }
+.p-menu-row .p-remove:active { background: oklch(48% 0.12 var(--initial-hue)); color: var(--on-accent); }
+.p-menu-row:focus-within .p-remove, .p-menu-row.is-hover .p-remove, .p-remove[aria-expanded="true"] { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .p-menu-row:hover .p-remove { opacity: 1; } .p-menu-row .p-remove:hover { background: oklch(48% 0.12 var(--initial-hue)); color: var(--on-accent); } }
+@media (hover: none) { .p-menu-row .p-remove { opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) { .p-menu-row .p-remove { transition: opacity var(--dur-hover) var(--ease-out); } }
+.p-confirm { margin: 0 var(--space-xs) var(--space-xs); padding: var(--space-s); border-radius: var(--radius); background: var(--surface); display: grid; gap: var(--space-s); }
+.p-confirm p { margin: 0; font-size: var(--type-small); color: var(--muted); }
+.p-row { display: flex; gap: var(--space-xs); flex-wrap: wrap; align-items: center; }
+.p-empty-line { display: flex; align-items: center; gap: var(--space-xs); margin: 0; padding: var(--space-2xs) var(--space-xs); font-size: var(--type-small); color: var(--muted); }
+/* Project menu organism: the tile button in the top bar, and its menu */
+.p-topbar { min-block-size: 72px; background: var(--surface); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-s) var(--space-l); padding: var(--space-xs) clamp(var(--space-m), 3vw, 28px); }
+.p-project { gap: var(--space-xs); padding: var(--space-2xs) var(--space-xs); min-block-size: var(--size-touch); max-inline-size: min(100%, 360px); border-radius: var(--radius-panel); font-size: var(--type-title); text-align: start; --badge-ring: var(--surface); }
+.p-project .p-words { line-height: 1.35; }
+.p-project .p-sub { line-height: 1.3; }
+.p-dot-item::before { content: ""; flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--muted); opacity: 0.5; }
+@media (prefers-reduced-motion: no-preference) { .p-menu, .p-menu[data-size="flyout"] { transition: opacity var(--dur-menu) var(--ease-out), translate var(--dur-menu) var(--ease-out); } @starting-style { .p-menu { opacity: 0; translate: 0 -4px; } } }
+</style>
+</head>
+<body data-mode="after">
+<main>
+  <header>
+    <h1>Project menu, rebuilt from catalogue parts <span class="tag">mock-up for Tuesday 10 Nov</span></h1>
+    <p class="intro">The project menu is the button at the top left with your site's letter. It lists your projects and their branches, Site settings, the agent connection and your GitHub accounts. Nothing it does changes: After builds it from the shared catalogue parts. Switch between Today and After, then play the steps.</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+  </div>
+  <div class="captions">
+    <p class="summary today">Today: the menu as the editor draws it now.</p>
+    <p class="summary after">Same colours and words. 4 row styles become 1 menu item, 3 small icon buttons become 1, 3 headings become 1, 2 corner numbers become 1 badge. Hover reacts to a mouse only (10 rules), every item answers a press, and rows are 44 px tall on phones (32 today).</p>
+  </div>
+
+  <section class="demo" aria-labelledby="demo-title">
+    <h2 id="demo-title">Play the steps (demo buttons, not part of the editor)</h2>
+    <div class="steps">
+      <button type="button" data-step="toggle">Open or close the menu</button>
+      <button type="button" data-step="branches">Show branches</button>
+      <button type="button" data-step="switch">Switch to dev</button>
+      <button type="button" data-step="point">Point at a project</button>
+      <button type="button" data-step="remove">Remove a project</button>
+      <button type="button" data-step="reload">Reload the list</button>
+      <button type="button" data-step="question">An agent asks a question</button>
+      <button type="button" data-step="finished">Work finished on another branch</button>
+      <button type="button" class="reset" data-step="reset">Start again</button>
+    </div>
+  </section>
+
+  <div class="stage today" id="today"></div>
+  <div class="stage after" id="after"></div>
+  <ul class="changes after"><li>one menu item for every row</li><li>one icon button</li><li>one heading</li><li>one badge for the corner numbers</li><li>hover only with a mouse</li><li>press feedback</li><li>44 px rows on phones</li></ul>
+</main>
+<script>
+const P = {
+  "caret-down": '<path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/>',
+  "caret-right": '<path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/>',
+  "arrows-clockwise": '<path d="M224,48V96a8,8,0,0,1-8,8H168a8,8,0,0,1,0-16h28.69L182.06,73.37a79.56,79.56,0,0,0-56.13-23.43h-.45A79.52,79.52,0,0,0,69.59,72.71,8,8,0,0,1,58.41,61.27a96,96,0,0,1,135,.79L208,76.69V48a8,8,0,0,1,16,0ZM186.41,183.29a80,80,0,0,1-112.47-.66L59.31,168H88a8,8,0,0,0,0-16H40a8,8,0,0,0-8,8v48a8,8,0,0,0,16,0V179.31l14.63,14.63A95.43,95.43,0,0,0,130,222.06h.53a95.360,95.36,0,0,0,67.07-27.33,8,8,0,0,0-11.18-11.44Z"/>',
+  x: '<path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/>',
+};
+const ic = (name, size = 16) => `<svg class="ph" width="${size}" height="${size}" style="inline-size:${size}px;block-size:${size}px" viewBox="0 0 256 256" aria-hidden="true">${P[name]}</svg>`;
+const hue = (text) => { let h = 0; for (const c of text) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; };
+const letter = (text) => (text.match(/[a-z0-9]/i)?.[0] ?? "·").toUpperCase();
+
+const REPOS = [
+  { id: 1, name: "bakery-site", owner: "lex", org: false, private: false },
+  { id: 2, name: "portfolio", owner: "lex", org: false, private: true },
+  { id: 3, name: "club-news", owner: "techies-club", org: true, private: false },
+];
+const BRANCHES = ["main", "dev", "new-menu"];
+const start = () => ({ open: true, flyout: false, branch: "main", confirming: null, loading: false, questions: 0, finished: false, point: false });
+let s = start();
+
+/* ---------- Today: markup as repository-menu.ts builds it ---------- */
+function todayTile(name, size) { return `<span class="rm-initial" style="--initial-hue:${hue(name)}" aria-hidden="true">${letter(name)}</span>`; }
+function todayRow(repo) {
+  const selected = repo.id === 1;
+  const on = selected ? ` · ⑂ ${s.branch}` : "";
+  const note = selected && s.finished ? `<span class="rm-finished" aria-hidden="true">1</span><span class="sr-only"> — An agent finished on new-menu</span>` : "";
+  const more = selected ? `<span class="rm-more" aria-hidden="true">${ic("caret-right", 12)}</span>` : "";
+  const confirm = s.confirming === repo.id ? `<div class="rm-confirm"><p>GitHub controls which repositories this editor can use. On the page that opens, uncheck ${repo.name} and save. Nothing in the repository changes.</p><a class="button primary" href="#" data-act="go">Remove on GitHub ↗</a><button type="button" class="text-button" data-act="cancel">Cancel</button></div>` : "";
+  return `<li class="rm-item${s.point && repo.id === 2 ? " is-hover" : ""}" style="--initial-hue:${hue(repo.name)}">
+    <button type="button" class="rm-remove" data-act="remove" data-id="${repo.id}" title="Remove ${repo.name} from the editor" aria-label="Remove ${repo.name}" aria-expanded="${s.confirming === repo.id}">${ic("x")}</button>
+    <button type="button" class="rm-repo" data-act="${selected ? "branches" : "choose"}" ${selected ? `aria-current="true" aria-expanded="${s.flyout}"` : ""}>${todayTile(repo.name)}<span class="rm-repo-text"><span class="rm-repo-name">${repo.name}</span><span class="rm-repo-owner">${repo.owner}${repo.private ? " · private" : ""}${on}</span></span>${note}${more}</button>
+    ${confirm}</li>`;
+}
+function todayHTML() {
+  const corner = s.questions ? `<span class="rm-questions" aria-hidden="true">${s.questions}</span>` : s.finished ? `<span class="rm-finished" aria-hidden="true">1</span>` : "";
+  const trigger = `<button type="button" class="rm-trigger" data-act="toggle" aria-expanded="${s.open}" aria-label="bakery-site — repository actions">${todayTile("bakery-site")}${corner}<span class="rm-identity"><span class="rm-repository">lex</span><span class="rm-name">bakery-site</span></span><span class="rm-caret">${ic("caret-down", 12)}</span></button>`;
+  const owners = (o, kind) => `<li class="rm-owner"><span>${o}</span><span class="rm-owner-kind">${kind}</span></li>`;
+  const list = s.loading ? "" : [owners("lex", "You"), todayRow(REPOS[0]), todayRow(REPOS[1]), owners("techies-club", "Organisation"), todayRow(REPOS[2])].join("");
+  const panel = `<div class="rm-popover dropdown-panel" aria-label="Repository actions">
+    <section class="rm-section"><div class="rm-heading"><span>Repositories</span><button type="button" class="rm-heading-button" data-act="reload" title="Reload repositories" aria-label="Reload repositories">${ic("arrows-clockwise")}</button></div>
+      <ul class="rm-repos">${list}</ul>${s.loading ? `<p class="rm-empty">Loading repositories…</p>` : ""}
+      <a class="text-button rm-action rm-add" href="#" title="Choose the repositories this editor can use, on GitHub">+ Add repositories ↗</a>
+      <a class="text-button rm-action rm-quiet" href="#" title="Install the editor on another account or organisation, on GitHub">+ Install on another account ↗</a></section>
+    <div class="rm-section"><button type="button" class="text-button rm-action">Site settings</button></div>
+    <div class="rm-agent"><button type="button" class="text-button agent-menu__action"><span>Connect to MCP</span></button></div>
+    <section class="rm-section"><div class="rm-heading"><span>GitHub accounts</span></div>
+      <div class="rm-account" aria-current="true">${todayTile("lex")}<span class="rm-account-name">lex</span></div>
+      <button type="button" class="rm-account rm-action${s.point ? " is-hover" : ""}" title="Switch to lex-work">${todayTile("lex-work")}<span class="rm-account-name">lex-work</span><span class="rm-hint">Switch</span></button>
+      <a class="text-button rm-action rm-quiet" href="#">+ Add another account</a>
+      <button type="button" class="text-button rm-action rm-quiet">Sign out of lex</button></section>
+  </div>`;
+  const items = BRANCHES.map((b) => `<button type="button" class="flyout__item rm-branch-item" role="menuitemradio" aria-checked="${b === s.branch}" data-act="branch" data-branch="${b}"><span class="rm-branch-name">${b}</span>${s.finished && b === "new-menu" ? `<span class="rm-finished" aria-hidden="true">1</span><span class="sr-only"> — An agent finished</span>` : ""}</button>`).join("");
+  const flyout = s.flyout ? `<div class="flyout" role="menu" aria-label="Branches" data-flyout><div class="flyout__heading" role="none"><span aria-hidden="true">Branches</span><button type="button" class="flyout__icon-button" title="Refresh from GitHub" aria-label="Refresh from GitHub" role="menuitem">${ic("arrows-clockwise")}</button></div><div class="flyout__list" role="group">${items}</div></div>` : "";
+  return `<div class="topbar"><div class="repository-menu">${trigger}</div></div><div class="menus">${s.open ? panel + flyout : `<p class="canvas-note">The menu is closed. Press the tile, or the demo button.</p>`}</div>`;
+}
+
+/* ---------- After: the same menu from catalogue parts ---------- */
+function tile(name, size = 28, corner = "") { return `<span class="p-initial-slot"><span class="p-initial" data-size="${size}" style="--initial-hue:${hue(name)}" aria-hidden="true">${letter(name)}</span>${corner}</span>`; }
+function afterRow(repo) {
+  const selected = repo.id === 1;
+  const on = selected ? ` · ⑂ ${s.branch}` : "";
+  const corner = selected && s.finished ? `<span class="p-badge p-corner" data-size="number" data-tone="action" aria-hidden="true">1</span>` : "";
+  const more = selected ? `<span class="p-end" aria-hidden="true">${ic("caret-right", 12)}</span>` : "";
+  const confirm = s.confirming === repo.id ? `<div class="p-confirm"><p>GitHub controls which repositories this editor can use. On the page that opens, uncheck ${repo.name} and save. Nothing in the repository changes.</p><div class="p-row"><a class="p-button p-press" data-tone="primary" href="#" data-act="go">Remove on GitHub ↗</a><button type="button" class="p-button p-press" data-tone="quiet" data-act="cancel">Cancel</button></div></div>` : "";
+  return `<li class="p-menu-row${s.point && repo.id === 2 ? " is-hover" : ""}" style="--initial-hue:${hue(repo.name)}"><div class="p-menu-row__line">
+    <button type="button" class="p-icon-button p-remove p-press" data-act="remove" data-id="${repo.id}" aria-label="Remove ${repo.name}" aria-expanded="${s.confirming === repo.id}">${ic("x")}</button>
+    <button type="button" class="p-menu-item p-press" data-lines="2" data-act="${selected ? "branches" : "choose"}" ${selected ? `aria-current="true" aria-expanded="${s.flyout}"` : ""}>${tile(repo.name, 28, corner)}<span class="p-words"><b>${repo.name}</b><span class="p-sub">${repo.owner}${repo.private ? " · private" : ""}${on}</span></span>${selected && s.finished ? `<span class="sr-only"> — An agent finished on new-menu</span>` : ""}${more}</button>
+  </div>${confirm}</li>`;
+}
+function afterHTML() {
+  const corner = s.questions ? `<span class="p-badge p-corner" data-size="number" data-tone="question" aria-hidden="true">${s.questions}</span>` : s.finished ? `<span class="p-badge p-corner" data-size="number" data-tone="action" aria-hidden="true">1</span>` : "";
+  const trigger = `<button type="button" class="p-button p-press p-project" data-tone="quiet" data-ink="text" data-act="toggle" aria-expanded="${s.open}" aria-label="bakery-site — repository actions">${tile("bakery-site", 32, corner)}<span class="p-words"><span class="p-sub">lex</span><span>bakery-site</span></span><span class="p-end">${ic("caret-down", 12)}</span></button>`;
+  const owner = (o, kind) => `<li class="p-heading" data-look="group"><span>${o}</span><span data-end>${kind}</span></li>`;
+  const list = s.loading ? "" : [owner("lex", "You"), afterRow(REPOS[0]), afterRow(REPOS[1]), owner("techies-club", "Organisation"), afterRow(REPOS[2])].join("");
+  const panel = `<div class="p-menu" aria-label="Repository actions">
+    <section class="p-menu-section"><div class="p-heading"><span>Repositories</span><button type="button" class="p-icon-button p-press" data-size="icon" data-act="reload" aria-label="Reload repositories">${s.loading ? `<span class="p-spinner"></span>` : ic("arrows-clockwise")}</button></div>
+      <ul class="p-menu-list">${list}</ul>${s.loading ? `<p class="p-empty-line">Loading repositories…</p>` : ""}
+      <a class="p-menu-item p-press" data-tone="quiet" href="#">+ Add repositories ↗</a>
+      <a class="p-menu-item p-press" data-tone="quiet" href="#">+ Install on another account ↗</a></section>
+    <div class="p-menu-section"><button type="button" class="p-menu-item p-press">Site settings</button>
+      <button type="button" class="p-menu-item p-press"><span class="p-badge" data-kind="dot" aria-hidden="true"></span><span class="p-words"><span>Connect to MCP</span></span></button></div>
+    <section class="p-menu-section"><div class="p-heading"><span>GitHub accounts</span></div>
+      <div class="p-menu-item" aria-current="true">${tile("lex", 24)}<span class="p-words"><span>lex</span></span></div>
+      <button type="button" class="p-menu-item p-press${s.point ? " is-hover" : ""}">${tile("lex-work", 24)}<span class="p-words"><span>lex-work</span></span><span class="p-end p-hint">Switch</span></button>
+      <a class="p-menu-item p-press" data-tone="quiet" href="#">+ Add another account</a>
+      <button type="button" class="p-menu-item p-press" data-tone="quiet">Sign out of lex</button></section>
+  </div>`;
+  const items = BRANCHES.map((b) => `<button type="button" class="p-menu-item p-press" role="menuitemradio" aria-checked="${b === s.branch}" data-act="branch" data-branch="${b}"><span class="p-words"><span>${b}</span></span>${s.finished && b === "new-menu" ? `<span class="p-badge" data-size="number" data-tone="action" aria-hidden="true">1</span><span class="sr-only"> — An agent finished</span>` : ""}</button>`).join("");
+  const flyout = s.flyout ? `<div class="p-menu" data-size="flyout" role="menu" aria-label="Branches" data-flyout><div class="p-heading" role="none"><span aria-hidden="true">Branches</span><button type="button" class="p-icon-button p-press" data-size="icon" aria-label="Refresh from GitHub" role="menuitem">${ic("arrows-clockwise")}</button></div><div class="p-menu-list" role="group">${items}</div></div>` : "";
+  return `<div class="p-topbar">${trigger}</div><div class="menus">${s.open ? panel + flyout : `<p class="canvas-note">The menu is closed. Press the tile, or the demo button.</p>`}</div>`;
+}
+
+/* The flyout sits beside the open project's row when there is room, under the menu otherwise. */
+function placeFlyout(stage) {
+  const fly = stage.querySelector("[data-flyout]");
+  const row = stage.querySelector('[aria-current="true"][data-act="branches"]');
+  if (!fly || !row) return;
+  fly.style.marginBlockStart = "0";
+  const menu = fly.previousElementSibling;
+  if (Math.abs(fly.offsetTop - menu.offsetTop) < 4) fly.style.marginBlockStart = `${row.getBoundingClientRect().top - menu.getBoundingClientRect().top - 6}px`;
+}
+function render() {
+  const t = document.getElementById("today"), a = document.getElementById("after");
+  t.innerHTML = todayHTML();
+  a.innerHTML = afterHTML();
+  placeFlyout(t); placeFlyout(a);
+}
+let timer;
+function act(name, el) {
+  clearTimeout(timer);
+  if (name === "toggle") { s.open = !s.open; if (!s.open) { s.flyout = false; s.confirming = null; } }
+  if (name === "branches") { s.open = true; s.flyout = !s.flyout || el?.dataset.step === "branches"; }
+  if (name === "switch") { s.open = true; s.flyout = true; s.branch = "dev"; }
+  if (name === "branch") { s.branch = el.dataset.branch; if (s.branch === "new-menu") s.finished = false; }
+  if (name === "point") { s.open = true; s.point = !s.point; }
+  if (name === "remove") { s.open = true; const id = Number(el?.dataset.id ?? 2); s.confirming = s.confirming === id ? null : id; }
+  if (name === "cancel" || name === "go") s.confirming = null;
+  if (name === "reload") { s.open = true; s.loading = true; s.confirming = null; render(); timer = setTimeout(() => { s.loading = false; render(); }, 1400); return; }
+  if (name === "question") s.questions = s.questions ? 0 : 1;
+  if (name === "finished") { s.finished = !s.finished; if (s.finished) { s.open = true; s.flyout = true; } }
+  if (name === "reset") s = start();
+  render();
+}
+document.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => {
+  const remove = b.dataset.step === "remove" ? { dataset: { id: "2" } } : b;
+  act(b.dataset.step, remove);
+  document.querySelectorAll("[data-step]").forEach((o) => o.setAttribute("aria-pressed", String(o === b && b.dataset.step !== "reset")));
+}));
+for (const id of ["today", "after"]) document.getElementById(id).addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]");
+  if (el?.tagName === "A" || e.target.closest("a")) e.preventDefault();
+  if (el) act(el.dataset.act, el);
+});
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  render();
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+window.addEventListener("resize", () => { placeFlyout(document.getElementById("today")); placeFlyout(document.getElementById("after")); });
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 57 Request pins, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 10 Nov review
+  (kitchen station 3, "Show and tell": a Today / After switch with demo steps).
+  Ticket: docs/wayfinder/atomic-catalogue/build/tickets/57-organism-pins.md.
+  Today: the numbered pins over the page for requests to agents, their card (the small conversation with the
+  answer box) and the tray for requests elsewhere. Structure, labels and states from src/components/agent-pins.ts
+  (stateLabels Waiting / Agent working / Done / Agent answered / Question; marks ✓ … ?; Dismiss or Clear;
+  Show page; "Answer…"; "1 request elsewhere"), values from src/components/agent-pins.css and the agent tokens
+  in src/theme.css (dev, 2026-10-27).
+  Not matched: hovering a pin opens its card after a moment in the editor; here a click or the demo button
+  opens it. Keyboard focus showing the request's first line is played with a demo button. Pins sit on a
+  sample page drawn here, not the real preview frame.
+  After: the same pins from the agent parts (slice 27) and the approved catalogue parts of
+  10-first-parts-and-edit-bar.html (button, field, badge, spinner), with the shared spacing and motion values;
+  the pop has no bounce, nothing eases in, and hover reacts to a mouse only.
+-->
+<style>
+/* ---------- Shared values: src/theme.css, light and dark written once with light-dark() ---------- */
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --on-accent: oklch(100% 0 none);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --danger: oklch(from var(--color-success) l c 25);
+  --danger-bg: oklch(from var(--success-bg) l c 25);
+  --danger-fg: oklch(from var(--success-fg) l c 25);
+  --agent-question-strong: oklch(66% 0.18 48);
+  --panel-surface: var(--surface-raised);
+  --pressed: light-dark(var(--primary), var(--color-primary-light));
+  --on-pressed: light-dark(var(--on-primary), var(--color-primary-darkest));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px; --size-tap: 0px;
+  --panel-padding: 6px;
+
+  /* After only: the catalogue's shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+/* src/theme.css: real tap targets on touch screens and narrow editor layouts. */
+@media (hover: none), (pointer: coarse), (width <= 768px) { :root { --size-tap: var(--size-touch); } }
+* { box-sizing: border-box; }
+body { margin: 0; font-size: var(--type-base); -webkit-tap-highlight-color: transparent; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: 0.5; }
+button:focus-visible, a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.ph { inline-size: 16px; block-size: 16px; fill: currentColor; flex: none; display: block; }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+header { display: grid; gap: var(--space-3xs); }
+h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 70ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 5; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; max-inline-size: 75ch; text-wrap: pretty; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+.demo { border: 1.5px dashed var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); }
+.demo h2 { margin: 0; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.demo .steps { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.demo button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 4px 10px; min-block-size: 32px; }
+.demo button[aria-pressed="true"] { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.demo button.reset { color: var(--muted); }
+.stage { border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--background); overflow: clip; min-inline-size: 0; }
+.menus { display: flex; flex-wrap: wrap; gap: var(--space-2xs); align-items: start; padding: var(--space-xs) clamp(8px, 3vw, 28px) var(--space-l); min-block-size: 30rem; }
+.canvas-note { color: var(--muted); font-size: var(--type-small); padding: var(--space-s) clamp(8px, 3vw, 28px); margin: 0; }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+
+:root {
+  /* src/theme.css agent tokens: pins stay light in both themes, the card follows the theme. */
+  --agent-question-pin: oklch(94.5% 0.05 62);
+  --agent-question-ink: oklch(46% 0.14 45);
+  --agent-done-pin: oklch(from var(--color-primary) 90.5% 0.006 h);
+  --agent-done-line: oklch(from var(--color-primary) 70% 0.012 h);
+  --agent-done-ink: oklch(from var(--color-primary) 36% 0.015 h);
+  --agent-pin-text: oklch(from var(--color-primary) 25% 0.01 h);
+  --agent-question-surface: light-dark(oklch(96% 0.04 62), oklch(31% 0.06 50));
+  --agent-question-text: light-dark(oklch(42% 0.13 45), oklch(88% 0.08 62));
+  --agent-done-surface: light-dark(oklch(from var(--color-primary) 92.5% 0.005 h), oklch(from var(--color-primary) 29% 0.006 h));
+  --agent-done-bubble: light-dark(oklch(from var(--color-primary) 84% 0.008 h), oklch(from var(--color-primary) 40% 0.01 h));
+  --agent-done-bubble-ink: light-dark(oklch(from var(--color-primary) 27% 0.015 h), oklch(from var(--color-primary) 92% 0.008 h));
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --panel-padding-roomy: 12px;
+}
+/* The sample page under the pins (not the editor) */
+.preview { position: relative; overflow: clip; container-type: inline-size; padding: clamp(10px, 3cqi, 28px); min-block-size: 34rem; }
+.site { background: light-dark(oklch(100% 0 none), oklch(19% 0.01 265)); color: light-dark(oklch(22% 0.02 140), oklch(92% 0.01 140)); border-radius: var(--radius); padding: clamp(12px, 5cqi, 48px); display: grid; gap: 14px; font-family: Georgia, "Iowan Old Style", serif; box-shadow: 0 1px 3px oklch(0% 0 none / 0.12); }
+.site .el { position: relative; margin-block-start: 26px; }
+.site h3 { margin: 0; font-size: clamp(1.5rem, 1rem + 3cqi, 2.4rem); line-height: 1.1; text-wrap: balance; }
+.site .photo { block-size: clamp(120px, 30cqi, 220px); border-radius: 4px; background: linear-gradient(135deg, oklch(75% 0.09 60), oklch(55% 0.1 30)); }
+/* Pins are the editor's overlay, not the page: the editor's own font. */
+.site :is(.agent-pin, .p-pin) { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.site p { margin: 0; max-inline-size: 56ch; font-size: 15px; line-height: 1.55; }
+
+/* =====================  TODAY: real editor CSS (src/components/agent-pins.css)  ===================== */
+.today .agent-pin { position: absolute; inset-block-end: calc(100% + 3px); z-index: 1; display: flex; align-items: center; white-space: nowrap; min-inline-size: 22px; block-size: 22px; margin: 0; border: 2px solid var(--primary); border-radius: 8px 8px 8px 2px; padding: 0 6px; background: var(--color-primary-lighter); color: var(--primary); font-size: var(--type-small); font-weight: 700; line-height: 1; transform-origin: left bottom; box-shadow: var(--shadow-small); }
+.today .agent-pin__status:not(:empty) { display: flex; margin-inline-start: 3px; }
+.today .agent-pin__spinner { inline-size: 8px; block-size: 8px; border: 1.5px solid currentColor; border-block-start-color: transparent; border-radius: 50%; animation: agent-pin-spin 0.8s steps(4) infinite; }
+.today .agent-pin[data-state="question"] { border-color: var(--agent-question-strong); background: var(--agent-question-pin); color: var(--agent-question-ink); }
+.today .agent-pin[data-state="done"], .today .agent-pin[data-state="answered"] { border-color: var(--agent-done-line); background: var(--agent-done-pin); color: var(--agent-done-ink); }
+.today .agent-pin__question { max-inline-size: 260px; overflow: hidden; line-height: 16px; text-overflow: ellipsis; font-weight: 600; }
+.today .agent-pin__question:not(:empty) { margin-inline-start: 6px; }
+.today .agent-pin__text { max-inline-size: 0; overflow: hidden; line-height: 16px; text-overflow: ellipsis; opacity: 0; color: var(--agent-pin-text); font-weight: 400; transition: max-width 160ms ease-out, margin-left 160ms ease-out, opacity 120ms ease-out; }
+.today .agent-pin:hover, .today .agent-pin:focus-visible, .today .agent-pin[aria-expanded="true"] { z-index: 2; }
+.today .agent-pin:focus-visible:not([aria-expanded="true"], [data-state="question"]) .agent-pin__text, .today .agent-pin.is-peek .agent-pin__text { max-inline-size: 240px; margin-inline-start: 6px; opacity: 1; }
+.today .agent-pin:hover, .today .agent-pin[aria-expanded="true"] { outline: 2px solid color-mix(in oklch, currentColor 35%, transparent); outline-offset: 1px; }
+.today .agent-pin:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.today .agent-pin.is-popping { animation: agent-pin-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.today .agent-pin-outline { position: absolute; inset: -4px; inline-size: calc(100% + 8px); block-size: calc(100% + 8px); z-index: 0; overflow: visible; pointer-events: none; }
+.today .agent-pin-outline rect { fill: color-mix(in oklch, var(--primary) 5%, transparent); stroke: var(--primary); stroke-width: 1.5px; stroke-dasharray: 3px 1.5px; animation: agent-pin-march 0.6s linear infinite; }
+.today .agent-pin-outline.is-done { animation: agent-pin-fade 0.9s ease-in forwards; }
+.today .agent-pin-outline.is-done rect { stroke: var(--color-success); stroke-dasharray: none; fill: color-mix(in oklch, var(--color-success) 5%, transparent); animation: none; }
+@keyframes agent-pin-spin { to { transform: rotate(360deg); } }
+@keyframes agent-pin-pop { 0% { transform: scale(0.85); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
+@keyframes agent-pin-march { to { stroke-dashoffset: -4.5px; } }
+@keyframes agent-pin-fade { 0%, 45% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .today .agent-pin__spinner, .today .agent-pin.is-popping, .today .agent-pin-outline rect { animation: none; }
+  .today .agent-pin__text { transition: none; }
+  .today .agent-pin-outline.is-done { display: none; }
+}
+.today .agent-pins__tray { position: absolute; inset-block-end: 14px; inset-inline-end: 14px; z-index: 26; display: flex; align-items: center; gap: 6px; min-block-size: var(--size-compact); margin: 0; border: 1px solid var(--control-line); border-radius: 999px; padding: 0 10px; background: var(--panel-surface); color: var(--text); font-size: var(--type-small); font-weight: 600; white-space: nowrap; box-shadow: var(--shadow); }
+.today .agent-pins__tray.has-questions { border-color: var(--agent-question-strong); padding-inline-start: 5px; }
+.today .agent-pins__tray-questions { border-radius: 999px; padding: 2px 7px; background: var(--agent-question-strong); color: var(--on-accent); display: inline-flex; align-items: center; gap: 0.2em; }
+.today .agent-pins__tray:hover { background: linear-gradient(var(--hover) 0 0), var(--panel-surface); }
+.today .agent-pins__tray:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.today .agent-pin-card { position: absolute; z-index: 31; display: flex; flex-direction: column; gap: 10px; inline-size: 300px; max-inline-size: calc(100% - 16px); max-block-size: 380px; overflow: auto; padding: var(--panel-padding-roomy); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); font-size: var(--type-base); box-shadow: var(--shadow); transition: opacity 120ms ease-out; }
+@starting-style { .today .agent-pin-card { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .today .agent-pin-card { transition: none; } }
+.today .agent-pin-card[data-state="done"], .today .agent-pin-card[data-state="answered"] { background: var(--agent-done-surface); }
+.today .agent-pin-card__request { display: flex; flex-direction: column; gap: 8px; }
+.today .agent-pin-card__request + .agent-pin-card__request { padding-block-start: 10px; border-block-start: 1px solid var(--line); }
+.today .agent-pin-card p { margin: 0; }
+.today .agent-pin-card__head { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--type-small); }
+.today .agent-pin-card__where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.today .agent-pin-card__state { display: flex; align-items: center; gap: 5px; flex: none; margin-inline-start: auto; font-weight: 600; }
+.today .agent-pin-card__state::before { content: ""; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--primary); }
+.today [data-state="question"] > .agent-pin-card__head .agent-pin-card__state { color: var(--agent-question-text); }
+.today [data-state="question"] > .agent-pin-card__head .agent-pin-card__state::before { background: var(--agent-question-strong); }
+.today :is([data-state="done"], [data-state="answered"]) > .agent-pin-card__head .agent-pin-card__state::before { background: var(--agent-done-line); }
+.today .agent-pin-card__thread { display: flex; flex-direction: column; gap: 6px; }
+.today .agent-pin-card__message { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.today .agent-pin-card__message[data-from="agent"] { align-items: flex-end; }
+.today .agent-pin-card__from { padding: 0 2px; color: var(--muted); font-size: var(--type-small); font-weight: 600; }
+.today .agent-pin-card__bubble { max-inline-size: 88%; border: 1px solid transparent; border-radius: 8px 8px 8px 2px; padding: 4px 8px 5px; background: var(--primary); color: var(--on-primary); font: var(--type-small)/15px var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.today [data-from="agent"] > .agent-pin-card__bubble { border-color: var(--line); border-radius: 8px 8px 2px 8px; background: var(--surface); color: var(--text); }
+.today .agent-pin-card__message.is-question > .agent-pin-card__bubble { border-color: var(--agent-question-strong); background: var(--agent-question-surface); color: var(--agent-question-text); }
+.today .agent-pin-card__message.is-question > .agent-pin-card__from { color: var(--agent-question-text); }
+.today :is([data-state="done"], [data-state="answered"]) [data-from="user"] > .agent-pin-card__bubble { background: var(--agent-done-bubble); color: var(--agent-done-bubble-ink); }
+.today .agent-pin-card__answer { display: flex; flex-direction: column; gap: 3px; }
+.today .agent-pin-card__answer-input { display: block; inline-size: 100%; max-block-size: 84px; margin: 0; border: 1.5px solid var(--primary); border-radius: 8px 8px 8px 2px; padding: 4px 8px 5px; background: var(--surface-input); color: var(--text); font: var(--type-small)/15px var(--font-mono); resize: none; field-sizing: content; min-block-size: 26px; }
+.today .agent-pin-card__answer-input::placeholder { color: var(--muted); }
+.today .agent-pin-card__answer-input:focus { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 28%, transparent); }
+.today .agent-pin-card__answer.is-sending .agent-pin-card__answer-input { opacity: 0.6; }
+.today .agent-pin-card__error { font-size: var(--type-small); font-weight: 600; display: flex; gap: 0.3em; align-items: start; }
+.today .agent-pin-card__error .ph { inline-size: 1em; block-size: 1em; margin-block-start: 0.15em; }
+.today .agent-pin-card__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.today .text-button { border: 0; background: none; padding: 5px 0; color: var(--link); font-size: var(--type-base); }
+.today .text-button:active { text-decoration: underline; }
+@media (hover: hover) and (pointer: fine) { .today .text-button:hover { text-decoration: underline; } }
+
+/* =====================  AFTER: catalogue parts  ===================== */
+/* Shared press and hover behaviour for every pressable part */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  .p-press:active:not(:disabled) { scale: 0.97; }
+}
+:is(.p-button, .p-icon-button):focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.p-menu-item:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+/* Button (approved): tones primary, secondary, quiet; sizes compact, control, touch */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: max(var(--size-control), var(--size-tap)); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); text-decoration: none; color: inherit; }
+.p-button[data-tone="primary"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-button[data-tone="quiet"] { background: transparent; box-shadow: none; color: var(--link); }
+.p-button[data-ink="text"] { color: inherit; }
+.p-button:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.p-button[data-tone="primary"]:active:not(:disabled) { background: var(--primary-hover); }
+.p-button[data-tone="quiet"]:active:not(:disabled), .p-button[data-tone="quiet"][aria-expanded="true"] { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-button:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .p-button[data-tone="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
+  .p-button[data-tone="quiet"]:hover:not(:disabled) { background: var(--hover); }
+}
+/* Icon button (approved): icon 24, compact 28, control 32 (44 on touch screens) */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.p-icon-button[data-size="icon"] { inline-size: var(--size-icon); block-size: var(--size-icon); border-radius: var(--radius-small); }
+.p-icon-button[data-size="compact"] { inline-size: var(--size-compact); block-size: var(--size-compact); }
+.p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Badge (approved): number size for counts that Lex kept, tones by data attribute */
+.p-badge { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-3xs); block-size: 20px; padding-inline: var(--space-xs); border-radius: var(--radius-full); font-size: var(--type-small); font-weight: 600; background: var(--surface-subtle); color: var(--link); flex: none; }
+.p-badge[data-size="number"] { min-inline-size: 18px; block-size: 18px; padding-inline: var(--space-3xs); font-size: var(--type-badge); font-weight: 700; }
+.p-badge[data-tone="action"] { background: var(--primary); color: var(--on-primary); }
+.p-badge[data-tone="question"] { background: var(--agent-question-strong); color: var(--on-accent); }
+.p-badge[data-kind="dot"] { inline-size: 8px; block-size: 8px; min-inline-size: 0; padding: 0; background: var(--muted); opacity: 0.5; }
+.p-corner { position: absolute; inset-block-start: calc(-1 * var(--space-2xs)); inset-inline-end: calc(-1 * var(--space-2xs)); box-shadow: 0 0 0 2px var(--badge-ring, var(--surface)); pointer-events: none; }
+/* Spinner (approved) */
+.p-spinner { inline-size: 10px; block-size: 10px; border: 1.5px solid var(--control-line); border-block-start-color: var(--primary); border-radius: 50%; animation: spin 0.9s linear infinite; flex: none; }
+@keyframes spin { to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .p-spinner { animation-duration: 2.4s; } }
+/* Section heading (slice 13): words with an optional end slot */
+.p-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); min-block-size: var(--size-icon); padding: var(--space-3xs) var(--space-3xs) var(--space-3xs) var(--space-xs); font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.p-heading[data-look="group"] { text-transform: none; letter-spacing: 0; padding-block: var(--space-xs) var(--space-4xs); }
+.p-heading [data-end] { font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; }
+/* Menu and menu item (approved): one item part with lead, words, end */
+.p-menu { padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); inline-size: min(340px, 100%); display: grid; gap: var(--space-4xs); align-content: start; --badge-ring: var(--panel-surface); }
+.p-menu[data-size="flyout"] { inline-size: min(240px, 100%); }
+.p-menu-section { display: grid; gap: var(--space-4xs); padding-block: var(--space-2xs); }
+.p-menu-section + .p-menu-section { margin-block-start: var(--space-2xs); }
+.p-menu-list { display: grid; gap: var(--space-4xs); margin: 0; padding: 0; list-style: none; }
+.p-menu-item { display: flex; align-items: center; gap: var(--space-xs); inline-size: 100%; min-inline-size: 0; min-block-size: max(var(--size-control), var(--size-tap)); padding: var(--space-3xs) var(--space-xs); border: 0; border-radius: var(--radius); background: transparent; color: inherit; font-size: var(--type-base); text-align: start; text-decoration: none; }
+.p-menu-item[data-lines="2"] { padding-block: var(--space-2xs); }
+.p-menu-item[aria-current="true"], .p-menu-item[aria-checked="true"] { background: var(--current); font-weight: 600; }
+.p-menu-item[data-tone="quiet"] { color: var(--muted); }
+.p-menu-item:active:not(:disabled) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-menu-item:hover:not(:disabled) { background: var(--hover); }
+  .p-menu-item[data-tone="quiet"]:hover { color: var(--text); }
+}
+.p-words { display: grid; flex: 1; min-inline-size: 0; }
+.p-words > * { overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.p-words b { font-weight: 600; }
+.p-sub { font-size: var(--type-small); font-weight: 400; color: var(--muted); }
+.p-end { margin-inline-start: auto; color: var(--muted); flex: none; display: inline-flex; align-items: center; gap: var(--space-3xs); }
+.p-hint { font-size: var(--type-small); font-weight: 400; opacity: 0; }
+.p-menu-item:focus-visible .p-hint, .p-menu-item.is-hover .p-hint { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .p-menu-item:hover .p-hint { opacity: 1; } }
+@media (hover: none) { .p-hint { opacity: 1; } }
+
+.p-button[data-size="compact"] { min-block-size: max(var(--size-compact), var(--size-tap)); padding-inline: var(--space-xs); }
+/* Field (approved): one field part, boxed look, one focus line and one error line */
+.p-field { inline-size: 100%; min-inline-size: 0; min-block-size: var(--size-control); padding: var(--space-2xs) var(--space-xs); border: 0; border-radius: var(--radius); background: var(--surface-input); box-shadow: inset 0 0 0 1px var(--control-line); caret-color: var(--primary); font-size: var(--type-base); resize: none; field-sizing: content; max-block-size: 84px; display: block; }
+.p-field:focus { outline: none; background-color: color-mix(in oklch, var(--primary) 7%, var(--surface-input)); box-shadow: inset 0 0 0 1px var(--control-line), inset 0 -2px 0 var(--primary); }
+.p-field[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--control-line), inset 0 -2px 0 var(--danger); }
+.p-field[readonly] { opacity: 0.6; }
+.p-field-error { display: flex; gap: var(--space-3xs); align-items: start; margin: 0; font-size: var(--type-small); font-weight: 600; color: var(--danger-fg); }
+.p-field-error .ph { inline-size: 14px; block-size: 14px; margin-block-start: 2px; }
+@media (prefers-reduced-motion: no-preference) { .p-field { transition: background-color var(--dur-hover) var(--ease-out), box-shadow var(--dur-hover) var(--ease-out); } }
+/* Pin (slice 27 agent part): same look; tokens for corners, sizes and motion */
+.p-pin { position: absolute; inset-block-end: calc(100% + var(--space-3xs)); z-index: 1; display: flex; align-items: center; gap: var(--space-3xs); white-space: nowrap; min-inline-size: 22px; block-size: 22px; border: 2px solid var(--primary); border-radius: var(--radius-panel) var(--radius-panel) var(--radius-panel) var(--space-4xs); padding: 0 var(--space-2xs); background: var(--color-primary-lighter); color: var(--primary); font-size: var(--type-small); font-weight: 700; line-height: 1; transform-origin: left bottom; box-shadow: var(--shadow-small); }
+.p-pin::after { content: ""; position: absolute; inset: -4px; }
+@media (pointer: coarse) { .p-pin::after { inset: -11px -6px; } }
+.p-pin[data-state="question"] { border-color: var(--agent-question-strong); background: var(--agent-question-pin); color: var(--agent-question-ink); }
+.p-pin[data-state="done"], .p-pin[data-state="answered"] { border-color: var(--agent-done-line); background: var(--agent-done-pin); color: var(--agent-done-ink); }
+.p-pin .p-spinner { border-color: color-mix(in oklch, currentColor 30%, transparent); border-block-start-color: currentColor; inline-size: 9px; block-size: 9px; }
+.p-pin__question { max-inline-size: 260px; overflow: clip; text-overflow: ellipsis; line-height: 16px; font-weight: 600; }
+.p-pin__text { max-inline-size: 0; overflow: clip; text-overflow: ellipsis; line-height: 16px; opacity: 0; color: var(--agent-pin-text); font-weight: 400; }
+.p-pin:focus-visible:not([aria-expanded="true"], [data-state="question"]) .p-pin__text, .p-pin.is-peek .p-pin__text { max-inline-size: 240px; opacity: 1; }
+.p-pin:focus-visible { outline: var(--focus-ring); outline-offset: 2px; z-index: 2; }
+.p-pin[aria-expanded="true"] { z-index: 2; outline: 2px solid color-mix(in oklch, currentColor 35%, transparent); outline-offset: 1px; }
+.p-pin:active { outline: 2px solid color-mix(in oklch, currentColor 35%, transparent); outline-offset: 1px; }
+@media (hover: hover) and (pointer: fine) { .p-pin:hover { z-index: 2; outline: 2px solid color-mix(in oklch, currentColor 35%, transparent); outline-offset: 1px; } }
+@media (prefers-reduced-motion: no-preference) {
+  .p-pin { transition: scale var(--dur-press) var(--ease-out); }
+  .p-pin:active { scale: 0.97; }
+  .p-pin__text { transition: max-inline-size var(--dur-menu) var(--ease-out), opacity var(--dur-hover) var(--ease-out); }
+  .p-pin.is-popping { animation: p-pop var(--dur-menu) var(--ease-out); }
+}
+@keyframes p-pop { from { scale: 0.85; opacity: 0; } }
+/* The element an agent works on: same marching outline, the done fade eases out */
+.p-outline { position: absolute; inset: -4px; inline-size: calc(100% + 8px); block-size: calc(100% + 8px); z-index: 0; overflow: visible; pointer-events: none; }
+.p-outline rect { fill: color-mix(in oklch, var(--primary) 5%, transparent); stroke: var(--primary); stroke-width: 1.5px; stroke-dasharray: 3px 1.5px; }
+.p-outline.is-done rect { stroke: var(--color-success); stroke-dasharray: none; fill: color-mix(in oklch, var(--color-success) 5%, transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-outline:not(.is-done) rect { animation: p-march 0.6s linear infinite; }
+  .p-outline.is-done { animation: p-fade 0.9s var(--ease-out) 0.4s forwards; }
+}
+@media (prefers-reduced-motion: reduce) { .p-outline.is-done { display: none; } }
+@keyframes p-march { to { stroke-dashoffset: -4.5px; } }
+@keyframes p-fade { to { opacity: 0; } }
+/* Tray: the button part as a pill, the questions as a badge */
+.p-tray { position: absolute; inset-block-end: var(--space-s); inset-inline-end: var(--space-s); z-index: 26; border-radius: var(--radius-full); min-block-size: max(var(--size-compact), var(--size-tap)); padding-inline: var(--space-s); font-size: var(--type-small); background: var(--panel-surface); box-shadow: inset 0 0 0 1px var(--control-line), var(--shadow); white-space: nowrap; }
+.p-tray:has(.p-badge) { padding-inline-start: var(--space-3xs); box-shadow: inset 0 0 0 1px var(--agent-question-strong), var(--shadow); }
+.p-badge[data-tone="question"] { background: var(--agent-question-strong); color: var(--on-accent); }
+.p-badge .ph { inline-size: 12px; block-size: 12px; }
+/* Card: the panel part; the conversation's bubbles stay this organism's own layout */
+.p-card { position: absolute; z-index: 31; display: grid; gap: var(--space-s); inline-size: 300px; max-inline-size: calc(100% - var(--space-m)); max-block-size: 380px; overflow: auto; padding: var(--space-s); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); --badge-ring: var(--panel-surface); }
+@media (prefers-reduced-motion: no-preference) { .p-card { transition: opacity var(--dur-menu) var(--ease-out), translate var(--dur-menu) var(--ease-out); } @starting-style { .p-card { opacity: 0; translate: 0 4px; } } }
+@media (prefers-reduced-motion: reduce) { .p-card { transition: opacity var(--dur-hover) linear; } @starting-style { .p-card { opacity: 0; } } }
+.p-card[data-state="done"], .p-card[data-state="answered"] { background: var(--agent-done-surface); }
+.p-card p { margin: 0; }
+.p-request { display: grid; gap: var(--space-xs); }
+.p-request + .p-request { padding-block-start: var(--space-s); border-block-start: 1px solid var(--line); }
+.p-request__head { display: flex; align-items: center; gap: var(--space-2xs); color: var(--muted); font-size: var(--type-small); }
+.p-request__where { overflow: clip; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.p-request__state { margin-inline-start: auto; display: inline-flex; align-items: center; gap: var(--space-3xs); font-weight: 600; flex: none; }
+.p-request__state .p-badge[data-kind="dot"] { inline-size: 6px; block-size: 6px; background: var(--primary); opacity: 1; }
+[data-state="question"] > .p-request__head .p-request__state { color: var(--agent-question-text); }
+[data-state="question"] > .p-request__head .p-badge[data-kind="dot"] { background: var(--agent-question-strong); }
+:is([data-state="done"], [data-state="answered"]) > .p-request__head .p-badge[data-kind="dot"] { background: var(--agent-done-line); }
+.p-thread { display: grid; gap: var(--space-2xs); }
+.p-message { display: grid; justify-items: start; gap: var(--space-4xs); }
+.p-message[data-from="agent"] { justify-items: end; }
+.p-message__from { padding-inline: var(--space-4xs); color: var(--muted); font-size: var(--type-small); font-weight: 600; }
+.p-bubble { max-inline-size: 88%; border: 1px solid transparent; border-radius: var(--radius-panel) var(--radius-panel) var(--radius-panel) var(--space-4xs); padding: var(--space-3xs) var(--space-xs); background: var(--primary); color: var(--on-primary); font: var(--type-small)/15px var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+[data-from="agent"] > .p-bubble { border-color: var(--line); border-radius: var(--radius-panel) var(--radius-panel) var(--space-4xs) var(--radius-panel); background: var(--surface); color: var(--text); }
+.p-message.is-question > .p-bubble { border-color: var(--agent-question-strong); background: var(--agent-question-surface); color: var(--agent-question-text); }
+.p-message.is-question > .p-message__from { color: var(--agent-question-text); }
+:is([data-state="done"], [data-state="answered"]) [data-from="user"] > .p-bubble { background: var(--agent-done-bubble); color: var(--agent-done-bubble-ink); }
+.p-answer { display: grid; gap: var(--space-3xs); }
+.p-row { display: flex; gap: var(--space-xs); flex-wrap: wrap; align-items: center; }
+.p-card .p-row { justify-content: end; }
+</style>
+</head>
+<body data-mode="after">
+<main>
+  <header>
+    <h1>Request pins, rebuilt from catalogue parts <span class="tag">mock-up for Tuesday 10 Nov</span></h1>
+    <p class="intro">When you ask an agent about something on the page, a small numbered pin stands on it. The pin shows what the agent is doing, turns orange when it asks you something, and opens a small conversation where you answer. Requests on other pages wait in a pill in the corner. Nothing they do changes: After builds them from the shared catalogue parts. Switch between Today and After, then play the steps.</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+  </div>
+  <div class="captions">
+    <p class="summary today">Today: the pins and their card as the editor draws them now.</p>
+    <p class="summary after">Same colours and words. Its own timings (5 durations, 5 curves) give way to the shared motion values: the pop has no bounce and nothing eases in. 2 spinners become 1, the 3 text links in the card become the quiet button, the answer box becomes the shared field with its error line. Hover reacts to a mouse only (4 rules), pins answer a press, and on phones a pin's tap area is 44 px (22 today).</p>
+  </div>
+
+  <section class="demo" aria-labelledby="demo-title">
+    <h2 id="demo-title">Play the steps (demo buttons, not part of the editor)</h2>
+    <div class="steps">
+      <button type="button" data-step="new">Ask an agent about the heading</button>
+      <button type="button" data-step="take">An agent takes it</button>
+      <button type="button" data-step="ask">The agent asks about the photo</button>
+      <button type="button" data-step="open">Open the question</button>
+      <button type="button" data-step="fail">The answer fails to send</button>
+      <button type="button" data-step="send">Send the answer</button>
+      <button type="button" data-step="done">The agent finishes the heading</button>
+      <button type="button" data-step="peek">Keyboard focus on a pin</button>
+      <button type="button" data-step="tray">Open the corner pill</button>
+      <button type="button" data-step="dismiss">Dismiss or clear</button>
+      <button type="button" class="reset" data-step="reset">Start again</button>
+    </div>
+  </section>
+
+  <div class="stage today" id="today"></div>
+  <div class="stage after" id="after"></div>
+  <ul class="changes after"><li>shared motion, no bounce</li><li>one spinner</li><li>quiet buttons in the card</li><li>shared field with its error line</li><li>hover only with a mouse</li><li>press feedback</li><li>44 px tap area on phones</li></ul>
+</main>
+<script>
+const P = {
+  "caret-down": '<path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/>',
+  "caret-right": '<path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/>',
+  "arrows-clockwise": '<path d="M224,48V96a8,8,0,0,1-8,8H168a8,8,0,0,1,0-16h28.69L182.06,73.37a79.56,79.56,0,0,0-56.13-23.43h-.45A79.52,79.52,0,0,0,69.59,72.71,8,8,0,0,1,58.41,61.27a96,96,0,0,1,135,.79L208,76.69V48a8,8,0,0,1,16,0ZM186.41,183.29a80,80,0,0,1-112.47-.66L59.31,168H88a8,8,0,0,0,0-16H40a8,8,0,0,0-8,8v48a8,8,0,0,0,16,0V179.31l14.63,14.63A95.43,95.43,0,0,0,130,222.06h.53a95.360,95.36,0,0,0,67.07-27.33,8,8,0,0,0-11.18-11.44Z"/>',
+  x: '<path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/>',
+};
+const ic = (name, size = 16) => `<svg class="ph" width="${size}" height="${size}" style="inline-size:${size}px;block-size:${size}px" viewBox="0 0 256 256" aria-hidden="true">${P[name]}</svg>`;
+
+Object.assign(P, {
+  question: '<path d="M140,180a12,12,0,1,1-12-12A12,12,0,0,1,140,180ZM128,72c-22.060,0-40,16.15-40,36v4a8,8,0,0,0,16,0v-4c0-11,10.77-20,24-20s24,9,24,20-10.77,20-24,20a8,8,0,0,0-8,8v8a8,8,0,0,0,16,0v-.72c18.24-3.35,32-17.9,32-35.28C168,88.15,150.06,72,128,72Zm104,56A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z"/>',
+  warning: '<path d="M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8ZM120,144V104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,180Z"/>',
+});
+const LABELS = { open: "Waiting", seen: "Agent working", done: "Done", answered: "Agent answered", question: "Question" };
+const MARKS = { done: "✓", answered: "…", question: "?" };
+const FAIL = "Remote agents or the open site changed meanwhile. Nothing was sent; answer again.";
+const start = () => ({
+  reqs: [
+    { id: 1, text: "Use a warmer photo here", tag: "img", el: "photo", state: "open", thread: [{ from: "user", text: "Use a warmer photo here" }] },
+    { id: 2, text: "Add our opening hours", tag: "section", el: null, route: "/visit", state: "open", thread: [{ from: "user", text: "Add our opening hours" }] },
+  ],
+  open: null, draft: "", sending: false, error: "", popping: new Set(), peek: null, outline: null,
+});
+let s = start();
+const num = (r) => s.reqs.indexOf(r) + 1;
+const byId = (id) => s.reqs.find((r) => r.id === id);
+const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+/* ---------- Today ---------- */
+function todayPin(r) {
+  const status = r.state === "seen" ? `<span class="agent-pin__spinner"></span>` : MARKS[r.state] ?? "";
+  const q = r.state === "question" ? r.thread.at(-1).text : "";
+  return `<button type="button" class="agent-pin${s.popping.has(r.id) ? " is-popping" : ""}${s.peek === r.id ? " is-peek" : ""}" data-act="pin" data-id="${r.id}" data-state="${r.state}" aria-haspopup="dialog" aria-expanded="${s.open === r.id}" aria-label="Request ${num(r)}: ${esc(r.text)} (${LABELS[r.state]})"><span>${num(r)}</span><span class="agent-pin__status" aria-hidden="true">${status}</span><span class="agent-pin__question" aria-hidden="true">${esc(q)}</span><span class="agent-pin__text" aria-hidden="true">${esc(r.text)}</span></button>`;
+}
+function todayBody(r, inTray) {
+  const where = r.route ? ` on ${r.route}` : "";
+  const msgs = r.thread.map((m, i) => `<div class="agent-pin-card__message${r.state === "question" && i === r.thread.length - 1 && m.from === "agent" ? " is-question" : ""}" data-from="${m.from}"><span class="agent-pin-card__from">${m.from === "user" ? "You" : "Agent"}</span><p class="agent-pin-card__bubble">${esc(m.text)}</p></div>`).join("");
+  const answer = r.state === "question" ? `<div class="agent-pin-card__answer${s.sending ? " is-sending" : ""}"><textarea class="agent-pin-card__answer-input" rows="1" placeholder="Answer…" aria-label="Answer the agent" data-answer ${s.sending ? "readonly" : ""}>${esc(s.draft)}</textarea>${s.error ? `<p class="agent-pin-card__error" role="alert">${ic("warning")}<span>${s.error}</span></p>` : ""}</div>` : "";
+  const answered = r.state === "done" || r.state === "answered";
+  const show = inTray && r.route ? `<button type="button" class="text-button" data-act="showpage">Show page</button>` : "";
+  return `<div class="agent-pin-card__request" data-state="${r.state}"><p class="agent-pin-card__head"><span class="agent-pin-card__where">&lt;${r.tag}&gt;${where}</span><span class="agent-pin-card__state">${LABELS[r.state]}</span></p><div class="agent-pin-card__thread">${msgs}</div>${answer}<div class="agent-pin-card__actions">${show}<button type="button" class="text-button agent-pin-card__dismiss" data-act="dismiss" data-id="${r.id}" title="${answered ? "Remove this pin" : "Withdraw this request, so no agent works on it"}">${answered ? "Clear" : "Dismiss"}</button></div></div>`;
+}
+function trayParts(forToday) {
+  const listed = s.reqs.filter((r) => !r.el);
+  if (!listed.length) return "";
+  const qs = listed.filter((r) => r.state === "question").length, others = listed.length - qs;
+  const q = qs ? (forToday ? `<span class="agent-pins__tray-questions">${ic("question", 12)}${qs} question${qs === 1 ? "" : "s"}</span>` : `<span class="p-badge" data-tone="question">${ic("question", 12)}${qs} question${qs === 1 ? "" : "s"}</span>`) : "";
+  return `${q}${others ? `${qs ? " " : ""}${others} request${others === 1 ? "" : "s"} elsewhere` : ""}`;
+}
+function outline(forToday, el) {
+  if (!s.outline || byId(s.outline.id)?.el !== el) return "";
+  return `<svg class="${forToday ? "agent-pin-outline" : "p-outline"}${s.outline.done ? " is-done" : ""}" aria-hidden="true"><rect x="0" y="0" width="100%" height="100%" rx="4"/></svg>`;
+}
+function page(pinFn, forToday) {
+  const pinsOn = (el) => s.reqs.filter((r) => r.el === el).map(pinFn).join("");
+  return `<div class="site">
+    <div class="el" data-el="heading"><h3>Fresh bread every morning</h3>${outline(forToday, "heading")}${pinsOn("heading")}</div>
+    <div class="el" data-el="photo"><div class="photo" role="img" aria-label="Loaves on a table"></div>${outline(forToday, "photo")}${pinsOn("photo")}</div>
+    <div class="el"><p>We bake sourdough, rye and seeded loaves before sunrise, and the rolls follow at seven. Come early on Saturdays; the cinnamon buns go fast.</p></div>
+  </div>`;
+}
+function todayHTML() {
+  const tray = trayParts(true);
+  const listed = s.reqs.filter((r) => !r.el);
+  const card = s.open == null ? "" : s.open === "tray"
+    ? `<div class="agent-pin-card" role="dialog" aria-label="Requests elsewhere" data-card>${listed.map((r) => todayBody(r, true)).join("")}</div>`
+    : `<div class="agent-pin-card" role="dialog" aria-label="Request ${num(byId(s.open))}" data-state="${byId(s.open).state}" data-card>${todayBody(byId(s.open), false)}</div>`;
+  return `<div class="preview">${page(todayPin, true)}${tray ? `<button type="button" class="agent-pins__tray${tray.includes("question") ? " has-questions" : ""}" data-act="tray" aria-expanded="${s.open === "tray"}" data-tray>${tray}</button>` : ""}${card}</div>`;
+}
+
+/* ---------- After ---------- */
+function afterPin(r) {
+  const status = r.state === "seen" ? `<span class="p-spinner" aria-hidden="true"></span>` : MARKS[r.state] ? `<span aria-hidden="true">${MARKS[r.state]}</span>` : "";
+  const q = r.state === "question" ? `<span class="p-pin__question" aria-hidden="true">${esc(r.thread.at(-1).text)}</span>` : "";
+  return `<button type="button" class="p-pin${s.popping.has(r.id) ? " is-popping" : ""}${s.peek === r.id ? " is-peek" : ""}" data-act="pin" data-id="${r.id}" data-state="${r.state}" aria-haspopup="dialog" aria-expanded="${s.open === r.id}" aria-label="Request ${num(r)}: ${esc(r.text)} (${LABELS[r.state]})"><span>${num(r)}</span>${status}${q}<span class="p-pin__text" aria-hidden="true">${esc(r.text)}</span></button>`;
+}
+function afterBody(r, inTray) {
+  const where = r.route ? ` on ${r.route}` : "";
+  const msgs = r.thread.map((m, i) => `<div class="p-message${r.state === "question" && i === r.thread.length - 1 && m.from === "agent" ? " is-question" : ""}" data-from="${m.from}"><span class="p-message__from">${m.from === "user" ? "You" : "Agent"}</span><p class="p-bubble">${esc(m.text)}</p></div>`).join("");
+  const answer = r.state === "question" ? `<div class="p-answer"><textarea class="p-field" rows="1" placeholder="Answer…" aria-label="Answer the agent" data-answer ${s.sending ? "readonly" : ""} ${s.error ? 'aria-invalid="true" aria-describedby="answer-error"' : ""}>${esc(s.draft)}</textarea>${s.error ? `<p class="p-field-error" id="answer-error" role="alert">${ic("warning")}<span>${s.error}</span></p>` : ""}</div>` : "";
+  const answered = r.state === "done" || r.state === "answered";
+  const show = inTray && r.route ? `<button type="button" class="p-button p-press" data-tone="quiet" data-size="compact" data-act="showpage">Show page</button>` : "";
+  return `<div class="p-request" data-state="${r.state}"><p class="p-request__head"><span class="p-request__where">&lt;${r.tag}&gt;${where}</span><span class="p-request__state"><span class="p-badge" data-kind="dot" aria-hidden="true"></span>${LABELS[r.state]}</span></p><div class="p-thread">${msgs}</div>${answer}<div class="p-row">${show}<button type="button" class="p-button p-press" data-tone="quiet" data-size="compact" data-act="dismiss" data-id="${r.id}">${answered ? "Clear" : "Dismiss"}</button></div></div>`;
+}
+function afterHTML() {
+  const tray = trayParts(false);
+  const listed = s.reqs.filter((r) => !r.el);
+  const card = s.open == null ? "" : s.open === "tray"
+    ? `<div class="p-card" role="dialog" aria-label="Requests elsewhere" data-card>${listed.map((r) => afterBody(r, true)).join("")}</div>`
+    : `<div class="p-card" role="dialog" aria-label="Request ${num(byId(s.open))}" data-state="${byId(s.open).state}" data-card>${afterBody(byId(s.open), false)}</div>`;
+  return `<div class="preview">${page(afterPin, false)}${tray ? `<button type="button" class="p-button p-press p-tray" data-act="tray" aria-expanded="${s.open === "tray"}" data-tray>${tray}</button>` : ""}${card}</div>`;
+}
+
+/* The card opens right above its pin, left edges aligned; below it when there is no room above. */
+function place(stage) {
+  const card = stage.querySelector("[data-card]");
+  if (!card) return;
+  const box = stage.querySelector(".preview").getBoundingClientRect();
+  const anchor = s.open === "tray" ? stage.querySelector("[data-tray]") : stage.querySelector(`[data-act="pin"][data-id="${s.open}"]`);
+  if (!anchor) return;
+  const a = anchor.getBoundingClientRect();
+  const w = card.offsetWidth, h = card.offsetHeight;
+  const left = Math.max(8, Math.min(a.left - box.left, box.width - w - 8));
+  const top = a.top - box.top - h - 6 >= 8 ? a.top - box.top - h - 6 : a.bottom - box.top + 6;
+  card.style.insetInlineStart = `${left}px`;
+  card.style.insetBlockStart = `${top}px`;
+}
+function render() {
+  const t = document.getElementById("today"), a = document.getElementById("after");
+  t.innerHTML = todayHTML(); a.innerHTML = afterHTML();
+  place(t); place(a);
+  s.popping.clear();
+  const visible = document.querySelector(`.stage.${document.body.dataset.mode} [data-answer]`);
+  if (visible && s.focusAnswer) { visible.focus(); visible.setSelectionRange(visible.value.length, visible.value.length); s.focusAnswer = false; }
+}
+let timer, outlineTimer;
+function act(name, el) {
+  clearTimeout(timer);
+  const photo = byId(1);
+  if (name === "new" && !s.reqs.some((r) => r.el === "heading")) {
+    s.reqs.push({ id: 3, text: "Make the heading shorter", tag: "h1", el: "heading", state: "open", thread: [{ from: "user", text: "Make the heading shorter" }] });
+    s.popping.add(3);
+  }
+  if (name === "take") { if (!byId(3)) act("new"); byId(3).state = "seen"; s.outline = { id: 3, done: false }; }
+  if (name === "ask" && photo && photo.state !== "question") {
+    photo.state = "question"; photo.thread.push({ from: "agent", text: "Which photo, loaves or rolls?" }); s.popping.add(1);
+  }
+  if (name === "open") { if (photo?.state !== "question") act("ask"); if (byId(1)) { s.open = 1; s.focusAnswer = true; } }
+  if (name === "pin") { const id = Number(el.dataset.id); s.open = s.open === id ? null : id; s.peek = null; s.focusAnswer = byId(id)?.state === "question"; }
+  if (name === "tray") s.open = s.open === "tray" ? null : "tray";
+  if (name === "fail") {
+    if (byId(1)?.state !== "question") act("open");
+    s.open = 1; s.draft = s.draft || "Loaves"; s.sending = true; render();
+    timer = setTimeout(() => { s.sending = false; s.error = FAIL; s.focusAnswer = true; render(); }, 700);
+    return;
+  }
+  if (name === "send") {
+    if (byId(1)?.state !== "question") act("open");
+    s.open = 1; s.draft = s.draft || "Loaves"; s.sending = true; s.error = ""; render();
+    timer = setTimeout(() => { const r = byId(1); r.thread.push({ from: "user", text: s.draft }); r.state = "open"; s.draft = ""; s.sending = false; render(); }, 800);
+    return;
+  }
+  if (name === "done") { if (!byId(3)) act("take"); byId(3).state = "done"; s.outline = { id: 3, done: true }; s.popping.add(3); clearTimeout(outlineTimer); outlineTimer = setTimeout(() => { if (s.outline?.done) { s.outline = null; render(); } }, 1500); }
+  if (name === "peek") { s.open = null; s.peek = (s.reqs.find((r) => r.el && r.state !== "question") ?? s.reqs.find((r) => r.el))?.id ?? null; }
+  if (name === "dismiss") {
+    const id = el?.dataset?.id ? Number(el.dataset.id) : typeof s.open === "number" ? s.open : s.open === "tray" ? s.reqs.find((r) => !r.el)?.id : (byId(3)?.id ?? byId(1)?.id);
+    s.reqs = s.reqs.filter((r) => r.id !== id);
+    if (s.outline?.id === id) s.outline = null;
+    if (s.open === id || s.open === "tray" && !s.reqs.some((r) => !r.el)) s.open = null;
+    if (s.open === "tray") s.open = null;
+  }
+  if (name === "showpage") s.open = null;
+  if (name === "reset") s = start();
+  render();
+}
+document.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => {
+  act(b.dataset.step, b);
+  document.querySelectorAll("[data-step]").forEach((o) => o.setAttribute("aria-pressed", String(o === b && b.dataset.step !== "reset")));
+}));
+for (const id of ["today", "after"]) {
+  const stage = document.getElementById(id);
+  stage.addEventListener("click", (e) => { const el = e.target.closest("[data-act]"); if (el) act(el.dataset.act, el); });
+  stage.addEventListener("input", (e) => { if (e.target.matches("[data-answer]")) s.draft = e.target.value; });
+  stage.addEventListener("keydown", (e) => {
+    if (e.target.matches("[data-answer]") && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (s.draft.trim()) act("send"); }
+    if (e.key === "Escape" && s.open != null) { s.open = null; render(); }
+  });
+}
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  render();
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+window.addEventListener("resize", () => { place(document.getElementById("today")); place(document.getElementById("after")); });
+render();
+</script>
+</body>
+</html>
