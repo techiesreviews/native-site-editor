@@ -75,8 +75,9 @@ machine copy (GitHub Actions, a cloud session, a new laptop) it clones the newes
 `${XDG_CACHE_HOME:-~/.cache}/agent-kit`, outside every project, and reuses that clone (never refreshed in
 place; `kit version` and `kit doctor` warn once it is a day old, and `kit update` then fills the machine copy; a
 cache folder that is not a whole kit ends `<folder> exists but holds no kit; remove it`, a fresh clone that is
-not one `the clone of <repo> holds no whole kit`, a whole clone that cannot be moved there
-`cannot place the clone at <folder>`). `KIT_REPO`
+not one `the clone of <repo> holds no whole kit`, a whole clone whose time stamp cannot be written
+`cannot stamp the clone in <cache>`, and one that cannot be moved over a folder that is not a kit
+`cannot place the clone at <folder>`; one that loses the move to another launcher's whole clone uses that). `KIT_REPO`
 is the kit repo, a setting at the top of the launcher. The hook launcher finds the kit the same way
 (without cloning) and runs the kit's own `hooks/run.sh`, never the front door, so no `RESULT:` line
 reaches session context. Without a kit it never blocks and never goes quiet: it prints
