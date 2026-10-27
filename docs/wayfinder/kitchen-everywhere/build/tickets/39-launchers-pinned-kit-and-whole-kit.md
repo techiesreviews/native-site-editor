@@ -1,7 +1,7 @@
 ---
 title: The launchers recover a retired kit folder and accept only a whole kit
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-39
 builder: claude
 blocked_by: [21-launcher-and-update]
@@ -39,3 +39,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke39 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/39-launchers-pinned-kit-and-whole-kit.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke39 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, how each new case failed before the fix, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- **Pinned kit** (`scripts/agents/launcher/kit`): when the launcher picks the kit itself (no `KIT_HOME`, or one a front door filled in), it exports `KIT_HOME_PINNED` beside `KIT_HOME`, both resolved like the front door resolves them (`pwd -P`), so the marker still matches in every child. A `KIT_HOME` equal to `KIT_HOME_PINNED` that still holds a whole kit is kept; one whose folder is no longer a whole kit is picked again from `current` or the cache clone. A person's `KIT_HOME` (no marker, or a different one) still wins and still ends `RESULT: fail no Agent Kit at <folder> (KIT_HOME)` when it holds no kit.
+- **Hook launcher** (`scripts/agents/launcher/hooks-run.sh`): the same rule, so a session that inherited a removed pinned folder keeps its guards; a person's missing `KIT_HOME` still prints the "guards are off" warning.
+- **Whole kit only**: both launchers take a folder only when `kit` is executable and `kit-lib.sh` is present (`kit update`'s check; the hook launcher also needs `hooks/run.sh`). This covers `current`, the cache folder, a fresh clone and the final check; a cache folder with `kit` but no `kit-lib.sh` ends `<folder> exists but holds no kit; remove it` and the hook launcher warns instead of running it.
+- **Docs**: `docs/agents/agent-scripts.md` describes the marker and the whole-kit check; `docs/agents/guardrails.md` no longer says `hooks/run.sh` finds the repo: it runs the guards beside it, and only the context card and the bash guard's server hint read the project (the ticket said only the context card; the bash guard's `setsid` hint reads `kit.json` too).
+- **Tests** (`tests/kit-launcher.test.ts`, a new `pinned` project command printing `KIT_HOME_PINNED`): update one, then two, remove one's folder; with `KIT_HOME` and `KIT_HOME_PINNED` both on one's folder the guard blocks `git stash pop` (status 2, its stderr) and `where` names two, and the marker moves to two; a pinned folder that still holds a kit is kept; with only `KIT_HOME` set the hook warns and `where` fails with the `(KIT_HOME)` line. A cache folder with `kit` but no `kit-lib.sh` is rejected with the "holds no kit" line and the hook launcher warns. Before the fix: `pinned` printed `unset`, the guard exited 0 with the warning instead of blocking, and the half-kit cache ran (status 0, not 2).
+- `scripts/agents/kit unit --affected`: `RESULT: ok unit 11/11 (1 files)`; `npm run lint` exit 0.
+- Feature list: no change (agent tooling only; nothing in the editor changes).

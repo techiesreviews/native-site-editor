@@ -60,10 +60,14 @@ here is still the full front door). Clean, read-only kits sit in
 `kit update`. `kit init` (ticket 22, not built yet) will write two templates from `scripts/agents/launcher/`
 into a project: `kit` becomes its `scripts/agents/kit` and `hooks-run.sh` its `scripts/agents/hooks/run.sh`. The launcher
 reads `current` once and sets `KIT_HOME` to that exact folder for the whole command, so a long slice
-keeps one kit while an update lands; a `KIT_HOME` a person set wins (trying a kit branch). With no
+keeps one kit while an update lands; a `KIT_HOME` a person set wins (trying a kit branch). Beside the folder it
+picks it exports `KIT_HOME_PINNED`, so a child (a builder session, a `kit bg` job) whose inherited folder `kit update`
+has since removed picks again from `current`, while a person's `KIT_HOME` that holds no kit still fails. Both
+launchers take only a whole kit, as `kit update` checks it (`kit` executable and `kit-lib.sh`). With no
 machine copy (GitHub Actions, a cloud session, a new laptop) it clones the newest kit `--depth 1` into
 `${XDG_CACHE_HOME:-~/.cache}/agent-kit`, outside every project, and reuses that clone (never refreshed in
-place; `kit version` and `kit doctor` warn once it is a day old, and `kit update` then fills the machine copy). `KIT_REPO`
+place; `kit version` and `kit doctor` warn once it is a day old, and `kit update` then fills the machine copy; a
+cache folder that is not a whole kit ends `<folder> exists but holds no kit; remove it`). `KIT_REPO`
 is the kit repo, a setting at the top of the launcher. The hook launcher finds the kit the same way
 (without cloning) and runs the kit's own `hooks/run.sh`, never the front door, so no `RESULT:` line
 reaches session context. Without a kit it never blocks and never goes quiet: it prints
