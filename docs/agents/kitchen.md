@@ -19,6 +19,9 @@ lands, do what the station says for today; never claim a planned item ran.
   work in progress is a commit on your own branch.
 - **Lex in plain words:** questions are plain choices about what changes for him, each with a
   recommended answer. Technical questions go to him too, explained plainly with file paths.
+- **Tuesday is Lex's only review day** (Lex, 2026-10-27): everything that needs him waits in one
+  [Tuesday pack](#tuesday-review); between Tuesdays the work keeps moving. Budget: his $200/month
+  Claude subscription and the free workers, never more.
 - **Everything is a file on `dev`:** maps, tickets, Lex's feedback and decisions
   ([issue-tracker.md](issue-tracker.md)). A change Lex asks for always has a ticket that opens
   with "Lex (YYYY-MM-DD): …", including lead fixes.
@@ -34,6 +37,7 @@ review needs `ASE_REVIEW_MODEL` only for the second opinions below; `kit slice` 
 | Lead | the selected model | runs the stations; never builds and reviews the same change |
 | Builder, every slice | `claude-opus-5-5`, high | `kit slice --builder claude-opus-5-5`; `builder: sol` lines in tickets are superseded |
 | Builder, tiny fully specified fix | free OpenCode model | T3 `delegate_task`, only once T3 lists a verified zero-cost model |
+| Builder, small chore beside the queue | free OpenCode model | [Small chores](#small-chores-on-free-models); a short Claude check before merging |
 | Review, every change | `claude-opus-5-5`, medium | default (`kit review`), fresh read-only session |
 | Second opinion: final version of a big, delicate slice, once | off since 2026-10-26: no OpenAI reviews (Lex); use Grok | was `ASE_REVIEW_MODEL=gpt-6.1-sol kit review --ticket <t>` |
 | Second opinion: routine, and the weekly sample of 2–3 Claude-approved slices | off since 2026-10-26: no OpenAI reviews (Lex); use Grok | was `ASE_REVIEW_MODEL=gpt-6-luna kit review` |
@@ -60,7 +64,8 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 - **Use:** skills `wayfinder` (map and tickets), `research` (AFK, on a `research/*` branch),
   `grilling` (Lex in the loop), `prototype`, `teach` when Lex wants a concept explained. Files and
   claiming: [issue-tracker.md](issue-tracker.md#wayfinding-operations).
-- **Decides:** Lex answers every grilling question; research answers facts.
+- **Decides:** Lex answers grilling questions in the Tuesday pack; between Tuesdays an easy-to-undo
+  one takes its recommended answer and is listed there ([Tuesday review](#tuesday-review)). Research answers facts.
 - **Evidence:** each ticket's `## Resolution (date)` and one line in the map's Decisions so far.
 - **Done when:** every ticket the build depends on is closed, and Not yet specified holds only what
   the build can do without.
@@ -73,7 +78,10 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 - **Planned:** mock-ups assembled from approved parts of the atomic catalogue, an interactive
   canvas of every editor part ([factory 09](../wayfinder/software-factory/tickets/09-grill-atomic-catalogue.md#resolution-2026-10-22);
   its own build after the clean-up).
-- **Decides:** Lex clicks through and approves.
+- **Mock-ups ahead:** the week before, the lead prepares mock-ups for the next visible changes in the
+  queue (the running build's next stage, then the next build), so Lex approves them in one batch in
+  the Tuesday pack and no slice waits for sign-off.
+- **Decides:** Lex clicks through and approves, on Tuesday.
 - **Done when:** Lex approved it and the ticket links it. Changes with nothing visible skip this station.
 
 ### 4. Tickets
@@ -119,7 +127,8 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 - **Limits** (`kit next` applies them): at most 5 slices at once, at most 2 in `src/main.ts`, no
   shared file, `runs_alone: true` tickets alone in their map, nothing from a build whose README
   still says `**Not started:**`; the build's other rules stay with the lead.
-- **Done when:** every frontier ticket the limits allow is claimed and running, or waits on Lex.
+- **Done when:** every frontier ticket the limits allow is claimed and running. A ticket waiting on
+  a hard-to-undo choice goes into the Tuesday pack, and its build's other tickets keep running.
 
 ### 6. Build
 
@@ -180,7 +189,11 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 
 ### 11. Lex's end check
 
-- **Use:** when the build's frontier is empty, the lead tells Lex the preview is ready, with a plain
+- **Releases wait for Tuesday, work doesn't:** when a build's (or stage's) frontier is empty, its end
+  check goes into the next Tuesday pack, and the next stage or the next build in the queue starts at
+  once on `dev` and preview. A gate line in a build README saying "after X's release" means "after X's
+  frontier is empty" for starting work; X's release itself still waits for Lex.
+- **Use:** the lead tells Lex the preview is ready (in the Tuesday pack), with a plain
   what-to-test list (what a user could notice, where to look, what to try on his iPhone). First the
   lead runs `kit ux --all` on `dev` and sends its summary (the per-feature lines) with that list (factory 03).
 - **Decides:** Lex. Each correction becomes a ticket in the build (station 4) and one feedback log
@@ -190,7 +203,7 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 
 ### 12. Release
 
-- **Use:** only after "ship it": `kit pr --release` (`dev` → `main`), merge once CI passes,
+- **Use:** only after Lex's written "ship it" (given on Tuesday): `kit pr --release` (`dev` → `main`), merge once CI passes,
   `npm run deploy:techies`, record the production version in
   [NATIVE-PROJECT.md](../NATIVE-PROJECT.md#remote-state), then a first-hour check (sign in, edit,
   agent). A build with a rollout checklist follows it.
@@ -209,24 +222,57 @@ review and checking tool.
 
 ## Weekly routines
 
-Scheduled with T3 `schedule_task` at a fixed time (Europe/Amsterdam); one short message to Lex
-carries both results ([factory 06](../wayfinder/software-factory/tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22)).
+Scheduled with T3 `schedule_task` at a fixed time (Europe/Amsterdam), on Tuesday morning before Lex
+reviews (Lex, 2026-10-27; was Monday); both results go into that day's Tuesday pack ([factory 06](../wayfinder/software-factory/tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22)).
 
-- **Sweep, Mondays 09:00:** [routines/sweep.md](routines/sweep.md). `kit sweep` gathers the week's
+- **Sweep, Tuesdays 07:00:** [routines/sweep.md](routines/sweep.md). `kit sweep` gathers the week's
   numbers into a small bundle; the session applies `improve-codebase-architecture` (list only) plus
   guardrail candidates and writes `docs/work/sweeps/YYYY-MM-DD.md` through `kit pr`. It lists bad
   patterns and changes nothing; Lex gets the top 3, each with a recommended fix, and picks which
   become tickets.
-- **Chat learning, Mondays 11:00 in even ISO weeks, after the sweep:** [routines/learning.md](routines/learning.md).
+- **Chat learning, even ISO weeks, right after the Tuesday sweep (same scheduled run):** [routines/learning.md](routines/learning.md).
   `kit learn` groups the corrections the chat project's sync collects in `~/Projects/chat/memory/`
   (factory 10) with the build feedback logs; the session applies `retro` and writes
   `docs/work/learning/YYYY-MM-DD.md` through `kit pr`. Each correction Lex gave more than once gets one
   proposed automatic check ([guardrails.md](guardrails.md): hook, lint rule or kit check) or UX rulebook
   line; nothing is added until Lex picks.
 
-## Always waits for Lex
+## Tuesday review
 
-Grilling questions and mock-up approval; going live (release, and every move up the ladder);
-anything that costs money; deleting what cannot be recovered; his settings, keys and secrets
-(T3 `request_secret`, never chat); a change in builder routing; which sweep findings become
-tickets; new checks or rulebook lines from chat learning. Everything else runs.
+Lex reviews only on Tuesdays (Lex, 2026-10-27). The lead keeps one pack per Tuesday and agents
+keep working on everything that doesn't need him.
+
+- **The pack:** `docs/work/tuesday/YYYY-MM-DD.md`, filled during the week, plus one visual page
+  served online (mock-ups, the build order with ready dates). It is written in plain words, and each question has a ➡️
+  recommended answer; ⚠️ marks the hard-to-undo ones; one round of questions. It holds, in order:
+  releases ready for his go-ahead (end checks), mock-ups to approve, hard-to-undo questions, the
+  easy-to-undo defaults taken since last Tuesday (so he can reverse them), the sweep's top 3, and
+  the ready-date guesses.
+- **Easy-to-undo defaults:** mid-week, an easy-to-undo choice takes its recommended answer at once, and
+  the pack lists it. Easy to undo: anything that lands on `dev` or preview and can be changed by a
+  later slice. Grilling answers and mock-up choices count when the work they steer is still unreleased.
+- **Hard to undo, waits for Tuesday:** going live (release, and every move up the ladder); public
+  repos, packages or GitHub Issues; anything that costs money; deleting what cannot be recovered;
+  changes to visitors' sites; his settings, keys and secrets (T3 `request_secret`, never chat); a
+  change in builder routing; which sweep findings become tickets; new checks or rulebook lines from
+  chat learning.
+- **Ready-date guesses:** each build README carries one line, `**Ready (guess):**`, with the date it
+  should go live. The lead updates it when a build or stage lands, never with live time tracking.
+- **Questions in their own thread:** an urgent question that can't wait for Tuesday (a hard-to-undo
+  choice blocking every slot) still gets its own T3 thread. Everything else goes into the pack.
+
+## Small chores on free models
+
+Low-risk tidying runs beside the main queue on the free OpenCode workers (Lex, 2026-10-27), for
+example splitting a file that grows into a god file, or a DX friction ticket.
+
+- **Fit:** fully specified, no visible change, with tests that pin the behaviour, and none of the
+  running build's files (`kit next`'s shared-file rule decides). It runs only when a slot is free;
+  main-queue slices come first.
+- **Build:** a free OpenCode model through T3 `delegate_task` (as in the pins), then Agent Kit's
+  `kit unit --affected` and `npm run check`.
+- **Check before merging:** one short Claude review (`kit review`, one round, no fix rounds on
+  Claude; a failed check goes back to the free worker or is dropped). That review is the chore's only
+  Claude use.
+- **Evidence:** the chore's ticket under `docs/work/` with its `## Done`, merged through `kit pr`,
+  and one line in the next Tuesday pack.
