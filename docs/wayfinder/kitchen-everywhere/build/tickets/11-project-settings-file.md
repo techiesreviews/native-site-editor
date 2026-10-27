@@ -96,5 +96,16 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
     - `kit next --help` with this editor's file and with a broken one.
     - The no-maps lines of `next`, `heartbeat`, `tickets.mjs` and `score`.
     - `kit pr` running two `checks.extra` commands in order and skipping a missing `lint`.
-- **Still open, outside this ticket's Files:** `scripts/agents/worktrees.mjs` (lines 71, 121, 124) protects only `native-site-editor-dev` or branch `dev` and hard-codes `origin/dev`/`origin/main`, so a project landing on `main` loses dev-worktree protection in `worktrees.sh`. `kit.d/learn`'s `defaultSlug` should read `project`. No ticket covers these yet; the lead needs to file one (`worktrees.mjs` should use `kitDevRoot()`, `kitBranch("land")` and `kitBranch("release")`).
+- **Review round 3 fixes:**
+  - `kit review` resolves its default base after the arguments are read, so a settings problem exits 1 with a `problem:` line and no usage text.
+  - `unit.sh` exits 1 on a settings problem.
+  - The score page labels feedback logs under `maps`.
+  - `tickets.mjs` keeps no `docs/wayfinder` defaults.
+  - `agent-scripts.md` points the tier patterns, visible paths and feature list at `kit.json` and states that `checks.extra` holds kit-plumbing checks. They run only in the full tier when `scripts/agents/**` or `tests/kit-*.test.ts` change (the hard-coded `cleanGuard`) and are logged as `kit-clean`. A test pins that a diff outside kit files never runs them.
+  - The docs note that this editor's file holds machine folders.
+  - New tests:
+    - `kit review` and `unit.sh` with a bad file.
+    - `checks.extra` on a non-kit diff.
+    - Sweep corrections under `notes/maps`.
+- **Still open, outside this ticket's Files:** `scripts/agents/worktrees.mjs` (lines 71, 121, 124) protects only `native-site-editor-dev` or branch `dev` and hard-codes `origin/dev`/`origin/main`, so a project landing on `main` loses dev-worktree protection in `worktrees.sh`. `kit.d/learn`'s `defaultSlug` should read `project`, and `kit.d/learn` line 271 should read `maps` instead of `join(root, "docs/wayfinder")`. `kit.d/slice` line 42 refuses the literal `dev`/`main` instead of `kitBranch("land")`/`kitBranch("release")`. `docs/agents/runner.md` line 73 still says the visible paths live in `pr-tier.mjs` (they are `paths.visible` in `kit.json`). No ticket covers these yet; the lead needs to file one (`worktrees.mjs` should use `kitDevRoot()`, `kitBranch("land")` and `kitBranch("release")`).
 - **Feature list:** no change (kit plumbing for agents; no editor UI).
