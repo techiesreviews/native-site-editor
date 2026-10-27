@@ -1,7 +1,7 @@
 ---
 title: The launcher and kit update, tried here
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-21
 builder: claude
 blocked_by: [14-settings-for-other-projects]
@@ -39,3 +39,17 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke21 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/21-launcher-and-update.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke21 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says (by hand before 17 lands, by `kit slice` after).
 - Report: unit `RESULT:` lines, the warning text as printed, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+The pieces for one machine-wide kit are built and tested here; this repo's own `scripts/agents/kit` and hook paths are unchanged (ticket 30 switches them).
+
+- **`kit update [--previous]`** (`scripts/agents/kit.d/update`): shallow-fetches `main` from `KIT_REPO` into `${XDG_DATA_HOME:-~/.local/share}/agent-kit/repo.git`, unpacks the commit into a read-only `<commit>/` folder (refusing a `main` without `kit` and `kit-lib.sh` at its top) and swaps `current` with one rename; `previous` names the kit it replaced. Folders that stopped being current over a day ago go; current and previous always stay. `--previous` swaps the two links for every project and records the commit stepped back from, so later updates stay put until `main` moves on. Updates take a `flock` and write the fetch time to `updated`.
+- **Launcher** (`scripts/agents/launcher/kit`, 31 lines): a person's `KIT_HOME` wins (one a front door filled in does not); else it reads `current` once and runs that folder's front door for the whole command; with no machine copy it clones `--depth 1` into `${XDG_CACHE_HOME:-~/.cache}/agent-kit` (via a temp folder, kept only when it holds a kit) and reuses it. No kit at all ends `RESULT: fail no Agent Kit at <folder> (<why>)`. `KIT_REPO` is the setting at its top.
+- **Hook launcher** (`scripts/agents/launcher/hooks-run.sh`): finds the kit the same way without cloning and runs the kit's `hooks/run.sh`. Without a kit it exits 0 and prints, for `session-env`, the SessionStart context `` Agent Kit not found: guards are off; run `scripts/agents/kit doctor` `` and, for every guarded hook, `{"systemMessage":"Agent Kit not found: guards are off; run `scripts/agents/kit doctor`"}`; `context-card` stays silent.
+- **Kit `hooks/run.sh`** runs the guard hooks beside itself, so it works from a machine copy; the context card is still the project's own `scripts/agents/context-card.mjs` (ticket 30 moves it into the kit).
+- **`kit version`** adds `kit <where and age>` (machine copy: since the last update; git checkout: commit age) and `project <commit>`, plus a `warning` line for a machine copy over a day without an update. **`kit doctor`** shows that as an uncounted `✓ kit:` note, a `✗ kit:` warning (also with `--quiet`) and `; warning: kit not updated for N days` on the RESULT; its `hooks live` probe runs without the command's `KIT_HOME` and fails as `hooks cannot reach a kit` on the hook launcher's warning; its kit home copy is made writable so a read-only machine copy cleans up.
+- **Tests:** `tests/kit-update.test.ts` (4) and `tests/kit-launcher.test.ts` (5) with a local bare repo and temporary `HOME`/`XDG_*` folders: unpack and swap, a command started before an update finishing on its old folder, `--previous` and the hold, retirement cleanup, one shallow cache clone and nothing in the project, `KIT_HOME` winning, the hook launcher's warning without blocking and its live guard with a kit. `tests/kit-doctor.test.ts` adds the two-day-old warning and the unreachable-kit failure; `tests/kit.test.ts`'s two `kit version` patterns take the new lines.
+- Docs: `docs/agents/agent-scripts.md` (machine kit and launchers, `kit update`, `kit version`, `kit doctor`).
+
+Feature list: no change (kit plumbing only; nothing Lex sees in the editor).
