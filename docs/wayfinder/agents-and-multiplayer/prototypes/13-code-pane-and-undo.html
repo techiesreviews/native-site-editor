@@ -7,7 +7,7 @@
 <!--
   THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 3 Nov review
   (kitchen rule "mock-ups ahead", 2026-10-27).
-  Question: do others' carets in the code pane (circle with letter or model icon that widens to show the full name on hover, tinted selection) and per-person Undo (agent from its chip, person from the undo at the end of their caret's name tag; typing shows no outline) read clearly? Agents build slices 22 and 24.
+  Question: do others' carets in the code pane and at the same spot on the page (circle with letter or model icon that widens to show the full name on hover, tinted selection) and per-person Undo (from the undo at the end of their caret's name tag; text changes show no outline) read clearly? Agents build slices 22 and 24.
 -->
 <style>
 :root {
@@ -105,10 +105,6 @@ button { font: inherit; color: inherit; }
 .who svg { inline-size: 0.85rem; block-size: 0.85rem; }
 .people { display: inline-flex; align-items: center; }
 .people .who + .who { margin-inline-start: -0.3rem; }
-.chip { display: inline-flex; align-items: center; gap: 0.3rem; font: 600 0.72rem/1.2 system-ui, sans-serif; color: var(--on-color); background: var(--c); border-radius: 99px; padding: 0.15rem 0.5rem; white-space: nowrap; }
-.chip button { all: unset; display: inline-grid; place-items: center; cursor: pointer; border-radius: 50%; inline-size: 1.1rem; block-size: 1.1rem; }
-.chip button:focus-visible { outline: 2px solid currentColor; }
-.chip svg { inline-size: 0.8rem; block-size: 0.8rem; }
 
 .panes { display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); align-items: start; }
 .label { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-block-end: 0.35rem; }
@@ -159,9 +155,6 @@ button { font: inherit; color: inherit; }
 .me { display: inline-block; inline-size: 0; block-size: 1.2em; vertical-align: text-bottom; border-inline-start: 2px solid var(--text); margin-inline: -1px; animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .me { animation: none; } }
-.site .outline { outline: 2px solid var(--c); outline-offset: 4px; border-radius: 2px; position: relative; }
-.site .outline { margin-block-start: 1.6rem; }
-.site .outline > .chip { position: absolute; inset-block-start: -1.55rem; inset-inline-end: 0; font-family: system-ui, sans-serif; }
 .site .cta { justify-self: start; display: inline-block; background: light-dark(oklch(35% 0.08 140), oklch(80% 0.08 140)); color: light-dark(white, oklch(18% 0.02 140)); padding: 0.55rem 1rem; border-radius: 99px; font: 600 0.95rem/1.2 system-ui, sans-serif; margin-block-start: 0.4rem; position: relative; }
 
 </style>
@@ -171,10 +164,10 @@ button { font: inherit; color: inherit; }
 <main>
   <header style="display:grid;gap:0.3rem">
     <h1>Code pane and Undo, together <span class="tag">mock-up for Tuesday 3 Nov</span></h1>
-    <p class="intro">Agents build, slices 22 and 24. Anna and Claude work in the same section as Lex. Their carets show in the code pane with a small circle on top. Lex's Undo only takes back his own typing. An agent's change is undone from its chip, and a person's typing from the name tag on their caret.</p>
+    <p class="intro">Agents build, slices 22 and 24. Anna and Claude work in the same section as Lex. Their carets show with a small circle on top, in the code pane and at the same spot on the page. Lex's Undo only takes back his own typing. Anna's or Claude's text change is undone from the name tag on their caret.</p>
   </header>
   <section class="strip" aria-labelledby="s1">
-    <h2 id="s1">Try it (demo buttons, not part of the editor). Hover a circle in the code to see the name.</h2>
+    <h2 id="s1">Try it (demo buttons, not part of the editor). Hover a circle in the code or on the page to see the name.</h2>
     <div class="buttons">
       <button type="button" data-act="anna">Anna types</button>
       <button type="button" data-act="lex">Lex types</button>
@@ -259,11 +252,12 @@ function flag(who) {
   const inner = who === "agent" ? icon("claude") : `<b>${NAMES[who][0]}</b>`;
   const person = who !== "agent";
   const rest = person ? NAMES[who].slice(1) : NAMES[who];
-  // While Anna's last text change can be undone, her opened tag ends with an undo button.
-  const undo = who === "anna" && S.annaUndo ? `<button type="button" class="rc__undo" data-undo-anna aria-label="Undo Anna's change">${icon("undo")}</button>` : "";
+  // While their last text change can be undone, the opened tag ends with an undo button.
+  const canUndo = who === "anna" ? S.annaUndo : !!S.agentChange;
+  const undo = canUndo ? `<button type="button" class="rc__undo" data-undo="${who}" aria-label="Undo ${NAMES[who].split(" ")[0]}'s change">${icon("undo")}</button>` : "";
   return `<span class="rc" style="--c:${C[who]}" tabindex="0" aria-label="${NAMES[who]}"><span class="rc__flag"${person ? " data-letter" : ""}><span class="rc__mark">${inner}</span><span class="rc__name" aria-hidden="true">${rest}</span>${undo}</span></span>`;
 }
-function lineText(f) {
+function lineText(f, inCode = true) {
   let out = "";
   S[f].forEach(([t, a], i) => {
     let piece = esc(t);
@@ -271,7 +265,7 @@ function lineText(f) {
     out += piece;
   });
   if (S.carets.anna && S.carets.anna[0] === f) out += flag("anna");
-  if (S.me[0] === f) out += '<span class="me" aria-hidden="true"></span>';
+  if (inCode && S.me[0] === f) out += '<span class="me" aria-hidden="true"></span>';
   return out;
 }
 function render() {
@@ -286,8 +280,8 @@ function render() {
   ];
   code.innerHTML = lines.map((l, i) => `<div class="ln"><i>${i + 1}</i><span>${l}</span></div>`).join("");
   const site = document.getElementById("site");
-  const agentChip = S.agentChange ? `<span class="chip" style="--c:${C.agent}">${icon("claude")}Claude<button type="button" data-undo-agent aria-label="Undo Claude's change">${icon("undo")}</button></span>` : "";
-  site.innerHTML = `<h2>${esc(text("heading"))}</h2><p>${esc(text("para"))}</p><span class="cta ${S.agentChange ? "outline" : ""}" style="--c:${C.agent}">${esc(S.cta)}${agentChip}</span>`;
+  // The page shows the same carets at the same spot as the code pane.
+  site.innerHTML = `<h2>${lineText("heading", false)}</h2><p>${lineText("para", false)}</p><span class="cta">${ctaCode}</span>`;
   document.getElementById("undoBtn").disabled = !S.lexUndo.length;
   const save = document.getElementById("saveBtn");
   save.querySelector(".save-dot")?.remove();
@@ -319,7 +313,7 @@ const acts = {
     caption("Claude changes the button. Its caret has a tiny model icon instead of a letter.");
     await sleep(500);
     S.agentChange = { before: S.cta }; S.cta = "Order today, collect tomorrow"; render();
-    caption("The agent's change is undone from its chip, not with Lex's Undo.");
+    caption("No outline for a text change. Claude's change is undone from its caret's tag, not with Lex's Undo.");
   },
   async annaSel() { S.sel = !S.sel; render(); caption(S.sel ? "A selection shows as a light tint in that person's colour." : "Selection cleared."); },
   async undo() {
@@ -337,14 +331,15 @@ document.querySelector(".strip").addEventListener("click", async (e) => {
 });
 document.getElementById("undoBtn").addEventListener("click", () => acts.undo());
 document.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); acts.undo(); } });
-document.getElementById("site").addEventListener("click", (e) => {
-  if (e.target.closest("[data-undo-agent]")) { S.cta = S.agentChange.before; S.agentChange = null; S.carets.agent = null; render(); caption("Claude's change is undone. Lex's and Anna's words stay."); }
-});
-document.getElementById("code").addEventListener("click", (e) => {
-  if (!e.target.closest("[data-undo-anna]")) return;
-  S.para = S.para.filter((s) => s[1] !== "anna"); S.annaUndo = false; render();
-  if (e.detail === 0) document.querySelector('#code .rc[aria-label="Anna"]')?.focus();
-  caption("Anna's change is undone from her caret's name tag. Lex's words stay.");
+// The undo on a caret's tag works the same in the code pane and on the page.
+for (const id of ["code", "site"]) document.getElementById(id).addEventListener("click", (e) => {
+  const b = e.target.closest("[data-undo]"); if (!b) return;
+  const who = b.dataset.undo;
+  if (who === "anna") { S.para = S.para.filter((s) => s[1] !== "anna"); S.annaUndo = false; }
+  else { S.cta = S.agentChange.before; S.agentChange = null; }
+  render();
+  if (e.detail === 0) document.querySelector(`#${id} .rc[aria-label="${NAMES[who]}"]`)?.focus();
+  caption(who === "anna" ? "Anna's change is undone from her caret's name tag. Lex's words stay." : "Claude's change is undone from its caret's tag. Lex's and Anna's words stay.");
 });
 reset();
 
