@@ -1,7 +1,7 @@
 ---
 title: "`kit unit` with named files says which setting is wrong, and its untested paths get tests (second looks on 26 and 37)"
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-51
 builder: claude
 blocked_by: [27-doctor-commands-on-broken-settings, 37-unit-sh-from-its-own-folder]
@@ -36,3 +36,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke51 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/51-kit-unit-names-settings-problem.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke51 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, the last line before and after, review decisions, PR and merge SHA.
+
+## Done (2026-10-28)
+
+- `kit unit` now reads `unit.sh`'s stderr while still showing it. When `unit.sh` prints no `log:` line, `kit unit` ends with `problem:` and `RESULT: fail unit <cause>`, where the cause is the last line `unit.sh` wrote to stderr, minus any `unit.sh: ` prefix. Examples: `RESULT: fail unit unit.sh needs unit.run in scripts/agents/kit.json`, `RESULT: fail unit jq is not installed; install jq`, `RESULT: fail unit scripts/agents/kit.json is unreadable: …`. `unit.sh returned no log path` now shows only when `unit.sh` printed nothing. The exit status is still 1 (`scripts/agents/kit.d/unit`).
+- Tests that failed before the fix: `kit unit <file>` without `unit.run` (`tests/kit-settings.test.ts`, and in `tests/kit-unit.test.ts` for named files and for none), with a broken `kit.json`, and without jq. Each now checks the whole `RESULT` line.
+- Gap tests:
+  - Doctor without jq, with `KIT_COMMANDS_DIR: ""` and a settings `commands` folder, prints `✓ commands: <n> shared, project folder skipped (jq is not installed)` exactly. `✓ kit home` passes.
+  - The no-jq doctor test now checks the whole last line, `RESULT: fail doctor 2 failed: settings,hooks live`. The old unanchored check had hidden that `hooks live` fails too: bash-guard reads its input with jq.
+  - `kit version` through the front door without jq exits 0 with `RESULT: ok version …`, and its only stderr is `jq is not installed; install jq`.
+  - With `.git` removed, `kit unit --affected --base HEAD` exits 1 with a `problem:` line, prints no `Usage:` and runs no test.
+- Feature list: no change (agent kit messages only, nothing in the editor).
