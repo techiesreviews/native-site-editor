@@ -1,7 +1,7 @@
 ---
 title: "`kit ux` keeps colour findings in paths with spaces, and its docs say the CSS-first rule (second look on 48)"
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-54
 builder: claude
 blocked_by: [48-kit-ux-land-branch-and-colour-setting]
@@ -40,3 +40,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke54 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/54-kit-ux-spaced-paths-and-docs.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke54 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, the findings for the spaced path before and after, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- `kit ux` reads a colour check line's path up to its first `:<line>:` (or `:<line>:<column>:`), so spaces and parentheses in it are kept: `src/my file.css:1: #fff` with `src/my file.css` changed is one L2 finding `src/my file.css:1: raw colour #fff`, alone or beside other lines (before: the generic `<command> exited 1: …` finding alone, and silently dropped beside other lines). Stack frames (`at …`, `node:…`) and paths outside the project are still no `file:line` lines.
+- A non-CSS line (an allow list's stale entry) counts for the longest tracked or untracked project file its text names whole (no path character just before it, none or `.x` just after; `./` and absolute paths still name it), instead of a token split: `allow.json:3: stale allow entry: src/my (old) file.css: #000` counts for `src/my (old) file.css` (before: dropped as outside the diff). A CSS line still counts for its own file.
+- `docs/agents/agent-scripts.md` states the CSS-first rule and the spaced-path reading; ticket 48's Done line 46 carries "(changed in round 3, see below)".
+- Tests in `tests/kit-ux.test.ts`: the spaced CSS path (unit and through this editor's `checks.css`) and the allow-list line naming `src/my (old) file.css`, all three failing on the old code; no `scripts/agents/kit.json` gives `RESULT: fail ux needs --base (no branches.land in scripts/agents/kit.json)` and runs with `--base origin/dev`; a broken one fails even with `--base`; a stale entry for an untracked CSS file counts for it; a passing `checks.css` prints `colours: <command>: ok` in stdout and the bundle.
+- Feature list: no change (kit plumbing and its docs only).
