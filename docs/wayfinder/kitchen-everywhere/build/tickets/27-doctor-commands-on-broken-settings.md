@@ -13,7 +13,7 @@ Grok's second look on [ticket 12](12-own-commands-folder.md#done-2026-10-27) (P2
 
 ## Decided behaviour
 
-- **A broken settings file skips the folder, out loud (`kit.d/doctor:147`, `:181`):** when `kit_settings_problems` reports the file missing or unreadable, the `commands` line fails with `project folder not checked (scripts/agents/kit.json unreadable)` and the fix `run kit doctor after fixing scripts/agents/kit.json`, and the shared folder is still listed and checked for `--help`. A readable file without `commands` keeps today's pass line.
+- **A broken settings file skips the folder, out loud (`kit.d/doctor:147`, `:181`):** when `kit_settings_problems` reports the file missing or unreadable, the `commands` line fails with `project folder not checked (scripts/agents/kit.json unreadable)` (`missing` when the file is absent) and the fix `run kit doctor after fixing scripts/agents/kit.json`, and the shared folder is still listed and checked for `--help`. A readable file without `commands` keeps today's pass line.
 - **`KIT_COMMANDS_DIR` is untouched:** with it set, the settings file is not read for `commands`, as today.
 - **Ticket 12's two test gaps, in the same pass:** the front door with the repo's real `kit.json` (no `KIT_COMMANDS_DIR`) runs a project command, and `kit --help` shows both groups.
 
@@ -42,4 +42,4 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Tests: `tests/kit-doctor.test.ts` covers a readable file with no `commands` (pass line), `{ "commands": ` (fail line, no `no "commands"` text, help still checked), a missing file, `[]` (unreadable), `{"commands":"own"}` without `project` or `branches` (project folder still checked) and a broken file with `KIT_COMMANDS_DIR` set (old line kept). `tests/kit.test.ts` runs `kit specs --help` through the front door with this repo's real `kit.json`, and the two-groups test runs `kit --help` and finds both `Shared commands:` and `Project commands:`.
 - The real `kit doctor` on this editor prints the same output as before: `✓ commands: 20 shared, 4 in scripts/agents/project.d`, `RESULT: ok doctor 11/11 checks passed`.
 - Feature list: no change (kit-internal doctor message; no editor UI).
-- Commits: ed4bc7d76 (doctor fix and tests), 1558cd27a (round 1: tests for `[]`, a readable file missing keys, and a broken file with `KIT_COMMANDS_DIR`).
+- Commits: ed4bc7d76 (doctor fix and tests), 1558cd27a (round 1: tests for `[]`, a readable file missing keys, and a broken file with `KIT_COMMANDS_DIR`), 1c5a2be35 (round 2: Done note lists the commits).
