@@ -50,6 +50,8 @@ Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **C
 | [15 One Grok count for the computer, its weekly use in the sweep](tickets/15-machine-wide-state.md) | M | claude | 14 |
 | [16 An OpenCode path in `kit review`](tickets/16-opencode-review-path.md) | M | claude | 15 |
 | [17 A second look on every change, per review kind](tickets/17-second-look-per-kind.md) | M | claude | 14, 16 |
+| [18 Follow-ups written in full (second look on 10)](tickets/18-full-follow-ups.md) | S | claude | – |
+| [19 A broken `--help` does not stop the fix builder (second look on 10)](tickets/19-doctor-gate-and-fix-builder.md) | S–M | claude | – |
 
 ## 2. Setup pieces (tickets 01, 05; research 04)
 

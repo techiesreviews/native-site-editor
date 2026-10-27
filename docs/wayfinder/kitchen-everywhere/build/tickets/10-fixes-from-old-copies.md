@@ -47,6 +47,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `docs/agents/agent-scripts.md`: the doctor, review and wait lines.
 - Validation: `RESULT: ok unit 110/110 (3 files)`; `RESULT: ok doctor 8/8 checks passed` (real run); `npm run lint` exit 0.
 - Feature list: no change (agent kit only, nothing a site editor user sees).
+- Second look (Grok 4.7, 2026-10-27, `.scratch/reviews/review/ke10-range/20261027T061559Z`): P2 clipped follow-ups → [ticket 18](18-full-follow-ups.md); the open P2 doctor gate on the fix builder and the untested default `KIT_COMMANDS_DIR` → [ticket 19](19-doctor-gate-and-fix-builder.md); two P3 nits (one `try` around save and scoring; a missing `.code` file ends `doctor` with no `RESULT:`) stay as follow-ups.
 
 ### Follow-ups
 
