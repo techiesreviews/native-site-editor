@@ -2,7 +2,7 @@
 title: The playwright setting reaches project commands
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-32
 builder: claude
 blocked_by: [14-settings-for-other-projects]
 ---
