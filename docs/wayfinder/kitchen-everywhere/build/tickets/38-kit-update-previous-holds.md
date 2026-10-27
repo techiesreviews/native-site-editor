@@ -1,7 +1,7 @@
 ---
 title: An emergency `kit update --previous` holds, and checks the kit it goes back to
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-38
 builder: claude
 blocked_by: [21-launcher-and-update]
@@ -41,3 +41,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke38 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/38-kit-update-previous-holds.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke38 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, how each new case failed before the fix, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- `kit update` checks every kit folder with one `has_kit` (`kit` executable and `kit-lib.sh` present): the current folder, the previous folder for `--previous`, the folder to unpack into and a fresh unpack.
+- While `held` names main's commit, a removed or broken current folder is unpacked again from `repo.git` as the kit `--previous` went back to (`RESULT: ok update refilled <commit>`), and `held` stays. When `repo.git` no longer has it: `RESULT: fail update cannot refill held <commit>`, and `current`, `previous`, `held` and the update time stay as they were. A broken folder is replaced only after the new unpack passes `has_kit`.
+- `--previous` refuses a previous folder that fails `has_kit` (`RESULT: fail update previous kit <commit> is incomplete`, `current` unchanged). A missing one is still `no previous kit to go back to`.
+- A second `--previous` (with `held` set and `previous` equal to `held`) changes nothing: `RESULT: ok update already back on <commit>`.
+- `docs/agents/agent-scripts.md`: the `kit update` line describes the three cases above. The `kit version` line now says the warning applies to the current machine copy, and that its age counts from the last update that left `current` on `main` or on the held kit (`--previous` alone does not reset it).
+- Tests (`tests/kit-update.test.ts`, 5 new): held refill; held refill with `repo.git` gone; incomplete previous folder; `--previous` twice; `kit version` age and warning after `--previous`. Before the fix, the first four failed: the refill went forward to two (`update <two> (was <one>)`, twice), the incomplete folder was accepted, and the second `--previous` swapped back to two. The `kit version` case already passed, because that part of the fix was the docs; it now keeps the behaviour from drifting.
+- Validation: `scripts/agents/kit unit --affected` → `RESULT: ok unit 16/16 (1 files)`; `npm run lint` clean.
+- Feature list: no change (agent kit internals, nothing in the editor).
