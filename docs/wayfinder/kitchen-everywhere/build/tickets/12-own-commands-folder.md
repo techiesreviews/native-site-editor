@@ -54,3 +54,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Docs: `docs/agents/agent-scripts.md` (two folders, `commands` key, doctor and ux lines), `docs/agents/code-map.md`.
 - Feature list: no change (agent kit tooling only, nothing an editor user sees).
 - Validation: `scripts/agents/kit unit --affected` `RESULT: ok unit 179/179 (7 files)`; all `tests/kit*.test.ts` plus docs guards `RESULT: ok unit 748/748 (32 files)`; `kit doctor` `RESULT: ok doctor 10/10 checks passed`; `kit specs|shots|size|preview --help` exit 0; `npm run check` and `npm run lint` pass.
+
+### Follow-ups
+
+- Spec (P3): ee98c8dc4:docs/work/tech-debt/issues/12-boot-back-under-355-kb.md:12 — P3 ticket: this open `ready-for-agent` issue still sends its builder to `scripts/agents/k
+- Validation gaps (gap): No test runs the real `scripts/agents/kit.json` `commands` setting through the front door. `kit-specs`, `kit-size` and `kit-preview` tests all set `KIT_COMMANDS
+- Validation gaps (gap): The Done-when says "`kit --help` shows two groups", but the new tests only run bare `kit` (`run([], env)`). Add one assertion in the two-groups test that `run([
+
