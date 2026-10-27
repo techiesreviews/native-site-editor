@@ -2,7 +2,7 @@
 title: unit.sh works when run from its own folder
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-37
 builder: claude
 blocked_by: [26-settings-messages-and-tests]
 ---
@@ -32,3 +32,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke37 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/37-unit-sh-from-its-own-folder.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke37 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, how the new case failed before the fix, review decisions, PR and merge SHA.
+
+## Comments
+
+- Lead, 2026-10-27 (from slice 26's decide line): one rule for `kit unit` usage mistakes. A mistyped option, a mistyped `--base` and a named test file that does not exist all exit 2 (usage error) with a `problem:` line naming the input; a test run that fails stays exit 1. Bring the `--base` case in line here and add its test.
