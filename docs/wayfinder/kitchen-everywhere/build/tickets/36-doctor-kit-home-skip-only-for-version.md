@@ -2,7 +2,7 @@
 title: Doctor skips a failing kit home only when version caused it
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-36
 builder: claude
 blocked_by: [27-doctor-commands-on-broken-settings]
 ---
