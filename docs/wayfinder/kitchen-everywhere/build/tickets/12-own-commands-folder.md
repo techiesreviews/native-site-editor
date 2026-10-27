@@ -2,7 +2,7 @@
 title: Own commands in the project's own folder
 type: task (AFK)
 status: closed
-assignee: build/ke-12-own-commands-folder
+assignee: ke-12
 builder: claude
 blocked_by: [11-project-settings-file]
 ---
@@ -47,6 +47,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit doctor` has a tenth check, `commands`: it fails when a project command takes a shared name (`ok in both <shared file> and <project file>; fix: rename the project command`) or the named folder is missing; the `--help` check covers both folders.
 - `kit ux` takes screenshots through the project's own `shots` (`KIT_UX_SHOTS`, else `KIT_COMMANDS_DIR`, else the `commands` folder) and fails `ux needs a project shots command (…)` before trying anything when there is none.
 - Tests: `tests/kit.test.ts` (project command runs, two groups, shared name wins, `KIT_COMMANDS_DIR` replaces both), `tests/kit-doctor.test.ts` (clash names both files, missing folder, real shared and project helps), `tests/kit-ux.test.ts` (no folder, no `shots`, project `shots.mjs` used). The fake-project fixtures in `kit-specs`, `kit-size` and `kit-preview` tests name `project.d` through `KIT_COMMANDS_DIR`; `kit-shots-compare` follows the move.
+- Commit 677b02ae8 (the change above). Fix round: bare `kit` marks a project command that takes a shared name `(hidden by the shared <name>; kit doctor names the clash)`; a `commands` naming the shared folder adds no project group and fails doctor with `"commands" names the shared folder …`; `kit ux` only takes an executable `shots` file, as the front door does. New tests: absolute `commands` folder lists and runs; no `commands` key lists only "Shared commands:" and an unknown name exits 2; a non-executable `own/shots` gives "needs a project shots command"; the shared-folder doctor message.
 - Docs: `docs/agents/agent-scripts.md` (two folders, `commands` key, doctor and ux lines), `docs/agents/code-map.md`.
 - Feature list: no change (agent kit tooling only, nothing an editor user sees).
 - Validation: `scripts/agents/kit unit --affected` `RESULT: ok unit 179/179 (7 files)`; all `tests/kit*.test.ts` plus docs guards `RESULT: ok unit 748/748 (32 files)`; `kit doctor` `RESULT: ok doctor 10/10 checks passed`; `kit specs|shots|size|preview --help` exit 0; `npm run check` and `npm run lint` pass.
