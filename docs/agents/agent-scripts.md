@@ -173,6 +173,7 @@ unstaged-work and validation contract. Every adapter verifies the actual model
 `modelUsage` keys, which may add a suffix such as `grok-4.7-build`; OpenCode's `opencode export --pure <session>`, where every
 assistant message must be the requested `<provider>/<model>`; the export is skipped when the call failed (an error event, a non-zero exit or a timeout) and is
 killed after `ASE_OPENCODE_EXPORT_TIMEOUT_MS`, default 60000, a value checked before the review starts).
+An OpenCode call that names no session within `ASE_OPENCODE_START_TIMEOUT_MS` (default 300000) is stopped as `opencode unavailable: no session within <s>s`; a second look counts that as OpenCode being down.
 Claude aliases permit their family; full names permit a dated snapshot suffix.
 The `[1m]` context suffix is preserved for the CLI and ignored for model inference and verification.
 Missing metadata, fallback models, CLI errors and empty reports fail the run.
