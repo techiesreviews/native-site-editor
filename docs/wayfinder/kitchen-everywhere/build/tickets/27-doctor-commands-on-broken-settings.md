@@ -2,7 +2,7 @@
 title: Doctor's commands check says so when the settings file is broken
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-27
 builder: claude
 blocked_by: [26-settings-messages-and-tests]
 ---
