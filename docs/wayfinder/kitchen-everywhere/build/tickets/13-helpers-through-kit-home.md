@@ -50,3 +50,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Feature list: no change (agent kit tooling only, nothing an editor user sees).
 - Validation: `scripts/agents/kit unit --affected` `RESULT: ok unit 392/392 (17 files)` (the clean guard ran 1221 kit tests from 35 files); `kit doctor` `RESULT: ok doctor 11/11 checks passed`; `npm run check` and `npm run lint` pass.
 - Out-of-ticket fix allowed by the lead (2026-10-27): `kit pr` stopped on `tests/ux-rulebook.test.ts`, which failed on `dev` too since 171bee276 added same-page links (`(#tuesday-review)`) to `docs/agents/kitchen.md`; the link check read the empty file part as the folder (EISDIR). A same-page link now resolves to its own page, and its anchor is still checked against that page's headings (commit 78e7dca3d, `node --test tests/ux-rulebook.test.ts` 6/6).
+
+### Follow-ups
+
+- Spec (P3): 23be33778:docs/wayfinder/kitchen-everywhere/build/tickets/13-helpers-through-kit-home.md:48 — P3 ticket: "Done when" says the grep output must be listed in the 
+- Standards (P2): fa024bc72:tests/kit-doctor.test.ts:69 — P2 fault: the fixture's `run` passes `...process.env` without removing `KIT_HOME` or `KIT_HOME_DEFAULT`. If a person run
+- Validation gaps (gap): `tests/kit-pr.test.ts:461`: the case with `KIT_HOME` outside the project copies `tickets.mjs` into the home but checks only the `unit.sh` call. Add a case where
+- Validation gaps (gap): `kit card` succeeding through a person's `KIT_HOME` is not tested; only the failure is. In `tests/kit.test.ts:579`, run `front("card")` against the copy with a 
+- Validation gaps (gap): The doctor `kit home` check leaves the project's commands folder out of the copy when it sits inside `KIT_HOME` (`kit.d/doctor:224`) and copies it into the temp
+
