@@ -9,21 +9,21 @@ blocked_by: [29-pr-ci-filters-and-claim-owner, 35-follow-ups-line-endings-and-ol
 
 ## Goal
 
-On PR #236 (slice 56, 2026-10-28) the first CI run failed in "Kit tests leave no trace": `tests/kit-pr.test.ts` left two `kit-pr-*` temp folders behind; the rerun passed. Slice 56 does not touch that code; slice 29 (PR #235) had just changed those tests. A flaky trace check makes every slice's `kit pr` fail at random.
+On PR #236 (slice 56, 2026-10-28) the first CI run failed in "Kit tests leave no trace": `tests/kit-pr.test.ts` left two `kit-pr-*` temp folders behind; the rerun passed. PRs #239 (slice 22) and #240 (slice 58) then failed the same way, twice each. Found on #239: this is no random leak. `tests/kit-tests-clean.test.ts` runs the whole kit suite under one time limit (230 s; the last green run took 219.7 s), and the failing runs were cut off at that limit mid-run, before the running `kit-pr` cases removed their folders. Slice 22 raised the limit to 480 s (test 500 s), as the lead decided. What stays open: a run cut off at the limit still leaves folders, and the check then reports a leftover instead of the time-out.
 
 ## Decided behaviour
 
-- Every `tests/kit-pr.test.ts` case removes its temp folder even when the case fails or times out, and any child process it starts (fake `gh`, `kit wait`, background jobs) has exited before the folder is removed.
-- Reproduce first: run `tests/kit-pr.test.ts` repeatedly (and under load) until the leftover shows, name the case, then fix it.
+- When the clean guard's suite run hits its time limit, the check says so first (the run was cut off after N s) instead of only listing the folders it left.
+- A cut-off run still cleans up: the guard's private temp folder and any `kit-pr-*` folder in it are removed after the child suite and its children have exited.
 
 ## Files
 
-- `tests/kit-pr.test.ts` (and its shared fixture helpers, if the leak is there)
+- `tests/kit-tests-clean.test.ts` (and `tests/kit-pr.test.ts`' shared fixture helpers, if cleanup belongs there)
 
 ## Done when
 
-- The leaking case is named in the Done with how it leaked; 20 repeated runs of `tests/kit-pr.test.ts` leave no `kit-pr-*` folder; `npm run test:kit-clean` passes.
-- `kit unit --affected`, `kit doctor`, `kit status` pass.
+- A guard run with a small limit forced (an env override or a test-only seam) fails with the time-out named, and leaves no folder in the system temp folder.
+- `npm run test:kit-clean` passes; `kit unit --affected`, `kit doctor`, `kit status` pass.
 
 ## Kit commands and evidence
 
