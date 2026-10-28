@@ -41,8 +41,12 @@ test("an image counts as used when a mock-up in its folder points at it by file 
   const html = `<img src="a.png"><img src='./b%20b.png?v=2#x'><img src=c.png>
 <picture><source srcset="d.webp 1x, ./e.webp 2x"></picture><link rel="icon" href="f.svg">
 <div style="background: url('g.jpg')"></div><style>i { background: url(h.gif) }</style>
-<script>image.src = "i.avif";</script><img src="images/j.png"><img src="../other/k.png"><a href="#l">`;
-  assert.deepEqual([...referencedFiles(html)].sort(), ["a.png", "b b.png", "c.png", "d.webp", "e.webp", "f.svg", "g.jpg", "h.gif", "i.avif"]);
+<script>image.src = "i.avif";</script><img src="images/j.png"><img src="../other/k.png"><a href="#l">
+<IMG SRC="m.png"><img data-src="n.png"><div style='background: url(" o o.png ")'></div>
+<img src="p&amp;q.png"><img src="r&#38;s.png"><img src="t&#x26;u.png"><img src="v&bogus;w.png">
+<!-- <img src="x-commented-out.png"> -->`;
+  assert.deepEqual([...referencedFiles(html)].sort(),
+    ["a.png", "b b.png", "c.png", "d.webp", "e.webp", "f.svg", "g.jpg", "h.gif", "i.avif", "m.png", "n.png", "o o.png", "p&q.png", "r&s.png", "t&u.png", "v&bogus;w.png"]);
 });
 
 test("a build copies only the images a mock-up in the same map uses; notes naming an image don't count", async () => {
@@ -154,6 +158,16 @@ test("index links are URL-encoded and a rebuild adds the header rule once", asyn
   assert.equal(readFileSync(join(outDir, "_headers"), "utf8"), MOCKUPS_HEADERS);
 });
 
+/** Builds `root` with the mock-ups from `mockupsRoot` and the editor's real `_headers`, served by Cloudflare's asset handler. */
+async function serveBuild(root: string, mockupsRoot: string) {
+  writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
+  mkdirSync(join(root, "public"));
+  writeFileSync(join(root, "public/_headers"), readFileSync(join(repoRoot, "public/_headers"), "utf8"));
+  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(mockupsRoot)], build: { outDir: join(root, "dist") } });
+  writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify({ name: "mockups-browser-test", compatibility_date: "2026-09-17", assets: { directory: "./dist" } }));
+  return unstable_startWorker({ config: join(root, "wrangler.jsonc"), dev: { server: { port: 0 }, inspector: false, watch: false, logLevel: "none" } });
+}
+
 /** A 1×1 transparent PNG. */
 const onePixelPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
@@ -166,15 +180,7 @@ const esmStub: Record<string, string> = {
 
 test("every real mock-up runs in a browser under the sandboxed policy", async () => {
   const { chromium } = await import("@playwright/test");
-  const root = mkdtempSync(join(scratch, "real-"));
-  writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
-  mkdirSync(join(root, "public"));
-  writeFileSync(join(root, "public/_headers"), readFileSync(join(repoRoot, "public/_headers"), "utf8"));
-  // No real mock-up uses an image yet; this one stands in to prove the sandboxed policy lets same-site images load.
-  writeFileSync(join(root, "public/probe.png"), Buffer.from(onePixelPng, "base64"));
-  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(repoRoot)], build: { outDir: join(root, "dist") } });
-  writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify({ name: "mockups-browser-test", compatibility_date: "2026-09-17", assets: { directory: "./dist" } }));
-  const worker = await unstable_startWorker({ config: join(root, "wrangler.jsonc"), dev: { server: { port: 0 }, inspector: false, watch: false, logLevel: "none" } });
+  const worker = await serveBuild(mkdtempSync(join(scratch, "real-")), repoRoot);
   const browser = await chromium.launch({ headless: true });
   try {
     const base = await worker.url;
@@ -210,18 +216,43 @@ test("every real mock-up runs in a browser under the sandboxed policy", async ()
     await page.goto(new URL(`mockups/${typingTogether}`, base).href, { waitUntil: "load" });
     await page.waitForFunction(() => (globalThis as { esmLoaded?: boolean }).esmLoaded === true);
     const sandbox = await page.evaluate(async () => {
-      const [imageLoaded, unusedReferenceLoaded] = await Promise.all(["/probe.png", "12-caret-circle-reference.png"].map(src => {
-        const image = new Image();
-        image.src = src;
-        return image.decode().then(() => true, () => false);
-      }));
+      const image = new Image();
+      image.src = "12-caret-circle-reference.png";
+      const unusedReferenceLoaded = await image.decode().then(() => true, () => false);
       let storage = "open";
       try { void localStorage.length; } catch { storage = "blocked"; }
-      return { origin: String(globalThis.origin), cookie: (() => { try { return document.cookie; } catch { return "blocked"; } })(), storage, imageLoaded, unusedReferenceLoaded };
+      return { origin: String(globalThis.origin), cookie: (() => { try { return document.cookie; } catch { return "blocked"; } })(), storage, unusedReferenceLoaded };
     });
-    assert.deepEqual(sandbox, { origin: "null", cookie: "blocked", storage: "blocked", imageLoaded: true, unusedReferenceLoaded: false });
+    assert.deepEqual(sandbox, { origin: "null", cookie: "blocked", storage: "blocked", unusedReferenceLoaded: false });
+    // On purpose against real content: this fails if a mock-up starts using the third-party screenshot.
     const unused = await page.request.get(new URL("mockups/styling/03-unblockwp-panel-reference.png", base).href);
     assert.equal(unused.status(), 404);
+    assert.deepEqual(violations, []);
+  } finally {
+    await browser.close();
+    await worker.dispose();
+  }
+});
+
+test("a mock-up loads an image the plugin copied beside it, under the sandboxed policy", async () => {
+  const { chromium } = await import("@playwright/test");
+  const root = repo();
+  writeFileSync(join(root, "docs/wayfinder/agents/prototypes/12-reference.png"), Buffer.from(onePixelPng, "base64"));
+  const worker = await serveBuild(root, root);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    const violations: string[] = [];
+    page.on("console", message => { if (/Content Security Policy/i.test(message.text())) violations.push(message.text()); });
+    await page.addInitScript(() => document.addEventListener("securitypolicyviolation", event => console.error(`Content Security Policy violation: ${event.violatedDirective} ${event.blockedURI}`)));
+    const images: Record<string, number> = {};
+    page.on("response", response => { if (response.request().resourceType() === "image") images[response.url().split("/").pop()!] = response.status(); });
+    page.on("requestfailed", request => { if (request.resourceType() === "image") images[request.url().split("/").pop()!] = 0; });
+    const response = await page.goto(new URL("mockups/agents/14-share.html", await worker.url).href, { waitUntil: "load" });
+    assert.equal(response?.status(), 200);
+    assert.equal(await page.evaluate(() => (document.querySelector('img[src="12-reference.png"]') as HTMLImageElement).naturalWidth), 1);
+    // 11-shared.png sits in another map's folder, so the build leaves it out of this one.
+    assert.deepEqual(images, { "12-reference.png": 200, "11-shared.png": 404 });
     assert.deepEqual(violations, []);
   } finally {
     await browser.close();
