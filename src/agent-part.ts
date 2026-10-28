@@ -6,6 +6,7 @@ import { minimalTextEdit } from "../shared/native-project";
 import type { SharedContext } from "./agent-site";
 import { pageOutline } from "./agent-site";
 import { readSource } from "./page-builder/source-tree";
+import { sameBranch } from "./workspace-session";
 
 /*
  * What this tab keeps of what agents were told (ticket 10), so several agents on one page rarely refuse
@@ -155,7 +156,7 @@ function catchUp(grantId: string | undefined, shared: SharedContext): AgentCatch
  * (noteOwnChange). A reply that is no object tells nothing, and keeps the mark.
  */
 export function tellAgent(shared: SharedContext | undefined, workspace: { repoId: number; branch: string }, grantId: string | undefined, result: AgentReadResult): AgentReadResult {
-  if (!shared || shared.context.repository.id !== workspace.repoId || shared.context.branch !== workspace.branch) return result;
+  if (!shared || !sameBranch({ repoId: shared.context.repository.id, branch: shared.context.branch }, workspace)) return result;
   if (!result.ok || !result.value || typeof result.value !== "object" || Array.isArray(result.value)) return result;
   const told = catchUp(grantId, shared);
   return told ? { ...result, value: { ...result.value, changesSinceLastRead: told as unknown as JsonValue } } : result;
