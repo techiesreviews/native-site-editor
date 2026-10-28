@@ -62,7 +62,9 @@ that connection's last call, its own changes left out: up to 20 files (`path`,
 `change`: added, changed, removed, discarded or saved; `hash`; the page
 `sections` touched when the tab still has the earlier text), `more` for the
 rest, within 2 KB. Marks and remembered texts live in the receiving tab's memory
-only, per connection, so agents sharing one connection share one catch-up.
+only, per connection, so agents sharing one connection share one catch-up. A page
+read with `get_page` and `source: false` keeps no text, so a page tool sent with
+that read's hash is not found again once the page changed: read with the source.
 
 Queued tools accept optional `requestId` (reuse only for the identical retry) and
 `waitSeconds` (default 10). Calls return applied, conflict, failed or pending.

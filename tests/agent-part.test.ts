@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { textHash } from "../shared/agent";
-import { PART_LIMIT, PartClash, prepareAgentEdit, spanNow, type AgentEdit, type AgentEditArgsMap } from "../shared/agent-edit";
+import { PART_LIMIT, PartClash, partOf, prepareAgentEdit, spanNow, type AgentEdit, type AgentEditArgsMap } from "../shared/agent-edit";
 import { CATCH_UP_BYTES, CATCH_UP_FILES, catchUpOf, type AgentMark } from "../shared/agent-read";
 import { SiteFiles, type SiteFileReader } from "../shared/site-files";
 import type { EditorContext } from "../shared/types";
@@ -68,23 +68,43 @@ test("a part is found between unchanged lines, else by the one stretch that chan
   assert.deepEqual(spanNow("<p>one</p><p>two</p>", 10, 20, "<p>one</p><p>2</p>"), { start: 0, end: 18 });
   // Lines around it gone too: the one stretch that changed, with the words.
   assert.deepEqual(spanNow("x\n<p>one</p><p>two</p>\ny", 12, 22, "X\n<p>one</p><p>2</p>\nY"), { start: 0, end: 22 });
-  assert.ok(PART_LIMIT <= 4000);
+  // Longer than PART_LIMIT: cut there and marked, its lines still the whole stretch's.
+  const long = `head\n${Array.from({ length: 300 }, (_, i) => `line ${i} ${"x".repeat(20)}`).join("\n")}\ntail`;
+  const cut = partOf("a.html", "h", long, 5, long.length - 5);
+  assert.equal(cut.text.length, PART_LIMIT);
+  assert.equal(cut.truncated, true);
+  assert.deepEqual(cut.lines, { start: 2, end: 301 });
+  assert.equal(partOf("a.html", "h", long, 0, 4).truncated, undefined);
+});
+
+test("without the read, a clash whose first replaced line is gone is found by its last line", async () => {
+  const now = read.replace("<h1>Welcome</h1>", "<h1>Hello there</h1>");
+  const { context, files: site } = await withHome(now);
+  const clash = await prepareAgentEdit(edit({ path: "index.html", expectedHash: "0".repeat(64), edits: [{ oldText: "<h1>Welcome</h1>\n  </section>", newText: "x" }] }), context, site)
+    .then(() => assert.fail("must clash"), (error: PartClash) => error);
+  assert.equal(clash.part?.text, "  </section>");
+  assert.deepEqual(clash.part?.lines, { start: 13, end: 13 });
 });
 
 test("a page command's elements are found again where other sections moved them, and refused with the part when they changed", async t => {
   installOutlineDocument(t);
   const page = (body: string) => `<!doctype html><html><head></head><body><main>${body}</main></body></html>`;
   const was = page("<section>A</section><section>B</section>");
-  const tags = new Set<string>();
   // A section added before them moves both; their HTML is unchanged, so their ids follow.
-  assert.deepEqual(elementsNow("index.html", { section: "0.1", after: "0.0" }, was, page("<section>X</section><section>A</section><section>B</section>"), "h", tags), { section: "0.2", after: "0.1" });
-  assert.deepEqual(elementsNow("index.html", { section: "0.1" }, was, page("<section>A</section><section>B</section><section>C</section>"), "h", tags), { section: "0.1" });
+  assert.deepEqual(elementsNow("index.html", { section: "0.1", after: "0.0" }, was, page("<section>X</section><section>A</section><section>B</section>"), "h"), { section: "0.2", after: "0.1" });
+  assert.deepEqual(elementsNow("index.html", { section: "0.1" }, was, page("<section>A</section><section>B</section><section>C</section>"), "h"), { section: "0.1" });
   // The section itself changed: refused with it as it is now.
   const changed = page("<section>A</section><section>B, edited</section>");
-  assert.throws(() => elementsNow("index.html", { section: "0.1" }, was, changed, "h2", tags), (error: PartClash) =>
+  assert.throws(() => elementsNow("index.html", { section: "0.1" }, was, changed, "h2"), (error: PartClash) =>
     error instanceof PartClash && /was changed meanwhile/.test(error.message) && error.part?.hash === "h2" && error.part.text.includes("B, edited"));
   // Gone: refused, with no part.
-  assert.throws(() => elementsNow("index.html", { section: "0.1" }, was, page("<section>A</section>"), "h3", tags), (error: PartClash) => error instanceof PartClash && !error.part && /no longer there/.test(error.message));
+  assert.throws(() => elementsNow("index.html", { section: "0.1" }, was, page("<section>A</section>"), "h3"), (error: PartClash) => error instanceof PartClash && !error.part && /no longer there/.test(error.message));
+  // make_component's element can be any container: a <div> moved by a section added before it is found too.
+  const withDiv = page("<section>A</section><div class=\"note\"><p>Note</p></div>");
+  assert.deepEqual(elementsNow("index.html", { element: "0.1" }, withDiv, page("<section>X</section><section>A</section><div class=\"note\"><p>Note</p></div>"), "h"), { element: "0.2" });
+  // Changed, and another kind of element at its old place: no part, which would be that other element.
+  assert.throws(() => elementsNow("index.html", { element: "0.1" }, withDiv, page("<section>A</section><section>B</section><div>Note, edited</div>"), "h4"),
+    (error: PartClash) => error instanceof PartClash && !error.part && /no longer there/.test(error.message));
 });
 
 test("a catch-up lists what changed since the last call, the agent's own changes left out, within its size cap", () => {
@@ -145,4 +165,36 @@ test("the tab keeps the texts agents read, by hash, within its limits", async ()
   for (let i = 0; i < 250; i++) rememberText(`h${i}`, String(i));
   assert.equal(readText("ha"), undefined, "the oldest go first");
   assert.equal(readText("h249"), "249");
+});
+
+test("a reply that is no answer keeps the agent's mark: its next reply still tells what changed", async () => {
+  const context: EditorContext = await siteContext(), texts = new Map<string, string>();
+  const shared = () => ({ context: structuredClone(context), texts });
+  const workspace = { repoId: repo.id, branch: "main" }, reply = { ok: true as const, value: { state: "applied" } };
+  tellAgent(shared(), workspace, "agent-refused", reply);
+  context.drafts.push({ path: "index.html", baseSha: "1".repeat(40), updatedAt: 4, hash: "h-other" });
+  const refused = { ok: false as const, message: "This change's id is already running with different work or authorization." };
+  assert.deepEqual(tellAgent(shared(), workspace, "agent-refused", refused), refused);
+  const told = tellAgent(shared(), workspace, "agent-refused", reply);
+  assert.ok(told.ok);
+  assert.partialDeepStrictEqual(told.value, { changesSinceLastRead: { files: [{ path: "index.html", change: "changed", hash: "h-other" }] } });
+});
+
+test("an agent's applied edit of a file another changed since its read still tells it that file; one on its own read does not", async () => {
+  const context: EditorContext = await siteContext(), texts = new Map<string, string>();
+  const shared = () => ({ context: structuredClone(context), texts });
+  const workspace = { repoId: repo.id, branch: "main" }, reply = { ok: true as const, value: { state: "applied" } };
+  tellAgent(shared(), workspace, "agent-own-a", reply);
+  tellAgent(shared(), workspace, "agent-own-b", reply);
+  // A changed index.html; B's edit, read before that, landed on A's text (src/agent-tools-edit.ts `landedElsewhere`).
+  context.drafts.push({ path: "index.html", baseSha: "1".repeat(40), updatedAt: 5, hash: "h-merged" });
+  const request: AgentEdit = { ...edit({ path: "index.html", expectedHash: "h-read", edits: [] }), grantId: "agent-own-b" };
+  const applied = { ok: true as const, value: { state: "applied", result: { path: "index.html", hash: "h-merged" } } };
+  const told = tellAgent(shared(), workspace, "agent-own-b", applied, request, "index.html");
+  assert.ok(told.ok);
+  assert.partialDeepStrictEqual(told.value, { changesSinceLastRead: { files: [{ path: "index.html", change: "changed", hash: "h-merged" }] } });
+  // Landed on the text it read: its own change, not told back.
+  context.drafts.find(draft => draft.path === "index.html")!.hash = "h-mine";
+  assert.deepEqual(tellAgent(shared(), workspace, "agent-own-b", { ok: true, value: { state: "applied", result: { path: "index.html", hash: "h-mine" } } }, request),
+    { ok: true, value: { state: "applied", result: { path: "index.html", hash: "h-mine" } } });
 });

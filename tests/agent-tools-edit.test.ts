@@ -1092,3 +1092,35 @@ test("an edit that loses a race with another change to its file is prepared agai
   assert.equal(clash.part.hash, await textHash(home.replace(">Fast<", ">Rapid<")));
   assert.equal(ran.length, 3);
 });
+
+test("an edit prepared again after a race waits when it now changes the part the user types in (ticket 52 holds on retry)", async t => {
+  t.after(() => workingPart.left());
+  const live: Record<string, string> = { ...files };
+  const f = await fixture({ source: path => live[path] }), home = files["index.html"], hash = f.context.site!.outlines[0].hash;
+  const ports = { ...f.ports, source: (path: string) => live[path], pin: () => ({ away: () => false, context: f.ports.context }) } satisfies AgentReadPorts;
+  const ran: AgentCommand[] = [];
+  const tools = createAgentEditTools({ workspace, records: f.records, ports, run: async command => {
+    ran.push({ ...command });
+    if (ran.length === 1) {
+      // The user started typing in the heading meanwhile: their text is written, and they are still in it.
+      const typed = home.replace("<h1>Welcome</h1>", "<h1>Welcome to</h1>");
+      live["index.html"] = typed;
+      f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(typed), content: typed });
+      workingPart.typed(heading);
+      throw new Error("index.html changed in the editor since it was read. Read it again. Nothing was changed; your drafts are as they were.");
+    }
+    const state = await f.records.workspace(workspace);
+    await f.records.commit({ workspace, fence: command.ownerGeneration!, expectedRevision: state.revision, expectedDrafts: [], drafts: [],
+      receipt: { operationId: command.id, authorizationId: command.grantId!, payloadIdentity: command.requestIdentity!, outcome: { message: "Applied." }, createdAt: Date.now(), issuedAt: command.createdAt } });
+    live[command.path] = command.content;
+    return { message: "Applied." };
+  } });
+  const edit = request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: "Welcome", newText: "Hello" }] }, "retry-waits");
+  assert.equal(body(await tools.run(edit, 0, () => true)).state, "waiting");
+  assert.equal(ran.length, 1, "the retry waits for the user, never runs over their typing");
+  workingPart.left(heading);
+  for (let turn = 0; turn < 100 && ran.length < 2; turn++) await settle();
+  assert.equal(ran.length, 2);
+  assert.equal(ran[1].content, home.replace("<h1>Welcome</h1>", "<h1>Hello to</h1>"));
+  assert.equal(body(await tools.run({ operation: "status", id: edit.id, grantId: edit.grantId }, 0, () => true)).state, "applied");
+});
