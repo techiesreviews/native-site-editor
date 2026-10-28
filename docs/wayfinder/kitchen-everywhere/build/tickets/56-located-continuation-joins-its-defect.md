@@ -1,7 +1,7 @@
 ---
 title: "A located continuation line stays with its defect (follow-up on 52)"
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-56
 builder: claude
 blocked_by: [52-review-notes-do-not-block]
@@ -29,3 +29,10 @@ Slice 52's final Claude review left one P2 ([ticket 52 Follow-ups](52-review-not
 ## Kit commands and evidence
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines.
+
+## Done (2026-10-28)
+
+- `openFindings` (`scripts/agents/review-findings.mjs`) starts a new item at an unindented, unbulleted located line only when the item above would be a note (no location and no severity). Under a located or severity-naming defect the located line is a continuation: `Defects:\nSpec:\n- a.ts:1 — P2 fault: x\nb.ts:2 has the same bug.` gives one P2 fault finding with both lines, and `blockingFindings` is `[]`. Ticket 52's "prose paragraph, then located defect" case still splits and blocks.
+- Tests: `tests/review-findings.test.ts` adds the P2 continuation case (failed before the fix), a located severity-less defect taking its continuation, and an unlocated P3 line taking one; `tests/kit-score.test.ts` adds `scoreReview` on a notes-only `result.md` with no `findings.json`, giving all-zero counts and no `unreadable`.
+- Validation: `kit unit --affected` RESULT: ok unit 515/515 (15 files); `npm run check` and `npm run lint` pass; `kit doctor` RESULT: ok doctor 11/11 checks passed; `kit status` RESULT: ok status all 776 tickets, 599 closed, 1 open PRs.
+- Feature list: no change (internal review parsing, nothing a user sees).
