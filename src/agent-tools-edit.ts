@@ -1,4 +1,4 @@
-import { textHash, WAITING_MESSAGE, type AgentCommand } from "../shared/agent";
+import { agentNamed, textHash, WAITING_MESSAGE, type AgentCommand } from "../shared/agent";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
 import { PartClash, prepareAgentEdit, type AgentEdit, type AgentStatus } from "../shared/agent-edit";
 import { agentToolsOn } from "../shared/agent-tool-table";
@@ -208,7 +208,7 @@ export function createAgentEditTools(options: Options) {
         const { input, operation } = prepared;
         const command: AgentCommand = { id: request.id, operation, content: input.content ?? "",
           branch: context.branch, commit: context.commit, ...input, repoId: workspace.repoId,
-          grantId: request.grantId, generation: request.generation, ownerGeneration: fence, requestIdentity: identity!,
+          grantId: request.grantId, ...agentNamed(request.agent), generation: request.generation, ownerGeneration: fence, requestIdentity: identity!,
           state: "pending", createdAt: request.createdAt };
         if (signal) agentCommandSignals.set(command, signal);
         agentCommandFiles.set(command, source);

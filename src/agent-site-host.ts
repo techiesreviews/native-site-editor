@@ -1,4 +1,5 @@
 import type { AgentReadFiles } from "./agent-tools-read";
+import type { AgentAtWork } from "../shared/agent-read";
 import type { AgentAwayPorts, AgentSiteActions, AgentSiteInput, SharedContext, agentStructuralActions } from "./agent-site";
 import type { AgentCommand } from "../shared/agent";
 import type { SessionInfo } from "../shared/types";
@@ -38,6 +39,8 @@ export interface AgentSiteHostPorts {
   input(): AgentSiteInput | undefined;
   /** The workspace shown, pinned for Media work (src/controllers/media-pin.ts). */
   mediaPin?(): MediaPin | undefined;
+  /** Who works on what (src/agent-presence.ts), which get_site tells. */
+  atWork?(): AgentAtWork[];
 }
 
 /** Agent waits belong to the repository they began on; the host supplies live inputs after loading. */
@@ -69,7 +72,8 @@ export function createAgentSiteHost(ports: AgentSiteHostPorts) {
     } };
   }
   function tools(build = context) {
-    return { stamp: () => ports.stamp(), context: build, pin: () => pin(build), files: () => ports.files?.(), source: (path: string) => ports.source?.(path) };
+    return { stamp: () => ports.stamp(), context: build, pin: () => pin(build), files: () => ports.files?.(), source: (path: string) => ports.source?.(path),
+      atWork: () => ports.atWork?.() ?? [] };
   }
   return { context, tools };
 }
@@ -249,7 +253,7 @@ export function createAgentCommands(ports: AgentCommandPorts) {
       return runAgentMedia(mediaController, mediaPorts, command, page, since);
     },
     legacy: applyAgentCommand,
-    presence: (path, find) => agentPresence.show(path, find),
+    presence: (path, find, who) => agentPresence.show(path, find, who),
   }; }
   async function applyAgentSiteCommand(command: AgentCommand) {
     const [{ applySiteCommand, applyStructural, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, holdWorkspace, retryProof, pinnedMedia, pinnedMediaActions, pinnedMediaAway }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);

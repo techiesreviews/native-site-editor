@@ -50,6 +50,11 @@
   /* An agent working on a section (ticket 33): its outline, name chip and Page Structure dot,
      in the colour of the connected MCP dot (agent-menu.css). */
   --agent-presence: var(--color-success);
+  /* Several agents at once (ticket am-11): each its own colour, the next of these in order of arrival
+     (src/agent-presence.ts AGENT_COLOURS); orange stays a question's, blue Lex's own selection. */
+  --agent-presence-2: var(--color-component);
+  --agent-presence-3: var(--file-video);
+  --agent-presence-4: var(--file-data);
 
   /* Request pins and cards (agent-pins.css, agent-menu.css, repository-menu.css). */
   /* A question for the user: orange, on pins light in both themes. */

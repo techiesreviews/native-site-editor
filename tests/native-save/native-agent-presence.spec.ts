@@ -58,8 +58,8 @@ test("an agent's change draws its presence on its section and row on the page sh
     const tree = document.querySelector('[role="tree"][aria-label="Page structure"]')!;
     const look = () => {
       for (const row of tree.querySelectorAll<HTMLElement>(".page-structure__row--agent")) {
-        const label = row.querySelector(".page-structure__label")!;
-        seen.push(`${row.dataset.node}|${row.getAttribute("aria-busy")}|${getComputedStyle(label, "::after").backgroundColor}|${new URLSearchParams(location.hash.slice(1)).get("file")}`);
+        const dot = row.querySelector(".agent-dots__dot")!;
+        seen.push(`${row.dataset.node}|${row.getAttribute("aria-busy")}|${getComputedStyle(dot).backgroundColor}|${new URLSearchParams(location.hash.slice(1)).get("file")}`);
       }
     };
     new MutationObserver(look).observe(tree, { subtree: true, attributes: true, attributeFilter: ["class"], childList: true });
@@ -103,8 +103,9 @@ test("an agent's change draws its presence on its section and row on the page sh
     await expect(heading).toHaveText("An agent was here");
     const drawn = await frameSeen();
     expect(drawn.length, "the presence box was drawn while the change ran").toBeGreaterThan(0);
-    // The outline stands round the hero section, the chip "Agent" on its top-left corner, in the agent's colour; nothing to click.
-    for (const seen of drawn) expect(seen).toMatchObject({ on: ["hero"], chip: "Agent", border: agentColour.srgb, chipBackground: agentColour.srgb, clickable: "none" });
+    // The outline stands round the hero section, the chip on its top-left corner naming the MCP client (no name of its own given,
+    // ticket am-11), in the agent's colour; nothing to click.
+    for (const seen of drawn) expect(seen).toMatchObject({ on: ["hero"], chip: "presence-spec", border: agentColour.srgb, chipBackground: agentColour.srgb, clickable: "none" });
     expect(Math.abs(drawn[0].chipBox.left - drawn[0].box.left)).toBeLessThan(1);
     expect(Math.abs(drawn[0].chipBox.bottom - drawn[0].box.top)).toBeLessThan(1);
     const rows = await treeSeen();
@@ -239,7 +240,7 @@ test("at the very top of the page the name chip stands inside the outline's corn
   await expect(preview.locator("site-header")).toBeVisible();
   // The editor's own message for the header (node 0, at the page's top), as the presence port sends it.
   await page.evaluate(source => (document.querySelector(".native-preview-frame") as HTMLIFrameElement).contentWindow!.postMessage(
-    { source, type: "agent-presence", request: { path: "index.html", node: [0] }, name: "Agent" }, "*"), HOST_SOURCE);
+    { source, type: "agent-presence", agents: [{ request: { path: "index.html", node: [0] }, name: "Agent", color: "#2e9e5b" }] }, "*"), HOST_SOURCE);
   await expect(box(page)).toBeVisible();
   const chip = preview.locator('[data-native-selection-box="agent-presence-chip"]');
   await expect(chip).toHaveText("Agent");

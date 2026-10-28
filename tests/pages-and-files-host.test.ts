@@ -56,7 +56,7 @@ const stubModules: Record<string, string> = {
   "components/file-row-actions.ts": "export const createFileRowActions = (options) => { globalThis.explorerStubs.rowActions.push(options); return { attachRoot() {}, close() {}, rename() {} }; };",
   "components/confirm-dialog.ts": "export const createConfirmDialog = () => ({ root: {}, close() {}, ask: async () => true, choose: async () => undefined });",
   "components/page-picker.ts": "export const createPagePicker = () => ({ root: {} });",
-  "components/pages-tree.ts": "export const createPagesTree = () => { globalThis.explorerStubs.pagesTrees++; return { root: {}, reset() {}, busy: () => false, render() {} }; };",
+  "components/pages-tree.ts": "export const createPagesTree = () => { globalThis.explorerStubs.pagesTrees++; return { root: {}, reset() {}, busy: () => false, render() {}, agents() {} }; };",
   "controllers/files-tree-controller.ts": "export const createFilesTreeController = () => ({ render() {}, shown() {}, refresh() {}, reset() {}, row() {}, openFolder() {}, listings: () => new Map() });",
 };
 registerHooks({

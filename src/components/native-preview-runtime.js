@@ -4052,40 +4052,51 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   }
   // ---- End of canvas ----
 
-  // ---- Agent presence (ticket 33) ----
-  // An agent working on a section of this page, shown as a collaborator is in
-  // Figma or Paper: a thin outline in the agent's colour (the editor's
-  // connected MCP dot) with its name in a chip on the outline's top-left
-  // corner, and nothing else. Drawn over the page, never part of it and never
-  // a click target; the editor ends it once the change lands or stops. The
-  // colour is the editor's --agent-presence token only: nothing is drawn
-  // until the editor's `theme` message has brought it.
-  var presenceColor = "";
-  var presenceRequest = null;
-  var presenceName = "";
-  var presenceBox = null;
-  var presenceChip = null;
+  // ---- Agent presence (tickets 33, am-11) ----
+  // Each agent working on a section of this page, shown as collaborators are
+  // in Figma or Paper: a thin outline in the agent's colour with its name in
+  // a chip on the outline's top-left corner (the chip orange while the agent
+  // asks the user a question), and nothing else. Drawn over the page, never
+  // part of it and never a click target; the editor ends each once its change
+  // lands or stops. The editor sends each agent's colour, from its theme:
+  // nothing is drawn without one. Chips on one corner stand side by side.
+  var presenceAgents = [];
+  var presenceBoxes = [];
   function drawPresence() {
-    if (!presenceBox) {
-      presenceBox = canvasOverlay("agent-presence");
-      presenceChip = canvasOverlay("agent-presence-chip");
-      presenceChip.style.cssText += "z-index:2147483647;padding:0 6px;border-radius:3px 3px 3px 0;white-space:nowrap;" +
+    while (presenceBoxes.length < presenceAgents.length) {
+      var chip = canvasOverlay("agent-presence-chip");
+      chip.style.cssText += "z-index:2147483647;padding:0 6px;border-radius:3px 3px 3px 0;white-space:nowrap;" +
         "font:600 11px/16px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:0;max-width:60vw;overflow:hidden;text-overflow:ellipsis;";
+      presenceBoxes.push({ box: canvasOverlay("agent-presence"), chip: chip });
     }
-    var target = presenceRequest && presenceColor ? resolveNodePath(presenceRequest) : null;
-    drawBox(presenceBox, target);
-    if (presenceBox.style.display === "none") { presenceChip.style.display = "none"; return; }
-    presenceBox.style.border = "2px solid " + presenceColor;
-    presenceChip.textContent = presenceName;
-    presenceChip.style.background = presenceColor;
-    presenceChip.style.color = canvasInk(presenceColor);
-    presenceChip.style.display = "block";
-    // On the outline's top-left corner, just above it, or inside it at the top of the page.
-    var rect = rectOf(target);
-    var left = Math.max(0, Math.min(rect.left, document.documentElement.clientWidth - presenceChip.offsetWidth));
-    var top = rect.top + window.scrollY >= 16 ? rect.top - 16 : rect.top;
-    presenceChip.style.left = left + window.scrollX + "px";
-    presenceChip.style.top = top + window.scrollY + "px";
+    var placed = [];
+    presenceBoxes.forEach(function (pair, index) {
+      var agent = presenceAgents[index];
+      var target = agent ? resolveNodePath(agent.request) : null;
+      drawBox(pair.box, target);
+      if (pair.box.style.display === "none") { pair.chip.style.display = "none"; return; }
+      pair.box.style.border = "2px solid " + agent.color;
+      pair.chip.textContent = agent.name;
+      pair.chip.style.background = agent.chip;
+      pair.chip.style.color = canvasInk(agent.chip);
+      pair.chip.style.display = "block";
+      // On the outline's top-left corner, just above it, or inside it at the top of the page; after the chips there already.
+      var rect = rectOf(target);
+      var width = pair.chip.offsetWidth;
+      var top = rect.top + window.scrollY >= 16 ? rect.top - 16 : rect.top;
+      var left = rect.left;
+      for (var moved = true; moved;) {
+        moved = false;
+        for (var i = 0; i < placed.length; i++) {
+          var other = placed[i];
+          if (Math.abs(other.top - top) < 16 && left < other.right && other.left < left + width) { left = other.right + 2; moved = true; }
+        }
+      }
+      placed.push({ left: left, right: left + width, top: top });
+      left = Math.max(0, Math.min(left, document.documentElement.clientWidth - width));
+      pair.chip.style.left = left + window.scrollX + "px";
+      pair.chip.style.top = top + window.scrollY + "px";
+    });
   }
 
   function refreshScroll(event) {
@@ -4198,15 +4209,18 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     if (msg.type === "theme") {
       if (typeof msg.focus === "string" && msg.focus) boxColor = msg.focus;
       if (typeof msg.component === "string" && msg.component) componentColor = msg.component;
-      if (typeof msg.presence === "string" && msg.presence) presenceColor = msg.presence;
       paintBoxes();
       if (selectBox) { selectBox.__tint = hoverBox.__tint = ""; }
       updateBoxes();
       return;
     }
     if (msg.type === "agent-presence") {
-      presenceRequest = msg.request && Array.isArray(msg.request.node) ? msg.request : null;
-      presenceName = typeof msg.name === "string" && msg.name ? msg.name.slice(0, 60) : "Agent";
+      presenceAgents = (Array.isArray(msg.agents) ? msg.agents : []).filter(function (agent) {
+        return agent && agent.request && Array.isArray(agent.request.node) && typeof agent.color === "string" && agent.color;
+      }).slice(0, 32).map(function (agent) {
+        return { request: agent.request, color: agent.color, chip: typeof agent.chip === "string" && agent.chip ? agent.chip : agent.color,
+          name: typeof agent.name === "string" && agent.name ? agent.name.slice(0, 60) : "Agent" };
+      });
       drawPresence();
       return;
     }

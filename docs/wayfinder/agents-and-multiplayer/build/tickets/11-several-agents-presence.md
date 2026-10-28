@@ -1,7 +1,7 @@
 ---
 title: "Several agents: names, colours and presence"
 type: task (AFK)
-status: open
+status: closed
 assignee: am-11
 builder: claude
 blocked_by: []
@@ -39,3 +39,19 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `kit unit --affected`, `kit specs --affected` and `npm run check` green, with `RESULT:` lines quoted in Done.
 - `kit shots` of the touched screens, light and dark, 390 and 1280 wide (Lex sees the contact sheet); Opus UX review of the sheet against the [UX rulebook](../../../../agents/ux-rulebook.md).
+
+## Done (2026-10-28)
+
+- Every MCP tool takes an optional `agent`: the caller's own short name (clipped to one line, 40 characters). It is `agent`, not `name`, because `change_collection` already takes `name` for the collection (`shared/agent-tool-table.ts` `AGENT_ARGUMENT`). The Worker adds it to everything the call sends the tab. With no name, it uses the connection's MCP client name (`clientInfo.name` from its first `initialize`, as the hub records it), else the editor shows "Agent" (`worker/mcp.ts`). This takes in clean-up 35. The site instructions, the Ask-agent prompt and the connection prompt (`src/agent-prompts.ts`) tell each agent and subagent to name itself.
+- An agent is its connection plus its name, so subagents sharing a connection show apart. `src/agent-presence.ts` keeps each one's colour in order of arrival from four theme colours: MCP green, components violet, video pink, data teal (new tokens `--agent-presence-2…4` in `src/theme.css`, sent to the frame by `src/theme.ts`). A fifth agent reuses the first colour.
+- On the page shown, each agent at work draws its own outline and name chip in its colour (`native-preview-runtime.js`). Chips on one corner stand side by side. Each section's Page Structure row wears its agents' dots and says it is busy. An agent at work on another page dots that page's row in Pages and files (`src/components/pages-tree.ts`; the ticket guessed `pages-and-files-explorer.ts`). The dots are shared: `src/components/agent-dots.ts` + `.css`.
+- An agent's question (`reply_to_request` with `question`) records who asked on the request (`reply.by`, kept from agents' reads). While the question waits, that agent's chip turns orange and its outline keeps its colour. When the agent is not otherwise at work, its outline stands on the request's section. The question is held to its request's site and branch, so a reload keeps it and another branch drops it.
+- `get_site` lists `agents`: who works on what. Each entry has the name, `file`, `section` (a get_page id) and `asking`. It covers agents at work now, agents asking, and agents whose last change was in the last ten minutes, plus a note to leave others' sections alone (`shared/agent-read.ts`). `docs/mcp.md` describes it.
+- Tests: `tests/agent-presence.test.ts` (several agents, colours, questions, who works on what, who reaches presence); `tests/agent-watch.test.ts` (who asked kept, hidden from agents); `tests/agent-tools-read.test.ts` (get_site `agents`); `tests/mcp-runtime.test.ts` (name and client fallback reach the tab); `tests/agent-tool-table.test.ts` (every tool has `agent`); menu-host and pages-host fakes updated. New `tests/native-save/native-several-agents.spec.ts`: three named agents draw three outlines with chips in three colours, the rows carry their dots, a fourth on About dots About's row, a question turns its chip orange, and `get_site` lists all four. `native-agent-presence.spec.ts`: the chip now shows the client's name.
+- Feature list: F-agent-05 updated.
+- `RESULT: ok unit 3862/3862 (250 files)` (`kit unit --affected`; one earlier run had a load-timing failure in `agent-tools-edit.test.ts`'s ticket-52 retry test, which passed 5/5 alone). `RESULT: ok specs 15/15 passed` (agent, MCP, pages and several-agents specs); the new spec also passed 3/3 with CI fonts. `npm run check` and `npm run lint` clean. `kit specs --affected` selects 186 specs (shared plumbing) and was not run here.
+
+### Follow-ups
+
+- The catch-up (`changesSinceLastRead`, `src/agent-part.ts`) is still keyed by connection only. Two named subagents on one connection still share one catch-up and count each other's edits as their own (ticket 10's follow-up). Key it by connection plus `agent` now that the name arrives.
+

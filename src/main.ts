@@ -50,7 +50,7 @@ import { createParkedSteps, parkedTransitions } from "./guarded-edit/parked";
 import { createEditorWorkspace } from "./editor-workspace";
 import { createFinishedElsewhere, openLink } from "./finished-elsewhere";
 import { createAgentPresence } from "./agent-presence";
-import { createWorkspaceSession, draftScopeOf, holdsDraftScope, type SessionStamp, type WorkspaceScope } from "./workspace-session";
+import { createWorkspaceSession, draftScopeOf, holdsDraftScope, sameBranch, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { Repository, SessionInfo, TreeEntry } from "../shared/types";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -75,10 +75,12 @@ const appStore = createAppStore(editorModule.sourceStore());
 // What is open and which load of it (src/workspace-session.ts): signing out and each load below start the next.
 const workspaceSession = createWorkspaceSession();
 function currentLoad() { return workspaceSession.current().load; }
-// Ticket 33 (src/agent-presence.ts): an agent at work on a section of the page shown, drawn while its workspace is.
+// Tickets 33, am-11 (src/agent-presence.ts): the agents at work on the site's pages, drawn while their workspace is.
 const agentPresence = createAgentPresence({
   pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), begin: () => workspaceSession.begin(),
-  paint: target => { nativePreview?.agentPresence(target); pageStructure?.agentPresence(target); },
+  sectionTags: () => new Set(nativeSectionChoices().map(choice => choice.tag)),
+  shows: at => { const scope = shownScope(); return scope?.kind === "github" && sameBranch(scope, { repoId: at.repoId, branch: at.branch ?? scope.branch }); },
+  paint: marks => { nativePreview?.agentPresence(marks); pageStructure?.agentPresence(marks); pagesAndFiles.agents(marks); },
 });
 function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.refresh(); workingPart.left(); return workspaceSession.begin(); }
 const cleanSources = new CleanSourceCache(() => info?.user?.login);
@@ -434,7 +436,7 @@ const agentCommands = createAgentCommands({
 // The agent menu, the context agents are shown and the files they read (src/agent-menu-host.ts).
 const { agentController } = createAgentMenuHost({
   appStore, runtime, guardedEdits, cleanSources, agentCommands, setupController, pageStructureController, mediaPorts, workspace, nativeTextIndexGate,
-  api, readFile, readFiles, loadAgentSite, loadAgentMenu, draftScope, nativeRouteInfo, pathNow, errorMessage,
+  agentPresence, api, readFile, readFiles, loadAgentSite, loadAgentMenu, draftScope, nativeRouteInfo, pathNow, errorMessage,
   get info() { return info; }, get nativePreview() { return nativePreview; },
 });
 // Opening a repository, its snapshot and the remembered boot's guess (src/workspace-boot.ts).

@@ -26,7 +26,7 @@ export interface AgentEditArgsMap {
 }
 export type AgentEditTool = keyof AgentEditArgsMap;
 export type AgentEdit = { [K in AgentEditTool]: {
-  operation: "edit"; tool: K; args: AgentEditArgsMap[K]; id: string; grantId: string; generation?: number; createdAt: number;
+  operation: "edit"; tool: K; args: AgentEditArgsMap[K]; id: string; grantId: string; agent?: string; generation?: number; createdAt: number;
 } }[AgentEditTool];
 export interface AgentStatus { operation: "status"; id: string; grantId: string; generation?: number }
 export type PreparedEdit = { operation: AgentOperation; input: {

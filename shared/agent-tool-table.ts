@@ -1,6 +1,7 @@
 import type { AgentEditTool } from "./agent-edit";
 import type { MediaTool } from "./agent-media";
 import type { AgentRead } from "./agent-read";
+import { AGENT_NAME_LIMIT } from "./agent";
 
 /**
  * Every agent tool, once. Its executors live where they run: the Worker's MCP registration
@@ -63,6 +64,14 @@ export const agentTools = {
   idempotent?: false;
   mcp?: false;
 }>;
+
+/**
+ * Every MCP tool also takes `agent` (ticket am-11): the short name the calling agent works under, so
+ * the editor draws each subagent of one connection apart, in its own colour, and get_site tells agents
+ * who works on what. Not `name`: change_collection's `name` is the collection's.
+ */
+export const AGENT_ARGUMENT = "agent";
+export const AGENT_ARGUMENT_HINT = `Your own short name, a few words (at most ${AGENT_NAME_LIMIT} characters), e.g. "Copy editor": the editor shows it, in your own colour, on what you work on. Give the same one in every call; subagents each give their own.`;
 
 /** The Astro-era active-file commands the code editor still applies, as write_file; both atomic. */
 const legacyOperations = ["update_active_draft", "create_file_draft"] as const;

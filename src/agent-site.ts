@@ -16,7 +16,7 @@ import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePage
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import { mediaChanges, type MediaTool } from "../shared/agent-media";
 import { isAtomicOperation } from "../shared/agent-tool-table";
-import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, WORKING_NOTE, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement, type AgentWorking } from "../shared/agent";
+import { agentName, type AgentWho, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, WORKING_NOTE, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement, type AgentWorking } from "../shared/agent";
 import { lineOf, type WorkingPart } from "./working-part";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./drafts";
@@ -35,6 +35,7 @@ import { removeEdit } from "./native-structure";
 import type { createGuardedEdits, EditorWorkspace, GuardedEdits, NodeRef, Outcome, Reads } from "./guarded-edit";
 import { addSectionStep, type LoaderPlanner, type SectionPlanned } from "./page-builder/component-plans";
 import { readSource, type SourceNode } from "./page-builder/source-tree";
+import { presenceWithin, sectionLike as isSection } from "./agent-presence";
 import type { AgentCommandOutcome } from "./components/agent-menu";
 import type { MediaPin } from "./controllers/media-controller";
 
@@ -683,10 +684,10 @@ export interface AgentSiteActions {
   /** The Astro-era active-file operations. */
   legacy(command: AgentCommand): Promise<void>;
   /**
-   * An agent at work on the page `path` (ticket 33): `find` names the element it works on in that page's
-   * text now (its section), which shows the agent's presence while that page is shown; ended by the returned call.
+   * The agent `who` at work on the file `path` (tickets 33, am-11): `find` names the element it works on in
+   * that page's text now (its section), which shows the agent's presence while that page is shown; ended by the returned call.
    */
-  presence?: (path: string, find: (source: string) => number[] | undefined) => () => void;
+  presence?: (path: string, find: (source: string) => number[] | undefined, who?: AgentWho) => () => void;
 }
 
 export class Conflict extends Error {}
@@ -809,13 +810,9 @@ function refuseProtected(command: AgentCommand) {
  */
 export function agentPresenceTarget(command: AgentCommand, source: string, sectionTags: ReadonlySet<string>): number[] | undefined {
   const args = command.args ?? {}, tree = readSource(source, { page: true });
-  const sectionLike = (el: SourceNode | undefined) => el?.type === "element" && (el.name === "section" || sectionTags.has(el.name));
+  const sectionLike = (el: SourceNode | undefined) => isSection(el, sectionTags);
   // The deepest section holding the element at `node` (or being it), else that element.
-  const within = (node: number[] | undefined) => {
-    if (!node?.length || !tree.at(node)) return undefined;
-    for (let depth = node.length; depth > 0; depth--) if (sectionLike(tree.at(node.slice(0, depth)))) return node.slice(0, depth);
-    return node;
-  };
+  const within = (node: number[] | undefined) => presenceWithin(tree, node, sectionTags);
   switch (command.operation) {
     case "move_section":
     case "remove_section": return within(parseOutlineId(String(args.section ?? "")));
@@ -868,7 +865,8 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
   // Admitted: the agent is at work from here until the change lands or stops.
   let end = () => {};
   try {
-    const started = actions.presence?.(command.path, source => agentPresenceTarget(command, source, actions.sectionTags()));
+    const started = actions.presence?.(command.path, source => agentPresenceTarget(command, source, actions.sectionTags()),
+      { grant: command.grantId ?? "", name: agentName(command.agent) });
     if (typeof started === "function") end = started;
   } catch { /* Presence is a picture of the work: it never stops it. */ }
   try { return await applyAdmitted(actions, command); }
@@ -1270,7 +1268,7 @@ export function pinnedMediaActions(actions: AgentSiteActions, command: AgentComm
     open: async path => left() ? true : actions.open(path),
     isMounted: path => left() || actions.isMounted(path),
     // Its presence shows only on its own page shown (ticket 33).
-    presence: (path, find) => left() ? () => {} : actions.presence?.(path, find) ?? (() => {}),
+    presence: (path, find, who) => left() ? () => {} : actions.presence?.(path, find, who) ?? (() => {}),
   };
 }
 

@@ -70,6 +70,17 @@ only, per connection, so agents sharing one connection share one catch-up. A pag
 read with `get_page` and `source: false` keeps no text, so a page tool sent with
 that read's hash is not found again once the page changed: read with the source.
 
+Every tool takes an optional `agent`: the caller's own short name (at most 40
+characters, clipped to one line), so subagents sharing a connection show apart.
+With none, the connection's MCP client name (`clientInfo.name` at its first
+`initialize`) stands in, else "Agent". The editor draws each agent at work in
+its own colour, in order of arrival: an outline and name chip on its section of
+the page shown (orange while its question waits for the user), a dot on that
+section's Page structure row, and a dot on another page's row in Pages and
+files. `get_site` lists `agents`: who works on what now (name, `file`,
+`section`, `asking`), including agents whose last change was in the last ten
+minutes.
+
 Queued tools accept optional `requestId` (reuse only for the identical retry) and
 `waitSeconds` (default 10). Calls return applied, conflict, failed or pending.
 Pending does not mean applied: use `get_command_status`. Commands expire after
