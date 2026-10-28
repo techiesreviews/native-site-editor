@@ -2,7 +2,7 @@
 title: "MCP menu: agents working now, Stop, and Pins go to"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-12
 builder: claude
 blocked_by: [11-several-agents-presence]
 ---
