@@ -15,8 +15,9 @@ const mockupPage = /^[^.].*\.html$/i;
 /** An image a mock-up may use. */
 const image = /^[^.].*\.(?:png|jpe?g|gif|webp|avif|svg)$/i;
 const titlePrefix = /^PROTOTYPE \(throwaway\) · /;
-/** `src`, `href` and `srcset` values (quoted or bare, `data-src` too) and `url(...)` arguments. */
-const reference = /\b(src|href|srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`]+))|\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/gi;
+/** `src`, `href`, `poster`, `srcset` and `imagesrcset` values (quoted, backticked or bare, `data-src` too) and
+ * `url(...)` arguments. Not counted: CSS `image-set("a.png" 1x)` without `url()`, and paths a script builds. */
+const reference = /\b(src|href|poster|srcset|imagesrcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`|([^\s"'<>`]+))|\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/gi;
 
 const namedCharacters: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
 const decodeCharacters = (text: string) => text.replace(/&(?:#(\d+)|#x([\da-f]+)|([a-z]+));/gi, (match, decimal?: string, hex?: string, name?: string) => {
@@ -29,9 +30,10 @@ const decodeCharacters = (text: string) => text.replace(/&(?:#(\d+)|#x([\da-f]+)
  * References inside HTML comments don't count, so a commented-out reference image stays unpublished. */
 export function referencedFiles(html: string): Set<string> {
   const names = new Set<string>();
-  for (const [, attribute, ...values] of html.replace(/<!--[\s\S]*?-->/g, "").matchAll(reference)) {
+  const uncommented = html.replace(/<(script|style)\b[\s\S]*?<\/\1\s*>|<!--[\s\S]*?-->/gi, (match, element?: string) => element ? match : "");
+  for (const [, attribute, ...values] of uncommented.matchAll(reference)) {
     const value = decodeCharacters(values.find(part => part !== undefined) ?? "");
-    const urls = attribute?.toLowerCase() === "srcset" ? value.split(",").map(candidate => candidate.trim().split(/\s+/)[0]) : [value.trim()];
+    const urls = attribute?.toLowerCase().endsWith("srcset") ? value.split(",").map(candidate => candidate.trim().split(/\s+/)[0]) : [value.trim()];
     for (const url of urls) {
       let name = url.replace(/[?#].*$/, "").replace(/^(?:\.\/)+/, "");
       try { name = decodeURIComponent(name); } catch { /* keep it as written */ }
