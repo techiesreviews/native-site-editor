@@ -41,7 +41,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - NN continues after the highest number there; the slug comes from the title (at most six words, else `issue-N`).
   - The frontmatter names the Issue as `issue: <url>`. The title is written JSON-quoted, so `:`, `#` and quotes read back unchanged.
   - The body holds the link `[owner/repo#N](url)`, author and date, labels, the Issue's text and `## Comments`. A label with a backtick gets a longer code fence.
-  - Copied text gets LF line endings. Its `#` and `##` headings outside code fences go two levels down, so an Issue's `## Files` never becomes the ticket's Files section.
+  - Copied text gets LF line endings. Its `#` and `##` headings go two levels down, and inside code fences they get one leading space, so an Issue's `## Files`, even pasted in a fence, never becomes the ticket's Files section.
   - At 100 comments (gh's most per Issue) the file ends with a line to read the rest on GitHub, and the run prints a note.
 - It writes `backlog/map.md` if missing, prints a `next:` line and closes nothing. A rerun skips an Issue whose `issue:` line names its number on this repo, or on an older name that `gh repo view` resolves to this repo, so a renamed repo writes no duplicates. Another repo's Issue with the same number never counts. Links to other Issues in the copied text never count, so a "Duplicate of #5" in #3 neither hides #5 nor stands for its file. Setup and doctor do not run in this mode.
 - `kit init --issues --close` fetches `origin/<land>` with an explicit refspec and finds each open Issue's file on that branch by its `issue:` line, noting an old link after a rename. It then runs `gh issue close N --repo owner/repo --comment "Moved to a ticket file: https://github.com/owner/repo/blob/<land>/<path>\nWork on it goes on there."` (two lines).
@@ -65,8 +65,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - another repo's `issue:` line with the same number not counting, and a non-ASCII file name being found;
   - a 2 MiB Issue list being read whole, and `KIT_ISSUES_TIMEOUT=1` stopping a hanging gh.
 - One sample ticket file, Issue #14 with labels, text and a comment, is the expected text in the first `--issues` test in `tests/kit-init.test.ts` (`02-search-results-ignore-accents.md`).
-- Evidence: `RESULT: ok unit 27/27 (1 files)` from `scripts/agents/kit unit --affected`; `npm run lint` and `npm run check` pass.
-- Commits: build `1ec07f398`, review round 1 `b3aed15d1`, round 2 `e08accd9b`; round 3 follows on this branch.
+- Evidence: `RESULT: ok unit 27/27 (1 files)` from `scripts/agents/kit unit --affected` (also after the PR review fixes); `npm run lint` and `npm run check` pass.
+- Commits (named by subject, since `kit pr` rebases them): "GitHub Issues into ticket files, once", then "Review fixes round 1" to "round 3" and "Review fixes after the PR review"; the PR number and merge SHA are in the slice report.
 - Review decisions, round 1 (all taken, none declined):
   - P1: an Issue was matched by a link anywhere in a file, so a cross-link could close the wrong Issue or skip one. Now only the `issue:` line in the frontmatter counts.
   - P3: the Done text was missing the close comment's second line, a commit and evidence; added.
@@ -89,3 +89,9 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - P2: another repo's `issue:` line with the same number counted as a match. The repo must now be this one, or an older name that resolves to it.
   - Gaps: tests added for large output, the timeout (now `KIT_ISSUES_TIMEOUT`), a fork, and another repo's ticket with the same number.
   - Optional nits taken: a fence closes only on a bare marker; blob links encode each path segment; the map says "after the owner's OK"; non-ASCII file names are read with `core.quotePath=false`.
+- Review decisions, PR review (after three rounds; the lead builder fixed these by hand):
+  - P1: `--close` read landed ticket files under Node's 1 MiB default, so a long Issue's file counted as missing and blocked every close. Files are now read under the 256 MiB limit, and an unreadable one stops the run with its own message.
+  - P2: a `## Files` pasted inside a code fence was still read as the ticket's Files by `tickets.mjs`. Top headings inside fences now get one leading space.
+  - P3: the Done section named pre-rebase commit SHAs; commits are now named by subject.
+  - Gaps: the 1 MiB test now also lands the ticket and closes its Issue; the heading test covers a fenced `## Files` and checks no Files are claimed.
+  - Optional nits not taken (follow-ups): a failed `gh repo view` on an old repo name counts as "another repo"; a rerun checks only the local tree, not `origin/<land>`; a label holding two backticks in a row breaks its code span.
