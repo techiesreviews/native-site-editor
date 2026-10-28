@@ -240,6 +240,15 @@ test("get_site tells an agent whose change on Home ended and who asks about Abou
   assert.deepEqual(presence.atWork(), [{ name: "Image finder", file: "about/index.html", section: "1.1", asking: true }]);
 });
 
+test("an agent whose change ended and who asks about a file that is not a page is told on that file, drawn nowhere", () => {
+  const { presence, painted } = presenceViews();
+  const finder = agent("Image finder");
+  presence.show("index.html", findHero, finder)();
+  presence.questions([question(finder, "1.0", "question", "styles/site.css")]);
+  assert.deepEqual(painted.at(-1), []);
+  assert.deepEqual(presence.atWork(), [{ name: "Image finder", file: "styles/site.css", asking: true }]);
+});
+
 test("an agent with two questions open is told on the first one's section, as the page draws it", () => {
   const { presence, painted } = presenceViews();
   const finder = agent("Image finder");
