@@ -66,7 +66,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - a 2 MiB Issue list being read whole, and `KIT_ISSUES_TIMEOUT=1` stopping a hanging gh.
 - One sample ticket file, Issue #14 with labels, text and a comment, is the expected text in the first `--issues` test in `tests/kit-init.test.ts` (`02-search-results-ignore-accents.md`).
 - Evidence: `RESULT: ok unit 27/27 (1 files)` from `scripts/agents/kit unit --affected` (also after the PR review fixes); `npm run lint` and `npm run check` pass.
-- Commits (named by subject, since `kit pr` rebases them): "GitHub Issues into ticket files, once", then "Review fixes round 1" to "round 3" and "Review fixes after the PR review"; the PR number and merge SHA are in the slice report.
+- Commits (named by subject, since `kit pr` rebases them): "GitHub Issues into ticket files, once", "Review fixes round 1", "Review fixes round 2", "Review fixes round 3", "Review fixes after the PR review" and this commit; the PR number and merge SHA are in the slice report.
 - Review decisions, round 1 (all taken, none declined):
   - P1: an Issue was matched by a link anywhere in a file, so a cross-link could close the wrong Issue or skip one. Now only the `issue:` line in the frontmatter counts.
   - P3: the Done text was missing the close comment's second line, a commit and evidence; added.
