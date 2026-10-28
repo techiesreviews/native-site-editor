@@ -1120,7 +1120,8 @@ test("an edit prepared again after a race waits when it now changes the part the
   assert.equal(body(await tools.run(edit, 0, () => true)).state, "waiting");
   assert.equal(ran.length, 1, "the retry waits for the user, never runs over their typing");
   workingPart.left(heading);
-  for (let turn = 0; turn < 100 && ran.length < 2; turn++) await settle();
+  // Bounded by time, not turns: the retry hashes off the main thread, which can outlast many turns under load.
+  for (const until = Date.now() + 2000; ran.length < 2 && Date.now() < until;) await settle();
   assert.equal(ran.length, 2);
   assert.equal(ran[1].content, home.replace("<h1>Welcome</h1>", "<h1>Hello to</h1>"));
   assert.equal(body(await tools.run({ operation: "status", id: edit.id, grantId: edit.grantId }, 0, () => true)).state, "applied");
