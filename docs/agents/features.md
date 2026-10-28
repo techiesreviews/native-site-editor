@@ -1111,7 +1111,7 @@ its number unused.
 
 ### F-agent-11 Stop one agent, and Pins go to
 - Try: With two agents at work, open the project menu, press Stop beside one of them; pick another agent in "Pins go to" and reload.
-- Good: The open menu lists the agents working now, each with its coloured dot (orange while it asks), its name and Stop. Stop ends that agent only: its row, outline, chip and dots go at once, its next calls are refused, and the other keeps working; Disconnect MCP still ends them all. "Pins go to" (Claude Code, Codex, Gemini CLI, OpenCode) keeps its choice per site through a reload. No toast or explainer (S1, S4); Stop is a 44 px target on touch (U6).
+- Good: The open menu lists the agents working now, each with its coloured dot (orange while it asks), its name and Stop. Stop ends that agent only: its row, outline, chip and dots go at once, its next calls are refused, and the other keeps working; Disconnect MCP still ends them all. "Pins go to" (Claude Code, Codex, Gemini CLI, OpenCode) keeps its choice per site (every branch) through a reload. No toast or explainer (S1, S4); Stop is a 44 px target on touch (U6).
 - Files: `src/components/agent-menu.ts`, `src/components/agent-menu.css`, `src/agent-presence.ts`, `src/agent-stops.ts`, `shared/agent.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-mcp-menu.spec.ts`
