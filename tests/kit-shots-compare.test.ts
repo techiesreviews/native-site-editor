@@ -506,7 +506,7 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
 });
 
 test("wrapper help and rejected compare arguments never capture", () => {
-  const run = (args: string[]) => spawnSync("scripts/agents/project.d/shots", args, { encoding: "utf8", timeout: 15_000 });
+  const run = (args: string[]) => spawnSync("scripts/agents/project.d/shots", args, { env: kitEnv(), encoding: "utf8", timeout: 15_000 });
   for (const flag of ["--help", "-h"]) {
     const help = run(["--compare", "dev", flag]);
     assert.equal(help.status, 0, help.stderr);
