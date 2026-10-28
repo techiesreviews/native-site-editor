@@ -9,6 +9,8 @@ import type { Plugin } from "vite";
 /** One file in a map's `prototypes/` folder. */
 export type Mockup = { map: string; file: string; path: string };
 
+/** The mock-ups and the images beside them; notes or other files in the folder stay unpublished. */
+const published = /^[^.].*\.(?:html|png|jpe?g|gif|webp|avif|svg)$/i;
 const titlePrefix = /^PROTOTYPE \(throwaway\) · /;
 
 export function mockupFiles(root: string): Mockup[] {
@@ -18,7 +20,7 @@ export function mockupFiles(root: string): Mockup[] {
     const folder = join(wayfinder, map, "prototypes");
     if (!isDir(folder)) return [];
     return readdirSync(folder).sort()
-      .filter(file => !file.startsWith(".") && statSync(join(folder, file)).isFile())
+      .filter(file => published.test(file) && statSync(join(folder, file)).isFile())
       .map(file => ({ map, file, path: join(folder, file) }));
   });
 }

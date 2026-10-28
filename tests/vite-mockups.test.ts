@@ -23,12 +23,13 @@ function repo() {
   write("docs/wayfinder/agents/prototypes/12-reference.png", "png");
   write("docs/wayfinder/agents/prototypes/05-untitled.html", "<p>no title</p>");
   write("docs/wayfinder/agents/prototypes/.DS_Store", "");
+  write("docs/wayfinder/agents/prototypes/notes.md", "# not published");
   write("docs/wayfinder/agents/map.md", "# map");
   write("docs/wayfinder/kit/map.md", "# map");
   return root;
 }
 
-test("every file in each map's prototypes folder is found, maps and files in name order", () => {
+test("every HTML mock-up and image in each map's prototypes folder is found, maps and files in name order", () => {
   const root = repo();
   assert.deepEqual(mockupFiles(root).map(({ map, file }) => `${map}/${file}`),
     ["agents/05-untitled.html", "agents/12-reference.png", "agents/14-share.html", "site-structure/08-site-map.html"]);
@@ -70,12 +71,14 @@ test("served by Cloudflare's asset handler, mock-ups get one sandboxed policy an
   writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify({ name: "mockups-test", compatibility_date: "2026-09-17", assets: { directory: "./dist" } }));
   const worker = await unstable_startWorker({ config: join(root, "wrangler.jsonc"), dev: { server: { port: 0 }, inspector: false, watch: false, logLevel: "none" } });
   try {
-    const csp = async (path: string) => {
+    const headers = async (path: string) => {
       const response = await worker.fetch(`http://localhost${path}`);
       assert.equal(response.status, 200, path);
-      return response.headers.get("Content-Security-Policy")!;
+      return response.headers;
     };
+    const csp = async (path: string) => (await headers(path)).get("Content-Security-Policy")!;
     const editor = await csp("/");
+    assert.equal((await headers("/")).get("X-Robots-Tag"), null);
     assert.match(editor, /script-src 'self' 'wasm-unsafe-eval';/);
     assert.doesNotMatch(editor, /sandbox|script-src[^;]*unsafe-inline/);
     const mockup = await csp("/mockups/agents/14-share.html");
@@ -84,6 +87,9 @@ test("served by Cloudflare's asset handler, mock-ups get one sandboxed policy an
     assert.match(mockup, /script-src 'self' 'unsafe-inline' https:\/\/esm\.sh;/);
     assert.match(mockup, /; sandbox allow-scripts allow-forms allow-popups$/);
     assert.doesNotMatch(mockup, /allow-same-origin/);
+    const index = await headers("/mockups/");
+    assert.equal(index.get("Content-Security-Policy"), mockup);
+    assert.equal(index.get("X-Robots-Tag"), "noindex");
   } finally {
     await worker.dispose();
   }
@@ -156,15 +162,24 @@ test("every real mock-up runs in a browser under the sandboxed policy", async ()
     const violations: string[] = [];
     page.on("console", message => { if (/Content Security Policy/i.test(message.text())) violations.push(`${page.url()}: ${message.text()}`); });
     await page.addInitScript(() => document.addEventListener("securitypolicyviolation", event => console.error(`Content Security Policy violation: ${event.violatedDirective} ${event.blockedURI}`)));
+    // A mock-up that crashes in the sandbox (say, unguarded localStorage) fails here. Only 08 Typing
+    // together may throw: the esm.sh stand-in has no Yjs past `Doc`.
+    const typingTogether = "agents-and-multiplayer/08-typing-together.html";
+    const errors: string[] = [];
+    let current = "";
+    page.on("pageerror", error => { if (current !== typingTogether) errors.push(`${current}: ${error.message}`); });
     const pages = mockupFiles(repoRoot).filter(mockup => mockup.file.endsWith(".html"));
     assert.ok(pages.length > 0);
     for (const { map, file } of [{ map: "", file: "index.html" }, ...pages]) {
-      const response = await page.goto(new URL(`mockups/${map ? `${map}/` : ""}${file}`, base).href, { waitUntil: "load" });
-      assert.equal(response?.status(), 200, `${map}/${file}`);
+      current = map ? `${map}/${file}` : file;
+      const response = await page.goto(new URL(`mockups/${current}`, base).href, { waitUntil: "load" });
+      assert.equal(response?.status(), 200, current);
     }
     assert.deepEqual(violations, []);
+    assert.deepEqual(errors, []);
 
-    await page.goto(new URL("mockups/agents-and-multiplayer/08-typing-together.html", base).href, { waitUntil: "load" });
+    current = typingTogether;
+    await page.goto(new URL(`mockups/${typingTogether}`, base).href, { waitUntil: "load" });
     await page.waitForFunction(() => (globalThis as { esmLoaded?: boolean }).esmLoaded === true);
     const sandbox = await page.evaluate(async () => {
       const image = new Image();
