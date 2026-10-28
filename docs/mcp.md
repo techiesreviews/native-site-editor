@@ -50,9 +50,11 @@ against the tab's live state before writing.
 Several agents and the person can work on one page at once (ticket 10). An edit
 targets the exact part it changes, not the whole file: `edit_file` lands while
 its old texts are still there once each (with `all`, as often as when read), and
-where the read had them, and a page tool (`make_component`,
+where the read had them; that read is known only while the receiving tab keeps
+it (it keeps the texts it gave agents, in memory: a reload or many reads let it
+go), and without it a stale `all` edit is refused with "read again", and a page tool (`make_component`,
 `add_section`, `move_section`, `remove_section`) finds its elements again by their
-unchanged HTML, whatever else changed since the hash it was read with. Only a
+unchanged HTML (an anchor, `before` or `after`, edited in place keeps its place), whatever else changed since the hash it was read with. Only a
 true clash, that same part changed meanwhile, is a conflict; its reply carries
 `part` (`path`, `hash`, `lines`, `text`, at most 4,000 characters) so the agent
 sends the edit again at once. A whole-file `write_file` still needs the exact
@@ -60,7 +62,8 @@ hash. A change that loses a race with another landing on the same file is
 prepared again on the new text before it is refused. Replies to reads, edits
 and `get_command_status` carry `changesSinceLastRead` (request and media tools do not) when the workspace's drafts changed since
 that connection's last call, its own changes left out: up to 20 files (`path`,
-`change`: added, changed, removed, discarded or saved; `hash`; the page
+`change`: added, changed, removed, discarded or saved, where a revision change
+labels every draft gone `saved`, one discarded just before included; `hash`; the page
 `sections` touched when the tab still has the earlier text), `more` for the
 rest, within 2 KB. Marks and remembered texts live in the receiving tab's memory
 only, per connection, so agents sharing one connection share one catch-up. A page
