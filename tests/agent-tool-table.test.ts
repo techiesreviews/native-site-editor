@@ -11,7 +11,7 @@ import type { AgentCommand, AgentCommandArgs } from "../shared/agent.ts";
 import { agentMediaArgsProblem } from "../shared/agent-media-args.ts";
 import { mediaTools } from "../shared/agent-media.ts";
 import { requestTools } from "../shared/agent-requests.ts";
-import { agentTools, agentToolsOn, isAgentOperation, isAtomicOperation, mcpTools, type AgentOperation, type AgentToolName } from "../shared/agent-tool-table.ts";
+import { AGENT_ARGUMENT_HINT, agentTools, agentToolsOn, isAgentOperation, isAtomicOperation, mcpTools, type AgentOperation, type AgentToolName } from "../shared/agent-tool-table.ts";
 import { applySiteCommand, atomicAgentCommand, type AgentSiteActions } from "../src/agent-site.ts";
 import { createAgentEditTools } from "../src/agent-tools-edit.ts";
 import { createAgentMediaTools } from "../src/agent-tools-media.ts";
@@ -55,8 +55,14 @@ test("MCP tools/list is dev's: same tools, order, descriptions, schemas and hint
   ]);
   // The whole tools/list result as dev (3c5518e4) answered it, before the table; since ticket 52,
   // get_command_status's description names the waiting state; since ticket 10, edit_file and the section tools
-  // say an edit lands while its own part is unchanged.
-  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "d9d2e90474f089379886e5aa9ce3cd69194479809f2fb2a7d9b3cbfb52229069");
+  // say an edit lands while its own part is unchanged; since ticket am-11, every tool takes the caller's own name (agent).
+  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "bd0ad9632a465b768c93c6e21e885348f5d524f0832ba4d5784ed7b32375a00f");
+  for (const tool of result.tools as { name: string; inputSchema?: { properties?: Record<string, { type?: string; description?: string }>; required?: string[] } }[]) {
+    const agent = tool.inputSchema?.properties?.agent;
+    assert.equal(agent?.type, "string", tool.name);
+    assert.equal(agent?.description, AGENT_ARGUMENT_HINT, tool.name);
+    assert.ok(!tool.inputSchema?.required?.includes("agent"), tool.name);
+  }
 });
 
 test("the Worker registers exactly the table's MCP tools, in table order", async () => {

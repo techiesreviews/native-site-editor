@@ -12,6 +12,8 @@ import { blockIcon } from "./element-icons";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import type { FocusRequest, RowText, StructureEditing } from "./structure-editing";
 import "./page-structure.css";
+import type { AgentMark } from "../agent-presence";
+import { setAgentDots } from "./agent-dots";
 import type { TemplateStructureItem } from "../page-builder/component-model";
 import type { ComponentStructureModel, ElementTextModel } from "../page-builder/components";
 import type { DragPress } from "../page-builder/insert-drag";
@@ -572,12 +574,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   const templateRoots = new WeakMap<NativeStructureItem, { path: string; node: number[] }>();
   let rootAlias: { key: string; id: string; path: string; node: number[]; painted?: string } | undefined;
   const templateKey = (path: string, at: number[]) => `@${path}:${key(at)}`;
-  // An agent working on an element of the page (ticket 33): its row wears the agent's dot, says it is busy, nothing more.
-  let presence: { path: string; node: number[] } | undefined;
-  const presenceRow = () => presence && structure?.path === presence.path ? key(presence.node) : undefined;
-  function markAgent(el: HTMLElement, on: boolean) {
-    el.classList.toggle("page-structure__row--agent", on);
-    if (on) el.setAttribute("aria-busy", "true"); else el.removeAttribute("aria-busy");
+  // Agents working on elements of the page (tickets 33, am-11): each row wears its agents' dots, says it is busy, nothing more.
+  let presence: readonly AgentMark[] = [];
+  const agentsOn = (id: string) => presence.filter(mark => mark.node && structure?.path === mark.path && key(mark.node) === id);
+  function markAgents(el: HTMLElement, agents: readonly AgentMark[]) {
+    el.classList.toggle("page-structure__row--agent", agents.length > 0);
+    setAgentDots(el, el.querySelector(":scope > .page-structure__label") ?? el, agents);
   }
   const itemKey = (item: NativeStructureItem) => {
     const path = templatePaths.get(item);
@@ -791,7 +793,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       onKey(event, item, el);
     });
     rows.set(id, el);
-    if (id === presenceRow()) markAgent(el, true);
+    if (agentsOn(id).length) markAgents(el, agentsOn(id));
     const editor = editing && slotContext ? editingNow() : undefined;
     // The row's own text being edited: drawn from the source as it is now.
     const typed = textEditing ? rowText(item) : undefined;
@@ -1344,12 +1346,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         current?.scrollIntoView({ block: "nearest" });
       }
     },
-    /** An agent working on the element `node` of the page `path` (ticket 33): its row wears the agent's dot; undefined ends it. */
-    agentPresence(target: { path: string; node: readonly number[] } | undefined) {
-      presence = target && { path: target.path, node: [...target.node] };
-      for (const el of tree.querySelectorAll<HTMLElement>(".page-structure__row--agent")) markAgent(el, false);
-      const id = presenceRow(), el = id !== undefined ? rows.get(id) : undefined;
-      if (el) markAgent(el, true);
+    /** The agents at work (tickets 33, am-11): the row of each one's element on the page shown wears its dot; none ends them. */
+    agentPresence(marks: readonly AgentMark[]) {
+      presence = marks;
+      for (const el of tree.querySelectorAll<HTMLElement>(".page-structure__row--agent")) markAgents(el, []);
+      for (const [id, el] of rows) { const agents = agentsOn(id); if (agents.length) markAgents(el, agents); }
     },
     /** Mark the row of the element selected in the preview, and show it. */
     select(target: SelectTarget | undefined) {

@@ -5,7 +5,7 @@ export const mediaTools = ["list_media", "preview_media", "remove_media", "keep_
 export type MediaTool = typeof mediaTools[number];
 export interface AgentMedia {
   operation: "media"; tool: MediaTool; path: string; args: AgentCommandArgs;
-  id: string; grantId: string; generation?: number; createdAt: number;
+  id: string; grantId: string; agent?: string; generation?: number; createdAt: number;
 }
 
 /** The read-only forms never create receipts or cancellation tombstones. */

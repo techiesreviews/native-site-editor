@@ -406,12 +406,16 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     assert.equal(payload(openedRecords).state, "applied");
     const openCommand = (await tab.inspect()).commands.find((item: any) => item.id === "open-media-records");
     assert.equal(openCommand.operation, "open_page");
+    // Who sent it (ticket am-11): unnamed, the name the connection's first MCP client gave (the legacy client above); named, its name on one short line.
+    assert.equal(openCommand.agent, "legacy-test");
+    assert.equal(payload(await call("write_file", { path: "styles/named.css", content: "p {}\n", requestId: "named-css", agent: "  Copy\neditor ", waitSeconds: 0 })).state, "applied");
+    assert.equal((await tab.inspect()).commands.find((item: any) => item.id === "named-css").agent, "Copy editor");
     assert.equal(payload(await call("write_file", { path: "styles/extra.css", content: "p {}\n", requestId: "new-css", waitSeconds: 0 })).state, "applied");
 
     // Make component's shape is the Worker's (shared/agent-edit.ts editShapeProblem); the page, the element and a taken name are the live page's.
     const makeTool = listing.find((tool) => tool.name === "make_component")!;
     assert.deepEqual(makeTool.inputSchema.required, ["page", "element", "tag", "expectedHash"]);
-    assert.deepEqual(Object.keys(makeTool.inputSchema.properties!).sort(), ["element", "expectedHash", "fixed", "page", "requestId", "tag", "waitSeconds"]);
+    assert.deepEqual(Object.keys(makeTool.inputSchema.properties!).sort(), ["agent", "element", "expectedHash", "fixed", "page", "requestId", "tag", "waitSeconds"]);
     const makeArgs = { page: "/", element: "1.0", tag: "section-welcome", expectedHash: page.hash, waitSeconds: 0 };
     for (const [extra, reason] of [
       [{ element: "bad.id" }, /not an element id/],
