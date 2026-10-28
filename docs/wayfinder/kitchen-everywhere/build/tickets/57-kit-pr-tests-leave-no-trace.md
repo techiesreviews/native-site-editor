@@ -1,7 +1,7 @@
 ---
 title: "The `kit pr` tests always clean up their temp folders (flake after 29)"
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-57
 builder: claude
 blocked_by: [29-pr-ci-filters-and-claim-owner, 35-follow-ups-line-endings-and-old-cuts]
@@ -28,3 +28,12 @@ On PR #236 (slice 56, 2026-10-28) the first CI run failed in "Kit tests leave no
 ## Kit commands and evidence
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines.
+
+## Done (2026-10-28)
+
+- The clean guard in `tests/kit-tests-clean.test.ts` now runs the kit suite as its own process group. At the limit it stops the whole group (SIGTERM, then SIGKILL after 5 s). It also stops any process still using the guard's private TMPDIR, such as `kit bg` jobs that start their own session. Only after all of these have exited does it remove the private temp folder, `kit-pr-*` folders included.
+- A cut-off run fails first with `kit suite run was cut off after N s (limit L s)`, followed by the temp paths it is removing, instead of `test temp paths left behind`.
+- `ASE_KIT_CLEAN_LIMIT_MS` overrides the 480 s limit and is only meant for tests. The guard's test time-out follows the limit (limit + 60 s).
+- New test `a guard run cut off at its limit names the time-out and leaves no temp folder`: runs the guard with an 8 s limit under its own private temp folder. It checks that the run fails with the time-out named, that no `test temp paths left behind` line appears, that the folder is empty apart from tsx's empty runtime folder, and that no process from the cut-off suite is still running.
+- Checks: `npm run test:kit-clean` passed 9/9 (the guard ran 1532 tests from 41 files in 185 s), `kit unit --affected` gave `RESULT: ok unit 9/9`, `npm run check` passed and eslint was clean.
+- Feature list: no change (test-only guard; nothing a user sees).
