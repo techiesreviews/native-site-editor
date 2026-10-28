@@ -150,7 +150,10 @@ function editClash(file: { path: string; hash: string; content: string }, edits:
   if (!span) {
     // No read to go by: where the replaced words' first and last lines still are, once each.
     const ends = oldText.split("\n").filter(line => line.trim());
-    const find = (line: string | undefined) => line !== undefined && file.content.indexOf(line) >= 0 && file.content.indexOf(line) === file.content.lastIndexOf(line) ? file.content.indexOf(line) : -1;
+    const find = (line: string | undefined) => {
+      const at = line === undefined ? -1 : file.content.indexOf(line);
+      return at >= 0 && at === file.content.lastIndexOf(line!) ? at : -1;
+    };
     const start = find(ends[0]), last = ends.at(-1)!, end = find(last);
     if (start >= 0 || end >= 0) span = { start: start >= 0 ? start : end, end: end >= start ? end + last.length : start + ends[0].length };
   }
