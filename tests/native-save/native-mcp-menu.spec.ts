@@ -1126,10 +1126,16 @@ test("Wait for MCP while the tab switches to another site: nothing is copied and
   expect(connects).toEqual([]);
 });
 
-// Ticket am-12: the open menu lists the agents working now (dot, name, Stop); Stop ends that agent only, its
-// outline and dots going while the other keeps working. "Pins go to" is remembered per site through a reload.
-test("Stop ends one of two agents: its outline and dots go, its calls are refused, the other keeps working; Pins go to survives a reload", async ({ page, context, baseURL }) => {
+// Ticket am-12: the open menu lists the agents working now (dot, name, Stop); Stop ends that agent only: its
+// outline and dots go, every later call of its is refused (a wait it holds included), while the others keep
+// working. "Pins go to" is remembered per site (every branch) through a reload.
+test("Stop ends one of three agents: its row, outline and dots go, the focus moves on, its calls and held wait are refused, the others keep working; Pins go to is per site", async ({ page, context, baseURL }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  // What the relay hands the tab: a wait is held there once its frame arrives.
+  const frames: string[] = [];
+  page.on("websocket", socket => {
+    if (socket.url().includes("/api/agent/relay?")) socket.on("framereceived", ({ payload }) => frames.push(String(payload)));
+  });
   await open(page, baseURL);
   await page.locator(".repository-menu__trigger").click();
   const action = page.locator(".agent-menu__action");
@@ -1141,58 +1147,86 @@ test("Stop ends one of two agents: its outline and dots go, its calls are refuse
   await expect(pinsGoTo).toHaveValue("Claude Code");
   await expect(page.locator(".agent-menu__agents")).toBeHidden();
   const subagents = await agent(baseURL, token, "stop-spec");
-  // Each place_media loads its module while it runs (agent-site.ts): held, both stay at work until it is let go.
+  const as = (name: string, tool: string, args: Record<string, unknown> = {}) => subagents.client.callTool({ name: tool, arguments: { ...args, agent: name } });
+  const refused = async (response: Promise<Awaited<ReturnType<typeof as>>>) => {
+    const answer = await response;
+    expect(answer.isError, JSON.stringify(answer)).toBe(true);
+    expect(JSON.stringify(answer.content)).toContain("stopped you");
+  };
+  // Each place_media loads its module while it runs (agent-site.ts): held, all three stay at work until it is let go.
   let release!: () => void;
   const released = new Promise<void>(resolve => { release = resolve; });
   let reached!: () => void;
   const loading = new Promise<void>(resolve => { reached = resolve; });
   await page.route(url => url.pathname === "/src/page-builder/media-insert.ts", async route => { reached(); await released; await route.continue(); });
-  const place = (name: string, element: string) => subagents.client.callTool({ name: "place_media",
-    arguments: { path: "index.html", element, file: "images/studio-desk.svg", requestId: `stop-${name.replace(/\W/g, "-")}`, waitSeconds: 0, agent: name } });
+  const place = (name: string, element: string) => as(name, "place_media",
+    { path: "index.html", element, file: "images/studio-desk.svg", requestId: `stop-${name.replace(/\W/g, "-")}`, waitSeconds: 0 }).catch(() => undefined);
   const preview = page.frameLocator(".native-preview-frame");
   const chips = preview.locator('[data-native-selection-box="agent-presence-chip"]').locator("visible=true");
+  const chipNames = async () => (await chips.allTextContents()).sort();
   const tree = page.getByRole("tree", { name: "Page structure" });
   const rowDots = (node: string) => tree.locator(`[data-node="${node}"] .agent-dots__dot`);
   try {
     expect((await subagents.call("get_site", { agent: "Header writer" })).repository).toBe("native-demo-user/native-demo");
     await page.keyboard.press("Escape");
-    const header = place("Header writer", "1.0.2");
+    const placings = [place("Header writer", "1.0.2")];
     await loading;
-    const copy = place("Copy editor", "1.1.0");
-    await expect(chips).toHaveText(["Header writer", "Copy editor"]);
+    // One after the other, so their order of arrival (and colour) is known.
+    placings.push(place("Copy editor", "1.1.0"));
+    await expect(chips).toHaveCount(2);
+    placings.push(place("Caption writer", "1.1.1"));
+    await expect.poll(chipNames).toEqual(["Caption writer", "Copy editor", "Header writer"]);
     await expect(rowDots("1.0")).toHaveCount(1);
-    await expect(rowDots("1.1")).toHaveCount(1);
+    await expect(rowDots("1.1")).toHaveCount(2);
+    // Copy editor also waits for requests: held in the tab.
+    const held = as("Copy editor", "wait_for_requests", { waitSeconds: 20 });
+    await expect.poll(() => frames.some(frame => frame.includes('"wait_for_requests"') && frame.includes('"Copy editor"'))).toBe(true);
 
-    // The open menu lists both, each with its dot in its colour and a Stop; Disconnect MCP stays below.
+    // The open menu lists all three in order of arrival, each with its dot in its colour and a Stop; Disconnect MCP stays below.
     await page.locator(".repository-menu__trigger").click();
     await expect.poll(async () => { await refresh(page); return action.textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
-    const rows = page.locator(".agent-menu__agent");
-    await expect(rows.locator(".agent-menu__agent-name")).toHaveText(["Header writer", "Copy editor"]);
-    await expect(rows.locator(".agent-dots__dot")).toHaveCount(2);
-    expect(new Set(await rows.locator(".agent-dots__dot").evaluateAll(dots => dots.map(dot => getComputedStyle(dot).backgroundColor))).size).toBe(2);
+    const names = page.locator(".agent-menu__agent .agent-menu__agent-name");
+    await expect(names).toHaveText(["Header writer", "Copy editor", "Caption writer"]);
+    expect(new Set(await page.locator(".agent-menu__agent .agent-dots__dot").evaluateAll(dots => dots.map(dot => getComputedStyle(dot).backgroundColor))).size).toBe(3);
     await expect(pinsGoTo).toBeVisible();
     await page.screenshot({ path: test.info().outputPath("menu-agents.png") });
 
-    // Stop Header writer: its row, outline, chip and dot go at once; Copy editor's stay. The menu stays open, no toast.
-    await page.getByRole("button", { name: "Stop Header writer" }).click();
-    await expect(rows.locator(".agent-menu__agent-name")).toHaveText(["Copy editor"]);
-    await expect(page.getByRole("button", { name: "Stop Copy editor" })).toBeFocused();
-    await expect(chips).toHaveText(["Copy editor"]);
-    await expect(rowDots("1.0")).toHaveCount(0);
+    // Stop the second: its row, outline, chip and dot go at once, the focus moves to the Stop now in its place
+    // (Caption writer's); the others stay. The menu stays open, with no toast.
+    await page.getByRole("button", { name: "Stop Copy editor" }).click();
+    await expect(names).toHaveText(["Header writer", "Caption writer"]);
+    await expect(page.getByRole("button", { name: "Stop Caption writer" })).toBeFocused();
+    await expect.poll(chipNames).toEqual(["Caption writer", "Header writer"]);
+    await expect(rowDots("1.0")).toHaveCount(1);
     await expect(rowDots("1.1")).toHaveCount(1);
     await expect(page.locator(".editor-toast")).toHaveCount(0);
     await expect(action).toHaveText("Disconnect MCP");
 
-    // Its calls are refused before anything runs; Copy editor's land, and get_site lists only it.
-    release();
-    await Promise.all([header, copy]);
-    const stopped = await subagents.client.callTool({ name: "get_site", arguments: { agent: "Header writer" } });
-    expect(stopped.isError).toBe(true);
-    expect(JSON.stringify(stopped.content)).toContain("stopped you");
-    await expect.poll(async () => (await subagents.call("get_site", { agent: "Copy editor" })).agents?.map((each: { name: string }) => each.name)).toEqual(["Copy editor"]);
-    expect((await subagents.call("set_page_details", { page: "/", title: "Still working", requestId: "stop-copy-again", agent: "Copy editor" })).state).toBe("applied");
+    // Its held wait ends refused, and every later call of its is refused before anything runs: nothing is written.
+    await refused(held);
+    await refused(as("Copy editor", "set_page_details", { page: "/", title: "Stopped title", requestId: "stop-refused-details" }));
+    await refused(as("Copy editor", "place_media", { path: "index.html", element: "1.0.2", file: "images/studio-desk.svg", requestId: "stop-refused-media" }));
+    await refused(as("Copy editor", "wait_for_requests", { waitSeconds: 10 }));
+    await refused(as("Copy editor", "get_site"));
+    expect(JSON.stringify(await subagents.call("read_file", { path: "index.html", agent: "Header writer" }))).not.toContain("Stopped title");
 
-    // Pins go to: Codex for this site, kept through a reload; the stop holds too.
+    // The others land and keep working; get_site no longer lists the stopped one.
+    release();
+    await Promise.all(placings);
+    expect((await subagents.call("set_page_details", { page: "/", title: "Still working", requestId: "stop-header-again", agent: "Header writer" })).state).toBe("applied");
+    expect((await subagents.call("get_site", { agent: "Header writer" })).agents.map((each: { name: string }) => each.name)).not.toContain("Copy editor");
+
+    // A request pinned now goes to Header writer's wait.
+    const next = subagents.call("wait_for_requests", { waitSeconds: 20, agent: "Header writer" });
+    await page.keyboard.press("Escape");
+    await preview.locator(".hero h1").click();
+    await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Ask agent" }).click();
+    await page.keyboard.type("After the stop");
+    await page.keyboard.press("Enter");
+    expect((await next).requests.map((request: { text: string }) => request.text)).toEqual(["After the stop"]);
+
+    // Pins go to: Codex for this site, kept through a reload; the stop holds too, and Header writer works on.
+    await page.locator(".repository-menu__trigger").click();
     await pinsGoTo.selectOption("Codex");
     await page.keyboard.press("Escape");
     await page.reload();
@@ -1200,9 +1234,27 @@ test("Stop ends one of two agents: its outline and dots go, its calls are refuse
     await page.locator(".repository-menu__trigger").click();
     await expect.poll(async () => { await refresh(page); return action.textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
     await expect(pinsGoTo).toHaveValue("Codex");
-    await expect.poll(async () => JSON.stringify((await subagents.client.callTool({ name: "get_site", arguments: { agent: "Header writer" } })).content)).toContain("stopped you");
-    expect((await subagents.call("set_page_details", { page: "/", title: "Working after a reload", requestId: "stop-copy-reload", agent: "Copy editor" })).state).toBe("applied");
-    await expect(page.locator(".agent-menu__agent-name")).toHaveText(["Copy editor"]);
+    await expect.poll(async () => JSON.stringify((await as("Copy editor", "get_site")).content)).toContain("stopped you");
+    expect((await subagents.call("set_page_details", { page: "/", title: "Working after a reload", requestId: "stop-header-reload", agent: "Header writer" })).state).toBe("applied");
+    await expect(names).toHaveText(["Header writer"]);
+
+    // Another branch of the site keeps Codex; another site has its own choice (Claude Code until picked).
+    await page.keyboard.press("Escape");
+    await featureBranch(page, baseURL);
+    await page.evaluate(() => { location.hash = "#repo=501&branch=feature&file=index.html"; });
+    await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
+    await page.locator(".repository-menu__trigger").click();
+    await action.click();
+    await expect(action).toHaveText("Wait for MCP");
+    await expect(pinsGoTo).toHaveValue("Codex");
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => { location.hash = "#repo=540&branch=main&file=index.html"; });
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await page.locator(".repository-menu__trigger").click();
+    await expect(action).toHaveText("Connect to MCP");
+    await action.click();
+    await expect(action).toHaveText("Wait for MCP");
+    await expect(pinsGoTo).toHaveValue("Claude Code");
   } finally {
     release();
     await subagents.client.close().catch(() => undefined);
