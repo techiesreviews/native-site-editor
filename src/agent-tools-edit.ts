@@ -16,8 +16,11 @@ interface Options {
   ports: AgentReadPorts;
   records: AgentRecords;
   run: (command: AgentCommand) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
-  /** The reply with what changed since the agent's last call added (ticket 10; src/agent-part.ts `tellAgent`). */
-  tell?: (request: AgentEdit | AgentStatus, result: AgentReadResult) => Promise<AgentReadResult>;
+  /**
+   * The reply with what changed since the agent's last call added (ticket 10; src/agent-part.ts `tellAgent`);
+   * `changed`: the file an applied edit landed on in another text than the agent read, told all the same.
+   */
+  tell?: (request: AgentEdit | AgentStatus, result: AgentReadResult, changed?: string) => Promise<AgentReadResult>;
 }
 type Request = AgentEdit | AgentStatus;
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JsonValue;
@@ -46,6 +49,8 @@ function holdWorkspace(ports: AgentReadPorts): Held {
  * `answered`: settles with "waiting" when it starts to wait, never otherwise.
  */
 const flights = new Map<string, { identity: string; authorizationId: string; promise: Promise<AgentReadResult>; answered: Promise<AgentReadResult>; waiting: boolean; waited: boolean }>();
+/** An applied edit's file, by workspace and id, when it landed on another text than its agent read (ticket 10). */
+const landedElsewhere = new Map<string, string>();
 /** A waiting change's record whose tab is gone: it never landed (AgentRecords.wait). */
 const WAIT_LOST = "The editor tab was reloaded or closed while this change waited for the user. Nothing was changed; read the site again and send the change anew.";
 
@@ -167,9 +172,8 @@ export function createAgentEditTools(options: Options) {
           rememberText(file.hash, file.content);
           const read = file.hash === expected || !PAGE_COMMANDS.has(request.tool) ? undefined : readText(expected);
           if (read === undefined) return { prepared, context };
-          const sectionTags = new Set(context.site?.components.filter(item => item.section).map(item => item.tag));
           return { context, prepared: { ...prepared, input: { ...input, expectedHash: file.hash,
-            args: elementsNow(input.path, input.args ?? {}, read, file.content, file.hash, sectionTags) } } };
+            args: elementsNow(input.path, input.args ?? {}, read, file.content, file.hash) } } };
         };
         const { prepared, context } = await prepareNow();
         // Unchanged requests and UI-only open_page also receive an owner-fenced receipt, so their id stays
@@ -193,32 +197,42 @@ export function createAgentEditTools(options: Options) {
         agentCommandFiles.set(command, source);
         if (pin.media) siteCommandPins.set(command, { pin: pin.media, opened: pin.opened });
         signal?.throwIfAborted();
-        const free = userPart(command, () => pin.away());
-        if (free && request.operation === "edit") {
-          // Kept beside its receipt first, so a reload meanwhile still answers for it; told as waiting only then.
-          await records.wait(workspace, request.id, request.grantId, identity!);
-          check();
-          flight.waiting = flight.waited = true;
-          attached = false;
-          agentCommandSignals.delete(command);
-          if (request.tool === "edit_file") waitedReplacements.set(command, request.args.edits);
-          answer(waiting(request.id));
+        /**
+         * Ticket 52: before each run, a change to the part the user works in waits until they leave it. Told
+         * as waiting once, kept beside its receipt first, so a reload meanwhile still answers for it.
+         */
+        const leaveUser = async () => {
+          const free = userPart(command, () => pin.away());
+          if (!free || request.operation !== "edit") return;
+          if (!flight.waited) {
+            await records.wait(workspace, request.id, request.grantId, identity!);
+            check();
+            flight.waited = true;
+            attached = false;
+            agentCommandSignals.delete(command);
+            if (request.tool === "edit_file") waitedReplacements.set(command, request.args.edits);
+            flight.waiting = true;
+            answer(waiting(request.id));
+          } else flight.waiting = true;
           await free;
           flight.waiting = false;
           check();
           // Shown, it lands on the text now; on its own site not shown, there (finishAgentTextElsewhere).
           if (!pin.away()) await landWaited(command, ports.source?.(command.path));
           check();
-        }
-        ran = true;
+        };
         let outcome: Awaited<ReturnType<Options["run"]>>;
         for (let attempt = 1; ; attempt++) {
+          await leaveUser();
+          ran = true;
           try { outcome = await options.run(command); break; }
           catch (error) {
-            // Another change landed on its file between preparing and applying (another agent's, most often):
-            // prepared again on that text, it lands while its own part is unchanged (ticket 10). Nothing was
-            // changed by the attempt; a reason of its own stands.
+            // Another change landed on its file between preparing and applying (another agent's, or the user's
+            // typing): prepared again on that text, it lands while its own part is unchanged (ticket 10). Nothing
+            // was changed by the attempt, so its proofs hold again until the next run; a reason of its own stands.
             if (attempt > 2 || !(error instanceof Error && /changed in the editor/.test(error.message) && /Nothing was changed/.test(error.message))) throw error;
+            ran = false;
+            check();
             const again = (await prepareNow()).prepared;
             if ("unchanged" in again) return record(json(again.unchanged));
             const { content = "", expectedHash, args } = again.input;
@@ -227,6 +241,9 @@ export function createAgentEditTools(options: Options) {
           }
         }
         check();
+        // Landed on a text other than the one the agent read: what others changed there is still its to be told.
+        const read = (request.args as { expectedHash?: unknown }).expectedHash;
+        if (typeof read === "string" && command.expectedHash !== read) landedElsewhere.set(key, command.path);
         // The text it left is the one an agent's next edit of the file is read against (its reply's hash).
         const landed = ports.source?.(command.path), hash = outcome?.result?.hash;
         if (typeof hash === "string" && landed !== undefined && await textHash(landed) === hash) rememberText(hash, landed);
@@ -286,7 +303,9 @@ export function createAgentEditTools(options: Options) {
     /** `held`: the workspace as the edit arrived, when the caller waited before this (src/components/agent-menu.ts). */
     async run(request: Request, fence: number, current: () => boolean, signal?: AbortSignal, held?: Held) {
       const result = await registry.run(request.operation === "status" ? "get_command_status" : request.tool, { request, fence, current, signal, held });
-      return options.tell ? options.tell(request, result) : result;
+      const key = JSON.stringify([workspaceKey(workspace), request.id]), changed = landedElsewhere.get(key);
+      landedElsewhere.delete(key);
+      return options.tell ? options.tell(request, result, changed) : result;
     },
   };
 }
