@@ -2,7 +2,7 @@
 title: Kit tests ignore a person's KIT_HOME, and KIT_HOME's untested paths get tests
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-28
 builder: claude
 blocked_by: [14-settings-for-other-projects]
 ---
