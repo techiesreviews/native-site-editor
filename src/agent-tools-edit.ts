@@ -1,9 +1,10 @@
 import { textHash, WAITING_MESSAGE, type AgentCommand } from "../shared/agent";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
-import { prepareAgentEdit, type AgentEdit, type AgentStatus } from "../shared/agent-edit";
+import { PartClash, prepareAgentEdit, type AgentEdit, type AgentStatus } from "../shared/agent-edit";
 import { agentToolsOn } from "../shared/agent-tool-table";
 import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
+import { elementsNow, readText, rememberText } from "./agent-part";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
 import { agentCommandFiles, agentCommandSignals, createAgentTools, siteCommandPins } from "./agent-tools";
 import { agentFileReader, type AgentReadPorts } from "./agent-tools-read";
@@ -15,6 +16,8 @@ interface Options {
   ports: AgentReadPorts;
   records: AgentRecords;
   run: (command: AgentCommand) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
+  /** The reply with what changed since the agent's last call added (ticket 10; src/agent-part.ts `tellAgent`). */
+  tell?: (request: AgentEdit | AgentStatus, result: AgentReadResult) => Promise<AgentReadResult>;
 }
 type Request = AgentEdit | AgentStatus;
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JsonValue;
@@ -45,6 +48,9 @@ function holdWorkspace(ports: AgentReadPorts): Held {
 const flights = new Map<string, { identity: string; authorizationId: string; promise: Promise<AgentReadResult>; answered: Promise<AgentReadResult>; waiting: boolean; waited: boolean }>();
 /** A waiting change's record whose tab is gone: it never landed (AgentRecords.wait). */
 const WAIT_LOST = "The editor tab was reloaded or closed while this change waited for the user. Nothing was changed; read the site again and send the change anew.";
+
+/** The page commands whose elements are found again in the page as it is now (ticket 10). */
+const PAGE_COMMANDS = new Set<string>(["make_component", "add_section", "move_section", "remove_section"]);
 
 /** Receipts precede preparation: replacements must never run twice against their own output. */
 export function createAgentEditTools(options: Options) {
@@ -138,14 +144,34 @@ export function createAgentEditTools(options: Options) {
         // commit landing meanwhile refuses it. Such a receipt writes no drafts, so no manual work is touched.
         const before = await records.workspace(workspace);
         check();
-        const shared = await pin.context();
-        check();
-        if (!shared) throw new Error("The editor is unavailable. Open the connected site and branch.");
-        const files = new SiteFiles(agentFileReader(source, shared.context, signal), source.repo, shared.context, async hash => {
-          check(); return shared.texts.get(hash);
-        });
-        const prepared = await prepareAgentEdit(request, shared.context, files);
-        check();
+        /**
+         * The command on the workspace's text now (ticket 10): a file edit's replacements made on it, a page
+         * command's elements found in it again from the page as the agent read it; refused only when that
+         * part itself changed (PartClash).
+         */
+        const prepareNow = async () => {
+          const shared = await pin.context();
+          check();
+          if (!shared) throw new Error("The editor is unavailable. Open the connected site and branch.");
+          const files = new SiteFiles(agentFileReader(source, shared.context, signal), source.repo, shared.context, async hash => {
+            check(); return shared.texts.get(hash);
+          });
+          const prepared = await prepareAgentEdit(request, shared.context, files, readText);
+          check();
+          const context = shared.context;
+          if ("unchanged" in prepared || typeof prepared.input.expectedHash !== "string" || request.tool !== "edit_file" && !PAGE_COMMANDS.has(request.tool))
+            return { prepared, context };
+          const { input } = prepared, expected = prepared.input.expectedHash, file = await files.read(input.path);
+          check();
+          if (!file) return { prepared, context };
+          rememberText(file.hash, file.content);
+          const read = file.hash === expected || !PAGE_COMMANDS.has(request.tool) ? undefined : readText(expected);
+          if (read === undefined) return { prepared, context };
+          const sectionTags = new Set(context.site?.components.filter(item => item.section).map(item => item.tag));
+          return { context, prepared: { ...prepared, input: { ...input, expectedHash: file.hash,
+            args: elementsNow(input.path, input.args ?? {}, read, file.content, file.hash, sectionTags) } } };
+        };
+        const { prepared, context } = await prepareNow();
         // Unchanged requests and UI-only open_page also receive an owner-fenced receipt, so their id stays
         // reserved for this work and grant (reuse for different work is refused like any other).
         const record = async (outcome: JsonValue, revision?: number) => {
@@ -160,7 +186,7 @@ export function createAgentEditTools(options: Options) {
         if ("unchanged" in prepared) return record(json(prepared.unchanged), before.revision);
         const { input, operation } = prepared;
         const command: AgentCommand = { id: request.id, operation, content: input.content ?? "",
-          branch: shared.context.branch, commit: shared.context.commit, ...input, repoId: workspace.repoId,
+          branch: context.branch, commit: context.commit, ...input, repoId: workspace.repoId,
           grantId: request.grantId, generation: request.generation, ownerGeneration: fence, requestIdentity: identity!,
           state: "pending", createdAt: request.createdAt };
         if (signal) agentCommandSignals.set(command, signal);
@@ -185,8 +211,25 @@ export function createAgentEditTools(options: Options) {
           check();
         }
         ran = true;
-        const outcome = await options.run(command);
+        let outcome: Awaited<ReturnType<Options["run"]>>;
+        for (let attempt = 1; ; attempt++) {
+          try { outcome = await options.run(command); break; }
+          catch (error) {
+            // Another change landed on its file between preparing and applying (another agent's, most often):
+            // prepared again on that text, it lands while its own part is unchanged (ticket 10). Nothing was
+            // changed by the attempt; a reason of its own stands.
+            if (attempt > 2 || !(error instanceof Error && /changed in the editor/.test(error.message) && /Nothing was changed/.test(error.message))) throw error;
+            const again = (await prepareNow()).prepared;
+            if ("unchanged" in again) return record(json(again.unchanged));
+            const { content = "", expectedHash, args } = again.input;
+            if (expectedHash === command.expectedHash && content === command.content) throw error;
+            Object.assign(command, { content, expectedHash, args });
+          }
+        }
         check();
+        // The text it left is the one an agent's next edit of the file is read against (its reply's hash).
+        const landed = ports.source?.(command.path), hash = outcome?.result?.hash;
+        if (typeof hash === "string" && landed !== undefined && await textHash(landed) === hash) rememberText(hash, landed);
         if (operation === "open_page") return record(json(outcome ?? {}));
         if (operation === "inspect_preview") {
           let report: JsonValue = json(outcome?.result ?? {});
@@ -233,7 +276,7 @@ export function createAgentEditTools(options: Options) {
       const message = error instanceof Error ? error.message : "The browser edit failed.";
       const unknown = error instanceof AgentRecordsError && error.code === "unknown" || /unproven|outcome.*unknown|could not prove|could not confirm whether/i.test(message);
       return { ok: true, value: { requestId: request.id, state: unknown ? "unknown" : "conflict", message: unknown
-        ? `${message} Check get_command_status; do not replay the change.` : message } };
+        ? `${message} Check get_command_status; do not replay the change.` : message, ...(error instanceof PartClash && error.part ? { part: json(error.part) } : {}) } };
     }
   }
   type Input = { request: Request; fence: number; current: () => boolean; signal?: AbortSignal; held?: Held };
@@ -241,8 +284,9 @@ export function createAgentEditTools(options: Options) {
   const registry = createAgentTools<Input>(Object.fromEntries(agentToolsOn("edit", "status").map(tool => [tool, executor])));
   return {
     /** `held`: the workspace as the edit arrived, when the caller waited before this (src/components/agent-menu.ts). */
-    run(request: Request, fence: number, current: () => boolean, signal?: AbortSignal, held?: Held) {
-      return registry.run(request.operation === "status" ? "get_command_status" : request.tool, { request, fence, current, signal, held });
+    async run(request: Request, fence: number, current: () => boolean, signal?: AbortSignal, held?: Held) {
+      const result = await registry.run(request.operation === "status" ? "get_command_status" : request.tool, { request, fence, current, signal, held });
+      return options.tell ? options.tell(request, result) : result;
     },
   };
 }

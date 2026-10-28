@@ -45,7 +45,24 @@ Reads combine the tab's reported context and effective drafts with GitHub files 
 the revision it shows. Text reads/writes are limited to 1 MB per file. A closed tab
 can leave stale read context; an edit requires a live tab. Queued changes are bound
 to repository, branch and revision. Hashes and element proofs are checked again
-against the tab's live state before writing, so newer edits cause a conflict.
+against the tab's live state before writing.
+
+Several agents and the person can work on one page at once (ticket 10). An edit
+targets the exact part it changes, not the whole file: `edit_file` lands while
+its old texts are still there once each, and a page tool (`make_component`,
+`add_section`, `move_section`, `remove_section`) finds its elements again by their
+unchanged HTML, whatever else changed since the hash it was read with. Only a
+true clash, that same part changed meanwhile, is a conflict; its reply carries
+`part` (`path`, `hash`, `lines`, `text`, at most 4,000 characters) so the agent
+sends the edit again at once. A whole-file `write_file` still needs the exact
+hash. A change that loses a race with another landing on the same file is
+prepared again on the new text before it is refused. Every reply (reads and
+edits) carries `changesSinceLastRead` when the workspace's drafts changed since
+that connection's last call, its own changes left out: up to 20 files (`path`,
+`change`: added, changed, removed, discarded or saved; `hash`; the page
+`sections` touched when the tab still has the earlier text), `more` for the
+rest, within 2 KB. Marks and remembered texts live in the receiving tab's memory
+only, per connection, so agents sharing one connection share one catch-up.
 
 Queued tools accept optional `requestId` (reuse only for the identical retry) and
 `waitSeconds` (default 10). Calls return applied, conflict, failed or pending.
@@ -105,7 +122,7 @@ not rewrite links.
 | `read_file` | Text and content hash from effective drafts or the reported GitHub revision. |
 | `export_site` | Whole site or folder: effective texts and hashes, binaries by path/SHA/size; large text results can be omitted and reported. |
 | `get_page` | Page by route or file, with source, hash, head details and body outline. Element/section ids follow element-child positions. |
-| `edit_file` | Exact text replacements with the read hash; each old text must be unique unless all matches are requested. |
+| `edit_file` | Exact text replacements with the read hash; each old text must be unique unless all matches are requested. Lands while its old texts are unchanged; a clash returns them as they are now (`part`). |
 | `write_file` | Create a free text path or replace text with its expected hash. Protected editor records and binary media writes refuse. |
 | `create_page` | Pages' New page, with title and optional folder parent/slug. Copies the home document, empties main, and sets page details and full canonical addresses when Site address is known. |
 | `set_page_details` | Changes title and/or description, with corresponding Open Graph details when present. |

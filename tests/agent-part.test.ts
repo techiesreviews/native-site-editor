@@ -1,0 +1,148 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { textHash } from "../shared/agent";
+import { PART_LIMIT, PartClash, prepareAgentEdit, spanNow, type AgentEdit, type AgentEditArgsMap } from "../shared/agent-edit";
+import { CATCH_UP_BYTES, CATCH_UP_FILES, catchUpOf, type AgentMark } from "../shared/agent-read";
+import { SiteFiles, type SiteFileReader } from "../shared/site-files";
+import type { EditorContext } from "../shared/types";
+import { elementsNow, readText, rememberRead, rememberText, tellAgent } from "../src/agent-part";
+import { installOutlineDocument } from "./support/outline-document";
+import { files, repo, siteContext } from "./mcp-harness";
+
+// Ticket 10: an agent's change targets the exact part it changes; only a true clash refuses, with the part
+// as it is now; every reply tells what changed since the agent's last call.
+
+const edit = (args: AgentEditArgsMap["edit_file"]): AgentEdit => ({ operation: "edit", tool: "edit_file", args, id: "e", grantId: "g", createdAt: 1 });
+const noGithub = { commitTree: async () => [], file: async () => "", prefetchTexts: async () => {}, hasText: () => false } satisfies SiteFileReader;
+/** The fake site with index.html's text now `home`, as a draft. */
+async function withHome(home: string) {
+  const context = await siteContext();
+  context.drafts.push({ path: "index.html", baseSha: "1".repeat(40), updatedAt: 2, hash: await textHash(home), content: home });
+  return { context, files: new SiteFiles(noGithub, repo, context) };
+}
+const read = files["index.html"];
+
+test("an edit read before another change elsewhere on the page lands on the text now, both changes kept", async () => {
+  const first = read.replace("<h1>Welcome</h1>", "<h1>Hello</h1>");
+  const { context, files: site } = await withHome(first);
+  // The second agent read the page before the first agent's change: its words are still there.
+  const prepared = await prepareAgentEdit(edit({ path: "index.html", expectedHash: await textHash(read), edits: [{ oldText: ">Fast<", newText: ">Quick<" }] }), context, site);
+  assert.ok("operation" in prepared);
+  assert.equal(prepared.input.content, first.replace(">Fast<", ">Quick<"));
+  assert.equal(prepared.input.expectedHash, await textHash(first));
+});
+
+test("the same words changed meanwhile are refused with the part as it is now, which a retry lands against", async () => {
+  const now = read.replace("<h1>Welcome</h1>", "<h1>Hello there</h1>");
+  const { context, files: site } = await withHome(now);
+  const args = { path: "index.html", expectedHash: await textHash(read), edits: [{ oldText: "<h1>Welcome</h1>", newText: "<h1>Hi</h1>" }] };
+  const clash = await prepareAgentEdit(edit(args), context, site, hash => hash === args.expectedHash ? read : undefined).then(() => assert.fail("must clash"), (error: unknown) => error);
+  assert.ok(clash instanceof PartClash);
+  assert.equal(clash.status, 409);
+  assert.match(clash.message, /were changed meanwhile, by the user or another agent/);
+  const part = clash.part!;
+  assert.equal(part.path, "index.html");
+  assert.equal(part.hash, await textHash(now));
+  // Whole lines, between the lines around it that are still there: the heading line, as it is now.
+  assert.equal(part.text, "    <h1>Hello there</h1>");
+  assert.deepEqual(part.lines, { start: 12, end: 12 });
+  // The agent retries against it at once, and lands.
+  const again = await prepareAgentEdit(edit({ ...args, expectedHash: part.hash, edits: [{ oldText: "<h1>Hello there</h1>", newText: "<h1>Hi</h1>" }] }), context, site);
+  assert.ok("operation" in again && again.input.content?.includes("<h1>Hi</h1>"));
+  // Without the read the tab kept, the replaced words' own lines locate it when they are still there; else it is gone.
+  const lines = await prepareAgentEdit(edit({ ...args, edits: [{ oldText: "<section class=\"hero\" data-key=\"hero\">\n    <h1>Welcome</h1>", newText: "x" }] }), context, site)
+    .then(() => assert.fail("must clash"), (error: PartClash) => error);
+  assert.match(lines.part!.text, /<section class="hero"/);
+  const gone = await prepareAgentEdit(edit(args), context, site).then(() => assert.fail("must clash"), (error: PartClash) => error);
+  assert.equal(gone.part, undefined);
+  assert.match(gone.message, /are no longer there/);
+  // Unchanged since its read, words that are not there are the agent's own mistake, as before.
+  await assert.rejects(prepareAgentEdit(edit({ ...args, expectedHash: part.hash, edits: [{ oldText: "absent", newText: "x" }] }), context, site), /oldText was not found/);
+});
+
+test("a part is found between unchanged lines, else by the one stretch that changed, and kept short", () => {
+  const before = "a\nb\nkeep\nold words\nmore\nz", after = "a\nB\nkeep\nnew words\nmore\nz";
+  const at = before.indexOf("old words");
+  assert.deepEqual(spanNow(before, at, at + 9, after), { start: after.indexOf("new words"), end: after.indexOf("new words") + 9 });
+  // One line alone: nothing around it, so all of it.
+  assert.deepEqual(spanNow("<p>one</p><p>two</p>", 10, 20, "<p>one</p><p>2</p>"), { start: 0, end: 18 });
+  // Lines around it gone too: the one stretch that changed, with the words.
+  assert.deepEqual(spanNow("x\n<p>one</p><p>two</p>\ny", 12, 22, "X\n<p>one</p><p>2</p>\nY"), { start: 0, end: 22 });
+  assert.ok(PART_LIMIT <= 4000);
+});
+
+test("a page command's elements are found again where other sections moved them, and refused with the part when they changed", async t => {
+  installOutlineDocument(t);
+  const page = (body: string) => `<!doctype html><html><head></head><body><main>${body}</main></body></html>`;
+  const was = page("<section>A</section><section>B</section>");
+  const tags = new Set<string>();
+  // A section added before them moves both; their HTML is unchanged, so their ids follow.
+  assert.deepEqual(elementsNow("index.html", { section: "0.1", after: "0.0" }, was, page("<section>X</section><section>A</section><section>B</section>"), "h", tags), { section: "0.2", after: "0.1" });
+  assert.deepEqual(elementsNow("index.html", { section: "0.1" }, was, page("<section>A</section><section>B</section><section>C</section>"), "h", tags), { section: "0.1" });
+  // The section itself changed: refused with it as it is now.
+  const changed = page("<section>A</section><section>B, edited</section>");
+  assert.throws(() => elementsNow("index.html", { section: "0.1" }, was, changed, "h2", tags), (error: PartClash) =>
+    error instanceof PartClash && /was changed meanwhile/.test(error.message) && error.part?.hash === "h2" && error.part.text.includes("B, edited"));
+  // Gone: refused, with no part.
+  assert.throws(() => elementsNow("index.html", { section: "0.1" }, was, page("<section>A</section>"), "h3", tags), (error: PartClash) => error instanceof PartClash && !error.part && /no longer there/.test(error.message));
+});
+
+test("a catch-up lists what changed since the last call, the agent's own changes left out, within its size cap", () => {
+  const before: AgentMark = { commit: "c1", files: {
+    "index.html": { hash: "h1", at: 1 }, "about/index.html": { hash: "a1", at: 1 }, "gone.html": { hash: "g", at: 1 }, "mine.html": { hash: "m1", at: 1 }, "same.css": { hash: "s", at: 1 } } };
+  const now: AgentMark = { commit: "c1", files: {
+    "index.html": { hash: "h2", at: 2 }, "about/index.html": { hash: "a1", at: 1, deleted: true }, "new/index.html": { hash: "n", at: 2, added: true },
+    "mine.html": { hash: "m2", at: 2 }, "same.css": { hash: "s", at: 3 } } };
+  const told = catchUpOf(before, now, new Set(["mine.html"]), path => path === "index.html" ? ["1.0", "1.1"] : undefined);
+  assert.deepEqual(told, { files: [
+    { path: "index.html", change: "changed", hash: "h2", sections: ["1.0", "1.1"] },
+    { path: "about/index.html", change: "removed" },
+    { path: "gone.html", change: "discarded" },
+    { path: "new/index.html", change: "added", hash: "n" },
+  ], note: told!.note });
+  assert.match(told!.note, /since your last call/);
+  // Nothing changed: no catch-up. A save moves the revision: the drafts it took are saved.
+  assert.equal(catchUpOf(now, now), undefined);
+  assert.deepEqual(catchUpOf({ commit: "c1", files: { "a.html": { hash: "x", at: 1 } } }, { commit: "c2", files: {} }), { files: [{ path: "a.html", change: "saved" }], saved: "c2", note: told!.note });
+  // Many changes: at most CATCH_UP_FILES, within CATCH_UP_BYTES, the rest counted.
+  const many: AgentMark = { commit: "c1", files: Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`pages/${"long-name-".repeat(3)}${i}/index.html`, { hash: "f".repeat(64), at: 2, added: true as const }])) };
+  const capped = catchUpOf({ commit: "c1", files: {} }, many)!;
+  assert.ok(capped.files.length <= CATCH_UP_FILES && capped.files.length > 0);
+  assert.equal(capped.files.length + capped.more!, 60);
+  assert.ok(new TextEncoder().encode(JSON.stringify(capped)).byteLength <= CATCH_UP_BYTES);
+});
+
+test("every reply to an agent carries what changed since its last call in the workspace shown, its own edit left out", async t => {
+  installOutlineDocument(t);
+  const context: EditorContext = await siteContext(), texts = new Map<string, string>();
+  const shared = () => ({ context: structuredClone(context), texts });
+  const workspace = { repoId: repo.id, branch: "main" };
+  const reply = { ok: true as const, value: { state: "applied" } };
+  // Its first call: nothing to tell yet.
+  assert.deepEqual(tellAgent(shared(), workspace, "agent-a", reply), reply);
+  assert.deepEqual(tellAgent(shared(), workspace, "agent-b", reply), reply);
+  // Agent B's edit of the home page lands: B is not told its own change; A is.
+  const home = files["index.html"].replace("Fast", "Quick"), hash = await textHash(home);
+  rememberText(await textHash(files["index.html"]), files["index.html"]);
+  context.drafts.push({ path: "index.html", baseSha: "1".repeat(40), updatedAt: 3, hash });
+  texts.set(hash, home);
+  const edited = { ok: true as const, value: { state: "applied", result: { hash } } };
+  const request: AgentEdit = { ...edit({ path: "index.html", expectedHash: "x", edits: [] }), grantId: "agent-b" };
+  assert.deepEqual(tellAgent(shared(), workspace, "agent-b", edited, request), edited);
+  const told = tellAgent(shared(), workspace, "agent-a", reply);
+  assert.ok(told.ok);
+  assert.partialDeepStrictEqual(told.value, { state: "applied", changesSinceLastRead: { files: [{ path: "index.html", change: "changed", hash }] } });
+  // Told once: the next call has nothing new. Another workspace shown tells nothing.
+  assert.deepEqual(tellAgent(shared(), workspace, "agent-a", reply), reply);
+  assert.deepEqual(tellAgent(shared(), { ...workspace, branch: "feature" }, "agent-a", reply), reply);
+});
+
+test("the tab keeps the texts agents read, by hash, within its limits", async () => {
+  rememberRead({ path: "a.txt", hash: "ha", content: "A" });
+  rememberRead({ hash: "hp", html: "<p>page</p>" });
+  rememberRead({ files: [{ path: "b.txt", hash: "hb", content: "B" }] });
+  assert.deepEqual([readText("ha"), readText("hp"), readText("hb"), readText("none")], ["A", "<p>page</p>", "B", undefined]);
+  for (let i = 0; i < 250; i++) rememberText(`h${i}`, String(i));
+  assert.equal(readText("ha"), undefined, "the oldest go first");
+  assert.equal(readText("h249"), "249");
+});

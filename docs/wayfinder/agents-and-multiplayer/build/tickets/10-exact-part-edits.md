@@ -1,7 +1,7 @@
 ---
 title: "Agent changes target the exact part they change"
 type: task (AFK)
-status: open
+status: closed
 assignee: am-10
 builder: claude
 blocked_by: []
@@ -37,3 +37,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `kit unit --affected`, `kit specs --affected` and `npm run check` green, with `RESULT:` lines quoted in Done.
 - Big, delicate slice: one second-opinion review of the final version (`ASE_REVIEW_MODEL=grok-4.7` or `gpt-6.1-sol` `kit review --ticket <this ticket>`), within the weekly budget.
+
+## Done (2026-10-28)
+
+- `edit_file` targets its own words: it lands on the file's text now while each old text is still there, whatever else changed since the hash it was read with. When those words changed meanwhile, the refusal (`conflict`) carries `part`: path, the file's hash now, line numbers and the words as they are now (whole lines, at most 4,000 characters), found between the nearest unchanged lines around the words as read (`shared/agent-edit.ts` `spanNow`, `PartClash`). A whole-file `write_file` still needs the exact hash.
+- `make_component`, `add_section`, `move_section` and `remove_section` find the elements they name again by their unchanged HTML (an element moved by sections added or removed before it takes its new id); a changed or vanished element is refused with it as it is now (`src/agent-part.ts` `elementsNow`). The tab keeps the texts agents read (by hash, 200 texts / 16 MB) to do this.
+- An edit that loses a race with another change landing on its file is prepared again on the new text and run again (at most twice), so two agents sending at once both land (`src/agent-tools-edit.ts`).
+- Every reply, reads and edits, carries `changesSinceLastRead` when the workspace's drafts changed since that connection's last call, its own changes left out: up to 20 files with `change`, `hash` and the page `sections` touched, `more` for the rest, within 2 KB (`shared/agent-read.ts` `catchUpOf`, `src/agent-part.ts` `tellAgent`). Reads now send the connection's grant id so the tab can tell agents apart. Marks live in the receiving tab's memory, per connection.
+- Tool descriptions, the site instructions and `docs/mcp.md` say so. Feature list: F-agent-10.
+- Tests: `tests/agent-part.test.ts` (clash part, retry against it, element re-finding, catch-up shape and size cap, kept texts); `tests/agent-tools-edit.test.ts` (race retry and clash, updated hash contract and refusal table); `tests/mcp-runtime.test.ts`, `tests/agent-tool-table.test.ts` updated; new `tests/native-save/native-agent-exact-part.spec.ts` (two agents on different sections at once, plus a stale-hash section removal; two agents on the same words, refused with the part, retry lands, catch-up told).
+- `RESULT: ok unit 3846/3846 (250 files)` (`kit unit --affected`); `RESULT: ok specs 1/1 passed` (exact-part spec); `RESULT: ok specs 5/5 passed` (waits, edits, reads, recovery, presence); `npm run check` and `npm run lint` clean.
