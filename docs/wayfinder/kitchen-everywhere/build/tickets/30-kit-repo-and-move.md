@@ -5,7 +5,7 @@ status: open
 assignee:
 builder: claude
 runs_alone: true
-blocked_by: [17-second-look-per-kind, 29-pr-ci-filters-and-claim-owner, 20-shared-rulebook, 21-launcher-and-update, 22-kit-init, 23-issues-to-ticket-files, 24-combined-score-table, 38-kit-update-previous-holds, 39-launchers-pinned-kit-and-whole-kit, 48-kit-ux-land-branch-and-colour-setting, 49-launcher-names-removed-folder, 51-kit-unit-names-settings-problem, 52-review-notes-do-not-block, 53-done-commits-match-dev, 54-kit-ux-spaced-paths-and-docs, 55-kit-ux-path-before-a-space]
+blocked_by: [17-second-look-per-kind, 29-pr-ci-filters-and-claim-owner, 20-shared-rulebook, 21-launcher-and-update, 22-kit-init, 23-issues-to-ticket-files, 24-combined-score-table, 38-kit-update-previous-holds, 39-launchers-pinned-kit-and-whole-kit, 48-kit-ux-land-branch-and-colour-setting, 49-launcher-names-removed-folder, 51-kit-unit-names-settings-problem, 52-review-notes-do-not-block, 53-done-commits-match-dev, 54-kit-ux-spaced-paths-and-docs, 55-kit-ux-path-before-a-space, 56-located-continuation-joins-its-defect]
 ---
 
 ## Goal
