@@ -138,11 +138,32 @@ export function spanNow(read: string, start: number, end: number, now: string): 
 }
 
 /**
+ * The first replacement whose words, as `read` has them, are not where that read put them in `now`: not as
+ * many, or one outside its own stretch now (spanNow); -1 when every one is. Words `read` lacks are an earlier
+ * replacement's to make, and pass.
+ */
+export function wordsMoved(read: string, now: string, edits: { oldText: string }[]) {
+  return edits.findIndex(({ oldText }) => {
+    const places = (text: string) => {
+      const found: number[] = [];
+      for (let at = text.indexOf(oldText); oldText && at >= 0; at = text.indexOf(oldText, at + oldText.length)) found.push(at);
+      return found;
+    };
+    const was = places(read), is = places(now);
+    if (!was.length) return false;
+    return was.length !== is.length || was.some((at, index) => {
+      const span = spanNow(read, at, at + oldText.length, now);
+      return span !== undefined && (is[index] < span.start || is[index] + oldText.length > span.end);
+    });
+  });
+}
+
+/**
  * The clash of a file edit whose replacements no longer apply to `file`, read by the agent as `read` (its
  * text at the agent's hash, when the tab still has it): the part the first failing replacement changes, now.
  */
-function editClash(file: { path: string; hash: string; content: string }, edits: { oldText: string; newText: string; all?: boolean }[], read: string | undefined): never {
-  const failing = edits.findIndex((_, index) => !applyReplacements(file.content, edits.slice(0, index + 1)).ok);
+function editClash(file: { path: string; hash: string; content: string }, edits: { oldText: string; newText: string; all?: boolean }[], read: string | undefined,
+  failing = edits.findIndex((_, index) => !applyReplacements(file.content, edits.slice(0, index + 1)).ok)): never {
   const { oldText } = edits[Math.max(0, failing)];
   const which = edits.length > 1 ? `The words replacement ${failing + 1} changes` : "The words this edit changes";
   const at = read?.indexOf(oldText) ?? -1;
@@ -182,8 +203,13 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditContext,
       if (!file) return refuse(`${path} does not exist. Use write_file to create it.`);
       // Its exact words are its part (ticket 10): it lands on the text now while they are there, whatever
       // else changed since its read; once they changed meanwhile, the clash carries them as they are now.
+      // Read in another text, each replaced word must be where that read had it, as often (`all` too): never a
+      // copy added since, nor the words changed in place and written again elsewhere.
+      const was = file.hash === expectedHash ? undefined : read?.(expectedHash);
+      const moved = was === undefined ? -1 : wordsMoved(was, file.content, edits);
+      if (moved >= 0) return editClash(file, edits, was, moved);
       const edited = applyReplacements(file.content, edits);
-      if (!edited.ok) return file.hash === expectedHash ? refuse(edited.error) : editClash(file, edits, read?.(expectedHash));
+      if (!edited.ok) return file.hash === expectedHash ? refuse(edited.error) : editClash(file, edits, was);
       if (edited.text === file.content) return unchanged({ state: "unchanged", message: "The edits change nothing." });
       const big = contentProblem(edited.text);
       if (big) return refuse(big);

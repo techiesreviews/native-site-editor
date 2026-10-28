@@ -13,6 +13,7 @@ import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
 import type { Snapshot, TreeEntry } from "../shared/types";
 import { createAgentEditTools } from "../src/agent-tools-edit";
+import { tellAgent } from "../src/agent-part";
 import { workingPart } from "../src/working-part";
 import { agentCommandFiles } from "../src/agent-tools";
 import { agentFileReader, type AgentReadPorts } from "../src/agent-tools-read";
@@ -1123,4 +1124,100 @@ test("an edit prepared again after a race waits when it now changes the part the
   assert.equal(ran.length, 2);
   assert.equal(ran[1].content, home.replace("<h1>Welcome</h1>", "<h1>Hello to</h1>"));
   assert.equal(body(await tools.run({ operation: "status", id: edit.id, grantId: edit.grantId }, 0, () => true)).state, "applied");
+});
+
+const raceLost = () => new Error("index.html changed in the editor since it was read. Read it again. Nothing was changed; your drafts are as they were.");
+
+test("a changed revision at every await of a race retry (its proof, preparation and reads) stops it: nothing runs again, nothing is recorded", async () => {
+  const points = await forEachAwait(race => {
+    const state = { disturb: () => {}, writes: 0, receipts: () => 0, done: Promise.resolve() };
+    state.done = (async () => {
+      const f = await fixture(), home = files["index.html"];
+      state.disturb = () => { f.snapshot.commit = "different revision"; };
+      state.receipts = () => f.fake.stores.get("receipts")?.size ?? 0;
+      let lost = false;
+      const source = f.ports.files();
+      const ports: AgentReadPorts = { ...f.ports, context: race.port("context", () => f.ports.context()),
+        files: () => ({ ...source, read: race.port("file", (repo, sha) => source.read(repo, sha)) }) };
+      const records: AgentRecords = { ...f.records, receipt: race.port("receipt", (...args) => f.records.receipt(...args)),
+        workspace: race.port("workspace", (...args) => f.records.workspace(...args)), status: race.port("status", (...args) => f.records.status(...args)) };
+      const tools = createAgentEditTools({ workspace, ports, records, run: async () => {
+        if (!lost) {
+          // Another agent's change landed first: the retry prepares again on it.
+          lost = true;
+          const text = home.replace("<h1>Welcome</h1>", "<h1>Hello</h1>");
+          f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(text), content: text });
+          throw raceLost();
+        }
+        state.writes++;
+        return { message: "Applied." };
+      } });
+      await tools.run(request("edit_file", { path: "index.html", expectedHash: f.context.site!.outlines[0].hash, edits: [{ oldText: ">Fast<", newText: ">Quick<" }] }), 0, () => true);
+    })();
+    return state;
+  }, state => state.disturb(), state => { assert.equal(state.writes, 0); assert.equal(state.receipts(), 0); });
+  assert.ok(points >= 6, `${points} await points`);
+});
+
+test("an edit that waited and landed is not told back to its agent on the status lookup that says applied", async t => {
+  t.after(() => workingPart.left());
+  const live: Record<string, string> = { ...files };
+  const f = await fixture({ source: path => live[path] });
+  const ports = { ...f.ports, source: (path: string) => live[path], pin: () => ({ away: () => false, context: f.ports.context }) } satisfies AgentReadPorts;
+  const tell = async (input: AgentEdit | { operation: "status"; id: string; grantId: string }, result: AgentReadResult) =>
+    tellAgent(await f.ports.context(), { repoId: repo.id, branch: "main" }, input.grantId, result);
+  const tools = createAgentEditTools({ workspace, records: f.records, ports, tell, run: async command => {
+    const state = await f.records.workspace(workspace), outcome = { message: "Applied.", result: { path: command.path, hash: await textHash(command.content) } };
+    await f.records.commit({ workspace, fence: command.ownerGeneration!, expectedRevision: state.revision, expectedDrafts: [], drafts: [],
+      receipt: { operationId: command.id, authorizationId: command.grantId!, payloadIdentity: command.requestIdentity!, outcome, createdAt: Date.now(), issuedAt: command.createdAt } });
+    live[command.path] = command.content;
+    f.context.drafts.push({ path: command.path, baseSha: null, updatedAt: Date.now(), hash: outcome.result.hash, content: command.content });
+    return outcome;
+  } });
+  // Its read (get_page) set its mark; then it edits the heading the user types in.
+  tellAgent(await f.ports.context(), { repoId: repo.id, branch: "main" }, "grant-own", { ok: true, value: {} });
+  workingPart.typed(heading);
+  const edit = { ...request("edit_file", { path: "index.html", expectedHash: f.context.site!.outlines[0].hash, edits: [{ oldText: "Welcome", newText: "Hello" }] }, "waited-own"), grantId: "grant-own" };
+  assert.equal(body(await tools.run(edit, 0, () => true)).state, "waiting");
+  workingPart.left(heading);
+  for (let turn = 0; turn < 100 && !live["index.html"].includes("Hello"); turn++) await settle();
+  const status = body(await tools.run({ operation: "status", id: edit.id, grantId: edit.grantId }, 0, () => true));
+  assert.equal(status.state, "applied");
+  assert.equal(status.changesSinceLastRead, undefined, JSON.stringify(status));
+});
+
+test("a race retry that finds its edits now change nothing keeps an unchanged receipt only at the revision proved before that preparation", async () => {
+  // Read in a text the tab does not keep: its replacements make a change on the text it first meets (an extra
+  // "Hello" there), and none on the text another agent leaves meanwhile (that "Hello" taken out).
+  const home = files["index.html"], first = home.replace("</main>", "<p>Hello</p>\n</main>");
+  const edits = [{ oldText: "Welcome", newText: "Hello" }, { oldText: "Hello", newText: "Welcome", all: true }];
+  const attempt = async (meanwhile: boolean) => {
+    const f = await fixture();
+    const draft = async (text: string) => {
+      f.context.drafts = f.context.drafts.filter(item => item.path !== "index.html");
+      f.context.drafts.push({ path: "index.html", baseSha: "1".repeat(40), updatedAt: Date.now(), hash: await textHash(text), content: text });
+    };
+    await draft(first);
+    let calls = 0, lost = false;
+    const records: AgentRecords = { ...f.records, workspace: async ws => {
+      const state = await f.records.workspace(ws);
+      // Right after the retry's proof: another agent's commit lands.
+      if (++calls === 2 && meanwhile) assert.equal(body(await f.run(request("write_file", { path: "meanwhile.txt", content: "agent" }, "meanwhile"))).state, "applied");
+      return state;
+    } };
+    const tools = createAgentEditTools({ workspace, records, ports: f.ports, run: async () => {
+      if (lost) assert.fail("must not run again");
+      lost = true;
+      await draft(home);
+      throw raceLost();
+    } });
+    const input = request("edit_file", { path: "index.html", expectedHash: "0".repeat(64), edits }, "same-change");
+    return { reply: body(await tools.run(input, 0, () => true)), receipt: await f.records.receipt(workspace, input.id, input.grantId), calls };
+  };
+  const kept = await attempt(false);
+  assert.equal(kept.reply.state, "unchanged", JSON.stringify(kept.reply));
+  assert.ok(kept.receipt);
+  const refused = await attempt(true);
+  assert.notEqual(refused.reply.state, "unchanged");
+  assert.equal(refused.receipt, undefined);
 });

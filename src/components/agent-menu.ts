@@ -184,7 +184,7 @@ export function createAgentMenu(options: {
         editTools ??= Promise.all([import("../agent-tools-edit"), import("../agent-part")]).then(([{ createAgentEditTools }, { tellAgent }]) => createAgentEditTools({
           workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, ports, records,
           run,
-          tell: async (request, result, changed) => tellAgent(await ports.context().catch(() => undefined), { repoId: repo.id, branch: repo.branch }, request.grantId, result, request, changed),
+          tell: async (request, result) => tellAgent(await ports.context().catch(() => undefined), { repoId: repo.id, branch: repo.branch }, request.grantId, result),
         }));
         // Pinned, its branch shown again (a new load of it) is no move either; on show its revision must
         // hold. With no pin, the stamp it arrived with must hold.
