@@ -2,7 +2,7 @@
 title: "Mock-ups on the preview site"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-37
 builder: claude
 blocked_by: []
 ---
