@@ -16,6 +16,11 @@ Slice 11's final review left a P2 ([ticket 11 Follow-ups](11-several-agents-pres
 - `atWork()` uses the same rule as `marks()`: a running change wins; otherwise an open question's section wins over an ended change.
 - Also take ticket 11's P3: one batched request carrying two agent names labels each change with its own agent.
 
+## Notes for the builder (runner, 2026-10-28)
+
+- Section fix: in `atWork()`'s questions loop, keep the `told` entry only when that agent has a `running` entry that holds; otherwise the question's `file` and `questionAt(question)`, as `marks()` does. Ticket 11's validation gap gives the test (`show(...)()` ended, then `questions([... "about/index.html"])`; `painted.at(-1)` and `atWork()` agree).
+- Batch labelling (`worker/mcp.ts`, `caller`): no `nodejs_compat`/`nodejs_als` flag, so no AsyncLocalStorage; do not add one. Today every handler reaches `dispatch` synchronously, so a batch is labelled right only by luck (and `native-site://site` / the `edit_site` prompt read under the last tool's name). Make it hold by construction: the name a call gives travels with that call (for example `register` hands each handler a per-call set of helpers bound to its name), never a variable shared by the server. Test in `tests/mcp-runtime.test.ts`: one POST to `/mcp` with a JSON-RPC batch of two `write_file` calls under two `agent` names; each command in `tab.inspect()` carries its own name.
+
 ## Files
 
 - `src/agent-presence.ts` and its unit tests (and the batch labelling code the P3 names)
