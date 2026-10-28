@@ -89,6 +89,7 @@ The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slice
 | [34 Folder changes merge too](tickets/34-folder-changes-merge.md) | S | – | – | 33 |
 | [35 Hot preview link](tickets/35-hot-preview-link.md) | L | visible | – | 30 |
 | [37 Mock-ups on the preview site](tickets/37-mockups-on-preview.md) | S | – | – | – |
+| [38 The preview mock-ups copy only images a mock-up uses](tickets/38-mockups-copy-only-used-images.md) | S | – | – | 37 |
 | [36 Close-out: checklist, docs, delete the proof of concept](tickets/36-close-out.md) | S | – | – | 31, 33, 35, 37 |
 
 ## Suggested waves
