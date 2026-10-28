@@ -1101,6 +1101,14 @@ its number unused.
 - Spec: `tests/native-save/native-agent-recovery.spec.ts`
 - Steps: none yet (needs a connected agent and full browser storage)
 
+### F-agent-10 Several agents on one page
+- Try: Have two agents change different sections of the same page at once.
+- Good: Both changes land; an agent is refused only when another changed the very same words or section, and then it retries at once.
+- Files: `shared/agent-edit.ts`, `src/agent-part.ts`, `src/agent-tools-edit.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-agent-exact-part.spec.ts`
+- Steps: none yet (needs two connected agents)
+
 ## Command palette
 
 ### F-palette-01 Go to a page or file

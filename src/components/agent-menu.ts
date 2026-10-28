@@ -181,9 +181,10 @@ export function createAgentMenu(options: {
         // The workspace the edit arrived in, held before its tools load: another site or branch shown
         // meanwhile stops nothing, and the edit finishes in its own (ticket 23).
         const pin = ports.pin?.(), held = { source, stamp, pin: pin ?? { away: () => false, context: () => ports.context() }, pinned: Boolean(pin) };
-        editTools ??= import("../agent-tools-edit").then(({ createAgentEditTools }) => createAgentEditTools({
+        editTools ??= Promise.all([import("../agent-tools-edit"), import("../agent-part")]).then(([{ createAgentEditTools }, { tellAgent }]) => createAgentEditTools({
           workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, ports, records,
           run,
+          tell: async (request, result) => tellAgent(await ports.context().catch(() => undefined), { repoId: repo.id, branch: repo.branch }, request.grantId, result, request),
         }));
         // Pinned, its branch shown again (a new load of it) is no move either; on show its revision must
         // hold. With no pin, the stamp it arrived with must hold.
@@ -193,8 +194,13 @@ export function createAgentMenu(options: {
       read: async (read, signal) => {
         const ports = options.tools, stamp = ports?.stamp();
         if (!ports || !stamp) return { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
-        const { createAgentReadTools } = await import("../agent-tools-read");
-        const result = await createAgentReadTools({ ...ports, stamp: () => stamp }).run(read.tool, read.args, signal);
+        const [{ createAgentReadTools }, { rememberRead, tellAgent }] = await Promise.all([import("../agent-tools-read"), import("../agent-part")]);
+        let result = await createAgentReadTools({ ...ports, stamp: () => stamp }).run(read.tool, read.args, signal);
+        // What it read is what its next edit is read against; what changed since its last call comes with it (ticket 10).
+        if (result.ok) {
+          rememberRead(result.value);
+          result = tellAgent(await ports.context().catch(() => undefined), { repoId: repo.id, branch: repo.branch }, read.grantId, result);
+        }
         // The requests agents wait on live here now: count this browser's, not the hub's.
         if (read.tool === "get_site" && result.ok && result.value && typeof result.value === "object" && !Array.isArray(result.value)) {
           const kept = await records.conversations(workspace).catch(() => []);

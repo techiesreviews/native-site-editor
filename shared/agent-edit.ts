@@ -1,6 +1,7 @@
 import { AGENT_TEXT_LIMIT, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, parseOutlineId, textBytes,
   type AgentCommandArgs, type AgentOperation } from "./agent";
 import { applyReplacements } from "./agent-replacements";
+import { minimalTextEdit } from "./native-project";
 import { HttpError } from "./http-error";
 import { SiteFiles } from "./site-files";
 import { fileInTheWay, foldersAbove, makeComponentProblem, pageAddressProblem, writablePathProblem } from "./site-rules";
@@ -86,6 +87,79 @@ function checkHash(expected: string | undefined, actual: string, what: string) {
   if (expected !== actual) throw new HttpError(409, changedSinceRead(what));
 }
 
+/** The longest part a clash sends back; past it the agent reads the file. */
+export const PART_LIMIT = 4000;
+/** The part of a file an edit targets, as it is now: whole lines (1-based), with the file's hash now. */
+export interface AgentPart { path: string; hash: string; lines: { start: number; end: number }; text: string; truncated?: true }
+/**
+ * A true clash (ticket 10): the words or section an edit changes were changed meanwhile, by the user or
+ * another agent. Its refusal carries the part as it is now (none when it is gone), so the agent retries at once.
+ */
+export class PartClash extends HttpError {
+  constructor(message: string, readonly part?: AgentPart) { super(409, message); }
+}
+
+/** `[start, end)` of `text` widened to whole lines, as a part of `path`. */
+export function partOf(path: string, hash: string, text: string, start: number, end: number): AgentPart {
+  const from = text.lastIndexOf("\n", start - 1) + 1, next = text.indexOf("\n", Math.max(from, end - 1));
+  const to = next < 0 ? text.length : next;
+  const lineAt = (at: number) => text.slice(0, at).split("\n").length;
+  const whole = text.slice(from, to), cut = whole.length > PART_LIMIT;
+  return { path, hash, lines: { start: lineAt(from), end: lineAt(to) }, text: cut ? whole.slice(0, PART_LIMIT) : whole, ...(cut ? { truncated: true as const } : {}) };
+}
+
+/**
+ * Where `[start, end)` of `read` (a file's text as an agent read it) is in `now`, its text now: between the
+ * nearest lines around it that are still there once each; failing those, where the one stretch that
+ * changed between the two puts it. Undefined when that stretch does not meet it.
+ */
+export function spanNow(read: string, start: number, end: number, now: string): { start: number; end: number } | undefined {
+  const lines = (text: string) => { let at = 0; return text.split("\n").map(line => { const item = { line, at }; at += line.length + 1; return item; }); };
+  const was = lines(read), is = lines(now);
+  const once = new Map<string, number | null>();
+  for (const { line, at } of is) if (line.trim()) once.set(line, once.has(line) ? null : at);
+  const lineAt = (offset: number) => { let index = 0; while (index + 1 < was.length && was[index + 1].at <= offset) index++; return index; };
+  const first = lineAt(start), last = lineAt(Math.max(start, end - 1));
+  let from: number | undefined, to: number | undefined;
+  for (let index = first - 1; index >= 0 && from === undefined; index--) {
+    const at = once.get(was[index].line);
+    if (typeof at === "number") from = at + was[index].line.length + 1;
+  }
+  if (from === undefined && was.slice(0, first).every(item => !item.line.trim())) from = 0;
+  for (let index = last + 1; index < was.length && to === undefined; index++) {
+    const at = once.get(was[index].line);
+    if (typeof at === "number") to = at;
+  }
+  if (to === undefined && was.slice(last + 1).every(item => !item.line.trim())) to = now.length;
+  if (from !== undefined && to !== undefined && from <= to) return { start: from, end: Math.max(from, to - (to > from && now[to - 1] === "\n" ? 1 : 0)) };
+  const change = minimalTextEdit(read, now);
+  if (!change || end < change.start || start > change.end) return undefined;
+  return { start: Math.min(start, change.start), end: Math.max(end, change.end) + change.text.length - (change.end - change.start) };
+}
+
+/**
+ * The clash of a file edit whose replacements no longer apply to `file`, read by the agent as `read` (its
+ * text at the agent's hash, when the tab still has it): the part the first failing replacement changes, now.
+ */
+function editClash(file: { path: string; hash: string; content: string }, edits: { oldText: string; newText: string; all?: boolean }[], read: string | undefined): never {
+  const failing = edits.findIndex((_, index) => !applyReplacements(file.content, edits.slice(0, index + 1)).ok);
+  const { oldText } = edits[Math.max(0, failing)];
+  const which = edits.length > 1 ? `The words replacement ${failing + 1} changes` : "The words this edit changes";
+  const at = read?.indexOf(oldText) ?? -1;
+  let span = at >= 0 ? spanNow(read!, at, at + oldText.length, file.content) : undefined;
+  if (!span) {
+    // No read to go by: where the replaced words' first and last lines still are, once each.
+    const ends = oldText.split("\n").filter(line => line.trim());
+    const find = (line: string | undefined) => line !== undefined && file.content.indexOf(line) >= 0 && file.content.indexOf(line) === file.content.lastIndexOf(line) ? file.content.indexOf(line) : -1;
+    const start = find(ends[0]), last = ends.at(-1)!, end = find(last);
+    if (start >= 0 || end >= 0) span = { start: start >= 0 ? start : end, end: end >= start ? end + last.length : start + ends[0].length };
+  }
+  const part = span && partOf(file.path, file.hash, file.content, span.start, span.end);
+  throw new PartClash(part
+    ? `${which} in ${file.path} were changed meanwhile, by the user or another agent. part has them as they are now: send the edit again with oldText from part.text and expectedHash part.hash.`
+    : `${which} in ${file.path} are no longer there: the user or another agent changed them meanwhile. Read the file again.`, part);
+}
+
 /** What the tab's preparation reads of the shared context: the pages, and the page shown. */
 export type EditContext = Pick<EditorContext, "pages"> & { site?: Pick<NonNullable<EditorContext["site"]>, "openRoute"> | null };
 
@@ -93,7 +167,7 @@ export type EditContext = Pick<EditorContext, "pages"> & { site?: Pick<NonNullab
  * The command an agent's edit becomes, in the receiving tab: its page found by name, a file edit's text
  * from what it was read as. The edit's shape was the Worker's to check; the live page is the command's.
  */
-export async function prepareAgentEdit(request: AgentEdit, context: EditContext, files: SiteFiles): Promise<PreparedEdit> {
+export async function prepareAgentEdit(request: AgentEdit, context: EditContext, files: SiteFiles, read?: (hash: string) => string | undefined): Promise<PreparedEdit> {
   const refuse = (message: string): never => { throw new HttpError(400, message); };
   const unchanged = (value: { state: "unchanged"; message: string }): PreparedEdit => ({ unchanged: value });
   // The command an edit becomes is its table row's (edit_file: write_file).
@@ -103,9 +177,10 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditContext,
       const { path, expectedHash, edits } = request.args;
       const file = await files.read(path);
       if (!file) return refuse(`${path} does not exist. Use write_file to create it.`);
-      checkHash(expectedHash, file.hash, path);
+      // Its exact words are its part (ticket 10): it lands on the text now while they are there, whatever
+      // else changed since its read; once they changed meanwhile, the clash carries them as they are now.
       const edited = applyReplacements(file.content, edits);
-      if (!edited.ok) return refuse(edited.error);
+      if (!edited.ok) return file.hash === expectedHash ? refuse(edited.error) : editClash(file, edits, read?.(expectedHash));
       if (edited.text === file.content) return unchanged({ state: "unchanged", message: "The edits change nothing." });
       const big = contentProblem(edited.text);
       if (big) return refuse(big);
