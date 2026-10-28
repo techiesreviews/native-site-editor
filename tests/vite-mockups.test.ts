@@ -44,14 +44,19 @@ test("an image counts as used when a mock-up in its folder points at it by file 
 <script>image.src = "i.avif";</script><img src="images/j.png"><img src="../other/k.png"><a href="#l">
 <IMG SRC="m.png"><img data-src="n.png"><div style='background: url(" o o.png ")'></div>
 <img src="p&amp;q.png"><img src="r&#38;s.png"><img src="t&#x26;u.png"><img src="v&bogus;w.png">
-<!-- <img src="x-commented-out.png"> -->`;
-  assert.deepEqual([...referencedFiles(html)].sort(),
-    ["a.png", "b b.png", "c.png", "d.webp", "e.webp", "f.svg", "g.jpg", "h.gif", "i.avif", "m.png", "n.png", "o o.png", "p&q.png", "r&s.png", "t&u.png", "v&bogus;w.png"]);
+<!-- <img src="x-commented-out.png"> --><video poster="y.png"></video><script>img.src = \`z.png\`; const open = "<!--";</script>
+<link rel="preload" as="image" imagesrcset="aa.webp 1x, ab.webp 2x"><img src="ac.png"><!-- closes the script's "<!--" only if it is read as a comment -->
+<div style='background: image-set("ad.png" 1x)'></div>`;
+  assert.deepEqual([...referencedFiles(html)].sort(), ["a.png", "aa.webp", "ab.webp", "ac.png", "b b.png", "c.png", "d.webp", "e.webp", "f.svg", "g.jpg",
+    "h.gif", "i.avif", "m.png", "n.png", "o o.png", "p&q.png", "r&s.png", "t&u.png", "v&bogus;w.png", "y.png", "z.png"]);
 });
 
 test("a build copies only the images a mock-up in the same map uses; notes naming an image don't count", async () => {
   const root = repo();
   writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
+  // File names match by exact case, like Cloudflare's asset paths: `Photo.PNG` would 404 there anyway.
+  writeFileSync(join(root, "docs/wayfinder/agents/prototypes/15-case.html"), '<img src="Photo.PNG" alt="">');
+  writeFileSync(join(root, "docs/wayfinder/agents/prototypes/photo.png"), "png");
   const outDir = join(root, "dist");
   await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(root)], build: { outDir } });
   const images = readdirSync(join(outDir, "mockups"), { recursive: true }).map(String).filter(file => file.endsWith(".png")).sort();
