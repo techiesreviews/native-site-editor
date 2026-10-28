@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { textHash } from "../shared/agent";
-import { PART_LIMIT, PartClash, partOf, prepareAgentEdit, spanNow, type AgentEdit, type AgentEditArgsMap } from "../shared/agent-edit";
+import { PART_LIMIT, PartClash, partOf, prepareAgentEdit, spanNow, wordsMoved, type AgentEdit, type AgentEditArgsMap } from "../shared/agent-edit";
 import { CATCH_UP_BYTES, CATCH_UP_FILES, catchUpOf, type AgentMark } from "../shared/agent-read";
 import { SiteFiles, type SiteFileReader } from "../shared/site-files";
 import type { EditorContext } from "../shared/types";
-import { elementsNow, readText, rememberRead, rememberText, tellAgent } from "../src/agent-part";
+import { elementsNow, noteOwnChange, readText, rememberRead, rememberText, tellAgent } from "../src/agent-part";
 import { installOutlineDocument } from "./support/outline-document";
 import { files, repo, siteContext } from "./mcp-harness";
 
@@ -147,8 +147,8 @@ test("every reply to an agent carries what changed since its last call in the wo
   context.drafts.push({ path: "index.html", baseSha: "1".repeat(40), updatedAt: 3, hash });
   texts.set(hash, home);
   const edited = { ok: true as const, value: { state: "applied", result: { hash } } };
-  const request: AgentEdit = { ...edit({ path: "index.html", expectedHash: "x", edits: [] }), grantId: "agent-b" };
-  assert.deepEqual(tellAgent(shared(), workspace, "agent-b", edited, request), edited);
+  noteOwnChange(workspace, "agent-b", new Map([["index.html", hash]]));
+  assert.deepEqual(tellAgent(shared(), workspace, "agent-b", edited), edited);
   const told = tellAgent(shared(), workspace, "agent-a", reply);
   assert.ok(told.ok);
   assert.partialDeepStrictEqual(told.value, { state: "applied", changesSinceLastRead: { files: [{ path: "index.html", change: "changed", hash }] } });
@@ -180,21 +180,53 @@ test("a reply that is no answer keeps the agent's mark: its next reply still tel
   assert.partialDeepStrictEqual(told.value, { changesSinceLastRead: { files: [{ path: "index.html", change: "changed", hash: "h-other" }] } });
 });
 
-test("an agent's applied edit of a file another changed since its read still tells it that file; one on its own read does not", async () => {
+test("an agent's own change is not told back on whichever reply comes next; changed again since, or landed on another text than it read, it is", async () => {
   const context: EditorContext = await siteContext(), texts = new Map<string, string>();
   const shared = () => ({ context: structuredClone(context), texts });
   const workspace = { repoId: repo.id, branch: "main" }, reply = { ok: true as const, value: { state: "applied" } };
-  tellAgent(shared(), workspace, "agent-own-a", reply);
-  tellAgent(shared(), workspace, "agent-own-b", reply);
-  // A changed index.html; B's edit, read before that, landed on A's text (src/agent-tools-edit.ts `landedElsewhere`).
-  context.drafts.push({ path: "index.html", baseSha: "1".repeat(40), updatedAt: 5, hash: "h-merged" });
-  const request: AgentEdit = { ...edit({ path: "index.html", expectedHash: "h-read", edits: [] }), grantId: "agent-own-b" };
-  const applied = { ok: true as const, value: { state: "applied", result: { path: "index.html", hash: "h-merged" } } };
-  const told = tellAgent(shared(), workspace, "agent-own-b", applied, request, "index.html");
+  const draft = (hash: string) => {
+    context.drafts = context.drafts.filter(item => item.path !== "index.html");
+    context.drafts.push({ path: "index.html", baseSha: "1".repeat(40), updatedAt: Date.now(), hash });
+  };
+  tellAgent(shared(), workspace, "agent-own", reply);
+  // A waited edit landed after its "waiting" reply: the status lookup that says applied leaves it out.
+  draft("h-mine");
+  noteOwnChange(workspace, "agent-own", new Map([["index.html", "h-mine"]]));
+  const status = { ok: true as const, value: { requestId: "waited", state: "applied", result: { path: "index.html" } } };
+  assert.deepEqual(tellAgent(shared(), workspace, "agent-own", status), status);
+  // Its change, then the user's on top before its next call: told.
+  noteOwnChange(workspace, "agent-own", new Map([["index.html", "h-mine-2"]]));
+  draft("h-user");
+  assert.ok(JSON.stringify(tellAgent(shared(), workspace, "agent-own", reply)).includes("h-user"));
+  // Landed on another text than it read (src/agent-tools-edit.ts ownFiles leaves its file out): told.
+  draft("h-merged");
+  noteOwnChange(workspace, "agent-own", new Map());
+  const told = tellAgent(shared(), workspace, "agent-own", reply);
   assert.ok(told.ok);
   assert.partialDeepStrictEqual(told.value, { changesSinceLastRead: { files: [{ path: "index.html", change: "changed", hash: "h-merged" }] } });
-  // Landed on the text it read: its own change, not told back.
-  context.drafts.find(draft => draft.path === "index.html")!.hash = "h-mine";
-  assert.deepEqual(tellAgent(shared(), workspace, "agent-own-b", { ok: true, value: { state: "applied", result: { path: "index.html", hash: "h-mine" } } }, request),
-    { ok: true, value: { state: "applied", result: { path: "index.html", hash: "h-mine" } } });
+});
+
+test("an edit read in another text clashes when its words are no longer where that read had them, `all` included", async () => {
+  const twice = read.replace("<h1>Welcome</h1>", "<h1>Welcome</h1>\n    <p>Welcome</p>");
+  const args = { path: "index.html", expectedHash: await textHash(read), edits: [{ oldText: "Welcome", newText: "Hi", all: true }] };
+  // Another added one more copy since the read: the copy it never read is not replaced.
+  const { context, files: site } = await withHome(twice);
+  const clash = await prepareAgentEdit(edit(args), context, site, hash => hash === args.expectedHash ? read : undefined).then(() => assert.fail("must clash"), (error: unknown) => error);
+  assert.ok(clash instanceof PartClash);
+  // Changed in place and written again elsewhere: as many, but not where it read them.
+  const elsewhere = read.replace("<h1>Welcome</h1>", "<h1>Hello</h1>").replace(">Fast<", ">Welcome<");
+  assert.equal(wordsMoved(read, elsewhere, [{ oldText: "Welcome" }]), 0);
+  // Still where it read them, beside other changes: none moved, and it lands.
+  const beside = read.replace(">Fast<", ">Quick<");
+  assert.equal(wordsMoved(read, beside, [{ oldText: "Welcome" }]), -1);
+  const ok = await withHome(beside);
+  const prepared = await prepareAgentEdit(edit(args), ok.context, ok.files, hash => hash === args.expectedHash ? read : undefined);
+  assert.ok("operation" in prepared && prepared.input.content === beside.replace("Welcome", "Hi"));
+});
+
+test("a revision change and a discarded draft at once: every draft gone is told as saved", () => {
+  const before: AgentMark = { commit: "c1", files: { "kept.html": { hash: "k", at: 1 }, "dropped.html": { hash: "d", at: 1 } } };
+  const told = catchUpOf(before, { commit: "c2", files: {} })!;
+  assert.deepEqual(told.files, [{ path: "kept.html", change: "saved" }, { path: "dropped.html", change: "saved" }]);
+  assert.equal(told.saved, "c2");
 });

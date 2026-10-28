@@ -4,7 +4,7 @@ import { PartClash, prepareAgentEdit, type AgentEdit, type AgentStatus } from ".
 import { agentToolsOn } from "../shared/agent-tool-table";
 import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
-import { elementsNow, readText, rememberText } from "./agent-part";
+import { elementsNow, noteOwnChange, readText, rememberText } from "./agent-part";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
 import { agentCommandFiles, agentCommandSignals, createAgentTools, siteCommandPins } from "./agent-tools";
 import { agentFileReader, type AgentReadPorts } from "./agent-tools-read";
@@ -16,11 +16,8 @@ interface Options {
   ports: AgentReadPorts;
   records: AgentRecords;
   run: (command: AgentCommand) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
-  /**
-   * The reply with what changed since the agent's last call added (ticket 10; src/agent-part.ts `tellAgent`);
-   * `changed`: the file an applied edit landed on in another text than the agent read, told all the same.
-   */
-  tell?: (request: AgentEdit | AgentStatus, result: AgentReadResult, changed?: string) => Promise<AgentReadResult>;
+  /** The reply with what changed since the agent's last call added (ticket 10; src/agent-part.ts `tellAgent`). */
+  tell?: (request: AgentEdit | AgentStatus, result: AgentReadResult) => Promise<AgentReadResult>;
 }
 type Request = AgentEdit | AgentStatus;
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JsonValue;
@@ -49,13 +46,27 @@ function holdWorkspace(ports: AgentReadPorts): Held {
  * `answered`: settles with "waiting" when it starts to wait, never otherwise.
  */
 const flights = new Map<string, { identity: string; authorizationId: string; promise: Promise<AgentReadResult>; answered: Promise<AgentReadResult>; waiting: boolean; waited: boolean }>();
-/** An applied edit's file, by workspace and id, when it landed on another text than its agent read (ticket 10). */
-const landedElsewhere = new Map<string, string>();
 /** A waiting change's record whose tab is gone: it never landed (AgentRecords.wait). */
 const WAIT_LOST = "The editor tab was reloaded or closed while this change waited for the user. Nothing was changed; read the site again and send the change anew.";
 
 /** The page commands whose elements are found again in the page as it is now (ticket 10). */
 const PAGE_COMMANDS = new Set<string>(["make_component", "add_section", "move_section", "remove_section"]);
+
+/**
+ * The files a landed change made its agent's own, with the hash each was left with when known (ticket 10).
+ * Its file is left out when it landed on another text than the agent read: what others changed there is
+ * still the agent's to be told.
+ */
+function ownFiles(request: AgentEdit | AgentStatus, command: AgentCommand, outcome: { result?: AgentCommand["result"] } | void) {
+  const files = new Map<string, string | undefined>(), result = outcome?.result ?? {};
+  const read = request.operation === "edit" ? (request.args as { expectedHash?: unknown }).expectedHash : undefined;
+  const elsewhere = typeof read === "string" && command.expectedHash !== read;
+  const kept = typeof result.hash === "string" && !["move_file", "delete_file"].includes(command.operation) ? result.hash : undefined;
+  for (const path of [command.args?.to, result.path, result.file, ...typeof result.files === "string" ? result.files.split(", ") : []])
+    if (typeof path === "string" && path && path !== command.path) files.set(path, undefined);
+  if (!elsewhere) files.set(command.path, kept);
+  return files;
+}
 
 /** Receipts precede preparation: replacements must never run twice against their own output. */
 export function createAgentEditTools(options: Options) {
@@ -233,17 +244,18 @@ export function createAgentEditTools(options: Options) {
             if (attempt > 2 || !(error instanceof Error && /changed in the editor/.test(error.message) && /Nothing was changed/.test(error.message))) throw error;
             ran = false;
             check();
+            // The proof an unchanged receipt is kept against: taken before the preparation it rests on.
+            const proof = await records.workspace(workspace);
+            check();
             const again = (await prepareNow()).prepared;
-            if ("unchanged" in again) return record(json(again.unchanged));
+            if ("unchanged" in again) return record(json(again.unchanged), proof.revision);
             const { content = "", expectedHash, args } = again.input;
             if (expectedHash === command.expectedHash && content === command.content) throw error;
             Object.assign(command, { content, expectedHash, args });
           }
         }
         check();
-        // Landed on a text other than the one the agent read: what others changed there is still its to be told.
-        const read = (request.args as { expectedHash?: unknown }).expectedHash;
-        if (typeof read === "string" && command.expectedHash !== read) landedElsewhere.set(key, command.path);
+        if (operation !== "open_page" && operation !== "inspect_preview") noteOwnChange(workspace, request.grantId, ownFiles(request, command, outcome));
         // The text it left is the one an agent's next edit of the file is read against (its reply's hash).
         const landed = ports.source?.(command.path), hash = outcome?.result?.hash;
         if (typeof hash === "string" && landed !== undefined && await textHash(landed) === hash) rememberText(hash, landed);
@@ -303,9 +315,7 @@ export function createAgentEditTools(options: Options) {
     /** `held`: the workspace as the edit arrived, when the caller waited before this (src/components/agent-menu.ts). */
     async run(request: Request, fence: number, current: () => boolean, signal?: AbortSignal, held?: Held) {
       const result = await registry.run(request.operation === "status" ? "get_command_status" : request.tool, { request, fence, current, signal, held });
-      const key = JSON.stringify([workspaceKey(workspace), request.id]), changed = landedElsewhere.get(key);
-      landedElsewhere.delete(key);
-      return options.tell ? options.tell(request, result, changed) : result;
+      return options.tell ? options.tell(request, result) : result;
     },
   };
 }
