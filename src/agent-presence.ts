@@ -6,7 +6,7 @@
 // connection and the name it works under) keeps one colour, the next of AGENT_COLOURS in order of
 // arrival. Changes that overlap each keep their own entry: an agent's latest one still running shows.
 // A workspace switch (`refresh`, at each load) clears what no longer holds, so nothing is drawn on a
-// same-named page of another workspace.
+// same-named page of another workspace. An agent the user stopped (ticket am-12) shows nowhere again.
 
 import { outlineId, parseOutlineId, type AgentWho } from "../shared/agent";
 import type { AgentAtWork } from "../shared/agent-read";
@@ -17,6 +17,9 @@ import { readSource, type SourceNode, type SourceTree } from "./page-builder/sou
  * alone), named `name`, in colour `colour` (an index into AGENT_COLOURS), its chip orange while `asking`.
  */
 export interface AgentMark { key: string; name: string; colour: number; path: string; node?: number[]; asking: boolean }
+/** An agent the MCP menu lists as working now (ticket am-12): who, as a mark names it, and when it leaves the list
+ * unless it works again (none while it is at work or asking). */
+export interface WorkingAgent { key: string; who: AgentWho; name: string; colour: number; asking: boolean; until?: number }
 /** A request as its question shows: its site and branch, the element it is about, and who asked when it waits for the user's answer. */
 export interface PresenceQuestion { repoId: number; branch?: string; state: string; element: { file: string; id: string }; reply?: { by?: AgentWho } }
 
@@ -42,6 +45,8 @@ export interface AgentPresencePorts {
   workspace(): { repoId: number; branch: string } | undefined;
   /** Draws every agent's presence in every view: none clears them. */
   paint(marks: AgentMark[]): void;
+  /** Whether the user stopped `who`, and recording that they did (src/agent-stops.ts); none: no one is. */
+  stops?: { has(who: AgentWho): boolean; add(who: AgentWho): void };
   now?(): number;
 }
 
@@ -65,6 +70,10 @@ export function createAgentPresence(ports: AgentPresencePorts) {
   const latest = new Map<string, { who: AgentWho; path: string; node?: number[]; time: number; at: Hold }>();
   const now = () => ports.now?.() ?? Date.now();
   const keyOf = (who: AgentWho) => JSON.stringify([who.grant, who.name]);
+  const stopped = (who: AgentWho) => ports.stops?.has(who) ?? false;
+  // The MCP menu's list, told each time it may have changed.
+  const listeners = new Set<() => void>();
+  const tell = () => { for (const listener of listeners) listener(); };
   const arrive = (who: AgentWho) => {
     const key = keyOf(who);
     if (!arrivals.has(key)) arrivals.set(key, arrivals.size);
@@ -80,9 +89,9 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     const shown = new Map<string, AgentMark>();
     const mark = (who: AgentWho, path: string, node: number[] | undefined, asking: boolean): AgentMark =>
       ({ key: keyOf(who), name: who.name || UNNAMED_AGENT, colour: arrivals.get(keyOf(who))! % AGENT_COLOURS.length, path, ...(node ? { node: [...node] } : {}), asking });
-    for (const entry of running) if (entry.at.holds()) shown.set(keyOf(entry.who), mark(entry.who, entry.path, entry.node, false));
+    for (const entry of running) if (entry.at.holds() && !stopped(entry.who)) shown.set(keyOf(entry.who), mark(entry.who, entry.path, entry.node, false));
     for (const question of asked) {
-      if (!question.at.holds()) continue;
+      if (!question.at.holds() || stopped(question.who)) continue;
       const key = keyOf(question.who), working = shown.get(key);
       if (working) { working.asking = true; continue; }
       if (!isPage(question.path)) continue;
@@ -96,9 +105,32 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     const next = marks();
     // Nothing shown and nothing to show: the views are left alone (boot, loads with no agent at work).
     const key = next.length ? JSON.stringify(next) : "";
-    if (key === painted && !(again && key)) return;
+    if (key === painted && !(again && key)) return tell();
     painted = key;
     ports.paint(next);
+    tell();
+  }
+  /** Every agent at work, asking, or with a change in the last AT_WORK_MS in the workspace shown, in order of arrival:
+   * where each is, whether it asks, and until when it stays listed (none while at work or asking). */
+  function working() {
+    const time = now(), told = new Map<string, { who: AgentWho; file: string; node?: number[]; asking?: boolean; until?: number }>(), placed = new Set<string>();
+    for (const [key, last] of latest) if (last.at.holds() && time - last.time <= AT_WORK_MS && !stopped(last.who))
+      told.set(key, { who: last.who, file: last.path, ...(last.node ? { node: last.node } : {}), until: last.time + AT_WORK_MS });
+    for (const entry of running) if (entry.at.holds() && !stopped(entry.who)) {
+      placed.add(keyOf(entry.who));
+      told.set(keyOf(entry.who), { who: entry.who, file: entry.path, ...(entry.node ? { node: entry.node } : {}) });
+    }
+    for (const question of asked) if (question.at.holds() && !stopped(question.who)) {
+      // As marks() draws it: at work on a change meanwhile, told there, asking; else on its first question about
+      // a page, on that question's section (an ended change gives way). Until one about a page comes, the latest
+      // question about another file is told, its file alone.
+      const key = keyOf(question.who), there = placed.has(key) ? told.get(key) : undefined;
+      if (there) { there.asking = true; continue; }
+      const node = questionAt(question);
+      told.set(key, { who: question.who, file: question.path, ...(node ? { node } : {}), asking: true });
+      if (isPage(question.path)) placed.add(key);
+    }
+    return [...told.entries()].sort(([a], [b]) => (arrivals.get(a) ?? 0) - (arrivals.get(b) ?? 0));
   }
   return {
     /**
@@ -107,11 +139,13 @@ export function createAgentPresence(ports: AgentPresencePorts) {
      * stylesheet or any other file draws nothing (a template change is every instance's), get_site lists it.
      */
     show(path: string, find: (source: string) => number[] | undefined, who: AgentWho = { grant: "", name: "" }): () => void {
+      // Stopped: its calls are refused before they run (src/components/agent-menu.ts); one already under way draws nothing.
+      if (stopped(who)) return () => {};
       arrive(who);
       const page = isPage(path), source = page ? ports.source(path) : undefined, node = source === undefined ? undefined : find(source);
       const at = ports.begin(), where = ports.workspace();
       latest.set(keyOf(who), { who, path, ...(node ? { node: [...node] } : {}), time: now(), at: { holds: () => Boolean(where && ports.shows(where)) } });
-      if (!page) return () => {};
+      if (!page) { tell(); return () => {}; }
       const entry = { who, path, ...(node ? { node: [...node] } : {}), at };
       running.push(entry);
       refresh();
@@ -138,25 +172,27 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     },
     /** Who works on what in the workspace shown (get_site): every agent at work, asking, or with a change in the last AT_WORK_MS. */
     atWork(): AgentAtWork[] {
-      const time = now(), told = new Map<string, AgentAtWork>(), placed = new Set<string>();
-      for (const [key, last] of latest) if (last.at.holds() && time - last.time <= AT_WORK_MS)
-        told.set(key, { name: last.who.name || UNNAMED_AGENT, file: last.path, ...(last.node ? { section: outlineId(last.node) } : {}) });
-      for (const entry of running) if (entry.at.holds()) {
-        placed.add(keyOf(entry.who));
-        told.set(keyOf(entry.who), { name: entry.who.name || UNNAMED_AGENT, file: entry.path, ...(entry.node ? { section: outlineId(entry.node) } : {}) });
-      }
-      for (const question of asked) if (question.at.holds()) {
-        // As marks() draws it: at work on a change meanwhile, told there, asking; else on its first question about
-        // a page, on that question's section (an ended change gives way). Until one about a page comes, the latest
-        // question about another file is told, its file alone.
-        const key = keyOf(question.who), there = placed.has(key) ? told.get(key) : undefined;
-        if (there) { there.asking = true; continue; }
-        const node = questionAt(question);
-        told.set(key, { name: question.who.name || UNNAMED_AGENT, file: question.path, ...(node ? { section: outlineId(node) } : {}), asking: true });
-        if (isPage(question.path)) placed.add(key);
-      }
-      return [...told.entries()].sort(([a], [b]) => (arrivals.get(a) ?? 0) - (arrivals.get(b) ?? 0)).map(([, agent]) => agent);
+      return working().map(([, agent]) => ({ name: agent.who.name || UNNAMED_AGENT, file: agent.file, ...(agent.node ? { section: outlineId(agent.node) } : {}), ...(agent.asking ? { asking: true } : {}) }));
     },
+    /** The same agents as the MCP menu lists them (ticket am-12), each in its colour. */
+    agents(): WorkingAgent[] {
+      return working().map(([key, agent]) => ({ key, who: agent.who, name: agent.who.name || UNNAMED_AGENT, colour: arrivals.get(key)! % AGENT_COLOURS.length,
+        asking: Boolean(agent.asking), ...(agent.until !== undefined ? { until: agent.until } : {}) }));
+    },
+    /** Stops `who` (the MCP menu's Stop): its outline, chip and dots go at once, here and, through the record, in this browser's other tabs. */
+    stop(who: AgentWho) {
+      ports.stops?.add(who);
+      refresh();
+    },
+    /** `listener` hears each time the agents listed may have changed; the returned call stops it. */
+    listen(listener: () => void) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+    /** Whether the user stopped `who`: its calls are refused (src/components/agent-menu.ts). */
+    stopped,
+    /** Another tab stopped an agent: drawn again without it. */
+    stopsChanged: () => refresh(),
     /** Draws again for the workspace shown now, after a load began: what still holds (a question on this branch) is painted again. */
     loaded: () => refresh(true),
   };

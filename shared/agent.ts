@@ -253,6 +253,17 @@ export const agentNamed = (value: unknown): { agent?: string } => { const name =
 export function agentName(value: unknown): string {
   return typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, AGENT_NAME_LIMIT).trim() : "";
 }
+/** Who sent `command`: its connection and the name the relay brought with it. */
+export const agentWho = (command: { grantId?: unknown; agent?: unknown }): AgentWho => ({ grant: typeof command.grantId === "string" ? command.grantId : "", name: agentName(command.agent) });
+/** What a call of an agent the user stopped (ticket am-12) gets back: nothing ran. */
+export const AGENT_STOPPED = "The editor's user stopped you. Nothing was read or changed; end your work on this site and say so to whoever started you.";
+
+/**
+ * The coding agents the helper may start for pins (ticket am-12, "Pins go to"; the helper is ticket
+ * am-16), the first the default (Lex, 2026-10-25). Each site remembers its choice in the browser.
+ */
+export const PIN_AGENTS = ["Claude Code", "Codex", "Gemini CLI", "OpenCode"] as const;
+export type PinAgent = (typeof PIN_AGENTS)[number];
 
 /**
  * The most text a request (and each answer) holds, the source of its

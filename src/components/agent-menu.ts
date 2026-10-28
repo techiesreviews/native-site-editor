@@ -3,7 +3,7 @@ import { recordFailure, recoveryHolds } from "../agent-recovery";
 import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
-import { REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, type AgentCommand, type AgentElement, type AgentRequest } from "../../shared/agent";
+import { AGENT_STOPPED, PIN_AGENTS, REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, agentWho, type AgentCommand, type AgentElement, type AgentRequest, type PinAgent } from "../../shared/agent";
 import { answerRequest, createRequestTools } from "../agent-watch";
 import { workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
 import { AgentRecordsError, agentStorageStatus, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords } from "../agent-records";
@@ -15,6 +15,9 @@ import { agentHistoryKey } from "../controllers/agent-controller";
 import { resumeAgents, revokeUnused, serialReads, siteFull, turnOnAgents } from "../agent-resume";
 import { mountFlyout } from "./flyout";
 import { githubScope, same, sameBranch } from "../workspace-session";
+import type { createAgentPresence } from "../agent-presence";
+import { options as selectOptions } from "../ui/select-options";
+import "./agent-dots.css";
 import "./agent-menu.css";
 
 // Remote agents are opt-in per site, remembered in this browser until turned off (a reload or
@@ -31,6 +34,15 @@ const agentsOnKey = (workspace: AgentWorkspace) => `native-site-editor:agents-on
 const agentsOn = (workspace: AgentWorkspace) => {
   try { return localStorage.getItem(agentsOnKey(workspace)) !== null; } catch { return false; }
 };
+/** "Pins go to" (ticket am-12): the agent the helper starts for this site's pins, remembered per site in this
+ * browser; Claude Code until the user picks another (the helper, ticket am-16, reads it). */
+const pinAgentKey = (workspace: AgentWorkspace) => `native-site-editor:pins-go-to:${workspaceKey(workspace)}`;
+export function pinAgent(workspace: AgentWorkspace): PinAgent {
+  try {
+    const kept = localStorage.getItem(pinAgentKey(workspace));
+    return PIN_AGENTS.find(name => name === kept) ?? PIN_AGENTS[0];
+  } catch { return PIN_AGENTS[0]; }
+}
 /** Startup mounts the menu while a workspace keeps requests or has agents on (src/controllers/agent-controller.ts). */
 function markStartup(workspace: AgentWorkspace, needed: boolean) {
   try {
@@ -91,6 +103,8 @@ export function createAgentMenu(options: {
   onQuestions?: (count: number) => void;
   /** Show a request's pin with its card open (closing the menus). */
   onShowRequest?: (id: string) => void;
+  /** The agents working now, which the open menu lists (dot, name, Stop), and the ones the user stopped, whose calls are refused (ticket am-12). */
+  agents?: Pick<ReturnType<typeof createAgentPresence>, "agents" | "stop" | "stopped" | "listen">;
   /** This browser's agent records (tests inject one). */
   records?: AgentRecords;
   reload?: (snapshot: Awaited<ReturnType<AgentRecords["snapshot"]>>) => Promise<void>;
@@ -145,6 +159,7 @@ export function createAgentMenu(options: {
     if (!live(at) || transportMode !== "pending") return;
     transportMode = "socket";
     const run = async (command: AgentCommand) => {
+      if (stopped(command)) throw new Error(AGENT_STOPPED);
       const outcome = await options.onCommand(command);
       const grant = hub.grants.find(each => each.id === command.grantId);
       if (grant && !grant.usedAt && live(at)) { grant.usedAt = Date.now(); paint(); }
@@ -163,6 +178,7 @@ export function createAgentMenu(options: {
       current: scope, records, reload: snapshot => options.reload?.(snapshot) ?? Promise.resolve(),
       source: path => options.tools?.source?.(path),
       media: async (request, fence, current, deadline, seen, signal) => {
+        if (stopped(request)) return { ok: false, message: AGENT_STOPPED };
         const ports = options.tools, stamp = ports?.stamp(), source = ports?.files(), commit = source?.snapshot.commit;
         if (!ports || !stamp) return { ok: false, message: "Browser media tools are unavailable. Refresh the editor." };
         // As an edit (below): held before its tools load, a Media change finishes in its own workspace
@@ -175,6 +191,7 @@ export function createAgentMenu(options: {
         return (await mediaTools).run(request, fence, () => current() && (pin ? stamp.changed() === "scope" || shown() : stamp.holds() && shown()), deadline, seen, signal, held);
       },
       edit: async (request, fence, current, signal) => {
+        if (stopped(request)) return { ok: false, message: AGENT_STOPPED };
         const ports = options.tools, stamp = ports?.stamp();
         const source = ports?.files(), commit = source?.snapshot.commit;
         if (!ports || !stamp) return { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
@@ -192,6 +209,7 @@ export function createAgentMenu(options: {
         return (await editTools).run(request, fence, () => current() && (pin ? stamp.changed() === "scope" || shown() : stamp.holds() && shown()), signal, held);
       },
       read: async (read, signal) => {
+        if (stopped(read)) return { ok: false, message: AGENT_STOPPED };
         const ports = options.tools, stamp = ports?.stamp();
         if (!ports || !stamp) return { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
         const [{ createAgentReadTools }, { rememberRead, tellAgent }] = await Promise.all([import("../agent-tools-read"), import("../agent-part")]);
@@ -209,6 +227,7 @@ export function createAgentMenu(options: {
         return result;
       },
       requests: async (request, fence, current, deadline, signal) => {
+        if (stopped(request)) return { ok: false, message: AGENT_STOPPED };
         const tools = requestTools;
         if (!tools) return { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
         // An agent asking for requests is connected, as one sending a change is.
@@ -234,14 +253,17 @@ export function createAgentMenu(options: {
     // A start that fails leaves the transport's state on the dot; Connect to MCP tries again.
     await transport.start().catch(() => { if (live(at)) paint(); });
   }
+  /** Whether the user stopped the agent that sent `call`: it is refused before anything runs. */
+  const stopped = (call: { grantId?: unknown; agent?: unknown }) => options.agents?.stopped(agentWho(call)) ?? false;
   // Grants this tab saw before it turned off: a later approval elsewhere never turns them back on.
   const declined = new Set<string>();
 
   // One button and its dot (Lex, 2026-10-23): "Connect to MCP" makes a token and copies a prompt
   // that tells an agent how to connect, its label confirming the copy; "Wait for MCP" copies it
   // again until an agent first uses the connection; then "Disconnect MCP" revokes the
-  // repository's connections (OAuth ones included). No hints, toasts or other controls: the dot
-  // shows in-between states and problems, which return the button to Connect to MCP.
+  // repository's connections (OAuth ones included). No hints or toasts: the dot shows in-between
+  // states and problems, which return the button to Connect to MCP. The only other controls are
+  // "Pins go to" and the agents' Stop (ticket am-12, below).
   const root = node("div", "agent-menu");
   const action = button("", () => void act(), "text-button agent-menu__action");
   const actionLabel = node("span", "agent-menu__label", "Connect to MCP");
@@ -262,7 +284,20 @@ export function createAgentMenu(options: {
   const waitingOn = node("div", "agent-menu__waiting");
   waitingOn.id = "agent-waiting";
   waitingOn.setAttribute("role", "menu");
-  root.append(action, download, waitingOn);
+  // While remote agents are on (ticket am-12): "Pins go to", the agent the helper starts for pins, and the
+  // agents working now, each with its dot and a Stop that ends that agent only (Disconnect MCP ends them all).
+  const choice = node("label", "agent-menu__choice");
+  const pinsGoTo = node("select", "agent-menu__select");
+  selectOptions(pinsGoTo, PIN_AGENTS.map(name => ({ value: name, label: name })));
+  pinsGoTo.addEventListener("change", () => {
+    const workspace = scope();
+    if (!workspace) return;
+    try { localStorage.setItem(pinAgentKey(workspace), pinsGoTo.value); } catch { /* Storage blocked: the choice holds until a reload. */ }
+  });
+  choice.append(node("span", "agent-menu__choice-label", "Pins go to"), pinsGoTo);
+  const working = node("ul", "agent-menu__agents");
+  working.setAttribute("aria-label", "Agents working now");
+  root.append(choice, working, action, download, waitingOn);
   const flyout = mountFlyout({
     panel: waitingOn,
     label: "Requests",
@@ -488,6 +523,10 @@ export function createAgentMenu(options: {
     root.classList.toggle("is-asking", asked > 0);
     count.hidden = !asked;
     count.textContent = asked ? String(asked) : "";
+    const workspace = scope();
+    choice.hidden = offered === "connect" || !workspace;
+    if (workspace && !choice.hidden && document.activeElement !== pinsGoTo) pinsGoTo.value = pinAgent(workspace);
+    drawAgents(offered);
     download.hidden = !storage.problem || current === "closed";
     download.disabled = exporting;
     root.dataset.storage = storage.problem?.reason ?? "";
@@ -526,6 +565,33 @@ export function createAgentMenu(options: {
       if (!disposed) paint();
     }
   }
+  let drawnAgents = "", agentsTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The agents working now, while connected: drawn again only when they changed, and when the next one's
+   * time on the list ends. */
+  function drawAgents(offered = offer()) {
+    const agents = offered === "disconnect" ? options.agents?.agents() ?? [] : [];
+    clearTimeout(agentsTimer);
+    const until = Math.min(...agents.map(agent => agent.until ?? Infinity));
+    if (until < Infinity) agentsTimer = setTimeout(() => { if (!disposed) drawAgents(); }, Math.max(0, until - Date.now()) + 50);
+    working.hidden = !agents.length;
+    const want = JSON.stringify(agents.map(agent => [agent.key, agent.name, agent.colour, agent.asking]));
+    if (want === drawnAgents) return;
+    drawnAgents = want;
+    const focused = working.contains(document.activeElement);
+    working.replaceChildren(...agents.map(agent => {
+      const row = node("li", `agent-menu__agent${agent.asking ? " is-asking" : ""}`);
+      row.dataset.key = agent.key;
+      const dot = node("i", "agent-dots__dot agent-menu__agent-dot");
+      dot.dataset.agentColour = String(agent.colour);
+      const stop = button("Stop", () => options.agents?.stop(agent.who), "agent-menu__stop");
+      stop.setAttribute("aria-label", `Stop ${agent.name}`);
+      row.append(dot, node("span", "agent-menu__agent-name", agent.name), stop);
+      return row;
+    }));
+    // A stopped agent's row went with the focus: it moves on to the next Stop, else the action.
+    if (focused && !working.contains(document.activeElement)) (working.querySelector<HTMLElement>("button") ?? action).focus();
+  }
+  const unlisten = options.agents?.listen(() => { if (!disposed) drawAgents(); });
   // The flyout: the requests waiting for an agent or for the user, each showing its pin; an
   // agent's question shows instead of the request's text.
   function drawWaiting() {
@@ -970,6 +1036,8 @@ export function createAgentMenu(options: {
       disposed = true;
       clearTimeout(repaintTimer);
       clearTimeout(confirmTimer);
+      clearTimeout(agentsTimer);
+      unlisten?.();
       flyout.destroy();
       turnOff();
       window.removeEventListener("storage", onStorage);

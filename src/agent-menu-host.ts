@@ -34,8 +34,8 @@ export interface AgentMenuHostPorts {
   mediaPorts: { pin?(): MediaPin | undefined };
   workspace: Pick<ReturnType<typeof createWorkspaceMount>, "activeFileContext" | "repositoryMenu">;
   nativeTextIndexGate: SiteIndexGate;
-  /** An agent's question shows on its request's element; get_site tells who works on what. */
-  agentPresence: Pick<ReturnType<typeof createAgentPresence>, "questions" | "atWork">;
+  /** An agent's question shows on its request's element; get_site tells who works on what; the menu lists and stops them. */
+  agentPresence: Pick<ReturnType<typeof createAgentPresence>, "questions" | "atWork" | "agents" | "stop" | "stopped" | "listen">;
   /** Host state, read at call time. */
   readonly info: SessionInfo | undefined;
   readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "route" | "setRequests" | "showRequest"> | undefined;
@@ -102,6 +102,7 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
       context: agentContext,
       tools: agentSiteHost.tools(agentContext),
       onCommand: command => agentCommands.apply(command),
+      agents: agentPresence,
       reload: snapshot => agentCommands.reload(snapshot),
       // Ask agent shows in the edit bar while an agent is connected.
       onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
