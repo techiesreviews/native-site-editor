@@ -13,7 +13,6 @@ import type { authenticateAgent } from "./agent-context";
 import type { Env } from "./app";
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import {
-  AGENT_NAME_LIMIT,
   AGENT_TEXT_LIMIT,
   agentName,
   isOutsideMediaAddress, OUTSIDE_MEDIA_REFUSED,
@@ -154,7 +153,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   const client = agentName(listed?.client ?? grant.client);
   let caller = client;
   function register<S extends z.ZodObject>(name: McpToolName, config: { description: string; inputSchema: S }, run: ToolCallback<S>) {
-    const inputSchema = config.inputSchema.extend({ [AGENT_ARGUMENT]: z.string().max(AGENT_NAME_LIMIT * 4).optional().describe(AGENT_ARGUMENT_HINT) });
+    const inputSchema = config.inputSchema.extend({ [AGENT_ARGUMENT]: z.string().optional().describe(AGENT_ARGUMENT_HINT) });
     const named = ((input: Record<string, unknown>, extra: unknown) => {
       const { [AGENT_ARGUMENT]: given, ...args } = input;
       caller = agentName(given) || client;

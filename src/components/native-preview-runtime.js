@@ -4080,20 +4080,22 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       pair.chip.style.background = agent.chip;
       pair.chip.style.color = canvasInk(agent.chip);
       pair.chip.style.display = "block";
-      // On the outline's top-left corner, just above it, or inside it at the top of the page; after the chips there already.
+      // On the outline's top-left corner, just above it, or inside it at the top of the page; after the chips there
+      // already and clear of the edit bar, kept within the page's width: a chip that would pass its right edge starts a row below.
       var rect = rectOf(target);
-      var width = pair.chip.offsetWidth;
+      var width = pair.chip.offsetWidth, view = document.documentElement.clientWidth;
       var top = rect.top + window.scrollY >= 16 ? rect.top - 16 : rect.top;
-      var left = rect.left;
+      var start = Math.max(0, Math.min(rect.left, view - width)), left = start;
       for (var moved = true; moved;) {
         moved = false;
         for (var i = 0; i < placed.length; i++) {
           var other = placed[i];
           if (Math.abs(other.top - top) < 16 && left < other.right && other.left < left + width) { left = other.right + 2; moved = true; }
         }
+        if (canvasCovered(left, top, width, 16)) { left = canvasAvoid.right + 2; moved = true; }
+        if (left + width > view && left !== start) { left = start; top += 16; moved = true; }
       }
       placed.push({ left: left, right: left + width, top: top });
-      left = Math.max(0, Math.min(left, document.documentElement.clientWidth - width));
       pair.chip.style.left = left + window.scrollX + "px";
       pair.chip.style.top = top + window.scrollY + "px";
     });
@@ -4139,6 +4141,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       var bar = msg.rect;
       canvasAvoid = bar && ["top", "left", "bottom", "right"].every(function (key) { return typeof bar[key] === "number" && isFinite(bar[key]); }) ? bar : null;
       canvasPaintLabel();
+      drawPresence();
       return;
     }
     // A crumb of the breadcrumb, by its place in the last path sent; -1 is the page itself.

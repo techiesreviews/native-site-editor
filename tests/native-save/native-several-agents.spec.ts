@@ -4,10 +4,11 @@ import { openEditor } from "../support/scenarios";
 import { editorMounted } from "./drafts";
 
 // Ticket am-11: several agents at once. Three named agents (one MCP connection, as subagents share it)
-// at work on three sections of the page shown each draw their own outline and name chip, in the next
-// colour in order of arrival, and their dots on those sections' Page Structure rows; a fourth at work
-// on About dots About's row in Pages and files. An agent's question turns its chip orange, its outline
-// keeps its colour. get_site tells every agent who works on what. Default native-save fixture.
+// at work on the page shown, two of them on one section, each draw their own outline and name chip in the
+// next colour in order of arrival (chips on one corner side by side), and their dots on those sections'
+// Page Structure rows; a fourth at work on About dots About's row in Pages and files. A fifth agent's
+// question shows on its request's section with its chip orange, its outline keeping its colour. get_site
+// tells every agent who works on what. Default native-save fixture.
 //
 // Each agent places media, which loads its module while it runs (agent-site.ts `place_media`): the
 // module's request is held, so all four stay at work until it is let go.
@@ -86,8 +87,9 @@ test("several named agents: an outline and chip each in its own colour, row dots
         (["left", "top", "width", "height"] as const).every(side => Math.abs(section.getBoundingClientRect()[side] - rect[side]) < 1));
       const chip = chips[index], chipRect = chip.getBoundingClientRect();
       return { on: on?.className, border: getComputedStyle(box).borderTopColor, chip: chip.textContent, chipBackground: getComputedStyle(chip).backgroundColor,
-        clickable: getComputedStyle(box).pointerEvents, chipLeft: Math.round(chipRect.left - rect.left), chipAbove: Math.round(rect.top - chipRect.bottom) };
-    }).sort((a, b) => (a.on ?? "").localeCompare(b.on ?? ""));
+        clickable: getComputedStyle(box).pointerEvents, chipLeft: Math.round(chipRect.left - rect.left), chipRight: Math.round(chipRect.right - rect.left),
+        chipAbove: Math.round(rect.top - chipRect.bottom) };
+    }).sort((a, b) => (a.on ?? "").localeCompare(b.on ?? "") || a.chipLeft - b.chipLeft);
   });
   const rowDots = (node: string) => tree.locator(`[data-node="${node}"] .agent-dots__dot`);
   const dotColours = (dots: ReturnType<Page["locator"]>) => dots.evaluateAll(all => all.map(dot => getComputedStyle(dot).backgroundColor));
@@ -97,32 +99,54 @@ test("several named agents: an outline and chip each in its own colour, row dots
   const placing = await holdModule(page, PLACING);
   let released = false;
   try {
-    // They arrive one after the other: Header writer on the hero, Copy editor on the cards, Image finder on the filler.
+    // They arrive one after the other: Header writer on the hero, Copy editor and Caption writer on two cards of
+    // the cards section, Link checker on About's prose section while Home is shown. (The relay runs at most five
+    // calls of a site at once: four stay held, one at a time goes alongside.)
     place("Header writer", "index.html", "1.0.2");
     await placing.reached;
     await expect(boxes).toHaveCount(1);
     place("Copy editor", "index.html", "1.1.0");
     await expect(boxes).toHaveCount(2);
-    place("Image finder", "index.html", "1.2.1");
+    place("Caption writer", "index.html", "1.1.1");
     await expect(boxes).toHaveCount(3);
-    // A fourth works on About's prose section while Home is shown: nothing more on Home.
     place("Link checker", "about/index.html", "1.1.0");
     await expect.poll(async () => (await call("get_site", { agent: "Link checker" })).agents?.map((agent: { name: string }) => agent.name)).toContain("Link checker");
+    // Nothing more on Home.
     await expect(boxes).toHaveCount(3);
     await expect(preview.locator(".hero h1")).toHaveText("A native browser preview");
 
-    expect(await drawn()).toEqual([
-      { on: "cards", border: colours["agent-presence-2"].srgb, chip: "Copy editor", chipBackground: colours["agent-presence-2"].srgb, clickable: "none", chipLeft: 0, chipAbove: 0 },
-      { on: "filler", border: colours["agent-presence-3"].srgb, chip: "Image finder", chipBackground: colours["agent-presence-3"].srgb, clickable: "none", chipLeft: 0, chipAbove: 0 },
-      { on: "hero", border: colours["agent-presence"].srgb, chip: "Header writer", chipBackground: colours["agent-presence"].srgb, clickable: "none", chipLeft: 0, chipAbove: 0 },
+    const outlines = await drawn();
+    expect(outlines.map(({ chipLeft: _left, chipRight: _right, ...outline }) => outline)).toEqual([
+      { on: "cards", border: colours["agent-presence-2"].srgb, chip: "Copy editor", chipBackground: colours["agent-presence-2"].srgb, clickable: "none", chipAbove: 0 },
+      { on: "cards", border: colours["agent-presence-3"].srgb, chip: "Caption writer", chipBackground: colours["agent-presence-3"].srgb, clickable: "none", chipAbove: 0 },
+      { on: "hero", border: colours["agent-presence"].srgb, chip: "Header writer", chipBackground: colours["agent-presence"].srgb, clickable: "none", chipAbove: 0 },
     ]);
-    // Page Structure: each section's row wears its agent's dot, and says it is busy.
-    for (const [node, token] of [["1.0", "agent-presence"], ["1.1", "agent-presence-2"], ["1.2", "agent-presence-3"]] as const) {
-      expect(await dotColours(rowDots(node))).toEqual([colours[token].css]);
+    // Each chip on its outline's corner; two on one section stand side by side, the later one just after the first.
+    expect(outlines.map(outline => outline.chipLeft)).toEqual([0, outlines[0].chipRight + 2, 0]);
+    // Page Structure: each section's row wears its agents' dots, and says it is busy.
+    for (const [node, tokens] of [["1.0", ["agent-presence"]], ["1.1", ["agent-presence-2", "agent-presence-3"]]] as const) {
+      expect(await dotColours(rowDots(node))).toEqual(tokens.map(token => colours[token].css));
       await expect(tree.locator(`[data-node="${node}"]`)).toHaveAttribute("aria-busy", "true");
     }
+    await expect(rowDots("1.2")).toHaveCount(0);
 
-    // Lex asks about the filler's heading; Image finder takes it and asks back: its chip turns orange, its outline keeps its colour.
+    // Pages and files: About's row wears Link checker's dot (the fourth colour); Home's, the page shown, none.
+    const explorer = page.locator("#explorer");
+    await expect(explorer).toBeHidden();
+    await page.locator("#explorer-toggle").click();
+    await expect(explorer).toBeVisible();
+    await explorer.getByRole("tab", { name: "Pages" }).click();
+    const about = explorer.locator('[role="treeitem"][data-file="about/index.html"]');
+    await expect(about.locator(".agent-dots__dot")).toHaveCount(1);
+    expect(await dotColours(about.locator(".agent-dots__dot"))).toEqual([colours["agent-presence-4"].css]);
+    await expect(about).toHaveAttribute("aria-busy", "true");
+    await expect(about.locator(".agent-dots")).toHaveAttribute("title", "Link checker at work here");
+    await expect(explorer.locator('[role="treeitem"][data-file="index.html"] .agent-dots')).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(explorer).toBeHidden();
+
+    // Lex asks about the filler's heading; Image finder (the fifth agent: the first colour again) takes it and asks
+    // back. Not at work on a change, it stands on the request's section with its chip orange, its outline its own colour.
     // (Ask agent shows once an agent has waited for requests.)
     expect((await call("wait_for_requests", { waitSeconds: 0, agent: "Image finder" })).requests).toEqual([]);
     await preview.locator(".filler h2").click();
@@ -133,36 +157,27 @@ test("several named agents: an outline and chip each in its own colour, row dots
     const [request] = (await call("wait_for_requests", { waitSeconds: 0, agent: "Image finder" })).requests;
     await call("reply_to_request", { request: request.id, status: "question", message: "Wide or square?", agent: "Image finder" });
     await expect.poll(async () => (await drawn()).find(box => box.chip === "Image finder")?.chipBackground).toBe(colours["agent-question-strong"].srgb);
-    expect((await drawn()).find(box => box.chip === "Image finder")?.border).toBe(colours["agent-presence-3"].srgb);
+    expect((await drawn()).find(box => box.chip === "Image finder")).toMatchObject({ on: "filler", border: colours["agent-presence"].srgb });
     expect((await drawn()).find(box => box.chip === "Copy editor")?.chipBackground).toBe(colours["agent-presence-2"].srgb);
+    expect(await dotColours(rowDots("1.2"))).toEqual([colours["agent-presence"].css]);
 
     // Reading the site tells each agent who works on what.
     const site = await call("get_site", { agent: "Copy editor" });
     expect(site.agents).toEqual([
       { name: "Header writer", file: "index.html", section: "1.0" },
       { name: "Copy editor", file: "index.html", section: "1.1" },
-      { name: "Image finder", file: "index.html", section: "1.2", asking: true },
+      { name: "Caption writer", file: "index.html", section: "1.1" },
       { name: "Link checker", file: "about/index.html", section: "1.1" },
+      { name: "Image finder", file: "index.html", asking: true },
     ]);
-
-    // Pages and files: About's row wears Link checker's dot (the fourth colour); Home's, the page shown, none.
-    const explorer = page.locator("#explorer");
-    if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
-    await explorer.getByRole("tab", { name: "Pages" }).click();
-    const about = explorer.locator('[role="treeitem"][data-file="about/index.html"]');
-    await expect(about.locator(".agent-dots__dot")).toHaveCount(1);
-    expect(await dotColours(about.locator(".agent-dots__dot"))).toEqual([colours["agent-presence-4"].css]);
-    await expect(about).toHaveAttribute("aria-busy", "true");
-    await expect(about.locator(".agent-dots")).toHaveAttribute("title", "Link checker at work here");
-    await expect(explorer.locator('[role="treeitem"][data-file="index.html"] .agent-dots')).toHaveCount(0);
-    await page.keyboard.press("Escape");
 
     // All land: every outline and dot goes; the question still waits, so Image finder's orange chip stays on its request's section.
     placing.release();
     released = true;
     await Promise.all(placings);
-    // (A placement that lands may bring its page on show: Home is opened again.)
-    if (await preview.locator("h1").textContent() !== "A native browser preview") await preview.locator("site-header a", { hasText: "Home" }).click({ modifiers: ["ControlOrMeta"] });
+    // Link checker's placement, refused on About's paragraph (not an image), ends with About on show: Home is opened again.
+    await expect(preview.locator("h1")).toHaveText("About this project");
+    await preview.locator("site-header a", { hasText: "Home" }).click({ modifiers: ["ControlOrMeta"] });
     await expect(preview.locator(".hero h1")).toHaveText("A native browser preview");
     await expect.poll(async () => (await drawn()).map(box => [box.on, box.chip, box.chipBackground])).toEqual([["filler", "Image finder", colours["agent-question-strong"].srgb]]);
     await expect(tree.locator(".agent-dots")).toHaveCount(1);
