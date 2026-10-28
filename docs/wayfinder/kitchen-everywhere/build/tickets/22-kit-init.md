@@ -2,7 +2,7 @@
 title: kit init sets a project up
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-22
 builder: claude
 blocked_by: [20-shared-rulebook, 21-launcher-and-update]
 ---
