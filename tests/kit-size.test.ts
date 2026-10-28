@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
 import { pathToFileURL } from "node:url";
+import { kitEnv } from "./support/kit-env.ts";
 
 const script = resolve("scripts/agents/project.d/size"), kit = resolve("scripts/agents/kit");
 // Node loads this extensionless executable as ESM; a URL keeps tsx from resolving it as TS.
@@ -30,7 +31,7 @@ function fixture(t: TestContext) {
   const root = mkdtempSync(join(tmpdir(), "kit-size-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   // The fake project has no settings file naming its commands folder, so name this project's.
-  const env = { ...process.env, KIT_ROOT: root, KIT_MAIN_ROOT: root, KIT_COMMANDS_DIR: dirname(script), ASE_OWNER: "size-test", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+  const env = { ...kitEnv(), KIT_ROOT: root, KIT_MAIN_ROOT: root, KIT_COMMANDS_DIR: dirname(script), ASE_OWNER: "size-test", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
   const git = (...args: string[]) => {
     const output = spawnSync("git", args, { cwd: root, env, encoding: "utf8" });
     assert.equal(output.status, 0, output.stderr);

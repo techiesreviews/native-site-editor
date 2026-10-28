@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { baseKey, beforeShots, breakGuard, breakStale, ensureBase, hasLiveLease, isHit, lockHolder, planBase, pruneTargets, saveCache, setupLock, splitCompare, toolingFiles, toolingHash } from "../scripts/agents/shots/compare.mjs";
 import { contactHtml, type Scenario, type Shot } from "../scripts/agents/shots/core";
+import { kitEnv } from "./support/kit-env.ts";
 
 const temporary: string[] = [];
 after(async () => { for (const dir of temporary) await rm(dir, { recursive: true, force: true }); });
@@ -85,7 +86,7 @@ test("toolingHash includes listed paths and recursive files, ignores other files
 
 test("shots config validates app root and overrides only the server cwd", async () => {
   const dir = await temp();
-  const env = { ...process.env, ASE_TEST_PORT: "5299", ASE_KIT_SHOTS_REQUEST: "test" };
+  const env = { ...kitEnv(), ASE_TEST_PORT: "5299", ASE_KIT_SHOTS_REQUEST: "test" };
   delete env.ASE_KIT_SHOTS_APP_ROOT;
   const run = (override: Record<string, string> = {}) => spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e",
     "import config from './scripts/agents/shots/config.ts'; console.log(JSON.stringify(config));",
@@ -412,7 +413,7 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
   const currentSha = commit(repo);
   git(repo, "branch", "-f", "dev", currentSha);
   const log = join(dir, "events.jsonl");
-  const env = { ...process.env, KIT_ROOT: repo, KIT_MAIN_ROOT: mainRoot, ASE_NATIVE_SAVE_FIXTURE: fixtureLink, ASE_NATIVE_SAVE_FIXTURE_KIND: "actual", ASE_KIT_SHOTS_REQUEST: "inherited", ASE_KIT_SHOTS_APP_ROOT: "inherited-invalid-root", ASE_TEST_PORT: "9999", TEST_LOG: log, TEST_SHOTS_CORE: pathToFileURL(resolve("scripts/agents/shots/core.ts")).href };
+  const env = { ...kitEnv(), KIT_ROOT: repo, KIT_MAIN_ROOT: mainRoot, ASE_NATIVE_SAVE_FIXTURE: fixtureLink, ASE_NATIVE_SAVE_FIXTURE_KIND: "actual", ASE_KIT_SHOTS_REQUEST: "inherited", ASE_KIT_SHOTS_APP_ROOT: "inherited-invalid-root", ASE_TEST_PORT: "9999", TEST_LOG: log, TEST_SHOTS_CORE: pathToFileURL(resolve("scripts/agents/shots/core.ts")).href };
   const run = (args: string[], extraEnv = {}) => spawnSync(process.execPath, ["--import", "tsx", comparePath, ...args], { env: { ...env, ...extraEnv }, cwd: process.cwd(), encoding: "utf8", timeout: 30_000 });
   const args = ["editor", "--compare", "dev", "--width", "390", "--out", out];
   const first = run(args);

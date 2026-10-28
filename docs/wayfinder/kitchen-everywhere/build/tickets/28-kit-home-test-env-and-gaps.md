@@ -1,7 +1,7 @@
 ---
 title: Kit tests ignore a person's KIT_HOME, and KIT_HOME's untested paths get tests
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-28
 builder: claude
 blocked_by: [14-settings-for-other-projects]
@@ -40,3 +40,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ## Comments
 
 - Runner ke-28, 2026-10-28 (on dev 7fabb236d, before building): plain `kit unit tests/kit*.test.ts` is green (1008/1008); with `KIT_HOME=<a copy of scripts/agents>` five fail: `kit-doctor` "doctor checks all eleven conditions…" (`kit home` names the copy) and "doctor names a missing jq…" (same line, `:448`), `kit.test.ts` "kit takes an absolute commands folder…" and "kit preserves stdin and exports resolved roots…", and `kit-tests-clean` (its nested run inherits the home). Already on dev: `tests/kit-launcher.test.ts`, `tests/kit-init.test.ts`, `tests/kit-settings.test.ts` and `tests/kit.test.ts`'s nested-checkout case drop both names; `tests/kit-next.test.ts` deletes `KIT_HOME_DEFAULT` where it sets `KIT_HOME`; `tests/kit-card.test.ts` covers a home *without* `context-card.mjs` (front door fails with one line), not the working copy this ticket asks for; `tests/kit-pr.test.ts` has the outside-home `unit.sh` case but no docs-tier `tickets.mjs` one; no doctor case covers the commands folder inside the home. The `kit-pr` fake records only the script's basename, so the `tickets.mjs` path needs it to record `process.argv[1]` too. Slice 57 also edits `tests/kit-pr.test.ts` and `tests/kit-tests-clean.test.ts`.
+
+## Done (2026-10-28)
+
+- **Fixtures start clean:** `tests/support/kit-env.ts` exports `kitEnv()`, this process's environment without `KIT_HOME` and `KIT_HOME_DEFAULT`. Every kit fixture that spread `process.env` into a front door, a `kit.d` command or a kit helper now spreads `kitEnv()` (24 files); the per-test `delete env.KIT_HOME_DEFAULT` lines in `tests/kit-next.test.ts` and `tests/kit-rulebook.test.ts`, and the two names in `tests/kit.test.ts`'s delete lists, went with it. The doctor `kit home` line expects `realpathSync` of the library's folder.
+- **`kit pr` with an outside home:** a docs-tier case in `tests/kit-pr.test.ts` touches `docs/work/01-x.md` and asserts the one `tickets.mjs` call is `["check"]` run as `join(home, "tickets.mjs")`, and the PR body shows `- node <home>/tickets.mjs check: ok`. The fake records `process.argv[1]` as `script`. Tried broken: with `pr` running `scripts/agents/tickets.mjs` from the project, the case fails (actual `<work>/scripts/agents/tickets.mjs`).
+- **`kit card` through a person's `KIT_HOME`:** the copy case in `tests/kit.test.ts` checks `context-card.mjs` is in the home and `kit card` with a notes fixture exits 0 with one `RESULT: ok card N lines`. Tried broken: a copy without `context-card.mjs` fails with `RESULT: fail card script failed`.
+- **Doctor moves the commands folder:** a `tests/kit-doctor.test.ts` case makes the build's `scripts/agents` the kit, with `commands: "scripts/agents/project.d"`, no `KIT_COMMANDS_DIR` and a `project.d/marker`; the copy's fake front door checks no marker under `KIT_HOME` and the folder under `KIT_ROOT`, and the line is `✓ kit home`. Tried broken: with doctor leaving the folder in the copy, the line is `✗ kit home: … RESULT: fail marker in the copy`.
+- **Left on purpose** (`grep -n "\.\.\.process\.env" tests/kit*.test.ts`): `kit-launcher:23`, `kit-init:22`, `kit-update:21`, `kit-settings:25`, `kit-preview:111`, `kit-status:52` delete both names (or every `KIT_` name) on the next line; `kit-commit:106,136,144`, `kit-sweep:48`, `kit-doctor:214` and `kit-specs:215` run only git; `kit-shots:257` and `kit-shots-layout:12` launch Chromium; `kit-size:60` and `kit-specs:251` are inside generated child scripts, which inherit an env already cleaned.
+- No kit file changes. Feature list: no change (tests only).
+- Validation: `KIT_HOME=<copy of scripts/agents> scripts/agents/kit unit tests/kit*.test.ts` → `RESULT: ok unit 1010/1010 (33 files)`; plain `scripts/agents/kit unit tests/kit*.test.ts` → `RESULT: ok unit 1010/1010 (33 files)`; `scripts/agents/kit unit --affected` → `RESULT: ok unit 822/822 (24 files)`; `npm run check` and `npm run lint` exit 0.
