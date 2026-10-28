@@ -47,4 +47,5 @@ On PR #236 (slice 56, 2026-10-28) the first CI run failed in "Kit tests leave no
   - `kit unit --affected`: `RESULT: ok unit 15/15 (1 files)`
   - `kit doctor`: `RESULT: ok doctor 11/11 checks passed`
   - `kit status`: `RESULT: ok status all 778 tickets, 609 closed, 0 open PRs`
+- Overlap with slice 58 (PR #240, merged first): 58 had already moved the child time-out check ahead of the leftover-folder check (`assert.equal(result.error, undefined, …)`). This slice rebased onto it and replaces that check with the cut-off message above, since the new group runner has no `error` field; the rebase conflict in `tests/kit-tests-clean.test.ts` kept this slice's side.
 - Feature list: no change (test-only guard; nothing a user sees).
