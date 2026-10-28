@@ -105,7 +105,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     const next = marks();
     // Nothing shown and nothing to show: the views are left alone (boot, loads with no agent at work).
     const key = next.length ? JSON.stringify(next) : "";
-    if (key === painted && !(again && key)) return tell();
+    if (key === painted && !(again && key)) { tell(); return; }
     painted = key;
     ports.paint(next);
     tell();
