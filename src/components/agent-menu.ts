@@ -3,7 +3,7 @@ import { recordFailure, recoveryHolds } from "../agent-recovery";
 import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
-import { AGENT_STOPPED, PIN_AGENTS, REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, agentWho, type AgentCommand, type AgentElement, type AgentRequest, type PinAgent } from "../../shared/agent";
+import { AGENT_STOPPED, PIN_AGENTS, REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, agentWho, type AgentCommand, type AgentElement, type AgentRequest } from "../../shared/agent";
 import { answerRequest, createRequestTools } from "../agent-watch";
 import { workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
 import { AgentRecordsError, agentStorageStatus, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords } from "../agent-records";
@@ -16,7 +16,8 @@ import { resumeAgents, revokeUnused, serialReads, siteFull, turnOnAgents } from 
 import { mountFlyout } from "./flyout";
 import { githubScope, same, sameBranch } from "../workspace-session";
 import type { createAgentPresence } from "../agent-presence";
-import { STOPPED_AGENTS_KEY } from "../agent-stops";
+import { STOPPED_AGENTS_KEY, agentStops, afterStoppedWait } from "../agent-stops";
+import { choosePinAgent, pinAgent } from "../pins-go-to";
 import { options as selectOptions } from "../ui/select-options";
 import "./agent-dots.css";
 import "./agent-menu.css";
@@ -35,15 +36,6 @@ const agentsOnKey = (workspace: AgentWorkspace) => `native-site-editor:agents-on
 const agentsOn = (workspace: AgentWorkspace) => {
   try { return localStorage.getItem(agentsOnKey(workspace)) !== null; } catch { return false; }
 };
-/** "Pins go to" (ticket am-12): the agent the helper starts for this site's pins, remembered per site (account and
- * repository, every branch) in this browser; Claude Code until the user picks another (the helper, ticket am-16, reads it). */
-const pinAgentKey = (workspace: AgentWorkspace) => `native-site-editor:pins-go-to:${JSON.stringify([workspace.account.toLowerCase(), workspace.repoId])}`;
-export function pinAgent(workspace: AgentWorkspace): PinAgent {
-  try {
-    const kept = localStorage.getItem(pinAgentKey(workspace));
-    return PIN_AGENTS.find(name => name === kept) ?? PIN_AGENTS[0];
-  } catch { return PIN_AGENTS[0]; }
-}
 /** Startup mounts the menu while a workspace keeps requests or has agents on (src/controllers/agent-controller.ts). */
 function markStartup(workspace: AgentWorkspace, needed: boolean) {
   try {
@@ -153,6 +145,8 @@ export function createAgentMenu(options: {
   function broadcast(key: string) {
     try { channel?.postMessage(key); } catch { /* Closed channel: they read again when seen. */ }
   }
+  /** Whether the user stopped the agent that sent `call`: it is refused before anything runs. */
+  function stopped(call: { grantId?: unknown; agent?: unknown }) { return options.agents?.stopped(agentWho(call)) ?? false; }
   async function activateSocket() {
     if (!remote || disposed || ownerPaused || workspaceChanged || transportMode !== "pending" || !pinned) return;
     const at = activation, repo = pinned;
@@ -237,8 +231,7 @@ export function createAgentMenu(options: {
         // A wait held when its agent is stopped (Stop wakes it) takes nothing more, and ends refused.
         try {
           const result = await tools.run(request, () => current() && !stopped(request), deadline, fence, signal);
-          const handed = result.ok && result.value && typeof result.value === "object" && !Array.isArray(result.value) && Array.isArray(result.value.requests) && result.value.requests.length > 0;
-          return stopped(request) && !handed ? { ok: false, message: AGENT_STOPPED } : result;
+          return stopped(request) ? afterStoppedWait(result) : result;
         }
         finally {
           if (request.tool !== "get_request") broadcast(workspaceKey(workspace));
@@ -259,8 +252,6 @@ export function createAgentMenu(options: {
     // A start that fails leaves the transport's state on the dot; Connect to MCP tries again.
     await transport.start().catch(() => { if (live(at)) paint(); });
   }
-  /** Whether the user stopped the agent that sent `call`: it is refused before anything runs. */
-  const stopped = (call: { grantId?: unknown; agent?: unknown }) => options.agents?.stopped(agentWho(call)) ?? false;
   // Grants this tab saw before it turned off: a later approval elsewhere never turns them back on.
   const declined = new Set<string>();
 
@@ -297,10 +288,13 @@ export function createAgentMenu(options: {
   selectOptions(pinsGoTo, PIN_AGENTS.map(name => ({ value: name, label: name })));
   pinsGoTo.addEventListener("change", () => {
     const workspace = scope();
-    if (!workspace) return;
-    try { localStorage.setItem(pinAgentKey(workspace), pinsGoTo.value); } catch { /* Storage blocked: the choice holds until a reload. */ }
+    if (workspace) choosePinAgent(workspace, pinsGoTo.value);
   });
-  choice.append(node("span", "agent-menu__choice-label", "Pins go to"), pinsGoTo);
+  // Named by its words alone (nested in its label, the select's own value would join its name).
+  const choiceLabel = node("span", "agent-menu__choice-label", "Pins go to");
+  choiceLabel.id = "agent-menu-pins-go-to";
+  pinsGoTo.setAttribute("aria-labelledby", choiceLabel.id);
+  choice.append(choiceLabel, pinsGoTo);
   const working = node("ul", "agent-menu__agents");
   working.setAttribute("aria-label", "Agents working now");
   root.append(choice, working, action, download, waitingOn);
@@ -583,9 +577,8 @@ export function createAgentMenu(options: {
     const want = JSON.stringify(agents.map(agent => [agent.key, agent.name, agent.colour, agent.asking]));
     if (want === drawnAgents) return;
     drawnAgents = want;
-    // The focused Stop's agent and place: its Stop again if still listed, else the one now in its place, else the action.
-    const rows = [...working.children] as HTMLElement[], at = rows.findIndex(row => row.contains(document.activeElement));
-    const focusedKey = at < 0 ? undefined : rows[at].dataset.key;
+    // The agent whose Stop has the focus, if any (below: where the focus goes after the redraw).
+    const focusedKey = ([...working.children] as HTMLElement[]).find(row => row.contains(document.activeElement))?.dataset.key;
     working.replaceChildren(...agents.map(agent => {
       const row = node("li", `agent-menu__agent${agent.asking ? " is-asking" : ""}`);
       row.dataset.key = agent.key;
@@ -601,9 +594,9 @@ export function createAgentMenu(options: {
       return row;
     }));
     if (focusedKey === undefined) return;
-    const now = [...working.children] as HTMLElement[];
-    const row = now.find(each => each.dataset.key === focusedKey) ?? now[Math.min(at, now.length - 1)];
-    // With no row left, the focus goes to "Pins go to", never to Disconnect MCP: a second Enter must not end them all.
+    // Its agent still listed: its Stop again. Gone (stopped, or its time ended): "Pins go to", never another Stop
+    // or Disconnect MCP, so a second Enter or a key repeat ends no one else.
+    const row = ([...working.children] as HTMLElement[]).find(each => each.dataset.key === focusedKey);
     (row?.querySelector<HTMLElement>("button") ?? (choice.hidden ? action : pinsGoTo)).focus();
   }
   const unlisten = options.agents?.listen(() => { if (!disposed) drawAgents(); });
@@ -795,7 +788,10 @@ export function createAgentMenu(options: {
       // Every agent on this site's connections, the shared token's and ones this tab has not
       // read yet included (the server lists them).
       const at = activation, shown = pinned ?? options.repository();
+      const ended = shown ? hub.grants.filter(grant => sameBranch(grant, branchOf(shown))).map(grant => grant.id) : [];
       if (shown) await api("revoke", { all: true, repoId: shown.id, branch: shown.branch });
+      // Their connections ended, the agents stopped on them are forgotten: a stop lasts until Disconnect MCP.
+      agentStops.forget(ended);
       token = tokenId = undefined;
       landing.clear();
       changing = false;
