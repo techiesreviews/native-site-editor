@@ -2,7 +2,7 @@
 title: "The `kit pr` tests always clean up their temp folders (flake after 29)"
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-57
 builder: claude
 blocked_by: [29-pr-ci-filters-and-claim-owner, 35-follow-ups-line-endings-and-old-cuts]
 ---
