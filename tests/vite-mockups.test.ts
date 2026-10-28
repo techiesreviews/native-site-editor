@@ -3,10 +3,11 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { build } from "vite";
+import { build, loadConfigFromFile } from "vite";
+import { unstable_startWorker } from "wrangler";
 import { MOCKUPS_HEADERS, mockupFiles, mockupIndex, mockups, mockupTitle } from "../vite-mockups.ts";
-import { staticAssetHeaders } from "./native-save/production-headers.ts";
 
+const repoRoot = new URL("..", import.meta.url).pathname;
 const scratch = mkdtempSync(join(tmpdir(), "ase-mockups-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -58,19 +59,50 @@ test("a build with the plugin writes the mock-ups and the index under mockups/",
   assert.match(readFileSync(join(outDir, "mockups/index.html"), "utf8"), /href="site-structure\/08-site-map.html"/);
 });
 
-test("the built _headers keeps the editor's policy and lets mock-ups run their inline scripts", async () => {
+test("served by Cloudflare's asset handler, mock-ups get one sandboxed policy and the editor keeps its own", async () => {
   const root = repo();
   writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
   const editorHeaders = readFileSync(new URL("../public/_headers", import.meta.url), "utf8");
   mkdirSync(join(root, "public"));
   writeFileSync(join(root, "public/_headers"), editorHeaders);
-  const outDir = join(root, "dist");
-  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(root)], build: { outDir } });
-  const built = readFileSync(join(outDir, "_headers"), "utf8");
-  assert.equal(built, editorHeaders + MOCKUPS_HEADERS);
-  const csp = (path: string) => staticAssetHeaders(built, path).get("Content-Security-Policy")!;
-  assert.equal(csp("/"), staticAssetHeaders(editorHeaders, "/").get("Content-Security-Policy"));
-  assert.doesNotMatch(csp("/"), /script-src[^;]*unsafe-inline/);
-  assert.match(csp("/mockups/agents/14-share.html"), /script-src 'self' 'unsafe-inline' https:\/\/esm\.sh;/);
-  assert.match(MOCKUPS_HEADERS, /^\/mockups\/\*\n {2}! Content-Security-Policy\n/m);
+  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(root)], build: { outDir: join(root, "dist") } });
+  assert.equal(readFileSync(join(root, "dist/_headers"), "utf8"), editorHeaders + MOCKUPS_HEADERS);
+  writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify({ name: "mockups-test", compatibility_date: "2026-09-17", assets: { directory: "./dist" } }));
+  const worker = await unstable_startWorker({ config: join(root, "wrangler.jsonc"), dev: { server: { port: 0 }, inspector: false, watch: false, logLevel: "none" } });
+  try {
+    const csp = async (path: string) => {
+      const response = await worker.fetch(`http://localhost${path}`);
+      assert.equal(response.status, 200, path);
+      return response.headers.get("Content-Security-Policy")!;
+    };
+    const editor = await csp("/");
+    assert.match(editor, /script-src 'self' 'wasm-unsafe-eval';/);
+    assert.doesNotMatch(editor, /sandbox|script-src[^;]*unsafe-inline/);
+    const mockup = await csp("/mockups/agents/14-share.html");
+    assert.equal(mockup.match(/default-src/g)?.length, 1, "one policy, not the editor's merged in");
+    assert.doesNotMatch(mockup, /wasm-unsafe-eval/);
+    assert.match(mockup, /script-src 'self' 'unsafe-inline' https:\/\/esm\.sh;/);
+    assert.match(mockup, /; sandbox allow-scripts allow-forms allow-popups$/);
+    assert.doesNotMatch(mockup, /allow-same-origin/);
+  } finally {
+    await worker.dispose();
+  }
+});
+
+test("vite.config.ts adds the mock-ups only with MOCKUPS=1", async () => {
+  const pluginNames = async (value: string | undefined) => {
+    const saved = process.env.MOCKUPS;
+    if (value === undefined) delete process.env.MOCKUPS;
+    else process.env.MOCKUPS = value;
+    try {
+      const loaded = await loadConfigFromFile({ command: "build", mode: "production" }, join(repoRoot, "vite.config.ts"), repoRoot, "silent", undefined, "runner");
+      return (loaded!.config.plugins ?? []).flat(Infinity).flatMap(plugin => plugin && "name" in plugin ? [plugin.name] : []);
+    } finally {
+      if (saved === undefined) delete process.env.MOCKUPS;
+      else process.env.MOCKUPS = saved;
+    }
+  };
+  assert.ok(!(await pluginNames(undefined)).includes("ase-mockups"));
+  assert.ok(!(await pluginNames("0")).includes("ase-mockups"));
+  assert.ok((await pluginNames("1")).includes("ase-mockups"));
 });
