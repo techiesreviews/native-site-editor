@@ -130,6 +130,17 @@ test("several named agents: an outline and chip each in its own colour, row dots
     }
     await expect(rowDots("1.2")).toHaveCount(0);
 
+    // The theme changes while they work: the frame is sent the theme's colours again (the agents' colours are the same
+    // in both themes today), and every outline and chip stays drawn in them, and back.
+    const outlineColours = async () => (await drawn()).map(outline => [outline.chip, outline.border, outline.chipBackground]);
+    const expected = (palette: typeof colours) => [["Copy editor", "agent-presence-2"], ["Caption writer", "agent-presence-3"], ["Header writer", "agent-presence"]]
+      .map(([chip, token]) => [chip, palette[token as keyof typeof colours].srgb, palette[token as keyof typeof colours].srgb]);
+    await page.emulateMedia({ colorScheme: "dark" });
+    const dark = await tokenColours(page);
+    await expect.poll(outlineColours).toEqual(expected(dark));
+    await page.emulateMedia({ colorScheme: "light" });
+    await expect.poll(outlineColours).toEqual(expected(colours));
+
     // Pages and files: About's row wears Link checker's dot (the fourth colour); Home's, the page shown, none.
     const explorer = page.locator("#explorer");
     await expect(explorer).toBeHidden();
@@ -168,7 +179,7 @@ test("several named agents: an outline and chip each in its own colour, row dots
       { name: "Copy editor", file: "index.html", section: "1.1" },
       { name: "Caption writer", file: "index.html", section: "1.1" },
       { name: "Link checker", file: "about/index.html", section: "1.1" },
-      { name: "Image finder", file: "index.html", asking: true },
+      { name: "Image finder", file: "index.html", section: "1.2", asking: true },
     ]);
 
     // All land: every outline and dot goes; the question still waits, so Image finder's orange chip stays on its request's section.

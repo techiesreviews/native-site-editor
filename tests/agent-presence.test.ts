@@ -217,6 +217,20 @@ test("an agent's question shows on its request's section with its chip orange, u
   assert.deepEqual(painted.at(-1), []);
 });
 
+test("get_site tells agents of one connection apart by name: one at work on Home, another asking on About, in order of arrival", () => {
+  const { presence } = presenceViews();
+  const end = presence.show("index.html", findHero, agent("A", "g1"));
+  presence.questions([question(agent("B", "g1"), "1.1.0", "question", "about/index.html")]);
+  assert.deepEqual(presence.atWork(), [
+    { name: "A", file: "index.html", section: "1.0" },
+    { name: "B", file: "about/index.html", section: "1.1", asking: true },
+  ]);
+  // At work on a change while asking: told where it works, asking.
+  presence.questions([question(agent("A", "g1"), "1.1.0", "question", "about/index.html")]);
+  assert.deepEqual(presence.atWork(), [{ name: "A", file: "index.html", section: "1.0", asking: true }]);
+  end();
+});
+
 test("get_site's who works on what: each agent's file and section now or last, its question, for ten minutes", () => {
   const { presence, clock, nextLoad, shown } = presenceViews();
   const header = presence.show("index.html", findHero, agent("Header writer"));
@@ -225,7 +239,7 @@ test("get_site's who works on what: each agent's file and section now or last, i
   assert.deepEqual(presence.atWork(), [
     { name: "Header writer", file: "index.html", section: "1.0" },
     { name: "Stylist", file: "styles/site.css" },
-    { name: "Image finder", file: "index.html", asking: true },
+    { name: "Image finder", file: "index.html", section: "1.1.1", asking: true },
   ]);
   header();
   // A reload of the same branch keeps who just worked where.
@@ -234,7 +248,7 @@ test("get_site's who works on what: each agent's file and section now or last, i
   assert.deepEqual(presence.atWork()[0], { name: "Header writer", file: "index.html", section: "1.0" });
   clock.now += AT_WORK_MS + 1;
   // Ten minutes after its last change an agent is no longer listed; a question still waiting is.
-  assert.deepEqual(presence.atWork(), [{ name: "Image finder", file: "index.html", asking: true }]);
+  assert.deepEqual(presence.atWork(), [{ name: "Image finder", file: "index.html", section: "1.1.1", asking: true }]);
   shown.branch = "other";
   nextLoad();
   assert.deepEqual(presence.atWork(), []);
@@ -242,7 +256,7 @@ test("get_site's who works on what: each agent's file and section now or last, i
   presence.show("index.html", findHero, agent("Copy editor"))();
   shown.branch = "main";
   nextLoad();
-  assert.deepEqual(presence.atWork(), [{ name: "Image finder", file: "index.html", asking: true }]);
+  assert.deepEqual(presence.atWork(), [{ name: "Image finder", file: "index.html", section: "1.1.1", asking: true }]);
 });
 
 test("a pinned Media change shows its presence only while its own page is shown", async () => {

@@ -71,6 +71,11 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     return key;
   };
   const isPage = (path: string) => [...ports.pages()].includes(path);
+  // The section a question's element is in, in its page's text now: where its agent shows, and what get_site tells.
+  const questionAt = (question: { path: string; element: string }) => {
+    const source = isPage(question.path) ? ports.source(question.path) : undefined;
+    return source === undefined ? undefined : presenceWithin(readSource(source, { page: true }), parseOutlineId(question.element), ports.sectionTags());
+  };
   function marks(): AgentMark[] {
     const shown = new Map<string, AgentMark>();
     const mark = (who: AgentWho, path: string, node: number[] | undefined, asking: boolean): AgentMark =>
@@ -81,9 +86,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
       const key = keyOf(question.who), working = shown.get(key);
       if (working) { working.asking = true; continue; }
       if (!isPage(question.path)) continue;
-      const source = ports.source(question.path);
-      const node = source === undefined ? undefined : presenceWithin(readSource(source, { page: true }), parseOutlineId(question.element), ports.sectionTags());
-      shown.set(key, mark(question.who, question.path, node, true));
+      shown.set(key, mark(question.who, question.path, questionAt(question), true));
     }
     return [...shown.values()].sort((a, b) => arrivals.get(a.key)! - arrivals.get(b.key)!);
   }
@@ -141,8 +144,9 @@ export function createAgentPresence(ports: AgentPresencePorts) {
       for (const entry of running) if (entry.at.holds())
         told.set(keyOf(entry.who), { name: entry.who.name || UNNAMED_AGENT, file: entry.path, ...(entry.node ? { section: outlineId(entry.node) } : {}) });
       for (const question of asked) if (question.at.holds()) {
-        const key = keyOf(question.who);
-        told.set(key, { ...told.get(key) ?? { name: question.who.name || UNNAMED_AGENT, file: question.path }, asking: true });
+        // At work on a change meanwhile: told there, asking; else on its question's section.
+        const key = keyOf(question.who), node = told.has(key) ? undefined : questionAt(question);
+        told.set(key, { ...told.get(key) ?? { name: question.who.name || UNNAMED_AGENT, file: question.path, ...(node ? { section: outlineId(node) } : {}) }, asking: true });
       }
       return [...told.entries()].sort(([a], [b]) => (arrivals.get(a) ?? 0) - (arrivals.get(b) ?? 0)).map(([, agent]) => agent);
     },

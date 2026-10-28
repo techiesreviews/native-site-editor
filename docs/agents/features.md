@@ -1063,7 +1063,7 @@ its number unused.
 
 ### F-agent-05 Agent presence
 - Try: Watch while several agents (or one agent's named subagents) work on sections of the page shown and on another page; let one ask you a question.
-- Good: Each agent's section is outlined in its own colour (green, violet, pink, teal, in order of arrival) with its name chip (its own name, else its program's, else "Agent"); its dot sits on that section's Page structure row, and an agent on another page dots that page's row in Pages and files; a question turns only that agent's chip orange; nothing else (no bars, status text or toasts; S1).
+- Good: Each agent's section is outlined in its own colour (green, violet, pink, teal, in order of arrival) with its name chip (its own name, else its program's, else "Agent"); its dot sits on that section's Page structure row, and an agent on another page (or on the shown page as a whole, such as its details) dots that page's row in Pages and files; a question turns only that agent's chip orange; nothing else (no bars, status text or toasts; S1).
 - Files: `src/agent-presence.ts`, `src/components/agent-dots.ts`, `src/components/agent-dots.css`, `src/components/native-preview-runtime.js`, `src/components/page-structure.ts`, `src/components/pages-tree.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-several-agents.spec.ts`, `tests/native-save/native-agent-presence.spec.ts`

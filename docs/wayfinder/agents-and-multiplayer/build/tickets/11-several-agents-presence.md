@@ -60,6 +60,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - `native-agent-presence.spec.ts` pins chip placement: past the edit bar, then a new row at the outline's left when the next chip would pass the right edge.
   `RESULT: ok unit 3864/3864 (251 files)`; `RESULT: ok specs 5/5 passed` (several agents, presence, branch menu, canvas-avoid, lifecycle); `npm run check` and `npm run lint` are clean.
 
+- Review round 3:
+  - `get_site` gives an agent that only asks the section its question is about (the section its outline stands on).
+  - On the page shown, Pages and files dots that page's row for agents at work on the page as a whole (its details, or a change in no one section), who show nowhere else.
+  - Tests: two agents of one connection (one at work on Home, one asking on About) come back as two entries in arrival order (presence unit test); the shown page's row with a whole-page agent (agent-dots test); `native-several-agents.spec.ts` switches to the dark theme and back while three outlines are drawn and checks that every outline and chip stays drawn in the theme's colours. The agents' colours are the same in both themes, so the step pins the repaint, not a colour change.
+  - `RESULT: ok unit 3865/3865 (251 files)`; `RESULT: ok specs 3/3 passed` (several agents, presence, pages look); `npm run check` and `npm run lint` are clean.
+
 ### Follow-ups
 
 - The catch-up (`changesSinceLastRead`, `src/agent-part.ts`) is still keyed by connection only. Two named subagents on one connection still share one catch-up and count each other's edits as their own (ticket 10's follow-up). Key it by connection plus `agent` now that the name arrives.
