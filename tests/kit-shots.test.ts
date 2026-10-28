@@ -117,7 +117,7 @@ test("index retains dimensions, files, sizes, failed attempts and layout finding
 });
 
 test("kit shots help and invalid arguments finish without starting a server", () => {
-  const run = (args: string[]) => spawnSync("scripts/agents/kit", ["shots", ...args], { encoding: "utf8", timeout: 15_000 });
+  const run = (args: string[]) => spawnSync("scripts/agents/kit", ["shots", ...args], { env: kitEnv(), encoding: "utf8", timeout: 15_000 });
   const help = run(["--help"]);
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /No screen: list screens and fail/);

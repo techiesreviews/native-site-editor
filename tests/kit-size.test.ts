@@ -271,7 +271,7 @@ test("help, discovery and invalid arguments do not invoke a measurement", t => {
     assert.match(output.stdout, /KIT_SIZE_RUNNER/);
     assert.doesNotMatch(output.stdout, /RESULT:/);
   }
-  const listing = spawnSync(kit, [], { encoding: "utf8" });
+  const listing = spawnSync(kit, [], { env: kitEnv(), encoding: "utf8" });
   assert.equal(listing.status, 0, listing.stderr);
   assert.match(listing.stdout, /size\s+measure boot bytes and compare the byte budget with dev/);
   for (const args of [["extra"], ["--unknown"], ["--base"], ["--base", "--no-base"], ["--base", "dev", "--base", "dev"], ["--no-base", "--no-base"]]) {
