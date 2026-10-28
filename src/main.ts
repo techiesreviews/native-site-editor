@@ -86,7 +86,7 @@ const agentPresence = createAgentPresence({
   stops: agentStops,
 });
 // An agent stopped in another tab of this browser (ticket am-12) goes from this one's views too.
-window.addEventListener("storage", event => { if (event.key === STOPPED_AGENTS_KEY) agentPresence.stopsChanged(); });
+window.addEventListener("storage", event => { if (event.key === STOPPED_AGENTS_KEY) { agentStops.reread(); agentPresence.stopsChanged(); } });
 function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.loaded(); workingPart.left(); return workspaceSession.begin(); }
 const cleanSources = new CleanSourceCache(() => info?.user?.login);
 // The open native site's state (src/native-site-runtime.ts); its preview adapter is the site preview below.

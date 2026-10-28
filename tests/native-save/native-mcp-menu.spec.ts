@@ -1172,7 +1172,8 @@ test("Stop ends one of three agents: its row, outline and dots go, the focus mov
     const placings = [place("Header writer", "1.0.2")];
     await loading;
     // One after the other, so their order of arrival (and colour) is known.
-    placings.push(place("Copy editor", "1.1.0"));
+    const copying = place("Copy editor", "1.1.0");
+    placings.push(copying);
     await expect(chips).toHaveCount(2);
     placings.push(place("Caption writer", "1.1.1"));
     await expect.poll(chipNames).toEqual(["Caption writer", "Copy editor", "Header writer"]);
@@ -1210,11 +1211,29 @@ test("Stop ends one of three agents: its row, outline and dots go, the focus mov
     await refused(as("Copy editor", "get_site"));
     expect(JSON.stringify(await subagents.call("read_file", { path: "index.html", agent: "Header writer" }))).not.toContain("Stopped title");
 
-    // The others land and keep working; get_site no longer lists the stopped one.
+    // A change not yet applied when its agent is stopped is refused: Caption writer's page details wait for the
+    // edit tools' module (its first edit loads it), Stop comes meanwhile. The last row left keeps the focus.
+    let editsLoaded!: () => void, letEditsLoad!: () => void;
+    const editsLoading = new Promise<void>(resolve => { editsLoaded = resolve; });
+    const editsHeld = new Promise<void>(resolve => { letEditsLoad = resolve; });
+    await page.route(url => url.pathname === "/src/agent-tools-edit.ts", async route => { editsLoaded(); await editsHeld; await route.continue(); });
+    const captioning = as("Caption writer", "set_page_details", { page: "/", title: "Caption title", requestId: "stop-caption-details" });
+    await editsLoading;
+    await page.getByRole("button", { name: "Stop Caption writer" }).click();
+    await expect(names).toHaveText(["Header writer"]);
+    await expect(page.getByRole("button", { name: "Stop Header writer" })).toBeFocused();
+    letEditsLoad();
+    await refused(captioning);
+    expect(JSON.stringify(await subagents.call("read_file", { path: "index.html", agent: "Header writer" }))).not.toContain("Caption title");
+
+    // A change already being applied when its agent was stopped (Copy editor's placement, held while it loads)
+    // finishes, drawn nowhere. The others land and keep working; get_site no longer lists the stopped ones.
     release();
     await Promise.all(placings);
+    expect(JSON.stringify(await copying)).not.toContain("stopped you");
+    await expect.poll(chipNames).toEqual([]);
     expect((await subagents.call("set_page_details", { page: "/", title: "Still working", requestId: "stop-header-again", agent: "Header writer" })).state).toBe("applied");
-    expect((await subagents.call("get_site", { agent: "Header writer" })).agents.map((each: { name: string }) => each.name)).not.toContain("Copy editor");
+    expect((await subagents.call("get_site", { agent: "Header writer" })).agents.map((each: { name: string }) => each.name)).toEqual(["Header writer"]);
 
     // A request pinned now goes to Header writer's wait.
     const next = subagents.call("wait_for_requests", { waitSeconds: 20, agent: "Header writer" });
@@ -1237,6 +1256,12 @@ test("Stop ends one of three agents: its row, outline and dots go, the focus mov
     await expect.poll(async () => JSON.stringify((await as("Copy editor", "get_site")).content)).toContain("stopped you");
     expect((await subagents.call("set_page_details", { page: "/", title: "Working after a reload", requestId: "stop-header-reload", agent: "Header writer" })).state).toBe("applied");
     await expect(names).toHaveText(["Header writer"]);
+    // Stopping the last one listed leaves the focus on "Pins go to", not on Disconnect MCP: a second Enter ends nothing more.
+    await page.getByRole("button", { name: "Stop Header writer" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".agent-menu__agents")).toBeHidden();
+    await expect(pinsGoTo).toBeFocused();
+    await expect(action).toHaveText("Disconnect MCP");
 
     // Another branch of the site keeps Codex; another site has its own choice (Claude Code until picked).
     await page.keyboard.press("Escape");
@@ -1259,4 +1284,87 @@ test("Stop ends one of three agents: its row, outline and dots go, the focus mov
     release();
     await subagents.client.close().catch(() => undefined);
   }
+});
+
+// Ticket am-12: Stop pressed in another tab of this browser reaches the tab receiving the agents' calls (the
+// storage event): the agent's held wait ends refused, its chip and dot go there without a reload. Another tab
+// lists only agents asking (its presence sees no calls); the asking agent is the one stopped here.
+test("a Stop pressed in another tab ends the agent in the receiving tab: its held wait is refused, its chip and dot go", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const frames: string[] = [];
+  page.on("websocket", socket => {
+    if (socket.url().includes("/api/agent/relay?")) socket.on("framereceived", ({ payload }) => frames.push(String(payload)));
+  });
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await page.locator(".agent-menu__action").click();
+  const { token } = await (await made).json() as { token: string };
+  await page.keyboard.press("Escape");
+  const finder = await agent(baseURL, token, "other-tab-spec");
+  const preview = page.frameLocator(".native-preview-frame");
+  const chips = preview.locator('[data-native-selection-box="agent-presence-chip"]').locator("visible=true");
+  const dots = page.getByRole("tree", { name: "Page structure" }).locator(".agent-dots__dot");
+  const other = await context.newPage();
+  try {
+    // Image finder asks back about a pinned request: its orange chip and its dot show in the receiving tab.
+    expect((await finder.call("wait_for_requests", { waitSeconds: 0, agent: "Image finder" })).requests).toEqual([]);
+    await preview.locator(".hero h1").click();
+    await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Ask agent" }).click();
+    await page.keyboard.type("A photo here?");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".agent-pin")).toHaveCount(1);
+    const [request] = (await finder.call("wait_for_requests", { waitSeconds: 0, agent: "Image finder" })).requests;
+    await finder.call("reply_to_request", { request: request.id, status: "question", message: "Wide or square?", agent: "Image finder" });
+    await expect(chips).toHaveText(["Image finder"]);
+    await expect(dots).toHaveCount(1);
+    // Then it waits, held in the receiving tab.
+    const held = finder.client.callTool({ name: "wait_for_requests", arguments: { waitSeconds: 20, agent: "Image finder" } });
+    await expect.poll(() => frames.some(frame => frame.includes('"wait_for_requests"') && frame.includes('"waitMs":20000'))).toBe(true);
+
+    // The other tab lists it and stops it.
+    await open(other, baseURL);
+    await other.locator(".repository-menu__trigger").click();
+    await expect.poll(async () => { await refresh(other); return other.locator(".agent-menu__label").textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+    await expect(other.locator(".agent-menu__agent-name")).toHaveText(["Image finder"]);
+    await other.getByRole("button", { name: "Stop Image finder" }).click();
+    await expect(other.locator(".agent-menu__agents")).toBeHidden();
+    await expect(other.getByRole("combobox", { name: "Pins go to" })).toBeFocused();
+
+    // The receiving tab: the held wait ends refused, the chip and dot go, with no reload.
+    const answer = await held;
+    expect(answer.isError, JSON.stringify(answer)).toBe(true);
+    expect(JSON.stringify(answer.content)).toContain("stopped you");
+    await expect(chips).toHaveCount(0);
+    await expect(dots).toHaveCount(0);
+    // Its question still waits on the pin for any other agent.
+    await expect(page.locator(".agent-pin")).toHaveCount(1);
+  } finally {
+    await other.close();
+    await finder.client.close().catch(() => undefined);
+  }
+});
+
+// Ticket am-12: an agent whose change has ended stays listed as working for ten minutes (AT_WORK_MS), then its
+// row leaves the open menu by itself.
+test("an agent's row leaves the open menu ten minutes after its last change", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.clock.install();
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action");
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  const stylist = await agent(baseURL, token, "expiry-spec");
+  try {
+    expect((await stylist.call("set_page_details", { page: "/", title: "Styled", requestId: "expiry-details", agent: "Stylist" })).state).toBe("applied");
+    await expect.poll(async () => { await refresh(page); return page.locator(".agent-menu__label").textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+    await expect(page.locator(".agent-menu__agent-name")).toHaveText(["Stylist"]);
+    await page.clock.fastForward(9 * 60_000);
+    await expect(page.locator(".agent-menu__agent-name")).toHaveText(["Stylist"]);
+    await page.clock.fastForward(60_000 + 1_000);
+    await expect(page.locator(".agent-menu__agents")).toBeHidden();
+    await expect(action).toHaveText("Disconnect MCP");
+  } finally { await stylist.client.close().catch(() => undefined); }
 });
