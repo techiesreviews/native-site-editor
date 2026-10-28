@@ -131,3 +131,64 @@
 .agent-menu__question:not(.is-asking) .agent-menu__question-number {
   background: var(--muted);
 }
+/* While agents are on (ticket am-12): "Pins go to", the agent the helper starts for pins, and the
+   agents working now, each with its dot and a Stop that ends that agent only. */
+.agent-menu__choice,
+.agent-menu__agent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-block-size: max(var(--size-control), var(--size-tap));
+  padding-block: 2px;
+  padding-inline: 8px 4px;
+}
+.agent-menu__choice-label,
+.agent-menu__agent-name {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-menu__select {
+  flex: none;
+  inline-size: auto;
+  max-inline-size: 60%;
+  block-size: max(var(--size-compact), var(--size-tap));
+  background: var(--surface-card);
+}
+.agent-menu__agents {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* An agent asking a question: its dot orange, as its chip on the page. */
+.agent-menu__agent.is-asking .agent-menu__agent-dot {
+  background: var(--agent-question-strong);
+}
+.agent-menu__stop {
+  flex: none;
+  min-block-size: max(var(--size-compact), var(--size-tap));
+  padding-block: 0;
+  padding-inline: 10px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: transparent;
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+@media (hover: hover) and (pointer: fine) {
+  .agent-menu__stop:hover {
+    background: var(--hover);
+  }
+}
+.agent-menu__stop:active {
+  background: var(--hover);
+}
+.agent-menu__stop:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
