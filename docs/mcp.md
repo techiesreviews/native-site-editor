@@ -49,15 +49,16 @@ against the tab's live state before writing.
 
 Several agents and the person can work on one page at once (ticket 10). An edit
 targets the exact part it changes, not the whole file: `edit_file` lands while
-its old texts are still there once each, and a page tool (`make_component`,
+its old texts are still there once each (with `all`, as often as when read), and
+where the read had them, and a page tool (`make_component`,
 `add_section`, `move_section`, `remove_section`) finds its elements again by their
 unchanged HTML, whatever else changed since the hash it was read with. Only a
 true clash, that same part changed meanwhile, is a conflict; its reply carries
 `part` (`path`, `hash`, `lines`, `text`, at most 4,000 characters) so the agent
 sends the edit again at once. A whole-file `write_file` still needs the exact
 hash. A change that loses a race with another landing on the same file is
-prepared again on the new text before it is refused. Every reply (reads and
-edits) carries `changesSinceLastRead` when the workspace's drafts changed since
+prepared again on the new text before it is refused. Replies to reads, edits
+and `get_command_status` carry `changesSinceLastRead` (request and media tools do not) when the workspace's drafts changed since
 that connection's last call, its own changes left out: up to 20 files (`path`,
 `change`: added, changed, removed, discarded or saved; `hash`; the page
 `sections` touched when the tab still has the earlier text), `more` for the

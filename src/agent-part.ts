@@ -1,8 +1,7 @@
 import { outlineId, parseOutlineId, textBytes, type AgentCommandArgs } from "../shared/agent";
 import type { JsonValue } from "../shared/agent-command";
-import { PartClash, partOf, type AgentEdit, type AgentStatus } from "../shared/agent-edit";
-import { catchUpOf, findPageRef, type AgentCatchUp, type AgentMark, type AgentReadResult } from "../shared/agent-read";
-import type { EditorContext } from "../shared/types";
+import { PartClash, partOf } from "../shared/agent-edit";
+import { catchUpOf, type AgentCatchUp, type AgentMark, type AgentReadResult } from "../shared/agent-read";
 import { minimalTextEdit } from "../shared/native-project";
 import type { SharedContext } from "./agent-site";
 import { pageOutline } from "./agent-site";
@@ -55,9 +54,9 @@ const ELEMENT_ARGS = ["section", "element", "before", "after"] as const;
  * with it as it is now when the same place still holds an element like it (its tag, among as many siblings).
  */
 export function elementsNow(path: string, args: AgentCommandArgs, read: string, now: string, hash: string): AgentCommandArgs {
-  const trees = new Map([read, now].map(text => [text, readSource(text, { page: true })]));
+  const readTree = readSource(read, { page: true }), nowTree = readSource(now, { page: true });
   const at = (text: string, id: string) => {
-    const tree = trees.get(text)!, node = parseOutlineId(id), el = node && tree.at(node), range = el?.type === "element" ? tree.range(el) : undefined;
+    const tree = text === read ? readTree : nowTree, node = parseOutlineId(id), el = node && tree.at(node), range = el?.type === "element" ? tree.range(el) : undefined;
     if (!node || !el || el.type !== "element" || !range) return undefined;
     const parent = node.length > 1 ? tree.at(node.slice(0, -1)) : undefined;
     return { tag: el.name, siblings: tree.elements(parent).filter(child => tree.path(child).length === node.length).length,
@@ -72,9 +71,8 @@ export function elementsNow(path: string, args: AgentCommandArgs, read: string, 
     if (!was) continue;
     const same = at(now, id);
     if (same?.text === was.text) continue;
-    const tree = trees.get(now)!;
-    const found = tree.elements().filter(el => { const range = tree.range(el); return range && range.end - range.start === was.text.length && now.slice(range.start, range.end) === was.text; });
-    if (found.length === 1) { moved[name] = outlineId(tree.path(found[0])); continue; }
+    const found = nowTree.elements().filter(el => { const range = nowTree.range(el); return range && range.end - range.start === was.text.length && now.slice(range.start, range.end) === was.text; });
+    if (found.length === 1) { moved[name] = outlineId(nowTree.path(found[0])); continue; }
     const part = same && same.tag === was.tag && same.siblings === was.siblings ? partOf(path, hash, now, same.start, same.end) : undefined;
     throw new PartClash(part
       ? `Element ${id} of ${path} was changed meanwhile, by the user or another agent. part has it as it is now: read the page again (get_page) and send the change anew.`
@@ -99,6 +97,22 @@ function sectionsTouched(before: string, now: string, sectionTags: ReadonlySet<s
 /** Each agent's mark, by repository, branch and connection. */
 const marks = new Map<string, AgentMark>();
 const MARKS = 100;
+/** The files each agent changed itself since its mark, with the hash its change left (none when it left none). */
+const owned = new Map<string, Map<string, string | undefined>>();
+const markKey = (repoId: number, branch: string, grantId: string) => JSON.stringify([repoId, branch, grantId]);
+
+/**
+ * An agent's change landed (ticket 10): its files are its own, not told back to it, whichever reply comes
+ * next (the edit's, a status lookup's once it waited, or any later call). A file left with another hash by
+ * the time it is told was changed again since, and is told.
+ */
+export function noteOwnChange(workspace: { repoId: number; branch: string }, grantId: string, files: ReadonlyMap<string, string | undefined>) {
+  const key = markKey(workspace.repoId, workspace.branch, grantId);
+  if (!marks.has(key)) return;
+  const mine = owned.get(key) ?? new Map<string, string | undefined>();
+  for (const [path, hash] of files) mine.set(path, hash);
+  owned.set(key, mine);
+}
 
 /** The drafts of `shared` as a mark keeps them. */
 function markOf(shared: SharedContext): AgentMark {
@@ -110,16 +124,18 @@ function markOf(shared: SharedContext): AgentMark {
 
 /**
  * What changed in the workspace `shared` shows since the last reply to the agent `grantId` there, its
- * own changes (`own` paths) left out; its mark moves to now. Nothing on its first reply, or when nothing changed.
+ * own changes (noteOwnChange) left out; its mark moves to now. Nothing on its first reply, or when nothing changed.
  */
-export function catchUp(grantId: string | undefined, shared: SharedContext | undefined, own: ReadonlySet<string> = new Set()): AgentCatchUp | undefined {
-  if (!grantId || !shared) return undefined;
-  const key = JSON.stringify([shared.context.repository.id, shared.context.branch, grantId]);
-  const before = marks.get(key), now = markOf(shared);
+function catchUp(grantId: string | undefined, shared: SharedContext): AgentCatchUp | undefined {
+  if (!grantId) return undefined;
+  const key = markKey(shared.context.repository.id, shared.context.branch, grantId);
+  const before = marks.get(key), now = markOf(shared), mine = owned.get(key);
   marks.delete(key);
+  owned.delete(key);
   marks.set(key, now);
-  for (const old of marks.keys()) { if (marks.size <= MARKS) break; marks.delete(old); }
+  for (const old of marks.keys()) { if (marks.size <= MARKS) break; marks.delete(old); owned.delete(old); }
   if (!before) return undefined;
+  const own = new Set([...mine ?? []].filter(([path, hash]) => hash === undefined || now.files[path]?.hash === hash).map(([path]) => path));
   const pages = new Set(shared.context.pages?.flatMap(page => page.file ? [page.file] : []));
   const sectionTags = new Set(shared.context.site?.components.filter(item => item.section).map(item => item.tag));
   return catchUpOf(before, now, own, (path, was, is) => {
@@ -129,28 +145,14 @@ export function catchUp(grantId: string | undefined, shared: SharedContext | und
   });
 }
 
-/** The files an applied edit changed, which its own catch-up leaves out, but for `changed` (tellAgent). */
-function ownPaths(request: AgentEdit | AgentStatus, result: AgentReadResult, context: EditorContext, changed?: string) {
-  const own = new Set<string>(), value = result.ok ? result.value : undefined;
-  if (request.operation !== "edit" || !value || typeof value !== "object" || Array.isArray(value) || value.state !== "applied") return own;
-  const args = request.args as { path?: string; to?: string; page?: string };
-  const page = args.page !== undefined && context.pages ? findPageRef(context.pages, args.page)?.file : undefined;
-  const detail = value.result && typeof value.result === "object" && !Array.isArray(value.result) ? value.result : {};
-  for (const path of [args.path, args.to, page, detail.path, detail.file, ...typeof detail.files === "string" ? detail.files.split(", ") : []])
-    if (typeof path === "string" && path && path !== changed) own.add(path);
-  return own;
-}
-
 /**
  * A reply to the agent `grantId` with what changed in `workspace` since its last call added as
- * `changesSinceLastRead`, while the editor shows that workspace (`shared`); an edit's (`request`) own
- * changes are left out, but for `changed`, the file it landed on in another text than it read (others'
- * changes there are still the agent's to be told). A reply that is no object tells nothing, and keeps the mark.
+ * `changesSinceLastRead`, while the editor shows that workspace (`shared`); its own changes are left out
+ * (noteOwnChange). A reply that is no object tells nothing, and keeps the mark.
  */
-export function tellAgent(shared: SharedContext | undefined, workspace: { repoId: number; branch: string }, grantId: string | undefined,
-  result: AgentReadResult, request?: AgentEdit | AgentStatus, changed?: string): AgentReadResult {
+export function tellAgent(shared: SharedContext | undefined, workspace: { repoId: number; branch: string }, grantId: string | undefined, result: AgentReadResult): AgentReadResult {
   if (!shared || shared.context.repository.id !== workspace.repoId || shared.context.branch !== workspace.branch) return result;
   if (!result.ok || !result.value || typeof result.value !== "object" || Array.isArray(result.value)) return result;
-  const told = catchUp(grantId, shared, request && ownPaths(request, result, shared.context, changed));
+  const told = catchUp(grantId, shared);
   return told ? { ...result, value: { ...result.value, changesSinceLastRead: told as unknown as JsonValue } } : result;
 }
