@@ -1187,10 +1187,10 @@ test("an edit that waited and landed is not told back to its agent on the status
 });
 
 test("a race retry that finds its edits now change nothing keeps an unchanged receipt only at the revision proved before that preparation", async () => {
-  // Read in a text the tab does not keep: its replacements make a change on the text it first meets (an extra
-  // "Hello" there), and none on the text another agent leaves meanwhile (that "Hello" taken out).
-  const home = files["index.html"], first = home.replace("</main>", "<p>Hello</p>\n</main>");
-  const edits = [{ oldText: "Welcome", newText: "Hello" }, { oldText: "Hello", newText: "Welcome", all: true }];
+  // Read in a text the tab does not keep: its replacements make a change on the text it first meets, and none
+  // on the text another agent leaves meanwhile (the second puts back what the first takes out there).
+  const home = files["index.html"], first = home.replace("</main>", "<p>Kqz1</p>\n<p>Kqy</p>\n</main>");
+  const edits = [{ oldText: "Kqz", newText: "Kq" }, { oldText: "Kqy", newText: "Kqzy" }];
   const attempt = async (meanwhile: boolean) => {
     const f = await fixture();
     const draft = async (text: string) => {
@@ -1208,7 +1208,7 @@ test("a race retry that finds its edits now change nothing keeps an unchanged re
     const tools = createAgentEditTools({ workspace, records, ports: f.ports, run: async () => {
       if (lost) assert.fail("must not run again");
       lost = true;
-      await draft(home);
+      await draft(home.replace("</main>", "<p>Kqzy</p>\n</main>"));
       throw raceLost();
     } });
     const input = request("edit_file", { path: "index.html", expectedHash: "0".repeat(64), edits }, "same-change");
@@ -1220,4 +1220,26 @@ test("a race retry that finds its edits now change nothing keeps an unchanged re
   const refused = await attempt(true);
   assert.notEqual(refused.reply.state, "unchanged");
   assert.equal(refused.receipt, undefined);
+});
+
+test("a parallel read while an agent's text edit lands is not told that edit as another's", async () => {
+  const f = await fixture(), gate = deferred<void>(), drafted = deferred<void>();
+  const shared = async () => f.ports.context();
+  const workspaceId = { repoId: repo.id, branch: "main" };
+  // Its earlier read set its mark.
+  tellAgent(await shared(), workspaceId, "grant-parallel", { ok: true, value: {} });
+  const tools = createAgentEditTools({ workspace, records: f.records, ports: f.ports, run: async command => {
+    // The draft shows before the run resolves.
+    f.context.drafts.push({ path: command.path, baseSha: null, updatedAt: Date.now(), hash: await textHash(command.content), content: command.content });
+    drafted.resolve();
+    await gate.promise;
+    return { message: "Applied.", result: { path: command.path, hash: await textHash(command.content) } };
+  } });
+  const edit = { ...request("edit_file", { path: "index.html", expectedHash: f.context.site!.outlines[0].hash, edits: [{ oldText: "Welcome", newText: "Hello" }] }, "parallel"), grantId: "grant-parallel" };
+  const pending = tools.run(edit, 0, () => true);
+  await drafted.promise;
+  const read = tellAgent(await shared(), workspaceId, "grant-parallel", { ok: true, value: { files: [] } });
+  assert.equal(read.ok && (read.value as { changesSinceLastRead?: unknown }).changesSinceLastRead, undefined, JSON.stringify(read));
+  gate.resolve();
+  assert.equal(body(await pending).state, "applied");
 });

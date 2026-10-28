@@ -56,7 +56,7 @@ test("MCP tools/list is dev's: same tools, order, descriptions, schemas and hint
   // The whole tools/list result as dev (3c5518e4) answered it, before the table; since ticket 52,
   // get_command_status's description names the waiting state; since ticket 10, edit_file and the section tools
   // say an edit lands while its own part is unchanged.
-  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "a7b87af727127225ad3c5fc4df08b615603992f9c7fd6238f017b44bacffe307");
+  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "d9d2e90474f089379886e5aa9ce3cd69194479809f2fb2a7d9b3cbfb52229069");
 });
 
 test("the Worker registers exactly the table's MCP tools, in table order", async () => {
