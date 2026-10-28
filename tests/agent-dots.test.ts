@@ -58,7 +58,7 @@ test("a row's dots: one per agent in its colour, in or beside their holder, draw
   assert.equal(seen.busy, null);
 }));
 
-test("Pages and files: another page's row wears its agents' dots, the page shown's none, kept across renders", () => inBrowser(async page => {
+test("Pages and files: another page's row wears its agents' dots, the page shown's only those on no one section, kept across renders", () => inBrowser(async page => {
   const seen = await page.evaluate(() => {
     const { createPagesTree, buildNativePagesTree } = (globalThis as typeof globalThis & { dotsFactories: Factories }).dotsFactories;
     const tree = createPagesTree({ open() {}, plan: () => ({ ok: false, error: "no" }), create: async () => undefined, announce() {} });
@@ -74,15 +74,21 @@ test("Pages and files: another page's row wears its agents' dots, the page shown
     ];
     tree.agents(marks);
     const shownHome = dots();
-    // Another page shown: its own row loses the dots, Home's row gains its agent's.
+    // Another page shown: Home's row gains its agent's dot; About's keeps only Copy editor's, at work on About as a whole
+    // (Link checker's shows on its section in the preview and Page Structure).
     tree.render(site, "about/index.html");
     const shownAbout = dots();
     tree.agents([]);
-    return { shownHome, shownAbout, none: dots() };
+    const none = dots();
+    // An agent on the page shown as a whole (its details, no one section): its dot on that page's row.
+    tree.render(site, "index.html");
+    tree.agents([{ key: "a", name: "X", colour: 0, path: "index.html", asking: false }]);
+    return { shownHome, shownAbout, none, wholePage: dots() };
   });
   assert.deepEqual(seen.shownHome, {
     "index.html": { colours: "", busy: null }, "about/index.html": { colours: "1,3", busy: "true" }, "contact.html": { colours: "", busy: null } });
   assert.deepEqual(seen.shownAbout, {
-    "index.html": { colours: "0", busy: "true" }, "about/index.html": { colours: "", busy: null }, "contact.html": { colours: "", busy: null } });
+    "index.html": { colours: "0", busy: "true" }, "about/index.html": { colours: "1", busy: "true" }, "contact.html": { colours: "", busy: null } });
   assert.deepEqual(Object.values(seen.none).map(row => row.colours + (row.busy ?? "")), ["", "", ""]);
+  assert.deepEqual(seen.wholePage["index.html"], { colours: "0", busy: "true" });
 }));
