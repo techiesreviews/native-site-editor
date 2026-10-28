@@ -118,6 +118,23 @@ The frontier decides; this is one order that keeps to the rules.
 - **Local folders (34)** need the local-folders build (`docs/wayfinder/local-folders/`), which is unbuilt. Slice 34 waits for it; the lead re-plans 34 if that build has not shipped when stage 3 starts.
 - **Cloudflare plan:** stays on Free (ticket 11). The lead tells Lex if a slice's numbers show the daily allowance at risk.
 
+## Already solved in script-editor: reuse, don't solve again
+
+Recorded 2026-10-28 from the script-editor lead (repo `/home/ubulex/Projects/script-editor`, github.com/techiesreviews/script, live at script.techies.tools; all on `main`). Read-only references. Taking any of it into this editor waits for Lex's go-ahead through the script-editor thread "Self-cleaning Durable Object notes"; until then a slice reads it and designs with it in mind, but copies nothing.
+
+- **Self-cleaning Durable Object notes** (commits 22e79eb, 993f7ca; for slices 20 and 30). Rule there: every stored note has an expiry date and cleans itself, and keys carry their birth date.
+  - Agent tokens are minted by the Worker (`POST /api/agent-token`) as `se2-<born base36>-<43 random>`. The Worker's own clock writes and checks the birth time. The relay object is chosen by the sha256 of the whole token, so no signature is needed.
+  - Tokens older than 8 h or from the future are refused before any object is touched (WebSocket close 4003, `/mcp` 401).
+  - The relay note `{createdAt, expiresAt, revoked, agent}` sets an alarm at expiresAt + 60 s, then `deleteAll()`. A revoked token stays refused until then. Old-format tokens were accepted until a fixed cutoff, with their alarm set at the cutoff.
+  - Rooms use one alarm read from the note: a daily check while the host is in, 30 s grace when the host leaves, erased 7 days after the room ends. A host tab silent for 7 days stops instead of reopening the room.
+  - Code: `worker/mcp.js` (`newToken`, `checkToken`), `worker/relay.js`, `worker/room.js`, `public/together/room.js`. Tests: `tests/worker-relay.test.mjs`, `tests/room.test.mjs`. Docs: `docs/data-shape.md`, `docs/together.md`.
+- **An agent shown as its model** (commits 9a9c93d, c64c810; for slices 11, 22 and 23). Lex's choice there: the caret, avatar and button say "Claude", "Codex", "ChatGPT"… with that model's logo, never "(agent)". An unknown agent gets Phosphor's sparkle.
+  - `public/agent-brand.js` is pure: MCP `clientInfo.name` → `{ name, icon }`. VS Code is not mapped to Copilot, because it can run any model.
+  - Logos are Phosphor (MIT) and Simple Icons (CC0) filled single-colour paths, in `public/app.js` ICONS.
+  - Our mock-ups 05, 10 and 13 still label the agent "Claude (agent)". Align them with this choice when Lex says yes.
+- **`public/together/`** (rooms, carets, Undo on the name tag; for slices 20–24 and 30). This build is meant to take it over.
+- **In progress there:** agent answers land straight in the text, lightly marked, with Undo on the agent's name tag, for guests' asks too (script-editor step F). Next: links that open by themselves in the prompter (`docs/build/step-g-links.md`).
+
 ## Lex's checklist: the GitHub App webhook (before slice 32 lands)
 
 Slice 32 first proves the setup on a throwaway test App, including whether installations must approve again when an event is added. Then the lead puts this list in the next Tuesday pack, with the exact values filled in by slice 32. About five minutes. Slices 30, 31 and 35 keep running meanwhile.
