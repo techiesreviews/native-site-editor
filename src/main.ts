@@ -83,7 +83,7 @@ const agentPresence = createAgentPresence({
   workspace: () => { const scope = shownScope(); return scope?.kind === "github" ? { repoId: scope.repoId, branch: scope.branch } : undefined; },
   paint: marks => { nativePreview?.agentPresence(marks); pageStructure?.agentPresence(marks); pagesAndFiles.agents(marks); },
 });
-function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.refresh(); workingPart.left(); return workspaceSession.begin(); }
+function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.loaded(); workingPart.left(); return workspaceSession.begin(); }
 const cleanSources = new CleanSourceCache(() => info?.user?.login);
 // The open native site's state (src/native-site-runtime.ts); its preview adapter is the site preview below.
 const runtime = createNativeSiteRuntime({

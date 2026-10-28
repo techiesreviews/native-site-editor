@@ -120,7 +120,7 @@ function presenceViews(sources: Record<string, string> = { "index.html": page, "
     paint: marks => painted.push(marks.map(mark => [mark.name, mark.colour, mark.path, mark.node?.join("."), mark.asking])),
     now: () => clock.now,
   });
-  return { presence, painted, clock, shown, nextLoad: () => { load++; presence.refresh(); } };
+  return { presence, painted, clock, shown, nextLoad: () => { load++; presence.loaded(); } };
 }
 const findHero = () => [1, 0];
 const agent = (name: string, grant = "g1"): AgentWho => ({ grant, name });
@@ -199,12 +199,18 @@ test("an agent's question shows on its request's section with its chip orange, u
   // Asked on another page: that page's row.
   presence.questions([question(finder, "1.1", "question", "about/index.html")]);
   assert.deepEqual(painted.at(-1), [["Image finder", 0, "about/index.html", "1.1", true]]);
+  // Unnamed (no name of its own nor its client's): "Agent".
+  presence.questions([question(agent(""))]);
+  assert.deepEqual(painted.at(-1), [["Agent", 1, "index.html", "1.1.1", true]]);
   // The user answered: gone.
   presence.questions([question(finder, "1.1", "open")]);
   assert.deepEqual(painted.at(-1), []);
   // A load of the same branch (a reload) keeps it; another branch shown does not, even before the menu tells its own requests.
   presence.questions([question(finder)]);
+  // The load's views start afresh (the preview's new document): the question is painted again, not taken as drawn.
+  const before = painted.length;
   nextLoad();
+  assert.equal(painted.length, before + 1);
   assert.deepEqual(painted.at(-1), [["Image finder", 0, "index.html", "1.1.1", true]]);
   shown.branch = "other";
   nextLoad();
