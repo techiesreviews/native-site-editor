@@ -2,7 +2,7 @@
 title: "`get_site` names the section an agent is asking about (follow-up on 11)"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-39
 builder: claude
 blocked_by: [11-several-agents-presence]
 ---
