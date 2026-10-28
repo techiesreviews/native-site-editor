@@ -18,7 +18,7 @@ const dot = (page: Page) => page.locator(".agent-menu__action").evaluate(element
  * working now (ticket am-12) are controls, each a label and its value or a name and its Stop. */
 async function onlyLabel(page: Page, label: string) {
   await expect.poll(() => page.locator(".agent-menu").evaluate(menu => {
-    const parts = [...menu.children].filter(part => part.checkVisibility() && !part.matches(".agent-menu__choice, .agent-menu__agents")) as HTMLElement[];
+    const parts = [...menu.children].filter(part => part.checkVisibility() && !part.matches(".agent-menu__choice, .agent-menu__agents, .agent-menu__divider")) as HTMLElement[];
     return parts.map(part => part.innerText).join("").trim();
   })).toBe(label);
   const choice = page.locator(".agent-menu__choice:visible");
