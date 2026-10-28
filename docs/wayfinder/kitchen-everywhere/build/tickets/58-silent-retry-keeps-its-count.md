@@ -1,7 +1,7 @@
 ---
 title: "A counted review that already worked keeps its count when a retry goes silent (follow-up on 34)"
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-58
 builder: claude
 blocked_by: [34-review-counts-honest]
@@ -29,3 +29,13 @@ Slice 34's final review left a P2 ([ticket 34 Follow-ups](34-review-counts-hones
 ## Kit commands and evidence
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines.
+
+## Done (2026-10-28)
+
+- `invokeAgent` (`scripts/agents/agent-run.mjs`) now marks a call that opened no OpenCode session within its start limit as `silent: true` in the run record only when it was the review's first call (the same `previousCalls` rule as the usage-limit refusal). `kit review` gives the weekly count back on that mark instead of on the `no session within` message, so a counted `openai/…` or `xai/…` review that answered on call 1 and went silent on its completeness retry keeps its count. The `opencode unavailable: no session within …` problem line is printed either way.
+- The free `opencode/deepseek-v4.1-flash-free` stays uncounted either way (no ledger written).
+- Tests (`tests/kit-review.test.ts`): a new fake OpenCode mode `retry-silent` (incomplete reply on call 1, no event on the resumed call). The new test runs it for `openai/gpt-6.1` and `xai/grok-4.7` (count stays 1, two calls, the silent problem line) and for the free model (no budget line, no ledger). Before the fix it failed: the count went back to 0. The existing test where call 1 is silent (count back to 0, one call) passes before and after and guards the refund.
+- `docs/agents/agent-scripts.md`: the `kit review` budget text says a silent start is refunded only on the first call.
+- Commits: 9fe26caba (fix, test and docs).
+- Validation: `scripts/agents/kit doctor` → `RESULT: ok doctor 11/11 checks passed`; `scripts/agents/kit unit --affected` → `RESULT: ok unit 131/131 (3 files)`; `scripts/agents/kit status` → `RESULT: ok status all 778 tickets, 604 closed, 0 open PRs`; `npm run lint` clean.
+- Feature list: no change (agent kit review counting, nothing in the editor).
