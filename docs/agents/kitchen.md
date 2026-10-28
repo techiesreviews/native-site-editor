@@ -71,6 +71,7 @@ the atomic catalogue: [extras](kitchen-extras.md#visible-changes-feature-list-an
 
 [Shared](../../scripts/agents/docs/kitchen.md#10-after-a-merge-note-scoreboard); `kit preview`:
 [extras](kitchen-extras.md#previews).
+`kit score --all` prints one builder table across every registered project, so builders are chosen from all their numbers.
 
 ### 11. Lex's end check
 
