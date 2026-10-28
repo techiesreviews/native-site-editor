@@ -109,9 +109,10 @@ test("every migrated tool prepares the existing command shape from the browser's
 test("hash, unchanged, folders and parent files retain their contracts", async () => {
   const f = await fixture(), hash = f.context.site!.outlines[0].hash;
   const prepare = (input: AgentEdit) => prepareAgentEdit(input, f.context, f.local());
-  for (const input of [request("edit_file", { path: "index.html", expectedHash: "0".repeat(64), edits: [{ oldText: "Welcome", newText: "Hello" }] }),
-    request("write_file", { path: "index.html", content: "text", expectedHash: "0".repeat(64) })])
-    await assert.rejects(prepare(input), /changed in the editor since it was read/);
+  // A whole write needs the hash it read; a file edit, only its words (ticket 10, below).
+  await assert.rejects(prepare(request("write_file", { path: "index.html", content: "text", expectedHash: "0".repeat(64) })), /changed in the editor since it was read/);
+  assert.partialDeepStrictEqual(await prepare(request("edit_file", { path: "index.html", expectedHash: "0".repeat(64), edits: [{ oldText: "Welcome", newText: "Hello" }] })),
+    { operation: "write_file", input: { path: "index.html", content: files["index.html"].replace("Welcome", "Hello"), expectedHash: hash } });
   assert.partialDeepStrictEqual(await prepare(request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: "Welcome", newText: "Welcome" }] })), { unchanged: { state: "unchanged", message: "The edits change nothing." } });
   assert.partialDeepStrictEqual(await prepare(request("write_file", { path: "index.html", content: files["index.html"], expectedHash: hash })), { unchanged: { message: "The file already has this text." } });
   // Protected paths, media as text and the size limit are the Worker's (the refusals below).
@@ -176,7 +177,8 @@ const refusals: Refusal[] = [
   refusal("edit_file", "Worker", GITHUB_CONFIG_REFUSED, "shared/protected-paths.ts", f => ({ path: ".github/workflows/ci.yml", expectedHash: homeHash(f), edits: [{ oldText: "x", newText: "y" }] })),
   refusal("edit_file", "Worker", "Invalid path. Use a repository path such as about/index.html.", "shared/site-rules.ts", f => ({ path: "../secret", expectedHash: homeHash(f), edits: [{ oldText: "x", newText: "y" }] })),
   refusal("edit_file", "preparation", " does not exist. Use write_file to create it.", "shared/agent-edit.ts", f => ({ path: "missing.txt", expectedHash: homeHash(f), edits: [{ oldText: "x", newText: "y" }] })),
-  unless(refusal("edit_file", "preparation", " changed in the editor since it was read. Read it again.", "shared/agent-edit.ts", () => ({ path: "index.html", expectedHash: "0".repeat(64), edits: [{ oldText: "Welcome", newText: "Hello" }] })), f => written("index.html", files["index.html"].replace("Welcome", "Hello"), homeHash(f))),
+  // Read in another text, its words changed since (ticket 10): the clash. Its words still there, it lands (below).
+  refusal("edit_file", "preparation", " were changed meanwhile, by the user or another agent.", "shared/agent-edit.ts", () => ({ path: "index.html", expectedHash: "0".repeat(64), edits: [{ oldText: "Welcome\nno longer here", newText: "Hello" }] })),
   refusal("edit_file", "preparation", "oldText was not found", "shared/agent-replacements.ts", f => ({ path: "index.html", expectedHash: homeHash(f), edits: [{ oldText: "absent", newText: "y" }] })),
   unless(refusal("edit_file", "preparation", "Drafts hold text files up to ", "shared/agent-edit.ts", f => ({ path: "index.html", expectedHash: homeHash(f), edits: [{ oldText: "Welcome", newText: "\0" }] })), f => written("index.html", files["index.html"].replace("Welcome", "\0"), homeHash(f))),
   // Typed in the editor after the tab read it: the guarded write's own proof.
@@ -304,7 +306,7 @@ async function firstRefusal(r: Refusal): Promise<{ layer: Layer; message: string
 }
 
 test("each refusal listed for an agent edit is decided in one layer, by one file of the command's path", async t => {
-  const agentPath = ["worker/mcp.ts", "shared/agent-edit.ts", "shared/site-files.ts", "src/agent-tools-edit.ts", "src/agent-site.ts"];
+  const agentPath = ["worker/mcp.ts", "shared/agent-edit.ts", "shared/site-files.ts", "src/agent-tools-edit.ts", "src/agent-part.ts", "src/agent-site.ts"];
   const sources = new Map<string, string>();
   // The code only: a comment may quote a refusal. Only whole comment lines and blocks go, so no string is cut short.
   const code = (text: string) => text.replace(/^\s*\/\*[\s\S]*?\*\//gm, "").replace(/^\s*\/\/.*$/gm, "");
@@ -1058,4 +1060,35 @@ test("the code pane's lines are left by a pause in typing; an element only by le
   workingPart.left({ path: "index.html" });
   await settle();
   assert.equal(workingPart.now(), undefined);
+});
+
+test("an edit that loses a race with another change to its file is prepared again on that text and lands; a clash then carries the part", async () => {
+  // Ticket 10: two agents' edits of one page, prepared on the same text; the second to apply finds the first landed.
+  const f = await fixture(), home = files["index.html"], hash = f.context.site!.outlines[0].hash;
+  const ran: AgentCommand[] = [];
+  let landFirst: string | undefined;
+  const tools = createAgentEditTools({ workspace, records: f.records, ports: f.ports, run: async command => {
+    ran.push({ ...command });
+    if (landFirst !== undefined) {
+      // Another agent's change landed between this edit's preparation and its application.
+      const text = landFirst; landFirst = undefined;
+      f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(text), content: text });
+      throw new Error("index.html changed in the editor since it was read. Read it again. Nothing was changed; your drafts are as they were.");
+    }
+    return f.run(request("write_file", { path: command.path, content: command.content, expectedHash: null }, `${command.id}-landed`)).then(() => ({ message: "Applied.", result: { path: command.path } }));
+  } });
+  landFirst = home.replace("<h1>Welcome</h1>", "<h1>Hello</h1>");
+  const landed = body(await tools.run(request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: ">Fast<", newText: ">Quick<" }] }, "race-1"), 0, () => true));
+  assert.equal(landed.state, "applied", JSON.stringify(landed));
+  assert.equal(ran.length, 2);
+  assert.equal(ran[1].content, home.replace("<h1>Welcome</h1>", "<h1>Hello</h1>").replace(">Fast<", ">Quick<"));
+  // The same words changed in the race: the clash, with the part as it is now; nothing more runs.
+  f.context.drafts.length = 0;
+  landFirst = home.replace(">Fast<", ">Rapid<");
+  const clash = body(await tools.run(request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: ">Fast<", newText: ">Quick<" }] }, "race-2"), 0, () => true));
+  assert.equal(clash.state, "conflict");
+  assert.match(clash.message, /were changed meanwhile/);
+  assert.match(clash.part.text, />Rapid</);
+  assert.equal(clash.part.hash, await textHash(home.replace(">Fast<", ">Rapid<")));
+  assert.equal(ran.length, 3);
 });

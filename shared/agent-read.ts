@@ -7,11 +7,54 @@ import { componentVariantsOf } from "./site-variants";
 import type { SiteFiles } from "./site-files";
 import type { AgentCommand } from "./agent";
 
-/** Browser-local reads carry no mutation identity or receipt. */
+/** Browser-local reads carry no mutation identity or receipt; `grantId` names the agent for its catch-up (ticket 10). */
 export interface AgentRead {
   operation: "read";
   tool: "get_site" | "list_files" | "read_file" | "export_site" | "get_page" | "get_selection";
   args: { folder?: string; path?: string; page?: string; source?: boolean };
+  grantId?: string;
+}
+
+/**
+ * The drafts of a workspace as one agent was last told them (ticket 10): its revision, and each draft's
+ * text hash (none for a binary or too large one), when it changed, and whether it adds or deletes the file.
+ */
+export interface AgentMark {
+  commit: string;
+  files: Record<string, { hash?: string; at: number; added?: true; deleted?: true }>;
+}
+/** One file's change in a catch-up; `sections`: the page sections it touched, when the tab can tell. */
+export interface AgentChange { path: string; change: "added" | "changed" | "removed" | "discarded" | "saved"; hash?: string; sections?: string[] }
+/** What changed since an agent's last reply; `more` counts the changes left out to keep it small. */
+export interface AgentCatchUp { files: AgentChange[]; more?: number; saved?: string; note: string }
+/** A catch-up lists at most this many files and stays within this many bytes as JSON. */
+export const CATCH_UP_FILES = 20;
+export const CATCH_UP_BYTES = 2048;
+export const CATCH_UP_NOTE = "Changed in the editor since your last call, by the user or other agents. Your edits still land while the words or section they change are unchanged.";
+
+/**
+ * What changed between `before` (the drafts as an agent was last told them) and `now`, the agent's own
+ * changes (`own` paths) left out; undefined when nothing did. `sections` tells, for a changed file, the
+ * page sections the change touched. Kept within CATCH_UP_FILES and CATCH_UP_BYTES.
+ */
+export function catchUpOf(before: AgentMark, now: AgentMark, own: ReadonlySet<string> = new Set(),
+  sections?: (path: string, before: string | undefined, now: string | undefined) => string[] | undefined): AgentCatchUp | undefined {
+  const saved = before.commit !== now.commit;
+  const changes: AgentChange[] = [];
+  for (const path of new Set([...Object.keys(before.files), ...Object.keys(now.files)])) {
+    if (own.has(path)) continue;
+    const was = before.files[path], is = now.files[path];
+    if (was && is && (was.hash !== undefined || is.hash !== undefined ? was.hash === is.hash : was.at === is.at) && !was.deleted === !is.deleted) continue;
+    const change: AgentChange["change"] = !is ? saved ? "saved" : "discarded" : is.deleted ? "removed" : !was && is.added ? "added" : "changed";
+    const touched = change === "changed" ? sections?.(path, was?.hash, is?.hash)?.slice(0, 10) : undefined;
+    changes.push({ path, change, ...(is?.hash && !is.deleted ? { hash: is.hash } : {}), ...(touched?.length ? { sections: touched } : {}) });
+  }
+  if (!changes.length && !saved) return undefined;
+  const shown = changes.slice(0, CATCH_UP_FILES);
+  const catchUp = (): AgentCatchUp => ({ files: shown, ...(changes.length > shown.length ? { more: changes.length - shown.length } : {}),
+    ...(saved ? { saved: now.commit } : {}), note: CATCH_UP_NOTE });
+  while (shown.length && new TextEncoder().encode(JSON.stringify(catchUp())).byteLength > CATCH_UP_BYTES) shown.pop();
+  return catchUp();
 }
 export type AgentReadResult =
   | { ok: true; value: import("./agent-command").JsonValue }

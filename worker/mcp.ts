@@ -218,7 +218,8 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       message: `The change's outcome is unknown (${code ?? "connection lost"}). Check get_command_status; do not replay the change.` }) };
   }
   async function readResult(read: AgentRead): Promise<AgentReadResult | { ok: false; waiting: true; message: string }> {
-    const outcome = await dispatch(read);
+    // The connection names the agent whose catch-up the reply carries (ticket 10).
+    const outcome = await dispatch({ ...read, grantId: connection.id });
     if (outcome.ok && outcome.result) return outcome.result;
     if (outcome.code === "editor-unavailable" && read.tool === "get_site")
       return { ok: true, value: { repository: connection.repo.full_name, branch: connection.workspace.branch, available: false, state: "waiting", note: closed } };
@@ -349,10 +350,10 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "edit_file",
     {
       description:
-        "Change any repository text file by exact text replacements, as an unsaved draft in the editor (Undo works). Each oldText must appear exactly once (or set all). Needs the hash from read_file or get_page. Prefer the page and section tools for page structure and details.",
+        "Change any repository text file by exact text replacements, as an unsaved draft in the editor (Undo works). Each oldText must appear exactly once (or set all). Needs the hash from read_file or get_page: the edit lands while the words it replaces are unchanged, whatever else changed since that read (the user or other agents work beside you). When those words changed meanwhile it is refused with part, them as they are now (and the file's hash): send the edit again against part.text. Prefer the page and section tools for page structure and details.",
       inputSchema: z.object({
         path: z.string().min(1).max(1024),
-        expectedHash: hash.describe("The file's hash as read_file returned it."),
+        expectedHash: hash.describe("The file's hash as read_file or get_page returned it: the text your oldText was read in."),
         edits: z
           .array(
             z.object({
@@ -642,7 +643,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "make_component",
     {
       description:
-        "Turn one container of one page into a new component (section, div, article, aside, figure, nav, header or footer, including the page's own header/footer): writes components/<tag>/<tag>.html and .css (and a card component's files, when it makes one), then replaces the element on that page only, as one undo step, unsaved. Other pages keep their copies. Refuses other elements, document elements (including main and body), head content, components, and anything inside a component instance. The editor adds the site's component loader (components/components.js, the script on every page, and the :not(:defined) rule) when the site lacks it. Needs the page hash from get_page; how slots are chosen: the Components chapter of the native-site://conventions resource.",
+        "Turn one container of one page into a new component (section, div, article, aside, figure, nav, header or footer, including the page's own header/footer): writes components/<tag>/<tag>.html and .css (and a card component's files, when it makes one), then replaces the element on that page only, as one undo step, unsaved. Other pages keep their copies. Refuses other elements, document elements (including main and body), head content, components, and anything inside a component instance. The editor adds the site's component loader (components/components.js, the script on every page, and the :not(:defined) rule) when the site lacks it. Needs the page hash from get_page (the element is found again when other parts of the page changed since); how slots are chosen: the Components chapter of the native-site://conventions resource.",
       inputSchema: z.object({
         page: pageRef,
         element: z.string().max(300).describe("An element id from get_page or get_selection."),
@@ -661,7 +662,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "add_section",
     {
       description:
-        "Add a section component to a page's <body> between its sections, as the page builder's + does: a new instance, which you can then change with edit_file (what it puts in the page: the Components chapter of the native-site://conventions resource). Without before/after it goes at the end. Needs the page hash from get_page. The editor adds the site's component loader (components/components.js, the script on every page, and the :not(:defined) rule) when the site lacks it.",
+        "Add a section component to a page's <body> between its sections, as the page builder's + does: a new instance, which you can then change with edit_file (what it puts in the page: the Components chapter of the native-site://conventions resource). Without before/after it goes at the end. Needs the page hash from get_page; the sections named are found again when other parts of the page changed since. The editor adds the site's component loader (components/components.js, the script on every page, and the :not(:defined) rule) when the site lacks it.",
       inputSchema: z.object({
         page: pageRef,
         component: z.string().min(1).max(100).describe("A component tag get_site marks as a section component."),
@@ -680,7 +681,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "move_section",
     {
       description:
-        "Move a section before or after another section in the same container, as dragging it in the page structure does. Needs the page hash from get_page.",
+        "Move a section before or after another section in the same container, as dragging it in the page structure does. Needs the page hash from get_page; the sections are found again when other parts of the page changed since, and a section changed meanwhile is refused with part, it as it is now.",
       inputSchema: z.object({
         page: pageRef,
         section: sectionId,
@@ -698,7 +699,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   register(
     "remove_section",
     {
-      description: "Remove a section from a page, as the edit bar's Remove does. Needs the page hash from get_page.",
+      description: "Remove a section from a page, as the edit bar's Remove does. Needs the page hash from get_page; the section is found again when other parts of the page changed since, and one changed meanwhile is refused with part, it as it is now.",
       inputSchema: z.object({ page: pageRef, section: sectionId, expectedHash: hash, requestId, waitSeconds }),
     },
     async ({ page: ref, section, expectedHash, requestId, waitSeconds }) => {

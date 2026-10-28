@@ -356,10 +356,10 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     assert.deepEqual([notFound.route, notFound.file, notFound.title], ["/404.html", "404.html", "Page not found"]);
     assert.equal((await call("get_page", { page: "/nowhere/" })).isError, true);
 
-    // edit_file needs the hash just read, and a unique old text.
-    const stale = await call("edit_file", { path: "styles/site.css", expectedHash: "0".repeat(64), edits: [{ oldText: "margin: 0", newText: "margin: 1px" }], waitSeconds: 0 });
+    // edit_file needs a unique old text; read in another text (ticket 10), it is refused only once its words are gone.
+    const stale = await call("edit_file", { path: "styles/site.css", expectedHash: "0".repeat(64), edits: [{ oldText: "margin: 9", newText: "margin: 1px" }], waitSeconds: 0 });
     assert.equal(stale.isError, true);
-    assert.match(JSON.stringify(stale), /changed in the editor since it was read/);
+    assert.match(JSON.stringify(stale), /no longer there: the user or another agent changed them meanwhile/);
     const edit = { path: "styles/site.css", expectedHash: css.hash, edits: [{ oldText: "margin: 0", newText: "margin: 1px" }], requestId: "css-1", waitSeconds: 0 };
     assert.equal(payload(await call("edit_file", edit)).state, "applied");
     assert.equal(payload(await call("edit_file", edit)).state, "applied", "a retry with the same requestId is the same change");
