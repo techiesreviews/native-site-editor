@@ -413,6 +413,20 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     // A name too long is clipped, never refused: the change still lands.
     assert.equal(payload(await call("write_file", { path: "styles/long.css", content: "p {}\n", requestId: "long-name-css", agent: "x".repeat(200), waitSeconds: 0 })).state, "applied");
     assert.equal((await tab.inspect()).commands.find((item: any) => item.id === "long-name-css").agent, "x".repeat(40));
+    // One batched request of two named calls (ticket am-39): each change carries its own agent's name
+    // (sent at once, the second may land or be refused as the draft changed meanwhile; either way it is its own).
+    const batched = await worker.dispatchFetch(origin + "/mcp", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify([
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "write_file", arguments: { path: "styles/one.css", content: "p {}\n", requestId: "batch-one", agent: "Header writer", waitSeconds: 0 } } },
+        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "write_file", arguments: { path: "styles/two.css", content: "p {}\n", requestId: "batch-two", agent: "Copy editor", waitSeconds: 0 } } },
+      ]),
+    });
+    assert.equal(batched.status, 200);
+    assert.match(await batched.text(), /batch-one[\s\S]*batch-two/);
+    const batch = (await tab.inspect()).commands;
+    assert.deepEqual(["batch-one", "batch-two"].map(id => batch.find((item: any) => item.id === id)?.agent), ["Header writer", "Copy editor"]);
     assert.equal(payload(await call("write_file", { path: "styles/extra.css", content: "p {}\n", requestId: "new-css", waitSeconds: 0 })).state, "applied");
 
     // Make component's shape is the Worker's (shared/agent-edit.ts editShapeProblem); the page, the element and a taken name are the live page's.
