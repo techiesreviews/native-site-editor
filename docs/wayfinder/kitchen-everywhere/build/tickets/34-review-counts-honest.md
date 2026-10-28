@@ -2,7 +2,7 @@
 title: Review counts cannot be dodged, doubled or lifted
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-34
 builder: claude
 blocked_by: [17-second-look-per-kind]
 ---
