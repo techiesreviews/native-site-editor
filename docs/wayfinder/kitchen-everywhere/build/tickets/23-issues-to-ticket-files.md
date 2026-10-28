@@ -36,8 +36,26 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 ## Done (2026-10-28)
 
-- `kit init --issues` (in `scripts/agents/kit.d/init`) reads open Issues with `gh issue list --state open --limit 1000 --json …` and writes one `needs-triage` ticket per Issue in `<maps>/backlog/tickets/NN-<slug>.md` (`maps` from `kit.json`, else `docs/wayfinder`; NN continues after the highest file there; slug from the title, at most six words, else `issue-N`). The title is written JSON-quoted, so `:`, `#` and quotes read back unchanged. The body holds the link `[owner/repo#N](url)`, author and date, labels, the Issue's text and `## Comments`. It writes `backlog/map.md` if missing, prints a `next:` line and closes nothing. A rerun finds each Issue's link in the existing files and skips it. The setup and doctor steps do not run in this mode, so it also works before the old kit files are gone.
-- `kit init --issues --close` fetches `origin/<land>`, finds each open Issue's file on that branch by its link, and runs `gh issue close N --repo owner/repo --comment "Moved to a ticket file: https://github.com/owner/repo/blob/<land>/<path>"`. If any open Issue has no file on `origin/<land>`, it closes none and lists them. A failed close is named, and a rerun retries it. `--close` without `--issues` and `--issues` with `--light` or `--land` exit 2.
-- Tests in `tests/kit-init.test.ts` use a fake `gh` on PATH and a bare `origin`. Two Issues become two tickets and a map that pass `tickets.mjs check`, and the titles read back. A rerun leaves the tree byte for byte, and a later Issue gets the next number. `--close` refuses before the files land and when they are on a build branch only; once they are on `origin/dev` it closes each Issue with the exact blob link. Flag misuse is also covered.
+- `kit init --issues` (in `scripts/agents/kit.d/init`) reads open Issues with `gh issue list --state open --limit 1000 --json number,title,body,labels,url,author,createdAt,comments`. It writes one `needs-triage` ticket per Issue in `<maps>/backlog/tickets/NN-<slug>.md`:
+  - `maps` comes from `kit.json`, else `docs/wayfinder` with a note; an absolute or `..` path is refused.
+  - NN continues after the highest number there; the slug comes from the title (at most six words, else `issue-N`).
+  - The frontmatter names the Issue as `issue: <url>`. The title is written JSON-quoted, so `:`, `#` and quotes read back unchanged.
+  - The body holds the link `[owner/repo#N](url)`, author and date, labels, the Issue's text and `## Comments`. A label with a backtick gets a longer code fence.
+- It writes `backlog/map.md` if missing, prints a `next:` line and closes nothing. A rerun skips an Issue whose `issue:` line is already in a file there. Links to other Issues in the copied text never count, so a "Duplicate of #5" in #3 neither hides #5 nor stands for its file. Setup and doctor do not run in this mode.
+- `kit init --issues --close` fetches `origin/<land>` with an explicit refspec and finds each open Issue's file on that branch by its `issue:` line. It then runs `gh issue close N --repo owner/repo --comment "Moved to a ticket file: https://github.com/owner/repo/blob/<land>/<path>\nWork on it goes on there."` (two lines).
+  - If any open Issue has no file on `origin/<land>`, it closes none and lists them.
+  - A failed close is named (`close failed: #N: <first error line>`) and the run ends `RESULT: fail init closed K of M Issues; failed: #N; rerun to retry them`; a rerun closes the rest.
+  - `--close` without `--issues` exits 2, and so does `--issues` with `--light` or `--land`.
+- Tests in `tests/kit-init.test.ts` use a typed fake `gh` on PATH and a bare `origin`. They cover:
+  - two Issues becoming two tickets and a map that pass `tickets.mjs check` (titles read back), with the exact `gh issue list` arguments checked;
+  - a rerun leaving the tree byte for byte, and a later Issue getting the next number;
+  - `--close` refusing before the files land and when they are only on a build branch, then closing with the exact blob links;
+  - a cross-linked Issue getting its own file and its own close link;
+  - a failed close being retried by a rerun;
+  - the `maps` fallback note, and a `maps` path outside the project being refused;
+  - flag misuse.
+- One sample ticket file, Issue #14 with labels, text and a comment, is the expected text in the first `--issues` test in `tests/kit-init.test.ts` (`02-search-results-ignore-accents.md`).
+- Evidence: `RESULT: ok unit 21/21 (1 files)` from `scripts/agents/kit unit --affected`; `npm run lint` and `npm run check` pass.
+- Commits: build `1ec07f398`; review fixes follow it on this branch.
 - `docs/agents/agent-scripts.md` describes both forms.
 - Feature list: no change (kit command for agents; nothing in the editor changes).
