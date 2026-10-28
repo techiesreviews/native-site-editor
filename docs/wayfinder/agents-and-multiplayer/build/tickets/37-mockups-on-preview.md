@@ -50,7 +50,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Review round 1 fixed: the mock-up policy gained `sandbox` (no `allow-same-origin`) so inline scripts and esm.sh never run on the editor's origin; headers checked through Wrangler's real asset handler instead of a helper that replaced rather than merged them; a test that `vite.config.ts` adds the plugin only with `MOCKUPS=1`; `escape` renamed `escapeHtml`; the module comment moved off `Mockup`. Declined: narrowing esm.sh to the Yjs path, since Yjs loads lib0 from other esm.sh paths.
 - Review round 2 fixed: a headless browser check over every real mock-up; a test that only the preview Worker builds with `build:preview`; the `_headers` rule added once across rebuilds; URL-encoded index links; `X-Robots-Tag: noindex` on mock-up pages.
 - Review round 3 fixed: the browser check also fails on page errors (a mock-up using storage unguarded), and checks the index's policy; only HTML and image files are published, so notes in `prototypes/` stay out. Left as notes: POSIX `MOCKUPS=1` syntax (preview Worker only) and no rebuild on mock-up edits in watch mode (nobody runs it).
-- Commits: Mock-ups on the preview site; Review fixes round 1; Review fixes round 2; Review fixes round 3
+- Commits: "Mock-ups on the preview site", "Review fixes round 1", "Review fixes round 2", "Review fixes round 3"
 
 ### Follow-ups
 
