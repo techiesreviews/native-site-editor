@@ -55,6 +55,8 @@ async function receivingTab(worker: Awaited<ReturnType<typeof startWorker>>["wor
   const snapshot: Snapshot = { branch: "main", commit: "c".repeat(40), entries: [] };
   let context: EditorContext | undefined;
   const commands: AgentCommand[] = [];
+  // Every command the relay delivers, reads included, as sent.
+  const received: { operation: string; tool?: string; agent?: string }[] = [];
   const results = new Map<string, AgentCommand["result"]>();
   const source = { repo, snapshot, api: async <T>() => ({ entries: [] }) as T,
     read: (_repo: string, sha: string) => github.file(repo, sha),
@@ -86,7 +88,7 @@ async function receivingTab(worker: Awaited<ReturnType<typeof startWorker>>["wor
     save: async (request, accept) => { if (!accept(conversations.get(request.id))) return false; conversations.set(request.id, request); return true; } });
   let socket: Awaited<ReturnType<typeof worker.dispatchFetch>>["webSocket"];
   return {
-    ...tab, commands, results, conversations,
+    ...tab, commands, received, results, conversations,
     inspect: async () => ({ ...await (await worker.dispatchFetch(origin + "/api/agent/connections", { headers: { Cookie: cookie } })).json(), commands }),
     async show(next: EditorContext) {
       context = structuredClone(next);
@@ -104,6 +106,7 @@ async function receivingTab(worker: Awaited<ReturnType<typeof startWorker>>["wor
           if (value.type === "ready") { resolve(); return; }
           if (value.type !== "command") return;
           const request = value.command;
+          received.push(request);
           const result = context?.repository.id !== repo.id || context.branch !== "main"
             ? { ok: false, message: "The editor is not sharing this workspace." }
             : request.operation === "read" ? await reads.run(request.tool, request.args)
@@ -424,9 +427,26 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
       ]),
     });
     assert.equal(batched.status, 200);
-    assert.match(await batched.text(), /batch-one[\s\S]*batch-two/);
+    const answered = await batched.text();
+    for (const id of ["batch-one", "batch-two"]) assert.ok(answered.includes(id), id);
     const batch = (await tab.inspect()).commands;
     assert.deepEqual(["batch-one", "batch-two"].map(id => batch.find((item: any) => item.id === id)?.agent), ["Header writer", "Copy editor"]);
+    // The site resource and the edit_site prompt read under the connection's client, never a tool call's name
+    // in the same request.
+    const before = tab.received.length;
+    const mixed = await worker.dispatchFetch(origin + "/mcp", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify([
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_file", arguments: { path: "styles/one.css", agent: "Header writer" } } },
+        { jsonrpc: "2.0", id: 2, method: "resources/read", params: { uri: "native-site://site" } },
+        { jsonrpc: "2.0", id: 3, method: "prompts/get", params: { name: "edit_site", arguments: {} } },
+      ]),
+    });
+    assert.equal(mixed.status, 200);
+    await mixed.text();
+    assert.deepEqual(tab.received.slice(before).map(item => [item.tool, item.agent]).sort(),
+      [["get_site", "legacy-test"], ["get_site", "legacy-test"], ["read_file", "Header writer"]]);
     assert.equal(payload(await call("write_file", { path: "styles/extra.css", content: "p {}\n", requestId: "new-css", waitSeconds: 0 })).state, "applied");
 
     // Make component's shape is the Worker's (shared/agent-edit.ts editShapeProblem); the page, the element and a taken name are the live page's.
