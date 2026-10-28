@@ -44,3 +44,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke34 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/34-review-counts-honest.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke34 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, each new case's result, review decisions, PR and merge SHA.
+
+## Comments
+
+- Lead, 2026-10-28: `tests/kit-sweep.test.ts` failed in CI on PR #232 when the run crossed 00:00 UTC, and passed on rerun and locally. You touch `kit.d/sweep` and its tests here, so make that test independent of the clock (pass a fixed "now", or derive the week from the same instant on both sides).
