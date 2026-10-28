@@ -2,7 +2,7 @@
 // `/mockups/<map>/<file>` with a generated `/mockups/index.html` listing them by map. Only the
 // preview build turns this on (`MOCKUPS=1`, `npm run build:preview`); production builds and the
 // editor's boot never see these files. The images a mock-up uses sit beside it and are copied too.
-import { appendFileSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Plugin } from "vite";
 
@@ -43,7 +43,7 @@ export function mockupIndex(mockups: readonly Mockup[], read: (path: string) => 
   const sections = [...maps].map(([map, pages]) => `<section>
 <h2>${escapeHtml(map)}</h2>
 <ul>
-${pages.map(page => `<li><a href="${escapeHtml(`${map}/${page.file}`)}">${escapeHtml(mockupTitle(read(page.path), page.file))}</a></li>`).join("\n")}
+${pages.map(page => `<li><a href="${escapeHtml(`${encodeURIComponent(map)}/${encodeURIComponent(page.file)}`)}">${escapeHtml(mockupTitle(read(page.path), page.file))}</a></li>`).join("\n")}
 </ul>
 </section>`);
   return `<!doctype html>
@@ -75,6 +75,7 @@ export const MOCKUPS_HEADERS = `
 /mockups/*
   ! Content-Security-Policy
   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://esm.sh; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; sandbox allow-scripts allow-forms allow-popups
+  X-Robots-Tag: noindex
 `;
 
 export function mockups(root: string): Plugin {
@@ -86,9 +87,11 @@ export function mockups(root: string): Plugin {
       for (const { map, file, path } of files) this.emitFile({ type: "asset", fileName: `mockups/${map}/${file}`, source: readFileSync(path) });
       this.emitFile({ type: "asset", fileName: "mockups/index.html", source: mockupIndex(files) });
     },
-    // After Vite has copied public/_headers into the output folder.
+    // After Vite has copied public/_headers into the output folder; once, even across watch rebuilds.
     writeBundle({ dir }) {
-      if (dir) appendFileSync(join(dir, "_headers"), MOCKUPS_HEADERS);
+      if (!dir) return;
+      const headers = join(dir, "_headers");
+      if (!existsSync(headers) || !readFileSync(headers, "utf8").includes(MOCKUPS_HEADERS)) appendFileSync(headers, MOCKUPS_HEADERS);
     },
   };
 }
