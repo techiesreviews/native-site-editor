@@ -2,6 +2,7 @@
 title: "A ticket's Done names commits that can be found on dev"
 type: task (AFK)
 status: open
+assignee: ke-53
 builder: claude
 blocked_by: [35-follow-ups-line-endings-and-old-cuts]
 ---
@@ -36,3 +37,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke53 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/53-done-commits-match-dev.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke53 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, a `landed:` block from a real `kit pr`, review decisions, PR and merge SHA.
+
+## Comments
+
+- Lead, 2026-10-28: take the default: inside the PR the Done list names commits by title; after the merge `kit pr` prints the landed SHAs for the close-out. Easy to undo; listed in the Tuesday pack.
