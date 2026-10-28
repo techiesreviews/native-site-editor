@@ -690,9 +690,10 @@ export function createPagesTree(options: {
   function label(text: string) {
     return node("span", "pages-label", text);
   }
-  // Agents at work on a page other than the one shown (ticket am-11): their dots after its name.
+  // Agents at work on a page (ticket am-11): their dots after its name. On the page shown, only those at work on the
+  // page as a whole (its details, a change in no one section): the others show on their sections in the preview and Page Structure.
   function markAgents(item: HTMLElement, name: HTMLElement, file: string) {
-    setAgentDots(item, name, file === current ? [] : agents.filter((agent) => agent.path === file), true);
+    setAgentDots(item, name, agents.filter((agent) => agent.path === file && (file !== current || !agent.node)), true);
   }
 
   function setOpen(item: HTMLElement, route: string, open: boolean) {
@@ -839,7 +840,7 @@ export function createPagesTree(options: {
     startNew(parent = "/") {
       startEditing(parent, parent === "/" ? newButton : rowOfRoute(parent)?.dataset.key ?? newButton);
     },
-    /** The agents at work (ticket am-11): a page's row other than the one shown wears each one's dot there. */
+    /** The agents at work (ticket am-11): a page's row wears each one's dot there (the page shown's, those on no one section). */
     agents(marks: readonly AgentMark[]) {
       agents = marks;
       for (const item of rows()) {
