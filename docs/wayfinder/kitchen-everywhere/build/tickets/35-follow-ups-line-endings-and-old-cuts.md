@@ -2,7 +2,7 @@
 title: Follow-ups keep the ticket's line endings and match old cuts through an emoji
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-35
 builder: claude
 blocked_by: [29-pr-ci-filters-and-claim-owner]
 ---
