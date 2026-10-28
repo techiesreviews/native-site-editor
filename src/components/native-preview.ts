@@ -21,6 +21,7 @@ import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../../sha
 import { withSlottedRules } from "../../shared/slotted-css";
 import type { NativeCascade, NativeSelectedRule } from "../style-cascade";
 import { watchEditorTheme } from "../theme";
+import { AGENT_COLOURS, type AgentMark } from "../agent-presence";
 import type { AddPanelHandlers } from "../page-builder/add-panel";
 import { createPageBuilder } from "../page-builder/page-builder";
 import type { DraggedBlock, DropTarget } from "../page-builder/drop-target";
@@ -416,11 +417,16 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // The runtime draws its hover and selection boxes in the editor's color.
   let previewFocus = "";
   let componentColor = "";
-  let presenceColor = "";
-  const postTheme = () => link.send({ type: "theme", focus: previewFocus, component: componentColor, presence: presenceColor });
-  // An agent working on a section of the page shown (ticket 33): drawn as its presence box, sent again to a new document.
-  let agentPresence: { request: NativeNodeRequest; name: string } | undefined;
-  const postPresence = () => link.send({ type: "agent-presence", request: agentPresence?.request ?? null, name: agentPresence?.name ?? "" });
+  // The agents' colours in order of arrival, and a question's orange (src/agent-presence.ts).
+  let agentColors: string[] = [];
+  let questionColor = "";
+  const postTheme = () => link.send({ type: "theme", focus: previewFocus, component: componentColor });
+  // The agents working on sections of the site's pages (tickets 33, am-11): each drawn as its presence box on the page shown, sent again to a new document.
+  let agentMarks: readonly AgentMark[] = [];
+  const postPresence = () => link.send({ type: "agent-presence", agents: agentMarks.flatMap(mark => {
+    const color = agentColors[mark.colour] ?? "", chip = mark.asking ? questionColor : color;
+    return mark.node && color && chip ? [{ request: { path: mark.path, node: [...mark.node] }, name: mark.name, color, chip }] : [];
+  }) });
   // The component whose template is open: its instances show outlined.
   let focusTag = "";
   const postFocus = () => {
@@ -613,8 +619,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const stopTheme = watchEditorTheme(({ colors }) => {
     previewFocus = colors["preview-focus"];
     componentColor = colors.component;
-    presenceColor = colors["agent-presence"];
-    if (frameState.ready) postTheme();
+    agentColors = AGENT_COLOURS.map(token => colors[token]);
+    questionColor = colors["agent-question-strong"];
+    if (frameState.ready) { postTheme(); postPresence(); }
   });
   // A load/site failure (frame hidden) outranks a transient runtime error
   // (banner only), so runtime "clear-error" must not wipe a hard load error.
@@ -1209,11 +1216,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (frameState.active) link.send({ type: "select-parent" });
     },
     /**
-     * An agent working on the element at `request` (ticket 33): its outline in the agent's colour with
-     * the `name` chip on its corner, drawn while that page is shown; undefined ends it. Never a click target.
+     * The agents at work (tickets 33, am-11): each one's outline on its element in its colour, with its name
+     * chip on the corner (orange while it asks), drawn while that page is shown; none ends them. Never a click target.
      */
-    agentPresence(request: NativeNodeRequest | undefined, name = "Agent") {
-      agentPresence = request ? { request: { path: request.path, node: [...request.node] }, name } : undefined;
+    agentPresence(marks: readonly AgentMark[]) {
+      agentMarks = marks;
       if (frameState.ready) postPresence();
     },
     /** The next selection of this element (a block just inserted or moved) flashes. */
@@ -1370,7 +1377,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!frameState.deactivate()) return;
       endPress();
       // Every deactivation comes with a new load (nextLoad, just before or after it), which clears the agent's presence (src/agent-presence.ts).
-      agentPresence = undefined;
+      agentMarks = [];
       site = undefined;
       shownRoute = undefined;
       editableTemplatePath = undefined;

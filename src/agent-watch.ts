@@ -6,7 +6,7 @@
 // arrives here (an in-memory wake, never a storage read) or its time runs out: at most 25 s,
 // clipped to the relay's budget. Agents keep watching (a watchdog subagent calling
 // wait_for_requests again) until the user chooses Disconnect MCP.
-import type { AgentRequest } from "../shared/agent";
+import { agentName, type AgentRequest } from "../shared/agent";
 import type { AgentReadResult } from "../shared/agent-read";
 import { requestForAgent, requestOperation, type AgentRequests } from "../shared/agent-requests";
 import { HttpError } from "../shared/http-error";
@@ -101,7 +101,9 @@ export function createRequestTools(ports: RequestPorts) {
   async function reply(command: AgentRequests, current: () => boolean, owner?: number) {
     const { request: id, status, message, requestIds } = command.args;
     const list = await ports.list(), read = structuredClone(list.find(request => request.id === id));
-    const { result } = requestOperation(list, { type: "reply", id, status, message, requestIds, ...scope }) as { result: AgentRequest };
+    // Who asks a question is drawn on the request's element while it waits (ticket am-11): its name, else "Agent".
+    const by = { grant: command.grantId, name: agentName(command.agent) };
+    const { result } = requestOperation(list, { type: "reply", id, status, message, requestIds, by, ...scope }) as { result: AgentRequest };
     if (!current()) throw new HttpError(409, "The editor stopped receiving for this connection. Nothing was changed; reply again when it is on.");
     if (!await ports.save(result, unchangedSince(read!, current), owner))
       throw new HttpError(409, "The request changed meanwhile (the user answered or dismissed it). Read it again with get_selection before replying.");

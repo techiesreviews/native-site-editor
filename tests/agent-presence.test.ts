@@ -1,10 +1,10 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { agentPresenceTarget, applySiteCommand, pinnedMediaActions, type AgentSiteActions } from "../src/agent-site.ts";
-import { createAgentPresence, type PresenceTarget } from "../src/agent-presence.ts";
+import { AT_WORK_MS, createAgentPresence, type PresenceQuestion } from "../src/agent-presence.ts";
 import { mediaCommandPins } from "../src/agent-tools.ts";
 import type { MediaPin } from "../src/controllers/media-controller.ts";
-import { textHash, type AgentCommand } from "../shared/agent.ts";
+import { textHash, type AgentCommand, type AgentWho } from "../shared/agent.ts";
 
 const page = "<!doctype html><html><head><title>Home</title></head><body>" +
   "<header><nav><a href=\"/\">Home</a></nav></header>" +
@@ -61,9 +61,9 @@ test("applySiteCommand starts the agent's presence before its change and ends it
     isMounted: () => false,
     atomicText: () => false,
     sectionTags: () => tags,
-    presence(path: string, find: (source: string) => number[] | undefined) {
+    presence(path: string, find: (source: string) => number[] | undefined, who?: AgentWho) {
       showing = { path, node: find(source) };
-      events.push(`start ${path} ${showing.node?.join(".")}`);
+      events.push(`start ${path} ${showing.node?.join(".")}${who?.name ? ` by ${who.grant}/${who.name}` : ""}`);
       return () => { events.push("end"); showing = undefined; };
     },
     async writeDraft(_path: string, content: string) {
@@ -84,6 +84,10 @@ test("applySiteCommand starts the agent's presence before its change and ends it
   await assert.rejects(applySiteCommand(actions as AgentSiteActions, command("write_file", { content: page, expectedHash: "stale" })), /changed in the editor/);
   assert.deepEqual(events, ["start index.html 1.0", "end"]);
   assert.equal(showing, undefined);
+  events.length = 0;
+  // Who sent it (ticket am-11): its connection and the name it gave itself.
+  await assert.rejects(applySiteCommand(actions as AgentSiteActions, command("write_file", { content: page, expectedHash: "stale", grantId: "g1", agent: "Copy editor" })), /changed in the editor/);
+  assert.deepEqual(events, ["start index.html 1.0 by g1/Copy editor", "end"]);
 });
 
 test("presence never stops the change: a failing presence port is let go", async () => {
@@ -97,31 +101,43 @@ test("presence never stops the change: a failing presence port is let go", async
   assert.ok(written);
 });
 
-// The presence's views as main.ts paints them, and the workspace loads it holds to.
+// The presence's views as main.ts paints them, and the workspace loads it holds to. Each paint as
+// name, colour, page, element and question.
 const template = "<section class=\"cards\"><h2>Cards</h2><slot></slot></section>";
+type Shot = [string, number, string, string | undefined, boolean][];
 function presenceViews(sources: Record<string, string> = { "index.html": page, "about/index.html": page, "components/site-cards.html": template, "styles/site.css": "h2 { color: red; }" }) {
   let load = 0;
-  const painted: (PresenceTarget | undefined)[] = [];
+  const clock = { now: 1_000 };
+  const shown = { repoId: 1, branch: "main" };
+  const painted: Shot[] = [];
   const presence = createAgentPresence({
     pages: () => ["index.html", "about/index.html"],
     source: path => sources[path],
     begin: () => { const at = load; return { holds: () => at === load }; },
-    paint: target => painted.push(target),
+    sectionTags: () => tags,
+    shows: at => at.repoId === shown.repoId && (at.branch ?? shown.branch) === shown.branch,
+    paint: marks => painted.push(marks.map(mark => [mark.name, mark.colour, mark.path, mark.node?.join("."), mark.asking])),
+    now: () => clock.now,
   });
-  return { presence, painted, nextLoad: () => { load++; presence.refresh(); } };
+  return { presence, painted, clock, shown, nextLoad: () => { load++; presence.refresh(); } };
 }
 const findHero = () => [1, 0];
+const agent = (name: string, grant = "g1"): AgentWho => ({ grant, name });
+const question = (who: AgentWho | undefined, element = "1.1.1.0", state = "question", file = "index.html"): PresenceQuestion =>
+  ({ repoId: 1, branch: "main", state, element: { file, id: element }, ...(who ? { reply: { by: who } } : {}) });
 
 test("a change's presence is painted on its page's element, and cleared once it ends (once)", () => {
   const { presence, painted } = presenceViews();
   const end = presence.show("index.html", findHero);
-  assert.deepEqual(painted, [{ path: "index.html", node: [1, 0] }]);
+  assert.deepEqual(painted, [[["Agent", 0, "index.html", "1.0", false]]]);
   end(); end();
-  assert.deepEqual(painted, [{ path: "index.html", node: [1, 0] }, undefined]);
-  // Nothing found, or no such page: nothing painted, and its end paints nothing.
+  assert.deepEqual(painted, [[["Agent", 0, "index.html", "1.0", false]], []]);
+  // Nothing found: the page alone (its row in Pages and files shows it, once another page is shown).
   presence.show("index.html", () => undefined)();
+  assert.deepEqual(painted.slice(2), [[["Agent", 0, "index.html", undefined, false]], []]);
+  // No such page: nothing painted, and its end paints nothing.
   presence.show("missing.html", findHero)();
-  assert.equal(painted.length, 2);
+  assert.equal(painted.length, 4);
 });
 
 test("another workspace shown while a change runs clears its presence there, and its end paints nothing more", () => {
@@ -129,24 +145,88 @@ test("another workspace shown while a change runs clears its presence there, and
   const end = presence.show("index.html", findHero);
   // Another branch or site opens (main.ts nextLoad): its index.html, the same path, shows nothing.
   nextLoad();
-  assert.deepEqual(painted, [{ path: "index.html", node: [1, 0] }, undefined]);
+  assert.deepEqual(painted, [[["Agent", 0, "index.html", "1.0", false]], []]);
   end();
   assert.equal(painted.length, 2);
   // A change begun in the workspace shown now is painted as ever.
   presence.show("index.html", findHero)();
-  assert.deepEqual(painted.slice(2), [{ path: "index.html", node: [1, 0] }, undefined]);
+  assert.deepEqual(painted.slice(2), [[["Agent", 0, "index.html", "1.0", false]], []]);
   // Loads with no agent at work paint nothing (boot).
   nextLoad();
   assert.equal(painted.length, 4);
 });
 
-test("overlapping changes: the latest one still running shows, the earlier one again once it ends", () => {
+test("overlapping changes of one agent: the latest one still running shows, the earlier one again once it ends", () => {
   const { presence, painted } = presenceViews();
   const first = presence.show("index.html", findHero);
   const second = presence.show("index.html", () => [1, 1]);
   second();
   first();
-  assert.deepEqual(painted, [{ path: "index.html", node: [1, 0] }, { path: "index.html", node: [1, 1] }, { path: "index.html", node: [1, 0] }, undefined]);
+  assert.deepEqual(painted, [[["Agent", 0, "index.html", "1.0", false]], [["Agent", 0, "index.html", "1.1", false]], [["Agent", 0, "index.html", "1.0", false]], []]);
+});
+
+test("several agents each show at once, in their own colour in order of arrival, kept while they come and go", () => {
+  const { presence, painted } = presenceViews();
+  const header = presence.show("index.html", findHero, agent("Header writer"));
+  const copy = presence.show("about/index.html", () => [1, 1], agent("Copy editor"));
+  // The same name on another connection is another agent.
+  const other = presence.show("index.html", () => [1, 1], agent("Header writer", "g2"));
+  assert.deepEqual(painted.at(-1), [
+    ["Header writer", 0, "index.html", "1.0", false], ["Copy editor", 1, "about/index.html", "1.1", false], ["Header writer", 2, "index.html", "1.1", false]]);
+  header();
+  assert.deepEqual(painted.at(-1), [["Copy editor", 1, "about/index.html", "1.1", false], ["Header writer", 2, "index.html", "1.1", false]]);
+  // Back again, in its own colour; a fourth gets the fourth colour, a fifth the first again.
+  const again = presence.show("index.html", findHero, agent("Header writer"));
+  const fourth = presence.show("index.html", findHero, agent("Image finder"));
+  const fifth = presence.show("index.html", findHero, agent("Link checker"));
+  assert.deepEqual(painted.at(-1)!.map(([name, colour]) => [name, colour]), [["Header writer", 0], ["Copy editor", 1], ["Header writer", 2], ["Image finder", 3], ["Link checker", 0]]);
+  for (const end of [copy, other, again, fourth, fifth]) end();
+  assert.deepEqual(painted.at(-1), []);
+});
+
+test("an agent's question shows on its request's section with its chip orange, until the user answers", () => {
+  const { presence, painted, nextLoad, shown } = presenceViews();
+  const finder = agent("Image finder");
+  // A question about the inner paragraph (1.1.1.0) stands on its section (1.1.1); others' requests, open ones and answered ones show nothing.
+  presence.questions([question(finder), question(undefined), question(agent("Copy editor"), "1.0", "done"), question(agent("Copy editor"), "1.0", "open")]);
+  assert.deepEqual(painted, [[["Image finder", 0, "index.html", "1.1.1", true]]]);
+  // At work meanwhile: its change shows, its chip still orange.
+  const end = presence.show("index.html", findHero, finder);
+  assert.deepEqual(painted.at(-1), [["Image finder", 0, "index.html", "1.0", true]]);
+  end();
+  assert.deepEqual(painted.at(-1), [["Image finder", 0, "index.html", "1.1.1", true]]);
+  // Asked on another page: that page's row.
+  presence.questions([question(finder, "1.1", "question", "about/index.html")]);
+  assert.deepEqual(painted.at(-1), [["Image finder", 0, "about/index.html", "1.1", true]]);
+  // The user answered: gone.
+  presence.questions([question(finder, "1.1", "open")]);
+  assert.deepEqual(painted.at(-1), []);
+  // A load of the same branch (a reload) keeps it; another branch shown does not, even before the menu tells its own requests.
+  presence.questions([question(finder)]);
+  nextLoad();
+  assert.deepEqual(painted.at(-1), [["Image finder", 0, "index.html", "1.1.1", true]]);
+  shown.branch = "other";
+  nextLoad();
+  assert.deepEqual(painted.at(-1), []);
+});
+
+test("get_site's who works on what: each agent's file and section now or last, its question, for ten minutes", () => {
+  const { presence, clock, nextLoad, shown } = presenceViews();
+  const header = presence.show("index.html", findHero, agent("Header writer"));
+  presence.show("styles/site.css", () => undefined, agent("Stylist"))();
+  presence.questions([question(agent("Image finder"))]);
+  assert.deepEqual(presence.atWork(), [
+    { name: "Header writer", file: "index.html", section: "1.0" },
+    { name: "Stylist", file: "styles/site.css" },
+    { name: "Image finder", file: "index.html", asking: true },
+  ]);
+  header();
+  clock.now += AT_WORK_MS + 1;
+  // Ten minutes after its last change an agent is no longer listed; a question still waiting is.
+  assert.deepEqual(presence.atWork(), [{ name: "Image finder", file: "index.html", asking: true }]);
+  shown.branch = "other";
+  nextLoad();
+  assert.deepEqual(presence.atWork(), []);
 });
 
 test("a pinned Media change shows its presence only while its own page is shown", async () => {

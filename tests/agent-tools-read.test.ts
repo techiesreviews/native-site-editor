@@ -199,6 +199,21 @@ test("get_site uses shared tree, not-found and variant lookup with draft styles"
   assert.match(JSON.stringify(summary.components), /browser/);
   assert.equal(summary.pending, 0);
   assert.equal(summary.openRequests, 0);
+  // With no presence port nothing is said about other agents.
+  assert.equal(summary.agents, undefined);
+});
+
+test("get_site tells who works on what (ticket am-11); other reads do not", async () => {
+  const f = await fixture();
+  const working = [{ name: "Copy editor", file: "about/index.html", section: "1.1" }, { name: "Image finder", file: "index.html", asking: true as const }];
+  const tools = createAgentReadTools({ ...f.ports, atWork: () => working });
+  const site = await tools.run("get_site", {});
+  assert.ok(site.ok);
+  const value = site.value as { agents: unknown; note: string };
+  assert.deepEqual(value.agents, working);
+  assert.match(value.note, /agents lists who works on what/);
+  const listed = await tools.run("list_files", {});
+  assert.ok(listed.ok && !JSON.stringify(listed.value).includes("Copy editor"));
 });
 
 test("get_selection returns current element or the established absent message", async () => {

@@ -39,6 +39,8 @@ export interface AgentCommand {
   args?: AgentCommandArgs;
   /** The connection that queued it; only it can read its status. */
   grantId?: string;
+  /** Who sent it on that connection (ticket am-11): the short name the agent gave itself, else its MCP client's. */
+  agent?: string;
   repoId?: number;
   /** The editor tab applying it. */
   claimedBy?: string;
@@ -234,8 +236,22 @@ export interface AgentRequest {
   seenAt?: number;
   /** The connections wait_for_requests returned it to (since the user last answered). */
   returnedTo?: string[];
-  reply?: { status: AgentReplyStatus; message: string; at: number; requestIds?: string[] };
+  reply?: { status: AgentReplyStatus; message: string; at: number; requestIds?: string[]; by?: AgentWho };
   thread?: AgentRequestMessage[];
+}
+
+/**
+ * One agent at work (ticket am-11): its connection and the name it works under there. Several
+ * subagents share a connection, each under its own name; with none, its MCP client's name.
+ */
+export interface AgentWho { grant: string; name: string }
+/** The most an agent's name holds: a chip's few words. */
+export const AGENT_NAME_LIMIT = 40;
+/** The `agent` field of a command from `value`, an agent's name as the relay brought it: none when it names no one. */
+export const agentNamed = (value: unknown): { agent?: string } => { const name = agentName(value); return name ? { agent: name } : {}; };
+/** An agent's name as it is shown: one line, at most AGENT_NAME_LIMIT characters; "" for none. */
+export function agentName(value: unknown): string {
+  return typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, AGENT_NAME_LIMIT).trim() : "";
 }
 
 /**

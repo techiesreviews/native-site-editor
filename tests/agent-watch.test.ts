@@ -39,8 +39,8 @@ function browser(clock = manualClock()) {
       writes++; kept.set(request.id, structuredClone(request)); return true;
     },
   });
-  const run = (tool: AgentRequests["tool"], args: AgentRequests["args"] = {}, waitMs?: number, deadline = clock.now() + 24_000, grantId = "grant-a") =>
-    tools.run({ operation: "requests", tool, args, grantId, ...(waitMs === undefined ? {} : { waitMs }) }, () => true, deadline);
+  const run = (tool: AgentRequests["tool"], args: AgentRequests["args"] = {}, waitMs?: number, deadline = clock.now() + 24_000, grantId = "grant-a", agent?: string) =>
+    tools.run({ operation: "requests", tool, args, grantId, ...(agent ? { agent } : {}), ...(waitMs === undefined ? {} : { waitMs }) }, () => true, deadline);
   const value = async (pending: ReturnType<typeof run>) => { const result = await pending; assert.equal(result.ok, true, JSON.stringify(result)); return (result as { value: any }).value; };
   const ask = (request: AgentRequest) => { kept.set(request.id, request); tools.notify(); };
   return { clock, kept, tools, run, value, ask, writes: () => writes, reads: () => reads };
@@ -170,8 +170,12 @@ test("reply_to_request and get_selection(request) run the hub's rules on this br
   const b = browser();
   b.ask(asked("req-a"));
   await b.value(b.run("wait_for_requests", {}, 0));
-  assert.deepEqual(await b.value(b.run("reply_to_request", { request: "req-a", status: "question", message: "Bold?", requestIds: ["e-1"] })), { id: "req-a", state: "question" });
+  assert.deepEqual(await b.value(b.run("reply_to_request", { request: "req-a", status: "question", message: "Bold?", requestIds: ["e-1"] }, undefined, undefined, "grant-a", "Image finder")), { id: "req-a", state: "question" });
+  // Who asked is kept for its presence (ticket am-11); agents read the reply without it.
+  assert.deepEqual(b.kept.get("req-a")!.reply?.by, { grant: "grant-a", name: "Image finder" });
   const found = await b.value(b.run("get_request", { request: "req-a" }));
+  assert.equal(found.reply.by, undefined);
+  assert.equal(found.reply.message, "Bold?");
   assert.deepEqual(found.thread.map((item: { from: string; text: string }) => [item.from, item.text]), [["user", "Change req-a"], ["agent", "Bold?"]]);
   assert.equal(found.element.html, "<h1>Hi</h1>");
   b.kept.set("req-a", { ...b.kept.get("req-a")!, state: "dismissed" });

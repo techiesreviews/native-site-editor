@@ -1,5 +1,5 @@
 import type { MediaPin } from "./controllers/media-controller";
-import type { AgentRead, AgentReadResult } from "../shared/agent-read";
+import type { AgentAtWork, AgentRead, AgentReadResult } from "../shared/agent-read";
 import { HttpError } from "../shared/http-error";
 import { executeAgentRead } from "../shared/agent-read";
 import { SiteFiles, type SiteFileReader } from "../shared/site-files";
@@ -27,6 +27,8 @@ export interface AgentReadPorts {
   files(): AgentReadFiles | undefined;
   /** The text of `path` now (the site runtime's): agent reads, and the live source a page edit starts from (media place/frame/loop proofs). */
   source?(path: string): string | undefined;
+  /** Who works on what (src/agent-presence.ts), which get_site tells. */
+  atWork?(): AgentAtWork[];
 }
 
 /** The browser's existing tree/blob readers and clean cache, pinned before any await. */
@@ -90,7 +92,7 @@ export function createAgentReadTools(ports: AgentReadPorts) {
       if (!shared) throw new Error("The editor is unavailable. Open the connected site and branch, then read the site again.");
       const files = new SiteFiles(agentFileReader(source, shared.context, signal), source.repo, shared.context, async hash => shared.texts.get(hash),
         ports.source && (path => ports.source!(path)));
-      const result = await executeAgentRead({ operation: "read", tool, args }, shared.context, files);
+      const result = await executeAgentRead({ operation: "read", tool, args }, shared.context, files, undefined, tool === "get_site" ? ports.atWork?.() : undefined);
       stale();
       // Leave space for the relay's correlation/scope envelope, including JSON escaping and UTF-8.
       if (new TextEncoder().encode(JSON.stringify(result)).byteLength > 8 * 1024 * 1024 - 4096)

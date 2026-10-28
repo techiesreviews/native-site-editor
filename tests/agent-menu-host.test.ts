@@ -64,6 +64,7 @@ function setup(options: { draftScope?: () => DraftScope | undefined } = {}) {
     setupController: { noteAgent: record("noteAgent") }, pageStructureController: { renderEditBar: record("renderEditBar") },
     mediaPorts: { pin: () => { pins.push("pin"); return PIN; } },
     workspace: { activeFileContext: null, repositoryMenu: { setQuestions: record("questions"), close: record("close menu") } },
+    agentPresence: { questions: record("questioned"), atWork: () => [{ name: "Copy editor", file: "index.html", section: "1.0" }] },
     nativeTextIndexGate: { key: () => "k", indexed: () => late.indexed, settled: async () => true, ensure: async () => { calls.push("index"); late.indexed = true; return undefined; } },
     get info() { return late.info; },
     get nativePreview() { return late.preview ? { route: () => "/", setRequests: record("requests"), showRequest: record("show") } : undefined; },
@@ -97,7 +98,7 @@ test("the menu mounts for the signed-in account and its connection, requests and
   options.onShowRequest?.("r1");
   await options.onCommand(COMMAND);
   await options.reload?.({ revision: 2, generation: 1, drafts: [] });
-  assert.deepEqual(calls, ["noteAgent true", "noteAgent false", `renderEditBar ${JSON.stringify(SELECTION)}`, "requests []", "questions 2", "close menu", 'show "r1"', "apply c1", "reload 2"]);
+  assert.deepEqual(calls, ["noteAgent true", "noteAgent false", `renderEditBar ${JSON.stringify(SELECTION)}`, "requests []", "questioned []", "questions 2", "close menu", 'show "r1"', "apply c1", "reload 2"]);
 });
 
 test("no menu mounts before the session names an account", async () => {
@@ -151,6 +152,8 @@ test("the files agents read are the open repository's, with the clean cache's bl
   assert.deepEqual([files?.has("o/site", "sha-1"), files?.has("o/site", "sha-2")], [true, false]);
   appStore.snapshot.value = undefined;
   assert.equal(tools.files(), undefined);
+  // get_site tells who works on what (ticket am-11).
+  assert.deepEqual(tools.atWork?.(), [{ name: "Copy editor", file: "index.html", section: "1.0" }]);
 });
 
 test("work pinned for Media carries the pin the media ports give", async () => {
@@ -167,7 +170,8 @@ test("before the preview exists, requests and a shown request wait, and the sele
   const options = menus.at(-1)!;
   options.onRequests?.([]);
   options.onShowRequest?.("r1");
-  assert.deepEqual(calls, ["close menu"]);
+  // The questions' presence needs no preview (Page Structure and Pages and files show it too).
+  assert.deepEqual(calls, ["questioned []", "close menu"]);
   const resolved = resolveNativeProject(["index.html"]);
   assert.ok(resolved.ok);
   runtime.site = resolved.site;

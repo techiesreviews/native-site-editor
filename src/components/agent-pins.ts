@@ -42,7 +42,7 @@ import "./agent-pins.css";
 // open.
 
 /** A request as the tab polls it: its element without the source. */
-export type PinRequest = Pick<AgentRequest, "id" | "text" | "state" | "createdAt" | "reply" | "thread"> & {
+export type PinRequest = Pick<AgentRequest, "id" | "text" | "state" | "createdAt" | "reply" | "thread" | "repoId" | "branch"> & {
   element: Pick<AgentRequest["element"], "file" | "route" | "id" | "tag" | "selector" | "host">;
 };
 

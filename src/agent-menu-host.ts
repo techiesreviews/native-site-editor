@@ -21,6 +21,7 @@ import type { createSetupHost } from "./setup-host";
 import { workingPart } from "./working-part";
 import type { createWorkspaceMount } from "./workspace-mount";
 import type { SessionInfo } from "../shared/types";
+import type { createAgentPresence } from "./agent-presence";
 
 export interface AgentMenuHostPorts {
   appStore: AppStore;
@@ -33,6 +34,8 @@ export interface AgentMenuHostPorts {
   mediaPorts: { pin?(): MediaPin | undefined };
   workspace: Pick<ReturnType<typeof createWorkspaceMount>, "activeFileContext" | "repositoryMenu">;
   nativeTextIndexGate: SiteIndexGate;
+  /** An agent's question shows on its request's element; get_site tells who works on what. */
+  agentPresence: Pick<ReturnType<typeof createAgentPresence>, "questions" | "atWork">;
   /** Host state, read at call time. */
   readonly info: SessionInfo | undefined;
   readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "route" | "setRequests" | "showRequest"> | undefined;
@@ -50,7 +53,7 @@ export interface AgentMenuHostPorts {
 export function createAgentMenuHost(ports: AgentMenuHostPorts) {
   // Consts and functions main.ts never reassigns, read once; its `let` state and later consts stay `ports.` reads.
   const { appStore, runtime, guardedEdits, cleanSources, agentCommands, setupController, pageStructureController, mediaPorts, workspace,
-    nativeTextIndexGate, api, readFile, readFiles, loadAgentSite, loadAgentMenu, draftScope, nativeRouteInfo, pathNow, errorMessage } = ports;
+    nativeTextIndexGate, agentPresence, api, readFile, readFiles, loadAgentSite, loadAgentMenu, draftScope, nativeRouteInfo, pathNow, errorMessage } = ports;
 
   // Agents see the whole site (its pages are read after the first paint):
   // the context waits for the complete index of the repository open then.
@@ -62,6 +65,7 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
       api, read: readFile, batch: readFiles, has: (repo, sha) => Boolean(cleanSources.get(repo, sha)) } : undefined,
     stamp: () => guardedEdits.stamp("repository"),
     source: path => runtime.textSource(path),
+    atWork: () => agentPresence.atWork(),
     load: loadAgentSite,
     input: () => {
       const scope = draftScope();
@@ -101,7 +105,7 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
       reload: snapshot => agentCommands.reload(snapshot),
       // Ask agent shows in the edit bar while an agent is connected.
       onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
-      onRequests: (requests) => ports.nativePreview?.setRequests(requests),
+      onRequests: (requests) => { ports.nativePreview?.setRequests(requests); agentPresence.questions(requests); },
       onQuestions: (count) => workspace.repositoryMenu?.setQuestions(count),
       // A question in the selector's list: its pin, card open, answer box focused.
       onShowRequest: (id) => {

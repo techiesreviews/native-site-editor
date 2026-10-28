@@ -17,6 +17,7 @@ import {
   requestThread,
   type AgentRequest,
   type AgentRequestMessage,
+  type AgentWho,
 } from "./agent";
 import { agentToolsOn, type AgentToolOn } from "./agent-tool-table";
 import { HttpError } from "./http-error";
@@ -38,7 +39,7 @@ type RequestAction =
   | { type: "ask"; request: AgentRequest }
   | { type: "take-requests"; grantId?: string; all?: boolean } & Workspace
   | { type: "request"; id?: string } & Workspace
-  | { type: "reply"; id?: string; status?: string; message?: string; requestIds?: unknown } & Workspace
+  | { type: "reply"; id?: string; status?: string; message?: string; requestIds?: unknown; by?: AgentWho } & Workspace
   | { type: "answer"; id?: string; text?: string }
   | { type: "dismiss"; id?: string };
 
@@ -68,7 +69,9 @@ export function requestSummary(request: AgentRequest) {
 /** A request as an agent reads it: with its whole thread, the user's answers included. */
 export function requestForAgent(request: AgentRequest) {
   const { returnedTo: _returned, repoId: _repoId, branch: _branch, ...rest } = request;
-  return { ...rest, thread: requestThread(request) };
+  // Who replied is the editor's (the replying agent's presence): agents read the reply alone.
+  const reply = request.reply && (({ by: _by, ...told }) => told)(request.reply);
+  return { ...rest, ...(reply ? { reply } : {}), thread: requestThread(request) };
 }
 
 /**
@@ -124,6 +127,7 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
       message: String(action.message ?? "").slice(0, REQUEST_TEXT_LIMIT),
       at: now,
       ...(requestIds.length ? { requestIds } : {}),
+      ...(action.by ? { by: action.by } : {}),
     };
     addMessage(request, { from: "agent", text: request.reply.message, at: now, status: action.status, ...(requestIds.length ? { requestIds } : {}) });
     return { list, changed: true, result: request };
@@ -159,6 +163,8 @@ export interface AgentRequests {
   tool: AgentRequestTool;
   args: { all?: boolean; request?: string; status?: string; message?: string; requestIds?: string[] };
   grantId: string;
+  /** Who calls on that connection (shared/agent.ts AgentWho). */
+  agent?: string;
   generation?: number;
   waitMs?: number;
 }
