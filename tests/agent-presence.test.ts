@@ -110,6 +110,7 @@ function presenceViews(sources: Record<string, string> = { "index.html": page, "
   const clock = { now: 1_000 };
   const shown = { repoId: 1, branch: "main" };
   const painted: Shot[] = [];
+  const stops = new Set<string>();
   const presence = createAgentPresence({
     pages: () => ["index.html", "about/index.html"],
     source: path => sources[path],
@@ -118,9 +119,10 @@ function presenceViews(sources: Record<string, string> = { "index.html": page, "
     shows: at => at.repoId === shown.repoId && (at.branch ?? shown.branch) === shown.branch,
     workspace: () => ({ ...shown }),
     paint: marks => painted.push(marks.map(mark => [mark.name, mark.colour, mark.path, mark.node?.join("."), mark.asking])),
+    stops: { has: who => stops.has(JSON.stringify(who)), add: who => { stops.add(JSON.stringify(who)); } },
     now: () => clock.now,
   });
-  return { presence, painted, clock, shown, nextLoad: () => { load++; presence.loaded(); } };
+  return { presence, painted, clock, shown, stops, nextLoad: () => { load++; presence.loaded(); } };
 }
 const findHero = () => [1, 0];
 const agent = (name: string, grant = "g1"): AgentWho => ({ grant, name });
@@ -321,4 +323,44 @@ test("an agent rewriting a component's template, or any file not a page, shows n
   presence.show(rewrite.path, source => agentPresenceTarget(rewrite, source, tags))();
   presence.show("styles/site.css", () => [0])();
   assert.deepEqual(painted, []);
+});
+
+test("the MCP menu lists the agents working now in their colours; Stop ends one: its marks go, the other keeps working", () => {
+  const { presence, painted, clock, stops } = presenceViews();
+  let told = 0;
+  const unlisten = presence.listen(() => { told++; });
+  const header = presence.show("index.html", findHero, agent("Header writer"));
+  presence.show("styles/site.css", () => undefined, agent("Stylist"))();
+  presence.questions([question(agent("Image finder"), "1.1.0", "question", "about/index.html")]);
+  assert.ok(told >= 3);
+  assert.deepEqual(presence.agents().map(({ name, colour, asking, until }) => [name, colour, asking, until]), [
+    ["Header writer", 0, false, undefined], ["Stylist", 1, false, clock.now + AT_WORK_MS], ["Image finder", 2, true, undefined]]);
+  // Stop: the header writer's outline and dots go at once; the others stay, in their colours.
+  presence.stop(agent("Header writer"));
+  assert.ok(stops.has(JSON.stringify(agent("Header writer"))));
+  assert.ok(presence.stopped(agent("Header writer")));
+  assert.ok(!presence.stopped(agent("Header writer", "g2")));
+  assert.deepEqual(painted.at(-1), [["Image finder", 2, "about/index.html", "1.1", true]]);
+  assert.deepEqual(presence.agents().map(agent => agent.name), ["Stylist", "Image finder"]);
+  assert.deepEqual(presence.atWork().map(agent => agent.name), ["Stylist", "Image finder"]);
+  // Its change under way ends, and a later one (refused by the tab, should one get through) draws nothing.
+  header();
+  presence.show("index.html", findHero, agent("Header writer"))();
+  assert.deepEqual(presence.agents().map(agent => agent.name), ["Stylist", "Image finder"]);
+  // Stopping one that asks takes its orange chip off; the other keeps working.
+  const copy = presence.show("index.html", findHero, agent("Copy editor"));
+  presence.stop(agent("Image finder"));
+  assert.deepEqual(painted.at(-1), [["Copy editor", 3, "index.html", "1.0", false]]);
+  // Another tab stopped one (main.ts hears the storage event): drawn again without it.
+  stops.add(JSON.stringify(agent("Copy editor")));
+  presence.stopsChanged();
+  assert.deepEqual(painted.at(-1), []);
+  copy();
+  // Ten minutes on, a change's agent leaves the list.
+  clock.now += AT_WORK_MS + 1;
+  assert.deepEqual(presence.agents(), []);
+  const before = told;
+  unlisten();
+  presence.show("index.html", findHero, agent("Late"))();
+  assert.equal(told, before);
 });

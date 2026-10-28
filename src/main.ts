@@ -50,6 +50,7 @@ import { createParkedSteps, parkedTransitions } from "./guarded-edit/parked";
 import { createEditorWorkspace } from "./editor-workspace";
 import { createFinishedElsewhere, openLink } from "./finished-elsewhere";
 import { createAgentPresence } from "./agent-presence";
+import { agentStops, STOPPED_AGENTS_KEY } from "./agent-stops";
 import { createWorkspaceSession, draftScopeOf, holdsDraftScope, sameBranch, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { Repository, SessionInfo, TreeEntry } from "../shared/types";
 
@@ -82,7 +83,10 @@ const agentPresence = createAgentPresence({
   shows: at => { const scope = shownScope(); return scope?.kind === "github" && sameBranch(scope, { repoId: at.repoId, branch: at.branch ?? scope.branch }); },
   workspace: () => { const scope = shownScope(); return scope?.kind === "github" ? { repoId: scope.repoId, branch: scope.branch } : undefined; },
   paint: marks => { nativePreview?.agentPresence(marks); pageStructure?.agentPresence(marks); pagesAndFiles.agents(marks); },
+  stops: agentStops,
 });
+// An agent stopped in another tab of this browser (ticket am-12) goes from this one's views too.
+window.addEventListener("storage", event => { if (event.key === STOPPED_AGENTS_KEY) agentPresence.stopsChanged(); });
 function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.loaded(); workingPart.left(); return workspaceSession.begin(); }
 const cleanSources = new CleanSourceCache(() => info?.user?.login);
 // The open native site's state (src/native-site-runtime.ts); its preview adapter is the site preview below.

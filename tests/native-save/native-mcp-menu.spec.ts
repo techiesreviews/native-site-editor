@@ -14,9 +14,15 @@ const dot = (page: Page) => page.locator(".agent-menu__action").evaluate(element
   const style = getComputedStyle(element, "::before");
   return { color: style.backgroundColor, animation: style.animationName };
 });
-/** The menu shows only its button's label: no hint, link, Watch control or tab text. */
+/** The menu shows only its button's label: no hint, link, Watch control or tab text. "Pins go to" and the agents
+ * working now (ticket am-12) are controls, each a label and its value or a name and its Stop. */
 async function onlyLabel(page: Page, label: string) {
-  await expect(page.locator(".agent-menu")).toHaveText(label, { useInnerText: true });
+  await expect.poll(() => page.locator(".agent-menu").evaluate(menu => {
+    const parts = [...menu.children].filter(part => part.checkVisibility() && !part.matches(".agent-menu__choice, .agent-menu__agents")) as HTMLElement[];
+    return parts.map(part => part.innerText).join("").trim();
+  })).toBe(label);
+  const choice = page.locator(".agent-menu__choice:visible");
+  if (await choice.count()) await expect(choice.locator(".agent-menu__choice-label")).toHaveText("Pins go to");
   await expect(page.locator(".editor-toast")).toHaveCount(0);
 }
 async function agent(baseURL: string | undefined, token: string, name: string) {
@@ -1118,4 +1124,87 @@ test("Wait for MCP while the tab switches to another site: nothing is copied and
   // clipboard-ready: the fixed wait above; the clipboard must still hold what was written before the press.
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
   expect(connects).toEqual([]);
+});
+
+// Ticket am-12: the open menu lists the agents working now (dot, name, Stop); Stop ends that agent only, its
+// outline and dots going while the other keeps working. "Pins go to" is remembered per site through a reload.
+test("Stop ends one of two agents: its outline and dots go, its calls are refused, the other keeps working; Pins go to survives a reload", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action");
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  // Waiting: Pins go to shows, the agents' list does not.
+  const pinsGoTo = page.getByRole("combobox", { name: "Pins go to" });
+  await expect(pinsGoTo).toHaveValue("Claude Code");
+  await expect(page.locator(".agent-menu__agents")).toBeHidden();
+  const subagents = await agent(baseURL, token, "stop-spec");
+  // Each place_media loads its module while it runs (agent-site.ts): held, both stay at work until it is let go.
+  let release!: () => void;
+  const released = new Promise<void>(resolve => { release = resolve; });
+  let reached!: () => void;
+  const loading = new Promise<void>(resolve => { reached = resolve; });
+  await page.route(url => url.pathname === "/src/page-builder/media-insert.ts", async route => { reached(); await released; await route.continue(); });
+  const place = (name: string, element: string) => subagents.client.callTool({ name: "place_media",
+    arguments: { path: "index.html", element, file: "images/studio-desk.svg", requestId: `stop-${name.replace(/\W/g, "-")}`, waitSeconds: 0, agent: name } });
+  const preview = page.frameLocator(".native-preview-frame");
+  const chips = preview.locator('[data-native-selection-box="agent-presence-chip"]').locator("visible=true");
+  const tree = page.getByRole("tree", { name: "Page structure" });
+  const rowDots = (node: string) => tree.locator(`[data-node="${node}"] .agent-dots__dot`);
+  try {
+    expect((await subagents.call("get_site", { agent: "Header writer" })).repository).toBe("native-demo-user/native-demo");
+    await page.keyboard.press("Escape");
+    const header = place("Header writer", "1.0.2");
+    await loading;
+    const copy = place("Copy editor", "1.1.0");
+    await expect(chips).toHaveText(["Header writer", "Copy editor"]);
+    await expect(rowDots("1.0")).toHaveCount(1);
+    await expect(rowDots("1.1")).toHaveCount(1);
+
+    // The open menu lists both, each with its dot in its colour and a Stop; Disconnect MCP stays below.
+    await page.locator(".repository-menu__trigger").click();
+    await expect.poll(async () => { await refresh(page); return action.textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+    const rows = page.locator(".agent-menu__agent");
+    await expect(rows.locator(".agent-menu__agent-name")).toHaveText(["Header writer", "Copy editor"]);
+    await expect(rows.locator(".agent-dots__dot")).toHaveCount(2);
+    expect(new Set(await rows.locator(".agent-dots__dot").evaluateAll(dots => dots.map(dot => getComputedStyle(dot).backgroundColor))).size).toBe(2);
+    await expect(pinsGoTo).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("menu-agents.png") });
+
+    // Stop Header writer: its row, outline, chip and dot go at once; Copy editor's stay. The menu stays open, no toast.
+    await page.getByRole("button", { name: "Stop Header writer" }).click();
+    await expect(rows.locator(".agent-menu__agent-name")).toHaveText(["Copy editor"]);
+    await expect(page.getByRole("button", { name: "Stop Copy editor" })).toBeFocused();
+    await expect(chips).toHaveText(["Copy editor"]);
+    await expect(rowDots("1.0")).toHaveCount(0);
+    await expect(rowDots("1.1")).toHaveCount(1);
+    await expect(page.locator(".editor-toast")).toHaveCount(0);
+    await expect(action).toHaveText("Disconnect MCP");
+
+    // Its calls are refused before anything runs; Copy editor's land, and get_site lists only it.
+    release();
+    await Promise.all([header, copy]);
+    const stopped = await subagents.client.callTool({ name: "get_site", arguments: { agent: "Header writer" } });
+    expect(stopped.isError).toBe(true);
+    expect(JSON.stringify(stopped.content)).toContain("stopped you");
+    await expect.poll(async () => (await subagents.call("get_site", { agent: "Copy editor" })).agents?.map((each: { name: string }) => each.name)).toEqual(["Copy editor"]);
+    expect((await subagents.call("set_page_details", { page: "/", title: "Still working", requestId: "stop-copy-again", agent: "Copy editor" })).state).toBe("applied");
+
+    // Pins go to: Codex for this site, kept through a reload; the stop holds too.
+    await pinsGoTo.selectOption("Codex");
+    await page.keyboard.press("Escape");
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await page.locator(".repository-menu__trigger").click();
+    await expect.poll(async () => { await refresh(page); return action.textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+    await expect(pinsGoTo).toHaveValue("Codex");
+    await expect.poll(async () => JSON.stringify((await subagents.client.callTool({ name: "get_site", arguments: { agent: "Header writer" } })).content)).toContain("stopped you");
+    expect((await subagents.call("set_page_details", { page: "/", title: "Working after a reload", requestId: "stop-copy-reload", agent: "Copy editor" })).state).toBe("applied");
+    await expect(page.locator(".agent-menu__agent-name")).toHaveText(["Copy editor"]);
+  } finally {
+    release();
+    await subagents.client.close().catch(() => undefined);
+  }
 });
