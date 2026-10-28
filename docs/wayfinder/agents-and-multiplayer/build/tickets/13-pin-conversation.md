@@ -2,7 +2,7 @@
 title: "A pin is a conversation"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-13
 builder: claude
 blocked_by: [11-several-agents-presence]
 ---
