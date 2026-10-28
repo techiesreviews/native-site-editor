@@ -66,6 +66,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - Tests: two agents of one connection (one at work on Home, one asking on About) come back as two entries in arrival order (presence unit test); the shown page's row with a whole-page agent (agent-dots test); `native-several-agents.spec.ts` switches to the dark theme and back while three outlines are drawn and checks that every outline and chip stays drawn in the theme's colours. The agents' colours are the same in both themes, so the step pins the repaint, not a colour change.
   - `RESULT: ok unit 3865/3865 (251 files)`; `RESULT: ok specs 3/3 passed` (several agents, presence, pages look); `npm run check` and `npm run lint` are clean.
 
+- Lead-allowed fix outside the ticket's Files (Ticket 52 retry test waits by time, not by turns). It fixes a slice-10 timing weakness. `tests/agent-tools-edit.test.ts` ("ticket 52 holds on retry") waited 100 `setImmediate` turns for the retry, but under load the retry's hashing outlasts them. `kit pr`'s full unit run failed on it every time here. Under 12 parallel runs, plain dev failed 1/12 and this branch 2/12. The test now checks each turn for up to 2 s: 36/36 passed under the same load, and `npm test` passed 6293/6293.
+
 ### Follow-ups
 
 - The catch-up (`changesSinceLastRead`, `src/agent-part.ts`) is still keyed by connection only. Two named subagents on one connection still share one catch-up and count each other's edits as their own (ticket 10's follow-up). Key it by connection plus `agent` now that the name arrives.
