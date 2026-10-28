@@ -10,18 +10,27 @@ import type { Plugin } from "vite";
 /** One file in a map's `prototypes/` folder. */
 export type Mockup = { map: string; file: string; path: string };
 
-/** The mock-ups and the images beside them; notes or other files in the folder stay unpublished. */
+/** An HTML mock-up. */
 const mockupPage = /^[^.].*\.html$/i;
+/** An image a mock-up may use. */
 const image = /^[^.].*\.(?:png|jpe?g|gif|webp|avif|svg)$/i;
 const titlePrefix = /^PROTOTYPE \(throwaway\) · /;
-/** `src`, `href` and `srcset` values (quoted or bare) and `url(...)` arguments. */
+/** `src`, `href` and `srcset` values (quoted or bare, `data-src` too) and `url(...)` arguments. */
 const reference = /\b(src|href|srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`]+))|\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/gi;
 
-/** The file names in the same folder an HTML mock-up points at, e.g. `a.png` from `./a.png?v=2 2x`. */
+const namedCharacters: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+const decodeCharacters = (text: string) => text.replace(/&(?:#(\d+)|#x([\da-f]+)|([a-z]+));/gi, (match, decimal?: string, hex?: string, name?: string) => {
+  if (name) return namedCharacters[name.toLowerCase()] ?? match;
+  const code = decimal ? Number(decimal) : parseInt(hex!, 16);
+  return code <= 0x10ffff ? String.fromCodePoint(code) : match;
+});
+
+/** The file names in the same folder an HTML mock-up points at, e.g. `a.png` from `./a.png?v=2 2x`.
+ * References inside HTML comments don't count, so a commented-out reference image stays unpublished. */
 export function referencedFiles(html: string): Set<string> {
   const names = new Set<string>();
-  for (const [, attribute, ...values] of html.matchAll(reference)) {
-    const value = values.find(part => part !== undefined) ?? "";
+  for (const [, attribute, ...values] of html.replace(/<!--[\s\S]*?-->/g, "").matchAll(reference)) {
+    const value = decodeCharacters(values.find(part => part !== undefined) ?? "");
     const urls = attribute?.toLowerCase() === "srcset" ? value.split(",").map(candidate => candidate.trim().split(/\s+/)[0]) : [value.trim()];
     for (const url of urls) {
       let name = url.replace(/[?#].*$/, "").replace(/^(?:\.\/)+/, "");
@@ -32,6 +41,8 @@ export function referencedFiles(html: string): Set<string> {
   return names;
 }
 
+/** Every HTML mock-up in each map's `prototypes/` folder, and the images beside them that one of
+ * those mock-ups uses; unused images, notes and other files stay unpublished. */
 export function mockupFiles(root: string): Mockup[] {
   const wayfinder = join(root, "docs/wayfinder");
   const isDir = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() ?? false;
