@@ -63,5 +63,7 @@ enough; it caches results per commit.
 ## Preview and CI deploys
 
 The lead deploys the preview with `kit preview`, which also checks the live
-bundle. CI deploys `dev` by itself only once Lex adds the Cloudflare secret:
-[github-settings.md](github-settings.md).
+bundle. The preview builds with `npm run build:preview`, which adds every
+`docs/wayfinder/*/prototypes/` mock-up at `/mockups/` (index by map);
+`build:ui` has none. CI deploys `dev` by itself only once Lex adds the
+Cloudflare secret: [github-settings.md](github-settings.md).
