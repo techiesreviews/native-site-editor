@@ -297,7 +297,10 @@ export function createAgentMenu(options: {
   choice.append(choiceLabel, pinsGoTo);
   const working = node("ul", "agent-menu__agents");
   working.setAttribute("aria-label", "Agents working now");
-  root.append(choice, working, action, download, waitingOn);
+  // Hairlines between "Pins go to", the agents and the button, as in the approved mock-up (prototypes/10-asking-agents.html).
+  const divider = () => { const line = node("div", "agent-menu__divider"); line.setAttribute("aria-hidden", "true"); return line; };
+  const afterChoice = divider(), afterAgents = divider();
+  root.append(choice, afterChoice, working, afterAgents, action, download, waitingOn);
   const flyout = mountFlyout({
     panel: waitingOn,
     label: "Requests",
@@ -524,7 +527,7 @@ export function createAgentMenu(options: {
     count.hidden = !asked;
     count.textContent = asked ? String(asked) : "";
     const workspace = scope();
-    choice.hidden = offered === "connect" || !workspace;
+    choice.hidden = afterChoice.hidden = offered === "connect" || !workspace;
     if (workspace && !choice.hidden && document.activeElement !== pinsGoTo) pinsGoTo.value = pinAgent(workspace);
     drawAgents(offered);
     download.hidden = !storage.problem || current === "closed";
@@ -573,7 +576,7 @@ export function createAgentMenu(options: {
     clearTimeout(agentsTimer);
     const until = Math.min(...agents.map(agent => agent.until ?? Infinity));
     if (until < Infinity) agentsTimer = setTimeout(() => { if (!disposed) drawAgents(); }, Math.max(0, until - Date.now()) + 50);
-    working.hidden = !agents.length;
+    working.hidden = afterAgents.hidden = !agents.length;
     const want = JSON.stringify(agents.map(agent => [agent.key, agent.name, agent.colour, agent.asking]));
     if (want === drawnAgents) return;
     drawnAgents = want;
