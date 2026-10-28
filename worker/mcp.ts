@@ -350,7 +350,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "edit_file",
     {
       description:
-        "Change any repository text file by exact text replacements, as an unsaved draft in the editor (Undo works). Each oldText must appear exactly once (or set all). Needs the hash from read_file or get_page: the edit lands while the words it replaces are unchanged, whatever else changed since that read (the user or other agents work beside you). When those words changed meanwhile it is refused with part, them as they are now (and the file's hash): send the edit again against part.text. Prefer the page and section tools for page structure and details.",
+        "Change any repository text file by exact text replacements, as an unsaved draft in the editor (Undo works). Each oldText must appear exactly once (or set all). Needs the hash from read_file or get_page: the edit lands while the words it replaces are unchanged, whatever else changed since that read (the user or other agents work beside you). When those words changed meanwhile it is refused with part, them as they are now (and the file's hash): send the edit again against part.text. With all, a hash the editor no longer keeps (after a reload) is refused: read the file again. Prefer the page and section tools for page structure and details.",
       inputSchema: z.object({
         path: z.string().min(1).max(1024),
         expectedHash: hash.describe("The file's hash as read_file or get_page returned it: the text your oldText was read in."),

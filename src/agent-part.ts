@@ -50,13 +50,15 @@ const ELEMENT_ARGS = ["section", "element", "before", "after"] as const;
 /**
  * A page command's element ids, read in `read` (the page as the agent read it), found in `now` (its text
  * now, `hash`): an element whose HTML is unchanged keeps its id, or takes the id of the one element with
- * that HTML now (elements added or removed before it move it). Throws the clash when it changed or is gone:
- * with it as it is now when the same place still holds an element like it (its tag, among as many siblings).
+ * that HTML now (elements added or removed before it move it). The element a command changes (`section`,
+ * `element`) throws the clash when it changed or is gone: with it as it is now when the same place still
+ * holds an element like it (its tag, among as many siblings). An anchor (`before`, `after`) is not changed by
+ * the command: changed in place like that, it keeps its id; only one gone is refused.
  */
 export function elementsNow(path: string, args: AgentCommandArgs, read: string, now: string, hash: string): AgentCommandArgs {
   const readTree = readSource(read, { page: true }), nowTree = readSource(now, { page: true });
-  const at = (text: string, id: string) => {
-    const tree = text === read ? readTree : nowTree, node = parseOutlineId(id), el = node && tree.at(node), range = el?.type === "element" ? tree.range(el) : undefined;
+  const at = (tree: typeof nowTree, text: string, id: string) => {
+    const node = parseOutlineId(id), el = node && tree.at(node), range = el?.type === "element" ? tree.range(el) : undefined;
     if (!node || !el || el.type !== "element" || !range) return undefined;
     const parent = node.length > 1 ? tree.at(node.slice(0, -1)) : undefined;
     return { tag: el.name, siblings: tree.elements(parent).filter(child => tree.path(child).length === node.length).length,
@@ -66,14 +68,16 @@ export function elementsNow(path: string, args: AgentCommandArgs, read: string, 
   for (const name of ELEMENT_ARGS) {
     const id = args[name];
     if (typeof id !== "string") continue;
-    const was = at(read, id);
+    const was = at(readTree, read, id);
     // Not an element of the page read: the live page refuses it as before.
     if (!was) continue;
-    const same = at(now, id);
+    const same = at(nowTree, now, id);
     if (same?.text === was.text) continue;
     const found = nowTree.elements().filter(el => { const range = nowTree.range(el); return range && range.end - range.start === was.text.length && now.slice(range.start, range.end) === was.text; });
     if (found.length === 1) { moved[name] = outlineId(nowTree.path(found[0])); continue; }
-    const part = same && same.tag === was.tag && same.siblings === was.siblings ? partOf(path, hash, now, same.start, same.end) : undefined;
+    const alike = same && same.tag === was.tag && same.siblings === was.siblings;
+    if (alike && (name === "before" || name === "after")) continue;
+    const part = alike ? partOf(path, hash, now, same.start, same.end) : undefined;
     throw new PartClash(part
       ? `Element ${id} of ${path} was changed meanwhile, by the user or another agent. part has it as it is now: read the page again (get_page) and send the change anew.`
       : `Element ${id} of ${path} is no longer there: the user or another agent changed the page meanwhile. Read the page again (get_page).`, part);

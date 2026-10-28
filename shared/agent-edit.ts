@@ -110,14 +110,19 @@ export function partOf(path: string, hash: string, text: string, start: number, 
 
 /**
  * Where `[start, end)` of `read` (a file's text as an agent read it) is in `now`, its text now: between the
- * nearest lines around it that are still there once each; failing those, where the one stretch that
+ * nearest lines around it that are there once each in both; failing those, where the one stretch that
  * changed between the two puts it. Undefined when that stretch does not meet it.
  */
 export function spanNow(read: string, start: number, end: number, now: string): { start: number; end: number } | undefined {
   const lines = (text: string) => { let at = 0; return text.split("\n").map(line => { const item = { line, at }; at += line.length + 1; return item; }); };
   const was = lines(read), is = lines(now);
-  const once = new Map<string, number | null>();
-  for (const { line, at } of is) if (line.trim()) once.set(line, once.has(line) ? null : at);
+  // Anchors are lines once each in both texts: a line repeated in the read could stand for either copy.
+  const onceIn = (items: { line: string; at: number }[]) => {
+    const found = new Map<string, number | null>();
+    for (const { line, at } of items) if (line.trim()) found.set(line, found.has(line) ? null : at);
+    return found;
+  };
+  const inRead = onceIn(was), once = new Map([...onceIn(is)].filter(([line, at]) => at !== null && typeof inRead.get(line) === "number"));
   const lineAt = (offset: number) => { let index = 0; while (index + 1 < was.length && was[index + 1].at <= offset) index++; return index; };
   const first = lineAt(start), last = lineAt(Math.max(start, end - 1));
   let from: number | undefined, to: number | undefined;
@@ -139,23 +144,26 @@ export function spanNow(read: string, start: number, end: number, now: string): 
 
 /**
  * The first replacement whose words, as `read` has them, are not where that read put them in `now`: not as
- * many, or one outside its own stretch now (spanNow); -1 when every one is. Words `read` lacks are an earlier
- * replacement's to make, and pass.
+ * many, or one outside its own stretch now (spanNow); with `at`, where in `read` that one (or the first) was.
+ * Undefined when every one is. Words `read` lacks are an earlier replacement's to make, and pass.
  */
-export function wordsMoved(read: string, now: string, edits: { oldText: string }[]) {
-  return edits.findIndex(({ oldText }) => {
-    const places = (text: string) => {
-      const found: number[] = [];
-      for (let at = text.indexOf(oldText); oldText && at >= 0; at = text.indexOf(oldText, at + oldText.length)) found.push(at);
-      return found;
-    };
-    const was = places(read), is = places(now);
-    if (!was.length) return false;
-    return was.length !== is.length || was.some((at, index) => {
-      const span = spanNow(read, at, at + oldText.length, now);
-      return span !== undefined && (is[index] < span.start || is[index] + oldText.length > span.end);
+export function wordsMoved(read: string, now: string, edits: { oldText: string }[]): { index: number; at: number } | undefined {
+  const places = (text: string, words: string) => {
+    const found: number[] = [];
+    for (let at = text.indexOf(words); words && at >= 0; at = text.indexOf(words, at + words.length)) found.push(at);
+    return found;
+  };
+  for (const [index, { oldText }] of edits.entries()) {
+    const was = places(read, oldText), is = places(now, oldText);
+    if (!was.length) continue;
+    if (was.length !== is.length) return { index, at: was[0] };
+    const at = was.find((place, which) => {
+      const span = spanNow(read, place, place + oldText.length, now);
+      return span !== undefined && (is[which] < span.start || is[which] + oldText.length > span.end);
     });
-  });
+    if (at !== undefined) return { index, at };
+  }
+  return undefined;
 }
 
 /**
@@ -163,10 +171,11 @@ export function wordsMoved(read: string, now: string, edits: { oldText: string }
  * text at the agent's hash, when the tab still has it): the part the first failing replacement changes, now.
  */
 function editClash(file: { path: string; hash: string; content: string }, edits: { oldText: string; newText: string; all?: boolean }[], read: string | undefined,
-  failing = edits.findIndex((_, index) => !applyReplacements(file.content, edits.slice(0, index + 1)).ok)): never {
-  const { oldText } = edits[Math.max(0, failing)];
+  moved?: { index: number; at: number }): never {
+  const failing = moved?.index ?? Math.max(0, edits.findIndex((_, index) => !applyReplacements(file.content, edits.slice(0, index + 1)).ok));
+  const { oldText } = edits[failing];
   const which = edits.length > 1 ? `The words replacement ${failing + 1} changes` : "The words this edit changes";
-  const at = read?.indexOf(oldText) ?? -1;
+  const at = moved?.at ?? read?.indexOf(oldText) ?? -1;
   let span = at >= 0 ? spanNow(read!, at, at + oldText.length, file.content) : undefined;
   if (!span) {
     // No read to go by: where the replaced words' first and last lines still are, once each.
@@ -205,11 +214,15 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditContext,
       // else changed since its read; once they changed meanwhile, the clash carries them as they are now.
       // Read in another text, each replaced word must be where that read had it, as often (`all` too): never a
       // copy added since, nor the words changed in place and written again elsewhere.
-      const was = file.hash === expectedHash ? undefined : read?.(expectedHash);
-      const moved = was === undefined ? -1 : wordsMoved(was, file.content, edits);
-      if (moved >= 0) return editClash(file, edits, was, moved);
+      const stale = file.hash !== expectedHash, was = stale ? read?.(expectedHash) : undefined;
+      // Without that read (the tab reloaded or let it go), how often it had the words is unknown: `all` is refused.
+      if (stale && was === undefined && edits.some(item => item.all))
+        throw new PartClash(`${path} changed since it was read, and this editor tab no longer keeps that read, so an edit with all cannot tell which copies you read. Read the file again and send the edit with its new hash.`);
+      const moved = was === undefined ? undefined : wordsMoved(was, file.content, edits);
+      if (moved) return editClash(file, edits, was, moved);
       const edited = applyReplacements(file.content, edits);
-      if (!edited.ok) return file.hash === expectedHash ? refuse(edited.error) : editClash(file, edits, was);
+      // Replacements that fail on the read itself are the agent's own mistake, not a clash.
+      if (!edited.ok) return !stale || was !== undefined && !applyReplacements(was, edits).ok ? refuse(edited.error) : editClash(file, edits, was);
       if (edited.text === file.content) return unchanged({ state: "unchanged", message: "The edits change nothing." });
       const big = contentProblem(edited.text);
       if (big) return refuse(big);

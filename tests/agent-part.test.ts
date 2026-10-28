@@ -68,6 +68,10 @@ test("a part is found between unchanged lines, else by the one stretch that chan
   assert.deepEqual(spanNow("<p>one</p><p>two</p>", 10, 20, "<p>one</p><p>2</p>"), { start: 0, end: 18 });
   // Lines around it gone too: the one stretch that changed, with the words.
   assert.deepEqual(spanNow("x\n<p>one</p><p>two</p>\ny", 12, 22, "X\n<p>one</p><p>2</p>\nY"), { start: 0, end: 22 });
+  // A line twice in the read (and once now) is no anchor: it could stand for either copy.
+  const twiceRead = "x\n</s>\nold\n</s>\ny", onceNow = "x\nnew\n</s>\ny";
+  const span = spanNow(twiceRead, twiceRead.indexOf("old"), twiceRead.indexOf("old") + 3, onceNow)!;
+  assert.ok(span.start <= onceNow.indexOf("new") && span.end >= onceNow.indexOf("new") + 3, JSON.stringify(span));
   // Longer than PART_LIMIT: cut there and marked, its lines still the whole stretch's.
   const long = `head\n${Array.from({ length: 300 }, (_, i) => `line ${i} ${"x".repeat(20)}`).join("\n")}\ntail`;
   const cut = partOf("a.html", "h", long, 5, long.length - 5);
@@ -99,6 +103,10 @@ test("a page command's elements are found again where other sections moved them,
     error instanceof PartClash && /was changed meanwhile/.test(error.message) && error.part?.hash === "h2" && error.part.text.includes("B, edited"));
   // Gone: refused, with no part.
   assert.throws(() => elementsNow("index.html", { section: "0.1" }, was, page("<section>A</section>"), "h3"), (error: PartClash) => error instanceof PartClash && !error.part && /no longer there/.test(error.message));
+  // An anchor (before/after) the command does not change: edited in place by another agent, it stays where it is;
+  // gone, it is refused. The section moved must be unchanged itself.
+  assert.deepEqual(elementsNow("index.html", { section: "0.0", after: "0.1" }, was, page("<section>A</section><section>B, edited</section>"), "h"), { section: "0.0", after: "0.1" });
+  assert.throws(() => elementsNow("index.html", { section: "0.0", after: "0.1" }, was, page("<section>A</section><div>B</div>"), "h"), (error: PartClash) => error instanceof PartClash && /0\.1 .* no longer there/.test(error.message));
   // make_component's element can be any container: a <div> moved by a section added before it is found too.
   const withDiv = page("<section>A</section><div class=\"note\"><p>Note</p></div>");
   assert.deepEqual(elementsNow("index.html", { element: "0.1" }, withDiv, page("<section>X</section><section>A</section><div class=\"note\"><p>Note</p></div>"), "h"), { element: "0.2" });
@@ -215,10 +223,10 @@ test("an edit read in another text clashes when its words are no longer where th
   assert.ok(clash instanceof PartClash);
   // Changed in place and written again elsewhere: as many, but not where it read them.
   const elsewhere = read.replace("<h1>Welcome</h1>", "<h1>Hello</h1>").replace(">Fast<", ">Welcome<");
-  assert.equal(wordsMoved(read, elsewhere, [{ oldText: "Welcome" }]), 0);
+  assert.deepEqual(wordsMoved(read, elsewhere, [{ oldText: "Welcome" }]), { index: 0, at: read.indexOf("Welcome") });
   // Still where it read them, beside other changes: none moved, and it lands.
   const beside = read.replace(">Fast<", ">Quick<");
-  assert.equal(wordsMoved(read, beside, [{ oldText: "Welcome" }]), -1);
+  assert.equal(wordsMoved(read, beside, [{ oldText: "Welcome" }]), undefined);
   const ok = await withHome(beside);
   const prepared = await prepareAgentEdit(edit(args), ok.context, ok.files, hash => hash === args.expectedHash ? read : undefined);
   assert.ok("operation" in prepared && prepared.input.content === beside.replace("Welcome", "Hi"));
@@ -229,4 +237,40 @@ test("a revision change and a discarded draft at once: every draft gone is told 
   const told = catchUpOf(before, { commit: "c2", files: {} })!;
   assert.deepEqual(told.files, [{ path: "kept.html", change: "saved" }, { path: "dropped.html", change: "saved" }]);
   assert.equal(told.saved, "c2");
+});
+
+test("with all and no kept read, a stale edit is refused; a typo read in the kept text is the agent's own mistake; a clash shows the copy that moved", async () => {
+  const twice = read.replace("<h1>Welcome</h1>", "<h1>Welcome</h1>\n    <p>Welcome</p>");
+  const { context, files: site } = await withHome(twice);
+  const stale = await textHash(read);
+  // The tab reloaded or let the read go: it cannot tell the copies it read.
+  const forgotten = await prepareAgentEdit(edit({ path: "index.html", expectedHash: stale, edits: [{ oldText: "Welcome", newText: "Hi", all: true }] }), context, site, () => undefined)
+    .then(() => assert.fail("must refuse"), (error: unknown) => error);
+  assert.ok(forgotten instanceof PartClash && /no longer keeps that read/.test(forgotten.message));
+  // Words it never read: refused plainly, not blamed on anyone else.
+  await assert.rejects(prepareAgentEdit(edit({ path: "index.html", expectedHash: stale, edits: [{ oldText: "Welcom e", newText: "Hi" }] }), context, site, () => read), /oldText was not found/);
+  // The second of two copies moved: the part is where that one is now, not the first.
+  const two = "a\n<p>Welcome one</p>\nb\n<p>Welcome two</p>\nc", moved = "a\n<p>Welcome one</p>\nb\n<p>changed</p>\nc\n<p>Welcome two</p>";
+  const at = await withHome(moved);
+  const clash = await prepareAgentEdit(edit({ path: "index.html", expectedHash: await textHash(two), edits: [{ oldText: "Welcome", newText: "Hi", all: true }] }), at.context, at.files, () => two)
+    .then(() => assert.fail("must clash"), (error: PartClash) => error);
+  assert.equal(clash.part?.text, "<p>changed</p>");
+});
+
+test("after a reload the tab keeps no reads or marks: no catch-up on the first reply, and an edit read before follows the no-read path", async () => {
+  const fresh = await import(`../src/agent-part.ts?reload=${Date.now()}`) as typeof import("../src/agent-part");
+  rememberText("before-reload", "text");
+  assert.equal(fresh.readText("before-reload"), undefined);
+  const context: EditorContext = await siteContext(), shared = { context, texts: new Map<string, string>() };
+  const workspace = { repoId: repo.id, branch: "main" }, reply = { ok: true as const, value: { state: "applied" } };
+  tellAgent(shared, workspace, "agent-reload", reply);
+  context.drafts.push({ path: "index.html", baseSha: "1".repeat(40), updatedAt: 9, hash: "h-new" });
+  // The reloaded tab's first reply to that agent tells nothing; its next one does.
+  assert.deepEqual(fresh.tellAgent({ context: structuredClone(context), texts: new Map() }, workspace, "agent-reload", reply), reply);
+  context.drafts.push({ path: "about.css", baseSha: null, updatedAt: 10, hash: "h-css" });
+  assert.ok(JSON.stringify(fresh.tellAgent({ context: structuredClone(context), texts: new Map() }, workspace, "agent-reload", reply)).includes("about.css"));
+  // An edit read before the reload: its words still there land (no `all`).
+  const now = read.replace(">Fast<", ">Quick<"), home = await withHome(now);
+  const prepared = await prepareAgentEdit(edit({ path: "index.html", expectedHash: await textHash(read), edits: [{ oldText: "Welcome", newText: "Hi" }] }), home.context, home.files, fresh.readText);
+  assert.ok("operation" in prepared && prepared.input.content === now.replace("Welcome", "Hi"));
 });

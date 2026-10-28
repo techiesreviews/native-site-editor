@@ -52,6 +52,12 @@ const WAIT_LOST = "The editor tab was reloaded or closed while this change waite
 /** The page commands whose elements are found again in the page as it is now (ticket 10). */
 const PAGE_COMMANDS = new Set<string>(["make_component", "add_section", "move_section", "remove_section"]);
 
+/** Whether a failed edit may have been kept all the same: never refused as nothing changed, nor run again. */
+function unknownOutcome(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  return error instanceof AgentRecordsError && error.code === "unknown" || /unproven|outcome.*unknown|could not prove|could not confirm whether/i.test(message);
+}
+
 /**
  * The files a landed change made its agent's own, with the hash each was left with when known (ticket 10).
  * Its file is left out when it landed on another text than the agent read: what others changed there is
@@ -235,16 +241,26 @@ export function createAgentEditTools(options: Options) {
         let outcome: Awaited<ReturnType<Options["run"]>>;
         for (let attempt = 1; ; attempt++) {
           await leaveUser();
+          // A text write's file is its agent's own from before its draft shows (a parallel read's catch-up
+          // must not tell it back); a page command's hash is known only once it lands (below).
+          if (command.operation === "write_file")
+            noteOwnChange(workspace, request.grantId, ownFiles(request, command, { result: { hash: await textHash(command.content) } }));
           ran = true;
           try { outcome = await options.run(command); break; }
           catch (error) {
             // Another change landed on its file between preparing and applying (another agent's, or the user's
-            // typing): prepared again on that text, it lands while its own part is unchanged (ticket 10). Nothing
-            // was changed by the attempt, so its proofs hold again until the next run; a reason of its own stands.
-            if (attempt > 2 || !(error instanceof Error && /changed in the editor/.test(error.message) && /Nothing was changed/.test(error.message))) throw error;
+            // typing): prepared again on that text, it lands while its own part is unchanged (ticket 10). Decided
+            // by proofs, not wording: no receipt or cancellation kept for it (nothing was changed by the attempt,
+            // so its proofs hold again until the next run), an outcome that is not unknown, and its file's text
+            // moved (below). A reason of its own stands.
+            if (attempt > 2 || unknownOutcome(error)) throw error;
+            const kept = await records.status(workspace, request.id, request.grantId);
+            if (kept.status !== "unknown") throw error;
             ran = false;
             check();
-            // The proof an unchanged receipt is kept against: taken before the preparation it rests on.
+            // `check()` still guards the fence, revision and workspace taken as the edit arrived. `proof` is only the
+            // agent-records revision the new preparation rests on: the first one (`before`) is known stale, since the
+            // change that refused this attempt landed after it. An unchanged receipt is kept against this one.
             const proof = await records.workspace(workspace);
             check();
             const again = (await prepareNow()).prepared;
@@ -303,7 +319,7 @@ export function createAgentEditTools(options: Options) {
         ? { ok: false, message: "This change's id was already used for different work. Nothing was changed." } : reply(settled.receipt.outcome);
       if (settled?.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "This delivery was cancelled before it committed. Nothing was changed by it." } };
       const message = error instanceof Error ? error.message : "The browser edit failed.";
-      const unknown = error instanceof AgentRecordsError && error.code === "unknown" || /unproven|outcome.*unknown|could not prove|could not confirm whether/i.test(message);
+      const unknown = unknownOutcome(error);
       return { ok: true, value: { requestId: request.id, state: unknown ? "unknown" : "conflict", message: unknown
         ? `${message} Check get_command_status; do not replay the change.` : message, ...(error instanceof PartClash && error.part ? { part: json(error.part) } : {}) } };
     }
