@@ -42,4 +42,4 @@ Slice 37 (PR #246) copies every image in `docs/wayfinder/*/prototypes/` to the p
 - `RESULT: ok unit 12/12 (1 files)`; `RESULT: ok specs none affected`; `npm run check` and `npm run lint` exit 0.
 - `kit preview` not run here (lead's step); the 404 for `/mockups/styling/03-unblockwp-panel-reference.png` is shown locally by the browser check.
 - Feature list: no change (planning pages on the preview site, not an editor feature).
-- Commits: "The preview mock-ups copy only images a mock-up uses", "Review fixes round 1", "Review fixes round 2"
+- Commits: "The preview mock-ups copy only images a mock-up uses", "Review fixes round 1", "Review fixes round 2", "Review fixes round 3" and this commit.
