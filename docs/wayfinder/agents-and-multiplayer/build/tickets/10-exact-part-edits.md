@@ -2,7 +2,7 @@
 title: "Agent changes target the exact part they change"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-10
 builder: claude
 blocked_by: []
 ---
