@@ -145,9 +145,10 @@ export function spanNow(read: string, start: number, end: number, now: string): 
 /**
  * The first replacement whose words, as `read` has them, are not where that read put them in `now`: not as
  * many, or one outside its own stretch now (spanNow); with `at`, where in `read` that one (or the first) was.
- * Undefined when every one is. Words `read` lacks are an earlier replacement's to make, and pass.
+ * Undefined when every one is. Words `read` lacks pass when an earlier replacement makes them, or when `now`
+ * lacks them too (the agent's own mistake); found only in `now`, they are a copy added since (`at` -1).
  */
-export function wordsMoved(read: string, now: string, edits: { oldText: string }[]): { index: number; at: number } | undefined {
+export function wordsMoved(read: string, now: string, edits: { oldText: string; newText: string; all?: boolean }[]): { index: number; at: number } | undefined {
   const places = (text: string, words: string) => {
     const found: number[] = [];
     for (let at = text.indexOf(words); words && at >= 0; at = text.indexOf(words, at + words.length)) found.push(at);
@@ -155,7 +156,11 @@ export function wordsMoved(read: string, now: string, edits: { oldText: string }
   };
   for (const [index, { oldText }] of edits.entries()) {
     const was = places(read, oldText), is = places(now, oldText);
-    if (!was.length) continue;
+    if (!was.length) {
+      const made = applyReplacements(read, edits.slice(0, index));
+      if (is.length && !(made.ok && made.text.includes(oldText))) return { index, at: -1 };
+      continue;
+    }
     if (was.length !== is.length) return { index, at: was[0] };
     const at = was.find((place, which) => {
       const span = spanNow(read, place, place + oldText.length, now);
