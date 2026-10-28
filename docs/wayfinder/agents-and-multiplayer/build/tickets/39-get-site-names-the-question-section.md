@@ -1,7 +1,7 @@
 ---
 title: "`get_site` names the section an agent is asking about (follow-up on 11)"
 type: task (AFK)
-status: open
+status: closed
 assignee: am-39
 builder: claude
 blocked_by: [11-several-agents-presence]
@@ -34,3 +34,9 @@ Slice 11's final review left a P2 ([ticket 11 Follow-ups](11-several-agents-pres
 ## Kit commands and evidence
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit specs --affected`, `kit review`, `kit pr`; report the RESULT lines.
+
+## Done (2026-10-28)
+
+- `get_site` now follows the page's rule for an agent that asks a question: only a change still running wins over the question; once that change ended, the agent is told on its question's file and section (`src/agent-presence.ts`, `atWork()`). Test "get_site tells an agent whose change on Home ended and who asks about About on About's section, as the page draws it" in `tests/agent-presence.test.ts` (fails before the fix, passes after).
+- Each MCP tool call's name now travels with that call: `register` in `worker/mcp.ts` hands every handler its own set of relay helpers (`calls(name)`: dispatch, edit, media, read, readSite, requestCommand) bound to its name, and the server keeps no shared caller variable. The `native-site://site` resource and the `edit_site` prompt read under the connection's client name. Test in `tests/mcp-runtime.test.ts`: one POST to `/mcp` with a JSON-RPC batch of two `write_file` calls named "Header writer" and "Copy editor"; each command the tab receives carries its own name.
+- Feature list: no change (agents get the right section and name in places they already show; nothing new for the user to try).
