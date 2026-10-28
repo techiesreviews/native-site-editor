@@ -1,11 +1,12 @@
+// The planning mock-ups (`docs/wayfinder/<map>/prototypes/*`), served by the preview site at
+// `/mockups/<map>/<file>` with a generated `/mockups/index.html` listing them by map. Only the
+// preview build turns this on (`MOCKUPS=1`, `npm run build:preview`); production builds and the
+// editor's boot never see these files. The images a mock-up uses sit beside it and are copied too.
 import { appendFileSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Plugin } from "vite";
 
-/** The planning mock-ups (`docs/wayfinder/<map>/prototypes/*`), served by the preview site at
- * `/mockups/<map>/<file>` with a generated `/mockups/index.html` listing them by map. Only the
- * preview build turns this on (`MOCKUPS=1`, `npm run build:preview`); production builds and the
- * editor's boot never see these files. The images a mock-up uses sit beside it and are copied too. */
+/** One file in a map's `prototypes/` folder. */
 export type Mockup = { map: string; file: string; path: string };
 
 const titlePrefix = /^PROTOTYPE \(throwaway\) · /;
@@ -22,7 +23,7 @@ export function mockupFiles(root: string): Mockup[] {
   });
 }
 
-const escape = (text: string) => text.replace(/[&<>"]/g, char => `&${({ "&": "amp", "<": "lt", ">": "gt", '"': "quot" })[char]};`);
+const escapeHtml = (text: string) => text.replace(/[&<>"]/g, char => `&${({ "&": "amp", "<": "lt", ">": "gt", '"': "quot" })[char]};`);
 
 /** A mock-up's `<title>` without the shared "PROTOTYPE (throwaway)" prefix, or its file name. */
 export function mockupTitle(html: string, file: string): string {
@@ -33,11 +34,16 @@ export function mockupTitle(html: string, file: string): string {
 /** The index page: one section per map, one link per HTML mock-up. */
 export function mockupIndex(mockups: readonly Mockup[], read: (path: string) => string = path => readFileSync(path, "utf8")): string {
   const maps = new Map<string, Mockup[]>();
-  for (const mockup of mockups) if (mockup.file.endsWith(".html")) maps.set(mockup.map, [...maps.get(mockup.map) ?? [], mockup]);
+  for (const mockup of mockups) {
+    if (!mockup.file.endsWith(".html")) continue;
+    const pages = maps.get(mockup.map);
+    if (pages) pages.push(mockup);
+    else maps.set(mockup.map, [mockup]);
+  }
   const sections = [...maps].map(([map, pages]) => `<section>
-<h2>${escape(map)}</h2>
+<h2>${escapeHtml(map)}</h2>
 <ul>
-${pages.map(page => `<li><a href="${escape(`${map}/${page.file}`)}">${escape(mockupTitle(read(page.path), page.file))}</a></li>`).join("\n")}
+${pages.map(page => `<li><a href="${escapeHtml(`${map}/${page.file}`)}">${escapeHtml(mockupTitle(read(page.path), page.file))}</a></li>`).join("\n")}
 </ul>
 </section>`);
   return `<!doctype html>
@@ -62,11 +68,13 @@ ${sections.join("\n") || "<p>No mock-ups yet.</p>"}
 
 /** Mock-ups are single files with inline scripts (one imports Yjs from esm.sh), which the editor's policy
  * in `public/_headers` forbids. This rule, appended to the built `_headers`, swaps that policy for one
- * allowing them under `/mockups/` only: a rule's `!` removes the header earlier rules set. */
+ * allowing them under `/mockups/` only: a rule's `!` removes the header earlier rules set. `sandbox`
+ * (without allow-same-origin) runs them in an opaque origin, so they never see the editor's session
+ * cookie or storage; their storage calls already fall back to memory. */
 export const MOCKUPS_HEADERS = `
 /mockups/*
   ! Content-Security-Policy
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://esm.sh; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://esm.sh; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; sandbox allow-scripts allow-forms allow-popups
 `;
 
 export function mockups(root: string): Plugin {
