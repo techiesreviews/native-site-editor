@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { STOPPED_AGENTS_KEY, agentStops } from "../src/agent-stops.ts";
+import { AGENT_STOPPED } from "../shared/agent.ts";
+import { STOPPED_AGENTS_KEY, afterStoppedWait, agentStops } from "../src/agent-stops.ts";
 
 // The agents stopped in this browser (ticket am-12): a list in localStorage every tab reads, plus this tab's own.
 const items = new Map<string, string>();
@@ -62,4 +63,24 @@ test("a broken record or broken entries count as no stops", () => {
   // A stop added over broken entries keeps only good ones.
   agentStops.add({ grant: "g10", name: "New" });
   assert.deepEqual(stored(), [{ grant: "g9", name: "Elsewhere" }, { grant: "g10", name: "New" }]);
+});
+
+test("Disconnect MCP forgets the stops of the connections it ended, in this tab and for the others", () => {
+  elsewhere(JSON.stringify([{ grant: "ended", name: "Copy editor" }, { grant: "kept", name: "Copy editor" }]));
+  agentStops.add({ grant: "ended", name: "Header writer" });
+  agentStops.forget(["ended"]);
+  assert.deepEqual(stored(), [{ grant: "kept", name: "Copy editor" }]);
+  assert.ok(!agentStops.has({ grant: "ended", name: "Copy editor" }));
+  assert.ok(!agentStops.has({ grant: "ended", name: "Header writer" }));
+  assert.ok(agentStops.has({ grant: "kept", name: "Copy editor" }));
+  // None ended: nothing changes.
+  agentStops.forget([]);
+  assert.deepEqual(stored(), [{ grant: "kept", name: "Copy editor" }]);
+});
+
+test("a held wait of an agent stopped meanwhile is refused, unless it was handed requests: they come back, never lost", () => {
+  const handed = { ok: true as const, value: { requests: [{ id: "req-1", text: "A photo here?" }] } };
+  assert.deepEqual(afterStoppedWait(handed), handed);
+  assert.deepEqual(afterStoppedWait({ ok: true, value: { requests: [] } }), { ok: false, message: AGENT_STOPPED });
+  assert.deepEqual(afterStoppedWait({ ok: false, message: "Lost." }), { ok: false, message: AGENT_STOPPED });
 });

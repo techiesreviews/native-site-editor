@@ -1129,7 +1129,7 @@ test("Wait for MCP while the tab switches to another site: nothing is copied and
 // Ticket am-12: the open menu lists the agents working now (dot, name, Stop); Stop ends that agent only: its
 // outline and dots go, every later call of its is refused (a wait it holds included), while the others keep
 // working. "Pins go to" is remembered per site (every branch) through a reload.
-test("Stop ends one of three agents: its row, outline and dots go, the focus moves on, its calls and held wait are refused, the others keep working; Pins go to is per site", async ({ page, context, baseURL }) => {
+test("Stop ends one of three agents: its row, outline and dots go, the focus goes to Pins go to, its calls and held wait are refused, the others keep working; Pins go to is per site", async ({ page, context, baseURL }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   // What the relay hands the tab: a wait is held there once its frame arrives.
   const frames: string[] = [];
@@ -1143,7 +1143,7 @@ test("Stop ends one of three agents: its row, outline and dots go, the focus mov
   await action.click();
   const { token } = await (await made).json() as { token: string };
   // Waiting: Pins go to shows, the agents' list does not.
-  const pinsGoTo = page.getByRole("combobox", { name: "Pins go to" });
+  const pinsGoTo = page.getByRole("combobox", { name: "Pins go to", exact: true });
   await expect(pinsGoTo).toHaveValue("Claude Code");
   await expect(page.locator(".agent-menu__agents")).toBeHidden();
   const subagents = await agent(baseURL, token, "stop-spec");
@@ -1192,11 +1192,15 @@ test("Stop ends one of three agents: its row, outline and dots go, the focus mov
     await expect(pinsGoTo).toBeVisible();
     await page.screenshot({ path: test.info().outputPath("menu-agents.png") });
 
-    // Stop the second: its row, outline, chip and dot go at once, the focus moves to the Stop now in its place
-    // (Caption writer's); the others stay. The menu stays open, with no toast.
-    await page.getByRole("button", { name: "Stop Copy editor" }).click();
+    // Stop the second by keyboard: its row, outline, chip and dot go at once; the others stay. The focus goes to
+    // "Pins go to", not to Caption writer's Stop now in its place (a second Enter stops no one else). The menu
+    // stays open, with no toast.
+    await page.getByRole("button", { name: "Stop Copy editor" }).focus();
+    await page.keyboard.press("Enter");
     await expect(names).toHaveText(["Header writer", "Caption writer"]);
-    await expect(page.getByRole("button", { name: "Stop Caption writer" })).toBeFocused();
+    await expect(pinsGoTo).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(names).toHaveText(["Header writer", "Caption writer"]);
     await expect.poll(chipNames).toEqual(["Caption writer", "Header writer"]);
     await expect(rowDots("1.0")).toHaveCount(1);
     await expect(rowDots("1.1")).toHaveCount(1);
@@ -1221,7 +1225,7 @@ test("Stop ends one of three agents: its row, outline and dots go, the focus mov
     await editsLoading;
     await page.getByRole("button", { name: "Stop Caption writer" }).click();
     await expect(names).toHaveText(["Header writer"]);
-    await expect(page.getByRole("button", { name: "Stop Header writer" })).toBeFocused();
+    await expect(pinsGoTo).toBeFocused();
     letEditsLoad();
     await refused(captioning);
     expect(JSON.stringify(await subagents.call("read_file", { path: "index.html", agent: "Header writer" }))).not.toContain("Caption title");
@@ -1262,6 +1266,12 @@ test("Stop ends one of three agents: its row, outline and dots go, the focus mov
     await expect(page.locator(".agent-menu__agents")).toBeHidden();
     await expect(pinsGoTo).toBeFocused();
     await expect(action).toHaveText("Disconnect MCP");
+    // A stop lasts until Disconnect MCP: ending the connection forgets its agents' stops.
+    const stops = () => page.evaluate(() => JSON.parse(localStorage.getItem("native-site-editor:agents-stopped") ?? "[]").map((who: { name: string }) => who.name));
+    expect((await stops()).sort()).toEqual(["Caption writer", "Copy editor", "Header writer"]);
+    await action.click();
+    await expect(action).toHaveText("Connect to MCP");
+    expect(await stops()).toEqual([]);
 
     // Another branch of the site keeps Codex; another site has its own choice (Claude Code until picked).
     await page.keyboard.press("Escape");
@@ -1329,7 +1339,7 @@ test("a Stop pressed in another tab ends the agent in the receiving tab: its hel
     await expect(other.locator(".agent-menu__agent-name")).toHaveText(["Image finder"]);
     await other.getByRole("button", { name: "Stop Image finder" }).click();
     await expect(other.locator(".agent-menu__agents")).toBeHidden();
-    await expect(other.getByRole("combobox", { name: "Pins go to" })).toBeFocused();
+    await expect(other.getByRole("combobox", { name: "Pins go to", exact: true })).toBeFocused();
 
     // The receiving tab: the held wait ends refused, the chip and dot go, with no reload.
     const answer = await held;
@@ -1346,8 +1356,8 @@ test("a Stop pressed in another tab ends the agent in the receiving tab: its hel
 });
 
 // Ticket am-12: an agent whose change has ended stays listed as working for ten minutes (AT_WORK_MS), then its
-// row leaves the open menu by itself.
-test("an agent's row leaves the open menu ten minutes after its last change", async ({ page, context, baseURL }) => {
+// row leaves the open menu by itself; a Stop with the focus keeps it while its agent stays listed.
+test("an agent's row leaves the open menu ten minutes after its last change; the focused Stop keeps the focus", async ({ page, context, baseURL }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.clock.install();
   await open(page, baseURL);
@@ -1360,10 +1370,20 @@ test("an agent's row leaves the open menu ten minutes after its last change", as
   try {
     expect((await stylist.call("set_page_details", { page: "/", title: "Styled", requestId: "expiry-details", agent: "Stylist" })).state).toBe("applied");
     await expect.poll(async () => { await refresh(page); return page.locator(".agent-menu__label").textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
-    await expect(page.locator(".agent-menu__agent-name")).toHaveText(["Stylist"]);
-    await page.clock.fastForward(9 * 60_000);
-    await expect(page.locator(".agent-menu__agent-name")).toHaveText(["Stylist"]);
+    const names = page.locator(".agent-menu__agent-name");
+    await expect(names).toHaveText(["Stylist"]);
+    // Five minutes on, Painter changes the page too; its Stop has the focus.
+    await page.clock.fastForward(5 * 60_000);
+    expect((await stylist.call("set_page_details", { page: "/", title: "Painted", requestId: "expiry-painter", agent: "Painter" })).state).toBe("applied");
+    await expect(names).toHaveText(["Stylist", "Painter"]);
+    await page.getByRole("button", { name: "Stop Painter" }).focus();
+    await page.clock.fastForward(4 * 60_000);
+    await expect(names).toHaveText(["Stylist", "Painter"]);
+    // Stylist's ten minutes end: its row leaves by itself, and Painter's Stop keeps the focus.
     await page.clock.fastForward(60_000 + 1_000);
+    await expect(names).toHaveText(["Painter"]);
+    await expect(page.getByRole("button", { name: "Stop Painter" })).toBeFocused();
+    await page.clock.fastForward(5 * 60_000);
     await expect(page.locator(".agent-menu__agents")).toBeHidden();
     await expect(action).toHaveText("Disconnect MCP");
   } finally { await stylist.client.close().catch(() => undefined); }

@@ -139,7 +139,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
      * stylesheet or any other file draws nothing (a template change is every instance's), get_site lists it.
      */
     show(path: string, find: (source: string) => number[] | undefined, who: AgentWho = { grant: "", name: "" }): () => void {
-      // Stopped: its calls are refused before they run (src/components/agent-menu.ts); one already under way draws nothing.
+      // Stopped: its calls are refused before they run (src/components/agent-menu.ts, with shared/agent.ts AGENT_STOPPED); one already under way draws nothing.
       if (stopped(who)) return () => {};
       arrive(who);
       const page = isPage(path), source = page ? ports.source(path) : undefined, node = source === undefined ? undefined : find(source);
@@ -189,7 +189,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
       listeners.add(listener);
       return () => { listeners.delete(listener); };
     },
-    /** Whether the user stopped `who`: its calls are refused (src/components/agent-menu.ts). */
+    /** Whether the user stopped `who`: its calls are refused (src/components/agent-menu.ts, with shared/agent.ts AGENT_STOPPED). */
     stopped,
     /** Another tab stopped an agent: drawn again without it. */
     stopsChanged: () => refresh(),
