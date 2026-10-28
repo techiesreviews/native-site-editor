@@ -182,6 +182,18 @@ test("several named agents: an outline and chip each in its own colour, row dots
     await expect.poll(async () => (await drawn()).map(box => [box.on, box.chip, box.chipBackground])).toEqual([["filler", "Image finder", colours["agent-question-strong"].srgb]]);
     await expect(tree.locator(".agent-dots")).toHaveCount(1);
     await expect(rowDots("1.2")).toHaveCount(1);
+
+    // The same branch loads again in this tab (Refresh from GitHub, a new frame document): the question still waits,
+    // so its orange chip is drawn again once Home shows (the load opens the page in the address, About).
+    await page.locator(".repository-menu__trigger").click();
+    await page.locator('.repository-menu__repo[aria-current="true"]').hover();
+    await page.getByRole("menu", { name: "Branches" }).getByRole("menuitem", { name: "Refresh from GitHub" }).click();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await expect(preview.locator("h1")).toHaveText("About this project");
+    await preview.locator("site-header a", { hasText: "Home" }).click({ modifiers: ["ControlOrMeta"] });
+    await expect(preview.locator(".hero h1")).toHaveText("A native browser preview");
+    await expect.poll(async () => (await drawn()).map(box => [box.on, box.chip, box.chipBackground])).toEqual([["filler", "Image finder", colours["agent-question-strong"].srgb]]);
+    await expect(rowDots("1.2")).toHaveCount(1);
   } finally {
     if (!released) placing.release();
     await client.close();

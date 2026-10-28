@@ -255,3 +255,35 @@ test("at the very top of the page the name chip stands inside the outline's corn
   expect(tag.y).toBeGreaterThanOrEqual(outline.y - 0.5);
   expect(Math.abs(tag.x - outline.x)).toBeLessThan(1);
 });
+
+test("chips step past the edit bar, and a chip that would pass the page's right edge starts a row below", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  const preview = page.frameLocator(".native-preview-frame");
+  await expect(preview.locator(".hero")).toBeVisible();
+  const frame = (await (await page.locator(".native-preview-frame").elementHandle())!.contentFrame())!;
+  const hero = await frame.evaluate(() => { const at = document.querySelector(".hero")!.getBoundingClientRect(); return { left: at.left, top: at.top }; });
+  // The edit bar (as the editor tells the frame, in the frame's viewport) over the hero's top-left corner, where the first chip would stand.
+  const avoid = { left: hero.left - 4, top: hero.top - 20, right: hero.left + 40, bottom: hero.top };
+  // Two agents on the hero, each with a name long enough to fill its chip's widest (60% of the frame).
+  const name = "W".repeat(60);
+  await page.evaluate(({ source, avoid, name }) => {
+    const frame = (document.querySelector(".native-preview-frame") as HTMLIFrameElement).contentWindow!;
+    frame.postMessage({ source, type: "canvas-avoid", rect: avoid }, "*");
+    frame.postMessage({ source, type: "agent-presence", agents: [
+      { request: { path: "index.html", node: [1, 0] }, name, color: "#2e9e5b", chip: "#2e9e5b" },
+      { request: { path: "index.html", node: [1, 0] }, name: `${name}2`, color: "#8a3ffc", chip: "#8a3ffc" },
+    ] }, "*");
+  }, { source: HOST_SOURCE, avoid, name });
+  const chips = preview.locator('[data-native-selection-box="agent-presence-chip"]').locator("visible=true");
+  await expect(chips).toHaveCount(2);
+  const [first, second] = await chips.evaluateAll(all => all.map(chip => { const at = chip.getBoundingClientRect(); return { left: at.left, top: at.top, right: at.right }; }));
+  const width = await frame.evaluate(() => document.documentElement.clientWidth);
+  // The first: just past the bar, above the outline.
+  expect(Math.abs(first.left - (avoid.right + 2))).toBeLessThan(1);
+  expect(Math.abs(first.top - (hero.top - 16))).toBeLessThan(1);
+  // The second fits neither before the bar nor after the first: a row below, at the outline's left, within the page.
+  expect(first.right + 2 + (second.right - second.left)).toBeGreaterThan(width);
+  expect(Math.abs(second.top - (first.top + 16))).toBeLessThan(1);
+  expect(Math.abs(second.left - hero.left)).toBeLessThan(1);
+  expect(second.right).toBeLessThanOrEqual(width);
+});

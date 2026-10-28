@@ -88,11 +88,12 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     return [...shown.values()].sort((a, b) => arrivals.get(a.key)! - arrivals.get(b.key)!);
   }
   let painted = "";
-  function refresh() {
+  // `again`: a load began, whose views may have dropped what was painted: marks still shown are painted again.
+  function refresh(again = false) {
     const next = marks();
     // Nothing shown and nothing to show: the views are left alone (boot, loads with no agent at work).
     const key = next.length ? JSON.stringify(next) : "";
-    if (key === painted) return;
+    if (key === painted && !(again && key)) return;
     painted = key;
     ports.paint(next);
   }
@@ -145,7 +146,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
       }
       return [...told.entries()].sort(([a], [b]) => (arrivals.get(a) ?? 0) - (arrivals.get(b) ?? 0)).map(([, agent]) => agent);
     },
-    /** Draws again for the workspace shown now (after a load began). */
-    refresh,
+    /** Draws again for the workspace shown now, after a load began: what still holds (a question on this branch) is painted again. */
+    loaded: () => refresh(true),
   };
 }
