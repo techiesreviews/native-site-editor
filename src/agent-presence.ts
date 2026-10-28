@@ -146,8 +146,9 @@ export function createAgentPresence(ports: AgentPresencePorts) {
         told.set(keyOf(entry.who), { name: entry.who.name || UNNAMED_AGENT, file: entry.path, ...(entry.node ? { section: outlineId(entry.node) } : {}) });
       }
       for (const question of asked) if (question.at.holds()) {
-        // As marks() draws it: at work on a change meanwhile, told there, asking; else on its first question's
-        // section on a page (an ended change gives way; one about another file is told until a page's comes).
+        // As marks() draws it: at work on a change meanwhile, told there, asking; else on its first question about
+        // a page, on that question's section (an ended change gives way). Until one about a page comes, the latest
+        // question about another file is told, its file alone.
         const key = keyOf(question.who), there = placed.has(key) ? told.get(key) : undefined;
         if (there) { there.asking = true; continue; }
         const node = questionAt(question);
