@@ -1,7 +1,7 @@
 ---
 title: One table across projects, and a kit-problem line per project
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-24
 builder: claude
 blocked_by: [15-machine-wide-state, 22-kit-init]
@@ -36,3 +36,23 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke24 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/24-combined-score-table.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke24 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
 - Report: unit `RESULT:` lines, the real `kit score --all` output, review decisions, PR and merge SHA.
+
+## Done (2026-10-28)
+
+- **`kit score --all`** reads every project in the state folder's `projects.json` where its records already are: the main folder's `.scratch/scoreboard/` and its `<maps>/*/build/feedback.md` read from its land branch (`origin/<land>`, else the local branch, else the folder's files), since a main folder can sit on an old branch. A main folder without a settings file uses this project's settings when the names match (this editor's main folder is on an old branch without `scripts/agents/kit.json`). One table: per project and builder, pieces, review rounds, findings by kind and landings; an `all builders` line per project carries Lex's corrections, because a feedback line names no builder. Nothing is copied or written. A project with no `root` or no folder is one `unreadable: <project> (<why>)` line; one whose logs cannot be found keeps its numbers with `corrections not read: …`. `--json` prints `{ projects }`; `--html [--out FILE]` writes the table as one page (`allProjectsPage` in `score-page.mjs`, default main root `.scratch/scoreboard/all-projects.html`).
+- **`kit sweep`** adds "Kit problems": one line per registered project whose own `scripts/agents/kit doctor --quiet` (run in its main folder without this command's `KIT_*` settings; the sweep's own project in its checkout) fails a kit check, warns `kit not updated for N days`, gives no result or times out, or that has no kit or no `root`. `place` and `base` judge the folder, not the kit, and are left out. No section when all is well.
+- **Tests:** `tests/kit-score.test.ts` builds alpha (git, feedback read from `dev`, not the uncommitted lines) and beta (no settings file) in a temp `projects.json` with a missing third: one table with both, the unreadable one named, JSON and page, and every file's bytes and time unchanged after the runs. `tests/kit-sweep.test.ts` registers fake kits: quiet with a passing doctor and a place/base-only failure, one line for a failing `hooks live`; `doctorProblem` covers the stale warning on both RESULT forms, no result and a timeout.
+- **Real run** on this machine (only this editor registered):
+
+```
+score: all projects (1 projects, 70 pieces)
+project             builder          pieces  rounds  findings                                                        landed  corrections
+native-site-editor  claude-opus-5-5  49      146     fault 312, ticket 315, race 49, style 41, unsorted 29, gap 792  45      -
+native-site-editor  unknown          21      0       fault 6, ticket 5, gap 16                                       16      -
+native-site-editor  all builders     70      146     fault 318, ticket 320, race 49, style 41, unsorted 29, gap 808  61      6
+RESULT: ok score all 1 projects 70 pieces
+```
+
+  The real "Kit problems" check for this editor returns no section (doctor passes here).
+- Validation: `RESULT: ok unit 149/149 (3 files)`; doc guards 89/89; `npm run check` and `npm run lint` pass.
+- Feature list: no change (kit commands only; nothing in the editor changes).
