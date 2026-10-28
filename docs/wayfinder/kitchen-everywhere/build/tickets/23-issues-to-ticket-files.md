@@ -37,15 +37,18 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ## Done (2026-10-28)
 
 - `kit init --issues` (in `scripts/agents/kit.d/init`) reads open Issues with `gh issue list --state open --limit 1000 --json number,title,body,labels,url,author,createdAt,comments`. It writes one `needs-triage` ticket per Issue in `<maps>/backlog/tickets/NN-<slug>.md`:
-  - `maps` comes from `kit.json`, else `docs/wayfinder` with a note; an absolute or `..` path is refused.
+  - `maps` comes from `kit.json`, else `docs/wayfinder` with a note. A `maps` that is not a folder name, or is absolute or holds `..`, is refused.
   - NN continues after the highest number there; the slug comes from the title (at most six words, else `issue-N`).
   - The frontmatter names the Issue as `issue: <url>`. The title is written JSON-quoted, so `:`, `#` and quotes read back unchanged.
   - The body holds the link `[owner/repo#N](url)`, author and date, labels, the Issue's text and `## Comments`. A label with a backtick gets a longer code fence.
-- It writes `backlog/map.md` if missing, prints a `next:` line and closes nothing. A rerun skips an Issue whose `issue:` line is already in a file there. Links to other Issues in the copied text never count, so a "Duplicate of #5" in #3 neither hides #5 nor stands for its file. Setup and doctor do not run in this mode.
-- `kit init --issues --close` fetches `origin/<land>` with an explicit refspec and finds each open Issue's file on that branch by its `issue:` line. It then runs `gh issue close N --repo owner/repo --comment "Moved to a ticket file: https://github.com/owner/repo/blob/<land>/<path>\nWork on it goes on there."` (two lines).
+  - Copied text gets LF line endings. Its `#` and `##` headings outside code fences go two levels down, so an Issue's `## Files` never becomes the ticket's Files section.
+  - At 100 comments (gh's most per Issue) the file ends with a line to read the rest on GitHub, and the run prints a note.
+- It writes `backlog/map.md` if missing, prints a `next:` line and closes nothing. A rerun skips an Issue whose `issue:` line names the same host and Issue number in a file there, so a renamed repo writes no duplicates. Links to other Issues in the copied text never count, so a "Duplicate of #5" in #3 neither hides #5 nor stands for its file. Setup and doctor do not run in this mode.
+- `kit init --issues --close` fetches `origin/<land>` with an explicit refspec and finds each open Issue's file on that branch by its `issue:` line, noting an old link after a rename. It then runs `gh issue close N --repo owner/repo --comment "Moved to a ticket file: https://github.com/owner/repo/blob/<land>/<path>\nWork on it goes on there."` (two lines).
   - If any open Issue has no file on `origin/<land>`, it closes none and lists them.
   - A failed close is named (`close failed: #N: <first error line>`) and the run ends `RESULT: fail init closed K of M Issues; failed: #N; rerun to retry them`; a rerun closes the rest.
   - `--close` without `--issues` exits 2, and so does `--issues` with `--light` or `--land`.
+  - Each `gh` call and the fetch stop after 120 s with `timed out after 120s`, and never wait at a login prompt.
 - Tests in `tests/kit-init.test.ts` use a typed fake `gh` on PATH and a bare `origin`. They cover:
   - two Issues becoming two tickets and a map that pass `tickets.mjs check` (titles read back), with the exact `gh issue list` arguments checked;
   - a rerun leaving the tree byte for byte, and a later Issue getting the next number;
@@ -53,9 +56,26 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - a cross-linked Issue getting its own file and its own close link;
   - a failed close being retried by a rerun;
   - the `maps` fallback note, and a `maps` path outside the project being refused;
-  - flag misuse.
+  - flag misuse;
+  - LF endings and moved-down headings in copied text, the 100-comment note and no claimed Files;
+  - another GitHub host, a renamed repo, and `--close` without a landing branch;
+  - running beside old kit files, and a failing, non-JSON or 1000-entry `gh issue list` writing nothing.
 - One sample ticket file, Issue #14 with labels, text and a comment, is the expected text in the first `--issues` test in `tests/kit-init.test.ts` (`02-search-results-ignore-accents.md`).
-- Evidence: `RESULT: ok unit 21/21 (1 files)` from `scripts/agents/kit unit --affected`; `npm run lint` and `npm run check` pass.
-- Commits: build `1ec07f398`; review fixes follow it on this branch.
+- Evidence: `RESULT: ok unit 24/24 (1 files)` from `scripts/agents/kit unit --affected`; `npm run lint` and `npm run check` pass.
+- Commits: build `1ec07f398`, review round 1 `b3aed15d1`; round 2 follows on this branch.
+- Review decisions, round 1 (all taken, none declined):
+  - P1: an Issue was matched by a link anywhere in a file, so a cross-link could close the wrong Issue or skip one. Now only the `issue:` line in the frontmatter counts.
+  - P3: the Done text was missing the close comment's second line, a commit and evidence; added.
+  - P3: the fake gh Issues were untyped; they now use a `GhIssue` type.
+  - Gaps: tests added for the cross-link, a failed close retried, `--land`, the full `gh issue list` arguments and the `maps` fallback.
+  - Optional nits taken: an explicit fetch refspec, `maps` trimmed and kept inside the project, labels with a backtick, and the docs saying setup and doctor are skipped.
+- Review decisions, round 2 (all taken, none declined):
+  - P3: the map's Notes said in the past tense that Issues were closed; they now name closing as the next step, after Lex's OK.
+  - P3: the slug regex held invisible combining characters; it now reads `\u0300-\u036f`.
+  - P3: copied headings could become ticket sections, and CRLF endings got through; headings now move down and line endings are LF.
+  - P3: gh and fetch had no timeout; both are now bounded at 120 s, with no login prompt.
+  - P3: a renamed repo broke matching; the match is now by host and Issue number, and `--close` notes the old link.
+  - Gaps: tests added for a backtick label, another host, a missing landing branch, old kit files, a failing or odd `gh issue list`, and the 1000 cap.
+  - Optional nits: the 100-comment cap and a non-string `maps` are handled. The live blob link is kept rather than a SHA permalink, because the close comment says work goes on in that file.
 - `docs/agents/agent-scripts.md` describes both forms.
 - Feature list: no change (kit command for agents; nothing in the editor changes).
