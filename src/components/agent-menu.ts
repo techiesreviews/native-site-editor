@@ -603,7 +603,8 @@ export function createAgentMenu(options: {
     if (focusedKey === undefined) return;
     const now = [...working.children] as HTMLElement[];
     const row = now.find(each => each.dataset.key === focusedKey) ?? now[Math.min(at, now.length - 1)];
-    (row?.querySelector<HTMLElement>("button") ?? action).focus();
+    // With no row left, the focus goes to "Pins go to", never to Disconnect MCP: a second Enter must not end them all.
+    (row?.querySelector<HTMLElement>("button") ?? (choice.hidden ? action : pinsGoTo)).focus();
   }
   const unlisten = options.agents?.listen(() => { if (!disposed) drawAgents(); });
   // The flyout: the requests waiting for an agent or for the user, each showing its pin; an
@@ -959,6 +960,7 @@ export function createAgentMenu(options: {
     // too, so this tab never takes over agents that were turned off.
     if (remote && pinned && event.newValue === null && event.key === agentsOnKey(site(pinned))) { turnOff(); paint(); }
     // An agent stopped in another tab: its held wait here wakes and takes nothing.
+    // (main.ts hears it first and reads the list again: src/agent-stops.ts.)
     if (event.key === STOPPED_AGENTS_KEY) requestTools?.notify();
   };
   window.addEventListener("storage", onStorage);
