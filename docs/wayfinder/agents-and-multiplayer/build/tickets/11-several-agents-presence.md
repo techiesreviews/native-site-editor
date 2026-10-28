@@ -70,3 +70,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - The catch-up (`changesSinceLastRead`, `src/agent-part.ts`) is still keyed by connection only. Two named subagents on one connection still share one catch-up and count each other's edits as their own (ticket 10's follow-up). Key it by connection plus `agent` now that the name arrives.
 
+### UX follow-ups
+
+- UX (looks off): F-pages-06 the dragged page lands under the target page, but a toast then appears at the bottom with the new address, the number of links updated and an Undo button (S4) (.scratch/ux/am-11/20261028-175804-4H2mfT/pages-F-pages-06-1280-light-drop-strip.webp)
+- UX (looks off): F-canvas-14 the heading and code pane update in place, but a "Text changed" toast appears after each edit and covers the bottom of the code pane at 390 (S4, U5); the Publish button also carries a count (S2) (.scratch/ux/am-11/20261028-175804-4H2mfT/add-panel-F-canvas-14-390-light-live-strip.webp)
+- UX (looks off): F-structure-04 Alt+Down moves the row, and rows show only ⋯ with no delete icon; but a "Moved down / Undo" toast covers the code pane (S4, U5), the code pane first shows the line "The code loads once the page is on screen." (S1), and the breadcrumb shows code ("section.flow") (S7) (.scratch/ux/am-11/20261028-175804-4H2mfT/add-panel-F-structure-04-390-light-keys-strip.webp)
+- UX (looks off): F-structure-05 the section's bar offers a single "No heading or label" press that turns into Label once fixed, but adding the section first shows the toast "Section added. Between page bands › after Section contact" with Undo (S4) (.scratch/ux/am-11/20261028-175804-4H2mfT/editor-F-structure-05-390-light-labelled-strip.webp)
+- UX (looks off): F-phone-04 nothing stays lit after a tap, but at 390 the bar on the page has buttons well under 44 px (B, I, the up and down arrows, the delete icon), which the Good line asks for (U6) (.scratch/ux/am-11/20261028-175804-4H2mfT/add-panel-F-structure-04-390-light-keys-strip.webp)
