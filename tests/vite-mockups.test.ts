@@ -5,13 +5,13 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { build, loadConfigFromFile } from "vite";
 import { unstable_startWorker } from "wrangler";
-import { MOCKUPS_HEADERS, mockupFiles, mockupIndex, mockups, mockupTitle } from "../vite-mockups.ts";
+import { MOCKUPS_HEADERS, mockupFiles, mockupIndex, mockups, mockupTitle, referencedFiles } from "../vite-mockups.ts";
 
 const repoRoot = new URL("..", import.meta.url).pathname;
 const scratch = mkdtempSync(join(tmpdir(), "ase-mockups-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
-/** A repo with two maps of mock-ups (one with a reference image) and one map without any. */
+/** A repo with two maps of mock-ups (one using an image beside it, with an unused one too) and one map without any. */
 function repo() {
   const root = mkdtempSync(join(scratch, "repo-"));
   const write = (path: string, text: string) => {
@@ -19,8 +19,10 @@ function repo() {
     writeFileSync(join(root, path), text);
   };
   write("docs/wayfinder/site-structure/prototypes/08-site-map.html", "<title>PROTOTYPE (throwaway) · 08 Site map</title>");
-  write("docs/wayfinder/agents/prototypes/14-share.html", "<title>PROTOTYPE (throwaway) · 14 Share & <edit></title>");
+  write("docs/wayfinder/agents/prototypes/14-share.html", '<title>PROTOTYPE (throwaway) · 14 Share & <edit></title><img src="12-reference.png" alt=""><img src="11-shared.png" alt="">');
   write("docs/wayfinder/agents/prototypes/12-reference.png", "png");
+  write("docs/wayfinder/agents/prototypes/13-unused-screenshot.png", "unused");
+  write("docs/wayfinder/site-structure/prototypes/11-shared.png", "another map's");
   write("docs/wayfinder/agents/prototypes/05-untitled.html", "<p>no title</p>");
   write("docs/wayfinder/agents/prototypes/.DS_Store", "");
   write("docs/wayfinder/agents/prototypes/notes.md", "# not published");
@@ -29,10 +31,27 @@ function repo() {
   return root;
 }
 
-test("every HTML mock-up and image in each map's prototypes folder is found, maps and files in name order", () => {
+test("every HTML mock-up in each map's prototypes folder is found with the images they use, maps and files in name order", () => {
   const root = repo();
   assert.deepEqual(mockupFiles(root).map(({ map, file }) => `${map}/${file}`),
     ["agents/05-untitled.html", "agents/12-reference.png", "agents/14-share.html", "site-structure/08-site-map.html"]);
+});
+
+test("an image counts as used when a mock-up in its folder points at it by file name", () => {
+  const html = `<img src="a.png"><img src='./b%20b.png?v=2#x'><img src=c.png>
+<picture><source srcset="d.webp 1x, ./e.webp 2x"></picture><link rel="icon" href="f.svg">
+<div style="background: url('g.jpg')"></div><style>i { background: url(h.gif) }</style>
+<script>image.src = "i.avif";</script><img src="images/j.png"><img src="../other/k.png"><a href="#l">`;
+  assert.deepEqual([...referencedFiles(html)].sort(), ["a.png", "b b.png", "c.png", "d.webp", "e.webp", "f.svg", "g.jpg", "h.gif", "i.avif"]);
+});
+
+test("a build copies only the images a mock-up in the same map uses", async () => {
+  const root = repo();
+  writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
+  const outDir = join(root, "dist");
+  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(root)], build: { outDir } });
+  const images = readdirSync(join(outDir, "mockups"), { recursive: true }).map(String).filter(file => file.endsWith(".png")).sort();
+  assert.deepEqual(images, ["agents/12-reference.png"]);
 });
 
 test("the index lists HTML mock-ups under their map by title, without the prototype prefix", () => {
@@ -137,6 +156,9 @@ test("index links are URL-encoded and a rebuild adds the header rule once", asyn
 
 /** esm.sh stand-ins, so the browser check needs no network: like the real Yjs build, the first module
  * imports a second esm.sh path (lib0), and the CSP decides before the route answers. */
+/** A 1×1 transparent PNG. */
+const onePixelPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
 const esmStub: Record<string, string> = {
   "/yjs@13": 'export * from "/lib0@0.2/stub.mjs";',
   "/lib0@0.2/stub.mjs": "globalThis.esmLoaded = true; export class Doc {}",
@@ -148,6 +170,8 @@ test("every real mock-up runs in a browser under the sandboxed policy", async ()
   writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
   mkdirSync(join(root, "public"));
   writeFileSync(join(root, "public/_headers"), readFileSync(join(repoRoot, "public/_headers"), "utf8"));
+  // No real mock-up uses an image yet; this one stands in to prove the sandboxed policy lets same-site images load.
+  writeFileSync(join(root, "public/probe.png"), Buffer.from(onePixelPng, "base64"));
   await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(repoRoot)], build: { outDir: join(root, "dist") } });
   writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify({ name: "mockups-browser-test", compatibility_date: "2026-09-17", assets: { directory: "./dist" } }));
   const worker = await unstable_startWorker({ config: join(root, "wrangler.jsonc"), dev: { server: { port: 0 }, inspector: false, watch: false, logLevel: "none" } });
@@ -168,6 +192,9 @@ test("every real mock-up runs in a browser under the sandboxed policy", async ()
     const errors: string[] = [];
     let current = "";
     page.on("pageerror", error => { if (current !== typingTogether) errors.push(`${current}: ${error.message}`); });
+    const missingImages: string[] = [];
+    page.on("response", response => { if (response.request().resourceType() === "image" && !response.ok()) missingImages.push(`${current}: ${response.url()}`); });
+    page.on("requestfailed", request => { if (request.resourceType() === "image") missingImages.push(`${current}: ${request.url()}`); });
     const pages = mockupFiles(repoRoot).filter(mockup => mockup.file.endsWith(".html"));
     assert.ok(pages.length > 0);
     for (const { map, file } of [{ map: "", file: "index.html" }, ...pages]) {
@@ -177,19 +204,24 @@ test("every real mock-up runs in a browser under the sandboxed policy", async ()
     }
     assert.deepEqual(violations, []);
     assert.deepEqual(errors, []);
+    assert.deepEqual(missingImages, []);
 
     current = typingTogether;
     await page.goto(new URL(`mockups/${typingTogether}`, base).href, { waitUntil: "load" });
     await page.waitForFunction(() => (globalThis as { esmLoaded?: boolean }).esmLoaded === true);
     const sandbox = await page.evaluate(async () => {
-      const image = new Image();
-      image.src = "12-caret-circle-reference.png";
-      const imageLoaded = await image.decode().then(() => true, () => false);
+      const [imageLoaded, unusedReferenceLoaded] = await Promise.all(["/probe.png", "12-caret-circle-reference.png"].map(src => {
+        const image = new Image();
+        image.src = src;
+        return image.decode().then(() => true, () => false);
+      }));
       let storage = "open";
       try { void localStorage.length; } catch { storage = "blocked"; }
-      return { origin: String(globalThis.origin), cookie: (() => { try { return document.cookie; } catch { return "blocked"; } })(), storage, imageLoaded };
+      return { origin: String(globalThis.origin), cookie: (() => { try { return document.cookie; } catch { return "blocked"; } })(), storage, imageLoaded, unusedReferenceLoaded };
     });
-    assert.deepEqual(sandbox, { origin: "null", cookie: "blocked", storage: "blocked", imageLoaded: true });
+    assert.deepEqual(sandbox, { origin: "null", cookie: "blocked", storage: "blocked", imageLoaded: true, unusedReferenceLoaded: false });
+    const unused = await page.request.get(new URL("mockups/styling/03-unblockwp-panel-reference.png", base).href);
+    assert.equal(unused.status(), 404);
     assert.deepEqual(violations, []);
   } finally {
     await browser.close();
