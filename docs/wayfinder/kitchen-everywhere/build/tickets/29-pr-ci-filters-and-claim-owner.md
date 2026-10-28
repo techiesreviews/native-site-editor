@@ -1,7 +1,7 @@
 ---
 title: kit pr waits for push workflows that may run on a PR branch, and a slice keeps its claim owner
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-29
 builder: claude
 blocked_by: [17-second-look-per-kind]
@@ -43,3 +43,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ## Comments
 
 - Lead, 2026-10-27: slices in T3 threads now run `kit slice` under `systemd-run --user --unit=kit-slice-<owner>` (app restarts kill `kit bg` jobs). `kit next` does not see those units, so it reports "claimed by ke-21, no running job found" and hands out tickets that share files with the running slice. Count `kit-slice-*` systemd units as running slices (and their files) here, next to the owner fix.
+
+## Done (2026-10-28)
+
+- `kit pr` reads a `push` trigger's filters (block form, `branches:` with `- item` lines, and the one-line `{ … }` flow form under `on:` or `push:`). It is "not CI" only when `branches` lists plain names (no `*`, `?`, `[`, `!`) or when only `tags`/`tags-ignore` filter it (GitHub then skips branch pushes). `branches-ignore`, `paths`, `paths-ignore`, wildcard branches and `on: { push: {} }` wait. `on: push` and `on: [push, …]` keep today's answer. Answers for the new shapes: `branches-ignore: [main]`, `branches: ['**']`, `paths: [src/**]` and `on: { push: { branches: ['**'] } }` wait (`landed.ci: "pass"`); `branches: [main]` + `paths: [src/**]` and `on: { push: { branches: [main] } }` land with `landed.ci: "none"`. The editor's own `ci.yml` (`pull_request`) still waits.
+- One existing table row changed shape and kept its answer: `'on': push: paths: ['src/**']` (no wait) contradicted the decided behaviour for `paths`, so that row is now `branches: [main]` + `paths: ['src/**']`. It still checks the quoted `'on'` key and the commented-out `# on: pull_request`.
+- `kit slice`'s brief keeps a ticket's front-matter `assignee:` (`assignee: ke-99` (keep the claim owner)). Only an empty one takes `kitOwner()`.
+- `kit next` counts running `kit-slice-*` systemd user units as running slices. It reads them through `systemctl --user list-units`/`show` (WorkingDirectory and ExecStart argv), and the test seam is `KIT_NEXT_SYSTEMCTL`. Each one gets a `running:` line, takes a slot, its Files block overlapping tickets, and it covers its ticket's claim. With no unit, or with no systemctl, the answer is unchanged. ExecStart words are split on spaces, so a ticket path with spaces is not read; such a unit still takes a slot.
+- Tests: `tests/kit-pr.test.ts` (6 new shapes), `tests/kit-slice.test.ts` (claim owner kept / empty → branch), `tests/kit-next.test.ts` (systemd unit, no unit, missing systemctl). `docs/agents/agent-scripts.md` `kit pr` CI line updated.
+- Feature list: no change (kit plumbing only, nothing in the editor UI).
