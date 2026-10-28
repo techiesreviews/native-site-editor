@@ -56,7 +56,7 @@ async function receivingTab(worker: Awaited<ReturnType<typeof startWorker>>["wor
   let context: EditorContext | undefined;
   const commands: AgentCommand[] = [];
   // Every command the relay delivers, reads included, as sent.
-  const received: { operation: string; tool?: string; agent?: string }[] = [];
+  const received: { operation: string; id?: string; tool?: string; agent?: string }[] = [];
   const results = new Map<string, AgentCommand["result"]>();
   const source = { repo, snapshot, api: async <T>() => ({ entries: [] }) as T,
     read: (_repo: string, sha: string) => github.file(repo, sha),
@@ -429,8 +429,7 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     assert.equal(batched.status, 200);
     const answered = await batched.text();
     for (const id of ["batch-one", "batch-two"]) assert.ok(answered.includes(id), id);
-    const batch = (await tab.inspect()).commands;
-    assert.deepEqual(["batch-one", "batch-two"].map(id => batch.find((item: any) => item.id === id)?.agent), ["Header writer", "Copy editor"]);
+    assert.deepEqual(["batch-one", "batch-two"].map(id => tab.received.find(item => item.id === id)?.agent), ["Header writer", "Copy editor"]);
     // The site resource and the edit_site prompt read under the connection's client, never a tool call's name
     // in the same request.
     const before = tab.received.length;
