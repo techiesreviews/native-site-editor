@@ -176,6 +176,11 @@ test("reply_to_request and get_selection(request) run the hub's rules on this br
   const found = await b.value(b.run("get_request", { request: "req-a" }));
   assert.equal(found.reply.by, undefined);
   assert.equal(found.reply.message, "Bold?");
+  // A reply naming no one (the Worker had no client name either): its connection alone, shown as "Agent".
+  b.ask(asked("req-unnamed"));
+  await b.value(b.run("wait_for_requests", {}, 0));
+  await b.value(b.run("reply_to_request", { request: "req-unnamed", status: "question", message: "Which?" }));
+  assert.deepEqual(b.kept.get("req-unnamed")!.reply?.by, { grant: "grant-a", name: "" });
   assert.deepEqual(found.thread.map((item: { from: string; text: string }) => [item.from, item.text]), [["user", "Change req-a"], ["agent", "Bold?"]]);
   assert.equal(found.element.html, "<h1>Hi</h1>");
   b.kept.set("req-a", { ...b.kept.get("req-a")!, state: "dismissed" });

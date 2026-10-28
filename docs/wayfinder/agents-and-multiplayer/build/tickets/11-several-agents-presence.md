@@ -53,6 +53,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Shots (`kit shots --spec .scratch/am11-shots.spec.ts` on the real starter, 1280 and 390 wide, light and dark): preview outlines with chips, two chips side by side on Recent work, Page Structure dots, About's dot in Pages, a question's orange chip. UX review against the rulebook: colours tell agents apart in both themes, nothing to click on the outlines, no status text or toasts (S1), and the dots fit the rows at 390 wide. One problem found and fixed: the question's chip was under the edit bar. Two agents on one section share one outline edge (the later one's colour drawn on top); their chips and dots tell them apart.
 - `RESULT: ok unit 3864/3864 (251 files)` (`kit unit --affected`). `kit specs --affected`: `RESULT: fail specs 1 of 186 failed: native-agent-quiet.spec.ts`. That failure is a socket-count timing check under a fake clock, not touched here; it passed alone and on two reruns (`RESULT: ok specs 1/1 passed`, twice). `RESULT: ok specs 3/3 passed` (several agents, presence, canvas-avoid) after the last runtime change. `npm run check` and `npm run lint` are clean.
 
+- Review round 2: a same-branch reload repaints the marks still shown (`agentPresence.loaded()` at each load), and the preview keeps its marks for the new frame document instead of dropping them at deactivation. A waiting question's orange chip therefore stays after a reload in the tab. Tests:
+  - the presence unit test asserts a fresh paint after a same-branch load;
+  - unnamed questions keep `by = { grant, name: "" }` and show as "Agent" (agent-watch and presence tests);
+  - `native-several-agents.spec.ts` refreshes the branch from GitHub and sees the chip again (the menu re-telling its requests also repaints here, so the unit test is what pins the reset);
+  - `native-agent-presence.spec.ts` pins chip placement: past the edit bar, then a new row at the outline's left when the next chip would pass the right edge.
+  `RESULT: ok unit 3864/3864 (251 files)`; `RESULT: ok specs 5/5 passed` (several agents, presence, branch menu, canvas-avoid, lifecycle); `npm run check` and `npm run lint` are clean.
+
 ### Follow-ups
 
 - The catch-up (`changesSinceLastRead`, `src/agent-part.ts`) is still keyed by connection only. Two named subagents on one connection still share one catch-up and count each other's edits as their own (ticket 10's follow-up). Key it by connection plus `agent` now that the name arrives.
