@@ -223,13 +223,23 @@ test("an edit read in another text clashes when its words are no longer where th
   assert.ok(clash instanceof PartClash);
   // Changed in place and written again elsewhere: as many, but not where it read them.
   const elsewhere = read.replace("<h1>Welcome</h1>", "<h1>Hello</h1>").replace(">Fast<", ">Welcome<");
-  assert.deepEqual(wordsMoved(read, elsewhere, [{ oldText: "Welcome" }]), { index: 0, at: read.indexOf("Welcome") });
+  assert.deepEqual(wordsMoved(read, elsewhere, [{ oldText: "Welcome", newText: "Hi" }]), { index: 0, at: read.indexOf("Welcome") });
   // Still where it read them, beside other changes: none moved, and it lands.
   const beside = read.replace(">Fast<", ">Quick<");
-  assert.equal(wordsMoved(read, beside, [{ oldText: "Welcome" }]), undefined);
+  assert.equal(wordsMoved(read, beside, [{ oldText: "Welcome", newText: "Hi" }]), undefined);
   const ok = await withHome(beside);
   const prepared = await prepareAgentEdit(edit(args), ok.context, ok.files, hash => hash === args.expectedHash ? read : undefined);
   assert.ok("operation" in prepared && prepared.input.content === beside.replace("Welcome", "Hi"));
+  // Words the read never had: a copy added since clashes; made by an earlier replacement, or nowhere, they pass.
+  const added = read.replace(">Fast<", ">Fresh words<");
+  assert.deepEqual(wordsMoved(read, added, [{ oldText: "Fresh words", newText: "x" }]), { index: 0, at: -1 });
+  const alsoAdded = read.replace("<h1>Welcome</h1>", "<h1>Welcome</h1><p>Fresh words</p>");
+  assert.equal(wordsMoved(read, alsoAdded, [{ oldText: ">Fast<", newText: ">Fresh words<" }, { oldText: "Fresh words", newText: "x" }]), undefined);
+  assert.equal(wordsMoved(read, beside, [{ oldText: "Nowhere", newText: "x" }]), undefined);
+  const fresh = await withHome(added);
+  const stale = await prepareAgentEdit(edit({ ...args, edits: [{ oldText: "Fresh words", newText: "x" }] }), fresh.context, fresh.files, hash => hash === args.expectedHash ? read : undefined)
+    .then(() => assert.fail("must clash"), (error: unknown) => error);
+  assert.ok(stale instanceof PartClash && stale.part?.text.includes("Fresh words"));
 });
 
 test("a revision change and a discarded draft at once: every draft gone is told as saved", () => {
