@@ -86,3 +86,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
     - The expiry test: a focused Stop keeps the focus while another row leaves when its time ends.
   - Declined: sharing the receiving tab's list with other tabs (the limit is written in F-agent-11 and above instead).
   - `RESULT: ok unit 3870/3870 (252 files)` (`kit unit --affected`); `RESULT: ok specs 5/5 passed` (mcp-menu, mcp, agent-quiet, several-agents, agent-lifecycle); `npm run check` and `npm run lint` are clean.
+- Review round 4 (UX review, L11):
+  - The menu takes the approved mock-up's look (`prototypes/10-asking-agents.html`): a hairline divider after "Pins go to" and another after the agents' rows (shown only while there are rows).
+  - "Pins go to" is a compact picker with a hairline edge on the menu's own colour. It matches the edit bar's select, with the same styled list where the browser allows it, a muted small label, and a press state. On touch and narrow layouts it stays 44 px tall (U6).
+  - The specs' "only the button" checks leave the dividers out.
+  - Shots retaken with `kit shots --spec .scratch/am12-shots.spec.ts` (`.scratch/shots/am-12/20261028-222453/`): waiting, three agents and after a Stop, at 1280 and 390 wide, in light and dark. They match the mock-up's layout.
+  - Declined: F-agent-11 "no agent rows or Stop are shown". The feature's shot has no steps (it needs connected agents, which the steps cannot make); the scratch shots above show the rows and Stop.
+  - `RESULT: ok unit 3870/3870 (252 files)` (`kit unit --affected`); `RESULT: ok specs 3/3 passed` (mcp-menu, mcp, agent-quiet); `RESULT: ok shots raw spec`; `npm run check` and `npm run lint` are clean.

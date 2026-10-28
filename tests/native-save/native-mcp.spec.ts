@@ -44,7 +44,7 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
   // Waiting shows only its one button: no explainer line, no links and no Turn off.
   // Beside "Pins go to" and the agents working now (ticket am-12), only the button.
-  await expect(page.locator(".agent-menu > :not(.agent-menu__choice, .agent-menu__agents):visible")).toHaveText(["Wait for MCP"]);
+  await expect(page.locator(".agent-menu > :not(.agent-menu__choice, .agent-menu__agents, .agent-menu__divider):visible")).toHaveText(["Wait for MCP"]);
   await expect(page.getByRole("button", { name: "Turn off", exact: true })).toHaveCount(0);
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
