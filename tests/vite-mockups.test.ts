@@ -11,7 +11,7 @@ const repoRoot = new URL("..", import.meta.url).pathname;
 const scratch = mkdtempSync(join(tmpdir(), "ase-mockups-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
-/** A repo with two maps of mock-ups (one using an image beside it, with an unused one too) and one map without any. */
+/** A repo with two maps of mock-ups (one using an image beside it, another image named only in notes) and one map without any. */
 function repo() {
   const root = mkdtempSync(join(scratch, "repo-"));
   const write = (path: string, text: string) => {
@@ -25,8 +25,8 @@ function repo() {
   write("docs/wayfinder/site-structure/prototypes/11-shared.png", "another map's");
   write("docs/wayfinder/agents/prototypes/05-untitled.html", "<p>no title</p>");
   write("docs/wayfinder/agents/prototypes/.DS_Store", "");
-  write("docs/wayfinder/agents/prototypes/notes.md", "# not published");
-  write("docs/wayfinder/agents/map.md", "# map");
+  write("docs/wayfinder/agents/prototypes/notes.md", "# not published\n\n![](13-unused-screenshot.png) <img src=\"13-unused-screenshot.png\">");
+  write("docs/wayfinder/agents/map.md", "# map\n\n![reference](prototypes/13-unused-screenshot.png)");
   write("docs/wayfinder/kit/map.md", "# map");
   return root;
 }
@@ -45,7 +45,7 @@ test("an image counts as used when a mock-up in its folder points at it by file 
   assert.deepEqual([...referencedFiles(html)].sort(), ["a.png", "b b.png", "c.png", "d.webp", "e.webp", "f.svg", "g.jpg", "h.gif", "i.avif"]);
 });
 
-test("a build copies only the images a mock-up in the same map uses", async () => {
+test("a build copies only the images a mock-up in the same map uses; notes naming an image don't count", async () => {
   const root = repo();
   writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
   const outDir = join(root, "dist");
@@ -154,11 +154,11 @@ test("index links are URL-encoded and a rebuild adds the header rule once", asyn
   assert.equal(readFileSync(join(outDir, "_headers"), "utf8"), MOCKUPS_HEADERS);
 });
 
-/** esm.sh stand-ins, so the browser check needs no network: like the real Yjs build, the first module
- * imports a second esm.sh path (lib0), and the CSP decides before the route answers. */
 /** A 1×1 transparent PNG. */
 const onePixelPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
+/** esm.sh stand-ins, so the browser check needs no network: like the real Yjs build, the first module
+ * imports a second esm.sh path (lib0), and the CSP decides before the route answers. */
 const esmStub: Record<string, string> = {
   "/yjs@13": 'export * from "/lib0@0.2/stub.mjs";',
   "/lib0@0.2/stub.mjs": "globalThis.esmLoaded = true; export class Doc {}",
