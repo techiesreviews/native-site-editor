@@ -2,7 +2,7 @@
 title: One table across projects, and a kit-problem line per project
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-24
 builder: claude
 blocked_by: [15-machine-wide-state, 22-kit-init]
 ---

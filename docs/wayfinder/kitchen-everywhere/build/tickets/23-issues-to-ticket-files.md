@@ -2,7 +2,7 @@
 title: GitHub Issues into ticket files, once
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-23
 builder: claude
 blocked_by: [22-kit-init]
 ---
