@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { chromium } from "@playwright/test";
 import { frameStrip, runStep } from "../scripts/agents/shots/steps";
 import { contactHtml, contactSheets, initialEncoding, expandMatrix, failShot, makeIndex, nextEncoding, parseArgs, parseStep, parseSteps, screens, type Encoding, type Shot } from "../scripts/agents/shots/core";
+import { kitEnv } from "./support/kit-env.ts";
 
 test("steps parse every grammar form and name unknown instructions", () => {
   assert.deepEqual(parseStep('click "Filter"'), { kind: "click", name: "Filter" });
@@ -219,7 +220,7 @@ console.log("capture diagnostic");
   await mkdir(join(root, "scripts/agents/shots/features"), { recursive: true });
   await writeFile(join(root, "scripts/agents/shots/features/F-media-01.json"), JSON.stringify({ screen: "media-gallery", steps: ["record flicker 800"] }));
   const feature = spawnSync(process.execPath, ["--import", "tsx", resolve("scripts/agents/shots/cli.ts"), "--steps", join(root, "scripts/agents/shots/features/F-media-01.json"), "--width", "1280", "--theme", "light", "--out", join(root, "out-feature")], {
-    env: { ...process.env, KIT_ROOT: root, KIT_MAIN_ROOT: root, ASE_NATIVE_SAVE_FIXTURE: join(root, "fixture"), TEST_CAPTURE: capture, TEST_SHOTS_CORE: pathToFileURL(resolve("scripts/agents/shots/core.ts")).href }, encoding: "utf8", timeout: 15_000,
+    env: { ...kitEnv(), KIT_ROOT: root, KIT_MAIN_ROOT: root, ASE_NATIVE_SAVE_FIXTURE: join(root, "fixture"), TEST_CAPTURE: capture, TEST_SHOTS_CORE: pathToFileURL(resolve("scripts/agents/shots/core.ts")).href }, encoding: "utf8", timeout: 15_000,
   });
   assert.equal(feature.status, 0, feature.stderr);
   assert.match(feature.stdout, /RESULT: ok shots/);
@@ -227,7 +228,7 @@ console.log("capture diagnostic");
     const out = join(root, `out-${many}-${files}`);
     const args = [...(many ? screens : ["editor"]), "--width", "390,768,1280", "--theme", "light", "--out", out, ...(files ? ["--files"] : [])];
     const result = spawnSync(process.execPath, ["--import", "tsx", resolve("scripts/agents/shots/cli.ts"), ...args], {
-      env: { ...process.env, KIT_ROOT: root, KIT_MAIN_ROOT: root, ASE_NATIVE_SAVE_FIXTURE: join(root, "fixture"), TEST_CAPTURE: capture, TEST_SHOTS_CORE: pathToFileURL(resolve("scripts/agents/shots/core.ts")).href }, encoding: "utf8", timeout: 15_000,
+      env: { ...kitEnv(), KIT_ROOT: root, KIT_MAIN_ROOT: root, ASE_NATIVE_SAVE_FIXTURE: join(root, "fixture"), TEST_CAPTURE: capture, TEST_SHOTS_CORE: pathToFileURL(resolve("scripts/agents/shots/core.ts")).href }, encoding: "utf8", timeout: 15_000,
     });
     assert.equal(result.status, 0, result.stderr);
     const lines = result.stdout.trim().split("\n");

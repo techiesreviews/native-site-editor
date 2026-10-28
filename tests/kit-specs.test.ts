@@ -8,6 +8,7 @@ import test, { type TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { combineOutcomes, importsOf, namedSpecs, planShards, removedStrings, routeSpecs, selectAffected, selectionLine, SHARD_MIN_SPECS, shardCount, specGroups, summarizeRun } from "../scripts/agents/specs-affected.mjs";
 import { specsDigest } from "../scripts/agents/specs-digest.mjs";
+import { kitEnv } from "./support/kit-env.ts";
 
 const kit = resolve("scripts/agents/kit");
 // The fake projects have no settings file naming their commands folder, so name this project's.
@@ -292,7 +293,7 @@ main().catch(error => { console.error(error); process.exit(1); });
     assert.equal(result.status, 0);
   }
   const run = (args: string[], env: NodeJS.ProcessEnv = {}) => spawnSync(kit, ["specs", ...args], {
-    cwd: root, env: { ...process.env, ASE_SPEC_SHARDS: undefined, KIT_SPECS_FREE_SLOTS: undefined, KIT_ROOT: root, KIT_COMMANDS_DIR: commands, KIT_SPECS_RUNNER: join(root, "fake-runner"), ...env }, encoding: "utf8", timeout: 15_000,
+    cwd: root, env: { ...kitEnv(), ASE_SPEC_SHARDS: undefined, KIT_SPECS_FREE_SLOTS: undefined, KIT_ROOT: root, KIT_COMMANDS_DIR: commands, KIT_SPECS_RUNNER: join(root, "fake-runner"), ...env }, encoding: "utf8", timeout: 15_000,
   });
   return { root, put, git, files, base, run, calls };
 }
@@ -724,7 +725,7 @@ for (const signal of ["SIGINT", "SIGTERM"] satisfies NodeJS.Signals[]) {
     const files = largeSelection(f);
     const child = spawn(kit, ["specs", ...files, save("actual")], {
       cwd: f.root,
-      env: { ...process.env, KIT_ROOT: f.root, KIT_COMMANDS_DIR: commands, KIT_SPECS_RUNNER: join(f.root, "fake-runner"), ASE_SPEC_SHARDS: "2", FAKE_WAIT_FOR_SIGNAL: "1" },
+      env: { ...kitEnv(), KIT_ROOT: f.root, KIT_COMMANDS_DIR: commands, KIT_SPECS_RUNNER: join(f.root, "fake-runner"), ASE_SPEC_SHARDS: "2", FAKE_WAIT_FOR_SIGNAL: "1" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     const closed = once(child, "close", { signal: AbortSignal.timeout(15_000) });
