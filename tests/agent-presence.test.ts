@@ -116,6 +116,7 @@ function presenceViews(sources: Record<string, string> = { "index.html": page, "
     begin: () => { const at = load; return { holds: () => at === load }; },
     sectionTags: () => tags,
     shows: at => at.repoId === shown.repoId && (at.branch ?? shown.branch) === shown.branch,
+    workspace: () => ({ ...shown }),
     paint: marks => painted.push(marks.map(mark => [mark.name, mark.colour, mark.path, mark.node?.join("."), mark.asking])),
     now: () => clock.now,
   });
@@ -221,12 +222,21 @@ test("get_site's who works on what: each agent's file and section now or last, i
     { name: "Image finder", file: "index.html", asking: true },
   ]);
   header();
+  // A reload of the same branch keeps who just worked where.
+  nextLoad();
+  assert.deepEqual(presence.atWork().map(agent => agent.name), ["Header writer", "Stylist", "Image finder"]);
+  assert.deepEqual(presence.atWork()[0], { name: "Header writer", file: "index.html", section: "1.0" });
   clock.now += AT_WORK_MS + 1;
   // Ten minutes after its last change an agent is no longer listed; a question still waiting is.
   assert.deepEqual(presence.atWork(), [{ name: "Image finder", file: "index.html", asking: true }]);
   shown.branch = "other";
   nextLoad();
   assert.deepEqual(presence.atWork(), []);
+  // Another branch's recent changes are its own: back on main they show again, while still recent.
+  presence.show("index.html", findHero, agent("Copy editor"))();
+  shown.branch = "main";
+  nextLoad();
+  assert.deepEqual(presence.atWork(), [{ name: "Image finder", file: "index.html", asking: true }]);
 });
 
 test("a pinned Media change shows its presence only while its own page is shown", async () => {

@@ -38,6 +38,8 @@ export interface AgentPresencePorts {
   sectionTags(): ReadonlySet<string>;
   /** Whether the site and branch shown now are `at` (a request's: none named, any branch). */
   shows(at: { repoId: number; branch?: string }): boolean;
+  /** The site and branch shown now, if any: an agent's latest change belongs to them. */
+  workspace(): { repoId: number; branch: string } | undefined;
   /** Draws every agent's presence in every view: none clears them. */
   paint(marks: AgentMark[]): void;
   now?(): number;
@@ -57,9 +59,9 @@ export function createAgentPresence(ports: AgentPresencePorts) {
   const running: { who: AgentWho; path: string; node?: number[]; at: Hold }[] = [];
   // Questions belong to their request's site and branch (shown again after any load), changes to the load they began in.
   let asked: { who: AgentWho; path: string; element: string; at: Hold }[] = [];
-  // Each agent's place in the order of arrival, for the session: its colour.
+  // Each agent's place in the order of arrival, for the session (a few names each, never cleared): its colour.
   const arrivals = new Map<string, number>();
-  // Each agent's latest change, as get_site tells it.
+  // Each agent's latest change, as get_site tells it: held to its site and branch (a reload keeps it), as questions are.
   const latest = new Map<string, { who: AgentWho; path: string; node?: number[]; time: number; at: Hold }>();
   const now = () => ports.now?.() ?? Date.now();
   const keyOf = (who: AgentWho) => JSON.stringify([who.grant, who.name]);
@@ -103,8 +105,8 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     show(path: string, find: (source: string) => number[] | undefined, who: AgentWho = { grant: "", name: "" }): () => void {
       arrive(who);
       const page = isPage(path), source = page ? ports.source(path) : undefined, node = source === undefined ? undefined : find(source);
-      const at = ports.begin();
-      latest.set(keyOf(who), { who, path, ...(node ? { node: [...node] } : {}), time: now(), at });
+      const at = ports.begin(), where = ports.workspace();
+      latest.set(keyOf(who), { who, path, ...(node ? { node: [...node] } : {}), time: now(), at: { holds: () => Boolean(where && ports.shows(where)) } });
       if (!page) return () => {};
       const entry = { who, path, ...(node ? { node: [...node] } : {}), at };
       running.push(entry);
@@ -114,6 +116,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
         if (ended) return;
         ended = true;
         running.splice(running.indexOf(entry), 1);
+        // The agent's latest change (this one, or a newer one of its own begun meanwhile) counts from now.
         latest.set(keyOf(who), { ...latest.get(keyOf(who))!, time: now() });
         refresh();
       };

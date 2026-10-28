@@ -80,6 +80,7 @@ const agentPresence = createAgentPresence({
   pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), begin: () => workspaceSession.begin(),
   sectionTags: () => new Set(nativeSectionChoices().map(choice => choice.tag)),
   shows: at => { const scope = shownScope(); return scope?.kind === "github" && sameBranch(scope, { repoId: at.repoId, branch: at.branch ?? scope.branch }); },
+  workspace: () => { const scope = shownScope(); return scope?.kind === "github" ? { repoId: scope.repoId, branch: scope.branch } : undefined; },
   paint: marks => { nativePreview?.agentPresence(marks); pageStructure?.agentPresence(marks); pagesAndFiles.agents(marks); },
 });
 function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.refresh(); workingPart.left(); return workspaceSession.begin(); }

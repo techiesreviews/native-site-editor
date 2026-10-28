@@ -410,6 +410,9 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     assert.equal(openCommand.agent, "legacy-test");
     assert.equal(payload(await call("write_file", { path: "styles/named.css", content: "p {}\n", requestId: "named-css", agent: "  Copy\neditor ", waitSeconds: 0 })).state, "applied");
     assert.equal((await tab.inspect()).commands.find((item: any) => item.id === "named-css").agent, "Copy editor");
+    // A name too long is clipped, never refused: the change still lands.
+    assert.equal(payload(await call("write_file", { path: "styles/long.css", content: "p {}\n", requestId: "long-name-css", agent: "x".repeat(200), waitSeconds: 0 })).state, "applied");
+    assert.equal((await tab.inspect()).commands.find((item: any) => item.id === "long-name-css").agent, "x".repeat(40));
     assert.equal(payload(await call("write_file", { path: "styles/extra.css", content: "p {}\n", requestId: "new-css", waitSeconds: 0 })).state, "applied");
 
     // Make component's shape is the Worker's (shared/agent-edit.ts editShapeProblem); the page, the element and a taken name are the live page's.
