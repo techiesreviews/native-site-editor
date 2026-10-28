@@ -138,17 +138,21 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     },
     /** Who works on what in the workspace shown (get_site): every agent at work, asking, or with a change in the last AT_WORK_MS. */
     atWork(): AgentAtWork[] {
-      const time = now(), told = new Map<string, AgentAtWork>(), working = new Set<string>();
+      const time = now(), told = new Map<string, AgentAtWork>(), placed = new Set<string>();
       for (const [key, last] of latest) if (last.at.holds() && time - last.time <= AT_WORK_MS)
         told.set(key, { name: last.who.name || UNNAMED_AGENT, file: last.path, ...(last.node ? { section: outlineId(last.node) } : {}) });
       for (const entry of running) if (entry.at.holds()) {
-        working.add(keyOf(entry.who));
+        placed.add(keyOf(entry.who));
         told.set(keyOf(entry.who), { name: entry.who.name || UNNAMED_AGENT, file: entry.path, ...(entry.node ? { section: outlineId(entry.node) } : {}) });
       }
       for (const question of asked) if (question.at.holds()) {
-        // At work on a change meanwhile: told there, asking; else on its question's section, as marks() draws it (an ended change gives way).
-        const key = keyOf(question.who), node = working.has(key) ? undefined : questionAt(question);
-        told.set(key, { ...working.has(key) ? told.get(key)! : { name: question.who.name || UNNAMED_AGENT, file: question.path, ...(node ? { section: outlineId(node) } : {}) }, asking: true });
+        // As marks() draws it: at work on a change meanwhile, told there, asking; else on its first question's
+        // section on a page (an ended change gives way; one about another file is told until a page's comes).
+        const key = keyOf(question.who), there = placed.has(key) ? told.get(key) : undefined;
+        if (there) { there.asking = true; continue; }
+        const node = questionAt(question);
+        told.set(key, { name: question.who.name || UNNAMED_AGENT, file: question.path, ...(node ? { section: outlineId(node) } : {}), asking: true });
+        if (isPage(question.path)) placed.add(key);
       }
       return [...told.entries()].sort(([a], [b]) => (arrivals.get(a) ?? 0) - (arrivals.get(b) ?? 0)).map(([, agent]) => agent);
     },
