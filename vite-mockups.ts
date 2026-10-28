@@ -1,7 +1,8 @@
 // The planning mock-ups (`docs/wayfinder/<map>/prototypes/*`), served by the preview site at
 // `/mockups/<map>/<file>` with a generated `/mockups/index.html` listing them by map. Only the
 // preview build turns this on (`MOCKUPS=1`, `npm run build:preview`); production builds and the
-// editor's boot never see these files. The images a mock-up uses sit beside it and are copied too.
+// editor's boot never see these files. The images a mock-up uses sit beside it and are copied too;
+// images no mock-up uses (reference screenshots for planning) stay unpublished.
 import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Plugin } from "vite";
@@ -10,8 +11,26 @@ import type { Plugin } from "vite";
 export type Mockup = { map: string; file: string; path: string };
 
 /** The mock-ups and the images beside them; notes or other files in the folder stay unpublished. */
-const published = /^[^.].*\.(?:html|png|jpe?g|gif|webp|avif|svg)$/i;
+const mockupPage = /^[^.].*\.html$/i;
+const image = /^[^.].*\.(?:png|jpe?g|gif|webp|avif|svg)$/i;
 const titlePrefix = /^PROTOTYPE \(throwaway\) · /;
+/** `src`, `href` and `srcset` values (quoted or bare) and `url(...)` arguments. */
+const reference = /\b(src|href|srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`]+))|\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/gi;
+
+/** The file names in the same folder an HTML mock-up points at, e.g. `a.png` from `./a.png?v=2 2x`. */
+export function referencedFiles(html: string): Set<string> {
+  const names = new Set<string>();
+  for (const [, attribute, ...values] of html.matchAll(reference)) {
+    const value = values.find(part => part !== undefined) ?? "";
+    const urls = attribute?.toLowerCase() === "srcset" ? value.split(",").map(candidate => candidate.trim().split(/\s+/)[0]) : [value.trim()];
+    for (const url of urls) {
+      let name = url.replace(/[?#].*$/, "").replace(/^(?:\.\/)+/, "");
+      try { name = decodeURIComponent(name); } catch { /* keep it as written */ }
+      if (name && !name.includes("/")) names.add(name);
+    }
+  }
+  return names;
+}
 
 export function mockupFiles(root: string): Mockup[] {
   const wayfinder = join(root, "docs/wayfinder");
@@ -19,9 +38,9 @@ export function mockupFiles(root: string): Mockup[] {
   return readdirSync(wayfinder).sort().flatMap(map => {
     const folder = join(wayfinder, map, "prototypes");
     if (!isDir(folder)) return [];
-    return readdirSync(folder).sort()
-      .filter(file => published.test(file) && statSync(join(folder, file)).isFile())
-      .map(file => ({ map, file, path: join(folder, file) }));
+    const files = readdirSync(folder).sort().filter(file => (mockupPage.test(file) || image.test(file)) && statSync(join(folder, file)).isFile());
+    const used = new Set(files.filter(file => mockupPage.test(file)).flatMap(file => [...referencedFiles(readFileSync(join(folder, file), "utf8"))]));
+    return files.filter(file => mockupPage.test(file) || used.has(file)).map(file => ({ map, file, path: join(folder, file) }));
   });
 }
 
