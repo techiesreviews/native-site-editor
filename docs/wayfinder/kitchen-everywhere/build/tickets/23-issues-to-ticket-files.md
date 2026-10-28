@@ -66,7 +66,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - a 2 MiB Issue list being read whole, and `KIT_ISSUES_TIMEOUT=1` stopping a hanging gh.
 - One sample ticket file, Issue #14 with labels, text and a comment, is the expected text in the first `--issues` test in `tests/kit-init.test.ts` (`02-search-results-ignore-accents.md`).
 - Evidence: `RESULT: ok unit 27/27 (1 files)` from `scripts/agents/kit unit --affected` (also after the PR review fixes); `npm run lint` and `npm run check` pass.
-- Commits (named by subject, since `kit pr` rebases them): "GitHub Issues into ticket files, once", "Review fixes round 1", "Review fixes round 2", "Review fixes round 3", "Review fixes after the PR review" and this commit; the PR number and merge SHA are in the slice report.
+- Commits (named by subject, since `kit pr` rebases them): "GitHub Issues into ticket files, once", "Review fixes round 1", "Review fixes round 2", "Review fixes round 3", "Review fixes after the PR review", "docs: 23-issues-to-ticket-files commits by subject" and this commit; the PR number and merge SHA are in the slice report.
 - Review decisions, round 1 (all taken, none declined):
   - P1: an Issue was matched by a link anywhere in a file, so a cross-link could close the wrong Issue or skip one. Now only the `issue:` line in the frontmatter counts.
   - P3: the Done text was missing the close comment's second line, a commit and evidence; added.
@@ -95,3 +95,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - P3: the Done section named pre-rebase commit SHAs; commits are now named by subject.
   - Gaps: the 1 MiB test now also lands the ticket and closes its Issue; the heading test covers a fenced `## Files` and checks no Files are claimed.
   - Optional nits not taken (follow-ups): a failed `gh repo view` on an old repo name counts as "another repo"; a rerun checks only the local tree, not `origin/<land>`; a label holding two backticks in a row breaks its code span.
+
+### Follow-ups
+
+- Spec (P3): 72e1c785e:scripts/agents/kit.d/init:288 — P3 fault: in `--issues` mode, the local ticket folder is read with bare `readdirSync` and `readFileSync(...)` calls that have no `try`. Two cases break: a directory named `NN-x.md` inside `<maps>/backlog/tickets` (EISDIR), and an `.md` file the runner cannot read (EACCES). Either one ends the run with an uncaught Node stack trace instead of a `RESULT: fail init …` line. The same goes for a `tickets` path that is a file (ENOTDIR). This goes against the script's own convention (`fail never returns: it prints the RESULT line`) and against the existing test that an unreadable AGENTS.md gives "a plain RESULT line" (`/at .+\(node:/` must not match). Fix: wrap the readdir and the reads in `try { … } catch (error) { fail(\`cannot read ${path} (${…}); wrote nothing\`) }`, the same way `--close` already handles a landed file it cannot read (line 255).
+- Spec (P3): 8b0e4b994:scripts/agents/kit.d/init:297 — P3 fault: `copied()` tracks fences but never closes one the Issue left open. Pasted logs often have a stray opening ``` with no closing marker. In that case the ticket's own `## Comments` heading and every comment below it show as code on GitHub. `tickets.mjs` is not affected, since it reads sections by line, but the copy no longer reads as the Issue. Fix: after the `map`, `if (fence) lines.push(fence)`, so each copied block closes its own fence.
+- Validation gaps (gap): The PR-review path `cannot read <path> on origin/<land> (…); closed nothing` (init:255) has no test. To add one: land a gitlink named like a ticket, `git update-index --add --cacheinfo 160000,<absent sha>,docs/wayfinder/backlog/tickets/99-sub.md`, then commit and push to `dev`. Then assert that `--issues --close` exits 1 with that RESULT and that `gh.closes()` is empty.
+- Validation gaps (gap): No test covers a non-string or blank `maps` (`"maps": 5` and `"maps": "  "`). The test should expect `RESULT: fail init "maps" in scripts/agents/kit.json must name a folder` and no `docs/` written.
+- Validation gaps (gap): No test covers `gh repo view` failing for origin's repo. To add one: `setRepos({})`, then assert `RESULT: fail init gh repo view acme/tools found no repo; check gh auth status and origin`, with no `issue list` call in `gh.calls()`.
+- Validation gaps (gap): No test covers an unclosed fence in an Issue body (see the defect above). It should assert that the copied block ends with a closing marker before `## Comments`.
+- Validation gaps (gap): No test covers a directory or unreadable file in the local tickets folder (see the first defect). It should assert a plain `RESULT: fail` line and no stack trace.
+
