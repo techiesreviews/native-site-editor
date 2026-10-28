@@ -106,3 +106,78 @@ test("vite.config.ts adds the mock-ups only with MOCKUPS=1", async () => {
   assert.ok(!(await pluginNames("0")).includes("ase-mockups"));
   assert.ok((await pluginNames("1")).includes("ase-mockups"));
 });
+
+test("only the preview Worker builds with the mock-ups", () => {
+  const commands = Object.fromEntries(["wrangler.jsonc", "wrangler.preview.jsonc", "wrangler.techies.jsonc"].map(file => {
+    const config = readFileSync(join(repoRoot, file), "utf8");
+    return [file, /"build"\s*:\s*\{\s*"command"\s*:\s*"([^"]+)"/.exec(config)?.[1]];
+  }));
+  assert.deepEqual(commands, { "wrangler.jsonc": "npm run build:ui", "wrangler.preview.jsonc": "npm run build:preview", "wrangler.techies.jsonc": "npm run build:ui" });
+  const scripts = (JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts;
+  assert.match(scripts["build:preview"], /^MOCKUPS=1 vite build\b/);
+  assert.doesNotMatch(scripts["build:ui"], /MOCKUPS/);
+});
+
+test("index links are URL-encoded and a rebuild adds the header rule once", async () => {
+  assert.match(mockupIndex([{ map: "m", file: "a #1?.html", path: "x" }], () => ""), /href="m\/a%20%231%3F\.html"/);
+  const root = repo();
+  writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
+  const outDir = join(root, "dist");
+  const plugin = mockups(root);
+  await build({ root, configFile: false, logLevel: "silent", plugins: [plugin], build: { outDir } });
+  await build({ root, configFile: false, logLevel: "silent", plugins: [plugin], build: { outDir, emptyOutDir: false } });
+  assert.equal(readFileSync(join(outDir, "_headers"), "utf8"), MOCKUPS_HEADERS);
+});
+
+/** esm.sh stand-ins, so the browser check needs no network: like the real Yjs build, the first module
+ * imports a second esm.sh path (lib0), and the CSP decides before the route answers. */
+const esmStub: Record<string, string> = {
+  "/yjs@13": 'export * from "/lib0@0.2/stub.mjs";',
+  "/lib0@0.2/stub.mjs": "globalThis.esmLoaded = true; export class Doc {}",
+};
+
+test("every real mock-up runs in a browser under the sandboxed policy", async () => {
+  const { chromium } = await import("@playwright/test");
+  const root = mkdtempSync(join(scratch, "real-"));
+  writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
+  mkdirSync(join(root, "public"));
+  writeFileSync(join(root, "public/_headers"), readFileSync(join(repoRoot, "public/_headers"), "utf8"));
+  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(repoRoot)], build: { outDir: join(root, "dist") } });
+  writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify({ name: "mockups-browser-test", compatibility_date: "2026-09-17", assets: { directory: "./dist" } }));
+  const worker = await unstable_startWorker({ config: join(root, "wrangler.jsonc"), dev: { server: { port: 0 }, inspector: false, watch: false, logLevel: "none" } });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const base = await worker.url;
+    const page = await browser.newPage();
+    await page.route("https://esm.sh/**", route => {
+      const body = esmStub[new URL(route.request().url()).pathname];
+      return body === undefined ? route.abort() : route.fulfill({ body, contentType: "text/javascript", headers: { "Access-Control-Allow-Origin": "*" } });
+    });
+    const violations: string[] = [];
+    page.on("console", message => { if (/Content Security Policy/i.test(message.text())) violations.push(`${page.url()}: ${message.text()}`); });
+    await page.addInitScript(() => document.addEventListener("securitypolicyviolation", event => console.error(`Content Security Policy violation: ${event.violatedDirective} ${event.blockedURI}`)));
+    const pages = mockupFiles(repoRoot).filter(mockup => mockup.file.endsWith(".html"));
+    assert.ok(pages.length > 0);
+    for (const { map, file } of [{ map: "", file: "index.html" }, ...pages]) {
+      const response = await page.goto(new URL(`mockups/${map ? `${map}/` : ""}${file}`, base).href, { waitUntil: "load" });
+      assert.equal(response?.status(), 200, `${map}/${file}`);
+    }
+    assert.deepEqual(violations, []);
+
+    await page.goto(new URL("mockups/agents-and-multiplayer/08-typing-together.html", base).href, { waitUntil: "load" });
+    await page.waitForFunction(() => (globalThis as { esmLoaded?: boolean }).esmLoaded === true);
+    const sandbox = await page.evaluate(async () => {
+      const image = new Image();
+      image.src = "12-caret-circle-reference.png";
+      const imageLoaded = await image.decode().then(() => true, () => false);
+      let storage = "open";
+      try { void localStorage.length; } catch { storage = "blocked"; }
+      return { origin: String(globalThis.origin), cookie: (() => { try { return document.cookie; } catch { return "blocked"; } })(), storage, imageLoaded };
+    });
+    assert.deepEqual(sandbox, { origin: "null", cookie: "blocked", storage: "blocked", imageLoaded: true });
+    assert.deepEqual(violations, []);
+  } finally {
+    await browser.close();
+    await worker.dispose();
+  }
+});
