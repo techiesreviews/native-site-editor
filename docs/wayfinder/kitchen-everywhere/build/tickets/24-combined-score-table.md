@@ -45,14 +45,15 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - **Real run** on this machine (only this editor registered):
 
 ```
-score: all projects (1 projects, 70 pieces)
+score: all projects (1 project, 70 pieces)
 project             builder          pieces  rounds  findings                                                        landed  corrections
-native-site-editor  claude-opus-5-5  49      146     fault 312, ticket 315, race 49, style 41, unsorted 29, gap 792  45      -
+native-site-editor  claude-opus-5-5  49      147     fault 320, ticket 321, race 50, style 44, unsorted 29, gap 811  45      -
 native-site-editor  unknown          21      0       fault 6, ticket 5, gap 16                                       16      -
-native-site-editor  all builders     70      146     fault 318, ticket 320, race 49, style 41, unsorted 29, gap 808  61      6
-RESULT: ok score all 1 projects 70 pieces
+native-site-editor  all builders     70      147     fault 326, ticket 326, race 50, style 44, unsorted 29, gap 827  61      6
+RESULT: ok score all 1 project 70 pieces
 ```
 
   The real "Kit problems" check for this editor returns no section (doctor passes here).
 - Validation: `RESULT: ok unit 149/149 (3 files)`; doc guards 89/89; `npm run check` and `npm run lint` pass.
+- Fix round: a feedback log that cannot be read (an unreadable folder, a failing git read) now leaves the project's numbers standing with `corrections not read: …`; a root inside a bigger repository reads its logs from the repository's top; the sweep passes no `KIT_*` variable (such as `KIT_DOCTOR_SKIP`) or `CLAUDE_PROJECT_DIR` to a project's doctor; counts of one read "1 project". Tests added: `origin/dev` wins over the local `dev`, the subfolder root, an unreadable feedback folder, a broken `projects.json` (exit 1), the default `--all --html` path, and a sweep started with `KIT_DOCTOR_SKIP`.
 - Feature list: no change (kit commands only; nothing in the editor changes).
