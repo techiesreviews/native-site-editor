@@ -2,7 +2,7 @@
 title: "Several agents: names, colours and presence"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-11
 builder: claude
 blocked_by: []
 ---
