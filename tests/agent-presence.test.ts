@@ -246,6 +246,14 @@ test("an agent working through a pin (am-13) has its colour on the pin and no ch
   end();
 });
 
+test("a finished request of an earlier session takes no colour (am-13): the agent at work now gets the first", () => {
+  const { presence, painted } = presenceViews();
+  presence.questions([{ repoId: 1, branch: "main", state: "done", element: { file: "index.html", id: "1.0.0" }, agent: agent("Old helper", "old-grant") }]);
+  presence.show("index.html", findHero, agent("Copy editor"))();
+  assert.deepEqual(painted[0], [["Copy editor", 0, "index.html", "1.0", false]]);
+  assert.equal(presence.colour(agent("Copy editor")), 0);
+});
+
 test("get_site tells agents of one connection apart by name: one at work on Home, another asking on About, in order of arrival", () => {
   const { presence } = presenceViews();
   const end = presence.show("index.html", findHero, agent("A", "g1"));
