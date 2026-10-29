@@ -2,7 +2,7 @@
 title: The 15-minute update timer
 type: task (HITL)
 status: open
-assignee:
+assignee: ke-31
 builder: claude
 blocked_by: [30-kit-repo-and-move]
 ---
