@@ -32,3 +32,7 @@ Also for Lex: ticket 43 waived its "test fails before the fix" rule for F-bar-01
 
 - The chosen placement holds at 390 px light and dark in the F-bar-01 and F-bar-03 UX checks (shots in the Done), with a unit test in `tests/edit-bar-placement.test.ts`.
 - `kit unit --affected`, `kit specs --affected`, `kit doctor` pass.
+
+## Comments
+
+- Lead, 2026-10-29: accepted ticket 43's F-bar-01 waiver (no app fault; the phone spec pins the behaviour). The placement question is in the 2026-11-03 Tuesday pack with C recommended.
