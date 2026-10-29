@@ -304,7 +304,7 @@ test("a watchdog's take is named at once when its connection's agent first acts,
   presence.listen(() => { told++; });
   presence.heard(watchdog, false);
   presence.questions([took(watchdog)]);
-  assert.equal(presence.onPin("req-took"), undefined, "no agent acting yet: the spinner, the watchdog unnamed");
+  assert.deepEqual(presence.onPin("req-took"), watchdog, "no agent acting yet: the taker alone on its connection");
   const before = told;
   presence.heard(copy);
   assert.deepEqual(presence.onPin("req-took"), copy);
@@ -350,12 +350,12 @@ test("a stopped taker is not named (am-12, am-45)", () => {
   assert.equal(presence.onPin("req-took"), undefined);
 });
 
-test("stored requests keep no agent acting (am-45): a question left open does not name a watchdog's take", () => {
+test("stored requests keep no agent acting (am-45): a question left open does not name a watchdog's take, its taker alone does", () => {
   const { presence } = presenceViews();
   const copy = agent("Copy editor"), watchdog = agent("Watchdog");
   presence.heard(watchdog, false);
   presence.questions([question(copy), took(watchdog)]);
-  assert.equal(presence.onPin("req-took"), undefined);
+  assert.deepEqual(presence.onPin("req-took"), watchdog);
 });
 
 test("a watchdog's take counts only its connection's agents that acted and are not stopped (am-45): not another connection's or a stopped one", () => {
