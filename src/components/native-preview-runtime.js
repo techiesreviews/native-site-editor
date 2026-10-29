@@ -1943,6 +1943,20 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     }
     return el;
   }
+  // A row of pins stands this far above its element (agent-pin-geometry.ts: NOTE_GAP, PIN_HEIGHT and the gap again).
+  var PIN_ROOM = 30;
+  // The top of the earlier siblings stacked over `el` closer than a row of pins (an eyebrow line over a heading,
+  // ticket am-45): its pins stand clear of them. Siblings beside it or hidden do not count.
+  function clearAbove(el, rect) {
+    var top = rect.top;
+    for (var at = el.previousElementSibling; at; at = at.previousElementSibling) {
+      var box = at.getBoundingClientRect();
+      if (!box.width || !box.height || box.top >= rect.top || box.right <= rect.left || box.left >= rect.right) continue;
+      if (box.bottom <= top - PIN_ROOM) break;
+      top = Math.min(top, box.top);
+    }
+    return top;
+  }
   function schedulePins() {
     if (pinFrame || !pins.length && !lastPins) return;
     pinFrame = requestAnimationFrame(function () {
@@ -1950,6 +1964,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       var rects = pins.map(function (pin) {
         var el = locatePin(pin);
         var rect = el && el.isConnected ? rectOf(el) : null;
+        var clear = rect ? clearAbove(el, rect) : undefined;
+        if (clear !== undefined && clear < rect.top) rect.clear = clear;
         return { id: pin.id, rect: rect && (rect.width || rect.height) ? rect : null };
       });
       var key = JSON.stringify(rects);

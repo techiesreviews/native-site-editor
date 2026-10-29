@@ -94,8 +94,8 @@ const marks: Record<string, string> = { done: "✓", answered: "…", question: 
 const replied = (state: string) => state === "done" || state === "answered" || state === "question";
 // The question an agent asks the user, shown in its pin ("" when none).
 const asking = (request: PinRequest) => request.state === "question" ? request.reply?.message.trim() ?? "" : "";
-// The agent working on it, named on its pin in its colour ("" when none). Not the one whose wait only took
-// it (a watchdog, for the agent that does the work): the pin keeps its spinner until an agent reads it.
+// The agent working on it, named on its pin in its colour ("" when none). For one a wait only took, the agent
+// presence names (src/agent-presence.ts `onPin`); none named, the pin keeps its spinner until an agent reads it.
 const workingAgent = (request: PinRequest) => request.state === "seen" && request.agent && !request.agentTook ? request.agent.name || UNNAMED_AGENT : "";
 // Its theme token: the agent's colour itself, and (`-pin`, `-ink`) its pin's tint and ink.
 const agentToken = (request: PinRequest, part = "") => `var(--${AGENT_COLOURS[(request.colour ?? 0) % AGENT_COLOURS.length]}${part})`;
@@ -727,15 +727,19 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     },
     /**
      * The pins on the element at `rect` (the selection): how far from its
-     * anchor the next one goes (0: none there), and the number it will have.
+     * anchor the next one goes (0: none there), the number it will have, and
+     * the top of what stands just above it that they stand clear of.
      */
     row(rect: SelectionRect) {
-      let offset = 0;
+      let offset = 0, clear: number | undefined;
       for (const [id, pin] of pins) {
         const live = rects.get(id);
-        if (live && !pin.hidden && sameRect(live, rect)) offset += restingWidth(pin) + STACK_GAP;
+        if (live && !pin.hidden && sameRect(live, rect)) {
+          offset += restingWidth(pin) + STACK_GAP;
+          clear ??= live.clear;
+        }
       }
-      return { offset, next: requests.length + 1 };
+      return { offset, next: requests.length + 1, ...(clear !== undefined ? { clear } : {}) };
     },
     /**
      * Show a request (from the project selector's list of what agents wait
