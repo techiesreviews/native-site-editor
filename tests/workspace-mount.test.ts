@@ -7,6 +7,7 @@ import type { SourceFile } from "../src/components/source-editor.ts";
 import type { NativePreviewSelection } from "../src/components/native-preview.ts";
 import { draftKey, type DraftScope } from "../src/drafts.ts";
 import type { NativeSite } from "../shared/native-project.ts";
+import type { GuardedEdits } from "../src/guarded-edit.ts";
 import type { WorkspaceMountPorts } from "../src/workspace-mount.ts";
 import type { WorkspaceScope } from "../src/workspace-session.ts";
 import type { Directory, Repository, SessionInfo, Snapshot } from "../shared/types.ts";
@@ -172,7 +173,10 @@ function setup() {
     mediaHistoryHome: { adopt: say("mediaHistoryHome.adopt"), clear: say("mediaHistoryHome.clear") } satisfies WorkspaceMountPorts["mediaHistoryHome"],
     parkedSteps: { adopt: say("parkedSteps.adopt"), clear: say("parkedSteps.clear") } satisfies WorkspaceMountPorts["parkedSteps"],
     // A stamp from the repository holds while `state.holds` does.
-    guardedEdits: { stamp: (key?: string) => ({ holds: () => key !== "repository" || state.holds, changed: () => undefined }) } satisfies WorkspaceMountPorts["guardedEdits"],
+    guardedEdits: {
+      stamp: (key?: string) => ({ holds: () => key !== "repository" || state.holds, changed: () => undefined }),
+      peek: fake<GuardedEdits["peek"]>({ source: (path: string) => state.sources[path] }),
+    } satisfies WorkspaceMountPorts["guardedEdits"],
     mediaController: { disposeGallery: say("disposeGallery"), mediaEnded: say("mediaEnded"), chooseImage: sayAsync("chooseImage") } satisfies WorkspaceMountPorts["mediaController"],
     paletteController: { shortcut: say("shortcut"), mount: say("palette.mount"), dispose: say("palette.dispose") } satisfies WorkspaceMountPorts["paletteController"],
     previewSelection: { handlers: () => ({ onSelect: () => {}, onSelectionRect: () => {}, onTextSelection: () => {}, onItemGrids: () => {} }) } satisfies WorkspaceMountPorts["previewSelection"],
@@ -289,7 +293,8 @@ test("mountWorkspace hands the preview, Page Structure and the component tools t
   // The component tools load only after the first paint; then Page Structure and the edit bar draw with them.
   assert.equal(state.componentTools, undefined);
   assert.ok(!calls.includes("mountComponentTools"));
-  appStore.selection.value = fake<NativePreviewSelection>({ path: "index.html" });
+  state.sources["index.html"] = "A";
+  appStore.selection.value = fake<NativePreviewSelection>({ path: "index.html", paintedSource: "A" });
   await paint(state);
   assert.ok(state.componentTools);
   assert.ok(last("structure").calls.includes("refresh"));
@@ -381,6 +386,18 @@ test("a component tools load that fails is reported once and not tried again for
   await paint(state);
   assert.ok(state.componentTools);
   assert.equal(calls.filter((call) => call.startsWith("error")).length, 1);
+});
+
+test("tools that land while an edit is on its way to the preview leave the edit bar for the preview's next selection", async () => {
+  const { workspace, state, calls, appStore } = setup();
+  workspace.mountWorkspace();
+  // A Bold pressed: the source moved on, the selection is still the one painted from "A".
+  state.sources["index.html"] = "B";
+  appStore.selection.value = fake<NativePreviewSelection>({ path: "index.html", paintedSource: "A" });
+  await paint(state);
+  assert.ok(state.componentTools);
+  assert.ok(!calls.some((call) => call.startsWith("renderEditBar")));
+  assert.ok(last("structure").calls.includes("refresh"));
 });
 
 test("the Add panel's New component before the component tools land waits for them", async () => {
