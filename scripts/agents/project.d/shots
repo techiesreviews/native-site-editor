@@ -5,7 +5,8 @@ set -euo pipefail
 # KIT_HOME), else the machine copy.
 if [[ -z ${KIT_LIB:-} ]]; then
   home=$("$(dirname -- "${BASH_SOURCE[0]}")/../kit" --home) || { printf '%s\n' "$home"; exit 2; }
-  KIT_LIB=$home/kit-lib.sh
+  # The Node helpers this runs reuse the same kit: one kit for both libraries.
+  export KIT_LIB=$home/kit-lib.sh KIT_HOME=$home
 fi
 # shellcheck source=/dev/null
 source "$KIT_LIB"
