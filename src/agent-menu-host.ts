@@ -35,7 +35,7 @@ export interface AgentMenuHostPorts {
   workspace: Pick<ReturnType<typeof createWorkspaceMount>, "activeFileContext" | "repositoryMenu">;
   nativeTextIndexGate: SiteIndexGate;
   /** An agent's question shows on its request's element; get_site tells who works on what; the menu lists and stops them. */
-  agentPresence: Pick<ReturnType<typeof createAgentPresence>, "questions" | "colour" | "atWork" | "agents" | "stop" | "stopped" | "listen">;
+  agentPresence: Pick<ReturnType<typeof createAgentPresence>, "questions" | "onPin" | "colour" | "atWork" | "agents" | "stop" | "stopped" | "listen">;
   /** Host state, read at call time. */
   readonly info: SessionInfo | undefined;
   readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "route" | "setRequests" | "showRequest"> | undefined;
@@ -106,13 +106,16 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
       reload: snapshot => agentCommands.reload(snapshot),
       // Ask agent shows in the edit bar while an agent is connected.
       onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
-      // A pin an agent works on wears its colour, the one its outline and dots have (ticket am-13). Only those:
-      // asking for a colour gives an agent its place in the order of arrival, which those of earlier sessions
-      // (on finished requests) and a watchdog that only took one for the agent that does the work must not take.
+      // A pin an agent works on wears its colour, the one its outline and dots have (ticket am-13), and a pin a wait
+      // took the agent presence names for it (ticket am-45). Only those: asking for a colour gives an agent its place
+      // in the order of arrival, which those of earlier sessions (on finished requests) and a watchdog that only took
+      // one for the agent that does the work must not take.
       onRequests: (requests) => {
         agentPresence.questions(requests);
-        ports.nativePreview?.setRequests(requests.map(request => request.state === "seen" && request.agent && !request.agentTook
-          ? { ...request, colour: agentPresence.colour(request.agent) } : request));
+        ports.nativePreview?.setRequests(requests.map(({ agentTook, ...request }) => {
+          const who = agentPresence.onPin(request.id);
+          return who ? { ...request, agent: who, colour: agentPresence.colour(who) } : { ...request, ...(agentTook ? { agentTook } : {}) };
+        }));
       },
       onQuestions: (count) => workspace.repositoryMenu?.setQuestions(count),
       // A question in the selector's list: its pin, card open, answer box focused.

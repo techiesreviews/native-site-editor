@@ -1055,8 +1055,8 @@ its number unused.
 
 ### F-agent-04 Ask agent and pins
 - Try: Select an element, press Ask agent and type a request; ask again on the same element; answer a question on its pin, or open a done pin and send a follow-up.
-- Good: A numbered pin shows waiting (blue), the agent on it in that agent's colour with its name, a question (orange) or done (grey, no name); one element holds several pins side by side; every pin's card has a box and Send, and a follow-up reopens the pin for the same agent; that agent's outline on the element has no second name chip; Ask agent stays icon-only; history stays in this browser.
-- Files: `src/components/agent-pins.ts`, `src/components/agent-pins.css`, `src/components/agent-pin-geometry.ts`, `src/agent-records.ts`, `shared/agent-requests.ts`, `src/agent-presence.ts`
+- Good: A numbered pin shows waiting (blue), the agent on it in that agent's colour with its name, a question (orange) or done (grey, no name); taken by an agent's wait, the pin shows that agent at once (or its connection's one agent at work; with several at work, the spinner until one reads or replies) and keeps it until done; one element holds several pins side by side, standing clear of a line just above the element (an eyebrow over a heading) when there is room; every pin's card has a box and Send, and a follow-up reopens the pin for the same agent; that agent's outline on the element has no second name chip; Ask agent stays icon-only; history stays in this browser.
+- Files: `src/components/agent-pins.ts`, `src/components/agent-pins.css`, `src/components/agent-pin-geometry.ts`, `src/components/native-preview-runtime.js`, `src/agent-records.ts`, `shared/agent-requests.ts`, `src/agent-presence.ts`, `src/agent-menu-host.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-mcp.spec.ts`, `tests/native-save/native-agent-pins.spec.ts`
 - Steps: none yet (needs a connected agent)

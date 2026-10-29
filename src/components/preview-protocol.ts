@@ -144,6 +144,7 @@ function readRect(raw: unknown): SelectionRect | undefined {
   if (!rect || !finite(rect.top) || !finite(rect.left) || !finite(rect.width) || !finite(rect.height) || !finite(rect.bottom) || !finite(rect.right)) return undefined;
   const read: SelectionRect = { top: rect.top, left: rect.left, width: rect.width, height: rect.height, bottom: rect.bottom, right: rect.right };
   if (finite(rect.inset) && rect.inset > 0) read.inset = rect.inset;
+  if (finite(rect.clear) && rect.clear < rect.top) read.clear = rect.clear;
   return read;
 }
 
