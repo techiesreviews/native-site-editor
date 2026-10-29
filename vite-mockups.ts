@@ -76,7 +76,7 @@ export type BuildTicket = { map: string; name: string; path: string; closed: boo
 export const SHIPPING_LABELS = {
   live: ["Live", "Built and released to editor.techies.tools."],
   preview: ["On preview", "Built and on preview-editor.techies.tools, not released yet."],
-  building: ["Being built", "Some of its tickets are done or under way, others not started."],
+  building: ["Being built", "Some of its tickets are done or under way, others still open."],
   planned: ["Planned", "Build tickets are written; none started yet."],
   idea: ["Idea only", "No build ticket links to it: an exploration or an option not chosen."],
 } as const;
@@ -113,40 +113,77 @@ export function buildTickets(root: string, mockups: readonly Mockup[]): BuildTic
 }
 
 /** The build tickets (paths from `root`, as in `BuildTicket`) whose closing commit, the newest one adding
- * their `status: closed` line, is on `origin/main` (or, without it, a local `main`), so their work is released.
- * A commit counts by its id or, rewritten by a rebase merge, by its author time and subject. A ticket moved or
- * renamed since keeps its closing commit. Undefined when git or `main` can't be read, or in a shallow clone
- * (its oldest commit would look like every ticket's closing one); `origin/main` is as fresh as the last fetch of `main`. */
+ * the `status: closed` line of their front matter, is on `origin/main` (or, without it, a local `main`), so their
+ * work is released. A commit counts by its id or, rewritten by a rebase merge, by its author time and subject.
+ * A ticket moved or renamed since keeps its closing commit. Undefined when git or `main` can't be read, or in a
+ * shallow clone (its oldest commit would look like every ticket's closing one); `origin/main` is as fresh as
+ * the last fetch of `main`. */
 export function ticketsOnMain(root: string): ReadonlySet<string> | undefined {
-  const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 });
+  const git = (args: string[], input?: string) =>
+    execFileSync("git", ["-C", root, ...args], { input, stdio: ["pipe", "pipe", "ignore"], maxBuffer: 1 << 28 });
   let top: string, main: Set<string>, log: string;
   try {
-    const ref = ["origin/main", "main"].find(name => { try { return Boolean(git("rev-parse", "--verify", "--quiet", `${name}^{commit}`)); } catch { return false; } });
+    const ref = ["origin/main", "main"].find(name => { try { return git(["rev-parse", "--verify", "--quiet", `${name}^{commit}`]).length > 0; } catch { return false; } });
     if (!ref) return undefined;
-    if (git("rev-parse", "--is-shallow-repository").trim() === "true") return undefined;
-    top = git("rev-parse", "--show-toplevel").trim();
-    main = new Set(git("log", "--format=%H%n%at %s", ref).split("\n"));
-    // Every change under docs/wayfinder, newest first, so renames are seen before the older commits they affect.
-    log = git("log", "-p", "-M", "--unified=0", "--no-color", "--no-ext-diff", "--format=commit %H%nsubject %at %s", "--", "docs/wayfinder");
+    if (git(["rev-parse", "--is-shallow-repository"]).toString().trim() === "true") return undefined;
+    top = git(["rev-parse", "--show-toplevel"]).toString().trim();
+    main = new Set(git(["log", "--format=%H%n%at %s", ref]).toString().split("\n"));
+    // Every change under docs/wayfinder, children before parents, so a rename is seen before the commits on
+    // any branch that used the older path.
+    log = git(["log", "--topo-order", "-p", "-M", "--unified=0", "--no-color", "--no-ext-diff", "--format=commit %H%nsubject %at %s", "--", "docs/wayfinder"]).toString();
   } catch {
     return undefined;
   }
-  /** A ticket's path today, and its closing commit's id and `<author time> <subject>`. */
-  const closing = new Map<string, string[]>();
-  /** An older path of a ticket, mapped to its path today. */
+  /** Each added `status: closed` line, newest first: the ticket's path then, the line's number, and its commit's
+   * id and `<author time> <subject>`. */
+  const added: { path: string; line: number; commit: string[] }[] = [];
+  /** An older path of a ticket, mapped to the one it was renamed to. */
   const renamed = new Map<string, string>();
-  let commit: string[] = [], file = "", from = "";
+  let commit: string[] = [], file = "", from = "", header = false, next = 0;
   for (const line of log.split("\n")) {
     if (line.startsWith("commit ")) commit = [line.slice(7)];
     else if (line.startsWith("subject ")) commit.push(line.slice(8));
-    else if (line.startsWith("rename from ")) from = line.slice(12);
-    else if (line.startsWith("rename to ")) renamed.set(from, renamed.get(line.slice(10)) ?? line.slice(10));
-    else if (line.startsWith("+++ ")) file = line.slice(4).replace(/^b\//, "");
-    else if (/^\+status:\s*closed\s*$/.test(line)) {
-      const today = renamed.get(file) ?? file;
-      if (!closing.has(today)) closing.set(today, commit);
+    else if (line.startsWith("diff --git ")) header = true;
+    else if (header && line.startsWith("rename from ")) from = line.slice(12);
+    else if (header && line.startsWith("rename to ")) { if (!renamed.has(from)) renamed.set(from, line.slice(10)); }
+    else if (header && line.startsWith("+++ ")) file = line.slice(4).replace(/^b\//, "");
+    else if (line.startsWith("@@ ")) {
+      header = false;
+      next = Number(/\+(\d+)/.exec(line)?.[1] ?? 0);
+    } else if (!header && line.startsWith("+")) {
+      if (/^\+status:\s*closed\s*$/.test(line)) added.push({ path: file, line: next, commit });
+      next++;
     }
   }
+  // Only a line inside the front matter closes a ticket, not one quoted in its body: read each file as it was.
+  let blobs: Buffer;
+  try {
+    blobs = git(["cat-file", "--batch"], added.map(({ path, commit: [id] }) => `${id}:${path}\n`).join(""));
+  } catch {
+    return undefined;
+  }
+  let offset = 0;
+  const frontMatterEnds = added.map(() => {
+    const headerEnd = blobs.indexOf(10, offset);
+    const [, kind, size] = blobs.subarray(offset, headerEnd).toString().split(" ");
+    if (kind !== "blob") { offset = headerEnd + 1; return 0; }
+    const text = blobs.subarray(headerEnd + 1, headerEnd + 1 + Number(size)).toString();
+    offset = headerEnd + 2 + Number(size);
+    const lines = text.split(/\r?\n/);
+    return lines[0] === "---" ? lines.indexOf("---", 1) + 1 : 0;
+  });
+  const today = (path: string) => {
+    for (const seen = new Set<string>(); renamed.has(path) && !seen.has(path);) {
+      seen.add(path);
+      path = renamed.get(path)!;
+    }
+    return path;
+  };
+  /** A ticket's path today, and its closing commit. */
+  const closing = new Map<string, string[]>();
+  added.forEach(({ path, line, commit: ids }, index) => {
+    if (line > 1 && line < frontMatterEnds[index] && !closing.has(today(path))) closing.set(today(path), ids);
+  });
   const base = realpathSync(root);
   return new Set([...closing].filter(([, ids]) => ids.some(id => main.has(id))).map(([path]) => relative(base, resolve(top, path)).split("\\").join("/")));
 }
@@ -218,7 +255,7 @@ li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem;
 .shipping--building { background: var(--warning-bg); color: var(--warning-fg); }
 .shipping--planned { background: var(--component-surface); color: var(--component-text); }
 .shipping--idea { box-shadow: inset 0 0 0 1px var(--control-line); color: var(--muted); }
-.tickets, .legend-note { color: var(--muted); font-size: var(--type-small); }
+.tickets { color: var(--muted); font-size: var(--type-small); }
 </style>
 </head>
 <body>
@@ -226,7 +263,6 @@ li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem;
 <dl class="legend">
 ${legend.join("\n")}
 </dl>
-<p class="legend-note">The numbers after a label are the build tickets linking to the mock-up, in docs/wayfinder/&lt;map&gt;/build/tickets/.</p>
 ${sections.join("\n") || "<p>No mock-ups yet.</p>"}
 </body>
 </html>
