@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -77,11 +77,15 @@ test("the index says so when there are no mock-ups", () => {
   assert.match(mockupIndex([]), /<p>No mock-ups yet\.<\/p>/);
 });
 
+/** Runs git in `dir` without the user's identity, signing or hooks. */
+const gitIn = (dir: string, ...args: string[]) =>
+  execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...args], { stdio: "ignore" });
+
 /** A git repo with one mock-up per label and build tickets linking to them; `main` holds tickets 01 and 06
  * closed, `dev` then closes 02 and claims 04. */
 function shippingRepo() {
   const root = mkdtempSync(join(scratch, "shipping-"));
-  const git = (...args: string[]) => execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...args], { stdio: "ignore" });
+  const git = (...args: string[]) => gitIn(root, ...args);
   const write = (path: string, text: string) => {
     mkdirSync(join(root, path, ".."), { recursive: true });
     writeFileSync(join(root, path), text);
@@ -104,13 +108,19 @@ function shippingRepo() {
   ticket("agents", "02-preview.md", "closed", "", "Mock-ups: [preview](../../prototypes/preview.html) and [the pair](../../prototypes/live-and-preview.html).");
   ticket("agents", "04-claimed.md", "open", "am-04", "[x](../../prototypes/claimed.html)");
   git("commit", "--quiet", "-am", "close 02, claim 04");
-  return root;
+  return { root, git, ticket };
+}
+
+/** Each mock-up's label in `root`, with the names of the tickets it came from: `{ "live.html": "live 01" }`. */
+function labelsIn(root: string) {
+  const files = mockupFiles(root);
+  return Object.fromEntries([...mockupShipping(files, buildTickets(root, files), ticketsOnMain(root))]
+    .map(([key, { label, tickets }]) => [key.slice("agents/".length), `${label} ${tickets.map(ticket => ticket.name).join(",")}`.trim()]));
 }
 
 test("each mock-up's label comes from the build tickets linking to it and whether their closing commits are on main", () => {
-  const root = shippingRepo();
-  const files = mockupFiles(root);
-  const tickets = buildTickets(root, files);
+  const { root } = shippingRepo();
+  const tickets = buildTickets(root, mockupFiles(root));
   assert.deepEqual(tickets.map(({ map, name, closed, claimed, mockups }) => ({ map, name, closed, claimed, mockups })), [
     { map: "agents", name: "01", closed: true, claimed: false, mockups: ["agents/live.html", "agents/live-and-open.html", "agents/live-and-preview.html"] },
     { map: "agents", name: "02", closed: true, claimed: false, mockups: ["agents/preview.html", "agents/live-and-preview.html"] },
@@ -120,12 +130,8 @@ test("each mock-up's label comes from the build tickets linking to it and whethe
     { map: "agents", name: "07", closed: false, claimed: false, mockups: ["agents/shared.html"] },
     { map: "styling", name: "06", closed: true, claimed: false, mockups: ["agents/shared.html"] },
   ]);
-  const onMain = ticketsOnMain(root);
-  assert.deepEqual([...onMain!].map(path => path.slice(root.length + 1)).sort(),
-    ["docs/wayfinder/agents/build/tickets/01-live.md", "docs/wayfinder/styling/build/tickets/06-shared.md"]);
-  const labels = (main?: ReadonlySet<string>) => Object.fromEntries([...mockupShipping(files, tickets, main)]
-    .map(([key, { label, tickets: from }]) => [key.slice("agents/".length), `${label} ${from.map(ticket => ticket.name).join(",")}`.trim()]));
-  assert.deepEqual(labels(onMain), {
+  assert.deepEqual([...ticketsOnMain(root)!].sort(), ["docs/wayfinder/agents/build/tickets/01-live.md", "docs/wayfinder/styling/build/tickets/06-shared.md"]);
+  assert.deepEqual(labelsIn(root), {
     "claimed.html": "building 04",
     "idea.html": "idea",
     "live.html": "live 01",
@@ -137,13 +143,48 @@ test("each mock-up's label comes from the build tickets linking to it and whethe
   });
   // Without main (a shallow clone, no git), closed work reads On preview.
   assert.equal(ticketsOnMain(join(scratch, "not-a-repo")), undefined);
-  assert.equal(labels(undefined)["live.html"], "preview 01");
+  assert.equal(mockupShipping(mockupFiles(root), tickets).get("agents/live.html")?.label, "preview");
+});
+
+test("a ticket's newest closing commit counts, a moved ticket keeps it, and origin/main wins over a lagging local main", () => {
+  const { root, git, ticket } = shippingRepo();
+  git("mv", "docs/wayfinder/styling/build/tickets/06-shared.md", "docs/wayfinder/styling/build/tickets/16-shared.md");
+  git("commit", "--quiet", "-m", "rename 06");
+  const body = "[mock-up](../../prototypes/live.html), ../../prototypes/live-and-open.html, ../../prototypes/live-and-preview.html";
+  ticket("agents", "01-live.md", "open", "", body);
+  git("commit", "--quiet", "-am", "reopen 01");
+  ticket("agents", "01-live.md", "closed", "", body);
+  git("commit", "--quiet", "-am", "close 01 again");
+  assert.deepEqual([...ticketsOnMain(root)!], ["docs/wayfinder/styling/build/tickets/16-shared.md"]);
+  const labels = labelsIn(root);
+  assert.equal(labels["live.html"], "preview 01");
+  assert.equal(labels["shared.html"], "building 07,16");
+  // Reached through a symlink, the repo reads the same.
+  const link = join(scratch, `link-${Date.now()}`);
+  symlinkSync(root, link);
+  assert.deepEqual(labelsIn(link), labels);
+
+  // A clone whose local main stays where it was while origin/main takes in dev's closes.
+  const clone = join(scratch, `clone-${Date.now()}`);
+  gitIn(scratch, "clone", "--quiet", root, clone);
+  gitIn(clone, "branch", "main", "origin/main");
+  git("branch", "--force", "main", "dev");
+  gitIn(clone, "fetch", "--quiet", "origin");
+  assert.deepEqual(labelsIn(clone), { ...labels, "live.html": "live 01", "preview.html": "live 02", "live-and-preview.html": "live 01,02" });
+});
+
+test("a closing commit rewritten onto main by a rebase merge still counts, matched by author time and subject", () => {
+  const { root, git } = shippingRepo();
+  git("checkout", "--quiet", "main");
+  git("cherry-pick", "dev");
+  git("checkout", "--quiet", "dev");
+  assert.equal(labelsIn(root)["preview.html"], "live 02");
 });
 
 test("the index shows each label with the tickets it came from, and a legend saying what each means", () => {
-  const root = shippingRepo();
+  const { root } = shippingRepo();
   const files = mockupFiles(root);
-  const html = mockupIndex(files, undefined, mockupShipping(files, buildTickets(root, files), ticketsOnMain(root)));
+  const html = mockupIndex(files, { shipping: mockupShipping(files, buildTickets(root, files), ticketsOnMain(root)) });
   const row = (page: string, badge: string) => assert.ok(html.includes(`<li><a href="agents/${page}.html">${page}</a> ${badge}</li>`), page);
   row("live", '<span class="shipping shipping--live">Live</span> <span class="tickets">ticket 01</span>');
   row("live-and-preview", '<span class="shipping shipping--preview">On preview</span> <span class="tickets">tickets 01, 02</span>');
@@ -168,7 +209,9 @@ test("a build with the plugin writes the mock-ups and the index under mockups/",
   assert.deepEqual(built,
     ["mockups/agents/05-untitled.html", "mockups/agents/12-reference.png", "mockups/agents/14-share.html", "mockups/index.html", "mockups/site-structure/08-site-map.html"]);
   assert.equal(readFileSync(join(outDir, "mockups/agents/12-reference.png"), "utf8"), "png");
-  assert.match(readFileSync(join(outDir, "mockups/index.html"), "utf8"), /href="site-structure\/08-site-map.html"/);
+  const index = readFileSync(join(outDir, "mockups/index.html"), "utf8");
+  assert.match(index, /href="site-structure\/08-site-map.html">08 Site map<\/a> <span class="shipping shipping--idea">Idea only<\/span>/);
+  assert.match(index, /--success-bg: var\(--semantic-success-surface\);/);
 });
 
 test("served by Cloudflare's asset handler, mock-ups get one sandboxed policy and the editor keeps its own", async () => {
@@ -236,7 +279,7 @@ test("only the preview Worker builds with the mock-ups", () => {
 });
 
 test("index links are URL-encoded and a rebuild adds the header rule once", async () => {
-  assert.match(mockupIndex([{ map: "m", file: "a #1?.html", path: "x" }], () => ""), /href="m\/a%20%231%3F\.html"/);
+  assert.match(mockupIndex([{ map: "m", file: "a #1?.html", path: "x" }], { read: () => "" }), /href="m\/a%20%231%3F\.html"/);
   const root = repo();
   writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
   const outDir = join(root, "dist");
