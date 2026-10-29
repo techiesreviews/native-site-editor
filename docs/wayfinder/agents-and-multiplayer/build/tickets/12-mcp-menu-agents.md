@@ -94,6 +94,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - Declined: F-agent-11 "no agent rows or Stop are shown". The feature's shot has no steps (it needs connected agents, which the steps cannot make); the scratch shots above show the rows and Stop.
   - `RESULT: ok unit 3870/3870 (252 files)` (`kit unit --affected`); `RESULT: ok specs 3/3 passed` (mcp-menu, mcp, agent-quiet); `RESULT: ok shots raw spec`; `npm run check` and `npm run lint` are clean.
 
+- Second look (catch-up, 2026-10-29, OpenCode `deepseek-v4.1-flash-free`, `kit review --ticket <this> --base fff30decf^` at `3006e9571`): `RESULT: ok review git diff f7d6ca108f6b7f41188b3bf7ee08f2603e7a715c...HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/unknown/20261029T040146Z` (findings 9: P2 3, P3 2, gap 4). Every finding is already in the Follow-ups below; nothing new filed.
+
 ### Follow-ups
 
 - Spec (P2): 3ecd3ac73:src/agent-stops.ts:1 — P2 ticket: Ticket 12 says "Stop ends that agent only" and lists `worker/mcp.ts` / `worker/agent-relay.ts` for "end one agent session". Neither file changed. The stop is only a localStorage entry in one browser, and it trusts the name the agent gives itself. So an agent stays stopped only while a tab in that browser is the one receiving its calls. If another browser or device receives them, the agent keeps working. If it restarts under a new name, or with no name, it also keeps working. The Done "Design note" admits all of this, but the change of scope was never sent back for Lex's OK. Fix: get Lex's sign-off on the advisory, per-browser stop in the review pack (Tuesday). Otherwise end the session in the relay, keyed on grant+name.
