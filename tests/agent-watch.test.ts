@@ -246,6 +246,43 @@ test("a follow-up on a waiting request (no reply yet) is taken; one held for a g
   assert.throws(() => answerRequest([structuredClone(b.kept.get("req-wait")!)], "req-wait", "More"), /dismissed/);
 });
 
+test("a follow-up while an agent works on a request (am-13): its reply to what came before is refused, and its next wait returns the follow-up", async () => {
+  const b = browser();
+  const ids = (value: { requests: AgentRequest[] }) => value.requests.map(item => item.id);
+  b.ask(asked("req-x"));
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"));
+  const followed = answerRequest([structuredClone(b.kept.get("req-x")!)], "req-x", "more", b.clock.now());
+  b.ask(followed.request);
+  const refused = await b.run("reply_to_request", { request: "req-x", status: "done", message: "Done." }, undefined, undefined, "grant-a", "Copy editor");
+  assert.equal(refused.ok, false);
+  assert.match((refused as { message: string }).message, /added to this request meanwhile.*wait_for_requests/);
+  assert.equal(b.kept.get("req-x")!.state, "open", "nothing recorded");
+  const again = await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"));
+  assert.deepEqual(ids(again), ["req-x"]);
+  assert.equal(again.requests[0].thread.at(-1).text, "more");
+  assert.deepEqual(await b.value(b.run("reply_to_request", { request: "req-x", status: "done", message: "Did both." }, undefined, undefined, "grant-a", "Copy editor")), { id: "req-x", state: "done" });
+  // A fresh request nobody added to still takes a reply straight away.
+  b.ask(asked("req-fresh"));
+  assert.equal((await b.run("reply_to_request", { request: "req-fresh", status: "answered", message: "Nothing to do." })).ok, true);
+});
+
+test("a wait on another connection held while a request is held for its agent looks again as the hold ends, not 25 s on", async () => {
+  const b = browser();
+  b.ask(asked("req-h"));
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"));
+  await b.value(b.run("reply_to_request", { request: "req-h", status: "done", message: "Done." }, undefined, undefined, "grant-a", "Copy editor"));
+  b.clock.advance(1000);
+  b.ask(answerRequest([structuredClone(b.kept.get("req-h")!)], "req-h", "more", b.clock.now()).request);
+  b.clock.advance(FOLLOW_UP_HOLD_MS - 5000);
+  const pending = b.run("wait_for_requests", {}, 25_000, b.clock.now() + 25_000, "grant-b", "Image finder");
+  await settle(); await settle();
+  assert.equal(b.tools.holding, 1);
+  assert.deepEqual([...b.clock.timers.values()].map(timer => timer.at), [b.kept.get("req-h")!.heldUntil], "held until the hold ends");
+  b.clock.advance(5000);
+  const value = await b.value(pending);
+  assert.deepEqual(value.requests.map((item: AgentRequest) => item.id), ["req-h"]);
+});
+
 function relayFixture() {
   let now = 0, next = 0;
   const timers = new Map<number, { at: number; run(): void }>();

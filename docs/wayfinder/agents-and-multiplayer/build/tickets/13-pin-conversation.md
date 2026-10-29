@@ -54,3 +54,25 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - `native-mcp.spec.ts` updated: a picked-up pin shows the client's name in place of a spinner; the card names the agent; a clicked done pin focuses its box.
 - Feature list: F-agent-04 updated (Try, Good, Files, Spec).
 - `RESULT: ok unit 3876/3876 (252 files)` (`kit unit --affected`). `RESULT: ok specs 1/1 passed` (native-agent-pins). Related specs (native-several-agents, native-agent-presence, native-agent-quiet, native-mcp-menu, native-lazy-panels, native-agent-pins) passed in one run; native-mcp then passed alone after its done-card check was updated (`RESULT: ok specs 1/1 passed`). `npm run check` and `npm run lint` are clean. `kit specs --affected` and `kit shots` were not run here.
+
+- Review round 1:
+  - A follow-up while an agent works on a request is no longer lost. The agent's reply to what came before is refused (409): it says the user added to the request and tells the agent to call `wait_for_requests`, which returns it with the whole thread (`FOLLOWED_UP`, `shared/agent-requests.ts`). A fresh request nobody added to still takes a reply straight away.
+  - A held `wait_for_requests` on another connection now looks again when the hold ends, not up to 25 s later: a take reports the earliest `heldUntil` it skipped, and the wait holds only until then (`src/agent-watch.ts`).
+  - The agent's pin is light like every pin: a tint of its colour, its colour as the border, and a dark ink of its hue. White on the solid colour measured 3.2–4.0:1 for three of the four colours; the tint and ink measure 7.3–8.1:1. The tint and ink are theme tokens (`--agent-presence[-N]-pin`, `-ink` in `src/theme.css`); the pin sets them with `--agent`.
+  - Sizes: Send uses `max(var(--size-compact), var(--size-tap))`, which is 44 px on touch and narrow layouts. The pin's line, gap and widest name are pin variables (`--pin-line`, `--pin-gap`, `--pin-name-max`), now shared by the name, the question and the first line.
+  - Send keeps the focus in the box, so after an empty Send the user types straight into it. The fallback error now says "The message could not be sent."
+  - Tests:
+    - `tests/agent-watch.test.ts`: a follow-up during work refuses the stale reply, and the next wait returns the follow-up; a wait on another connection holds until the hold ends and then takes the request.
+    - `native-agent-pins.spec.ts`:
+      - waits for both pins to be placed side by side;
+      - checks the pin's border colour and that the ink on the tint reaches 4.5:1 for all four agent colours;
+      - Send with an empty box sends nothing, and a double Send sends once;
+      - a follow-up on the pin still being worked on (state seen) turns it back to waiting, the agent's stale reply is refused, and the same agent takes it again;
+      - while Copy editor places media on the heading's section and works through that pin, its outline in the preview has no chip; once done, the chip shows "Copy editor" again (the runtime's `bare`).
+  - Shots (`kit shots --spec .scratch/am13-shots.spec.ts`, real starter, 1280 and 390 wide, light and dark): pins on "Recent work" (one done, one Copy editor's), close-ups of them, and the done pin's card with a follow-up typed in. UX review against the rulebook:
+    - the agent's pin reads in both themes;
+    - done is grey with only its number and ✓ (no name);
+    - the card names the agent and has the box and the Send arrow, a full tap target at 390;
+    - no toast or explainer.
+    One thing to look at: a pin that keeps the focus after its card closes shows its first line over the pin beside it. That is the existing focus behaviour, which the spec works around by opening the second pin from the keyboard. Tapping a done pin on a phone focuses the box and brings up the keyboard (follow-up).
+  - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3878/3878 (252 files)` (`kit unit --affected`). `RESULT: ok specs 7/7 passed` (native-agent-pins, native-mcp, native-several-agents, native-agent-presence, native-agent-quiet, native-mcp-menu, native-lazy-panels). `kit specs --affected`: `RESULT: fail specs 1 of 183 failed: native-media-adding.spec.ts`. That failure is the PDF preview's 30-second limit under load, a spec this change does not touch; it passed alone (`RESULT: ok specs 1/1 passed`). `RESULT: ok shots raw spec`. `npm run check` and `npm run lint` are clean.

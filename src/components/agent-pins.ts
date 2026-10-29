@@ -96,7 +96,8 @@ const replied = (state: string) => state === "done" || state === "answered" || s
 const asking = (request: PinRequest) => request.state === "question" ? request.reply?.message.trim() ?? "" : "";
 // The agent working on it, named on its pin in its colour ("" when none).
 const workingAgent = (request: PinRequest) => request.state === "seen" && request.agent ? request.agent.name || UNNAMED_AGENT : "";
-const agentColour = (request: PinRequest) => `var(--${AGENT_COLOURS[(request.colour ?? 0) % AGENT_COLOURS.length]})`;
+// Its theme token: the agent's colour itself, and (`-pin`, `-ink`) its pin's tint and ink.
+const agentToken = (request: PinRequest, part = "") => `var(--${AGENT_COLOURS[(request.colour ?? 0) % AGENT_COLOURS.length]}${part})`;
 
 // Between two pins of one element.
 const STACK_GAP = 3;
@@ -205,10 +206,11 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     if (numberSpan.textContent !== String(number)) numberSpan.textContent = String(number);
     const name = workingAgent(request);
     if (who.textContent !== name) who.textContent = name;
-    const colour = name ? agentColour(request) : "";
-    if (pin.style.getPropertyValue("--agent") !== colour) {
-      if (colour) pin.style.setProperty("--agent", colour);
-      else pin.style.removeProperty("--agent");
+    for (const part of ["", "-pin", "-ink"]) {
+      const colour = name ? agentToken(request, part) : "";
+      if (pin.style.getPropertyValue(`--agent${part}`) === colour) continue;
+      if (colour) pin.style.setProperty(`--agent${part}`, colour);
+      else pin.style.removeProperty(`--agent${part}`);
     }
     pin.toggleAttribute("data-agent", Boolean(name));
     const mark = `${request.state}/${Boolean(name)}`;
@@ -319,7 +321,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       if (!pin.hidden) row.offset += restingWidth(pin) + STACK_GAP;
       else if (request.state === "question") listed.push(request);
       if (!pin.hidden && pops.delete(request.id)) pop(pin);
-      outline(request.id, detached || pin.hidden ? undefined : rect, request.state === "seen", name ? agentColour(request) : "");
+      outline(request.id, detached || pin.hidden ? undefined : rect, request.state === "seen", name ? agentToken(request) : "");
     }
     for (const [id, pin] of pins)
       if (!seen.has(id)) {
@@ -525,7 +527,11 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       event.preventDefault();
       void sendAnswer(request.id, input);
     });
-    const send = button("", () => sendAnswer(request.id, input), "agent-pin-card__send");
+    // Send keeps the focus in the box, so an empty one is typed in next.
+    const send = button("", () => {
+      input.focus();
+      return sendAnswer(request.id, input);
+    }, "agent-pin-card__send");
     send.append(icon("arrow-up", 14));
     send.setAttribute("aria-label", "Send");
     row.append(input, send);
@@ -547,7 +553,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     try {
       await handlers.onAnswer(id, text);
     } catch (error) {
-      problems.set(id, (error as Error).message || "The answer could not be sent.");
+      problems.set(id, (error as Error).message || "The message could not be sent.");
       input.readOnly = false;
       input.closest(".agent-pin-card__answer")?.classList.remove("is-sending");
       cardKey = "";
