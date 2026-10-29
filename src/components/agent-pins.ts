@@ -727,19 +727,15 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     },
     /**
      * The pins on the element at `rect` (the selection): how far from its
-     * anchor the next one goes (0: none there), the number it will have, and
-     * the top of what stands just above it that they stand clear of.
+     * anchor the next one goes (0: none there), and the number it will have.
      */
     row(rect: SelectionRect) {
-      let offset = 0, clear: number | undefined;
+      let offset = 0;
       for (const [id, pin] of pins) {
         const live = rects.get(id);
-        if (live && !pin.hidden && sameRect(live, rect)) {
-          offset += restingWidth(pin) + STACK_GAP;
-          clear ??= live.clear;
-        }
+        if (live && !pin.hidden && sameRect(live, rect)) offset += restingWidth(pin) + STACK_GAP;
       }
-      return { offset, next: requests.length + 1, ...(clear !== undefined ? { clear } : {}) };
+      return { offset, next: requests.length + 1 };
     },
     /**
      * Show a request (from the project selector's list of what agents wait
