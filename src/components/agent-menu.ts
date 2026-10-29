@@ -147,11 +147,12 @@ export function createAgentMenu(options: {
   }
   /** Whether the user stopped the agent that sent `call`: it is refused before anything runs. */
   function stopped(call: { grantId?: unknown; agent?: unknown }) { return options.agents?.stopped(agentWho(call)) ?? false; }
-  /** As `stopped`, as a call arrives: one not refused is heard as one of its connection's agents (whom a pin its wait took names, ticket am-45). */
-  function refused(call: { grantId?: unknown; agent?: unknown }) {
-    if (stopped(call)) return true;
+  /** Lets a call in unless its agent is stopped, and records that agent as heard on its connection (whom a pin its
+   * wait took names, ticket am-45). False: refused, nothing recorded. */
+  function admit(call: { grantId?: unknown; agent?: unknown }) {
+    if (stopped(call)) return false;
     options.agents?.heard(agentWho(call));
-    return false;
+    return true;
   }
   async function activateSocket() {
     if (!remote || disposed || ownerPaused || workspaceChanged || transportMode !== "pending" || !pinned) return;
@@ -160,7 +161,7 @@ export function createAgentMenu(options: {
     if (!live(at) || transportMode !== "pending") return;
     transportMode = "socket";
     const run = async (command: AgentCommand) => {
-      if (refused(command)) throw new Error(AGENT_STOPPED);
+      if (!admit(command)) throw new Error(AGENT_STOPPED);
       const outcome = await options.onCommand(command);
       const grant = hub.grants.find(each => each.id === command.grantId);
       if (grant && !grant.usedAt && live(at)) { grant.usedAt = Date.now(); paint(); }
@@ -179,7 +180,7 @@ export function createAgentMenu(options: {
       current: scope, records, reload: snapshot => options.reload?.(snapshot) ?? Promise.resolve(),
       source: path => options.tools?.source?.(path),
       media: async (request, fence, current, deadline, seen, signal) => {
-        if (refused(request)) return { ok: false, message: AGENT_STOPPED };
+        if (!admit(request)) return { ok: false, message: AGENT_STOPPED };
         const ports = options.tools, stamp = ports?.stamp(), source = ports?.files(), commit = source?.snapshot.commit;
         if (!ports || !stamp) return { ok: false, message: "Browser media tools are unavailable. Refresh the editor." };
         // As an edit (below): held before its tools load, a Media change finishes in its own workspace
@@ -192,7 +193,7 @@ export function createAgentMenu(options: {
         return (await mediaTools).run(request, fence, () => current() && (pin ? stamp.changed() === "scope" || shown() : stamp.holds() && shown()), deadline, seen, signal, held);
       },
       edit: async (request, fence, current, signal) => {
-        if (refused(request)) return { ok: false, message: AGENT_STOPPED };
+        if (!admit(request)) return { ok: false, message: AGENT_STOPPED };
         const ports = options.tools, stamp = ports?.stamp();
         const source = ports?.files(), commit = source?.snapshot.commit;
         if (!ports || !stamp) return { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
@@ -210,7 +211,7 @@ export function createAgentMenu(options: {
         return (await editTools).run(request, fence, () => current() && (pin ? stamp.changed() === "scope" || shown() : stamp.holds() && shown()), signal, held);
       },
       read: async (read, signal) => {
-        if (refused(read)) return { ok: false, message: AGENT_STOPPED };
+        if (!admit(read)) return { ok: false, message: AGENT_STOPPED };
         const ports = options.tools, stamp = ports?.stamp();
         if (!ports || !stamp) return { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
         const [{ createAgentReadTools }, { rememberRead, tellAgent }] = await Promise.all([import("../agent-tools-read"), import("../agent-part")]);
@@ -228,7 +229,7 @@ export function createAgentMenu(options: {
         return result;
       },
       requests: async (request, fence, current, deadline, signal) => {
-        if (refused(request)) return { ok: false, message: AGENT_STOPPED };
+        if (!admit(request)) return { ok: false, message: AGENT_STOPPED };
         const tools = requestTools;
         if (!tools) return { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
         // An agent asking for requests is connected, as one sending a change is.

@@ -29,9 +29,9 @@ export const PIN_ROOM = NOTE_GAP * 2 + PIN_HEIGHT;
 type Box = { top: number; bottom: number; left: number; right: number; width: number; height: number };
 /**
  * The top of what stands just above an element at `rect` (ticket am-45: an eyebrow line over a heading), from its
- * earlier siblings' boxes, nearest first: those stacked over it closer than a row of pins. Siblings beside it, over
- * it (a layer behind it, a float) or hidden do not count. None when there are none, or when they reach higher than
- * two rows of pins (its pins stay near it).
+ * earlier siblings' boxes, nearest first: those stacked over it closer than a row of pins, however tall (the pins
+ * never cover their text; hung inside the element they would cover its own). Siblings beside it, over it (a layer
+ * behind it, a float) or hidden do not count. None when there are none.
  */
 export function clearAbove(rect: Pick<Box, "top" | "left" | "right">, earlier: Iterable<Box>) {
   let top = rect.top;
@@ -40,5 +40,5 @@ export function clearAbove(rect: Pick<Box, "top" | "left" | "right">, earlier: I
     if (box.bottom <= top - PIN_ROOM) break;
     top = Math.min(top, box.top);
   }
-  return top < rect.top && rect.top - top <= PIN_ROOM * 2 ? top : undefined;
+  return top < rect.top ? top : undefined;
 }
