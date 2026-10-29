@@ -141,7 +141,7 @@ function commandsFixture(overrides: Partial<AgentCommandPorts> = {}, files: Part
     pagesAndFiles: withPorts(pagesAndFiles, files), api: unused,
     editorModule: { isMounted: () => false, getMountedSource: unused, dropDraft: unused, forgetDraftModel: unused, prepareHistorySources: unused,
       flushAgentTyping: unused, applyAgentDraft: async command => { calls.push(`draft ${command.path}`); } },
-    get info() { return host.info; }, componentTools: undefined,
+    get info() { return host.info; }, componentTools: undefined, loadComponentTools: async () => undefined,
     get pageStructure() { return host.pageStructure; }, get nativePreview() { return host.nativePreview; },
     loadAgentSite: unused, draftScope: () => undefined, shownScope: () => undefined, restoreFile: unused,
     openNewDraft: async draft => { calls.push(`open ${draft.account} ${draft.path}`); }, nativeComponentLoaderPlan: unused,
@@ -192,6 +192,18 @@ test("an agent reads the preview and Page Structure made after its commands' hos
   f.host.pageStructure = { refreshMeta: () => { f.calls.push("meta"); } };
   assert.equal(await f.commands.actions.setPageDetail("index.html", "title", "Home"), undefined);
   assert.deepEqual(f.calls, ["meta", "tree", "label", "context"]);
+});
+
+test("an agent's make_component made before the component tools land waits for them", async () => {
+  type Request = Parameters<NonNullable<AgentCommandPorts["componentTools"]>["makeFromAgent"]>[0];
+  const request: Request = { path: "index.html", source: "<p>Hi</p>", node: [0], tag: "x-hi" };
+  let land!: (tools: Awaited<ReturnType<AgentCommandPorts["loadComponentTools"]>>) => void;
+  const f = commandsFixture({ loadComponentTools: () => new Promise(resolve => { land = resolve; }) });
+  const made = f.commands.actions.makeComponent(request);
+  land({ makeFromAgent: async asked => `made ${asked.tag}` });
+  assert.equal(await made, "made x-hi");
+  // No preview to load them for: the agent hears why.
+  assert.equal(await commandsFixture().commands.actions.makeComponent(request), "The component tools are not ready.");
 });
 
 const loaded = { loadPagesActions: () => import("../src/controllers/pages-controller"), loadFileOps: () => import("../src/controllers/file-operation-checks") } satisfies Partial<PagesAndFilesPort>;

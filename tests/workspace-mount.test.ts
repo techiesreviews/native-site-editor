@@ -2,6 +2,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { signal } from "@preact/signals-core";
+import { forEachAwait } from "./support/await-race.ts";
 import type { SourceFile } from "../src/components/source-editor.ts";
 import type { NativePreviewSelection } from "../src/components/native-preview.ts";
 import { draftKey, type DraftScope } from "../src/drafts.ts";
@@ -134,6 +135,8 @@ function setup() {
     startSite: undefined as ((panel: HTMLElement) => void) | undefined,
     mountListener: undefined as WorkspaceMountPorts["nativeMountListener"],
     painted: [] as (() => void)[],
+    // How many component tools loads fail next, and a wait each load holds before it lands.
+    toolsFail: 0, toolsWait: undefined as Promise<void> | undefined,
   };
   type Editor = WorkspaceMountPorts["editorModule"];
   let unmountedText: Parameters<Editor["onUnmountedText"]>[0] | undefined;
@@ -244,7 +247,11 @@ function setup() {
       menuItems: () => [{ label: "Remove", run: say("remove") }],
       fields: () => "",
       moveItems: () => () => false,
-      tools: async () => { calls.push("mountComponentTools"); return fake<NonNullable<WorkspaceMountPorts["componentTools"]>>({
+      tools: async () => {
+        calls.push("mountComponentTools");
+        if (state.toolsFail) { state.toolsFail--; throw new Error("The component tools did not load."); }
+        await state.toolsWait;
+        return fake<NonNullable<WorkspaceMountPorts["componentTools"]>>({
         destroy: say("componentTools.destroy"), refresh: say("componentTools.refresh"),
         mode: { now: () => state.template, opened: () => false, sync: say("mode.sync") },
       }); },
@@ -304,15 +311,81 @@ test("mountWorkspace hands the preview, Page Structure and the component tools t
   assert.deepEqual(menus.at(-1)!.calls, ["close"]);
   assert.equal(state.componentTools, undefined);
   assert.ok(calls.includes("componentTools.destroy"));
-  // Tools that land after a remount belong to the preview replaced: they go, and the new preview's load its own.
+  // A wait after a paint of the preview replaced loads nothing; the new preview loads its own.
   (last("preview").options as { onStructure(structure: unknown): void }).onStructure({ path: "index.html", paintedSource: "A", items: [] });
   workspace.mountWorkspace();
   for (const run of state.painted.splice(0)) run();
   await flush();
   assert.equal(state.componentTools, undefined);
-  assert.equal(calls.filter((call) => call === "componentTools.destroy").length, 2);
+  assert.equal(calls.filter((call) => call === "mountComponentTools").length, 1);
   await paint(state);
   assert.ok(state.componentTools && state.componentTools !== tools);
+});
+
+test("before the component tools land, a right-click opens the element's menu; a shared template's part gets none", async () => {
+  const { workspace, state } = setup();
+  workspace.mountWorkspace();
+  const preview = last("preview").options as { onStructure(structure: unknown): void; onContextMenu(point: unknown, anchor: unknown, selection: unknown): void };
+  preview.onStructure({ path: "index.html", paintedSource: "A", items: [] });
+  assert.equal(state.componentTools, undefined);
+  preview.onContextMenu({ x: 1, y: 2 }, {}, { path: "components/card.html", node: [0], host: { path: "index.html", node: [1], tag: "x-card" } });
+  assert.ok(!last("rowMenu").calls.includes("open"));
+  preview.onContextMenu({ x: 1, y: 2 }, {}, { path: "index.html", node: [0] });
+  const [, entries] = last("rowMenu").args.get("open") as [unknown, { label: string }[]];
+  assert.deepEqual(entries.map((entry) => entry.label), ["Remove"]);
+});
+
+test("a component tools load that fails is reported once and tried again with the next structure", async () => {
+  const { workspace, state, calls } = setup();
+  workspace.mountWorkspace();
+  state.toolsFail = 1;
+  await paint(state);
+  assert.deepEqual(calls.filter((call) => call.startsWith("error")), ["error The component tools did not load."]);
+  assert.equal(state.componentTools, undefined);
+  await paint(state);
+  assert.equal(calls.filter((call) => call === "mountComponentTools").length, 2);
+  assert.ok(state.componentTools);
+  assert.equal(calls.filter((call) => call.startsWith("error")).length, 1);
+});
+
+test("component tools that land after the workspace closed are destroyed; a wait after it closed loads nothing", async () => {
+  const { workspace, state, calls } = setup();
+  workspace.mountWorkspace();
+  (last("preview").options as { onStructure(structure: unknown): void }).onStructure({ path: "index.html", paintedSource: "A", items: [] });
+  workspace.closeWorkspace();
+  for (const run of state.painted.splice(0)) run();
+  await flush();
+  assert.ok(!calls.includes("mountComponentTools"));
+  assert.equal(state.componentTools, undefined);
+  // Asked for (an agent's make_component) and closed while it loads.
+  let land!: () => void;
+  state.toolsWait = new Promise<void>((resolve) => { land = resolve; });
+  workspace.mountWorkspace();
+  const load = workspace.loadComponentTools();
+  // A second ask waits for the same load.
+  assert.equal(workspace.loadComponentTools(), load);
+  workspace.closeWorkspace();
+  land();
+  assert.equal(await load, undefined);
+  assert.equal(state.componentTools, undefined);
+  assert.ok(calls.includes("componentTools.destroy"));
+  // With no preview there is nothing to load.
+  assert.equal(await workspace.loadComponentTools(), undefined);
+});
+
+test("a remount at the component tools' await hands over nothing", async () => {
+  const points = await forEachAwait((race) => {
+    const run = setup();
+    const tools = run.ports.builder.tools;
+    run.ports.builder.tools = race.port("tools", () => tools());
+    run.workspace.mountWorkspace();
+    return { ...run, done: run.workspace.loadComponentTools() };
+  }, (run) => { run.workspace.mountWorkspace(); }, async (run) => {
+    assert.equal(await run.done, undefined);
+    assert.equal(run.state.componentTools, undefined);
+    assert.ok(run.calls.includes("componentTools.destroy"));
+  });
+  assert.equal(points, 1);
 });
 
 test("choosing a branch sets it before the snapshot loads, and hands over to the explorer", () => {
