@@ -425,7 +425,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let agentMarks: readonly AgentMark[] = [];
   const postPresence = () => link.send({ type: "agent-presence", agents: agentMarks.flatMap(mark => {
     const color = agentColors[mark.colour] ?? "", chip = mark.asking ? questionColor : color;
-    return mark.node && color && chip ? [{ request: { path: mark.path, node: [...mark.node] }, name: mark.name, color, chip }] : [];
+    // An agent working through a pin here has its name on the pin, not on its outline (ticket am-13).
+    return mark.node && color && chip ? [{ request: { path: mark.path, node: [...mark.node] }, name: mark.name, color, chip, ...(mark.pinned ? { bare: true } : {}) }] : [];
   }) });
   // The component whose template is open: its instances show outlined.
   let focusTag = "";

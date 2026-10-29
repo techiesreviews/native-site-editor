@@ -4076,6 +4076,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       drawBox(pair.box, target);
       if (pair.box.style.display === "none") { pair.chip.style.display = "none"; return; }
       pair.box.style.border = "2px solid " + agent.color;
+      // Its name is on the pin it works through (ticket am-13): the outline alone here.
+      if (agent.bare) { pair.chip.style.display = "none"; return; }
       pair.chip.textContent = agent.name;
       pair.chip.style.background = agent.chip;
       pair.chip.style.color = canvasInk(agent.chip);
@@ -4222,7 +4224,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
         return agent && agent.request && Array.isArray(agent.request.node) && typeof agent.color === "string" && agent.color;
       }).slice(0, 32).map(function (agent) {
         return { request: agent.request, color: agent.color, chip: typeof agent.chip === "string" && agent.chip ? agent.chip : agent.color,
-          name: typeof agent.name === "string" && agent.name ? agent.name.slice(0, 60) : "Agent" };
+          name: typeof agent.name === "string" && agent.name ? agent.name.slice(0, 60) : "Agent", bare: agent.bare === true };
       });
       drawPresence();
       return;

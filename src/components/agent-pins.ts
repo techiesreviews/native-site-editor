@@ -1,6 +1,8 @@
 import { PIN_HEIGHT, noteAnchor, noteTop } from "./agent-pin-geometry";
 import { guardChunkReload } from "../chunk-recovery";
 import { button, node } from "../ui/dom";
+import { icon } from "../icons";
+import { AGENT_COLOURS, UNNAMED_AGENT } from "../agent-presence";
 import { REQUEST_TEXT_LIMIT, requestThread, type AgentRequest } from "../../shared/agent";
 import type { SelectionRect } from "./edit-bar";
 import "./agent-pins.css";
@@ -23,6 +25,14 @@ import "./agent-pins.css";
 // so it stays with the pin and clear of the element under it; below the pin
 // when the frame has no room above.
 //
+// A pin is a conversation (ticket am-13): its card has a box and Send for
+// the user's next message on any request, which reopens it for the agent on
+// it (an answer to a question, a follow-up on one waiting, worked on or
+// done). An agent taking a request gives its pin the agent's colour and name
+// (its outline there has no chip of its own, src/agent-presence.ts), the
+// element's marching outline its colour too; done, the pin is grey with no
+// name. One element holds as many pins as it is asked about.
+//
 // An agent's question needs the user: its pin turns orange with a "?" and
 // the question itself (agents keep it to a few words), read without opening
 // anything, and its card has a box for the answer, focused as a held card
@@ -41,9 +51,10 @@ import "./agent-pins.css";
 // question instead), and so does hovering one while another's card is held
 // open.
 
-/** A request as the tab polls it: its element without the source. */
-export type PinRequest = Pick<AgentRequest, "id" | "text" | "state" | "createdAt" | "reply" | "thread" | "repoId" | "branch"> & {
+/** A request as the tab polls it: its element without the source, and the colour of the agent on it (an index into AGENT_COLOURS). */
+export type PinRequest = Pick<AgentRequest, "id" | "text" | "state" | "createdAt" | "reply" | "thread" | "repoId" | "branch" | "agent"> & {
   element: Pick<AgentRequest["element"], "file" | "route" | "id" | "tag" | "selector" | "host">;
+  colour?: number;
 };
 
 /** Where the runtime looks for a pin's element (native-preview-runtime.js `locatePin`). */
@@ -61,7 +72,7 @@ interface PinHandlers {
   /** The pins to look for on the page shown. */
   locate(pins: PinLocator[]): void;
   onDismiss(id: string): void;
-  /** The user's answer to an agent's question; rejects with what went wrong. */
+  /** The user's next message on a request (an answer or a follow-up); rejects with what went wrong. */
   onAnswer(id: string, text: string): Promise<void>;
   /** Show the page a request is on. */
   onShowPage(route: string): void;
@@ -83,6 +94,9 @@ const marks: Record<string, string> = { done: "✓", answered: "…", question: 
 const replied = (state: string) => state === "done" || state === "answered" || state === "question";
 // The question an agent asks the user, shown in its pin ("" when none).
 const asking = (request: PinRequest) => request.state === "question" ? request.reply?.message.trim() ?? "" : "";
+// The agent working on it, named on its pin in its colour ("" when none).
+const workingAgent = (request: PinRequest) => request.state === "seen" && request.agent ? request.agent.name || UNNAMED_AGENT : "";
+const agentColour = (request: PinRequest) => `var(--${AGENT_COLOURS[(request.colour ?? 0) % AGENT_COLOURS.length]})`;
 
 // Between two pins of one element.
 const STACK_GAP = 3;
@@ -171,25 +185,38 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     // A touch has no hover: its tap is the click.
     pin.addEventListener("pointerenter", (event) => { if (event.pointerType !== "touch") hover(id); });
     pin.addEventListener("pointerleave", (event) => { if (event.pointerType !== "touch") leave(); });
+    const who = node("span", "agent-pin__who");
     const status = node("span", "agent-pin__status");
     const question = node("span", "agent-pin__question");
     const text = node("span", "agent-pin__text");
+    who.setAttribute("aria-hidden", "true");
     status.setAttribute("aria-hidden", "true");
     question.setAttribute("aria-hidden", "true");
     text.setAttribute("aria-hidden", "true");
-    pin.append(node("span", "agent-pin__number"), status, question, text);
+    pin.append(node("span", "agent-pin__number"), who, status, question, text);
     return pin;
   }
-  // Number, state mark, the agent's question while it asks, and the first
-  // line, each set only when it changed so a spinning mark keeps turning
-  // across polls.
+  // Number, the agent on it (in its colour) or a state mark, the agent's
+  // question while it asks, and the first line, each set only when it
+  // changed so a spinning mark (an agent of a request kept from before
+  // names) keeps turning across polls.
   function paintPin(pin: HTMLButtonElement, request: PinRequest, number: number) {
-    const [numberSpan, status, question, text] = pin.children as HTMLCollectionOf<HTMLElement>;
+    const [numberSpan, who, status, question, text] = pin.children as HTMLCollectionOf<HTMLElement>;
     if (numberSpan.textContent !== String(number)) numberSpan.textContent = String(number);
-    if (pin.dataset.state !== request.state) {
+    const name = workingAgent(request);
+    if (who.textContent !== name) who.textContent = name;
+    const colour = name ? agentColour(request) : "";
+    if (pin.style.getPropertyValue("--agent") !== colour) {
+      if (colour) pin.style.setProperty("--agent", colour);
+      else pin.style.removeProperty("--agent");
+    }
+    pin.toggleAttribute("data-agent", Boolean(name));
+    const mark = `${request.state}/${Boolean(name)}`;
+    if (pin.dataset.mark !== mark) {
+      pin.dataset.mark = mark;
       pin.dataset.state = request.state;
       status.replaceChildren(
-        request.state === "seen" ? node("span", "agent-pin__spinner") : document.createTextNode(marks[request.state] ?? ""),
+        request.state === "seen" && !name ? node("span", "agent-pin__spinner") : document.createTextNode(marks[request.state] ?? ""),
       );
     }
     const asked = asking(request);
@@ -206,7 +233,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
 
   // The outline on an element an agent works on: marching while it does,
   // solid for a moment once it is done, then gone.
-  function outline(id: string, rect: SelectionRect | undefined, working: boolean) {
+  function outline(id: string, rect: SelectionRect | undefined, working: boolean, colour: string) {
     let box = outlines.get(id);
     const done = finishing.has(id) && rect;
     if (done) {
@@ -225,6 +252,10 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       return;
     }
     box ??= makeOutline(id);
+    if (working) {
+      if (colour) box.style.setProperty("--agent", colour);
+      else box.style.removeProperty("--agent");
+    }
     Object.assign(box.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
     box.setAttribute("width", String(rect.width));
     box.setAttribute("height", String(rect.height));
@@ -272,10 +303,10 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       pin.dataset.request = request.id;
       const detached = !rects.get(request.id);
       pin.classList.toggle("is-detached", detached);
-      const asked = asking(request);
+      const asked = asking(request), name = workingAgent(request);
       pin.setAttribute(
         "aria-label",
-        `Request ${number}: ${stateLabels[request.state] ?? request.state}${asked ? `, ${asked}` : ""}${detached ? ", its element is gone" : ""}`,
+        `Request ${number}: ${stateLabels[request.state] ?? request.state}${name ? `, ${name}` : ""}${asked ? `, ${asked}` : ""}${detached ? ", its element is gone" : ""}`,
       );
       pin.setAttribute("aria-expanded", String(openId === request.id && !openFromTray));
       pin.hidden = rect.bottom < 0 || rect.top > frameRect.height;
@@ -288,7 +319,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       if (!pin.hidden) row.offset += restingWidth(pin) + STACK_GAP;
       else if (request.state === "question") listed.push(request);
       if (!pin.hidden && pops.delete(request.id)) pop(pin);
-      outline(request.id, detached || pin.hidden ? undefined : rect, request.state === "seen");
+      outline(request.id, detached || pin.hidden ? undefined : rect, request.state === "seen", name ? agentColour(request) : "");
     }
     for (const [id, pin] of pins)
       if (!seen.has(id)) {
@@ -397,7 +428,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     clearTimeout(closing);
     closing = setTimeout(() => close(false), HOVER_CLOSE);
   }
-  // A question's answer box, else the card's first button.
+  // The card's message box (a question's first in the tray), else its first button.
   function focusCard() {
     (card.querySelector<HTMLElement>(".agent-pin-card__answer-input") ?? card.querySelector<HTMLButtonElement>("button"))?.focus();
   }
@@ -417,8 +448,8 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
   }
 
   // One request as a small conversation: where it is and its state, then
-  // what the user said and what agents replied, the answer box while an
-  // agent asks, and its actions.
+  // what the user said and what agents replied, the box for the user's next
+  // message (in the tray, only while an agent asks), and its actions.
   function requestBody(request: PinRequest, inTray: boolean) {
     const body = node("div", "agent-pin-card__request");
     body.dataset.state = request.state;
@@ -435,11 +466,11 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       row.dataset.from = message.from;
       // The question the user is to answer is the last message.
       if (request.state === "question" && index === messages.length - 1 && message.from === "agent") row.classList.add("is-question");
-      row.append(node("span", "agent-pin-card__from", message.from === "user" ? "You" : "Agent"), node("p", "agent-pin-card__bubble", message.text));
+      row.append(node("span", "agent-pin-card__from", message.from === "user" ? "You" : message.name || UNNAMED_AGENT), node("p", "agent-pin-card__bubble", message.text));
       thread.append(row);
     });
     body.append(head, thread);
-    if (request.state === "question") body.append(answerBox(request));
+    if (request.state === "question" || !inTray) body.append(answerBox(request));
     const actions = node("div", "agent-pin-card__actions");
     const answered = request.state === "done" || request.state === "answered";
     const dismiss = button(answered ? "Clear" : "Dismiss", () => {
@@ -467,16 +498,19 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     body.append(actions);
     return body;
   }
-  // The answer to an agent's question: a box that grows with its text, Enter
-  // sends it and Shift+Enter starts a new line (Esc closes the card).
+  // The user's next message (the answer to an agent's question, or a
+  // follow-up): a box that grows with its text, and Send. Enter sends it too
+  // and Shift+Enter starts a new line (Esc closes the card).
   function answerBox(request: PinRequest) {
     const box = node("div", "agent-pin-card__answer");
+    const row = node("div", "agent-pin-card__reply");
     const input = document.createElement("textarea");
+    const question = request.state === "question";
     input.className = "agent-pin-card__answer-input";
     input.rows = 1;
-    input.placeholder = "Answer…";
+    input.placeholder = question ? "Answer…" : "Add to this…";
     input.maxLength = REQUEST_TEXT_LIMIT;
-    input.setAttribute("aria-label", "Answer the agent");
+    input.setAttribute("aria-label", question ? "Answer the agent" : "Add to this request");
     input.dataset.request = request.id;
     input.value = drafts.get(request.id) ?? "";
     const error = node("p", "agent-pin-card__error", problems.get(request.id) ?? "");
@@ -491,7 +525,11 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       event.preventDefault();
       void sendAnswer(request.id, input);
     });
-    box.append(input, error);
+    const send = button("", () => sendAnswer(request.id, input), "agent-pin-card__send");
+    send.append(icon("arrow-up", 14));
+    send.setAttribute("aria-label", "Send");
+    row.append(input, send);
+    box.append(row, error);
     requestAnimationFrame(() => fit(input));
     return box;
   }
@@ -637,8 +675,9 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       for (const request of requests) {
         const was = states.get(request.id);
         const finished = was !== undefined && was !== request.state && replied(request.state);
-        // Just asked (not one found on opening the editor), or just replied to.
-        if (was === undefined ? Date.now() - request.createdAt < FRESH : finished) pops.add(request.id);
+        const taken = was !== undefined && was !== request.state && request.state === "seen";
+        // Just asked (not one found on opening the editor), just taken by an agent, or just replied to.
+        if (was === undefined ? Date.now() - request.createdAt < FRESH : finished || taken) pops.add(request.id);
         if (finished && request.state === "done") finishing.add(request.id);
         states.set(request.id, request.state);
       }

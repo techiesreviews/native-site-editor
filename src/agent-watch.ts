@@ -6,7 +6,7 @@
 // arrives here (an in-memory wake, never a storage read) or its time runs out: at most 25 s,
 // clipped to the relay's budget. Agents keep watching (a watchdog subagent calling
 // wait_for_requests again) until the user chooses Disconnect MCP.
-import { agentName, type AgentRequest } from "../shared/agent";
+import { agentName, agentWho, type AgentRequest, type AgentWho } from "../shared/agent";
 import type { AgentReadResult } from "../shared/agent-read";
 import { requestForAgent, requestOperation, type AgentRequests } from "../shared/agent-requests";
 import { HttpError } from "../shared/http-error";
@@ -35,11 +35,11 @@ const unchangedSince = (read: AgentRequest, current: () => boolean = () => true)
   return (stored: AgentRequest | undefined) => current() && Boolean(stored && stored.state !== "dismissed" && JSON.stringify(stored) === seen);
 };
 
-/** The user's answer from a request's card (the hub's rule), kept only over the copy it was made from:
+/** The user's answer or follow-up from a request's card (the hub's rule), kept only over the copy it was made from:
  * an answer from another tab meanwhile is never overwritten. */
-export function answerRequest(list: AgentRequest[], id: string, text: string) {
+export function answerRequest(list: AgentRequest[], id: string, text: string, now = Date.now()) {
   const read = structuredClone(list.find(request => request.id === id));
-  const { result } = requestOperation(list, { type: "answer", id, text }) as { result: AgentRequest };
+  const { result } = requestOperation(list, { type: "answer", id, text, now }) as { result: AgentRequest };
   return { request: result, accept: unchangedSince(read!) };
 }
 const ok = (value: unknown): AgentReadResult => ({ ok: true, value: JSON.parse(JSON.stringify(value)) as { [key: string]: JsonValue } });
@@ -54,12 +54,12 @@ export function createRequestTools(ports: RequestPorts) {
   const scope = { repoId: ports.workspace.repoId, branch: ports.workspace.branch };
   /** Takes this grant's requests. A save that loses a race (another agent's wait took the same
    * request at the same wake) reads again, at most TAKE_TRIES times, so each grant still gets it. */
-  async function take(grantId: string, all: boolean, current: () => boolean, owner?: number) {
+  async function take(grantId: string, all: boolean, current: () => boolean, owner?: number, by?: AgentWho) {
     const taken: ReturnType<typeof requestForAgent>[] = [], ids = new Set<string>();
     for (let attempt = 0; attempt < TAKE_TRIES; attempt++) {
       const list = await ports.list();
       const read = new Map(list.map(request => [request.id, structuredClone(request)]));
-      const { result } = requestOperation(list, { type: "take-requests", grantId, all, ...scope }) as { result: { requests: AgentRequest[] } };
+      const { result } = requestOperation(list, { type: "take-requests", grantId, all, ...(by ? { by } : {}), now: now(), ...scope }) as { result: { requests: AgentRequest[] } };
       let lost = false;
       for (const request of result.requests) {
         if (ids.has(request.id)) continue;
@@ -87,7 +87,7 @@ export function createRequestTools(ports: RequestPorts) {
   async function wait(command: AgentRequests, current: () => boolean, deadline: number, owner?: number, signal?: AbortSignal) {
     const all = command.args.all === true, started = now();
     const seen = version;
-    let requests = await take(command.grantId, all, current, owner);
+    let requests = await take(command.grantId, all, current, owner, agentWho(command));
     const wanted = typeof command.waitMs === "number" && Number.isFinite(command.waitMs) ? Math.min(WAIT_MS, command.waitMs) : WAIT_MS;
     // The site owner's switch (waitMs 0) answers at once.
     if (requests.length || !current() || wanted <= 0) return ok({ requests });
@@ -95,7 +95,7 @@ export function createRequestTools(ports: RequestPorts) {
     const ms = version !== seen ? 0 : Math.min(deadline, started + wanted) - now();
     if (ms > 0) await hold(ms, signal);
     // The relay gave up or the socket went: take nothing it could not deliver.
-    if (current()) requests = await take(command.grantId, all, current, owner);
+    if (current()) requests = await take(command.grantId, all, current, owner, agentWho(command));
     return ok({ requests });
   }
   async function reply(command: AgentRequests, current: () => boolean, owner?: number) {
