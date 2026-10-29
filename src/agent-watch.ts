@@ -56,15 +56,19 @@ export function createRequestTools(ports: RequestPorts) {
    * request at the same wake) reads again, at most TAKE_TRIES times, so each grant still gets it. */
   async function take(grantId: string, all: boolean, current: () => boolean, owner?: number, by?: AgentWho) {
     const taken: ReturnType<typeof requestForAgent>[] = [], ids = new Set<string>();
+    // When a hold for another connection's agent ends, the earliest (none: no request held from this one).
+    let heldUntil: number | undefined;
     for (let attempt = 0; attempt < TAKE_TRIES; attempt++) {
       const list = await ports.list();
       const read = new Map(list.map(request => [request.id, structuredClone(request)]));
-      const { result } = requestOperation(list, { type: "take-requests", grantId, all, ...(by ? { by } : {}), now: now(), ...scope }) as { result: { requests: AgentRequest[] } };
+      const { result } = requestOperation(list, { type: "take-requests", grantId, all, ...(by ? { by } : {}), now: now(), ...scope }) as
+        { result: { requests: AgentRequest[]; heldUntil?: number } };
+      heldUntil = result.heldUntil;
       let lost = false;
       for (const request of result.requests) {
         if (ids.has(request.id)) continue;
         // A connection gone stale (turned off, lost, taken over) marks nothing delivered.
-        if (!current()) return taken;
+        if (!current()) return { taken, heldUntil };
         // One changed since the read (replied, answered, dismissed, or taken by another agent) is
         // looked at again; one that no longer qualifies is not handed out.
         if (await ports.save(request, unchangedSince(read.get(request.id)!, current), owner)) { ids.add(request.id); taken.push(requestForAgent(request)); }
@@ -72,7 +76,7 @@ export function createRequestTools(ports: RequestPorts) {
       }
       if (!lost) break;
     }
-    return taken;
+    return { taken, heldUntil };
   }
   /** Ends at a wake (a request arrived or changed) or after `ms`. */
   function hold(ms: number, signal?: AbortSignal) {
@@ -87,15 +91,17 @@ export function createRequestTools(ports: RequestPorts) {
   async function wait(command: AgentRequests, current: () => boolean, deadline: number, owner?: number, signal?: AbortSignal) {
     const all = command.args.all === true, started = now();
     const seen = version;
-    let requests = await take(command.grantId, all, current, owner, agentWho(command));
+    const first = await take(command.grantId, all, current, owner, agentWho(command));
+    let requests = first.taken;
     const wanted = typeof command.waitMs === "number" && Number.isFinite(command.waitMs) ? Math.min(WAIT_MS, command.waitMs) : WAIT_MS;
     // The site owner's switch (waitMs 0) answers at once.
     if (requests.length || !current() || wanted <= 0) return ok({ requests });
     // A request during the read: look again at once instead of holding.
-    const ms = version !== seen ? 0 : Math.min(deadline, started + wanted) - now();
+    // A request held for another connection's agent: this wait looks again as the hold ends.
+    const ms = version !== seen ? 0 : Math.min(deadline, started + wanted, first.heldUntil ?? Infinity) - now();
     if (ms > 0) await hold(ms, signal);
     // The relay gave up or the socket went: take nothing it could not deliver.
-    if (current()) requests = await take(command.grantId, all, current, owner, agentWho(command));
+    if (current()) requests = (await take(command.grantId, all, current, owner, agentWho(command))).taken;
     return ok({ requests });
   }
   async function reply(command: AgentRequests, current: () => boolean, owner?: number) {

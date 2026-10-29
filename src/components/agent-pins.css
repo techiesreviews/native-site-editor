@@ -3,10 +3,11 @@
    corner, where Ask agent's note stood, its small bottom-left corner the
    tail pointing at the element (flipped under the element's top edge when
    `.is-below`). Every pin is light so its number reads over any page, in
-   light and dark themes alike, but one an agent works on. Open requests are
-   light blue with the action colour's border; one an agent has taken is in
-   that agent's colour (`--agent`, its outline's and dots') with its name
-   (a small spinner for an agent kept from before names); an agent's
+   light and dark themes alike. Open requests are light blue with the action
+   colour's border; one an agent has taken is a light tint of that agent's
+   colour (`--agent`, its outline's and dots') with its border and its name
+   in a dark ink of its hue (a small spinner for an agent kept from before
+   names); an agent's
    question is orange with a "?" and the question on one line, for the
    user to answer; done (a check) and answered (a speech mark) are grey, so
    they recede. A pin whose element is gone is dashed. Focusing a pin from
@@ -19,6 +20,10 @@
   pointer-events: none;
 }
 .agent-pin {
+  /* A line of words on a pin, the space before one, and the widest name. */
+  --pin-line: 16px;
+  --pin-gap: 6px;
+  --pin-name-max: 160px;
   position: absolute;
   z-index: 1;
   display: flex;
@@ -50,17 +55,18 @@
 .agent-pin__number {
   flex: none;
 }
-/* The agent working on it, in its colour (ticket am-13). */
+/* The agent working on it, in its colour (ticket am-13): light like every
+   pin, a tint of the colour with a dark ink of its hue (src/theme.css). */
 .agent-pin[data-agent] {
   border-color: var(--agent);
-  background: var(--agent);
-  color: var(--on-accent);
+  background: var(--agent-pin);
+  color: var(--agent-ink);
 }
 .agent-pin__who {
-  max-inline-size: 160px;
-  margin-inline-start: 5px;
+  max-inline-size: var(--pin-name-max);
+  margin-inline-start: var(--pin-gap);
   overflow: clip;
-  line-height: 16px;
+  line-height: var(--pin-line);
   text-overflow: ellipsis;
   font-weight: 600;
 }
@@ -97,12 +103,12 @@
   max-width: 260px;
   overflow: hidden;
   /* Tall enough for descenders, which the clipping would cut at line-height 1. */
-  line-height: 16px;
+  line-height: var(--pin-line);
   text-overflow: ellipsis;
   font-weight: 600;
 }
 .agent-pin__question:not(:empty) {
-  margin-left: 6px;
+  margin-left: var(--pin-gap);
 }
 /* The request's first line, folded away until a keyboard focus (or a hover
    while another's card is held open); a question's pin keeps to the
@@ -110,7 +116,7 @@
 .agent-pin__text {
   max-width: 0;
   overflow: hidden;
-  line-height: 16px;
+  line-height: var(--pin-line);
   text-overflow: ellipsis;
   opacity: 0;
   color: var(--agent-pin-text);
@@ -129,7 +135,7 @@
 .agent-pin:focus-visible:not([aria-expanded="true"], [data-state="question"]) .agent-pin__text,
 .agent-pins.is-holding .agent-pin:hover:not([aria-expanded="true"], [data-state="question"]) .agent-pin__text {
   max-width: 240px;
-  margin-left: 6px;
+  margin-left: var(--pin-gap);
   opacity: 1;
 }
 .agent-pin.is-detached {
@@ -483,20 +489,15 @@
   display: inline-grid;
   place-items: center;
   flex: none;
-  inline-size: 28px;
-  block-size: 28px;
+  /* A compact button; a real tap target on touch and narrow layouts. */
+  inline-size: max(var(--size-compact), var(--size-tap));
+  block-size: max(var(--size-compact), var(--size-tap));
   margin: 0;
   border: 0;
   border-radius: var(--radius);
   padding: 0;
   background: var(--primary);
   color: var(--on-primary);
-}
-@media (pointer: coarse) {
-  .agent-pin-card__send {
-    inline-size: 44px;
-    block-size: 44px;
-  }
 }
 @media (hover: hover) and (pointer: fine) {
   .agent-pin-card__send:hover {
