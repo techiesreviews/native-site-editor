@@ -2,7 +2,7 @@
 title: "Agent tools: ask first, undo its own change"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-15
 builder: claude
 blocked_by: [10-exact-part-edits, 13-pin-conversation]
 ---
