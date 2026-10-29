@@ -452,3 +452,76 @@ test("kit shots without KIT_LIB hands the kit it picked to its Node helpers", (t
   const frontDoor = spawnSync(resolve("scripts/agents/project.d/shots"), ["--help"], { env: { ...plain, KIT_HOME: fake, KIT_HOME_DEFAULT: fake, XDG_DATA_HOME: data }, encoding: "utf8" });
   assert.deepEqual([frontDoor.status, frontDoor.stdout], [0, `${picked}\n${picked}\n`]);
 });
+
+test("with no machine copy the hook launcher runs the cache clone's hooks, and warns when the clone has none", (t) => {
+  const directory = temp(t), cache = join(directory, "cache"), clone = join(cache, "agent-kit");
+  mkdirSync(join(clone, "hooks"), { recursive: true });
+  writeFileSync(join(clone, "kit"), "#!/usr/bin/env bash\n"); chmodSync(join(clone, "kit"), 0o755);
+  writeFileSync(join(clone, "kit-lib.sh"), "");
+  writeFileSync(join(clone, "hooks/run.sh"), 'printf "ran %s\\n" "$*"; exit 2\n');
+  const { KIT_HOME: _home, KIT_HOME_DEFAULT: _default, KIT_HOME_PINNED: _pinned, ...rest } = process.env;
+  const hook = () => {
+    const result = spawnSync("bash", [resolve("scripts/agents/hooks/run.sh"), "bash-guard"],
+      { env: { ...rest, XDG_DATA_HOME: join(directory, "data"), XDG_CACHE_HOME: cache }, input: "{}", encoding: "utf8" });
+    return [result.status, result.stdout];
+  };
+  assert.deepEqual(hook(), [2, "ran bash-guard\n"]);
+  rmSync(join(clone, "hooks/run.sh"));
+  const warning = "Agent Kit not found: guards are off; run `scripts/agents/kit doctor`";
+  assert.deepEqual(hook(), [0, `${JSON.stringify({ systemMessage: warning })}\n`]);
+});
+
+test("with no machine copy the launcher clones the kit once into the cache, and refuses a clone that holds no kit", (t) => {
+  const directory = temp(t);
+  const repo = (name: string, files: Record<string, string>) => {
+    const folder = join(directory, name);
+    mkdirSync(folder);
+    for (const [file, text] of Object.entries(files)) writeFileSync(join(folder, file), text);
+    if (files.kit) chmodSync(join(folder, "kit"), 0o755);
+    const git = (...args: string[]) => assert.equal(spawnSync("git", ["-C", folder, "-c", "user.name=Kit test", "-c", "user.email=kit@example.com", ...args]).status, 0, args.join(" "));
+    git("init", "-q"); git("add", "."); git("commit", "-qm", "kit");
+    return `file://${folder}`;
+  };
+  const { KIT_HOME: _home, KIT_HOME_DEFAULT: _default, KIT_HOME_PINNED: _pinned, ...rest } = process.env;
+  const lookUp = (name: string, kitRepo: string) => {
+    const cache = join(directory, `${name}-cache`);
+    const result = spawnSync(kit, ["--home"], { env: { ...rest, XDG_DATA_HOME: join(directory, `${name}-data`), XDG_CACHE_HOME: cache, KIT_REPO: kitRepo }, encoding: "utf8", timeout: 60_000 });
+    return { cache, result };
+  };
+  const good = lookUp("good", repo("kit-repo", { kit: "#!/usr/bin/env bash\n", "kit-lib.sh": "" }));
+  assert.deepEqual([good.result.status, good.result.stdout], [0, `${realpathSync(join(good.cache, "agent-kit"))}\n`], good.result.stderr);
+  assert.ok(existsSync(join(good.cache, "agent-kit/.git/kit-cloned")));
+  assert.deepEqual(readdirSync(good.cache), ["agent-kit"]);
+  const emptyRepo = repo("no-kit-repo", { "README.md": "no kit here\n" });
+  const empty = lookUp("empty", emptyRepo);
+  assert.equal(empty.result.status, 2);
+  assert.equal(empty.result.stdout, `RESULT: fail no Agent Kit at ${join(empty.cache, "agent-kit")} (the clone of ${emptyRepo} holds no whole kit)\n`);
+  assert.deepEqual(readdirSync(empty.cache), []);
+});
+
+test("kit preview in a kitEnv() fixture loads the library of the kit tried through KIT_HOME", (t) => {
+  const directory = temp(t), fake = join(directory, "kit"), loaded = join(directory, "loaded");
+  mkdirSync(fake);
+  writeFileSync(join(fake, "kit"), "#!/usr/bin/env bash\n"); chmodSync(join(fake, "kit"), 0o755);
+  writeFileSync(join(fake, "kit-lib.sh"), "");
+  writeFileSync(join(fake, "kit-lib.mjs"), `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(loaded)}, "tried\\n");\n` +
+    `export * from ${JSON.stringify(pathToFileURL(join(home, "kit-lib.mjs")).href)};\n`);
+  const { KIT_LIB: _lib, KIT_LIB_MJS: _mjs, ...rest } = process.env;
+  const result = spawnSync(resolve("scripts/agents/project.d/preview"), ["--help"], { env: kitEnv({ ...rest, KIT_HOME: fake, KIT_HOME_PINNED: undefined }), encoding: "utf8", timeout: 60_000 });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /^Usage: kit preview/);
+  assert.equal(readFileSync(loaded, "utf8"), "tried\n");
+});
+
+test("a person's relative KIT_HOME reaches this editor's helpers as a full path", (t) => {
+  const directory = temp(t), fake = join(directory, "kit");
+  mkdirSync(fake);
+  writeFileSync(join(fake, "kit"), "#!/usr/bin/env bash\n"); chmodSync(join(fake, "kit"), 0o755);
+  writeFileSync(join(fake, "kit-lib.sh"), "");
+  writeFileSync(join(fake, "unit.sh"), '#!/usr/bin/env bash\nprintf "%s\\n" "$KIT_HOME"\n'); chmodSync(join(fake, "unit.sh"), 0o755);
+  writeFileSync(join(fake, "tickets.mjs"), "console.log(process.env.KIT_HOME);\n");
+  const { KIT_HOME: _home, KIT_HOME_DEFAULT: _default, KIT_HOME_PINNED: _pinned, ...rest } = process.env;
+  const env = { ...rest, KIT_HOME: "kit" }, full = `${realpathSync(fake)}\n`;
+  assert.equal(spawnSync(resolve("scripts/agents/unit.sh"), [], { cwd: directory, env, encoding: "utf8" }).stdout, full);
+  assert.equal(spawnSync(process.execPath, [resolve("scripts/agents/tickets.mjs")], { cwd: directory, env, encoding: "utf8" }).stdout, full);
+});

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { join } from "node:path";
 
 let picked;
@@ -8,7 +9,7 @@ let picked;
  * (`scripts/agents/kit --home`), as for any kit command: a person's KIT_HOME wins, a pinned one `kit update`
  * removed is picked again, else the machine copy or the cache clone. Looked up once per process (for the
  * process's own environment), so one command never mixes two kits. Throws the launcher's RESULT line when
- * there is no kit.
+ * there is no kit. Always a full path.
  */
 export function kitHomeFolder(env = process.env) {
   if (env === process.env && picked !== undefined) return picked;
@@ -18,6 +19,8 @@ export function kitHomeFolder(env = process.env) {
   } catch (error) {
     throw new Error(String(error.stdout ?? "").trim() || "RESULT: fail no Agent Kit (scripts/agents/kit --home failed)");
   }
+  // A person's KIT_HOME may be relative (the launcher passes it on as given): a full path, as the front door has it.
+  try { home = realpathSync(home); } catch { throw new Error(`RESULT: fail no Agent Kit at ${home} (removed while starting)`); }
   if (env === process.env) picked = home;
   return home;
 }
