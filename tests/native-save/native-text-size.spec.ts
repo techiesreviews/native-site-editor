@@ -68,3 +68,23 @@ test("a site with size variables gets them in Text size, written as var() inline
   await size(page).selectOption("default");
   await expect.poll(() => editorText(page)).toBe(source);
 });
+
+test("Text size chosen in the same moment as Bold, before the bar redraws, applies with no refusal", async ({ page, baseURL }) => {
+  await open(page, baseURL, 530);
+  const lead = page.frameLocator(".native-preview-frame").locator("p[data-key=lead]");
+  await lead.click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await expect.poll(() => options(page)).toEqual(["Default", "Small", "Large"]);
+  const bold = await bar(page).getByRole("button", { name: "Bold" }).elementHandle();
+  const select = await size(page).elementHandle();
+  // One task: the bar cannot redraw between Bold and the size.
+  await page.evaluate(([button, field]) => {
+    (button as HTMLButtonElement).click();
+    (field as HTMLSelectElement).value = "text-large";
+    field!.dispatchEvent(new Event("change", { bubbles: true }));
+  }, [bold, select]);
+  await expect(lead).toHaveCSS("font-size", "23px");
+  await expect(lead.locator("strong")).toHaveCount(1);
+  await expect.poll(() => editorText(page)).toContain(`<p data-key="lead" class="text-large"><strong>`);
+  await expect(page.locator("#status")).not.toContainText("The source changed");
+});

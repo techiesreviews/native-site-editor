@@ -483,6 +483,16 @@ test("Layout applies when the latest source changed only inside the block", () =
   assert.deepEqual(f.errors, []);
 });
 
+test("Text size refuses once the source after the element changed", () => {
+  const f = fixture({ page: "<main><p>Hello world</p></main>" });
+  const size = drawBar(f, f.target.node, { ...textBarPorts(f), locateNativeElementRange: rangeAtPath }, undefined, "p")("Text size");
+  assert.ok(size.kind === "select");
+  f.mem.typeInto(PAGE, "<main><p>Hello world</p><p>New</p></main>");
+  size.onChange("l");
+  assert.equal(f.page(), "<main><p>Hello world</p><p>New</p></main>");
+  assert.deepEqual(f.notices, ["The source changed. Select the element again and try again."]);
+});
+
 test("Text size from a bar drawn before its element's start tag moved still refuses", () => {
   const f = fixture({ page: "<main><p>Hello world</p></main>" });
   const size = drawBar(f, f.target.node, textBarPorts(f), undefined, "p")("Text size");
