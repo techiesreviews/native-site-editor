@@ -75,7 +75,7 @@
 }
 .agent-pin__status:not(:empty) {
   display: flex;
-  margin-left: 3px;
+  margin-inline-start: 3px;
 }
 /* An agent is on it: a ring turning a quarter at a time. */
 .agent-pin__spinner {
@@ -100,7 +100,7 @@
 /* An agent's question, always shown: a few words, cut short if ever
    longer. */
 .agent-pin__question {
-  max-width: 260px;
+  max-inline-size: 260px;
   overflow: hidden;
   /* Tall enough for descenders, which the clipping would cut at line-height 1. */
   line-height: var(--pin-line);
@@ -108,13 +108,13 @@
   font-weight: 600;
 }
 .agent-pin__question:not(:empty) {
-  margin-left: var(--pin-gap);
+  margin-inline-start: var(--pin-gap);
 }
 /* The request's first line, folded away until a keyboard focus (or a hover
    while another's card is held open); a question's pin keeps to the
    question. */
 .agent-pin__text {
-  max-width: 0;
+  max-inline-size: 0;
   overflow: hidden;
   line-height: var(--pin-line);
   text-overflow: ellipsis;
@@ -122,8 +122,8 @@
   color: var(--agent-pin-text);
   font-weight: 400;
   transition:
-    max-width 160ms ease-out,
-    margin-left 160ms ease-out,
+    max-inline-size 160ms ease-out,
+    margin-inline-start 160ms ease-out,
     opacity 120ms ease-out;
 }
 .agent-pin:hover,
@@ -134,8 +134,8 @@
 /* Hovering a pin opens its card instead, unless another's is held open. */
 .agent-pin:focus-visible:not([aria-expanded="true"], [data-state="question"]) .agent-pin__text,
 .agent-pins.is-holding .agent-pin:hover:not([aria-expanded="true"], [data-state="question"]) .agent-pin__text {
-  max-width: 240px;
-  margin-left: var(--pin-gap);
+  max-inline-size: 240px;
+  margin-inline-start: var(--pin-gap);
   opacity: 1;
 }
 .agent-pin.is-detached {

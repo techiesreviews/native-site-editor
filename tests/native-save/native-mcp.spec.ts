@@ -751,9 +751,12 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
     expect(first.element.html).toBe('<h1 data-key="hero-title">A native browser preview</h1>');
     expect(second.element).toMatchObject({ file: indexPath, tag: "p", component: { tag: "project-card", in: "slot", slot: "body" } });
     expect(second.element.text).toContain("header and footer are custom elements");
-    // Taken: each pin wears the agent's name (its MCP client's), and its element has a marching outline.
+    // Taken by the wait alone: each pin turns its spinner, naming no one yet, and its element has a marching
+    // outline; reading one by its id puts the agent's name (its MCP client's) on its pin.
     await expect(page.locator('.agent-pin[data-state="seen"]')).toHaveCount(2);
-    await expect(page.locator('.agent-pin[data-state="seen"] .agent-pin__who')).toHaveText(["playwright-agent", "playwright-agent"]);
+    await expect(page.locator('.agent-pin[data-state="seen"] .agent-pin__spinner')).toHaveCount(2);
+    await call("get_selection", { request: first.id });
+    await expect(pins.first().locator(".agent-pin__who")).toHaveText("playwright-agent");
     await expect(page.locator(".agent-pin-outline")).toHaveCount(2);
 
     // It edits the heading, and says so; the pin shows it.

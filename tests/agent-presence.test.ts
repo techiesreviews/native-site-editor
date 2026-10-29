@@ -254,6 +254,13 @@ test("a finished request of an earlier session takes no colour (am-13): the agen
   assert.equal(presence.colour(agent("Copy editor")), 0);
 });
 
+test("a watchdog that only took a pin's request takes no colour (am-13): the first agent at work gets the first", () => {
+  const { presence, painted } = presenceViews();
+  presence.questions([{ repoId: 1, branch: "main", state: "seen", element: { file: "index.html", id: "1.0.0" }, agent: agent("Watchdog"), agentTook: true }]);
+  presence.show("index.html", findHero, agent("Copy editor"))();
+  assert.deepEqual(painted[0], [["Copy editor", 0, "index.html", "1.0", false]], "not pinned either: the watchdog's pin names no one");
+});
+
 test("get_site tells agents of one connection apart by name: one at work on Home, another asking on About, in order of arrival", () => {
   const { presence } = presenceViews();
   const end = presence.show("index.html", findHero, agent("A", "g1"));
