@@ -1,6 +1,6 @@
 # Kitchen extras: native-site-editor
 
-This editor's own facts for the shared rulebook ([`scripts/agents/docs/kitchen.md`](../../scripts/agents/docs/kitchen.md));
+This editor's own facts for the shared rulebook ([`docs/kitchen.md` in the kit repo](https://github.com/techiesreviews/agent-kit/blob/main/docs/kitchen.md));
 `scripts/agents/kit rulebook` prints both. Where they differ, this file wins.
 
 ## Branches, checks and the shared file

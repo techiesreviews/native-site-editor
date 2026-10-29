@@ -7,9 +7,12 @@ import { basename, extname, isAbsolute, join, relative, resolve } from "node:pat
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } from "../kit-lib.mjs";
+import { kitHomeFolder } from "../kit-home.mjs";
 import { contactOutput, parseArgs, parseSteps } from "./core.ts";
 import { findingsSections } from "./findings-list.ts";
+
+// The shared kit library comes from the kit (KIT_HOME, else the one the launcher picks), never from this project.
+const { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } = await import(pathToFileURL(join(kitHomeFolder(), "kit-lib.mjs")).href);
 
 export function splitCompare(args) {
   const rest = [];
@@ -26,8 +29,7 @@ export function splitCompare(args) {
 
 export const toolingFiles = [
   "scripts/agents/kit",
-  "scripts/agents/kit-lib.sh",
-  "scripts/agents/kit-lib.mjs",
+  "scripts/agents/kit-home.mjs",
   "scripts/agents/project.d/shots",
   "scripts/agents/shots/",
   "tests/support/scenarios.ts",

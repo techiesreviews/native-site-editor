@@ -1,211 +1,46 @@
 #!/usr/bin/env bash
-# Usage: kit [<command> [args]]; run a shared command from $KIT_HOME/kit.d/ or one of the
-# project's own from the folder named by "commands" in scripts/agents/kit.json.
+# Usage: kit [<command> [args]] | kit --home; the Agent Kit launcher kit init writes into each project. Runs the
+# machine's newest kit (${XDG_DATA_HOME:-~/.local/share}/agent-kit/current) for the whole command; a person's
+# KIT_HOME wins. --home prints that kit's folder and runs nothing (for a project's own helpers and forwarders).
 set -euo pipefail
-kit_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-# KIT_HOME is the shared kit: this folder unless a person set it (a kit checkout tried against this project).
-# A front door marks the KIT_HOME it fills in itself (KIT_HOME_DEFAULT), so a nested kit in another
-# worktree keeps its own folder while a person's choice reaches every nested kit.
-home=$kit_dir chosen=false
-if [[ -n ${KIT_HOME:-} && $KIT_HOME != "${KIT_HOME_DEFAULT:-}" ]]; then home=$KIT_HOME chosen=true; fi
-if ! KIT_HOME=$(cd -- "$home" 2>/dev/null && pwd -P) || [[ ! -f $KIT_HOME/kit-lib.sh ]]; then
-  printf 'kit: KIT_HOME %s is not a kit folder (no kit-lib.sh)\n' "$home" >&2
-  printf 'RESULT: fail no kit at KIT_HOME %s\n' "$home"
-  exit 2
+export KIT_REPO=${KIT_REPO:-https://github.com/techiesreviews/agent-kit.git}
+data=${XDG_DATA_HOME:-} cache=${XDG_CACHE_HOME:-} why=KIT_HOME clone='' picked=false
+[[ $data == /* ]] || data=${HOME:-$(cd ~ && pwd -P)}/.local/share
+[[ $cache == /* ]] || cache=${HOME:-$(cd ~ && pwd -P)}/.cache
+# A whole kit, as kit update checks it: the front door needs kit-lib.sh beside kit. The hook launcher also needs
+# hooks/run.sh, so a pinned folder missing only that is kept here but looked up again there.
+whole() { [[ -x $1/kit && -f $1/kit-lib.sh ]]; }
+# KIT_HOME_PINNED marks a KIT_HOME a launcher picked, so a child whose folder kit update has since removed
+# picks again instead of treating it as a person's choice.
+if [[ -z ${KIT_HOME:-} || $KIT_HOME == "${KIT_HOME_DEFAULT:-}" ]] || { [[ $KIT_HOME == "${KIT_HOME_PINNED:-}" ]] && ! whole "$KIT_HOME"; }; then
+  picked=true
+  # current is read once: the command keeps this folder while kit update swaps the link.
+  KIT_HOME=$(readlink -- "$data/agent-kit/current" 2>/dev/null) || KIT_HOME=''
+  [[ -z $KIT_HOME || $KIT_HOME == /* ]] || KIT_HOME=$data/agent-kit/$KIT_HOME
+  # No machine copy (CI, a cloud session, a new laptop): one shallow clone in the cache, stamped for kit version;
+  # a clone that is not a whole kit is thrown away.
+  whole "$KIT_HOME" || KIT_HOME=$cache/agent-kit why="$cache/agent-kit exists but holds no kit; remove it"
+  if [[ ! -e $KIT_HOME ]]; then
+    why="no machine copy; cannot clone $KIT_REPO"
+    trap '[[ -z $clone ]] || rm -rf -- "$clone"' EXIT
+    mkdir -p -- "$cache" && clone=$(mktemp -d "$cache/agent-kit.XXXXXX") && git clone -q --depth 1 -- "$KIT_REPO" "$clone" >&2 &&
+      { whole "$clone" || { why="the clone of $KIT_REPO holds no whole kit"; false; }; } &&
+      { date +%s > "$clone/.git/kit-cloned" || { why="cannot stamp the clone in $cache"; false; }; } &&
+      why="cannot place the clone at $KIT_HOME" && mv -T -- "$clone" "$KIT_HOME" 2>/dev/null && clone='' || :
+    [[ -z $clone ]] || rm -rf -- "$clone"
+  fi
 fi
-if [[ $chosen == true ]]; then unset KIT_HOME_DEFAULT; else export KIT_HOME_DEFAULT=$KIT_HOME; fi
-export KIT_HOME
-# shellcheck source=scripts/agents/kit-lib.sh
-source "$KIT_HOME/kit-lib.sh"
-# Outside git the project is the one around this front door, not around KIT_HOME.
+whole "$KIT_HOME" || { printf 'RESULT: fail no Agent Kit at %s (%s)\n' "$KIT_HOME" "$why"; exit 2; }
+# The front door resolves KIT_HOME the same way, so the marker still matches it in every child.
+if [[ $picked == true ]]; then
+  folder=$KIT_HOME
+  KIT_HOME=$(cd -- "$folder" 2>/dev/null && pwd -P) || { printf 'RESULT: fail no Agent Kit at %s (removed while starting)\n' "$folder"; exit 2; }
+  export KIT_HOME_PINNED=$KIT_HOME
+fi
+# Outside git the project is the one around this launcher, not around the kit.
 if [[ -z ${KIT_ROOT:-} ]] && ! git rev-parse --show-toplevel > /dev/null 2>&1; then
-  KIT_ROOT=$(cd -- "$kit_dir/../.." && pwd -P)
+  KIT_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P) && export KIT_ROOT
 fi
-KIT_ROOT=$(kit_root)
-
-# KIT_COMMANDS_DIR (tests) replaces both folders.
-if [[ -n ${KIT_COMMANDS_DIR:-} ]]; then
-  folders=("$KIT_COMMANDS_DIR") headings=('Commands')
-else
-  folders=("$KIT_HOME/kit.d") headings=('Shared commands')
-  # Without jq, kit_setting names it on stderr and the shared commands still run, so kit doctor can report it.
-  own=$(kit_setting .commands) || own=''
-  if [[ -n $own ]]; then
-    [[ $own == /* ]] || own=$KIT_ROOT/$own
-    # A "commands" naming the shared folder adds nothing; kit doctor says so.
-    [[ $own -ef ${folders[0]} ]] || { folders+=("$own"); headings+=('Project commands'); }
-  fi
-fi
-
-names=() files=() summaries=() groups=()
-declare -A shared=()
-width=0
-for group in "${!folders[@]}"; do
-  start=${#names[@]}
-  for file in "${folders[group]}"/*; do
-    base=${file##*/}
-    [[ -f $file && -x $file && $base != [._]* ]] || continue
-    name=${base%.*}
-    summary=''
-    count=0
-    while IFS= read -r line || [[ -n $line ]]; do
-      count=$((count + 1))
-      if [[ $line == *'# kit: '* || $line == *'// kit: '* ]]; then
-        [[ $line =~ (#\ kit:\ |//\ kit:\ ) ]]
-        summary=${line#*"${BASH_REMATCH[0]}"}
-        break
-      fi
-      (( count < 15 )) || break
-    done < "$file"
-    if (( group == 0 )); then shared[$name]=1
-    elif [[ -n ${shared[$name]-} ]]; then summary="(hidden by the shared $name; kit doctor names the clash)${summary:+ $summary}"
-    fi
-    # Sort by the command name within its folder, which can differ from the filename's order.
-    position=${#names[@]}
-    while (( position > start )) && [[ ${names[position-1]} > "$name" ]]; do
-      names[position]=${names[position-1]}
-      files[position]=${files[position-1]}
-      summaries[position]=${summaries[position-1]}
-      groups[position]=${groups[position-1]}
-      position=$((position - 1))
-    done
-    names[position]=$name files[position]=$file summaries[position]=$summary groups[position]=$group
-    (( ${#name} <= width )) || width=${#name}
-  done
-done
-
-list_commands() {
-  local index group=-1
-  printf 'Usage: kit <command> [args]\n'
-  for index in "${!names[@]}"; do
-    if (( groups[index] != group )); then
-      group=${groups[index]}
-      printf '\n%s:\n' "${headings[group]}"
-    fi
-    printf '  %-*s  %s\n' "$width" "${names[index]}" "${summaries[index]}"
-  done
-  printf "Run 'kit <command> --help' for a command's usage.\n"
-}
-
-command=${1-}
-case $command in ''|help|--help|-h) list_commands; exit 0 ;; esac
-shift
-# The first match is the shared command: a project command never hides a shared one (kit doctor names the clash).
-command_file=''
-for index in "${!names[@]}"; do
-  if [[ ${names[index]} == "$command" ]]; then command_file=${files[index]}; break; fi
-done
-if [[ -z $command_file ]]; then
-  # A broken settings file, or no jq to read it, hides the project folder; say so instead of only "unknown".
-  unreadable='' settings_file=$(kit_settings_file)
-  if [[ -n ${KIT_COMMANDS_DIR:-} || ! -f $settings_file ]]; then :
-  elif ! command -v jq > /dev/null; then unreadable=' (jq is not installed; install jq)'
-  elif ! jq empty "$settings_file" > /dev/null 2>&1; then unreadable=' (scripts/agents/kit.json unreadable; run kit doctor)'
-  fi
-  printf "kit: unknown command '%s'%s\n" "$command" "$unreadable" >&2
-  list_commands >&2
-  kit_result fail "unknown command $command$unreadable"
-  exit 2
-fi
-
-last_result=false
-partial=false
-child_pid=''
-signal_status=0
-enforce_result=true
-# Help for a subcommand (`kit wait pid --help`) is usage text, not a run.
-for arg in "$@"; do
-  case $arg in --help|-h) enforce_result=false; break ;; esac
-done
-
-finish() {
-  local status=$?
-  trap - EXIT INT TERM HUP
-  if (( signal_status )); then status=$signal_status; fi
-  if [[ $enforce_result == true && $last_result == false ]]; then
-    [[ $partial == false ]] || printf '\n'
-    if (( signal_status )); then
-      kit_result fail "$command interrupted"
-    elif (( status == 0 )); then
-      kit_result ok "$command finished"
-    else
-      kit_result fail "$command exited $status without a RESULT line"
-    fi
-  fi
-  exit "$status"
-}
-interrupted() {
-  signal_status=$((128 + $2))
-  if [[ -n $child_pid ]]; then
-    kill -s "$1" "$child_pid" 2>/dev/null || :
-  else
-    exit "$signal_status"
-  fi
-}
-trap finish EXIT
-trap 'interrupted INT 2' INT
-trap 'interrupted TERM 15' TERM
-trap 'interrupted HUP 1' HUP
-
-kit_node || :
-KIT_MAIN_ROOT=$(kit_main_root)
-export KIT_ROOT KIT_MAIN_ROOT
-# The playwright setting reaches commands as KIT_PLAYWRIGHT_MODULE, against the real top folder as kit doctor reads it;
-# a person's value wins (a relative one read the same way), and KIT_PLAYWRIGHT_MODULE_DEFAULT marks the front door's
-# own as KIT_HOME_DEFAULT does.
-if [[ -n ${KIT_PLAYWRIGHT_MODULE:-} && $KIT_PLAYWRIGHT_MODULE != "${KIT_PLAYWRIGHT_MODULE_DEFAULT:-}" ]]; then
-  playwright=$KIT_PLAYWRIGHT_MODULE own=false
-else
-  playwright=$(kit_setting .playwright 2>/dev/null) || playwright=''
-  own=true
-fi
-unset KIT_PLAYWRIGHT_MODULE KIT_PLAYWRIGHT_MODULE_DEFAULT
-if [[ -n $playwright ]]; then
-  if [[ $playwright != /* ]]; then
-    # A KIT_ROOT that cannot be entered stays as given; kit doctor fails on it anyway.
-    top=$(cd -- "$KIT_ROOT" 2>/dev/null && pwd -P) || top=$KIT_ROOT
-    playwright=$top/$playwright
-  fi
-  export KIT_PLAYWRIGHT_MODULE=$playwright
-  [[ $own == false ]] || export KIT_PLAYWRIGHT_MODULE_DEFAULT=$playwright
-fi
-export KIT_LIB="$KIT_HOME/kit-lib.sh" KIT_LIB_MJS="$KIT_HOME/kit-lib.mjs"
-
-# A coprocess lets the parent remember the last line without buffering stdout.
-# Preserve stdin explicitly: a coprocess otherwise replaces it with a pipe.
-exec {input_fd}<&0
-coproc KIT_CHILD {
-  # Bash ignores SIGINT in asynchronous jobs; restore it before launching.
-  trap - INT TERM HUP
-  # Wait until the parent has saved the pipe descriptor, even for instant exits.
-  IFS= read -r _start
-  exec "$command_file" "$@" <&"$input_fd"
-}
-child_pid=$!
-exec {output_fd}<&"${KIT_CHILD[0]}"
-control_fd=${KIT_CHILD[1]}
-printf '\n' >&"$control_fd"
-exec {control_fd}>&-
-exec {input_fd}<&-
-pending=''
-while :; do
-  line=''
-  read_status=0
-  IFS= read -r -u "$output_fd" line || read_status=$?
-  # Signals can interrupt read halfway through a line; keep its prefix intact.
-  if (( read_status > 128 )); then pending+=$line; continue; fi
-  line=$pending$line
-  pending=''
-  if [[ -n $line || $read_status == 0 ]]; then
-    printf '%s' "$line"
-    last_result=false
-    [[ $line != 'RESULT: '* ]] || last_result=true
-    partial=true
-    if (( read_status == 0 )); then printf '\n'; partial=false; fi
-  fi
-  (( read_status == 0 )) || break
-done
-exec {output_fd}<&-
-status=0
-wait "$child_pid" || status=$?
-exit "$status"
+export KIT_HOME
+if [[ ${1-} == --home && $# == 1 ]]; then printf '%s\n' "$KIT_HOME"; exit 0; fi
+exec "$KIT_HOME/kit" "$@"

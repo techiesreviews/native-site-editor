@@ -6,9 +6,11 @@ import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, renameSync, 
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ensureBase } from "../shots/compare.mjs";
+// The shared kit library comes from the kit this command runs in (KIT_HOME), never from this project.
+import { kitHomeFolder } from "../kit-home.mjs";
 
 const { kitRoot, kitMainRoot, kitOwner, kitResult, nodeEnv } = await import(
-  pathToFileURL(process.env.KIT_LIB_MJS || resolve(import.meta.dirname, "../kit-lib.mjs")).href
+  pathToFileURL(process.env.KIT_LIB_MJS || join(kitHomeFolder(), "kit-lib.mjs")).href
 );
 const budget = 362 * 1024;
 const usage = `Usage: kit size [--no-base] [--base REF]

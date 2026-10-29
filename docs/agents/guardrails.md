@@ -7,8 +7,9 @@ Automated checks for mistakes made during Phase 5 (retro, 2026-10-08). Each one 
 ## Hooks
 
 Claude Code loads `.claude/settings.json`; Codex loads `.codex/hooks.json`. Both call
-`scripts/agents/hooks/run.sh`, which runs the guard scripts in its own folder (behind a hook launcher, the kit's copy). Only the
-context card and the bash guard's server hint read the project, found from `CLAUDE_PROJECT_DIR` when set,
+`scripts/agents/hooks/run.sh`, the hook launcher, which runs the kit's own `hooks/run.sh` (the machine copy, from
+the agent-kit repo) and its guard scripts; without a kit it warns ("Agent Kit not found: guards are off") and never
+blocks. Only the context card and the bash guard's server hint read the project, found from `CLAUDE_PROJECT_DIR` when set,
 otherwise from `git rev-parse --show-toplevel` in the session cwd. The shared scripts enforce:
 
 - **Stash**: commit work in progress on your own branch. Bash rejects `git stash` except `list`/`show`; worktrees share stashes, risking another runner’s work.
