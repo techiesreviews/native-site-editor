@@ -24,8 +24,8 @@ export interface SelectionRect {
   right: number;
   /** Height the page's own sticky/fixed top bar covers at the frame's top, kept clear by the edit bar. */
   inset?: number;
-  /** A pin's element (ticket am-45): the top of what stands just above it, too close for a row of pins between (an
-   * eyebrow line over a heading). The pins stand above that while there is room. */
+  /** A pin's or the selection's element (ticket am-45): the top of what stands just above it, too close for a row of
+   * pins between (an eyebrow line over a heading). Its pins and Ask agent's note stand above that while there is room. */
   clear?: number;
 }
 
@@ -202,7 +202,7 @@ export type EditBarDrag = (event: PointerEvent, chip: HTMLElement) => { justDrag
  * how far from the element's anchor the next one goes (0: none there), and
  * the number it will have.
  */
-export type PinRow = (rect: SelectionRect) => { offset: number; next: number; clear?: number };
+export type PinRow = (rect: SelectionRect) => { offset: number; next: number };
 
 // A sent note shrinking into its pin (edit-bar.css `edit-bar-note-sent`).
 const NOTE_SENT_MS = 180;
@@ -503,8 +503,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   // and that row's extent in frame coordinates.
   function placeNote(at: SelectionRect, frameRect: DOMRect, frameLeft: number, frameTop: number) {
     const slot = pinRow?.(at);
-    // Where the selection's pins stand: clear of what stands just above it.
-    const anchor = noteAnchor(slot?.clear !== undefined ? { ...at, clear: slot.clear } : at, frameRect);
+    const anchor = noteAnchor(at, frameRect);
     if (note) {
       const { element } = note;
       note.number.textContent = slot ? `${slot.next}.` : "";

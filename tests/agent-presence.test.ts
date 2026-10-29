@@ -294,6 +294,43 @@ test("a watchdog's take shows its connection's agent at work (am-45), takes no c
   assert.deepEqual(presence.onPin("req-second"), finder);
 });
 
+test("a watchdog's take names its connection's one other agent heard (am-45: get_site counts), and the watchdog takes no colour", () => {
+  const { presence } = presenceViews();
+  const watchdog = agent("Watchdog"), copy = agent("Copy editor");
+  // Copy editor only read the site; the watchdog waits: two agents heard on the connection.
+  presence.heard(copy);
+  presence.heard(watchdog);
+  presence.questions([took(watchdog)]);
+  assert.deepEqual(presence.onPin("req-took"), copy);
+  assert.equal(presence.colour(copy), 0, "Copy editor has the first colour; the watchdog none");
+  // A third agent heard: the next take names no one until one reads it or replies.
+  presence.heard(agent("Image finder"));
+  presence.questions([took(watchdog), took(watchdog, "req-second")]);
+  assert.deepEqual([presence.onPin("req-took"), presence.onPin("req-second")], [copy, undefined]);
+});
+
+test("once named, a take keeps its agent until done (am-45): another agent's work or a stop meanwhile does not rename it", () => {
+  const { presence, stops } = presenceViews();
+  const watchdog = agent("Watchdog"), copy = agent("Copy editor"), finder = agent("Image finder");
+  // No other agent heard: the watchdog's own name, kept when Copy editor starts work.
+  presence.questions([took(watchdog)]);
+  assert.deepEqual(presence.onPin("req-took"), watchdog);
+  presence.show("index.html", findHero, copy)();
+  presence.questions([took(watchdog)]);
+  assert.deepEqual(presence.onPin("req-took"), watchdog);
+  // Named after Copy editor, then Copy editor stopped and Image finder at work: still Copy editor's.
+  presence.questions([took(watchdog, "req-copy")]);
+  assert.deepEqual(presence.onPin("req-copy"), copy);
+  stops.add(JSON.stringify(copy));
+  presence.show("index.html", findHero, finder)();
+  presence.questions([took(watchdog, "req-copy")]);
+  assert.deepEqual(presence.onPin("req-copy"), copy);
+  // Done and taken again (a follow-up): named afresh.
+  presence.questions([]);
+  presence.questions([took(watchdog, "req-copy")]);
+  assert.deepEqual(presence.onPin("req-copy"), finder);
+});
+
 test("a take counts only its own connection's agents at work (am-45): with none, the pin is the taker's", () => {
   const { presence } = presenceViews();
   presence.show("index.html", findHero, agent("Header writer", "g2"))();

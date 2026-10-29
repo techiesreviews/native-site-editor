@@ -5,8 +5,7 @@ import { editorMounted } from "./drafts";
 import { waitForConnection } from "./mcp-prompt";
 
 // Ticket am-13: a pin is a conversation. Two pins on the hero heading stand side by side; an agent
-// taking them gives each its colour and name (a watchdog's take its own, while no agent of its connection
-// is at work, until one reads it: am-45); done, a pin turns grey with no name; a follow-up sent
+// taking them gives each its colour and name (a watchdog's take its connection's one other agent's, am-45); done, a pin turns grey with no name; a follow-up sent
 // from a done pin's card (Send) reopens it, and the same agent gets it back with the whole thread,
 // the pin in its colour again. A follow-up while the agent still works on a pin reopens it too: the
 // agent's reply to what came before is refused until it takes it again. While it works through a
@@ -123,18 +122,18 @@ test("a pin is a conversation: two pins on one element, the agent's colour on pi
     }).toBe(true);
     await expect(first.locator(".agent-pin__who")).toBeHidden();
 
-    // As the connection prompt has it, a watchdog takes them for the agent that does the work. No agent
-    // of its connection at work yet (get_site is no work), each pin names the watchdog in the first colour
-    // until Copy editor reads it by its id; then Copy editor in the second: a light tint, the colour as
-    // border, its name, the heading's outline in that colour.
-    const copy = await token(page, "agent-presence-2");
+    // As the connection prompt has it, a watchdog takes them for the agent that does the work. Copy editor,
+    // heard on the connection (get_site), is its one other agent: each pin is Copy editor's at once, before
+    // any read, in the first colour (the watchdog takes none): a light tint, the colour as border, its name,
+    // the heading's outline in that colour. Reading them by id keeps it.
+    const copy = await token(page, "agent-presence");
     const taken = (await call("wait_for_requests", { waitSeconds: 10, agent: "Watchdog" })).requests;
     expect(taken.map((request: { text: string }) => request.text)).toEqual(["Make this heading shorter", "Add a subtitle under it"]);
     await expect(first).toHaveAttribute("data-state", "seen");
     await expect(first.locator(".agent-pin__spinner")).toHaveCount(0);
-    await expect(first.locator(".agent-pin__who")).toHaveText("Watchdog");
-    await expect(first).toHaveAttribute("aria-label", "Request 1: Agent working, Watchdog");
-    await expect.poll(() => first.evaluate(pin => getComputedStyle(pin).borderTopColor)).toBe(await token(page, "agent-presence"));
+    await expect(first.locator(".agent-pin__who")).toHaveText("Copy editor");
+    await expect(first).toHaveAttribute("aria-label", "Request 1: Agent working, Copy editor");
+    await expect.poll(() => first.evaluate(pin => getComputedStyle(pin).borderTopColor)).toBe(copy);
     for (const request of taken) await call("get_selection", { request: request.id, agent: "Copy editor" });
     await expect(first.locator(".agent-pin__who")).toHaveText("Copy editor");
     await expect(second.locator(".agent-pin__who")).toHaveText("Copy editor");
@@ -222,8 +221,8 @@ test("a pin is a conversation: two pins on one element, the agent's colour on pi
       await placing.reached;
       await expect(outlines).toHaveCount(1);
       await expect(chips).toHaveCount(0);
-      // Copy editor's outline is in its colour (the second), as its pin is.
-      const copyColour = await srgb(page, "agent-presence-2");
+      // Copy editor's outline is in the first colour, as its pin is.
+      const copyColour = await srgb(page, "agent-presence");
       await expect.poll(() => outlines.first().evaluate(box => getComputedStyle(box).borderTopColor)).toBe(copyColour);
       await call("reply_to_request", { request: italics.id, status: "done", message: "Subtitle in italics.", agent: "Copy editor" });
       await expect(second).toHaveAttribute("data-state", "done");
