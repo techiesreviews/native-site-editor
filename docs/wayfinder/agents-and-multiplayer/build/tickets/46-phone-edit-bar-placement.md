@@ -15,11 +15,11 @@ Ticket 43 decided "the bar never covers the element above it", but no fix was ma
 
 On a phone, when the space above the selected element is full of other content, where should the edit bar go?
 
-- **A. Keep it above (today).** It may cover a line of the element above for as long as the selection lasts. Nothing changes.
+- **A. Keep it above (today).** It may cover a line of the element above for as long as the selection lasts. This reverses ticket 43's decided behaviour ("the bar never covers the element above it").
 - **B. Scroll the page so the bar gets clear space above or below.** The page moves a little when you select something. Where there's no clear space (a dense page), it falls back to A.
 - **C. Dock it to the bottom of the canvas on phones**, like a keyboard toolbar. It never covers page content near the selection, but it sits further from what you selected.
 
-Default if not answered: A, which is easy to change later.
+No default: until Lex chooses, the bar stays as it is today, and 43's decision stays open rather than reversed.
 
 ## Files
 
