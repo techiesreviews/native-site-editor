@@ -2,7 +2,7 @@
 title: The kit moves to its own repo; this editor runs it through the launcher
 type: task (HITL)
 status: open
-assignee:
+assignee: ke-30
 builder: claude
 runs_alone: true
 blocked_by: [17-second-look-per-kind, 29-pr-ci-filters-and-claim-owner, 20-shared-rulebook, 21-launcher-and-update, 22-kit-init, 23-issues-to-ticket-files, 24-combined-score-table, 38-kit-update-previous-holds, 39-launchers-pinned-kit-and-whole-kit, 48-kit-ux-land-branch-and-colour-setting, 49-launcher-names-removed-folder, 51-kit-unit-names-settings-problem, 52-review-notes-do-not-block, 53-done-commits-match-dev, 54-kit-ux-spaced-paths-and-docs, 55-kit-ux-path-before-a-space, 56-located-continuation-joins-its-defect, 57-kit-pr-tests-leave-no-trace, 58-silent-retry-keeps-its-count, 59-builder-specs-capped-and-resume-after-timeout]
@@ -20,6 +20,8 @@ The shared kit lives in its own repo, and this editor becomes its first user thr
 - **This repo after the move:** `scripts/agents/kit` and `scripts/agents/hooks/run.sh` are the launchers (ticket 21); `scripts/agents/project.d/`, `kit.json`, the editor's own helpers and own-command tests stay; a small forwarding `scripts/agents/tickets.mjs` keeps `npm run lint` and the many docs that name it working. `.claude/settings.json` and `.codex/hooks.json` do not change. CI here gets the kit through the launcher's shallow clone.
 - **The machine copy:** the lead runs `kit update` once to fill `~/.local/share/agent-kit/`; until ticket 31 he runs it after each kit merge (README helper decision 13).
 - **From here on** a kit change is a PR into the kit repo through its own `kit pr`; this map's tickets still record the work.
+
+- **Paid skills never go public (Lex, 2026-10-29, "really important"):** no skill file or skill text from `~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills` or plugins ever enters the kit repo or its history (checked 2026-10-29: the editor repo and its history hold none). The kit repo's `.gitignore` ignores `skills/`, `.claude/skills/`, `.agents/`, `**/SKILL.md`; a guard in its CI and in `kit pr` (both repos) fails when a tracked path is a `SKILL.md` or under a `skills/` folder, and, on Lex's machine, when a changed line matches a line from his local skill files. Before the first push, the moved history is checked the same way (`git log --all --name-only`, and the line check over every blob) and the result goes in the Done.
 
 ## Files
 
@@ -42,3 +44,4 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.
 - Lead, 2026-10-28: all blockers closed. `gh repo create techiesreviews/agent-kit --public` failed: "Resource not accessible by personal access token (createRepository)". Waiting for Lex to create the empty public repo on GitHub; then the lead starts the slice.
+- Lex, 2026-10-29: created the empty public repo https://github.com/techiesreviews/agent-kit and asked that paid skills stay hidden and never reach GitHub ("that is really important"); added to Decided behaviour.
