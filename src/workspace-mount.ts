@@ -104,7 +104,8 @@ export interface WorkspaceBuilderPorts {
   menuItems: (target: ElementMenuTarget) => ReturnType<StructureHandler<"menuItems">>;
   fields: () => string;
   moveItems: StructureHandler<"itemsSlots">;
-  tools: () => ComponentTools;
+  /** The component tools, made once their module has loaded. */
+  tools: () => Promise<ComponentTools>;
 }
 
 /** A page's details and the settings dialogs. */
@@ -128,7 +129,7 @@ export interface WorkspaceAccountPorts {
 export interface WorkspaceMountPorts {
   app: HTMLElement;
   element: <T extends HTMLElement>(id: string) => T;
-  appStore: Pick<AppStore, "openFile" | "branch" | "repository" | "snapshot" | "reset">;
+  appStore: Pick<AppStore, "openFile" | "branch" | "repository" | "snapshot" | "reset" | "selection">;
   editorModule: Pick<typeof SourceEditor, "onUnmountedText" | "setViewLoader" | "mountSourceEditor" | "captureHistoryHost" | "recordHistoryAction"
     | "isMounted" | "captureFileModelState" | "closeActiveEditGroup" | "clearDrafts">;
   workspaceSession: Pick<WorkspaceSession, "begin">;
@@ -141,7 +142,7 @@ export interface WorkspaceMountPorts {
   paletteController: Pick<ReturnType<typeof createCommandPaletteController>, "shortcut" | "mount" | "dispose">;
   previewSelection: Pick<PreviewSelectionController, "handlers">;
   pageStructureController: Pick<ReturnType<typeof createPageStructureController>, "nativeFormatActions" | "applyNativeTextEdit" | "textEdits"
-    | "nativeElementMoveAction" | "removeRow" | "isNativeSectionTag" | "moveBlock">;
+    | "nativeElementMoveAction" | "removeRow" | "isNativeSectionTag" | "moveBlock" | "renderEditBar">;
   linkedStyles: Pick<ReturnType<typeof createLinkedStylesController>, "updateBodyStyles" | "clearSources">;
   versions: { readonly view: ReturnType<typeof createVersionView>["view"]; history: Pick<ReturnType<typeof createVersionView>["history"], "destroy"> };
   cards: Cards;
@@ -173,9 +174,12 @@ export interface WorkspaceMountPorts {
   setCurrentPage: (path?: string) => void;
   errorMessage: (error: unknown) => void;
   announce: (text: string) => void;
+  /** Scheduling seam for the component tools' load; production waits two frames and a beat. */
+  afterPaint?: (callback: () => void) => void;
 }
 
 export function createWorkspaceMount(ports: WorkspaceMountPorts) {
+  const afterPaint = ports.afterPaint ?? ((callback: () => void) => void requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(callback, 100))));
   let repositorySelect: HTMLSelectElement;
   let branchSelect: HTMLSelectElement;
   let refreshButton: HTMLButtonElement;
@@ -425,6 +429,22 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     previewElementMenu?.close(false);
     previewElementMenu?.element.remove();
     previewElementMenu = createRowMenu(ports.app);
+    // The component tools never run before the first paint: they load two frames and a beat after it
+    // (the runtime reports the structure just before the frame presents it), for the preview painted;
+    // Page Structure's instance and text rows and the edit bar then draw with them.
+    let toolsDue = false;
+    const toolsAfterPaint = () => {
+      if (toolsDue) return;
+      toolsDue = true;
+      const preview = ports.nativePreview;
+      afterPaint(() => void ports.builder.tools().then((tools) => {
+        if (ports.nativePreview !== preview) { tools.destroy(); return; }
+        ports.componentTools = tools;
+        ports.pageStructure?.refresh();
+        const selection = ports.appStore.selection.value;
+        if (selection) ports.pageStructureController.renderEditBar(selection);
+      }).catch(ports.errorMessage));
+    };
     ports.nativePreview = createNativePreview(ports.element("main"), {
       onShortcut: name => ports.paletteController.shortcut(name),
       onRefusalNoteAction: dismissRefusalNote,
@@ -461,6 +481,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       onNewComponent: (tag, point) => ports.componentTools?.newComponent(tag, point) ?? Promise.resolve(false),
       onStructure: (structure) => {
         if (!structure) { ports.pageStructure?.update(undefined); return; }
+        toolsAfterPaint();
         codePanes.notePreviewPainted();
         ports.site.painted();
         const path = structure.path, source = structure.paintedSource, scope = ports.draftScope();
@@ -558,7 +579,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       announce: ports.announce,
     });
     ports.componentTools?.destroy();
-    ports.componentTools = ports.builder.tools();
+    ports.componentTools = undefined;
     ports.paletteController.mount();
   }
 

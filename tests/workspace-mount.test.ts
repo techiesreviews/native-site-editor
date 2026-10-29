@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { signal } from "@preact/signals-core";
 import type { SourceFile } from "../src/components/source-editor.ts";
+import type { NativePreviewSelection } from "../src/components/native-preview.ts";
 import { draftKey, type DraftScope } from "../src/drafts.ts";
 import type { NativeSite } from "../shared/native-project.ts";
 import type { WorkspaceMountPorts } from "../src/workspace-mount.ts";
@@ -132,6 +133,7 @@ function setup() {
     site: undefined as NativeSite | undefined, holds: true, template: undefined as { template: string; tag: string } | undefined, sources: {} as Record<string, string>, mountedPaths: new Set<string>(), sectionTags: new Set<string>(), typingLanded: true,
     startSite: undefined as ((panel: HTMLElement) => void) | undefined,
     mountListener: undefined as WorkspaceMountPorts["nativeMountListener"],
+    painted: [] as (() => void)[],
   };
   type Editor = WorkspaceMountPorts["editorModule"];
   let unmountedText: Parameters<Editor["onUnmountedText"]>[0] | undefined;
@@ -139,7 +141,7 @@ function setup() {
   let mounted: { content: unknown; file: unknown } | undefined;
   const proof = { isCurrent: () => true };
   const begin = () => ({ load: 1, scope: undefined, holds: () => true, changed: () => undefined });
-  const appStore = { openFile: signal<string | undefined>(undefined), branch: signal<string | undefined>(undefined), repository: signal<Repository | undefined>(undefined), snapshot: signal<Snapshot | undefined>(undefined), reset: say("appStore.reset") };
+  const appStore = { openFile: signal<string | undefined>(undefined), branch: signal<string | undefined>(undefined), repository: signal<Repository | undefined>(undefined), snapshot: signal<Snapshot | undefined>(undefined), selection: signal<NativePreviewSelection | undefined>(undefined), reset: say("appStore.reset") };
   const ports = {
     app: fake<HTMLElement>(app),
     element: <T extends HTMLElement>(id: string) => fake<T>(byId(id)),
@@ -175,6 +177,7 @@ function setup() {
       nativeFormatActions: {}, applyNativeTextEdit: sayAsync("applyNativeTextEdit"), textEdits: async () => {}, nativeElementMoveAction: undefined,
       removeRow: () => false, isNativeSectionTag: (tag: string) => state.sectionTags.has(tag),
       moveBlock: (_at, _step, options) => { calls.push(`moveBlock ${options.stale}`); return "stayed" as const; },
+      renderEditBar: (selection: NativePreviewSelection) => { calls.push(`renderEditBar ${selection.path}`); },
     } satisfies WorkspaceMountPorts["pageStructureController"],
     linkedStyles: { updateBodyStyles: say("updateBodyStyles"), clearSources: say("linkedStyles.clearSources") } satisfies WorkspaceMountPorts["linkedStyles"],
     versions: { view: undefined, history: { destroy: say("history.destroy") } } satisfies WorkspaceMountPorts["versions"],
@@ -213,6 +216,8 @@ function setup() {
     setCurrentPage: say("setCurrentPage"),
     errorMessage: (error: unknown) => { calls.push(`error ${error instanceof Error ? error.message : String(error)}`); },
     announce: say("announce"),
+    // The component tools' wait after the first paint, run when a test lets it.
+    afterPaint: (callback: () => void) => { state.painted.push(callback); },
     site: {
       active: () => state.native,
       deactivate: say("deactivateNative"),
@@ -239,7 +244,7 @@ function setup() {
       menuItems: () => [{ label: "Remove", run: say("remove") }],
       fields: () => "",
       moveItems: () => () => false,
-      tools: () => { calls.push("mountComponentTools"); return fake<NonNullable<WorkspaceMountPorts["componentTools"]>>({
+      tools: async () => { calls.push("mountComponentTools"); return fake<NonNullable<WorkspaceMountPorts["componentTools"]>>({
         destroy: say("componentTools.destroy"), refresh: say("componentTools.refresh"),
         mode: { now: () => state.template, opened: () => false, sync: say("mode.sync") },
       }); },
@@ -256,14 +261,30 @@ function setup() {
   return { workspace, ports, state, calls, appStore, byId, proof, unmounted: () => unmountedText, viewLoader: () => viewLoader, mounted: () => mounted };
 }
 const flush = async () => { for (let i = 0; i < 5; i++) await new Promise<void>((resolve) => setImmediate(resolve)); };
+// The preview reports its first structure, and the wait after the paint ends: the component tools load.
+async function paint(state: ReturnType<typeof setup>["state"]) {
+  (last("preview").options as { onStructure(structure: unknown): void }).onStructure({ path: "index.html", paintedSource: "A", items: [] });
+  for (const run of state.painted.splice(0)) run();
+  await flush();
+}
 const directory = fake<Directory>({ entries: [{}, {}] });
 
-test("mountWorkspace hands the preview, Page Structure and the component tools to the host through its setters", () => {
-  const { workspace, state, calls, byId } = setup();
+test("mountWorkspace hands the preview, Page Structure and the component tools to the host through its setters", async () => {
+  const { workspace, state, calls, byId, appStore } = setup();
   workspace.mountWorkspace();
   assert.equal(state.nativePreview, last("preview").value);
   assert.equal(state.pageStructure, last("structure").value);
+  // The component tools load only after the first paint; then Page Structure and the edit bar draw with them.
+  assert.equal(state.componentTools, undefined);
+  assert.ok(!calls.includes("mountComponentTools"));
+  appStore.selection.value = fake<NativePreviewSelection>({ path: "index.html" });
+  await paint(state);
   assert.ok(state.componentTools);
+  assert.ok(last("structure").calls.includes("refresh"));
+  assert.ok(calls.includes("renderEditBar index.html"));
+  // A second paint loads nothing more.
+  await paint(state);
+  assert.equal(calls.filter((call) => call === "mountComponentTools").length, 1);
   assert.equal(workspace.content, byId("content"));
   assert.equal(workspace.files, byId("files"));
   assert.equal(workspace.repositorySelect, byId("repository"));
@@ -271,7 +292,7 @@ test("mountWorkspace hands the preview, Page Structure and the component tools t
   assert.equal(workspace.repositoryMenu, last("menu").value);
   assert.equal(workspace.siteActions, last("siteActions").value);
   assert.equal(workspace.sidebarResize, last("sidebar").value);
-  assert.deepEqual(calls.filter((call) => /mountExplorer|mountComponentTools|palette.mount/.test(call)), ["mountExplorer", "mountComponentTools", "palette.mount"]);
+  assert.deepEqual(calls.filter((call) => /mountExplorer|mountComponentTools|palette.mount/.test(call)), ["mountExplorer", "palette.mount", "mountComponentTools"]);
   // A remount leaves nothing of the first behind.
   const first = last("preview"), tools = state.componentTools;
   workspace.mountWorkspace();
@@ -281,8 +302,17 @@ test("mountWorkspace hands the preview, Page Structure and the component tools t
   assert.deepEqual(menus[0].calls, ["close"]);
   for (const listener of windowListeners.get("blur") ?? []) listener();
   assert.deepEqual(menus.at(-1)!.calls, ["close"]);
-  assert.notEqual(state.componentTools, tools);
+  assert.equal(state.componentTools, undefined);
   assert.ok(calls.includes("componentTools.destroy"));
+  // Tools that land after a remount belong to the preview replaced: they go, and the new preview's load its own.
+  (last("preview").options as { onStructure(structure: unknown): void }).onStructure({ path: "index.html", paintedSource: "A", items: [] });
+  workspace.mountWorkspace();
+  for (const run of state.painted.splice(0)) run();
+  await flush();
+  assert.equal(state.componentTools, undefined);
+  assert.equal(calls.filter((call) => call === "componentTools.destroy").length, 2);
+  await paint(state);
+  assert.ok(state.componentTools && state.componentTools !== tools);
 });
 
 test("choosing a branch sets it before the snapshot loads, and hands over to the explorer", () => {
@@ -534,6 +564,7 @@ test("a page shown by following a link redraws the preview when it fell behind, 
 test("a block dropped from the rail is refused while typing has not landed, or once Edit component mode was left", async () => {
   const { workspace, state, calls } = setup();
   workspace.mountWorkspace();
+  await paint(state);
   const rail = last("rail").options as { drag(kind: string): Promise<unknown> };
   const target = { container: { path: [0], kind: "flow" }, index: 0 };
   const dropOf = () => (last("preview").args.get("blockDrag")![1] as { drop: (target: unknown, where: string, painted: string, pointer: { x: number; y: number }) => void }).drop;
