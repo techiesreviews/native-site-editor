@@ -40,7 +40,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 ## Done (2026-10-29)
 
-1. A stale page command looks up the agent's read before the tab keeps the page's text now (`src/agent-tools-edit.ts` `prepareNow`): with the text cache full and that read oldest, its element ids are still mapped to the page now.
+1. A stale page command looks up the agent's read before the tab keeps the page's text now (`src/agent-tools-edit.ts` `prepareNow`): with the text cache full and that read oldest, its element ids are still mapped to the page now. The agent's reads are looked up once per edit and reused on every attempt, so a retry after a race (whose first attempt kept the page's text and let the read go) maps them too, for `edit_file` as for page commands.
 2. Words found a different number of times now than in the read (`shared/agent-edit.ts` `wordsMoved`, marked `recounted`) are refused with no part and "Read the file again.", so neither a unique nor an `all` retry starts from the unchanged original or takes a copy added since. Words gone altogether still get their part as before.
 3. A clash whose part is cut at `PART_LIMIT` says to read the file again instead of retrying with `oldText` from `part.text`.
 4. `catchUpOf` (`shared/agent-read.ts`) cuts the list to `CATCH_UP_FILES` and 2 KB first, works out sections only for the files left, then cuts again with them.
@@ -55,3 +55,7 @@ Tests: one per item in `tests/agent-part.test.ts` (items 2 to 5) and `tests/agen
 - `RESULT: ok doctor 11/11 checks passed`; `npm run check` and `npm run lint` pass.
 
 Feature list: no change (only what agents are told in refusals and catch-ups changes; nothing the user sees).
+
+Review decisions:
+- Round 1: added the `Commits:` line and tests for a copy removed since the read and for the catch-up's second cut. Declined a new test for words gone altogether, since ticket 10's "the same words changed meanwhile are refused with the part as it is now" covers it.
+- Round 2: fixed the retry after a race losing the agent's read (reads looked up once per edit), with a test that fails without it (40/41); `READ_TEXTS` is exported so the cache tests follow its cap.
