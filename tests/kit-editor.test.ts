@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 // @ts-expect-error This editor's helper is plain JavaScript without declarations.
 import { kitHomeFolder } from "../scripts/agents/kit-home.mjs";
 import { toolingHash } from "../scripts/agents/shots/compare.mjs";
-import { kitEnv } from "./support/kit-env.ts";
+import { kitEnv, triedKit } from "./support/kit-env.ts";
 
 // This editor runs the shared kit through its launcher (kitchen-everywhere 30). The kit's own tests live in the
 // agent-kit repo; these check what is this editor's: its own commands, its docs into the shared rulebook, the
@@ -61,30 +61,77 @@ test("kit rulebook prints the kit's shared rulebook, then this editor's extras",
   assert.equal(JSON.parse(read("scripts/agents/kit.json")).rulebookExtras, extras);
 });
 
-// A kit tried by hand or in the kit's own CI (a KIT_HOME the launcher did not pick) may move or rename what these
-// docs link to; the links are checked against the kit the launcher picks (main's), so neither gate blocks the other.
-const tryingKit = Boolean(process.env.KIT_HOME) && process.env.KIT_HOME !== process.env.KIT_HOME_PINNED;
 const kitUrl = "https://github.com/techiesreviews/agent-kit/blob/main/";
+const agentDocs = readdirSync("docs/agents").filter(name => name.endsWith(".md")).map(name => `docs/agents/${name}`);
+const links = (path: string) => [...read(path).matchAll(/\]\(([^)\s]+)\)/g)].map(([, target]) => target);
 
-test("every link from this editor's docs into the kit names a file and heading it has; relative links resolve", { skip: tryingKit && "a kit tried through KIT_HOME" }, () => {
-  const docs = readdirSync("docs/agents").filter(name => name.endsWith(".md")).map(name => `docs/agents/${name}`);
+// Links from this editor's docs into the kit that `kit` lacks. A tried kit (a KIT_HOME the launcher did not pick:
+// a kit branch by hand, the kit's own CI) is checked against the kit the launcher picks (`main`): it fails only for
+// a file or heading `main` has, so a kit change that removes one this editor links to stops in the kit's gate, and
+// a link to one new on the branch cannot deadlock the two gates.
+function kitLinkProblems(kitFolder: string, main?: string, docs = agentDocs): string[] {
+  const resolves = (folder: string, file: string, anchor?: string) => {
+    const path = join(folder, file);
+    return existsSync(path) && (!anchor || !file.endsWith(".md") || anchors(readFileSync(path, "utf8")).includes(anchor));
+  };
+  return docs.flatMap(path => links(path).filter(target => target.startsWith(kitUrl)).flatMap(target => {
+    const [file, anchor] = target.slice(kitUrl.length).split("#");
+    return resolves(kitFolder, file, anchor) || (main && !resolves(main, file, anchor)) ? [] : [`${path}: the kit has no ${anchor && existsSync(join(kitFolder, file)) ? `heading for ${file}#${anchor}` : file}`];
+  }));
+}
+
+// The kit the launcher picks without a tried KIT_HOME; none when it is the tried kit (the kit's CI points the
+// machine copy at the changed kit too), so the tried kit is then checked in full.
+function mainKit(tried: string): string | undefined {
+  try {
+    const main = kitHomeFolder(kitEnv({ ...process.env, KIT_HOME: undefined }));
+    return realpathSync(main) === realpathSync(tried) ? undefined : main;
+  } catch { return undefined; }
+}
+
+test("every link from this editor's docs into the kit names a file and heading it has; relative links resolve", () => {
+  const tried = triedKit();
+  assert.deepEqual(kitLinkProblems(home, tried && mainKit(tried)), []);
   const relative = [extras, pointer, "docs/agents/runner.md", "docs/agents/agent-scripts.md"];
-  for (const path of docs) {
-    for (const [, target] of read(path).matchAll(/\]\(([^)\s]+)\)/g)) {
+  for (const path of relative) {
+    for (const target of links(path)) {
       const [file, anchor] = target.split("#");
-      if (file.startsWith(kitUrl)) {
-        const inKit = join(home, file.slice(kitUrl.length));
-        assert.ok(existsSync(inKit), `${path}: the kit has no ${file.slice(kitUrl.length)}`);
-        if (anchor && file.endsWith(".md")) assert.ok(anchors(readFileSync(inKit, "utf8")).includes(anchor), `${path}: the kit has no heading for ${target}`);
-        continue;
-      }
       // Relative links are checked in the docs that link into the rulebook (others hold placeholders).
-      if (/^https?:/.test(target) || !relative.includes(path)) continue;
+      if (/^https?:/.test(target)) continue;
       const full = file ? resolve(dirname(path), file) : resolve(path);
       assert.ok(existsSync(full), `${path}: missing ${target}`);
       if (anchor) assert.ok(anchors(readFileSync(full, "utf8")).includes(anchor), `${path}: no heading for ${target}`);
     }
   }
+});
+
+test("a tried kit that drops a heading this editor links to fails the link check; one new on the branch does not", (t) => {
+  const directory = temp(t), doc = join(directory, "runner.md");
+  writeFileSync(doc, `[Hand-out](${kitUrl}docs/kitchen.md#5-hand-out), [new](${kitUrl}docs/kitchen.md#6-build), [kit](${kitUrl}kit-lib.mjs#L1)\n`);
+  const kitWith = (name: string, rulebook: string) => {
+    mkdirSync(join(directory, name, "docs"), { recursive: true });
+    writeFileSync(join(directory, name, "docs/kitchen.md"), rulebook);
+    writeFileSync(join(directory, name, "kit-lib.mjs"), "");
+    return join(directory, name);
+  };
+  const main = kitWith("main", "# The kitchen\n### 5. Hand-out\n");
+  const problems = (tried: string, against?: string) => kitLinkProblems(tried, against, [doc]);
+  const dropped = kitWith("dropped", "# The kitchen\n### 6. Build\n");
+  assert.deepEqual(problems(dropped, main), [`${doc}: the kit has no heading for docs/kitchen.md#5-hand-out`]);
+  // An old anchor kept for a renamed heading passes; #6-build, new on the branch, is not asked of main.
+  assert.deepEqual(problems(kitWith("renamed", '# The kitchen\n<a id="5-hand-out"></a>\n### 5. Handing out\n### 6. Build\n'), main), []);
+  // With no other kit to compare with, the tried kit is checked in full.
+  assert.deepEqual(problems(main), [`${doc}: the kit has no heading for docs/kitchen.md#6-build`]);
+  // A file main has and the branch removed fails too.
+  rmSync(join(dropped, "kit-lib.mjs"));
+  assert.deepEqual(problems(dropped, main).at(-1), `${doc}: the kit has no kit-lib.mjs`);
+});
+
+test("a front door's own KIT_HOME and a pinned one are not a tried kit; a person's is", () => {
+  assert.equal(triedKit({ KIT_HOME: "/x", KIT_HOME_DEFAULT: "/x" }), undefined);
+  assert.equal(triedKit({ KIT_HOME: "/x", KIT_HOME_PINNED: "/x" }), undefined);
+  assert.equal(triedKit({}), undefined);
+  assert.equal(triedKit({ KIT_HOME: "/x", KIT_HOME_PINNED: "/y" }), "/x");
 });
 
 test("the pointer keeps every heading the old kitchen.md had, each linking to the shared part", () => {
@@ -393,4 +440,15 @@ test("kit shots without KIT_LIB hands the kit it picked to its Node helpers", (t
   assert.deepEqual([person.status, person.stdout], [0, `${fake}\nunset\n`]);
   const pinned = spawnSync(resolve("scripts/agents/project.d/shots"), ["--help"], { env: { ...env, KIT_HOME: fake, KIT_HOME_PINNED: fake, XDG_DATA_HOME: other }, encoding: "utf8" });
   assert.deepEqual([pinned.status, pinned.stdout], [0, `${fake}\n${fake}\n`]);
+  // A front door's own KIT_HOME is picked again, as the forwarders pick it: the machine copy, with its marker.
+  const machine = join(directory, "machine");
+  mkdirSync(machine);
+  writeFileSync(join(machine, "kit"), "#!/usr/bin/env bash\n"); chmodSync(join(machine, "kit"), 0o755);
+  writeFileSync(join(machine, "kit-lib.sh"), readFileSync(join(fake, "kit-lib.sh"), "utf8"));
+  const data = join(directory, "machine-data"), picked = realpathSync(machine);
+  mkdirSync(join(data, "agent-kit"), { recursive: true });
+  symlinkSync(machine, join(data, "agent-kit/current"));
+  const { KIT_HOME_DEFAULT: _default, ...plain } = env;
+  const frontDoor = spawnSync(resolve("scripts/agents/project.d/shots"), ["--help"], { env: { ...plain, KIT_HOME: fake, KIT_HOME_DEFAULT: fake, XDG_DATA_HOME: data }, encoding: "utf8" });
+  assert.deepEqual([frontDoor.status, frontDoor.stdout], [0, `${picked}\n${picked}\n`]);
 });
