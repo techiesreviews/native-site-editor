@@ -115,8 +115,12 @@ export function createRequestTools(ports: RequestPorts) {
       throw new HttpError(409, "The request changed meanwhile (the user answered or dismissed it). Read it again with get_selection before replying.");
     return ok({ id: result.id, state: result.state });
   }
-  async function find(command: AgentRequests) {
-    const { result } = requestOperation(await ports.list(), { type: "request", id: command.args.request, ...scope }) as { result: AgentRequest };
+  async function find(command: AgentRequests, current: () => boolean, owner?: number) {
+    const list = await ports.list(), read = structuredClone(list.find(request => request.id === command.args.request));
+    const { changed, result } = requestOperation(list, { type: "request", id: command.args.request, by: agentWho(command), ...scope }) as
+      { changed: boolean; result: AgentRequest };
+    // Who reads it is on it, and has read the user's latest: kept when it did not change meanwhile (else its reply asks it to read again).
+    if (changed && current()) await ports.save(result, unchangedSince(read!, current), owner);
     return ok(requestForAgent(result));
   }
   return {
@@ -127,7 +131,7 @@ export function createRequestTools(ports: RequestPorts) {
         signal?.throwIfAborted();
         if (command.tool === "wait_for_requests") return await wait(command, live, deadline, owner, signal);
         if (command.tool === "reply_to_request") return await reply(command, live, owner);
-        if (command.tool === "get_request") return await find(command);
+        if (command.tool === "get_request") return await find(command, live, owner);
         return { ok: false, message: "Unknown request tool." };
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : "The editor could not read its requests." };

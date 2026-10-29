@@ -43,7 +43,7 @@ interface Workspace { repoId?: number; branch?: string }
 type RequestAction =
   | { type: "ask"; request: AgentRequest }
   | { type: "take-requests"; grantId?: string; all?: boolean; by?: AgentWho; now?: number } & Workspace
-  | { type: "request"; id?: string } & Workspace
+  | { type: "request"; id?: string; by?: AgentWho } & Workspace
   | { type: "reply"; id?: string; status?: string; message?: string; requestIds?: unknown; by?: AgentWho } & Workspace
   | { type: "answer"; id?: string; text?: string; now?: number }
   | { type: "dismiss"; id?: string };
@@ -63,14 +63,14 @@ function addMessage(request: AgentRequest, message: AgentRequestMessage) {
 }
 
 const waiting = (request: AgentRequest) => request.state === "open" || request.state === "seen";
-// Waiting again after the user added to it: their message is the thread's last, after the first.
-const reopened = (request: AgentRequest) => {
-  const thread = requestThread(request);
-  return request.state === "open" && thread.length > 1 && thread[thread.length - 1].from === "user";
-};
-/** A reply to a request the user added to since it was taken: nothing is recorded. */
+const whoKey = (who: AgentWho | undefined) => JSON.stringify([who?.grant ?? "", who?.name ?? ""]);
+// `who` has read the user's latest message (by a take, or by the request's id).
+function read(request: AgentRequest, who: AgentWho | undefined) {
+  if (request.readBy && !request.readBy.includes(whoKey(who))) request.readBy = [...request.readBy, whoKey(who)].slice(-RETURNED_TO);
+}
+/** A reply from an agent that has not read the user's latest message: nothing is recorded. */
 const FOLLOWED_UP =
-  "The user added to this request meanwhile (their message is last in its thread). Nothing was recorded: call wait_for_requests, which returns it to you with the whole thread, then reply to all of it.";
+  "The user added to this request since you last read it (their message is last in its thread). Nothing was recorded: read it with get_selection (request) and reply to all of it.";
 // Reopened for another connection's agent, which has it to itself a while yet.
 const heldFromOthers = (request: AgentRequest, grantId: string, now: number) =>
   request.heldUntil !== undefined && now < request.heldUntil && request.agent !== undefined && request.agent.grant !== grantId;
@@ -84,7 +84,7 @@ export function requestSummary(request: AgentRequest) {
 
 /** A request as an agent reads it: with its whole thread, the user's answers included. */
 export function requestForAgent(request: AgentRequest) {
-  const { returnedTo: _returned, repoId: _repoId, branch: _branch, agent: _agent, heldUntil: _held, ...rest } = request;
+  const { returnedTo: _returned, repoId: _repoId, branch: _branch, agent: _agent, agentTook: _took, heldUntil: _held, readBy: _readBy, ...rest } = request;
   // Who replied is the editor's (the replying agent's presence): agents read the reply alone.
   const reply = request.reply && (({ by: _by, ...told }) => told)(request.reply);
   return { ...rest, ...(reply ? { reply } : {}), thread: requestThread(request) };
@@ -110,8 +110,9 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
   if (type === "take-requests") {
     // The waiting requests of this repository this connection has not had
     // yet (all of them with `all`), oldest first; each is seen from now. The
-    // first to take one waiting is the agent on it, unless it was reopened
-    // for this connection's agent (who keeps it).
+    // first to take one waiting is on it until an agent reads it by its id
+    // (a watchdog takes requests for the agents that do the work), unless it
+    // was reopened for this connection's agent (who keeps it).
     const grantId = String(action.grantId ?? "");
     const now = action.now ?? Date.now();
     const taken: AgentRequest[] = [];
@@ -125,7 +126,11 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
         heldUntil = Math.min(heldUntil ?? Infinity, request.heldUntil!);
         continue;
       }
-      if (request.state === "open" && action.by && request.agent?.grant !== grantId) request.agent = action.by;
+      if (request.state === "open" && action.by && request.agent?.grant !== grantId) {
+        request.agent = action.by;
+        request.agentTook = true;
+      }
+      read(request, action.by);
       delete request.heldUntil;
       request.state = "seen";
       request.seenAt ??= now;
@@ -137,16 +142,24 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
   const request = list.find((item) => item.id === action.id);
   if (type === "request") {
     if (!request || !inWorkspace(request, action)) throw new HttpError(404, "No such request in the site and branch this connection works on.");
-    return { list, changed: false, result: request };
+    // An agent reading it by its id works on it: it is on it (the first to, after a take), and has read the user's latest.
+    const was = JSON.stringify(request);
+    if (action.by && request.state === "seen" && request.agentTook) {
+      request.agent = action.by;
+      delete request.agentTook;
+    }
+    read(request, action.by);
+    return { list, changed: JSON.stringify(request) !== was, result: request };
   }
   if (type === "reply") {
     if (!request || !inWorkspace(request, action)) throw new HttpError(404, "No such request in the site and branch this connection works on.");
     if (request.state === "dismissed") throw new HttpError(409, "The user dismissed this request.");
     if (action.status !== "done" && action.status !== "answered" && action.status !== "question")
       throw new HttpError(400, "Reply with done, answered or question.");
-    // Reopened by the user's message since it was taken (a follow-up while an agent worked on it): a reply
-    // to what came before would close it with their message unread, so the agent takes it again first.
-    if (reopened(request)) throw new HttpError(409, FOLLOWED_UP);
+    // The user added to it since this agent last read it (a follow-up while it worked, taken since by
+    // another of its connection's agents, or not taken yet): a reply to what came before would close
+    // it with their message unread, so the agent reads it first.
+    if (request.readBy && !request.readBy.includes(whoKey(action.by))) throw new HttpError(409, FOLLOWED_UP);
     const now = Date.now();
     request.state = action.status;
     request.seenAt ??= now;
@@ -159,6 +172,8 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
       ...(action.by ? { by: action.by } : {}),
     };
     if (action.by) request.agent = action.by;
+    delete request.agentTook;
+    delete request.readBy;
     delete request.heldUntil;
     addMessage(request, {
       from: "agent", text: request.reply.message, at: now, status: action.status,
@@ -180,6 +195,7 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
     delete request.reply;
     delete request.seenAt;
     delete request.returnedTo;
+    request.readBy = [];
     if (request.agent) request.heldUntil = now + FOLLOW_UP_HOLD_MS;
     return { list, changed: true, result: request };
   }

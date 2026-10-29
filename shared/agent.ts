@@ -241,8 +241,14 @@ export interface AgentRequest {
   returnedTo?: string[];
   reply?: { status: AgentReplyStatus; message: string; at: number; requestIds?: string[]; by?: AgentWho };
   thread?: AgentRequestMessage[];
-  /** The agent on it (ticket am-13): the first to take it while it waited, then whoever replied; its pin wears its colour and name. */
+  /** The agent on it (ticket am-13): the first to read it by its id or reply, else (`agentTook`) the one whose
+   * wait took it, as a watchdog takes requests for the agents that do the work; its pin wears its colour and name. */
   agent?: AgentWho;
+  /** `agent` is only the one whose wait took it: the first agent to read it by its id is on it instead. */
+  agentTook?: boolean;
+  /** While the user's latest message waits for an answer: the agents (JSON [grant, name]) that read it since,
+   * by a take or by its id; only they can reply. None before the user first adds to the request. */
+  readBy?: string[];
   /** Reopened by the user's follow-up: until this time only `agent`'s connection gets it, then every connection does. */
   heldUntil?: number;
 }

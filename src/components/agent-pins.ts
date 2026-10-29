@@ -116,6 +116,7 @@ const HOVER_CLOSE = 200;
 const CARD_GAP = 6;
 const CARD_MARGIN = 8;
 const sizesItself = typeof CSS !== "undefined" && CSS.supports("field-sizing", "content");
+const touch = matchMedia("(pointer: coarse)");
 
 const sameRect = (a: SelectionRect, b: SelectionRect) =>
   Math.abs(a.top - b.top) < 1 && Math.abs(a.left - b.left) < 1 && Math.abs(a.width - b.width) < 1 && Math.abs(a.height - b.height) < 1;
@@ -430,9 +431,13 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     clearTimeout(closing);
     closing = setTimeout(() => close(false), HOVER_CLOSE);
   }
-  // The card's message box (a question's first in the tray), else its first button.
+  // The card's message box (a question's first in the tray), else its first action. On touch, the box of
+  // a question only: a pin tapped to read it does not bring up the keyboard over the card and the page.
   function focusCard() {
-    (card.querySelector<HTMLElement>(".agent-pin-card__answer-input") ?? card.querySelector<HTMLButtonElement>("button"))?.focus();
+    const box = touch.matches
+      ? card.querySelector<HTMLElement>(".agent-pin-card__request[data-state=\"question\"] .agent-pin-card__answer-input")
+      : card.querySelector<HTMLElement>(".agent-pin-card__answer-input");
+    (box ?? card.querySelector<HTMLButtonElement>(".agent-pin-card__actions button") ?? card.querySelector<HTMLButtonElement>("button"))?.focus();
   }
   function toggleTray() {
     if (openId && openFromTray) {

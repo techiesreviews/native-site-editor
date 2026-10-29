@@ -11,7 +11,8 @@ import { createNativeSiteRuntime } from "../src/native-site-runtime.ts";
 import type { Stamp } from "../src/guarded-edit.ts";
 import type { NativePreviewSelection } from "../src/components/native-preview.ts";
 import type { MediaPin } from "../src/controllers/media-controller.ts";
-import type { AgentCommand } from "../shared/agent.ts";
+import type { AgentCommand, AgentWho } from "../shared/agent.ts";
+import type { PinRequest } from "../src/components/agent-pins.ts";
 import { resolveNativeProject } from "../shared/native-project.ts";
 import type { Repository, SessionInfo, Snapshot } from "../shared/types.ts";
 
@@ -64,7 +65,7 @@ function setup(options: { draftScope?: () => DraftScope | undefined } = {}) {
     setupController: { noteAgent: record("noteAgent") }, pageStructureController: { renderEditBar: record("renderEditBar") },
     mediaPorts: { pin: () => { pins.push("pin"); return PIN; } },
     workspace: { activeFileContext: null, repositoryMenu: { setQuestions: record("questions"), close: record("close menu") } },
-    agentPresence: { questions: record("questioned"), colour: () => 0, atWork: () => [{ name: "Copy editor", file: "index.html", section: "1.0" }], agents: () => [], stop: () => {}, stopped: () => false, listen: () => () => {} },
+    agentPresence: { questions: record("questioned"), colour: (who: AgentWho) => { calls.push(`colour ${who.name}`); return 2; }, atWork: () => [{ name: "Copy editor", file: "index.html", section: "1.0" }], agents: () => [], stop: () => {}, stopped: () => false, listen: () => () => {} },
     nativeTextIndexGate: { key: () => "k", indexed: () => late.indexed, settled: async () => true, ensure: async () => { calls.push("index"); late.indexed = true; return undefined; } },
     get info() { return late.info; },
     get nativePreview() { return late.preview ? { route: () => "/", setRequests: record("requests"), showRequest: record("show") } : undefined; },
@@ -178,4 +179,16 @@ test("before the preview exists, requests and a shown request wait, and the sele
   appStore.selection.value = SELECTION;
   assert.ok(await options.context());
   assert.deepEqual([inputs[0].native?.selection?.path, inputs[0].native?.selection?.route], ["index.html", undefined]);
+});
+
+test("only a pin an agent works on asks for its colour (am-13): finished ones of earlier sessions take no place in the order of arrival", async () => {
+  const { host, calls, menus } = setup();
+  await host.agentController.ensure();
+  const request = (id: string, state: string, name: string) => ({ id, text: id, state, createdAt: 1, repoId: 1, branch: "main",
+    element: { file: "index.html", route: "/", id: "1.0", tag: "h1" }, agent: { grant: `grant-${name}`, name } });
+  // eslint-disable-next-line no-restricted-syntax -- the requests as the menu tells them, the fields the host reads.
+  menus[0].onRequests?.([request("req-old", "done", "Old helper"), request("req-now", "seen", "Copy editor")] as unknown as PinRequest[]);
+  assert.deepEqual(calls.filter(call => call.startsWith("colour")), ["colour Copy editor"]);
+  const told = JSON.parse(calls.find(call => call.startsWith("requests "))!.slice("requests ".length)) as { id: string; colour?: number }[];
+  assert.deepEqual(told.map(item => [item.id, item.colour]), [["req-old", undefined], ["req-now", 2]]);
 });

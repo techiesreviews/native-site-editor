@@ -255,7 +255,7 @@ test("a follow-up while an agent works on a request (am-13): its reply to what c
   b.ask(followed.request);
   const refused = await b.run("reply_to_request", { request: "req-x", status: "done", message: "Done." }, undefined, undefined, "grant-a", "Copy editor");
   assert.equal(refused.ok, false);
-  assert.match((refused as { message: string }).message, /added to this request meanwhile.*wait_for_requests/);
+  assert.match((refused as { message: string }).message, /added to this request since you last read it.*get_selection/);
   assert.equal(b.kept.get("req-x")!.state, "open", "nothing recorded");
   const again = await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"));
   assert.deepEqual(ids(again), ["req-x"]);
@@ -281,6 +281,47 @@ test("a wait on another connection held while a request is held for its agent lo
   b.clock.advance(5000);
   const value = await b.value(pending);
   assert.deepEqual(value.requests.map((item: AgentRequest) => item.id), ["req-h"]);
+});
+
+test("a watchdog takes requests for the agents that do the work (am-13): the first to read one by its id is on its pin", async () => {
+  const b = browser();
+  b.ask(asked("req-w"));
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Watchdog"));
+  // Taken: the watchdog is on it until an agent reads it.
+  assert.deepEqual(b.kept.get("req-w")!.agent, { grant: "grant-a", name: "Watchdog" });
+  assert.equal(b.kept.get("req-w")!.agentTook, true);
+  const read = await b.value(b.run("get_request", { request: "req-w" }, undefined, undefined, "grant-a", "Copy editor"));
+  assert.equal("agentTook" in read || "readBy" in read || "agent" in read, false, "agents read no editor bookkeeping");
+  assert.deepEqual(b.kept.get("req-w")!.agent, { grant: "grant-a", name: "Copy editor" }, "its pin and colour are Copy editor's (agent-presence pins its outline)");
+  assert.equal(b.kept.get("req-w")!.agentTook, undefined);
+  // A second reader does not take it over.
+  await b.value(b.run("get_request", { request: "req-w" }, undefined, undefined, "grant-a", "Link checker"));
+  assert.deepEqual(b.kept.get("req-w")!.agent, { grant: "grant-a", name: "Copy editor" });
+  await b.value(b.run("reply_to_request", { request: "req-w", status: "done", message: "Done." }, undefined, undefined, "grant-a", "Copy editor"));
+  assert.deepEqual(b.kept.get("req-w")!.agent, { grant: "grant-a", name: "Copy editor" });
+});
+
+test("a stale reply after the watchdog took the follow-up (am-13): refused until the agent reads it", async () => {
+  const b = browser();
+  b.ask(asked("req-s"));
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Watchdog"));
+  await b.value(b.run("get_request", { request: "req-s" }, undefined, undefined, "grant-a", "Copy editor"));
+  // The user follows up while Copy editor works; the watchdog's held wait takes it at once (seen again).
+  b.ask(answerRequest([structuredClone(b.kept.get("req-s")!)], "req-s", "more", b.clock.now()).request);
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Watchdog"));
+  assert.equal(b.kept.get("req-s")!.state, "seen");
+  assert.deepEqual(b.kept.get("req-s")!.agent, { grant: "grant-a", name: "Copy editor" }, "its connection keeps Copy editor on it");
+  // Copy editor replies to the first instruction, the follow-up unread: refused, nothing recorded.
+  const stale = await b.run("reply_to_request", { request: "req-s", status: "done", message: "Done." }, undefined, undefined, "grant-a", "Copy editor");
+  assert.equal(stale.ok, false);
+  assert.match((stale as { message: string }).message, /since you last read it/);
+  assert.equal(b.kept.get("req-s")!.state, "seen");
+  // Read, then answered: done, its thread ending with the reply.
+  const read = await b.value(b.run("get_request", { request: "req-s" }, undefined, undefined, "grant-a", "Copy editor"));
+  assert.equal(read.thread.at(-1).text, "more");
+  await b.value(b.run("reply_to_request", { request: "req-s", status: "done", message: "Did both." }, undefined, undefined, "grant-a", "Copy editor"));
+  assert.equal(b.kept.get("req-s")!.state, "done");
+  assert.equal(b.kept.get("req-s")!.readBy, undefined);
 });
 
 function relayFixture() {

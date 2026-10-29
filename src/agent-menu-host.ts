@@ -106,10 +106,13 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
       reload: snapshot => agentCommands.reload(snapshot),
       // Ask agent shows in the edit bar while an agent is connected.
       onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
-      // A pin an agent is on wears its colour, the one its outline and dots have (ticket am-13).
+      // A pin an agent works on wears its colour, the one its outline and dots have (ticket am-13). Only those:
+      // asking for a colour gives an agent its place in the order of arrival, which those of earlier sessions
+      // (on finished requests) must not take.
       onRequests: (requests) => {
         agentPresence.questions(requests);
-        ports.nativePreview?.setRequests(requests.map(request => request.agent ? { ...request, colour: agentPresence.colour(request.agent) } : request));
+        ports.nativePreview?.setRequests(requests.map(request => request.state === "seen" && request.agent
+          ? { ...request, colour: agentPresence.colour(request.agent) } : request));
       },
       onQuestions: (count) => workspace.repositoryMenu?.setQuestions(count),
       // A question in the selector's list: its pin, card open, answer box focused.
