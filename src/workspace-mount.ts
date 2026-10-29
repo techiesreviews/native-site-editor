@@ -174,12 +174,16 @@ export interface WorkspaceMountPorts {
   setCurrentPage: (path?: string) => void;
   errorMessage: (error: unknown) => void;
   announce: (text: string) => void;
-  /** Scheduling seam for the component tools' load; production waits two frames and a beat. */
-  afterPaint?: (callback: () => void) => void;
+  /** Scheduling seam for the component tools' load; production waits two frames and a beat. Returns its cancel. */
+  afterPaint?: (callback: () => void) => () => void;
 }
 
 export function createWorkspaceMount(ports: WorkspaceMountPorts) {
-  const afterPaint = ports.afterPaint ?? ((callback: () => void) => void requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(callback, 100))));
+  const afterPaint = ports.afterPaint ?? ((callback: () => void) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { frame = 0; timer = setTimeout(callback, 100); }); });
+    return () => { cancelAnimationFrame(frame); clearTimeout(timer); };
+  });
   let repositorySelect: HTMLSelectElement;
   let branchSelect: HTMLSelectElement;
   let refreshButton: HTMLButtonElement;
@@ -192,6 +196,10 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   let blockRail: ReturnType<typeof mountBlockRail> | undefined;
   // The component tools' load for the preview shown (one at a time; a remount or a failure starts afresh).
   let toolsLoad: Promise<ComponentTools | undefined> | undefined;
+  // The preview's right-clicks and dismissals, counted: a menu waiting for the component tools opens only for the latest.
+  let contextMenuAsk = 0;
+  // The wait after the paint of the preview shown, cancelled when it is replaced or closed.
+  let cancelToolsWait: (() => void) | undefined;
   let previewElementMenu: ReturnType<typeof createRowMenu> | undefined;
   window.addEventListener("blur", () => previewElementMenu?.close(false));
 
@@ -439,7 +447,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       if (toolsDue) return;
       toolsDue = true;
       const preview = ports.nativePreview;
-      afterPaint(() => {
+      cancelToolsWait = afterPaint(() => {
+        cancelToolsWait = undefined;
         if (ports.nativePreview !== preview) return;
         loadComponentTools().catch((error: unknown) => {
           toolsDue = false;
@@ -452,14 +461,22 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       onRefusalNoteAction: dismissRefusalNote,
       onMediaEnded: (id) => ports.mediaController.mediaEnded(id),
       ...ports.previewSelection.handlers(),
-      onDismissContextMenu: () => previewElementMenu?.close(false),
+      onDismissContextMenu: () => { contextMenuAsk++; previewElementMenu?.close(false); },
       // The right-clicked element as the edit bar takes it (a shared template's part maps to its instance).
-      // Before the component tools land, a shared template's part has no instance to map to: it gets no menu.
+      // Its entries are the component tools': a right-click before they land loads them at once and
+      // opens the menu when they do, unless it was dismissed, another came or the workspace moved on.
       onContextMenu: (point, anchor, selection) => {
-        const tools = ports.componentTools;
-        const target = !tools ? (selection.host ? undefined : selection) : tools.mode.opened() ? selection : tools.instanceSelection(selection);
-        const entries = target ? ports.builder.menuItems(target) : [];
-        if (entries.length) previewElementMenu?.open(anchor, entries, point, "Element actions");
+        const open = (tools: ComponentTools) => {
+          const target = tools.mode.opened() ? selection : tools.instanceSelection(selection);
+          const entries = target ? ports.builder.menuItems(target) : [];
+          if (entries.length) previewElementMenu?.open(anchor, entries, point, "Element actions");
+        };
+        const ask = ++contextMenuAsk;
+        if (ports.componentTools) { open(ports.componentTools); return; }
+        const since = ports.guardedEdits.stamp(), menu = previewElementMenu;
+        void loadComponentTools().then((tools) => {
+          if (tools && ask === contextMenuAsk && since.holds() && previewElementMenu === menu) open(tools);
+        }).catch(ports.errorMessage);
       },
       // The images of a page shown by following a link are read when it shows.
       // A page the text index has not read yet is read when it shows.
@@ -585,6 +602,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     ports.componentTools?.destroy();
     ports.componentTools = undefined;
     toolsLoad = undefined;
+    cancelToolsWait?.();
+    cancelToolsWait = undefined;
     ports.paletteController.mount();
   }
 
@@ -592,9 +611,9 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   // instance and text rows and the edit bar then draw with them. Tools that land for a preview
   // replaced or closed are destroyed and handed to no one (undefined).
   function loadComponentTools(): Promise<ComponentTools | undefined> {
-    if (ports.componentTools) return Promise.resolve(ports.componentTools);
     const preview = ports.nativePreview;
     if (!preview) return Promise.resolve(undefined);
+    if (ports.componentTools) return Promise.resolve(ports.componentTools);
     const load: Promise<ComponentTools | undefined> = toolsLoad ??= ports.builder.tools().then((tools) => {
       if (ports.nativePreview !== preview || toolsLoad !== load) { tools.destroy(); return undefined; }
       ports.componentTools = tools;
@@ -612,6 +631,11 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   // Everything open goes before the login page shows (renderLogin, src/setup-host.ts).
   function closeWorkspace() {
     ports.workspaceBoot.dropGuess();
+    cancelToolsWait?.();
+    cancelToolsWait = undefined;
+    toolsLoad = undefined;
+    ports.componentTools?.destroy();
+    ports.componentTools = undefined;
     ports.paletteController.dispose();
     ports.agentController.destroy();
     ports.setup.setupController.dispose();
