@@ -243,9 +243,16 @@ export function createPageStructureController(ports: PageStructurePorts) {
         options,
         value,
         onChange: (next) => {
-          const edit = textSizeEdit(source, range.tag, scale, next);
+          // Chosen before the bar redrew after its own last change (Bold, say): the start tag
+          // is all this edits, so it applies to the latest source while that tag is where and
+          // as it was; any other change stays refused as stale.
+          const latest = ports.nativeEditableSource(path) ?? "";
+          const found = latest !== source && node ? ports.locateNativeElementRange(latest, node) : undefined;
+          const same = found?.tag.start === range.tag.start && latest.slice(found.tag.start, found.tag.end) === source.slice(range.tag.start, range.tag.end);
+          const [at, tag] = same ? [latest, found.tag] : [source, range.tag];
+          const edit = textSizeEdit(at, tag, scale, next);
           const size = scale.sizes.find((item) => item.value === next);
-          if (edit) change([edit], node, size ? `Text size ${size.label}` : "Default text size");
+          if (edit) editOpenPage(path, at, [edit], node, size ? `Text size ${size.label}` : "Default text size");
         },
       });
     }
