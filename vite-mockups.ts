@@ -45,11 +45,12 @@ export function referencedFiles(html: string): Set<string> {
   return names;
 }
 
+const isDir = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() ?? false;
+
 /** Every HTML mock-up in each map's `prototypes/` folder, and the images beside them that one of
  * those mock-ups uses; unused images, notes and other files stay unpublished. */
 export function mockupFiles(root: string): Mockup[] {
   const wayfinder = join(root, "docs/wayfinder");
-  const isDir = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() ?? false;
   return readdirSync(wayfinder).sort().flatMap(map => {
     const folder = join(wayfinder, map, "prototypes");
     if (!isDir(folder)) return [];
@@ -90,7 +91,6 @@ const mockupLink = /((?:[\w.-]+\/)*)prototypes\/([\w.-]+\.html)/gi;
 export function buildTickets(root: string, mockups: readonly Mockup[]): BuildTicket[] {
   const wayfinder = join(root, "docs/wayfinder");
   const known = new Set(mockups.map(({ map, file }) => `${map}/${file}`));
-  const isDir = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() ?? false;
   return readdirSync(wayfinder).sort().flatMap(map => {
     const folder = join(wayfinder, map, "build/tickets");
     if (!isDir(folder)) return [];
@@ -115,14 +115,15 @@ export function buildTickets(root: string, mockups: readonly Mockup[]): BuildTic
 /** The build tickets (paths from `root`, as in `BuildTicket`) whose closing commit, the newest one adding
  * their `status: closed` line, is on `origin/main` (or, without it, a local `main`), so their work is released.
  * A commit counts by its id or, rewritten by a rebase merge, by its author time and subject. A ticket moved or
- * renamed since keeps its closing commit. Undefined when git or `main` can't be read, as in
- * a shallow clone; `origin/main` is as fresh as the last fetch of `main`. */
+ * renamed since keeps its closing commit. Undefined when git or `main` can't be read, or in a shallow clone
+ * (its oldest commit would look like every ticket's closing one); `origin/main` is as fresh as the last fetch of `main`. */
 export function ticketsOnMain(root: string): ReadonlySet<string> | undefined {
   const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 });
   let top: string, main: Set<string>, log: string;
   try {
     const ref = ["origin/main", "main"].find(name => { try { return Boolean(git("rev-parse", "--verify", "--quiet", `${name}^{commit}`)); } catch { return false; } });
     if (!ref) return undefined;
+    if (git("rev-parse", "--is-shallow-repository").trim() === "true") return undefined;
     top = git("rev-parse", "--show-toplevel").trim();
     main = new Set(git("log", "--format=%H%n%at %s", ref).split("\n"));
     // Every change under docs/wayfinder, newest first, so renames are seen before the older commits they affect.
@@ -211,7 +212,7 @@ ul { padding-inline-start: 0; list-style: none; }
 li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; margin-block: 0.375rem; }
 .legend { display: grid; grid-template-columns: max-content 1fr; align-items: baseline; gap: 0.375rem 0.75rem; margin-block: 0; }
 .legend dd { margin: 0; }
-.shipping { padding-inline: 6px; border-radius: var(--radius-small); font-size: var(--type-small); font-weight: 600; line-height: 18px; white-space: nowrap; }
+.shipping { padding: 0 6px; border-radius: 999px; font-size: var(--type-small); font-weight: 600; line-height: 18px; white-space: nowrap; }
 .shipping--live { background: var(--success-bg); color: var(--success-fg); }
 .shipping--preview { background: var(--current); color: var(--link); }
 .shipping--building { background: var(--warning-bg); color: var(--warning-fg); }
