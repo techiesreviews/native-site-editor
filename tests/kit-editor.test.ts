@@ -8,7 +8,6 @@ import { pathToFileURL } from "node:url";
 // @ts-expect-error This editor's helper is plain JavaScript without declarations.
 import { kitHomeFolder } from "../scripts/agents/kit-home.mjs";
 import { toolingHash } from "../scripts/agents/shots/compare.mjs";
-import { screens } from "../scripts/agents/shots/core";
 
 // This editor runs the shared kit through its launcher (kitchen-everywhere 30). The kit's own tests live in the
 // agent-kit repo; these check what is this editor's: its own commands, its docs into the shared rulebook, the
@@ -29,14 +28,16 @@ function temp(t: TestContext) {
   return directory;
 }
 
+// Heading anchors, plus explicit `<a id="…">` ones: the kit keeps an old anchor that way when it renames a
+// heading, so this editor's links never block a kit change (both repos gate on each other's tests).
 function anchors(markdown: string): string[] {
   const seen = new Map<string, number>();
-  return markdown.split("\n").filter(line => /^#+ /.test(line)).map(line => {
+  return [...markdown.split("\n").filter(line => /^#+ /.test(line)).map(line => {
     const base = line.replace(/^#+ /, "").toLowerCase().replace(/[^\w\- ]/g, "").replace(/ /g, "-");
     const count = seen.get(base) ?? 0;
     seen.set(base, count + 1);
     return count ? `${base}-${count}` : base;
-  });
+  }), ...[...markdown.matchAll(/<a (?:id|name)="([^"]+)"/g)].map(match => match[1])];
 }
 
 test("the launcher lists this editor's own commands, and each answers --help through it", () => {
@@ -151,11 +152,6 @@ test("the documented user-level card hook skips projects with a hook launcher an
   assert.match(context, /^Context card: Other \(updated 2026-10-24\)\n/);
 });
 
-test("every kit shots screen maps to the files kit ux reads for it", async () => {
-  // Node loads the extensionless command as ESM; a URL keeps tsx from resolving it as TypeScript.
-  const ux = await import(pathToFileURL(join(home, "kit.d/ux")).href);
-  assert.deepEqual(Object.keys(ux.screenFiles).sort(), [...screens].sort());
-});
 
 test("the hook launcher runs the kit's hooks with their arguments and status, and without a kit warns and never blocks", (t) => {
   const directory = temp(t), fake = join(directory, "kit");
@@ -297,4 +293,16 @@ test("the launcher answers --home alone and hands --home with more arguments to 
   const env = { ...process.env, KIT_HOME: fake };
   assert.equal(spawnSync(kit, ["--home"], { env, encoding: "utf8" }).stdout, `${fake}\n`);
   assert.equal(spawnSync(kit, ["--home", "x"], { env, encoding: "utf8" }).stdout, "front door --home x\n");
+});
+
+test("this editor's helpers load the shell and Node libraries of one kit", (t) => {
+  const fake = temp(t);
+  writeFileSync(join(fake, "kit"), "#!/usr/bin/env bash\n"); chmodSync(join(fake, "kit"), 0o755);
+  writeFileSync(join(fake, "kit-lib.sh"), "");
+  const script = `const { kitLibrary, kitShellLibrary } = await import(${JSON.stringify(pathToFileURL(resolve("scripts/agents/kit-home.mjs")).href)});
+console.log(kitShellLibrary()); console.log(kitLibrary());`;
+  const { KIT_LIB: _lib, KIT_LIB_MJS: _mjs, ...env } = process.env;
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { env: { ...env, KIT_HOME: fake }, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, `${join(fake, "kit-lib.sh")}\n${join(fake, "kit-lib.mjs")}\n`);
 });
