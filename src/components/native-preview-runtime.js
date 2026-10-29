@@ -1950,8 +1950,10 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   // The top of what stands just above `el` (ticket am-45: an eyebrow line over a heading), from its earlier
   // siblings, nearest first, measured only as far as the rule reads them: its pins stand clear of it.
   function clearAboveEl(el, rect) {
+    // Headings only: an eyebrow stands over a heading; a run of paragraphs or items keeps each pin on its own element.
+    if (!/^H[1-6]$/.test(el.tagName)) return undefined;
     return clearAbove(rect, (function* () {
-      for (var at = el.previousElementSibling; at; at = at.previousElementSibling) yield at.getBoundingClientRect();
+      for (var at = el.previousElementSibling; at; at = at.previousElementSibling) yield rectOf(at);
     })());
   }
   function schedulePins() {
