@@ -60,16 +60,25 @@ test("kit rulebook prints the kit's shared rulebook, then this editor's extras",
   assert.equal(JSON.parse(read("scripts/agents/kit.json")).rulebookExtras, extras);
 });
 
-test("every link from this editor's docs into the shared rulebook names a heading it has; relative links resolve", () => {
+// A kit tried by hand or in the kit's own CI (a KIT_HOME the launcher did not pick) may move or rename what these
+// docs link to; the links are checked against the kit the launcher picks (main's), so neither gate blocks the other.
+const tryingKit = Boolean(process.env.KIT_HOME) && process.env.KIT_HOME !== process.env.KIT_HOME_PINNED;
+const kitUrl = "https://github.com/techiesreviews/agent-kit/blob/main/";
+
+test("every link from this editor's docs into the kit names a file and heading it has; relative links resolve", { skip: tryingKit && "a kit tried through KIT_HOME" }, () => {
   const headings = anchors(readFileSync(shared, "utf8"));
-  for (const path of [extras, pointer, "docs/agents/runner.md", "docs/agents/agent-scripts.md"]) {
+  const docs = readdirSync("docs/agents").filter(name => name.endsWith(".md")).map(name => `docs/agents/${name}`);
+  const relative = [extras, pointer, "docs/agents/runner.md", "docs/agents/agent-scripts.md"];
+  for (const path of docs) {
     for (const [, target] of read(path).matchAll(/\]\(([^)\s]+)\)/g)) {
       const [file, anchor] = target.split("#");
-      if (file === sharedUrl) {
-        if (anchor) assert.ok(headings.includes(anchor), `${path}: the shared rulebook has no heading for ${target}`);
+      if (file.startsWith(kitUrl)) {
+        assert.ok(existsSync(join(home, file.slice(kitUrl.length))), `${path}: the kit has no ${file.slice(kitUrl.length)}`);
+        if (file === sharedUrl && anchor) assert.ok(headings.includes(anchor), `${path}: the shared rulebook has no heading for ${target}`);
         continue;
       }
-      if (/^https?:/.test(target)) continue;
+      // Relative links are checked in the docs that link into the rulebook (others hold placeholders).
+      if (/^https?:/.test(target) || !relative.includes(path)) continue;
       const full = file ? resolve(dirname(path), file) : resolve(path);
       assert.ok(existsSync(full), `${path}: missing ${target}`);
       if (anchor) assert.ok(anchors(readFileSync(full, "utf8")).includes(anchor), `${path}: no heading for ${target}`);
@@ -340,4 +349,20 @@ test("kit version goes through the machine copy the launcher picks", (t) => {
   const { KIT_HOME: _home, KIT_HOME_DEFAULT: _default, KIT_HOME_PINNED: _pinned, ...rest } = process.env;
   const result = spawnSync(kit, ["version"], { env: { ...rest, XDG_DATA_HOME: data }, encoding: "utf8" });
   assert.deepEqual([result.status, result.stdout], [0, "commit 1234567\nRESULT: ok version 1234567\n"]);
+});
+
+test("kit shots without KIT_LIB hands the kit it picked to its Node helpers", (t) => {
+  const directory = temp(t), fake = join(directory, "kit"), other = join(directory, "data");
+  mkdirSync(fake);
+  writeFileSync(join(fake, "kit"), "#!/usr/bin/env bash\n"); chmodSync(join(fake, "kit"), 0o755);
+  const helper = `const { kitHomeFolder } = await import(${JSON.stringify(pathToFileURL(resolve("scripts/agents/kit-home.mjs")).href)}); console.log(kitHomeFolder());`;
+  writeFileSync(join(fake, "kit-lib.sh"), `kit_node() { node --input-type=module -e ${JSON.stringify(helper).replace(/\$/g, "\\$")}; printf "%s\\n" "\${KIT_HOME_PINNED-unset}"; exit 0; }\n`);
+  // A machine copy elsewhere, which a fresh lookup would pick instead.
+  mkdirSync(join(other, "agent-kit"), { recursive: true });
+  symlinkSync(home, join(other, "agent-kit/current"));
+  const { KIT_LIB: _lib, KIT_LIB_MJS: _mjs, KIT_HOME_PINNED: _pinned, ...env } = process.env;
+  const person = spawnSync(resolve("scripts/agents/project.d/shots"), ["--help"], { env: { ...env, KIT_HOME: fake, XDG_DATA_HOME: other }, encoding: "utf8" });
+  assert.deepEqual([person.status, person.stdout], [0, `${fake}\nunset\n`]);
+  const pinned = spawnSync(resolve("scripts/agents/project.d/shots"), ["--help"], { env: { ...env, KIT_HOME: fake, KIT_HOME_PINNED: fake, XDG_DATA_HOME: other }, encoding: "utf8" });
+  assert.deepEqual([pinned.status, pinned.stdout], [0, `${fake}\n${fake}\n`]);
 });
