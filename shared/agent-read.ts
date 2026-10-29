@@ -50,20 +50,26 @@ export const CATCH_UP_NOTE = "Changed in the editor since your last call, by the
 export function catchUpOf(before: AgentMark, now: AgentMark, own: ReadonlySet<string> = new Set(),
   sections?: (path: string, before: string | undefined, now: string | undefined) => string[] | undefined): AgentCatchUp | undefined {
   const saved = before.commit !== now.commit;
-  const changes: AgentChange[] = [];
+  const changes: { item: AgentChange; was?: string; is?: string }[] = [];
   for (const path of new Set([...Object.keys(before.files), ...Object.keys(now.files)])) {
     if (own.has(path)) continue;
     const was = before.files[path], is = now.files[path];
     if (was && is && (was.hash !== undefined || is.hash !== undefined ? was.hash === is.hash : was.at === is.at) && !was.deleted === !is.deleted) continue;
     const change: AgentChange["change"] = !is ? saved ? "saved" : "discarded" : is.deleted ? "removed" : !was && is.added ? "added" : "changed";
-    const touched = change === "changed" ? sections?.(path, was?.hash, is?.hash)?.slice(0, 10) : undefined;
-    changes.push({ path, change, ...(is?.hash && !is.deleted ? { hash: is.hash } : {}), ...(touched?.length ? { sections: touched } : {}) });
+    changes.push({ item: { path, change, ...(is?.hash && !is.deleted ? { hash: is.hash } : {}) }, was: was?.hash, is: is?.hash });
   }
   if (!changes.length && !saved) return undefined;
-  const shown = changes.slice(0, CATCH_UP_FILES);
+  const shown = changes.slice(0, CATCH_UP_FILES).map(({ item }) => item);
   const catchUp = (): AgentCatchUp => ({ files: shown, ...(changes.length > shown.length ? { more: changes.length - shown.length } : {}),
     ...(saved ? { saved: now.commit } : {}), note: CATCH_UP_NOTE });
-  while (shown.length && new TextEncoder().encode(JSON.stringify(catchUp())).byteLength > CATCH_UP_BYTES) shown.pop();
+  const fit = () => { while (shown.length && new TextEncoder().encode(JSON.stringify(catchUp())).byteLength > CATCH_UP_BYTES) shown.pop(); };
+  // Sections (a parse and compare each) are worked out only for the files left once cut without them; cut again with them.
+  fit();
+  for (const [index, item] of shown.entries()) {
+    const touched = item.change === "changed" ? sections?.(item.path, changes[index].was, changes[index].is)?.slice(0, 10) : undefined;
+    if (touched?.length) shown[index] = { ...item, sections: touched };
+  }
+  fit();
   return catchUp();
 }
 export type AgentReadResult =

@@ -147,8 +147,10 @@ export function spanNow(read: string, start: number, end: number, now: string): 
  * many, or one outside its own stretch now (spanNow); with `at`, where in `read` that one (or the first) was.
  * Undefined when every one is. Words `read` lacks pass when an earlier replacement makes them, or when `now`
  * lacks them too (the agent's own mistake); found only in `now`, they are a copy added since (`at` -1).
+ * Still there, but not as often (`recounted`): which copy changed is not told, since a part at the first copy
+ * read is usually the one unchanged.
  */
-export function wordsMoved(read: string, now: string, edits: { oldText: string; newText: string; all?: boolean }[]): { index: number; at: number } | undefined {
+export function wordsMoved(read: string, now: string, edits: { oldText: string; newText: string; all?: boolean }[]): { index: number; at: number; recounted?: true } | undefined {
   const places = (text: string, words: string) => {
     const found: number[] = [];
     for (let at = text.indexOf(words); words && at >= 0; at = text.indexOf(words, at + words.length)) found.push(at);
@@ -161,7 +163,7 @@ export function wordsMoved(read: string, now: string, edits: { oldText: string; 
       if (is.length && !(made.ok && made.text.includes(oldText))) return { index, at: -1 };
       continue;
     }
-    if (was.length !== is.length) return { index, at: was[0] };
+    if (was.length !== is.length) return { index, at: was[0], ...(is.length ? { recounted: true as const } : {}) };
     const at = was.find((place, which) => {
       const span = spanNow(read, place, place + oldText.length, now);
       return span !== undefined && (is[which] < span.start || is[which] + oldText.length > span.end);
@@ -176,10 +178,13 @@ export function wordsMoved(read: string, now: string, edits: { oldText: string; 
  * text at the agent's hash, when the tab still has it): the part the first failing replacement changes, now.
  */
 function editClash(file: { path: string; hash: string; content: string }, edits: { oldText: string; newText: string; all?: boolean }[], read: string | undefined,
-  moved?: { index: number; at: number }): never {
+  moved?: { index: number; at: number; recounted?: true }): never {
   const failing = moved?.index ?? Math.max(0, edits.findIndex((_, index) => !applyReplacements(file.content, edits.slice(0, index + 1)).ok));
   const { oldText } = edits[failing];
   const which = edits.length > 1 ? `The words replacement ${failing + 1} changes` : "The words this edit changes";
+  // No part to retry from: a retry with all would also change the copies another made since.
+  if (moved?.recounted)
+    throw new PartClash(`${which} are in ${file.path} a different number of times than when it was read: the user or another agent changed them meanwhile. Read the file again.`);
   const at = moved?.at ?? read?.indexOf(oldText) ?? -1;
   let span = at >= 0 ? spanNow(read!, at, at + oldText.length, file.content) : undefined;
   if (!span) {
@@ -193,8 +198,12 @@ function editClash(file: { path: string; hash: string; content: string }, edits:
     if (start >= 0 || end >= 0) span = { start: start >= 0 ? start : end, end: end >= start ? end + last.length : start + ends[0].length };
   }
   const part = span && partOf(file.path, file.hash, file.content, span.start, span.end);
+  // Cut short, part.text is no oldText to retry with.
+  const retry = part?.truncated
+    ? `part has the start of them as they are now, cut at ${PART_LIMIT} characters: read the file again and send the edit anew.`
+    : "part has them as they are now: send the edit again with oldText from part.text and expectedHash part.hash.";
   throw new PartClash(part
-    ? `${which} in ${file.path} were changed meanwhile, by the user or another agent. part has them as they are now: send the edit again with oldText from part.text and expectedHash part.hash.`
+    ? `${which} in ${file.path} were changed meanwhile, by the user or another agent. ${retry}`
     : `${which} in ${file.path} are no longer there: the user or another agent changed them meanwhile. Read the file again.`, part);
 }
 

@@ -186,8 +186,9 @@ export function createAgentEditTools(options: Options) {
           const { input } = prepared, expected = prepared.input.expectedHash, file = await files.read(input.path);
           check();
           if (!file) return { prepared, context };
-          rememberText(file.hash, file.content);
+          // The agent's read is looked up before the text now is kept: keeping it may let the oldest read go.
           const read = file.hash === expected || !PAGE_COMMANDS.has(request.tool) ? undefined : readText(expected);
+          rememberText(file.hash, file.content);
           if (read === undefined) return { prepared, context };
           return { context, prepared: { ...prepared, input: { ...input, expectedHash: file.hash,
             args: elementsNow(input.path, input.args ?? {}, read, file.content, file.hash) } } };

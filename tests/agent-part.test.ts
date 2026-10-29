@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { textHash } from "../shared/agent";
+import { textBytes, textHash } from "../shared/agent";
 import { PART_LIMIT, PartClash, partOf, prepareAgentEdit, spanNow, wordsMoved, type AgentEdit, type AgentEditArgsMap } from "../shared/agent-edit";
-import { CATCH_UP_BYTES, CATCH_UP_FILES, catchUpOf, type AgentMark } from "../shared/agent-read";
+import { CATCH_UP_BYTES, CATCH_UP_FILES, catchUpOf, type AgentCatchUp, type AgentMark } from "../shared/agent-read";
 import { SiteFiles, type SiteFileReader } from "../shared/site-files";
 import type { EditorContext } from "../shared/types";
 import { elementsNow, noteOwnChange, readText, rememberRead, rememberText, tellAgent } from "../src/agent-part";
+import { AgentRelay } from "../worker/agent-relay";
 import { installOutlineDocument } from "./support/outline-document";
 import { files, repo, siteContext } from "./mcp-harness";
 
@@ -283,4 +284,74 @@ test("after a reload the tab keeps no reads or marks: no catch-up on the first r
   const now = read.replace(">Fast<", ">Quick<"), home = await withHome(now);
   const prepared = await prepareAgentEdit(edit({ path: "index.html", expectedHash: await textHash(read), edits: [{ oldText: "Welcome", newText: "Hi" }] }), home.context, home.files, fresh.readText);
   assert.ok("operation" in prepared && prepared.input.content === now.replace("Welcome", "Hi"));
+});
+
+// Ticket 40: the second look at ticket 10.
+
+test("a copy added elsewhere since the read is refused with no part, so a retry with all never takes that copy", async () => {
+  // Read with "Welcome" once; another agent wrote it again in the feature's title since.
+  const { context, files: site } = await withHome(read.replace(">Fast<", ">Welcome<"));
+  const expectedHash = await textHash(read);
+  for (const all of [false, true]) {
+    const clash = await prepareAgentEdit(edit({ path: "index.html", expectedHash, edits: [{ oldText: "Welcome", newText: "Hi", all }] }), context, site, hash => hash === expectedHash ? read : undefined)
+      .then(() => assert.fail("must clash"), (error: unknown) => error);
+    assert.ok(clash instanceof PartClash);
+    // Not the heading, unchanged, offered as it is now: the agent reads again and sees both copies.
+    assert.equal(clash.part, undefined, String(all));
+    assert.match(clash.message, /a different number of times .* Read the file again\.$/);
+  }
+});
+
+test("a changed part longer than PART_LIMIT is refused with read again, never a retry from its cut text", async () => {
+  const block = Array.from({ length: 200 }, (_, i) => `    <p>Line ${i} ${"x".repeat(20)}</p>`).join("\n");
+  const long = read.replace("    <h1>Welcome</h1>", `    <h1>Welcome</h1>\n${block}`), now = long.replace("Line 100 ", "Line one hundred ");
+  assert.ok(block.length > PART_LIMIT);
+  const { context, files: site } = await withHome(now);
+  const expectedHash = await textHash(long);
+  const clash = await prepareAgentEdit(edit({ path: "index.html", expectedHash, edits: [{ oldText: block, newText: "x" }] }), context, site, hash => hash === expectedHash ? long : undefined)
+    .then(() => assert.fail("must clash"), (error: PartClash) => error);
+  assert.equal(clash.part?.truncated, true);
+  assert.match(clash.message, /read the file again/);
+  assert.doesNotMatch(clash.message, /oldText from part\.text/);
+});
+
+test("a catch-up works out sections only for the files it can show", () => {
+  const marked = (hash: string) => Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`pages/${i}/index.html`, { hash: `${hash}${i}`, at: 1 }]));
+  let calls = 0;
+  const told = catchUpOf({ commit: "c1", files: marked("a") }, { commit: "c1", files: marked("b") }, new Set(), () => { calls++; return ["1.0"]; })!;
+  assert.ok(calls <= CATCH_UP_FILES && calls >= told.files.length, String(calls));
+  assert.equal(told.files.length + told.more!, 60);
+  assert.ok(told.files.every(file => file.sections?.[0] === "1.0"));
+  assert.ok(textBytes(JSON.stringify(told)) <= CATCH_UP_BYTES);
+});
+
+test("a draft named __proto__ is told in the catch-up like any other file", async () => {
+  const context: EditorContext = await siteContext(), shared = () => ({ context: structuredClone(context), texts: new Map<string, string>() });
+  const workspace = { repoId: repo.id, branch: "main" }, reply = { ok: true as const, value: { state: "applied" } };
+  tellAgent(shared(), workspace, "agent-proto", reply);
+  context.drafts.push({ path: "__proto__", baseSha: null, updatedAt: 5, hash: "h-proto" });
+  const told = tellAgent(shared(), workspace, "agent-proto", reply);
+  assert.ok(told.ok);
+  assert.partialDeepStrictEqual(told.value, { changesSinceLastRead: { files: [{ path: "__proto__", change: "added", hash: "h-proto" }] } });
+});
+
+test("a read reply just under the relay's limit still fits with a full catch-up: the read tool's margin holds it", async () => {
+  const context: EditorContext = await siteContext(), shared = () => ({ context: structuredClone(context), texts: new Map<string, string>() });
+  const workspace = { repoId: repo.id, branch: "main" };
+  tellAgent(shared(), workspace, "agent-big", { ok: true, value: {} });
+  for (let i = 0; i < CATCH_UP_FILES * 2; i++)
+    context.drafts.push({ path: `pages/${"a-long-page-name-".repeat(5)}${i}/index.html`, baseSha: null, updatedAt: 6, hash: "f".repeat(64) });
+  // src/agent-tools-read.ts refuses a reply past the relay's limit less 4096 bytes: one exactly at it.
+  const limit = AgentRelay.maxBytes - 4096, base = { ok: true as const, value: { path: "big.txt", hash: "h", content: "" } };
+  const big = { ok: true as const, value: { ...base.value, content: "x".repeat(limit - textBytes(JSON.stringify(base))) } };
+  assert.equal(textBytes(JSON.stringify(big)), limit);
+  const told = tellAgent(shared(), workspace, "agent-big", big);
+  assert.ok(told.ok && told.value && typeof told.value === "object" && !Array.isArray(told.value));
+  const catchUp: AgentCatchUp = JSON.parse(JSON.stringify(told.value.changesSinceLastRead));
+  assert.equal(catchUp.files.length + catchUp.more!, CATCH_UP_FILES * 2);
+  assert.ok(textBytes(JSON.stringify(catchUp)) > CATCH_UP_BYTES - 256, "a full catch-up");
+  // The transport's envelope at its largest (src/agent-transport.ts readCommand; worker/agent-relay.ts readScope's bounds).
+  const message = JSON.stringify({ type: "result", id: "i".repeat(128), workspace: { account: "a".repeat(39), repoId: Number.MAX_SAFE_INTEGER, branch: "語".repeat(255) },
+    tabId: "t".repeat(128), generation: Number.MAX_SAFE_INTEGER, result: told });
+  assert.ok(textBytes(message) <= AgentRelay.maxBytes, String(textBytes(message) - AgentRelay.maxBytes));
 });

@@ -1,7 +1,7 @@
 ---
 title: "Exact-part edits: second-look fixes (follow-up on 10)"
 type: task (AFK)
-status: open
+status: closed
 assignee: am-40
 builder: claude
 blocked_by: [10-exact-part-edits]
@@ -37,3 +37,19 @@ Slice 10's catch-up second look (OpenCode `deepseek-v4.1-flash-free`, 2026-10-29
 ## Kit commands and evidence
 
 Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit specs --affected`, `kit review`, `kit pr`. Quote the RESULT lines in Done.
+
+## Done (2026-10-29)
+
+1. A stale page command looks up the agent's read before the tab keeps the page's text now (`src/agent-tools-edit.ts` `prepareNow`): with the text cache full and that read oldest, its element ids are still mapped to the page now.
+2. Words found a different number of times now than in the read (`shared/agent-edit.ts` `wordsMoved`, marked `recounted`) are refused with no part and "Read the file again.", so neither a unique nor an `all` retry starts from the unchanged original or takes a copy added since. Words gone altogether still get their part as before.
+3. A clash whose part is cut at `PART_LIMIT` says to read the file again instead of retrying with `oldText` from `part.text`.
+4. `catchUpOf` (`shared/agent-read.ts`) cuts the list to `CATCH_UP_FILES` and 2 KB first, works out sections only for the files left, then cuts again with them.
+5. A mark keeps its files in an object with no prototype (`src/agent-part.ts` `markOf`): a draft named `__proto__` is told in the catch-up.
+
+Tests: one per item in `tests/agent-part.test.ts` (items 2 to 5) and `tests/agent-tools-edit.test.ts` (item 1); each failed on the code before its fix (54/59 with the four source files at the claim commit). Gap test, no fix needed: a read reply exactly at the read tool's limit (relay `maxBytes` less 4096) plus a full catch-up and the transport's largest envelope stays within `maxBytes`.
+
+- `RESULT: ok unit 3891/3891 (252 files)` (`kit unit --affected`)
+- `RESULT: ok specs 1/1 passed` (`kit specs tests/native-save/native-agent-exact-part.spec.ts`; `--affected` selects 152 specs through the shared imports, left to `kit pr`)
+- `RESULT: ok doctor 11/11 checks passed`; `npm run check` and `npm run lint` pass.
+
+Feature list: no change (only what agents are told in refusals and catch-ups changes; nothing the user sees).
