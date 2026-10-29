@@ -48,7 +48,7 @@ and each `--help`. A build's own `runner-extras.md` (next to its map) wins where
   <model> --effort <effort>` in the background. Inspect the report and diff; stay inside the ticket's Files; then commit.
 - Add unit coverage for pure rules. While building, run `scripts/agents/kit unit --affected` (or `scripts/agents/unit.sh
   <files>`), `npm run check` when types moved, `scripts/agents/kit specs --affected` (or `kit specs <spec…>`; `full-suite.sh 3`
-  only for shared plumbing). `kit pr` runs the full set scaled to the change; don't run it all yourself first. A slice's builder gets at most 20 specs, closest first (`N more run in kit pr`). Rerun a
+  only for shared plumbing). `kit pr` runs the full set scaled to the change; don't run it all yourself first. A slice's builder gets at most 20 specs: named and direct ones when more are affected (`N more run in kit pr`). Rerun a
   failing spec once before calling it flaky; one that also fails on plain dev: say so in `decide` and stop. Read the digest; don't open results or error-context files.
 - Credit whichever model built the change: `Co-Authored-By: <model name> <noreply@<vendor>>`
   (Sol: `GPT-6.1-Sol <noreply@openai.com>`; Claude: `Claude Opus 5.5 <noreply@anthropic.com>`).
