@@ -294,22 +294,25 @@ export function namedSpecs(names, files) {
   return [...selected.values()].sort((a, b) => a.file.localeCompare(b.file));
 }
 
-/** Specs a ticket's text names (paths or basenames); unknown or ambiguous names are skipped. */
+/** Specs a ticket's text names (paths, relative links or basenames); unknown, ambiguous or glob names are skipped. */
 export function ticketSpecs(text, files) {
   const found = new Map();
-  for (const [name] of text.matchAll(/[\w./-]*\.spec\.ts\b/g)) {
+  for (const [mention] of text.matchAll(/[\w./-]*\.spec\.ts\b/g)) {
+    // A link from a ticket under docs/ reaches tests/ through ../ segments.
+    const name = mention.replace(/^(?:\.{1,2}\/)+/, "");
     try { for (const spec of namedSpecs([name], files)) found.set(spec.file, spec); } catch { /* Not a spec here. */ }
   }
   return [...found.values()].sort((a, b) => a.file.localeCompare(b.file));
 }
 
 export const BUILDER_SPEC_CAP = 20;
-// After named and direct specs (ranks 0 and 1), a builder keeps reasons in this order; any other reason ranks 4.
+// Within an affected selection that fits the cap, a builder keeps reasons in this order after named and direct specs.
 const BUILDER_REASON_RANK = { import: 2, fixture: 2, server: 2, "removed string": 3 };
 
-/** A builder's run: the ticket's named specs, then specs that changed or import a changed file
- * themselves, then the rest by reason, up to `cap`. `left` counts the affected specs left for kit pr
- * (a spec only the ticket names is not affected, so kit pr does not run it). */
+/** A builder's run, at most `cap` specs: the ticket's named specs, then specs that changed or import a changed
+ * file themselves. When the affected selection fits the cap, its other specs follow by reason; when it does not,
+ * they are left out. `left` counts the affected specs left for kit pr (a spec only the ticket names is not
+ * affected, so kit pr does not run it). */
 export function builderSpecs(selected, { files, changed, named = [], cap = BUILDER_SPEC_CAP }) {
   const changes = new Set(changed), paths = new Set([...Object.keys(files), ...changed]);
   const direct = spec => changes.has(spec.file)
@@ -321,8 +324,8 @@ export function builderSpecs(selected, { files, changed, named = [], cap = BUILD
     const found = byFile.get(spec.file);
     byFile.set(spec.file, found ? { ...found, reasons: ["named spec", ...found.reasons] } : spec);
   }
-  const all = [...byFile.values()];
-  const kept = all.map(spec => ({ spec, rank: rank(spec) }))
+  const fits = selected.length <= cap;
+  const kept = [...byFile.values()].map(spec => ({ spec, rank: rank(spec) })).filter(({ rank }) => fits || rank <= 1)
     .sort((a, b) => a.rank - b.rank || b.spec.reasons.length - a.spec.reasons.length || a.spec.file.localeCompare(b.spec.file))
     .slice(0, cap).map(({ spec }) => spec).sort((a, b) => a.file.localeCompare(b.file));
   const run = new Set(kept.map(spec => spec.file));

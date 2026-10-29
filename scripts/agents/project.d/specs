@@ -23,8 +23,8 @@ Each shard uses port.sh, which waits for a slot and its resource gates.
 KIT_SPECS_RUNNER: test executable replacing port.sh; skips probing (assumes 1 free slot).
 KIT_SPECS_FREE_SLOTS: test-only free-slot probe override.
 ASE_KNOWN_FAILURES: registry path (default tests/known-failures.json).
-KIT_BUILDER_TICKET (kit slice sets it for its builders): --affected keeps the ticket's named specs,
-then specs that changed or import a changed file, then the rest, at most ${BUILDER_SPEC_CAP}; kit pr runs the others.
+KIT_BUILDER_TICKET (kit slice sets it for its builders): --affected keeps the ticket's named specs and
+specs that changed or import a changed file (plus the rest when at most ${BUILDER_SPEC_CAP} are affected), at most ${BUILDER_SPEC_CAP}; kit pr runs the others.
 `;
 
 function options(args) {
@@ -132,7 +132,7 @@ async function main(args) {
         let text = "";
         try { text = readFileSync(resolve(root, process.env.KIT_BUILDER_TICKET), "utf8"); } catch { /* No ticket: no named specs. */ }
         ({ specs: selected, left } = builderSpecs(selected, { files, changed, named: ticketSpecs(text, files) }));
-        if (left) console.log(`builder run: ${selected.length} closest specs; ${left} more run in kit pr`);
+        if (left) console.log(`builder run: ${selected.length} specs (named, changed or importing a changed file); ${left} more run in kit pr`);
       }
     } else selected = namedSpecs(flags.names, files);
     const later = left ? `; ${left} more run in kit pr` : "";
