@@ -1054,11 +1054,11 @@ its number unused.
 - Steps: none yet (needs a connected agent)
 
 ### F-agent-04 Ask agent and pins
-- Try: Select an element, press Ask agent and type a request; answer its question on the pin.
-- Good: A numbered pin shows waiting, working, a question (orange) or done (grey); history stays in this browser.
-- Files: `src/components/agent-pins.ts`, `src/components/agent-pins.css`, `src/components/agent-pin-geometry.ts`, `src/agent-records.ts`
+- Try: Select an element, press Ask agent and type a request; ask again on the same element; answer a question on its pin, or open a done pin and send a follow-up.
+- Good: A numbered pin shows waiting (blue), the agent on it in that agent's colour with its name, a question (orange) or done (grey, no name); one element holds several pins side by side; every pin's card has a box and Send, and a follow-up reopens the pin for the same agent; that agent's outline on the element has no second name chip; Ask agent stays icon-only; history stays in this browser.
+- Files: `src/components/agent-pins.ts`, `src/components/agent-pins.css`, `src/components/agent-pin-geometry.ts`, `src/agent-records.ts`, `shared/agent-requests.ts`, `src/agent-presence.ts`
 - Phone: yes
-- Spec: `tests/native-save/native-mcp.spec.ts`
+- Spec: `tests/native-save/native-mcp.spec.ts`, `tests/native-save/native-agent-pins.spec.ts`
 - Steps: none yet (needs a connected agent)
 
 ### F-agent-05 Agent presence

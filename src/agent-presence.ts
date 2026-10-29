@@ -7,6 +7,8 @@
 // arrival. Changes that overlap each keep their own entry: an agent's latest one still running shows.
 // A workspace switch (`refresh`, at each load) clears what no longer holds, so nothing is drawn on a
 // same-named page of another workspace. An agent the user stopped (ticket am-12) shows nowhere again.
+// An agent working through a pin on the page (ticket am-13) wears its chip on the pin alone: its outline
+// there has none (`pinned`).
 
 import { outlineId, parseOutlineId, type AgentWho } from "../shared/agent";
 import type { AgentAtWork } from "../shared/agent-read";
@@ -16,12 +18,12 @@ import { readSource, type SourceNode, type SourceTree } from "./page-builder/sou
  * One agent as the views draw it: at work on the page `path`, on its element `node` (none: the page
  * alone), named `name`, in colour `colour` (an index into AGENT_COLOURS), its chip orange while `asking`.
  */
-export interface AgentMark { key: string; name: string; colour: number; path: string; node?: number[]; asking: boolean }
+export interface AgentMark { key: string; name: string; colour: number; path: string; node?: number[]; asking: boolean; pinned?: boolean }
 /** An agent the MCP menu lists as working now (ticket am-12): who, as a mark names it, and when it leaves the list
  * unless it works again (none while it is at work or asking). */
 export interface WorkingAgent { key: string; who: AgentWho; name: string; colour: number; asking: boolean; until?: number }
 /** A request as its question shows: its site and branch, the element it is about, and who asked when it waits for the user's answer. */
-export interface PresenceQuestion { repoId: number; branch?: string; state: string; element: { file: string; id: string }; reply?: { by?: AgentWho } }
+export interface PresenceQuestion { repoId: number; branch?: string; state: string; element: { file: string; id: string }; reply?: { by?: AgentWho }; agent?: AgentWho }
 
 /** The agents' colours, theme tokens in order of arrival: the MCP green, the components' violet, video pink, data teal (src/theme.css). */
 export const AGENT_COLOURS = ["agent-presence", "agent-presence-2", "agent-presence-3", "agent-presence-4"] as const;
@@ -64,6 +66,8 @@ export function createAgentPresence(ports: AgentPresencePorts) {
   const running: { who: AgentWho; path: string; node?: number[]; at: Hold }[] = [];
   // Questions belong to their request's site and branch (shown again after any load), changes to the load they began in.
   let asked: { who: AgentWho; path: string; element: string; at: Hold }[] = [];
+  // The pins an agent works through now, by agent and page: their chips carry its name.
+  let pinned: { key: string; path: string; at: Hold }[] = [];
   // Each agent's place in the order of arrival, for the session (a few names each, never cleared): its colour.
   const arrivals = new Map<string, number>();
   // Each agent's latest change, as get_site tells it: held to its site and branch (a reload keeps it), as questions are.
@@ -87,13 +91,15 @@ export function createAgentPresence(ports: AgentPresencePorts) {
   };
   function marks(): AgentMark[] {
     const shown = new Map<string, AgentMark>();
-    const mark = (who: AgentWho, path: string, node: number[] | undefined, asking: boolean): AgentMark =>
-      ({ key: keyOf(who), name: who.name || UNNAMED_AGENT, colour: arrivals.get(keyOf(who))! % AGENT_COLOURS.length, path, ...(node ? { node: [...node] } : {}), asking });
+    const mark = (who: AgentWho, path: string, node: number[] | undefined, asking: boolean): AgentMark => {
+      const key = keyOf(who), onPin = !asking && pinned.some(pin => pin.key === key && pin.path === path && pin.at.holds());
+      return { key, name: who.name || UNNAMED_AGENT, colour: arrivals.get(key)! % AGENT_COLOURS.length, path, ...(node ? { node: [...node] } : {}), asking, ...(onPin ? { pinned: true } : {}) };
+    };
     for (const entry of running) if (entry.at.holds() && !stopped(entry.who)) shown.set(keyOf(entry.who), mark(entry.who, entry.path, entry.node, false));
     for (const question of asked) {
       if (!question.at.holds() || stopped(question.who)) continue;
       const key = keyOf(question.who), working = shown.get(key);
-      if (working) { working.asking = true; continue; }
+      if (working) { working.asking = true; delete working.pinned; continue; }
       if (!isPage(question.path)) continue;
       shown.set(key, mark(question.who, question.path, questionAt(question), true));
     }
@@ -159,17 +165,24 @@ export function createAgentPresence(ports: AgentPresencePorts) {
         refresh();
       };
     },
-    /** The open workspace's requests (the agent menu tells them): each question waiting for the user shows on its element, by who asked it. */
+    /** The open workspace's requests (the agent menu tells them): each question waiting for the user shows on its element, by who asked it;
+     * each request an agent works through puts its name on the pin, not on its outline on that page. */
     questions(requests: readonly PresenceQuestion[]) {
+      const holds = (request: PresenceQuestion) => {
+        const where = { repoId: request.repoId, ...(request.branch ? { branch: request.branch } : {}) };
+        return { holds: () => ports.shows(where) };
+      };
       asked = requests.flatMap(request => {
         const who = request.state === "question" ? request.reply?.by : undefined;
         if (!who) return [];
         arrive(who);
-        const where = { repoId: request.repoId, ...(request.branch ? { branch: request.branch } : {}) };
-        return [{ who, path: request.element.file, element: request.element.id, at: { holds: () => ports.shows(where) } }];
+        return [{ who, path: request.element.file, element: request.element.id, at: holds(request) }];
       });
+      pinned = requests.flatMap(request => request.state === "seen" && request.agent ? [{ key: arrive(request.agent), path: request.element.file, at: holds(request) }] : []);
       refresh();
     },
+    /** `who`'s colour (an index into AGENT_COLOURS), the same on its pins as on its outline: it arrives now if new. */
+    colour: (who: AgentWho) => arrivals.get(arrive(who))! % AGENT_COLOURS.length,
     /** Who works on what in the workspace shown (get_site): every agent at work, asking, or with a change in the last AT_WORK_MS. */
     atWork(): AgentAtWork[] {
       return working().map(([, agent]) => ({ name: agent.who.name || UNNAMED_AGENT, file: agent.file, ...(agent.node ? { section: outlineId(agent.node) } : {}), ...(agent.asking ? { asking: true } : {}) }));

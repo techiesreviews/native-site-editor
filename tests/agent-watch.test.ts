@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { AgentRequest } from "../shared/agent";
 import type { AgentRequests } from "../shared/agent-requests";
 import { TAKE_TRIES, WAIT_MS, answerRequest, createRequestTools } from "../src/agent-watch";
+import { FOLLOW_UP_HOLD_MS } from "../shared/agent-requests";
 import { connectionPrompt } from "../src/agent-prompts";
 import { AgentRelay, WAITS_PER_SITE, relayObjectName, type RelayClock, type RelayScope, type RelaySocket } from "../worker/agent-relay";
 import { countedSocket, startCountedWorker } from "./fakes/counted-agent";
@@ -190,6 +191,59 @@ test("reply_to_request and get_selection(request) run the hub's rules on this br
   assert.equal((await b.run("get_request", { request: "req-none" })).ok, false);
   b.kept.set("req-other", asked("req-other", { branch: "other" }));
   assert.equal((await b.run("get_request", { request: "req-other" })).ok, false, "another branch's request");
+});
+
+test("a pin is a conversation (am-13): the first agent to take it is on it, and a follow-up on a done request reopens it for that agent first", async () => {
+  const b = browser();
+  const ids = (value: { requests: AgentRequest[] }) => value.requests.map(item => item.id);
+  b.ask(asked("req-pin"));
+  // Copy editor takes it first: it is on it; another connection's agent also gets it, but does not take it over.
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"))), ["req-pin"]);
+  assert.deepEqual(b.kept.get("req-pin")!.agent, { grant: "grant-a", name: "Copy editor" });
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-b", "Image finder"))), ["req-pin"]);
+  assert.deepEqual(b.kept.get("req-pin")!.agent, { grant: "grant-a", name: "Copy editor" });
+  await b.value(b.run("reply_to_request", { request: "req-pin", status: "done", message: "Shorter now." }, undefined, undefined, "grant-a", "Copy editor"));
+  const done = b.kept.get("req-pin")!;
+  assert.equal(done.state, "done");
+  assert.equal(done.thread!.at(-1)!.name, "Copy editor", "the card names who replied");
+  // The user follows up on the done request: it waits again, held for Copy editor's connection.
+  const followed = answerRequest([structuredClone(done)], "req-pin", "And add a third one", b.clock.now());
+  assert.equal(followed.accept(done), true);
+  b.ask(followed.request);
+  assert.equal(b.kept.get("req-pin")!.state, "open");
+  assert.equal(b.kept.get("req-pin")!.heldUntil, b.clock.now() + FOLLOW_UP_HOLD_MS);
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-b", "Image finder"))), [], "another connection waits its turn");
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests", { all: true }, 0, undefined, "grant-b", "Image finder"))), [], "with all too");
+  const again = await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Watchdog"));
+  assert.deepEqual(ids(again), ["req-pin"]);
+  assert.deepEqual(again.requests[0].thread.map((item: { text: string }) => item.text), ["Change req-pin", "Shorter now.", "And add a third one"]);
+  assert.equal("agent" in again.requests[0] || "heldUntil" in again.requests[0], false, "agents read no editor bookkeeping");
+  const kept = b.kept.get("req-pin")!;
+  assert.equal(kept.state, "seen");
+  assert.deepEqual(kept.agent, { grant: "grant-a", name: "Copy editor" }, "the same agent stays on it, in its colour");
+  assert.equal(kept.heldUntil, undefined);
+});
+
+test("a follow-up on a waiting request (no reply yet) is taken; one held for a gone agent goes to any connection after the hold", async () => {
+  const b = browser();
+  const ids = (value: { requests: AgentRequest[] }) => value.requests.map(item => item.id);
+  b.ask(asked("req-wait"));
+  const waiting = answerRequest([structuredClone(b.kept.get("req-wait")!)], "req-wait", "Keep it short", b.clock.now());
+  assert.equal(waiting.request.state, "open");
+  assert.equal(waiting.request.heldUntil, undefined, "no agent on it: nothing held");
+  assert.deepEqual(waiting.request.thread!.map(item => item.from), ["user", "user"]);
+  b.ask(waiting.request);
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"));
+  await b.value(b.run("reply_to_request", { request: "req-wait", status: "answered", message: "Nothing to change." }, undefined, undefined, "grant-a", "Copy editor"));
+  const followed = answerRequest([structuredClone(b.kept.get("req-wait")!)], "req-wait", "Try again", b.clock.now());
+  b.ask(followed.request);
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-b", "Image finder"))), []);
+  b.clock.advance(FOLLOW_UP_HOLD_MS);
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-b", "Image finder"))), ["req-wait"]);
+  assert.deepEqual(b.kept.get("req-wait")!.agent, { grant: "grant-b", name: "Image finder" }, "the agent that took it over is on it");
+  // A dismissed request takes no follow-up.
+  b.kept.set("req-wait", { ...b.kept.get("req-wait")!, state: "dismissed" });
+  assert.throws(() => answerRequest([structuredClone(b.kept.get("req-wait")!)], "req-wait", "More"), /dismissed/);
 });
 
 function relayFixture() {

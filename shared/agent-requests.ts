@@ -4,9 +4,12 @@
 // answers the request tools over the socket (src/agent-watch.ts). Agents
 // fetch them with wait_for_requests and answer them with
 // reply_to_request (worker/mcp.ts), and the tab shows each one as a pin on
-// its element until the user dismisses it. An agent's question the user
-// answers from the pin: the answer joins the request's thread and the
-// request waits for agents again, returned once more to every connection.
+// its element until the user dismisses it. The user adds to any request
+// from its pin (ticket am-13): an answer to an agent's question, or a
+// follow-up on one waiting, being worked on or done. It joins the request's
+// thread and the request waits again, returned first to the agent on it
+// (the first to take it, then whoever replied), and to every connection once
+// FOLLOW_UP_HOLD_MS pass without that agent taking it.
 // A request belongs to the repository and branch it was asked on: a
 // connection sees only the ones of the workspace it is pinned to.
 const inWorkspace = (request: AgentRequest, action: Workspace) =>
@@ -30,6 +33,8 @@ export const THREAD_TEXT_LIMIT = 8000;
 // closed ones go first.
 const KEPT = 100;
 const RETURNED_TO = 20;
+/** How long a reopened request waits for the agent on it before any connection gets it. */
+export const FOLLOW_UP_HOLD_MS = 60_000;
 export const requestIdPattern = /^req-[\w-]{1,64}$/;
 
 /** The workspace a connection's request action is pinned to. */
@@ -37,10 +42,10 @@ interface Workspace { repoId?: number; branch?: string }
 /** What the tab does to its requests: the user asks, answers or dismisses; an agent takes, reads or replies. */
 type RequestAction =
   | { type: "ask"; request: AgentRequest }
-  | { type: "take-requests"; grantId?: string; all?: boolean } & Workspace
+  | { type: "take-requests"; grantId?: string; all?: boolean; by?: AgentWho; now?: number } & Workspace
   | { type: "request"; id?: string } & Workspace
   | { type: "reply"; id?: string; status?: string; message?: string; requestIds?: unknown; by?: AgentWho } & Workspace
-  | { type: "answer"; id?: string; text?: string }
+  | { type: "answer"; id?: string; text?: string; now?: number }
   | { type: "dismiss"; id?: string };
 
 // A message added to a request's thread, which keeps its first message (what
@@ -58,6 +63,9 @@ function addMessage(request: AgentRequest, message: AgentRequestMessage) {
 }
 
 const waiting = (request: AgentRequest) => request.state === "open" || request.state === "seen";
+// Reopened for another connection's agent, which has it to itself a while yet.
+const heldFromOthers = (request: AgentRequest, grantId: string, now: number) =>
+  request.heldUntil !== undefined && now < request.heldUntil && request.agent !== undefined && request.agent.grant !== grantId;
 
 /** A request as the tab polls it: without its element's source, with its thread. */
 export function requestSummary(request: AgentRequest) {
@@ -68,7 +76,7 @@ export function requestSummary(request: AgentRequest) {
 
 /** A request as an agent reads it: with its whole thread, the user's answers included. */
 export function requestForAgent(request: AgentRequest) {
-  const { returnedTo: _returned, repoId: _repoId, branch: _branch, ...rest } = request;
+  const { returnedTo: _returned, repoId: _repoId, branch: _branch, agent: _agent, heldUntil: _held, ...rest } = request;
   // Who replied is the editor's (the replying agent's presence): agents read the reply alone.
   const reply = request.reply && (({ by: _by, ...told }) => told)(request.reply);
   return { ...rest, ...(reply ? { reply } : {}), thread: requestThread(request) };
@@ -93,14 +101,19 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
   }
   if (type === "take-requests") {
     // The waiting requests of this repository this connection has not had
-    // yet (all of them with `all`), oldest first; each is seen from now.
+    // yet (all of them with `all`), oldest first; each is seen from now. The
+    // first to take one waiting is the agent on it, unless it was reopened
+    // for this connection's agent (who keeps it).
     const grantId = String(action.grantId ?? "");
-    const now = Date.now();
+    const now = action.now ?? Date.now();
     const taken: AgentRequest[] = [];
     // IndexedDB returns request ID order, so delivery must restore creation order.
     for (const request of [...list].sort((a, b) => a.createdAt - b.createdAt)) {
       if (!inWorkspace(request, action) || !waiting(request)) continue;
       if (!action.all && request.returnedTo?.includes(grantId)) continue;
+      if (heldFromOthers(request, grantId, now)) continue;
+      if (request.state === "open" && action.by && request.agent?.grant !== grantId) request.agent = action.by;
+      delete request.heldUntil;
       request.state = "seen";
       request.seenAt ??= now;
       if (!request.returnedTo?.includes(grantId)) request.returnedTo = [...(request.returnedTo ?? []), grantId].slice(-RETURNED_TO);
@@ -129,22 +142,29 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
       ...(requestIds.length ? { requestIds } : {}),
       ...(action.by ? { by: action.by } : {}),
     };
-    addMessage(request, { from: "agent", text: request.reply.message, at: now, status: action.status, ...(requestIds.length ? { requestIds } : {}) });
+    if (action.by) request.agent = action.by;
+    delete request.heldUntil;
+    addMessage(request, {
+      from: "agent", text: request.reply.message, at: now, status: action.status,
+      ...(requestIds.length ? { requestIds } : {}), ...(action.by?.name ? { name: action.by.name } : {}),
+    });
     return { list, changed: true, result: request };
   }
   if (type === "answer") {
-    // The user's answer to a reply: the request waits for agents again, and
-    // every connection gets it once more, thread and all.
+    // The user's answer or follow-up, on any request not dismissed: it waits
+    // again, thread and all, for the agent on it first, then for every
+    // connection.
     if (!request) throw new HttpError(404, "No such request.");
     if (request.state === "dismissed") throw new HttpError(409, "This request was dismissed.");
-    if (!request.reply) throw new HttpError(409, "No agent has replied to this request yet.");
     if (!waiting(request) && list.filter(waiting).length >= OPEN_REQUESTS_LIMIT)
       throw new HttpError(429, `${OPEN_REQUESTS_LIMIT} requests are waiting for an agent already. Dismiss some first.`);
-    addMessage(request, { from: "user", text: String(action.text ?? "").slice(0, REQUEST_TEXT_LIMIT), at: Date.now() });
+    const now = action.now ?? Date.now();
+    addMessage(request, { from: "user", text: String(action.text ?? "").slice(0, REQUEST_TEXT_LIMIT), at: now });
     request.state = "open";
     delete request.reply;
     delete request.seenAt;
     delete request.returnedTo;
+    if (request.agent) request.heldUntil = now + FOLLOW_UP_HOLD_MS;
     return { list, changed: true, result: request };
   }
   if (type === "dismiss") {
