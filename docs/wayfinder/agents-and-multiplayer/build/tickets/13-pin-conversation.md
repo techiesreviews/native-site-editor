@@ -112,3 +112,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
     - Copy editor's pin is in the first colour;
     - the phone card opens in view above the bottom sheet with Clear focused, and no keyboard comes up.
   - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3885/3885 (252 files)` (`kit unit --affected`). Of native-agent-pins, native-agent-quiet, native-mcp, native-several-agents, native-mcp-menu, native-agent-presence and native-lazy-panels, six passed together; native-mcp then passed alone after its pickup check was updated (`RESULT: ok specs 1/1 passed`). `RESULT: ok shots raw spec`. `npm run check` and `npm run lint` are clean.
+
+### UX follow-ups
+
+- UX (looks off): F-canvas-14 the heading edit reaches the code panes in place with the scroll kept, but a dark "Text changed" strip appears at the foot of the screen after the edit (light in dark mode) and covers the code pane's lines at 390 px and 1280 px (.scratch/ux/am-13/20261029-025359-9Vtu1u/add-panel-F-canvas-14-390-light-live-strip.webp)
