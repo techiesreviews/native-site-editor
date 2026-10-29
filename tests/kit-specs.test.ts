@@ -670,6 +670,20 @@ test("a builder's run keeps named, then direct, then other specs up to the cap a
   assert.deepEqual(builderSpecs(selected.slice(0, 5), { files, changed: ["shared/wide.ts"] }), { specs: selected.slice(0, 5), left: 0 });
 });
 
+test("ticket spec mentions skip ambiguous basenames and globs, and over-cap names leave only affected specs to kit pr", () => {
+  const files: Record<string, string> = { [save("dup")]: "", "tests/native-preview/dup.spec.ts": "", [save("one")]: "" };
+  assert.deepEqual(ticketSpecs("Run dup.spec.ts, tests/native-save/*.spec.ts and one.spec.ts.", files).map(spec => spec.file), [save("one")]);
+  assert.deepEqual(ticketSpecs("Run tests/native-preview/dup.spec.ts.", files).map(spec => spec.file), ["tests/native-preview/dup.spec.ts"]);
+  const named = Array.from({ length: 25 }, (_, i) => save(`named-${String(i).padStart(2, "0")}`));
+  for (const file of named) files[file] = "";
+  files["src/a.ts"] = ""; files[save("affected-a")] = 'import "../../src/a.ts";\n'; files[save("affected-b")] = 'import "../../src/a.ts";\n';
+  const selected = selectAffected({ files, changed: ["src/a.ts"] });
+  assert.equal(selected.length, 2);
+  const { specs, left } = builderSpecs(selected, { files, changed: ["src/a.ts"], named: ticketSpecs(named.join(" "), files) });
+  assert.equal(specs.length, BUILDER_SPEC_CAP); assert.ok(specs.every(spec => spec.reasons[0] === "named spec"));
+  assert.equal(left, 2, "named specs that were cut are not counted for kit pr");
+});
+
 test("real CLI under a builder caps a widely used file's specs at twenty and says how many kit pr runs", t => {
   const f = fixture(t);
   f.put("shared/wide.ts", "export const wide = 1;\n");
