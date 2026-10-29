@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { connect } from "./agent-pins-support";
 import { storedDrafts } from "./drafts";
+import { waitForConnection } from "./mcp-prompt";
 
 // The edit bar over the native preview: anchored to the selection, with
 // heading level, text size, Bold, Italic and the link Address editing the source.
@@ -300,6 +302,28 @@ test("a selected link takes an address as typed with page suggestions, and the b
 
 type Boxed = { boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> };
 const box = async (locator: Boxed) => (await locator.boundingBox())!;
+// A typed stand-in for the browser's VisualViewport, installed before the editor loads: a
+// keyboard shrinks its height at a fixed scale, a pinch-zoom changes its scale and offset.
+type ViewStub = Pick<VisualViewport, "offsetTop" | "offsetLeft" | "pageTop" | "pageLeft" | "width" | "height" | "scale"> & EventTarget;
+const stubView = (page: Page) => page.addInitScript(() => {
+  const view: ViewStub = Object.assign(new EventTarget(), { offsetTop: 0, offsetLeft: 0, pageTop: 0, pageLeft: 0, width: innerWidth, height: innerHeight, scale: 1 });
+  Object.defineProperty(window, "visualViewport", { get: () => view, configurable: true });
+});
+const setView = (page: Page, change: Partial<Pick<ViewStub, "offsetTop" | "height" | "scale">>) => page.evaluate((next) => {
+  Object.assign(window.visualViewport!, next);
+  window.visualViewport!.dispatchEvent(new Event("resize"));
+}, change);
+// The site header's About link, selected inside its component (a link's bar has Address).
+async function openHeaderLink(page: Page) {
+  const frame = page.frameLocator(".native-preview-frame");
+  await expect(frame.getByRole("link", { name: "About", exact: true })).toBeVisible({ timeout: 30_000 });
+  await frame.getByRole("link", { name: "About", exact: true }).click();
+  await bar(page).getByRole("button", { name: "Edit Site header component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-header/site-header.html");
+  await frame.getByRole("link", { name: "About", exact: true }).click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");
+  await expect(bar(page)).toHaveAttribute("data-side", "docked");
+}
 // The editor's own toast module (the one the app loaded), as a background job would show one.
 const showToast = (page: Page, text: string) => page.evaluate(async (words) => (await import("/src/components/toast.ts")).showToast(words), text);
 
@@ -372,26 +396,98 @@ test.describe("on a phone", () => {
   });
 
   test("the docked bar rides on top of the on-screen keyboard and goes back down when it closes", async ({ page }) => {
-    // A stand-in for the browser's VisualViewport: the keyboard shrinks it, the layout stays put.
-    await page.addInitScript(() => {
-      const view = Object.assign(new EventTarget(), { offsetTop: 0, offsetLeft: 0, pageTop: 0, pageLeft: 0, width: innerWidth, height: innerHeight, scale: 1 });
-      Object.defineProperty(window, "visualViewport", { get: () => view, configurable: true });
-    });
+    await stubView(page);
     await page.reload();
     const paragraph = page.frameLocator(".native-preview-frame").locator('[data-key="hero-lead"]');
     await expect(paragraph).toBeVisible({ timeout: 30_000 });
     await paragraph.click();
     await expect(bar(page)).toHaveAttribute("data-side", "docked");
     const pane = await box(page.locator(".native-preview-pane"));
-    const keyboard = (height: number) => page.evaluate((h) => {
-      // The stand-in above: its height is a plain field.
-      Object.defineProperty(window.visualViewport!, "height", { value: h, configurable: true, writable: true });
-      window.visualViewport!.dispatchEvent(new Event("resize"));
-    }, height);
-    await keyboard(500);
+    await setView(page, { height: 500 });
     await expect.poll(async () => { const at = await box(bar(page)); return Math.round(at.y + at.height); }).toBe(500);
-    await keyboard(844);
+    await setView(page, { height: 844 });
     await expect.poll(async () => { const at = await box(bar(page)); return Math.round(at.y + at.height - (pane.y + pane.height)); }).toBe(0);
+  });
+
+  test("a pinch-zoom lifts the bar to the zoomed view's foot and does not scroll the page", async ({ page }) => {
+    await stubView(page);
+    await page.reload();
+    const paragraph = page.frameLocator(".native-preview-frame").locator('[data-key="filler-3"]');
+    await expect(paragraph).toBeVisible({ timeout: 30_000 });
+    await paragraph.evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().bottom - innerHeight + 4));
+    await paragraph.click();
+    await expect(bar(page)).toHaveAttribute("data-side", "docked");
+    // In view just above the bar, after the new selection's own scroll.
+    await expect.poll(async () => { const shown = await box(paragraph); return shown.y + shown.height <= (await box(bar(page))).y; }).toBe(true);
+    await page.waitForTimeout(600); // fixed-wait: that scroll has finished
+    const scrolled = () => paragraph.evaluate(() => window.scrollY);
+    const before = await scrolled();
+    // Zoomed in twice and panned down: the zoomed view ends at 722, above the paragraph.
+    await setView(page, { scale: 2, height: 422, offsetTop: 300 });
+    await expect.poll(async () => { const at = await box(bar(page)); return Math.round(at.y + at.height); }).toBe(722);
+    await page.waitForTimeout(900); // fixed-wait: past the 400 ms settle and a smooth scroll, nothing may have moved
+    expect(await scrolled()).toBe(before);
+  });
+
+  test("a menu from the docked bar stays above the bar on top of the keyboard", async ({ page }) => {
+    await stubView(page);
+    await page.reload();
+    await openHeaderLink(page);
+    await setView(page, { height: 500 });
+    await expect.poll(async () => { const at = await box(bar(page)); return Math.round(at.y + at.height); }).toBe(500);
+    await bar(page).getByRole("button", { name: "Address" }).click();
+    const popover = page.locator(".edit-bar__popover");
+    await expect(popover.getByRole("combobox", { name: "Address" })).toBeFocused();
+    const shown = await box(popover);
+    expect(shown.y + shown.height).toBeLessThanOrEqual((await box(bar(page))).y + 0.5);
+    expect(shown.y).toBeGreaterThanOrEqual((await box(page.locator(".native-preview-frame"))).y - 0.5);
+  });
+
+  test("turning the window desktop-wide puts the bar back by the selection", async ({ page }) => {
+    await stubView(page);
+    await page.reload();
+    const paragraph = page.frameLocator(".native-preview-frame").locator('[data-key="hero-lead"]');
+    await expect(paragraph).toBeVisible({ timeout: 30_000 });
+    await paragraph.click();
+    await expect(bar(page)).toHaveAttribute("data-side", "docked");
+    await expect(bar(page)).toHaveAttribute("data-toast-avoid", "");
+    await setView(page, { height: 500 });
+    await expect.poll(() => bar(page).evaluate((el) => el.style.translate)).not.toBe("");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(bar(page)).toHaveAttribute("data-side", /^(above|below|pinned)$/);
+    expect(await bar(page).evaluate((el) => el.style.translate)).toBe("");
+    await expect(bar(page)).not.toHaveAttribute("data-toast-avoid");
+  });
+
+  test("Ask agent's note on a selection under the lifted bar stays above the bar", async ({ page, baseURL }) => {
+    await stubView(page);
+    await page.reload();
+    const client = await connect(page, baseURL);
+    try {
+      await expect.poll(async () => {
+        const response = await client.callTool({ name: "get_site", arguments: { agent: "Copy editor" } });
+        return response.isError ? false : JSON.parse((response.content as { text: string }[])[0].text).available ?? true;
+      }, { timeout: 15_000 }).toBe(true);
+      await waitForConnection(page);
+      const paragraph = page.frameLocator(".native-preview-frame").locator('[data-key="filler-3"]');
+      await paragraph.click();
+      await expect(bar(page)).toHaveAttribute("data-side", "docked");
+      await page.waitForTimeout(600); // fixed-wait: the new selection's own check has run
+      await setView(page, { height: 500 });
+      const lifted = await box(bar(page));
+      // The user scrolls it under the lifted bar, inside the frame.
+      const frameBox = await box(page.locator(".native-preview-frame"));
+      await paragraph.evaluate((el, under) => window.scrollBy(0, el.getBoundingClientRect().top - under), lifted.y + 40 - frameBox.y);
+      // Far enough under that the note's own place, just above it, is under the bar too.
+      await expect.poll(async () => (await box(paragraph)).y).toBeGreaterThan(lifted.y + 30);
+      await bar(page).getByRole("button", { name: "Ask agent" }).click();
+      const note = page.locator(".edit-bar__note");
+      await expect(note).toBeVisible();
+      const noted = await box(note);
+      expect(noted.y + noted.height).toBeLessThanOrEqual((await box(bar(page))).y + 0.5);
+    } finally {
+      await client.close();
+    }
   });
 
   test("a toast shown after the bar stands above it", async ({ page }) => {
@@ -427,14 +523,7 @@ test.describe("on a phone", () => {
   });
 
   test("a menu or field from the docked bar opens upward, inside the room above it", async ({ page }) => {
-    const frame = page.frameLocator(".native-preview-frame");
-    await expect(frame.getByRole("link", { name: "About", exact: true })).toBeVisible({ timeout: 30_000 });
-    await frame.getByRole("link", { name: "About", exact: true }).click();
-    await bar(page).getByRole("button", { name: "Edit Site header component", exact: true }).click();
-    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-header/site-header.html");
-    await frame.getByRole("link", { name: "About", exact: true }).click();
-    await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");
-    await expect(bar(page)).toHaveAttribute("data-side", "docked");
+    await openHeaderLink(page);
     await bar(page).getByRole("button", { name: "Address" }).click();
     const popover = page.locator(".edit-bar__popover");
     await expect(popover.getByRole("combobox", { name: "Address" })).toBeFocused();
