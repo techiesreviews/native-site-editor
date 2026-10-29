@@ -79,6 +79,7 @@ Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **C
 | [57 The `kit pr` tests always clean up their temp folders (flake after 29)](tickets/57-kit-pr-tests-leave-no-trace.md) | S | claude | 29, 35 |
 | [58 A counted review that already worked keeps its count when a retry goes silent (follow-up on 34)](tickets/58-silent-retry-keeps-its-count.md) | S | claude | 34 |
 | [59 A builder's spec run stays small, and a timed-out build can resume](tickets/59-builder-specs-capped-and-resume-after-timeout.md) | S–M | claude | – |
+| [60 A spec file with an `@actual` test still runs its other tests; ticket 59's resume follow-ups](tickets/60-specs-actual-tag-keeps-the-rest.md) | S | claude | 30 |
 
 ## 2. Setup pieces (tickets 01, 05; research 04)
 
