@@ -358,17 +358,26 @@ test("stored requests keep no agent acting (am-45): a question left open does no
   assert.equal(presence.onPin("req-took"), undefined);
 });
 
-test("a watchdog's take counts only its connection's agents acting lately (am-45): not another connection's, a stopped one, or one quiet for AT_WORK_MS", () => {
-  const { presence, stops, clock } = presenceViews();
+test("a watchdog's take counts only its connection's agents that acted and are not stopped (am-45): not another connection's or a stopped one", () => {
+  const { presence, stops } = presenceViews();
   const copy = agent("Copy editor"), watchdog = agent("Watchdog");
   presence.heard(agent("Header writer", "g2"));
-  presence.heard(agent("Old helper"));
   presence.heard(agent("Stopped helper"));
   stops.add(JSON.stringify(agent("Stopped helper")));
-  clock.now += AT_WORK_MS + 1;
   presence.heard(watchdog, false);
   presence.heard(copy);
-  presence.heard(agent("Stopped helper"));
+  presence.questions([took(watchdog)]);
+  assert.deepEqual(presence.onPin("req-took"), copy);
+});
+
+test("a watchdog's take names its main agent quiet for longer than AT_WORK_MS (am-45): it waits on its watchdog", () => {
+  const { presence, clock } = presenceViews();
+  const copy = agent("Copy editor"), watchdog = agent("Watchdog");
+  presence.heard(copy);
+  for (let at = 0; at < 4; at++) {
+    clock.now += AT_WORK_MS / 2;
+    presence.heard(watchdog, false);
+  }
   presence.questions([took(watchdog)]);
   assert.deepEqual(presence.onPin("req-took"), copy);
 });

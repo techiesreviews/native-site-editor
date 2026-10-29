@@ -9,7 +9,7 @@
 // same-named page of another workspace. An agent the user stopped (ticket am-12) shows nowhere again.
 // An agent working through a pin on the page (ticket am-13) wears its chip on the pin alone: its outline
 // there has none (`pinned`). A pin only a wait took (ticket am-45) shows the taker when it acts (any call but a
-// wait, or a change); a watchdog's take (an agent heard only waiting) shows its connection's one agent acting lately,
+// wait, or a change); a watchdog's take (an agent heard only waiting) shows its connection's one agent that acted,
 // else no one until one reads or replies (`onPin`). Once named, a take keeps its name, unless that agent is stopped.
 // An agent acting first, or stopped, names the pins again at once (the MCP menu's `listen`).
 
@@ -101,10 +101,11 @@ export function createAgentPresence(ports: AgentPresencePorts) {
   };
   /** Whom the pin of request `id`, taken by `taker`'s wait, names (ticket am-45): the taker when it acts (a worker's
    * own wait); for a watchdog (heard only waiting), the agent this take was named after before, else its connection's
-   * one agent acting in the last AT_WORK_MS. Never a stopped agent (am-12); else no one (until one reads or replies). */
+   * one agent that acted this session. Never a stopped agent (am-12); else no one (until one reads or replies). */
   const takenBy = (id: string, taker: AgentWho) => {
-    const took = keyOf(taker), before = named.get(id), time = now();
-    const others = [...heard].flatMap(([key, agent]) => key !== took && agent.acts && agent.who.grant === taker.grant && time - agent.time <= AT_WORK_MS && !stopped(agent.who) ? [agent.who] : []);
+    const took = keyOf(taker), before = named.get(id);
+    // Acting at any time this session: a main agent goes quiet while its watchdog waits.
+    const others = [...heard].flatMap(([key, agent]) => key !== took && agent.acts && agent.who.grant === taker.grant && !stopped(agent.who) ? [agent.who] : []);
     const who = stopped(taker) ? undefined
       : heard.get(took)?.acts ? taker
       : before?.took === took && !stopped(before.who) ? before.who
