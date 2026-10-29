@@ -130,7 +130,7 @@ function presenceViews(sources: Record<string, string> = { "index.html": page, "
 const findHero = () => [1, 0];
 const agent = (name: string, grant = "g1"): AgentWho => ({ grant, name });
 const question = (who: AgentWho | undefined, element = "1.1.1.0", state = "question", file = "index.html"): PresenceQuestion =>
-  ({ repoId: 1, branch: "main", state, element: { file, id: element }, ...(who ? { reply: { by: who } } : {}) });
+  ({ id: `req-${element}`, repoId: 1, branch: "main", state, element: { file, id: element }, ...(who ? { reply: { by: who } } : {}) });
 
 test("a change's presence is painted on its page's element, and cleared once it ends (once)", () => {
   const { presence, painted } = presenceViews();
@@ -229,7 +229,7 @@ test("an agent working through a pin (am-13) has its colour on the pin and no ch
   // The pin's agent takes the next colour, the same its outline gets.
   assert.equal(presence.colour(copy), 1);
   assert.equal(presence.colour(finder), 0);
-  const working = (who: AgentWho, state = "seen", file = "index.html"): PresenceQuestion => ({ repoId: 1, branch: "main", state, element: { file, id: "1.0.0" }, agent: who });
+  const working = (who: AgentWho, state = "seen", file = "index.html"): PresenceQuestion => ({ id: "req-1", repoId: 1, branch: "main", state, element: { file, id: "1.0.0" }, agent: who });
   presence.questions([working(copy)]);
   const copyEnd = presence.show("index.html", findHero, copy);
   assert.deepEqual(painted.at(-1), [["Image finder", 0, "index.html", "1.0", false], ["Copy editor", 1, "index.html", "1.0", false, "pinned"]]);
@@ -248,17 +248,63 @@ test("an agent working through a pin (am-13) has its colour on the pin and no ch
 
 test("a finished request of an earlier session takes no colour (am-13): the agent at work now gets the first", () => {
   const { presence, painted } = presenceViews();
-  presence.questions([{ repoId: 1, branch: "main", state: "done", element: { file: "index.html", id: "1.0.0" }, agent: agent("Old helper", "old-grant") }]);
+  presence.questions([{ id: "req-old", repoId: 1, branch: "main", state: "done", element: { file: "index.html", id: "1.0.0" }, agent: agent("Old helper", "old-grant") }]);
   presence.show("index.html", findHero, agent("Copy editor"))();
   assert.deepEqual(painted[0], [["Copy editor", 0, "index.html", "1.0", false]]);
   assert.equal(presence.colour(agent("Copy editor")), 0);
 });
 
-test("a watchdog that only took a pin's request takes no colour (am-13): the first agent at work gets the first", () => {
+// A request a wait took (ticket am-45): `taker`'s wait, on the hero heading.
+const took = (taker: AgentWho, id = "req-took", state = "seen"): PresenceQuestion =>
+  ({ id, repoId: 1, branch: "main", state, element: { file: "index.html", id: "1.0.0" }, agent: taker, agentTook: true });
+
+test("a pin a wait took and its agent answers without reading it by id shows that agent while it works (am-45): its name and colour, its outline unnamed", () => {
   const { presence, painted } = presenceViews();
-  presence.questions([{ repoId: 1, branch: "main", state: "seen", element: { file: "index.html", id: "1.0.0" }, agent: agent("Watchdog"), agentTook: true }]);
-  presence.show("index.html", findHero, agent("Copy editor"))();
-  assert.deepEqual(painted[0], [["Copy editor", 0, "index.html", "1.0", false]], "not pinned either: the watchdog's pin names no one");
+  const copy = agent("Copy editor");
+  // Taken by Copy editor's own wait, no agent of its connection at work yet: the pin is Copy editor's at once.
+  presence.questions([took(copy)]);
+  assert.deepEqual(presence.onPin("req-took"), copy);
+  assert.equal(presence.colour(copy), 0);
+  // At work on it: its outline there has no chip (the pin has its name).
+  const end = presence.show("index.html", findHero, copy);
+  assert.deepEqual(painted.at(-1), [["Copy editor", 0, "index.html", "1.0", false, "pinned"]]);
+  end();
+  // Its reply (no read first): done, grey, no one on the pin.
+  presence.questions([{ ...took(copy, "req-took", "done"), agentTook: undefined }]);
+  assert.equal(presence.onPin("req-took"), undefined);
+});
+
+test("a watchdog's take shows its connection's agent at work (am-45), takes no colour itself, and with several shows no one until one reads", () => {
+  const { presence, painted } = presenceViews();
+  const watchdog = agent("Watchdog"), copy = agent("Copy editor"), finder = agent("Image finder");
+  presence.show("index.html", findHero, copy)();
+  presence.questions([took(watchdog)]);
+  assert.deepEqual(presence.onPin("req-took"), copy, "the connection's one agent at work");
+  assert.deepEqual(painted[0], [["Copy editor", 0, "index.html", "1.0", false]]);
+  // Another agent of the connection at work since: the pin keeps Copy editor (until done).
+  presence.show("index.html", findHero, finder)();
+  presence.questions([took(watchdog)]);
+  assert.deepEqual(presence.onPin("req-took"), copy);
+  // A second take with both at work: no one, and the watchdog takes no colour.
+  presence.questions([took(watchdog), took(watchdog, "req-second")]);
+  assert.equal(presence.onPin("req-second"), undefined);
+  assert.deepEqual([presence.colour(copy), presence.colour(finder)], [0, 1]);
+  // Image finder reads it by its id: its pin.
+  presence.questions([took(watchdog), { ...took(finder, "req-second"), agentTook: undefined }]);
+  assert.deepEqual(presence.onPin("req-second"), finder);
+});
+
+test("a take counts only its own connection's agents at work (am-45): with none, the pin is the taker's", () => {
+  const { presence } = presenceViews();
+  presence.show("index.html", findHero, agent("Header writer", "g2"))();
+  presence.questions([took(agent("Copy editor"))]);
+  assert.deepEqual(presence.onPin("req-took"), agent("Copy editor"));
+  // Stopped meanwhile, the agent at work counts no more.
+  const { presence: next, stops } = presenceViews();
+  next.show("index.html", findHero, agent("Header writer"))();
+  stops.add(JSON.stringify(agent("Header writer")));
+  next.questions([took(agent("Copy editor"))]);
+  assert.deepEqual(next.onPin("req-took"), agent("Copy editor"));
 });
 
 test("get_site tells agents of one connection apart by name: one at work on Home, another asking on About, in order of arrival", () => {

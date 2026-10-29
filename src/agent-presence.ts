@@ -8,7 +8,8 @@
 // A workspace switch (`refresh`, at each load) clears what no longer holds, so nothing is drawn on a
 // same-named page of another workspace. An agent the user stopped (ticket am-12) shows nowhere again.
 // An agent working through a pin on the page (ticket am-13) wears its chip on the pin alone: its outline
-// there has none (`pinned`).
+// there has none (`pinned`). A pin only a wait took (ticket am-45) shows its connection's one agent at
+// work this session, else the taker while none is; with several, no one until one reads or replies (`onPin`).
 
 import { outlineId, parseOutlineId, type AgentWho } from "../shared/agent";
 import type { AgentAtWork } from "../shared/agent-read";
@@ -23,7 +24,7 @@ export interface AgentMark { key: string; name: string; colour: number; path: st
  * unless it works again (none while it is at work or asking). */
 export interface WorkingAgent { key: string; who: AgentWho; name: string; colour: number; asking: boolean; until?: number }
 /** A request as its question shows: its site and branch, the element it is about, and who asked when it waits for the user's answer. */
-export interface PresenceQuestion { repoId: number; branch?: string; state: string; element: { file: string; id: string }; reply?: { by?: AgentWho }; agent?: AgentWho; agentTook?: boolean }
+export interface PresenceQuestion { id: string; repoId: number; branch?: string; state: string; element: { file: string; id: string }; reply?: { by?: AgentWho }; agent?: AgentWho; agentTook?: boolean }
 
 /** The agents' colours, theme tokens in order of arrival: the MCP green, the components' violet, video pink, data teal (src/theme.css). */
 export const AGENT_COLOURS = ["agent-presence", "agent-presence-2", "agent-presence-3", "agent-presence-4"] as const;
@@ -68,6 +69,12 @@ export function createAgentPresence(ports: AgentPresencePorts) {
   let asked: { who: AgentWho; path: string; element: string; at: Hold }[] = [];
   // The pins an agent works through now, by agent and page: their chips carry its name.
   let pinned: { key: string; path: string; at: Hold }[] = [];
+  // The agents at work this session (a change, a question, a pin read or replied to), by key: whom a wait's take names.
+  const workers = new Map<string, AgentWho>();
+  // The agent each pin an agent works through shows, by request; and for one a wait took, whom that take named
+  // last: kept while it holds, so an agent at work since on its connection does not leave the pin unnamed.
+  let onPins = new Map<string, AgentWho>();
+  const named = new Map<string, { took: string; who: AgentWho }>();
   // Each agent's place in the order of arrival, for the session (a few names each, never cleared): its colour.
   const arrivals = new Map<string, number>();
   // Each agent's latest change, as get_site tells it: held to its site and branch (a reload keeps it), as questions are.
@@ -82,6 +89,15 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     const key = keyOf(who);
     if (!arrivals.has(key)) arrivals.set(key, arrivals.size);
     return key;
+  };
+  /** Whom the pin of request `id`, taken by `taker`'s wait, names (ticket am-45): the taker when it is at work itself or
+   * its connection has no agent at work yet, else that connection's one agent at work; with several, the one named
+   * before for this take, else no one (until one reads it or replies). */
+  const takenBy = (id: string, taker: AgentWho) => {
+    const took = keyOf(taker), theirs = [...workers.values()].filter(who => who.grant === taker.grant && !stopped(who));
+    const who = workers.has(took) || !theirs.length ? taker : theirs.length === 1 ? theirs[0] : undefined;
+    if (who) named.set(id, { took, who });
+    return who ?? (named.get(id)?.took === took ? named.get(id)!.who : undefined);
   };
   const isPage = (path: string) => [...ports.pages()].includes(path);
   // The section a question's element is in, in its page's text now: where its agent shows, and what get_site tells.
@@ -148,6 +164,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
       // Stopped: its calls are refused before they run (src/components/agent-menu.ts, with shared/agent.ts AGENT_STOPPED); one already under way draws nothing.
       if (stopped(who)) return () => {};
       arrive(who);
+      workers.set(keyOf(who), who);
       const page = isPage(path), source = page ? ports.source(path) : undefined, node = source === undefined ? undefined : find(source);
       const at = ports.begin(), where = ports.workspace();
       latest.set(keyOf(who), { who, path, ...(node ? { node: [...node] } : {}), time: now(), at: { holds: () => Boolean(where && ports.shows(where)) } });
@@ -166,7 +183,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
       };
     },
     /** The open workspace's requests (the agent menu tells them): each question waiting for the user shows on its element, by who asked it;
-     * each request an agent works through puts its name on the pin, not on its outline on that page. */
+     * each request an agent works through puts its name on the pin (`onPin`), not on its outline on that page. */
     questions(requests: readonly PresenceQuestion[]) {
       const holds = (request: PresenceQuestion) => {
         const where = { repoId: request.repoId, ...(request.branch ? { branch: request.branch } : {}) };
@@ -178,10 +195,20 @@ export function createAgentPresence(ports: AgentPresencePorts) {
         arrive(who);
         return [{ who, path: request.element.file, element: request.element.id, at: holds(request) }];
       });
-      // Not a watchdog that only took it: it draws nothing, and takes no colour.
-      pinned = requests.flatMap(request => request.state === "seen" && request.agent && !request.agentTook ? [{ key: arrive(request.agent), path: request.element.file, at: holds(request) }] : []);
+      for (const { who } of asked) workers.set(keyOf(who), who);
+      const working = requests.filter(request => request.state === "seen" && request.agent);
+      for (const request of working) if (!request.agentTook) workers.set(keyOf(request.agent!), request.agent!);
+      for (const id of named.keys()) if (!working.some(request => request.id === id && request.agentTook)) named.delete(id);
+      // A watchdog that only took it for an agent at work takes no colour, nor one whose pin names no one yet.
+      onPins = new Map(working.flatMap(request => {
+        const who = request.agentTook ? takenBy(request.id, request.agent!) : request.agent!;
+        return who ? [[request.id, who] as const] : [];
+      }));
+      pinned = working.flatMap(request => onPins.has(request.id) ? [{ key: arrive(onPins.get(request.id)!), path: request.element.file, at: holds(request) }] : []);
       refresh();
     },
+    /** The agent the pin of request `id` shows at work on it, as the last `questions` told (none: its spinner, or not being worked on). */
+    onPin: (id: string): AgentWho | undefined => onPins.get(id),
     /** `who`'s colour (an index into AGENT_COLOURS), the same on its pins as on its outline: it arrives now if new. */
     colour: (who: AgentWho) => arrivals.get(arrive(who))! % AGENT_COLOURS.length,
     /** Who works on what in the workspace shown (get_site): every agent at work, asking, or with a change in the last AT_WORK_MS. */

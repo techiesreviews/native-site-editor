@@ -49,8 +49,9 @@ const cases: Record<FrameMessage["type"], Case> = {
   },
   "canvas-clear": { valid: {}, malformed: [] },
   "pin-rects": {
-    valid: { rects: [{ id: "a", rect }, { id: "b", rect: { top: 1 } }, { rect }] },
-    read: { rects: [{ id: "a", rect }, { id: "b", rect: null }] },
+    // A pin's element tells the top of what stands just above it (am-45): kept only when above its own top.
+    valid: { rects: [{ id: "a", rect }, { id: "b", rect: { top: 1 } }, { rect }, { id: "c", rect: { ...rect, clear: rect.top - 20 } }, { id: "d", rect: { ...rect, clear: rect.top } }] },
+    read: { rects: [{ id: "a", rect }, { id: "b", rect: null }, { id: "c", rect: { ...rect, clear: rect.top - 20 } }, { id: "d", rect }] },
     malformed: [{ rects: { id: "a" } }],
   },
   "drop-containers": {

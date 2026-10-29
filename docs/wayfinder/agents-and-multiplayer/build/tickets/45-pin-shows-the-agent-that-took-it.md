@@ -1,7 +1,7 @@
 ---
 title: "A pin shows the agent that took it, however it was taken (follow-up on 13)"
 type: task (AFK)
-status: open
+status: closed
 assignee: am-45
 builder: claude
 blocked_by: [13-pin-conversation]
@@ -33,3 +33,14 @@ Slice 13 (PR #252) colours a picked-up pin with the agent's colour and name only
 ## Kit commands and evidence
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit specs --affected`, `kit review`, `kit pr`; shots; report the RESULT lines.
+
+## Done (2026-10-29)
+
+- A pin a wait took now shows an agent at once (`src/agent-presence.ts` `onPin`, wired in `src/agent-menu-host.ts`): the taker when it is at work itself or its connection has no agent at work yet this session (a change, a question, a pin read or replied to); else that connection's one agent at work; with several, the spinner until one reads it or replies. Once named, a take keeps its agent until done, even if another agent of the connection starts work. The pin takes that agent's colour; a watchdog only takes one when it is the agent shown.
+- The pin row stands clear of what stands just above its element when there is room (the eyebrow line over the starter's hero heading): the preview runtime reports the top of earlier siblings closer than a pin row (`clear` on `pin-rects`), `noteAnchor` stands the pins above it, and the Ask agent note follows the selection's pins. With no room at the frame's top, the pins stand on the element's own edge, as before.
+- Unit tests: `tests/agent-presence.test.ts` (a pin taken by a wait and answered without a read shows that agent's name and colour while it works; the watchdog/several-agents cases; other connections and stopped agents do not count), `tests/agent-menu-host.test.ts`, `tests/agent-pin-geometry.test.ts`, `tests/preview-protocol.test.ts`. The first presence case fails before the fix (the pin was never "pinned" to the agent).
+- Specs: `native-agent-pins.spec.ts` has a new `@actual` test at 390 and 1280, light and dark: the agent's own wait names the pin in its colour, the pin row is clear of the eyebrow line and the heading, and done turns it grey with no agent colour. `ASE_PIN_SHOTS=<dir>` saves the shots. The default test now expects the watchdog's name (no agent at work on its connection yet) until Copy editor reads, then Copy editor in the second colour. `native-mcp.spec.ts` now expects the agent's own wait to name both pins at once.
+- Out of the listed Files, needed for the behaviour: `src/agent-menu-host.ts`, `src/components/native-preview-runtime.js`, `src/components/preview-protocol.ts`, `src/components/edit-bar.ts`, `src/components/agent-pin-geometry.ts`, `tests/native-save/native-mcp.spec.ts`.
+- Known limits: which agents are at work is per tab, so another tab may name the taker where the receiving tab names its worker. A pin named after a watchdog stays on it until the next request update, even if a worker starts editing meanwhile.
+- Shots (real starter, scripted: waiting, taken by a wait, one done; 390 and 1280, light and dark): `.scratch/shots/build-am-45-pin-shows-agent/20261029-064919/` (main checkout), contact sheets `contact-390.webp`, `contact-1280.webp`; every shot checks no pin covers the eyebrow line ("LARKSPUR STUDIO").
+- Feature list: F-agent-04 Good and Files updated.
