@@ -417,7 +417,7 @@ its number unused.
 
 ### F-bar-01 Edit bar on the selection
 - Try: Select a heading, a section and a component part.
-- Good: The bar sits by the element with its name as a label and never covers the text being edited; groups wrap whole on narrow frames (L4, U5).
+- Good: The bar sits by the element with its name as a label and never covers the text being edited; groups wrap whole on narrow frames (L4, U5). On a phone it is docked at the foot of the canvas instead, one row that scrolls sideways with the name chip first: no page content sits under it, it rides on top of the on-screen keyboard, and a selection it (or the keyboard, or a toast on it) would hide scrolls into view above it.
 - Files: `src/components/edit-bar.ts`, `src/components/edit-bar.css`, `src/components/edit-bar-placement.ts`, `src/controllers/page-structure-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-edit-bar.spec.ts`

@@ -1,7 +1,7 @@
 ---
 title: "The edit bar on a phone: opens on a new element, and Text size applies (found on dev by 42's UX check)"
 type: task (AFK)
-status: ready-for-human
+status: closed
 assignee: am-43
 builder: claude
 blocked_by: []
@@ -45,6 +45,7 @@ Slice 42's UX check found two edit-bar faults at 390 px that plain `dev` shows e
 - Shots after the fix, 390 and 1280 px, light and dark (`kit shots --steps`, `RESULT: ok shots 14 files, 0 failed` for each): `.scratch/ux/am-43-builder/20261029/editor-F-bar-01-{390,1280}-{light,dark}-bar-strip.webp` and `editor-F-bar-03-{390,1280}-{light,dark}-size-strip.webp` (main checkout).
 - Validation: `RESULT: ok unit 123/123 (6 files)`; `RESULT: ok specs 2/2 passed; 67 more run in kit pr` (affected); named specs `RESULT: ok specs 2/2 passed` (native-edit-bar, native-text-size); `npm run check` and `npm run lint` pass; `RESULT: ok size boot 342 KB (±0 KB) vs dev@9ff2b5a, budget 355 KB`; `RESULT: ok doctor 11/11 checks passed`.
 - Feature list: F-bar-03's Good line now says the chosen size applies at once, also right after Bold, with no "source changed" refusal.
+- **Closed (2026-10-29).** The deferred rule "the bar never covers the element above it" is met on phones by docking the bar to the foot of the canvas ([46](46-phone-edit-bar-placement.md), Lex chose option C). Lex accepted the F-bar-01 waiver (lead, 2026-10-29).
 
 ### Follow-ups
 

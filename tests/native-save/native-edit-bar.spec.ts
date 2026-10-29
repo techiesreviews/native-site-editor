@@ -304,17 +304,44 @@ test.describe("on a phone", () => {
   test("a Heading just added from the Blocks rail is selected with its bar in view", async ({ page }) => {
     await page.getByRole("navigation", { name: "Blocks" }).getByRole("button", { name: "Heading", exact: true }).click();
     await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
-    await expect(bar(page).getByRole("button", { name: "Bold" })).toBeInViewport();
+    await expect(bar(page).getByRole("button", { name: "Bold" })).toBeVisible();
     const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
+    // The "Heading added … Undo" strip stays clear of the bar, measured once both have shown.
+    const strip = page.locator(".editor-toast");
+    await expect(strip).toContainText("Heading added");
+    await expect.poll(async () => {
+      const barBox = (await bar(page).boundingBox())!;
+      const stripBox = (await strip.boundingBox())!;
+      return barBox.y + barBox.height <= stripBox.y || stripBox.y + stripBox.height <= barBox.y
+        || barBox.x + barBox.width <= stripBox.x || stripBox.x + stripBox.width <= barBox.x;
+    }).toBe(true);
     const barBox = (await bar(page).boundingBox())!;
     expect(barBox.x).toBeGreaterThanOrEqual(frameBox.x - 1);
     expect(barBox.x + barBox.width).toBeLessThanOrEqual(frameBox.x + frameBox.width + 1);
-    // The "Heading added … Undo" strip stays clear of the bar.
-    const strip = page.locator(".editor-toast");
-    await expect(strip).toContainText("Heading added");
-    const stripBox = (await strip.boundingBox())!;
-    const apart = barBox.y + barBox.height <= stripBox.y || stripBox.y + stripBox.height <= barBox.y
-      || barBox.x + barBox.width <= stripBox.x || stripBox.x + stripBox.width <= barBox.x;
-    expect(apart, `bar ${JSON.stringify(barBox)} and strip ${JSON.stringify(stripBox)}`).toBe(true);
+  });
+
+  test("the bar docks at the canvas foot, clear of the selected paragraph and of the page's end", async ({ page }) => {
+    const frame = page.frameLocator(".native-preview-frame");
+    const paragraph = frame.locator('[data-key="filler-3"]');
+    await expect(paragraph).toBeVisible({ timeout: 30_000 });
+    // Its last line at the canvas foot, where the bar docks.
+    await paragraph.evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().bottom - innerHeight + 4));
+    await paragraph.click();
+    await expect(bar(page)).toHaveAttribute("data-side", "docked");
+    await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+    const pane = (await page.locator(".native-preview-pane").boundingBox())!;
+    const box = async (locator: { boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> }) => (await locator.boundingBox())!;
+    const barBox = await box(bar(page));
+    // Across the canvas at its foot, under the frame: no page sits under it.
+    expect(Math.abs(barBox.y + barBox.height - (pane.y + pane.height))).toBeLessThanOrEqual(1);
+    expect(Math.abs(barBox.width - pane.width)).toBeLessThanOrEqual(1);
+    expect((await box(page.locator(".native-preview-frame"))).y + (await box(page.locator(".native-preview-frame"))).height).toBeLessThanOrEqual(barBox.y + 1);
+    // The selected paragraph is scrolled into view above it.
+    await expect.poll(async () => { const shown = await box(paragraph); return shown.y + shown.height <= barBox.y && shown.y >= pane.y; }).toBe(true);
+    // The page's end scrolls clear above the bar, and the bar does not move with the page.
+    await paragraph.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const footer = frame.locator("site-footer");
+    await expect.poll(async () => { const end = await box(footer); return end.y + end.height <= barBox.y + 1; }).toBe(true);
+    expect((await box(bar(page))).y).toBe(barBox.y);
   });
 });
