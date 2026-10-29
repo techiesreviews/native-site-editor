@@ -441,7 +441,6 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     previewElementMenu = createRowMenu(ports.app);
     // The component tools never run before the first paint: they load two frames and a beat after it
     // (the runtime reports the structure just before the frame presents it), for the preview painted.
-    // A load that fails tries again with the next structure the preview reports.
     let toolsDue = false;
     const toolsAfterPaint = () => {
       if (toolsDue) return;
@@ -450,10 +449,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       cancelToolsWait = afterPaint(() => {
         cancelToolsWait = undefined;
         if (ports.nativePreview !== preview) return;
-        loadComponentTools().catch((error: unknown) => {
-          toolsDue = false;
-          ports.errorMessage(error);
-        });
+        void loadComponentTools();
       });
     };
     ports.nativePreview = createNativePreview(ports.element("main"), {
@@ -476,7 +472,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
         const since = ports.guardedEdits.stamp(), menu = previewElementMenu;
         void loadComponentTools().then((tools) => {
           if (tools && ask === contextMenuAsk && since.holds() && previewElementMenu === menu) open(tools);
-        }).catch(ports.errorMessage);
+        });
       },
       // The images of a page shown by following a link are read when it shows.
       // A page the text index has not read yet is read when it shows.
@@ -499,7 +495,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       insertPointFor: ports.builder.addPoint,
       insertDestinationText: point => point ? ports.builder.addPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
       onInsert: (point, choice) => void ports.builder.insert(point, choice),
-      onNewComponent: (tag, point) => ports.componentTools?.newComponent(tag, point) ?? Promise.resolve(false),
+      // The Add panel's New component waits for the component tools when it comes before them.
+      onNewComponent: async (tag, point) => (await loadComponentTools())?.newComponent(tag, point) ?? false,
       onStructure: (structure) => {
         if (!structure) { ports.pageStructure?.update(undefined); return; }
         toolsAfterPaint();
@@ -609,7 +606,9 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
 
   // The component tools for the preview shown, made once their module has loaded: Page Structure's
   // instance and text rows and the edit bar then draw with them. Tools that land for a preview
-  // replaced or closed are destroyed and handed to no one (undefined).
+  // replaced or closed are destroyed and handed to no one (undefined). A load that fails is reported
+  // once and not tried again for this preview (the browser keeps a failed module import failed until
+  // the page reloads, which chunk recovery's notice asks for): every later ask gets undefined. Never rejects.
   function loadComponentTools(): Promise<ComponentTools | undefined> {
     const preview = ports.nativePreview;
     if (!preview) return Promise.resolve(undefined);
@@ -622,8 +621,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       if (selection) ports.pageStructureController.renderEditBar(selection);
       return tools;
     }, (error: unknown) => {
-      if (toolsLoad === load) toolsLoad = undefined;
-      throw error;
+      if (ports.nativePreview === preview && toolsLoad === load) ports.errorMessage(error);
+      return undefined;
     });
     return load;
   }
