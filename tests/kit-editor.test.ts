@@ -306,3 +306,38 @@ console.log(kitShellLibrary()); console.log(kitLibrary());`;
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, `${join(fake, "kit-lib.sh")}\n${join(fake, "kit-lib.mjs")}\n`);
 });
+
+test("the hook launcher finds the machine copy, and picks again for a pinned kit that is gone or has no hooks", (t) => {
+  const directory = temp(t), data = join(directory, "data");
+  const whole = (folder: string, hooks: boolean) => {
+    mkdirSync(join(folder, "hooks"), { recursive: true });
+    writeFileSync(join(folder, "kit"), "#!/usr/bin/env bash\n"); chmodSync(join(folder, "kit"), 0o755);
+    writeFileSync(join(folder, "kit-lib.sh"), "");
+    if (hooks) writeFileSync(join(folder, "hooks/run.sh"), 'printf "ran %s\\n" "$*"; exit 2\n');
+    return folder;
+  };
+  whole(join(data, "agent-kit/machine"), true);
+  symlinkSync("machine", join(data, "agent-kit/current"));
+  const hookless = whole(join(directory, "hookless"), false);
+  const { KIT_HOME: _home, KIT_HOME_DEFAULT: _default, KIT_HOME_PINNED: _pinned, ...rest } = process.env;
+  const env = { ...rest, XDG_DATA_HOME: data, XDG_CACHE_HOME: join(directory, "cache") };
+  const hook = (extra: NodeJS.ProcessEnv) => {
+    const result = spawnSync("bash", [resolve("scripts/agents/hooks/run.sh"), "bash-guard"], { env: { ...env, ...extra }, input: "{}", encoding: "utf8" });
+    return [result.status, result.stdout];
+  };
+  assert.deepEqual(hook({}), [2, "ran bash-guard\n"]);
+  const gone = join(directory, "gone");
+  assert.deepEqual(hook({ KIT_HOME: gone, KIT_HOME_PINNED: gone }), [2, "ran bash-guard\n"]);
+  assert.deepEqual(hook({ KIT_HOME: hookless, KIT_HOME_PINNED: hookless }), [2, "ran bash-guard\n"]);
+});
+
+test("kit version goes through the machine copy the launcher picks", (t) => {
+  const directory = temp(t), data = join(directory, "data"), machine = join(data, "agent-kit/machine");
+  mkdirSync(machine, { recursive: true });
+  writeFileSync(join(machine, "kit"), '#!/usr/bin/env bash\nprintf "commit 1234567\\nRESULT: ok %s 1234567\\n" "$1"\n'); chmodSync(join(machine, "kit"), 0o755);
+  writeFileSync(join(machine, "kit-lib.sh"), "");
+  symlinkSync("machine", join(data, "agent-kit/current"));
+  const { KIT_HOME: _home, KIT_HOME_DEFAULT: _default, KIT_HOME_PINNED: _pinned, ...rest } = process.env;
+  const result = spawnSync(kit, ["version"], { env: { ...rest, XDG_DATA_HOME: data }, encoding: "utf8" });
+  assert.deepEqual([result.status, result.stdout], [0, "commit 1234567\nRESULT: ok version 1234567\n"]);
+});
