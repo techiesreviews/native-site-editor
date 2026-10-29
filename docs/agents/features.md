@@ -1055,10 +1055,10 @@ its number unused.
 
 ### F-agent-04 Ask agent and pins
 - Try: Select an element, press Ask agent and type a request; ask again on the same element; answer a question on its pin, or open a done pin and send a follow-up.
-- Good: A numbered pin shows waiting (blue), the agent on it in that agent's colour with its name, a question (orange) or done (grey, no name); taken by an agent's wait, the pin shows that agent at once when it works or is alone on its connection (with several agents, such as a watchdog and the agent it works for, the spinner until one reads or replies) and keeps it until done; one element holds several pins side by side, they and Ask agent's note standing clear of a short line just above a heading (an eyebrow) when there is room; every pin's card has a box and Send, and a follow-up reopens the pin for the same agent; that agent's outline on the element has no second name chip; Ask agent stays icon-only; history stays in this browser.
+- Good: A numbered pin shows waiting (blue), the agent on it in that agent's colour with its name, a question (orange) or done (grey, no name); taken by an agent's wait, the pin shows that agent at once when it works or is alone on its connection, else the connection's one other agent (a watchdog's main agent; with several, the one at work, else the spinner until one reads or replies), and keeps it until done; one element holds several pins side by side, they and Ask agent's note standing clear of a short line just above a heading (an eyebrow) when there is room; every pin's card has a box and Send, and a follow-up reopens the pin for the same agent; that agent's outline on the element has no second name chip; Ask agent stays icon-only; history stays in this browser.
 - Files: `src/components/agent-pins.ts`, `src/components/agent-pins.css`, `src/components/agent-pin-geometry.ts`, `src/components/native-preview-runtime.js`, `src/agent-records.ts`, `shared/agent-requests.ts`, `src/agent-presence.ts`, `src/agent-menu-host.ts`, `src/components/agent-menu.ts`
 - Phone: yes
-- Spec: `tests/native-save/native-mcp.spec.ts`, `tests/native-save/native-agent-pins.spec.ts`
+- Spec: `tests/native-save/native-mcp.spec.ts`, `tests/native-save/native-agent-pins.spec.ts`, `tests/native-save/native-agent-pins-actual.spec.ts`
 - Steps: none yet (needs a connected agent)
 
 ### F-agent-05 Agent presence
