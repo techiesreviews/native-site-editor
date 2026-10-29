@@ -391,6 +391,29 @@ test("Bold wraps selected text and unwraps formatted text through the edit bar",
   assert.deepEqual(f.notices, []);
 });
 
+test("Text size chosen right after Bold, before the bar redraws, applies to the bolded source", () => {
+  const f = fixture({ page: "<main><p>Hello world</p></main>" });
+  const control = drawBar(f, f.target.node, textBarPorts(f), undefined, "p");
+  const bold = control("B"), size = control("Text size");
+  assert.ok(bold.kind === "button" && size.kind === "select");
+  bold.onPress();
+  size.onChange("l");
+  assert.equal(f.page(), '<main><p style="font-size: 1.25rem"><strong>Hello</strong> world</p></main>');
+  assert.deepEqual(f.mem.steps(), ["range", "range"]);
+  assert.deepEqual(f.notices, []);
+  assert.deepEqual(f.errors, []);
+});
+
+test("Text size from a bar drawn before its element's start tag moved still refuses", () => {
+  const f = fixture({ page: "<main><p>Hello world</p></main>" });
+  const size = drawBar(f, f.target.node, textBarPorts(f), undefined, "p")("Text size");
+  assert.ok(size.kind === "select");
+  f.mem.typeInto(PAGE, "<main> <p>Hello world</p></main>");
+  size.onChange("l");
+  assert.equal(f.page(), "<main> <p>Hello world</p></main>");
+  assert.deepEqual(f.notices, ["The source changed. Select the element again and try again."]);
+});
+
 test("Link wraps selected text; leaving its unused Address removes the empty link and its undo step", async () => {
   const source = "<main><p>Hello world</p></main>";
   const f = fixture({ page: source });

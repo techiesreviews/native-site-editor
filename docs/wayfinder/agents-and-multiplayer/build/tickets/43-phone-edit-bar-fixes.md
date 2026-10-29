@@ -1,7 +1,7 @@
 ---
 title: "The edit bar on a phone: opens on a new element, and Text size applies (found on dev by 42's UX check)"
 type: task (AFK)
-status: open
+status: closed
 assignee: am-43
 builder: claude
 blocked_by: []
@@ -34,3 +34,14 @@ Slice 42's UX check found two edit-bar faults at 390 px that plain `dev` shows e
 ## Kit commands and evidence
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit specs --affected`, `kit ux`, `kit review`, `kit pr`; report the RESULT lines and shots.
+
+## Done (2026-10-29)
+
+- **F-bar-03, Text size.** Cause: the bar's controls hold the page source from when they were drawn. When Text size was chosen right after Bold, before the bar had redrawn, the size was checked against that old copy and refused with "The source changed…" (it showed up in 1 of 5 runs at 390 px light; it is a timing race, not a theme or width fault). Now Text size, which only edits the element's start tag, applies to the latest source as long as that start tag is still in the same place with the same text; any other change is still refused. `src/controllers/page-structure-controller.ts`.
+- **F-bar-01, edit bar on a new element.** No app fault: the bar does show on a newly added Heading at 390 and 1280 px in every frame. The check clicked the `main.page` crumb after adding the Heading, which selects the page's `main`, and `main` gets no bar by design. The check now records the new Heading's bar, expects Bold, then selects the Heading's section (`section.flow`) and expects its Variants. Run the old way (selecting `main`) with the new closing check, it fails (`expect visible "Bold" failed`).
+- **The F-bar-03 check** now ends with `expect visible "p.text-l"` (the crumb for the applied size class), so it fails when the size didn't apply. With "press l" left out it fails (`expect visible "p.text-l" failed`).
+- **Not changed:** at 390 px the bar above a paragraph still covers the bottom line of the element above it (the "Paragraph" label over the card's link). Every placement above an element covers what sits just above it, and the F-bar-01 rule only protects the selection, so changing this needs a placement decision first.
+- Tests: `tests/page-structure-controller.test.ts`: "Text size chosen right after Bold, before the bar redraws, applies to the bolded source" (failed before the fix, passes after) and "Text size from a bar drawn before its element's start tag moved still refuses". Steps: `scripts/agents/shots/features/F-bar-01.json`, `F-bar-03.json`.
+- Shots after the fix, 390 and 1280 px, light and dark (`kit shots --steps`, `RESULT: ok shots 14 files, 0 failed` for each): `.scratch/ux/am-43-builder/20261029/editor-F-bar-01-{390,1280}-{light,dark}-bar-strip.webp` and `editor-F-bar-03-{390,1280}-{light,dark}-size-strip.webp` (main checkout).
+- Validation: `RESULT: ok unit 115/115 (6 files)`; `RESULT: ok specs none affected`; named specs `RESULT: ok specs 2/2 passed` (native-text-size, native-edit-bar); `npm run check` and `npm run lint` pass; `RESULT: ok doctor 11/11 checks passed`.
+- Feature list: no change (F-bar-03's Good already says the size applies; both features keep their Steps files).
