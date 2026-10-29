@@ -171,6 +171,9 @@ export function createAgentEditTools(options: Options) {
          * command's elements found in it again from the page as the agent read it; refused only when that
          * part itself changed (PartClash).
          */
+        // The agent's reads, looked up once for every attempt: keeping a text now may let the oldest go before a retry.
+        const reads = new Map<string, string>();
+        const readOnce = (hash: string) => { const text = reads.get(hash) ?? readText(hash); if (text !== undefined) reads.set(hash, text); return text; };
         const prepareNow = async () => {
           const shared = await pin.context();
           check();
@@ -178,7 +181,7 @@ export function createAgentEditTools(options: Options) {
           const files = new SiteFiles(agentFileReader(source, shared.context, signal), source.repo, shared.context, async hash => {
             check(); return shared.texts.get(hash);
           });
-          const prepared = await prepareAgentEdit(request, shared.context, files, readText);
+          const prepared = await prepareAgentEdit(request, shared.context, files, readOnce);
           check();
           const context = shared.context;
           if ("unchanged" in prepared || typeof prepared.input.expectedHash !== "string" || request.tool !== "edit_file" && !PAGE_COMMANDS.has(request.tool))
@@ -187,7 +190,7 @@ export function createAgentEditTools(options: Options) {
           check();
           if (!file) return { prepared, context };
           // The agent's read is looked up before the text now is kept: keeping it may let the oldest read go.
-          const read = file.hash === expected || !PAGE_COMMANDS.has(request.tool) ? undefined : readText(expected);
+          const read = file.hash === expected || !PAGE_COMMANDS.has(request.tool) ? undefined : readOnce(expected);
           rememberText(file.hash, file.content);
           if (read === undefined) return { prepared, context };
           return { context, prepared: { ...prepared, input: { ...input, expectedHash: file.hash,

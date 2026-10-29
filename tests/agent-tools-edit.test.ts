@@ -13,7 +13,7 @@ import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
 import type { Snapshot, TreeEntry } from "../shared/types";
 import { createAgentEditTools } from "../src/agent-tools-edit";
-import { readText, rememberText, tellAgent } from "../src/agent-part";
+import { READ_TEXTS, readText, rememberText, tellAgent } from "../src/agent-part";
 import { workingPart } from "../src/working-part";
 import { agentCommandFiles } from "../src/agent-tools";
 import { agentFileReader, type AgentReadPorts } from "../src/agent-tools-read";
@@ -382,7 +382,7 @@ test("a stale page command keeps its read when the tab's texts are full: keeping
   const f = await fixture(), read = files["index.html"], now = read.replace("<main>\n", "<main>\n  <section>Added</section>\n");
   // The agent's read is the oldest text the tab keeps, at its cap of 200; the page now is not kept yet.
   rememberText(await textHash(read), read);
-  for (let i = 0; i < 199; i++) rememberText(`full-${i}`, String(i));
+  for (let i = 0; i < READ_TEXTS - 1; i++) rememberText(`full-${i}`, String(i));
   f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(now), content: now });
   await f.run(request("remove_section", { page: "/", section: "1.1", expectedHash: await textHash(read) }));
   // The section added before it moved it: its id follows, against the page's hash now.
@@ -390,6 +390,37 @@ test("a stale page command keeps its read when the tab's texts are full: keeping
   assert.equal(f.commands[0].expectedHash, await textHash(now));
   assert.deepEqual(f.commands[0].args, { section: "1.2" });
   assert.equal(readText(await textHash(now)), now);
+});
+
+test("a stale page command prepared again after a race keeps its read too, though keeping the page let it go from the tab's texts", async t => {
+  installOutlineDocument(t);
+  const f = await fixture(), read = files["index.html"], now = read.replace("<main>\n", "<main>\n  <section>Added</section>\n");
+  const newer = now.replace("<h1>Welcome</h1>", "<h1>Hello</h1>");
+  const draft = async (text: string) => {
+    f.context.drafts = f.context.drafts.filter(item => item.path !== "index.html");
+    f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(text), content: text });
+  };
+  // The agent's read is the oldest text the tab keeps, at its cap; keeping the page now lets it go.
+  rememberText(await textHash(read), read);
+  for (let i = 0; i < READ_TEXTS - 1; i++) rememberText(`race-full-${i}`, String(i));
+  await draft(now);
+  const ran: AgentCommand[] = [];
+  let race = true;
+  const tools = createAgentEditTools({ workspace, records: f.records, ports: f.ports, run: async command => {
+    ran.push({ ...command });
+    if (race) {
+      // Another change landed between preparing and applying: refused with nothing kept, so it is prepared again.
+      race = false;
+      await draft(newer);
+      throw new Error("index.html changed in the editor since it was read. Read it again. Nothing was changed; your drafts are as they were.");
+    }
+    return { message: "Applied.", result: { path: command.path } };
+  } });
+  await tools.run(request("remove_section", { page: "/", section: "1.1", expectedHash: await textHash(read) }, "race-page"), 0, () => true);
+  assert.equal(readText(await textHash(read)), undefined, "the tab let the read go");
+  assert.equal(ran.length, 2);
+  assert.equal(ran[1].expectedHash, await textHash(newer));
+  assert.deepEqual(ran[1].args, { section: "1.2" });
 });
 
 test("duplicate edit_file joins in flight and returns the receipt before re-reading a changed hash", async () => {
