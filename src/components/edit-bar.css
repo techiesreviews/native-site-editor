@@ -763,8 +763,9 @@
   align-self: stretch;
   gap: 4px;
   inline-size: auto;
-  /* Its foot keeps a finger's reach clear of the phone sheet's handle under it. */
-  padding-block: 6px calc(8px + env(safe-area-inset-bottom, 0px));
+  /* As tall as its 44 px touch targets; its foot keeps the phone sheet's handle
+     under it a finger's reach apart, plus the home indicator's room. */
+  padding-block: 0 calc(4px + env(safe-area-inset-bottom, 0px));
   padding-inline: 8px;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
@@ -776,14 +777,16 @@
 }
 .edit-bar[data-side="docked"] > .edit-bar__label {
   flex: none;
-  block-size: 28px;
+  block-size: 36px;
   max-inline-size: 45%;
   border-radius: var(--radius);
   box-shadow: 0 0 0 1px var(--control-line);
 }
-/* The name chip is a tap target here, as tall as the WCAG minimum. */
+/* Touch: every control a 44 px target (U6), the name chip's reaching past its 36 px label. */
+.edit-bar[data-side="docked"] :is(.edit-bar__button, .edit-bar__select, .edit-bar__labelled, .edit-bar__check),
 .edit-bar[data-side="docked"] > .edit-bar__label > :is(button:not(.slot-chip), .edit-bar__component-name) {
-  block-size: 24px;
+  block-size: 44px;
+  min-inline-size: 44px;
 }
 .edit-bar[data-side="docked"] > .edit-bar__controls {
   flex: none;
@@ -800,7 +803,7 @@
 }
 /* Raised onto the keyboard, which covers the home indicator: no room kept for it. */
 .edit-bar[data-side="docked"][data-lifted] {
-  padding-block-end: 6px;
+  padding-block-end: 0;
 }
 /* Phones: the bar's fields at 16 px, so iOS opens the keyboard without
    zooming the page (a zoom would also read as a pinch, edit-bar.ts). */
