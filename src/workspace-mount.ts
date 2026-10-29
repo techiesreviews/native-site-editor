@@ -190,6 +190,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   let siteActions: ReturnType<typeof mountSiteActions> | undefined;
   let sidebarResize: SidebarResize | undefined;
   let blockRail: ReturnType<typeof mountBlockRail> | undefined;
+  // The component tools' load for the preview shown (one at a time; a remount or a failure starts afresh).
+  let toolsLoad: Promise<ComponentTools | undefined> | undefined;
   let previewElementMenu: ReturnType<typeof createRowMenu> | undefined;
   window.addEventListener("blur", () => previewElementMenu?.close(false));
 
@@ -430,20 +432,20 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     previewElementMenu?.element.remove();
     previewElementMenu = createRowMenu(ports.app);
     // The component tools never run before the first paint: they load two frames and a beat after it
-    // (the runtime reports the structure just before the frame presents it), for the preview painted;
-    // Page Structure's instance and text rows and the edit bar then draw with them.
+    // (the runtime reports the structure just before the frame presents it), for the preview painted.
+    // A load that fails tries again with the next structure the preview reports.
     let toolsDue = false;
     const toolsAfterPaint = () => {
       if (toolsDue) return;
       toolsDue = true;
       const preview = ports.nativePreview;
-      afterPaint(() => void ports.builder.tools().then((tools) => {
-        if (ports.nativePreview !== preview) { tools.destroy(); return; }
-        ports.componentTools = tools;
-        ports.pageStructure?.refresh();
-        const selection = ports.appStore.selection.value;
-        if (selection) ports.pageStructureController.renderEditBar(selection);
-      }).catch(ports.errorMessage));
+      afterPaint(() => {
+        if (ports.nativePreview !== preview) return;
+        loadComponentTools().catch((error: unknown) => {
+          toolsDue = false;
+          ports.errorMessage(error);
+        });
+      });
     };
     ports.nativePreview = createNativePreview(ports.element("main"), {
       onShortcut: name => ports.paletteController.shortcut(name),
@@ -452,8 +454,10 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       ...ports.previewSelection.handlers(),
       onDismissContextMenu: () => previewElementMenu?.close(false),
       // The right-clicked element as the edit bar takes it (a shared template's part maps to its instance).
+      // Before the component tools land, a shared template's part has no instance to map to: it gets no menu.
       onContextMenu: (point, anchor, selection) => {
-        const target = ports.componentTools?.mode.opened() ? selection : ports.componentTools?.instanceSelection(selection);
+        const tools = ports.componentTools;
+        const target = !tools ? (selection.host ? undefined : selection) : tools.mode.opened() ? selection : tools.instanceSelection(selection);
         const entries = target ? ports.builder.menuItems(target) : [];
         if (entries.length) previewElementMenu?.open(anchor, entries, point, "Element actions");
       },
@@ -580,7 +584,29 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     });
     ports.componentTools?.destroy();
     ports.componentTools = undefined;
+    toolsLoad = undefined;
     ports.paletteController.mount();
+  }
+
+  // The component tools for the preview shown, made once their module has loaded: Page Structure's
+  // instance and text rows and the edit bar then draw with them. Tools that land for a preview
+  // replaced or closed are destroyed and handed to no one (undefined).
+  function loadComponentTools(): Promise<ComponentTools | undefined> {
+    if (ports.componentTools) return Promise.resolve(ports.componentTools);
+    const preview = ports.nativePreview;
+    if (!preview) return Promise.resolve(undefined);
+    const load: Promise<ComponentTools | undefined> = toolsLoad ??= ports.builder.tools().then((tools) => {
+      if (ports.nativePreview !== preview || toolsLoad !== load) { tools.destroy(); return undefined; }
+      ports.componentTools = tools;
+      ports.pageStructure?.refresh();
+      const selection = ports.appStore.selection.value;
+      if (selection) ports.pageStructureController.renderEditBar(selection);
+      return tools;
+    }, (error: unknown) => {
+      if (toolsLoad === load) toolsLoad = undefined;
+      throw error;
+    });
+    return load;
   }
 
   // Everything open goes before the login page shows (renderLogin, src/setup-host.ts).
@@ -673,7 +699,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
 
   return {
     codePanes, nativeHistoryAliases, nativeHistoryShares, nativeHistorySession, closeEditor, openCodeEditor,
-    mountWorkspace, closeWorkspace, setupScope, showDirectory,
+    mountWorkspace, closeWorkspace, setupScope, showDirectory, loadComponentTools,
     get primaryHistoryScope() { return primaryHistoryScope; },
     get activeFileContext() { return activeFileContext; }, set activeFileContext(value) { activeFileContext = value; },
     get repositorySelect() { return repositorySelect; }, get branchSelect() { return branchSelect; }, get refreshButton() { return refreshButton; },

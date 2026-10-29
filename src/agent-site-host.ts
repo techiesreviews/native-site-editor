@@ -103,6 +103,8 @@ export interface AgentCommandPorts {
   api: ReturnType<typeof createGitHubReads>["api"];
   readonly info: SessionInfo;
   readonly componentTools: Pick<ComponentTools, "makeFromAgent" | "typingTemplate"> | undefined;
+  /** The component tools once they have loaded for the preview shown (src/workspace-mount.ts); undefined without one. */
+  loadComponentTools: () => Promise<Pick<ComponentTools, "makeFromAgent"> | undefined>;
   readonly pageStructure: { refreshMeta(): void } | undefined;
   readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "isActive" | "inspect"> | undefined;
   loadAgentSite: () => Promise<typeof import("./agent-site")>;
@@ -138,7 +140,8 @@ export function createAgentCommands(ports: AgentCommandPorts) {
   }
   const agentSiteActions = makeAgentSiteActions();
   function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false): AgentSiteActions { return {
-    makeComponent: async (request) => ports.componentTools?.makeFromAgent(request) ?? "The component tools are not ready.",
+    // The tools load after the first paint: an agent quicker than that waits for them.
+    makeComponent: async (request) => (await ports.loadComponentTools())?.makeFromAgent(request) ?? "The component tools are not ready.",
     async text(path) {
       await awaitNativeResync();
       const scope = draftScope();

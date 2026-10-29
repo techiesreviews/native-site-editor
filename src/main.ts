@@ -434,7 +434,7 @@ const agentCommands = createAgentCommands({
   mediaController, mediaPorts, blockMoves, agentPresence, pagesAndFiles, api, loadAgentSite, draftScope, shownScope, openNewDraft,
   nativeComponentLoaderPlan, writeNativePageMeta, nativeSectionChoices, componentPorts, refreshNativeRoutes, updateCurrentPageLabel, updateAgentContext,
   // Declared further down: read at call time.
-  restoreFile: (...args) => restoreFile(...args),
+  restoreFile: (...args) => restoreFile(...args), loadComponentTools: workspace.loadComponentTools,
   get info() { return info; }, get componentTools() { return componentTools; }, get pageStructure() { return pageStructure; },
   get nativePreview() { return nativePreview; },
 });
