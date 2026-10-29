@@ -324,6 +324,47 @@ test("a stale reply after the watchdog took the follow-up (am-13): refused until
   assert.equal(b.kept.get("req-s")!.readBy, undefined);
 });
 
+test("two agents reading one request at once (am-13): the read whose save lost reads again, and its reply is accepted", async () => {
+  const clock = manualClock();
+  const kept = new Map<string, AgentRequest>();
+  // Another agent's read lands just before this one's save, once.
+  let interfere: (() => void) | undefined;
+  const tools = createRequestTools({
+    workspace, now: clock.now, clock,
+    list: async () => [...kept.values()].map(item => structuredClone(item)),
+    save: async (request, accept) => {
+      const other = interfere;
+      interfere = undefined;
+      other?.();
+      if (!accept(kept.get(request.id))) return false;
+      kept.set(request.id, structuredClone(request)); return true;
+    },
+  });
+  const run = (tool: AgentRequests["tool"], args: AgentRequests["args"], agent: string) =>
+    tools.run({ operation: "requests", tool, args, grantId: "grant-a", agent }, () => true, clock.now() + 24_000);
+  kept.set("req-r", asked("req-r", { state: "seen", agent: { grant: "grant-a", name: "Copy editor" }, readBy: [] }));
+  interfere = () => { const stored = kept.get("req-r")!; kept.set("req-r", { ...stored, readBy: [...stored.readBy!, JSON.stringify(["grant-a", "Link checker"])] }); };
+  assert.equal((await run("get_request", { request: "req-r" }, "Copy editor")).ok, true);
+  assert.deepEqual(kept.get("req-r")!.readBy, [JSON.stringify(["grant-a", "Link checker"]), JSON.stringify(["grant-a", "Copy editor"])], "both reads kept");
+  assert.equal((await run("reply_to_request", { request: "req-r", status: "done", message: "Done." }, "Copy editor")).ok, true);
+});
+
+test("a follow-up whose hold ran out, taken by another connection's watchdog (am-13): the original agent reading it is on it again and replies", async () => {
+  const b = browser();
+  b.ask(asked("req-o"));
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"));
+  await b.value(b.run("reply_to_request", { request: "req-o", status: "done", message: "Done." }, undefined, undefined, "grant-a", "Copy editor"));
+  b.ask(answerRequest([structuredClone(b.kept.get("req-o")!)], "req-o", "more", b.clock.now()).request);
+  b.clock.advance(FOLLOW_UP_HOLD_MS);
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-b", "Watchdog"));
+  assert.deepEqual(b.kept.get("req-o")!.agent, { grant: "grant-b", name: "Watchdog" });
+  assert.equal(b.kept.get("req-o")!.agentTook, true, "the watchdog only took it: its pin names no one yet");
+  await b.value(b.run("get_request", { request: "req-o" }, undefined, undefined, "grant-a", "Copy editor"));
+  assert.deepEqual(b.kept.get("req-o")!.agent, { grant: "grant-a", name: "Copy editor" });
+  assert.equal(b.kept.get("req-o")!.agentTook, undefined);
+  assert.deepEqual(await b.value(b.run("reply_to_request", { request: "req-o", status: "done", message: "Did more." }, undefined, undefined, "grant-a", "Copy editor")), { id: "req-o", state: "done" });
+});
+
 function relayFixture() {
   let now = 0, next = 0;
   const timers = new Map<number, { at: number; run(): void }>();

@@ -23,7 +23,7 @@ export interface AgentMark { key: string; name: string; colour: number; path: st
  * unless it works again (none while it is at work or asking). */
 export interface WorkingAgent { key: string; who: AgentWho; name: string; colour: number; asking: boolean; until?: number }
 /** A request as its question shows: its site and branch, the element it is about, and who asked when it waits for the user's answer. */
-export interface PresenceQuestion { repoId: number; branch?: string; state: string; element: { file: string; id: string }; reply?: { by?: AgentWho }; agent?: AgentWho }
+export interface PresenceQuestion { repoId: number; branch?: string; state: string; element: { file: string; id: string }; reply?: { by?: AgentWho }; agent?: AgentWho; agentTook?: boolean }
 
 /** The agents' colours, theme tokens in order of arrival: the MCP green, the components' violet, video pink, data teal (src/theme.css). */
 export const AGENT_COLOURS = ["agent-presence", "agent-presence-2", "agent-presence-3", "agent-presence-4"] as const;
@@ -178,7 +178,8 @@ export function createAgentPresence(ports: AgentPresencePorts) {
         arrive(who);
         return [{ who, path: request.element.file, element: request.element.id, at: holds(request) }];
       });
-      pinned = requests.flatMap(request => request.state === "seen" && request.agent ? [{ key: arrive(request.agent), path: request.element.file, at: holds(request) }] : []);
+      // Not a watchdog that only took it: it draws nothing, and takes no colour.
+      pinned = requests.flatMap(request => request.state === "seen" && request.agent && !request.agentTook ? [{ key: arrive(request.agent), path: request.element.file, at: holds(request) }] : []);
       refresh();
     },
     /** `who`'s colour (an index into AGENT_COLOURS), the same on its pins as on its outline: it arrives now if new. */

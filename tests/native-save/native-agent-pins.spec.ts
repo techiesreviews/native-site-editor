@@ -57,6 +57,19 @@ const token = (page: Page, name: string) => page.evaluate(name => {
   return colour;
 }, name);
 
+// A theme token as the frame is sent it (sRGB, src/theme.ts).
+const srgb = (page: Page, name: string) => page.evaluate(name => {
+  const probe = document.createElement("span");
+  probe.style.color = `var(--${name})`;
+  document.body.append(probe);
+  const context = Object.assign(document.createElement("canvas"), { width: 1, height: 1 }).getContext("2d", { willReadFrequently: true })!;
+  context.fillStyle = getComputedStyle(probe).color;
+  probe.remove();
+  context.fillRect(0, 0, 1, 1);
+  const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+  return `rgb(${r}, ${g}, ${b})`;
+}, name);
+
 // The contrast of an agent pin's ink on its tint (WCAG), for each agent colour, as the editor computes them.
 const pinContrasts = (page: Page) => page.evaluate(() => ["agent-presence", "agent-presence-2", "agent-presence-3", "agent-presence-4"].map(token => {
   const srgb = (name: string) => {
@@ -110,14 +123,17 @@ test("a pin is a conversation: two pins on one element, the agent's colour on pi
     await expect(first.locator(".agent-pin__who")).toBeHidden();
 
     // As the connection prompt has it, a watchdog takes them for the agent that does the work: each pin
-    // shows the watchdog in its colour until Copy editor reads it by its id, then Copy editor in its own
-    // (a light tint, the colour as border, its name), the heading's outline in that colour.
-    const [watchdog, copy] = [await token(page, "agent-presence"), await token(page, "agent-presence-2")];
+    // turns its spinner, naming no one and in no agent's colour, until Copy editor reads it by its id; then
+    // Copy editor in the first colour (the watchdog took none): a light tint, the colour as border, its
+    // name, the heading's outline in that colour.
+    const copy = await token(page, "agent-presence");
     const taken = (await call("wait_for_requests", { waitSeconds: 10, agent: "Watchdog" })).requests;
     expect(taken.map((request: { text: string }) => request.text)).toEqual(["Make this heading shorter", "Add a subtitle under it"]);
     await expect(first).toHaveAttribute("data-state", "seen");
-    await expect(first.locator(".agent-pin__who")).toHaveText("Watchdog");
-    await expect.poll(() => first.evaluate(pin => getComputedStyle(pin).borderTopColor)).toBe(watchdog);
+    await expect(first.locator(".agent-pin__spinner")).toHaveCount(1);
+    await expect(first.locator(".agent-pin__who")).toBeHidden();
+    await expect(first).not.toHaveAttribute("data-agent");
+    await expect(first).toHaveAttribute("aria-label", "Request 1: Agent working");
     for (const request of taken) await call("get_selection", { request: request.id, agent: "Copy editor" });
     await expect(first.locator(".agent-pin__who")).toHaveText("Copy editor");
     await expect(second.locator(".agent-pin__who")).toHaveText("Copy editor");
@@ -205,6 +221,9 @@ test("a pin is a conversation: two pins on one element, the agent's colour on pi
       await placing.reached;
       await expect(outlines).toHaveCount(1);
       await expect(chips).toHaveCount(0);
+      // Copy editor's outline is in the first colour, as its pin is.
+      const firstColour = await srgb(page, "agent-presence");
+      await expect.poll(() => outlines.first().evaluate(box => getComputedStyle(box).borderTopColor)).toBe(firstColour);
       await call("reply_to_request", { request: italics.id, status: "done", message: "Subtitle in italics.", agent: "Copy editor" });
       await expect(second).toHaveAttribute("data-state", "done");
       await expect(chips).toHaveText(["Copy editor"]);
@@ -245,17 +264,24 @@ test.describe("on a phone", () => {
       await expect(card).toBeVisible();
       await expect(card.getByRole("textbox", { name: "Add to this request" })).not.toBeFocused();
       await expect(card.getByRole("button", { name: "Clear" })).toBeFocused();
-      // In view, and on top where it stands.
-      const box = (await card.boundingBox())!;
-      expect(box.y).toBeGreaterThanOrEqual(0);
-      expect(box.y + box.height).toBeLessThanOrEqual(844);
-      expect(await card.evaluate(element => {
+      // In view, and on top where it stands, once placed (a layout pass after it opens).
+      await expect.poll(() => card.evaluate(element => {
         const rect = element.getBoundingClientRect();
-        return [[0.5, 0.2], [0.5, 0.8], [0.2, 0.5], [0.8, 0.5]].every(([x, y]) =>
+        return rect.top >= 0 && rect.bottom <= innerHeight && [[0.5, 0.2], [0.5, 0.8], [0.2, 0.5], [0.8, 0.5]].every(([x, y]) =>
           element.contains(document.elementFromPoint(rect.left + rect.width * x, rect.top + rect.height * y)));
       })).toBe(true);
     } finally {
       await client.close();
     }
+  });
+});
+
+test.describe("in the dark scheme", () => {
+  test.use({ colorScheme: "dark" });
+
+  test("an agent's pin stays light, its name readable as small text (4.5:1) for every agent colour", async ({ page, baseURL }) => {
+    await openEditor(page, baseURL);
+    expect(await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches)).toBe(true);
+    for (const ratio of await pinContrasts(page)) expect(ratio).toBeGreaterThanOrEqual(4.5);
   });
 });

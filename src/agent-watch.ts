@@ -115,12 +115,18 @@ export function createRequestTools(ports: RequestPorts) {
       throw new HttpError(409, "The request changed meanwhile (the user answered or dismissed it). Read it again with get_selection before replying.");
     return ok({ id: result.id, state: result.state });
   }
+  /** Who reads it by its id is on it (after a take), and has read the user's latest. A save that loses a race
+   * (another agent read or took it at once) reads again, at most TAKE_TRIES times, as a take does; still lost, or
+   * the connection gone stale, nothing is kept, and a reply to a follow-up asks this agent to read it again. */
   async function find(command: AgentRequests, current: () => boolean, owner?: number) {
-    const list = await ports.list(), read = structuredClone(list.find(request => request.id === command.args.request));
-    const { changed, result } = requestOperation(list, { type: "request", id: command.args.request, by: agentWho(command), ...scope }) as
-      { changed: boolean; result: AgentRequest };
-    // Who reads it is on it, and has read the user's latest: kept when it did not change meanwhile (else its reply asks it to read again).
-    if (changed && current()) await ports.save(result, unchangedSince(read!, current), owner);
+    let result!: AgentRequest;
+    for (let attempt = 0; attempt < TAKE_TRIES; attempt++) {
+      const list = await ports.list(), read = structuredClone(list.find(request => request.id === command.args.request));
+      const outcome = requestOperation(list, { type: "request", id: command.args.request, by: agentWho(command), ...scope }) as
+        { changed: boolean; result: AgentRequest };
+      result = outcome.result;
+      if (!outcome.changed || !current() || await ports.save(result, unchangedSince(read!, current), owner)) break;
+    }
     return ok(requestForAgent(result));
   }
   return {
