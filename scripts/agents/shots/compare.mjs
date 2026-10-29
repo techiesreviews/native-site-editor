@@ -58,6 +58,17 @@ export async function toolingHash(root) {
   }
   for (const path of toolingFiles) await collect(path);
   const hash = createHash("sha256");
+  // The kit's library, which kit shots runs on, lives in the kit (KIT_HOME): a kit change is a tooling change too.
+  for (const name of ["kit-lib.sh", "kit-lib.mjs"]) {
+    let content;
+    try { content = await readFile(join(kitHomeFolder(), name)); }
+    catch (error) {
+      if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+      hash.update(JSON.stringify([`kit:${name}`, "missing"])).update("\0");
+      continue;
+    }
+    hash.update(JSON.stringify([`kit:${name}`, content.length])).update("\0").update(content).update("\0");
+  }
   for (const path of paths.sort()) {
     let content;
     try { content = await readFile(join(root, path)); }
