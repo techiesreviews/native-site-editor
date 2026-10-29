@@ -46,7 +46,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 4. `catchUpOf` (`shared/agent-read.ts`) cuts the list to `CATCH_UP_FILES` and 2 KB first, works out sections only for the files left, then cuts again with them.
 5. A mark keeps its files in an object with no prototype (`src/agent-part.ts` `markOf`): a draft named `__proto__` is told in the catch-up.
 
-Commits: Exact-part edits: second-look fixes (follow-up on 10)
+Commits: "Exact-part edits: second-look fixes (follow-up on 10)", "Review fixes round 1", "Review fixes round 2", "Review fixes round 3" and this commit.
 
 Tests: one per item in `tests/agent-part.test.ts` (items 2 to 5) and `tests/agent-tools-edit.test.ts` (item 1); each failed on the code before its fix (54/59 with the four source files at the claim commit). Gap test, no fix needed: a read reply exactly at the read tool's limit (relay `maxBytes` less 4096) plus a full catch-up and the transport's largest envelope stays within `maxBytes`. Also covered: a copy removed since the read is refused with no part like one added, and a catch-up cut to its files without sections is cut again once their sections are added. Words gone altogether keep their part (ticket 10's test "the same words changed meanwhile are refused with the part as it is now").
 
