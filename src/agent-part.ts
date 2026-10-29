@@ -15,7 +15,9 @@ import { sameBranch } from "./workspace-session";
  * Kept in memory only: a reload starts every agent's catch-up afresh.
  */
 
-const READ_TEXTS = 200, READ_BYTES = 16 * 1024 * 1024;
+/** The most texts, and bytes of them, the tab keeps; the oldest go first. */
+export const READ_TEXTS = 200;
+const READ_BYTES = 16 * 1024 * 1024;
 const texts = new Map<string, string>();
 let bytes = 0;
 
