@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # kit: capture named screens across sizes and themes, with small copies and a contact sheet
 set -euo pipefail
-# The shared kit library comes from the kit this command runs in: KIT_HOME (the front door sets it), else the
-# kit the launcher picks.
+# The shared kit library comes from the kit the launcher picks: the one this command runs in (a front door's
+# KIT_HOME), else the machine copy.
 if [[ -z ${KIT_LIB:-} ]]; then
-  home=${KIT_HOME:-$("$(dirname -- "${BASH_SOURCE[0]}")/../kit" --home)} || { printf '%s\n' "$home"; exit 2; }
+  home=$("$(dirname -- "${BASH_SOURCE[0]}")/../kit" --home) || { printf '%s\n' "$home"; exit 2; }
   KIT_LIB=$home/kit-lib.sh
 fi
 # shellcheck source=/dev/null
