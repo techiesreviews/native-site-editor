@@ -525,3 +525,10 @@ test("a person's relative KIT_HOME reaches this editor's helpers as a full path"
   assert.equal(spawnSync(resolve("scripts/agents/unit.sh"), [], { cwd: directory, env, encoding: "utf8" }).stdout, full);
   assert.equal(spawnSync(process.execPath, [resolve("scripts/agents/tickets.mjs")], { cwd: directory, env, encoding: "utf8" }).stdout, full);
 });
+
+test("new worktrees link the native-static fixture the browser suite reads", () => {
+  const { worktreeLinks } = JSON.parse(read("scripts/agents/kit.json")) as { worktreeLinks?: string[] };
+  const fixture = /group === "native-static" && !creationOnly \? "([^"]+)"/.exec(read("scripts/native-browser-tests.mjs"))?.[1];
+  assert.equal(fixture, ".scratch/native-static-preview");
+  assert.ok(worktreeLinks?.includes(fixture), `worktreeLinks in scripts/agents/kit.json must name ${fixture}`);
+});
