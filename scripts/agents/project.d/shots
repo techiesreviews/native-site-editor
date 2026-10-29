@@ -5,7 +5,9 @@ set -euo pipefail
 # KIT_HOME), else the machine copy.
 if [[ -z ${KIT_LIB:-} ]]; then
   home=$("$(dirname -- "${BASH_SOURCE[0]}")/../kit" --home) || { printf '%s\n' "$home"; exit 2; }
-  # The Node helpers this runs reuse the same kit: one kit for both libraries.
+  # The Node helpers this runs reuse the same kit: one kit for both libraries. A kit the launcher picked keeps
+  # its marker, so a helper whose kit kit update removed picks again; a person's KIT_HOME stays theirs.
+  if [[ -z ${KIT_HOME:-} || $KIT_HOME == "${KIT_HOME_PINNED:-}" ]]; then export KIT_HOME_PINNED=$home; fi
   export KIT_LIB=$home/kit-lib.sh KIT_HOME=$home
 fi
 # shellcheck source=/dev/null
