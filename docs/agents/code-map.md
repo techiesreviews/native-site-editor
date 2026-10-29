@@ -229,9 +229,9 @@ One line per media-* module. Concern-level rows sit in the table above.
 | Edit component mode ownership guard | `tests/component-mode-guard.test.ts` |
 | Card source-tree read guard | `tests/card-tree-guard.test.ts` |
 | Focused ports, exclusive timing and suite shards | `scripts/agents/port.sh`; `scripts/agents/timing.sh`; `scripts/agents/full-suite.sh`; `scripts/agents/suite-summary.mjs` |
-| Cold-load measurement and worktrees | `scripts/agents/cold.sh`; `scripts/agents/worktree.sh` |
-| Agent kit: front door, commands and helpers | `scripts/agents/kit`; `scripts/agents/kit.d/` (shared commands); `scripts/agents/project.d/` (this project's own commands: specs, shots, size, preview); `scripts/agents/kit-lib.sh`; `scripts/agents/kit-lib.mjs`; `scripts/agents/pr-tier.mjs` — `classify`, `checkSteps` |
-| Kitchen rulebook, printed by kit rulebook | `scripts/agents/docs/kitchen.md` (shared); `scripts/agents/kit.d/rulebook`; `scripts/agents/docs/kitchen-extras-template.md`; `docs/agents/kitchen-extras.md` (this editor's extras); `docs/agents/kitchen.md` (pointer) |
+| Cold-load measurement and worktrees | `scripts/agents/cold.sh`; `scripts/agents/worktree.sh` (forwards to the kit's) |
+| Agent kit: launchers, own commands and forwarders (the shared kit lives in the agent-kit repo, checked out at ~/Projects/agent-kit; machine copy in ~/.local/share/agent-kit/current) | `scripts/agents/kit` (launcher); `scripts/agents/hooks/run.sh` (hook launcher); `scripts/agents/project.d/` (this project's own commands: specs, shots, size, preview); `scripts/agents/kit-home.mjs` — `kitHomeFolder`; `scripts/agents/tickets.mjs`, `scripts/agents/agent.sh`, `scripts/agents/unit.sh`, `scripts/agents/worktrees.sh` (each forwards to the kit's own); `scripts/agents/kit.json` (settings) |
+| Kitchen rulebook, printed by kit rulebook | the shared part, docs/kitchen.md in the agent-kit repo; `docs/agents/kitchen-extras.md` (this editor's extras); `docs/agents/kitchen.md` (pointer) |
 | Shared browser scenarios (specs and kit shots) | `tests/support/scenarios.ts` — `openEditor`, `openMedia`, `pickPicture`, `switchSiteMidUpload` |
 | Await-race helper for async writers | `tests/support/await-race.ts` — `forEachAwait` |
 

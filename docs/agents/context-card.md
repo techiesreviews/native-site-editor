@@ -8,7 +8,7 @@ The chat project's memory sync writes the notes
 
 ## What it prints
 
-[`scripts/agents/context-card.mjs`](../../scripts/agents/context-card.mjs) is plain Node with no
+The kit's [`context-card.mjs`](https://github.com/techiesreviews/agent-kit/blob/main/context-card.mjs) is plain Node with no
 imports from this repo, so any project can call it by absolute path. It matches the working
 directory against the `Workspace` column of the README's project map (a folder inside the
 workspace up to that folder's own repository, or a sibling worktree named `<workspace>-*`,
@@ -34,14 +34,15 @@ exits 0. `CHAT_MEMORY_DIR` overrides the folder (tests). `--cwd DIR` picks anoth
 
 ## Every other project
 
-One user-level SessionStart hook per CLI calls the script by absolute path. It skips projects
-that carry their own copy, so this repo does not show the card twice. Until the script reaches
-`main`, the path is the dev worktree's; after the release use `~/Projects/native-site-editor`.
+The card is the kit's own `context-card.mjs` (in the [agent-kit repo](https://github.com/techiesreviews/agent-kit)),
+so every project `kit init` sets up shows it through its own hook launcher. For a project without the kit, one
+user-level SessionStart hook per CLI calls the machine copy by absolute path. It skips projects with a hook
+launcher (`scripts/agents/hooks/run.sh`), so they do not show the card twice.
 
 Claude, `~/.claude/settings.json` (merge into any existing `hooks`):
 
 ```json
-{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "test -f \"$(git rev-parse --show-toplevel 2>/dev/null)/scripts/agents/context-card.mjs\" || timeout 1 node /home/ubulex/Projects/native-site-editor-dev/scripts/agents/context-card.mjs --hook 2>/dev/null || true"}]}]}}
+{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "test -f \"$(git rev-parse --show-toplevel 2>/dev/null)/scripts/agents/hooks/run.sh\" || timeout 1 node \"${XDG_DATA_HOME:-$HOME/.local/share}/agent-kit/current/context-card.mjs\" --hook 2>/dev/null || true"}]}]}}
 ```
 
 Codex, `~/.codex/hooks.json`: the same JSON. Interactive Codex asks once to approve the new hook.
