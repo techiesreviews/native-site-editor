@@ -2,7 +2,7 @@
 title: "Exact-part edits: second-look fixes (follow-up on 10)"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-40
 builder: claude
 blocked_by: [10-exact-part-edits]
 ---
