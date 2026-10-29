@@ -172,6 +172,7 @@ export function createAgentEditTools(options: Options) {
          * part itself changed (PartClash).
          */
         // The agent's reads, looked up once for every attempt: keeping a text now may let the oldest go before a retry.
+        // Held while the edit lasts (a wait for the user too), though the tab's own texts may have let them go.
         const reads = new Map<string, string>();
         const readOnce = (hash: string) => { const text = reads.get(hash) ?? readText(hash); if (text !== undefined) reads.set(hash, text); return text; };
         const prepareNow = async () => {

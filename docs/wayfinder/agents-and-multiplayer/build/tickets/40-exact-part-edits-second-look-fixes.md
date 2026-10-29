@@ -59,3 +59,4 @@ Feature list: no change (only what agents are told in refusals and catch-ups cha
 Review decisions:
 - Round 1: added the `Commits:` line and tests for a copy removed since the read and for the catch-up's second cut. Declined a new test for words gone altogether, since ticket 10's "the same words changed meanwhile are refused with the part as it is now" covers it.
 - Round 2: fixed the retry after a race losing the agent's read (reads looked up once per edit), with a test that fails without it (40/41); `READ_TEXTS` is exported so the cache tests follow its cap.
+- Round 3: added an `edit_file` retry-after-race test (with `all`; fails without the once-per-edit lookup, 41/42) and a test that a recount in a later replacement names it ("The words replacement 2 changes …") with no part.
