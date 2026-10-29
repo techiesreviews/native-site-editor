@@ -1,8 +1,8 @@
 ---
 title: "Where the edit bar sits on a phone, so it doesn't cover the element above (follow-up on 43)"
-type: task (HITL)
-status: ready-for-human
-assignee:
+type: task (AFK)
+status: open
+assignee: am-46
 builder: claude
 blocked_by: [43-phone-edit-bar-fixes]
 ---
@@ -36,3 +36,4 @@ Also for Lex: ticket 43 waived its "test fails before the fix" rule for F-bar-01
 ## Comments
 
 - Lead, 2026-10-29: accepted ticket 43's F-bar-01 waiver (no app fault; the phone spec pins the behaviour). The placement question is in the 2026-11-03 Tuesday pack with C recommended.
+- Lex, 2026-10-29: "can we make it work the same as other word editors on mobile?" → option C: on phones the edit bar docks to the bottom of the screen (above the on-screen keyboard when it is open), like Google Docs and Word on mobile; it never covers page content. He also noted that mobile needs many more space changes in general (a later piece of work, not this ticket).
