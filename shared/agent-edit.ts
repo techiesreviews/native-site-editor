@@ -147,7 +147,7 @@ export function spanNow(read: string, start: number, end: number, now: string): 
  * many, or one outside its own stretch now (spanNow); with `at`, where in `read` that one (or the first) was.
  * Undefined when every one is. Words `read` lacks pass when an earlier replacement makes them, or when `now`
  * lacks them too (the agent's own mistake); found only in `now`, they are a copy added since (`at` -1).
- * Still there, but not as often (`recounted`): which copy changed is not told, since a part at the first copy
+ * Still there, but a different number of times (`recounted`): which copy changed is not told, since a part at the first copy
  * read is usually the one unchanged.
  */
 export function wordsMoved(read: string, now: string, edits: { oldText: string; newText: string; all?: boolean }[]): { index: number; at: number; recounted?: true } | undefined {
