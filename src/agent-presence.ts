@@ -11,7 +11,9 @@
 // there has none (`pinned`). A pin only a wait took (ticket am-45) shows the taker when it acts (any call but a
 // wait, or a change, or alone on its connection); a watchdog's take (an agent heard only waiting) shows its connection's one agent that acted,
 // else no one until one reads or replies (`onPin`). Once named, a take keeps its name, unless that agent is stopped.
-// An agent acting first, or stopped, names the pins again at once (the MCP menu's `listen`).
+// An agent acting first, or stopped, names the pins again at once (the MCP menu's `listen`). An agent can also say
+// where it works before it changes anything (working_here, ticket am-14, src/agent-working-here.ts): it shows there
+// as a change would (`show`, held).
 
 import { outlineId, parseOutlineId, type AgentWho } from "../shared/agent";
 import type { AgentAtWork } from "../shared/agent-read";
@@ -66,7 +68,8 @@ export function presenceWithin(tree: SourceTree<SourceNode>, node: number[] | un
 
 export function createAgentPresence(ports: AgentPresencePorts) {
   type Hold = { holds(): boolean };
-  const running: { who: AgentWho; path: string; node?: number[]; at: Hold }[] = [];
+  // `held`: a working_here hold, not a change (ticket am-14).
+  const running: { who: AgentWho; path: string; node?: number[]; at: Hold; held: boolean }[] = [];
   // Questions belong to their request's site and branch (shown again after any load), changes to the load they began in.
   let asked: { who: AgentWho; path: string; element: string; at: Hold }[] = [];
   // The pins an agent works through now, by agent and page: their chips carry its name.
@@ -87,7 +90,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
   // Each agent's place in the order of arrival, for the session (a few names each, never cleared): its colour.
   const arrivals = new Map<string, number>();
   // Each agent's latest change, as get_site tells it: held to its site and branch (a reload keeps it), as questions are.
-  const latest = new Map<string, { who: AgentWho; path: string; node?: number[]; time: number; at: Hold }>();
+  const latest = new Map<string, { who: AgentWho; path: string; node?: number[]; time: number; at: Hold; held?: true }>();
   const now = () => ports.now?.() ?? Date.now();
   const keyOf = (who: AgentWho) => JSON.stringify([who.grant, who.name]);
   const stopped = (who: AgentWho) => ports.stops?.has(who) ?? false;
@@ -142,13 +145,15 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     const source = isPage(question.path) ? ports.source(question.path) : undefined;
     return source === undefined ? undefined : presenceWithin(readSource(source, { page: true }), parseOutlineId(question.element), ports.sectionTags());
   };
+  // What runs, a working_here hold before any change (ticket am-14): an agent's change shows over its hold, whichever began first.
+  const byHolds = () => [...running.filter(entry => entry.held), ...running.filter(entry => !entry.held)];
   function marks(): AgentMark[] {
     const shown = new Map<string, AgentMark>();
     const mark = (who: AgentWho, path: string, node: number[] | undefined, asking: boolean): AgentMark => {
       const key = keyOf(who), onPin = !asking && pinned.some(pin => pin.key === key && pin.path === path && pin.at.holds());
       return { key, name: who.name || UNNAMED_AGENT, colour: arrivals.get(key)! % AGENT_COLOURS.length, path, ...(node ? { node: [...node] } : {}), asking, ...(onPin ? { pinned: true } : {}) };
     };
-    for (const entry of running) if (entry.at.holds() && !stopped(entry.who)) shown.set(keyOf(entry.who), mark(entry.who, entry.path, entry.node, false));
+    for (const entry of byHolds()) if (entry.at.holds() && !stopped(entry.who)) shown.set(keyOf(entry.who), mark(entry.who, entry.path, entry.node, false));
     for (const question of asked) {
       if (!question.at.holds() || stopped(question.who)) continue;
       const key = keyOf(question.who), working = shown.get(key);
@@ -175,7 +180,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     const time = now(), told = new Map<string, { who: AgentWho; file: string; node?: number[]; asking?: boolean; until?: number }>(), placed = new Set<string>();
     for (const [key, last] of latest) if (last.at.holds() && time - last.time <= AT_WORK_MS && !stopped(last.who))
       told.set(key, { who: last.who, file: last.path, ...(last.node ? { node: last.node } : {}), until: last.time + AT_WORK_MS });
-    for (const entry of running) if (entry.at.holds() && !stopped(entry.who)) {
+    for (const entry of byHolds()) if (entry.at.holds() && !stopped(entry.who)) {
       placed.add(keyOf(entry.who));
       told.set(keyOf(entry.who), { who: entry.who, file: entry.path, ...(entry.node ? { node: entry.node } : {}) });
     }
@@ -191,34 +196,45 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     }
     return [...told.entries()].sort(([a], [b]) => (arrivals.get(a) ?? 0) - (arrivals.get(b) ?? 0));
   }
-  return {
-    /**
-     * The agent `who` at work on the file `path`: when it is a page, `find` names its element in the page's
-     * text now (none: the page alone). The returned call ends it. Only pages show: a component's template, a
-     * stylesheet or any other file draws nothing (a template change is every instance's), get_site lists it.
-     */
-    show(path: string, find: (source: string) => number[] | undefined, who: AgentWho = { grant: "", name: "" }): () => void {
-      // Stopped: its calls are refused before they run (src/components/agent-menu.ts, with shared/agent.ts AGENT_STOPPED); one already under way draws nothing.
-      if (stopped(who)) return () => {};
-      arrive(who);
-      hear(who, true);
-      const page = isPage(path), source = page ? ports.source(path) : undefined, node = source === undefined ? undefined : find(source);
-      const at = ports.begin(), where = ports.workspace();
-      latest.set(keyOf(who), { who, path, ...(node ? { node: [...node] } : {}), time: now(), at: { holds: () => Boolean(where && ports.shows(where)) } });
-      if (!page) { tell(); return () => {}; }
-      const entry = { who, path, ...(node ? { node: [...node] } : {}), at };
-      running.push(entry);
+  /**
+   * The agent `who` at work on the file `path`: when it is a page, `find` names its element in the page's
+   * text now (none: the page alone). The returned call ends it. Only pages show: a component's template, a
+   * stylesheet or any other file draws nothing (a template change is every instance's), get_site lists it.
+   * `held` (working_here): no change, so its end leaves get_site as it was before it, unless a change came since.
+   */
+  function show(path: string, find: (source: string) => number[] | undefined, who: AgentWho = { grant: "", name: "" }, held = false): () => void {
+    // Stopped: its calls are refused before they run (src/components/agent-menu.ts, with shared/agent.ts AGENT_STOPPED); one already under way draws nothing.
+    if (stopped(who)) return () => {};
+    arrive(who);
+    hear(who, true);
+    const page = isPage(path), source = page ? ports.source(path) : undefined, node = source === undefined ? undefined : find(source);
+    const at = ports.begin(), where = ports.workspace(), key = keyOf(who), before = latest.get(key);
+    const said = { who, path, ...(node ? { node: [...node] } : {}), time: now(), at: { holds: () => Boolean(where && ports.shows(where)) }, ...(held ? { held: true as const } : {}) };
+    latest.set(key, said);
+    if (!page) { tell(); return () => {}; }
+    const entry = { who, path, ...(node ? { node: [...node] } : {}), at, held };
+    running.push(entry);
+    refresh();
+    let ended = false;
+    return () => {
+      if (ended) return;
+      ended = true;
+      running.splice(running.indexOf(entry), 1);
+      if (held) {
+        if (latest.get(key) === said) { if (before) latest.set(key, before); else latest.delete(key); }
+      } else {
+        // The agent's latest change (this one, or a newer one of its own begun meanwhile) counts from now. A hold begun
+        // meanwhile is no change: this one is told, not the hold, which on its end leaves this in place.
+        const last = latest.get(key)!;
+        latest.set(key, { ...(last.held ? said : last), time: now() });
+      }
       refresh();
-      let ended = false;
-      return () => {
-        if (ended) return;
-        ended = true;
-        running.splice(running.indexOf(entry), 1);
-        // The agent's latest change (this one, or a newer one of its own begun meanwhile) counts from now.
-        latest.set(keyOf(who), { ...latest.get(keyOf(who))!, time: now() });
-        refresh();
-      };
-    },
+    };
+  }
+  return {
+    show,
+    /** The load shown now, for working_here as its command arrives (src/agent-working-here.ts). */
+    begin: () => ports.begin(),
     /** The open workspace's requests (the agent menu tells them): each question waiting for the user shows on its element, by who asked it;
      * each request an agent works through puts its name on the pin (`onPin`), not on its outline on that page. */
     questions(requests: readonly PresenceQuestion[]) {

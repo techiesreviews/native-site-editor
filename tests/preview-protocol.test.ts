@@ -66,6 +66,11 @@ const cases: Record<FrameMessage["type"], Case> = {
     malformed: [{ id: NaN }, { report: {} }, { report: { facts: [] } }, { report: { facts: [{ viewport: 390 }] } }],
   },
   "inspect-result": { valid: { id: 7, report: { found: 1 } }, malformed: [] },
+  "picture-result": {
+    valid: { id: 6, report: { data: "UklGRg==", mimeType: "image/webp", width: 390, height: 844, viewport: 390 } },
+    malformed: [{ id: -1 }, { report: { data: 1, mimeType: "image/webp", width: 390, height: 844, viewport: 390 } },
+      { report: { data: "x", mimeType: "text/html", width: 390, height: 844, viewport: 390 } }, { report: { data: "x", mimeType: "image/png", width: 0, height: 1, viewport: 390 } }],
+  },
   ack: { valid: { id: 9 }, malformed: [] },
   ready: { valid: { load: "2" }, malformed: [{ load: 2 }] },
   error: { valid: { message: "Bad define" }, malformed: [{ message: undefined }] },

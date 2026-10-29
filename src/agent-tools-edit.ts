@@ -1,7 +1,7 @@
 import { agentNamed, textHash, WAITING_MESSAGE, type AgentCommand } from "../shared/agent";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
 import { PartClash, prepareAgentEdit, type AgentEdit, type AgentStatus } from "../shared/agent-edit";
-import { agentToolsOn } from "../shared/agent-tool-table";
+import { agentTools, agentToolsOn } from "../shared/agent-tool-table";
 import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
 import { elementsNow, noteOwnChange, readText, rememberText } from "./agent-part";
@@ -198,7 +198,7 @@ export function createAgentEditTools(options: Options) {
             args: elementsNow(input.path, input.args ?? {}, read, file.content, file.hash) } } };
         };
         const { prepared, context } = await prepareNow();
-        // Unchanged requests and UI-only open_page also receive an owner-fenced receipt, so their id stays
+        // Unchanged requests and UI-only open_page and working_here also receive an owner-fenced receipt, so their id stays
         // reserved for this work and grant (reuse for different work is refused like any other).
         const record = async (outcome: JsonValue, revision?: number) => {
           const expectedRevision = revision ?? (await records.workspace(workspace)).revision;
@@ -276,11 +276,15 @@ export function createAgentEditTools(options: Options) {
           }
         }
         check();
-        if (operation !== "open_page" && operation !== "inspect_preview") noteOwnChange(workspace, request.grantId, ownFiles(request, command, outcome));
+        // What only shows or reads the page (open_page, inspect_preview, screenshot_preview, working_here) makes no file the agent's own.
+        const looks = request.operation === "edit" && agentTools[request.tool].effect === "read";
+        if (!looks) noteOwnChange(workspace, request.grantId, ownFiles(request, command, outcome));
         // The text it left is the one an agent's next edit of the file is read against (its reply's hash).
         const landed = ports.source?.(command.path), hash = outcome?.result?.hash;
         if (typeof hash === "string" && landed !== undefined && await textHash(landed) === hash) rememberText(hash, landed);
-        if (operation === "open_page") return record(json(outcome ?? {}));
+        if (operation === "open_page" || operation === "working_here") return record(json(outcome ?? {}));
+        // A picture is answered once, never kept with a receipt: asked again, it is taken again.
+        if (operation === "screenshot_preview") return reply(json(outcome ?? {}));
         if (operation === "inspect_preview") {
           let report: JsonValue = json(outcome?.result ?? {});
           if (typeof outcome?.result?.report === "string") {

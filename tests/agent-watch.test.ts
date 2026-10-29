@@ -559,7 +559,8 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   assert.doesNotMatch(prompt, /while :|run this loop|curl -s|Watch/);
   assert.match(prompt, /1\. Initialize the MCP connection and call `get_site`\./);
   assert.match(prompt, /2\. Start a "watchdog" subagent that keeps calling `wait_for_requests` \(each call waits up to 25 seconds\) and reports each request it returns back to you, the main thread\./);
-  assert.match(prompt, /3\. For each request the watchdog reports, make the change as an unsaved editor draft and answer it with `reply_to_request`/);
+  // Ticket am-14: it shows where it works, and checks its change with a picture.
+  assert.match(prompt, /3\. For each request the watchdog reports, show me where you work with `working_here`, make the change as an unsaved editor draft, check how it looks with `screenshot_preview` \(also `width: "phone"`\), and answer it with `reply_to_request`/);
   assert.match(prompt, /Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token\./);
   assert.match(prompt, /Keep the token in memory; never save it or repeat it in responses\./);
   assert.match(prompt, /Give it the server and token in its instructions only\./);

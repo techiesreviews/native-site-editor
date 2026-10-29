@@ -49,6 +49,8 @@ export interface BackgroundSitePorts {
 }
 
 const none = () => {};
+/** What a command that needs the page on screen is told there. */
+const ON_SCREEN = "The editor shows another site or branch now; this needs the page on screen. Nothing was changed.";
 const holds: Stamp = { holds: () => true, changed: () => undefined };
 
 /** The pinned workspace's files and their places: its tree, deletions and new drafts. */
@@ -196,7 +198,8 @@ export function backgroundSite(pin: MediaPin, ports: BackgroundSitePorts, opened
     isMounted: () => true,
     open: async () => true,
     sectionTags: () => new Set(Object.entries(site?.components ?? {}).filter(([, path]) => isSectionTemplate(read(path) ?? "")).map(([tag]) => tag)),
-    inspect: () => Promise.reject(new Error("The editor shows another site or branch now; this needs the page on screen. Nothing was changed.")),
+    inspect: () => Promise.reject(new Error(ON_SCREEN)),
+    picture: () => Promise.reject(new Error(ON_SCREEN)),
   });
   return { workspace, pages, files, components, actions, loader, home };
 }

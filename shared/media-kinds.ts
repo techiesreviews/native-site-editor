@@ -44,6 +44,8 @@ export function mimeMap(extensions: string): Record<string, string> {
 }
 
 export const pictureExtensions = "jpg jpeg png webp avif";
+/** Types a tab's page picture may come back as (src/agent-picture.ts encodes WebP, else JPEG). */
+export const pictureReplyTypes: readonly string[] = /* @__PURE__ */ Object.values(mimeMap("webp jpeg png"));
 const agentVideoExtensions = videoExtensions + " avi mkv mpeg mpg";
 const agentAudioExtensions = audioExtensions + " aif aiff";
 export const creationExtensions = "png jpg jpeg gif webp avif ico bmp tif tiff pdf zip gz tgz tar 7z woff woff2 ttf otf eot mp3 mp4 m4a webm mov wav ogg";

@@ -198,8 +198,8 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
       "add_section", "adding_settings", "change_collection", "create_page", "delete_file", "describe_media", "edit_file", "export_site", "frame_image", "get_command_status", "get_page", "get_selection", "get_site",
-      "improve_images", "inspect_preview", "keep_media", "list_files", "list_media", "loop_video", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_media", "remove_section", "replace_media", "reply_to_request", "restore_media", "set_page_details",
-      "video_still", "wait_for_requests", "write_file", "write_subtitles",
+      "improve_images", "inspect_preview", "keep_media", "list_files", "list_media", "loop_video", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_media", "remove_section", "replace_media", "reply_to_request", "restore_media", "screenshot_preview", "set_page_details",
+      "video_still", "wait_for_requests", "working_here", "write_file", "write_subtitles",
     ]);
     const documentation = readFileSync(new URL("../docs/mcp.md", import.meta.url), "utf8");
     for (const name of tools) assert.ok(documentation.includes(`\`${name}\``), `docs/mcp.md must list ${name}`);
