@@ -258,6 +258,7 @@ function setup() {
         destroy: say("componentTools.destroy"), refresh: say("componentTools.refresh"),
         mode: { now: () => state.template, opened: () => false, sync: say("mode.sync") },
         instanceSelection: (selection: NativePreviewSelection) => selection,
+        newComponent: async (tag: string) => { calls.push(`newComponent ${tag}`); return true; },
       }); },
     },
     page: {
@@ -359,17 +360,40 @@ test("a right-click before the component tools land loads them at once and opens
   assert.deepEqual(last("rowMenu").calls, ["close"]);
 });
 
-test("a component tools load that fails is reported once and tried again with the next structure", async () => {
+test("a component tools load that fails is reported once and not tried again for that preview; a remount tries again", async () => {
   const { workspace, state, calls } = setup();
   workspace.mountWorkspace();
-  state.toolsFail = 1;
+  state.toolsFail = 2;
   await paint(state);
   assert.deepEqual(calls.filter((call) => call.startsWith("error")), ["error The component tools did not load."]);
   assert.equal(state.componentTools, undefined);
+  // Later structures (every edit repaints) and later asks load nothing more and report nothing more.
   await paint(state);
-  assert.equal(calls.filter((call) => call === "mountComponentTools").length, 2);
+  await paint(state);
+  assert.equal(await workspace.loadComponentTools(), undefined);
+  const preview = last("preview").options as { onNewComponent(tag: string, point: unknown): Promise<boolean> };
+  assert.equal(await preview.onNewComponent("x-new", {}), false);
+  assert.equal(calls.filter((call) => call === "mountComponentTools").length, 1);
+  assert.equal(calls.filter((call) => call.startsWith("error")).length, 1);
+  // A remount (another branch, a reload of the list) tries again.
+  workspace.mountWorkspace();
+  state.toolsFail = 0;
+  await paint(state);
   assert.ok(state.componentTools);
   assert.equal(calls.filter((call) => call.startsWith("error")).length, 1);
+});
+
+test("the Add panel's New component before the component tools land waits for them", async () => {
+  const { workspace, state, calls } = setup();
+  workspace.mountWorkspace();
+  let land!: () => void;
+  state.toolsWait = new Promise<void>((resolve) => { land = resolve; });
+  const preview = last("preview").options as { onNewComponent(tag: string, point: unknown): Promise<boolean> };
+  const made = preview.onNewComponent("x-new", { parent: [0], index: 0 });
+  assert.ok(calls.includes("mountComponentTools"));
+  land();
+  assert.equal(await made, true);
+  assert.ok(calls.includes("newComponent x-new"));
 });
 
 test("component tools that land after the workspace closed are destroyed; a wait after it closed loads nothing", async () => {
