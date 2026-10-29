@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { build, loadConfigFromFile } from "vite";
 import { unstable_startWorker } from "wrangler";
-import { MOCKUPS_HEADERS, mockupFiles, mockupIndex, mockups, mockupTitle, referencedFiles } from "../vite-mockups.ts";
+import { buildTickets, MOCKUPS_HEADERS, mockupFiles, mockupIndex, mockups, mockupShipping, mockupTitle, referencedFiles, ticketsOnMain } from "../vite-mockups.ts";
 
 const repoRoot = new URL("..", import.meta.url).pathname;
 const scratch = mkdtempSync(join(tmpdir(), "ase-mockups-"));
@@ -65,14 +66,96 @@ test("a build copies only the images a mock-up in the same map uses; notes namin
 
 test("the index lists HTML mock-ups under their map by title, without the prototype prefix", () => {
   const html = mockupIndex(mockupFiles(repo()));
-  assert.match(html, /<h2>agents<\/h2>\n<ul>\n<li><a href="agents\/05-untitled.html">05-untitled.html<\/a><\/li>\n<li><a href="agents\/14-share.html">14 Share &amp; &lt;edit&gt;<\/a><\/li>\n<\/ul>/);
-  assert.match(html, /<h2>site-structure<\/h2>\n<ul>\n<li><a href="site-structure\/08-site-map.html">08 Site map<\/a><\/li>/);
+  const idea = ' <span class="shipping shipping--idea">Idea only</span>';
+  assert.match(html, new RegExp(`<h2>agents</h2>\n<ul>\n<li><a href="agents/05-untitled.html">05-untitled.html</a>${idea}</li>\n<li><a href="agents/14-share.html">14 Share &amp; &lt;edit&gt;</a>${idea}</li>\n</ul>`));
+  assert.match(html, new RegExp(`<h2>site-structure</h2>\n<ul>\n<li><a href="site-structure/08-site-map.html">08 Site map</a>${idea}</li>`));
   assert.doesNotMatch(html, /12-reference\.png|kit/);
   assert.equal(mockupTitle("<title>  </title>", "a.html"), "a.html");
 });
 
 test("the index says so when there are no mock-ups", () => {
   assert.match(mockupIndex([]), /<p>No mock-ups yet\.<\/p>/);
+});
+
+/** A git repo with one mock-up per label and build tickets linking to them; `main` holds tickets 01 and 06
+ * closed, `dev` then closes 02 and claims 04. */
+function shippingRepo() {
+  const root = mkdtempSync(join(scratch, "shipping-"));
+  const git = (...args: string[]) => execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...args], { stdio: "ignore" });
+  const write = (path: string, text: string) => {
+    mkdirSync(join(root, path, ".."), { recursive: true });
+    writeFileSync(join(root, path), text);
+  };
+  const ticket = (map: string, file: string, status: string, assignee: string, body: string) =>
+    write(`docs/wayfinder/${map}/build/tickets/${file}`, `---\ntitle: "${file}"\nstatus: ${status}\nassignee: ${assignee}\n---\n\n${body}\n`);
+  for (const page of ["live", "preview", "live-and-open", "live-and-preview", "claimed", "planned", "idea", "shared"]) write(`docs/wayfinder/agents/prototypes/${page}.html`, `<title>${page}</title>`);
+  git("init", "--quiet", "--initial-branch=dev");
+  ticket("agents", "01-live.md", "closed", "", "[mock-up](../../prototypes/live.html), ../../prototypes/live-and-open.html, ../../prototypes/live-and-preview.html");
+  ticket("agents", "02-preview.md", "open", "", "Mock-ups: [preview](../../prototypes/preview.html) and [the pair](../../prototypes/live-and-preview.html).");
+  ticket("agents", "03-open.md", "open", "", "Builds `prototypes/live-and-open.html`; `prototypes/<file>.html` and prototypes/missing.html name none.");
+  ticket("agents", "04-claimed.md", "open", "", "[x](../../prototypes/claimed.html)");
+  ticket("agents", "05-planned.md", "ready-for-agent", "", "[x](../../prototypes/planned.html)");
+  // Another map's ticket, linking across maps: listed with its map's name.
+  ticket("styling", "06-shared.md", "closed", "", "From [shared](../../../agents/prototypes/shared.html) and docs/wayfinder/agents/prototypes/shared.html.");
+  ticket("agents", "07-shared.md", "open", "", "[x](../../prototypes/shared.html)");
+  git("add", "-A");
+  git("commit", "--quiet", "-m", "tickets");
+  git("branch", "main");
+  ticket("agents", "02-preview.md", "closed", "", "Mock-ups: [preview](../../prototypes/preview.html) and [the pair](../../prototypes/live-and-preview.html).");
+  ticket("agents", "04-claimed.md", "open", "am-04", "[x](../../prototypes/claimed.html)");
+  git("commit", "--quiet", "-am", "close 02, claim 04");
+  return root;
+}
+
+test("each mock-up's label comes from the build tickets linking to it and whether their closing commits are on main", () => {
+  const root = shippingRepo();
+  const files = mockupFiles(root);
+  const tickets = buildTickets(root, files);
+  assert.deepEqual(tickets.map(({ map, name, closed, claimed, mockups }) => ({ map, name, closed, claimed, mockups })), [
+    { map: "agents", name: "01", closed: true, claimed: false, mockups: ["agents/live.html", "agents/live-and-open.html", "agents/live-and-preview.html"] },
+    { map: "agents", name: "02", closed: true, claimed: false, mockups: ["agents/preview.html", "agents/live-and-preview.html"] },
+    { map: "agents", name: "03", closed: false, claimed: false, mockups: ["agents/live-and-open.html"] },
+    { map: "agents", name: "04", closed: false, claimed: true, mockups: ["agents/claimed.html"] },
+    { map: "agents", name: "05", closed: false, claimed: false, mockups: ["agents/planned.html"] },
+    { map: "agents", name: "07", closed: false, claimed: false, mockups: ["agents/shared.html"] },
+    { map: "styling", name: "06", closed: true, claimed: false, mockups: ["agents/shared.html"] },
+  ]);
+  const onMain = ticketsOnMain(root);
+  assert.deepEqual([...onMain!].map(path => path.slice(root.length + 1)).sort(),
+    ["docs/wayfinder/agents/build/tickets/01-live.md", "docs/wayfinder/styling/build/tickets/06-shared.md"]);
+  const labels = (main?: ReadonlySet<string>) => Object.fromEntries([...mockupShipping(files, tickets, main)]
+    .map(([key, { label, tickets: from }]) => [key.slice("agents/".length), `${label} ${from.map(ticket => ticket.name).join(",")}`.trim()]));
+  assert.deepEqual(labels(onMain), {
+    "claimed.html": "building 04",
+    "idea.html": "idea",
+    "live.html": "live 01",
+    "live-and-open.html": "building 01,03",
+    "live-and-preview.html": "preview 01,02",
+    "planned.html": "planned 05",
+    "preview.html": "preview 02",
+    "shared.html": "building 07,06",
+  });
+  // Without main (a shallow clone, no git), closed work reads On preview.
+  assert.equal(ticketsOnMain(join(scratch, "not-a-repo")), undefined);
+  assert.equal(labels(undefined)["live.html"], "preview 01");
+});
+
+test("the index shows each label with the tickets it came from, and a legend saying what each means", () => {
+  const root = shippingRepo();
+  const files = mockupFiles(root);
+  const html = mockupIndex(files, undefined, mockupShipping(files, buildTickets(root, files), ticketsOnMain(root)));
+  const row = (page: string, badge: string) => assert.ok(html.includes(`<li><a href="agents/${page}.html">${page}</a> ${badge}</li>`), page);
+  row("live", '<span class="shipping shipping--live">Live</span> <span class="tickets">ticket 01</span>');
+  row("live-and-preview", '<span class="shipping shipping--preview">On preview</span> <span class="tickets">tickets 01, 02</span>');
+  row("shared", '<span class="shipping shipping--building">Being built</span> <span class="tickets">tickets 07, styling 06</span>');
+  row("planned", '<span class="shipping shipping--planned">Planned</span> <span class="tickets">ticket 05</span>');
+  row("idea", '<span class="shipping shipping--idea">Idea only</span>');
+  for (const [label, meaning] of [["live", "Live</span></dt><dd>Built and released to editor.techies.tools."], ["preview", "On preview</span></dt><dd>Built and on preview"],
+    ["building", "Being built</span></dt><dd>"], ["planned", "Planned</span></dt><dd>"], ["idea", "Idea only</span></dt><dd>No build ticket"]]) {
+    assert.ok(html.includes(`<dt><span class="shipping shipping--${label}">${meaning}`), label);
+  }
+  // The editor's own tokens, light and dark, colour the labels.
+  assert.match(html, /--success-bg: var\(--semantic-success-surface\);[\s\S]*@media \(prefers-color-scheme: dark\)[\s\S]*\.shipping--live \{ background: var\(--success-bg\)/);
 });
 
 test("a build with the plugin writes the mock-ups and the index under mockups/", async () => {
