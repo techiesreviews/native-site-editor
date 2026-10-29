@@ -108,10 +108,10 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
       onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
       // A pin an agent works on wears its colour, the one its outline and dots have (ticket am-13). Only those:
       // asking for a colour gives an agent its place in the order of arrival, which those of earlier sessions
-      // (on finished requests) must not take.
+      // (on finished requests) and a watchdog that only took one for the agent that does the work must not take.
       onRequests: (requests) => {
         agentPresence.questions(requests);
-        ports.nativePreview?.setRequests(requests.map(request => request.state === "seen" && request.agent
+        ports.nativePreview?.setRequests(requests.map(request => request.state === "seen" && request.agent && !request.agentTook
           ? { ...request, colour: agentPresence.colour(request.agent) } : request));
       },
       onQuestions: (count) => workspace.repositoryMenu?.setQuestions(count),

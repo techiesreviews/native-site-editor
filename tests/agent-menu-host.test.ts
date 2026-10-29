@@ -181,14 +181,14 @@ test("before the preview exists, requests and a shown request wait, and the sele
   assert.deepEqual([inputs[0].native?.selection?.path, inputs[0].native?.selection?.route], ["index.html", undefined]);
 });
 
-test("only a pin an agent works on asks for its colour (am-13): finished ones of earlier sessions take no place in the order of arrival", async () => {
+test("only a pin an agent works on asks for its colour (am-13): finished ones of earlier sessions, and a watchdog that only took one, take no place in the order of arrival", async () => {
   const { host, calls, menus } = setup();
   await host.agentController.ensure();
-  const request = (id: string, state: string, name: string) => ({ id, text: id, state, createdAt: 1, repoId: 1, branch: "main",
+  const request = (id: string, state: PinRequest["state"], name: string): PinRequest => ({ id, text: id, state, createdAt: 1, repoId: 1, branch: "main",
     element: { file: "index.html", route: "/", id: "1.0", tag: "h1" }, agent: { grant: `grant-${name}`, name } });
-  // eslint-disable-next-line no-restricted-syntax -- the requests as the menu tells them, the fields the host reads.
-  menus[0].onRequests?.([request("req-old", "done", "Old helper"), request("req-now", "seen", "Copy editor")] as unknown as PinRequest[]);
+  const took: PinRequest = { ...request("req-took", "seen", "Watchdog"), agentTook: true };
+  menus[0].onRequests?.([request("req-old", "done", "Old helper"), request("req-now", "seen", "Copy editor"), took]);
   assert.deepEqual(calls.filter(call => call.startsWith("colour")), ["colour Copy editor"]);
   const told = JSON.parse(calls.find(call => call.startsWith("requests "))!.slice("requests ".length)) as { id: string; colour?: number }[];
-  assert.deepEqual(told.map(item => [item.id, item.colour]), [["req-old", undefined], ["req-now", 2]]);
+  assert.deepEqual(told.map(item => [item.id, item.colour]), [["req-old", undefined], ["req-now", 2], ["req-took", undefined]]);
 });

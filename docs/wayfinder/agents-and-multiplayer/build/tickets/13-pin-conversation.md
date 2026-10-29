@@ -90,3 +90,25 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
     - `native-agent-pins.spec.ts` follows the prompt's setup: "Watchdog" waits and Copy editor reads, works and replies. The pin shows Watchdog until Copy editor reads, then Copy editor in its own colour. A stale reply after the watchdog took the follow-up is refused. New phone test (390 px, touch): tapping a done pin opens its card in view and on top, with Clear focused and the box not.
   - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3882/3882 (252 files)` (`kit unit --affected`). `RESULT: ok specs 7/7 passed` (native-agent-pins, native-agent-quiet, native-mcp, native-several-agents, native-mcp-menu, native-agent-presence, native-lazy-panels). `npm run check` and `npm run lint` are clean.
   - `kit specs --affected`: `RESULT: ok specs 183/183 passed`.
+
+- Review round 3:
+  - A pin that only a watchdog's wait took names no one. It keeps its spinner, in no agent's colour, until an agent reads it by its id or replies. The watchdog therefore takes no colour, so the first agent at work gets the first colour (`agentTook` is skipped in `agent-pins.ts` `workingAgent`, in the presence `pinned` list and in the host's colour lookup).
+  - Two agents reading one request at once: a read whose save lost the race reads again, at most `TAKE_TRIES` times, as a take does (`src/agent-watch.ts` `find`). Its reply is then accepted.
+  - The icon-only Send button has a tooltip ("Send"). The pin's text pieces use logical properties throughout. The pin's state mark is cached in a `WeakMap`, not a `data-mark` attribute.
+  - Round 1's refusal told the agent to call `wait_for_requests`. Since round 2 it says to read the request with `get_selection (request)`.
+  - Tests:
+    - `tests/agent-watch.test.ts`:
+      - two reads where the first save loses: both reads are kept, and the losing reader's reply is accepted;
+      - a follow-up whose hold ran out is taken by another connection's watchdog, then read by the original agent: that agent is on it again and its reply is accepted.
+    - `tests/agent-presence.test.ts` and `tests/agent-menu-host.test.ts`: a watchdog that only took a request takes no colour.
+    - `native-agent-pins.spec.ts`:
+      - the watchdog-only pin shows its spinner, with no name and no agent colour;
+      - Copy editor gets the first colour, and its outline in the preview is in it too;
+      - the phone card's in-view and on-top checks are polled;
+      - a new dark-scheme test checks the 4.5:1 contrast for all four agent colours.
+    - `native-mcp.spec.ts`: a pin taken by a wait shows its spinner, and reading it names the agent.
+  - Shots (`kit shots --spec .scratch/am13-shots.spec.ts`, real starter, light and dark): three pins on "Recent work" at 1280 and 390 (done, Copy editor's, the watchdog's only), close-ups, the done card, and on a 390 touch phone the done pin tapped. UX review:
+    - the watchdog-only pin is the plain blue waiting style with its spinner, telling no name;
+    - Copy editor's pin is in the first colour;
+    - the phone card opens in view above the bottom sheet with Clear focused, and no keyboard comes up.
+  - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3885/3885 (252 files)` (`kit unit --affected`). Of native-agent-pins, native-agent-quiet, native-mcp, native-several-agents, native-mcp-menu, native-agent-presence and native-lazy-panels, six passed together; native-mcp then passed alone after its pickup check was updated (`RESULT: ok specs 1/1 passed`). `RESULT: ok shots raw spec`. `npm run check` and `npm run lint` are clean.

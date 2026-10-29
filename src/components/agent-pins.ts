@@ -52,7 +52,7 @@ import "./agent-pins.css";
 // open.
 
 /** A request as the tab polls it: its element without the source, and the colour of the agent on it (an index into AGENT_COLOURS). */
-export type PinRequest = Pick<AgentRequest, "id" | "text" | "state" | "createdAt" | "reply" | "thread" | "repoId" | "branch" | "agent"> & {
+export type PinRequest = Pick<AgentRequest, "id" | "text" | "state" | "createdAt" | "reply" | "thread" | "repoId" | "branch" | "agent" | "agentTook"> & {
   element: Pick<AgentRequest["element"], "file" | "route" | "id" | "tag" | "selector" | "host">;
   colour?: number;
 };
@@ -94,8 +94,9 @@ const marks: Record<string, string> = { done: "✓", answered: "…", question: 
 const replied = (state: string) => state === "done" || state === "answered" || state === "question";
 // The question an agent asks the user, shown in its pin ("" when none).
 const asking = (request: PinRequest) => request.state === "question" ? request.reply?.message.trim() ?? "" : "";
-// The agent working on it, named on its pin in its colour ("" when none).
-const workingAgent = (request: PinRequest) => request.state === "seen" && request.agent ? request.agent.name || UNNAMED_AGENT : "";
+// The agent working on it, named on its pin in its colour ("" when none). Not the one whose wait only took
+// it (a watchdog, for the agent that does the work): the pin keeps its spinner until an agent reads it.
+const workingAgent = (request: PinRequest) => request.state === "seen" && request.agent && !request.agentTook ? request.agent.name || UNNAMED_AGENT : "";
 // Its theme token: the agent's colour itself, and (`-pin`, `-ink`) its pin's tint and ink.
 const agentToken = (request: PinRequest, part = "") => `var(--${AGENT_COLOURS[(request.colour ?? 0) % AGENT_COLOURS.length]}${part})`;
 
@@ -141,6 +142,8 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
   const rects = new Map<string, SelectionRect | null>();
   const lastRects = new Map<string, SelectionRect>();
   const pins = new Map<string, HTMLButtonElement>();
+  // Each pin's state mark as last drawn (state, and whether an agent is named).
+  const marked = new WeakMap<HTMLElement, string>();
   // The outlines of the elements agents work on, or just finished.
   const outlines = new Map<string, SVGSVGElement>();
   // Each request's state as last told, and those whose pin pops (or whose
@@ -215,8 +218,8 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     }
     pin.toggleAttribute("data-agent", Boolean(name));
     const mark = `${request.state}/${Boolean(name)}`;
-    if (pin.dataset.mark !== mark) {
-      pin.dataset.mark = mark;
+    if (marked.get(pin) !== mark) {
+      marked.set(pin, mark);
       pin.dataset.state = request.state;
       status.replaceChildren(
         request.state === "seen" && !name ? node("span", "agent-pin__spinner") : document.createTextNode(marks[request.state] ?? ""),
@@ -539,6 +542,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     }, "agent-pin-card__send");
     send.append(icon("arrow-up", 14));
     send.setAttribute("aria-label", "Send");
+    send.title = "Send";
     row.append(input, send);
     box.append(row, error);
     requestAnimationFrame(() => fit(input));
