@@ -302,6 +302,17 @@ test("a copy added elsewhere since the read is refused with no part, so a retry 
   }
 });
 
+test("a copy removed since the read is refused with no part too: the first copy read may be the one left unchanged", async () => {
+  const twice = read.replace("<h1>Welcome</h1>", "<h1>Welcome</h1>\n    <p>Welcome</p>");
+  const { context, files: site } = await withHome(read);
+  const expectedHash = await textHash(twice);
+  const clash = await prepareAgentEdit(edit({ path: "index.html", expectedHash, edits: [{ oldText: "Welcome", newText: "Hi", all: true }] }), context, site, hash => hash === expectedHash ? twice : undefined)
+    .then(() => assert.fail("must clash"), (error: unknown) => error);
+  assert.ok(clash instanceof PartClash);
+  assert.equal(clash.part, undefined);
+  assert.match(clash.message, /a different number of times .* Read the file again\.$/);
+});
+
 test("a changed part longer than PART_LIMIT is refused with read again, never a retry from its cut text", async () => {
   const block = Array.from({ length: 200 }, (_, i) => `    <p>Line ${i} ${"x".repeat(20)}</p>`).join("\n");
   const long = read.replace("    <h1>Welcome</h1>", `    <h1>Welcome</h1>\n${block}`), now = long.replace("Line 100 ", "Line one hundred ");
@@ -309,7 +320,8 @@ test("a changed part longer than PART_LIMIT is refused with read again, never a 
   const { context, files: site } = await withHome(now);
   const expectedHash = await textHash(long);
   const clash = await prepareAgentEdit(edit({ path: "index.html", expectedHash, edits: [{ oldText: block, newText: "x" }] }), context, site, hash => hash === expectedHash ? long : undefined)
-    .then(() => assert.fail("must clash"), (error: PartClash) => error);
+    .then(() => assert.fail("must clash"), (error: unknown) => error);
+  assert.ok(clash instanceof PartClash);
   assert.equal(clash.part?.truncated, true);
   assert.match(clash.message, /read the file again/);
   assert.doesNotMatch(clash.message, /oldText from part\.text/);
@@ -322,6 +334,20 @@ test("a catch-up works out sections only for the files it can show", () => {
   assert.ok(calls <= CATCH_UP_FILES && calls >= told.files.length, String(calls));
   assert.equal(told.files.length + told.more!, 60);
   assert.ok(told.files.every(file => file.sections?.[0] === "1.0"));
+  assert.ok(textBytes(JSON.stringify(told)) <= CATCH_UP_BYTES);
+});
+
+test("a catch-up cut to its files without sections is cut again once their sections are added", () => {
+  const marked = (hash: string) => Object.fromEntries(Array.from({ length: CATCH_UP_FILES }, (_, i) => [`pages/${"p".repeat(30)}${String(i).padStart(2, "0")}/index.html`, { hash: `${hash}${i}`, at: 1 }]));
+  const before: AgentMark = { commit: "c1", files: marked("a") }, now: AgentMark = { commit: "c1", files: marked("b") };
+  // Without sections, every file fits, with little room left.
+  const bare = catchUpOf(before, now)!;
+  assert.equal(bare.files.length, CATCH_UP_FILES);
+  assert.ok(textBytes(JSON.stringify(bare)) > CATCH_UP_BYTES - 200, String(textBytes(JSON.stringify(bare))));
+  const told = catchUpOf(before, now, new Set(), () => Array.from({ length: 10 }, (_, i) => `${i}.${"9".repeat(8)}`))!;
+  assert.ok(told.files.length < bare.files.length && told.files.length > 0, String(told.files.length));
+  assert.equal(told.files.length + told.more!, CATCH_UP_FILES);
+  assert.ok(told.files.every(file => file.sections?.length === 10));
   assert.ok(textBytes(JSON.stringify(told)) <= CATCH_UP_BYTES);
 });
 

@@ -46,7 +46,9 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 4. `catchUpOf` (`shared/agent-read.ts`) cuts the list to `CATCH_UP_FILES` and 2 KB first, works out sections only for the files left, then cuts again with them.
 5. A mark keeps its files in an object with no prototype (`src/agent-part.ts` `markOf`): a draft named `__proto__` is told in the catch-up.
 
-Tests: one per item in `tests/agent-part.test.ts` (items 2 to 5) and `tests/agent-tools-edit.test.ts` (item 1); each failed on the code before its fix (54/59 with the four source files at the claim commit). Gap test, no fix needed: a read reply exactly at the read tool's limit (relay `maxBytes` less 4096) plus a full catch-up and the transport's largest envelope stays within `maxBytes`.
+Commits: Exact-part edits: second-look fixes (follow-up on 10)
+
+Tests: one per item in `tests/agent-part.test.ts` (items 2 to 5) and `tests/agent-tools-edit.test.ts` (item 1); each failed on the code before its fix (54/59 with the four source files at the claim commit). Gap test, no fix needed: a read reply exactly at the read tool's limit (relay `maxBytes` less 4096) plus a full catch-up and the transport's largest envelope stays within `maxBytes`. Also covered: a copy removed since the read is refused with no part like one added, and a catch-up cut to its files without sections is cut again once their sections are added. Words gone altogether keep their part (ticket 10's test "the same words changed meanwhile are refused with the part as it is now").
 
 - `RESULT: ok unit 3891/3891 (252 files)` (`kit unit --affected`)
 - `RESULT: ok specs 1/1 passed` (`kit specs tests/native-save/native-agent-exact-part.spec.ts`; `--affected` selects 152 specs through the shared imports, left to `kit pr`)
