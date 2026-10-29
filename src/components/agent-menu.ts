@@ -147,11 +147,11 @@ export function createAgentMenu(options: {
   }
   /** Whether the user stopped the agent that sent `call`: it is refused before anything runs. */
   function stopped(call: { grantId?: unknown; agent?: unknown }) { return options.agents?.stopped(agentWho(call)) ?? false; }
-  /** Lets a call in unless its agent is stopped, and records that agent as heard on its connection (whom a pin its
-   * wait took names, ticket am-45). False: refused, nothing recorded. */
-  function admit(call: { grantId?: unknown; agent?: unknown }) {
+  /** Lets a call in unless its agent is stopped, and records that agent as heard on its connection, acting unless the
+   * call is a wait (whom a pin a wait took names, ticket am-45). False: refused, nothing recorded. */
+  function admit(call: { grantId?: unknown; agent?: unknown; tool?: unknown }) {
     if (stopped(call)) return false;
-    options.agents?.heard(agentWho(call));
+    options.agents?.heard(agentWho(call), call.tool !== "wait_for_requests");
     return true;
   }
   async function activateSocket() {

@@ -9,6 +9,7 @@ import { createAgentSiteHost, type AgentSiteHostPorts, type createAgentCommands 
 import type { AgentReadFiles } from "./agent-tools-read";
 import type { AppStore } from "./app-store";
 import type { CleanSourceCache } from "./clean-source-cache";
+import type { PinRequest } from "./components/agent-pins";
 import type { createNativePreview } from "./components/native-preview";
 import { createAgentController } from "./controllers/agent-controller";
 import type { createPageStructureController } from "./controllers/page-structure-controller";
@@ -54,6 +55,21 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
   // Consts and functions main.ts never reassigns, read once; its `let` state and later consts stay `ports.` reads.
   const { appStore, runtime, guardedEdits, cleanSources, agentCommands, setupController, pageStructureController, mediaPorts, workspace,
     nativeTextIndexGate, agentPresence, api, readFile, readFiles, loadAgentSite, loadAgentMenu, draftScope, nativeRouteInfo, pathNow, errorMessage } = ports;
+
+  // The pins of the requests last told, each named as the agent presence names it; told again when an agent acting
+  // or stopped names one anew (ticket am-45), so the name shows without waiting for a request to change.
+  let pinned: { requests: PinRequest[]; names: string } | undefined;
+  const pinNames = (requests: readonly { id: string }[]) => requests.map(request => agentPresence.onPin(request.id)?.name ?? "").join("\n");
+  function pinRequests(requests: PinRequest[]) {
+    pinned = { requests, names: pinNames(requests) };
+    ports.nativePreview?.setRequests(requests.map(request => {
+      const who = agentPresence.onPin(request.id);
+      if (!who) return request;
+      const { agentTook: _took, ...rest } = request;
+      return { ...rest, agent: who, colour: agentPresence.colour(who) };
+    }));
+  }
+  agentPresence.listen(() => { if (pinned && pinNames(pinned.requests) !== pinned.names) pinRequests(pinned.requests); });
 
   // Agents see the whole site (its pages are read after the first paint):
   // the context waits for the complete index of the repository open then.
@@ -112,10 +128,7 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
       // sessions (on finished requests) and a watchdog that only took one among its connection's agents must not take.
       onRequests: (requests) => {
         agentPresence.questions(requests);
-        ports.nativePreview?.setRequests(requests.map(request => {
-          const who = agentPresence.onPin(request.id), { agentTook: _took, ...rest } = request;
-          return who ? { ...rest, agent: who, colour: agentPresence.colour(who) } : request;
-        }));
+        pinRequests(requests);
       },
       onQuestions: (count) => workspace.repositoryMenu?.setQuestions(count),
       // A question in the selector's list: its pin, card open, answer box focused.
