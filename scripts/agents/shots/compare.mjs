@@ -7,13 +7,15 @@ import { basename, extname, isAbsolute, join, relative, resolve } from "node:pat
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { kitHomeFolder, kitLibrary } from "../kit-home.mjs";
+import { kitLibrary, kitShellLibrary } from "../kit-home.mjs";
 import { contactOutput, parseArgs, parseSteps } from "./core.ts";
 import { findingsSections } from "./findings-list.ts";
 
-// The shared kit library comes from the kit the launcher picks, found once per process, never from this project.
-const kitHome = kitHomeFolder();
-const { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } = await import(pathToFileURL(kitLibrary(process.env, kitHome)).href);
+// The shared kit library comes from the kit the launcher picks (once per process), never from this project.
+let library;
+try { library = kitLibrary(); }
+catch (error) { console.log(error.message); process.exit(2); }
+const { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } = await import(pathToFileURL(library).href);
 
 export function splitCompare(args) {
   const rest = [];
@@ -41,7 +43,7 @@ export const toolingFiles = [
 ];
 
 /** Hash paths and bytes, including a stable marker for missing tooling. */
-export async function toolingHash(root, home = kitHome) {
+export async function toolingHash(root, libraries = [kitShellLibrary(), kitLibrary()]) {
   const paths = [];
   async function collect(path) {
     if (!path.endsWith("/")) { paths.push(path); return; }
@@ -59,16 +61,16 @@ export async function toolingHash(root, home = kitHome) {
   }
   for (const path of toolingFiles) await collect(path);
   const hash = createHash("sha256");
-  // The kit's library, which kit shots runs on, lives in the kit (KIT_HOME): a kit change is a tooling change too.
-  for (const name of ["kit-lib.sh", "kit-lib.mjs"]) {
+  // The kit's libraries kit shots runs on (the ones this process loads): a kit change is a tooling change too.
+  for (const [index, path] of libraries.entries()) {
     let content;
-    try { content = await readFile(join(home, name)); }
+    try { content = await readFile(path); }
     catch (error) {
       if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
-      hash.update(JSON.stringify([`kit:${name}`, "missing"])).update("\0");
+      hash.update(JSON.stringify([`kit:${index}`, "missing"])).update("\0");
       continue;
     }
-    hash.update(JSON.stringify([`kit:${name}`, content.length])).update("\0").update(content).update("\0");
+    hash.update(JSON.stringify([`kit:${index}`, content.length])).update("\0").update(content).update("\0");
   }
   for (const path of paths.sort()) {
     let content;

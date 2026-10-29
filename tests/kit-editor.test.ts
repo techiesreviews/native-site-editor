@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -115,11 +115,13 @@ test("the forwarders run the kit's own helper with every argument and its exit s
   writeFileSync(join(fake, "tickets.mjs"), 'console.log(JSON.stringify(process.argv.slice(2))); process.exit(5);\n');
   const tickets = spawnSync(process.execPath, [resolve("scripts/agents/tickets.mjs"), "check", "x y"], { env: { ...process.env, KIT_HOME: fake }, encoding: "utf8" });
   assert.deepEqual([tickets.status, tickets.stdout], [5, '["check","x y"]\n']);
-  // Without KIT_HOME a forwarder asks the launcher, which picks the same kit as a kit command.
-  const { KIT_HOME: _drop, ...env } = process.env;
-  const picked = spawnSync(kit, ["--home"], { env, encoding: "utf8", timeout: 60_000 });
-  assert.equal(picked.status, 0, picked.stdout + picked.stderr);
-  assert.ok(existsSync(join(picked.stdout.trim(), "tickets.mjs")), picked.stdout);
+  // Without KIT_HOME a forwarder asks the launcher, which picks the machine copy as for a kit command.
+  const data = join(fake, "data");
+  mkdirSync(join(data, "agent-kit"), { recursive: true });
+  symlinkSync(fake, join(data, "agent-kit/current"));
+  const { KIT_HOME: _drop, KIT_HOME_DEFAULT: _default, KIT_HOME_PINNED: _pinned, ...env } = process.env;
+  const unit = spawnSync(resolve("scripts/agents/unit.sh"), ["a"], { env: { ...env, XDG_DATA_HOME: data }, encoding: "utf8" });
+  assert.deepEqual([unit.status, unit.stdout], [7, "unit.sh|a|\n"]);
 });
 
 test("the documented user-level card hook skips projects with a hook launcher and prints the card elsewhere", (t) => {
@@ -132,7 +134,7 @@ test("the documented user-level card hook skips projects with a hook launcher an
   const data = join(directory, "data");
   mkdirSync(join(data, "agent-kit"), { recursive: true });
   // The machine copy the documented command names, here the kit these tests run.
-  spawnSync("ln", ["-s", home, join(data, "agent-kit/current")]);
+  symlinkSync(home, join(data, "agent-kit/current"));
   const block = /```json\n(.+)\n```/.exec(read("docs/agents/context-card.md"))![1];
   const command = (JSON.parse(block) as { hooks: { SessionStart: { hooks: { command: string }[] }[] } }).hooks.SessionStart[0].hooks[0].command;
   const env = { ...process.env, HOME: directory, XDG_DATA_HOME: data, CHAT_MEMORY_DIR: memory };
@@ -188,7 +190,7 @@ test("without any kit the forwarders fail with the launcher's RESULT line", (t) 
   }
 });
 
-test("the shots base cache key changes with the kit's library", (t) => {
+test("the shots base cache key changes with the kit's library", async (t) => {
   const directory = temp(t);
   const copy = (name: string, library: string) => {
     const kitFolder = join(directory, name);
@@ -199,11 +201,21 @@ test("the shots base cache key changes with the kit's library", (t) => {
     return kitFolder;
   };
   const one = copy("one", "export const a = 1;\n"), two = copy("two", "export const a = 2;\n");
-  return (async () => {
-    const first = await toolingHash(resolve("."), one);
-    assert.equal(await toolingHash(resolve("."), one), first);
-    assert.notEqual(await toolingHash(resolve("."), two), first);
-  })();
+  const libraries = (folder: string) => [join(folder, "kit-lib.sh"), join(folder, "kit-lib.mjs")];
+  const first = await toolingHash(resolve("."), libraries(one));
+  assert.equal(await toolingHash(resolve("."), libraries(one)), first);
+  assert.notEqual(await toolingHash(resolve("."), libraries(two)), first);
+  // By default it hashes the library this process loads: KIT_LIB_MJS when set.
+  const hashWith = (library: string) => {
+    const stub = join(directory, "stub.mjs");
+    writeFileSync(stub, `export * from ${JSON.stringify(pathToFileURL(join(home, "kit-lib.mjs")).href)};\n${library}`);
+    const script = `const { toolingHash } = await import(${JSON.stringify(pathToFileURL(resolve("scripts/agents/shots/compare.mjs")).href)});
+console.log(await toolingHash(${JSON.stringify(resolve("."))}));`;
+    const result = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], { env: { ...process.env, KIT_LIB_MJS: stub }, encoding: "utf8", timeout: 60_000 });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  assert.notEqual(hashWith("// one\n"), hashWith("// two\n"));
 });
 
 test("KIT_LIB_MJS wins for this editor's own commands: only that library loads", (t) => {
@@ -220,7 +232,8 @@ test("KIT_LIB_MJS wins for this editor's own commands: only that library loads",
     assert.equal(result.status, 0, `${name}: ${result.stdout}${result.stderr}`);
     assert.match(result.stdout, new RegExp(`^Usage: kit ${name}`), name);
   }
-  assert.ok(readFileSync(loaded, "utf8").split("\n").filter(Boolean).length >= 3);
+  // One load per command: none loads the library twice.
+  assert.equal(readFileSync(loaded, "utf8"), "stub\nstub\nstub\n");
 });
 
 test("a pinned KIT_HOME that kit update removed is picked again for this editor's helpers", (t) => {
@@ -228,11 +241,30 @@ test("a pinned KIT_HOME that kit update removed is picked again for this editor'
   mkdirSync(fake, { recursive: true });
   writeFileSync(join(fake, "kit"), "#!/usr/bin/env bash\n"); chmodSync(join(fake, "kit"), 0o755);
   writeFileSync(join(fake, "kit-lib.sh"), "");
-  spawnSync("ln", ["-s", "newer", join(data, "agent-kit/current")]);
+  symlinkSync("newer", join(data, "agent-kit/current"));
   const removed = join(directory, "removed-kit");
   const env = { ...process.env, XDG_DATA_HOME: data, KIT_HOME: removed, KIT_HOME_PINNED: removed };
   assert.equal(kitHomeFolder(env), fake);
   // A person's KIT_HOME (no marker) that holds no kit still fails plainly.
   const { KIT_HOME_PINNED: _pinned, ...person } = env;
   assert.throws(() => kitHomeFolder(person), /RESULT: fail no Agent Kit at .*removed-kit/);
+});
+
+test("this editor's helpers look the kit up once per process", (t) => {
+  const directory = temp(t);
+  const whole = (name: string) => {
+    const folder = join(directory, name);
+    mkdirSync(folder);
+    writeFileSync(join(folder, "kit"), "#!/usr/bin/env bash\n"); chmodSync(join(folder, "kit"), 0o755);
+    writeFileSync(join(folder, "kit-lib.sh"), "");
+    return folder;
+  };
+  const one = whole("one"), two = whole("two");
+  const script = `const { kitHomeFolder } = await import(${JSON.stringify(pathToFileURL(resolve("scripts/agents/kit-home.mjs")).href)});
+const first = kitHomeFolder(); process.env.KIT_HOME = ${JSON.stringify(two)};
+console.log(first, kitHomeFolder(), kitHomeFolder({ ...process.env }));`;
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { env: { ...process.env, KIT_HOME: one }, encoding: "utf8", timeout: 60_000 });
+  assert.equal(result.status, 0, result.stderr);
+  // The process keeps its first kit; an explicit environment is looked up as given.
+  assert.equal(result.stdout, `${one} ${one} ${two}\n`);
 });
