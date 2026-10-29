@@ -275,11 +275,11 @@ test("a pin a wait took and its agent answers without reading it by id shows tha
   assert.equal(presence.onPin("req-took"), undefined);
 });
 
-test("a watchdog's take shows its connection's one other agent heard (am-45: get_site counts), and the watchdog takes no colour", () => {
+test("a watchdog's take (heard only waiting) shows its connection's one agent acting (am-45: get_site counts), and the watchdog takes no colour", () => {
   const { presence } = presenceViews();
   const watchdog = agent("Watchdog"), copy = agent("Copy editor");
   presence.heard(copy);
-  presence.heard(watchdog);
+  presence.heard(watchdog, false);
   presence.questions([took(watchdog)]);
   assert.deepEqual(presence.onPin("req-took"), copy);
   assert.equal(presence.colour(copy), 0, "Copy editor has the first colour; the watchdog none");
@@ -288,97 +288,88 @@ test("a watchdog's take shows its connection's one other agent heard (am-45: get
   assert.deepEqual(presence.onPin("req-took"), copy);
 });
 
-test("a worker's own take names it when it is at work (am-45), even with another agent heard, and once it starts work on it", () => {
+test("a worker's own wait names it (am-45), even with another agent of its connection acting", () => {
   const { presence } = presenceViews();
   const finder = agent("Image finder"), copy = agent("Copy editor");
   presence.heard(copy);
   presence.heard(finder);
   presence.questions([took(finder)]);
-  assert.deepEqual(presence.onPin("req-took"), copy, "not at work yet: the one other agent heard, as for a watchdog");
-  presence.show("index.html", findHero, finder)();
-  presence.questions([took(finder)]);
   assert.deepEqual(presence.onPin("req-took"), finder);
 });
 
-test("once named, a take keeps its agent until done (am-45): another agent heard or at work meanwhile does not unname it; a stop does", () => {
-  const { presence, stops } = presenceViews();
+test("a watchdog's take is named at once when its connection's agent first acts, without a request changing (am-45)", () => {
+  const { presence } = presenceViews();
   const watchdog = agent("Watchdog"), copy = agent("Copy editor");
-  presence.heard(watchdog);
+  let told = 0;
+  presence.listen(() => { told++; });
+  presence.heard(watchdog, false);
   presence.questions([took(watchdog)]);
-  assert.deepEqual(presence.onPin("req-took"), watchdog);
+  assert.equal(presence.onPin("req-took"), undefined, "no agent acting yet: the spinner, the watchdog unnamed");
+  const before = told;
   presence.heard(copy);
-  presence.show("index.html", findHero, copy)();
-  presence.questions([took(watchdog)]);
-  assert.deepEqual(presence.onPin("req-took"), watchdog);
-  // Stopped (am-12): it shows nowhere again, its pin's spinner neither.
-  stops.add(JSON.stringify(watchdog));
-  presence.questions([took(watchdog)]);
-  assert.equal(presence.onPin("req-took"), undefined);
+  assert.deepEqual(presence.onPin("req-took"), copy);
+  assert.ok(told > before, "the host hears it and names the pin again");
 });
 
-test("a stopped taker alone on its connection is not named (am-12, am-45)", () => {
+test("once named, a watchdog's take keeps its agent until done (am-45): another agent acting meanwhile does not rename it; a stop does", () => {
   const { presence, stops } = presenceViews();
-  const watchdog = agent("Watchdog");
-  presence.heard(watchdog);
-  presence.questions([took(watchdog)]);
-  assert.deepEqual(presence.onPin("req-took"), watchdog);
-  stops.add(JSON.stringify(watchdog));
-  presence.questions([took(watchdog)]);
-  assert.equal(presence.onPin("req-took"), undefined);
-});
-
-test("stored requests keep no agent heard (am-45): a question left open long ago does not count against the only agent heard now", () => {
-  const { presence, clock } = presenceViews();
-  const copy = agent("Copy editor"), watchdog = agent("Watchdog");
-  presence.questions([question(copy)]);
-  for (let at = 0; at < 3; at++) {
-    clock.now += AT_WORK_MS / 2;
-    presence.questions([question(copy)]);
-  }
-  presence.heard(watchdog);
-  presence.questions([question(copy), took(watchdog)]);
-  assert.deepEqual(presence.onPin("req-took"), watchdog);
-});
-
-test("being at work lapses after AT_WORK_MS without a change (am-45), however often the agent is heard", () => {
-  const { presence, clock } = presenceViews();
-  const finder = agent("Image finder"), copy = agent("Copy editor");
-  presence.show("index.html", findHero, finder)();
-  for (let at = 0; at < 3; at++) {
-    clock.now += 5 * 60_000;
-    presence.heard(finder);
-  }
+  const watchdog = agent("Watchdog"), copy = agent("Copy editor"), finder = agent("Image finder");
+  presence.heard(watchdog, false);
   presence.heard(copy);
-  presence.questions([took(finder)]);
-  assert.deepEqual(presence.onPin("req-took"), copy, "no longer at work: the one other agent heard");
+  presence.questions([took(watchdog)]);
+  assert.deepEqual(presence.onPin("req-took"), copy);
+  presence.show("index.html", findHero, finder)();
+  presence.questions([took(watchdog)]);
+  assert.deepEqual(presence.onPin("req-took"), copy);
+  // Copy editor stopped (am-12): it shows nowhere again; the one agent acting left is named.
+  stops.add(JSON.stringify(copy));
+  presence.stopsChanged();
+  assert.deepEqual(presence.onPin("req-took"), finder);
 });
 
-test("a watchdog's take with several other agents heard (am-45) shows the one at work, else no one until one reads or replies", () => {
+test("a watchdog's take with several agents acting (am-45) shows no one until one reads or replies", () => {
   const { presence } = presenceViews();
   const watchdog = agent("Watchdog"), copy = agent("Copy editor"), finder = agent("Image finder");
-  for (const who of [copy, finder, watchdog]) presence.heard(who);
+  presence.heard(watchdog, false);
+  presence.heard(copy);
+  presence.heard(finder);
   presence.questions([took(watchdog)]);
   assert.equal(presence.onPin("req-took"), undefined);
-  presence.show("index.html", findHero, finder)();
-  presence.questions([took(watchdog)]);
-  assert.deepEqual(presence.onPin("req-took"), finder);
-  // Named, it keeps that agent while the other starts work too.
-  presence.show("index.html", findHero, copy)();
-  presence.questions([took(watchdog)]);
+  presence.questions([{ ...took(finder), agentTook: undefined }]);
   assert.deepEqual(presence.onPin("req-took"), finder);
 });
 
-test("a take counts only its connection's agents heard lately (am-45): not another connection's, a stopped one, or one gone quiet for AT_WORK_MS", () => {
-  const { presence, stops, clock } = presenceViews();
+test("a stopped taker is not named (am-12, am-45)", () => {
+  const { presence, stops } = presenceViews();
   const copy = agent("Copy editor");
+  presence.heard(copy);
+  presence.questions([took(copy)]);
+  assert.deepEqual(presence.onPin("req-took"), copy);
+  stops.add(JSON.stringify(copy));
+  presence.questions([took(copy)]);
+  assert.equal(presence.onPin("req-took"), undefined);
+});
+
+test("stored requests keep no agent acting (am-45): a question left open does not name a watchdog's take", () => {
+  const { presence } = presenceViews();
+  const copy = agent("Copy editor"), watchdog = agent("Watchdog");
+  presence.heard(watchdog, false);
+  presence.questions([question(copy), took(watchdog)]);
+  assert.equal(presence.onPin("req-took"), undefined);
+});
+
+test("a watchdog's take counts only its connection's agents acting lately (am-45): not another connection's, a stopped one, or one quiet for AT_WORK_MS", () => {
+  const { presence, stops, clock } = presenceViews();
+  const copy = agent("Copy editor"), watchdog = agent("Watchdog");
   presence.heard(agent("Header writer", "g2"));
   presence.heard(agent("Old helper"));
   presence.heard(agent("Stopped helper"));
   stops.add(JSON.stringify(agent("Stopped helper")));
   clock.now += AT_WORK_MS + 1;
+  presence.heard(watchdog, false);
   presence.heard(copy);
   presence.heard(agent("Stopped helper"));
-  presence.questions([took(copy)]);
+  presence.questions([took(watchdog)]);
   assert.deepEqual(presence.onPin("req-took"), copy);
 });
 
