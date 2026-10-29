@@ -173,6 +173,15 @@ test("a ticket's newest closing commit counts, a moved ticket keeps it, and orig
   assert.deepEqual(labelsIn(clone), { ...labels, "live.html": "live 01", "preview.html": "live 02", "live-and-preview.html": "live 01,02" });
 });
 
+test("a shallow clone, even with main, reads no ticket as on main, so closed work is On preview", () => {
+  const { root } = shippingRepo();
+  const clone = join(scratch, `shallow-${Date.now()}`);
+  gitIn(scratch, "clone", "--quiet", "--depth=1", "--no-single-branch", `file://${root}`, clone);
+  gitIn(clone, "rev-parse", "--verify", "origin/main");
+  assert.equal(ticketsOnMain(clone), undefined);
+  assert.equal(labelsIn(clone)["live.html"], "preview 01");
+});
+
 test("a closing commit rewritten onto main by a rebase merge still counts, matched by author time and subject", () => {
   const { root, git } = shippingRepo();
   git("checkout", "--quiet", "main");
