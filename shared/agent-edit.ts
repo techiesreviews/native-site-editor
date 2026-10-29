@@ -148,7 +148,7 @@ export function spanNow(read: string, start: number, end: number, now: string): 
  * Undefined when every one is. Words `read` lacks pass when an earlier replacement makes them, or when `now`
  * lacks them too (the agent's own mistake); found only in `now`, they are a copy added since (`at` -1).
  * Still there, but a different number of times, or several copies read and none left (`recounted`): which copy changed
- * is not told, since a part at the first copy read is usually the one unchanged, or only one of those changed.
+ * is not told, since a part at the first copy read is usually the one unchanged, or would leave the others.
  */
 export function wordsMoved(read: string, now: string, edits: { oldText: string; newText: string; all?: boolean }[]): { index: number; at: number; recounted?: true } | undefined {
   const places = (text: string, words: string) => {
@@ -183,12 +183,13 @@ function editClash(file: { path: string; hash: string; content: string }, edits:
   const failing = moved?.index ?? Math.max(0, edits.findIndex((_, index) => !applyReplacements(file.content, edits.slice(0, index + 1)).ok));
   const { oldText } = edits[failing];
   const which = edits.length > 1 ? `The words replacement ${failing + 1} changes` : "The words this edit changes";
+  const gone = `${which} in ${file.path} are no longer there: the user or another agent changed them meanwhile. Read the file again.`;
   // No part to retry from: a retry with all would also change copies another made since, or, every copy read
   // gone, retry from one and leave the rest.
   if (moved?.recounted)
     throw new PartClash(file.content.includes(oldText)
       ? `${which} are in ${file.path} a different number of times than when it was read: the user or another agent changed them meanwhile. Read the file again.`
-      : `${which} in ${file.path} are no longer there: the user or another agent changed them meanwhile. Read the file again.`);
+      : gone);
   const at = moved?.at ?? read?.indexOf(oldText) ?? -1;
   let span = at >= 0 ? spanNow(read!, at, at + oldText.length, file.content) : undefined;
   if (!span) {
@@ -208,7 +209,7 @@ function editClash(file: { path: string; hash: string; content: string }, edits:
     : "part has them as they are now: send the edit again with oldText from part.text and expectedHash part.hash.";
   throw new PartClash(part
     ? `${which} in ${file.path} were changed meanwhile, by the user or another agent. ${retry}`
-    : `${which} in ${file.path} are no longer there: the user or another agent changed them meanwhile. Read the file again.`, part);
+    : gone, part);
 }
 
 /** What the tab's preparation reads of the shared context: the pages, and the page shown. */

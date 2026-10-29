@@ -225,6 +225,8 @@ test("an edit read in another text clashes when its words are no longer where th
   // Changed in place and written again elsewhere: as many, but not where it read them.
   const elsewhere = read.replace("<h1>Welcome</h1>", "<h1>Hello</h1>").replace(">Fast<", ">Welcome<");
   assert.deepEqual(wordsMoved(read, elsewhere, [{ oldText: "Welcome", newText: "Hi" }]), { index: 0, at: read.indexOf("Welcome") });
+  // Two copies read, none left: recounted, so no part around the first.
+  assert.deepEqual(wordsMoved(twice, twice.replaceAll("Welcome", "Hello"), [{ oldText: "Welcome", newText: "Hi", all: true }]), { index: 0, at: twice.indexOf("Welcome"), recounted: true });
   // Still where it read them, beside other changes: none moved, and it lands.
   const beside = read.replace(">Fast<", ">Quick<");
   assert.equal(wordsMoved(read, beside, [{ oldText: "Welcome", newText: "Hi" }]), undefined);
@@ -338,6 +340,12 @@ test("an edit whose two copies read both changed since is refused as no longer t
     assert.match(clash.message, /are no longer there: .* Read the file again\.$/);
     assert.doesNotMatch(clash.message, /different number of times|oldText from part\.text/);
   }
+  // In a later replacement: named, with no part.
+  const later = await prepareAgentEdit(edit({ path: "index.html", expectedHash, edits: [{ oldText: "<title>", newText: "<title>" }, { oldText: "Welcome", newText: "Hi", all: true }] }), context, site,
+    hash => hash === expectedHash ? twice : undefined).then(() => assert.fail("must clash"), (error: unknown) => error);
+  assert.ok(later instanceof PartClash);
+  assert.equal(later.part, undefined);
+  assert.match(later.message, /^The words replacement 2 changes in index\.html are no longer there/);
   // Read once and changed since: the part as it is now, to retry from.
   const once = await textHash(read), single = await withHome(read.replace("Welcome", "Hello"));
   const changed = await prepareAgentEdit(edit({ path: "index.html", expectedHash: once, edits: [{ oldText: "Welcome", newText: "Hi", all: true }] }), single.context, single.files, hash => hash === once ? read : undefined)
