@@ -297,3 +297,17 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
   await expect(bar(page)).toBeHidden();
 });
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("a Heading just added from the Blocks rail is selected with its bar in view", async ({ page }) => {
+    await page.getByRole("navigation", { name: "Blocks" }).getByRole("button", { name: "Heading", exact: true }).click();
+    await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
+    await expect(bar(page).getByRole("button", { name: "Bold" })).toBeInViewport();
+    const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
+    const barBox = (await bar(page).boundingBox())!;
+    expect(barBox.x).toBeGreaterThanOrEqual(frameBox.x - 1);
+    expect(barBox.x + barBox.width).toBeLessThanOrEqual(frameBox.x + frameBox.width + 1);
+  });
+});
