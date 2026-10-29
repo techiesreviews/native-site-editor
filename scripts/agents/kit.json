@@ -10,13 +10,12 @@
     "check": "npm run check",
     "test": "npm test",
     "lint": "npm run lint",
-    "css": "node scripts/check-colours.mjs",
-    "extra": ["npm run test:kit-clean"]
+    "css": "node scripts/check-colours.mjs"
   },
   "unit": {
     "run": "./node_modules/.bin/tsx --test --test-reporter=spec",
     "files": "tests/**/*.test.ts",
-    "docsGuards": ["tests/agent-scripts.test.ts", "tests/code-map.test.ts", "tests/mcp-runtime.test.ts"]
+    "docsGuards": ["tests/kit-editor.test.ts", "tests/code-map.test.ts", "tests/mcp-runtime.test.ts"]
   },
   "paths": {
     "docs": ["^docs/", "(?i:\\.md)$"],
