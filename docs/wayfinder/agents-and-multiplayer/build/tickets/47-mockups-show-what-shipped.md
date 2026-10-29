@@ -1,7 +1,7 @@
 ---
 title: "The mock-ups page shows which ones are built and live"
 type: task (AFK)
-status: open
+status: closed
 assignee: am-47
 builder: claude
 blocked_by: [38-mockups-copy-only-used-images]
@@ -36,3 +36,14 @@ Lex, 2026-10-29: "For the mockups, could you add to see which one is shipped?" T
 ## Kit commands and evidence
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit review`, `kit pr`, `kit preview`; report the RESULT lines and shots.
+
+## Done (2026-10-29)
+
+- Each mock-up on `/mockups/` now carries one label (Live, On preview, Being built, Planned, Idea only) in the editor's badge style, coloured by its own theme tokens (`src/theme.css` is inlined, so light and dark both follow the editor), followed by the build tickets it came from: `tickets 12, 13, 15`, or `atomic-catalogue 66` when the ticket sits in another map. A legend at the top says what each label means.
+- Linking tickets: any `prototypes/<file>.html` in `docs/wayfinder/*/build/tickets/*.md`, read relative to the ticket, the repo or the ticket's map, that names a published mock-up. Closed is `status: closed`; claimed is a non-empty `assignee`.
+- "On `main`": a ticket's closing commit (the newest commit adding its `status: closed` line, from one `git log -p -G` over all build tickets, about 0.35 s) is reachable from `origin/main`, else a local `main`. When neither can be read (no git, or a clone without `main`), closed work reads On preview. The dev preview's GitHub workflow checks out with the default depth of 1, so its builds have no `main` and show On preview for all closed work, never Live, until that checkout fetches full history (`fetch-depth: 0` in `.github/workflows/deploy-preview.yml`, outside this ticket's files).
+- Today's index (dev at `0fd612795`, `origin/main` at `9ac4574a1`): 05 Several agents at once is On preview, 10 Asking agents is Being built, the other 26 are Planned; no mock-up is Live or Idea only yet.
+- Tests (`tests/vite-mockups.test.ts`): a fixture git repo with `main` and `dev` covers every label, a mock-up linked from a ticket that is live and another that is open (Being built), one linked from a live ticket and one on preview only (On preview), a cross-map link, a bare `prototypes/` name, and no `main` (On preview). The index test checks each row's label and tickets, the legend and the theme tokens.
+- Shots of a local `MOCKUPS=1` build (the `kit preview` deploy runs on `origin/dev`, so it shows the labels once this lands): `.scratch/am47-shots/index-1280-light.png`, `index-390-light.png`, `index-390-dark.png` (this worktree).
+- `RESULT: ok unit 14/14 (1 files)`; `npm run check` and `npm run lint` pass.
+- Feature list: no change (the mock-ups index is a preview-only planning page, not an editor feature; slices 37 and 38 left it out too).
