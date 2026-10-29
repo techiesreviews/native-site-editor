@@ -195,18 +195,20 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const change = (edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) => {
       return editOpenPage(path, source, edits, next, message);
     };
-    // For a control that edits only the element's own tags, chosen before the bar redrew after
-    // its own last change (Bold, say): the element in the latest source while its start tag is
-    // where and as it was, and its close tag (when it has one) as it was; else the bar's source,
-    // which editOpenPage refuses as stale. editOpenPage's check against the source is the proof.
+    // Own-tag controls (Text size, Heading level, Layout) apply to the latest source when only the
+    // element's content changed since the bar was drawn (its own Bold, say): everything up to the end
+    // of its start tag, its close tag and everything after it as they were. Otherwise the bar's
+    // source, which editOpenPage refuses as stale; its check against the source stays the proof.
     const ownTags = (own: ElementRange): { at: string; own: ElementRange } => {
       const latest = ports.nativeEditableSource(path) ?? "";
-      const found = latest !== source && node ? ports.locateNativeElementRange(latest, node) : undefined;
-      if (!found || found.tag.start !== own.tag.start) return { at: source, own };
-      const text = (html: string, at?: { start: number; end: number }) => at && html.slice(at.start, at.end);
-      const sameStart = text(latest, found.tag) === text(source, own.tag);
-      const sameClose = !own.close || text(latest, found.close) === text(source, own.close);
-      return sameStart && sameClose ? { at: latest, own: found } : { at: source, own };
+      const tail = source.length - own.end;
+      const before = latest.slice(0, own.tag.end) === source.slice(0, own.tag.end);
+      const after = latest.slice(latest.length - tail) === source.slice(own.end);
+      const found = latest !== source && node && before && after ? ports.locateNativeElementRange(latest, node) : undefined;
+      // The element found there ends where the unchanged tail begins, with the same close tag.
+      const close = (range: ElementRange, html: string) => range.close && html.slice(range.close.start, range.close.end);
+      const same = found && found.tag.end === own.tag.end && found.end === latest.length - tail && close(found, latest) === close(own, source);
+      return same ? { at: latest, own: found } : { at: source, own };
     };
     const controls: EditBarControl[] = [];
     if (range && node && ports.nativeSite) {
@@ -223,6 +225,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
         value: selection.tag,
         onChange: (value) => {
           const { at, own } = ownTags(range);
+          // Only narrows the type: ownTags keeps a close tag it was given.
           if (!own.close) return;
           editOpenPage(path, at, [
             { start: own.tag.start + 1, end: own.tag.nameEnd, text: value },
