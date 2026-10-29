@@ -7,12 +7,13 @@ import { basename, extname, isAbsolute, join, relative, resolve } from "node:pat
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { kitHomeFolder } from "../kit-home.mjs";
+import { kitHomeFolder, kitLibrary } from "../kit-home.mjs";
 import { contactOutput, parseArgs, parseSteps } from "./core.ts";
 import { findingsSections } from "./findings-list.ts";
 
-// The shared kit library comes from the kit (KIT_HOME, else the one the launcher picks), never from this project.
-const { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } = await import(pathToFileURL(join(kitHomeFolder(), "kit-lib.mjs")).href);
+// The shared kit library comes from the kit the launcher picks, found once per process, never from this project.
+const kitHome = kitHomeFolder();
+const { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } = await import(pathToFileURL(kitLibrary(process.env, kitHome)).href);
 
 export function splitCompare(args) {
   const rest = [];
@@ -40,7 +41,7 @@ export const toolingFiles = [
 ];
 
 /** Hash paths and bytes, including a stable marker for missing tooling. */
-export async function toolingHash(root) {
+export async function toolingHash(root, home = kitHome) {
   const paths = [];
   async function collect(path) {
     if (!path.endsWith("/")) { paths.push(path); return; }
@@ -61,7 +62,7 @@ export async function toolingHash(root) {
   // The kit's library, which kit shots runs on, lives in the kit (KIT_HOME): a kit change is a tooling change too.
   for (const name of ["kit-lib.sh", "kit-lib.mjs"]) {
     let content;
-    try { content = await readFile(join(kitHomeFolder(), name)); }
+    try { content = await readFile(join(home, name)); }
     catch (error) {
       if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
       hash.update(JSON.stringify([`kit:${name}`, "missing"])).update("\0");

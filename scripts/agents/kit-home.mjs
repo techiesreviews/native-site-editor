@@ -7,6 +7,11 @@ import { join } from "node:path";
  * removed is picked again, else the machine copy or the cache clone. Throws the launcher's RESULT line when
  * there is no kit.
  */
+/** The kit's library this editor's own helpers load: KIT_LIB_MJS (tests), else the picked kit's kit-lib.mjs. */
+export function kitLibrary(env = process.env, home) {
+  return env.KIT_LIB_MJS || join(home ?? kitHomeFolder(env), "kit-lib.mjs");
+}
+
 export function kitHomeFolder(env = process.env) {
   try {
     return execFileSync("bash", [join(import.meta.dirname, "kit"), "--home"], { env, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] }).trim();
