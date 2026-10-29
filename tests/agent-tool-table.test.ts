@@ -56,8 +56,9 @@ test("MCP tools/list is dev's: same tools, order, descriptions, schemas and hint
   // The whole tools/list result as dev (3c5518e4) answered it, before the table; since ticket 52,
   // get_command_status's description names the waiting state; since ticket 10, edit_file and the section tools
   // say an edit lands while its own part is unchanged; since ticket am-11, every tool takes the caller's own name (agent);
-  // since ticket am-13, wait_for_requests says a follow-up on any request brings it back, to the agent on it first.
-  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "67fe3d12763048a8dc70a85fef8f39fb63ef96a2733832611a7d476cf0765206");
+  // since ticket am-13, wait_for_requests says a follow-up on any request brings it back, to the agent on it first,
+  // and reply_to_request that only an agent that read the user's latest message replies.
+  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "1e831869f6b08f7d002bc70445fd137b5cd8f9f01b158fc1134a06a7d5182a37");
   for (const tool of result.tools as { name: string; inputSchema?: { properties?: Record<string, { type?: string; description?: string }>; required?: string[] } }[]) {
     const agent = tool.inputSchema?.properties?.agent;
     assert.equal(agent?.type, "string", tool.name);
