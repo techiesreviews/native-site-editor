@@ -423,7 +423,6 @@ test.describe("on a phone", () => {
   test("opening the keyboard over a selection in view scrolls it back above the lifted bar", async ({ page }) => {
     await stubView(page);
     await page.reload();
-    // Far enough from the page's end for the page to scroll it above the keyboard: the keyboard does not shorten the canvas.
     const paragraph = await footParagraph(page, "filler-1");
     // Its foot about 100 px above the bar.
     await paragraph.evaluate((el, by) => el.ownerDocument.defaultView!.scrollBy(0, by), 100 - 8);
@@ -431,6 +430,27 @@ test.describe("on a phone", () => {
     await setView(page, { height: 500 });
     await expect.poll(async () => { const at = await box(bar(page)); return Math.round(at.y + at.height); }).toBe(500);
     await expect.poll(async () => { const shown = await box(paragraph); return shown.y + shown.height <= (await box(bar(page))).y + 0.5; }).toBe(true);
+  });
+
+  test("with the keyboard open, a selection at the page's end and the page's end scroll clear above the lifted bar", async ({ page }) => {
+    await stubView(page);
+    await page.reload();
+    const frame = page.frameLocator(".native-preview-frame");
+    const paragraph = frame.locator('[data-key="filler-3"]');
+    await expect(paragraph).toBeVisible({ timeout: 30_000 });
+    await paragraph.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await paragraph.click();
+    await expect(bar(page)).toHaveAttribute("data-side", "docked");
+    await page.waitForTimeout(600); // fixed-wait: its own scroll into view has finished
+    await setView(page, { height: 500 });
+    await expect.poll(async () => { const at = await box(bar(page)); return Math.round(at.y + at.height); }).toBe(500);
+    // The frame ends above the lifted bar, so nothing of the page sits under it or the keyboard.
+    const lifted = await box(bar(page));
+    const frameBox = await box(page.locator(".native-preview-frame"));
+    expect(frameBox.y + frameBox.height).toBeLessThanOrEqual(lifted.y + 1);
+    await expect.poll(async () => { const shown = await box(paragraph); return shown.y + shown.height <= lifted.y + 0.5; }).toBe(true);
+    await paragraph.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect.poll(async () => { const end = await box(frame.locator("site-footer")); return end.y + end.height <= lifted.y + 1; }).toBe(true);
   });
 
   test("a tall section chosen in a visual viewport panned down shows its top below the view's top", async ({ page }) => {
@@ -499,14 +519,14 @@ test.describe("on a phone", () => {
     await expect(bar(page)).toHaveAttribute("data-side", "docked");
     await expect(bar(page)).toHaveAttribute("data-toast-avoid", "");
     await setView(page, { height: 500 });
-    await expect.poll(() => bar(page).evaluate((el) => el.style.translate)).not.toBe("");
+    await expect.poll(() => bar(page).evaluate((el) => el.style.marginBlockEnd)).not.toBe("");
     await page.setViewportSize({ width: 1280, height: 900 });
     await expect(bar(page)).toHaveAttribute("data-side", /^(above|below|pinned)$/);
-    expect(await bar(page).evaluate((el) => el.style.translate)).toBe("");
+    expect(await bar(page).evaluate((el) => el.style.marginBlockEnd)).toBe("");
     await expect(bar(page)).not.toHaveAttribute("data-toast-avoid");
   });
 
-  test("Ask agent's note on a selection under the lifted bar stays above the bar", async ({ page, baseURL }) => {
+  test("Ask agent's note on a selection at the foot of the frame over the keyboard stays above the lifted bar", async ({ page, baseURL }) => {
     await stubView(page);
     await page.reload();
     const client = await connect(page, baseURL);
@@ -521,12 +541,12 @@ test.describe("on a phone", () => {
       await expect(bar(page)).toHaveAttribute("data-side", "docked");
       await page.waitForTimeout(600); // fixed-wait: the new selection's own check has run
       await setView(page, { height: 500 });
-      const lifted = await box(bar(page));
-      // The user scrolls it under the lifted bar, inside the frame.
+      await expect.poll(async () => { const at = await box(bar(page)); return Math.round(at.y + at.height); }).toBe(500);
+      // The frame ends above the lifted bar; the user scrolls the paragraph down to the frame's foot,
+      // so the note's own place, just above it, would reach past the frame.
       const frameBox = await box(page.locator(".native-preview-frame"));
-      await paragraph.evaluate((el, under) => window.scrollBy(0, el.getBoundingClientRect().top - under), lifted.y + 40 - frameBox.y);
-      // Far enough under that the note's own place, just above it, is under the bar too.
-      await expect.poll(async () => (await box(paragraph)).y).toBeGreaterThan(lifted.y + 30);
+      await paragraph.evaluate((el, at) => window.scrollBy(0, el.getBoundingClientRect().top - at), frameBox.height - 12);
+      await expect.poll(async () => (await box(paragraph)).y).toBeGreaterThan(frameBox.y + frameBox.height - 20);
       await bar(page).getByRole("button", { name: "Ask agent" }).click();
       const note = page.locator(".edit-bar__note");
       await expect(note).toBeVisible();

@@ -462,7 +462,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     docked = undefined;
     delete bar.dataset.toastAvoid;
     delete bar.dataset.lifted;
-    bar.style.translate = "";
+    bar.style.marginBlockEnd = bar.style.translate = "";
+    applied = 0;
     undock();
     const frameRight = frameRect.right - frameRect.left + frameLeft;
     bar.style.maxWidth = `${Math.max(180, frameRect.width - 16)}px`;
@@ -484,7 +485,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     bar.style.top = `${frameTop + top}px`;
   }
   // Phones: in its own row under the frame (edit-bar.css), so no page sits
-  // under it, raised onto the keyboard (or a zoomed view's foot). A toast
+  // under it, raised onto the keyboard with the frame ending above it, so the
+  // page's end still scrolls clear of both (or onto a zoomed view's foot). A toast
   // keeps above it (data-toast-avoid; toast.ts re-places on edit-bar-dock).
   function dockBar(at: SelectionRect, frameRect: DOMRect, paneRect: DOMRect, frameLeft: number, frameTop: number) {
     bar.dataset.side = "docked";
@@ -493,9 +495,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const panel = bar.querySelector<HTMLElement>(":scope > .edit-bar__controls");
     if (panel) panel.style.width = "";
     const view = window.visualViewport;
+    // Where the bar stands unlifted, in whole px so a fractional layout does not flip it.
     const measure = () => {
-      const barTop = paneRect.top + pane.clientTop + bar.offsetTop;
-      const lift = view ? dockLift({ barTop, barBottom: barTop + bar.offsetHeight, viewportTop: view.offsetTop, viewportHeight: view.height }) : 0;
+      const barTop = Math.round(bar.getBoundingClientRect().top + applied);
+      const lift = view ? Math.round(dockLift({ barTop, barBottom: barTop + bar.offsetHeight, viewportTop: view.offsetTop, viewportHeight: view.height })) : 0;
       return { barTop, lift };
     };
     let { barTop, lift } = measure();
@@ -505,7 +508,11 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       ({ barTop, lift } = measure());
     }
     const toast = document.querySelector(".editor-toast:popover-open")?.getBoundingClientRect();
-    bar.style.translate = lift ? `0 ${-lift}px` : "";
+    // A keyboard's lift shortens the frame; a pinch-zoomed view's (panned all the time) only moves the bar.
+    const zoomed = Boolean(view && Math.abs(view.scale - 1) > 0.01);
+    bar.style.marginBlockEnd = lift && !zoomed ? `${lift}px` : "";
+    bar.style.translate = lift && zoomed ? `0 ${-lift}px` : "";
+    applied = lift;
     // Toasts re-place over it only when it moved (toast.ts), not on every page scroll.
     const place = `${Math.round(barTop - lift)} ${bar.offsetHeight}`;
     if (place !== dockedPlace) {
@@ -527,6 +534,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       inset: at.inset,
     };
   }
+  // The lift last applied to the docked bar (a margin, or a translate in a zoomed view).
+  let applied = 0;
   // Where the docked bar last stood, for toasts; empty while it is not docked.
   let dockedPlace = "";
   function undock() {

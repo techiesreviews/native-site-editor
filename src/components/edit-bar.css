@@ -753,7 +753,8 @@
    row under the frame, as a word editor's on a phone, so no page sits under
    it and the page's end scrolls clear above it. One row: the name chip first,
    then the groups, scrolled sideways when they don't fit. Clear of the home
-   indicator; raised onto the on-screen keyboard by a translate. */
+   indicator; raised onto the on-screen keyboard by a bottom margin (edit-bar.ts),
+   which shortens the frame so the page's end scrolls clear of both. */
 .edit-bar[data-side="docked"] {
   position: relative;
   flex: none;
