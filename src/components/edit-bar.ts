@@ -461,7 +461,9 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   function float(at: SelectionRect, frameRect: DOMRect, frameLeft: number, frameTop: number, visible: boolean) {
     docked = undefined;
     delete bar.dataset.toastAvoid;
+    delete bar.dataset.lifted;
     bar.style.translate = "";
+    undock();
     const frameRight = frameRect.right - frameRect.left + frameLeft;
     bar.style.maxWidth = `${Math.max(180, frameRect.width - 16)}px`;
     fitPanel();
@@ -483,30 +485,54 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   }
   // Phones: in its own row under the frame (edit-bar.css), so no page sits
   // under it, raised onto the keyboard (or a zoomed view's foot). A toast
-  // keeps above it (data-toast-avoid; toast.ts re-places on edit-bar-layout).
+  // keeps above it (data-toast-avoid; toast.ts re-places on edit-bar-dock).
   function dockBar(at: SelectionRect, frameRect: DOMRect, paneRect: DOMRect, frameLeft: number, frameTop: number) {
     bar.dataset.side = "docked";
     bar.dataset.toastAvoid = "";
     bar.style.left = bar.style.top = bar.style.maxWidth = "";
     const panel = bar.querySelector<HTMLElement>(":scope > .edit-bar__controls");
     if (panel) panel.style.width = "";
-    const barTop = paneRect.top + pane.clientTop + bar.offsetTop;
-    const barBottom = barTop + bar.offsetHeight;
     const view = window.visualViewport;
-    const lift = view ? dockLift({ barTop, barBottom, viewportTop: view.offsetTop, viewportHeight: view.height }) : 0;
+    const measure = () => {
+      const barTop = paneRect.top + pane.clientTop + bar.offsetTop;
+      const lift = view ? dockLift({ barTop, barBottom: barTop + bar.offsetHeight, viewportTop: view.offsetTop, viewportHeight: view.height }) : 0;
+      return { barTop, lift };
+    };
+    let { barTop, lift } = measure();
+    // Lifted onto the keyboard, its foot drops the home indicator's room (edit-bar.css).
+    if (Boolean(lift) !== (bar.dataset.lifted !== undefined)) {
+      bar.toggleAttribute("data-lifted", Boolean(lift));
+      ({ barTop, lift } = measure());
+    }
     const toast = document.querySelector(".editor-toast:popover-open")?.getBoundingClientRect();
     bar.style.translate = lift ? `0 ${-lift}px` : "";
+    // Toasts re-place over it only when it moved (toast.ts), not on every page scroll.
+    const place = `${Math.round(barTop - lift)} ${bar.offsetHeight}`;
+    if (place !== dockedPlace) {
+      dockedPlace = place;
+      pane.dispatchEvent(new Event("edit-bar-dock"));
+    }
     // The page shows down to the bar, or to a toast standing on it.
     const foot = toast && toast.top < barTop - lift && toast.bottom > barTop - lift - 24 ? toast.top : barTop - lift;
     const visibleBottom = Math.min(frameRect.height, foot - frameRect.top);
+    // A visual viewport panned down (a zoomed view, iOS keeping a caret in sight) starts below the frame's top.
+    const visibleTop = view ? Math.max(0, view.offsetTop - frameRect.top) : 0;
     // Ask agent's note stays by the selection, above the bar.
     const row = placeNote(at, frameRect, frameLeft, frameTop, visibleBottom - 4);
     docked = {
       selectionTop: Math.min(at.top, row?.top ?? at.top),
       selectionBottom: Math.max(at.bottom, row?.bottom ?? at.bottom),
+      visibleTop,
       visibleBottom,
       inset: at.inset,
     };
+  }
+  // Where the docked bar last stood, for toasts; empty while it is not docked.
+  let dockedPlace = "";
+  function undock() {
+    if (!dockedPlace) return;
+    dockedPlace = "";
+    pane.dispatchEvent(new Event("edit-bar-dock"));
   }
   // A wrapped flex box keeps the width of the line it wrapped from, so a
   // panel that wraps would end in empty space: fit it to its widest row.
@@ -1234,6 +1260,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       delete bar.dataset.model;
       bar.hidden = true;
       bar.replaceChildren();
+      undock();
     },
     destroy() {
       clearTimeout(roomTimer);

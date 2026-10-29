@@ -49,8 +49,8 @@ function build() {
   };
   document.addEventListener("toggle", moved, true);
   document.addEventListener("close", moved, true);
-  // The edit bar moved or came (edit-bar.ts; docked at the canvas foot on a phone): keep above it.
-  document.addEventListener("edit-bar-layout", () => { if (toast!.matches(":popover-open")) lift(); }, true);
+  // The edit bar docked at the canvas foot on a phone moved, came or went (edit-bar.ts): keep above it.
+  document.addEventListener("edit-bar-dock", () => { if (toast!.matches(":popover-open")) lift(); }, true);
   const status = document.getElementById("status");
   if (status) new MutationObserver(() => { if (status.textContent !== shown) dismissToast(); }).observe(status, { childList: true, characterData: true, subtree: true });
 }
@@ -79,6 +79,7 @@ function place() {
 function lift() {
   toast!.style.removeProperty("--toast-lift");
   const box = toast!.getBoundingClientRect();
+  // Computed `translate` is "none", "<x>" or "<x> <y>" (toast.css moves it on y only).
   const entering = parseFloat(getComputedStyle(toast!).translate.split(" ")[1] ?? "") || 0;
   // Only the layer's own buttons: what it covers is out of sight anyway.
   const obstacles = [...toast!.parentElement!.querySelectorAll<HTMLElement>(AVOID)]
