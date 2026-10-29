@@ -63,6 +63,14 @@ function addMessage(request: AgentRequest, message: AgentRequestMessage) {
 }
 
 const waiting = (request: AgentRequest) => request.state === "open" || request.state === "seen";
+// Waiting again after the user added to it: their message is the thread's last, after the first.
+const reopened = (request: AgentRequest) => {
+  const thread = requestThread(request);
+  return request.state === "open" && thread.length > 1 && thread[thread.length - 1].from === "user";
+};
+/** A reply to a request the user added to since it was taken: nothing is recorded. */
+const FOLLOWED_UP =
+  "The user added to this request meanwhile (their message is last in its thread). Nothing was recorded: call wait_for_requests, which returns it to you with the whole thread, then reply to all of it.";
 // Reopened for another connection's agent, which has it to itself a while yet.
 const heldFromOthers = (request: AgentRequest, grantId: string, now: number) =>
   request.heldUntil !== undefined && now < request.heldUntil && request.agent !== undefined && request.agent.grant !== grantId;
@@ -107,11 +115,16 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
     const grantId = String(action.grantId ?? "");
     const now = action.now ?? Date.now();
     const taken: AgentRequest[] = [];
+    // The earliest end of a hold that kept one from this connection: it may take it then.
+    let heldUntil: number | undefined;
     // IndexedDB returns request ID order, so delivery must restore creation order.
     for (const request of [...list].sort((a, b) => a.createdAt - b.createdAt)) {
       if (!inWorkspace(request, action) || !waiting(request)) continue;
       if (!action.all && request.returnedTo?.includes(grantId)) continue;
-      if (heldFromOthers(request, grantId, now)) continue;
+      if (heldFromOthers(request, grantId, now)) {
+        heldUntil = Math.min(heldUntil ?? Infinity, request.heldUntil!);
+        continue;
+      }
       if (request.state === "open" && action.by && request.agent?.grant !== grantId) request.agent = action.by;
       delete request.heldUntil;
       request.state = "seen";
@@ -119,7 +132,7 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
       if (!request.returnedTo?.includes(grantId)) request.returnedTo = [...(request.returnedTo ?? []), grantId].slice(-RETURNED_TO);
       taken.push(request);
     }
-    return { list, changed: taken.length > 0, result: { requests: taken } };
+    return { list, changed: taken.length > 0, result: { requests: taken, ...(heldUntil !== undefined ? { heldUntil } : {}) } };
   }
   const request = list.find((item) => item.id === action.id);
   if (type === "request") {
@@ -131,6 +144,9 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
     if (request.state === "dismissed") throw new HttpError(409, "The user dismissed this request.");
     if (action.status !== "done" && action.status !== "answered" && action.status !== "question")
       throw new HttpError(400, "Reply with done, answered or question.");
+    // Reopened by the user's message since it was taken (a follow-up while an agent worked on it): a reply
+    // to what came before would close it with their message unread, so the agent takes it again first.
+    if (reopened(request)) throw new HttpError(409, FOLLOWED_UP);
     const now = Date.now();
     request.state = action.status;
     request.seenAt ??= now;

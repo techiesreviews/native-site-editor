@@ -55,6 +55,16 @@
   --agent-presence-2: var(--color-component);
   --agent-presence-3: var(--file-video);
   --agent-presence-4: var(--file-data);
+  /* A pin an agent works on (ticket am-13): light like every pin, a tint of the agent's colour with a dark
+     ink of its hue, 4.5:1 and more for small text in all four. */
+  --agent-presence-pin: oklch(from var(--agent-presence) 94% calc(c * 0.3) h);
+  --agent-presence-ink: oklch(from var(--agent-presence) 40% calc(c * 0.75) h);
+  --agent-presence-2-pin: oklch(from var(--agent-presence-2) 94% calc(c * 0.3) h);
+  --agent-presence-2-ink: oklch(from var(--agent-presence-2) 40% calc(c * 0.75) h);
+  --agent-presence-3-pin: oklch(from var(--agent-presence-3) 94% calc(c * 0.3) h);
+  --agent-presence-3-ink: oklch(from var(--agent-presence-3) 40% calc(c * 0.75) h);
+  --agent-presence-4-pin: oklch(from var(--agent-presence-4) 94% calc(c * 0.3) h);
+  --agent-presence-4-ink: oklch(from var(--agent-presence-4) 40% calc(c * 0.75) h);
 
   /* Request pins and cards (agent-pins.css, agent-menu.css, repository-menu.css). */
   /* A question for the user: orange, on pins light in both themes. */
