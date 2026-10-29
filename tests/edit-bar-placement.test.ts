@@ -77,6 +77,12 @@ test("docked: a selection in view above the bar needs no scroll", () => {
   assert.equal(dockScroll({ ...room, selectionTop: 500, selectionBottom: 592 }), 0);
 });
 
+test("docked: a tall selection in a visual viewport panned down shows its top under the view's top", () => {
+  assert.equal(dockScroll({ ...room, selectionTop: 300, selectionBottom: 1000, visibleTop: 150 }), 142);
+  // The larger of the sticky header and the view's top wins.
+  assert.equal(dockScroll({ ...room, selectionTop: 300, selectionBottom: 1000, visibleTop: 150, inset: 200 }), 92);
+});
+
 test("docked: a selection wholly above the view needs no scroll", () => {
   assert.equal(dockScroll({ ...room, selectionTop: -120, selectionBottom: -40 }), 0);
 });

@@ -324,6 +324,17 @@ async function openHeaderLink(page: Page) {
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");
   await expect(bar(page)).toHaveAttribute("data-side", "docked");
 }
+// A filler paragraph chosen with its foot at the canvas foot: its own check scrolls it just above the docked bar.
+async function footParagraph(page: Page, key = "filler-3") {
+  const paragraph = page.frameLocator(".native-preview-frame").locator(`[data-key="${key}"]`);
+  await expect(paragraph).toBeVisible({ timeout: 30_000 });
+  await paragraph.evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().bottom - innerHeight + 4));
+  await paragraph.click();
+  await expect(bar(page)).toHaveAttribute("data-side", "docked");
+  await expect.poll(async () => { const shown = await box(paragraph); return shown.y + shown.height <= (await box(bar(page))).y; }).toBe(true);
+  await page.waitForTimeout(600); // fixed-wait: that scroll has finished
+  return paragraph;
+}
 // The editor's own toast module (the one the app loaded), as a background job would show one.
 const showToast = (page: Page, text: string) => page.evaluate(async (words) => (await import("/src/components/toast.ts")).showToast(words), text);
 
@@ -407,6 +418,42 @@ test.describe("on a phone", () => {
     await expect.poll(async () => { const at = await box(bar(page)); return Math.round(at.y + at.height); }).toBe(500);
     await setView(page, { height: 844 });
     await expect.poll(async () => { const at = await box(bar(page)); return Math.round(at.y + at.height - (pane.y + pane.height)); }).toBe(0);
+  });
+
+  test("opening the keyboard over a selection in view scrolls it back above the lifted bar", async ({ page }) => {
+    await stubView(page);
+    await page.reload();
+    // Far enough from the page's end for the page to scroll it above the keyboard: the keyboard does not shorten the canvas.
+    const paragraph = await footParagraph(page, "filler-1");
+    // Its foot about 100 px above the bar.
+    await paragraph.evaluate((el, by) => el.ownerDocument.defaultView!.scrollBy(0, by), 100 - 8);
+    await expect.poll(async () => (await box(bar(page))).y - ((await box(paragraph)).y + (await box(paragraph)).height)).toBeGreaterThan(90);
+    await setView(page, { height: 500 });
+    await expect.poll(async () => { const at = await box(bar(page)); return Math.round(at.y + at.height); }).toBe(500);
+    await expect.poll(async () => { const shown = await box(paragraph); return shown.y + shown.height <= (await box(bar(page))).y + 0.5; }).toBe(true);
+  });
+
+  test("a tall section chosen in a visual viewport panned down shows its top below the view's top", async ({ page }) => {
+    await stubView(page);
+    await page.reload();
+    // Mid-page, so the page can scroll it either way; three stacked cards, taller than the room.
+    const section = page.frameLocator(".native-preview-frame").locator('section[data-key="cards"]');
+    await expect(section).toBeVisible({ timeout: 30_000 });
+    // The view panned down to 500 px, as iOS does to keep a caret near the foot in sight.
+    await setView(page, { height: 300, offsetTop: 500 });
+    // Its top 360 px into the frame, its foot far below the bar.
+    await section.evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 360));
+    await section.evaluate((el) => (el as HTMLElement).click());
+    await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+    // Scrolled up to just under the view's top, not to the frame's top (296) out of sight.
+    await expect.poll(async () => Math.round((await box(section)).y)).toBeLessThan(560);
+    expect((await box(section)).y).toBeGreaterThanOrEqual(500);
+  });
+
+  test("the bar growing taller over a selection in view scrolls it back above the bar", async ({ page }) => {
+    const paragraph = await footParagraph(page);
+    await bar(page).evaluate((el) => { el.style.paddingBlockStart = "40px"; });
+    await expect.poll(async () => { const shown = await box(paragraph); return shown.y + shown.height <= (await box(bar(page))).y + 0.5; }).toBe(true);
   });
 
   test("a pinch-zoom lifts the bar to the zoomed view's foot and does not scroll the page", async ({ page }) => {

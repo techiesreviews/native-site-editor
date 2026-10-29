@@ -797,3 +797,18 @@
   flex-wrap: nowrap;
   max-inline-size: none;
 }
+/* Raised onto the keyboard, which covers the home indicator: no room kept for it. */
+.edit-bar[data-side="docked"][data-lifted] {
+  padding-block-end: 6px;
+}
+/* Phones: the bar's fields at 16 px, so iOS opens the keyboard without
+   zooming the page (a zoom would also read as a pinch, edit-bar.ts). */
+@media (max-width: 650px) {
+  :is(.edit-bar, .edit-bar__popover, .edit-bar__note) :is(input:not([type="checkbox"], [type="file"]), select, textarea) {
+    font-size: 16px;
+  }
+  .edit-bar__note-input {
+    line-height: 20px;
+    max-block-size: 120px;
+  }
+}

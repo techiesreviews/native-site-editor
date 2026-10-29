@@ -58,10 +58,14 @@ export function dockLift({ barTop, barBottom, viewportTop, viewportHeight }: Doc
   return Math.max(0, Math.min(barBottom - (viewportTop + viewportHeight), barTop - viewportTop));
 }
 
-/** The selection (with its note row) in frame px, and where the page shows down to: the docked bar's top, or the keyboard's. */
+/**
+ * The selection (with its note row) in frame px, where the page shows down to (the docked
+ * bar's top, or the keyboard's) and from (the visual viewport's top when it is panned down).
+ */
 export interface DockScrollOptions {
   selectionTop: number;
   selectionBottom: number;
+  visibleTop?: number;
   visibleBottom: number;
   inset?: number;
 }
@@ -69,11 +73,11 @@ export interface DockScrollOptions {
 /**
  * How far to scroll the page (px; positive scrolls down) so a selection hidden
  * behind the docked bar or the keyboard comes into view 8 px above it, its top
- * kept 8 px under the sticky header; 0 when it is already in view. A selection
- * taller than the room shows its top.
+ * kept 8 px under the sticky header and the visible top; 0 when it is already in
+ * view. A selection taller than the room shows its top.
  */
-export function dockScroll({ selectionTop, selectionBottom, visibleBottom, inset = 0 }: DockScrollOptions): number {
-  const ceiling = Math.min(inset, Math.max(0, visibleBottom - 16)) + 8;
+export function dockScroll({ selectionTop, selectionBottom, visibleTop = 0, visibleBottom, inset = 0 }: DockScrollOptions): number {
+  const ceiling = Math.min(Math.max(inset, visibleTop), Math.max(0, visibleBottom - 16)) + 8;
   const hidden = selectionBottom - (visibleBottom - 8);
   return hidden > 0 ? Math.max(0, Math.min(hidden, selectionTop - ceiling)) : 0;
 }
