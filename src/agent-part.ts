@@ -121,7 +121,8 @@ export function noteOwnChange(workspace: { repoId: number; branch: string }, gra
 
 /** The drafts of `shared` as a mark keeps them. */
 function markOf(shared: SharedContext): AgentMark {
-  const files: AgentMark["files"] = {};
+  // No prototype: a draft named __proto__ is a file like any other.
+  const files: AgentMark["files"] = Object.create(null);
   for (const draft of shared.context.drafts)
     files[draft.path] = { at: draft.updatedAt, ...(draft.hash ? { hash: draft.hash } : {}), ...(draft.baseSha === null ? { added: true as const } : {}), ...(draft.deleted ? { deleted: true as const } : {}) };
   return { commit: shared.context.commit, files };

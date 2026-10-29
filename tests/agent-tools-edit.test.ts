@@ -13,7 +13,7 @@ import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
 import type { Snapshot, TreeEntry } from "../shared/types";
 import { createAgentEditTools } from "../src/agent-tools-edit";
-import { tellAgent } from "../src/agent-part";
+import { readText, rememberText, tellAgent } from "../src/agent-part";
 import { workingPart } from "../src/working-part";
 import { agentCommandFiles } from "../src/agent-tools";
 import { agentFileReader, type AgentReadPorts } from "../src/agent-tools-read";
@@ -375,6 +375,21 @@ test("a page change refused by the page's text never opens the page", async t =>
   assert.ok("operation" in prepared);
   await applySiteCommand(liveActions(live, { open }), commandOf(input, prepared));
   assert.equal(opened, 1);
+});
+
+test("a stale page command keeps its read when the tab's texts are full: keeping the page now never lets that read go first", async t => {
+  installOutlineDocument(t);
+  const f = await fixture(), read = files["index.html"], now = read.replace("<main>\n", "<main>\n  <section>Added</section>\n");
+  // The agent's read is the oldest text the tab keeps, at its cap of 200; the page now is not kept yet.
+  rememberText(await textHash(read), read);
+  for (let i = 0; i < 199; i++) rememberText(`full-${i}`, String(i));
+  f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(now), content: now });
+  await f.run(request("remove_section", { page: "/", section: "1.1", expectedHash: await textHash(read) }));
+  // The section added before it moved it: its id follows, against the page's hash now.
+  assert.equal(f.commands.length, 1);
+  assert.equal(f.commands[0].expectedHash, await textHash(now));
+  assert.deepEqual(f.commands[0].args, { section: "1.2" });
+  assert.equal(readText(await textHash(now)), now);
 });
 
 test("duplicate edit_file joins in flight and returns the receipt before re-reading a changed hash", async () => {
