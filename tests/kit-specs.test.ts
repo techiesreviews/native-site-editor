@@ -652,7 +652,7 @@ test("real CLI --list includes committed, staged, unstaged and untracked changes
   assert.equal(f.run(["--affected", "--list"]).stdout, result.stdout);
 });
 
-test("a builder's run keeps named, then direct, then other specs up to the cap and counts the rest", () => {
+test("over the cap a builder runs only named and direct specs; under it the rest follow, cut at the cap counting named ones", () => {
   const files: Record<string, string> = { "shared/wide.ts": "export const wide = 1;\n", "tests/native-save/helpers.ts": 'import "../../shared/wide.ts";\n' };
   const wide = Array.from({ length: 30 }, (_, i) => save(`wide-${String(i).padStart(2, "0")}`));
   for (const file of wide) files[file] = 'import "./helpers";\n';
@@ -660,13 +660,21 @@ test("a builder's run keeps named, then direct, then other specs up to the cap a
   files[save("zz-named")] = 'test("named", () => {});\n';
   const selected = selectAffected({ files, changed: ["shared/wide.ts"] });
   assert.equal(selected.length, 31);
-  const named = ticketSpecs("Run `tests/native-save/zz-named.spec.ts`, unknown.spec.ts and zz-named.spec.ts.", files);
+  const named = ticketSpecs("Run `tests/native-save/zz-named.spec.ts`, [it](../../../../tests/native-save/zz-named.spec.ts), unknown.spec.ts and zz-named.spec.ts.", files);
   assert.deepEqual(named.map(spec => spec.file), [save("zz-named")]);
-  const { specs, left } = builderSpecs(selected, { files, changed: ["shared/wide.ts"], named });
-  assert.equal(specs.length, BUILDER_SPEC_CAP); assert.equal(left, 12);
-  assert.ok(specs.some(spec => spec.file === save("zz-named")) && specs.some(spec => spec.file === save("zz-direct")));
-  assert.deepEqual(specs.map(spec => spec.file), [...specs.map(spec => spec.file)].sort());
-  // A selection under the cap is kept whole.
+  assert.deepEqual(ticketSpecs("See [the spec](../../../../tests/native-save/zz-direct.spec.ts).", files).map(spec => spec.file), [save("zz-direct")]);
+  const over = builderSpecs(selected, { files, changed: ["shared/wide.ts"], named });
+  assert.deepEqual(over.specs.map(spec => spec.file), [save("zz-direct"), save("zz-named")]);
+  assert.equal(over.left, 30);
+  // 19 affected plus 3 named specs the change does not reach: 22, cut to 20 with the named ones first.
+  const nineteen = selected.filter(spec => spec.file !== save("zz-direct")).slice(0, 19);
+  const others = ["a", "b", "c"].map(name => save(`other-${name}`));
+  for (const file of others) files[file] = "";
+  const under = builderSpecs(nineteen, { files, changed: ["shared/wide.ts"], named: ticketSpecs(others.join(" "), files) });
+  assert.equal(under.specs.length, BUILDER_SPEC_CAP); assert.equal(under.left, 2);
+  assert.ok(others.every(file => under.specs.some(spec => spec.file === file)));
+  assert.deepEqual(under.specs.map(spec => spec.file), [...under.specs.map(spec => spec.file)].sort());
+  // A selection under the cap with no named specs is kept whole.
   assert.deepEqual(builderSpecs(selected.slice(0, 5), { files, changed: ["shared/wide.ts"] }), { specs: selected.slice(0, 5), left: 0 });
 });
 
@@ -684,14 +692,18 @@ test("ticket spec mentions skip ambiguous basenames and globs, and over-cap name
   assert.equal(left, 2, "named specs that were cut are not counted for kit pr");
 });
 
-test("real CLI under a builder caps a widely used file's specs at twenty and says how many kit pr runs", t => {
+test("real CLI under a builder keeps a widely used file's run to named and direct specs and says how many kit pr runs", t => {
   const f = fixture(t);
   f.put("shared/wide.ts", "export const wide = 1;\n");
   f.put("tests/native-save/wide-helpers.ts", 'import "../../shared/wide.ts";\n');
   const wide = Array.from({ length: 25 }, (_, i) => save(`wide-${String(i).padStart(2, "0")}`));
   for (const file of wide) f.put(file, 'import "./wide-helpers";\ntest("case", () => {});\n');
   f.put(save("zz-direct"), 'import "../../shared/wide.ts";\ntest("case", () => {});\n');
-  f.put("docs/ticket.md", "Touched specs: `zz-direct.spec.ts`, `tests/native-save/moved.spec.ts`.\n");
+  f.put("shared/mid.ts", "export const mid = 1;\n");
+  f.put("tests/native-save/mid-helpers.ts", 'import "../../shared/mid.ts";\n');
+  for (let i = 0; i < 19; i++) f.put(save(`mid-${String(i).padStart(2, "0")}`), 'import "./mid-helpers";\ntest("case", () => {});\n');
+  f.put("docs/ticket.md", "Touched specs: `zz-direct.spec.ts`, [moved](../tests/native-save/moved.spec.ts).\n");
+  f.put("docs/three.md", "Touched specs: label.spec.ts, moved.spec.ts, custom.spec.ts.\n");
   f.git("add", "."); f.git("commit", "--quiet", "-m", "wide helper");
   f.git("update-ref", "refs/remotes/origin/dev", "HEAD");
   const builder = { KIT_BUILDER_TICKET: "docs/ticket.md" };
@@ -702,19 +714,27 @@ test("real CLI under a builder caps a widely used file's specs at twenty and say
   assert.match(near.stdout, /imports.spec.ts \[default\] — import: src\/media.ts/);
   assert.doesNotMatch(near.stdout, /builder run:|more run in kit pr/);
   f.git("checkout", "--quiet", "src/media.ts");
+  // 19 affected specs and 3 named ones the change does not reach: cut at 20, counting the named ones.
+  f.put("shared/mid.ts", "export const mid = 2;\n");
+  const mid = f.run(["--affected", "--list"], { KIT_BUILDER_TICKET: "docs/three.md" });
+  assert.equal(mid.status, 0, mid.stderr);
+  assert.match(mid.stdout, /^builder run: 20 specs \(named, changed or importing a changed file\); 2 more run in kit pr$/m);
+  assert.match(mid.stdout, /RESULT: ok specs 20 selected \(list only\); 2 more run in kit pr\n$/);
+  f.git("checkout", "--quiet", "shared/mid.ts");
   f.put("shared/wide.ts", "export const wide = 2;\n");
   assert.match(f.run(["--affected", "--list"]).stdout, /RESULT: ok specs 26 selected \(list only\)\n$/);
   const list = f.run(["--affected", "--list"], builder);
   assert.equal(list.status, 0, list.stderr);
-  assert.match(list.stdout, /^builder run: 20 closest specs; 7 more run in kit pr$/m);
+  assert.match(list.stdout, /^builder run: 2 specs \(named, changed or importing a changed file\); 25 more run in kit pr$/m);
   assert.match(list.stdout, /zz-direct.spec.ts \[default\] — named spec; import: shared\/wide.ts/);
   assert.match(list.stdout, /moved.spec.ts \[default\] — named spec/);
-  assert.match(list.stdout, /RESULT: ok specs 20 selected \(list only\); 7 more run in kit pr\n$/);
+  assert.match(list.stdout, /RESULT: ok specs 2 selected \(list only\); 25 more run in kit pr\n$/);
   const kept = list.stdout.split("\n").filter(line => line.startsWith("tests/")).map(line => line.split(" ")[0]);
+  assert.deepEqual(kept, [save("moved"), save("zz-direct")]);
   f.put("reports.json", JSON.stringify({ "native-save": { suites: [{ specs: kept.map(file => reportSpec(file, "case")) }] } }));
   const result = f.run(["--affected"], builder);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /RESULT: ok specs 20\/20 passed; 7 more run in kit pr\n$/);
+  assert.match(result.stdout, /RESULT: ok specs 2\/2 passed; 25 more run in kit pr\n$/);
   assert.deepEqual(readFileSync(f.calls, "utf8").trim().split("\n").map(line => JSON.parse(line)).flatMap(callFiles).sort(), kept);
 });
 
