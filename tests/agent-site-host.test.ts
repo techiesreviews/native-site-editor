@@ -204,6 +204,9 @@ test("an agent's make_component made before the component tools land waits for t
   assert.equal(await made, "made x-hi");
   // No preview to load them for: the agent hears why.
   assert.equal(await commandsFixture().commands.actions.makeComponent(request), "The component tools are not ready.");
+  // A load that rejects ends the same way.
+  const failing = commandsFixture({ loadComponentTools: async () => { throw new Error("The component tools did not load."); } });
+  assert.equal(await failing.commands.actions.makeComponent(request), "The component tools are not ready.");
 });
 
 const loaded = { loadPagesActions: () => import("../src/controllers/pages-controller"), loadFileOps: () => import("../src/controllers/file-operation-checks") } satisfies Partial<PagesAndFilesPort>;

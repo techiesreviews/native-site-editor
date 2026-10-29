@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { editorMounted } from "./drafts";
+import { clickOnText } from "./click-text";
+import { editorMounted, effectiveSource } from "./drafts";
 
 // The component tools (src/page-builder/components.ts) load two frames and a beat after the first
 // preview paint (src/workspace-mount.ts, ticket agents-and-multiplayer 42): their module's request is
@@ -68,7 +69,7 @@ test("a right-click before the component tools land opens the element's menu onc
   await expect(menu.getByRole("menuitem", { name: "Make component", exact: true })).toBeVisible();
 });
 
-test("a component tools load that fails is reported once, and the tools load after a reload", async ({ page, baseURL }) => {
+test("a component tools load that fails is reported once, stays quiet through later edits, and the tools load after a reload", async ({ page, baseURL }) => {
   let requests = 0;
   await page.route(url => url.pathname === TOOLS, async route => {
     if (!requests++) await route.abort("failed");
@@ -77,13 +78,26 @@ test("a component tools load that fails is reported once, and the tools load aft
   // Recovery offers a manual reload rather than reloading the tab.
   await page.addInitScript(() => { if (!sessionStorage.getItem("am42-reloaded")) sessionStorage.setItem("native-site-editor:chunk-reload", "1"); });
   await openHome(page, baseURL);
-  await expect(page.locator("#notice")).toContainText("reload the page manually");
-  await expect(page.locator("#notice")).toHaveText(/^(?!.*reload the page manually.*reload the page manually)/s);
+  const notice = page.locator("#notice");
+  await expect(notice).toContainText("reload the page manually");
   expect(requests).toBe(1);
   // The page still works: the instance selects, without its component parts.
   await firstCard(page).click();
   await expect(editBar(page).locator(".edit-bar__kind")).toHaveText("Project card");
   await expect(editBar(page).locator(".edit-bar__kind--component")).toHaveCount(0);
+  // The notice put away (as the editor does when a later action succeeds), edits repaint the page and bring it back never.
+  await notice.evaluate(element => { element.hidden = true; });
+  const title = frame(page).locator('[data-key="filler-title"]');
+  for (const text of [" again", "!"]) {
+    await clickOnText(title);
+    await expect(title).toHaveAttribute("contenteditable", /.+/);
+    await page.keyboard.press("End");
+    await page.keyboard.type(text);
+    await page.keyboard.press("Escape");
+    await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toContain(`Scroll to verify again${text === "!" ? "!" : ""}`);
+  }
+  await expect(notice).toBeHidden();
+  expect(requests).toBe(1);
   await page.evaluate(() => sessionStorage.setItem("am42-reloaded", "1"));
   await page.reload();
   await expect(frame(page).locator(".hero h1")).toBeVisible();
@@ -91,4 +105,35 @@ test("a component tools load that fails is reported once, and the tools load aft
   await tree(page).getByRole("treeitem", { name: "Section", exact: true }).locator(".page-structure__toggle").click();
   await firstCard(page).click();
   await expect(editBar(page).locator(".edit-bar__kind--component")).toHaveText("Project card");
+});
+
+test("the Add panel's New component pressed before the component tools land places the component once they do", async ({ page, baseURL }) => {
+  const tools = await holdModule(page, TOOLS);
+  await openHome(page, baseURL);
+  await tools.reached;
+  const panel = page.getByRole("dialog", { name: "Add to the page" });
+  await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
+  await panel.getByRole("button", { name: "+ New component", exact: true }).click();
+  await panel.getByRole("textbox", { name: "Component name" }).pressSequentially("services");
+  await panel.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(frame(page).locator("section-services")).toHaveCount(0);
+  tools.release();
+  await expect(frame(page).locator("main > section.filler + section-services")).toHaveCount(1);
+  await expect(page.locator("#status")).toContainText("Made the component <section-services>");
+});
+
+// Page Structure's row menu is the component tools' entries for a page's section: before they land
+// the row has no ⋯ (nothing to offer); the rows redraw when they land, with Make component.
+test("a Page Structure section row offers Make component once the component tools land", async ({ page, baseURL }) => {
+  const tools = await holdModule(page, TOOLS);
+  await openHome(page, baseURL);
+  await tools.reached;
+  const row = tree(page).getByRole("treeitem", { name: "Section", exact: true });
+  const more = row.locator(":scope > .row-action-overlay").getByRole("button", { name: "Actions for Section", exact: true });
+  await row.hover();
+  await expect(more).toHaveCount(0);
+  tools.release();
+  await row.hover();
+  await more.click();
+  await expect(page.getByRole("menu", { name: "Actions for Section", exact: true }).getByRole("menuitem", { name: "Make component", exact: true })).toBeVisible();
 });
