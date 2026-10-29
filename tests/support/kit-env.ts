@@ -1,7 +1,9 @@
-// This test process's environment without the kit's own home names. The kit run that started the tests exports
-// KIT_HOME, and KIT_HOME_DEFAULT when its front door filled that in: a fixture inheriting a person's KIT_HOME would
-// run that other kit, and one inheriting KIT_HOME_DEFAULT would read a KIT_HOME it set itself as a front door's.
-export function kitEnv(): NodeJS.ProcessEnv {
-  const { KIT_HOME: _home, KIT_HOME_DEFAULT: _default, ...env } = process.env;
-  return env;
+// This test process's environment without the kit home a launcher or front door filled in. A fixture inheriting
+// KIT_HOME_DEFAULT would read a KIT_HOME it set itself as a front door's, and one inheriting a picked KIT_HOME
+// (KIT_HOME_PINNED) picks the machine copy again as any fresh command does. A person's KIT_HOME (a kit branch tried
+// against this editor) is kept, so every fixture runs that kit.
+export function kitEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const { KIT_HOME: home, KIT_HOME_DEFAULT: filled, KIT_HOME_PINNED: pinned, ...env } = source;
+  if (!home || home === filled || home === pinned) return env;
+  return pinned === undefined ? { ...env, KIT_HOME: home } : { ...env, KIT_HOME: home, KIT_HOME_PINNED: pinned };
 }
