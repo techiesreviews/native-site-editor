@@ -304,15 +304,18 @@ export function ticketSpecs(text, files) {
 }
 
 export const BUILDER_SPEC_CAP = 20;
+// After named and direct specs (ranks 0 and 1), a builder keeps reasons in this order; any other reason ranks 4.
+const BUILDER_REASON_RANK = { import: 2, fixture: 2, server: 2, "removed string": 3 };
 
 /** A builder's run: the ticket's named specs, then specs that changed or import a changed file
- * themselves, then the rest by reason, up to `cap`. `left` counts the affected specs left for kit pr. */
+ * themselves, then the rest by reason, up to `cap`. `left` counts the affected specs left for kit pr
+ * (a spec only the ticket names is not affected, so kit pr does not run it). */
 export function builderSpecs(selected, { files, changed, named = [], cap = BUILDER_SPEC_CAP }) {
   const changes = new Set(changed), paths = new Set([...Object.keys(files), ...changed]);
   const direct = spec => changes.has(spec.file)
     || importsOf(files[spec.file] ?? "").some(value => changes.has(resolveImport(spec.file, value, paths)));
   const rank = spec => spec.reasons.includes("named spec") ? 0 : direct(spec) ? 1
-    : Math.min(...spec.reasons.map(reason => ({ import: 2, fixture: 2, server: 2, "removed string": 3 })[reason.split(":")[0]] ?? 4));
+    : Math.min(...spec.reasons.map(reason => BUILDER_REASON_RANK[reason.split(":")[0]] ?? 4));
   const byFile = new Map(selected.map(spec => [spec.file, spec]));
   for (const spec of named) {
     const found = byFile.get(spec.file);
@@ -322,7 +325,8 @@ export function builderSpecs(selected, { files, changed, named = [], cap = BUILD
   const kept = all.map(spec => ({ spec, rank: rank(spec) }))
     .sort((a, b) => a.rank - b.rank || b.spec.reasons.length - a.spec.reasons.length || a.spec.file.localeCompare(b.spec.file))
     .slice(0, cap).map(({ spec }) => spec).sort((a, b) => a.file.localeCompare(b.file));
-  return { specs: kept, left: all.length - kept.length };
+  const run = new Set(kept.map(spec => spec.file));
+  return { specs: kept, left: selected.filter(spec => !run.has(spec.file)).length };
 }
 
 export const SHARD_MIN_SPECS = 40;
