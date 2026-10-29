@@ -8,7 +8,7 @@
 // A workspace switch (`refresh`, at each load) clears what no longer holds, so nothing is drawn on a
 // same-named page of another workspace. An agent the user stopped (ticket am-12) shows nowhere again.
 // An agent working through a pin on the page (ticket am-13) wears its chip on the pin alone: its outline
-// there has none (`pinned`). A pin only a wait took (ticket am-45) shows the taker when it is at work itself
+// there has none (`pinned`). A pin only a wait took (ticket am-45) shows the taker when it began a change lately
 // or is its connection's only agent heard lately; else no one until one reads or replies (`onPin`). Once named,
 // a take keeps its name, unless that agent is stopped.
 
@@ -70,17 +70,17 @@ export function createAgentPresence(ports: AgentPresencePorts) {
   let asked: { who: AgentWho; path: string; element: string; at: Hold }[] = [];
   // The pins an agent works through now, by agent and page: their chips carry its name.
   let pinned: { key: string; path: string; at: Hold }[] = [];
-  // Every agent heard (any call on its connection, get_site and waits included), by key, when last, and whether
-  // it was at work then (a change, a question, a pin read or replied to): whom a wait's take names, within AT_WORK_MS.
-  const heard = new Map<string, { who: AgentWho; time: number; works: boolean }>();
-  const hear = (who: AgentWho, works: boolean) => {
-    const key = keyOf(who), before = heard.get(key);
-    heard.set(key, { who, time: now(), works: works || Boolean(before?.works && now() - before.time <= AT_WORK_MS) });
+  // Every agent heard (each call of its let in, get_site and waits included), by key: when last, and when it last
+  // began a change (`show`): whom a wait's take names, within AT_WORK_MS. Stored requests move neither time.
+  const heard = new Map<string, { who: AgentWho; time: number; workedAt?: number }>();
+  const hear = (who: AgentWho, works = false) => {
+    const key = keyOf(who), time = now(), workedAt = works ? time : heard.get(key)?.workedAt;
+    heard.set(key, { who, time, ...(workedAt !== undefined ? { workedAt } : {}) });
   };
-  // The agent each pin an agent works through shows, by request; and for one a wait took, whom that take named
-  // last: kept while it holds, so another agent heard since on its connection does not leave the pin unnamed.
+  // The agent each pin an agent works through shows, by request; and for one a wait took, the taker it was named
+  // after (its key): kept while that take holds, so another agent heard since on its connection does not unname it.
   let onPins = new Map<string, AgentWho>();
-  const named = new Map<string, { took: string; who: AgentWho }>();
+  const named = new Map<string, string>();
   // Each agent's place in the order of arrival, for the session (a few names each, never cleared): its colour.
   const arrivals = new Map<string, number>();
   // Each agent's latest change, as get_site tells it: held to its site and branch (a reload keeps it), as questions are.
@@ -96,17 +96,16 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     if (!arrivals.has(key)) arrivals.set(key, arrivals.size);
     return key;
   };
-  /** Whom the pin of request `id`, taken by `taker`'s wait, names (ticket am-45): the taker when it is at work itself
-   * or no other agent of its connection was heard in the last AT_WORK_MS; else the one named before for this take,
-   * unless stopped since; else no one (until one reads it or replies). */
+  /** Whom the pin of request `id`, taken by `taker`'s wait, names (ticket am-45): the taker when it began a change
+   * in the last AT_WORK_MS, when no other agent of its connection was heard in that time, or when this take was
+   * named after it before; never once it is stopped (am-12); else no one (until one reads it or replies). */
   const takenBy = (id: string, taker: AgentWho) => {
-    const took = keyOf(taker), time = now(), before = named.get(id);
-    const fresh = [...heard].filter(([, agent]) => time - agent.time <= AT_WORK_MS && agent.who.grant === taker.grant && !stopped(agent.who));
-    const alone = fresh.every(([key]) => key === took), works = fresh.some(([key, agent]) => key === took && agent.works);
-    const who = works || alone ? taker : before?.took === took && !stopped(before.who) ? before.who : undefined;
-    if (who) named.set(id, { took, who });
+    const took = keyOf(taker), time = now(), lately = (at?: number) => at !== undefined && time - at <= AT_WORK_MS;
+    const others = [...heard].some(([key, agent]) => key !== took && agent.who.grant === taker.grant && lately(agent.time) && !stopped(agent.who));
+    const names = !stopped(taker) && (lately(heard.get(took)?.workedAt) || !others || named.get(id) === took);
+    if (names) named.set(id, took);
     else named.delete(id);
-    return who;
+    return names ? taker : undefined;
   };
   const isPage = (path: string) => [...ports.pages()].includes(path);
   // The section a question's element is in, in its page's text now: where its agent shows, and what get_site tells.
@@ -204,9 +203,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
         arrive(who);
         return [{ who, path: request.element.file, element: request.element.id, at: holds(request) }];
       });
-      for (const { who } of asked) hear(who, true);
       const working = requests.filter(request => request.state === "seen" && request.agent);
-      for (const request of working) if (!request.agentTook) hear(request.agent!, true);
       for (const id of named.keys()) if (!working.some(request => request.id === id && request.agentTook)) named.delete(id);
       // A watchdog that only took it for its connection's agent takes no colour, nor one whose pin names no one yet.
       onPins = new Map(working.flatMap(request => {
@@ -217,7 +214,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
       refresh();
     },
     /** `who` called on its connection (src/components/agent-menu.ts): one of its agents, whom a pin a wait took may name. */
-    heard: (who: AgentWho) => hear(who, false),
+    heard: (who: AgentWho) => hear(who),
     /** The agent the pin of request `id` shows at work on it, as the last `questions` told (none: its spinner, or not being worked on). */
     onPin: (id: string): AgentWho | undefined => onPins.get(id),
     /** `who`'s colour (an index into AGENT_COLOURS), the same on its pins as on its outline: it arrives now if new. */

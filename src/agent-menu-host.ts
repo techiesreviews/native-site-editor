@@ -112,9 +112,9 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
       // sessions (on finished requests) and a watchdog that only took one among its connection's agents must not take.
       onRequests: (requests) => {
         agentPresence.questions(requests);
-        ports.nativePreview?.setRequests(requests.map(({ agentTook, ...request }) => {
-          const who = agentPresence.onPin(request.id);
-          return who ? { ...request, agent: who, colour: agentPresence.colour(who) } : { ...request, ...(agentTook ? { agentTook } : {}) };
+        ports.nativePreview?.setRequests(requests.map(request => {
+          const who = agentPresence.onPin(request.id), { agentTook: _took, ...rest } = request;
+          return who ? { ...rest, agent: who, colour: agentPresence.colour(who) } : request;
         }));
       },
       onQuestions: (count) => workspace.repositoryMenu?.setQuestions(count),
