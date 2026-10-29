@@ -14,7 +14,7 @@ function addServerSteps(url: string) {
 /** The task that builds a site from nothing, about `about` when the user said. */
 export function buildSitePrompt(about?: string) {
   const subject = about?.trim() ? about.trim().replace(/\s+/g, " ").slice(0, 300) : "<what it is about>";
-  return `Build a site for ${subject} in this repository: call get_site, read the native-site://conventions resource and follow it (with no index.html yet, its "Starting a site from nothing"), write the pages with write_file and create_page, then tell me to review the drafts in the editor and Publish them.`;
+  return `Build a site for ${subject} in this repository: call get_site, read the native-site://conventions resource and follow it (with no index.html yet, its "Starting a site from nothing"), write the pages with write_file and create_page, check each with screenshot_preview (also width phone), then tell me to review the drafts in the editor and Publish them.`;
 }
 
 /**
@@ -68,7 +68,7 @@ Send each JSON-RPC message as its own POST with the headers ${code("Authorizatio
 
 1. Initialize the MCP connection and call ${code("get_site")}.
 2. Start a "watchdog" subagent that keeps calling ${code("wait_for_requests")} (each call waits up to 25 seconds) and reports each request it returns back to you, the main thread. Give it the server and token in its instructions only. A hint in an answer that says to stop overrides this loop: the watchdog stops and tells you.${task ? `\n3. ${task}` : ""}
-${task ? 4 : 3}. For each request the watchdog reports, make the change as an unsaved editor draft and answer it with ${code("reply_to_request")}: done when you made the change, answered when you replied without changing the site, question (at most 60 characters) when you need my input.
+${task ? 4 : 3}. For each request the watchdog reports, show me where you work with ${code("working_here")}, make the change as an unsaved editor draft, check how it looks with ${code("screenshot_preview")} (also ${code("width: \"phone\"")}), and answer it with ${code("reply_to_request")}: done when you made the change, answered when you replied without changing the site, question (at most 60 characters) when you need my input.
 
 Give yourself and each subagent you start a short name of a few words (e.g. "Copy editor"), sent as ${code("agent")} in every tool call: I see each name, in its own colour, on what it works on, and ${code("get_site")} lists who works on what, so you leave each other's sections alone.
 

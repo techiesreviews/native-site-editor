@@ -16,7 +16,7 @@ import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePage
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import { mediaChanges, type MediaTool } from "../shared/agent-media";
 import { isAtomicOperation } from "../shared/agent-tool-table";
-import { agentName, type AgentWho, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, WORKING_NOTE, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement, type AgentWorking } from "../shared/agent";
+import { agentName, type AgentWho, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, WORKING_NOTE, outlineId, PICTURE_PHONE_HEIGHT, PICTURE_PHONE_WIDTH, WORKING_HERE_MS, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement, type AgentWorking } from "../shared/agent";
 import { lineOf, type WorkingPart } from "./working-part";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./drafts";
@@ -678,6 +678,8 @@ export interface AgentSiteActions {
   deleteFile(path: string): Promise<string | undefined>;
   /** The preview's inspection of the page `path` shows (see native-preview.ts `inspect`). */
   inspect(request: { path: string; node?: number[]; selector?: string; limit?: number }): Promise<unknown>;
+  /** A picture of the page `path` shows (ticket am-14, native-preview.ts `picture`): drawn `width` × `height` (none: the preview's own size), of its section `node` (none: its first screen). */
+  picture(request: { path: string; width?: number; height?: number; node?: number[] }): Promise<{ data: string; mimeType: string; width: number; height: number; viewport: number }>;
   listMedia(request: { folder?: string; offset: number; limit: number }): Promise<string>;
   previewMedia(path: string): Promise<{ data: string; mimeType: string; width: number; height: number; originalWidth: number; originalHeight: number }>;
   media(command: AgentCommand): Promise<void | { message: string; result: Record<string, string> }>;
@@ -688,9 +690,17 @@ export interface AgentSiteActions {
    * that page's text now (its section), which shows the agent's presence while that page is shown; ended by the returned call.
    */
   presence?: (path: string, find: (source: string) => number[] | undefined, who?: AgentWho) => () => void;
+  /**
+   * "I'm working here" (ticket am-14), taken as the command arrives: the returned call shows `who` on the page `path`'s
+   * element `node` (none: the page alone) until it says otherwise, in the workspace shown as it arrived; no path: nowhere.
+   * It answers why nothing shows, if nothing does.
+   */
+  workingHere?: (who: AgentWho) => (path: string | undefined, node: number[] | undefined) => Promise<string | undefined> | string | undefined;
 }
 
 export class Conflict extends Error {}
+const gone = (path: string) => `${path} is not there any more.`;
+const notShown = (path: string) => `${path} could not be shown in the preview.`;
 
 interface InspectionReport {
   error?: string;
@@ -725,7 +735,7 @@ async function expectHash(actions: AgentSiteActions, path: string, expected: str
     if (text !== undefined) throw new Conflict(`${path} exists now. Read it and edit it instead.`);
     return text;
   }
-  if (text === undefined) throw new Conflict(`${path} is not there any more.`);
+  if (text === undefined) throw new Conflict(gone(path));
   if ((await textHash(text)) !== expected) throw new Conflict(changedSinceRead(path));
   return text;
 }
@@ -801,6 +811,9 @@ function refuseProtected(command: AgentCommand) {
 
 // ---- Agent presence (ticket 33) ----
 
+/** Commands that show no presence of their own while they run (ticket am-14). */
+const UNSHOWN = new Set<string>(["screenshot_preview", "working_here"]);
+
 /**
  * The element of the page `source` an agent's change works on, as its presence shows it (ticket 33):
  * the section the change is in (a section moved or removed, the section of an element it changes, of a
@@ -862,9 +875,10 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
   if (mediaProblem) throw new Conflict(mediaProblem);
   for (const candidate of [args.file, args.with, ...args.files ?? []])
     if (candidate && touchesMediaRecords(candidate)) throw new Error(MEDIA_RECORDS_REFUSED);
-  // Admitted: the agent is at work from here until the change lands or stops.
+  // Admitted: the agent is at work from here until the change lands or stops. A picture changes nothing, so it shows
+  // nothing (an agent holding a section stays there); working_here shows the agent itself, held.
   let end = () => {};
-  try {
+  if (!UNSHOWN.has(command.operation)) try {
     const started = actions.presence?.(command.path, source => agentPresenceTarget(command, source, actions.sectionTags()),
       { grant: command.grantId ?? "", name: agentName(command.agent) });
     if (typeof started === "function") end = started;
@@ -1055,9 +1069,34 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       if (!isPreviewablePicture(path)) throw new Error(picturePreviewRefusal(path));
       return { message: `Previewed ${path}.`, result: { ...await actions.previewMedia(path) } };
     }
+    case "screenshot_preview": {
+      const node = args.section !== undefined ? elementOf(args.section) : undefined;
+      if (!(await actions.open(path))) throw new Conflict(notShown(path));
+      const picture = await actions.picture({ path, ...(args.width === "phone" ? { width: PICTURE_PHONE_WIDTH, height: PICTURE_PHONE_HEIGHT } : {}), ...(node ? { node } : {}) });
+      return {
+        message: `A picture of ${node ? `section ${args.section} of ` : ""}${path}, ${picture.viewport} px wide.`,
+        result: { data: picture.data, mimeType: picture.mimeType, width: picture.width, height: picture.height, viewport: picture.viewport },
+      };
+    }
+    case "working_here": {
+      // Taken before the page is read: a site or branch shown meanwhile gets no hold (its same-named page is another).
+      const hold = actions.workingHere?.({ grant: command.grantId ?? "", name: agentName(command.agent) });
+      if (args.done) {
+        await hold?.(undefined, undefined);
+        return { message: "You show nowhere now." };
+      }
+      const node = args.section !== undefined ? elementOf(args.section) : undefined;
+      const source = await actions.text(path);
+      if (source === undefined) throw new Conflict(gone(path));
+      const tree = readSource(source, { page: true });
+      if (node && !tree.at(node)) throw new Conflict(noSection(args.section!));
+      const unheld = await hold?.(path, node && presenceWithin(tree, node, actions.sectionTags()));
+      if (unheld) throw new Conflict(unheld);
+      return { message: `The user sees you at work on ${node ? `section ${args.section} of ` : ""}${path} for ${WORKING_HERE_MS / 60_000} minutes, or until you call working_here again.` };
+    }
     case "inspect_preview": {
       const node = args.element !== undefined ? elementOf(args.element) : undefined;
-      if (!(await actions.open(path))) throw new Conflict(`${path} could not be shown in the preview.`);
+      if (!(await actions.open(path))) throw new Conflict(notShown(path));
       const report = (await actions.inspect({
         path,
         ...(node ? { node } : {}),
@@ -1373,7 +1412,7 @@ export interface AgentAwayPorts {
  * the agent records with its receipt, then into the draft store, as another tab's would. A page or
  * file command runs in its background site (src/background-site.ts, `away`): the editor's own
  * controllers over the workspace it held as it arrived, its step parked for its own page's Undo.
- * Only a command that needs the page on screen (open_page, inspect_preview) refuses.
+ * Only a command that needs the page on screen (open_page, inspect_preview, screenshot_preview, working_here) refuses.
  */
 export async function finishAgentTextElsewhere(command: AgentCommand, shown: () => DraftScope | undefined, account: string | undefined, store: DraftStore,
   find: (files: AgentReadFiles, path: string) => Promise<{ sha: string } | undefined>, away?: AgentAwayPorts): Promise<AgentCommandOutcome | undefined> {

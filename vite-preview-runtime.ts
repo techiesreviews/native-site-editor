@@ -4,8 +4,15 @@ import { dirname, posix, relative, resolve } from "node:path";
 import { build, type BuildOptions } from "esbuild";
 import type { Plugin } from "vite";
 
-const runtimeName = "native-preview-runtime.js";
-const runtimeUrl = 'new URL("./native-preview-runtime.js", import.meta.url)';
+/**
+ * The classic scripts native-preview.ts loads into frames by URL: the runtime, and the page picture
+ * (src/agent-picture.ts, as the global `asePicture`), which only a picture's measuring frame loads, so it stays
+ * out of the boot bytes.
+ */
+const frameScripts = [
+  { file: "src/components/native-preview-runtime.js", name: "native-preview-runtime", url: 'new URL("./native-preview-runtime.js", import.meta.url)' },
+  { file: "src/agent-picture.ts", name: "agent-picture", url: 'new URL("../agent-picture.ts", import.meta.url)', globalName: "asePicture" },
+];
 
 export type RuntimeBundle = {
   code: string;
@@ -25,6 +32,8 @@ export async function bundlePreviewRuntime(options: {
   minify: boolean;
   sourcemap: "external" | "inline";
   target: BuildOptions["target"];
+  /** The entry's exports as this global (none: the entry runs for its effects). */
+  globalName?: string;
 }): Promise<RuntimeBundle> {
   const cwd = dirname(options.entry);
   const result = await build({
@@ -35,6 +44,7 @@ export async function bundlePreviewRuntime(options: {
     write: false,
     bundle: true,
     format: "iife",
+    globalName: options.globalName,
     platform: "browser",
     target: options.target,
     minify: options.minify,
@@ -50,11 +60,11 @@ export async function bundlePreviewRuntime(options: {
 }
 
 /** The build's runtime under an immutable, content-hashed name with its external map. */
-export function immutableRuntimeAsset(bundle: Pick<RuntimeBundle, "code" | "map">) {
+export function immutableRuntimeAsset(bundle: Pick<RuntimeBundle, "code" | "map">, name = "native-preview-runtime") {
   // Hash both payloads before adding the self-referencing map URL. Any change
   // to either payload invalidates both immutable URLs, including map-only edits.
   const hash = createHash("sha256").update(bundle.code).update(bundle.map).digest("hex").slice(0, 12);
-  const fileName = `native-preview-runtime-${hash}.js`;
+  const fileName = `${name}-${hash}.js`;
   return { fileName, code: `${bundle.code}//# sourceMappingURL=${fileName}.map\n`, map: bundle.map };
 }
 
@@ -63,7 +73,7 @@ export function immutableRuntimeAsset(bundle: Pick<RuntimeBundle, "code" | "map"
  * changed since the last build. Concurrent callers share one build; a failed
  * build is not kept, so the next call tries again.
  */
-export function devRuntimeBundle(entry: string, target: BuildOptions["target"]) {
+export function devRuntimeBundle(entry: string, target: BuildOptions["target"], globalName?: string) {
   let current: { stamps: Map<string, number>; code: Promise<string>; stamped: boolean } | undefined;
   // A file that cannot be read is NaN, which equals nothing: never fresh.
   const mtime = (path: string) => stat(path).then((s) => s.mtimeMs, () => NaN);
@@ -80,7 +90,7 @@ export function devRuntimeBundle(entry: string, target: BuildOptions["target"]) 
     const next = { stamps: new Map<string, number>(), code: Promise.resolve(""), stamped: false };
     next.code = (async () => {
       const started = Date.now();
-      const bundle = await bundlePreviewRuntime({ entry, minify: false, sourcemap: "inline", target });
+      const bundle = await bundlePreviewRuntime({ entry, minify: false, sourcemap: "inline", target, globalName });
       // A file written while the build ran may be in it or not: stamp it as
       // changed (NaN), so the next request builds again.
       for (const input of bundle.inputs) {
@@ -102,7 +112,6 @@ export function previewRuntime(): Plugin {
   let assetsDir: string;
   let target: BuildOptions["target"];
   let command: "build" | "serve";
-  const entry = () => resolve(root, `src/components/${runtimeName}`);
   return {
     name: "preview-runtime",
     enforce: "pre",
@@ -113,14 +122,16 @@ export function previewRuntime(): Plugin {
       assetsDir = config.build.assetsDir;
       target = config.build.target === false ? "esnext" : config.build.target;
     },
-    // Dev: `new URL("./native-preview-runtime.js", import.meta.url)` stays the
-    // source path; answer it with the readable bundle and an inline map before
-    // Vite would serve the file as written (its imports break a classic script).
+    // Dev: each script's `new URL(…, import.meta.url)` stays its source path; answer it with the readable
+    // bundle and an inline map before Vite would serve the file as written (its imports break a classic script).
     configureServer(server) {
-      const url = posix.join(base, relative(root, entry()).split("\\").join("/"));
-      const bundle = devRuntimeBundle(entry(), target);
+      const served = new Map(frameScripts.map((script) => {
+        const entry = resolve(root, script.file);
+        return [posix.join(base, relative(root, entry).split("\\").join("/")), devRuntimeBundle(entry, target, script.globalName)];
+      }));
       server.middlewares.use((req, res, next) => {
-        if (req.url?.split("?")[0] !== url) return next();
+        const bundle = served.get(req.url?.split("?")[0] ?? "");
+        if (!bundle) return next();
         bundle().then((code) => {
           res.setHeader("content-type", "text/javascript; charset=utf-8");
           res.setHeader("cache-control", "no-cache");
@@ -128,18 +139,21 @@ export function previewRuntime(): Plugin {
         }, next);
       });
     },
-    // Build: the minified bundle under a hashed /assets/ name.
+    // Build: each minified bundle under a hashed /assets/ name.
     async transform(code, id) {
       if (command !== "build" || id !== resolve(root, "src/components/native-preview.ts")) return;
-      if (!code.includes(runtimeUrl)) this.error("Preview runtime URL expression was not found.");
-      const bundle = await bundlePreviewRuntime({ entry: entry(), minify: true, sourcemap: "external", target });
-      for (const input of bundle.inputs) this.addWatchFile(input);
-      const runtime = immutableRuntimeAsset(bundle);
-      const reference = this.emitFile({ type: "asset", fileName: `${assetsDir}/${runtime.fileName}`, source: runtime.code });
-      this.emitFile({ type: "asset", fileName: `${assetsDir}/${runtime.fileName}.map`, source: runtime.map });
-      // Vite resolves the emitted reference relative to the importing chunk,
-      // including builds with a custom base.
-      return { code: code.replace(runtimeUrl, `new URL(import.meta.ROLLUP_FILE_URL_${reference}, import.meta.url)`), map: null };
+      for (const script of frameScripts) {
+        if (!code.includes(script.url)) this.error(`Frame script URL expression was not found: ${script.url}`);
+        const bundle = await bundlePreviewRuntime({ entry: resolve(root, script.file), minify: true, sourcemap: "external", target, globalName: script.globalName });
+        for (const input of bundle.inputs) this.addWatchFile(input);
+        const asset = immutableRuntimeAsset(bundle, script.name);
+        const reference = this.emitFile({ type: "asset", fileName: `${assetsDir}/${asset.fileName}`, source: asset.code });
+        this.emitFile({ type: "asset", fileName: `${assetsDir}/${asset.fileName}.map`, source: asset.map });
+        // Vite resolves the emitted reference relative to the importing chunk,
+        // including builds with a custom base.
+        code = code.replace(script.url, `new URL(import.meta.ROLLUP_FILE_URL_${reference}, import.meta.url)`);
+      }
+      return { code, map: null };
     },
   };
 }

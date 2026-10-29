@@ -3,6 +3,25 @@ import type { MediaTool } from "./agent-media";
 import type { AgentRead } from "./agent-read";
 import { AGENT_NAME_LIMIT } from "./agent";
 
+const answer = "If a request asked for it, answer it with reply_to_request.";
+/** The steps tools name after they worked (`next` below). */
+const next = {
+  look: `Check how it looks with screenshot_preview (its page and section, and width phone). ${answer}`,
+  answer,
+  // A file of any kind: a page, a stylesheet, a component, media.
+  moved: `list_files shows it at its new path, and get_site the pages at their URLs. ${answer}`,
+  // The section is gone: the page it was on.
+  removed: `Check how the page looks with screenshot_preview (and width phone). ${answer}`,
+  deleted: `list_files shows the files now. ${answer}`,
+  created: "Add sections to it with add_section, then check it with screenshot_preview.",
+  added: "Fill it with edit_file (get_page gives its id and the page's hash), then check it with screenshot_preview.",
+  listed: `list_media shows it now. ${answer}`,
+  looked: `Fix what looks wrong and check again. ${answer}`,
+  here: "Make your change. Call working_here again when you move on, and with done when you finish.",
+  // working_here with done: the agent finished.
+  finished: answer,
+};
+
 /**
  * Every agent tool, once. Its executors live where they run: the Worker's MCP registration
  * (worker/mcp.ts, which registers the tools in this order), and the receiving tab's
@@ -17,6 +36,8 @@ import { AGENT_NAME_LIMIT } from "./agent";
  *   command enters the draft/receipt transaction.
  * - `idempotent: false`: calling it twice is not the same as once.
  * - `mcp: false`: a browser tool behind another MCP tool (get_selection with a request).
+ * - `next`: the step after it (ticket am-14). An MCP has no screen to find it on, so the tool's reply names it
+ *   once it worked; every change has one (tests/agent-tool-table.test.ts pins them).
  */
 export const agentTools = {
   get_site: { route: "read", effect: "read" },
@@ -25,33 +46,35 @@ export const agentTools = {
   export_site: { route: "read", effect: "read" },
   get_page: { route: "read", effect: "read" },
   get_command_status: { route: "status", effect: "read" },
-  edit_file: { route: "edit", effect: "edit", operation: "write_file", atomic: true },
-  write_file: { route: "edit", effect: "edit", operation: "write_file", atomic: true },
-  move_file: { route: "edit", effect: "edit", operation: "move_file", atomic: true },
-  delete_file: { route: "edit", effect: "remove", operation: "delete_file", atomic: true },
-  create_page: { route: "edit", effect: "edit", operation: "create_page", atomic: true },
-  set_page_details: { route: "edit", effect: "edit", operation: "set_page_details", atomic: true },
+  edit_file: { route: "edit", effect: "edit", operation: "write_file", atomic: true, next: next.look },
+  write_file: { route: "edit", effect: "edit", operation: "write_file", atomic: true, next: next.look },
+  move_file: { route: "edit", effect: "edit", operation: "move_file", atomic: true, next: next.moved },
+  delete_file: { route: "edit", effect: "remove", operation: "delete_file", atomic: true, next: next.deleted },
+  create_page: { route: "edit", effect: "edit", operation: "create_page", atomic: true, next: next.created },
+  set_page_details: { route: "edit", effect: "edit", operation: "set_page_details", atomic: true, next: next.answer },
   open_page: { route: "edit", effect: "read", operation: "open_page" },
   inspect_preview: { route: "edit", effect: "read", operation: "inspect_preview" },
+  screenshot_preview: { route: "edit", effect: "read", operation: "screenshot_preview", next: next.looked },
+  working_here: { route: "edit", effect: "read", operation: "working_here", next: next.here },
   list_media: { route: "media", effect: "read", operation: "list_media" },
   preview_media: { route: "media", effect: "read", operation: "preview_media" },
-  remove_media: { route: "media", effect: "remove", operation: "remove_media" },
-  keep_media: { route: "media", effect: "edit", operation: "keep_media" },
-  restore_media: { route: "media", effect: "edit", operation: "restore_media" },
-  replace_media: { route: "media", effect: "edit", operation: "replace_media" },
-  frame_image: { route: "media", effect: "edit", operation: "frame_image" },
-  place_media: { route: "media", effect: "edit", operation: "place_media" },
-  improve_images: { route: "media", effect: "edit", operation: "improve_images" },
-  loop_video: { route: "media", effect: "edit", operation: "loop_video" },
-  video_still: { route: "media", effect: "edit", operation: "video_still" },
-  write_subtitles: { route: "media", effect: "edit", operation: "write_subtitles" },
-  describe_media: { route: "media", effect: "edit", operation: "describe_media" },
-  change_collection: { route: "media", effect: "edit", operation: "change_collection" },
-  adding_settings: { route: "media", effect: "edit", operation: "adding_settings" },
-  make_component: { route: "edit", effect: "edit", operation: "make_component", atomic: true },
-  add_section: { route: "edit", effect: "edit", operation: "add_section", atomic: true },
-  move_section: { route: "edit", effect: "edit", operation: "move_section", atomic: true },
-  remove_section: { route: "edit", effect: "remove", operation: "remove_section", atomic: true },
+  remove_media: { route: "media", effect: "remove", operation: "remove_media", next: next.listed },
+  keep_media: { route: "media", effect: "edit", operation: "keep_media", next: next.listed },
+  restore_media: { route: "media", effect: "edit", operation: "restore_media", next: next.listed },
+  replace_media: { route: "media", effect: "edit", operation: "replace_media", next: next.look },
+  frame_image: { route: "media", effect: "edit", operation: "frame_image", next: next.look },
+  place_media: { route: "media", effect: "edit", operation: "place_media", next: next.look },
+  improve_images: { route: "media", effect: "edit", operation: "improve_images", next: next.look },
+  loop_video: { route: "media", effect: "edit", operation: "loop_video", next: next.look },
+  video_still: { route: "media", effect: "edit", operation: "video_still", next: next.look },
+  write_subtitles: { route: "media", effect: "edit", operation: "write_subtitles", next: next.listed },
+  describe_media: { route: "media", effect: "edit", operation: "describe_media", next: next.listed },
+  change_collection: { route: "media", effect: "edit", operation: "change_collection", next: next.listed },
+  adding_settings: { route: "media", effect: "edit", operation: "adding_settings", next: next.listed },
+  make_component: { route: "edit", effect: "edit", operation: "make_component", atomic: true, next: next.look },
+  add_section: { route: "edit", effect: "edit", operation: "add_section", atomic: true, next: next.added },
+  move_section: { route: "edit", effect: "edit", operation: "move_section", atomic: true, next: next.look },
+  remove_section: { route: "edit", effect: "remove", operation: "remove_section", atomic: true, next: next.removed },
   wait_for_requests: { route: "requests", effect: "read", idempotent: false },
   get_selection: { route: "read", effect: "read" },
   reply_to_request: { route: "requests", effect: "edit", idempotent: false },
@@ -63,6 +86,7 @@ export const agentTools = {
   atomic?: true;
   idempotent?: false;
   mcp?: false;
+  next?: string;
 }>;
 
 /**
@@ -94,6 +118,9 @@ export const agentToolsOn = <R extends AgentToolRoute>(...routes: R[]) =>
 export const mcpTools = names.filter((_name, at) => rows[at].mcp !== false) as McpToolName[];
 const operations = new Set<string>([...legacyOperations, ...rows.flatMap(row => row.operation ?? [])]);
 const atomic = new Set<string>([...legacyOperations, ...rows.flatMap(row => row.atomic ? row.operation! : [])]);
+/** The step a tool's reply names once it worked (`next`), if it has one: for working_here with done (its `args`), the one after finishing. */
+export const nextStep = (name: AgentToolName, args?: object): string | undefined =>
+  name === "working_here" && (args as { done?: unknown } | undefined)?.done === true ? next.finished : (agentTools[name] as { next?: string }).next;
 export const isAgentOperation = (value: unknown): value is AgentOperation => typeof value === "string" && operations.has(value);
 /** Only these commands enter the draft/receipt transaction. */
 export const isAtomicOperation = (operation: string) => atomic.has(operation);

@@ -57,6 +57,8 @@ import "./native-preview.css";
 // /assets/ URL in the build, cached as immutable.
 // The URL is absolute so the about:srcdoc frame needs no base URL.
 const RUNTIME_URL = new URL("./native-preview-runtime.js", import.meta.url).href;
+// The page picture (src/agent-picture.ts), bundled the same way; only a picture's measuring frame loads it.
+const PICTURE_URL = new URL("../agent-picture.ts", import.meta.url).href;
 // A tab opened before a deploy asks for the previous hash, which is gone: the
 // sandboxed frame's failed <script> never reaches the parent, so the host
 // waits this long for `ready` once the frame is attached and then treats it
@@ -72,7 +74,7 @@ const RUNTIME_DOC = `<!doctype html>
 <meta name="ase-frame-load" content="__FRAME_LOAD__" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Native preview</title>
-<script src="${RUNTIME_URL}" defer></script>
+<script src="${RUNTIME_URL}" data-picture="${PICTURE_URL}" defer></script>
 </head>
 <body><div id="root" data-key="root"><div id="page" data-key="page"></div></div></body>
 </html>`;
@@ -1179,6 +1181,21 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (rafHandle) await new Promise((resolve) => requestAnimationFrame(resolve));
       const answer = await link.ask({ type: "inspect", request }, 8000);
       if (!answer) throw new Error("The preview did not answer. Keep the editor tab visible and try again.");
+      return answer.report;
+    },
+    /**
+     * A picture of the page `path` shows, for an agent (ticket am-14): drawn in a hidden frame `width` × `height`
+     * (none: the preview's own size, as the user sees it), of its element `node` (none: the first screen). After any
+     * pending render, once the preview shows that page (it was just opened: at most 1.5 s). Its waits stay within the
+     * relay's ten seconds for the whole command (worker/agent-relay.ts), opening the page included: 1.5 s, then 5.5 s.
+     */
+    async picture(request: { path: string; width?: number; height?: number; node?: number[] }) {
+      for (let wait = 0; wait < 15 && site?.routes[route] !== request.path; wait++) await new Promise((resolve) => setTimeout(resolve, 100));
+      if (!frameState.active || !site || !frameState.ready || site.routes[route] !== request.path) throw new Error("The preview is not showing the page yet. Try again in a moment.");
+      if (rafHandle) await new Promise((resolve) => requestAnimationFrame(resolve));
+      const answer = await link.ask({ type: "picture", request }, 5500);
+      if (!answer) throw new Error("The preview did not answer. Keep the editor tab visible and try again.");
+      if ("error" in answer.report) throw new Error(answer.report.error);
       return answer.report;
     },
     paintedSource(path: string) { return site?.routes[route] === path ? link.painted()?.[path] : undefined; },

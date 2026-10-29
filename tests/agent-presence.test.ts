@@ -2,9 +2,10 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { agentPresenceTarget, applySiteCommand, pinnedMediaActions, type AgentSiteActions } from "../src/agent-site.ts";
 import { AT_WORK_MS, createAgentPresence, type PresenceQuestion } from "../src/agent-presence.ts";
+import { createWorkingHere } from "../src/agent-working-here.ts";
 import { mediaCommandPins } from "../src/agent-tools.ts";
 import type { MediaPin } from "../src/controllers/media-controller.ts";
-import { textHash, type AgentCommand, type AgentWho } from "../shared/agent.ts";
+import { textHash, WORKING_HERE_MS, type AgentCommand, type AgentWho } from "../shared/agent.ts";
 
 const page = "<!doctype html><html><head><title>Home</title></head><body>" +
   "<header><nav><a href=\"/\">Home</a></nav></header>" +
@@ -112,6 +113,8 @@ function presenceViews(sources: Record<string, string> = { "index.html": page, "
   const shown = { repoId: 1, branch: "main" };
   const painted: Shot[] = [];
   const stops = new Set<string>();
+  // working_here's ends, waiting (ticket am-14): each its time and whether it was cancelled.
+  const timers: { run: () => void; ms: number; cancelled: boolean }[] = [];
   const presence = createAgentPresence({
     pages: () => ["index.html", "about/index.html"],
     source: path => sources[path],
@@ -125,7 +128,8 @@ function presenceViews(sources: Record<string, string> = { "index.html": page, "
     stops: { has: who => stops.has(JSON.stringify(who)), add: who => { stops.add(JSON.stringify(who)); } },
     now: () => clock.now,
   });
-  return { presence, painted, clock, shown, stops, nextLoad: () => { load++; presence.loaded(); } };
+  const working = createWorkingHere(presence, (run, ms) => { const timer = { run, ms, cancelled: false }; timers.push(timer); return () => { timer.cancelled = true; }; });
+  return { presence, working, painted, clock, shown, stops, timers, nextLoad: () => { load++; presence.loaded(); } };
 }
 const findHero = () => [1, 0];
 const agent = (name: string, grant = "g1"): AgentWho => ({ grant, name });
@@ -526,4 +530,114 @@ test("the MCP menu lists the agents working now in their colours; Stop ends one:
   unlisten();
   presence.show("index.html", findHero, agent("Late"))();
   assert.equal(told, before);
+});
+
+test("working_here shows an agent where it says, moves it, ends it when done or after five minutes, and gives way to its own change (ticket am-14)", () => {
+  const { presence, working, painted, timers, stops } = presenceViews();
+  const a = agent("Copy editor"), b = agent("Designer", "g2");
+  working.here("index.html", [1, 1], a);
+  assert.deepEqual(painted.at(-1), [["Copy editor", 0, "index.html", "1.1", false]]);
+  assert.deepEqual(presence.atWork(), [{ name: "Copy editor", file: "index.html", section: "1.1" }]);
+  assert.deepEqual(timers.map(timer => timer.ms), [WORKING_HERE_MS]);
+  // A change of its own shows where it lands while it runs, then the agent is back where it said.
+  const end = presence.show("index.html", findHero, a);
+  assert.deepEqual(painted.at(-1), [["Copy editor", 0, "index.html", "1.0", false]]);
+  end();
+  assert.deepEqual(painted.at(-1), [["Copy editor", 0, "index.html", "1.1", false]]);
+  // Called again, it moves (on another page: that page's row dot); the first end is cancelled.
+  working.here("about/index.html", undefined, a);
+  assert.deepEqual(painted.at(-1), [["Copy editor", 0, "about/index.html", undefined, false]]);
+  assert.equal(timers[0].cancelled, true);
+  // Another agent's stays apart; done clears only the agent that says it.
+  working.here("index.html", [1, 0], b);
+  working.here(undefined, undefined, a);
+  assert.deepEqual(painted.at(-1), [["Designer", 1, "index.html", "1.0", false]]);
+  // Done, get_site tells what it told before the holds: the copy editor's one change (on the hero), not where it said it worked.
+  assert.deepEqual(presence.atWork(), [{ name: "Copy editor", file: "index.html", section: "1.0" }, { name: "Designer", file: "index.html", section: "1.0" }]);
+  // Five minutes on, the other one's ends by itself; it changed nothing, so get_site no longer lists it.
+  timers.at(-1)!.run();
+  assert.deepEqual(painted.at(-1), []);
+  assert.deepEqual(presence.atWork(), [{ name: "Copy editor", file: "index.html", section: "1.0" }]);
+  // A stopped agent shows nowhere, whatever it says.
+  stops.add(JSON.stringify(b));
+  working.here("index.html", [1, 0], b);
+  assert.deepEqual(painted.at(-1), []);
+});
+
+test("applySiteCommand's working_here holds the agent on the section it names (an element's: its section), or nowhere once done", async () => {
+  const calls: unknown[] = [];
+  const actions = {
+    text: async () => page, sectionTags: () => tags,
+    presence: () => { calls.push("presence"); return () => {}; },
+    workingHere: who => (path, node) => { calls.push([path, node, who.name]); return undefined; },
+  } satisfies Pick<AgentSiteActions, "text" | "sectionTags" | "presence" | "workingHere">;
+  // Deliberate: working_here reaches only these ports; any other would fail as a TypeError.
+  const run = (args: AgentCommand["args"], path = "index.html") =>
+    applySiteCommand(actions as Pick<AgentSiteActions, keyof typeof actions> as AgentSiteActions, command("working_here", { path, args, grantId: "g1", agent: "Copy editor" }));
+  assert.match((await run({ section: "1.1" })).message, /^The user sees you at work on section 1\.1 of index\.html for 5 minutes/);
+  await run({ section: "1.1.1.0" });
+  await run({});
+  await assert.rejects(run({ section: "1.9" }), /No section 1\.9 on this page\. get_page lists them\./);
+  assert.equal((await run({ done: true }, "")).message, "You show nowhere now.");
+  // Its own hold is its presence: no passing presence of the call itself (which would name no page once done).
+  assert.deepEqual(calls, [["index.html", [1, 1], "Copy editor"], ["index.html", [1, 1, 1], "Copy editor"], ["index.html", undefined, "Copy editor"], [undefined, undefined, "Copy editor"]]);
+});
+
+test("a picture leaves the agent where it is: an agent holding a section stays on it while its picture is taken (ticket am-14)", async () => {
+  const { presence, working, painted } = presenceViews();
+  const a = agent("Copy editor");
+  working.here("index.html", [1, 1], a);
+  const marks: Shot[] = [];
+  // The picture port reads the marks painted while it runs.
+  const actions = {
+    text: async () => page, sectionTags: () => tags, open: async () => true,
+    presence: (path, find, who) => presence.show(path, find, who),
+    picture: async () => { marks.push(painted.at(-1)!); return { data: "UklGRg==", mimeType: "image/webp", width: 390, height: 844, viewport: 390 }; },
+  } satisfies Pick<AgentSiteActions, "text" | "sectionTags" | "open" | "presence" | "picture">;
+  // Deliberate: a screenshot reaches only these ports; any other would fail as a TypeError.
+  await applySiteCommand(actions as Pick<AgentSiteActions, keyof typeof actions> as AgentSiteActions, command("screenshot_preview", { grantId: "g1", agent: "Copy editor" }));
+  assert.deepEqual(marks, [[["Copy editor", 0, "index.html", "1.1", false]]]);
+  assert.deepEqual(painted.at(-1), [["Copy editor", 0, "index.html", "1.1", false]]);
+  assert.deepEqual(presence.atWork(), [{ name: "Copy editor", file: "index.html", section: "1.1" }]);
+});
+
+test("a hold begun while a change of its own runs: the change shows over it, and get_site keeps the change once both end (ticket am-14)", () => {
+  const { presence, working, painted, timers } = presenceViews();
+  const a = agent("Copy editor");
+  const end = presence.show("index.html", findHero, a);
+  working.here("index.html", [1, 1], a);
+  assert.deepEqual(painted.at(-1), [["Copy editor", 0, "index.html", "1.0", false]]);
+  end();
+  assert.deepEqual(painted.at(-1), [["Copy editor", 0, "index.html", "1.1", false]]);
+  timers.at(-1)!.run();
+  assert.deepEqual(painted.at(-1), []);
+  assert.deepEqual(presence.atWork(), [{ name: "Copy editor", file: "index.html", section: "1.0" }]);
+});
+
+test("working_here whose site or branch changes while its page is read holds nothing there (ticket am-14)", async () => {
+  const { presence, working, painted, shown, nextLoad } = presenceViews();
+  const actions = {
+    // The page is read; meanwhile another branch is shown.
+    text: async () => { shown.branch = "other"; nextLoad(); return page; },
+    sectionTags: () => tags,
+    workingHere: who => working.hold(who, presence.begin()),
+  } satisfies Pick<AgentSiteActions, "text" | "sectionTags" | "workingHere">;
+  // Deliberate: working_here reaches only these ports; any other would fail as a TypeError.
+  await assert.rejects(applySiteCommand(actions as Pick<AgentSiteActions, keyof typeof actions> as AgentSiteActions,
+    command("working_here", { args: { section: "1.1" }, grantId: "g1", agent: "Copy editor" })),
+  { message: "Nothing is shown: the editor shows another site or branch now. Nothing was changed." });
+  assert.deepEqual(painted.at(-1) ?? [], []);
+  assert.deepEqual(presence.atWork(), []);
+});
+
+test("working_here from an agent the user stopped shows nothing, and says so (ticket am-14)", async () => {
+  const { presence, working, painted, stops } = presenceViews();
+  stops.add(JSON.stringify(agent("Copy editor")));
+  const actions = { text: async () => page, sectionTags: () => tags, workingHere: who => working.hold(who, presence.begin()) } satisfies Pick<AgentSiteActions, "text" | "sectionTags" | "workingHere">;
+  // Deliberate: working_here reaches only these ports; any other would fail as a TypeError.
+  await assert.rejects(applySiteCommand(actions as Pick<AgentSiteActions, keyof typeof actions> as AgentSiteActions,
+    command("working_here", { args: { section: "1.1" }, grantId: "g1", agent: "Copy editor" })),
+  { message: "Nothing is shown: the user stopped you. Nothing was changed." });
+  assert.deepEqual(painted.at(-1) ?? [], []);
+  assert.deepEqual(presence.atWork(), []);
 });

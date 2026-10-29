@@ -19,6 +19,8 @@ export interface AgentEditArgsMap {
   set_page_details: { page: string; title?: string; description?: string };
   open_page: { page: string };
   inspect_preview: { page?: string; element?: string; selector?: string; limit?: number };
+  screenshot_preview: { page?: string; section?: string; width?: "editor" | "phone" };
+  working_here: { page?: string; section?: string; done?: boolean };
   make_component: { page: string; element: string; tag: string; fixed?: string[]; expectedHash: string };
   add_section: { page: string; component: string; expectedHash: string; before?: string; after?: string };
   move_section: { page: string; section: string; expectedHash: string; before?: string; after?: string };
@@ -48,6 +50,7 @@ function contentProblem(content: string) {
   return textBytes(content) > AGENT_TEXT_LIMIT || content.includes("\0") ? `Drafts hold text files up to ${AGENT_TEXT_LIMIT / 1024 / 1024} MB.` : undefined;
 }
 
+const NO_PAGE_SHOWN = "The editor shows no page now. Give page.";
 const notAnElement = (element: string) => `${element} is not an element id; get_page lists them.`;
 const oneAnchor = (before?: string, after?: string) => before && after ? "Give before or after, not both." : undefined;
 
@@ -62,6 +65,11 @@ export function editShapeProblem<K extends AgentEditTool>(tool: K, input: AgentE
     case "move_file": return writablePathProblem(args.path) ?? writablePathProblem(args.to) ?? (args.path === args.to ? "The new path is the same." : undefined);
     case "create_page": return args.slug === undefined ? undefined : pageAddressProblem(args.slug);
     case "set_page_details": return args.title === undefined && args.description === undefined ? "Give a title, a description, or both." : undefined;
+    case "screenshot_preview": return args.section !== undefined && !parseOutlineId(args.section) ? notAnElement(args.section) : undefined;
+    case "working_here":
+      if (args.done) return args.page !== undefined || args.section !== undefined ? "Give done alone, or the page you work on." : undefined;
+      if (args.page === undefined) return "Give the page you work on (and its section), or done: true once you finished.";
+      return args.section !== undefined && !parseOutlineId(args.section) ? notAnElement(args.section) : undefined;
     case "inspect_preview":
       if (args.element !== undefined && args.selector !== undefined) return "Give element or selector, not both.";
       return args.element !== undefined && !parseOutlineId(args.element) ? notAnElement(args.element) : undefined;
@@ -311,10 +319,21 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditContext,
       if (problem) return refuse(problem);
       return queue({ path });
     }
+    case "screenshot_preview": {
+      const { page: ref, section, width } = request.args;
+      const route = ref ?? context.site?.openRoute;
+      if (!route) return refuse(NO_PAGE_SHOWN);
+      return queue({ path: findPage(context, route).file, args: { ...(section !== undefined ? { section } : {}), ...(width !== undefined ? { width } : {}) } });
+    }
+    case "working_here": {
+      const { page: ref, section, done } = request.args;
+      if (done || ref === undefined) return queue({ path: "", args: { done: true } });
+      return queue({ path: findPage(context, ref).file, args: section !== undefined ? { section } : {} });
+    }
     case "inspect_preview": {
       const { page: ref, element, selector, limit } = request.args;
       const route = ref ?? context.site?.openRoute;
-      if (!route) return refuse("The editor shows no page now. Give page.");
+      if (!route) return refuse(NO_PAGE_SHOWN);
       const page = findPage(context, route);
       return queue({
         path: page.file,

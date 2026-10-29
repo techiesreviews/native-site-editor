@@ -22,6 +22,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   var measurement = document.getElementById("ase-image-measure");
   if (measurement) { measureDocument(JSON.parse(measurement.textContent)); return; }
   var runtimeUrl = document.currentScript.src;
+  // The page picture's own script (native-preview.ts PICTURE_URL): only a picture's measuring frame loads it.
+  var pictureUrl = document.currentScript.dataset.picture;
   // The page and templates as the shared rules read them (rules/tree.ts):
   // the runtime's own injected styles are not there.
   var ruleView = domView(injectedStyle);
@@ -3540,101 +3542,206 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
         }
       });
     }
-    function answer(report) { emit("image-measured", { id: config.id, context: config.context, report: report }); }
+    function answer(report) {
+      if (config.picture) emit("picture-result", { id: config.id, context: config.context, report: report });
+      else emit("image-measured", { id: config.id, context: config.context, report: report });
+    }
+    // Laid out at the parent's width once its styles, images and fonts are in: `then` runs, else a timeout's error answers.
+    function whenSettled(width, then) {
+      var deadline = Date.now() + (config.picture ? 3500 : 5000);
+      (function read() {
+        try {
+          if (Date.now() >= deadline) throw new Error((config.picture ? "The picture" : "Image measurement") + " timed out waiting for styles or images.");
+          var links = Array.prototype.slice.call(document.querySelectorAll('link[rel="stylesheet"]'));
+          roots.forEach(function (root) { links = links.concat(Array.prototype.slice.call(root.querySelectorAll('link[rel="stylesheet"]'))); });
+          // The child's viewport follows the parent's resize; wait until it has.
+          if (innerWidth !== width || links.some(function (link) { return !link.sheet; }) || images.some(function (image) { return !image.complete; }) || document.fonts && document.fonts.status === "loading") {
+            setTimeout(read, 25);
+            return;
+          }
+          then();
+        } catch (error) { answer({ error: String(error && error.message || error) }); }
+      })();
+    }
+    // The section asked for, else the first screen, painted (src/agent-picture.ts, loaded before this runtime).
+    function picture() {
+      var rect = target && target.getBoundingClientRect();
+      var box = rect ? { left: rect.left + scrollX, top: rect.top + scrollY, width: rect.width, height: rect.height } : { left: 0, top: 0, width: innerWidth, height: innerHeight };
+      if (!window.asePicture) { answer({ error: "The picture could not load. Reload the editor and try again." }); return; }
+      window.asePicture.paintPicture(document, box).then(function (made) {
+        answer({ data: made.data, mimeType: made.mimeType, width: made.width, height: made.height, viewport: innerWidth });
+      }, function (error) { answer({ error: String(error && error.message || error) }); });
+    }
+    function measure() {
+      try {
+        var rect = target.getBoundingClientRect();
+        if (!target.naturalWidth || !target.naturalHeight) throw new Error("The image has no natural size.");
+        var style = getComputedStyle(target);
+        var w = parseFloat(style.width), h = parseFloat(style.height);
+        if (style.boxSizing === "border-box") {
+          w -= parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+          h -= parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+        }
+        if (!rect.width && !rect.height) { w = 0; h = 0; }
+        if (!isFinite(w) || !isFinite(h)) throw new Error("The image content box could not be measured.");
+        var pageImages = [];
+        if (innerWidth === 390 || innerWidth === 1280) document.querySelectorAll("img[data-native-measure-node]").forEach(function (image) {
+          var box = image.getBoundingClientRect(), first = box.top >= 0 && box.top < innerHeight && box.width > 0 && box.height > 0;
+          pageImages.push({ node: JSON.parse(image.getAttribute("data-native-measure-node")), firstScreen: first, large: first && box.width * box.height >= 50000 });
+        });
+        var device = innerWidth === 390 || innerWidth === 1280;
+        answer({ images: pageImages, large: device && rect.top >= 0 && rect.top < innerHeight && rect.width * rect.height >= 50000, facts: [{ viewport: innerWidth, viewportHeight: innerHeight, top: w || h ? rect.top : innerHeight, width: Math.max(0, w), height: Math.max(0, h), naturalWidth: target.naturalWidth, naturalHeight: target.naturalHeight, fit: style.objectFit }] });
+      } catch (error) { answer({ error: String(error && error.message || error) }); }
+    }
     try {
       sheets(document, config.sheets[0]);
       visit(document);
-      if (!target) throw new Error("The image could not be cloned.");
-      // A first slot fill shows the slot and its wrappers, which the preview hides while unfilled.
-      if (config.slot) for (var up = target; up; up = up.parentElement) up.removeAttribute("data-native-empty");
-      if (config.style !== undefined) target.setAttribute("style", config.style);
-      if (config.image) {
-        // Placing a new picture unwraps a <picture> (slice 34): measure the plain image in its place.
-        var wrapper = target.parentElement;
-        if (wrapper && wrapper.localName === "picture") {
-          if (!target.hasAttribute("slot") && wrapper.hasAttribute("slot")) target.setAttribute("slot", wrapper.getAttribute("slot"));
-          wrapper.replaceWith(target);
+      if (config.picture) {
+        // A picture (ticket am-14): no scrollbar takes the page's width.
+        var bare = new CSSStyleSheet();
+        bare.replaceSync("html{scrollbar-width:none}");
+        document.adoptedStyleSheets = document.adoptedStyleSheets.concat([bare]);
+      } else {
+        if (!target) throw new Error("The image could not be cloned.");
+        // A first slot fill shows the slot and its wrappers, which the preview hides while unfilled.
+        if (config.slot) for (var up = target; up; up = up.parentElement) up.removeAttribute("data-native-empty");
+        if (config.style !== undefined) target.setAttribute("style", config.style);
+        if (config.image) {
+          // Placing a new picture unwraps a <picture> (slice 34): measure the plain image in its place.
+          var wrapper = target.parentElement;
+          if (wrapper && wrapper.localName === "picture") {
+            if (!target.hasAttribute("slot") && wrapper.hasAttribute("slot")) target.setAttribute("slot", wrapper.getAttribute("slot"));
+            wrapper.replaceWith(target);
+          }
+          target.removeAttribute("srcset"); target.removeAttribute("sizes");
+          target.width = config.image.width; target.height = config.image.height;
+          target.src = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="' + config.image.width + '" height="' + config.image.height + '"/>');
         }
-        target.removeAttribute("srcset"); target.removeAttribute("sizes");
-        target.width = config.image.width; target.height = config.image.height;
-        target.src = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="' + config.image.width + '" height="' + config.image.height + '"/>');
       }
       window.addEventListener("message", function (event) {
         var msg = event.data || {};
-        if (event.source !== parent || msg.source !== HOST_SOURCE || msg.type !== "measure-image") return;
-        var deadline = Date.now() + 5000;
-        function read() {
-          try {
-            if (Date.now() >= deadline) throw new Error("Image measurement timed out waiting for styles or images.");
-            var rect = target.getBoundingClientRect();
-            var links = Array.prototype.slice.call(document.querySelectorAll('link[rel="stylesheet"]'));
-            roots.forEach(function (root) { links = links.concat(Array.prototype.slice.call(root.querySelectorAll('link[rel="stylesheet"]'))); });
-            // The child's viewport follows the parent's resize; wait until it has.
-            if (innerWidth !== msg.width || links.some(function (link) { return !link.sheet; }) || images.some(function (image) { return !image.complete; }) || document.fonts && document.fonts.status === "loading") {
-              setTimeout(read, 25);
-              return;
-            }
-            if (!target.naturalWidth || !target.naturalHeight) throw new Error("The image has no natural size.");
-            var style = getComputedStyle(target);
-            var w = parseFloat(style.width), h = parseFloat(style.height);
-            if (style.boxSizing === "border-box") {
-              w -= parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
-              h -= parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
-            }
-            if (!rect.width && !rect.height) { w = 0; h = 0; }
-            if (!isFinite(w) || !isFinite(h)) throw new Error("The image content box could not be measured.");
-            var pageImages = [];
-            if (innerWidth === 390 || innerWidth === 1280) document.querySelectorAll("img[data-native-measure-node]").forEach(function (image) {
-              var box = image.getBoundingClientRect(), first = box.top >= 0 && box.top < innerHeight && box.width > 0 && box.height > 0;
-              pageImages.push({ node: JSON.parse(image.getAttribute("data-native-measure-node")), firstScreen: first, large: first && box.width * box.height >= 50000 });
-            });
-            var device = innerWidth === 390 || innerWidth === 1280;
-            answer({ images: pageImages, large: device && rect.top >= 0 && rect.top < innerHeight && rect.width * rect.height >= 50000, facts: [{ viewport: innerWidth, viewportHeight: innerHeight, top: w || h ? rect.top : innerHeight, width: Math.max(0, w), height: Math.max(0, h), naturalWidth: target.naturalWidth, naturalHeight: target.naturalHeight, fit: style.objectFit }] });
-          } catch (error) { answer({ error: String(error && error.message || error) }); }
-        }
-        read();
+        if (event.source !== parent || msg.source !== HOST_SOURCE) return;
+        if (config.picture ? msg.type === "picture" : msg.type === "measure-image") whenSettled(msg.width, config.picture ? picture : measure);
       });
       emit("ready");
     } catch (error) { answer({ error: String(error && error.message || error) }); }
   }
 
-  function measureImage(msg) {
-    var frame = null, timer = 0, ended = false;
-    var context = state && state.context;
-    function finish(report) {
-      if (ended) return;
-      ended = true;
-      clearTimeout(timer);
-      window.removeEventListener("message", receive);
-      if (frame) frame.remove();
-      // Stamp the render we cloned, even if a new render arrived meanwhile.
-      emit("image-measured", { id: msg.id, context: context, report: report });
+  // A copy of the page shown for a measuring frame (image measurement, pictures): its document with each
+  // shadow tree declarative and `target` marked, without the editor's overlays, scripts or handlers; `sources`
+  // holds each root's sheets, by the index its host carries.
+  function measuringCopy(target) {
+    var doc = document.implementation.createHTMLDocument("");
+    var base = doc.createElement("base");
+    base.href = document.baseURI;
+    doc.head.appendChild(base);
+    var sources = [];
+    function adopted(root) {
+      var index = sources.length;
+      // The editor's own sheet stays out, except its rule hiding unfilled slots (they take no space).
+      sources.push(["[data-native-empty]{display:none !important}"].concat(Array.prototype.filter.call(root.adoptedStyleSheets || [], function (item) {
+        return item !== runtimeSheet && item !== viewportScrollbarSheet;
+      }).map(function (item) {
+        return Array.prototype.map.call(item.cssRules, function (rule) { return rule.cssText; }).join("\n");
+      })));
+      return index;
     }
-    var widths, facts = [], pageImages = [], large = false, at = 0;
-    function next() {
-      if (state.context !== context) { finish({ error: "The preview changed during image measurement." }); return; }
-      frame.style.setProperty("width", widths[at] + "px", "important");
-      frame.style.setProperty("height", (widths[at] === 390 ? 844 : 800) + "px", "important");
-      // Lay the frame out now so the child's viewport already has this width.
-      frame.getBoundingClientRect();
-      frame.contentWindow.postMessage({ source: HOST_SOURCE, type: "measure-image", id: msg.id, request: msg.request, width: widths[at] }, "*");
-    }
-    function receive(event) {
-      var data = event.data || {};
-      if (!frame || event.source !== frame.contentWindow || data.source !== FRAME_SOURCE || ended) return;
-      if (data.type === "ready") { next(); return; }
-      if (data.type !== "image-measured" || data.id !== msg.id) return;
-      if (data.report.error) { finish(data.report); return; }
-      facts.push(data.report.facts[0]);
-      large = large || data.report.large === true;
-      (data.report.images || []).forEach(function (image, i) {
-        if (!pageImages[i]) pageImages[i] = image;
-        else { pageImages[i].firstScreen = pageImages[i].firstScreen || image.firstScreen; pageImages[i].large = pageImages[i].large || image.large; }
+    adopted(document);
+    var originals = Array.prototype.slice.call(pageEl.querySelectorAll("img")).slice(0, 1000);
+    function clone(from) {
+      if (from.nodeType === 1 && (from.localName === "script" || from.localName === "base" || from.localName === "meta" && from.hasAttribute("http-equiv") || from.hasAttribute("data-native-selection-box"))) return null;
+      var to = doc.importNode(from, false);
+      if (to.nodeType === 1) {
+        Array.prototype.slice.call(to.attributes).forEach(function (attr) {
+          if (/^on/i.test(attr.name) || attr.name === "contenteditable" || /^data-native-measure-/.test(attr.name)) to.removeAttribute(attr.name);
+        });
+        if (to.localName === "img") {
+          to.loading = "eager";
+          if (originals.indexOf(from) >= 0) to.setAttribute("data-native-measure-node", JSON.stringify(elementIndexPath(from)));
+        }
+        // An embed keeps its box (it can push the image below the fold) but loads nothing.
+        if (to.localName === "iframe") {
+          to.removeAttribute("src");
+          to.removeAttribute("srcdoc");
+          to.setAttribute("sandbox", "");
+          return to;
+        }
+        if (from === target) to.setAttribute("data-native-measure-target", "");
+      }
+      Array.prototype.forEach.call(from.childNodes, function (child) {
+        var copy = clone(child);
+        if (copy) to.appendChild(copy);
       });
-      if (++at === widths.length) finish({ facts: facts, images: pageImages, large: large });
-      else next();
+      if (from.shadowRoot) {
+        to.setAttribute("data-native-measure-root", String(adopted(from.shadowRoot)));
+        var template = doc.createElement("template");
+        template.setAttribute("shadowrootmode", "open");
+        Array.prototype.forEach.call(from.shadowRoot.childNodes, function (child) {
+          var copy = clone(child);
+          if (copy) template.content.appendChild(copy);
+        });
+        to.prepend(template);
+      }
+      return to;
     }
-    try {
+    Array.prototype.forEach.call(document.documentElement.attributes, function (attr) { doc.documentElement.setAttribute(attr.name, attr.value); });
+    Array.prototype.forEach.call(document.body.attributes, function (attr) { doc.body.setAttribute(attr.name, attr.value); });
+    Array.prototype.forEach.call(document.head.children, function (el) {
+      var copy = clone(el);
+      if (copy) doc.head.appendChild(copy);
+    });
+    doc.body.appendChild(clone(document.getElementById("root")));
+    return { doc: doc, sources: sources };
+  }
+  // The hidden measuring frame of `copy`, whose runtime runs only its measuring branch with `config`.
+  function measuringFrame(copy, settings) {
+    var doc = copy.doc;
+    // Only the measurement branch of our runtime executes. JSON's '<'
+    // is escaped so site CSS cannot end the inert configuration element.
+    var config = doc.createElement("script");
+    config.id = "ase-image-measure";
+    config.type = "application/json";
+    config.textContent = JSON.stringify(settings).replace(/</g, "\\u003c");
+    doc.head.appendChild(config);
+    // Deferred scripts run in order: the picture's painter is there before the runtime asks for it.
+    if (settings.picture) {
+      var painter = doc.createElement("script");
+      painter.src = pictureUrl;
+      painter.defer = true;
+      doc.head.appendChild(painter);
+    }
+    var script = doc.createElement("script");
+    script.src = runtimeUrl;
+    script.defer = true;
+    doc.head.appendChild(script);
+    var frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.tabIndex = -1;
+    frame.style.cssText = "all:initial!important;position:fixed!important;inset-inline-start:-10000px!important;inset-block-start:0!important;border:0!important;padding:0!important;box-sizing:content-box!important;visibility:hidden!important;pointer-events:none!important";
+    frame.srcdoc = "<!doctype html>" + doc.documentElement.outerHTML;
+    return frame;
+  }
+
+  // A picture of the page shown for an agent (ticket am-14): its copy drawn `width` wide in a measuring frame
+  // (none: as wide as this preview), whose runtime paints it (src/agent-picture.ts): the element `node` (a
+  // section), else the first screen.
+  function takePicture(msg) {
+    var request = msg.request || {};
+    inMeasuringFrame(msg, true, function (context) {
+      if (!state || !pageEl) throw new Error("The preview is not showing a page yet.");
+      var target = request.node ? resolveNodePath({ path: request.path, node: request.node }) : null;
+      if (request.node && !target) throw new Error("No such section on the page shown.");
+      var copy = measuringCopy(target);
+      return measuringFrame(copy, { picture: true, id: msg.id, context: context, sheets: copy.sources });
+    }, function (report, post, finish) {
+      if (report) finish(report);
+      else post(request.width || innerWidth, request.height || innerHeight);
+    });
+  }
+
+  function measureImage(msg) {
+    var widths, facts = [], pageImages = [], large = false, at = 0;
+    inMeasuringFrame(msg, false, function (context) {
       var standin = msg.request.image, standinStyle = msg.request.style;
       if (standinStyle !== undefined && (typeof standinStyle !== "string" || standinStyle.length > 16384)) throw new Error("Invalid image style.");
       if (standin !== undefined && (!standin || Array.isArray(standin) || !Number.isFinite(standin.width) || standin.width <= 0 || standin.width > 100000 || !Number.isFinite(standin.height) || standin.height <= 0 || standin.height > 100000)) throw new Error("Invalid image size.");
@@ -3664,84 +3771,58 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       rootSheets(document);
       shadowRoots.forEach(rootSheets);
       widths = imageViewports(imageBreakpoints(conditions));
-      var doc = document.implementation.createHTMLDocument("");
-      var base = doc.createElement("base");
-      base.href = document.baseURI;
-      doc.head.appendChild(base);
-      var sources = [];
-      function adopted(root) {
-        var index = sources.length;
-        // The editor's own sheet stays out, except its rule hiding unfilled slots (they take no space).
-        sources.push(["[data-native-empty]{display:none !important}"].concat(Array.prototype.filter.call(root.adoptedStyleSheets || [], function (item) {
-          return item !== runtimeSheet && item !== viewportScrollbarSheet;
-        }).map(function (item) {
-          return Array.prototype.map.call(item.cssRules, function (rule) { return rule.cssText; }).join("\n");
-        })));
-        return index;
-      }
-      adopted(document);
-      var originals = Array.prototype.slice.call(pageEl.querySelectorAll("img")).slice(0, 1000);
-      function clone(from) {
-        if (from.nodeType === 1 && (from.localName === "script" || from.localName === "base" || from.localName === "meta" && from.hasAttribute("http-equiv") || from.hasAttribute("data-native-selection-box"))) return null;
-        var to = doc.importNode(from, false);
-        if (to.nodeType === 1) {
-          Array.prototype.slice.call(to.attributes).forEach(function (attr) {
-            if (/^on/i.test(attr.name) || attr.name === "contenteditable" || /^data-native-measure-/.test(attr.name)) to.removeAttribute(attr.name);
-          });
-          if (to.localName === "img") {
-            to.loading = "eager";
-            if (originals.indexOf(from) >= 0) to.setAttribute("data-native-measure-node", JSON.stringify(elementIndexPath(from)));
-          }
-          // An embed keeps its box (it can push the image below the fold) but loads nothing.
-          if (to.localName === "iframe") {
-            to.removeAttribute("src");
-            to.removeAttribute("srcdoc");
-            to.setAttribute("sandbox", "");
-            return to;
-          }
-          if (from === target) to.setAttribute("data-native-measure-target", "");
-        }
-        Array.prototype.forEach.call(from.childNodes, function (child) {
-          var copy = clone(child);
-          if (copy) to.appendChild(copy);
+      var copy = measuringCopy(target);
+      return measuringFrame(copy, { id: msg.id, context: context, sheets: copy.sources, image: standin, style: standinStyle, slot: typeof slotName === "string" });
+    }, function (report, post, finish) {
+      if (report) {
+        if (report.error) { finish(report); return; }
+        facts.push(report.facts[0]);
+        large = large || report.large === true;
+        (report.images || []).forEach(function (image, i) {
+          if (!pageImages[i]) pageImages[i] = image;
+          else { pageImages[i].firstScreen = pageImages[i].firstScreen || image.firstScreen; pageImages[i].large = pageImages[i].large || image.large; }
         });
-        if (from.shadowRoot) {
-          to.setAttribute("data-native-measure-root", String(adopted(from.shadowRoot)));
-          var template = doc.createElement("template");
-          template.setAttribute("shadowrootmode", "open");
-          Array.prototype.forEach.call(from.shadowRoot.childNodes, function (child) {
-            var copy = clone(child);
-            if (copy) template.content.appendChild(copy);
-          });
-          to.prepend(template);
-        }
-        return to;
+        if (++at === widths.length) { finish({ facts: facts, images: pageImages, large: large }); return; }
       }
-      Array.prototype.forEach.call(document.documentElement.attributes, function (attr) { doc.documentElement.setAttribute(attr.name, attr.value); });
-      Array.prototype.forEach.call(document.body.attributes, function (attr) { doc.body.setAttribute(attr.name, attr.value); });
-      Array.prototype.forEach.call(document.head.children, function (el) {
-        var copy = clone(el);
-        if (copy) doc.head.appendChild(copy);
-      });
-      doc.body.appendChild(clone(document.getElementById("root")));
-      // Only the measurement branch of our runtime executes. JSON's '<'
-      // is escaped so site CSS cannot end the inert configuration element.
-      var config = doc.createElement("script");
-      config.id = "ase-image-measure";
-      config.type = "application/json";
-      config.textContent = JSON.stringify({ id: msg.id, context: context, sheets: sources, image: standin, style: standinStyle, slot: typeof slotName === "string" }).replace(/</g, "\\u003c");
-      doc.head.appendChild(config);
-      var script = doc.createElement("script");
-      script.src = runtimeUrl;
-      script.defer = true;
-      doc.head.appendChild(script);
-      frame = document.createElement("iframe");
-      frame.setAttribute("aria-hidden", "true");
-      frame.tabIndex = -1;
-      frame.style.cssText = "all:initial!important;position:fixed!important;inset-inline-start:-10000px!important;inset-block-start:0!important;border:0!important;padding:0!important;box-sizing:content-box!important;visibility:hidden!important;pointer-events:none!important";
+      post(widths[at], widths[at] === 390 ? 844 : 800);
+    });
+  }
+
+  // One run of a measuring frame, a page picture's or image measurement's: `start` makes the frame for the
+  // render shown now. On its `ready` and on each answer (`report`), `step` lays it out and asks again (`post`), or
+  // ends the run (`finish`): the answer, stamped with that render even if a new one arrived meanwhile, goes to the
+  // host. A new render before an ask, or the timeout, ends it with an error.
+  function inMeasuringFrame(msg, picture, start, step) {
+    var frame = null, timer = 0, ended = false, context = state && state.context;
+    function finish(report) {
+      if (ended) return;
+      ended = true;
+      clearTimeout(timer);
+      window.removeEventListener("message", receive);
+      if (frame) frame.remove();
+      var answer = { id: msg.id, context: context, report: report };
+      if (picture) emit("picture-result", answer);
+      else emit("image-measured", answer);
+    }
+    function post(width, height) {
+      if (state.context !== context) { finish({ error: picture ? "The preview changed while it was pictured. Try again." : "The preview changed during image measurement." }); return; }
+      frame.style.setProperty("width", width + "px", "important");
+      frame.style.setProperty("height", height + "px", "important");
+      // Lay the frame out now so the child's viewport already has this width.
+      frame.getBoundingClientRect();
+      frame.contentWindow.postMessage({ source: HOST_SOURCE, type: picture ? "picture" : "measure-image", id: msg.id, request: msg.request, width: width }, "*");
+    }
+    function receive(event) {
+      var data = event.data || {};
+      if (!frame || event.source !== frame.contentWindow || data.source !== FRAME_SOURCE || ended) return;
+      if (data.type === "ready") step(null, post, finish);
+      else if (data.type === (picture ? "picture-result" : "image-measured") && data.id === msg.id) step(data.report, post, finish);
+    }
+    try {
+      frame = start(context);
       window.addEventListener("message", receive);
-      timer = setTimeout(function () { finish({ error: "Image measurement timed out waiting for the measuring frame." }); }, 6000);
-      frame.srcdoc = "<!doctype html>" + doc.documentElement.outerHTML;
+      // A picture's is within the host's 5.5 s ask (native-preview.ts `picture`), so its own error reaches the agent.
+      timer = setTimeout(function () { finish({ error: picture ? "The picture timed out waiting for the page to draw." : "Image measurement timed out waiting for the measuring frame." }); }, picture ? 5000 : 6000);
       document.body.appendChild(frame);
     } catch (error) { finish({ error: String(error && error.message || error) }); }
   }
@@ -4285,6 +4366,10 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     }
     if (msg.type === "inspect") {
       inspectWhenSettled(msg);
+      return;
+    }
+    if (msg.type === "picture") {
+      takePicture(msg);
       return;
     }
     // Kept (drawn again after renders) until the host ends or drops it.
