@@ -9,8 +9,9 @@
 // same-named page of another workspace. An agent the user stopped (ticket am-12) shows nowhere again.
 // An agent working through a pin on the page (ticket am-13) wears its chip on the pin alone: its outline
 // there has none (`pinned`). A pin only a wait took (ticket am-45) shows the taker when it began a change lately
-// or is its connection's only agent heard lately; else no one until one reads or replies (`onPin`). Once named,
-// a take keeps its name, unless that agent is stopped.
+// or is its connection's only agent heard lately; else the one other agent heard there (a watchdog's main agent);
+// with several, no one until one reads or replies (`onPin`). Once named, a take keeps its name, unless that agent
+// is stopped.
 
 import { outlineId, parseOutlineId, type AgentWho } from "../shared/agent";
 import type { AgentAtWork } from "../shared/agent-read";
@@ -77,10 +78,10 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     const key = keyOf(who), time = now(), workedAt = works ? time : heard.get(key)?.workedAt;
     heard.set(key, { who, time, ...(workedAt !== undefined ? { workedAt } : {}) });
   };
-  // The agent each pin an agent works through shows, by request; and for one a wait took, the taker it was named
-  // after (its key): kept while that take holds, so another agent heard since on its connection does not unname it.
+  // The agent each pin an agent works through shows, by request; and for one a wait took, its taker (key) and the
+  // agent it was named after: kept while that take holds, so another agent heard since does not rename it.
   let onPins = new Map<string, AgentWho>();
-  const named = new Map<string, string>();
+  const named = new Map<string, { took: string; who: AgentWho }>();
   // Each agent's place in the order of arrival, for the session (a few names each, never cleared): its colour.
   const arrivals = new Map<string, number>();
   // Each agent's latest change, as get_site tells it: held to its site and branch (a reload keeps it), as questions are.
@@ -96,16 +97,23 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     if (!arrivals.has(key)) arrivals.set(key, arrivals.size);
     return key;
   };
-  /** Whom the pin of request `id`, taken by `taker`'s wait, names (ticket am-45): the taker when it began a change
-   * in the last AT_WORK_MS, when no other agent of its connection was heard in that time, or when this take was
-   * named after it before; never once it is stopped (am-12); else no one (until one reads it or replies). */
+  /** Whom the pin of request `id`, taken by `taker`'s wait, names (ticket am-45): the taker when it began a change in
+   * the last AT_WORK_MS; else the agent this take was named after before; else the taker when no other agent of its
+   * connection was heard in that time; else that connection's one other agent heard (the main agent a watchdog waits for), or of
+   * several, the one that began a change lately. Never a stopped agent (am-12); else no one (until one reads or replies). */
   const takenBy = (id: string, taker: AgentWho) => {
     const took = keyOf(taker), time = now(), lately = (at?: number) => at !== undefined && time - at <= AT_WORK_MS;
-    const others = [...heard].some(([key, agent]) => key !== took && agent.who.grant === taker.grant && lately(agent.time) && !stopped(agent.who));
-    const names = !stopped(taker) && (lately(heard.get(took)?.workedAt) || !others || named.get(id) === took);
-    if (names) named.set(id, took);
+    const before = named.get(id), works = !stopped(taker) && lately(heard.get(took)?.workedAt);
+    if (!works && before?.took === took && !stopped(before.who)) return before.who;
+    const others = [...heard].flatMap(([key, agent]) => key !== took && agent.who.grant === taker.grant && lately(agent.time) && !stopped(agent.who) ? [agent] : []);
+    const working = others.filter(agent => lately(agent.workedAt));
+    const who = stopped(taker) ? undefined
+      : works || !others.length ? taker
+      : others.length === 1 ? others[0].who
+      : working.length === 1 ? working[0].who : undefined;
+    if (who) named.set(id, { took, who });
     else named.delete(id);
-    return names ? taker : undefined;
+    return who;
   };
   const isPage = (path: string) => [...ports.pages()].includes(path);
   // The section a question's element is in, in its page's text now: where its agent shows, and what get_site tells.
