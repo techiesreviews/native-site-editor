@@ -5,7 +5,7 @@
 // images no mock-up uses (reference screenshots for planning) stay unpublished. Each mock-up on the
 // index carries a label saying how far the build tickets linking to it have got (`mockupShipping`).
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type { Plugin } from "vite";
 
@@ -67,7 +67,8 @@ export function mockupTitle(html: string, file: string): string {
   return title || file;
 }
 
-/** A build ticket (`docs/wayfinder/<map>/build/tickets/*.md`) and the mock-ups it links to, as `<map>/<file>`. */
+/** A build ticket, its `path` from the repo root (`docs/wayfinder/<map>/build/tickets/*.md`), and the mock-ups it
+ * links to, as `<map>/<file>`. */
 export type BuildTicket = { map: string; name: string; path: string; closed: boolean; claimed: boolean; mockups: string[] };
 
 /** What a mock-up's label says, and what the legend says it means. */
@@ -106,14 +107,16 @@ export function buildTickets(root: string, mockups: readonly Mockup[]): BuildTic
         if (key) linked.add(key);
       }
       if (!linked.size) return [];
-      return [{ map, name: /^\d+/.exec(file)?.[0] ?? file.slice(0, -3), path, closed: field("status") === "closed", claimed: field("assignee") !== "", mockups: [...linked] }];
+      return [{ map, name: /^\d+/.exec(file)?.[0] ?? file.slice(0, -3), path: `docs/wayfinder/${map}/build/tickets/${file}`, closed: field("status") === "closed", claimed: field("assignee") !== "", mockups: [...linked] }];
     });
   });
 }
 
-/** The build tickets (absolute paths) whose closing commit, the newest one adding their `status: closed`
- * line, is on `origin/main` (or a local `main`), so their work is released; undefined when git or `main`
- * can't be read, as in a shallow clone. */
+/** The build tickets (paths from `root`, as in `BuildTicket`) whose closing commit, the newest one adding
+ * their `status: closed` line, is on `origin/main` (or, without it, a local `main`), so their work is released.
+ * A commit counts by its id or, rewritten by a rebase merge, by its author time and subject. A ticket moved or
+ * renamed since keeps its closing commit. Undefined when git or `main` can't be read, as in
+ * a shallow clone; `origin/main` is as fresh as the last fetch of `main`. */
 export function ticketsOnMain(root: string): ReadonlySet<string> | undefined {
   const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 28 });
   let top: string, main: Set<string>, log: string;
@@ -121,19 +124,30 @@ export function ticketsOnMain(root: string): ReadonlySet<string> | undefined {
     const ref = ["origin/main", "main"].find(name => { try { return Boolean(git("rev-parse", "--verify", "--quiet", `${name}^{commit}`)); } catch { return false; } });
     if (!ref) return undefined;
     top = git("rev-parse", "--show-toplevel").trim();
-    main = new Set(git("rev-list", ref).split("\n"));
-    log = git("log", "-p", "--unified=0", "--no-color", "--no-ext-diff", "--format=commit %H", "-G^status:[[:space:]]*closed", "--", "docs/wayfinder/*/build/tickets/*.md");
+    main = new Set(git("log", "--format=%H%n%at %s", ref).split("\n"));
+    // Every change under docs/wayfinder, newest first, so renames are seen before the older commits they affect.
+    log = git("log", "-p", "-M", "--unified=0", "--no-color", "--no-ext-diff", "--format=commit %H%nsubject %at %s", "--", "docs/wayfinder");
   } catch {
     return undefined;
   }
-  const closing = new Map<string, string>();
-  let commit = "", file = "";
+  /** A ticket's path today, and its closing commit's id and `<author time> <subject>`. */
+  const closing = new Map<string, string[]>();
+  /** An older path of a ticket, mapped to its path today. */
+  const renamed = new Map<string, string>();
+  let commit: string[] = [], file = "", from = "";
   for (const line of log.split("\n")) {
-    if (line.startsWith("commit ")) commit = line.slice(7);
+    if (line.startsWith("commit ")) commit = [line.slice(7)];
+    else if (line.startsWith("subject ")) commit.push(line.slice(8));
+    else if (line.startsWith("rename from ")) from = line.slice(12);
+    else if (line.startsWith("rename to ")) renamed.set(from, renamed.get(line.slice(10)) ?? line.slice(10));
     else if (line.startsWith("+++ ")) file = line.slice(4).replace(/^b\//, "");
-    else if (/^\+status:\s*closed\s*$/.test(line) && !closing.has(file)) closing.set(file, commit);
+    else if (/^\+status:\s*closed\s*$/.test(line)) {
+      const today = renamed.get(file) ?? file;
+      if (!closing.has(today)) closing.set(today, commit);
+    }
   }
-  return new Set([...closing].filter(([, sha]) => main.has(sha)).map(([path]) => resolve(top, path)));
+  const base = realpathSync(root);
+  return new Set([...closing].filter(([, ids]) => ids.some(id => main.has(id))).map(([path]) => relative(base, resolve(top, path)).split("\\").join("/")));
 }
 
 /** Each HTML mock-up's label from the build tickets linking to it: Live when all are closed and on `main`
@@ -163,7 +177,10 @@ function shippingBadge(map: string, { label, tickets }: Shipping): string {
 }
 
 /** The index page: a legend of the labels, then one section per map, one link per HTML mock-up with its label. */
-export function mockupIndex(mockups: readonly Mockup[], read: (path: string) => string = path => readFileSync(path, "utf8"), shipping: ReadonlyMap<string, Shipping> = new Map()): string {
+export function mockupIndex(mockups: readonly Mockup[], { read = path => readFileSync(path, "utf8"), shipping = new Map() }: {
+  read?: (path: string) => string;
+  shipping?: ReadonlyMap<string, Shipping>;
+} = {}): string {
   const maps = new Map<string, Mockup[]>();
   for (const mockup of mockups) {
     if (!mockup.file.endsWith(".html")) continue;
@@ -235,7 +252,7 @@ export function mockups(root: string): Plugin {
       const files = mockupFiles(root);
       for (const { map, file, path } of files) this.emitFile({ type: "asset", fileName: `mockups/${map}/${file}`, source: readFileSync(path) });
       const shipping = mockupShipping(files, buildTickets(root, files), ticketsOnMain(root));
-      this.emitFile({ type: "asset", fileName: "mockups/index.html", source: mockupIndex(files, undefined, shipping) });
+      this.emitFile({ type: "asset", fileName: "mockups/index.html", source: mockupIndex(files, { shipping }) });
     },
     // After Vite has copied public/_headers into the output folder; once, even across watch rebuilds.
     writeBundle({ dir }) {
