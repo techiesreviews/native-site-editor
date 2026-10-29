@@ -268,3 +268,33 @@ console.log(first, kitHomeFolder(), kitHomeFolder({ ...process.env }));`;
   // The process keeps its first kit; an explicit environment is looked up as given.
   assert.equal(result.stdout, `${one} ${one} ${two}\n`);
 });
+
+test("without any kit this editor's own commands end with the launcher's RESULT line, never a stack trace", (t) => {
+  const directory = temp(t);
+  const { KIT_HOME: _home, KIT_HOME_DEFAULT: _default, KIT_HOME_PINNED: _pinned, KIT_LIB_MJS: _mjs, KIT_LIB: _lib, ...rest } = process.env;
+  const env = { ...rest, XDG_DATA_HOME: join(directory, "data"), XDG_CACHE_HOME: join(directory, "cache"), KIT_REPO: `file://${join(directory, "none.git")}` };
+  for (const name of ["size", "specs", "preview", "shots"]) {
+    const result = spawnSync(resolve("scripts/agents/project.d", name), ["--help"], { env, encoding: "utf8", timeout: 60_000 });
+    assert.equal(result.status, 2, `${name}: ${result.stdout}${result.stderr}`);
+    assert.match(result.stdout, /^RESULT: fail no Agent Kit at /m, name);
+    assert.doesNotMatch(result.stderr, /^\s+at /m, name);
+  }
+});
+
+test("kit shots without KIT_LIB sources the bash library of the kit the launcher picks", (t) => {
+  const fake = temp(t);
+  writeFileSync(join(fake, "kit"), "#!/usr/bin/env bash\n"); chmodSync(join(fake, "kit"), 0o755);
+  writeFileSync(join(fake, "kit-lib.sh"), 'kit_node() { printf "fake kit library\\n"; exit 0; }\n');
+  const { KIT_LIB: _lib, ...env } = process.env;
+  const result = spawnSync(resolve("scripts/agents/project.d/shots"), ["--help"], { env: { ...env, KIT_HOME: fake }, encoding: "utf8" });
+  assert.deepEqual([result.status, result.stdout], [0, "fake kit library\n"]);
+});
+
+test("the launcher answers --home alone and hands --home with more arguments to the kit's front door", (t) => {
+  const fake = temp(t);
+  writeFileSync(join(fake, "kit"), '#!/usr/bin/env bash\nprintf "front door %s\\n" "$*"\n'); chmodSync(join(fake, "kit"), 0o755);
+  writeFileSync(join(fake, "kit-lib.sh"), "");
+  const env = { ...process.env, KIT_HOME: fake };
+  assert.equal(spawnSync(kit, ["--home"], { env, encoding: "utf8" }).stdout, `${fake}\n`);
+  assert.equal(spawnSync(kit, ["--home", "x"], { env, encoding: "utf8" }).stdout, "front door --home x\n");
+});

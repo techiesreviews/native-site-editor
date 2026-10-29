@@ -7,10 +7,10 @@ import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 // The shared kit library comes from the kit this command runs in (KIT_HOME), never from this project.
-import { kitLibrary } from "../kit-home.mjs";
+import { kitLibraryOrExit } from "../kit-home.mjs";
 
 const { kitMainRoot, kitJobGroup, kitResult, nodeEnv } = await import(
-  pathToFileURL(kitLibrary()).href
+  pathToFileURL(kitLibraryOrExit()).href
 );
 const usage = "Usage: kit preview [--dry-run] [--help]\nDeploy origin/dev from a detached worktree; --dry-run only prepares the worktree.\nASE_PREVIEW_TIMEOUT: positive integer seconds or s/m/h (at most 2147483 seconds).\nDefaults: git 2m, deploy 10m, verification 2m; expiry kills the step's process group.\n";
 

@@ -7,10 +7,10 @@ import { pathToFileURL } from "node:url";
 import { BUILDER_SPEC_CAP, builderSpecs, combineOutcomes, graphFile, namedSpecs, routeSpecs, selectAffected, selectionLine, SHARD_MIN_SPECS, shardCount, specGroups, summarizeRun, ticketSpecs } from "../specs-affected.mjs";
 import { specsDigest } from "../specs-digest.mjs";
 // The shared kit library comes from the kit this command runs in (KIT_HOME), never from this project.
-import { kitLibrary } from "../kit-home.mjs";
+import { kitLibraryOrExit } from "../kit-home.mjs";
 
 const { kitRoot, kitOwner, kitResult, nodeEnv } = await import(
-  pathToFileURL(kitLibrary()).href
+  pathToFileURL(kitLibraryOrExit()).href
 );
 const usage = `Usage: kit specs <spec…> [--list]
        kit specs --affected [--base REF] [--list]
