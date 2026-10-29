@@ -302,6 +302,16 @@ test("a copy added elsewhere since the read is refused with no part, so a retry 
   }
 });
 
+test("a recount in a later replacement names that replacement, with no part", async () => {
+  const { context, files: site } = await withHome(read.replace("<h1>Welcome</h1>", "<h1>Welcome</h1>\n    <p>Welcome</p>"));
+  const expectedHash = await textHash(read);
+  const clash = await prepareAgentEdit(edit({ path: "index.html", expectedHash, edits: [{ oldText: "Fast", newText: "Quick" }, { oldText: "Welcome", newText: "Hi" }] }), context, site,
+    hash => hash === expectedHash ? read : undefined).then(() => assert.fail("must clash"), (error: unknown) => error);
+  assert.ok(clash instanceof PartClash);
+  assert.equal(clash.part, undefined);
+  assert.match(clash.message, /^The words replacement 2 changes are in index\.html a different number of times/);
+});
+
 test("a copy removed since the read is refused with no part too: the first copy read may be the one left unchanged", async () => {
   const twice = read.replace("<h1>Welcome</h1>", "<h1>Welcome</h1>\n    <p>Welcome</p>");
   const { context, files: site } = await withHome(read);

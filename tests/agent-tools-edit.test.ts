@@ -423,6 +423,35 @@ test("a stale page command prepared again after a race keeps its read too, thoug
   assert.deepEqual(ran[1].args, { section: "1.2" });
 });
 
+test("a stale edit_file prepared again after a race keeps its read too: an edit with all still lands on the text now", async () => {
+  const f = await fixture(), read = files["index.html"], now = read.replace(">Fast<", ">Rapid<");
+  const newer = now.replace("<main>\n", "<main>\n  <section>Added</section>\n");
+  const draft = async (text: string) => {
+    f.context.drafts = f.context.drafts.filter(item => item.path !== "index.html");
+    f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(text), content: text });
+  };
+  // The agent's read is the oldest text the tab keeps, at its cap; keeping the text now lets it go.
+  rememberText(await textHash(read), read);
+  for (let i = 0; i < READ_TEXTS - 1; i++) rememberText(`edit-race-full-${i}`, String(i));
+  await draft(now);
+  const ran: AgentCommand[] = [];
+  let race = true;
+  const tools = createAgentEditTools({ workspace, records: f.records, ports: f.ports, run: async command => {
+    ran.push({ ...command });
+    if (race) {
+      race = false;
+      await draft(newer);
+      throw new Error("index.html changed in the editor since it was read. Read it again. Nothing was changed; your drafts are as they were.");
+    }
+    return { message: "Applied.", result: { path: command.path } };
+  } });
+  await tools.run(request("edit_file", { path: "index.html", expectedHash: await textHash(read), edits: [{ oldText: "Welcome", newText: "Hi", all: true }] }, "race-edit"), 0, () => true);
+  assert.equal(readText(await textHash(read)), undefined, "the tab let the read go");
+  assert.equal(ran.length, 2);
+  assert.equal(ran[1].expectedHash, await textHash(newer));
+  assert.equal(ran[1].content, newer.replace("Welcome", "Hi"));
+});
+
 test("duplicate edit_file joins in flight and returns the receipt before re-reading a changed hash", async () => {
   const f = await fixture(), hold = deferred<void>();
   f.hold(hold.promise);
