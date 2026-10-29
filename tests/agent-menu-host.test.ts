@@ -67,7 +67,7 @@ function setup(options: { draftScope?: () => DraftScope | undefined } = {}) {
     setupController: { noteAgent: record("noteAgent") }, pageStructureController: { renderEditBar: record("renderEditBar") },
     mediaPorts: { pin: () => { pins.push("pin"); return PIN; } },
     workspace: { activeFileContext: null, repositoryMenu: { setQuestions: record("questions"), close: record("close menu") } },
-    agentPresence: { questions: record("questioned"), onPin: (id: string) => ON_PIN.get(id), colour: (who: AgentWho) => { calls.push(`colour ${who.name}`); return 2; }, atWork: () => [{ name: "Copy editor", file: "index.html", section: "1.0" }], agents: () => [], stop: () => {}, stopped: () => false, listen: () => () => {} },
+    agentPresence: { questions: record("questioned"), onPin: (id: string) => ON_PIN.get(id), colour: (who: AgentWho) => { calls.push(`colour ${who.name}`); return 2; }, atWork: () => [{ name: "Copy editor", file: "index.html", section: "1.0" }], agents: () => [], stop: () => {}, stopped: () => false, heard: () => {}, listen: () => () => {} },
     nativeTextIndexGate: { key: () => "k", indexed: () => late.indexed, settled: async () => true, ensure: async () => { calls.push("index"); late.indexed = true; return undefined; } },
     get info() { return late.info; },
     get nativePreview() { return late.preview ? { route: () => "/", setRequests: record("requests"), showRequest: record("show") } : undefined; },

@@ -4,6 +4,7 @@
 import { imageBreakpoints, imageViewports } from "../page-builder/image-sizes.ts";
 import { canvasPath, canvasRoute } from "./canvas-path.ts";
 import { FRAME_SOURCE, HOST_SOURCE } from "./preview-wire.ts";
+import { clearAbove as clearOver } from "./agent-pin-geometry.ts";
 import { canvasGesture } from "../page-builder/rules/canvas-gesture.ts";
 import { hasHeadingSlot, isCardSlot, isCardTag, isItemsSlot } from "../page-builder/rules/cards.ts";
 import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts";
@@ -1834,10 +1835,13 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     for (var at = inner; at; at = at.parentElement || (at.parentNode && at.parentNode.host)) if (at === outer) return true;
     return false;
   }
-  // The selected element's rectangle, with the top inset the bar keeps clear of.
+  // The selected element's rectangle, with the top inset the bar keeps clear of, and (as a pin's) the top of
+  // what stands just above it, which Ask agent's note stands clear of as its pins do.
   function selectionRectOf(el) {
     var rect = rectOf(el);
     rect.inset = topInset(el);
+    var clear = clearAbove(el, rect);
+    if (clear !== undefined) rect.clear = clear;
     return rect;
   }
 
@@ -1943,19 +1947,15 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     }
     return el;
   }
-  // A row of pins stands this far above its element (agent-pin-geometry.ts: NOTE_GAP, PIN_HEIGHT and the gap again).
-  var PIN_ROOM = 30;
-  // The top of the earlier siblings stacked over `el` closer than a row of pins (an eyebrow line over a heading,
-  // ticket am-45): its pins stand clear of them. Siblings beside it or hidden do not count.
+  // The top of what stands just above `el` (ticket am-45: an eyebrow line over a heading), from its earlier
+  // siblings, nearest first, measured only as far as the rule reads them: its pins stand clear of it.
   function clearAbove(el, rect) {
-    var top = rect.top;
-    for (var at = el.previousElementSibling; at; at = at.previousElementSibling) {
-      var box = at.getBoundingClientRect();
-      if (!box.width || !box.height || box.top >= rect.top || box.right <= rect.left || box.left >= rect.right) continue;
-      if (box.bottom <= top - PIN_ROOM) break;
-      top = Math.min(top, box.top);
-    }
-    return top;
+    var earlier = {};
+    earlier[Symbol.iterator] = function () {
+      var at = el;
+      return { next: function () { at = at && at.previousElementSibling; return at ? { done: false, value: at.getBoundingClientRect() } : { done: true, value: undefined }; } };
+    };
+    return clearOver(rect, earlier);
   }
   function schedulePins() {
     if (pinFrame || !pins.length && !lastPins) return;
@@ -1965,7 +1965,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
         var el = locatePin(pin);
         var rect = el && el.isConnected ? rectOf(el) : null;
         var clear = rect ? clearAbove(el, rect) : undefined;
-        if (clear !== undefined && clear < rect.top) rect.clear = clear;
+        if (clear !== undefined) rect.clear = clear;
         return { id: pin.id, rect: rect && (rect.width || rect.height) ? rect : null };
       });
       var key = JSON.stringify(rects);
