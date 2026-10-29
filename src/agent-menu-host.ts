@@ -107,9 +107,9 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
       // Ask agent shows in the edit bar while an agent is connected.
       onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
       // A pin an agent works on wears its colour, the one its outline and dots have (ticket am-13), and a pin a wait
-      // took the agent presence names for it (ticket am-45: its connection's agent, the taker only when it works or
-      // is alone there). Only those: asking for a colour gives an agent its place in the order of arrival, which those
-      // of earlier sessions (on finished requests) and a watchdog that only took one for its connection's agent must not take.
+      // took the agent presence names for it (ticket am-45: the taker, when it works or is alone on its connection).
+      // Only those: asking for a colour gives an agent its place in the order of arrival, which those of earlier
+      // sessions (on finished requests) and a watchdog that only took one among its connection's agents must not take.
       onRequests: (requests) => {
         agentPresence.questions(requests);
         ports.nativePreview?.setRequests(requests.map(({ agentTook, ...request }) => {

@@ -34,6 +34,6 @@ test("what stands just above an element is its earlier siblings stacked over it 
   assert.equal(clearAbove(heading, [box(270, 20, heading.right + 10, 40)]), undefined);
   assert.equal(clearAbove(heading, [box(270, 0)]), undefined);
   assert.equal(clearAbove(heading, [box(0, 600, 0, 400)]), undefined);
-  // A tall block ending just above it would lift the pins further than two rows: none, they stay near.
-  assert.equal(clearAbove(heading, [box(300 - PIN_ROOM * 3, PIN_ROOM * 3 - 10)]), undefined);
+  // A tall block ending just above it (a two-line lead): its top, however high; the pins never cover its text.
+  assert.equal(clearAbove(heading, [box(300 - PIN_ROOM * 3, PIN_ROOM * 3 - 10)]), 300 - PIN_ROOM * 3);
 });

@@ -4,7 +4,7 @@
 import { imageBreakpoints, imageViewports } from "../page-builder/image-sizes.ts";
 import { canvasPath, canvasRoute } from "./canvas-path.ts";
 import { FRAME_SOURCE, HOST_SOURCE } from "./preview-wire.ts";
-import { clearAbove as clearOver } from "./agent-pin-geometry.ts";
+import { clearAbove } from "./agent-pin-geometry.ts";
 import { canvasGesture } from "../page-builder/rules/canvas-gesture.ts";
 import { hasHeadingSlot, isCardSlot, isCardTag, isItemsSlot } from "../page-builder/rules/cards.ts";
 import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts";
@@ -1840,7 +1840,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   function selectionRectOf(el) {
     var rect = rectOf(el);
     rect.inset = topInset(el);
-    var clear = clearAbove(el, rect);
+    var clear = clearAboveEl(el, rect);
     if (clear !== undefined) rect.clear = clear;
     return rect;
   }
@@ -1949,13 +1949,10 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   }
   // The top of what stands just above `el` (ticket am-45: an eyebrow line over a heading), from its earlier
   // siblings, nearest first, measured only as far as the rule reads them: its pins stand clear of it.
-  function clearAbove(el, rect) {
-    var earlier = {};
-    earlier[Symbol.iterator] = function () {
-      var at = el;
-      return { next: function () { at = at && at.previousElementSibling; return at ? { done: false, value: at.getBoundingClientRect() } : { done: true, value: undefined }; } };
-    };
-    return clearOver(rect, earlier);
+  function clearAboveEl(el, rect) {
+    return clearAbove(rect, (function* () {
+      for (var at = el.previousElementSibling; at; at = at.previousElementSibling) yield at.getBoundingClientRect();
+    })());
   }
   function schedulePins() {
     if (pinFrame || !pins.length && !lastPins) return;
@@ -1964,7 +1961,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       var rects = pins.map(function (pin) {
         var el = locatePin(pin);
         var rect = el && el.isConnected ? rectOf(el) : null;
-        var clear = rect ? clearAbove(el, rect) : undefined;
+        var clear = rect ? clearAboveEl(el, rect) : undefined;
         if (clear !== undefined) rect.clear = clear;
         return { id: pin.id, rect: rect && (rect.width || rect.height) ? rect : null };
       });
