@@ -180,7 +180,8 @@ test("without any kit the forwarders fail with the launcher's RESULT line", (t) 
   const directory = temp(t);
   const { KIT_HOME: _home, KIT_HOME_DEFAULT: _default, KIT_HOME_PINNED: _pinned, ...rest } = process.env;
   const env = { ...rest, XDG_DATA_HOME: join(directory, "data"), XDG_CACHE_HOME: join(directory, "cache"), KIT_REPO: `file://${join(directory, "none.git")}` };
-  for (const [command, args] of [[resolve("scripts/agents/unit.sh"), []], [process.execPath, [resolve("scripts/agents/tickets.mjs"), "check"]]] as const) {
+  const forwarders = ["agent.sh", "unit.sh", "worktree.sh", "worktrees.sh"].map(name => [resolve("scripts/agents", name), [] as string[]] as const);
+  for (const [command, args] of [...forwarders, [process.execPath, [resolve("scripts/agents/tickets.mjs"), "check"]]] as const) {
     const result = spawnSync(command, [...args], { env, encoding: "utf8", timeout: 60_000 });
     assert.equal(result.status, 2, result.stdout + result.stderr);
     assert.match(result.stdout, /^RESULT: fail no Agent Kit at .*\(no machine copy; cannot clone file:\/\//m);
@@ -188,8 +189,7 @@ test("without any kit the forwarders fail with the launcher's RESULT line", (t) 
 });
 
 test("the shots base cache key changes with the kit's library", (t) => {
-  const directory = temp(t), before = process.env.KIT_HOME;
-  t.after(() => { if (before === undefined) delete process.env.KIT_HOME; else process.env.KIT_HOME = before; });
+  const directory = temp(t);
   const copy = (name: string, library: string) => {
     const kitFolder = join(directory, name);
     mkdirSync(kitFolder);
@@ -200,10 +200,39 @@ test("the shots base cache key changes with the kit's library", (t) => {
   };
   const one = copy("one", "export const a = 1;\n"), two = copy("two", "export const a = 2;\n");
   return (async () => {
-    process.env.KIT_HOME = one;
-    const first = await toolingHash(resolve("."));
-    assert.equal(await toolingHash(resolve(".")), first);
-    process.env.KIT_HOME = two;
-    assert.notEqual(await toolingHash(resolve(".")), first);
+    const first = await toolingHash(resolve("."), one);
+    assert.equal(await toolingHash(resolve("."), one), first);
+    assert.notEqual(await toolingHash(resolve("."), two), first);
   })();
+});
+
+test("KIT_LIB_MJS wins for this editor's own commands: only that library loads", (t) => {
+  const directory = temp(t), stub = join(directory, "stub.mjs"), fake = join(directory, "kit"), loaded = join(directory, "loaded");
+  writeFileSync(stub, `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(loaded)}, "stub\\n");\n` +
+    `export * from ${JSON.stringify(pathToFileURL(join(home, "kit-lib.mjs")).href)};\n`);
+  mkdirSync(fake);
+  writeFileSync(join(fake, "kit"), "#!/usr/bin/env bash\n"); chmodSync(join(fake, "kit"), 0o755);
+  writeFileSync(join(fake, "kit-lib.sh"), "");
+  writeFileSync(join(fake, "kit-lib.mjs"), 'throw new Error("the picked kit library loaded");\n');
+  for (const name of ["size", "specs", "preview"]) {
+    const result = spawnSync(process.execPath, [resolve("scripts/agents/project.d", name), "--help"],
+      { env: { ...process.env, KIT_HOME: fake, KIT_LIB_MJS: stub }, encoding: "utf8", timeout: 60_000 });
+    assert.equal(result.status, 0, `${name}: ${result.stdout}${result.stderr}`);
+    assert.match(result.stdout, new RegExp(`^Usage: kit ${name}`), name);
+  }
+  assert.ok(readFileSync(loaded, "utf8").split("\n").filter(Boolean).length >= 3);
+});
+
+test("a pinned KIT_HOME that kit update removed is picked again for this editor's helpers", (t) => {
+  const directory = temp(t), data = join(directory, "data"), fake = join(data, "agent-kit", "newer");
+  mkdirSync(fake, { recursive: true });
+  writeFileSync(join(fake, "kit"), "#!/usr/bin/env bash\n"); chmodSync(join(fake, "kit"), 0o755);
+  writeFileSync(join(fake, "kit-lib.sh"), "");
+  spawnSync("ln", ["-s", "newer", join(data, "agent-kit/current")]);
+  const removed = join(directory, "removed-kit");
+  const env = { ...process.env, XDG_DATA_HOME: data, KIT_HOME: removed, KIT_HOME_PINNED: removed };
+  assert.equal(kitHomeFolder(env), fake);
+  // A person's KIT_HOME (no marker) that holds no kit still fails plainly.
+  const { KIT_HOME_PINNED: _pinned, ...person } = env;
+  assert.throws(() => kitHomeFolder(person), /RESULT: fail no Agent Kit at .*removed-kit/);
 });
