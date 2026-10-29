@@ -77,6 +77,10 @@ test("docked: a selection in view above the bar needs no scroll", () => {
   assert.equal(dockScroll({ ...room, selectionTop: 500, selectionBottom: 592 }), 0);
 });
 
+test("docked: a selection wholly above the view needs no scroll", () => {
+  assert.equal(dockScroll({ ...room, selectionTop: -120, selectionBottom: -40 }), 0);
+});
+
 test("docked: a selection behind the bar or keyboard scrolls just into view 8 px above it", () => {
   assert.equal(dockScroll({ ...room, selectionTop: 560, selectionBottom: 620 }), 28);
   // Wholly under the keyboard.

@@ -298,24 +298,50 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await expect(bar(page)).toBeHidden();
 });
 
+type Boxed = { boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> };
+const box = async (locator: Boxed) => (await locator.boundingBox())!;
+// The editor's own toast module (the one the app loaded), as a background job would show one.
+const showToast = (page: Page, text: string) => page.evaluate(async (words) => (await import("/src/components/toast.ts")).showToast(words), text);
+
+test.describe("on a desktop window with the 390 px device frame", () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  test("the bar stays by the selection, not docked", async ({ page }) => {
+    await page.getByRole("button", { name: "Mobile, 390 px" }).click();
+    const heading = page.frameLocator(".native-preview-frame").locator(".hero h1");
+    await expect(heading).toBeVisible();
+    await expect.poll(async () => Math.round((await box(page.locator(".native-preview-frame"))).width)).toBe(390);
+    await heading.click();
+    await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
+    await expect(bar(page)).toHaveAttribute("data-side", /^(above|below|pinned)$/);
+  });
+});
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("a Heading just added from the Blocks rail is selected with its bar in view", async ({ page }) => {
+  test("a Heading just added from the Blocks rail is selected with its bar docked under the page and its toast above the bar", async ({ page }) => {
+    // The "Heading added … Undo" toast shows before the bar does.
     await page.getByRole("navigation", { name: "Blocks" }).getByRole("button", { name: "Heading", exact: true }).click();
     await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
     await expect(bar(page).getByRole("button", { name: "Bold" })).toBeVisible();
-    const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
-    // The "Heading added … Undo" strip stays clear of the bar, measured once both have shown.
     const strip = page.locator(".editor-toast");
     await expect(strip).toContainText("Heading added");
+    // The toast moves above the bar; the bar never rises over the page.
     await expect.poll(async () => {
-      const barBox = (await bar(page).boundingBox())!;
-      const stripBox = (await strip.boundingBox())!;
-      return barBox.y + barBox.height <= stripBox.y || stripBox.y + stripBox.height <= barBox.y
-        || barBox.x + barBox.width <= stripBox.x || stripBox.x + stripBox.width <= barBox.x;
+      const barBox = await box(bar(page));
+      const stripBox = await box(strip);
+      return stripBox.y + stripBox.height <= barBox.y + 0.5;
     }).toBe(true);
-    const barBox = (await bar(page).boundingBox())!;
+    const frameBox = await box(page.locator(".native-preview-frame"));
+    for (let check = 0; check < 3; check++) {
+      const barBox = await box(bar(page));
+      expect(barBox.y).toBeGreaterThanOrEqual(frameBox.y + frameBox.height - 1);
+      const stripBox = await box(strip);
+      expect(stripBox.y + stripBox.height).toBeLessThanOrEqual(barBox.y + 0.5);
+      await page.waitForTimeout(200); // fixed-wait: samples across the toast's entrance and the scroll into view
+    }
+    const barBox = await box(bar(page));
     expect(barBox.x).toBeGreaterThanOrEqual(frameBox.x - 1);
     expect(barBox.x + barBox.width).toBeLessThanOrEqual(frameBox.x + frameBox.width + 1);
   });
@@ -329,13 +355,13 @@ test.describe("on a phone", () => {
     await paragraph.click();
     await expect(bar(page)).toHaveAttribute("data-side", "docked");
     await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
-    const pane = (await page.locator(".native-preview-pane").boundingBox())!;
-    const box = async (locator: { boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> }) => (await locator.boundingBox())!;
+    const pane = await box(page.locator(".native-preview-pane"));
     const barBox = await box(bar(page));
     // Across the canvas at its foot, under the frame: no page sits under it.
     expect(Math.abs(barBox.y + barBox.height - (pane.y + pane.height))).toBeLessThanOrEqual(1);
     expect(Math.abs(barBox.width - pane.width)).toBeLessThanOrEqual(1);
-    expect((await box(page.locator(".native-preview-frame"))).y + (await box(page.locator(".native-preview-frame"))).height).toBeLessThanOrEqual(barBox.y + 1);
+    const frameBox = await box(page.locator(".native-preview-frame"));
+    expect(frameBox.y + frameBox.height).toBeLessThanOrEqual(barBox.y + 1);
     // The selected paragraph is scrolled into view above it.
     await expect.poll(async () => { const shown = await box(paragraph); return shown.y + shown.height <= barBox.y && shown.y >= pane.y; }).toBe(true);
     // The page's end scrolls clear above the bar, and the bar does not move with the page.
@@ -343,5 +369,79 @@ test.describe("on a phone", () => {
     const footer = frame.locator("site-footer");
     await expect.poll(async () => { const end = await box(footer); return end.y + end.height <= barBox.y + 1; }).toBe(true);
     expect((await box(bar(page))).y).toBe(barBox.y);
+  });
+
+  test("the docked bar rides on top of the on-screen keyboard and goes back down when it closes", async ({ page }) => {
+    // A stand-in for the browser's VisualViewport: the keyboard shrinks it, the layout stays put.
+    await page.addInitScript(() => {
+      const view = Object.assign(new EventTarget(), { offsetTop: 0, offsetLeft: 0, pageTop: 0, pageLeft: 0, width: innerWidth, height: innerHeight, scale: 1 });
+      Object.defineProperty(window, "visualViewport", { get: () => view, configurable: true });
+    });
+    await page.reload();
+    const paragraph = page.frameLocator(".native-preview-frame").locator('[data-key="hero-lead"]');
+    await expect(paragraph).toBeVisible({ timeout: 30_000 });
+    await paragraph.click();
+    await expect(bar(page)).toHaveAttribute("data-side", "docked");
+    const pane = await box(page.locator(".native-preview-pane"));
+    const keyboard = (height: number) => page.evaluate((h) => {
+      // The stand-in above: its height is a plain field.
+      Object.defineProperty(window.visualViewport!, "height", { value: h, configurable: true, writable: true });
+      window.visualViewport!.dispatchEvent(new Event("resize"));
+    }, height);
+    await keyboard(500);
+    await expect.poll(async () => { const at = await box(bar(page)); return Math.round(at.y + at.height); }).toBe(500);
+    await keyboard(844);
+    await expect.poll(async () => { const at = await box(bar(page)); return Math.round(at.y + at.height - (pane.y + pane.height)); }).toBe(0);
+  });
+
+  test("a toast shown after the bar stands above it", async ({ page }) => {
+    const paragraph = page.frameLocator(".native-preview-frame").locator('[data-key="hero-lead"]');
+    await expect(paragraph).toBeVisible({ timeout: 30_000 });
+    await paragraph.click();
+    await expect(bar(page)).toHaveAttribute("data-side", "docked");
+    await showToast(page, "Saved a draft");
+    const strip = page.locator(".editor-toast");
+    await expect(strip).toContainText("Saved a draft");
+    await expect.poll(async () => { const stripBox = await box(strip); return stripBox.y + stripBox.height <= (await box(bar(page))).y + 0.5; }).toBe(true);
+  });
+
+  test("a selection the user scrolled under the bar stays put when a toast shows", async ({ page }) => {
+    const paragraph = page.frameLocator(".native-preview-frame").locator('[data-key="hero-lead"]');
+    await expect(paragraph).toBeVisible({ timeout: 30_000 });
+    await paragraph.click();
+    await expect(bar(page)).toHaveAttribute("data-side", "docked");
+    await page.waitForTimeout(600); // fixed-wait: the new selection's own check (400 ms after the click) has run and found it in view
+    // Scroll back to the top of the page, then far enough that the paragraph is below the bar.
+    await paragraph.evaluate((el) => {
+      window.scrollTo(0, 0);
+      el.closest("section")!.style.marginBlockStart = `${innerHeight}px`;
+    });
+    const frameBox = await box(page.locator(".native-preview-frame"));
+    await expect.poll(async () => (await box(paragraph)).y).toBeGreaterThan(frameBox.y + frameBox.height);
+    const scrolled = () => paragraph.evaluate(() => window.scrollY);
+    const before = await scrolled();
+    await showToast(page, "Saved a draft");
+    await expect(page.locator(".editor-toast")).toContainText("Saved a draft");
+    await page.waitForTimeout(900); // fixed-wait: past the 400 ms settle and a smooth scroll, nothing may have moved
+    expect(await scrolled()).toBe(before);
+  });
+
+  test("a menu or field from the docked bar opens upward, inside the room above it", async ({ page }) => {
+    const frame = page.frameLocator(".native-preview-frame");
+    await expect(frame.getByRole("link", { name: "About", exact: true })).toBeVisible({ timeout: 30_000 });
+    await frame.getByRole("link", { name: "About", exact: true }).click();
+    await bar(page).getByRole("button", { name: "Edit Site header component", exact: true }).click();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-header/site-header.html");
+    await frame.getByRole("link", { name: "About", exact: true }).click();
+    await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");
+    await expect(bar(page)).toHaveAttribute("data-side", "docked");
+    await bar(page).getByRole("button", { name: "Address" }).click();
+    const popover = page.locator(".edit-bar__popover");
+    await expect(popover.getByRole("combobox", { name: "Address" })).toBeFocused();
+    const shown = await box(popover);
+    const frameBox = await box(page.locator(".native-preview-frame"));
+    expect(shown.y + shown.height).toBeLessThanOrEqual((await box(bar(page))).y + 0.5);
+    expect(shown.y).toBeGreaterThanOrEqual(frameBox.y - 0.5);
+    expect(await popover.evaluate((el) => parseFloat(getComputedStyle(el).maxHeight))).toBeLessThanOrEqual(320);
   });
 });
