@@ -2,7 +2,7 @@
 title: "Agent tools: page picture, I'm working here, next steps, shorter instructions"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-14
 builder: claude
 blocked_by: [11-several-agents-presence]
 ---
