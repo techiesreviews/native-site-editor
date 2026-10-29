@@ -7,15 +7,12 @@ import { basename, extname, isAbsolute, join, relative, resolve } from "node:pat
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { kitLibrary, kitShellLibrary } from "../kit-home.mjs";
+import { kitLibrary, kitLibraryOrExit, kitShellLibrary } from "../kit-home.mjs";
 import { contactOutput, parseArgs, parseSteps } from "./core.ts";
 import { findingsSections } from "./findings-list.ts";
 
 // The shared kit library comes from the kit the launcher picks (once per process), never from this project.
-let library;
-try { library = kitLibrary(); }
-catch (error) { console.log(error.message); process.exit(2); }
-const { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } = await import(pathToFileURL(library).href);
+const { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } = await import(pathToFileURL(kitLibraryOrExit()).href);
 
 export function splitCompare(args) {
   const rest = [];

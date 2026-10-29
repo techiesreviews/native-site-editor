@@ -7,10 +7,10 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ensureBase } from "../shots/compare.mjs";
 // The shared kit library comes from the kit this command runs in (KIT_HOME), never from this project.
-import { kitLibrary } from "../kit-home.mjs";
+import { kitLibraryOrExit } from "../kit-home.mjs";
 
 const { kitRoot, kitMainRoot, kitOwner, kitResult, nodeEnv } = await import(
-  pathToFileURL(kitLibrary()).href
+  pathToFileURL(kitLibraryOrExit()).href
 );
 const budget = 362 * 1024;
 const usage = `Usage: kit size [--no-base] [--base REF]

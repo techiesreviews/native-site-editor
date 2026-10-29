@@ -27,6 +27,12 @@ export function kitLibrary(env = process.env) {
   return env.KIT_LIB_MJS || join(kitHomeFolder(env), "kit-lib.mjs");
 }
 
+/** kitLibrary, or the launcher's RESULT line and exit 2 when there is no kit (never a stack trace). */
+export function kitLibraryOrExit(env = process.env) {
+  try { return kitLibrary(env); }
+  catch (error) { console.log(error.message); process.exit(2); }
+}
+
 /** The kit's bash library, as kit shots sources it: KIT_LIB (tests), else the picked kit's kit-lib.sh. */
 export function kitShellLibrary(env = process.env) {
   return env.KIT_LIB || join(kitHomeFolder(env), "kit-lib.sh");
