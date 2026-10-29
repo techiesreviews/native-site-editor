@@ -21,6 +21,8 @@ On a phone, when the space above the selected element is full of other content, 
 
 No default: until Lex chooses, the bar stays as it is today, and 43's decision stays open rather than reversed.
 
+Also for Lex: ticket 43 waived its "test fails before the fix" rule for F-bar-01, because there was no app fault (its UX check selected `main`, which has no bar by design). A phone spec now pins the behaviour. Accept the waiver, or say what should fail first.
+
 ## Files
 
 - the edit bar's placement (`src/components/edit-bar-placement.ts`, `src/components/edit-bar.ts`) and their tests

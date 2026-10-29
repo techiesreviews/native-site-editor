@@ -225,8 +225,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
         value: selection.tag,
         onChange: (value) => {
           const { at, own } = ownTags(range);
-          // Only narrows the type: ownTags keeps a close tag it was given.
-          if (!own.close) return;
+          // ownTags keeps a close tag it was given; said aloud should that ever change.
+          if (!own.close) { refuse("The source changed. Select the element again and try again."); return; }
           editOpenPage(path, at, [
             { start: own.tag.start + 1, end: own.tag.nameEnd, text: value },
             { start: own.close.start + 2, end: own.close.start + 2 + length, text: value },

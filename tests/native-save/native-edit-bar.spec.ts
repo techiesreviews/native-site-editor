@@ -309,5 +309,12 @@ test.describe("on a phone", () => {
     const barBox = (await bar(page).boundingBox())!;
     expect(barBox.x).toBeGreaterThanOrEqual(frameBox.x - 1);
     expect(barBox.x + barBox.width).toBeLessThanOrEqual(frameBox.x + frameBox.width + 1);
+    // The "Heading added … Undo" strip stays clear of the bar.
+    const strip = page.locator(".editor-toast");
+    await expect(strip).toContainText("Heading added");
+    const stripBox = (await strip.boundingBox())!;
+    const apart = barBox.y + barBox.height <= stripBox.y || stripBox.y + stripBox.height <= barBox.y
+      || barBox.x + barBox.width <= stripBox.x || stripBox.x + stripBox.width <= barBox.x;
+    expect(apart, `bar ${JSON.stringify(barBox)} and strip ${JSON.stringify(stripBox)}`).toBe(true);
   });
 });
