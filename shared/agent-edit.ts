@@ -147,8 +147,8 @@ export function spanNow(read: string, start: number, end: number, now: string): 
  * many, or one outside its own stretch now (spanNow); with `at`, where in `read` that one (or the first) was.
  * Undefined when every one is. Words `read` lacks pass when an earlier replacement makes them, or when `now`
  * lacks them too (the agent's own mistake); found only in `now`, they are a copy added since (`at` -1).
- * Still there, but a different number of times (`recounted`): which copy changed is not told, since a part at the first copy
- * read is usually the one unchanged.
+ * Still there, but a different number of times, or several copies read and none left (`recounted`): which copy changed
+ * is not told, since a part at the first copy read is usually the one unchanged, or only one of those changed.
  */
 export function wordsMoved(read: string, now: string, edits: { oldText: string; newText: string; all?: boolean }[]): { index: number; at: number; recounted?: true } | undefined {
   const places = (text: string, words: string) => {
@@ -163,7 +163,8 @@ export function wordsMoved(read: string, now: string, edits: { oldText: string; 
       if (is.length && !(made.ok && made.text.includes(oldText))) return { index, at: -1 };
       continue;
     }
-    if (was.length !== is.length) return { index, at: was[0], ...(is.length ? { recounted: true as const } : {}) };
+    // A part to retry from only for the one copy read: around the first of several, a retry with all leaves the rest.
+    if (was.length !== is.length) return { index, at: was[0], ...(is.length || was.length > 1 ? { recounted: true as const } : {}) };
     const at = was.find((place, which) => {
       const span = spanNow(read, place, place + oldText.length, now);
       return span !== undefined && (is[which] < span.start || is[which] + oldText.length > span.end);
