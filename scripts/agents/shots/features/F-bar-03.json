@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-bar-03","steps":["click \"Paragraph\"","click \"Bold\"","press ArrowLeft","press l","record size 600"]}
+{"screen":"editor","name":"F-bar-03","steps":["click \"Paragraph\"","click \"Bold\"","press ArrowLeft","press l","record size 600","expect visible \"p.text-l\""]}
