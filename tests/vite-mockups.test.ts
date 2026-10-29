@@ -182,6 +182,37 @@ test("a shallow clone, even with main, reads no ticket as on main, so closed wor
   assert.equal(labelsIn(clone)["live.html"], "preview 01");
 });
 
+test("a status: closed line quoted in a ticket's body doesn't count as its closing", () => {
+  const { root, git } = shippingRepo();
+  git("branch", "--force", "main", "dev");
+  writeFileSync(join(root, "docs/wayfinder/agents/build/tickets/01-live.md"),
+    readFileSync(join(root, "docs/wayfinder/agents/build/tickets/01-live.md"), "utf8") + "\n```\nstatus: closed\n```\n");
+  git("commit", "--quiet", "-am", "quote a front matter in 01");
+  assert.equal(labelsIn(root)["live.html"], "live 01");
+});
+
+test("a rename on one branch and a later close of the old path on another both count once merged", () => {
+  const { root, git, ticket } = shippingRepo();
+  const later = { ...process.env, GIT_AUTHOR_DATE: "2099-01-01T00:00:00Z", GIT_COMMITTER_DATE: "2099-01-01T00:00:00Z" };
+  const gitLater = (...args: string[]) =>
+    execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...args], { stdio: "ignore", env: later });
+  const body = "From [shared](../../../agents/prototypes/shared.html) and docs/wayfinder/agents/prototypes/shared.html.";
+  git("checkout", "--quiet", "-b", "x");
+  git("mv", "docs/wayfinder/styling/build/tickets/06-shared.md", "docs/wayfinder/styling/build/tickets/16-shared.md");
+  git("commit", "--quiet", "-m", "rename 06");
+  git("checkout", "--quiet", "-b", "y", "dev");
+  ticket("styling", "06-shared.md", "open", "", body);
+  gitLater("commit", "--quiet", "-am", "reopen 06");
+  ticket("styling", "06-shared.md", "closed", "", body);
+  gitLater("commit", "--quiet", "-am", "close 06 again");
+  git("checkout", "--quiet", "dev");
+  git("merge", "--quiet", "--no-ff", "--no-edit", "x");
+  git("merge", "--quiet", "--no-ff", "--no-edit", "y");
+  git("branch", "--force", "main", "dev");
+  assert.ok(ticketsOnMain(root)!.has("docs/wayfinder/styling/build/tickets/16-shared.md"));
+  assert.equal(labelsIn(root)["shared.html"], "building 07,16");
+});
+
 test("a closing commit rewritten onto main by a rebase merge still counts, matched by author time and subject", () => {
   const { root, git } = shippingRepo();
   git("checkout", "--quiet", "main");
