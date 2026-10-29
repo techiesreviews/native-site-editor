@@ -183,9 +183,12 @@ function editClash(file: { path: string; hash: string; content: string }, edits:
   const failing = moved?.index ?? Math.max(0, edits.findIndex((_, index) => !applyReplacements(file.content, edits.slice(0, index + 1)).ok));
   const { oldText } = edits[failing];
   const which = edits.length > 1 ? `The words replacement ${failing + 1} changes` : "The words this edit changes";
-  // No part to retry from: a retry with all would also change the copies another made since.
+  // No part to retry from: a retry with all would also change copies another made since, or, every copy read
+  // gone, retry from one and leave the rest.
   if (moved?.recounted)
-    throw new PartClash(`${which} are in ${file.path} a different number of times than when it was read: the user or another agent changed them meanwhile. Read the file again.`);
+    throw new PartClash(file.content.includes(oldText)
+      ? `${which} are in ${file.path} a different number of times than when it was read: the user or another agent changed them meanwhile. Read the file again.`
+      : `${which} in ${file.path} are no longer there: the user or another agent changed them meanwhile. Read the file again.`);
   const at = moved?.at ?? read?.indexOf(oldText) ?? -1;
   let span = at >= 0 ? spanNow(read!, at, at + oldText.length, file.content) : undefined;
   if (!span) {
