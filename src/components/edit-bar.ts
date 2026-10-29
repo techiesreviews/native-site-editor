@@ -254,6 +254,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   let docked: DockScrollOptions | undefined;
   let shownKey = "";
   let roomTimer = 0;
+  // A new selection's scroll into view is waiting (room).
+  let roomDue = false;
   let onFormat: EditBarModel["onFormat"];
   let onMove: EditBarModel["onMove"];
   // The open menu or field, under its button.
@@ -308,7 +310,9 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     // as tall as the room above it allows.
     const paneRect = pane.getBoundingClientRect();
     const frameRect = frame.getBoundingClientRect();
+    // Docked, it opens from the bar's top edge, not the button's.
     const anchor = trigger.getBoundingClientRect();
+    if (docked) anchor.y = bar.getBoundingClientRect().top;
     popover.style.maxHeight = docked ? `${Math.max(80, Math.min(320, anchor.top - frameRect.top - 8))}px` : "";
     const width = popover.offsetWidth;
     const left = Math.max(frameRect.left - paneRect.left + 8, Math.min(anchor.left - paneRect.left, frameRect.right - paneRect.left - width - 8));
@@ -473,8 +477,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     bar.style.top = `${frameTop + top}px`;
   }
   // Phones: in its own row under the frame (edit-bar.css), so no page sits
-  // under it, raised onto the keyboard (or a zoomed view's foot) and over a
-  // toast that came first; toasts after it keep above it (data-toast-avoid).
+  // under it, raised onto the keyboard (or a zoomed view's foot). A toast
+  // keeps above it (data-toast-avoid; toast.ts re-places on edit-bar-layout).
   function dockBar(frameRect: DOMRect, paneRect: DOMRect, frameLeft: number, frameTop: number) {
     bar.dataset.side = "docked";
     bar.dataset.toastAvoid = "";
@@ -484,9 +488,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const barTop = paneRect.top + pane.clientTop + bar.offsetTop;
     const barBottom = barTop + bar.offsetHeight;
     const view = window.visualViewport;
-    let lift = view ? dockLift({ barTop, barBottom, viewportTop: view.offsetTop, viewportHeight: view.height }) : 0;
+    const lift = view ? dockLift({ barTop, barBottom, viewportTop: view.offsetTop, viewportHeight: view.height }) : 0;
     const toast = document.querySelector(".editor-toast:popover-open")?.getBoundingClientRect();
-    if (toast && toast.top < barBottom - lift && toast.bottom > barTop - lift) lift = Math.max(lift, barBottom - toast.top + 8);
     bar.style.translate = lift ? `0 ${-lift}px` : "";
     // The page shows down to the bar, or to a toast standing on it.
     const foot = toast && toast.top < barTop - lift && toast.bottom > barTop - lift - 24 ? toast.top : barTop - lift;
@@ -516,13 +519,18 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     panel.style.width = `${Math.ceil(Math.max(...rects.map((r) => r.right)) - panel.getBoundingClientRect().left + end)}px`;
   }
   // On a phone-wide window a selection hidden behind the docked bar, the keyboard or a
-  // toast is scrolled into view above it (dockScroll): when it is chosen, after a
-  // double-click's second press could land, once the canvas, the bar or the keyboard
-  // changed height and has settled, and when a toast shows; never on a scroll.
-  function room(key: string) {
+  // toast is scrolled into view above it (dockScroll), measured once things settled: when
+  // it is chosen, after a double-click's second press could land; and when the canvas,
+  // the bar or the keyboard changes height or a toast shows (`follow`, the geometry
+  // before), only if it was in view then, so one the user scrolled away stays put.
+  function room(key: string, follow?: { was: DockScrollOptions | undefined }) {
     if (!scroll || !phoneWide()) return;
+    if (follow && !roomDue && !(follow.was && !dockScroll(follow.was))) return;
+    if (!follow) roomDue = true;
     clearTimeout(roomTimer);
     roomTimer = window.setTimeout(() => {
+      roomDue = false;
+      position();
       const dy = docked && shownKey === key ? dockScroll(docked) : 0;
       if (dy) scroll(dy);
     }, 400);
@@ -530,10 +538,11 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   let frameHeight = 0;
   let barHeight = 0;
   const resize = new ResizeObserver(() => {
+    const was = docked;
     position();
     const height = frame.getBoundingClientRect().height;
     const own = bar.offsetHeight;
-    if ((frameHeight && height !== frameHeight || barHeight && own && own !== barHeight) && shownKey) room(shownKey);
+    if ((frameHeight && height !== frameHeight || barHeight && own && own !== barHeight) && shownKey) room(shownKey, { was });
     frameHeight = height;
     if (own) barHeight = own;
   });
@@ -545,8 +554,9 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   const view = window.visualViewport;
   let viewHeight = view?.height ?? 0;
   function onViewResize() {
+    const was = docked;
     position();
-    if (view && view.height !== viewHeight && shownKey) room(shownKey);
+    if (view && view.height !== viewHeight && shownKey) room(shownKey, { was });
     viewHeight = view?.height ?? 0;
   }
   view?.addEventListener("resize", onViewResize);
@@ -555,8 +565,9 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   // selection out from under a toast that came.
   function onToggle(event: Event) {
     if (!(event.target as Element).classList?.contains("editor-toast")) return;
+    const was = docked;
     position();
-    if ((event as ToggleEvent).newState === "open" && shownKey) room(shownKey);
+    if ((event as ToggleEvent).newState === "open" && shownKey) room(shownKey, { was });
   }
   document.addEventListener("toggle", onToggle, true);
 
@@ -1208,6 +1219,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       rect = undefined;
       shownKey = "";
       clearTimeout(roomTimer);
+      roomDue = false;
       delete bar.dataset.model;
       bar.hidden = true;
       bar.replaceChildren();
