@@ -54,3 +54,9 @@ Slice 13 (PR #252) colours a picked-up pin with the agent's colour and name only
 - Known limit: the agents heard and at work are per tab, so a tab that is not receiving may name the taker where the receiving tab names the connection's agent.
 - Shots (real starter, scripted: waiting, taken by a wait, one done; 390 and 1280, light and dark): `.scratch/shots/build-am-45-pin-shows-agent/20261029-101226/` (main checkout; retaken after the runner fix), contact sheets `contact-390.webp`, `contact-1280.webp`; every shot checks no pin covers the eyebrow line ("LARKSPUR STUDIO").
 - Feature list: F-agent-04 Good and Files updated.
+
+### UX follow-ups
+
+- UX (looks off): F-canvas-14 the page updates in place and the page scroll holds, but each edit raises a dark "Text changed" toast with Undo (S4) that sits over the code pane's lines at 390 (U5); the Publish button carries a "1" count (S2); a code token in the light pane reads at 3.8:1 (L12); the crumbs read "section.flow › h2" (S7) (.scratch/ux/am-45/20261029-105140-w9Eomk/add-panel-F-canvas-14-390-light-live-strip.webp)
+- UX (looks off): F-bar-01 after Heading is added, a "Heading added. Into Section "Recent work" › after Div" toast with Undo shows at both widths (S4, and "Div" is code, S7); the crumbs read "body › main.page" (S7); no frame in this strip shows the edit bar on the new heading (.scratch/ux/am-45/20261029-105140-w9Eomk/editor-F-bar-01-390-light-bar-strip.webp)
+- UX (looks off): F-bar-02 the level goes to H3 and Italic sets in place, but a "Heading level H3" toast with Undo follows (S4); at 390 the bar's "Heading" label and controls sit over the card link "Read about Meadow Row Allotments" above it (U5); the handle is 20 px tall and the selects and B/I buttons are 28 px, all crowded together (U6); the crumbs read "section.flow › h3" (S7) (.scratch/ux/am-45/20261029-105140-w9Eomk/editor-F-bar-02-390-light-level-strip.webp)
