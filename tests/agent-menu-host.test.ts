@@ -64,7 +64,7 @@ function setup(options: { draftScope?: () => DraftScope | undefined } = {}) {
     setupController: { noteAgent: record("noteAgent") }, pageStructureController: { renderEditBar: record("renderEditBar") },
     mediaPorts: { pin: () => { pins.push("pin"); return PIN; } },
     workspace: { activeFileContext: null, repositoryMenu: { setQuestions: record("questions"), close: record("close menu") } },
-    agentPresence: { questions: record("questioned"), atWork: () => [{ name: "Copy editor", file: "index.html", section: "1.0" }], agents: () => [], stop: () => {}, stopped: () => false, listen: () => () => {} },
+    agentPresence: { questions: record("questioned"), colour: () => 0, atWork: () => [{ name: "Copy editor", file: "index.html", section: "1.0" }], agents: () => [], stop: () => {}, stopped: () => false, listen: () => () => {} },
     nativeTextIndexGate: { key: () => "k", indexed: () => late.indexed, settled: async () => true, ensure: async () => { calls.push("index"); late.indexed = true; return undefined; } },
     get info() { return late.info; },
     get nativePreview() { return late.preview ? { route: () => "/", setRequests: record("requests"), showRequest: record("show") } : undefined; },
@@ -98,7 +98,7 @@ test("the menu mounts for the signed-in account and its connection, requests and
   options.onShowRequest?.("r1");
   await options.onCommand(COMMAND);
   await options.reload?.({ revision: 2, generation: 1, drafts: [] });
-  assert.deepEqual(calls, ["noteAgent true", "noteAgent false", `renderEditBar ${JSON.stringify(SELECTION)}`, "requests []", "questioned []", "questions 2", "close menu", 'show "r1"', "apply c1", "reload 2"]);
+  assert.deepEqual(calls, ["noteAgent true", "noteAgent false", `renderEditBar ${JSON.stringify(SELECTION)}`, "questioned []", "requests []", "questions 2", "close menu", 'show "r1"', "apply c1", "reload 2"]);
 });
 
 test("no menu mounts before the session names an account", async () => {

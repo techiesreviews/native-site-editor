@@ -104,7 +104,8 @@ test("presence never stops the change: a failing presence port is let go", async
 // The presence's views as main.ts paints them, and the workspace loads it holds to. Each paint as
 // name, colour, page, element and question.
 const template = "<section class=\"cards\"><h2>Cards</h2><slot></slot></section>";
-type Shot = [string, number, string, string | undefined, boolean][];
+// A mark's name, colour, page, element, asking, and "pinned" only when its name is on a pin it works through.
+type Shot = ([string, number, string, string | undefined, boolean] | [string, number, string, string | undefined, boolean, "pinned"])[];
 function presenceViews(sources: Record<string, string> = { "index.html": page, "about/index.html": page, "components/site-cards.html": template, "styles/site.css": "h2 { color: red; }" }) {
   let load = 0;
   const clock = { now: 1_000 };
@@ -118,7 +119,9 @@ function presenceViews(sources: Record<string, string> = { "index.html": page, "
     sectionTags: () => tags,
     shows: at => at.repoId === shown.repoId && (at.branch ?? shown.branch) === shown.branch,
     workspace: () => ({ ...shown }),
-    paint: marks => painted.push(marks.map(mark => [mark.name, mark.colour, mark.path, mark.node?.join("."), mark.asking])),
+    paint: marks => painted.push(marks.map(mark => mark.pinned
+      ? [mark.name, mark.colour, mark.path, mark.node?.join("."), mark.asking, "pinned"]
+      : [mark.name, mark.colour, mark.path, mark.node?.join("."), mark.asking])),
     stops: { has: who => stops.has(JSON.stringify(who)), add: who => { stops.add(JSON.stringify(who)); } },
     now: () => clock.now,
   });
@@ -217,6 +220,30 @@ test("an agent's question shows on its request's section with its chip orange, u
   shown.branch = "other";
   nextLoad();
   assert.deepEqual(painted.at(-1), []);
+});
+
+test("an agent working through a pin (am-13) has its colour on the pin and no chip on its outline on that page; done, its chip is back", () => {
+  const { presence, painted } = presenceViews();
+  const copy = agent("Copy editor"), finder = agent("Image finder");
+  const end = presence.show("index.html", findHero, finder);
+  // The pin's agent takes the next colour, the same its outline gets.
+  assert.equal(presence.colour(copy), 1);
+  assert.equal(presence.colour(finder), 0);
+  const working = (who: AgentWho, state = "seen", file = "index.html"): PresenceQuestion => ({ repoId: 1, branch: "main", state, element: { file, id: "1.0.0" }, agent: who });
+  presence.questions([working(copy)]);
+  const copyEnd = presence.show("index.html", findHero, copy);
+  assert.deepEqual(painted.at(-1), [["Image finder", 0, "index.html", "1.0", false], ["Copy editor", 1, "index.html", "1.0", false, "pinned"]]);
+  // At work on another page meanwhile: its chip shows there.
+  copyEnd();
+  const about = presence.show("about/index.html", findHero, copy);
+  assert.deepEqual(painted.at(-1), [["Image finder", 0, "index.html", "1.0", false], ["Copy editor", 1, "about/index.html", "1.0", false]]);
+  about();
+  // Done: the pin is grey, and its next change wears its chip again.
+  presence.questions([working(copy, "done")]);
+  const after = presence.show("index.html", findHero, copy);
+  assert.deepEqual(painted.at(-1), [["Image finder", 0, "index.html", "1.0", false], ["Copy editor", 1, "index.html", "1.0", false]]);
+  after();
+  end();
 });
 
 test("get_site tells agents of one connection apart by name: one at work on Home, another asking on About, in order of arrival", () => {

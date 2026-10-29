@@ -212,16 +212,19 @@ export interface AgentRequestMessage {
   /** An agent's: how it replied, and the edits it made for it. */
   status?: AgentReplyStatus;
   requestIds?: string[];
+  /** An agent's: the name it replied under (ticket am-13), shown over its message. */
+  name?: string;
 }
 
 /**
  * Something the user asked agents to do about an element, from the edit
  * bar's Ask agent. This browser keeps them per workspace (src/agent-records.ts):
  * open until an agent fetches it (seen), then done, answered or question by
- * its reply, or dismissed by the user. The user answers a question, which
- * opens it again for agents. `thread` is the conversation, `text` its first
- * message and `reply` the agent's latest (requests kept from before threads
- * have only those two).
+ * its reply, or dismissed by the user. The user adds to any request (answers
+ * a question, or follows up on one waiting, being worked on or done), which
+ * opens it again, for the agent on it first (`agent`, until `heldUntil`).
+ * `thread` is the conversation, `text` its first message and `reply` the
+ * agent's latest (requests kept from before threads have only those two).
  */
 export interface AgentRequest {
   id: string;
@@ -238,6 +241,10 @@ export interface AgentRequest {
   returnedTo?: string[];
   reply?: { status: AgentReplyStatus; message: string; at: number; requestIds?: string[]; by?: AgentWho };
   thread?: AgentRequestMessage[];
+  /** The agent on it (ticket am-13): the first to take it while it waited, then whoever replied; its pin wears its colour and name. */
+  agent?: AgentWho;
+  /** Reopened by the user's follow-up: until this time only `agent`'s connection gets it, then every connection does. */
+  heldUntil?: number;
 }
 
 /**
