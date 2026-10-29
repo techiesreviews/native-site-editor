@@ -404,6 +404,38 @@ test("Text size chosen right after Bold, before the bar redraws, applies to the 
   assert.deepEqual(f.errors, []);
 });
 
+test("Heading level chosen right after Bold, before the bar redraws, applies to the bolded source", () => {
+  const f = fixture({ page: "<main><h2>Hello world</h2></main>" });
+  const control = drawBar(f, f.target.node, { ...textBarPorts(f), nativeTextTags: new Set(["h2"]), locateNativeElementRange: html => rangeOf(html, "h2") }, undefined, "h2");
+  const bold = control("B"), level = control("Heading level");
+  assert.ok(bold.kind === "button" && level.kind === "select");
+  bold.onPress();
+  level.onChange("h3");
+  assert.equal(f.page(), "<main><h3><strong>Hello</strong> world</h3></main>");
+  assert.deepEqual(f.notices, []);
+  assert.deepEqual(f.errors, []);
+});
+
+test("Text size applies when the latest source changed only inside the element", () => {
+  const f = fixture({ page: "<main><p>Hello world</p></main>" });
+  const size = drawBar(f, f.target.node, textBarPorts(f), undefined, "p")("Text size");
+  assert.ok(size.kind === "select");
+  f.mem.typeInto(PAGE, "<main><p>Hello there</p></main>");
+  size.onChange("l");
+  assert.equal(f.page(), '<main><p style="font-size: 1.25rem">Hello there</p></main>');
+  assert.deepEqual(f.notices, []);
+});
+
+test("Text size refuses once the element's own start tag changed in place", () => {
+  const f = fixture({ page: "<main><p>Hello world</p></main>" });
+  const size = drawBar(f, f.target.node, textBarPorts(f), undefined, "p")("Text size");
+  assert.ok(size.kind === "select");
+  f.mem.typeInto(PAGE, '<main><p class="x">Hello world</p></main>');
+  size.onChange("l");
+  assert.equal(f.page(), '<main><p class="x">Hello world</p></main>');
+  assert.deepEqual(f.notices, ["The source changed. Select the element again and try again."]);
+});
+
 test("Text size from a bar drawn before its element's start tag moved still refuses", () => {
   const f = fixture({ page: "<main><p>Hello world</p></main>" });
   const size = drawBar(f, f.target.node, textBarPorts(f), undefined, "p")("Text size");

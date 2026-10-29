@@ -195,6 +195,19 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const change = (edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) => {
       return editOpenPage(path, source, edits, next, message);
     };
+    // For a control that edits only the element's own tags, chosen before the bar redrew after
+    // its own last change (Bold, say): the element in the latest source while its start tag is
+    // where and as it was, and its close tag (when it has one) as it was; else the bar's source,
+    // which editOpenPage refuses as stale. editOpenPage's check against the source is the proof.
+    const ownTags = (own: ElementRange): { at: string; own: ElementRange } => {
+      const latest = ports.nativeEditableSource(path) ?? "";
+      const found = latest !== source && node ? ports.locateNativeElementRange(latest, node) : undefined;
+      if (!found || found.tag.start !== own.tag.start) return { at: source, own };
+      const text = (html: string, at?: { start: number; end: number }) => at && html.slice(at.start, at.end);
+      const sameStart = text(latest, found.tag) === text(source, own.tag);
+      const sameClose = !own.close || text(latest, found.close) === text(source, own.close);
+      return sameStart && sameClose ? { at: latest, own: found } : { at: source, own };
+    };
     const controls: EditBarControl[] = [];
     if (range && node && ports.nativeSite) {
       if (selection.tag === "site-header" || selection.tag === "header" || selection.tag === "nav")
@@ -202,17 +215,20 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
     nativeFormatActions = {};
     if (/^h[1-6]$/.test(selection.tag) && range?.close && range.tag.name === selection.tag) {
-      const close = range.close;
       const length = range.tag.name.length;
       controls.push({
         kind: "select",
         label: "Heading level",
         options: [1, 2, 3, 4, 5, 6].map((level) => ({ label: `H${level}`, value: `h${level}` })),
         value: selection.tag,
-        onChange: (value) => change([
-          { start: range.tag.start + 1, end: range.tag.nameEnd, text: value },
-          { start: close.start + 2, end: close.start + 2 + length, text: value },
-        ], node, `Heading level ${value.toUpperCase()}`),
+        onChange: (value) => {
+          const { at, own } = ownTags(range);
+          if (!own.close) return;
+          editOpenPage(path, at, [
+            { start: own.tag.start + 1, end: own.tag.nameEnd, text: value },
+            { start: own.close.start + 2, end: own.close.start + 2 + length, text: value },
+          ], node, `Heading level ${value.toUpperCase()}`);
+        },
       });
     }
     if (range && node) {
@@ -222,8 +238,9 @@ export function createPageStructureController(ports: PageStructurePorts) {
         options: [{ label: "Stack", value: "flow" }, { label: "Grid", value: "cards" }],
         value: layout,
         onChange: (value) => {
-          const edit = blockLayoutEdit(source, range.tag, value);
-          if (edit) change([edit], node, `Layout: ${value === "cards" ? "Grid" : "Stack"}`);
+          const { at, own } = ownTags(range);
+          const edit = blockLayoutEdit(at, own.tag, value);
+          if (edit) editOpenPage(path, at, [edit], node, `Layout: ${value === "cards" ? "Grid" : "Stack"}`);
         },
       });
     }
@@ -243,14 +260,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
         options,
         value,
         onChange: (next) => {
-          // Chosen before the bar redrew after its own last change (Bold, say): the start tag
-          // is all this edits, so it applies to the latest source while that tag is where and
-          // as it was; any other change stays refused as stale.
-          const latest = ports.nativeEditableSource(path) ?? "";
-          const found = latest !== source && node ? ports.locateNativeElementRange(latest, node) : undefined;
-          const same = found?.tag.start === range.tag.start && latest.slice(found.tag.start, found.tag.end) === source.slice(range.tag.start, range.tag.end);
-          const [at, tag] = same ? [latest, found.tag] : [source, range.tag];
-          const edit = textSizeEdit(at, tag, scale, next);
+          const { at, own } = ownTags(range);
+          const edit = textSizeEdit(at, own.tag, scale, next);
           const size = scale.sizes.find((item) => item.value === next);
           if (edit) editOpenPage(path, at, [edit], node, size ? `Text size ${size.label}` : "Default text size");
         },
