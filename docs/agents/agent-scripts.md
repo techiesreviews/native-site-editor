@@ -26,7 +26,7 @@ editor's own. A kit change is a PR into the kit repo through its own `kit pr`; i
 `tests/kit-editor.test.ts` checks this editor's side: its own commands through the launcher, its docs'
 links into the shared rulebook, the forwarders and the card hook it documents. A project command may not take a shared
 name: the shared one runs and `kit doctor` fails naming both files. `KIT_COMMANDS_DIR` (tests)
-replaces both folders. Shared helpers live in `kit-lib.sh` and `kit-lib.mjs`. Owner: `ASE_OWNER`,
+replaces both folders. Shared helpers live in the kit repo's `kit-lib.sh` and `kit-lib.mjs`. Owner: `ASE_OWNER`,
 else `.scratch/owner`.
 
 Project values come from one settings file, `scripts/agents/kit.json`, read from the project's top
@@ -229,14 +229,14 @@ Use positive integer seconds or `s/m/h/d` (at most 2147483 seconds). Expiry or
 interruption kills the CLI's whole process group. How callers wait:
 [runner.md](runner.md#waiting).
 
-To add another CLI, add one adapter function in `agent-run.mjs` and register it in
-the adapter registry (plus inference if wanted). Contract:
+To add another CLI, add one adapter function in the kit repo's `agent-run.mjs` (a PR there through its own
+`kit pr`) and register it in the adapter registry (plus inference if wanted). Contract:
 accept `{kind, worktree, model, effort}`, Git common dir and output path; return
 `{command, args, capture, finish(stdout, runLog)}`. Read stdin; honor build versus
 read-only review permissions; verify the actual model in `finish`. Return final
 text, or null if the CLI wrote `out.md`. Set `capture` for stdout parsing. Shared
 code owns cwd, brief/footer, logging, deadlines, cleanup and Git status. Add pure
-argument/result tests plus fake CLI coverage; no other CLIs are installed here.
+argument/result tests plus fake CLI coverage in the kit repo; no other CLIs are installed here.
 Instruction imports use `AGENTS.md`: `CLAUDE.md` and `GEMINI.md` contain `@AGENTS.md`.
 
 ## Screenshots
