@@ -1,7 +1,7 @@
 ---
 title: Boot back under 355 KB after the clean-up
 status: ready-for-agent
-assignee:
+assignee: am-42
 blocked_by: []
 ---
 
