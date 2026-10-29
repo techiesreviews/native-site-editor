@@ -155,6 +155,8 @@ test("Structure upload prepares and places; one Undo removes placement and famil
   const tree = page.getByRole("tree", { name: "Page structure" });
   const instance = tree.getByRole("treeitem", { name: "Media card", exact: true });
   await instance.click();
+  // The instance's slot rows come with the component tools, a moment after the first paint.
+  await expect(instance).toHaveAttribute("aria-expanded", /^(true|false)$/);
   if (await instance.getAttribute("aria-expanded") === "false") await instance.locator(".page-structure__toggle").click();
   await tree.locator(".page-structure__slot-badge").filter({ hasText: /^Image$/ }).press("Enter");
   const bytes = await photo(page);
