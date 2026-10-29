@@ -539,7 +539,9 @@ test("worktree.sh links this editor's worktreeLinks into a new worktree", (t) =>
   mkdirSync(join(main, "scripts/agents"), { recursive: true });
   writeFileSync(join(main, "scripts/agents/kit.json"), JSON.stringify({ project: "p", mainRoot: main, branches: { land: "main" }, worktreePrefix: "wt-", worktreeLinks }));
   writeFileSync(join(main, ".gitignore"), ".scratch/\n");
-  const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", ASE_OWNER: "kit-editor-test" };
+  // The project's own settings decide: no main or project root from the run that started the tests.
+  const { KIT_MAIN_ROOT: _main, KIT_ROOT: _root, KIT_DEV_ROOT: _dev, ...outer } = process.env;
+  const env = { ...outer, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", ASE_OWNER: "kit-editor-test" };
   for (const args of [["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "start"]]) assert.equal(spawnSync("git", args, { cwd: main, env }).status, 0);
   for (const link of worktreeLinks) mkdirSync(join(main, link), { recursive: true });
   const made = spawnSync(resolve("scripts/agents/worktree.sh"), ["feature", "HEAD"], { cwd: main, env, encoding: "utf8" });
