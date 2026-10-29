@@ -275,13 +275,13 @@ test("a pin a wait took and its agent answers without reading it by id shows tha
   assert.equal(presence.onPin("req-took"), undefined);
 });
 
-test("a watchdog's take on a connection with several agents heard (am-45: get_site counts) shows no one, and takes no colour, until one reads it", () => {
+test("a watchdog's take shows its connection's one other agent heard (am-45: get_site counts), and the watchdog takes no colour", () => {
   const { presence } = presenceViews();
   const watchdog = agent("Watchdog"), copy = agent("Copy editor");
   presence.heard(copy);
   presence.heard(watchdog);
   presence.questions([took(watchdog)]);
-  assert.equal(presence.onPin("req-took"), undefined);
+  assert.deepEqual(presence.onPin("req-took"), copy);
   assert.equal(presence.colour(copy), 0, "Copy editor has the first colour; the watchdog none");
   // Copy editor reads it by its id: its pin.
   presence.questions([{ ...took(copy), agentTook: undefined }]);
@@ -294,7 +294,7 @@ test("a worker's own take names it when it is at work (am-45), even with another
   presence.heard(copy);
   presence.heard(finder);
   presence.questions([took(finder)]);
-  assert.equal(presence.onPin("req-took"), undefined, "two agents heard: either may be the one on it");
+  assert.deepEqual(presence.onPin("req-took"), copy, "not at work yet: the one other agent heard, as for a watchdog");
   presence.show("index.html", findHero, finder)();
   presence.questions([took(finder)]);
   assert.deepEqual(presence.onPin("req-took"), finder);
@@ -350,7 +350,22 @@ test("being at work lapses after AT_WORK_MS without a change (am-45), however of
   }
   presence.heard(copy);
   presence.questions([took(finder)]);
+  assert.deepEqual(presence.onPin("req-took"), copy, "no longer at work: the one other agent heard");
+});
+
+test("a watchdog's take with several other agents heard (am-45) shows the one at work, else no one until one reads or replies", () => {
+  const { presence } = presenceViews();
+  const watchdog = agent("Watchdog"), copy = agent("Copy editor"), finder = agent("Image finder");
+  for (const who of [copy, finder, watchdog]) presence.heard(who);
+  presence.questions([took(watchdog)]);
   assert.equal(presence.onPin("req-took"), undefined);
+  presence.show("index.html", findHero, finder)();
+  presence.questions([took(watchdog)]);
+  assert.deepEqual(presence.onPin("req-took"), finder);
+  // Named, it keeps that agent while the other starts work too.
+  presence.show("index.html", findHero, copy)();
+  presence.questions([took(watchdog)]);
+  assert.deepEqual(presence.onPin("req-took"), finder);
 });
 
 test("a take counts only its connection's agents heard lately (am-45): not another connection's, a stopped one, or one gone quiet for AT_WORK_MS", () => {
