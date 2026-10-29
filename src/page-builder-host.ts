@@ -41,7 +41,7 @@ import type { createCodePanesController } from "./controllers/code-panes-control
 import type { createLinkedStylesController } from "./controllers/linked-styles-controller";
 import type { createMediaController } from "./controllers/media-controller";
 import type { createAgentController } from "./controllers/agent-controller";
-import { createComponentTools, type ComponentTools, type PreparedComponentLoader } from "./page-builder/components";
+import type { ComponentDeps, ComponentTools, PreparedComponentLoader } from "./page-builder/components";
 import { addSectionStep } from "./page-builder/component-plans";
 import type { createPagesAndFilesHost } from "./pages-and-files-host";
 import type { createSiteLoading } from "./site-loading";
@@ -161,10 +161,12 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
     },
   });
 
-  function mountComponentTools() {
-    return createComponentTools(componentPorts());
+  // The component tools (src/page-builder/components.ts) load once the preview has painted (src/workspace-mount.ts).
+  const loadComponentTools = lazyModule(() => import("./page-builder/components"));
+  async function mountComponentTools() {
+    return (await loadComponentTools()).createComponentTools(componentPorts());
   }
-  function componentPorts(): Parameters<typeof createComponentTools>[0] {
+  function componentPorts(): ComponentDeps {
     return {
       site: () => runtime.site,
       sources: () => runtime.sources(),

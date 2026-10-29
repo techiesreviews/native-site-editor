@@ -1,6 +1,6 @@
 ---
 title: Boot back under 355 KB after the clean-up
-status: ready-for-agent
+status: closed
 assignee: am-42
 blocked_by: []
 ---
@@ -19,3 +19,7 @@ After the clean-up lands, load the page-builder parts that never run before the 
 
 - `kit size` at or under 355 KB with the budget back at 355 KB.
 - No visible change, apart from what Lex accepts for a first use.
+
+## Closed
+
+- 2026-10-29: closed by agents-and-multiplayer ticket 42 ([ticket](../../../wayfinder/agents-and-multiplayer/build/tickets/42-boot-back-under-355-kb.md)): the component tools (`src/page-builder/components.ts` and what only it uses) load two frames and a beat after the first preview paint, which takes boot from 362 KB to 342 KB; the budget is back at 355 KB in the kit, the perf test, `tests/kit-size.test.ts` and the agent docs. The parts named under Fix (row menus, row moves and drags, URL planning, the rail's pick and drop, the right-click menu) stay at boot: slice 86 measured them at about 1.3 KB, short of the 7 KB needed.
