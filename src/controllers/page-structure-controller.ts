@@ -15,7 +15,7 @@ import { handleChunkLoadFailure } from "../chunk-recovery";
 import { isSectionTemplate } from "../native-insert";
 import type { MoveStep } from "../page-builder/block-move-rules";
 import { type BlockMoves, type MoveAt, type MoveOptions, type Settled } from "../page-builder/block-move";
-import { type ComponentTools } from "../page-builder/components";
+import type { ComponentTools } from "../page-builder/components";
 import { type createAgentController } from "../controllers/agent-controller";
 import { type createPageStructure } from "../components/page-structure";
 import { type NativeSite } from "../../shared/native-project";

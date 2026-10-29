@@ -220,7 +220,10 @@ function setup() {
     errorMessage: (error: unknown) => { calls.push(`error ${error instanceof Error ? error.message : String(error)}`); },
     announce: say("announce"),
     // The component tools' wait after the first paint, run when a test lets it.
-    afterPaint: (callback: () => void) => { state.painted.push(callback); },
+    afterPaint: (callback: () => void) => {
+      state.painted.push(callback);
+      return () => { state.painted = state.painted.filter((each) => each !== callback); calls.push("toolsWait.cancel"); };
+    },
     site: {
       active: () => state.native,
       deactivate: say("deactivateNative"),
@@ -254,6 +257,7 @@ function setup() {
         return fake<NonNullable<WorkspaceMountPorts["componentTools"]>>({
         destroy: say("componentTools.destroy"), refresh: say("componentTools.refresh"),
         mode: { now: () => state.template, opened: () => false, sync: say("mode.sync") },
+        instanceSelection: (selection: NativePreviewSelection) => selection,
       }); },
     },
     page: {
@@ -322,17 +326,37 @@ test("mountWorkspace hands the preview, Page Structure and the component tools t
   assert.ok(state.componentTools && state.componentTools !== tools);
 });
 
-test("before the component tools land, a right-click opens the element's menu; a shared template's part gets none", async () => {
-  const { workspace, state } = setup();
+test("a right-click before the component tools land loads them at once and opens the menu when they do, unless dismissed", async () => {
+  const { workspace, state, calls } = setup();
   workspace.mountWorkspace();
-  const preview = last("preview").options as { onStructure(structure: unknown): void; onContextMenu(point: unknown, anchor: unknown, selection: unknown): void };
+  const preview = last("preview").options as { onStructure(structure: unknown): void; onContextMenu(point: unknown, anchor: unknown, selection: unknown): void; onDismissContextMenu(): void };
   preview.onStructure({ path: "index.html", paintedSource: "A", items: [] });
-  assert.equal(state.componentTools, undefined);
-  preview.onContextMenu({ x: 1, y: 2 }, {}, { path: "components/card.html", node: [0], host: { path: "index.html", node: [1], tag: "x-card" } });
-  assert.ok(!last("rowMenu").calls.includes("open"));
+  let land!: () => void;
+  state.toolsWait = new Promise<void>((resolve) => { land = resolve; });
   preview.onContextMenu({ x: 1, y: 2 }, {}, { path: "index.html", node: [0] });
+  // Asked for now, not after the wait.
+  assert.ok(calls.includes("mountComponentTools"));
+  assert.equal(state.painted.length, 1);
+  assert.ok(!last("rowMenu").calls.includes("open"));
+  land();
+  await flush();
   const [, entries] = last("rowMenu").args.get("open") as [unknown, { label: string }[]];
   assert.deepEqual(entries.map((entry) => entry.label), ["Remove"]);
+  // The wait after the paint finds them there and loads nothing more.
+  for (const run of state.painted.splice(0)) run();
+  await flush();
+  assert.equal(calls.filter((call) => call === "mountComponentTools").length, 1);
+  // A right-click dismissed before they land opens nothing.
+  const second = setup();
+  second.workspace.mountWorkspace();
+  const options = last("preview").options as typeof preview;
+  second.state.toolsWait = new Promise<void>((resolve) => { land = resolve; });
+  options.onContextMenu({ x: 1, y: 2 }, {}, { path: "index.html", node: [0] });
+  options.onDismissContextMenu();
+  land();
+  await flush();
+  assert.ok(second.state.componentTools);
+  assert.deepEqual(last("rowMenu").calls, ["close"]);
 });
 
 test("a component tools load that fails is reported once and tried again with the next structure", async () => {
@@ -371,6 +395,29 @@ test("component tools that land after the workspace closed are destroyed; a wait
   assert.ok(calls.includes("componentTools.destroy"));
   // With no preview there is nothing to load.
   assert.equal(await workspace.loadComponentTools(), undefined);
+});
+
+test("closing the workspace cancels the wait after the paint, and destroys the tools that landed", async () => {
+  const { workspace, state, calls } = setup();
+  workspace.mountWorkspace();
+  await paint(state);
+  assert.ok(state.componentTools);
+  workspace.closeWorkspace();
+  assert.ok(calls.includes("componentTools.destroy"));
+  assert.equal(state.componentTools, undefined);
+  // An agent's make_component after the close hears that there are no tools.
+  assert.equal(await workspace.loadComponentTools(), undefined);
+  // A wait armed and then closed (or replaced) is cancelled, not left to run.
+  workspace.mountWorkspace();
+  (last("preview").options as { onStructure(structure: unknown): void }).onStructure({ path: "index.html", paintedSource: "A", items: [] });
+  assert.equal(state.painted.length, 1);
+  workspace.closeWorkspace();
+  assert.deepEqual(state.painted, []);
+  workspace.mountWorkspace();
+  (last("preview").options as { onStructure(structure: unknown): void }).onStructure({ path: "index.html", paintedSource: "A", items: [] });
+  workspace.mountWorkspace();
+  assert.deepEqual(state.painted, []);
+  assert.equal(calls.filter((call) => call === "toolsWait.cancel").length, 2);
 });
 
 test("a remount at the component tools' await hands over nothing", async () => {
