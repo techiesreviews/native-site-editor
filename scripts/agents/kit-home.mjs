@@ -22,6 +22,16 @@ export function kitHomeFolder(env = process.env) {
   return home;
 }
 
+/**
+ * `env` handing the kit `kitHomeFolder` picked to a child, as the shell forwarders do: KIT_HOME is that kit, and a
+ * kit the launcher picked keeps its marker (KIT_HOME_PINNED), so the child and everything below it never look up
+ * `current` again; a person's KIT_HOME stays theirs.
+ */
+export function kitChildEnv(home, env = process.env) {
+  const picked = !env.KIT_HOME || env.KIT_HOME === env.KIT_HOME_DEFAULT || env.KIT_HOME === env.KIT_HOME_PINNED;
+  return picked ? { ...env, KIT_HOME: home, KIT_HOME_PINNED: home } : { ...env, KIT_HOME: home };
+}
+
 /** The kit's library this editor's own helpers load: KIT_LIB_MJS (tests), else the picked kit's kit-lib.mjs. */
 export function kitLibrary(env = process.env) {
   return env.KIT_LIB_MJS || join(kitHomeFolder(env), "kit-lib.mjs");

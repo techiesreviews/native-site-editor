@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 // @ts-expect-error This editor's helper is plain JavaScript without declarations.
 import { kitHomeFolder } from "../scripts/agents/kit-home.mjs";
 import { toolingHash } from "../scripts/agents/shots/compare.mjs";
+import { kitEnv } from "./support/kit-env.ts";
 
 // This editor runs the shared kit through its launcher (kitchen-everywhere 30). The kit's own tests live in the
 // agent-kit repo; these check what is this editor's: its own commands, its docs into the shared rulebook, the
@@ -66,15 +67,15 @@ const tryingKit = Boolean(process.env.KIT_HOME) && process.env.KIT_HOME !== proc
 const kitUrl = "https://github.com/techiesreviews/agent-kit/blob/main/";
 
 test("every link from this editor's docs into the kit names a file and heading it has; relative links resolve", { skip: tryingKit && "a kit tried through KIT_HOME" }, () => {
-  const headings = anchors(readFileSync(shared, "utf8"));
   const docs = readdirSync("docs/agents").filter(name => name.endsWith(".md")).map(name => `docs/agents/${name}`);
   const relative = [extras, pointer, "docs/agents/runner.md", "docs/agents/agent-scripts.md"];
   for (const path of docs) {
     for (const [, target] of read(path).matchAll(/\]\(([^)\s]+)\)/g)) {
       const [file, anchor] = target.split("#");
       if (file.startsWith(kitUrl)) {
-        assert.ok(existsSync(join(home, file.slice(kitUrl.length))), `${path}: the kit has no ${file.slice(kitUrl.length)}`);
-        if (file === sharedUrl && anchor) assert.ok(headings.includes(anchor), `${path}: the shared rulebook has no heading for ${target}`);
+        const inKit = join(home, file.slice(kitUrl.length));
+        assert.ok(existsSync(inKit), `${path}: the kit has no ${file.slice(kitUrl.length)}`);
+        if (anchor && file.endsWith(".md")) assert.ok(anchors(readFileSync(inKit, "utf8")).includes(anchor), `${path}: the kit has no heading for ${target}`);
         continue;
       }
       // Relative links are checked in the docs that link into the rulebook (others hold placeholders).
@@ -115,23 +116,48 @@ test("the forwarders run the kit's own helper with every argument and its exit s
   const fake = temp(t);
   writeFileSync(join(fake, "kit"), "#!/usr/bin/env bash\n"); chmodSync(join(fake, "kit"), 0o755);
   writeFileSync(join(fake, "kit-lib.sh"), "");
-  const record = 'printf "%s|" "$(basename "$0")" "$@"; printf "\\n"; exit 7\n';
+  // Each helper prints its arguments, then the kit it was handed and the launcher's marker.
+  const record = 'printf "%s|" "$(basename "$0")" "$@" "$KIT_HOME" "${KIT_HOME_PINNED-unset}"; printf "\\n"; exit 7\n';
+  const { KIT_HOME: _drop, KIT_HOME_DEFAULT: _default, KIT_HOME_PINNED: _pinned, ...env } = process.env;
+  const person = { ...env, KIT_HOME: fake };
   for (const name of ["agent.sh", "unit.sh", "worktree.sh", "worktrees.sh"]) {
     writeFileSync(join(fake, name), `#!/usr/bin/env bash\n${record}`);
     chmodSync(join(fake, name), 0o755);
-    const result = spawnSync(resolve("scripts/agents", name), ["a b", "--c"], { env: { ...process.env, KIT_HOME: fake }, encoding: "utf8" });
-    assert.deepEqual([result.status, result.stdout], [7, `${name}|a b|--c|\n`], name);
+    const result = spawnSync(resolve("scripts/agents", name), ["a b", "--c"], { env: person, encoding: "utf8" });
+    assert.deepEqual([result.status, result.stdout], [7, `${name}|a b|--c|${fake}|unset|\n`], name);
   }
-  writeFileSync(join(fake, "tickets.mjs"), 'console.log(JSON.stringify(process.argv.slice(2))); process.exit(5);\n');
-  const tickets = spawnSync(process.execPath, [resolve("scripts/agents/tickets.mjs"), "check", "x y"], { env: { ...process.env, KIT_HOME: fake }, encoding: "utf8" });
-  assert.deepEqual([tickets.status, tickets.stdout], [5, '["check","x y"]\n']);
-  // Without KIT_HOME a forwarder asks the launcher, which picks the machine copy as for a kit command.
-  const data = join(fake, "data");
+  writeFileSync(join(fake, "tickets.mjs"), 'console.log(JSON.stringify([...process.argv.slice(2), process.env.KIT_HOME, process.env.KIT_HOME_PINNED ?? "unset"])); process.exit(5);\n');
+  const tickets = (extra: NodeJS.ProcessEnv) => spawnSync(process.execPath, [resolve("scripts/agents/tickets.mjs"), "check", "x y"], { env: { ...env, ...extra }, encoding: "utf8" });
+  const given = tickets({ KIT_HOME: fake });
+  assert.deepEqual([given.status, given.stdout], [5, `${JSON.stringify(["check", "x y", fake, "unset"])}\n`]);
+  // Without KIT_HOME a forwarder asks the launcher, which picks the machine copy as for a kit command, and hands
+  // that kit with its marker to the helper, so nothing below it looks up current again.
+  const data = join(fake, "data"), machine = realpathSync(fake);
   mkdirSync(join(data, "agent-kit"), { recursive: true });
   symlinkSync(fake, join(data, "agent-kit/current"));
-  const { KIT_HOME: _drop, KIT_HOME_DEFAULT: _default, KIT_HOME_PINNED: _pinned, ...env } = process.env;
   const unit = spawnSync(resolve("scripts/agents/unit.sh"), ["a"], { env: { ...env, XDG_DATA_HOME: data }, encoding: "utf8" });
-  assert.deepEqual([unit.status, unit.stdout], [7, "unit.sh|a|\n"]);
+  assert.deepEqual([unit.status, unit.stdout], [7, `unit.sh|a|${machine}|${machine}|\n`]);
+  const picked = tickets({ XDG_DATA_HOME: data });
+  assert.deepEqual([picked.status, picked.stdout], [5, `${JSON.stringify(["check", "x y", machine, machine])}\n`]);
+});
+
+test("a kit tried through KIT_HOME runs in kitEnv() fixtures, not the machine copy", (t) => {
+  const directory = temp(t), data = join(directory, "data");
+  const frontDoor = (folder: string, label: string) => {
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "kit"), `#!/usr/bin/env bash\nprintf "${label} %s\\n" "$*"\n`); chmodSync(join(folder, "kit"), 0o755);
+    writeFileSync(join(folder, "kit-lib.sh"), "");
+    return folder;
+  };
+  const tried = frontDoor(join(directory, "tried"), "tried");
+  frontDoor(join(data, "agent-kit/machine"), "machine");
+  symlinkSync("machine", join(data, "agent-kit/current"));
+  const { KIT_HOME: _home, KIT_HOME_DEFAULT: _default, KIT_HOME_PINNED: _pinned, ...rest } = process.env;
+  const version = (env: NodeJS.ProcessEnv) => spawnSync(kit, ["version"], { env: kitEnv({ ...rest, XDG_DATA_HOME: data, ...env }), encoding: "utf8" }).stdout;
+  assert.equal(version({ KIT_HOME: tried }), "tried version\n");
+  // A kit the launcher or a front door filled in is dropped: the fixture picks the machine copy again.
+  assert.equal(version({ KIT_HOME: tried, KIT_HOME_PINNED: tried }), "machine version\n");
+  assert.equal(version({ KIT_HOME: tried, KIT_HOME_DEFAULT: tried }), "machine version\n");
 });
 
 test("the documented user-level card hook skips projects with a hook launcher and prints the card elsewhere", (t) => {
@@ -160,7 +186,6 @@ test("the documented user-level card hook skips projects with a hook launcher an
   const context = (JSON.parse(shown.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
   assert.match(context, /^Context card: Other \(updated 2026-10-24\)\n/);
 });
-
 
 test("the hook launcher runs the kit's hooks with their arguments and status, and without a kit warns and never blocks", (t) => {
   const directory = temp(t), fake = join(directory, "kit");
@@ -338,6 +363,9 @@ test("the hook launcher finds the machine copy, and picks again for a pinned kit
   const gone = join(directory, "gone");
   assert.deepEqual(hook({ KIT_HOME: gone, KIT_HOME_PINNED: gone }), [2, "ran bash-guard\n"]);
   assert.deepEqual(hook({ KIT_HOME: hookless, KIT_HOME_PINNED: hookless }), [2, "ran bash-guard\n"]);
+  // A person's hookless KIT_HOME stays theirs: the guards are off, said plainly, and nothing blocks.
+  const warning = "Agent Kit not found: guards are off; run `scripts/agents/kit doctor`";
+  assert.deepEqual(hook({ KIT_HOME: hookless }), [0, `${JSON.stringify({ systemMessage: warning })}\n`]);
 });
 
 test("kit version goes through the machine copy the launcher picks", (t) => {
