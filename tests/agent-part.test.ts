@@ -325,17 +325,19 @@ test("a copy removed since the read is refused with no part too: the first copy 
 
 // Ticket 41: an all-copies edit whose copies all changed.
 
-test("an all edit whose two copies read both changed since is refused with read again and no part; one copy changed keeps its part", async () => {
+test("an edit whose two copies read both changed since is refused as no longer there, with no part, all or not; a single copy read and changed keeps its part", async () => {
   const twice = read.replace("<h1>Welcome</h1>", "<h1>Welcome</h1>\n    <p>Welcome</p>");
   const expectedHash = await textHash(twice);
   const { context, files: site } = await withHome(twice.replaceAll("Welcome", "Hello"));
-  const clash = await prepareAgentEdit(edit({ path: "index.html", expectedHash, edits: [{ oldText: "Welcome", newText: "Hi", all: true }] }), context, site, hash => hash === expectedHash ? twice : undefined)
-    .then(() => assert.fail("must clash"), (error: unknown) => error);
-  assert.ok(clash instanceof PartClash);
-  // A part around the first copy would let an all retry change that one and leave the other.
-  assert.equal(clash.part, undefined);
-  assert.match(clash.message, /Read the file again\.$/);
-  assert.doesNotMatch(clash.message, /oldText from part\.text/);
+  for (const all of [true, false]) {
+    const clash = await prepareAgentEdit(edit({ path: "index.html", expectedHash, edits: [{ oldText: "Welcome", newText: "Hi", all }] }), context, site, hash => hash === expectedHash ? twice : undefined)
+      .then(() => assert.fail("must clash"), (error: unknown) => error);
+    assert.ok(clash instanceof PartClash);
+    // A part around the first copy would let a retry change that one and leave the other.
+    assert.equal(clash.part, undefined, String(all));
+    assert.match(clash.message, /are no longer there: .* Read the file again\.$/);
+    assert.doesNotMatch(clash.message, /different number of times|oldText from part\.text/);
+  }
   // Read once and changed since: the part as it is now, to retry from.
   const once = await textHash(read), single = await withHome(read.replace("Welcome", "Hello"));
   const changed = await prepareAgentEdit(edit({ path: "index.html", expectedHash: once, edits: [{ oldText: "Welcome", newText: "Hi", all: true }] }), single.context, single.files, hash => hash === once ? read : undefined)
