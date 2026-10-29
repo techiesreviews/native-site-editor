@@ -91,6 +91,7 @@ The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slice
 | [37 Mock-ups on the preview site](tickets/37-mockups-on-preview.md) | S | – | – | – |
 | [38 The preview mock-ups copy only images a mock-up uses](tickets/38-mockups-copy-only-used-images.md) | S | – | – | 37 |
 | [39 `get_site` names the section an agent is asking about (follow-up on 11)](tickets/39-get-site-names-the-question-section.md) | S | – | – | 11 |
+| [40 Exact-part edits: second-look fixes (follow-up on 10)](tickets/40-exact-part-edits-second-look-fixes.md) | S | – | – | 10 |
 | [45 A pin shows the agent that took it, however it was taken (follow-up on 13)](tickets/45-pin-shows-the-agent-that-took-it.md) | S | visible | – | 13 |
 | [36 Close-out: checklist, docs, delete the proof of concept](tickets/36-close-out.md) | S | – | – | 31, 33, 35, 37 |
 

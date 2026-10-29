@@ -68,6 +68,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - Lead-allowed fix outside the ticket's Files (Ticket 52 retry test waits by time, not by turns). It fixes a slice-10 timing weakness. `tests/agent-tools-edit.test.ts` ("ticket 52 holds on retry") waited 100 `setImmediate` turns for the retry, but under load the retry's hashing outlasts them. `kit pr`'s full unit run failed on it every time here. Under 12 parallel runs, plain dev failed 1/12 and this branch 2/12. The test now checks each turn for up to 2 s: 36/36 passed under the same load, and `npm test` passed 6293/6293.
 
+- Second look (catch-up, 2026-10-29, OpenCode `deepseek-v4.1-flash-free`, `kit review --ticket <this> --base 189c8d907^` at `e33d0686e`): `RESULT: ok review git diff d0b11789d7f6ec869d7613f44e5e9ec25f1c9559...HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/unknown/20261029T034612Z` (findings 6: P2 2, gap 4). Both P2s (`atWork()` names the ended change's section; the shared `caller` in a batch) are the Follow-ups below, fixed by [ticket 39](39-get-site-names-the-question-section.md). New gap only: the Done quotes `kit specs --affected` failing (`native-agent-quiet.spec.ts`); nothing filed.
+
 ### Follow-ups
 
 - The catch-up (`changesSinceLastRead`, `src/agent-part.ts`) is still keyed by connection only. Two named subagents on one connection still share one catch-up and count each other's edits as their own (ticket 10's follow-up). Key it by connection plus `agent` now that the name arrives.
