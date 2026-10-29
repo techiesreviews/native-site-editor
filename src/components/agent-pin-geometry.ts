@@ -27,18 +27,21 @@ export function noteTop(anchor: ReturnType<typeof noteAnchor>, height: number) {
 /** The room a row of pins takes above its element: the gap, the pin and the gap again. */
 export const PIN_ROOM = NOTE_GAP * 2 + PIN_HEIGHT;
 type Box = { top: number; bottom: number; left: number; right: number; width: number; height: number };
+/** How many earlier siblings `clearAbove` reads at most: past those, a layer or float beside it is no line over it. */
+export const CLEAR_SIBLINGS = 4;
 /**
- * The top of what stands just above an element at `rect` (ticket am-45: an eyebrow line over a heading), from its
- * earlier siblings' boxes, nearest first: those stacked over it closer than a row of pins, however tall (the pins
- * never cover their text; hung inside the element they would cover its own). Siblings beside it, over it (a layer
- * behind it, a float) or hidden do not count. None when there are none.
+ * The top of the line just above a heading at `rect` (ticket am-45: an eyebrow over a heading), from its earlier
+ * siblings' boxes, nearest first: the nearest one stacked over it, when it ends closer than a row of pins and is
+ * short (at most two rows of pins tall, a kicker or eyebrow), so its pins stand clear of it without leaving their
+ * element. Siblings beside it, over it (a layer behind it, a float) or hidden are passed over, up to
+ * CLEAR_SIBLINGS. None otherwise: a run of paragraphs, items or cards keeps each pin on its own element.
  */
 export function clearAbove(rect: Pick<Box, "top" | "left" | "right">, earlier: Iterable<Box>) {
-  let top = rect.top;
+  let read = 0;
   for (const box of earlier) {
+    if (++read > CLEAR_SIBLINGS) return undefined;
     if (!box.width || !box.height || box.bottom > rect.top + 1 || box.right <= rect.left || box.left >= rect.right) continue;
-    if (box.bottom <= top - PIN_ROOM) break;
-    top = Math.min(top, box.top);
+    return box.bottom > rect.top - PIN_ROOM && box.height <= PIN_ROOM * 2 ? box.top : undefined;
   }
-  return top < rect.top ? top : undefined;
+  return undefined;
 }
