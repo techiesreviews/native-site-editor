@@ -30,3 +30,4 @@ On agents-and-multiplayer slice 45 (PR #259) the builder found that the test run
 ## Kit commands and evidence
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines.
+- Lead, 2026-10-30: also take this here: the `kit ux` reviewer returned no verdict for one feature three times on agents-and-multiplayer slice 14 (F-canvas-13), stopping the slice each time until a rerun. A missing verdict should be retried once by `kit ux` itself, then reported as "no verdict" without stopping the slice.
