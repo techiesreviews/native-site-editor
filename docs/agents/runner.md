@@ -42,13 +42,13 @@ and each `--help`. A build's own `runner-extras.md` (next to its map) wins where
 ## Build and tests
 
 - **Default:** from a clean worktree, `scripts/agents/kit bg slice-<NN> -- scripts/agents/kit slice --ticket <ticket> --builder claude-opus-5-5`
-  with `ASE_REVIEW_MODEL=claude-opus-5-5` (pins: [the kitchen rulebook](../../scripts/agents/docs/kitchen.md#who-cooks-pins-from-2026-10-22)), then `kit wait job slice-<NN> --timeout 2h` (brief, build, commit, review, ≤3 `kit fix` rounds, `kit pr`; a rerun resumes). Every open finding blocks before three completed rounds; afterwards P2/P3 defects and validation gaps proceed as follow-ups, while P0/P1 defects, defects without readable severity and unreadable reviews leave the PR unmerged. A covering review survives ticket-only commits on resume.
+  with `ASE_REVIEW_MODEL=claude-opus-5-5` (pins: [the kitchen rulebook](../../scripts/agents/docs/kitchen.md#who-cooks-pins-from-2026-10-22)), then `kit wait job slice-<NN> --timeout 2h` (brief, build, commit, review, ≤3 `kit fix` rounds, `kit pr`; a rerun resumes). Every open finding blocks before three completed rounds; afterwards P2/P3 defects and validation gaps proceed as follow-ups, while P0/P1 defects, defects without readable severity and unreadable reviews leave the PR unmerged. A covering review survives ticket-only commits on resume. A build that timed out with its work committed on top of the slice's start resumes at review on a rerun (`resume: build taken from N commits …`; no `state.json` edit); a branch moved to other history still stops.
 - Manual fallback: `builder: claude`: implement directly. Another model: write `.scratch/agent-brief.md`
   with ticket path, Files list and acceptance, and run `scripts/agents/agent.sh build "$PWD" .scratch/agent-brief.md --model
   <model> --effort <effort>` in the background. Inspect the report and diff; stay inside the ticket's Files; then commit.
 - Add unit coverage for pure rules. While building, run `scripts/agents/kit unit --affected` (or `scripts/agents/unit.sh
   <files>`), `npm run check` when types moved, `scripts/agents/kit specs --affected` (or `kit specs <spec…>`; `full-suite.sh 3`
-  only for shared plumbing). `kit pr` runs the full set scaled to the change; don't run it all yourself first. Rerun a
+  only for shared plumbing). `kit pr` runs the full set scaled to the change; don't run it all yourself first. A slice's builder gets at most 20 specs, closest first (`N more run in kit pr`). Rerun a
   failing spec once before calling it flaky; one that also fails on plain dev: say so in `decide` and stop. Read the digest; don't open results or error-context files.
 - Credit whichever model built the change: `Co-Authored-By: <model name> <noreply@<vendor>>`
   (Sol: `GPT-6.1-Sol <noreply@openai.com>`; Claude: `Claude Opus 5.5 <noreply@anthropic.com>`).

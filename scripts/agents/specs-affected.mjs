@@ -294,6 +294,37 @@ export function namedSpecs(names, files) {
   return [...selected.values()].sort((a, b) => a.file.localeCompare(b.file));
 }
 
+/** Specs a ticket's text names (paths or basenames); unknown or ambiguous names are skipped. */
+export function ticketSpecs(text, files) {
+  const found = new Map();
+  for (const [name] of text.matchAll(/[\w./-]*\.spec\.ts\b/g)) {
+    try { for (const spec of namedSpecs([name], files)) found.set(spec.file, spec); } catch { /* Not a spec here. */ }
+  }
+  return [...found.values()].sort((a, b) => a.file.localeCompare(b.file));
+}
+
+export const BUILDER_SPEC_CAP = 20;
+
+/** A builder's run: the ticket's named specs, then specs that changed or import a changed file
+ * themselves, then the rest by reason, up to `cap`. `left` counts the affected specs left for kit pr. */
+export function builderSpecs(selected, { files, changed, named = [], cap = BUILDER_SPEC_CAP }) {
+  const changes = new Set(changed), paths = new Set([...Object.keys(files), ...changed]);
+  const direct = spec => changes.has(spec.file)
+    || importsOf(files[spec.file] ?? "").some(value => changes.has(resolveImport(spec.file, value, paths)));
+  const rank = spec => spec.reasons.includes("named spec") ? 0 : direct(spec) ? 1
+    : Math.min(...spec.reasons.map(reason => ({ import: 2, fixture: 2, server: 2, "removed string": 3 })[reason.split(":")[0]] ?? 4));
+  const byFile = new Map(selected.map(spec => [spec.file, spec]));
+  for (const spec of named) {
+    const found = byFile.get(spec.file);
+    byFile.set(spec.file, found ? { ...found, reasons: ["named spec", ...found.reasons] } : spec);
+  }
+  const all = [...byFile.values()];
+  const kept = all.map(spec => ({ spec, rank: rank(spec) }))
+    .sort((a, b) => a.rank - b.rank || b.spec.reasons.length - a.spec.reasons.length || a.spec.file.localeCompare(b.spec.file))
+    .slice(0, cap).map(({ spec }) => spec).sort((a, b) => a.file.localeCompare(b.file));
+  return { specs: kept, left: all.length - kept.length };
+}
+
 export const SHARD_MIN_SPECS = 40;
 
 /** Greedy largest-first partitioning, with stable ties independent of input order. */
