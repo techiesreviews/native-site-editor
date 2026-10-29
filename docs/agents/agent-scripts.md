@@ -38,8 +38,8 @@ lacks them. The other keys are optional and a missing one turns its feature off 
 only shared commands; `kit pr` runs `kit specs` only when it holds a `specs` command), `mainRoot`
 (else the main worktree), `allowMainCheckout` (`true`: `kit doctor` accepts the main checkout, for a
 project worked on there), `devRoot` (`next` and `heartbeat` say they need one; `worktrees.sh` never prunes it),
-`worktreePrefix`, `worktreeLinks` (paths inside the main checkout that `worktree.sh` links into each new worktree;
-here `.scratch/native-static-preview`, the native-static fixture), `sharedNodeModules` (without it `kit doctor` skips the `node_modules` check and
+`worktreePrefix`, `worktreeLinks` (paths inside the main checkout that `worktree.sh` links into each new
+worktree; here `.scratch/native-static-preview`, the native-static fixture), `sharedNodeModules` (without it `kit doctor` skips the `node_modules` check and
 `kit pr` skips `kit deps check`), `branches.release` and `branches.ci` (else `land`; a `release`
 equal to `land` takes ordinary PRs), `checks` (`check`, `test`, `lint`: any command, for example
 `python3 .checks/site.py`, run by `kit pr` and named by the review, slice and fix briefs, a missing one is
