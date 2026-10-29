@@ -137,7 +137,7 @@ export interface WorkspaceMountPorts {
   finishedWork: Pick<ReturnType<typeof createFinishedElsewhere>, "open" | "shown">;
   mediaHistoryHome: Pick<ReturnType<typeof createMediaHistoryHome>, "adopt" | "clear">;
   parkedSteps: Pick<ReturnType<typeof createParkedSteps>, "adopt" | "clear">;
-  guardedEdits: Pick<GuardedEdits, "stamp">;
+  guardedEdits: Pick<GuardedEdits, "stamp" | "peek">;
   mediaController: Pick<ReturnType<typeof createMediaController>, "disposeGallery" | "mediaEnded" | "chooseImage">;
   paletteController: Pick<ReturnType<typeof createCommandPaletteController>, "shortcut" | "mount" | "dispose">;
   previewSelection: Pick<PreviewSelectionController, "handlers">;
@@ -617,8 +617,12 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       if (ports.nativePreview !== preview || toolsLoad !== load) { tools.destroy(); return undefined; }
       ports.componentTools = tools;
       ports.pageStructure?.refresh();
+      // The edit bar draws again for the selection held only while the page it was painted from is
+      // still the source: with an edit on its way to the preview (a Bold just pressed), its controls
+      // would read bytes the edit replaced; the preview's next selection draws it, tools and all.
       const selection = ports.appStore.selection.value;
-      if (selection) ports.pageStructureController.renderEditBar(selection);
+      if (selection && selection.paintedSource !== undefined && ports.guardedEdits.peek.source(selection.path) === selection.paintedSource)
+        ports.pageStructureController.renderEditBar(selection);
       return tools;
     }, (error: unknown) => {
       if (ports.nativePreview === preview && toolsLoad === load) ports.errorMessage(error);

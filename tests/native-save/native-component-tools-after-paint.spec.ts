@@ -137,3 +137,26 @@ test("a Page Structure section row offers Make component once the component tool
   await more.click();
   await expect(page.getByRole("menu", { name: "Actions for Section", exact: true }).getByRole("menuitem", { name: "Make component", exact: true })).toBeVisible();
 });
+
+// The tools landing between an edit bar change and the preview's update (a Bold just pressed) leave the
+// bar to the preview's next selection: the next change in the bar reads the bytes the Bold wrote.
+// The preview's update travels by postMessage, which page.route cannot hold, so this order is not
+// forced here (it came about in about one run of three); tests/workspace-mount.test.ts forces it.
+test("component tools that land right after a Bold leave the next bar change working", async ({ page, baseURL }) => {
+  // A phone, as the UX check met it: Page Structure is folded into the sheet.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const tools = await holdModule(page, TOOLS);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator(".hero p.lead")).toBeVisible();
+  await editorMounted(page);
+  await tools.reached;
+  await frame(page).locator(".hero p.lead").click();
+  await page.getByRole("button", { name: "Paragraph", exact: true }).first().click();
+  await expect(editBar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await editBar(page).getByRole("button", { name: "Bold" }).click();
+  tools.release();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("l");
+  await expect(editBar(page).getByRole("combobox", { name: "Text size" })).toHaveValue("l");
+  await expect(page.getByText("The source changed. Select the element again and try again.")).toHaveCount(0);
+});
