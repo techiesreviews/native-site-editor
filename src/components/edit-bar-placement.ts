@@ -41,18 +41,39 @@ export function editBarPlacement({ selectionTop, selectionBottom, frameHeight, b
   return { top, side };
 }
 
+/** The docked bar's box and the visual viewport (`window.visualViewport`'s offsetTop and height), in host viewport px. */
+export interface DockLiftOptions {
+  barTop: number;
+  barBottom: number;
+  viewportTop: number;
+  viewportHeight: number;
+}
+
 /**
- * How far to scroll the page (px; positive scrolls down) so a selection the
- * bar would cover gets clear room above or below it, the shorter way, with the
- * selection still in view; 0 when it already has room or no scroll can give it.
- * `tried`: a scroll that did not happen (the page's top or end), so the other way.
+ * How far to raise the bar docked at the canvas foot (phones) so it sits right
+ * on top of the on-screen keyboard, or at the foot of a zoomed-in visual
+ * viewport: 0 when that foot is at or under the bar, never past its top.
  */
-export function roomScroll({ selectionTop, selectionBottom, frameHeight, barHeight, inset = 0 }: Omit<EditBarPlacementOptions, "visible">, tried = 0): number {
-  const ceiling = Math.min(inset, Math.max(0, frameHeight - barHeight - 8)) + 4;
-  const above = selectionTop - barHeight - 8 - ceiling;
-  const below = selectionBottom + 8 - (frameHeight - barHeight - 4);
-  if (above >= 0 || below <= 0) return 0;
-  const up = tried >= 0 && selectionBottom - above <= frameHeight;
-  const down = tried <= 0 && selectionTop - below >= ceiling;
-  return up && (!down || -above <= below) ? above : down ? below : 0;
+export function dockLift({ barTop, barBottom, viewportTop, viewportHeight }: DockLiftOptions): number {
+  return Math.max(0, Math.min(barBottom - (viewportTop + viewportHeight), barTop - viewportTop));
+}
+
+/** The selection (with its note row) in frame px, and where the page shows down to: the docked bar's top, or the keyboard's. */
+export interface DockScrollOptions {
+  selectionTop: number;
+  selectionBottom: number;
+  visibleBottom: number;
+  inset?: number;
+}
+
+/**
+ * How far to scroll the page (px; positive scrolls down) so a selection hidden
+ * behind the docked bar or the keyboard comes into view 8 px above it, its top
+ * kept 8 px under the sticky header; 0 when it is already in view. A selection
+ * taller than the room shows its top.
+ */
+export function dockScroll({ selectionTop, selectionBottom, visibleBottom, inset = 0 }: DockScrollOptions): number {
+  const ceiling = Math.min(inset, Math.max(0, visibleBottom - 16)) + 8;
+  const hidden = selectionBottom - (visibleBottom - 8);
+  return hidden > 0 ? Math.max(0, Math.min(hidden, selectionTop - ceiling)) : 0;
 }
