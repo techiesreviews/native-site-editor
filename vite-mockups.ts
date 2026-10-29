@@ -5,7 +5,7 @@
 // images no mock-up uses (reference screenshots for planning) stay unpublished. Each mock-up on the
 // index carries a label saying how far the build tickets linking to it have got (`mockupShipping`).
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type { Plugin } from "vite";
 
@@ -82,6 +82,10 @@ export const SHIPPING_LABELS = {
 } as const;
 export type Shipping = { label: keyof typeof SHIPPING_LABELS; tickets: BuildTicket[] };
 
+/** A field of a ticket's front matter, `""` when it has none. */
+const frontMatterField = (text: string, name: string) =>
+  new RegExp(`^${name}:[ \\t]*(.*?)[ \\t]*$`, "m").exec(/^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "")?.[1] ?? "";
+
 /** `prototypes/<file>.html` with the path before it, as a ticket links it (`../../prototypes/a.html`,
  * `../../../other-map/prototypes/b.html`) or names it (`prototypes/c.html`). */
 const mockupLink = /((?:[\w.-]+\/)*)prototypes\/([\w.-]+\.html)/gi;
@@ -97,8 +101,6 @@ export function buildTickets(root: string, mockups: readonly Mockup[]): BuildTic
     return readdirSync(folder).sort().filter(file => file.endsWith(".md")).flatMap(file => {
       const path = join(folder, file);
       const text = readFileSync(path, "utf8");
-      const frontMatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? "";
-      const field = (name: string) => new RegExp(`^${name}:[ \\t]*(.*?)[ \\t]*$`, "m").exec(frontMatter)?.[1] ?? "";
       const linked = new Set<string>();
       for (const [, before, page] of text.matchAll(mockupLink)) {
         const key = [dirname(path), root, join(wayfinder, map)]
@@ -107,85 +109,38 @@ export function buildTickets(root: string, mockups: readonly Mockup[]): BuildTic
         if (key) linked.add(key);
       }
       if (!linked.size) return [];
-      return [{ map, name: /^\d+/.exec(file)?.[0] ?? file.slice(0, -3), path: `docs/wayfinder/${map}/build/tickets/${file}`, closed: field("status") === "closed", claimed: field("assignee") !== "", mockups: [...linked] }];
+      return [{ map, name: /^\d+/.exec(file)?.[0] ?? file.slice(0, -3), path: `docs/wayfinder/${map}/build/tickets/${file}`, closed: frontMatterField(text, "status") === "closed", claimed: frontMatterField(text, "assignee") !== "", mockups: [...linked] }];
     });
   });
 }
 
-/** The build tickets (paths from `root`, as in `BuildTicket`) whose closing commit, the newest one adding
- * the `status: closed` line of their front matter, is on `origin/main` (or, without it, a local `main`), so their
- * work is released. A commit counts by its id or, rewritten by a rebase merge, by its author time and subject.
- * A ticket moved or renamed since keeps its closing commit. Undefined when git or `main` can't be read, or in a
- * shallow clone (its oldest commit would look like every ticket's closing one); `origin/main` is as fresh as
- * the last fetch of `main`. */
-export function ticketsOnMain(root: string): ReadonlySet<string> | undefined {
+/** Those of `tickets` closed in `origin/main`'s copy (or, without it, a local `main`'s). A ticket closes in the
+ * same change as its work, so closed there means released. Only `main`'s tip is read, so a shallow clone works
+ * once it has `main`; a ticket renamed since its release reads as not on `main` until the rename is released.
+ * Undefined when git or `main` can't be read; `origin/main` is as fresh as the last fetch of `main`. */
+export function ticketsOnMain(root: string, tickets: readonly BuildTicket[]): ReadonlySet<string> | undefined {
   const git = (args: string[], input?: string) =>
     execFileSync("git", ["-C", root, ...args], { input, stdio: ["pipe", "pipe", "ignore"], maxBuffer: 1 << 28 });
-  let top: string, main: Set<string>, log: string;
+  let blobs: Buffer;
   try {
     const ref = ["origin/main", "main"].find(name => { try { return git(["rev-parse", "--verify", "--quiet", `${name}^{commit}`]).length > 0; } catch { return false; } });
     if (!ref) return undefined;
-    if (git(["rev-parse", "--is-shallow-repository"]).toString().trim() === "true") return undefined;
-    top = git(["rev-parse", "--show-toplevel"]).toString().trim();
-    main = new Set(git(["log", "--format=%H%n%at %s", ref]).toString().split("\n"));
-    // Every change under docs/wayfinder, children before parents, so a rename is seen before the commits on
-    // any branch that used the older path.
-    log = git(["log", "--topo-order", "-p", "-M", "--unified=0", "--no-color", "--no-ext-diff", "--format=commit %H%nsubject %at %s", "--", "docs/wayfinder"]).toString();
+    blobs = git(["cat-file", "--batch"], tickets.map(({ path }) => `${ref}:./${path}\n`).join(""));
   } catch {
     return undefined;
   }
-  /** Each added `status: closed` line, newest first: the ticket's path then, the line's number, and its commit's
-   * id and `<author time> <subject>`. */
-  const added: { path: string; line: number; commit: string[] }[] = [];
-  /** An older path of a ticket, mapped to the one it was renamed to. */
-  const renamed = new Map<string, string>();
-  let commit: string[] = [], file = "", from = "", header = false, next = 0;
-  for (const line of log.split("\n")) {
-    if (line.startsWith("commit ")) commit = [line.slice(7)];
-    else if (line.startsWith("subject ")) commit.push(line.slice(8));
-    else if (line.startsWith("diff --git ")) header = true;
-    else if (header && line.startsWith("rename from ")) from = line.slice(12);
-    else if (header && line.startsWith("rename to ")) { if (!renamed.has(from)) renamed.set(from, line.slice(10)); }
-    else if (header && line.startsWith("+++ ")) file = line.slice(4).replace(/^b\//, "");
-    else if (line.startsWith("@@ ")) {
-      header = false;
-      next = Number(/\+(\d+)/.exec(line)?.[1] ?? 0);
-    } else if (!header && line.startsWith("+")) {
-      if (/^\+status:\s*closed\s*$/.test(line)) added.push({ path: file, line: next, commit });
-      next++;
-    }
-  }
-  // Only a line inside the front matter closes a ticket, not one quoted in its body: read each file as it was.
-  let blobs: Buffer;
-  try {
-    blobs = git(["cat-file", "--batch"], added.map(({ path, commit: [id] }) => `${id}:${path}\n`).join(""));
-  } catch {
-    return undefined;
-  }
+  // `<id> blob <size>`, the file and a newline per ticket; `<name> missing` for one `main` doesn't have.
+  const onMain = new Set<string>();
   let offset = 0;
-  const frontMatterEnds = added.map(() => {
+  for (const { path } of tickets) {
     const headerEnd = blobs.indexOf(10, offset);
     const [, kind, size] = blobs.subarray(offset, headerEnd).toString().split(" ");
-    if (kind !== "blob") { offset = headerEnd + 1; return 0; }
-    const text = blobs.subarray(headerEnd + 1, headerEnd + 1 + Number(size)).toString();
-    offset = headerEnd + 2 + Number(size);
-    const lines = text.split(/\r?\n/);
-    return lines[0] === "---" ? lines.indexOf("---", 1) + 1 : 0;
-  });
-  const today = (path: string) => {
-    for (const seen = new Set<string>(); renamed.has(path) && !seen.has(path);) {
-      seen.add(path);
-      path = renamed.get(path)!;
-    }
-    return path;
-  };
-  /** A ticket's path today, and its closing commit. */
-  const closing = new Map<string, string[]>();
-  added.forEach(({ path, line, commit: ids }, index) => {
-    if (line > 1 && line < frontMatterEnds[index] && !closing.has(today(path))) closing.set(today(path), ids);
-  });
-  const base = realpathSync(root);
-  return new Set([...closing].filter(([, ids]) => ids.some(id => main.has(id))).map(([path]) => relative(base, resolve(top, path)).split("\\").join("/")));
+    offset = headerEnd + 1;
+    if (kind !== "blob") continue;
+    if (frontMatterField(blobs.subarray(offset, offset + Number(size)).toString(), "status") === "closed") onMain.add(path);
+    offset += Number(size) + 1;
+  }
+  return onMain;
 }
 
 /** Each HTML mock-up's label from the build tickets linking to it: Live when all are closed and on `main`
@@ -249,7 +204,7 @@ ul { padding-inline-start: 0; list-style: none; }
 li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; margin-block: 0.375rem; }
 .legend { display: grid; grid-template-columns: max-content 1fr; align-items: baseline; gap: 0.375rem 0.75rem; margin-block: 0; }
 .legend dd { margin: 0; }
-.shipping { padding: 0 6px; border-radius: 999px; font-size: var(--type-small); font-weight: 600; line-height: 18px; white-space: nowrap; }
+.shipping { padding: 0 6px; border-radius: 999px; font-size: var(--type-badge); font-weight: 600; line-height: 18px; white-space: nowrap; }
 .shipping--live { background: var(--success-bg); color: var(--success-fg); }
 .shipping--preview { background: var(--current); color: var(--link); }
 .shipping--building { background: var(--warning-bg); color: var(--warning-fg); }
@@ -288,7 +243,8 @@ export function mockups(root: string): Plugin {
     generateBundle() {
       const files = mockupFiles(root);
       for (const { map, file, path } of files) this.emitFile({ type: "asset", fileName: `mockups/${map}/${file}`, source: readFileSync(path) });
-      const shipping = mockupShipping(files, buildTickets(root, files), ticketsOnMain(root));
+      const tickets = buildTickets(root, files);
+      const shipping = mockupShipping(files, tickets, ticketsOnMain(root, tickets));
       this.emitFile({ type: "asset", fileName: "mockups/index.html", source: mockupIndex(files, { shipping }) });
     },
     // After Vite has copied public/_headers into the output folder; once, even across watch rebuilds.

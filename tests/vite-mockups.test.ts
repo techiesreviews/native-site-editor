@@ -114,11 +114,12 @@ function shippingRepo() {
 /** Each mock-up's label in `root`, with the names of the tickets it came from: `{ "live.html": "live 01" }`. */
 function labelsIn(root: string) {
   const files = mockupFiles(root);
-  return Object.fromEntries([...mockupShipping(files, buildTickets(root, files), ticketsOnMain(root))]
+  const tickets = buildTickets(root, files);
+  return Object.fromEntries([...mockupShipping(files, tickets, ticketsOnMain(root, tickets))]
     .map(([key, { label, tickets }]) => [key.slice("agents/".length), `${label} ${tickets.map(ticket => ticket.name).join(",")}`.trim()]));
 }
 
-test("each mock-up's label comes from the build tickets linking to it and whether their closing commits are on main", () => {
+test("each mock-up's label comes from the build tickets linking to it and whether main has them closed", () => {
   const { root } = shippingRepo();
   const tickets = buildTickets(root, mockupFiles(root));
   assert.deepEqual(tickets.map(({ map, name, closed, claimed, mockups }) => ({ map, name, closed, claimed, mockups })), [
@@ -130,7 +131,7 @@ test("each mock-up's label comes from the build tickets linking to it and whethe
     { map: "agents", name: "07", closed: false, claimed: false, mockups: ["agents/shared.html"] },
     { map: "styling", name: "06", closed: true, claimed: false, mockups: ["agents/shared.html"] },
   ]);
-  assert.deepEqual([...ticketsOnMain(root)!].sort(), ["docs/wayfinder/agents/build/tickets/01-live.md", "docs/wayfinder/styling/build/tickets/06-shared.md"]);
+  assert.deepEqual([...ticketsOnMain(root, tickets)!].sort(), ["docs/wayfinder/agents/build/tickets/01-live.md", "docs/wayfinder/styling/build/tickets/06-shared.md"]);
   assert.deepEqual(labelsIn(root), {
     "claimed.html": "building 04",
     "idea.html": "idea",
@@ -141,24 +142,21 @@ test("each mock-up's label comes from the build tickets linking to it and whethe
     "preview.html": "preview 02",
     "shared.html": "building 07,06",
   });
-  // Without main (a shallow clone, no git), closed work reads On preview.
-  assert.equal(ticketsOnMain(join(scratch, "not-a-repo")), undefined);
+  // Without git or main, closed work reads On preview.
+  assert.equal(ticketsOnMain(join(scratch, "not-a-repo"), tickets), undefined);
   assert.equal(mockupShipping(mockupFiles(root), tickets).get("agents/live.html")?.label, "preview");
 });
 
-test("a ticket's newest closing commit counts, a moved ticket keeps it, and origin/main wins over a lagging local main", () => {
+test("a ticket counts as on main by main's own copy; a lagging local main loses to origin/main", () => {
   const { root, git, ticket } = shippingRepo();
-  git("mv", "docs/wayfinder/styling/build/tickets/06-shared.md", "docs/wayfinder/styling/build/tickets/16-shared.md");
-  git("commit", "--quiet", "-m", "rename 06");
+  // Reopened on dev, closed again: main's copy is closed, so its mock-up stays Live.
   const body = "[mock-up](../../prototypes/live.html), ../../prototypes/live-and-open.html, ../../prototypes/live-and-preview.html";
   ticket("agents", "01-live.md", "open", "", body);
   git("commit", "--quiet", "-am", "reopen 01");
   ticket("agents", "01-live.md", "closed", "", body);
   git("commit", "--quiet", "-am", "close 01 again");
-  assert.deepEqual([...ticketsOnMain(root)!], ["docs/wayfinder/styling/build/tickets/16-shared.md"]);
   const labels = labelsIn(root);
-  assert.equal(labels["live.html"], "preview 01");
-  assert.equal(labels["shared.html"], "building 07,16");
+  assert.equal(labels["live.html"], "live 01");
   // Reached through a symlink, the repo reads the same.
   const link = join(scratch, `link-${Date.now()}`);
   symlinkSync(root, link);
@@ -170,61 +168,42 @@ test("a ticket's newest closing commit counts, a moved ticket keeps it, and orig
   gitIn(clone, "branch", "main", "origin/main");
   git("branch", "--force", "main", "dev");
   gitIn(clone, "fetch", "--quiet", "origin");
-  assert.deepEqual(labelsIn(clone), { ...labels, "live.html": "live 01", "preview.html": "live 02", "live-and-preview.html": "live 01,02" });
+  assert.deepEqual(labelsIn(clone), { ...labels, "preview.html": "live 02", "live-and-preview.html": "live 01,02" });
 });
 
-test("a shallow clone, even with main, reads no ticket as on main, so closed work is On preview", () => {
-  const { root } = shippingRepo();
+test("a shallow clone with main reads it; a repo without any main reads closed work as On preview", () => {
+  const { root, git } = shippingRepo();
   const clone = join(scratch, `shallow-${Date.now()}`);
   gitIn(scratch, "clone", "--quiet", "--depth=1", "--no-single-branch", `file://${root}`, clone);
-  gitIn(clone, "rev-parse", "--verify", "origin/main");
-  assert.equal(ticketsOnMain(clone), undefined);
-  assert.equal(labelsIn(clone)["live.html"], "preview 01");
+  assert.equal(labelsIn(clone)["live.html"], "live 01");
+  git("branch", "--delete", "--force", "main");
+  assert.equal(ticketsOnMain(root, buildTickets(root, mockupFiles(root))), undefined);
+  assert.equal(labelsIn(root)["live.html"], "preview 01");
 });
 
-test("a status: closed line quoted in a ticket's body doesn't count as its closing", () => {
+test("a status: closed line quoted in a ticket's body doesn't close it", () => {
   const { root, git } = shippingRepo();
+  const path = join(root, "docs/wayfinder/agents/build/tickets/04-claimed.md");
+  writeFileSync(path, readFileSync(path, "utf8") + "\n```\nstatus: closed\n```\n");
+  git("commit", "--quiet", "-am", "quote a front matter in 04");
   git("branch", "--force", "main", "dev");
-  writeFileSync(join(root, "docs/wayfinder/agents/build/tickets/01-live.md"),
-    readFileSync(join(root, "docs/wayfinder/agents/build/tickets/01-live.md"), "utf8") + "\n```\nstatus: closed\n```\n");
-  git("commit", "--quiet", "-am", "quote a front matter in 01");
-  assert.equal(labelsIn(root)["live.html"], "live 01");
+  assert.equal(labelsIn(root)["claimed.html"], "building 04");
 });
 
-test("a rename on one branch and a later close of the old path on another both count once merged", () => {
-  const { root, git, ticket } = shippingRepo();
-  const later = { ...process.env, GIT_AUTHOR_DATE: "2099-01-01T00:00:00Z", GIT_COMMITTER_DATE: "2099-01-01T00:00:00Z" };
-  const gitLater = (...args: string[]) =>
-    execFileSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...args], { stdio: "ignore", env: later });
-  const body = "From [shared](../../../agents/prototypes/shared.html) and docs/wayfinder/agents/prototypes/shared.html.";
-  git("checkout", "--quiet", "-b", "x");
-  git("mv", "docs/wayfinder/styling/build/tickets/06-shared.md", "docs/wayfinder/styling/build/tickets/16-shared.md");
-  git("commit", "--quiet", "-m", "rename 06");
-  git("checkout", "--quiet", "-b", "y", "dev");
-  ticket("styling", "06-shared.md", "open", "", body);
-  gitLater("commit", "--quiet", "-am", "reopen 06");
-  ticket("styling", "06-shared.md", "closed", "", body);
-  gitLater("commit", "--quiet", "-am", "close 06 again");
-  git("checkout", "--quiet", "dev");
-  git("merge", "--quiet", "--no-ff", "--no-edit", "x");
-  git("merge", "--quiet", "--no-ff", "--no-edit", "y");
-  git("branch", "--force", "main", "dev");
-  assert.ok(ticketsOnMain(root)!.has("docs/wayfinder/styling/build/tickets/16-shared.md"));
-  assert.equal(labelsIn(root)["shared.html"], "building 07,16");
-});
-
-test("a closing commit rewritten onto main by a rebase merge still counts, matched by author time and subject", () => {
+test("a ticket renamed on dev reads as not on main until the rename is released", () => {
   const { root, git } = shippingRepo();
-  git("checkout", "--quiet", "main");
-  git("cherry-pick", "dev");
-  git("checkout", "--quiet", "dev");
-  assert.equal(labelsIn(root)["preview.html"], "live 02");
+  git("mv", "docs/wayfinder/agents/build/tickets/01-live.md", "docs/wayfinder/agents/build/tickets/11-live.md");
+  git("commit", "--quiet", "-m", "rename 01");
+  assert.equal(labelsIn(root)["live.html"], "preview 11");
+  git("branch", "--force", "main", "dev");
+  assert.equal(labelsIn(root)["live.html"], "live 11");
 });
 
 test("the index shows each label with the tickets it came from, and a legend saying what each means", () => {
   const { root } = shippingRepo();
   const files = mockupFiles(root);
-  const html = mockupIndex(files, { shipping: mockupShipping(files, buildTickets(root, files), ticketsOnMain(root)) });
+  const tickets = buildTickets(root, files);
+  const html = mockupIndex(files, { shipping: mockupShipping(files, tickets, ticketsOnMain(root, tickets)) });
   const row = (page: string, badge: string) => assert.ok(html.includes(`<li><a href="agents/${page}.html">${page}</a> ${badge}</li>`), page);
   row("live", '<span class="shipping shipping--live">Live</span> <span class="tickets">ticket 01</span>');
   row("live-and-preview", '<span class="shipping shipping--preview">On preview</span> <span class="tickets">tickets 01, 02</span>');
@@ -316,6 +295,8 @@ test("only the preview Worker builds with the mock-ups", () => {
   const scripts = (JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts;
   assert.match(scripts["build:preview"], /^MOCKUPS=1 vite build\b/);
   assert.doesNotMatch(scripts["build:ui"], /MOCKUPS/);
+  // Its GitHub deploy fetches main, so the index can label work Live.
+  assert.match(readFileSync(join(repoRoot, ".github/workflows/deploy-preview.yml"), "utf8"), /^\s+- run: git fetch --no-tags --depth=1 origin main:refs\/remotes\/origin\/main$/m);
 });
 
 test("index links are URL-encoded and a rebuild adds the header rule once", async () => {
