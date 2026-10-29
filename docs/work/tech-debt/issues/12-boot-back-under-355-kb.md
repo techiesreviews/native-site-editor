@@ -28,3 +28,7 @@ After the clean-up lands, load the page-builder parts that never run before the 
   - a right-click on the page opens its menu (Make component, slot actions) when the tools land; the Add panel's New component and an agent's make_component wait for them.
   If their load fails, chunk recovery's notice asks for a reload once; until the reload these stay absent, the right-click opens nothing, New component does nothing and agents hear "The component tools are not ready."
   This note closes when Lex accepts that delay (the "Done when" above).
+
+## Done (2026-10-29)
+
+Landed in agents-and-multiplayer slice 42 (PR #262, merge 602286a): boot 362 KB → 342 KB, budget back at 355 KB. Lex accepted (2026-10-29) that the component tools load just after first paint on every page open (menus briefly missing, one tree redraw).
