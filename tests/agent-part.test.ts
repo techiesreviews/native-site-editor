@@ -323,6 +323,27 @@ test("a copy removed since the read is refused with no part too: the first copy 
   assert.match(clash.message, /a different number of times .* Read the file again\.$/);
 });
 
+// Ticket 41: an all-copies edit whose copies all changed.
+
+test("an all edit whose two copies read both changed since is refused with read again and no part; one copy changed keeps its part", async () => {
+  const twice = read.replace("<h1>Welcome</h1>", "<h1>Welcome</h1>\n    <p>Welcome</p>");
+  const expectedHash = await textHash(twice);
+  const { context, files: site } = await withHome(twice.replaceAll("Welcome", "Hello"));
+  const clash = await prepareAgentEdit(edit({ path: "index.html", expectedHash, edits: [{ oldText: "Welcome", newText: "Hi", all: true }] }), context, site, hash => hash === expectedHash ? twice : undefined)
+    .then(() => assert.fail("must clash"), (error: unknown) => error);
+  assert.ok(clash instanceof PartClash);
+  // A part around the first copy would let an all retry change that one and leave the other.
+  assert.equal(clash.part, undefined);
+  assert.match(clash.message, /Read the file again\.$/);
+  assert.doesNotMatch(clash.message, /oldText from part\.text/);
+  // Read once and changed since: the part as it is now, to retry from.
+  const once = await textHash(read), single = await withHome(read.replace("Welcome", "Hello"));
+  const changed = await prepareAgentEdit(edit({ path: "index.html", expectedHash: once, edits: [{ oldText: "Welcome", newText: "Hi", all: true }] }), single.context, single.files, hash => hash === once ? read : undefined)
+    .then(() => assert.fail("must clash"), (error: unknown) => error);
+  assert.ok(changed instanceof PartClash && changed.part?.text.includes("Hello"));
+  assert.match(changed.message, /oldText from part\.text/);
+});
+
 test("a changed part longer than PART_LIMIT is refused with read again, never a retry from its cut text", async () => {
   const block = Array.from({ length: 200 }, (_, i) => `    <p>Line ${i} ${"x".repeat(20)}</p>`).join("\n");
   const long = read.replace("    <h1>Welcome</h1>", `    <h1>Welcome</h1>\n${block}`), now = long.replace("Line 100 ", "Line one hundred ");
