@@ -433,7 +433,7 @@ its number unused.
 
 ### F-bar-03 Text size
 - Try: Select text and open Text size.
-- Good: Offers the site's own size classes or variables, written as the site writes them.
+- Good: Offers the site's own size classes or variables, written as the site writes them; the chosen size applies at once, also right after Bold, with no "source changed" refusal.
 - Files: `src/native-text-size.ts`, `src/controllers/page-structure-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-text-size.spec.ts`
