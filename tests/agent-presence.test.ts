@@ -316,6 +316,43 @@ test("once named, a take keeps its agent until done (am-45): another agent heard
   assert.equal(presence.onPin("req-took"), undefined);
 });
 
+test("a stopped taker alone on its connection is not named (am-12, am-45)", () => {
+  const { presence, stops } = presenceViews();
+  const watchdog = agent("Watchdog");
+  presence.heard(watchdog);
+  presence.questions([took(watchdog)]);
+  assert.deepEqual(presence.onPin("req-took"), watchdog);
+  stops.add(JSON.stringify(watchdog));
+  presence.questions([took(watchdog)]);
+  assert.equal(presence.onPin("req-took"), undefined);
+});
+
+test("stored requests keep no agent heard (am-45): a question left open long ago does not count against the only agent heard now", () => {
+  const { presence, clock } = presenceViews();
+  const copy = agent("Copy editor"), watchdog = agent("Watchdog");
+  presence.questions([question(copy)]);
+  for (let at = 0; at < 3; at++) {
+    clock.now += AT_WORK_MS / 2;
+    presence.questions([question(copy)]);
+  }
+  presence.heard(watchdog);
+  presence.questions([question(copy), took(watchdog)]);
+  assert.deepEqual(presence.onPin("req-took"), watchdog);
+});
+
+test("being at work lapses after AT_WORK_MS without a change (am-45), however often the agent is heard", () => {
+  const { presence, clock } = presenceViews();
+  const finder = agent("Image finder"), copy = agent("Copy editor");
+  presence.show("index.html", findHero, finder)();
+  for (let at = 0; at < 3; at++) {
+    clock.now += 5 * 60_000;
+    presence.heard(finder);
+  }
+  presence.heard(copy);
+  presence.questions([took(finder)]);
+  assert.equal(presence.onPin("req-took"), undefined);
+});
+
 test("a take counts only its connection's agents heard lately (am-45): not another connection's, a stopped one, or one gone quiet for AT_WORK_MS", () => {
   const { presence, stops, clock } = presenceViews();
   const copy = agent("Copy editor");

@@ -26,7 +26,7 @@ const box = (top: number, height: number, left = heading.left, width = heading.w
 test("what stands just above an element is its earlier siblings stacked over it closer than a row of pins (am-45)", () => {
   // An eyebrow line 10 px above the heading: its top.
   assert.equal(clearAbove(heading, [box(270, 20)]), 270);
-  // Two lines stacked close (a kicker over the eyebrow): the higher one's top, within two rows of pins.
+  // Two lines stacked close (a kicker over the eyebrow): the higher one's top.
   assert.equal(clearAbove(heading, [box(276, 14), box(256, 14)]), 256);
   // A sibling with room for a row of pins below it: none.
   assert.equal(clearAbove(heading, [box(200, 20)]), undefined);

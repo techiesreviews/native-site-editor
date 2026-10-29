@@ -42,8 +42,8 @@ type MenuOptions = Parameters<Awaited<ReturnType<AgentMenuHostPorts["loadAgentMe
 const SELECTION = { path: "index.html", tag: "p", text: "", reason: "click", selectors: [], node: [0] } satisfies NativePreviewSelection;
 const COMMAND = { id: "c1", operation: "write_file", path: "index.html", branch: "main", commit: "c1", content: "", state: "pending" } satisfies AgentCommand;
 const PIN = {} as MediaPin; // eslint-disable-line no-restricted-syntax -- handed on unread: the test checks only that it arrives.
-// The agent presence names on each pin being worked on (src/agent-presence.ts `onPin`): none for the take it names no one for.
-const ON_PIN = new Map<string, AgentWho>([["req-now", { grant: "grant-Copy editor", name: "Copy editor" }], ["req-named", { grant: "grant-Watchdog", name: "Image finder" }]]);
+// The agent presence names on each pin being worked on (src/agent-presence.ts `onPin`): a take's own taker, or none.
+const ON_PIN = new Map<string, AgentWho>([["req-now", { grant: "grant-Copy editor", name: "Copy editor" }], ["req-named", { grant: "grant-Watchdog", name: "Watchdog" }]]);
 
 // The host over the real runtime, app store and drafts; the menu, the agent's site and the other ports record what they were asked.
 function setup(options: { draftScope?: () => DraftScope | undefined } = {}) {
@@ -189,11 +189,11 @@ test("only a pin an agent works on asks for its colour (am-13): finished ones of
   const request = (id: string, state: PinRequest["state"], name: string): PinRequest => ({ id, text: id, state, createdAt: 1, repoId: 1, branch: "main",
     element: { file: "index.html", route: "/", id: "1.0", tag: "h1" }, agent: { grant: `grant-${name}`, name } });
   const took: PinRequest = { ...request("req-took", "seen", "Watchdog"), agentTook: true };
-  // Ticket am-45: a take presence names its connection's agent for shows that agent, in its colour.
+  // Ticket am-45: a take presence names its taker for shows that agent, in its colour.
   const named: PinRequest = { ...request("req-named", "seen", "Watchdog"), agentTook: true };
   menus[0].onRequests?.([request("req-old", "done", "Old helper"), request("req-now", "seen", "Copy editor"), took, named]);
-  assert.deepEqual(calls.filter(call => call.startsWith("colour")), ["colour Copy editor", "colour Image finder"]);
+  assert.deepEqual(calls.filter(call => call.startsWith("colour")), ["colour Copy editor", "colour Watchdog"]);
   const told = JSON.parse(calls.find(call => call.startsWith("requests "))!.slice("requests ".length)) as PinRequest[];
   assert.deepEqual(told.map(item => [item.id, item.colour, item.agent?.name, item.agentTook]),
-    [["req-old", undefined, "Old helper", undefined], ["req-now", 2, "Copy editor", undefined], ["req-took", undefined, "Watchdog", true], ["req-named", 2, "Image finder", undefined]]);
+    [["req-old", undefined, "Old helper", undefined], ["req-now", 2, "Copy editor", undefined], ["req-took", undefined, "Watchdog", true], ["req-named", 2, "Watchdog", undefined]]);
 });
