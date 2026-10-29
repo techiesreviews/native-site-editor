@@ -346,8 +346,9 @@ test("a committed edit whose reply arrives after the deadline stays unknown on t
     assert.equal(result.state, "unknown"); assert.match(result.message, /get_command_status.*do not replay/);
     const status = payload(await h.rpc("get_command_status", { requestId: "late" }));
     assert.equal(status.state, "applied"); assert.equal(status.result.image, "smaller"); assert.equal(browser.history.length, 1);
-    const duplicate = payload(await h.rpc("adding_settings", { image: "smaller", requestId: "late" }));
-    assert.deepEqual(duplicate, status); assert.equal(browser.history.length, 1);
+    // A duplicate answers as its status does, with the change's next step (ticket am-14).
+    const { next, ...duplicate } = payload(await h.rpc("adding_settings", { image: "smaller", requestId: "late" }));
+    assert.deepEqual(duplicate, status); assert.match(next, /^list_media shows it now/); assert.equal(browser.history.length, 1);
   } finally { await h.worker.dispose(); }
 });
 

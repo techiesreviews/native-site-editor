@@ -93,7 +93,7 @@ export interface AgentCommandPorts {
   mediaController: ReturnType<typeof createMediaController>;
   mediaPorts: MediaControllerPorts;
   blockMoves: Pick<ReturnType<typeof createBlockMoves>, "move">;
-  agentPresence: Pick<ReturnType<typeof createAgentPresence>, "show">;
+  agentPresence: Pick<ReturnType<typeof createAgentPresence>, "show" | "begin" | "stopped">;
   /** The Pages & files host (src/pages-and-files-host.ts): `nativeResyncDone` and `pageActions` read at call time, the rest taken as it is made. */
   pagesAndFiles: Pick<PagesAndFiles, "nativeResyncDone" | "pageActions" | "loadPagesActions" | "loadFileOps" | "pagePorts" | "filePorts"
     | "branchText" | "pathNow" | "treeState" | "branchPathProblem" | "afterFileChanges"> & {
@@ -106,7 +106,7 @@ export interface AgentCommandPorts {
   /** The component tools once they have loaded for the preview shown (src/workspace-mount.ts); undefined without one or once their load failed. Never rejects. */
   loadComponentTools: () => Promise<Pick<ComponentTools, "makeFromAgent"> | undefined>;
   readonly pageStructure: { refreshMeta(): void } | undefined;
-  readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "isActive" | "inspect"> | undefined;
+  readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "isActive" | "inspect" | "picture"> | undefined;
   loadAgentSite: () => Promise<typeof import("./agent-site")>;
   draftScope: () => DraftScope | undefined;
   shownScope: () => WorkspaceScope | undefined;
@@ -139,6 +139,8 @@ export function createAgentCommands(ports: AgentCommandPorts) {
       throw new Error("The editor tab switched to another site meanwhile. Call get_site and try again.");
   }
   const agentSiteActions = makeAgentSiteActions();
+  // working_here's holds (src/agent-working-here.ts), loaded with the first.
+  let workingHere: Promise<ReturnType<typeof import("./agent-working-here").createWorkingHere>> | undefined;
   function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false): AgentSiteActions { return {
     // The tools load after the first paint: an agent quicker than that waits for them.
     makeComponent: async (request) => (await ports.loadComponentTools().catch(() => undefined))?.makeFromAgent(request) ?? "The component tools are not ready.",
@@ -235,6 +237,10 @@ export function createAgentCommands(ports: AgentCommandPorts) {
       if (!ports.nativePreview?.isActive()) throw new Error("The preview is not showing a page.");
       return ports.nativePreview.inspect(request);
     },
+    picture(request) {
+      if (!ports.nativePreview?.isActive()) throw new Error("The preview is not showing a page.");
+      return ports.nativePreview.picture(request);
+    },
     async listMedia(request) {
       // The workspace shown as it was asked: listed from there whatever is shown by the time it is read (ticket 27).
       // With nothing to pin, the stamp taken before the chunk loads must hold.
@@ -257,6 +263,11 @@ export function createAgentCommands(ports: AgentCommandPorts) {
     },
     legacy: applyAgentCommand,
     presence: (path, find, who) => agentPresence.show(path, find, who),
+    workingHere: who => {
+      // The load shown as it arrives, before its code loads.
+      const at = agentPresence.begin();
+      return async (path, node) => (await (workingHere ??= import("./agent-working-here").then(m => m.createWorkingHere(agentPresence)))).hold(who, at)(path, node);
+    },
   }; }
   async function applyAgentSiteCommand(command: AgentCommand) {
     const [{ applySiteCommand, applyStructural, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, holdWorkspace, retryProof, pinnedMedia, pinnedMediaActions, pinnedMediaAway }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);

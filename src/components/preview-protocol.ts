@@ -16,12 +16,15 @@ import { readCascade, readSelectedRules, type NativeCascade, type NativeSelected
 import { readCrumbs, type CanvasCrumb } from "../page-builder/canvas-model";
 
 import { FRAME_SOURCE, HOST_SOURCE } from "./preview-wire";
+import { pictureReplyTypes } from "../../shared/media-kinds";
 export { HOST_SOURCE } from "./preview-wire";
 
 /** A component instance around the selection, as the frame reports it (the receiver adds `paintedSource`). */
 export type FrameHost = Omit<NonNullable<NativePreviewSelection["host"]>, "paintedSource">;
 // Rules whose path the frame reported; the receiver keeps those of files it shows.
 type Styles = { selectors: NativeSelectedRule[]; cascade: NativeCascade | undefined };
+/** A picture the frame made (src/agent-picture.ts), or why it made none. */
+export type PictureReport = { error: string } | { data: string; mimeType: string; width: number; height: number; viewport: number };
 type Frame<T extends string, P = object> = { source: typeof FRAME_SOURCE; type: T; context: string | undefined } & P;
 
 export type FrameMessage =
@@ -46,6 +49,8 @@ export type FrameMessage =
   | Frame<"slot-ghosts", { report: unknown }>
   | Frame<"image-measured", { id: number; report: ImageReport }>
   | Frame<"inspect-result", { id: number; report: unknown }>
+  // A picture of the page for an agent (ticket am-14): base64 data, or why there is none.
+  | Frame<"picture-result", { id: number; report: PictureReport }>
   | Frame<"ack", { id: number }>
   | Frame<"ready", { load: string | undefined }>
   | Frame<"error", { message: string }>
@@ -84,6 +89,8 @@ export type HostMessage =
   | Host<"finish-typing", { id: number }>
   | Host<"measure-image", { id: number; request: NativeNodeRequest & { image?: { width: number; height: number }; slot?: string; style?: string } }>
   | Host<"inspect", { id: number; request: { path?: string; node?: number[]; selector?: string; limit?: number } }>
+  // `width`/`height`: the frame it is drawn in (none: the preview's own); `node`: the element pictured (none: the first screen).
+  | Host<"picture", { id: number; request: { path: string; node?: number[]; width?: number; height?: number } }>
   | Host<"theme", { focus: string; component: string }>
   // The agents working on elements (their pages' sections, tickets 33, am-11), each in its colour, its chip's orange while it asks (sRGB); none: no agent at work.
   | Host<"agent-presence", { agents: { request: NativeNodeRequest; name: string; color: string; chip: string }[] }>
@@ -123,7 +130,7 @@ export const FRESHNESS: { [T in FrameMessage["type"]]: T extends "press-drag" ? 
   "typing-finished": "reply", "image-drop": "render", "image-edit": "action", patched: "reply", "text-edit": "action", typing: "action",
   route: "action", format: "action", move: "action", "press-drag": { start: "render", move: "action", end: "action", cancel: "action" },
   "canvas-clear": "action", "pin-rects": "whole", "drop-containers": "reply", "dismiss-context-menu": "action",
-  "slot-ghosts": "render", "inspect-result": "reply", "image-measured": "reply", ack: "reply", ready: "lifecycle", error: "render", "clear-error": "render",
+  "slot-ghosts": "render", "inspect-result": "reply", "picture-result": "reply", "image-measured": "reply", ack: "reply", ready: "lifecycle", error: "render", "clear-error": "render",
   "insert-points": "render", "section-hover": "render", "text-selection": "render", "item-grids": "render", structure: "render",
   "selection-rect": "render", select: "render", "default-styles": "render", "component-styles": "render",
   shortcut: "action", "refusal-note-action": "action", "media-ended": "action",
@@ -343,6 +350,15 @@ export function readFrameMessage(data: unknown): FrameMessage | undefined {
     }
     case "inspect-result":
       return { ...base(raw.type), id: Number(raw.id), report: raw.report };
+    case "picture-result": {
+      const report = object(raw.report);
+      if (!index(raw.id) || !report) return undefined;
+      if (typeof report.error === "string") return { ...base(raw.type), id: raw.id, report: { error: report.error.slice(0, 2000) } };
+      const size = (value: unknown): value is number => integer(value) && value > 0 && value <= 4096;
+      const { data, mimeType, width, height, viewport } = report;
+      if (typeof data !== "string" || !pictureReplyTypes.includes(String(mimeType)) || !size(width) || !size(height) || !size(viewport)) return undefined;
+      return { ...base(raw.type), id: raw.id, report: { data, mimeType: String(mimeType), width, height, viewport } };
+    }
     case "ack":
       return { ...base(raw.type), id: Number(raw.id) };
     case "ready":

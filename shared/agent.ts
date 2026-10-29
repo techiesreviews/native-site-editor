@@ -74,6 +74,10 @@ export interface AgentCommandArgs {
   /** move_file */
   to?: string;
   keepOldUrl?: boolean;
+  /** screenshot_preview: Lex's width (the preview's own) or a phone's (PICTURE_PHONE_WIDTH). */
+  width?: "editor" | "phone";
+  /** working_here: the agent finished, and shows nowhere. */
+  done?: boolean;
   /** make_component / inspect_preview: the element by outline id; inspect_preview also takes a CSS selector and count. */
   element?: string;
   selector?: string;
@@ -102,6 +106,12 @@ export interface AgentCommandArgs {
   folder?: string;
   offset?: number;
 }
+
+/** How wide screenshot_preview draws a page for a phone (ticket am-14), and how tall its first screen is. */
+export const PICTURE_PHONE_WIDTH = 390;
+export const PICTURE_PHONE_HEIGHT = 844;
+/** How long working_here shows an agent after its call (ticket am-14), unless it calls again or is done. */
+export const WORKING_HERE_MS = 5 * 60_000;
 
 /** The most an inspect_preview report may be, as JSON. */
 export const INSPECTION_LIMIT = 24 * 1024;

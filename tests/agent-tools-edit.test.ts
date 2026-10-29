@@ -212,6 +212,16 @@ const refusals: Refusal[] = [
   refusal("inspect_preview", "preparation", "The editor shows no page now. Give page.", "shared/agent-edit.ts", () => ({ selector: "h1" }), f => { f.context.site!.openRoute = null; }),
   refusal("inspect_preview", "live page", " could not be shown in the preview.", "src/agent-site.ts", () => ({ selector: "h1" }), undefined, { open: async () => false }),
   refusal("inspect_preview", "live page", "The preview could not be inspected.", "src/agent-site.ts", () => ({ selector: "h1" }), undefined, { inspect: async () => null }),
+  refusal("screenshot_preview", "Worker", " is not an element id; get_page lists them.", "shared/agent-edit.ts", () => ({ section: "bad.id" })),
+  refusal("screenshot_preview", "preparation", "The editor shows no page now. Give page.", "shared/agent-edit.ts", () => ({}), f => { f.context.site!.openRoute = null; }),
+  refusal("screenshot_preview", "preparation", ". get_site lists the pages.", "shared/agent-edit.ts", () => ({ page: "/absent/" })),
+  refusal("screenshot_preview", "live page", " could not be shown in the preview.", "src/agent-site.ts", () => ({ page: "/" }), undefined, { open: async () => false }),
+  refusal("working_here", "Worker", "Give done alone, or the page you work on.", "shared/agent-edit.ts", () => ({ page: "/", done: true })),
+  refusal("working_here", "Worker", "Give the page you work on (and its section), or done: true once you finished.", "shared/agent-edit.ts", () => ({ section: "1.0" })),
+  refusal("working_here", "Worker", " is not an element id; get_page lists them.", "shared/agent-edit.ts", () => ({ page: "/", section: "bad.id" })),
+  refusal("working_here", "preparation", ". get_site lists the pages.", "shared/agent-edit.ts", () => ({ page: "/absent/" })),
+  refusal("working_here", "live page", " on this page. get_page lists them.", "src/agent-site.ts", () => ({ page: "/", section: "1.9" })),
+  refusal("working_here", "live page", " is not there any more.", "src/agent-site.ts", () => ({ page: "/" }), gone("index.html")),
   refusal("make_component", "Worker", " is not an element id; get_page lists them.", "shared/agent-edit.ts", f => ({ page: "/", element: "", tag: "section-intro", expectedHash: homeHash(f) })),
   refusal("make_component", "Worker", "A component's name has a dash in it", "shared/site-rules.ts", f => ({ page: "/", element: "1.0", tag: "section", expectedHash: homeHash(f) })),
   refusal("make_component", "preparation", ". get_site lists the pages.", "shared/agent-edit.ts", f => ({ page: "/absent/", element: "1.0", tag: "section-intro", expectedHash: homeHash(f) })),
@@ -241,7 +251,7 @@ const refusals: Refusal[] = [
 
 /** The ports applySiteCommand uses for the edit tools. */
 type LivePorts = Pick<AgentSiteActions, "text" | "isMounted" | "open" | "sectionTags" | "edits" | "writeDraft" | "moveSection" | "makeComponent"
-  | "createPage" | "setPageDetails" | "moveFile" | "deleteFile" | "inspect">;
+  | "createPage" | "setPageDetails" | "moveFile" | "deleteFile" | "inspect" | "picture" | "workingHere">;
 /** The live page as applySiteCommand reads it: texts now, the fixture's components; every editor control succeeds. */
 function liveActions(live: Live, override: Partial<LivePorts> = {}): AgentSiteActions {
   const components: Record<string, string> = { "feature-block": "components/feature-block/feature-block.html", "site-header": "components/site-header/site-header.html" };
@@ -258,6 +268,7 @@ function liveActions(live: Live, override: Partial<LivePorts> = {}): AgentSiteAc
     makeComponent: async request => ({ tag: request.tag, files: [], slots: [], cards: [], notes: [] }),
     createPage: async () => ({ file: "about/team/index.html", route: "/about/team/" }), setPageDetails: async () => undefined,
     moveFile: async () => undefined, deleteFile: async () => undefined, inspect: async () => ({ elements: [], matched: 0 }),
+    picture: async () => ({ data: "UklGRg==", mimeType: "image/webp", width: 390, height: 844, viewport: 390 }), workingHere: () => () => {},
     ...override,
   } satisfies LivePorts;
   // Deliberate: the edit tools use only these ports; a call to another fails as a TypeError, never as a refusal.
@@ -561,7 +572,10 @@ test("already-authorized edit and duplicate: 3 auth + 1 real relay dispatch, 0 r
       h.counters.reset(); h.github.requests.length = 0;
       const result = await h.rpc(tool, argsForTool);
       assert.equal(body({ ok: true, value: json(payload(result)) }).state, "applied", JSON.stringify(result));
-      if (!first) first = result; else assert.deepEqual(result, first);
+      // A duplicate answers as the edit did; its status the same, without the edit's next step (ticket am-14).
+      const { next, ...told } = payload(result) as { next?: string };
+      assert.equal(Boolean(next), tool === "edit_file", tool);
+      if (!first) first = told; else assert.deepEqual(told, first);
       assert.equal(h.counters.byCategory.auth.calls, 3);
       assert.equal(h.counters.byCategory.control.calls, 1);
       assert.equal(h.counters.byCategory.data.calls, 0);
@@ -1318,4 +1332,39 @@ test("a parallel read while an agent's text edit lands is not told that edit as 
   assert.equal(read.ok && (read.value as { changesSinceLastRead?: unknown }).changesSinceLastRead, undefined, JSON.stringify(read));
   gate.resolve();
   assert.equal(body(await pending).state, "applied");
+});
+
+test("screenshot_preview's reply: the picture as an image, none taken refused, and a late one told to take it again, never to look up its status (ticket am-14)", async t => {
+  const h = await connected();
+  let now = Date.now(); t.mock.method(Date, "now", () => now);
+  const scope = { workspace, tabId: "picture-tab", generation: 1 }, name = await relayObjectName(workspace);
+  let attachment: unknown = { ...scope, role: "editor", owner: { tabId: scope.tabId, generation: 1 } };
+  // What the tab answers each picture with, and whether it answers after the relay's ten seconds.
+  let answer: { result: Record<string, unknown>; late?: true } = { result: {} };
+  const socket = { readyState: 1, close() {}, serializeAttachment(value: unknown) { attachment = value; }, deserializeAttachment: () => attachment,
+    send(message: string) {
+      const value = JSON.parse(message); if (value.type !== "command") return;
+      if (answer.late) now += 10_001;
+      const result = { ok: true, value: { requestId: value.command.id, state: "applied", message: "A picture of index.html, 390 px wide.", result: answer.result } };
+      queueMicrotask(() => h.message(name, socket, JSON.stringify({ type: "result", id: value.id, ...scope, result })));
+    },
+  } satisfies RelaySocket;
+  try {
+    h.attach(name, socket, JSON.stringify({ type: "handshake", ...scope, owner: true }));
+    await h.settle(name);
+    type Reply = { isError?: boolean; content: { type: string; data?: string; mimeType?: string; text?: string }[] };
+    answer = { result: { data: "UklGRg==", mimeType: "image/webp", width: 390, height: 844, viewport: 390 } };
+    const taken = await h.rpc("screenshot_preview", { width: "phone" }) as Reply;
+    assert.equal(taken.isError, undefined);
+    assert.deepEqual(taken.content[0], { type: "image", data: "UklGRg==", mimeType: "image/webp" });
+    assert.deepEqual(JSON.parse(taken.content[1].text!).result, { width: 390, height: 844, viewport: 390 });
+    answer = { result: { width: 390, height: 844, viewport: 390 } };
+    const none = await h.rpc("screenshot_preview", {}) as Reply;
+    assert.equal(none.isError, true); assert.equal(none.content[0].text, "The editor took no picture. Try again.");
+    answer = { result: { data: "UklGRg==", mimeType: "image/webp", width: 390, height: 844, viewport: 390 }, late: true };
+    const late = await h.rpc("screenshot_preview", {}) as Reply;
+    assert.equal(late.isError, true);
+    assert.match(late.content[0].text!, /^No picture came back \(.+\)\. Nothing was changed; take it again\.$/);
+    assert.doesNotMatch(late.content[0].text!, /get_command_status/);
+  } finally { await h.worker.dispose(); }
 });

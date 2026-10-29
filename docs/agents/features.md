@@ -1117,6 +1117,14 @@ its number unused.
 - Spec: `tests/native-save/native-mcp-menu.spec.ts`
 - Steps: none yet (needs connected agents)
 
+### F-agent-12 An agent shows where it works and checks its work with a picture
+- Try: Ask a connected agent to say where it works before changing a section (working_here), then to take a picture of the page at your width and at a phone's (screenshot_preview).
+- Good: Before it changes anything, the agent's outline and name chip stand on the section it names, with its dot on that section's Page structure row (on another page: that page's row in Pages and files); it moves when the agent says it moved, and goes when it says it is done or five minutes later. The picture shows the page as your preview draws it, at your width or 390 px wide (the phone picture laid out for a phone), its first screen or one section; nothing changes on your screen but the page shown. No toast or status text (S1, S4).
+- Files: `src/agent-picture.ts`, `src/components/native-preview-runtime.js`, `src/components/native-preview.ts`, `src/agent-presence.ts`, `src/agent-site.ts`, `worker/mcp.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-agent-picture.spec.ts`
+- Steps: none yet (needs a connected agent)
+
 ## Command palette
 
 ### F-palette-01 Go to a page or file

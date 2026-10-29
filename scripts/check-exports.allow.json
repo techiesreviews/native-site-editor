@@ -10,6 +10,11 @@
     "reason": "Cloudflare loads this Durable Object through wrangler durable_objects.bindings[].class_name."
   },
   {
+    "file": "src/agent-picture.ts",
+    "name": "paintPicture",
+    "reason": "vite-preview-runtime.ts bundles agent-picture.ts as its own classic script with the global asePicture; a picture's measuring frame calls asePicture.paintPicture (native-preview-runtime.js)."
+  },
+  {
     "file": "shared/media-kinds.ts",
     "name": "mediaKind",
     "reason": "The media-kind table's kind column (extension \u2192 kind \u2192 MIME, ticket 17); tests/media-kinds.test.ts proves every caller's old set through it."
