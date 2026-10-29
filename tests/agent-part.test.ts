@@ -225,8 +225,8 @@ test("an edit read in another text clashes when its words are no longer where th
   // Changed in place and written again elsewhere: as many, but not where it read them.
   const elsewhere = read.replace("<h1>Welcome</h1>", "<h1>Hello</h1>").replace(">Fast<", ">Welcome<");
   assert.deepEqual(wordsMoved(read, elsewhere, [{ oldText: "Welcome", newText: "Hi" }]), { index: 0, at: read.indexOf("Welcome") });
-  // Two copies read, none left: recounted, so no part around the first.
-  assert.deepEqual(wordsMoved(twice, twice.replaceAll("Welcome", "Hello"), [{ oldText: "Welcome", newText: "Hi", all: true }]), { index: 0, at: twice.indexOf("Welcome"), recounted: true });
+  // Two copies read, none left: no part around the first.
+  assert.deepEqual(wordsMoved(twice, twice.replaceAll("Welcome", "Hello"), [{ oldText: "Welcome", newText: "Hi", all: true }]), { index: 0, at: twice.indexOf("Welcome"), reread: "gone" });
   // Still where it read them, beside other changes: none moved, and it lands.
   const beside = read.replace(">Fast<", ">Quick<");
   assert.equal(wordsMoved(read, beside, [{ oldText: "Welcome", newText: "Hi" }]), undefined);
@@ -252,7 +252,7 @@ test("a revision change and a discarded draft at once: every draft gone is told 
   assert.equal(told.saved, "c2");
 });
 
-test("with all and no kept read, a stale edit is refused; a typo read in the kept text is the agent's own mistake; a clash shows the copy that moved", async () => {
+test("with all and no kept read, a stale edit is refused; a typo read in the kept text is the agent's own mistake; one of several copies moved is told to read again", async () => {
   const twice = read.replace("<h1>Welcome</h1>", "<h1>Welcome</h1>\n    <p>Welcome</p>");
   const { context, files: site } = await withHome(twice);
   const stale = await textHash(read);
@@ -262,12 +262,14 @@ test("with all and no kept read, a stale edit is refused; a typo read in the kep
   assert.ok(forgotten instanceof PartClash && /no longer keeps that read/.test(forgotten.message));
   // Words it never read: refused plainly, not blamed on anyone else.
   await assert.rejects(prepareAgentEdit(edit({ path: "index.html", expectedHash: stale, edits: [{ oldText: "Welcom e", newText: "Hi" }] }), context, site, () => read), /oldText was not found/);
-  // The second of two copies moved: the part is where that one is now, not the first.
+  // The second of two copies moved (ticket 41): a part around it would let an all retry leave the first, so no part.
   const two = "a\n<p>Welcome one</p>\nb\n<p>Welcome two</p>\nc", moved = "a\n<p>Welcome one</p>\nb\n<p>changed</p>\nc\n<p>Welcome two</p>";
   const at = await withHome(moved);
   const clash = await prepareAgentEdit(edit({ path: "index.html", expectedHash: await textHash(two), edits: [{ oldText: "Welcome", newText: "Hi", all: true }] }), at.context, at.files, () => two)
     .then(() => assert.fail("must clash"), (error: PartClash) => error);
-  assert.equal(clash.part?.text, "<p>changed</p>");
+  assert.equal(clash.part, undefined);
+  assert.match(clash.message, /^The words this edit changes in index\.html are no longer all where they were read: .* Read the file again\.$/);
+  assert.deepEqual(wordsMoved(two, moved, [{ oldText: "Welcome", newText: "Hi", all: true }]), { index: 0, at: two.indexOf("Welcome two"), reread: "moved" });
 });
 
 test("after a reload the tab keeps no reads or marks: no catch-up on the first reply, and an edit read before follows the no-read path", async () => {
