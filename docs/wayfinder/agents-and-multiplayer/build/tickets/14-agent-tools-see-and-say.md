@@ -108,6 +108,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
     - image measurement and the picture share one measuring-frame run (`inMeasuringFrame`) in the runtime, instead of two copies;
     - working_here's hold moved out of the boot `agent-presence.ts` into `src/agent-working-here.ts`, loaded with the first working_here. Its load is taken as the command arrives (presence `begin`), before that code loads.
   - Evidence: `RESULT: ok unit 6362/6362 (411 files)` (`kit unit`); `RESULT: ok specs 5/5 passed` (picture, presence, image markup, runtime recovery, agent edits); `npm run check` and `npm run lint` clean.
+- Parked (2026-10-29): squashed into one commit on dev after am-45 (`35b4950ba`; the conflict in `src/agent-presence.ts` resolved), not pushed. Boot is then 371,258 B against 370,688 B (dev 370,364 B), so the slice waits on the boot budget until am-42 (tech-debt 12) lands; then it rebases and reruns `kit pr`.
 - Review round 3, declined: a spec for the measuring frame's 3.5 s settling deadline. In the measuring frame every picture and font is a data: URL and the sheets are adopted, so no request can be held to keep it unsettled. The frame's own 5 s timeout carries the same kind of answer and is tested.
 - Review round 1, declined: `working_here { done: true }` while another site or branch is shown stays refused as needing its page on screen. The hold belongs to the load it began in, so after the switch its outline and dots are already gone. Its `get_site` line ends with its five minutes.
 
