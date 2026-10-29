@@ -1,1 +1,11 @@
-[]
+[
+  {
+    "spec": "native-save/native-guarded-history.spec.ts",
+    "line": 74,
+    "title": "Undo of Make component closes the new component's stylesheet pane",
+    "status": "flaky",
+    "since": "2026-10-29",
+    "note": "Fails on plain dev too (1 of 6 runs alone; 2 of 3 full runs of slice am-14): back on the page after Make component, the stylesheet pane shows styles/site.css instead of the new component's stylesheet. Lead-allowed for slice am-14; the real fix is ticket 48, in src/controllers/linked-styles-controller.ts.",
+    "ticket": "docs/wayfinder/agents-and-multiplayer/build/tickets/48-make-component-undo-pane-race.md"
+  }
+]
