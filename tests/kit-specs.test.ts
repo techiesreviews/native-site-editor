@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import { combineOutcomes, importsOf, namedSpecs, planShards, removedStrings, routeSpecs, selectAffected, selectionLine, SHARD_MIN_SPECS, shardCount, specGroups, summarizeRun } from "../scripts/agents/specs-affected.mjs";
+import { BUILDER_SPEC_CAP, builderSpecs, combineOutcomes, importsOf, namedSpecs, planShards, removedStrings, routeSpecs, selectAffected, selectionLine, SHARD_MIN_SPECS, shardCount, specGroups, summarizeRun, ticketSpecs } from "../scripts/agents/specs-affected.mjs";
 import { specsDigest } from "../scripts/agents/specs-digest.mjs";
 import { kitEnv } from "./support/kit-env.ts";
 
@@ -293,7 +293,7 @@ main().catch(error => { console.error(error); process.exit(1); });
     assert.equal(result.status, 0);
   }
   const run = (args: string[], env: NodeJS.ProcessEnv = {}) => spawnSync(kit, ["specs", ...args], {
-    cwd: root, env: { ...kitEnv(), ASE_SPEC_SHARDS: undefined, KIT_SPECS_FREE_SLOTS: undefined, KIT_ROOT: root, KIT_COMMANDS_DIR: commands, KIT_SPECS_RUNNER: join(root, "fake-runner"), ...env }, encoding: "utf8", timeout: 15_000,
+    cwd: root, env: { ...kitEnv(), ASE_SPEC_SHARDS: undefined, KIT_SPECS_FREE_SLOTS: undefined, KIT_BUILDER_TICKET: undefined, KIT_ROOT: root, KIT_COMMANDS_DIR: commands, KIT_SPECS_RUNNER: join(root, "fake-runner"), ...env }, encoding: "utf8", timeout: 15_000,
   });
   return { root, put, git, files, base, run, calls };
 }
@@ -650,6 +650,58 @@ test("real CLI --list includes committed, staged, unstaged and untracked changes
   assert.match(result.stdout, /RESULT: ok specs 7 selected \(list only\)\n$/);
   assert.equal(existsSync(f.calls), false);
   assert.equal(f.run(["--affected", "--list"]).stdout, result.stdout);
+});
+
+test("a builder's run keeps named, then direct, then other specs up to the cap and counts the rest", () => {
+  const files: Record<string, string> = { "shared/wide.ts": "export const wide = 1;\n", "tests/native-save/helpers.ts": 'import "../../shared/wide.ts";\n' };
+  const wide = Array.from({ length: 30 }, (_, i) => save(`wide-${String(i).padStart(2, "0")}`));
+  for (const file of wide) files[file] = 'import "./helpers";\n';
+  files[save("zz-direct")] = 'import "../../shared/wide.ts";\n';
+  files[save("zz-named")] = 'test("named", () => {});\n';
+  const selected = selectAffected({ files, changed: ["shared/wide.ts"] });
+  assert.equal(selected.length, 31);
+  const named = ticketSpecs("Run `tests/native-save/zz-named.spec.ts`, unknown.spec.ts and zz-named.spec.ts.", files);
+  assert.deepEqual(named.map(spec => spec.file), [save("zz-named")]);
+  const { specs, left } = builderSpecs(selected, { files, changed: ["shared/wide.ts"], named });
+  assert.equal(specs.length, BUILDER_SPEC_CAP); assert.equal(left, 12);
+  assert.ok(specs.some(spec => spec.file === save("zz-named")) && specs.some(spec => spec.file === save("zz-direct")));
+  assert.deepEqual(specs.map(spec => spec.file), [...specs.map(spec => spec.file)].sort());
+  // A selection under the cap is kept whole.
+  assert.deepEqual(builderSpecs(selected.slice(0, 5), { files, changed: ["shared/wide.ts"] }), { specs: selected.slice(0, 5), left: 0 });
+});
+
+test("real CLI under a builder caps a widely used file's specs at twenty and says how many kit pr runs", t => {
+  const f = fixture(t);
+  f.put("shared/wide.ts", "export const wide = 1;\n");
+  f.put("tests/native-save/wide-helpers.ts", 'import "../../shared/wide.ts";\n');
+  const wide = Array.from({ length: 25 }, (_, i) => save(`wide-${String(i).padStart(2, "0")}`));
+  for (const file of wide) f.put(file, 'import "./wide-helpers";\ntest("case", () => {});\n');
+  f.put(save("zz-direct"), 'import "../../shared/wide.ts";\ntest("case", () => {});\n');
+  f.put("docs/ticket.md", "Touched specs: `zz-direct.spec.ts`, `tests/native-save/moved.spec.ts`.\n");
+  f.git("add", "."); f.git("commit", "--quiet", "-m", "wide helper");
+  f.git("update-ref", "refs/remotes/origin/dev", "HEAD");
+  const builder = { KIT_BUILDER_TICKET: "docs/ticket.md" };
+  // A change one spec's module reaches picks it as before.
+  f.put("src/media.ts", 'export const media = "changed";\n');
+  const near = f.run(["--affected", "--list"], builder);
+  assert.equal(near.status, 0, near.stderr);
+  assert.match(near.stdout, /imports.spec.ts \[default\] — import: src\/media.ts/);
+  assert.doesNotMatch(near.stdout, /builder run:|more run in kit pr/);
+  f.git("checkout", "--quiet", "src/media.ts");
+  f.put("shared/wide.ts", "export const wide = 2;\n");
+  assert.match(f.run(["--affected", "--list"]).stdout, /RESULT: ok specs 26 selected \(list only\)\n$/);
+  const list = f.run(["--affected", "--list"], builder);
+  assert.equal(list.status, 0, list.stderr);
+  assert.match(list.stdout, /^builder run: 20 closest specs; 7 more run in kit pr$/m);
+  assert.match(list.stdout, /zz-direct.spec.ts \[default\] — named spec; import: shared\/wide.ts/);
+  assert.match(list.stdout, /moved.spec.ts \[default\] — named spec/);
+  assert.match(list.stdout, /RESULT: ok specs 20 selected \(list only\); 7 more run in kit pr\n$/);
+  const kept = list.stdout.split("\n").filter(line => line.startsWith("tests/")).map(line => line.split(" ")[0]);
+  f.put("reports.json", JSON.stringify({ "native-save": { suites: [{ specs: kept.map(file => reportSpec(file, "case")) }] } }));
+  const result = f.run(["--affected"], builder);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /RESULT: ok specs 20\/20 passed; 7 more run in kit pr\n$/);
+  assert.deepEqual(readFileSync(f.calls, "utf8").trim().split("\n").map(line => JSON.parse(line)).flatMap(callFiles).sort(), kept);
 });
 
 function reportSpec(file: string, title: string, status = "expected", results = true) {

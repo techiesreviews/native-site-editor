@@ -1,7 +1,7 @@
 ---
 title: "A builder's spec run stays small, and a timed-out build can resume (from agents-and-multiplayer 41)"
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-59
 builder: claude
 blocked_by: []
@@ -32,3 +32,11 @@ On agents-and-multiplayer slice 41 (PR #255, 2026-10-29) `kit specs --affected` 
 ## Kit commands and evidence
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines.
+
+## Done (2026-10-29)
+
+- `kit specs --affected` under a slice's builder (`KIT_BUILDER_TICKET`, which `kit slice` sets for its build and its fix rounds, not for `kit pr`) keeps at most 20 specs: the ticket's named specs first, then specs that changed or import a changed file themselves, then the rest by reason. When it leaves some out it prints `builder run: 20 closest specs; N more run in kit pr`, adds `; N more run in kit pr` to its RESULT and exits 0 for a passing run. A selection of 20 or fewer is unchanged; `kit pr` keeps its full scaled set. Helpers `ticketSpecs` and `builderSpecs` in `scripts/agents/specs-affected.mjs`.
+- `kit slice` resumes a build that stopped (such as at its time limit) when the work is committed on top of the saved start: it prints `resume: build taken from N commits on <start>: <sha> <subject>; …`, takes HEAD as the build, commits only work left uncommitted and goes on to review, without a `state.json` edit. A HEAD on unrelated history stops with `HEAD … is not on top of the slice's start …`.
+- runner.md and agent-scripts.md say both.
+- Tests: `tests/kit-specs.test.ts` (selection ranking and cap; real CLI caps a widely used file's 27 specs at 20 with `7 more run in kit pr`, runs only those and passes, while a change one spec's module reaches picks it as before); `tests/kit-slice.test.ts` (timed-out build plus a hand commit resumes at review, fix round and land with no second build; builder and fix runs get `KIT_BUILDER_TICKET`, review and `kit pr` do not; unrelated history still stops).
+- Feature list: no change (kit tooling only; nothing in the editor changed).
