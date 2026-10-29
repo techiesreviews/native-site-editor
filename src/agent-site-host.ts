@@ -140,7 +140,8 @@ export function createAgentCommands(ports: AgentCommandPorts) {
   }
   const agentSiteActions = makeAgentSiteActions();
   // working_here's holds (src/agent-working-here.ts), loaded with the first.
-  let workingHere: Promise<ReturnType<typeof import("./agent-working-here").createWorkingHere>> | undefined;
+  // Kept once made, not as the import's promise: a failed chunk load is tried again by the next working_here.
+  let workingHere: ReturnType<typeof import("./agent-working-here").createWorkingHere> | undefined;
   function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false): AgentSiteActions { return {
     // The tools load after the first paint: an agent quicker than that waits for them.
     makeComponent: async (request) => (await ports.loadComponentTools().catch(() => undefined))?.makeFromAgent(request) ?? "The component tools are not ready.",
@@ -266,7 +267,11 @@ export function createAgentCommands(ports: AgentCommandPorts) {
     workingHere: who => {
       // The load shown as it arrives, before its code loads.
       const at = agentPresence.begin();
-      return async (path, node) => (await (workingHere ??= import("./agent-working-here").then(m => m.createWorkingHere(agentPresence)))).hold(who, at)(path, node);
+      return async (path, node) => {
+        const { createWorkingHere } = await import("./agent-working-here");
+        workingHere ??= createWorkingHere(agentPresence);
+        return workingHere.hold(who, at)(path, node);
+      };
     },
   }; }
   async function applyAgentSiteCommand(command: AgentCommand) {
