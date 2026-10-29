@@ -90,6 +90,7 @@ The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slice
 | [35 Hot preview link](tickets/35-hot-preview-link.md) | L | visible | – | 30 |
 | [37 Mock-ups on the preview site](tickets/37-mockups-on-preview.md) | S | – | – | – |
 | [38 The preview mock-ups copy only images a mock-up uses](tickets/38-mockups-copy-only-used-images.md) | S | – | – | 37 |
+| [47 The mock-ups page shows which ones are built and live](tickets/47-mockups-show-what-shipped.md) | S | – | – | 38 |
 | [39 `get_site` names the section an agent is asking about (follow-up on 11)](tickets/39-get-site-names-the-question-section.md) | S | – | – | 11 |
 | [40 Exact-part edits: second-look fixes (follow-up on 10)](tickets/40-exact-part-edits-second-look-fixes.md) | S | – | – | 10 |
 | [41 An all-copies edit whose copies all changed is told to read again (follow-up on 40)](tickets/41-all-copies-changed-reads-again.md) | S | – | – | 40 |
