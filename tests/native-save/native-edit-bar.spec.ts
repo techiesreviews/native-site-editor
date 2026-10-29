@@ -368,6 +368,9 @@ test.describe("on a phone", () => {
       const stripBox = await box(strip);
       return stripBox.y + stripBox.height <= barBox.y + 0.5;
     }).toBe(true);
+    // The new heading is scrolled clear above the toast as soon as it shows (U5), not after the double-click wait.
+    const heading = page.frameLocator(".native-preview-frame").locator("h2").last();
+    await expect.poll(async () => { const shown = await box(heading); return shown.y + shown.height <= (await box(strip)).y + 0.5; }, { timeout: 1_000 }).toBe(true);
     const frameBox = await box(page.locator(".native-preview-frame"));
     for (let check = 0; check < 3; check++) {
       const barBox = await box(bar(page));
@@ -395,6 +398,9 @@ test.describe("on a phone", () => {
     // Across the canvas at its foot, under the frame: no page sits under it.
     expect(Math.abs(barBox.y + barBox.height - (pane.y + pane.height))).toBeLessThanOrEqual(1);
     expect(Math.abs(barBox.width - pane.width)).toBeLessThanOrEqual(1);
+    // Every control a 44 px touch target (U6).
+    const sizes = await bar(page).locator("button, select").evaluateAll((controls) => controls.map((control) => control.getBoundingClientRect()).map(({ width, height }) => Math.min(width, height)));
+    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(44);
     const frameBox = await box(page.locator(".native-preview-frame"));
     expect(frameBox.y + frameBox.height).toBeLessThanOrEqual(barBox.y + 1);
     // The selected paragraph is scrolled into view above it.
