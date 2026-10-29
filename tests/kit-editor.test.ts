@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -529,6 +529,22 @@ test("a person's relative KIT_HOME reaches this editor's helpers as a full path"
 test("new worktrees link the native-static fixture the browser suite reads", () => {
   const { worktreeLinks } = JSON.parse(read("scripts/agents/kit.json")) as { worktreeLinks?: string[] };
   const fixture = /group === "native-static" && !creationOnly \? "([^"]+)"/.exec(read("scripts/native-browser-tests.mjs"))?.[1];
-  assert.equal(fixture, ".scratch/native-static-preview");
+  assert.ok(fixture, "the native-static fixture path in scripts/native-browser-tests.mjs (the regex needs updating)");
   assert.ok(worktreeLinks?.includes(fixture), `worktreeLinks in scripts/agents/kit.json must name ${fixture}`);
+});
+
+test("worktree.sh links this editor's worktreeLinks into a new worktree", (t) => {
+  const directory = temp(t), main = join(directory, "main");
+  const { worktreeLinks } = JSON.parse(read("scripts/agents/kit.json")) as { worktreeLinks: string[] };
+  mkdirSync(join(main, "scripts/agents"), { recursive: true });
+  writeFileSync(join(main, "scripts/agents/kit.json"), JSON.stringify({ project: "p", mainRoot: main, branches: { land: "main" }, worktreePrefix: "wt-", worktreeLinks }));
+  writeFileSync(join(main, ".gitignore"), ".scratch/\n");
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", ASE_OWNER: "kit-editor-test" };
+  for (const args of [["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "start"]]) assert.equal(spawnSync("git", args, { cwd: main, env }).status, 0);
+  for (const link of worktreeLinks) mkdirSync(join(main, link), { recursive: true });
+  const made = spawnSync(resolve("scripts/agents/worktree.sh"), ["feature", "HEAD"], { cwd: main, env, encoding: "utf8" });
+  assert.equal(made.status, 0, made.stdout + made.stderr);
+  const worktree = join(directory, "wt-feature");
+  assert.equal(made.stdout.trim(), worktree);
+  for (const link of worktreeLinks) assert.equal(readlinkSync(join(worktree, link)), join(main, link), link);
 });
