@@ -38,7 +38,7 @@ Slice 40's final review left a P2 ([ticket 40 Follow-ups](40-exact-part-edits-se
 - Ticket 40's other two test gaps (the read tool's size limit, the 2 KB cut with long paths) need `src/agent-tools-read.ts` and the catch-up, outside this ticket's files; they stay tracked in [ticket 40 Follow-ups](40-exact-part-edits-second-look-fixes.md#follow-ups).
 - Feature list: no change (agent-facing clash wording only; nothing a user sees).
 
-Commits: "An all-copies edit whose copies all changed is told to read again (follow-up on 40)".
+Commits: "An all-copies edit whose copies all changed is told to read again (follow-up on 40)", "Review fixes round 1", "Review fixes round 2", "Review fixes round 3" and this commit.
 
 Evidence:
 - `RESULT: ok unit 3897/3897 (252 files)` (`kit unit --affected`, after the review fixes too); the new test failed with the source at the claim commit (22/23).
