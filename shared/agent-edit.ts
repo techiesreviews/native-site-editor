@@ -147,10 +147,11 @@ export function spanNow(read: string, start: number, end: number, now: string): 
  * many, or one outside its own stretch now (spanNow); with `at`, where in `read` that one (or the first) was.
  * Undefined when every one is. Words `read` lacks pass when an earlier replacement makes them, or when `now`
  * lacks them too (the agent's own mistake); found only in `now`, they are a copy added since (`at` -1).
- * Still there, but a different number of times, or several copies read and none left (`recounted`): which copy changed
- * is not told, since a part at the first copy read is usually the one unchanged, or would leave the others.
+ * With `reread`, no part is offered, only a new read: the words are there a different number of times
+ * (`recounted`; a part at the first copy read is usually the one unchanged), or several copies were read and
+ * none is left (`gone`) or one moved (`moved`): a part around one of them would leave the others.
  */
-export function wordsMoved(read: string, now: string, edits: { oldText: string; newText: string; all?: boolean }[]): { index: number; at: number; recounted?: true } | undefined {
+export function wordsMoved(read: string, now: string, edits: { oldText: string; newText: string; all?: boolean }[]): WordsMoved | undefined {
   const places = (text: string, words: string) => {
     const found: number[] = [];
     for (let at = text.indexOf(words); words && at >= 0; at = text.indexOf(words, at + words.length)) found.push(at);
@@ -163,33 +164,39 @@ export function wordsMoved(read: string, now: string, edits: { oldText: string; 
       if (is.length && !(made.ok && made.text.includes(oldText))) return { index, at: -1 };
       continue;
     }
-    // A part to retry from only for the one copy read: around the first of several, a retry with all leaves the rest.
-    if (was.length !== is.length) return { index, at: was[0], ...(is.length || was.length > 1 ? { recounted: true as const } : {}) };
+    // A part to retry from only for the one copy read: around one of several, a retry with all leaves the rest.
+    const several = was.length > 1;
+    if (was.length !== is.length) return { index, at: was[0], ...(is.length ? { reread: "recounted" as const } : several ? { reread: "gone" as const } : {}) };
     const at = was.find((place, which) => {
       const span = spanNow(read, place, place + oldText.length, now);
       return span !== undefined && (is[which] < span.start || is[which] + oldText.length > span.end);
     });
-    if (at !== undefined) return { index, at };
+    if (at !== undefined) return { index, at, ...(several ? { reread: "moved" as const } : {}) };
   }
   return undefined;
 }
+
+/** A replacement whose words are not where the read had them (wordsMoved). */
+type WordsMoved = { index: number; at: number; reread?: "recounted" | "gone" | "moved" };
 
 /**
  * The clash of a file edit whose replacements no longer apply to `file`, read by the agent as `read` (its
  * text at the agent's hash, when the tab still has it): the part the first failing replacement changes, now.
  */
 function editClash(file: { path: string; hash: string; content: string }, edits: { oldText: string; newText: string; all?: boolean }[], read: string | undefined,
-  moved?: { index: number; at: number; recounted?: true }): never {
+  moved?: WordsMoved): never {
   const failing = moved?.index ?? Math.max(0, edits.findIndex((_, index) => !applyReplacements(file.content, edits.slice(0, index + 1)).ok));
   const { oldText } = edits[failing];
   const which = edits.length > 1 ? `The words replacement ${failing + 1} changes` : "The words this edit changes";
   const gone = `${which} in ${file.path} are no longer there: the user or another agent changed them meanwhile. Read the file again.`;
-  // No part to retry from: a retry with all would also change copies another made since, or, every copy read
-  // gone, retry from one and leave the rest.
-  if (moved?.recounted)
-    throw new PartClash(file.content.includes(oldText)
-      ? `${which} are in ${file.path} a different number of times than when it was read: the user or another agent changed them meanwhile. Read the file again.`
-      : gone);
+  // No part to retry from: a retry with all would also change copies another made since, or change one copy
+  // of several read and leave the rest.
+  if (moved?.reread)
+    throw new PartClash({
+      recounted: `${which} are in ${file.path} a different number of times than when it was read: the user or another agent changed them meanwhile. Read the file again.`,
+      gone,
+      moved: `${which} in ${file.path} are no longer all where they were read: the user or another agent moved them meanwhile. Read the file again.`,
+    }[moved.reread]);
   const at = moved?.at ?? read?.indexOf(oldText) ?? -1;
   let span = at >= 0 ? spanNow(read!, at, at + oldText.length, file.content) : undefined;
   if (!span) {
