@@ -72,3 +72,8 @@ Also for Lex: ticket 43 waived its "test fails before the fix" rule for F-bar-01
 - Validation: `RESULT: ok unit 2612/2612 (167 files)`; `RESULT: ok specs 4/4 passed; 129 more run in kit pr` (affected); named specs `RESULT: ok specs 8/8 passed` (native-phone-sheet, native-edit-bar-clear, -label, -scroll, native-agent-pins, native-placed-media, native-image-popup, native-add-card); `npm run check` and `npm run lint` pass; `RESULT: ok size boot 343 KB (±0 KB) vs dev@691f00d, budget 355 KB`; `RESULT: ok doctor 11/11 checks passed`.
 - Feature list: F-bar-01's Good line now describes the docked bar on phones; its Files line adds `src/components/toast.ts` and `index.html`.
 
+### UX follow-ups
+
+- UX (looks off): F-bar-01 on the phone the bar is docked at the canvas foot as one sideways-scrolling row with the name chip first, and the selected heading stays clear of it; but each add leaves a toast above the bar (S4) that covers page text ("Have a project in"), and the toast reads "after Div", which is a code word (S7) (.scratch/ux/am-46/20261029-234809-ej5io4/editor-F-bar-01-390-light-bar-strip.webp)
+- UX (looks off): F-bar-02 the level changes to H3 and Italic shows as on, in light and dark, but every change leaves a "Heading level H3" toast above the bar (S4) (.scratch/ux/am-46/20261029-234809-ej5io4/editor-F-bar-02-390-light-level-strip.webp)
+- UX (looks off): F-phone-02 the selected picture is scrolled above the docked bar, but its selection box runs up under the page's sticky "Larkspur Work About" header, so the top of the selection is covered (U5) (.scratch/ux/am-46/20261029-234809-ej5io4/F-phone-02-contact.webp)
