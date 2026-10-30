@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CLIENT_CAPABILITIES_META_KEY, CLIENT_INFO_META_KEY, PROTOCOL_VERSION_META_KEY } from "@modelcontextprotocol/server";
 import type { AgentRequest } from "../shared/agent";
-import { relayObjectName, type RelaySocket } from "../worker/agent-relay";
+import { AgentRelay, relayObjectName, type RelaySocket } from "../worker/agent-relay";
 import { LIFECYCLE_KEY } from "../worker/agent-lifecycle";
 import { WATCH_PAUSED } from "../worker/agent-controls";
 import { JOB_HOLD_MS, TASKS_EXTENSION } from "../worker/mcp";
@@ -30,12 +30,15 @@ function modernRequest(token: string, method: string, params: Record<string, unk
  * A connected agent and an editor tab whose commands answer at once with the pins it holds. `editor: false`: no tab
  * is open. `hold`: the tab keeps each command unanswered until `release()`. `refuse`: the tab refuses each command
  * with this message. `cleaned`: the relay's lifecycle cleaned this connection, so it must connect again.
+ * `answerBytes`: the tab pads its first pin's html until its answer is exactly this long. A second connection
+ * (`otherToken`) shares the site.
  */
-async function connected(options: { editor?: boolean; hold?: boolean; refuse?: string; cleaned?: boolean } = {}) {
+async function connected(options: { editor?: boolean; hold?: boolean; refuse?: string; cleaned?: boolean; answerBytes?: number } = {}) {
   const h = await startCountedWorker();
   const { cookie } = await signIn(h.worker);
   const tab = editorTab(h.worker, cookie);
   const { id: grantId, token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json() as { id: string; token: string };
+  const { token: otherToken } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json() as { token: string };
   const name = await relayObjectName(workspace);
   // Every frame the tab received (commands and cancels).
   const frames: { type: string; id: string }[] = [];
@@ -58,7 +61,12 @@ async function connected(options: { editor?: boolean; hold?: boolean; refuse?: s
   function answer(frame: { id: string }) {
     const requests = pins.splice(0).map(pin => ({ ...pin, state: "seen" }));
     const result = options.refuse ? { ok: false, message: options.refuse } : { ok: true, value: { requests } };
-    h.message(name, socket, JSON.stringify({ type: "result", id: frame.id, ...scope, result }));
+    let message = JSON.stringify({ type: "result", id: frame.id, ...scope, result });
+    if (options.answerBytes && requests[0]) {
+      requests[0].element = { ...requests[0].element!, html: "x".repeat(options.answerBytes - Buffer.byteLength(message)) };
+      message = JSON.stringify({ type: "result", id: frame.id, ...scope, result });
+    }
+    h.message(name, socket, message);
   }
   if (options.cleaned) {
     // Connecting woke the relay's object and read its lifecycle: a fresh one reads the cleaned connection.
@@ -70,8 +78,8 @@ async function connected(options: { editor?: boolean; hold?: boolean; refuse?: s
     await h.settle(name);
   }
   /** One JSON-RPC message, as a 2026-07-28 client sends it; `tasks` declares the tasks extension. */
-  async function modern(method: string, params: Record<string, unknown>, tasks: boolean, id: number | string = 1) {
-    const response = await h.dispatchFetch(origin + "/mcp", modernRequest(token, method, params, tasks, id));
+  async function modern(method: string, params: Record<string, unknown>, tasks: boolean, id: number | string = 1, as = token) {
+    const response = await h.dispatchFetch(origin + "/mcp", modernRequest(as, method, params, tasks, id));
     assert.equal(response.status, 200);
     return JSON.parse(await response.text()) as { result?: any; error?: { code: number; message: string } };
   }
@@ -80,7 +88,7 @@ async function connected(options: { editor?: boolean; hold?: boolean; refuse?: s
   const pin = (id: string): AgentRequest => ({ id, text: pinText, createdAt: Date.now(), repoId: repo.id, repository: repo.full_name, branch: "main",
     state: "open", element: { file: "index.html", id: "1.0.0", tag: "h1", text: "Welcome", html: "<h1>Welcome</h1>" },
     thread: [{ from: "user", text: pinText, at: Date.now() }] });
-  return { ...h, name, token, pins, pin, frames, commands, held, release, modern };
+  return { ...h, name, token, otherToken, pins, pin, frames, commands, held, release, modern };
 }
 
 test("a tasks-capable client gets wait_for_requests as a job whose result is the pin, and no storage holds the pin", async () => {
@@ -259,22 +267,60 @@ test("tasks/cancel ends a look the tab holds: it answers cancelled, and the tab 
   } finally { await h.worker.dispose(); }
 });
 
-test("a cancel of a look's own request id ends that look only, never the job", async () => {
+test("a cancel of a look's own request id never ends the job: the look runs out its hold", async () => {
   const h = await connected({ hold: true });
   try {
     const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
-    const look = h.modern("tasks/get", { taskId }, true, 41);
+    let answered = false;
+    const look = h.modern("tasks/get", { taskId }, true, 41).then(reply => { answered = true; return reply; });
     while (h.commands.length < 1) await new Promise(resolve => setImmediate(resolve));
     const cancelled = await h.dispatchFetch(origin + "/mcp", { method: "POST", headers: { Authorization: `Bearer ${h.token}`,
       "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25" },
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 41 } }) });
     assert.equal(cancelled.status, 202);
+    // The look waits under its task id, not its request id: the tab keeps its wait, and the look has not answered.
     const next = h.modern("tasks/get", { taskId }, true, 42);
     while (h.commands.length < 2) await new Promise(resolve => setImmediate(resolve));
+    assert.equal(h.frames.some(frame => frame.type === "cancel"), false);
+    assert.equal(answered, false);
     h.release();
     assert.equal((await look).result.status, "working");
     assert.equal((await next).result.status, "working");
   } finally { await h.worker.dispose(); }
+});
+
+test("one connection's tasks/cancel never cancels another connection's job", async () => {
+  const h = await connected();
+  try {
+    const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    assert.equal((await h.modern("tasks/cancel", { taskId }, true, 1, h.otherToken)).result.status, "cancelled");
+    assert.equal((await h.modern("tasks/get", { taskId }, true)).result.status, "working");
+    assert.equal(h.commands.length, 1, "the job's own look still waits in the tab");
+  } finally { await h.worker.dispose(); }
+});
+
+test("a look whose answer is too large, or whose relay request throws, ends the job with the all: true hint", async () => {
+  const large = await connected({ answerBytes: AgentRelay.maxBytes });
+  try {
+    const { taskId } = (await large.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    large.pins.push(large.pin("req-large"));
+    const look = (await large.modern("tasks/get", { taskId }, true)).result;
+    assert.equal(look.status, "completed");
+    assert.deepEqual(payload(look.result).requests, []);
+    assert.match(payload(look.result).hint, /\(too-large\).*come back with all: true/);
+  } finally { await large.worker.dispose(); }
+
+  const lost = await connected();
+  try {
+    const { taskId } = (await lost.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    const sessions = lost.env.SESSIONS;
+    lost.env.SESSIONS = { ...sessions, get: id => id === lost.name ? { fetch: () => Promise.reject(new Error("Lost subrequest")) } : sessions.get(id) };
+    const look = (await lost.modern("tasks/get", { taskId }, true)).result;
+    lost.env.SESSIONS = sessions;
+    assert.equal(look.status, "completed");
+    assert.match(payload(look.result).hint, /\(unknown-outcome\).*come back with all: true/);
+    assert.equal(lost.commands.length, 0);
+  } finally { await lost.worker.dispose(); }
 });
 
 test("a job ends without a pin on a refusal from the tab, a connection that must connect again, and paused waiting", async () => {
