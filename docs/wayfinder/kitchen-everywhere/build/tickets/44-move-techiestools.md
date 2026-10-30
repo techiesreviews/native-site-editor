@@ -2,7 +2,7 @@
 title: TechiesTools gets the shared kit (full kitchen), its Issues as ticket files
 type: task (HITL)
 status: open
-assignee:
+assignee: ke-44
 builder: claude
 blocked_by: [42-move-chat]
 ---
@@ -37,3 +37,5 @@ Agent Kit is required. After Lex's OK the lead starts a T3 thread in `~/Projects
 ## Comments
 
 - Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.
+- Lead, 2026-10-30: paid-skill check: TechiesTools (public) carries 39 vendored skills in `.agents/skills/` (Matt Pocock's open set); every version (37 revisions) checked against all 5,308 lines of Lex's paid skills: no match.
+- Lex, 2026-10-30: remove the vendored `.agents/skills/` from the repo (agents use the installed copies on his computer); the skill guard stays strict. Closing its 19 GitHub Issues still waits for his own OK in a Tuesday pack.
