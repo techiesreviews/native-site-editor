@@ -131,9 +131,8 @@
 .agent-menu__question:not(.is-asking) .agent-menu__question-number {
   background: var(--muted);
 }
-/* While agents are on (ticket am-12): "Pins go to", the agent the helper starts for pins, and the
-   agents working now, each with its dot and a Stop that ends that agent only. */
-.agent-menu__choice,
+/* While agents are on (ticket am-12): the agents working now, each with its dot and a Stop that ends that
+   agent only. */
 .agent-menu__agent {
   display: flex;
   align-items: center;
@@ -142,90 +141,12 @@
   padding-block: 2px;
   padding-inline: 8px 4px;
 }
-.agent-menu__choice-label {
-  color: var(--muted);
-  font-size: var(--type-small);
-  font-weight: 600;
-}
-.agent-menu__choice-label,
 .agent-menu__agent-name {
   flex: 1;
   min-inline-size: 0;
   overflow: clip;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* A compact picker with a hairline edge on the menu's own colour, as the edit bar's (edit-bar.css) and the mock-up's. */
-.agent-menu__select {
-  flex: none;
-  inline-size: auto;
-  max-inline-size: 60%;
-  block-size: max(var(--size-compact), var(--size-tap));
-  margin: 0;
-  padding-block: 0;
-  padding-inline: 6px;
-  border: 1px solid var(--control-line);
-  border-radius: var(--radius);
-  background: transparent;
-  font-weight: 600;
-}
-@media (hover: hover) and (pointer: fine) {
-  .agent-menu__select:hover {
-    background: var(--hover);
-  }
-}
-.agent-menu__select:active {
-  background: var(--hover);
-}
-@supports (appearance: base-select) {
-  .agent-menu__select,
-  .agent-menu__select::picker(select) {
-    appearance: base-select;
-  }
-  .agent-menu__select {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .agent-menu__select::picker-icon {
-    color: var(--muted);
-  }
-  .agent-menu__select::picker(select) {
-    margin-block: 4px;
-    border: 0;
-    border-radius: var(--radius-panel);
-    padding: var(--panel-padding);
-    background: var(--panel-surface);
-    color: var(--text);
-    font-size: var(--type-base);
-    font-weight: 400;
-    box-shadow: var(--shadow);
-  }
-  .agent-menu__select option {
-    min-block-size: var(--size-control);
-    border-radius: var(--radius);
-    padding: 4px 8px;
-    white-space: nowrap;
-  }
-  .agent-menu__select option::checkmark {
-    display: none;
-  }
-  .agent-menu__select option:checked {
-    background: var(--current);
-    font-weight: 600;
-  }
-  .agent-menu__select option:focus-visible {
-    background: var(--hover);
-    outline: var(--focus-ring);
-    outline-offset: -2px;
-  }
-}
-@media (hover: hover) and (pointer: fine) {
-  @supports (appearance: base-select) {
-    .agent-menu__select option:hover {
-      background: var(--hover);
-    }
-  }
 }
 .agent-menu__divider {
   block-size: 1px;

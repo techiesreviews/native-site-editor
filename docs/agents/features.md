@@ -1031,7 +1031,7 @@ its number unused.
 
 ### F-agent-01 Connect to MCP
 - Try: Open the project menu and press Connect to MCP, then paste the prompt into an agent.
-- Good: Three actions only (Connect to MCP, Wait for MCP, Disconnect MCP), beside "Pins go to" and the agents working now while agents are on (F-agent-11); the label confirms the copy and the dot shows the state, with no toast or explainer (S1, S4). Connect to MCP copies a prompt even when an agent already uses the site's connection, then offers Disconnect MCP. Whatever the clipboard does (an Electron webview that never answers included), the button ends in Copied or the problem dot within a few seconds. After time away (the laptop asleep, the connection's retries used up, a permission past its 8 hours, the sign-in ended), coming back or opening the menu shows the real state, and a press still copies a working prompt or shows the problem dot (am-51).
+- Good: Three actions only (Connect to MCP, Wait for MCP, Disconnect MCP), beside the agents working now while agents are on (F-agent-11); the label confirms the copy and the dot shows the state, with no toast or explainer (S1, S4). Connect to MCP copies a prompt even when an agent already uses the site's connection, then offers Disconnect MCP. Whatever the clipboard does (an Electron webview that never answers included), the button ends in Copied or the problem dot within a few seconds. After time away (the laptop asleep, the connection's retries used up, a permission past its 8 hours, the sign-in ended), coming back or opening the menu shows the real state, and a press still copies a working prompt or shows the problem dot (am-51).
 - Files: `src/components/agent-menu.ts`, `src/components/agent-menu.css`, `src/agent-resume.ts`, `src/agent-menu-host.ts`, `src/controllers/agent-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-mcp-menu.spec.ts`
@@ -1109,10 +1109,10 @@ its number unused.
 - Spec: `tests/native-save/native-agent-exact-part.spec.ts`
 - Steps: none yet (needs two connected agents)
 
-### F-agent-11 Stop one agent, and Pins go to
-- Try: With two agents at work, open the project menu, press Stop beside one of them; pick another agent in "Pins go to" and reload.
-- Good: The open menu lists the agents working now, each with its coloured dot (orange while it asks), its name and Stop. Stop ends that agent only: its row, outline, chip and dots go at once, its next calls are refused, the focus goes to "Pins go to" (never another Stop), and the other keeps working. A stop lasts until Disconnect MCP, which still ends them all. A tab not receiving the agents' calls lists only the agents asking a question. "Pins go to" (Claude Code, Codex, Gemini CLI, OpenCode) keeps its choice per site (every branch) through a reload. No toast or explainer (S1, S4); Stop is a 44 px target on touch (U6).
-- Files: `src/components/agent-menu.ts`, `src/components/agent-menu.css`, `src/agent-presence.ts`, `src/agent-stops.ts`, `src/pins-go-to.ts`, `shared/agent.ts`
+### F-agent-11 Stop one agent
+- Try: With two agents at work, open the project menu and press Stop beside one of them.
+- Good: The open menu lists the agents working now, each with its coloured dot (orange while it asks), its name and Stop. Stop ends that agent only: its row, outline, chip and dots go at once, its next calls are refused, the focus goes to the agents' list, or the menu once none is left (never another Stop or Disconnect MCP), and the other keeps working. A stop lasts until Disconnect MCP, which still ends them all. A tab not receiving the agents' calls lists only the agents asking a question. The menu has no "Pins go to" (removed, am-50): pins go to whichever connected agent takes them first, and the helper starts the agent its own start command names (Claude Code by default). No toast or explainer (S1, S4); Stop is a 44 px target on touch (U6).
+- Files: `src/components/agent-menu.ts`, `src/components/agent-menu.css`, `src/agent-presence.ts`, `src/agent-stops.ts`, `shared/agent.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-mcp-menu.spec.ts`
 - Steps: none yet (needs connected agents)
