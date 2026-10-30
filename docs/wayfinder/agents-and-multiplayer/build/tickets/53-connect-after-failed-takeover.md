@@ -2,7 +2,7 @@
 title: "Connect to MCP works after a failed takeover too (follow-up on 51)"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-53
 builder: claude
 blocked_by: [51-connect-after-being-away]
 ---
