@@ -49,7 +49,7 @@ Your changes appear in my editor as unsaved drafts; I review them and save them 
 
 /** The helper's package (helper/, ticket am-16), its version pinned. */
 export const HELPER_PACKAGE = "@techiesreviews/editor-helper@0.1.0";
-/** The command that starts the helper on this connection: it waits for pins and starts the agent "Pins go to" names for each. */
+/** The command that starts the helper on this connection: it waits for pins and starts Claude Code for each (its default; `--agent` names another). */
 export function helperCommand(url: string, token: string) {
   return `EDITOR_HELPER_TOKEN=${token} npx -y ${HELPER_PACKAGE} ${url}`;
 }
@@ -83,5 +83,5 @@ A change to the part I am typing in answers waiting and lands once I leave that 
 
 Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token. If you stop before that, first answer each request you took but did not finish with reply_to_request (status answered, saying you stopped). The token also stops working when I sign out of the editor (at most eight hours).
 
-If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog: run ${code(helperCommand(url, token))} in the background (it needs Node 24 or later), then stop the watchdog. For each pin it starts the agent I chose in "Pins go to", until Disconnect MCP.`;
+If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog: ${code(helperCommand(url, token))} (it needs Node 24 or later). A background job of this conversation ends with it, so start the helper detached from it (${code("systemd-run --user")} on Linux, else ${code("nohup … &")} or ${code("setsid")}), check a few seconds later that it still runs, then stop the watchdog and tell me how you started it and how to stop it. If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me: the one time you repeat the token. For each pin the helper starts Claude Code, until Disconnect MCP.`;
 }

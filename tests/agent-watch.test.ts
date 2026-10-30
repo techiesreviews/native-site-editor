@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HELPER_AGENT, type AgentRequest } from "../shared/agent";
+import type { AgentRequest } from "../shared/agent";
 import type { AgentRequests } from "../shared/agent-requests";
 import { TAKE_TRIES, WAIT_MS, answerRequest, createRequestTools } from "../src/agent-watch";
 import { FOLLOW_UP_HOLD_MS } from "../shared/agent-requests";
@@ -29,11 +29,11 @@ const asked = (id: string, extra: Partial<AgentRequest> = {}): AgentRequest => (
   element: { file: "index.html", id: "1.0", tag: "h1", text: "Hi", html: "<h1>Hi</h1>" }, thread: [{ from: "user", text: `Change ${id}`, at: 1 }], ...extra,
 });
 /** This browser's requests in memory, with the menu's in-transaction accept and a write count. */
-function browser(clock = manualClock(), ports: { pinsGoTo?: () => string } = {}) {
+function browser(clock = manualClock()) {
   const kept = new Map<string, AgentRequest>();
   let writes = 0, reads = 0;
   const tools = createRequestTools({
-    workspace, now: clock.now, clock, ...ports,
+    workspace, now: clock.now, clock,
     list: async () => { reads++; return [...kept.values()].map(item => structuredClone(item)); },
     save: async (request, accept) => {
       if (!accept(kept.get(request.id))) return false;
@@ -47,20 +47,6 @@ function browser(clock = manualClock(), ports: { pinsGoTo?: () => string } = {})
   return { clock, kept, tools, run, value, ask, writes: () => writes, reads: () => reads };
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
-
-test("only the helper's waits with requests are told the site's Pins go to choice (ticket am-16)", async () => {
-  const b = browser(manualClock(), { pinsGoTo: () => "Codex" });
-  assert.deepEqual(await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", HELPER_AGENT)), { requests: [] });
-  b.ask(asked("req-one"));
-  const agent = await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"));
-  assert.deepEqual([agent.requests.length, "pinsGoTo" in agent], [1, false]);
-  const helper = await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-b", HELPER_AGENT));
-  assert.deepEqual([helper.requests.map((item: AgentRequest) => item.id), helper.pinsGoTo], [["req-one"], "Codex"]);
-  // A tab without the choice (none to tell) answers as before.
-  const plain = browser();
-  plain.ask(asked("req-two"));
-  assert.equal("pinsGoTo" in await plain.value(plain.run("wait_for_requests", {}, 0, undefined, "grant-a", HELPER_AGENT)), false);
-});
 
 test("waitMs 0 (the site owner's switch) answers at once and takes each request once per connection", async () => {
   const b = browser();
@@ -585,7 +571,12 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   const task = connectionPrompt("https://editor.example/mcp", "ase_token", "lex/site", "Build the site.");
   assert.match(task, /\n3\. Build the site\.\n4\. For each request the watchdog reports/);
   // Ticket am-16: the helper's start command, on this connection, only when the user asks for it.
-  assert.match(prompt, /If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog: run `EDITOR_HELPER_TOKEN=ase_token npx -y @techiesreviews\/editor-helper@0\.1\.0 https:\/\/editor\.example\/mcp` in the background/);
+  assert.match(prompt, /If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog: `EDITOR_HELPER_TOKEN=ase_token npx -y @techiesreviews\/editor-helper@0\.1\.0 https:\/\/editor\.example\/mcp`/);
+  // A background job of the conversation ends with it: the helper starts detached, or the user runs it themselves.
+  assert.match(prompt, /start the helper detached from it \(`systemd-run --user` on Linux, else `nohup … &` or `setsid`\), check a few seconds later that it still runs/);
+  assert.match(prompt, /If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me: the one time you repeat the token\./);
+  // Lex removed the menu's "Pins go to" (2026-10-30): the default command starts Claude Code.
+  assert.match(prompt, /For each pin the helper starts Claude Code, until Disconnect MCP\.`?$/);
   assert.equal(helperCommand("https://e.example/mcp", "ase_x"), "EDITOR_HELPER_TOKEN=ase_x npx -y @techiesreviews/editor-helper@0.1.0 https://e.example/mcp");
 });
 

@@ -6,11 +6,13 @@
 
 /** The editor's MCP server, as agents name it. */
 export const SERVER = "native-site-editor";
-/** The name the helper waits for requests under (shared/agent.ts HELPER_AGENT). */
+/** The name the helper waits for requests under. */
 export const HELPER_AGENT = "Pin helper";
-/** "Pins go to" (shared/agent.ts PIN_AGENTS), the first the default. */
+/** The agents the helper can start, the first the default; its start command names another with `--agent`. */
 export const PIN_AGENTS = ["Claude Code", "Codex", "Gemini CLI", "OpenCode"] as const;
 export type PinAgent = (typeof PIN_AGENTS)[number];
+/** `--agent`'s words for each. */
+export const AGENT_FLAGS: Record<string, PinAgent> = { claude: "Claude Code", codex: "Codex", gemini: "Gemini CLI", opencode: "OpenCode" };
 
 /** Each agent's ACP program, versions pinned: the adapters change fast. */
 export const AGENT_COMMANDS: Record<PinAgent, string[]> = {
@@ -19,8 +21,6 @@ export const AGENT_COMMANDS: Record<PinAgent, string[]> = {
   "Gemini CLI": ["npx", "-y", "@google/gemini-cli@0.66.0", "--acp"],
   OpenCode: ["npx", "-y", "opencode-ai@1.19.5", "acp"],
 };
-
-export const pinAgent = (value: unknown): PinAgent | undefined => PIN_AGENTS.find(name => name === value);
 
 /**
  * The allowed-tools list: every tool of the editor's MCP server, which changes the site only as drafts,
@@ -70,6 +70,16 @@ export function sessionMeta(agent: PinAgent): Record<string, unknown> {
     settingSources: [],
   } } } };
 }
+
+/**
+ * The agents whose own shell, file and web tools the helper turns off (`sessionMeta`): only these take pins. Codex,
+ * Gemini CLI and OpenCode run their own tools inside their programs, which ACP does not let the helper limit, and their
+ * lockdown settings are not confirmed yet: a helper started for one of them says `notLockedDown` and ends. A command
+ * the user gives (`--agent-command`) runs as they chose.
+ */
+export const LOCKED_DOWN: readonly PinAgent[] = ["Claude Code"];
+export const notLockedDown = (agent: PinAgent) =>
+  `${agent} cannot take pins from the helper yet: its own tools cannot be limited. Start the helper without --agent for Claude Code.`;
 
 /** The session modes the helper picks when an agent offers them: ask before anything not allowed. */
 export const SAFE_MODES = ["default", "read-only"];
