@@ -16,6 +16,7 @@
 import type { DraftScope, SavedDraft } from "./drafts";
 import type { GuardedEdits, Outcome, PlanResult, Reads } from "./guarded-edit";
 import { githubScope, same } from "./workspace-session";
+import { nativePageHead } from "../shared/native-project";
 
 export interface AgentChange {
   /** The change's requestId (the receipt's operation id) and the connection and name that made it. */
@@ -44,9 +45,13 @@ const sizeOf = (drafts: Map<string, SavedDraft | undefined>) => [...drafts.value
 /** Whether two workspaces are the same account, repository and branch. */
 export const sameScope = (a: Scope | undefined, b: Scope | undefined) => !!a && !!b && same(githubScope(a), githubScope(b));
 
-/** A change that landed: `before` and `after` as its commit wrote them; only the files it changed are kept. */
+// A draft as it stands for the undo: its text and where it came from, whenever it was written.
+const sameDraft = (a: SavedDraft | undefined, b: SavedDraft | undefined) =>
+  a === b || Boolean(a && b) && JSON.stringify({ ...a, updatedAt: 0 }) === JSON.stringify({ ...b, updatedAt: 0 });
+
+/** A change that landed: `before` and `after` as its commit wrote them; only the files it changed are kept (not the page open it stayed on). */
 export function noteAgentChange(change: AgentChange) {
-  const after = new Map(change.after), before = new Map([...after.keys()].map(path => [path, change.before.get(path)] as const));
+  const after = new Map([...change.after].filter(([path, draft]) => !sameDraft(change.before.get(path), draft))), before = new Map([...after.keys()].map(path => [path, change.before.get(path)] as const));
   if (!after.size) return;
   const key = keyOf(change.scope, change.id);
   changes.delete(key);
@@ -73,19 +78,16 @@ export function keptChanges(scope: Scope, ids: readonly string[], grant?: string
 }
 /**
  * The newest kept change (undone or not) the agent `who` (its connection and name) made to the page `page` in this
- * workspace: what its chip's Undo puts back (ticket am-49). A change about that page, or one that changed its file.
+ * workspace: what its chip's Undo puts back (ticket am-49). Only a change that wrote that page's file: one that landed
+ * on another page waits on that page.
  */
 export function latestChange(scope: Scope, who: { grant: string; name: string }, page: string): AgentChange | undefined {
   let latest: Kept | undefined;
   for (const change of changes.values())
-    if (change.grant === who.grant && change.agent === who.name && (change.page === page || change.after.has(page)) && sameScope(change.scope, scope)
+    if (change.grant === who.grant && change.agent === who.name && change.after.has(page) && sameScope(change.scope, scope)
       && (!latest || change.seq > latest.seq)) latest = change;
   return latest;
 }
-
-// A draft as it stands for the undo: its text and where it came from, whenever it was written.
-const sameDraft = (a: SavedDraft | undefined, b: SavedDraft | undefined) =>
-  a === b || Boolean(a && b) && JSON.stringify({ ...a, updatedAt: 0 }) === JSON.stringify({ ...b, updatedAt: 0 });
 
 /**
  * `list` (newest first) against the drafts now: "ready" when each, newest first, finds its files as it left them
@@ -122,6 +124,14 @@ export function undoState(scope: Scope, ids: readonly string[] | undefined, draf
   return walk(list, drafts).state === "undone" ? "undone" : "ready";
 }
 
+/** A file as the user's refusal names it, never by its path (S7): the page shown, another page by its title, else a file of the change. */
+function userFile(path: string, r: Reads, openFile: string | undefined) {
+  if (path === openFile) return "This page";
+  if (!Object.values(r.site()?.routes ?? {}).includes(path)) return "A file it changed";
+  const text = r.source(path), title = text === undefined ? undefined : nativePageHead(text).title?.trim();
+  return title ? `The page “${title}”` : "Another page";
+}
+
 /**
  * The guarded edit that undoes `list` (newest first) as one step: the drafts before each, put back, while each
  * finds its files as it left them (`drafts`: the draft of a path now). The page shown stays open when it is
@@ -136,7 +146,7 @@ export function discardPlan(list: readonly AgentChange[], r: Reads, drafts: Draf
     `${list.map(change => change.id).join(", ")} ${list.length === 1 ? "is" : "are"} undone already: the files are as they were before.` };
   if (state === "changed") {
     const who = changed.change.agent || "the agent";
-    return { refuse: reader === "user" ? `${changed.path} changed since ${who}'s change. Nothing was undone.`
+    return { refuse: reader === "user" ? `${userFile(changed.path, r, openFile)} changed since ${who}'s change. Nothing was undone.`
       : `${changed.path} changed since ${who}'s change ${changed.change.id}, so it cannot be undone as a whole. Change it back with the edit tools.` };
   }
   // A file changed is there after the undo when it was before (a draft not deleted, or the branch's file).
@@ -182,6 +192,19 @@ export async function undoAgentChanges(ids: readonly string[], grant: string | u
   if (!outcome.ok) throw new Error(outcome.reason === "stale" ? SITE_CHANGED : outcome.message);
 }
 const SITE_CHANGED = "The site changed meanwhile. Nothing was undone; try again.";
+
+/**
+ * The user's Undo on an agent's chip (ticket am-49): the change `change` its chip offered, which must still be `who`'s
+ * latest to the page `page` in the workspace the press was in (`scope`, taken as it was pressed); put back as a pin's
+ * Undo does (`undoAgentChanges`). A newer change landed since is refused: the chip offers that one next.
+ */
+export async function undoLatestChange(who: { grant: string; name: string }, page: string, change: string, ports: Parameters<typeof undoAgentChanges>[2]) {
+  const { scope } = ports;
+  if (!scope) throw new Error("Open the site first.");
+  const latest = latestChange(scope, who, page);
+  if (latest && latest.id !== change) throw new Error(`${who.name || "The agent"} changed this page again meanwhile. Nothing was undone; try again.`);
+  await undoAgentChanges(latest ? [latest.id] : [], who.grant, ports);
+}
 
 /** What an agent is told once discard_change undid its change (its reply, and the receipt's recorded one). */
 export const discardedMessage = (id: string) => `Undid change ${id}: its files are as they were before it, unsaved.`;
