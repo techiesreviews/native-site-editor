@@ -35,7 +35,9 @@ export async function resumeAgents(ports: {
  * this tab's own if it still waits, otherwise a new one; Connect to MCP makes a new prompt when
  * idle or when another tab receives, or marks the press stuck: still reconnecting with no recorded
  * retry time to wait for, or still paused by a reconnect that gave up (the retry did nothing or
- * failed again). A turn-off, another turn-on or a site move while it waits ends it with no write.
+ * failed again). Finding an earlier takeover failed (the site left paused in this browser, ticket
+ * am-53), it retries the takeover instead, and is stuck if that fails again. A turn-off, another
+ * turn-on or a site move while it waits ends it with no write.
  */
 export async function turnOnAgents(ports: {
   /** Turns remote agents on for the open site and returns this activation. */
@@ -52,6 +54,8 @@ export async function turnOnAgents(ports: {
   state(): string;
   /** Retries the reconnect now; its failure is the recovery's to report. */
   retry(): Promise<void>;
+  /** Tries again to make this tab the one that receives agent changes; its failure shows on the dot. */
+  takeover(): Promise<void>;
   /** Whether a recorded retry time is still ahead (the button waits for it). */
   retryWaits(): boolean;
   /** What the button offers in `state`. */
@@ -73,13 +77,16 @@ export async function turnOnAgents(ports: {
   // A reconnect that gave up (paused while the user was away, ticket am-51) is retried as one
   // still under way; a pause by the site owner (also one the socket found while opening) is not.
   const gaveUp = (state: string) => state === "paused" && !ports.paused();
+  // An earlier takeover that failed (ticket am-53) is retried too, unless the site owner paused.
+  const failed = (state: string) => state === "takeover-failed" && !ports.paused();
   const found = ports.state();
-  if (found === "reconnecting" || gaveUp(found)) await ports.retry();
+  if (failed(found)) await ports.takeover();
+  else if (found === "reconnecting" || gaveUp(found)) await ports.retry();
   if (!ports.live(at)) return;
   const now = ports.state();
   if (ports.offer(now) !== "connect") await ports.copyAgain();
   else if (ports.fresh(now)) await ports.prompt();
-  else if ((now === "reconnecting" && !ports.retryWaits()) || gaveUp(now)) ports.stuck();
+  else if ((now === "reconnecting" && !ports.retryWaits()) || gaveUp(now) || failed(now)) ports.stuck();
 }
 
 /**
