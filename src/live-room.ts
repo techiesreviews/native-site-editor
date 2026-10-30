@@ -104,18 +104,25 @@ async function unwrapFrom(request: { privateKey: CryptoKey; publicKey: Bytes }, 
     { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
 }
 
-/** A failed upgrade hides its status, so one plain request (same check, no socket) tells a refusal from a network failure. */
+/** Final answers to the plain request; anything else (426: allowed, the upgrade itself failed) is worth retrying. */
+const refusals: Record<number, string> = {
+  400: "This live room's address is not valid.",
+  401: "Sign in again to join this live room.",
+  403: "This live room is not open to you.",
+};
+/** A failed upgrade hides its status, so one plain request (same check, no socket) tells a refusal from a network
+ * failure. Only a socket that never opened asks: later drops reconnect without it. */
 function browserSocket(url: string): Promise<LiveRoomSocket> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(new URL(url, location.href).href.replace(/^http/, "ws"));
     socket.binaryType = "arraybuffer";
-    socket.addEventListener("open", () => resolve(socket), { once: true });
-    socket.addEventListener("close", () => {
+    const failed = () => {
       fetch(url, { credentials: "same-origin" }).then(
-        response => reject(response.status === 401 ? new LiveRoomClosed("Sign in again to join this live room.")
-          : response.status === 403 ? new LiveRoomClosed("This live room is not open to you.") : new Error("The live room could not be joined.")),
+        response => reject(response.status in refusals ? new LiveRoomClosed(refusals[response.status]) : new Error("The live room could not be joined.")),
         () => reject(new Error("The live room could not be joined.")));
-    }, { once: true });
+    };
+    socket.addEventListener("open", () => { socket.removeEventListener("close", failed); resolve(socket); }, { once: true });
+    socket.addEventListener("close", failed, { once: true });
   });
 }
 const systemClock: LiveClock = {
@@ -171,11 +178,15 @@ export function openLiveRoom(options: LiveRoomOptions) {
     if (dropped) changed();
   };
   const sendControl = (message: LiveClientMessage) => { try { socket?.send(JSON.stringify(message)); } catch { /* The close handler reconnects. */ } };
+  /** Waits for the key, then seals on that key for the socket current then: both must still hold after sealing. */
   const sendFrame = async (kind: number, payload: Uint8Array) => {
+    if (closed) throw new Error("The live room is closed.");
     const key = await keyed.promise;
+    const on = socket;
     const frame = await seal(key, joined(Uint8Array.of(kind), payload));
-    if (closed || roomKey !== key || !socket) return false;
-    try { socket.send(frame); return true; } catch { return false; }
+    if (closed) throw new Error("The live room is closed.");
+    if (roomKey !== key || !on || socket !== on) return false;
+    try { on.send(frame); return true; } catch { return false; }
   };
   const sayHere = () => {
     if (closed) return;
@@ -312,6 +323,10 @@ export function openLiveRoom(options: LiveRoomOptions) {
     closed = true;
     for (const timer of [heartbeat, sweep, retry, rerequest]) clock.clearTimeout(timer);
     request = null;
+    // Callers still waiting hold the pending promise: reject it. The key may have arrived already, and a settled
+    // promise cannot reject, so later calls get a fresh, rejected one.
+    keyed.reject(new Error("The live room is closed."));
+    resetKeyed();
     keyed.reject(new Error("The live room is closed."));
     roomKey = null;
   };

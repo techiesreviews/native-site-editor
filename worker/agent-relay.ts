@@ -1,5 +1,5 @@
 import { workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
-import { LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, readLiveClientMessage, type LiveAccess, type LiveServerMessage } from "../shared/live-room";
+import { LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, PRESENCE_TIMEOUT_MS, readLiveClientMessage, type LiveAccess, type LiveServerMessage } from "../shared/live-room";
 
 export interface RelayScope {
   workspace: AgentWorkspace;
@@ -495,11 +495,13 @@ export interface LiveAgent { id: string; sessionId: string; generation: number; 
 export const LIVE_AGENT_CHECK_MS = 60_000;
 /** `keyed`: holds the room key, or was told to make it. `since`: join order, for choosing who makes a new key.
  * `rejoin`: the tab's own secret, never sent to peers, so its reconnect replaces a socket the relay has not yet seen drop.
- * `gone`: replaced by that reconnect; its late close is ignored. */
+ * `gone`: replaced by that reconnect; its late close is ignored. `heardAt`: its last frame, to within LIVE_HEARD_STEP_MS. */
 interface LiveAttachment {
   role: "live"; room: string; peer: string; access: LiveAccess; keyed: boolean; since: number;
-  rejoin?: string; agent?: LiveAgent & { checkedAt: number }; gone?: true;
+  rejoin?: string; agent?: LiveAgent & { checkedAt: number }; gone?: true; heardAt?: number;
 }
+/** How often a socket's `heardAt` is written back to its attachment: often enough for a 30 s silence, rarely enough for typing. */
+const LIVE_HEARD_STEP_MS = 5_000;
 const readLive = (value: unknown): LiveAttachment | null => {
   const item = value as Partial<LiveAttachment> | null;
   return item && typeof item === "object" && item.role === "live" && typeof item.room === "string" && /^[a-f\d]{64}$/.test(item.room) &&
@@ -516,7 +518,7 @@ export class LiveRooms {
   private sockets = new Map<LiveSocket, LiveAttachment>();
 
   /** Keeps closing sockets too: after hibernation a close wakes the object with that socket no longer open, and its leave must still be announced. */
-  constructor(sockets: LiveSocket[]) {
+  constructor(sockets: LiveSocket[], private now: () => number = () => Date.now()) {
     for (const socket of sockets) {
       const metadata = readLive(socket.deserializeAttachment());
       if (metadata) this.sockets.set(socket, metadata);
@@ -562,11 +564,12 @@ export class LiveRooms {
       for (const [other] of this.members(room)) this.send(other, { type: "left", peer: metadata.peer });
     }
     const others = this.members(room);
-    const since = Math.max(Date.now(), ...others.map(([, other]) => other.since + 1));
+    const since = Math.max(this.now(), ...others.map(([, other]) => other.since + 1));
     const metadata: LiveAttachment = {
       role: "live", room, peer: hex(crypto.getRandomValues(new Uint8Array(16))), access, keyed: others.length === 0 || inherited, since,
       ...(options.rejoin === undefined ? {} : { rejoin: options.rejoin }),
-      ...(options.agent ? { agent: { ...options.agent, checkedAt: Date.now() } } : {}),
+      ...(options.agent ? { agent: { ...options.agent, checkedAt: this.now() } } : {}),
+      heardAt: this.now(),
     };
     socket.serializeAttachment(metadata);
     this.sockets.set(socket, metadata);
@@ -609,6 +612,8 @@ export class LiveRooms {
       socket.close(1009, "Live room message is too large.");
       return false;
     }
+    const now = this.now();
+    if (now - (metadata.heardAt ?? 0) >= LIVE_HEARD_STEP_MS) { metadata.heardAt = now; socket.serializeAttachment(metadata); }
     if (typeof message !== "string") {
       for (const [other] of this.members(metadata.room, socket)) this.send(other, message);
       return true;
@@ -621,6 +626,11 @@ export class LiveRooms {
       return true;
     }
     if (value.type === "key-request") {
+      // Key holders whose sockets died without a close (silent past the presence timeout) cannot answer:
+      // closing them has the room make a new key (`leave`), so the joiner is not left waiting for good.
+      const holders = this.members(metadata.room, socket).filter(([, other]) => other.keyed);
+      if (holders.length && holders.every(([, other]) => now - (other.heardAt ?? 0) > PRESENCE_TIMEOUT_MS + LIVE_HEARD_STEP_MS))
+        for (const [holder] of holders) this.end(holder, 1001, "Silent past the presence timeout.");
       for (const [other] of this.members(metadata.room, socket)) this.send(other, { type: "key-request", from: metadata.peer, publicKey: value.publicKey });
       return true;
     }
