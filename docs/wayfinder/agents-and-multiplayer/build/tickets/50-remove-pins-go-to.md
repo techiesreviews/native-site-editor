@@ -22,7 +22,7 @@ Lex, 2026-10-30, a preview note on the MCP menu's "Pins go to" control (`span#ag
 
 - `src/pins-go-to.ts` (removed), `src/components/agent-menu.ts`, `src/components/agent-menu.css`, `shared/agent.ts`
 - `tests/pins-go-to.test.ts` (removed), `tests/native-save/native-mcp-menu.spec.ts`, `tests/native-save/native-mcp.spec.ts`, `tests/native-save/native-agent-quiet.spec.ts`
-- `docs/agents/features.md`, `docs/wayfinder/agents-and-multiplayer/build/README.md`
+- `docs/agents/features.md`, `docs/wayfinder/agents-and-multiplayer/build/README.md`, `docs/agents/code-map.md`
 
 ## Done when
 
@@ -37,8 +37,8 @@ Lex, 2026-10-30, a preview note on the MCP menu's "Pins go to" control (`span#ag
 
 - The MCP menu has no "Pins go to" row: `src/pins-go-to.ts` and its test are gone, with the picker's code in `src/components/agent-menu.ts`, its CSS in `agent-menu.css` and `PIN_AGENTS`/`PinAgent` in `shared/agent.ts` (the helper keeps its own list in `helper/src/agents.ts`). Pins go to whichever connected agent takes them first.
 - A stored choice (`native-site-editor:pins-go-to:…`) is cleared when the menu opens, in the same one-off clean-up as the old Watch records (`forgetRetired`, to remove after 2027-02-28).
-- After Stop, the focus goes to the agents' list, or to the menu once none is left: never another Stop or Disconnect MCP (it used to go to "Pins go to").
-- Specs: `native-mcp-menu.spec.ts` checks the menu has no picker, the new focus after Stop (a second Enter ends no one), and that old Pins go to records are removed; `native-mcp.spec.ts` and `native-agent-quiet.spec.ts` no longer allow for the row.
-- `docs/agents/features.md` F-agent-11 and the build README's helper decision say what holds now.
+- After Stop, the focus goes to the agents' list ("Agents working now"), or to the menu once none is left (a group named "MCP"): never another Stop or Disconnect MCP (it used to go to "Pins go to"). Both show the editor's focus ring.
+- Specs: `native-mcp-menu.spec.ts` checks the menu has no picker, the new focus after Stop and its name (a second Enter ends no one), and that old Pins go to records are removed; `native-mcp.spec.ts` and `native-agent-quiet.spec.ts` no longer allow for the row.
+- `docs/agents/features.md` F-agent-11 and the build README's helper decision say what holds now; `docs/agents/code-map.md` no longer lists `src/pins-go-to.ts`.
 - Checks: `kit unit --affected` 3863/3863, `kit specs --affected` 6/6 (79 tests), `kit size` ok (boot 345 KB, ±0), `npm run check` and `npm run lint` clean. Shots at 390 and 1280, light and dark, before and after (`kit shots --compare dev`): the row is gone.
 - `git grep -i "pins go to\|pinsGoTo\|pins-go-to"` also finds the clean-up's key and its spec, and one history comment in `tests/agent-watch.test.ts` (outside this ticket's files); no code reads the choice.

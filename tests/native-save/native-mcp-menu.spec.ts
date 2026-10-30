@@ -1488,6 +1488,7 @@ test("Stop ends one of three agents: its row, outline and dots go, the focus sta
     await page.keyboard.press("Enter");
     await expect(names).toHaveText(["Header writer", "Caption writer"]);
     await expect(list).toBeFocused();
+    await expect(list).toHaveAccessibleName("Agents working now");
     await page.keyboard.press("Enter");
     await expect(names).toHaveText(["Header writer", "Caption writer"]);
     await expect.poll(chipNames).toEqual(["Caption writer", "Header writer"]);
@@ -1550,6 +1551,7 @@ test("Stop ends one of three agents: its row, outline and dots go, the focus sta
     await page.keyboard.press("Enter");
     await expect(list).toBeHidden();
     await expect(page.locator(".agent-menu")).toBeFocused();
+    await expect(page.locator(".agent-menu")).toHaveAccessibleName("MCP");
     await page.keyboard.press("Enter");
     await expect(action).toHaveText("Disconnect MCP");
     // A stop lasts until Disconnect MCP: ending the connection forgets its agents' stops.
