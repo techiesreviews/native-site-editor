@@ -299,8 +299,12 @@ export function createAgentMenu(options: {
   // that agent only (Disconnect MCP ends them all).
   const working = node("ul", "agent-menu__agents");
   working.setAttribute("aria-label", "Agents working now");
-  // Where the focus goes after a Stop (drawAgents): never another Stop or Disconnect MCP.
-  working.tabIndex = root.tabIndex = -1;
+  // Where the focus goes after a Stop (drawAgents): never another Stop or Disconnect MCP. Each is named, so a
+  // screen reader says where the focus landed.
+  working.tabIndex = -1;
+  root.tabIndex = -1;
+  root.setAttribute("role", "group");
+  root.setAttribute("aria-label", "MCP");
   // A hairline between the agents and the button, as in the approved mock-up (prototypes/10-asking-agents.html).
   const afterAgents = node("div", "agent-menu__divider");
   afterAgents.setAttribute("aria-hidden", "true");
@@ -1102,7 +1106,7 @@ const RETIRED_KEYS = ["native-site-editor:agent-watch:", "native-site-editor:pin
 function forgetRetired() {
   try {
     const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
-    for (const key of keys) if (RETIRED_KEYS.some(prefix => key?.startsWith(prefix))) localStorage.removeItem(key!);
+    for (const key of keys) if (key && RETIRED_KEYS.some(prefix => key.startsWith(prefix))) localStorage.removeItem(key);
   } catch { /* Storage blocked: nothing to forget. */ }
 }
 
