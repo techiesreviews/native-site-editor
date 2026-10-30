@@ -1,7 +1,7 @@
 ---
 title: "The kit never prints a token from a remote's URL (follow-up on 62)"
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-63
 builder: claude
 blocked_by: [62-kit-pr-picks-the-origin-repo]
@@ -28,3 +28,7 @@ Ticket 62's waived review left one finding to fix first ([ticket 62 Follow-ups](
 ## Kit commands and evidence
 
 In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines.
+
+## Done
+
+Lead, 2026-10-31: fixed in agent-kit #5 (merge 1c217e6); the machine kit runs 1c217e6. The child settled before closing the ticket here.
