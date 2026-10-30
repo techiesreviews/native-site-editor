@@ -9,7 +9,7 @@
 //
 // An agent's own question (ask_user, ticket am-15) is held the same way: its pin is kept here, and the call
 // waits for the user's answer, which goes to it rather than to a watchdog's wait.
-import { agentName, agentWho, QUESTION_TEXT_LIMIT, type AgentElement, type AgentRequest, type AgentWho } from "../shared/agent";
+import { agentName, agentWho, HELPER_AGENT, QUESTION_TEXT_LIMIT, type AgentElement, type AgentRequest, type AgentWho } from "../shared/agent";
 import type { AgentReadResult } from "../shared/agent-read";
 import { agentQuestion, requestForAgent, requestOperation, type AgentRequests } from "../shared/agent-requests";
 import { HttpError } from "../shared/http-error";
@@ -32,6 +32,8 @@ export interface RequestPorts {
   place?(page: string | undefined, element: string): Promise<{ element: AgentElement; repository: string } | { refuse: string }>;
   /** A new id for an agent's question. */
   newId?: () => string;
+  /** The site's "Pins go to" choice (src/pins-go-to.ts), told to the helper's waits with requests. */
+  pinsGoTo?: () => string;
 }
 
 /** A change made on a copy read before an await is kept only over that same stored copy: a reply,
@@ -104,14 +106,19 @@ export function createRequestTools(ports: RequestPorts) {
     let requests = first.taken;
     const wanted = typeof command.waitMs === "number" && Number.isFinite(command.waitMs) ? Math.min(WAIT_MS, command.waitMs) : WAIT_MS;
     // The site owner's switch (waitMs 0) answers at once.
-    if (requests.length || !current() || wanted <= 0) return ok({ requests });
+    if (requests.length || !current() || wanted <= 0) return waitAnswer(command, requests);
     // A request during the read: look again at once instead of holding.
     // A request held for another connection's agent: this wait looks again as the hold ends.
     const ms = version !== seen ? 0 : Math.min(deadline, started + wanted, first.heldUntil ?? Infinity) - now();
     if (ms > 0) await hold(ms, signal);
     // The relay gave up or the socket went: take nothing it could not deliver.
     if (current()) requests = (await take(command.grantId, all, current, owner, agentWho(command))).taken;
-    return ok({ requests });
+    return waitAnswer(command, requests);
+  }
+  /** A wait's answer: the helper's (HELPER_AGENT) is also told which agent the user chose to take them. */
+  function waitAnswer(command: AgentRequests, requests: ReturnType<typeof requestForAgent>[]) {
+    const helper = requests.length && ports.pinsGoTo && agentWho(command).name === HELPER_AGENT;
+    return ok(helper ? { requests, pinsGoTo: ports.pinsGoTo!() } : { requests });
   }
   async function reply(command: AgentRequests, current: () => boolean, owner?: number) {
     const { request: id, status, message, requestIds } = command.args;

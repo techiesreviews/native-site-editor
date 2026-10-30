@@ -1,0 +1,19 @@
+{
+  "name": "@techiesreviews/editor-helper",
+  "version": "0.1.0",
+  "description": "Starts your own coding agent (Claude Code, Codex, Gemini CLI, OpenCode) for each pin in Native Site Editor.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "editor-helper": "dist/cli.js" },
+  "files": ["dist", "README.md"],
+  "engines": { "node": ">=24" },
+  "repository": { "type": "git", "url": "git+https://github.com/techiesreviews/native-site-editor.git", "directory": "helper" },
+  "scripts": {
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/cli.js",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.2.0",
+    "esbuild": "0.28.1"
+  }
+}
