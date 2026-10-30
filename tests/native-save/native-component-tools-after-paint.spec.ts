@@ -11,6 +11,7 @@ const tree = (page: Page) => page.getByRole("tree", { name: "Page structure", ex
 const firstCard = (page: Page) => tree(page).getByRole("treeitem", { name: /^Project card Reusable cards/ }).first();
 const titleBadge = (page: Page) => tree(page).locator(".page-structure__slot-badge").and(page.getByRole("button", { name: "Edit Title", exact: true }));
 const editBar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact: true });
+const selectedCrumb = (page: Page) => page.locator(".canvas-crumb[aria-current=true]");
 
 async function holdModule(page: Page, path: string) {
   let held!: () => void;
@@ -151,8 +152,11 @@ test("component tools that land right after a Bold leave the next bar change wor
   await editorMounted(page);
   await tools.reached;
   await frame(page).locator(".hero p.lead").click();
-  await page.getByRole("button", { name: "Paragraph", exact: true }).first().click();
-  await expect(editBar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await expect(selectedCrumb(page)).toHaveText("p.lead");
+  // The Blocks rail adds a paragraph after the lead; the lead's bar already says "Paragraph", so the
+  // wait is on the crumb turning to the new paragraph, or the Bold lands on the lead's bar.
+  await page.getByRole("navigation", { name: "Blocks", exact: true }).getByRole("button", { name: "Paragraph", exact: true }).click();
+  await expect(selectedCrumb(page)).toHaveText("p");
   await editBar(page).getByRole("button", { name: "Bold" }).click();
   tools.release();
   await page.keyboard.press("ArrowLeft");
