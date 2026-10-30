@@ -69,18 +69,19 @@ for (const how of ["switch", "destroy", "disconnect"] as const) {
 // The agent menu's Connect to MCP press with agents off (turnOn): the connection is found
 // reconnecting, its retry leaves the menu `after`, and the press then prompts, copies or is stuck.
 // "other-owner": another tab of this browser holds the socket and an agent uses the site's connection;
-// "taken-over": another tab holds it with no connection of the site at all.
-function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "connected" | "other-owner" | "taken-over" | "reconnecting") {
+// "taken-over": another tab holds it with no connection of the site at all. `found` "paused": the
+// reconnect gave up while the user was away (ticket am-51), so the press finds it paused, not reconnecting.
+function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "connected" | "other-owner" | "taken-over" | "reconnecting", found: "reconnecting" | "paused" = "reconnecting", owner = false) {
   let site = "main", pinned = "", activation = 0, remote = false, retried = false;
   const writes: string[] = [];
   const live = (at: number) => remote && activation === at && site === pinned;
   const done = turnOnAgents({
     start: () => { remote = true; activation++; pinned = site; return activation; },
     live,
-    paused: () => false,
+    paused: () => owner,
     read: race.port("read", async () => true),
     open: race.port("open", async () => {}),
-    state: () => retried ? after : "reconnecting",
+    state: () => retried ? after : found,
     retry: race.port("retry", async () => { retried = true; }),
     retryWaits: () => false,
     offer: now => now === "waiting" ? "wait" : now === "connected" || now === "other-owner" ? "disconnect" : "connect",
@@ -111,13 +112,27 @@ test("Connect to MCP finding a reconnect: undisturbed, it retries and then promp
   }
 });
 
+test("Connect to MCP after a reconnect gave up while away: it retries as for a reconnect, then prompts, copies again or shows the press stuck", async () => {
+  for (const [after, write] of [["idle", "POST /api/agent/connect"], ["waiting", "copy"], ["connected", "copy"], ["other-owner", "copy"], ["taken-over", "POST /api/agent/connect"], ["reconnecting", "stuck"]] as const) {
+    const run = press({ port: (_name, work) => work }, after, "paused");
+    await run.done;
+    assert.deepEqual(run.writes, [write], after);
+  }
+  // Paused by the site owner, not by a reconnect that gave up: the press neither retries nor prompts.
+  const owner = press({ port: (_name, work) => work }, "idle", "paused", true);
+  await owner.done;
+  assert.deepEqual(owner.writes, []);
+});
+
 for (const how of ["off", "switch", "again"] as const) {
   test(`Connect to MCP finding a reconnect: a ${how} at any await makes no prompt, no copy and no stuck dot`, async () => {
-    for (const after of ["idle", "waiting", "connected", "other-owner", "taken-over", "reconnecting"] as const) {
-      const points = await forEachAwait(race => press(race, after), run => run.disturb(how), run => {
-        assert.deepEqual(run.writes, [], `${after}: nothing written after the ${how}`);
-      });
-      assert.equal(points, 3, `${after}: read, open and retry`);
+    for (const found of ["reconnecting", "paused"] as const) {
+      for (const after of ["idle", "waiting", "connected", "other-owner", "taken-over", "reconnecting"] as const) {
+        const points = await forEachAwait(race => press(race, after, found), run => run.disturb(how), run => {
+          assert.deepEqual(run.writes, [], `${found} → ${after}: nothing written after the ${how}`);
+        });
+        assert.equal(points, 3, `${found} → ${after}: read, open and retry`);
+      }
     }
   });
 }
