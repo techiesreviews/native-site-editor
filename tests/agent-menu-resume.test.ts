@@ -77,7 +77,7 @@ for (const how of ["switch", "destroy", "disconnect"] as const) {
 // `found` "takeover-failed": an earlier takeover failed and left the site paused in this browser
 // (ticket am-53), so the press retries the takeover instead ("takeover-failed" after: it failed again,
 // and that state is itself the problem dot).
-function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "connected" | "other-owner" | "taken-over" | "reconnecting" | "paused" | "takeover-failed", found: "reconnecting" | "paused" | "takeover-failed" = "reconnecting", owner: "none" | "before" | "open" = "none", waits = false) {
+function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "connected" | "other-owner" | "taken-over" | "reconnecting" | "paused" | "takeover-failed" | "quota" | "unavailable", found: "reconnecting" | "paused" | "takeover-failed" = "reconnecting", owner: "none" | "before" | "open" = "none", waits = false) {
   let site = "main", pinned = "", activation = 0, remote = false, acted = false, retries = 0, takeovers = 0, ownerPaused = owner === "before";
   const writes: string[] = [];
   const live = (at: number) => remote && activation === at && site === pinned;
@@ -138,20 +138,19 @@ test("Connect to MCP after a reconnect gave up while away: it retries as for a r
 });
 
 test("Connect to MCP after a failed takeover: it retries the takeover, then prompts, copies again or shows the press stuck; failed again, it writes nothing", async () => {
-  for (const [after, write] of [["idle", ["POST /api/agent/connect"]], ["waiting", ["copy"]], ["connected", ["copy"]], ["other-owner", ["copy"]], ["taken-over", ["POST /api/agent/connect"]], ["reconnecting", ["stuck"]], ["paused", ["stuck"]], ["takeover-failed", []]] as const) {
+  for (const [after, write] of [["idle", ["POST /api/agent/connect"]], ["waiting", ["copy"]], ["connected", ["copy"]], ["other-owner", ["copy"]], ["taken-over", ["POST /api/agent/connect"]], ["reconnecting", ["stuck"]], ["paused", ["stuck"]], ["takeover-failed", []], ["quota", []], ["unavailable", []]] as const) {
     const run = press({ port: (_name, work) => work }, after, "takeover-failed");
     await run.done;
     assert.equal(run.takeovers(), 1, after);
     assert.equal(run.retries(), 0, `${after}: no reconnect retry`);
     assert.deepEqual(run.writes, write, after);
   }
-  // Paused by the site owner: no takeover, no prompt.
-  for (const when of ["before", "open"] as const) {
-    const owner = press({ port: (_name, work) => work }, "idle", "takeover-failed", when);
-    await owner.done;
-    assert.equal(owner.takeovers(), 0, when);
-    assert.deepEqual(owner.writes, [], when);
-  }
+  // Paused by the site owner before the press: no takeover, no prompt. (The owner's pause is never
+  // `takeover-failed`, so one found while the socket opens shows as `paused` instead.)
+  const owner = press({ port: (_name, work) => work }, "idle", "takeover-failed", "before");
+  await owner.done;
+  assert.equal(owner.takeovers(), 0);
+  assert.deepEqual(owner.writes, []);
 });
 
 test("the menu's owner pause is only the relay's paused-with-a-message: a failed takeover after it, or a reconnect that gave up, is not", () => {
