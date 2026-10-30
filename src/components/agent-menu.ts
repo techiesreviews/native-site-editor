@@ -115,6 +115,8 @@ export function createAgentMenu(options: {
   // A press found the reconnect still under way, or still given up (paused, not by the site owner):
   // the dot shows a problem until it ends or the next press.
   let stuckOn = false;
+  // This activation's socket already tried a takeover (shown taking-over): a press tries once.
+  let triedTakeover = false;
   let disposed = false,
     changing = false,
     remote = false,
@@ -259,6 +261,7 @@ export function createAgentMenu(options: {
         if (disposed || !remote || activation !== at || workspaceChanged) return;
         transportState = next;
         if (next.mode !== "reconnecting" && next.mode !== "paused") stuckOn = false;
+        if (next.mode === "taking-over") triedTakeover = true;
         ownerPaused = ownerPause(next);
         paint();
       },
@@ -692,10 +695,11 @@ export function createAgentMenu(options: {
       // its attempts outlive the connection) would wait out its backoff. A failed retry is the
       // recovery's to report: the dot shows it.
       retry: async () => { await transport?.retry().catch(() => undefined); },
-      // An earlier takeover failed and left the site paused in this browser (ticket am-53). A new
-      // failure is the transport's to report (takeover-failed on the dot); it never rejects, so the
-      // catch is only defensive.
-      takeover: async () => { await transport?.takeover().catch(() => undefined); },
+      // An earlier takeover failed and left the site paused in this browser (ticket am-53). One the
+      // socket's opening just tried and failed is not tried again in the same press. A new failure is
+      // the transport's to report (takeover-failed on the dot); it never rejects, so the catch is
+      // only defensive.
+      takeover: async () => { if (!triedTakeover) await transport?.takeover().catch(() => undefined); },
       retryWaits: () => (transportState?.retryAt ?? 0) > Date.now(),
       offer: now => offer(now as ReturnType<typeof state>),
       fresh: now => now === "idle" || elsewhere(now),
@@ -729,6 +733,7 @@ export function createAgentMenu(options: {
     ownerPaused = false;
     failedOn = undefined;
     stuckOn = false;
+    triedTakeover = false;
     activation++;
     pinned = options.repository();
     remember(true);

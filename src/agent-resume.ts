@@ -36,8 +36,8 @@ export async function resumeAgents(ports: {
  * idle or when another tab receives, or marks the press stuck: still reconnecting with no recorded
  * retry time to wait for, or still paused by a reconnect that gave up (the retry did nothing or
  * failed again). Finding an earlier takeover failed (the site left paused in this browser, ticket
- * am-53), it retries the takeover instead; one that fails again writes nothing more, as
- * `takeover-failed` is itself the problem dot. A turn-off, another turn-on or a site move while it
+ * am-53), it tries the takeover, unless the socket's opening already tried it in this press; one
+ * that fails again writes nothing more, as `takeover-failed` is itself the problem dot. A turn-off, another turn-on or a site move while it
  * waits ends it with no write.
  */
 export async function turnOnAgents(ports: {
@@ -55,7 +55,8 @@ export async function turnOnAgents(ports: {
   state(): string;
   /** Retries the reconnect now; its failure is the recovery's to report. */
   retry(): Promise<void>;
-  /** Tries again to make this tab the one that receives agent changes; its failure shows on the dot. */
+  /** Tries to make this tab the one that receives agent changes, unless this press already tried;
+   * its failure shows on the dot. */
   takeover(): Promise<void>;
   /** Whether a recorded retry time is still ahead (the button waits for it). */
   retryWaits(): boolean;
@@ -78,10 +79,10 @@ export async function turnOnAgents(ports: {
   // A reconnect that gave up (paused while the user was away, ticket am-51) is retried as one
   // still under way; a pause by the site owner (also one the socket found while opening) is not.
   const gaveUp = (state: string) => state === "paused" && !ports.paused();
-  // An earlier takeover that failed (ticket am-53) is retried too, unless the site owner paused.
-  const failed = (state: string) => state === "takeover-failed" && !ports.paused();
+  // An earlier takeover that failed (ticket am-53) is tried again. The owner's pause is never
+  // `takeover-failed` (`ownerPause`), so no owner check here.
   const found = ports.state();
-  if (failed(found)) await ports.takeover();
+  if (found === "takeover-failed") await ports.takeover();
   else if (found === "reconnecting" || gaveUp(found)) await ports.retry();
   if (!ports.live(at)) return;
   const now = ports.state();
