@@ -3,7 +3,7 @@ import { recordFailure, recoveryHolds } from "../agent-recovery";
 import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
-import { AGENT_STOPPED, PIN_AGENTS, REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, agentWho, type AgentCommand, type AgentElement, type AgentRequest } from "../../shared/agent";
+import { AGENT_STOPPED, REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, agentWho, type AgentCommand, type AgentElement, type AgentRequest } from "../../shared/agent";
 import { answerRequest, createRequestTools } from "../agent-watch";
 import { workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
 import { AgentRecordsError, agentStorageStatus, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords } from "../agent-records";
@@ -17,8 +17,6 @@ import { mountFlyout } from "./flyout";
 import { githubScope, same, sameBranch } from "../workspace-session";
 import type { createAgentPresence } from "../agent-presence";
 import { STOPPED_AGENTS_KEY, agentStops, afterStoppedWait } from "../agent-stops";
-import { choosePinAgent, pinAgent } from "../pins-go-to";
-import { options as selectOptions } from "../ui/select-options";
 import "./agent-dots.css";
 import "./agent-menu.css";
 
@@ -275,8 +273,8 @@ export function createAgentMenu(options: {
   // that tells an agent how to connect, its label confirming the copy; "Wait for MCP" copies it
   // again until an agent first uses the connection; then "Disconnect MCP" revokes the
   // repository's connections (OAuth ones included). No hints or toasts: the dot shows in-between
-  // states and problems, which return the button to Connect to MCP. The only other controls are
-  // "Pins go to" and the agents' Stop (ticket am-12, below).
+  // states and problems, which return the button to Connect to MCP. The only other control is the
+  // agents' Stop (ticket am-12, below).
   const root = node("div", "agent-menu");
   const action = button("", () => void act(), "text-button agent-menu__action");
   const actionLabel = node("span", "agent-menu__label", "Connect to MCP");
@@ -297,26 +295,16 @@ export function createAgentMenu(options: {
   const waitingOn = node("div", "agent-menu__waiting");
   waitingOn.id = "agent-waiting";
   waitingOn.setAttribute("role", "menu");
-  // While remote agents are on (ticket am-12): "Pins go to", the agent the helper starts for pins, and the
-  // agents working now, each with its dot and a Stop that ends that agent only (Disconnect MCP ends them all).
-  const choice = node("label", "agent-menu__choice");
-  const pinsGoTo = node("select", "agent-menu__select");
-  selectOptions(pinsGoTo, PIN_AGENTS.map(name => ({ value: name, label: name })));
-  pinsGoTo.addEventListener("change", () => {
-    const workspace = scope();
-    if (workspace) choosePinAgent(workspace, pinsGoTo.value);
-  });
-  // Named by its words alone (nested in its label, the select's own value would join its name).
-  const choiceLabel = node("span", "agent-menu__choice-label", "Pins go to");
-  choiceLabel.id = "agent-menu-pins-go-to";
-  pinsGoTo.setAttribute("aria-labelledby", choiceLabel.id);
-  choice.append(choiceLabel, pinsGoTo);
+  // While remote agents are on (ticket am-12): the agents working now, each with its dot and a Stop that ends
+  // that agent only (Disconnect MCP ends them all).
   const working = node("ul", "agent-menu__agents");
   working.setAttribute("aria-label", "Agents working now");
-  // Hairlines between "Pins go to", the agents and the button, as in the approved mock-up (prototypes/10-asking-agents.html).
-  const divider = () => { const line = node("div", "agent-menu__divider"); line.setAttribute("aria-hidden", "true"); return line; };
-  const afterChoice = divider(), afterAgents = divider();
-  root.append(choice, afterChoice, working, afterAgents, action, download, waitingOn);
+  // Where the focus goes after a Stop (drawAgents): never another Stop or Disconnect MCP.
+  working.tabIndex = root.tabIndex = -1;
+  // A hairline between the agents and the button, as in the approved mock-up (prototypes/10-asking-agents.html).
+  const afterAgents = node("div", "agent-menu__divider");
+  afterAgents.setAttribute("aria-hidden", "true");
+  root.append(working, afterAgents, action, download, waitingOn);
   const flyout = mountFlyout({
     panel: waitingOn,
     label: "Requests",
@@ -544,9 +532,6 @@ export function createAgentMenu(options: {
     root.classList.toggle("is-asking", asked > 0);
     count.hidden = !asked;
     count.textContent = asked ? String(asked) : "";
-    const workspace = scope();
-    choice.hidden = afterChoice.hidden = offered === "connect" || !workspace;
-    if (workspace && !choice.hidden && document.activeElement !== pinsGoTo) pinsGoTo.value = pinAgent(workspace);
     drawAgents(offered);
     download.hidden = !storage.problem || current === "closed";
     download.disabled = exporting;
@@ -615,10 +600,10 @@ export function createAgentMenu(options: {
       return row;
     }));
     if (focusedKey === undefined) return;
-    // Its agent still listed: its Stop again. Gone (stopped, or its time ended): "Pins go to", never another Stop
-    // or Disconnect MCP, so a second Enter or a key repeat ends no one else.
+    // Its agent still listed: its Stop again. Gone (stopped, or its time ended): the list, or the menu once it is
+    // empty, never another Stop or Disconnect MCP, so a second Enter or a key repeat ends no one else.
     const row = ([...working.children] as HTMLElement[]).find(each => each.dataset.key === focusedKey);
-    (row?.querySelector<HTMLElement>("button") ?? (choice.hidden ? action : pinsGoTo)).focus();
+    (row?.querySelector<HTMLElement>("button") ?? (working.hidden ? root : working)).focus();
   }
   const unlisten = options.agents?.listen(() => { if (!disposed) drawAgents(); });
   // The flyout: the requests waiting for an agent or for the user, each showing its pin; an
@@ -1008,7 +993,7 @@ export function createAgentMenu(options: {
     if (event.key === STOPPED_AGENTS_KEY) requestTools?.notify();
   };
   window.addEventListener("storage", onStorage);
-  forgetWatch();
+  forgetRetired();
   paint();
   void resume();
   return {
@@ -1111,12 +1096,13 @@ export function createAgentMenu(options: {
   };
 }
 
-/** Watch records of the removed Watch control (`native-site-editor:agent-watch:…`): nothing reads
- * them now. A one-off clean-up (ticket 29, 2026-10-23): remove it after 2027-01-31. */
-function forgetWatch() {
+/** Records of removed controls: nothing reads them now. One-off clean-ups, each to remove after its date: the
+ * Watch control (ticket 29, 2026-10-23; after 2027-01-31) and "Pins go to" (am-50, 2026-10-30; after 2027-02-28). */
+const RETIRED_KEYS = ["native-site-editor:agent-watch:", "native-site-editor:pins-go-to:"];
+function forgetRetired() {
   try {
     const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
-    for (const key of keys) if (key?.startsWith("native-site-editor:agent-watch:")) localStorage.removeItem(key);
+    for (const key of keys) if (RETIRED_KEYS.some(prefix => key?.startsWith(prefix))) localStorage.removeItem(key!);
   } catch { /* Storage blocked: nothing to forget. */ }
 }
 

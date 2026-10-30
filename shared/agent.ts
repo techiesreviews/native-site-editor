@@ -284,13 +284,6 @@ export const agentWho = (command: { grantId?: unknown; agent?: unknown }): Agent
 export const AGENT_STOPPED = "The editor's user stopped you. Nothing was read or changed; end your work on this site and say so to whoever started you.";
 
 /**
- * The coding agents the helper may start for pins (ticket am-12, "Pins go to"; the helper is ticket
- * am-16), the first the default (Lex, 2026-10-25). Each site remembers its choice in the browser.
- */
-export const PIN_AGENTS = ["Claude Code", "Codex", "Gemini CLI", "OpenCode"] as const;
-export type PinAgent = (typeof PIN_AGENTS)[number];
-
-/**
  * The most text a request (and each answer) holds, the source of its
  * element and how many wait at once (thread limits: shared/agent-requests.ts).
  */
