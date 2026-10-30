@@ -152,6 +152,14 @@ function jobState(id: string, job: WaitJob, status: JobStatus, more: { statusMes
   return { taskId: id, status, createdAt: new Date(job.createdAt).toISOString(), lastUpdatedAt: new Date().toISOString(), ttlMs: null, ...more };
 }
 
+/** The job a tasks-capable wait_for_requests call gets in place of waiting; undefined for arguments the tool refuses. */
+function startJob(args: unknown) {
+  const parsed = waitArguments.extend({ [AGENT_ARGUMENT]: z.string().optional() }).safeParse(args ?? {});
+  if (!parsed.success) return undefined;
+  const job = { createdAt: Date.now(), all: Boolean(parsed.data.all), agent: agentName(parsed.data[AGENT_ARGUMENT]) };
+  return { resultType: "task", ...jobState(jobId(job), job, "working", { statusMessage: "Waiting for a request from the editor.", pollIntervalMs: JOB_POLL_MS }) };
+}
+
 /**
  * The MCP tools' registrations, held until `inOrder` registers them in the table's order. A tool
  * registered twice, a row without a registration, or a registration without a row throws.
@@ -877,7 +885,7 @@ function siteServer(connection: Connection, env: Env, origin: string, exchange: 
     "wait_for_requests",
     {
       description:
-        "Get the requests the user sends from the editor: they select an element in the preview, choose Ask agent and type what they want. Returns the requests of the site the editor shows that this connection has not had yet (all waiting ones with all), each with its id, text, time, thread (the conversation so far: the user's messages, from the request's text on, and the agents' replies) and the element it is about (file, page URL, get_page id, tag, a unique CSS selector, its source and lines, its component and slot, its text), and marks them seen, which the user sees on its pin. A request comes back when the user adds to it (answers your question, or follows up on one waiting, being worked on or done), with their message last in its thread: to the connection whose agent is on it first, to any after a minute. With none, it waits up to waitSeconds for one, then returns an empty list: call it again, as a watchdog does, until the connection ends (the user chose Disconnect MCP). Where your app runs MCP tasks, it is a long job instead: its result arrives when a request comes, so no watchdog is needed; call it again after each result. Do what each asks with the edit tools, then answer it with reply_to_request. " +
+        "Get the requests the user sends from the editor: they select an element in the preview, choose Ask agent and type what they want. Returns the requests of the site the editor shows that this connection has not had yet (all waiting ones with all), each with its id, text, time, thread (the conversation so far: the user's messages, from the request's text on, and the agents' replies) and the element it is about (file, page URL, get_page id, tag, a unique CSS selector, its source and lines, its component and slot, its text), and marks them seen, which the user sees on its pin. A request comes back when the user adds to it (answers your question, or follows up on one waiting, being worked on or done), with their message last in its thread: to the connection whose agent is on it first, to any after a minute. With none, it waits up to waitSeconds for one, then returns an empty list: call it again, as a watchdog does, until the connection ends (the user chose Disconnect MCP). Where your app runs MCP tasks, it is a long job instead: its result arrives when a request comes or the wait ends, so no watchdog is needed; call it again after each result. Do what each asks with the edit tools, then answer it with reply_to_request. " +
         requestNote,
       inputSchema: waitArguments,
     },
@@ -987,13 +995,6 @@ function siteServer(connection: Connection, env: Env, origin: string, exchange: 
   /** wait_for_requests as a long job (ticket am-17): each look is one ordinary wait in the editor, its
    * result the job's once requests come; nothing is kept between looks, so no pin is stored anywhere. */
   const jobs = {
-    /** The job a tasks-capable call gets in place of waiting; undefined for arguments the tool refuses. */
-    start(args: unknown) {
-      const parsed = waitArguments.extend({ [AGENT_ARGUMENT]: z.string().optional() }).safeParse(args ?? {});
-      if (!parsed.success) return undefined;
-      const job = { createdAt: Date.now(), all: Boolean(parsed.data.all), agent: agentName(parsed.data[AGENT_ARGUMENT]) };
-      return { resultType: "task", ...jobState(jobId(job), job, "working", { statusMessage: "Waiting for a request from the editor.", pollIntervalMs: JOB_POLL_MS }) };
-    },
     /** tasks/get: completed with the requests once some come; undefined for an id that is no job. */
     async look(id: unknown) {
       const job = readJob(id);
@@ -1115,6 +1116,9 @@ export async function handleMcp(
   };
   // A tasks-capable client's wait_for_requests and its job's messages answer outside the SDK, whose 2026-07-28
   // tools/call results are complete only. Arguments the tool refuses go on to the SDK for its own answer.
+  let started!: () => void;
+  const dispatching = new Promise<undefined>(resolve => { started = () => resolve(undefined); });
+  exchange.started = started;
   let response: Promise<Response> | undefined;
   if (job) {
     const answer = (result: object | undefined) => Response.json({ jsonrpc: "2.0", id: body?.id ?? null, ...(result ? { result }
@@ -1128,30 +1132,28 @@ export async function handleMcp(
     }
     if (job === "update") return answer(known ? { resultType: "complete" } : undefined);
     if (job === "look" && !known) return answer(undefined);
-    const { jobs } = siteServer(connection, env, origin, exchange);
-    if (job === "start") {
-      const started = jobs.start(body?.params?.arguments);
-      if (started) return answer(started);
-    } else response = jobs.look(taskId).then(answer);
+    if (job === "look") response = siteServer(connection, env, origin, exchange).jobs.look(taskId).then(answer);
+    else {
+      const created = startJob(body?.params?.arguments);
+      if (created) return answer(created);
+    }
   }
-  const handler = createMcpHandler(() => createSiteServer(connection, env, origin, exchange), {
-    legacy: "stateless",
-    responseMode: "json",
-    maxSubscriptions: 0,
-  });
   const cancel = () => {
     if (exchange.requestId === undefined) return;
     const pending = relayCancel(exchange.requestId).catch(() => undefined);
     context?.waitUntil(pending);
   };
-  // A look's caller leaving ends only that look (its subrequest's signal); the job goes on.
+  // A look's caller leaving ends only that look (its subrequest's signal); the job goes on. A
+  // notifications/cancelled names the look's own request id, never the task id it waits under: the look runs out its hold.
   if (job !== "look") exchange.signal?.addEventListener("abort", cancel, { once: true });
   // A cancelled tool call answers nothing; a cancelled job's look answers that it was cancelled.
   const silent = () => exchange.cancelled === true && job !== "look";
-  let started!: () => void;
-  const dispatching = new Promise<undefined>(resolve => { started = () => resolve(undefined); });
-  exchange.started = started;
-  response ??= handler.fetch(request, { parsedBody }).finally(() => exchange.signal?.removeEventListener("abort", cancel));
+  // Everything but a job's look is the SDK's.
+  response ??= createMcpHandler(() => createSiteServer(connection, env, origin, exchange), {
+    legacy: "stateless",
+    responseMode: "json",
+    maxSubscriptions: 0,
+  }).fetch(request, { parsedBody }).finally(() => exchange.signal?.removeEventListener("abort", cancel));
   // Preserve the SDK's validation status before any tool is dispatched. Its stateless legacy path remains
   // untouched: only a modern request's closed response cancels the underlying tool.
   if (classification.kind !== "modern" || classification.messageKind !== "request") {

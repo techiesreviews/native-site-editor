@@ -62,7 +62,7 @@ test("MCP tools/list is dev's: same tools, order, descriptions, schemas and hint
   // screenshot_preview (no requestId: it keeps no receipt) and working_here follow inspect_preview; since ticket am-15,
   // discard_change follows remove_section and ask_user ends the list; since ticket am-17, wait_for_requests says
   // it runs as a long job where the app runs MCP tasks.
-  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "c283f73c281bfd665fcf4fd66b5943036f451f77810e25011d0cb9b7395b4b5a");
+  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "155958c8b83ee22fbd55cdf84f49c01492527629c73c1f5f3c19a9f283348aad");
   for (const tool of result.tools as { name: string; inputSchema?: { properties?: Record<string, { type?: string; description?: string }>; required?: string[] } }[]) {
     const agent = tool.inputSchema?.properties?.agent;
     assert.equal(agent?.type, "string", tool.name);
