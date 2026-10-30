@@ -414,6 +414,41 @@ test("a takeover that fails again on the press: the problem dot stays, nothing i
   } finally { await client.close().catch(() => undefined); }
 });
 
+test("a press whose own takeover fails tries it once: the problem dot, nothing copied; the next press takes over and copies", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
+  // Agents off and the site not paused: the socket's opening takes over by itself, and fails.
+  await holdNextOwnerLock(page);
+  let connects = 0;
+  page.on("request", request => { if (new URL(request.url()).pathname === "/api/agent/connect" && request.method() === "POST") connects++; });
+  await menu.evaluate(element => {
+    const host = window as Window & { agentStates?: string[] };
+    host.agentStates = [];
+    new MutationObserver(() => host.agentStates!.push(element.dataset.state ?? "")).observe(element, { attributes: true, attributeFilter: ["data-state"] });
+  });
+  await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+  await action.click();
+  await expect(menu).toHaveAttribute("data-state", "takeover-failed", { timeout: 15_000 });
+  // fixed-wait: a second takeover would begin at once after the first failed; it would show by now.
+  await page.waitForTimeout(1_000);
+  const states = await page.evaluate(() => (window as Window & { agentStates?: string[] }).agentStates ?? []);
+  expect(states.filter(state => state === "taking-over"), `one takeover in ${states.join(", ")}`).toHaveLength(1);
+  expect(states.at(-1)).toBe("takeover-failed");
+  expect((await dot(page)).color).toBe(await danger(page));
+  await onlyLabel(page, "Connect to MCP");
+  expect(connects, "no prompt made").toBe(0);
+  // clipboard-ready: the fixed wait above.
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+  // That failure left the site paused: the next press tries again (the next fence is free) and copies.
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  await expect(action).toHaveText("Copied");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+});
+
 test("a permission that ended while away: the reopened menu offers Connect to MCP, whose press copies a working prompt", async ({ page, context, baseURL }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await open(page, baseURL);
