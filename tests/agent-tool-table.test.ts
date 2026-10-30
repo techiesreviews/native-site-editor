@@ -60,8 +60,9 @@ test("MCP tools/list is dev's: same tools, order, descriptions, schemas and hint
   // since ticket am-13, wait_for_requests says a follow-up on any request brings it back, to the agent on it first,
   // and reply_to_request that only an agent that read the user's latest message replies; since ticket am-14,
   // screenshot_preview (no requestId: it keeps no receipt) and working_here follow inspect_preview; since ticket am-15,
-  // discard_change follows remove_section and ask_user ends the list.
-  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "71b588322aa8e31544dc6cb949d65439304a263902f9cb1ae3069891c6ccb044");
+  // discard_change follows remove_section and ask_user ends the list; since ticket am-17, wait_for_requests says
+  // it runs as a long job where the app runs MCP tasks.
+  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "c283f73c281bfd665fcf4fd66b5943036f451f77810e25011d0cb9b7395b4b5a");
   for (const tool of result.tools as { name: string; inputSchema?: { properties?: Record<string, { type?: string; description?: string }>; required?: string[] } }[]) {
     const agent = tool.inputSchema?.properties?.agent;
     assert.equal(agent?.type, "string", tool.name);
