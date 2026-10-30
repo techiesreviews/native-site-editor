@@ -641,6 +641,14 @@ export class LiveRooms {
       if (holders.length && holders.every(([holder, other]) => now - heard(holder, other) > PRESENCE_TIMEOUT_MS + LIVE_HEARD_STEP_MS))
         for (const [holder] of holders) this.end(holder, 1001, "Silent past the presence timeout.");
       for (const [other] of this.members(metadata.room, socket)) this.send(other, { type: "key-request", from: metadata.peer, publicKey: value.publicKey });
+      // Asking again after being handed a key: that key never unwrapped (a broken handover), so it does not count.
+      // With nobody else holding one, the room makes a new key.
+      if (metadata.handed) {
+        metadata.keyed = false;
+        delete metadata.handed;
+        socket.serializeAttachment(metadata);
+        this.keyNeeded(this.members(metadata.room));
+      }
       return true;
     }
     const target = this.members(metadata.room, socket).find(([, other]) => other.peer === value.to);
@@ -671,8 +679,13 @@ export class LiveRooms {
       }
       return;
     }
-    if (others.some(([, other]) => other.keyed)) return;
-    const maker = others.filter(([, other]) => other.access !== "agent").sort(([, a], [, b]) => a.since - b.since || (a.peer < b.peer ? -1 : 1))[0];
+    this.keyNeeded(others);
+  }
+  /** No member holds the key: the longest-present tab makes a new one. */
+  private keyNeeded(members: [LiveSocket, LiveAttachment][]) {
+    if (members.some(([, other]) => other.keyed)) return;
+    const maker = members.filter(([, other]) => other.access !== "agent").sort(([, a], [, b]) => a.since - b.since || (a.peer < b.peer ? -1 : 1))[0];
+    if (!maker) return;
     this.send(maker[0], { type: "make-key" });
     if (this.sockets.has(maker[0])) this.markKeyed(...maker);
   }
