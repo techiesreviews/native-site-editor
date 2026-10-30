@@ -37,7 +37,7 @@ import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 type Yjs = typeof import("yjs");
 type Doc = import("yjs").Doc;
 type Room = Pick<LiveRoom, "send" | "close">;
-type Store = Pick<DraftTextStore, "get" | "text" | "edit" | "subscribe">;
+type Store = Pick<DraftTextStore, "get" | "text" | "edit" | "subscribe" | "subscribeState">;
 
 export interface LiveTextPorts {
   store: Store;
@@ -51,8 +51,9 @@ export interface LiveTextPorts {
   keeper?: CopyKeeper;
   clock?: LiveClock;
 }
-/** A copy this browser shared, kept to start from when the file opens again: its starting-text tag, its Yjs state and its text then. */
-export interface KeptCopy { tag: Uint8Array; update: Uint8Array; text: string }
+/** A copy this browser shared, kept to start from when the file opens again: its starting-text tag and its Yjs state.
+ * Only the shapes are checked on reading; a state Yjs cannot apply is dropped then (`load`). */
+export interface KeptCopy { tag: Uint8Array; update: Uint8Array }
 /** Where kept copies live: this browser only (memory, then IndexedDB), never the server. */
 export interface CopyKeeper {
   read(key: string): Promise<KeptCopy | undefined>;
@@ -68,18 +69,20 @@ const INBOX_LIMIT = 500;
 /** The room closes a socket over its limit: a larger copy is not sent (the room's own framing needs a little room). */
 const FRAME_LIMIT = LIVE_MESSAGE_LIMIT - 1024;
 const LOCAL = Symbol("local"), REMOTE = Symbol("remote"), START = Symbol("start");
-/** A copy is kept this long after its last change (and at once when the file closes). */
-const KEEP_MS = 300;
+/** A copy is kept this long after its last change, as drafts are (src/drafts.ts), and at once when the page hides or the file
+ * closes: the copy kept and the draft saved must say the same, or text shared since would go in again on resuming. */
+const KEEP_MS = 200;
 
 const isKept = (value: unknown): value is KeptCopy => {
   const copy = value as Partial<KeptCopy> | null;
-  return !!copy && copy.tag instanceof Uint8Array && copy.tag.length === 20 && copy.update instanceof Uint8Array && typeof copy.text === "string";
+  return !!copy && copy.tag instanceof Uint8Array && copy.tag.length === 20 && copy.update instanceof Uint8Array;
 };
-/** Memory first (this page's newest), then IndexedDB (a reload); writes go to both, best effort. */
+/** Memory first (this page's newest), then IndexedDB (a reload); writes go to both, best effort. The database opens at once,
+ * so a write when the page hides starts its transaction then, as the drafts' does. */
 function browserKeeper(): CopyKeeper {
   const memory = new Map<string, KeptCopy | undefined>();
-  let opened: Promise<IDBDatabase | undefined> | undefined;
-  const open = () => opened ??= new Promise(resolve => {
+  let opened: Promise<IDBDatabase | undefined> | undefined, ready: IDBDatabase | undefined;
+  const open = () => opened ??= new Promise<IDBDatabase | undefined>(resolve => {
     if (typeof indexedDB === "undefined") { resolve(undefined); return; }
     try {
       const request = indexedDB.open("native-site-editor-live", 1);
@@ -87,7 +90,14 @@ function browserKeeper(): CopyKeeper {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => resolve(undefined);
     } catch { resolve(undefined); }
-  });
+  }).then(db => (ready = db));
+  void open();
+  const put = (db: IDBDatabase | undefined, key: string, copy: KeptCopy | undefined) => {
+    try {
+      const copies = db?.transaction("copies", "readwrite").objectStore("copies");
+      if (copy) copies?.put(copy, key); else copies?.delete(key);
+    } catch { /* Kept in memory only: a reload starts as a joiner. */ }
+  };
   return {
     async read(key) {
       if (memory.has(key)) return memory.get(key);
@@ -102,12 +112,8 @@ function browserKeeper(): CopyKeeper {
     },
     write(key, copy) {
       memory.set(key, copy);
-      void open().then(db => {
-        try {
-          const copies = db?.transaction("copies", "readwrite").objectStore("copies");
-          if (copy) copies?.put(copy, key); else copies?.delete(key);
-        } catch { /* Kept in memory only: a reload starts as a joiner. */ }
-      });
+      if (ready) put(ready, key, copy);
+      else void open().then(db => put(db, key, copy));
     },
   };
 }
@@ -166,15 +172,38 @@ function changesBetween(from: string, to: string, changes?: readonly TextChange[
   return [diffRange(from, to)];
 }
 
+/**
+ * What was typed since a share began (`began` to `own`), as one change on the kept copy's text (`kept`). Where the
+ * kept copy and `began` differ (`stale`), that range is left as the copy has it; a change clear of it moves by its
+ * length, and one across it falls back to the whole difference from the copy.
+ */
+export function typedSince(kept: string, began: string, own: string): TextChange | undefined {
+  if (own === began) return undefined;
+  const change = diffRange(began, own);
+  if (kept === began) return change;
+  const stale = diffRange(began, kept), shift = stale.text.length - (stale.end - stale.start);
+  if (change.end <= stale.start) return change;
+  if (change.start >= stale.end) return { start: change.start + shift, end: change.end + shift, text: change.text };
+  return diffRange(kept, own);
+}
+
 /** Shares one file while it is open; returns its stop. `ended`: this tab left the copy (Discard), or must start it
  * again (GitHub's text changed while it was being made). */
 function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended: (why: "left" | "again") => void) {
   const store = ports.store, clock = ports.clock ?? systemClock, keeper = ports.keeper ?? (pageKeeper ??= browserKeeper());
   const start = store.get(scope, path)!;
   const base = start.base, baseSha = start.baseSha ?? null;
-  let stopped = false, aloneOnce = false, editors = 0;
+  let stopped = false, aloneOnce = false, editors = 0, discarded = false;
   let copy: ReturnType<typeof makeCopy> | undefined, loading = false;
   const inbox: Uint8Array[] = [];
+  // Discard is this tab's own, from the moment it shares the file (alone, loading Yjs, or with a copy): it leaves the
+  // shared copy rather than taking everyone's changes away, and drops its kept copy so nothing brings them back.
+  const unwatch = store.subscribe(event => {
+    if (event.type !== "text" || event.key !== start.key || event.origin !== "discard" || discarded) return;
+    discarded = true;
+    keeper.write(start.key, undefined);
+    ended("left");
+  });
 
   const room = (ports.openRoom ?? openLiveRoom)({
     repo: scope.repo, branch: scope.branch, file: path, ...(ports.clock ? { clock: ports.clock } : {}),
@@ -197,7 +226,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       const Y = await (ports.loadYjs ?? (() => import("yjs")))();
       const tag = await tagOf(baseSha, base);
       const kept = await keeper.read(start.key);
-      if (stopped) return;
+      if (stopped || discarded) return;
       // GitHub's text moved on meanwhile (a save landed): the copy starts again from it, with its tag.
       const now = store.get(scope, path);
       if (!now || now.base !== base || (now.baseSha ?? null) !== baseSha) { ended("again"); return; }
@@ -207,7 +236,13 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       const own = store.text(scope, path);
       const resume = kept && sameTag(kept.tag, tag) && own !== undefined && own !== base ? kept : undefined;
       if (kept && !resume) keeper.write(start.key, undefined);
-      copy = makeCopy(Y, tag, seed, resume);
+      try { copy = makeCopy(Y, tag, seed, resume); }
+      catch (error) {
+        // A kept state Yjs cannot apply (damaged, or from another Yjs version): dropped, and this tab joins as a fresh joiner.
+        if (!resume) throw error;
+        keeper.write(start.key, undefined);
+        copy = makeCopy(Y, tag, seed, undefined);
+      }
       for (const bytes of inbox.splice(0)) copy.receive(bytes);
       if (!editors || aloneOnce) await copy.startOwn(); else copy.hello();
     } catch { /* Yjs did not load: this tab keeps its own draft, as before. */ }
@@ -218,13 +253,14 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     const doc: Doc = new Y.Doc();
     const text = doc.getText("source");
     if (seed) Y.applyUpdate(doc, seed, START);
-    let synced = false, starting = false, waiting: unknown, keeping: unknown, left = false;
+    let synced = false, starting = false, waiting: unknown, keeping: unknown;
     if (resume) {
-      // Its own earlier copy, then what this tab typed since (as changes on that copy, so they merge as edits do).
+      // Its own earlier copy, then what this tab typed since this share began (as changes on that copy, so they merge
+      // as edits do). The draft and the kept copy are saved apart and a reload can keep one write and lose the other:
+      // where they disagreed when the share began, that difference was shared already (the room, or this copy, has it).
       Y.applyUpdate(doc, resume.update, START);
-      const own = store.text(scope, path)!, from = text.toString();
-      if (own !== from) {
-        const change = diffRange(from, own);
+      const change = typedSince(text.toString(), start.text, store.text(scope, path)!);
+      if (change) {
         doc.transact(() => {
           if (change.end > change.start) text.delete(change.start, change.end - change.start);
           if (change.text) text.insert(change.start, change.text);
@@ -234,7 +270,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     const keep = () => {
       clock.clearTimeout(keeping);
       keeping = undefined;
-      if (synced && !left) keeper.write(start.key, { tag, update: Y.encodeStateAsUpdate(doc), text: text.toString() });
+      if (synced && !discarded) keeper.write(start.key, { tag, update: Y.encodeStateAsUpdate(doc) });
     };
     /** Catch-up requests that came before this copy could answer: answered once it can. */
     let asked: { kind: number; theirs: boolean; vector: Uint8Array }[] = [];
@@ -260,7 +296,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
 
     // A reload or a closed tab keeps the newest copy too.
     const page = typeof window === "undefined" ? undefined : window;
+    const hidden = () => { if (document.visibilityState === "hidden") keep(); };
     page?.addEventListener("pagehide", keep);
+    page?.document.addEventListener("visibilitychange", hidden);
     doc.on("update", (update: Uint8Array, origin: unknown) => {
       if (origin !== REMOTE) void send(UPDATE, update);
       if (synced && keeping === undefined) keeping = clock.setTimeout(keep, KEEP_MS);
@@ -269,10 +307,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (synced && transaction.origin !== LOCAL) follow(deltaChanges(event.delta as { retain?: number; insert?: unknown; delete?: number }[]));
     });
     const unsubscribe = store.subscribe((event: DraftEvent) => {
-      if (event.type !== "text" || event.key !== start.key || left) return;
-      // Discard is this tab's own: it leaves the copy rather than taking everyone's changes away.
-      if (event.origin === "discard") { left = true; keeper.write(start.key, undefined); ended("left"); return; }
-      if (!synced || event.origin === "shared") return;
+      if (event.type !== "text" || event.key !== start.key || discarded || !synced || event.origin === "shared" || event.origin === "discard") return;
       const now = text.toString();
       if (event.text === now) return;
       const changes = changesBetween(now, event.text, event.changes).sort((a, b) => b.start - a.start);
@@ -323,6 +358,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         waiting = clock.setTimeout(() => { void begin(false); }, LIVE_TEXT_CATCH_UP_MS);
       });
     }
+    // Every caught-up copy answers every request, and after a new key every copy asks: frames grow with the square of the
+    // people in the room, fine for the 2-5 this is for (ADR 0003, join traffic).
     function answer(kind: number, theirs: boolean, vector: Uint8Array) {
       void send(REPLY, Y.encodeStateAsUpdate(doc, vector));
       if (kind === HELLO && theirs) void send(ASK, Y.encodeStateVector(doc));
@@ -346,12 +383,13 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       receive, hello,
       /** Alone in the room (first in, or everyone else left before catching this tab up): its own draft starts the copy. */
       startOwn: () => begin(false),
-      destroy() { clock.clearTimeout(waiting); keep(); unsubscribe(); page?.removeEventListener("pagehide", keep); doc.destroy(); },
+      destroy() { clock.clearTimeout(waiting); keep(); unsubscribe(); page?.removeEventListener("pagehide", keep); page?.document.removeEventListener("visibilitychange", hidden); doc.destroy(); },
     };
   }
 
   return () => {
     stopped = true;
+    unwatch();
     room.close();
     copy?.destroy();
     copy = undefined;
@@ -384,5 +422,7 @@ export function startLiveText(ports: LiveTextPorts) {
   };
   const stopEffect = effect(() => { void ports.openFile.value; untracked(() => { left = undefined; check(); }); });
   const stopStore = ports.store.subscribe(event => { if (event.type === "file") check(); });
-  return () => { stopEffect(); stopStore(); current?.stop(); current = undefined; };
+  // `clear` (sign-out, another workspace) says nothing per file: any settled change looks again, which is cheap.
+  const stopState = ports.store.subscribeState(check);
+  return () => { stopEffect(); stopStore(); stopState(); current?.stop(); current = undefined; };
 }
