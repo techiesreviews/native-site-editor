@@ -119,6 +119,8 @@ export interface AgentCommandPorts {
   refreshNativeRoutes: () => void;
   updateCurrentPageLabel: () => void;
   updateAgentContext: () => void;
+  /** The agent changes this tab keeps (src/agent-changes.ts), loaded with the first agent command; a test may pass its own. */
+  loadChanges?: () => Promise<typeof import("./agent-changes")>;
 }
 
 /** An agent's commands, applied through the editor's own actions; `acting` while one runs (src/guarded-edit/commit.ts). */
@@ -392,7 +394,7 @@ export function createAgentCommands(ports: AgentCommandPorts) {
   }
   // The agent changes this tab keeps for their undo (ticket am-15), loaded with the first agent command.
   let changes: typeof import("./agent-changes") | undefined;
-  const loadChanges = async () => changes ??= await import("./agent-changes");
+  const loadChanges = async () => changes ??= await (ports.loadChanges?.() ?? import("./agent-changes"));
   /** The user's Undo on a done pin's card: its agent's (connection `grant`) changes for it, newest first, put back as one step (src/agent-changes.ts). */
   async function undo(ids: readonly string[], grant: string | undefined) {
     // The workspace the click was in, taken before any wait.

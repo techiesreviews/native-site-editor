@@ -270,7 +270,7 @@ test("in the user's words: a refusal names the page and the agent, never a file 
   assert.deepEqual(discardPlan([change], titled, () => typed, "about.html", "user"), { refuse: "The page “Home & studio” changed since Copy editor's change. Nothing was undone." });
   assert.deepEqual(discardPlan([change], reads, () => typed, "about.html", "user"), { refuse: "Another page changed since Copy editor's change. Nothing was undone." });
   const styles = { ...change, page: "site.css", after: new Map([["site.css", { ...typed, path: "site.css", content: "agent" }]]), before: new Map([["site.css", undefined]]) };
-  assert.deepEqual(discardPlan([styles], reads, () => ({ ...typed, path: "site.css" }), "index.html", "user"), { refuse: "A file it changed changed since Copy editor's change. Nothing was undone." });
+  assert.deepEqual(discardPlan([styles], reads, () => ({ ...typed, path: "site.css" }), "index.html", "user"), { refuse: "One of its files changed since Copy editor's change. Nothing was undone." });
   assert.deepEqual(discardPlan([change], reads, () => typed, "index.html"),
     { refuse: "index.html changed since Copy editor's change mcp-words, so it cannot be undone as a whole. Change it back with the edit tools." });
   assert.deepEqual(discardPlan([change], reads, () => undefined, "index.html", "user"), { refuse: "This is undone already." });
@@ -360,4 +360,18 @@ test("the chip's Undo writes nothing once another site or branch is shown at any
     assert.equal(await run.done, "The site changed meanwhile. Nothing was undone; try again.");
   });
   assert.equal(awaits, 2);
+});
+
+test("the chip's Undo of a change this tab no longer keeps (past the 40 kept) is refused, and nothing is written", async () => {
+  const { m, edits } = setup();
+  const who = { grant: "grant-chip-gone", name: "Copy editor" };
+  await agentChange(m, edits, "chip-gone", ["index.html"], { edits: new Map([["index.html", PAGE.replace("Hello", "Gone")]]), done: "1.", undone: "1." }, who.grant);
+  const scope = { account: "lex", repoId: 77, repo: "lex/elsewhere", branch: "main" };
+  const draft = (n: number) => ({ ...scope, version: 1 as const, path: "a.html", baseSha: "s", original: "", content: String(n), updatedAt: n });
+  for (let n = 0; n < 40; n++) noteAgentChange({ id: `evict-${n}`, grant: "g", agent: "A", operation: "write_file", scope, page: "a.html", before: new Map(), after: new Map([["a.html", draft(n)]]) });
+  assert.equal(latestChange(m.scope, who, "index.html"), undefined);
+  const steps = m.steps().length;
+  await assert.rejects(undoLatestChange(who, "index.html", "chip-gone", undoPorts(m, edits)), { message: "This tab no longer keeps the agent's change. Change it back by hand." });
+  assert.equal(m.workspace.source("index.html"), PAGE.replace("Hello", "Gone"));
+  assert.equal(m.steps().length, steps);
 });
