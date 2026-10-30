@@ -86,11 +86,6 @@
   },
   {
     "file": "shared/live-room.ts",
-    "name": "PRESENCE_TIMEOUT_MS",
-    "reason": "Live rooms (ticket am-20) land before their first caller: slice am-21 opens src/live-room.ts lazily when a file gets a second participant. tests/live-room.test.ts proves it until then; remove this entry with that wiring."
-  },
-  {
-    "file": "shared/live-room.ts",
     "name": "readLiveServerMessage",
     "reason": "Live rooms (ticket am-20) land before their first caller: slice am-21 opens src/live-room.ts lazily when a file gets a second participant. tests/live-room.test.ts proves it until then; remove this entry with that wiring."
   }
