@@ -2,7 +2,7 @@
 title: "`kit pr` opens the PR in the project's own repo, not an `upstream` it was made from"
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-62
 builder: claude
 blocked_by: [30-kit-repo-and-move]
 ---
