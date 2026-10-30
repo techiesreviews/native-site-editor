@@ -10,7 +10,7 @@ import type { Readable, Writable } from "node:stream";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { acpConnection, choose, PROTOCOL_VERSION, type AcpConnection, type PermissionOutcome, type PermissionRequest } from "./acp.ts";
 import {
-  approvalQuestion, approves, followUpPrompt, HELPER_AGENT, pinAgent, pinPrompt, PIN_AGENTS, SAFE_MODES, SERVER, sessionMeta,
+  approvalQuestion, approves, followUpPrompt, refuses, HELPER_AGENT, pinAgent, pinPrompt, PIN_AGENTS, SAFE_MODES, SERVER, sessionMeta,
   toolAllowed, type PinAgent,
 } from "./agents.ts";
 
@@ -38,12 +38,15 @@ export interface HelperOptions {
   idleMs?: number;
   /** An approval with no answer is refused after this long (default 10 min). */
   approvalMs?: number;
+  /** The name every agent works under, in place of the "Pins go to" choice's (a custom command's program). */
+  agentName?: string;
   log?(line: string): void;
   signal?: AbortSignal;
   sleep?(ms: number, signal?: AbortSignal): Promise<void>;
 }
 
 interface Request { id: string; thread?: { from: string; text: string }[] }
+type PinStatus = "question" | "answered";
 
 /** One agent on one pin. */
 interface Work {
@@ -58,8 +61,8 @@ interface Work {
   turns: Promise<void>;
   busy: number;
   idle?: ReturnType<typeof setTimeout>;
-  /** The approval the pin is asked for now: its answer's resolver. */
-  approval?: (answer: string | undefined) => void;
+  /** The approval the pin is asked for now: its question, and its answer's resolver. */
+  approval?: { question: string; settle(answer: string | undefined): void };
   approvals: Promise<unknown>;
   closed: boolean;
 }
@@ -78,7 +81,15 @@ const textOf = (result: unknown) => {
   const content = (result as { content?: { type?: string; text?: string }[] }).content ?? [];
   return content.find(item => item.type === "text")?.text ?? "";
 };
-const lastUserText = (request: Request) => [...request.thread ?? []].reverse().find(item => item.from === "user")?.text;
+/** The user's answer to `question` on the pin: their messages after the agent's last asking of it; none yet, undefined.
+ * A message from before the question (a follow-up meanwhile) is no answer to it. */
+export function answerTo(request: Request, question: string) {
+  const thread = request.thread ?? [];
+  let asked = thread.length - 1;
+  while (asked >= 0 && !(thread[asked].from !== "user" && thread[asked].text === question)) asked--;
+  const after = asked < 0 ? [] : thread.slice(asked + 1).filter(item => item.from === "user").map(item => item.text);
+  return after.length ? after.join("\n") : undefined;
+}
 
 /** Runs until the connection ends, the user stops the helper, or `signal` aborts; resolves with why it stopped. */
 export async function runHelper(options: HelperOptions): Promise<string> {
@@ -87,18 +98,21 @@ export async function runHelper(options: HelperOptions): Promise<string> {
   const maxAgents = options.maxAgents ?? 3, idleMs = options.idleMs ?? 15 * 60_000, approvalMs = options.approvalMs ?? 10 * 60_000;
   const work = new Map<string, Work>();
   const queue: { request: Request; program: PinAgent }[] = [];
+  // Set once the helper ends: no queued pin starts after it.
+  let stopping = false;
   const client = new Client({ name: HELPER_NAME, version: HELPER_VERSION });
   const call = async (name: string, args: Record<string, unknown>, signal?: AbortSignal) => {
     const result = await client.callTool({ name, arguments: args }, signal ? { signal } : undefined);
     return { error: Boolean((result as { isError?: boolean }).isError), text: textOf(result) };
   };
 
-  /** Says `message` on the pin as `job`'s agent; it reads the request first, so a reply after the user's latest is kept. */
-  async function sayOnPin(job: Work, status: "question" | "answered", message: string) {
-    await call("get_selection", { request: job.request, agent: job.name });
-    const said = await call("reply_to_request", { request: job.request, status, message, agent: job.name });
+  /** Says `message` on pin `request` as agent `name`; it reads the request first, so a reply after the user's latest is kept. */
+  async function sayAs(request: string, name: string, status: PinStatus, message: string) {
+    await call("get_selection", { request, agent: name });
+    const said = await call("reply_to_request", { request, status, message, agent: name });
     if (said.error) throw new Error(said.text);
   }
+  const sayOnPin = (job: Work, status: PinStatus, message: string) => sayAs(job.request, job.name, status, message);
 
   async function permission(job: Work, request: PermissionRequest): Promise<PermissionOutcome> {
     if (toolAllowed(request.toolCall)) return choose(request.options, "allow");
@@ -107,18 +121,20 @@ export async function runHelper(options: HelperOptions): Promise<string> {
       if (job.closed) return choose(request.options, "reject");
       const question = approvalQuestion(request.toolCall);
       log(`${job.name} asks on ${job.request}: ${question}`);
+      // Waiting from before the question is posted (an answer is told apart by the thread, `answerTo`); its time
+      // runs from then. Every settle (answer, time, close, a failed post) clears the timer and the approval.
+      let timer: ReturnType<typeof setTimeout> | undefined;
       const answer = new Promise<string | undefined>(resolve => {
-        const timer = setTimeout(() => resolve(undefined), approvalMs);
-        job.approval = value => { clearTimeout(timer); resolve(value); };
+        job.approval = { question, settle(value) { clearTimeout(timer); job.approval = undefined; resolve(value); } };
       });
+      const settle = job.approval!.settle;
       try { await sayOnPin(job, "question", question); } catch (error) {
-        job.approval = undefined;
+        settle(undefined);
         log(`${job.request}: the question could not be asked (${error instanceof Error ? error.message : error}); refused.`);
         return choose(request.options, "reject");
       }
-      const reply = await answer;
-      job.approval = undefined;
-      return choose(request.options, approves(reply) ? "allow" : "reject");
+      if (job.approval?.settle === settle) timer = setTimeout(() => settle(undefined), approvalMs);
+      return choose(request.options, approves(await answer) ? "allow" : "reject");
     });
     job.approvals = asked.catch(() => {});
     return asked;
@@ -128,12 +144,12 @@ export async function runHelper(options: HelperOptions): Promise<string> {
     if (job.closed) return;
     job.closed = true;
     clearTimeout(job.idle);
-    job.approval?.(undefined);
+    job.approval?.settle(undefined);
     job.agent?.stop();
     if (job.folder) void rm(job.folder, { recursive: true, force: true });
     work.delete(job.request);
     log(`${job.name} left ${job.request}.`);
-    const waiting = queue.shift();
+    const waiting = stopping ? undefined : queue.shift();
     if (waiting) start(waiting.request, waiting.program);
   }
 
@@ -148,18 +164,19 @@ export async function runHelper(options: HelperOptions): Promise<string> {
       } catch (error) {
         if (job.closed) return;
         log(`${job.name} stopped on ${job.request}: ${error instanceof Error ? error.message : error}`);
-        await sayOnPin(job, "answered", `${job.name} stopped before it finished. Send again to retry.`).catch(() => {});
+        // Gone first, then said: a message the user sends after reading it starts a new agent.
         close(job);
+        await sayOnPin(job, "answered", `${job.name} stopped before it finished. Send again to retry.`).catch(() => {});
       } finally {
         if (--job.busy === 0 && !job.closed) job.idle = setTimeout(() => close(job), idleMs);
       }
     });
   }
 
-  /** A free name: the program's, numbered when it already works on another pin. */
+  /** A free name: the program's (or `agentName`), numbered when it already works on another pin. */
   function nameFor(program: PinAgent) {
-    const taken = new Set([...work.values()].map(job => job.name));
-    for (let n = 1; ; n++) { const name = n === 1 ? program : `${program} ${n}`; if (!taken.has(name)) return name; }
+    const base = options.agentName ?? program, taken = new Set([...work.values()].map(job => job.name));
+    for (let n = 1; ; n++) { const name = n === 1 ? base : `${base} ${n}`; if (!taken.has(name)) return name; }
   }
 
   function start(request: Request, program: PinAgent) {
@@ -177,7 +194,7 @@ export async function runHelper(options: HelperOptions): Promise<string> {
           clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
           clientInfo: { name: HELPER_NAME, version: HELPER_VERSION },
         });
-        if (ready.agentCapabilities?.mcpCapabilities?.http !== true) throw new Error(`${program} cannot reach the editor over MCP.`);
+        if (ready.agentCapabilities?.mcpCapabilities?.http !== true) throw new Error(`${job.name} cannot reach the editor over MCP.`);
         job.folder = await mkdtemp(join(tmpdir(), "editor-helper-"));
         const session = await job.acp.request<{ sessionId: string; modes?: { currentModeId?: string; availableModes?: { id: string }[] } }>("session/new", {
           cwd: job.folder,
@@ -188,9 +205,9 @@ export async function runHelper(options: HelperOptions): Promise<string> {
         const mode = SAFE_MODES.find(id => session.modes?.availableModes?.some(each => each.id === id));
         if (mode && mode !== session.modes?.currentModeId) await job.acp.request("session/set_mode", { sessionId: job.session, modeId: mode });
       } catch (error) {
-        log(`${program} could not start for ${request.id}: ${error instanceof Error ? error.message : error}`);
-        await sayOnPin(job, "answered", `${program} could not start on this computer.`).catch(() => {});
+        log(`${job.name} could not start for ${request.id}: ${error instanceof Error ? error.message : error}`);
         close(job);
+        await sayOnPin(job, "answered", `${job.name} could not start on this computer.`).catch(() => {});
       }
     })();
     turn(job, pinPrompt(job.name, request.id));
@@ -198,14 +215,31 @@ export async function runHelper(options: HelperOptions): Promise<string> {
 
   function dispatch(request: Request, choice: unknown) {
     const job = work.get(request.id);
-    // The answer to an approval is the helper's: read as the agent's, so the agent's own reply is not held up by it.
-    if (job?.approval) { void call("get_selection", { request: request.id, agent: job.name }).catch(() => {}); job.approval(lastUserText(request)); return; }
+    const answer = job?.approval && answerTo(request, job.approval.question);
+    if (job?.approval && answer !== undefined) {
+      const plain = approves(answer) || refuses(answer);
+      job.approval.settle(answer);
+      // A plain yes or no is the helper's: read as the agent's, so the agent's own reply is not held up by it.
+      // Anything more ("no, but make it blue") also goes to the agent, as a follow-up.
+      if (plain) { void call("get_selection", { request: request.id, agent: job.name }).catch(() => {}); return; }
+    }
     if (job) { log(`${request.id} goes back to ${job.name}.`); turn(job, followUpPrompt(job.name, request.id)); return; }
     if (queue.some(item => item.request.id === request.id)) return;
     start(request, pinAgent(choice) ?? PIN_AGENTS[0]);
   }
 
-  const stop = (why: string) => { for (const job of [...work.values()]) close(job); queue.length = 0; log(why); return why; };
+  /** Ends every agent and drops the queue. Asked to stop (not a dead connection: `answer`), it first says so on each
+   * pin it took and has not finished (an agent at work, or waiting its turn), so none stays taken by nobody. */
+  async function stop(why: string, answer = false) {
+    stopping = true;
+    const waiting = queue.splice(0).map(item => ({ request: item.request.id, name: options.agentName ?? item.program }));
+    const working = [...work.values()].filter(job => job.busy > 0).map(job => ({ request: job.request, name: job.name }));
+    for (const job of [...work.values()]) close(job);
+    if (answer) await Promise.all([...working, ...waiting].map(pin =>
+      sayAs(pin.request, pin.name, "answered", `${pin.name} stopped: the helper on this computer was closed. Send again to retry.`).catch(() => {})));
+    log(why);
+    return why;
+  }
   try {
     try {
       await client.connect(new StreamableHTTPClientTransport(new URL(options.url), {
@@ -213,7 +247,7 @@ export async function runHelper(options: HelperOptions): Promise<string> {
         ...(options.fetch ? { fetch: options.fetch } : {}),
       }));
     } catch (error) {
-      if (unauthorized(error)) return stop("The editor refused the token: choose Connect to MCP again for a new one.");
+      if (unauthorized(error)) return await stop("The editor refused the token: choose Connect to MCP again for a new one.");
       throw error;
     }
     log("Waiting for pins.");
@@ -223,27 +257,27 @@ export async function runHelper(options: HelperOptions): Promise<string> {
         answer = await call("wait_for_requests", { agent: HELPER_AGENT, waitSeconds: options.waitSeconds ?? 25 }, options.signal);
       } catch (error) {
         if (options.signal?.aborted) break;
-        if (unauthorized(error)) return stop("The editor ended this connection (Disconnect MCP, or signed out).");
+        if (unauthorized(error)) return await stop("The editor ended this connection (Disconnect MCP, or signed out).");
         log(`The editor did not answer (${error instanceof Error ? error.message : error}); trying again in 10 seconds.`);
         await sleep(10_000, options.signal);
         continue;
       }
       if (answer.error) {
-        if (/stopped you/.test(answer.text)) return stop("The editor's user stopped the helper.");
+        if (/stopped you/.test(answer.text)) return await stop("The editor's user stopped the helper.");
         log(`The editor refused the wait: ${answer.text}`);
         await sleep(10_000, options.signal);
         continue;
       }
       let value: { requests?: Request[]; pinsGoTo?: unknown; hint?: string };
       try { value = JSON.parse(answer.text); } catch { value = {}; }
-      if (value.hint?.includes("Stop the watchdog")) return stop("Waiting for requests is paused by the site owner.");
+      if (value.hint?.includes("Stop the watchdog")) return await stop("Waiting for requests is paused by the site owner.", true);
       for (const request of value.requests ?? []) dispatch(request, value.pinsGoTo);
       if (value.requests?.length) continue;
       const later = /Wait about (a minute|(\d+) seconds)/.exec(value.hint ?? "");
       if (later) await sleep(later[2] ? Number(later[2]) * 1000 : 60_000, options.signal);
       else if (options.pollMs) await sleep(options.pollMs, options.signal);
     }
-    return stop("Stopped.");
+    return await stop("Stopped.", true);
   } finally {
     await client.close().catch(() => {});
   }
