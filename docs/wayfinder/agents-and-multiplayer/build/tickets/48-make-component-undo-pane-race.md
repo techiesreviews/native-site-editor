@@ -2,7 +2,7 @@
 title: "Undo of Make component keeps the component's stylesheet pane (flaky on dev)"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-48
 builder: claude
 blocked_by: [14-agent-tools-see-and-say]
 ---

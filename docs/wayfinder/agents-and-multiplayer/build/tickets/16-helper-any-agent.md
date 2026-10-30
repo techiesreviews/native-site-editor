@@ -2,7 +2,7 @@
 title: "The helper: any agent picks up pins"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-16
 builder: claude
 blocked_by: [12-mcp-menu-agents, 13-pin-conversation]
 ---

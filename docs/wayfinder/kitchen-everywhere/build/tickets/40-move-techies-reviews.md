@@ -2,7 +2,7 @@
 title: techies-reviews moves to the shared kit (light, plus its own checks)
 type: task (HITL)
 status: open
-assignee:
+assignee: ke-40
 builder: claude
 blocked_by: [31-update-timer]
 ---
@@ -38,3 +38,4 @@ Agent Kit is required. After Lex's OK the lead starts a T3 thread in `~/Projects
 ## Comments
 
 - Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.
+- Lex, 2026-10-30: move on `main` now, without the Melapress course. The live site's pages must not change. `feat/melapress-course` keeps its old kit copy until it goes live; it is tidied then (its own commands and checks move to the shared kit when it lands). Skill check 2026-10-30: no `SKILL.md` or `skills/` in techies-reviews' history.
