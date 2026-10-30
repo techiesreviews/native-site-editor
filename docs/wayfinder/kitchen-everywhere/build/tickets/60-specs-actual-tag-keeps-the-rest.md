@@ -2,7 +2,7 @@
 title: "A spec file with an `@actual` test still runs its other tests (from agents-and-multiplayer 45)"
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-60
 builder: claude
 blocked_by: [30-kit-repo-and-move]
 ---
