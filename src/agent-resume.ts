@@ -28,8 +28,8 @@ export async function resumeAgents(ports: {
 
 /**
  * Connect to MCP with remote agents off: turns them on, reads the connections, opens the socket,
- * and, finding a reconnect left from before the press, retries it at once rather than waiting out
- * its backoff. Then it branches on what the button would offer, as the menu's own press does:
+ * and, finding a reconnect left from before the press (or one that gave up), retries it at once
+ * rather than waiting out its backoff. Then it branches on what the button would offer, as the menu's own press does:
  * Wait for MCP or Disconnect MCP (a token waits, or an agent already uses the site's connection,
  * in this tab or another tab that holds the socket) copies a prompt again, this tab's own if it
  * still waits, otherwise a new one; Connect to MCP makes a new prompt when idle or when another
@@ -69,7 +69,10 @@ export async function turnOnAgents(ports: {
   if (ports.paused() || !ports.live(at)) return;
   await ports.open();
   if (!ports.live(at)) return;
-  if (ports.state() === "reconnecting") await ports.retry();
+  // A reconnect that gave up (paused while the user was away, ticket am-51) is retried as one
+  // still under way; a pause by the site owner is not.
+  const found = ports.state();
+  if (found === "reconnecting" || found === "paused" && !ports.paused()) await ports.retry();
   if (!ports.live(at)) return;
   const now = ports.state();
   if (ports.offer(now) !== "connect") await ports.copyAgain();
