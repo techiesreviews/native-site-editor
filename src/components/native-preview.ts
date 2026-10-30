@@ -444,7 +444,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       const color = agentColors[mark.colour] ?? "", chip = mark.asking ? questionColor : color;
       // An agent working through a pin here has its name on the pin, not on its outline (ticket am-13).
       if (!mark.node || !color || !chip) return [];
-      const undo = chipUndo.fields(mark);
+      // An earlier version shown (History) offers no Undo: the change is the latest version's.
+      const undo = viewing ? undefined : chipUndo.fields(mark);
       return [{ request: { path: mark.path, node: [...mark.node] }, name: mark.name, color, chip, ...(mark.pinned ? { bare: true as const } : {}), ...undo }];
     });
     const key = JSON.stringify(agents);
@@ -1334,6 +1335,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         cardGrids?.clear();
         postClearSelection();
       }
+      // The chips' Undo goes with an earlier version shown and comes back with the latest.
+      if (frameState.ready) postPresence(false);
     },
     /** The top bar's "+ Add" opens the Add panel (src/page-builder/add-panel.ts). */
     attachAddButton(addButton: HTMLButtonElement) {
