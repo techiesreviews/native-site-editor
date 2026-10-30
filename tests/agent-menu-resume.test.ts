@@ -67,12 +67,13 @@ for (const how of ["switch", "destroy", "disconnect"] as const) {
 }
 
 // The agent menu's Connect to MCP press with agents off (turnOn): the connection is found
-// reconnecting, its retry leaves the menu `after`, and the press then prompts, copies or is stuck.
+// reconnecting, its retry leaves the menu `after`, and the press then prompts, copies or is stuck
+// ("paused" after: the retry did nothing, its recorded retry time still ahead, or failed again).
 // "other-owner": another tab of this browser holds the socket and an agent uses the site's connection;
 // "taken-over": another tab holds it with no connection of the site at all. `found` "paused": the
 // reconnect gave up while the user was away (ticket am-51), so the press finds it paused, not reconnecting.
 // `owner`: the site owner paused remote agents, known before the press or found while the socket opens.
-function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "connected" | "other-owner" | "taken-over" | "reconnecting", found: "reconnecting" | "paused" = "reconnecting", owner: "none" | "before" | "open" = "none") {
+function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "connected" | "other-owner" | "taken-over" | "reconnecting" | "paused", found: "reconnecting" | "paused" = "reconnecting", owner: "none" | "before" | "open" = "none") {
   let site = "main", pinned = "", activation = 0, remote = false, retried = false, retries = 0, ownerPaused = owner === "before";
   const writes: string[] = [];
   const live = (at: number) => remote && activation === at && site === pinned;
@@ -107,7 +108,7 @@ function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "
 test("Connect to MCP finding a reconnect: undisturbed, it retries and then prompts, copies again or shows the press stuck", async () => {
   // An agent already uses the site's connection (here or in the tab holding the socket): the press
   // still copies a prompt; another tab holding it with nothing connected: a new prompt.
-  for (const [after, write] of [["idle", "POST /api/agent/connect"], ["waiting", "copy"], ["connected", "copy"], ["other-owner", "copy"], ["taken-over", "POST /api/agent/connect"], ["reconnecting", "stuck"]] as const) {
+  for (const [after, write] of [["idle", "POST /api/agent/connect"], ["waiting", "copy"], ["connected", "copy"], ["other-owner", "copy"], ["taken-over", "POST /api/agent/connect"], ["reconnecting", "stuck"], ["paused", "stuck"]] as const) {
     const run = press({ port: (_name, work) => work }, after);
     await run.done;
     assert.deepEqual(run.writes, [write], after);
@@ -115,7 +116,7 @@ test("Connect to MCP finding a reconnect: undisturbed, it retries and then promp
 });
 
 test("Connect to MCP after a reconnect gave up while away: it retries as for a reconnect, then prompts, copies again or shows the press stuck", async () => {
-  for (const [after, write] of [["idle", "POST /api/agent/connect"], ["waiting", "copy"], ["connected", "copy"], ["other-owner", "copy"], ["taken-over", "POST /api/agent/connect"], ["reconnecting", "stuck"]] as const) {
+  for (const [after, write] of [["idle", "POST /api/agent/connect"], ["waiting", "copy"], ["connected", "copy"], ["other-owner", "copy"], ["taken-over", "POST /api/agent/connect"], ["reconnecting", "stuck"], ["paused", "stuck"]] as const) {
     const run = press({ port: (_name, work) => work }, after, "paused");
     await run.done;
     assert.deepEqual(run.writes, [write], after);
@@ -133,7 +134,7 @@ test("Connect to MCP after a reconnect gave up while away: it retries as for a r
 for (const how of ["off", "switch", "again"] as const) {
   test(`Connect to MCP finding a reconnect: a ${how} at any await makes no prompt, no copy and no stuck dot`, async () => {
     for (const found of ["reconnecting", "paused"] as const) {
-      for (const after of ["idle", "waiting", "connected", "other-owner", "taken-over", "reconnecting"] as const) {
+      for (const after of ["idle", "waiting", "connected", "other-owner", "taken-over", "reconnecting", "paused"] as const) {
         const points = await forEachAwait(race => press(race, after, found), run => run.disturb(how), run => {
           assert.deepEqual(run.writes, [], `${found} → ${after}: nothing written after the ${how}`);
         });

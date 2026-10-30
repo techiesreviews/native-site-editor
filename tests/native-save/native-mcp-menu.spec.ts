@@ -332,7 +332,9 @@ test("a sign-in that ended while away: the tab coming back offers Connect to MCP
     await expect(menu).toHaveAttribute("data-state", "failed");
     expect((await dot(page)).color).toBe(await danger(page));
     await onlyLabel(page, "Connect to MCP");
-    // clipboard-ready: the press has ended on the failed dot, so no copy is still on its way.
+    // fixed-wait: the failed dot shows before the press drops its copy; a wrong write would show by now.
+    await page.waitForTimeout(1_000);
+    // clipboard-ready: the fixed wait above.
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
   } finally { await client.close().catch(() => undefined); }
 });
@@ -344,13 +346,41 @@ test("offering Disconnect MCP, coming back or opening the menu reads the connect
   try {
     await page.keyboard.press("Escape");
     await countReads(page);
-    await away(page, 1);
-    expect(await backToTab(page), "a minute away: no read").toBe(0);
-    await away(page, 6);
+    await away(page, 2);
+    expect(await backToTab(page), "two minutes away, coming back: no read").toBe(0);
     await page.locator(".repository-menu__trigger").click();
-    await expect.poll(() => readsBegun(page), { message: "the menu opening after 7 minutes: one read" }).toBe(1);
+    await expect(action).toHaveText("Disconnect MCP");
+    expect(await readsBegun(page), "two minutes away, opening the menu: no read").toBe(0);
+    await page.keyboard.press("Escape");
+    await away(page, 6);
+    // Another popover of the page opening and closing is not the menu opening.
+    await page.evaluate(() => new Promise<void>(resolve => {
+      const other = document.createElement("div");
+      other.popover = "auto";
+      document.body.append(other);
+      other.addEventListener("toggle", event => { if (event.newState === "closed") { other.remove(); resolve(); } });
+      other.showPopover();
+      other.hidePopover();
+    }));
+    expect(await readsBegun(page), "another popover: no read").toBe(0);
+    await page.locator(".repository-menu__trigger").click();
+    await expect.poll(() => readsBegun(page), { message: "the menu opening after 8 minutes: one read" }).toBe(1);
     await expect(action).toHaveText("Disconnect MCP");
     expect(await backToTab(page), "the read just made holds: no second").toBe(1);
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("offering Disconnect MCP, the window regaining focus after 6 minutes away reads the connections once", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, action } = await connectedAgent(page, baseURL, "away-agent");
+  try {
+    await page.keyboard.press("Escape");
+    await countReads(page);
+    await away(page, 6);
+    await refresh(page);
+    await expect.poll(() => readsBegun(page), { message: "focus after 6 minutes: one read" }).toBe(1);
+    await expect(action).toHaveText("Disconnect MCP");
   } finally { await client.close().catch(() => undefined); }
 });
 
@@ -366,7 +396,9 @@ test("a sign-in that ends during a press of Wait for MCP, or of Connect to MCP w
     await expect(menu).toHaveAttribute("data-state", "failed");
     expect((await dot(page)).color).toBe(await danger(page));
     await onlyLabel(page, "Connect to MCP");
-    // clipboard-ready: the press has ended on the failed dot, so no copy is still on its way.
+    // fixed-wait: the failed dot shows before the press drops its copy; a wrong write would show by now.
+    await page.waitForTimeout(1_000);
+    // clipboard-ready: the fixed wait above.
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
   };
   await action.click();

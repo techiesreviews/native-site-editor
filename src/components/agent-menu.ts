@@ -114,7 +114,8 @@ export function createAgentMenu(options: {
   /** The site whose last press failed with nothing to show for it: the dot shows it until the
    * next press, a turn on or off, another site shown, or an agent using a connection. */
   let failedOn: ReturnType<typeof options.repository>;
-  // A press found the reconnect still under way: the dot shows a problem until it ends or the next press.
+  // A press found the reconnect still under way, or still given up (paused, not by the site owner):
+  // the dot shows a problem until it ends or the next press.
   let stuckOn = false;
   let disposed = false,
     changing = false,
@@ -259,7 +260,7 @@ export function createAgentMenu(options: {
         // takeover updates must not be lost (a real move sets workspaceChanged and a new activation).
         if (disposed || !remote || activation !== at || workspaceChanged) return;
         transportState = next;
-        if (next.mode !== "reconnecting") stuckOn = false;
+        if (next.mode !== "reconnecting" && next.mode !== "paused") stuckOn = false;
         ownerPaused = next.mode === "paused" && Boolean(next.message);
         paint();
       },
@@ -423,7 +424,7 @@ export function createAgentMenu(options: {
     if (!remote) return "off";
     if (workspaceChanged) return "workspace-changed";
     if (transportMode === "pending") return "connecting";
-    if (transportMode === "socket" && stuckOn && transportState?.mode === "reconnecting") return "failed";
+    if (transportMode === "socket" && stuckOn && (transportState?.mode === "reconnecting" || (transportState?.mode === "paused" && !ownerPaused))) return "failed";
     if (transportMode === "socket" && transportState && transportState.mode !== "live") return transportState.mode;
     if (usedGrants().length) return "connected";
     return waiting() ? "waiting" : "idle";
@@ -697,8 +698,9 @@ export function createAgentMenu(options: {
       // already uses the site's connection: Connect to MCP still copies a prompt, this tab's own if
       // it still waits, otherwise a new one.
       copyAgain: () => copyAgain(slot, task),
-      // Still reconnecting (another tab of this browser holds the attempt, or it failed again): the
-      // press made no prompt, so the dot shows a problem until the reconnect ends or the next press.
+      // Still reconnecting (another tab of this browser holds the attempt, or it failed again), or
+      // still paused by a reconnect that gave up (its retry did nothing or failed again): the press
+      // made no prompt, so the dot shows a problem until the reconnect ends or the next press.
       stuck: () => { stuckOn = true; paint(); },
     });
   }

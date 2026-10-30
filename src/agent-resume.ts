@@ -33,15 +33,16 @@ export async function resumeAgents(ports: {
  * menu's own press does: Wait for MCP or Disconnect MCP (a token waits, or an agent already uses
  * the site's connection, in this tab or another tab that holds the socket) copies a prompt again,
  * this tab's own if it still waits, otherwise a new one; Connect to MCP makes a new prompt when
- * idle or when another tab receives, or, still reconnecting with no recorded retry time to wait
- * for, marks the press stuck. A turn-off, another turn-on or a site move while it waits ends it with no write.
+ * idle or when another tab receives, or marks the press stuck: still reconnecting with no recorded
+ * retry time to wait for, or still paused by a reconnect that gave up (the retry did nothing or
+ * failed again). A turn-off, another turn-on or a site move while it waits ends it with no write.
  */
 export async function turnOnAgents(ports: {
   /** Turns remote agents on for the open site and returns this activation. */
   start(): number;
   /** Whether activation `at` still holds. */
   live(at: number): boolean;
-  /** Whether another tab of this browser paused remote agents. */
+  /** Whether the site owner paused remote agents (known before the press or found while the socket opens). */
   paused(): boolean;
   /** Reads the connections. */
   read(): Promise<unknown>;
@@ -61,7 +62,7 @@ export async function turnOnAgents(ports: {
   prompt(): Promise<void>;
   /** Copies this tab's waiting prompt again, or makes a new one. */
   copyAgain(): Promise<void>;
-  /** Shows that the press found the reconnect still under way. */
+  /** Shows that the press found the reconnect still under way, or still given up. */
   stuck(): void;
 }) {
   const at = ports.start();
@@ -77,7 +78,7 @@ export async function turnOnAgents(ports: {
   const now = ports.state();
   if (ports.offer(now) !== "connect") await ports.copyAgain();
   else if (ports.fresh(now)) await ports.prompt();
-  else if (now === "reconnecting" && !ports.retryWaits()) ports.stuck();
+  else if ((now === "reconnecting" && !ports.retryWaits()) || (now === "paused" && !ports.paused())) ports.stuck();
 }
 
 /**
