@@ -82,7 +82,16 @@ export function approvalQuestion(call: ToolCall) {
   return question.length <= QUESTION_LIMIT ? question : `Allow ${what.slice(0, QUESTION_LIMIT - 8).trimEnd()}…?`;
 }
 /** Only a plain yes allows; anything else, or no answer, refuses. */
-export const approves = (answer: string | undefined) => /^\s*(yes|y|allow|ok|okay|sure)\b/i.test(answer ?? "");
+export const approves = (answer: string | undefined) => /^\s*(yes|y|allow|ok|okay|sure)[\s.!]*$/i.test(answer ?? "");
+/** A plain no: nothing more for the agent to hear. */
+export const refuses = (answer: string | undefined) => /^\s*(no|n|nope|deny|don't|do not)[\s.!]*$/i.test(answer ?? "");
+
+/** The name agents started by a custom command work under: its program's (an npx package's, without its version). */
+export function commandName(command: string[]) {
+  const program = command[0] === "npx" ? command.slice(1).find(part => !part.startsWith("-")) : command[0];
+  const name = program?.replace(/(.)@[^@/]*$/, "$1").split("/").at(-1)?.replace(/\.[cm]?js$/, "");
+  return name || "Custom agent";
+}
 
 /** What the agent is told for a new pin. */
 export function pinPrompt(name: string, request: string) {

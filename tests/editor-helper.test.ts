@@ -11,9 +11,9 @@ import { HELPER_AGENT as EDITOR_HELPER_AGENT, PIN_AGENTS as EDITOR_PIN_AGENTS, t
 import { requestOperation } from "../shared/agent-requests";
 import { acpConnection, choose, type PermissionRequest } from "../helper/src/acp";
 import {
-  ALLOWED_TOOLS, approvalQuestion, approves, editorTool, HELPER_AGENT, PIN_AGENTS, sessionMeta, toolAllowed,
+  ALLOWED_TOOLS, approvalQuestion, approves, commandName, editorTool, HELPER_AGENT, PIN_AGENTS, refuses, sessionMeta, toolAllowed,
 } from "../helper/src/agents";
-import { HELPER_VERSION, runHelper, type AgentProcess } from "../helper/src/helper";
+import { answerTo, HELPER_VERSION, runHelper, type AgentProcess } from "../helper/src/helper";
 import { HELPER_PACKAGE } from "../src/agent-prompts";
 import { launchAgent, TOKEN_VARIABLE } from "../helper/src/launch";
 import { files, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness";
@@ -61,8 +61,20 @@ test("only the editor's MCP tools run unasked: no shell, files, web or the helpe
   assert.equal(approvalQuestion({ title: "npm install" }), "Allow npm install?");
   assert.ok(approvalQuestion({ title: "x".repeat(100) }).length <= 60);
   assert.equal(approvalQuestion({}), "Allow a tool?");
-  for (const answer of ["yes", "Yes please", "ok", "allow it"]) assert.equal(approves(answer), true, answer);
-  for (const answer of ["no", "not yes", "", undefined, "nope"]) assert.equal(approves(answer), false, String(answer));
+  for (const answer of ["yes", "Yes.", " ok! ", "allow", "Sure"]) assert.equal(approves(answer), true, answer);
+  for (const answer of ["no", "not yes", "", undefined, "nope", "ok, no", "sure not", "yes but don't", "Yes please"]) assert.equal(approves(answer), false, String(answer));
+  for (const answer of ["no", "No.", "nope", "don't"]) assert.equal(refuses(answer), true, answer);
+  for (const answer of ["no, also make it blue", "yes", "not now"]) assert.equal(refuses(answer), false, answer);
+  // The answer is what the user wrote after the question; a follow-up from before it is none.
+  const thread = (...items: [string, string][]) => ({ id: "req-x", thread: items.map(([from, text]) => ({ from, text })) });
+  assert.equal(answerTo(thread(["user", "Fix it"], ["user", "Also blue"]), "Allow npm install?"), undefined);
+  assert.equal(answerTo(thread(["user", "Fix it"], ["agent", "Allow npm install?"]), "Allow npm install?"), undefined);
+  assert.equal(answerTo(thread(["user", "Fix it"], ["agent", "Allow npm install?"], ["user", "no"]), "Allow npm install?"), "no");
+  assert.equal(answerTo(thread(["agent", "Allow npm install?"], ["user", "no"], ["agent", "Allow npm install?"]), "Allow npm install?"), undefined);
+  // A custom command's agent works under its program's name.
+  assert.equal(commandName(["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.99.1"]), "claude-agent-acp");
+  assert.equal(commandName(["/usr/local/bin/opencode", "acp"]), "opencode");
+  assert.equal(commandName(["npx", "-y"]), "Custom agent");
 });
 
 test("an agent program runs over its own stdin and stdout, without the helper's token in its environment", async () => {
@@ -101,13 +113,25 @@ test("an agent program runs over its own stdin and stdout, without the helper's 
     delete process.env[TOKEN_VARIABLE];
     agent?.stop();
   }
+  // A program that ends at once (or never starts) refuses the request; writing to it raises no uncaught EPIPE.
+  for (const command of [[process.execPath, "-e", "process.exit(0)"], ["/nonexistent/editor-helper-agent"]]) {
+    const gone = launchAgent(command);
+    const acp = acpConnection(gone, { permission: async () => ({ outcome: "cancelled" }) });
+    await new Promise(resolve => setTimeout(resolve, 200));
+    await assert.rejects(acp.request("initialize", { protocolVersion: 1, padding: "x".repeat(1 << 20) }), /The agent stopped/);
+    gone.stop();
+  }
 });
 
-/** A fake ACP agent in this process: it works on its pin through the MCP server its session was given. */
-function fakeAgent(worker: Parameters<typeof workerFetch>[0]) {
+/** One turn of a fake agent: its prompt, its pin and name, its MCP calls, and its asking and dying. */
+interface Turn { text: string; request: string; name: string; call(tool: string, args?: Record<string, unknown>): Promise<any>; ask(toolCall: object): Promise<unknown>; die(): Promise<never> }
+
+/** A fake ACP agent in this process: it works on its pin through the MCP server its session was given, as `script`
+ * says (by default: asks the user's word, then asks before an editor tool and a shell command, edits and is done). */
+function fakeAgent(worker: Parameters<typeof workerFetch>[0], script?: (turn: Turn) => Promise<void>) {
   const toAgent = new PassThrough(), fromAgent = new PassThrough();
   const seen = { methods: [] as string[], sessions: [] as Record<string, any>[], modes: [] as string[], prompts: [] as string[], outcomes: [] as unknown[], stopped: 0 };
-  const send = (message: object) => fromAgent.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
+  const send = (message: object) => { if (!fromAgent.writableEnded) fromAgent.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`); };
   let asks = 0;
   const waiting = new Map<string, (outcome: unknown) => void>();
   const ask = (toolCall: object) => new Promise(resolve => {
@@ -127,6 +151,7 @@ function fakeAgent(worker: Parameters<typeof workerFetch>[0]) {
       }));
     }
     const call = async (tool: string, args: Record<string, unknown> = {}) => payload(await client!.callTool({ name: tool, arguments: { ...args, agent: name } }));
+    if (script) return script({ text, request, name, call, ask, die: () => { fromAgent.end(); return new Promise<never>(() => {}); } });
     const pin = await call("get_selection", { request });
     const answer = pin.thread.filter((item: any) => item.from === "user").slice(1).at(-1)?.text;
     // First turn: the agent needs the user's word first.
@@ -155,7 +180,7 @@ function fakeAgent(worker: Parameters<typeof workerFetch>[0]) {
         error => send({ id: message.id, error: { code: -32603, message: String(error) } }));
     } else if (!message.method && waiting.has(message.id)) { waiting.get(message.id)!(message.result.outcome); waiting.delete(message.id); }
   });
-  const agent: AgentProcess = { input: fromAgent, output: toAgent, stop: () => { seen.stopped++; fromAgent.end(); void client?.close(); } };
+  const agent: AgentProcess = { input: fromAgent, output: toAgent, stop: () => { seen.stopped++; if (!fromAgent.writableEnded) fromAgent.end(); void client?.close(); } };
   return { agent, seen };
 }
 
@@ -256,4 +281,133 @@ test("a pin starts one agent through the local Worker: its question returns to t
     stopping.abort();
     await worker.dispose();
   }
+});
+
+/** A signed-in tab on the real Worker with its own connection, and a way to pin and answer requests there. */
+async function site(worker: Awaited<ReturnType<typeof startWorker>>["worker"], github: Awaited<ReturnType<typeof startWorker>>["github"]) {
+  const { cookie } = await signIn(worker);
+  const tab = await receivingTab(worker, cookie, github, { pinsGoTo: () => "Claude Code" });
+  await tab.show(await siteContext());
+  const connect = async () => (await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json()) as { id: string; token: string };
+  const element = { file: "index.html", id: "1.0.0", tag: "h1", text: "Welcome", html: "<h1>Welcome</h1>" };
+  const add = (id: string, text: string) => tab.conversations.set(id, { id, text, createdAt: Date.now(), repoId: repo.id, repository: repo.full_name, branch: "main",
+    state: "open", element, thread: [{ from: "user", text, at: Date.now() }] });
+  const answer = (id: string, text: string) => {
+    const { list } = requestOperation([...tab.conversations.values()], { type: "answer", id, text }) as { list: AgentRequest[] };
+    tab.conversations.set(id, list.find(item => item.id === id)!);
+  };
+  const pin = (id: string) => tab.conversations.get(id)!;
+  return { tab, connect, add, answer, pin };
+}
+const said = (request: AgentRequest | undefined) => request?.thread?.at(-1)?.text;
+
+test("at most maxAgents run: a queued pin starts once one closes, and none starts as the helper ends", async () => {
+  const { worker, github } = await startWorker();
+  const quit = new AbortController();
+  try {
+    const { tab, connect, add, pin } = await site(worker, github);
+    const { id, token } = await connect();
+    const events: string[] = [], fakes: ReturnType<typeof fakeAgent>[] = [];
+    // A pin saying "hang" keeps its agent at work; any other is done at once.
+    const script = async (turn: Turn) => {
+      events.push(`work ${turn.request}`);
+      if (/hang/.test((await turn.call("get_selection", { request: turn.request })).text)) return new Promise<void>(() => {});
+      await turn.call("reply_to_request", { request: turn.request, status: "done", message: "Done." });
+    };
+    const running = runHelper({ url: `${origin}/mcp`, token, fetch: workerFetch(worker), waitSeconds: 0, pollMs: 20, maxAgents: 1, idleMs: 100, signal: quit.signal,
+      launch: () => { const fake = fakeAgent(worker, script); fakes.push(fake);
+        events.push(`launch ${fakes.length}`); return { ...fake.agent, stop: () => { events.push(`stop ${fakes.indexOf(fake) + 1}`); fake.agent.stop(); } }; } });
+    add("req-a", "Fix a"); add("req-b", "Fix b");
+    await until("both pins done", () => pin("req-a").state === "done" && pin("req-b").state === "done");
+    // The second agent started only once the first had closed (done, then idle).
+    assert.deepEqual(events.filter(event => !event.startsWith("work")).slice(0, 3), ["launch 1", "stop 1", "launch 2"]);
+    add("req-c", "hang"); add("req-d", "Fix d");
+    await until("the hanging agent at work", () => events.includes("work req-c"));
+    await until("the fourth pin taken and queued", () => pin("req-d").state === "seen");
+    // Disconnect with req-d still queued: nothing new starts, every agent is stopped, and the helper ends.
+    assert.equal((await tab.post("/api/agent/revoke", { id })).status, 200);
+    assert.match(await running, /ended this connection/);
+    assert.equal(fakes.length, 3);
+    assert.ok(fakes.every(fake => fake.seen.stopped > 0));
+    assert.ok(!events.includes("work req-d"));
+  } finally { quit.abort(); await worker.dispose(); }
+});
+
+test("an agent that dies mid-turn answers its pin; approvals time out to a refusal, and an answer with more goes to the agent", async () => {
+  const { worker, github } = await startWorker();
+  const quits: AbortController[] = [];
+  try {
+    const { connect, add, answer, pin } = await site(worker, github);
+    const lines: string[] = [];
+    // One helper, approvals answered or not as each test says.
+    const helper = async (approvalMs: number, script: (turn: Turn) => Promise<void>) => {
+      const { token } = await connect(), quit = new AbortController(), fakes: ReturnType<typeof fakeAgent>[] = [];
+      quits.push(quit);
+      const running = runHelper({ url: `${origin}/mcp`, token, fetch: workerFetch(worker), waitSeconds: 0, pollMs: 20, approvalMs, signal: quit.signal,
+        launch: () => { const fake = fakeAgent(worker, script); fakes.push(fake); return fake.agent; }, log: line => lines.push(line) });
+      return { fakes, end: async () => { quit.abort(); return running; } };
+    };
+
+    // The agent's program stops during its turn: the pin says so, and the job is gone.
+    const dying = await helper(60_000, turn => turn.die());
+    add("req-die", "Fix it");
+    await until("the stopped reply", () => pin("req-die").state === "answered" && pin("req-die"));
+    assert.equal(said(pin("req-die")), "Claude Code stopped before it finished. Send again to retry.");
+    assert.ok(lines.includes("Claude Code left req-die."), lines.join("\n"));
+    assert.equal(await dying.end(), "Stopped.");
+
+    // An approval nobody answers is refused when its time runs out.
+    const outcomes: unknown[] = [];
+    const asking = async (turn: Turn) => {
+      if (/^The user added/.test(turn.text)) { await turn.call("get_selection", { request: turn.request }); await turn.call("reply_to_request", { request: turn.request, status: "done", message: "Blue." }); return; }
+      outcomes.push(await turn.ask({ title: "npm install", kind: "execute" }));
+      await turn.call("get_selection", { request: turn.request });
+      await turn.call("reply_to_request", { request: turn.request, status: "done", message: "Done without it." });
+    };
+    const timing = await helper(50, asking);
+    add("req-late", "Fix it");
+    await until("the refusal", () => pin("req-late").state === "done");
+    assert.deepEqual(outcomes, [{ outcome: "selected", optionId: "no" }]);
+    await timing.end();
+
+    // "no, also make it blue": refused, and the rest reaches the agent as a follow-up turn.
+    const answering = await helper(60_000, asking);
+    add("req-blue", "Fix it");
+    await until("the approval question", () => said(pin("req-blue")) === "Allow npm install?");
+    answer("req-blue", "no, also make it blue");
+    await until("the follow-up done", () => said(pin("req-blue")) === "Blue." && pin("req-blue").state === "done");
+    assert.deepEqual(outcomes.at(-1), { outcome: "selected", optionId: "no" });
+    assert.equal(answering.fakes.length, 1);
+    assert.equal(answering.fakes[0].seen.prompts.length, 2);
+    assert.match(answering.fakes[0].seen.prompts[1], /The user added to request req-blue/);
+    await answering.end();
+  } finally { for (const quit of quits) quit.abort(); await worker.dispose(); }
+});
+
+test("Ctrl+C says on each unfinished pin that its agent stopped before the helper ends; finished pins keep their answer", async () => {
+  const { worker, github } = await startWorker();
+  const quit = new AbortController();
+  try {
+    const { connect, add, pin } = await site(worker, github);
+    const { token } = await connect(), working = new Set<string>();
+    const script = async (turn: Turn) => {
+      working.add(turn.request);
+      if (turn.request === "req-done") { await turn.call("get_selection", { request: turn.request }); await turn.call("reply_to_request", { request: turn.request, status: "done", message: "Done." }); return; }
+      return new Promise<void>(() => {});
+    };
+    const running = runHelper({ url: `${origin}/mcp`, token, fetch: workerFetch(worker), waitSeconds: 0, pollMs: 20, maxAgents: 2, signal: quit.signal,
+      launch: () => fakeAgent(worker, script).agent });
+    add("req-done", "Fix it");
+    await until("the first pin done", () => pin("req-done").state === "done");
+    add("req-busy", "Fix this"); add("req-queued", "And this");
+    await until("the busy agent at work", () => working.has("req-busy") && pin("req-queued").state === "seen");
+    quit.abort();
+    assert.equal(await running, "Stopped.");
+    // The busy pin by its agent (the first, idle after its pin, still holds "Claude Code"); the queued one by the program.
+    for (const [id, name] of [["req-busy", "Claude Code 2"], ["req-queued", "Claude Code"]]) {
+      assert.equal(pin(id).state, "answered", id);
+      assert.equal(said(pin(id)), `${name} stopped: the helper on this computer was closed. Send again to retry.`);
+    }
+    assert.equal(said(pin("req-done")), "Done.");
+  } finally { quit.abort(); await worker.dispose(); }
 });

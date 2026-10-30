@@ -1,7 +1,7 @@
 ---
 title: "The helper: any agent picks up pins"
 type: task (AFK)
-status: closed
+status: open
 assignee: am-16
 builder: claude
 blocked_by: [12-mcp-menu-agents, 13-pin-conversation]
@@ -54,3 +54,21 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Docs: `docs/mcp.md` "The helper: pins start your own agent"; `helper/README.md`; `docs/agents/code-map.md` names `helper/`. Feature list: new F-agent-14.
 - Manual run with the real Claude Code: not done here. This builder may not start agents, and the package is not on npm yet. For the lead, after `npm run build` in `helper/`: `EDITOR_HELPER_TOKEN=<token from Connect to MCP> node helper/dist/cli.js https://preview-editor.techies.tools/mcp`, then pin a heading in the editor and record the result here.
 - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3831/3831 (255 files)` (`kit unit --affected`, the new test included). `RESULT: ok specs 4/4 passed` (native-mcp-menu, native-mcp, native-agent-waits, native-agent-pins). `npm run check` and `npm run lint` are clean. `kit specs --affected` was not run here.
+
+- Review round 1:
+  - Status back to `open`: the manual run with the real Claude Code (Done when) is still to be recorded, by the lead, and the first publish waits for Lex's approval.
+  - **For Lex (Tuesday review): how long the helper listens.** It runs on the Connect to MCP token, which ends with the editor sign-in (at most eight hours); then it stops and says so, and pins wait for nobody until Connect to MCP gives a new command. Recommended default, easy to change later: keep it so for now. The other choice is the helper signing in on its own (OAuth with a longer-lived sign-in), which keeps it listening across days but means a new kind of sign-in that outlives the editor's. Written in `helper/README.md` too.
+  - Stopping no longer starts queued pins: once the helper ends (`stopping`), a closing agent starts nothing, and the queue is emptied first.
+  - Ctrl+C (and the site owner's pause) first says on each pin the helper took and has not finished, an agent's at work or one waiting its turn: "<agent> stopped: the helper on this computer was closed. Send again to retry." Pins already answered keep their answer. A dead connection (401) says nothing, as it cannot.
+  - An agent program that ends while the helper writes to it (EPIPE), or never starts, ends only its own connection (`child.stdin` error listener; `acpConnection` also closes on its output's close or error).
+  - Approvals: the question's time runs from its post, and every settle clears its timer. Only a message the user wrote after the "Allow …?" question answers it (`answerTo`, by the thread), so a follow-up from before is a follow-up. Only a plain yes allows ("yes", "ok!"; not "ok, no" or "yes but don't"). A plain yes or no stays with the helper; anything more ("no, also make it blue") is refused and also goes to the agent as a follow-up turn.
+  - `--agent-command` agents work under their program's name (`commandName`: "claude-agent-acp", "opencode"; "Custom agent" when none), not the "Pins go to" choice's.
+  - Tests (`tests/editor-helper.test.ts`), each against the local Worker:
+    - `maxAgents: 1` with two pins: the second agent starts only after the first closes. With one agent at work and a pin queued, Disconnect ends the helper, starts nothing more and stops every agent.
+    - An agent whose program stops mid-turn: its pin says "Claude Code stopped before it finished. Send again to retry." and the job is gone.
+    - `approvalMs: 50` with no answer refuses. "no, also make it blue" refuses and brings a second turn, the follow-up.
+    - Ctrl+C with one pin done, one at work and one queued: the two unfinished say they stopped before `runHelper` ends; the done one keeps "Done.".
+    - A program that exits at once, and one that does not exist: `initialize` (1 MB, to force a write on the closed pipe) is refused with "The agent stopped", with no uncaught EPIPE.
+    - Plain yes and no, `answerTo` and `commandName` in the list test.
+  - An agent that stops or cannot start is closed before its pin says so, so a message sent after reading it starts a new agent. The new tests end every helper they start, also when an assertion fails.
+  - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3834/3834 (255 files)` (`kit unit --affected`). `kit specs --affected` (all 162, the builder limit lifted): `RESULT: fail specs 1 of 162 failed: native-boot-memory.spec.ts`, a warm-reload snapshot check this change does not touch; alone it passes (`RESULT: ok specs 1/1 passed`). `npm run check` and `npm run lint` are clean.

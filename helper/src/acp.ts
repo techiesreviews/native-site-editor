@@ -35,6 +35,9 @@ export function acpConnection(streams: { input: Readable; output: Writable }, ha
   const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
   const send = (message: Message) => { if (!ended) streams.output.write(`${JSON.stringify(message)}\n`); };
   const lines = createInterface({ input: streams.input, crlfDelay: Infinity });
+  // An output destroyed without an end (the program never started, or its pipe broke) closes the connection too.
+  streams.input.once("close", () => lines.close());
+  streams.input.on("error", () => lines.close());
 
   async function answer(message: Message) {
     try {
