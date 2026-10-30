@@ -130,3 +130,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3830/3830 (255 files)` (`kit unit --affected`). `RESULT: ok specs 8/8 passed; 179 more run in kit pr` (`kit specs --affected`).
   - native-agent-pins, native-guarded-history and native-mcp together: `RESULT: fail specs 1 of 3 failed: native-mcp.spec.ts` (its Ask agent history-after-reload test timed out at 120 s). Run alone, native-mcp passed: `RESULT: ok specs 1/1 passed`.
   - `npm run check` and `npm run lint` are clean. Boot bytes 344 KB of 355 KB, unchanged.
+
+- UX review (kit ux): F-agent-13 and every other agent feature read fine. Four other items were flagged, each already on `dev` and outside this slice; no change made:
+  - F-canvas-14 shows the "Text changed" toast (`page-structure-controller.ts`, `components.ts`).
+  - F-history-01 shows the "Paragraph added" and "Undid…" toasts (the editor's default announcement, unchanged here; this slice only adds `quiet`, which its undo plans set).
+  - The Publish count (`publish-menu`).
+  - F-phone-03, the two-row phone top bar.
+  - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3830/3830 (255 files)`. `RESULT: ok specs 2/2 passed` (native-agent-ask-undo, native-agent-pins). `npm run lint` is clean.
