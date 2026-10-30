@@ -865,8 +865,9 @@ function siteServer(connection: Connection, env: Env, origin: string, exchange: 
       if (!watching) return { result: waited(requests, `${WATCH_PAUSED} Stop the watchdog: do not call wait_for_requests again on your own; tell the user you are ready.`) };
       return { result: waited(requests), ...(requests.length ? {} : { waitOn: { retryMs: JOB_POLL_MS, why: "Waiting for a request from the editor." } }) };
     }
-    // A newer look at the same job took over this look's wait (ticket am-52): this one took nothing.
-    if (outcome.code === "replaced") return { result: waited([]), waitOn: { retryMs: JOB_POLL_MS, why: "Waiting for a request from the editor." } };
+    // A newer look at the same job took over this look's wait (ticket am-52): this one took nothing. One that
+    // ended a sent wait (its command differed) may have lost requests: it ends below, with the all: true hint.
+    if (outcome.code === "replaced" && outcome.outcome === "not-sent") return { result: waited([]), waitOn: { retryMs: JOB_POLL_MS, why: "Waiting for a request from the editor." } };
     if (outcome.code === "editor-unavailable") {
       const why = editorClosedMessage(origin, connection.workspace, "Wait about a minute, then call wait_for_requests again.");
       return { result: waited([], why), waitOn: { retryMs: 60_000, why: editorClosedMessage(origin, connection.workspace, "This job keeps waiting.") } };
