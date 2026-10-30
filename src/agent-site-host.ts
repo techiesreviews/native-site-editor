@@ -1,7 +1,7 @@
 import type { AgentReadFiles } from "./agent-tools-read";
 import type { AgentAtWork } from "../shared/agent-read";
 import type { AgentAwayPorts, AgentSiteActions, AgentSiteInput, SharedContext, agentStructuralActions } from "./agent-site";
-import type { AgentCommand } from "../shared/agent";
+import type { AgentCommand, AgentWho } from "../shared/agent";
 import type { SessionInfo } from "../shared/types";
 import { createGuardedEdits, type GuardedEdits, type Reads, type Stamp } from "./guarded-edit";
 import type { createMediaController, MediaControllerPorts, MediaPin } from "./controllers/media-controller";
@@ -404,6 +404,16 @@ export function createAgentCommands(ports: AgentCommandPorts) {
     const scope = draftScope();
     return scope && changes ? changes.undoState(scope, ids, path => draftStore().get(scope, path), grant) : undefined;
   };
+  /** The user's Undo on an agent's chip (ticket am-49): its latest change to the page `page`, put back as the pin card's Undo does. */
+  async function undoLatest(who: AgentWho, page: string) {
+    const scope = draftScope(), changes = await loadChanges(), change = scope && changes.latestChange(scope, who, page);
+    await changes.undoAgentChanges(change ? [change.id] : [], who.grant, { scope, shown: draftScope, edits: guardedEdits, draft: (scope, path) => draftStore().get(scope, path), openFile: () => appStore.openFile.value });
+  }
+  /** Whether the chip's Undo is offered now, as `undoable` tells it for that change. */
+  const latestUndoable = (who: AgentWho, page: string) => {
+    const scope = draftScope(), change = scope && changes?.latestChange(scope, who, page);
+    return change ? undoable([change.id], who.grant) : undefined;
+  };
   const apply = (command: AgentCommand) => { void loadChanges().catch(() => undefined); return applyAgentSiteCommand(command); };
-  return { actions: agentSiteActions, apply, reload, undo, undoable, acting: () => agentActingDepth > 0 };
+  return { actions: agentSiteActions, apply, reload, undo, undoable, undoLatest, latestUndoable, acting: () => agentActingDepth > 0 };
 }

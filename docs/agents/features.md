@@ -1141,6 +1141,14 @@ its number unused.
 - Spec: none
 - Steps: none yet (needs the helper published and running)
 
+### F-agent-15 Undo an agent's change from its name chip
+- Try: Ask a connected agent to say where it works (working_here) on the hero and change its heading, with no pin. Choose Undo on its name chip on the page. Then press Ctrl+Z. Type in the heading and choose the chip's Undo again.
+- Good: The chip on the agent's outline reads "Copy editor  Undo" once it changed that page. Undo puts the page back as it was before the agent's latest change there, as one step of its own, and then reads Undone (disabled), with no toast and nothing selected on the page. Ctrl+Z brings the change back and the chip offers Undo again. Once you typed in that section, the chip says in plain words why nothing was undone ("index.html changed since Copy editor's change. Nothing was undone."), the chip growing upward so it stays off the section. The chip shows only while the agent is at work there, and Undo only while this tab keeps its change (not after a reload). Undo works the same as a done pin's (F-agent-13). Light and dark (S1, S3, S4).
+- Files: `src/agent-changes.ts` `latestChange`, `src/agent-site-host.ts` `undoLatest`, `src/components/native-preview.ts`, `src/components/native-preview-runtime.js` `drawPresence`, `src/workspace-mount.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-agent-chip-undo.spec.ts`
+- Steps: none yet (needs a connected agent)
+
 ## Command palette
 
 ### F-palette-01 Go to a page or file

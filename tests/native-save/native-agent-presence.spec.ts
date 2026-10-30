@@ -40,7 +40,7 @@ test("an agent's change draws its presence on its section and row on the page sh
       const rect = box.getBoundingClientRect();
       const on = [...document.querySelectorAll("main > section")].filter(section => near(section.getBoundingClientRect(), rect));
       seen.push({ page: document.querySelector("h1")?.textContent ?? "", on: on.map(section => section.className), box: rect.toJSON(),
-        chip: chip.textContent ?? "", chipBox: chip.getBoundingClientRect().toJSON(), border: getComputedStyle(box).borderTopColor,
+        chip: chip.querySelector("span")?.textContent ?? "", chipBox: chip.getBoundingClientRect().toJSON(), border: getComputedStyle(box).borderTopColor,
         chipBackground: getComputedStyle(chip).backgroundColor, clickable: getComputedStyle(box).pointerEvents });
     };
     new MutationObserver(look).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["style"], childList: true });
@@ -104,7 +104,7 @@ test("an agent's change draws its presence on its section and row on the page sh
     const drawn = await frameSeen();
     expect(drawn.length, "the presence box was drawn while the change ran").toBeGreaterThan(0);
     // The outline stands round the hero section, the chip on its top-left corner naming the MCP client (no name of its own given,
-    // ticket am-11), in the agent's colour; nothing to click.
+    // ticket am-11), in the agent's colour; the outline is nothing to click (the chip's Undo, once the change landed, is: ticket am-49).
     for (const seen of drawn) expect(seen).toMatchObject({ on: ["hero"], chip: "presence-spec", border: agentColour.srgb, chipBackground: agentColour.srgb, clickable: "none" });
     expect(Math.abs(drawn[0].chipBox.left - drawn[0].box.left)).toBeLessThan(1);
     expect(Math.abs(drawn[0].chipBox.bottom - drawn[0].box.top)).toBeLessThan(1);

@@ -71,6 +71,8 @@ export type FrameMessage =
   | Frame<"component-styles", { tags: string[] }>
   | Frame<"shortcut", { name: string }>
   | Frame<"refusal-note-action">
+  // The Undo on an agent's chip pressed (ticket am-49): the mark it was drawn for.
+  | Frame<"agent-chip-undo", { key: string }>
   // The canvas stopped play `id` (its end, an error, or the element redrawn).
   | Frame<"media-ended", { id: number }>;
 
@@ -93,7 +95,8 @@ export type HostMessage =
   | Host<"picture", { id: number; request: { path: string; node?: number[]; width?: number; height?: number } }>
   | Host<"theme", { focus: string; component: string }>
   // The agents working on elements (their pages' sections, tickets 33, am-11), each in its colour, its chip's orange while it asks (sRGB); none: no agent at work.
-  | Host<"agent-presence", { agents: { request: NativeNodeRequest; name: string; color: string; chip: string }[] }>
+  // `bare`: no chip (its name is on a pin); `undo`: its chip's Undo for the agent's latest change to the page (ticket am-49), with `problem` its refusal.
+  | Host<"agent-presence", { agents: { request: NativeNodeRequest; name: string; color: string; chip: string; bare?: true; key?: string; undo?: "ready" | "undone" | "busy"; problem?: string }[] }>
   | Host<"component-focus", { tag: string }>
   | Host<"edit-component", { mode: EditComponentFrameMode | undefined }>
   | Host<"viewing", { viewing: boolean }>
@@ -133,7 +136,7 @@ export const FRESHNESS: { [T in FrameMessage["type"]]: T extends "press-drag" ? 
   "slot-ghosts": "render", "inspect-result": "reply", "picture-result": "reply", "image-measured": "reply", ack: "reply", ready: "lifecycle", error: "render", "clear-error": "render",
   "insert-points": "render", "section-hover": "render", "text-selection": "render", "item-grids": "render", structure: "render",
   "selection-rect": "render", select: "render", "default-styles": "render", "component-styles": "render",
-  shortcut: "action", "refusal-note-action": "action", "media-ended": "action",
+  shortcut: "action", "refusal-note-action": "action", "media-ended": "action", "agent-chip-undo": "action",
 };
 
 const object = (value: unknown): Record<string, unknown> | undefined =>
@@ -311,6 +314,8 @@ export function readFrameMessage(data: unknown): FrameMessage | undefined {
     case "clear-error":
     case "refusal-note-action":
       return base(raw.type);
+    case "agent-chip-undo":
+      return typeof raw.key === "string" && raw.key.length <= 500 ? { ...base(raw.type), key: raw.key } : undefined;
     case "pin-rects":
       if (!Array.isArray(raw.rects)) return undefined;
       return {
