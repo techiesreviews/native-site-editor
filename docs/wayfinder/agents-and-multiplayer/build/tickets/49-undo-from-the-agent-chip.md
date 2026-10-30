@@ -2,7 +2,7 @@
 title: "Undo an agent's change from its chip when it worked without a pin (follow-up on 15)"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-49
 builder: claude
 blocked_by: [15-agent-tools-ask-and-undo]
 ---
