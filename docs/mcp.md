@@ -77,9 +77,15 @@ built-in tools and none of the user's settings, hooks or MCP servers. Anything
 else an agent asks to run is asked on the pin ("Allow …?"), and runs only on a
 plain yes; no answer in ten minutes refuses. A 401 (Disconnect MCP, sign-out)
 ends the helper and its agents; Stop in the menu refuses that agent's calls, as
-for any agent. Ctrl+C or the site owner's pause first says on each pin the helper
-took and has not finished that its agent stopped. Agents run in their own process
-group, so Ctrl+C reaches the helper alone.
+for any agent. Ctrl+C, SIGTERM, a closed terminal (SIGHUP) or the site owner's
+pause first says on each pin the helper took and has not finished that its agent
+stopped. Agents run in their own process group, so Ctrl+C reaches the helper alone.
+The helper's first wait, and each one after a wait whose pins may be lost (the
+"did not answer" hint, or a failed call), lists every pin still waiting
+(`all: true`); a pin listed again with no new message from the user is left to
+the agent already on it. A name the user stopped in the menu is refused at every
+call, so the helper never gives it again: the pin its agent leaves says so, under
+the helper's own name, and later pins get the next name ("Claude Code 2").
 
 ## Tool calls and drafts
 
