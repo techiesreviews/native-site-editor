@@ -933,7 +933,7 @@ export function createAgentMenu(options: {
     // connections still hold (past 8 hours, or the sign-in ended; ticket am-51).
     if (workspaceChanged || document.visibilityState !== "visible") return;
     const age = Date.now() - lastRead;
-    if ((offer() === "wait" || state() === "failed") && age >= 2000 || offer() === "disconnect" && age >= STALE_READ_MS)
+    if (((offer() === "wait" || state() === "failed") && age >= 2000) || (offer() === "disconnect" && age >= STALE_READ_MS))
       void readConnections();
   }
   /** The menu's popover opening (it does not bubble: heard on the way down). */
