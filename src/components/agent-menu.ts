@@ -273,8 +273,8 @@ export function createAgentMenu(options: {
   // that tells an agent how to connect, its label confirming the copy; "Wait for MCP" copies it
   // again until an agent first uses the connection; then "Disconnect MCP" revokes the
   // repository's connections (OAuth ones included). No hints or toasts: the dot shows in-between
-  // states and problems, which return the button to Connect to MCP. The only other control is the
-  // agents' Stop (ticket am-12, below).
+  // states and problems, which return the button to Connect to MCP. The only other controls are the
+  // agents' Stop (ticket am-12, below) and the storage exception's download.
   const root = node("div", "agent-menu");
   const action = button("", () => void act(), "text-button agent-menu__action");
   const actionLabel = node("span", "agent-menu__label", "Connect to MCP");
@@ -300,7 +300,8 @@ export function createAgentMenu(options: {
   const working = node("ul", "agent-menu__agents");
   working.setAttribute("aria-label", "Agents working now");
   // Where the focus goes after a Stop (drawAgents): never another Stop or Disconnect MCP. Each is named, so a
-  // screen reader says where the focus landed.
+  // screen reader says where the focus landed. A click on the menu's padding focuses the group too, on purpose
+  // (no ring for a mouse focus).
   working.tabIndex = -1;
   root.tabIndex = -1;
   root.setAttribute("role", "group");
