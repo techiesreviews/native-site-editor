@@ -830,6 +830,15 @@ test("browser requests reach MCP over the runtime socket, keep threads, and neve
     assert.equal(payload(await call("wait_for_requests", quick)).requests[0].thread.at(-1).text, "Warm");
     assert.equal(payload(await call("reply_to_request", { request: asked.id, status: "done", message: "Updated." })).state, "done");
     assert.deepEqual(payload(await call("wait_for_requests", { all: true, ...quick })).requests, []);
+    // ask_user's shape is the Worker's to refuse (ticket am-15): nothing reaches the tab.
+    const sent = tab.received.length;
+    const unplaced = await call("ask_user", { question: "Ghost or outline?", ...quick });
+    assert.equal(unplaced.isError, true);
+    assert.match(JSON.stringify(unplaced.content), /Give question and element \(an id from get_page\)/);
+    const long = await call("ask_user", { question: "x".repeat(61), element: "1.0.0", ...quick });
+    assert.equal(long.isError, true);
+    assert.match(JSON.stringify(long.content), /at most 60 characters \(this one has 61\)/);
+    assert.equal(tab.received.length, sent);
     assert.equal((await tab.post("/api/agent/ask", { text: "obsolete" })).status, 410);
     assert.equal(github.writes, 0);
   } finally { await client?.close(); await worker.dispose(); }

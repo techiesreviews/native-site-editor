@@ -395,8 +395,9 @@ export function createAgentCommands(ports: AgentCommandPorts) {
   const loadChanges = async () => changes ??= await import("./agent-changes");
   /** The user's Undo on a done pin's card: its agent's (connection `grant`) changes for it, newest first, put back as one step (src/agent-changes.ts). */
   async function undo(ids: readonly string[], grant: string | undefined) {
-    const { undoAgentChanges } = await loadChanges();
-    await undoAgentChanges(ids, grant, { scope: draftScope, edits: guardedEdits, draft: (scope, path) => draftStore().get(scope, path), openFile: () => appStore.openFile.value });
+    // The workspace the click was in, taken before any wait.
+    const scope = draftScope(), { undoAgentChanges } = await loadChanges();
+    await undoAgentChanges(ids, grant, { scope, shown: draftScope, edits: guardedEdits, draft: (scope, path) => draftStore().get(scope, path), openFile: () => appStore.openFile.value });
   }
   /** Whether a pin's changes can be undone here now: "ready", "undone" (the files as before them), or neither. */
   const undoable = (ids: readonly string[] | undefined, grant: string | undefined) => {

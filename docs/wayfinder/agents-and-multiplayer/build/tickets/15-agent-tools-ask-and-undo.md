@@ -110,3 +110,23 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
       - the agent's discard sets the status line and shows no toast;
       - with the done pin's card still open, Ctrl+Z after its Undo brings the agent's heading back, and the same card offers Undo again.
   - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3827/3827 (255 files)` (`kit unit --affected`). `RESULT: ok specs 4/4 passed` (native-agent-ask-undo, native-agent-pins, native-mcp, native-guarded-history). `npm run check` and `npm run lint` are clean. Boot bytes 344 KB of 355 KB (`npm run test:budget`), unchanged.
+
+- Review round 3:
+  - The pin card's refusal is in Lex's words: "index.html changed since Copy editor's change. Nothing was undone." No change id, no edit tools. discard_change keeps the agent's wording (`discardPlan`'s reader, "user" from `undoAgentChanges`).
+  - The pin's Undo takes the workspace of the click before any wait (`scope` passed in; `shown` proves it before the undo and through its guarded edit).
+  - After the pin's Undo the focus stays in the card: on Undo while it can be pressed, on Clear once it reads Undone. It does nothing when another card opened meanwhile.
+  - discard_change's two replies share one message (`discardedMessage`).
+  - Tests:
+    - `tests/agent-changes.test.ts`:
+      - refusals in the user's words and the agent's;
+      - a click whose site was left writes nothing;
+      - past 16 M characters the older change goes and the newer stays.
+    - `tests/mcp-runtime.test.ts`: ask_user with no element, and with a 61-character question, refused by the Worker with no command sent to the tab.
+    - `native-agent-ask-undo.spec.ts`:
+      - the alert's exact words, without the id or "edit tools";
+      - Undo focused after a refusal;
+      - Clear focused after Undone.
+      Ctrl+Z inside a card is the card's, by the editor's rule for dialogs, so the spec moves the focus out of the still-open card before pressing it.
+  - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3830/3830 (255 files)` (`kit unit --affected`). `RESULT: ok specs 8/8 passed; 179 more run in kit pr` (`kit specs --affected`).
+  - native-agent-pins, native-guarded-history and native-mcp together: `RESULT: fail specs 1 of 3 failed: native-mcp.spec.ts` (its Ask agent history-after-reload test timed out at 120 s). Run alone, native-mcp passed: `RESULT: ok specs 1/1 passed`.
+  - `npm run check` and `npm run lint` are clean. Boot bytes 344 KB of 355 KB, unchanged.
