@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createGuardedEdits, type GuardedEdits, type PlanResult } from "../src/guarded-edit";
-import { discardPlan, keptChange, keptChanges, noteAgentChange, undoAgentChanges, undoState, type AgentChange } from "../src/agent-changes";
+import { discardPlan, keptChange, keptChanges, latestChange, noteAgentChange, undoAgentChanges, undoState, type AgentChange } from "../src/agent-changes";
 import { applySiteCommand, type AgentSiteActions } from "../src/agent-site";
 import { prepareAgentEdit, type AgentEdit } from "../shared/agent-edit";
 import type { AgentCommand } from "../shared/agent";
@@ -281,4 +281,43 @@ test("past 16 M characters of text, the oldest changes go first", () => {
   noteAgentChange({ id: "big-2", grant: "g", agent: "A", operation: "write_file", scope, page: "big-2.html", before: new Map(), after: new Map([["big-2.html", big(2)]]) });
   assert.equal(keptChange(scope, "big-1"), undefined);
   assert.equal(keptChange(scope, "big-2")?.id, "big-2");
+});
+
+test("an agent's chip finds its latest change to the page it shows on: by connection, name, page and site", async () => {
+  const { m, edits } = setup();
+  const who = { grant: "grant-chip", name: "Copy editor" };
+  await agentChange(m, edits, "chip-1", ["index.html"], { edits: new Map([["index.html", PAGE.replace("Hello", "One")]]), done: "1.", undone: "1." }, who.grant);
+  // About the home page, but it changed about.html alone: the chip on about.html offers it, as does the home page's.
+  const other = await agentChange(m, edits, "chip-2", ["about.html"], { edits: new Map([["about.html", "<main><h1>Team</h1></main>"]]), done: "2.", undone: "2." }, who.grant);
+  assert.equal(latestChange(m.scope, who, "about.html")?.id, "chip-2");
+  assert.equal(latestChange(m.scope, who, "index.html")?.id, "chip-2", "its page is index.html");
+  noteAgentChange({ ...other, page: "about.html" });
+  assert.equal(latestChange(m.scope, who, "index.html")?.id, "chip-1");
+  await agentChange(m, edits, "chip-3", ["index.html"], { edits: new Map([["index.html", PAGE.replace("Hello", "Three")]]), done: "3.", undone: "3." }, who.grant);
+  assert.equal(latestChange(m.scope, who, "index.html")?.id, "chip-3");
+  assert.equal(latestChange(m.scope, { ...who, name: "Designer" }, "index.html"), undefined, "another agent on the connection");
+  assert.equal(latestChange(m.scope, { ...who, grant: "grant-other" }, "index.html"), undefined, "another connection");
+  assert.equal(latestChange({ ...m.scope, branch: "other" }, who, "index.html"), undefined, "another branch");
+  assert.equal(latestChange(m.scope, who, "team.html"), undefined);
+});
+
+test("the chip's Undo puts back the agent's latest change, reads Undone, is offered again after Ctrl+Z, and is refused once the user typed there", async () => {
+  const { m, edits } = setup();
+  const who = { grant: "grant-chip-undo", name: "Copy editor" }, drafts = (path: string) => m.draft(path);
+  await agentChange(m, edits, "chip-undo", ["index.html"], { edits: new Map([["index.html", PAGE.replace("Hello", "Hi there")]]), done: "1.", undone: "1." }, who.grant);
+  const latest = () => latestChange(m.scope, who, "index.html")!;
+  assert.equal(undoState(m.scope, [latest().id], drafts, who.grant), "ready");
+  await undoAgentChanges([latest().id], who.grant, undoPorts(m, edits));
+  assert.equal(m.workspace.source("index.html"), PAGE);
+  assert.equal(undoState(m.scope, [latest().id], drafts, who.grant), "undone");
+  // The editor's Undo of that undo brings the change back, and the chip offers Undo again.
+  assert.equal(m.undo(), true);
+  assert.equal(m.workspace.source("index.html"), PAGE.replace("Hello", "Hi there"));
+  assert.equal(undoState(m.scope, [latest().id], drafts, who.grant), "ready");
+  // Typed in since: refused in the user's words, nothing written.
+  m.typeInto("index.html");
+  const text = m.workspace.source("index.html"), steps = m.steps().length;
+  await assert.rejects(undoAgentChanges([latest().id], who.grant, undoPorts(m, edits)), { message: "index.html changed since Copy editor's change. Nothing was undone." });
+  assert.equal(m.workspace.source("index.html"), text);
+  assert.equal(m.steps().length, steps);
 });

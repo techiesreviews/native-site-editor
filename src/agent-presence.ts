@@ -22,8 +22,9 @@ import { readSource, type SourceNode, type SourceTree } from "./page-builder/sou
 /**
  * One agent as the views draw it: at work on the page `path`, on its element `node` (none: the page
  * alone), named `name`, in colour `colour` (an index into AGENT_COLOURS), its chip orange while `asking`.
+ * `who`: whose latest change to the page its chip's Undo puts back (ticket am-49).
  */
-export interface AgentMark { key: string; name: string; colour: number; path: string; node?: number[]; asking: boolean; pinned?: boolean }
+export interface AgentMark { key: string; who: AgentWho; name: string; colour: number; path: string; node?: number[]; asking: boolean; pinned?: boolean }
 /** An agent the MCP menu lists as working now (ticket am-12): who, as a mark names it, and when it leaves the list
  * unless it works again (none while it is at work or asking). */
 export interface WorkingAgent { key: string; who: AgentWho; name: string; colour: number; asking: boolean; until?: number }
@@ -151,7 +152,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     const shown = new Map<string, AgentMark>();
     const mark = (who: AgentWho, path: string, node: number[] | undefined, asking: boolean): AgentMark => {
       const key = keyOf(who), onPin = !asking && pinned.some(pin => pin.key === key && pin.path === path && pin.at.holds());
-      return { key, name: who.name || UNNAMED_AGENT, colour: arrivals.get(key)! % AGENT_COLOURS.length, path, ...(node ? { node: [...node] } : {}), asking, ...(onPin ? { pinned: true } : {}) };
+      return { key, who: { grant: who.grant, name: who.name }, name: who.name || UNNAMED_AGENT, colour: arrivals.get(key)! % AGENT_COLOURS.length, path, ...(node ? { node: [...node] } : {}), asking, ...(onPin ? { pinned: true } : {}) };
     };
     for (const entry of byHolds()) if (entry.at.holds() && !stopped(entry.who)) shown.set(keyOf(entry.who), mark(entry.who, entry.path, entry.node, false));
     for (const question of asked) {
