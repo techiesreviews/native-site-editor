@@ -325,6 +325,39 @@ test("a reload after the reconnect gave up: Connect to MCP reconnects and copies
   } finally { await client.close().catch(() => undefined); }
 });
 
+/** What a failed takeover leaves in this browser (ticket am-53): the site's stored record paused,
+ * so turning agents on again, here or after a reload, finds the takeover failed. */
+const takeoverFailed = (page: Page) => page.evaluate(async () => {
+  const { indexedDbAgentRecords } = await import("/src/agent-records.ts");
+  const records = indexedDbAgentRecords(), workspace = { account: "native-demo-user", repoId: 501, branch: "main" };
+  await records.pause(workspace, (await records.workspace(workspace)).generation);
+});
+
+test("after a failed takeover, Connect to MCP takes over again and copies a working prompt; the agent keeps working", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, call, action, menu } = await connectedAgent(page, baseURL, "takeover-agent");
+  try {
+    await takeoverFailed(page);
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await page.locator(".repository-menu__trigger").click();
+    await expect(menu).toHaveAttribute("data-state", "takeover-failed", { timeout: 15_000 });
+    await expect.poll(() => dot(page).then(shown => shown.color)).toBe(await danger(page));
+    await onlyLabel(page, "Connect to MCP");
+    // The press tries the takeover again rather than doing nothing, then copies.
+    await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+    expect((await call("get_site")).repository, "the earlier agent keeps working").toBe("native-demo-user/native-demo");
+    await expect(action).toHaveText("Disconnect MCP");
+    await expect(menu).toHaveAttribute("data-state", "connected");
+  } finally { await client.close().catch(() => undefined); }
+});
+
 test("a permission that ended while away: the reopened menu offers Connect to MCP, whose press copies a working prompt", async ({ page, context, baseURL }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await open(page, baseURL);

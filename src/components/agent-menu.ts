@@ -692,6 +692,9 @@ export function createAgentMenu(options: {
       // its attempts outlive the connection) would wait out its backoff. A failed retry is the
       // recovery's to report: the dot shows it.
       retry: async () => { await transport?.retry().catch(() => undefined); },
+      // An earlier takeover failed and left the site paused in this browser (ticket am-53): the
+      // transport reports a new failure itself (takeover-failed on the dot).
+      takeover: async () => { await transport?.takeover().catch(() => undefined); },
       retryWaits: () => (transportState?.retryAt ?? 0) > Date.now(),
       offer: now => offer(now as ReturnType<typeof state>),
       fresh: now => now === "idle" || elsewhere(now),
@@ -700,8 +703,9 @@ export function createAgentMenu(options: {
       // already uses the site's connection: Connect to MCP still copies a prompt, this tab's own if
       // it still waits, otherwise a new one.
       copyAgain: () => copyAgain(slot, task),
-      // Still reconnecting (another tab of this browser holds the attempt, or it failed again), or
-      // still paused by a reconnect that gave up (its retry did nothing or failed again): the press
+      // Still reconnecting (another tab of this browser holds the attempt, or it failed again), still
+      // paused by a reconnect that gave up (its retry did nothing or failed again), or a takeover that
+      // failed again (takeover-failed already shows the problem dot): the press
       // made no prompt, so the dot shows a problem until the reconnect ends or the next press.
       stuck: () => { stuckOn = true; paint(); },
     });
