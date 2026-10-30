@@ -16,6 +16,13 @@ Lex (2026-10-30): "the agents stop their own work, we add it to a todo list for 
 - **script-editor:** its always-loaded `AGENTS.md` and `CLAUDE.md` grew feature descriptions and history, which every session pays to read.
 - **techies-prompter** (Lex, 2026-10-30: "update [the shared kit] to the things found here"): a 376-word design bullet sat in its `AGENTS.md`, and a 6,244-character doc line listing every check was copied into a command's `--help`; the copies drifted (one review round went to that) and the help went stale.
 
+## Check (ke-77, 2026-10-30): build as is
+
+Verdict on the [retro check](../retro-check-2026-10-30.md): build as is, finishing the paused WIP. agent-kit branch `build/ke-66-kitchen-rules` (worktree `~/Projects/agent-kit-ke66`, head `053b2ee`, local only; read `git notes show HEAD`) already holds the four house rules, the `kit init` pointer line and a shared `plainEnglish` line in `review-brief.mjs` with tests. Doctor, `kit unit --affected` 307/307, npm test 1368/0 and lint passed. Start the slice from that branch, rebased on agent-kit `main`. Left to do: the one `test:kit-clean` failure, `kit review`, the second look and `kit pr`.
+
+- **Wording:** the shared rulebook may not name editor-only words (`tests/kit-rulebook.test.ts` bans `native-site-editor`, `` `dev` ``, `origin/dev` and others), so its board rule says "the kitchen-everywhere board in the Native Site Editor's repo, on its landing branch". The `kit init` pointer text is not the rulebook and may name `native-site-editor` and `dev`. That ban wins over the quoted wording below.
+- **Classical Chinese:** the one non-English report most likely came from a project rule asking for classical-Chinese style (TechiesTools had one; the 3 Nov pack proposes dropping it). The plain-English line stays, because it is cheap.
+
 ## Decided behaviour
 
 - **One board, one thread.** A line in the shared rulebook's House rules (`docs/kitchen.md` in agent-kit, which every project prints with `kit rulebook`): "A change to the shared kit is a ticket on the kitchen-everywhere board (`docs/wayfinder/kitchen-everywhere/build/` in native-site-editor, on `dev`), built only by the thread that orchestrates that board. A thread in any other project that wants a kit change writes the ticket there (or asks the orchestrator to) and goes on with its own work; it does not build the change." `kit init`'s pointer text for a project's `docs/agents/kitchen.md` says the same in one line.
@@ -36,7 +43,7 @@ The matching line for the `lex-coding` skill goes into [ticket 50's Comments](50
 
 ## Done when
 
-- `kit rulebook` in this editor and in `techies-reviews` prints the four new house rules (after the update timer brings the kit).
+- `kit rulebook` in this editor and in `script-editor` prints the four new house rules (after the update timer brings the kit; `techies-reviews` has no kit settings yet).
 - A `kit init` test shows the new pointer line; the review brief test shows the plain-English line.
 - agent-kit's `npm test`, `npm run lint` and `npm run test:kit-clean` pass.
 
