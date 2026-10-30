@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { LIVE_AGENT_CHECK_MS, LiveRooms, liveRoomObjectName, type LiveSocket } from "../worker/agent-relay";
+import { forEachAwait, type AwaitRace } from "./support/await-race";
 import { LiveRoomClosed, openLiveRoom, type LiveClock, type LivePeer, type LiveRoomSocket } from "../src/live-room";
 import { editorTab, origin, repo, signIn, startWorker } from "./mcp-harness";
 import { LIVE_ACCESS_ENDED, LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, liveRoomFile, readLiveClientMessage, type LiveAccess } from "../shared/live-room";
@@ -46,8 +47,9 @@ function fakeClock() {
 }
 
 /** One relay, every frame through it on record: what reached it and what it sent. */
-function relayHarness() {
-  let relay = new LiveRooms([]);
+/** `now`: the relay's clock (the fake clock in tests that time silence). */
+function relayHarness(now: () => number = () => Date.now()) {
+  let relay = new LiveRooms([], now);
   const seen: (string | Uint8Array)[] = [];
   const servers: LiveSocket[] = [];
   const record = (message: string | ArrayBuffer) => seen.push(typeof message === "string" ? message : new Uint8Array(message.slice(0)));
@@ -99,7 +101,7 @@ function relayHarness() {
     seen,
     pair,
     /** The Durable Object woke from hibernation: a fresh relay rebuilt from every socket the runtime still lists, closing ones included. */
-    wake() { relay = new LiveRooms(servers); },
+    wake() { relay = new LiveRooms(servers, now); },
     get relay() { return relay; },
   };
 }
@@ -467,7 +469,7 @@ test("agent sockets are checked again once a minute and removed when their conne
       close(code?: number) { this.readyState = 3; this.closedWith = code; },
       serializeAttachment(value: unknown) { attachment = structuredClone(value); },
       deserializeAttachment() { return structuredClone(attachment); },
-    };
+    } satisfies LiveSocket & { texts: string[]; closedWith?: number };
   });
   const [tab, agentSocket] = sockets;
   const relay = new LiveRooms([]);
@@ -483,6 +485,159 @@ test("agent sockets are checked again once a minute and removed when their conne
   relay.end(agentSocket, LIVE_ACCESS_ENDED, "This agent connection ended.");
   assert.equal(agentSocket.closedWith, LIVE_ACCESS_ENDED);
   assert.equal(JSON.parse(tab.texts.at(-1)!).type, "left", "the tab hears the agent left");
+});
+
+test("a key holder whose socket died without a close is removed when a joiner asks, and the room makes a new key", async () => {
+  const time = fakeClock();
+  const h = relayHarness(() => time.clock.now());
+  const anna = participant(h, time.clock);
+  await anna.live.ready();
+  // Anna's network dies: her frames stop, and the relay is not told.
+  anna.link.cut = true;
+  const silent = anna.server;
+  const lex = participant(h, time.clock);
+  await until(() => h.seen.some(frame => typeof frame === "string" && JSON.parse(frame).type === "key-request"), "Lex asking for the key");
+  let ready = false;
+  void lex.live.ready().then(() => { ready = true; });
+  await time.advance(20_000);
+  assert.equal(ready, false, "within the presence timeout Anna still counts as holding the key");
+  await time.advance(25_000);
+  await until(() => ready, "Lex making a new key once Anna was silent past the timeout");
+  assert.equal(silent.readyState, 3, "the silent holder's socket was closed (her tab may come back as a new joiner)");
+  const sam = participant(h, time.clock);
+  await sam.live.ready();
+  assert.equal(await lex.live.send(new TextEncoder().encode("after Anna")), true);
+  await until(() => sam.got.length > 0, "Sam hearing Lex");
+  assert.deepEqual(sam.got, ["after Anna"]);
+  lex.live.close(); sam.live.close(); anna.live.close();
+});
+
+test("after close, ready() and send() reject even though the key had arrived", async () => {
+  const time = fakeClock();
+  const h = relayHarness();
+  const anna = participant(h, time.clock);
+  await anna.live.ready();
+  anna.live.close();
+  await assert.rejects(anna.live.ready());
+  await assert.rejects(anna.live.send(new Uint8Array([1])));
+  // Calls already waiting for a key that never came reject too.
+  h.pair("editor"); // a key holder that never answers, so Lex waits
+  const lex = participant(h, time.clock);
+  const waiting = lex.live.ready(), sending = lex.live.send(new Uint8Array([2]));
+  await until(() => h.seen.some(frame => typeof frame === "string" && JSON.parse(frame).type === "key-request"), "Lex asking for the key");
+  lex.live.close();
+  await assert.rejects(waiting);
+  await assert.rejects(sending);
+});
+
+test("a tab's socket that opened never asks for its status when it drops; one refused before opening stops", async () => {
+  const fetched: string[] = [], sockets: FakeBrowserSocket[] = [];
+  let status = 426;
+  class FakeBrowserSocket extends EventTarget {
+    binaryType = "blob";
+    constructor(readonly url: string) { super(); sockets.push(this); }
+    send() { /* Nothing is sent before the welcome in this test. */ }
+    close() { /* The test drives closes. */ }
+  }
+  const saved = ["WebSocket", "location", "fetch"].map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
+  const set = (name: string, value: unknown) => Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
+  set("WebSocket", FakeBrowserSocket);
+  set("location", { href: origin + "/" });
+  set("fetch", async (url: string) => { fetched.push(url); return new Response(null, { status }); });
+  const closeEvent = (code: number) => Object.assign(new Event("close"), { code });
+  try {
+    const time = fakeClock();
+    let ended = false;
+    openLiveRoom({ repo: repo.full_name, branch: "main", file: "index.html", clock: time.clock, onMessage: () => undefined, onClosed: () => { ended = true; } });
+    await settle();
+    assert.match(sockets[0].url, /^wss:\/\/editor\.example\/api\/live\/room\?/);
+    sockets[0].dispatchEvent(new Event("open"));
+    await settle();
+    sockets[0].dispatchEvent(closeEvent(1006));
+    await settle();
+    assert.deepEqual(fetched, [], "a socket that opened reconnects without the status request");
+    await time.advance(1_000);
+    status = 401;
+    sockets[1].dispatchEvent(closeEvent(1006));
+    await until(() => ended, "the refused tab to stop");
+    assert.equal(fetched.length, 1, "one status request, for the socket that never opened");
+    await time.advance(120_000);
+    assert.deepEqual([sockets.length, time.pending], [2, 0], "and it never tries again");
+  } finally {
+    for (const [name, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else Reflect.deleteProperty(globalThis, name);
+    }
+  }
+});
+
+/** Every Web Crypto call the participants make, as await points `forEachAwait` can disturb. Returns the undo. */
+function cryptoPorts(race: AwaitRace) {
+  const subtle = crypto.subtle;
+  const names = ["generateKey", "encrypt", "decrypt", "wrapKey", "unwrapKey", "deriveBits", "deriveKey", "importKey", "exportKey"] satisfies (keyof SubtleCrypto)[];
+  for (const name of names) {
+    const original: (...args: unknown[]) => Promise<unknown> = Reflect.get(subtle, name);
+    Object.defineProperty(subtle, name, { configurable: true, value: race.port(name, (...args: unknown[]) => Reflect.apply(original, subtle, args) as Promise<unknown>) });
+  }
+  return () => { for (const name of names) Reflect.deleteProperty(subtle, name); };
+}
+/** A joiner whose sends after `run.closed` are counted; `run.live` is closed at once if the disturbance came first. */
+function racingJoiner(h: ReturnType<typeof relayHarness>, run: { closed: boolean; sentAfter: number; own: ReturnType<typeof fakeClock>; live?: ReturnType<typeof openLiveRoom> }) {
+  run.live = openLiveRoom({
+    repo: repo.full_name, branch: "main", file: "index.html", clock: run.own.clock, onMessage: () => undefined,
+    connect: async url => {
+      const { client } = h.pair("editor", room, new URL(url, origin).searchParams.get("rejoin") ?? undefined);
+      return { ...client, send: data => { if (run.closed) run.sentAfter++; client.send(data); } } satisfies LiveRoomSocket;
+    },
+  });
+  if (run.closed) run.live.close();
+  return run.live;
+}
+const noStaleWrite = async (run: { sentAfter: number; own: ReturnType<typeof fakeClock> }) => {
+  await run.own.advance(60_000);
+  assert.equal(run.sentAfter, 0, "nothing sent after close");
+  assert.equal(run.own.pending, 0, "no timer left after close");
+};
+
+test("closing at any crypto await of a join, handover, presence or send sends nothing more and leaves no timers", async () => {
+  const points = await forEachAwait(race => {
+    const restore = cryptoPorts(race), shared = fakeClock(), h = relayHarness();
+    const run = { closed: false, sentAfter: 0, own: fakeClock(), live: undefined as ReturnType<typeof openLiveRoom> | undefined, done: Promise.resolve() as Promise<unknown> };
+    // The baseline run gets no assertion call: each run undoes its own crypto ports and closes its holder.
+    let anna: ReturnType<typeof participant> | undefined;
+    run.done = (async () => {
+      anna = participant(h, shared.clock);
+      await anna.live.ready();
+      anna.live.setPresence({ name: "Anna" });
+      const joiner = racingJoiner(h, run);
+      await joiner.ready().catch(() => undefined);
+      joiner.setPresence({ name: "Joiner" });
+      await joiner.send(new TextEncoder().encode("edit")).catch(() => undefined);
+      await new Promise(resolve => setTimeout(resolve, 30));
+    })().finally(() => { anna?.live.close(); restore(); });
+    return run;
+  }, run => { run.closed = true; run.live?.close(); }, noStaleWrite);
+  assert.ok(points > 10, `every crypto await was disturbed (${points})`);
+});
+
+test("closing at any crypto await while making a new key (make-key) sends nothing more and leaves no timers", async () => {
+  const points = await forEachAwait(race => {
+    const restore = cryptoPorts(race), h = relayHarness();
+    const run = { closed: false, sentAfter: 0, own: fakeClock(), live: undefined as ReturnType<typeof openLiveRoom> | undefined, done: Promise.resolve() as Promise<unknown> };
+    run.done = (async () => {
+      // A holder that never answers, then leaves: the relay tells the joiner to make the key.
+      const holder = h.pair("editor");
+      const joiner = racingJoiner(h, run);
+      await until(() => run.closed || h.seen.some(frame => typeof frame === "string" && JSON.parse(frame).type === "key-request"), "the key request");
+      holder.server.readyState = 3;
+      h.relay.leave(holder.server);
+      await joiner.ready().catch(() => undefined);
+      await joiner.send(new TextEncoder().encode("edit")).catch(() => undefined);
+      await new Promise(resolve => setTimeout(resolve, 30));
+    })().finally(restore);
+    return run;
+  }, run => { run.closed = true; run.live?.close(); }, noStaleWrite);
+  assert.ok(points > 3, `every crypto await was disturbed (${points})`);
 });
 
 test("room files and participants' text frames are read strictly", () => {
@@ -547,7 +702,8 @@ test("Miniflare: two signed-in tabs share a room over the real Worker; storage s
     // Agents: past the check with their connection, but only into a room a tab has open, on their own branch.
     // A plain request (no upgrade) gets the same answer, so a tab can tell a refusal from a network failure.
     assert.equal((await worker.dispatchFetch(roomUrl())).status, 401);
-    assert.equal((await worker.dispatchFetch(roomUrl(), { headers: { Cookie: anna.cookie } })).status, 400, "allowed in; only the upgrade is missing");
+    assert.equal((await worker.dispatchFetch(roomUrl(), { headers: { Cookie: anna.cookie } })).status, 426, "allowed in; only the upgrade is missing");
+    assert.equal((await worker.dispatchFetch(roomUrl("../secret"), { headers: { Cookie: anna.cookie } })).status, 400, "a bad address is final");
     const { id: grantId, token } = await (await editorTab(worker, anna.cookie).post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json() as { id: string; token: string };
     assert.equal((await upgrade({ Authorization: `Bearer ${token}` }, roomUrl("about/index.html"))).status, 409, "no tab has that room open");
     // The agent's client hears the 409 as LiveRoomClosed: it ends and never tries again.

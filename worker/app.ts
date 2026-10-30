@@ -409,7 +409,7 @@ const OBSOLETE_AGENT_ROUTES = new Set([
 /** The live room access check (ADR 0003): editor sign-in to a repository the GitHub connection
  * lists, or an agent connection pinned to this repository and branch. Encryption keeps strangers
  * from reading edits; this keeps them from joining at all. Synced-session links (slice 30) add their token here.
- * A plain request (no upgrade) gets the same answer, so a tab can tell "refused" from "network". */
+ * A plain request (no upgrade) gets the same answer, so a tab can tell "refused" from "network" (426 when allowed). */
 async function liveRoomAccess(request: Request, env: Env, url: URL, fetcher: typeof fetch, fullName: string, branch: string): Promise<{ repoId: number; access: LiveAccess; agent?: LiveAgent }> {
   if (request.headers.has("Authorization")) {
     if (!agentControls(env).relay) throw new HttpError(403, AGENTS_PAUSED);
@@ -688,7 +688,8 @@ async function route(
       !validAgentBranch(branch) || !liveRoomFile(file) || (rejoin !== null && !/^[a-f\d]{32}$/.test(rejoin)))
       throw new HttpError(400, "Choose a repository, branch and file.");
     const { repoId, access, agent } = await liveRoomAccess(request, env, url, fetcher, url.searchParams.get("repo") ?? "", branch);
-    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") throw new HttpError(400, "Use a WebSocket upgrade.");
+    // Allowed in: a plain request learns only that (426), apart from the final 400, 401 and 403 above.
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") throw new HttpError(426, "Use a WebSocket upgrade.");
     // Fresh headers: no cookie or bearer credential crosses into the room.
     const identity = { room: await liveRoomTag(file), access, ...(rejoin === null ? {} : { rejoin }), ...(agent ? { agent } : {}) };
     return env.SESSIONS.get(env.SESSIONS.idFromName(await liveRoomObjectName(repoId, branch))).fetch(
