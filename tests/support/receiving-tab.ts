@@ -1,6 +1,6 @@
 // A receiving editor tab over the real runtime socket, for the MCP tests (tests/mcp-runtime.test.ts) and the
 // helper's (tests/editor-helper.test.ts): the browser's read, edit, media and request tools answer the relay.
-import { textHash, type AgentCommand, type AgentRequest } from "../../shared/agent";
+import { AGENT_STOPPED, textHash, type AgentCommand, type AgentRequest } from "../../shared/agent";
 import type { EditorContext, Snapshot } from "../../shared/types";
 import { createRequestTools } from "../../src/agent-watch";
 import { createAgentReadTools, type AgentReadPorts } from "../../src/agent-tools-read";
@@ -16,6 +16,8 @@ import { editorTab, fakeGitHub, githubState, origin, repo, type startWorker } fr
 export async function receivingTab(worker: Awaited<ReturnType<typeof startWorker>>["worker"], cookie: string,
   state = githubState()) {
   const tab = editorTab(worker, cookie), workspace = { account: "lex", repoId: repo.id, branch: "main" };
+  // The agents the user stopped (the menu's Stop, by name, ticket am-12): their calls are refused before anything runs.
+  const stopped = new Set<string>();
   const scope = { workspace, tabId: tab.tabId, generation: 1 };
   const github = new GitHub("github-private-token", (input, init) => fakeGitHub(new Request(input, init), state));
   const records = indexedDbAgentRecords("runtime", fakeIndexedDB().factory);
@@ -56,7 +58,7 @@ export async function receivingTab(worker: Awaited<ReturnType<typeof startWorker
     save: async (request, accept) => { if (!accept(conversations.get(request.id))) return false; conversations.set(request.id, request); return true; } });
   let socket: Awaited<ReturnType<typeof worker.dispatchFetch>>["webSocket"];
   return {
-    ...tab, commands, received, results, conversations,
+    ...tab, commands, received, results, conversations, stopped,
     inspect: async () => ({ ...await (await worker.dispatchFetch(origin + "/api/agent/connections", { headers: { Cookie: cookie } })).json(), commands }),
     async show(next: EditorContext) {
       context = structuredClone(next);
@@ -77,6 +79,7 @@ export async function receivingTab(worker: Awaited<ReturnType<typeof startWorker
           received.push(request);
           const result = context?.repository.id !== repo.id || context.branch !== "main"
             ? { ok: false, message: "The editor is not sharing this workspace." }
+            : stopped.has(request.agent) ? { ok: false, message: AGENT_STOPPED }
             : request.operation === "read" ? await reads.run(request.tool, request.args)
             : request.operation === "requests" ? await requests.run(request, () => true, Date.now() + 24_000)
             : request.operation === "media" ? await media.run(request, owner.generation, () => true)

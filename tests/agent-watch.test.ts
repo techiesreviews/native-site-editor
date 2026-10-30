@@ -4,7 +4,7 @@ import type { AgentRequest } from "../shared/agent";
 import type { AgentRequests } from "../shared/agent-requests";
 import { TAKE_TRIES, WAIT_MS, answerRequest, createRequestTools } from "../src/agent-watch";
 import { FOLLOW_UP_HOLD_MS } from "../shared/agent-requests";
-import { connectionPrompt, helperCommand } from "../src/agent-prompts";
+import { connectionPrompt, helperCommand, helperDetached } from "../src/agent-prompts";
 import { AgentRelay, WAITS_PER_SITE, relayObjectName, type RelayClock, type RelayScope, type RelaySocket } from "../worker/agent-relay";
 import { countedSocket, startCountedWorker } from "./fakes/counted-agent";
 import { indexedDbAgentRecords } from "../src/agent-records";
@@ -573,7 +573,11 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   // Ticket am-16: the helper's start command, on this connection, only when the user asks for it.
   assert.match(prompt, /If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog: `EDITOR_HELPER_TOKEN=ase_token npx -y @techiesreviews\/editor-helper@0\.1\.0 https:\/\/editor\.example\/mcp`/);
   // A background job of the conversation ends with it: the helper starts detached, or the user runs it themselves.
-  assert.match(prompt, /start the helper detached from it \(`systemd-run --user` on Linux, else `nohup … &` or `setsid`\), check a few seconds later that it still runs/);
+  // Each detached form carries the token itself: systemd-run passes no environment, and nohup runs env, which sets it.
+  const detached = helperDetached("https://editor.example/mcp", "ase_token");
+  assert.equal(detached.systemd, 'systemd-run --user --unit editor-helper --setenv=EDITOR_HELPER_TOKEN=ase_token --setenv=PATH="$PATH" "$(command -v npx)" -y @techiesreviews/editor-helper@0.1.0 https://editor.example/mcp');
+  assert.equal(detached.nohup, "nohup env EDITOR_HELPER_TOKEN=ase_token npx -y @techiesreviews/editor-helper@0.1.0 https://editor.example/mcp >/dev/null 2>&1 &");
+  assert.ok(prompt.includes(`on Linux run \`${detached.systemd}\` (stop it with \`systemctl --user stop editor-helper\`), elsewhere \`${detached.nohup}\`. Check a few seconds later that it still runs`));
   assert.match(prompt, /If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me: the one time you repeat the token\./);
   // Lex removed the menu's "Pins go to" (2026-10-30): the default command starts Claude Code.
   assert.match(prompt, /For each pin the helper starts Claude Code, until Disconnect MCP\.`?$/);

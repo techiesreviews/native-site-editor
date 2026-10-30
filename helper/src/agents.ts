@@ -61,7 +61,7 @@ export function toolAllowed(call: ToolCall) {
  * allowed, and none of the user's own settings, hooks, plugins or MCP servers. The others ask through ACP
  * for whatever they would run, and the helper answers with the list above.
  */
-export function sessionMeta(agent: PinAgent): Record<string, unknown> {
+export function sessionMeta(agent: PinAgent): { _meta?: Record<string, unknown> } {
   if (agent !== "Claude Code") return {};
   return { _meta: { claudeCode: { options: {
     tools: [],

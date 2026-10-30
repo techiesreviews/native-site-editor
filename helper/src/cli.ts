@@ -34,21 +34,23 @@ The token comes from ${TOKEN_VARIABLE}; Connect to MCP in the editor copies the 
   if (custom && !custom[0]) { console.error("--agent-command needs a command."); process.exitCode = 1; return; }
   const agent = values.agent === undefined ? undefined : AGENT_FLAGS[values.agent.trim().toLowerCase()];
   if (values.agent !== undefined && !agent) { console.error(`--agent is one of ${Object.keys(AGENT_FLAGS).join(", ")}.`); process.exitCode = 1; return; }
+  const most = values["max-agents"] === undefined ? undefined : Number(values["max-agents"]);
+  if (most !== undefined && !(Number.isInteger(most) && most >= 1)) { console.error("--max-agents is a whole number, 1 or more."); process.exitCode = 1; return; }
   const stopping = new AbortController();
-  process.once("SIGINT", () => stopping.abort());
-  process.once("SIGTERM", () => stopping.abort());
-  const why = await runHelper({
+  // Ctrl+C, a stop, and a closed terminal (SIGHUP) all end the helper the same way: each unfinished pin hears it.
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.once(signal, () => stopping.abort());
+  const end = await runHelper({
     url: positionals[0] ?? DEFAULT_URL,
     token,
     ...(agent ? { agent } : {}),
     launch: (program: PinAgent) => launchAgent(custom ?? AGENT_COMMANDS[program], values.verbose),
     // A custom program works under its own name.
     ...(custom ? { agentName: commandName(custom) } : {}),
-    ...(values["max-agents"] ? { maxAgents: Math.max(1, Number(values["max-agents"]) || 3) } : {}),
+    ...(most ? { maxAgents: most } : {}),
     log: line => console.error(`[editor-helper] ${line}`),
     signal: stopping.signal,
   });
-  if (/refused|ended|cannot take pins/.test(why)) process.exitCode = 1;
+  if (end.failed) process.exitCode = 1;
 }
 
 await main().catch((error: unknown) => {

@@ -11,6 +11,12 @@ export const PROTOCOL_VERSION = 1;
 export interface PermissionOption { optionId: string; name?: string; kind: "allow_once" | "allow_always" | "reject_once" | "reject_always" }
 export interface PermissionRequest { sessionId: string; toolCall: ToolCall; options: PermissionOption[] }
 export type PermissionOutcome = { outcome: "cancelled" } | { outcome: "selected"; optionId: string };
+/** session/new as the helper sends it: an empty folder and the editor's MCP server over HTTP. */
+export interface NewSessionParams {
+  cwd: string;
+  mcpServers: { type: "http"; name: string; url: string; headers: { name: string; value: string }[] }[];
+  _meta?: Record<string, unknown>;
+}
 
 export interface AcpHandlers {
   /** The agent asks before running a tool. */
