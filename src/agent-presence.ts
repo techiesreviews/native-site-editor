@@ -284,3 +284,49 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     loaded: () => refresh(true),
   };
 }
+
+/** What an agent's chip offers to undo (ticket am-49): the agent's latest change to the chip's page, and whether it is undone. */
+export interface ChipUndoOffer { change: string; state: "ready" | "undone" }
+/** A chip's Undo as the frame draws it: `token` names the mark in the page (no connection ids there), `change` the change offered. */
+export interface ChipUndoFields { token: string; change: string; undo: "ready" | "undone" | "busy"; problem?: string }
+
+/**
+ * The Undo on agents' chips (ticket am-49), for the preview: what each mark's chip offers (`offer`; none, or a mark
+ * whose name is on a pin, offers nothing), the press under way, and a refusal said on the chip until its next press
+ * or until the mark goes. `changed` is told whenever what the chips say changed.
+ */
+export function createChipUndo(ports: {
+  offer?(mark: AgentMark): ChipUndoOffer | undefined;
+  undo?(mark: AgentMark, change: string): Promise<void>;
+  changed(): void;
+}) {
+  const undoing = new Set<string>(), problems = new Map<string, string>(), tokens = new Map<string, string>();
+  const tokenOf = (key: string) => { let token = tokens.get(key); if (!token) tokens.set(key, token = `agent-${tokens.size + 1}`); return token; };
+  return {
+    /** The fields of `mark`'s chip Undo, none when it offers nothing. */
+    fields(mark: AgentMark): ChipUndoFields | undefined {
+      const offer = !mark.pinned && ports.undo ? ports.offer?.(mark) : undefined, problem = problems.get(mark.key);
+      return offer && { token: tokenOf(mark.key), change: offer.change, undo: undoing.has(mark.key) ? "busy" : offer.state, ...(problem ? { problem } : {}) };
+    },
+    /** The chip of `token` pressed, offering `change`, among the marks now. */
+    async press(marks: readonly AgentMark[], token: string, change: string) {
+      const mark = marks.find(mark => tokens.get(mark.key) === token);
+      if (!mark || undoing.has(mark.key) || !ports.undo) return;
+      undoing.add(mark.key);
+      problems.delete(mark.key);
+      ports.changed();
+      try {
+        await ports.undo(mark, change);
+      } catch (error) {
+        problems.set(mark.key, (error as Error).message || "The change could not be undone.");
+      } finally {
+        undoing.delete(mark.key);
+        ports.changed();
+      }
+    },
+    /** The marks now: a refusal goes with its mark. */
+    marks(marks: readonly AgentMark[]) {
+      for (const key of problems.keys()) if (!marks.some(mark => mark.key === key)) problems.delete(key);
+    },
+  };
+}
