@@ -211,6 +211,8 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
     // as a take would (read, worked on by it, returned to its connection); before that, nothing changes.
     if (!request || !inWorkspace(request, action)) throw new HttpError(404, "No such request in the site and branch this connection works on.");
     if (request.state === "dismissed") throw new HttpError(409, DISMISSED_QUESTION);
+    // Only the connection whose agent is on it takes its answer (its pin stays that agent's).
+    if (request.agent?.grant !== String(action.grantId ?? "")) throw new HttpError(409, "This question is another connection's. Wait for your own requests with wait_for_requests.");
     const last = requestThread(request).at(-1)!;
     if (request.state === "question" || last.from !== "user") {
       if (request.state !== "question") throw new HttpError(409, "This request waits for no answer of the user's. Read it with get_selection (request).");

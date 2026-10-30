@@ -44,6 +44,8 @@ export interface CommitRequest {
   moves: { from: string; to: string }[];
   /** Drafts put back whole, by path (none: the branch's file, or no file); only with no other writes. */
   restore?: Map<string, SavedDraft | undefined>;
+  /** The step's first announcement is said only, no toast (its Undo and Redo still say theirs). */
+  quiet?: true;
   /** The open page whose history takes the step; undefined: the page opened after takes it. */
   anchor: string | undefined;
   /** The file to open after; else the anchor where it went (the home page when it went). */
@@ -244,7 +246,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
       }
       op.recorded();
       ws.afterFileChanges();
-      ws.announce(done, { undo: anchor });
+      ws.announce(done, op.quiet ? "quiet" : { undo: anchor });
       return undefined;
     }
 
@@ -363,7 +365,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
           ws.showRow(initial && op.focus ? op.focus : path ? { file: path } : undefined);
           // The step's first announcement offers its Undo, from the page it reopened, once a page (anchor) records it.
           const undo = initial && anchor !== undefined ? ws.openFile() : undefined;
-          if (message && structuralLive() && receipt.isCurrent() && ws.status() === previousStatus) ws.announce(message, undo === undefined ? undefined : { undo });
+          if (message && structuralLive() && receipt.isCurrent() && ws.status() === previousStatus) ws.announce(message, op.quiet ? "quiet" : undo === undefined ? undefined : { undo });
           return true;
         } finally { end(); }
       };

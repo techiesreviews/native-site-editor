@@ -23,7 +23,7 @@ import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./d
 import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
 import { changedSinceRead } from "../shared/agent-edit";
 import { findPageRef } from "../shared/agent-read";
-import { changeUndone, discardPlan, keptChange, noteAgentChange } from "./agent-changes";
+import { discardPlan, keptChange, noteAgentChange } from "./agent-changes";
 import { applyReplacements } from "../shared/agent-replacements";
 import { toPageAddress } from "../shared/site-rules";
 import type { AgentTextCommit } from "./editor-workspace";
@@ -964,14 +964,13 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
     case "discard_change": {
       // The agent's own change, kept in this tab (src/agent-changes.ts): its files' drafts before it, put back while
       // each is as it left them, as one step of the editor's own Undo.
-      const id = String(args.change ?? ""), change = keptChange({ repoId: command.repoId ?? -1, branch: command.branch }, id);
-      if (!change || change.grant !== command.grantId) throw new Conflict(`No change ${id} of yours is kept in this editor tab any more. Change it back with the edit tools.`);
       // Its undo runs where the change is shown, never in another site or branch.
-      const shown = actions.shown?.();
-      if (!shown || shown.scope.account !== change.scope.account || shown.scope.repoId !== change.scope.repoId || shown.scope.branch !== change.scope.branch)
+      const id = String(args.change ?? ""), shown = actions.shown?.();
+      if (!shown || shown.scope.repoId !== command.repoId || shown.scope.branch !== command.branch)
         throw new Conflict("Show this site and branch in the editor, then undo the change again.");
-      await guarded(actions.edits.run(r => discardPlan(change, r, path => shown.draft(path), shown.openFile)));
-      changeUndone(change);
+      const change = keptChange(shown.scope, id);
+      if (!change || change.grant !== command.grantId) throw new Conflict(`No change ${id} of yours is kept in this editor tab any more. Change it back with the edit tools.`);
+      await guarded(actions.edits.run(r => discardPlan([change], r, path => shown.draft(path), shown.openFile)));
       return { message: `Undid change ${id}: its files are as they were before it, unsaved.`, result: { files: [...change.after.keys()].join(", ") } };
     }
     case "add_section":
@@ -1294,8 +1293,8 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
           lastAfter = after;
           committed = true;
           // Kept for its undo (ticket am-15); an undo is not undone in its turn by an agent.
-          if (!result.duplicate && command.operation !== "discard_change")
-            noteAgentChange({ id: command.id, grant: command.grantId!, agent: agentName(command.agent), operation: command.operation, scope, page: command.path, before, after });
+          if (!result.duplicate && command.grantId && command.operation !== "discard_change")
+            noteAgentChange({ id: command.id, grant: command.grantId, agent: agentName(command.agent), operation: command.operation, scope, page: command.path, before, after });
           return !result.duplicate;
         } catch (error) { return refuse(error); }
       },
