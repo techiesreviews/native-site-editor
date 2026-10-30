@@ -29,3 +29,7 @@ On ticket 40 (2026-10-30) the first `kit pr` in `techies-reviews` tried to open 
 ## Kit commands and evidence
 
 In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines.
+
+## Comments
+
+- Lead, 2026-10-30, also from ticket 40's review (PR techies-reviews#12): (a) the launcher that `kit init` writes uses `mv -T` in its fallback copy step, which only GNU `mv` has, so it fails on macOS without a kit; use a portable rename. (b) No test covers what the hook launcher does when no kit is installed (it must print the "Agent Kit not found" warning and exit 0). Fix both here, with tests.
