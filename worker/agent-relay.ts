@@ -1,4 +1,5 @@
 import { workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
+import { LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, readLiveClientMessage, type LiveAccess, type LiveServerMessage } from "../shared/live-room";
 
 export interface RelayScope {
   workspace: AgentWorkspace;
@@ -79,8 +80,7 @@ const sameScope = (a: RelayScope, b: RelayScope) => a.tabId === b.tabId && a.gen
 /** Shared by the editor upgrade and future MCP dispatchers. Repository names can
  * change; the repository id and case-insensitive GitHub account are the identity. */
 export async function relayObjectName(workspace: AgentWorkspace): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", utf8.encode(workspaceKey(workspace)));
-  return `agent-relay:${Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("")}`;
+  return `agent-relay:${await sha256(workspaceKey(workspace))}`;
 }
 
 type BodyRead = { ok: true; value: JsonValue } | { ok: false; code: "timeout" | "too-large" | "cancelled" | "invalid" };
@@ -464,5 +464,114 @@ export class AgentRelay {
     this.sockets.delete(socket);
     for (const call of [...this.calls.values()])
       if (call.socket === socket) call.finish(lost(call));
+  }
+}
+
+/** The Durable Object instance holding a site and branch's live rooms (ADR 0003). The agent relay's
+ * instances are per GitHub account; collaborators signed in as other accounts must meet in one room,
+ * so live rooms use the same class under a name of the repository id and branch only. */
+export async function liveRoomObjectName(repoId: number, branch: string): Promise<string> {
+  return `live-room:${await sha256(JSON.stringify([repoId, branch]))}`;
+}
+/** A file's room inside that instance: a fixed-width socket tag, whatever the path's length. */
+export async function liveRoomTag(file: string): Promise<string> {
+  return sha256(file);
+}
+async function sha256(value: string) {
+  const hash = await crypto.subtle.digest("SHA-256", utf8.encode(value));
+  return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export interface LiveSocket {
+  readonly readyState: number;
+  send(message: string | ArrayBuffer): void;
+  close(code?: number, reason?: string): void;
+  serializeAttachment(value: unknown): void;
+  deserializeAttachment(): unknown;
+}
+interface LiveAttachment { role: "live"; room: string; peer: string; access: LiveAccess }
+const readLive = (value: unknown): LiveAttachment | null => {
+  const item = value as Partial<LiveAttachment> | null;
+  return item && typeof item === "object" && item.role === "live" && typeof item.room === "string" && /^[a-f\d]{64}$/.test(item.room) &&
+    typeof item.peer === "string" && (item.access === "editor" || item.access === "agent") ? item as LiveAttachment : null;
+};
+
+/** Forwards each room's frames and stores nothing: no storage port, no history, no keys. Who is in
+ * which room lives in the socket attachments, which hibernation keeps with the sockets. Binary
+ * frames (ciphertext) go to the room's other sockets unread; the only text frames it acts on are
+ * the key handover's public keys and wrapped keys (shared/live-room.ts). */
+export class LiveRooms {
+  static readonly identityHeader = "X-Live-Room";
+  private sockets = new Map<LiveSocket, LiveAttachment>();
+
+  constructor(sockets: LiveSocket[]) {
+    for (const socket of sockets) {
+      const metadata = readLive(socket.deserializeAttachment());
+      if (metadata && socket.readyState === 1) this.sockets.set(socket, metadata);
+    }
+  }
+
+  static owns(socket: { deserializeAttachment(): unknown }) { return readLive(socket.deserializeAttachment()) !== null; }
+
+  private members(room: string, except?: LiveSocket) {
+    return [...this.sockets].filter(([socket, metadata]) => socket !== except && metadata.room === room && socket.readyState === 1);
+  }
+  private send(socket: LiveSocket, message: LiveServerMessage | ArrayBuffer) {
+    try { socket.send(message instanceof ArrayBuffer ? message : JSON.stringify(message)); }
+    catch { this.leave(socket); }
+  }
+
+  /** An agent joins only a room a tab has open: only a tab makes the room key. */
+  admits(room: string, access: LiveAccess) {
+    return access !== "agent" || this.members(room).some(([, metadata]) => metadata.access !== "agent");
+  }
+  /** Refuses (false) whom `admits` refuses. */
+  join(socket: LiveSocket, room: string, access: LiveAccess): boolean {
+    if (!this.admits(room, access)) return false;
+    const others = this.members(room);
+    const metadata: LiveAttachment = { role: "live", room, peer: Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join(""), access };
+    socket.serializeAttachment(metadata);
+    this.sockets.set(socket, metadata);
+    this.send(socket, { type: "welcome", peer: metadata.peer, peers: others.map(([, other]) => ({ peer: other.peer, access: other.access })) });
+    for (const [other] of others) this.send(other, { type: "joined", peer: metadata.peer, access });
+    return true;
+  }
+
+  message(socket: LiveSocket, message: string | ArrayBuffer): boolean {
+    const metadata = this.sockets.get(socket);
+    if (!metadata || socket.readyState !== 1) return false;
+    if ((typeof message === "string" ? bytes(message) : message.byteLength) > LIVE_MESSAGE_LIMIT) {
+      this.leave(socket);
+      socket.close(1009, "Live room message is too large.");
+      return false;
+    }
+    if (typeof message !== "string") {
+      for (const [other] of this.members(metadata.room, socket)) this.send(other, message);
+      return true;
+    }
+    const value = readLiveClientMessage(message);
+    if (!value) return false;
+    if (value.type === "key-request") {
+      for (const [other] of this.members(metadata.room, socket)) this.send(other, { type: "key-request", from: metadata.peer, publicKey: value.publicKey });
+      return true;
+    }
+    const target = this.members(metadata.room, socket).find(([, other]) => other.peer === value.to);
+    if (!target) return false;
+    this.send(target[0], { type: "key", from: metadata.peer, publicKey: value.publicKey, wrapped: value.wrapped });
+    return true;
+  }
+
+  /** A clean leave is announced at once. The room's last tab leaving closes the agents still in it. */
+  leave(socket: LiveSocket) {
+    const metadata = this.sockets.get(socket);
+    if (!metadata) return;
+    this.sockets.delete(socket);
+    const others = this.members(metadata.room);
+    for (const [other] of others) this.send(other, { type: "left", peer: metadata.peer });
+    if (metadata.access === "agent" || others.some(([, other]) => other.access !== "agent")) return;
+    for (const [other] of others) {
+      this.sockets.delete(other);
+      try { other.close(LIVE_ROOM_CLOSED, "No tab has this room open."); } catch { /* Already closed. */ }
+    }
   }
 }

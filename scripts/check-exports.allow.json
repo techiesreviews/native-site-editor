@@ -73,5 +73,25 @@
     "file": "worker/starter.ts",
     "name": "NATIVE_STARTER_VERSION",
     "reason": "Browser starter fixtures and component-loader specs load the matching versioned starter assets."
+  },
+  {
+    "file": "src/live-room.ts",
+    "name": "(file unreachable)",
+    "reason": "Live rooms (ticket am-20) land before their first caller: slice am-21 opens src/live-room.ts lazily when a file gets a second participant. tests/live-room.test.ts proves it until then; remove this entry with that wiring."
+  },
+  {
+    "file": "shared/live-room.ts",
+    "name": "PRESENCE_HEARTBEAT_MS",
+    "reason": "Live rooms (ticket am-20) land before their first caller: slice am-21 opens src/live-room.ts lazily when a file gets a second participant. tests/live-room.test.ts proves it until then; remove this entry with that wiring."
+  },
+  {
+    "file": "shared/live-room.ts",
+    "name": "PRESENCE_TIMEOUT_MS",
+    "reason": "Live rooms (ticket am-20) land before their first caller: slice am-21 opens src/live-room.ts lazily when a file gets a second participant. tests/live-room.test.ts proves it until then; remove this entry with that wiring."
+  },
+  {
+    "file": "shared/live-room.ts",
+    "name": "readLiveServerMessage",
+    "reason": "Live rooms (ticket am-20) land before their first caller: slice am-21 opens src/live-room.ts lazily when a file gets a second participant. tests/live-room.test.ts proves it until then; remove this entry with that wiring."
   }
 ]
