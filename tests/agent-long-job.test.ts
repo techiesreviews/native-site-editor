@@ -531,6 +531,9 @@ test("a look under a changed agent name ends the held wait: the earlier look sti
   } finally { await h.worker.dispose(); }
 });
 
+/** A look's answer, as the tests read it. */
+type LookAnswer = { status: string; pollIntervalMs?: number; result: { isError?: boolean; content: { type: string; text: string }[] } };
+
 /** A job whose first look the tab holds, and a second look under a changed agent name that ended its wait. */
 async function renamedTakeover(h: Awaited<ReturnType<typeof connected>>, signal?: AbortSignal) {
   const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
@@ -538,7 +541,7 @@ async function renamedTakeover(h: Awaited<ReturnType<typeof connected>>, signal?
   await until(() => h.commands.length === 1);
   await h.rename("Renamed");
   const second = h.dispatchFetch(origin + "/mcp", modernRequest(h.token, "tasks/get", { taskId }, true, 2, signal))
-    .then(async response => JSON.parse(await response.text()).result as any);
+    .then(async response => (JSON.parse(await response.text()) as { result: LookAnswer }).result);
   await until(() => h.commands.length === 2);
   assert.equal((await first).result.status, "working");
   return { taskId, second };

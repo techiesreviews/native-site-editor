@@ -862,7 +862,7 @@ function siteServer(connection: Connection, env: Env, origin: string, exchange: 
     const outcome = await call.requestCommand("wait_for_requests", { all }, watching ? waitMs : 0);
     // A look that ended its job's wait the tab already had (the command changed between looks, ticket am-54)
     // gives the job's only final answer, even with nothing come: its hint brings back what that wait took.
-    // A replaced look still works whatever it carries: the newest look gives the job's answer.
+    // A replaced look still works: the newest look gives the job's answer (the relay never marks one; a guard only).
     if (!outcome.tookOver || outcome.code === "replaced") return answerWait(outcome, watching);
     const once = answerWait(outcome, watching, TOOK_OVER_HINT);
     return once.waitOn ? { result: once.result } : once;
