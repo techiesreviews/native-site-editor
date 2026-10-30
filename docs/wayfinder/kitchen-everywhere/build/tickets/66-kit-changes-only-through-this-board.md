@@ -1,7 +1,7 @@
 ---
 title: "Kitchen rules: shared-kit changes go through this board; a build's tests live in its project; reports in plain English; AGENTS.md holds rules and pointers"
 type: task (AFK)
-status: open
+status: closed
 assignee: ke-66
 builder: claude
 blocked_by: [77-check-the-retro-tickets]
@@ -50,3 +50,21 @@ The matching line for the `lex-coding` skill goes into [ticket 50's Comments](50
 ## Kit commands and evidence
 
 Agent Kit is required. In `~/Projects/agent-kit`: `scripts/agents/kit doctor`, `kit unit --affected`, `kit review`, `kit pr` (its CI also runs this editor's tests against the changed kit); report the RESULT lines, the PR URL and merge SHA, and `kit rulebook | grep -n` output for the new lines here. This ticket's Done lands on `dev` with this repo's `scripts/agents/kit pr` (docs tier).
+
+## Done (2026-10-31)
+
+- **The kit PR:** https://github.com/techiesreviews/agent-kit/pull/7, landed through the kit's own `kit pr` as `a6a53bf` on the kit's `main`, with the lead's waiver after three fix rounds. Only two validation gaps were open, no defects: the review-prompt test checks that the plain-English line is there but not that it is there once (the build test does), and the board-rule test does not pin "in the Native Site Editor's repo". CI run 41140932054 green. Second look: skipped (Grok's weekly count used up, 8/8 in 2026-W44; the free OpenCode model opened no session within 300 s).
+- **Rulebook:** four new house rules in the kit's `docs/kitchen.md`, each dated "Lex, 2026-10-30": Plain English; Kit changes go through one board (the board in the Native Site Editor's repo, on its landing branch, as the ke-77 check allowed); A build's tests stay in the project; Always-loaded files stay short.
+- **`kit init`:** the `docs/agents/kitchen.md` pointer it writes for a new project says that a kit change is a ticket on this board (`docs/wayfinder/kitchen-everywhere/build/` in native-site-editor, on `dev`), built only by the board's orchestrator. A project that already has the file keeps it and gets the rule from `kit rulebook`.
+- **Plain English in every prompt:** one shared line, `plainEnglish` in `review-brief.mjs` ("Write in plain English: Lex reads every report, ticket and commit message."). It is part of `reviewFormat`, which every review gets (Claude's, the second look and `kit ux`, whose brief names it as the part of the format that applies), and of `buildContract` in `agent-run.mjs`, which every build gets, hand-written briefs included.
+- **Tests:** `kit-init` (the pointer line), `kit-review` (the wording pinned, the line in every review prompt), `agent-scripts` (a hand-written build brief gets the line once), `kit-ux` (the ux brief keeps it), `kit-rulebook` (`kit rulebook` prints the four rules under House rules, with the board's folder and who builds).
+- **`test:kit-clean`:** it failed twice, each time on `tests/kit-launcher.test.ts`, where `kit update` exited 2 (the launcher's "no Agent Kit" exit). It could not be reproduced: 18 runs of that file, six at a time, and two more full guard runs all passed. The launcher test's `kit update` steps now print the launcher's output when they fail, so the next failure will name its cause. `kit pr`'s own `kit-clean` step passed on each of its three runs.
+- **Kit commands:** `kit doctor` → `RESULT: ok doctor 11/11 checks passed`; `kit unit --affected` → `RESULT: ok unit 307/307 (6 files)`; `npm test` 1376/1376; `npm run lint` ok; `kit review` (claude-opus-5-5) → one P3 and two gaps, fixed; `kit pr` → three Claude review rounds (fixed: the builder line moved into the shared build contract, the ux brief, the init pointer wording, the rulebook test), then `RESULT: ok merged #7 a6a53bf`.
+- **On this machine:** the update timer brought the kit at 2026-10-31 00:15 CET (`RESULT: ok update 954fded (was 504d1f6)`; `954fded` holds `a6a53bf` and ke-68's guard). This repo's `scripts/agents/kit version` → `RESULT: ok version 954fded`. `kit rulebook | grep -n` here and in `script-editor` print the same lines: `28:- **Plain English** (Lex, 2026-10-30)…`, `41:- **Kit changes go through one board** (Lex, 2026-10-30)…`, `46:- **A build's tests stay in the project** (Lex, 2026-10-30)…`, `50:- **Always-loaded files stay short** (Lex, 2026-10-30)…`.
+- **Lex's skill:** the `lex-coding` line stays a proposal in [ticket 50's Comments](50-lex-coding-rule.md#comments); the skill was not touched, and no skill text went into any repo.
+
+## Follow-ups
+
+- Waived (gap): the review-prompt test in `tests/kit-review.test.ts` should check that the plain-English line appears once; the board-rule test should also pin "in the Native Site Editor's repo".
+- `test:kit-clean`: if the `kit-launcher` test fails again, its message now carries the launcher's output; turn that into a fix ticket.
+- Projects set up before this change (script-editor, lexvd.nl) keep their old `docs/agents/kitchen.md` pointer; they see the board rule only through `kit rulebook`.
