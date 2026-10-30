@@ -62,7 +62,7 @@ export interface Mode {
 }
 
 /** The instance Done returns to: its page, its node there, and the outermost component. */
-export interface Instance { page: string; node: number[]; tag: string; template: string }
+export interface DoneTarget { page: string; node: number[]; tag: string; template: string }
 
 /** What a rename's `run` resolves to when the step was written: where the template went. */
 export interface Renamed { tag: string; template: string; notes: readonly string[] }
@@ -127,10 +127,10 @@ export interface ComponentMode {
   /**
    * Ends the mode (Done) and any entry still loading: every share released, the frame told; the instance
    * it was on, or the instance of an entry still loading (the latest entry wins), so Done returns to it.
-   * A loading instance whose page changed since its entry read it is not returned (its node may be
-   * another element now), nor is an entry with no instance: Done then returns to the mode's instance, if any.
+   * A loading instance whose page changed since its entry read it (or had no source then) is not returned
+   * (its node may be another element), nor is an entry with no instance: Done then returns to the mode's instance, if any.
    */
-  leave(): Instance | undefined;
+  leave(): DoneTarget | undefined;
   /** Ends everything: the mode (frame told, nothing drawn), pending transitions (they settle "stale"), the opening. */
   destroy(): void;
 }
@@ -169,7 +169,7 @@ type Wait = { kind: "mounted" | "refused" | "ready" | "timeout" | "cancelled" } 
  * A pending enter: `cancel` settles it "stale" and releases its share at once; `loading`: its
  * instance until it settles, with the page source it was read from.
  */
-type Entry = { cancel(): void; share?: () => void; loading?: Instance & { source: string | undefined } };
+type Entry = { cancel(): void; share?: () => void; loading?: DoneTarget & { source: string | undefined } };
 
 const once = (release: () => void) => {
   let done = false;
@@ -281,7 +281,7 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
   }
 
   /** Lets go of every share the mode holds and forgets it; `tell`: the host draws again. */
-  function end(tell: boolean): Instance | undefined {
+  function end(tell: boolean): DoneTarget | undefined {
     const was = state;
     if (!was) return undefined;
     state = undefined;
@@ -456,9 +456,10 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     leave() {
       // Done also ends an entry or a level still loading: nothing it started frames later, no share stays.
       // An entry still loading is where Done returns: its instance, as the mode would have framed it,
-      // while its page reads as the entry read it.
+      // while its page reads as the entry read it (a page it could not read gives no instance).
       const at = latest?.loading;
-      const loading = at && peek.source(at.page) === at.source ? { page: at.page, node: at.node, tag: at.tag, template: at.template } : undefined;
+      const loading = at && at.source !== undefined && peek.source(at.page) === at.source
+        ? { page: at.page, node: [...at.node], tag: at.tag, template: at.template } : undefined;
       latest?.cancel();
       latest = undefined;
       for (const release of pending) release();
