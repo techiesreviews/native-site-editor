@@ -587,7 +587,12 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       undoing.delete(id);
       cardKey = "";
       layout();
-      card.querySelector<HTMLButtonElement>(".agent-pin-card__undo")?.focus();
+      // Still this request's card: the focus back on Undo, or on Clear once Undo reads Undone (disabled, unfocusable).
+      // Another card opened meanwhile keeps its own focus.
+      if (openId === id && !openFromTray && !card.hidden) {
+        const undo = card.querySelector<HTMLButtonElement>(".agent-pin-card__undo");
+        (undo && !undo.disabled ? undo : card.querySelector<HTMLButtonElement>(".agent-pin-card__dismiss"))?.focus();
+      }
     }
   }
   function fit(input: HTMLTextAreaElement) {

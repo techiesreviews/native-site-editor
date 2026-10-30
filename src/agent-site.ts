@@ -23,7 +23,7 @@ import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./d
 import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
 import { changedSinceRead } from "../shared/agent-edit";
 import { findPageRef } from "../shared/agent-read";
-import { discardPlan, keptChange, noteAgentChange } from "./agent-changes";
+import { discardedMessage, discardPlan, keptChange, noteAgentChange } from "./agent-changes";
 import { applyReplacements } from "../shared/agent-replacements";
 import { toPageAddress } from "../shared/site-rules";
 import type { AgentTextCommit } from "./editor-workspace";
@@ -971,7 +971,7 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       const change = keptChange(shown.scope, id);
       if (!change || change.grant !== command.grantId) throw new Conflict(`No change ${id} of yours is kept in this editor tab any more. Change it back with the edit tools.`);
       await guarded(actions.edits.run(r => discardPlan([change], r, path => shown.draft(path), shown.openFile)));
-      return { message: `Undid change ${id}: its files are as they were before it, unsaved.`, result: { files: [...change.after.keys()].join(", ") } };
+      return { message: discardedMessage(id), result: { files: [...change.after.keys()].join(", ") } };
     }
     case "add_section":
     case "move_section":
@@ -1179,7 +1179,7 @@ async function structuralOutcome(command: AgentCommand, after: Map<string, Saved
     case "move_file": return { message: `Moved ${path} to ${String(args.to ?? "")}, unsaved.`, result: { path: String(args.to ?? "") } };
     case "delete_file": return { message: `Deleted ${path}, unsaved (Restore brings it back).` };
     case "remove_section": return { message: `Section ${args.section} removed from ${path}, unsaved.`, result: { ...await hash(path) } };
-    case "discard_change": return { message: `Undid change ${String(args.change ?? "")}: its files are as they were before it, unsaved.`,
+    case "discard_change": return { message: discardedMessage(String(args.change ?? "")),
       result: { files: [...after.keys()].join(", "), ...await hash(path) } };
     case "add_section": case "move_section": {
       if (!plan?.after) break;

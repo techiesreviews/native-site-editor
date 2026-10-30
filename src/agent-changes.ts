@@ -114,13 +114,18 @@ export function undoState(scope: Scope, ids: readonly string[] | undefined, draf
  * finds its files as it left them (`drafts`: the draft of a path now). The page shown stays open when it is
  * still there after; else the newest change's own page, else the home page.
  */
-export function discardPlan(list: readonly AgentChange[], r: Reads, drafts: Drafts, openFile: string | undefined): PlanResult {
+export function discardPlan(list: readonly AgentChange[], r: Reads, drafts: Drafts, openFile: string | undefined, reader: "agent" | "user" = "agent"): PlanResult {
   const names = [...new Set(list.map(change => change.agent || "the agent"))].join(", ");
   const { state, changed, merged } = walk(list, drafts);
   for (const path of merged.keys()) r.source(path);
-  if (state === "undone") return { refuse: `${list.map(change => change.id).join(", ")} ${list.length === 1 ? "is" : "are"} undone already: the files are as they were before.` };
-  if (state === "changed")
-    return { refuse: `${changed.path} changed since ${changed.change.agent || "the agent"}'s change ${changed.change.id}, so it cannot be undone as a whole. Change it back with the edit tools.` };
+  // Refusals in the reader's words: an agent gets the change's id and its next step; the user, on the pin's card, neither.
+  if (state === "undone") return { refuse: reader === "user" ? "This is undone already." :
+    `${list.map(change => change.id).join(", ")} ${list.length === 1 ? "is" : "are"} undone already: the files are as they were before.` };
+  if (state === "changed") {
+    const who = changed.change.agent || "the agent";
+    return { refuse: reader === "user" ? `${changed.path} changed since ${who}'s change. Nothing was undone.`
+      : `${changed.path} changed since ${who}'s change ${changed.change.id}, so it cannot be undone as a whole. Change it back with the edit tools.` };
+  }
   // A file changed is there after the undo when it was before (a draft not deleted, or the branch's file).
   const there = (path: string) => {
     const file = merged.get(path);
@@ -142,21 +147,28 @@ export function discardPlan(list: readonly AgentChange[], r: Reads, drafts: Draf
 
 /**
  * The user's Undo on a done pin's card: the kept changes of `ids` its agent's connection (`grant`) made, newest first, put back as one step, in the
- * workspace they were made in, while it is the one shown. Undone already (the agent discarded them), nothing
- * happens; refused, nothing is written and the reason is thrown.
+ * workspace the click was in (`scope`, taken as it was pressed), while it is the one shown. Undone already (the agent
+ * discarded them), nothing happens; refused, nothing is written and the reason is thrown, in the user's words.
  */
 export async function undoAgentChanges(ids: readonly string[], grant: string | undefined, ports: {
-  scope(): DraftScope | undefined;
+  scope: DraftScope | undefined;
+  /** The workspace shown now. */
+  shown(): DraftScope | undefined;
   edits: Pick<GuardedEdits, "run">;
   draft(scope: DraftScope, path: string): SavedDraft | undefined;
   openFile(): string | undefined;
 }) {
-  const scope = ports.scope();
+  const { scope } = ports;
   if (!scope) throw new Error("Open the site first.");
+  if (!sameScope(ports.shown(), scope)) throw new Error(SITE_CHANGED);
   const list = grant ? keptChanges(scope, ids, grant) : [];
   if (!list.length) throw new Error("This tab no longer keeps the agent's change. Change it back by hand.");
   const drafts: Drafts = path => ports.draft(scope, path);
   if (walk(list, drafts).state === "undone") return;
-  const outcome: Outcome = await ports.edits.run(r => discardPlan(list, r, drafts, ports.openFile()), { guard: () => sameScope(ports.scope(), scope) });
-  if (!outcome.ok) throw new Error(outcome.reason === "stale" ? "The site changed meanwhile. Nothing was undone; try again." : outcome.message);
+  const outcome: Outcome = await ports.edits.run(r => discardPlan(list, r, drafts, ports.openFile(), "user"), { guard: () => sameScope(ports.shown(), scope) });
+  if (!outcome.ok) throw new Error(outcome.reason === "stale" ? SITE_CHANGED : outcome.message);
 }
+const SITE_CHANGED = "The site changed meanwhile. Nothing was undone; try again.";
+
+/** What an agent is told once discard_change undid its change (its reply, and the receipt's recorded one). */
+export const discardedMessage = (id: string) => `Undid change ${id}: its files are as they were before it, unsaved.`;
