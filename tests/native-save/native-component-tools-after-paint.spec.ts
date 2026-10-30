@@ -162,5 +162,8 @@ test("component tools that land right after a Bold leave the next bar change wor
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("l");
   await expect(editBar(page).getByRole("combobox", { name: "Text size" })).toHaveValue("l");
+  // Bold and L both land on the new paragraph; the lead keeps its plain text.
+  await expect.poll(() => effectiveSource(page, baseURL, "index.html"))
+    .toMatch(/<p class="lead"[^>]*>[^<]*<\/p>\s*<p style="font-size: 1.25rem"><strong>Text<\/strong><\/p>/);
   await expect(page.getByText("The source changed. Select the element again and try again.")).toHaveCount(0);
 });
