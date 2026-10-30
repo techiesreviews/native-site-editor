@@ -1518,6 +1518,8 @@ test("Stop ends one of three agents: its row, outline and dots go, the focus sta
     await page.getByRole("button", { name: "Stop Caption writer" }).click();
     await expect(names).toHaveText(["Header writer"]);
     await expect(list).toBeFocused();
+    // Focused after a click: no ring.
+    expect(await list.evaluate(element => getComputedStyle(element).outlineStyle)).toBe("none");
     letEditsLoad();
     await refused(captioning);
     expect(JSON.stringify(await subagents.call("read_file", { path: "index.html", agent: "Header writer" }))).not.toContain("Caption title");
@@ -1553,7 +1555,7 @@ test("Stop ends one of three agents: its row, outline and dots go, the focus sta
     await page.keyboard.press("Enter");
     await expect(list).toBeHidden();
     await expect(page.locator(".agent-menu")).toBeFocused();
-    await expect(page.locator(".agent-menu")).toHaveAccessibleName("MCP");
+    await expect(page.locator(".agent-menu")).toHaveAccessibleName("MCP connection");
     expect(await page.locator(".agent-menu").evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe("none");
     await page.keyboard.press("Enter");
     await expect(action).toHaveText("Disconnect MCP");
@@ -1613,7 +1615,7 @@ test("a Stop pressed in another tab ends the agent in the receiving tab: its hel
     await other.getByRole("button", { name: "Stop Image finder" }).click();
     await expect(other.locator(".agent-menu__agents")).toBeHidden();
     await expect(other.locator(".agent-menu")).toBeFocused();
-    await expect(other.locator(".agent-menu")).toHaveAccessibleName("MCP");
+    await expect(other.locator(".agent-menu")).toHaveAccessibleName("MCP connection");
 
     // The receiving tab: the held wait ends refused, the chip and dot go, with no reload.
     const answer = await held;
