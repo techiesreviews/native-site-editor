@@ -6,7 +6,8 @@ import { test } from "node:test";
 import { signal } from "@preact/signals-core";
 import { createDraftStore } from "../src/draft-store";
 import { draftKey, type DraftScope } from "../src/drafts";
-import { LIVE_TEXT_CATCH_UP_MS, startLiveText } from "../src/live-text";
+import { LIVE_TEXT_CATCH_UP_MS, startLiveText, type CopyKeeper, type KeptCopy } from "../src/live-text";
+import { forEachAwait, type AwaitRace } from "./support/await-race";
 import type { LiveClock, LiveRoomOptions } from "../src/live-room";
 import type { LiveAccess } from "../shared/live-room";
 
@@ -30,6 +31,8 @@ function fakeRoom() {
   const tell = (me: Member) => { for (const other of members) if (other !== me) other.options.onMembers?.(others(other)); };
   return {
     frames: 0,
+    /** Every frame sent, by sender. */
+    log: [] as { from: string; bytes: Uint8Array }[],
     members,
     open(options: LiveRoomOptions, access: LiveAccess = "editor") {
       const me: Member = { id: String(++next), options, access, cut: false };
@@ -46,6 +49,7 @@ function fakeRoom() {
           if (!members.has(me) || me.cut) return false;
           room.frames++;
           const copy = Uint8Array.from(bytes);
+          room.log.push({ from: me.id, bytes: copy });
           for (const other of members) if (other !== me && !other.cut) setImmediate(() => { if (members.has(other) && !other.cut) other.options.onMessage(copy); });
           return true;
         },
@@ -55,19 +59,31 @@ function fakeRoom() {
   };
 }
 
-function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?: string; clock?: LiveClock } = {}) {
+/** One browser's kept copies (memory): a reload passes the same one again. */
+function keeper(): CopyKeeper & { copies: Map<string, KeptCopy | undefined> } {
+  const copies = new Map<string, KeptCopy | undefined>();
+  return { copies, read: async key => copies.get(key), write: (key, copy) => { copies.set(key, copy); } };
+}
+
+function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?: string; clock?: LiveClock; keeper?: CopyKeeper; race?: AwaitRace } = {}) {
   const store = createDraftStore();
   store.open(scope, path, { text: base, baseSha: options.baseSha ?? sha });
   if (text !== base) store.edit({ scope, path, text, label: "Earlier draft" });
   const openFile = signal<string | undefined>(path);
   let yjsLoads = 0, socket: ReturnType<typeof room.open> | undefined;
+  const kept = options.keeper ?? keeper(), sockets: string[] = [];
+  /** The copy's last load await is over: from here it is made at once. */
+  let keptRead = false;
+  const race = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => options.race ? options.race.port(name, work) : work;
   const stop = startLiveText({
     store, openFile, scope: () => scope, ...(options.clock ? { clock: options.clock } : {}),
-    openRoom: roomOptions => (socket = room.open(roomOptions)),
-    loadYjs: () => { yjsLoads++; return import("yjs"); },
+    keeper: { read: key => race("kept copy", (key: string) => kept.read(key))(key).finally(() => { keptRead = true; }), write: (key, copy) => kept.write(key, copy) },
+    openRoom: roomOptions => { socket = room.open(roomOptions); sockets.push(socket.me.id); return socket; },
+    loadYjs: race("Yjs", () => { yjsLoads++; return import("yjs"); }),
   });
   return {
-    store, openFile, stop,
+    store, openFile, stop, keeper: kept, sockets,
+    get keptRead() { return keptRead; },
     get yjsLoads() { return yjsLoads; },
     get socket() { return socket!; },
     get text() { return store.text(scope, path)!; },
@@ -221,4 +237,146 @@ test("the copy follows the open file: another file closes the room, and agents a
   await quiet();
   assert.equal([...room.members].filter(member => member.access === "editor").length, 0, "the tab left the file's room");
   anna.stop();
+});
+
+const times = (text: string, part: string) => text.split(part).length - 1;
+
+test("a tab that comes back to a page it shared (another page meanwhile, or a reload) adds nothing twice", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Warm ");
+  lex.type(base.length, "<p>Closed Mondays.</p>\n");
+  await until(() => anna.text === lex.text && anna.text.includes("Warm") && anna.text.includes("Mondays"), "both edits");
+  // Anna opens another page; Lex goes on; Anna comes back.
+  anna.openFile.value = "about.html";
+  await quiet();
+  lex.type(0, "<!-- while Anna was away -->");
+  anna.openFile.value = path;
+  await until(() => anna.text.startsWith("<!-- while Anna was away -->"), "Anna catching up");
+  await quiet();
+  assert.equal(anna.text, lex.text);
+  assert.deepEqual([times(anna.text, "Warm "), times(anna.text, "Mondays"), times(anna.text, "away")], [1, 1, 1]);
+  // Anna reloads (a new page in the same browser, with its draft and kept copy) while Lex types.
+  anna.stop();
+  await quiet();
+  lex.type(0, "<!-- during the reload -->");
+  const again = tab(room, anna.text, { keeper: anna.keeper });
+  await until(() => again.text.startsWith("<!-- during the reload -->"), "the reloaded tab catching up");
+  await quiet();
+  assert.equal(again.text, lex.text);
+  assert.deepEqual([times(again.text, "Warm "), times(again.text, "Mondays"), times(again.text, "away"), times(again.text, "reload")], [1, 1, 1, 1]);
+  again.type(0, "x");
+  await until(() => lex.text.startsWith("x<!--"), "its next edit");
+  again.stop(); lex.stop();
+});
+
+test("two tabs with the same draft that each start their own copy (a catch-up request lost) do not double it", async () => {
+  let now = 0, id = 0;
+  const timers = new Map<number, { at: number; run(): void }>();
+  const clock: LiveClock = { now: () => now, setTimeout(run, delay) { timers.set(++id, { at: now + delay, run }); return id; }, clearTimeout(timer) { timers.delete(timer as number); } };
+  const room = fakeRoom(), draft = `${base}<p>Same unsaved line.</p>\n`;
+  const anna = tab(room, draft);
+  await quiet();
+  const lex = tab(room, draft, { clock });
+  await until(() => lex.sockets.length === 1, "Lex in the room");
+  // Lex's socket is cut: his request never arrives, and after the wait he starts from his own draft too.
+  lex.socket.me.cut = true;
+  await until(() => lex.yjsLoads === 1 && anna.yjsLoads === 1, "both copies");
+  await quiet();
+  now += LIVE_TEXT_CATCH_UP_MS;
+  for (const [key, timer] of [...timers]) if (timer.at <= now) { timers.delete(key); timer.run(); }
+  await quiet();
+  lex.socket.me.cut = false;
+  lex.socket.me.options.onKey?.();
+  await quiet();
+  assert.deepEqual([anna.text, lex.text], [draft, draft], "the same draft makes the same items: nothing doubled");
+  anna.type(0, "x");
+  await until(() => lex.text === `x${draft}`, "an edit after");
+  anna.stop(); lex.stop();
+});
+
+test("Discard takes that tab out of the shared copy: the others keep their changes; opening the page again takes the room's copy", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Warm ");
+  lex.type(base.length, "<p>Lex's unsaved line.</p>\n");
+  await until(() => anna.text === lex.text && anna.text.includes("Warm") && anna.text.includes("Lex's"), "both edits");
+  const shared = lex.text;
+  assert.equal(anna.store.discard(scope, path).ok, true);
+  await quiet();
+  assert.equal(anna.text, base, "Anna's page is GitHub's text");
+  assert.equal(lex.text, shared, "Lex keeps everyone's changes");
+  assert.equal([...room.members].filter(member => member.access === "editor").length, 1, "Anna left the room");
+  lex.type(0, "<!-- later -->");
+  await quiet();
+  assert.equal(anna.text, base, "and does not follow it any more");
+  // Opening the page again joins once more, from the room's copy.
+  anna.openFile.value = "about.html";
+  await quiet();
+  anna.openFile.value = path;
+  await until(() => anna.text === lex.text, "Anna back on the room's copy");
+  assert.equal(times(anna.text, "Warm "), 1);
+  anna.stop(); lex.stop();
+});
+
+/** The copy's starting-text tag of each frame Anna's sockets sent after `from` in the log. */
+const tagsSent = (room: ReturnType<typeof fakeRoom>, sockets: string[], from: number) =>
+  room.log.slice(from).filter(item => sockets.includes(item.from)).map(item => Buffer.from(item.bytes.subarray(2, 22)).toString("hex"));
+type RaceRun = { done: Promise<unknown>; room: ReturnType<typeof fakeRoom>; anna?: ReturnType<typeof tab>; lex?: ReturnType<typeof tab>; at: number; loading: boolean };
+/** Anna has an unsaved draft and the page to herself; Lex opens it: her Yjs load, kept-copy read and starting digest are the awaits. */
+function startingRace(race: AwaitRace): RaceRun {
+  const subtle = crypto.subtle, digest = subtle.digest.bind(subtle);
+  Object.defineProperty(subtle, "digest", { configurable: true, value: race.port("digest", (...args: Parameters<typeof digest>) => digest(...args)) });
+  const run: RaceRun = { done: Promise.resolve(), room: fakeRoom(), at: 0, loading: true };
+  run.done = (async () => {
+    run.anna = tab(run.room, `${base}<p>Anna's unsaved line.</p>\n`, { race });
+    await quiet();
+    run.lex = tab(run.room);
+    await until(() => run.anna!.yjsLoads > 0 && run.lex!.yjsLoads > 0, "both loading");
+    await new Promise(resolve => setTimeout(resolve, 120));
+  })().finally(() => { Reflect.deleteProperty(subtle, "digest"); });
+  return run;
+}
+const endRace = (run: RaceRun) => { run.anna?.stop(); run.lex?.stop(); };
+
+test("stopping at any await of starting the copy sends and writes nothing more", async () => {
+  const points = await forEachAwait(startingRace, run => {
+    run.at = run.room.log.length;
+    run.anna!.stop();
+  }, async run => {
+    let shared = 0;
+    run.anna!.store.subscribe(event => { if (event.type === "text" && event.origin === "shared") shared++; });
+    await quiet();
+    assert.deepEqual(tagsSent(run.room, run.anna!.sockets, run.at), [], "no frame after the stop");
+    assert.equal(shared, 0, "no draft write after the stop");
+    endRace(run);
+  });
+  assert.ok(points >= 3, `every await was disturbed (${points})`);
+});
+
+test("typing at any await of starting the copy lands once, on both tabs", async () => {
+  await forEachAwait(startingRace, run => { run.anna!.type(0, "!"); }, async run => {
+    await until(() => run.anna!.text === run.lex!.text && run.lex!.text.startsWith("!"), "the typing on both");
+    assert.deepEqual([times(run.lex!.text, "!"), times(run.lex!.text, "Anna's unsaved line")], [1, 1]);
+    endRace(run);
+  });
+});
+
+test("a save landing at any await of loading the copy starts it from the saved text, under its new tag", async () => {
+  const saved = "c".repeat(40);
+  await forEachAwait(startingRace, run => {
+    run.at = run.room.log.length;
+    // Still loading (her copy not made yet): from now on it is the saved version's. Once made, a copy keeps its version (a known limit).
+    run.loading = !run.anna!.keptRead;
+    run.anna!.store.markSaved(scope, path, { baseSha: saved, original: run.anna!.text });
+  }, async run => {
+    await quiet();
+    const tags = tagsSent(run.room, run.anna!.sockets, run.at);
+    if (run.loading) assert.deepEqual(tags.filter(tag => tag !== saved), [], "no frame under the old version's tag");
+    endRace(run);
+  });
 });

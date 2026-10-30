@@ -559,7 +559,8 @@ export class LiveRooms {
       [...this.sockets].find(([, other]) => other.room === room && other.access === access && other.rejoin === options.rejoin);
     if (ghost) {
       const [old, metadata] = ghost;
-      inherited = metadata.keyed;
+      // Only a key it holds carries over: one merely handed to it may never have been unwrapped (the old socket dropped first).
+      inherited = metadata.keyed && !metadata.handed;
       this.sockets.delete(old);
       old.serializeAttachment({ ...metadata, gone: true });
       try { old.close(1000, "Replaced by a reconnect."); } catch { /* Already closed. */ }
@@ -567,8 +568,10 @@ export class LiveRooms {
     }
     const others = this.members(room);
     const since = Math.max(this.now(), ...others.map(([, other]) => other.since + 1));
+    // First in, back in place of a socket that held the key, or (a tab) in a room nobody holds a key for any more.
+    const makes = others.length === 0 || inherited || (access !== "agent" && !others.some(([, other]) => other.keyed));
     const metadata: LiveAttachment = {
-      role: "live", room, peer: hex(crypto.getRandomValues(new Uint8Array(16))), access, keyed: others.length === 0 || inherited, since,
+      role: "live", room, peer: hex(crypto.getRandomValues(new Uint8Array(16))), access, keyed: makes, since,
       ...(options.rejoin === undefined ? {} : { rejoin: options.rejoin }),
       ...(options.agent ? { agent: { ...options.agent, checkedAt: this.now() } } : {}),
       heardAt: this.now(),
@@ -578,7 +581,7 @@ export class LiveRooms {
     this.send(socket, { type: "welcome", peer: metadata.peer, keyed: metadata.keyed, peers: others.map(([, other]) => ({ peer: other.peer, access: other.access, keyed: other.keyed })) });
     for (const [other] of others) {
       this.send(other, { type: "joined", peer: metadata.peer, access });
-      if (inherited) this.send(other, { type: "keyed", peer: metadata.peer });
+      if (metadata.keyed) this.send(other, { type: "keyed", peer: metadata.peer });
     }
     return true;
   }
@@ -644,7 +647,7 @@ export class LiveRooms {
     if (!target) return false;
     // The joiner counts as holding the key from here, so a leave before its own `keyed` arrives never has a
     // second tab make another key (two keyed tabs on different keys never merge). Its `keyed` still tells the room.
-    if (!target[1].keyed) {
+    if (metadata.keyed && !target[1].keyed) {
       target[1].keyed = true;
       target[1].handed = true;
       target[0].serializeAttachment(target[1]);
