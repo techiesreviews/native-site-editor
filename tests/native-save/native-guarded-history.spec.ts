@@ -77,6 +77,8 @@ test("Undo of Make component closes the new component's stylesheet pane", async 
   await tree(page).getByRole("treeitem", { name: "Section A native browser preview", exact: true }).first().locator(".page-structure__label").first().click();
   await bar(page).getByRole("button", { name: "Make component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", `components/${tag}/${tag}.html`);
+  // Done only once the mode is on: a Done while it still loads has no instance to select back on the page.
+  await expect(page.locator(".edit-mode__title")).toHaveText(`Editing<${tag}>`);
   await page.getByRole("button", { name: "Done editing component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   // Back on the page, the new component's stylesheet still shows beside it.
