@@ -73,6 +73,13 @@
 // Events are delivered after a mutation and its journal move are complete,
 // so a listener that edits the store again builds on a settled history.
 //
+// Shared copies (src/live-text.ts). While someone else has the file open,
+// their changes arrive as `edit({ record: false, origin: "shared" })`: the
+// draft follows the shared copy and is persisted as any edit is, and, like
+// another tab's draft (`reload`), the histories over the file are cleared,
+// because a step over someone else's text cannot be undone alone (per-person
+// Undo is ticket am-24).
+//
 // Shared state for the main.ts split (ticket 08) wraps `subscribeState` in
 // @preact/signals-core signals, including persistence-only changes and clears.
 // The store itself needs no reactive library.
@@ -126,7 +133,8 @@ export interface HistoryCompanion {
 /** Returning false refuses the step and keeps it in place. */
 export type HistoryActionCallback = () => void | boolean | Promise<void | boolean>;
 
-export type TextOrigin = "edit" | "typing" | "undo" | "redo" | "receipt" | "discard" | "external";
+/** `shared`: someone else's change, from the file's shared copy (src/live-text.ts). */
+export type TextOrigin = "edit" | "typing" | "undo" | "redo" | "receipt" | "discard" | "external" | "shared";
 export type DraftEvent =
   | { type: "text"; key: string; scope: DraftScope; path: string; text: string; revision: number; origin: TextOrigin;
       /** Ranges of the text before this change, applied as one batch; a whole-text replacement when absent. */

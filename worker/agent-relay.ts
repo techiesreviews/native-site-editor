@@ -493,12 +493,13 @@ export interface LiveSocket {
 export interface LiveAgent { id: string; sessionId: string; generation: number; repoId: number; branch: string }
 /** An agent socket's connection is checked again this often, on the room's frames (heartbeats keep them coming). */
 export const LIVE_AGENT_CHECK_MS = 60_000;
-/** `keyed`: holds the room key, or was told to make it. `since`: join order, for choosing who makes a new key.
+/** `keyed`: holds the room key, was told to make it, or was handed it (`handed`: a member's wrapped key went
+ * to it, and its own `keyed` is still to come). `since`: join order, for choosing who makes a new key.
  * `rejoin`: the tab's own secret, never sent to peers, so its reconnect replaces a socket the relay has not yet seen drop.
  * `gone`: replaced by that reconnect; its late close is ignored. `heardAt`: its last frame, to within LIVE_HEARD_STEP_MS. */
 interface LiveAttachment {
   role: "live"; room: string; peer: string; access: LiveAccess; keyed: boolean; since: number;
-  rejoin?: string; agent?: LiveAgent & { checkedAt: number }; gone?: true; heardAt?: number;
+  rejoin?: string; agent?: LiveAgent & { checkedAt: number }; gone?: true; heardAt?: number; handed?: true;
 }
 /** How often a socket's `heardAt` is written back to its attachment: often enough for a 30 s silence, rarely enough for typing. */
 const LIVE_HEARD_STEP_MS = 5_000;
@@ -517,8 +518,9 @@ export class LiveRooms {
   static readonly identityHeader = "X-Live-Room";
   private sockets = new Map<LiveSocket, LiveAttachment>();
 
-  /** Keeps closing sockets too: after hibernation a close wakes the object with that socket no longer open, and its leave must still be announced. */
-  constructor(sockets: LiveSocket[], private now: () => number = () => Date.now()) {
+  /** Keeps closing sockets too: after hibernation a close wakes the object with that socket no longer open, and its leave must still be announced.
+   * `pingedAt`: when the runtime last answered the socket's `ping` itself (`getWebSocketAutoResponseTimestamp`), which no JS timer of the relay's sets. */
+  constructor(sockets: LiveSocket[], private now: () => number = () => Date.now(), private pingedAt: (socket: LiveSocket) => number | null = () => null) {
     for (const socket of sockets) {
       const metadata = readLive(socket.deserializeAttachment());
       if (metadata) this.sockets.set(socket, metadata);
@@ -621,21 +623,32 @@ export class LiveRooms {
     const value = readLiveClientMessage(message);
     if (!value) return false;
     if (value.type === "keyed") {
-      if (metadata.keyed) return false;
+      if (metadata.keyed && !metadata.handed) return false;
+      delete metadata.handed;
       this.markKeyed(socket, metadata);
       return true;
     }
     if (value.type === "key-request") {
-      // Key holders whose sockets died without a close (silent past the presence timeout) cannot answer:
-      // closing them has the room make a new key (`leave`), so the joiner is not left waiting for good.
+      // Key holders whose sockets died without a close cannot answer: closing them has the room make a new
+      // key (`leave`), so the joiner is not left waiting for good. A holder is silent when neither its frames
+      // nor its auto-answered pings reached the relay within the timeout: a hidden tab's throttled timers
+      // still ping, and the runtime answers that without any JS timer here.
+      const heard = (other: LiveSocket, at: LiveAttachment) => Math.max(at.heardAt ?? 0, this.pingedAt(other) ?? 0);
       const holders = this.members(metadata.room, socket).filter(([, other]) => other.keyed);
-      if (holders.length && holders.every(([, other]) => now - (other.heardAt ?? 0) > PRESENCE_TIMEOUT_MS + LIVE_HEARD_STEP_MS))
+      if (holders.length && holders.every(([holder, other]) => now - heard(holder, other) > PRESENCE_TIMEOUT_MS + LIVE_HEARD_STEP_MS))
         for (const [holder] of holders) this.end(holder, 1001, "Silent past the presence timeout.");
       for (const [other] of this.members(metadata.room, socket)) this.send(other, { type: "key-request", from: metadata.peer, publicKey: value.publicKey });
       return true;
     }
     const target = this.members(metadata.room, socket).find(([, other]) => other.peer === value.to);
     if (!target) return false;
+    // The joiner counts as holding the key from here, so a leave before its own `keyed` arrives never has a
+    // second tab make another key (two keyed tabs on different keys never merge). Its `keyed` still tells the room.
+    if (!target[1].keyed) {
+      target[1].keyed = true;
+      target[1].handed = true;
+      target[0].serializeAttachment(target[1]);
+    }
     this.send(target[0], { type: "key", from: metadata.peer, publicKey: value.publicKey, wrapped: value.wrapped });
     return true;
   }

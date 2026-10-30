@@ -181,6 +181,10 @@ _Avoid_: guest account, invite
 Everyone with one file of one site and branch open at once: the editor's tabs, collaborators and agents. Their changes travel locked with a room key only the participants hold; the relay passes them on and keeps nothing. Agents join only while a tab has the file open. (ADR 0003; the carrier for typing together, hot preview links and outside-change news.)
 _Avoid_: channel, session (a Synced session is something else)
 
+**Shared copy**:
+A file as everyone in its Live room holds it while two or more have it open: each tab merges everyone's changes into its own copy of the plain source, and its draft follows that copy. A tab that opens the file later is caught up by someone online; nothing is kept on the server. (ADR 0003; ticket am-21.)
+_Avoid_: server copy, master copy, shared document
+
 **External agent workflow**:
 An agent working directly on the site's repository, with its changes reconciled with the editor's drafts.
 

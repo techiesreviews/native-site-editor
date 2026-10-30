@@ -413,6 +413,14 @@ its number unused.
 - Spec: `tests/native-preview/native-preview.spec.ts`
 - Steps: `scripts/agents/shots/features/F-canvas-14.json`
 
+### F-canvas-15 Two people on one page share one copy
+- Try: Open the same page on the same site and branch in two browsers (two sign-ins), change its text in one, then in the other; then open it in a third browser.
+- Good: Each change shows in the other browser's page and code within a moment, with nothing typed lost, and both end with the very same text; the third browser opens on that shared text, not GitHub's. Opening a page nobody else has open at the same moment as someone else never doubles its text. Each browser keeps the shared text as its own unsaved change. Someone else's change clears your Undo over that page (per-person Undo comes later). There are no carets or names yet, and no toast (S4).
+- Files: `src/live-text.ts`, `src/live-room.ts`, `shared/live-room.ts`, `worker/agent-relay.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-live-text.spec.ts`
+- Steps: none yet (needs two browsers signed in at once)
+
 ## Edit bar
 
 ### F-bar-01 Edit bar on the selection
