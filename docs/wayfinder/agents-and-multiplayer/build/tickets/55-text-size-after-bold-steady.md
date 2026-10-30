@@ -2,7 +2,7 @@
 title: "\"Text size after Bold\" passes every time (flaky since 43)"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-55
 builder: claude
 blocked_by: []
 ---

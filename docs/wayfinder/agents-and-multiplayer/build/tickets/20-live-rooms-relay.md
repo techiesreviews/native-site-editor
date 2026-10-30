@@ -2,7 +2,7 @@
 title: "Live rooms in the relay: locked, store nothing"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-20
 builder: claude
 blocked_by: [15-agent-tools-ask-and-undo, 16-helper-any-agent, 17-long-job-wait]
 ---
