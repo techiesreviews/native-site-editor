@@ -79,6 +79,9 @@ export const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
 const FRESH_TOKEN_MS = 2 * 60_000;
 /** How long the button's own label confirms a copy. */
 const CONFIRM_MS = 2000;
+/** Offering Disconnect MCP, a return to the tab or the menu opening reads the connections again
+ * once the last read is this old: one read after time away, no polling (native-agent-live spec). */
+const STALE_READ_MS = 5 * 60_000;
 
 export function createAgentMenu(options: {
   account: string;
@@ -119,6 +122,8 @@ export function createAgentMenu(options: {
     // Each Connect and Turn off starts a new activation; work begun in an older one writes nothing.
     activation = 0;
   let lastRead = 0;
+  // Presses of Connect to MCP under way (the button's, or `connect`).
+  let pressing = 0;
   let consentChecks: ReturnType<typeof setTimeout>[] = [];
   let ownerPaused = false;
   let transport: ReturnType<typeof createLiveTransport> | undefined;
@@ -379,9 +384,13 @@ export function createAgentMenu(options: {
     consentChecks = [];
   }
   function failed(error: AgentFailureError) {
-    // Sign-in ended: back to Connect to MCP.
-    if (error.failure.kind === "auth") turnOff(true);
-    else if (transportMode === "socket") transport?.report(error.failure);
+    // Sign-in ended: back to Connect to MCP. During a press, which can then copy nothing, the dot
+    // shows the problem on its site until the next press (ticket am-51).
+    if (error.failure.kind === "auth") {
+      const repo = pinned ?? options.repository();
+      turnOff(true);
+      if (pressing && repo) { failedOn = repo; paint(); }
+    } else if (transportMode === "socket") transport?.report(error.failure);
     else if (pinned) {
       try { recordFailure(localStorage, { account: options.account.toLowerCase(), repoId: pinned.id }, error.failure, Date.now()); } catch { /* Activation still reports the failure below. */ }
     }
@@ -647,7 +656,7 @@ export function createAgentMenu(options: {
       await revoke();
       return;
     }
-    await pressCopy(async (slot) => {
+    await press(async (slot) => {
       // Wait for MCP copies this tab's prompt again while its token still waits; a tab without
       // it (another tab copied it, a reload, or it was revoked) copies a prompt of its own.
       if (offered === "wait") await copyAgain(slot);
@@ -659,6 +668,11 @@ export function createAgentMenu(options: {
         await turnOn(slot);
       }
     });
+  }
+  /** A press that may copy a prompt (pressCopy), counted while under way. */
+  async function press(run: (slot: Copy) => Promise<void>) {
+    pressing++;
+    try { await pressCopy(run); } finally { pressing--; }
   }
   // Connect to MCP while remote agents are off: an agent connected before is used again (it may
   // need resuming), and the press still copies a prompt for the next agent.
@@ -715,6 +729,7 @@ export function createAgentMenu(options: {
     transportState = undefined;
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("focus", wake);
+    document.addEventListener("toggle", opened, true);
     paint();
   }
   /** Stops this tab's live connection and pending consent checks; `forget` also turns remote
@@ -734,6 +749,7 @@ export function createAgentMenu(options: {
     workspaceChanged = false;
     document.removeEventListener("visibilitychange", wake);
     window.removeEventListener("focus", wake);
+    document.removeEventListener("toggle", opened, true);
     for (const grant of hub.grants) declined.add(grant.id);
     hub = { grants: [] };
     landing.clear();
@@ -913,8 +929,16 @@ export function createAgentMenu(options: {
     // Waiting for an agent, or after a failed press with remote agents still on (another tab's
     // token waits): returning to the tab looks once whether an agent connected meanwhile.
     // Also in a tab where another tab receives: what the button offers (Wait for MCP) decides.
-    if (!workspaceChanged && document.visibilityState === "visible" && (offer() === "wait" || state() === "failed") && Date.now() - lastRead >= 2000)
+    // Offering Disconnect MCP, a return or the menu opening after time away looks whether the
+    // connections still hold (past 8 hours, or the sign-in ended; ticket am-51).
+    if (workspaceChanged || document.visibilityState !== "visible") return;
+    const age = Date.now() - lastRead;
+    if ((offer() === "wait" || state() === "failed") && age >= 2000 || offer() === "disconnect" && age >= STALE_READ_MS)
       void readConnections();
+  }
+  /** The menu's popover opening (it does not bubble: heard on the way down). */
+  function opened(event: Event) {
+    if ((event as ToggleEvent).newState === "open" && event.target instanceof Node && event.target.contains(root)) wake();
   }
   // A connection approved in this browser turns remote agents on only for
   // the exact approval, repository and branch named by the consent page.
@@ -985,7 +1009,7 @@ export function createAgentMenu(options: {
      * Resolves to whether the prompt was copied.
      */
     async connect(task: string) {
-      await pressCopy(async (slot) => {
+      await press(async (slot) => {
         if (state() === "waiting" && token) await copyAgain(slot, task);
         else if (!remote) await turnOn(slot, task);
         else await start(slot, task);

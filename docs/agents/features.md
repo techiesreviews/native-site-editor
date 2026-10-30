@@ -1031,7 +1031,7 @@ its number unused.
 
 ### F-agent-01 Connect to MCP
 - Try: Open the project menu and press Connect to MCP, then paste the prompt into an agent.
-- Good: Three actions only (Connect to MCP, Wait for MCP, Disconnect MCP), beside "Pins go to" and the agents working now while agents are on (F-agent-11); the label confirms the copy and the dot shows the state, with no toast or explainer (S1, S4). Connect to MCP copies a prompt even when an agent already uses the site's connection, then offers Disconnect MCP. Whatever the clipboard does (an Electron webview that never answers included), the button ends in Copied or the problem dot within a few seconds.
+- Good: Three actions only (Connect to MCP, Wait for MCP, Disconnect MCP), beside "Pins go to" and the agents working now while agents are on (F-agent-11); the label confirms the copy and the dot shows the state, with no toast or explainer (S1, S4). Connect to MCP copies a prompt even when an agent already uses the site's connection, then offers Disconnect MCP. Whatever the clipboard does (an Electron webview that never answers included), the button ends in Copied or the problem dot within a few seconds. After time away (the laptop asleep, the connection's retries used up, a permission past its 8 hours, the sign-in ended), coming back or opening the menu shows the real state, and a press still copies a working prompt or shows the problem dot (am-51).
 - Files: `src/components/agent-menu.ts`, `src/components/agent-menu.css`, `src/agent-resume.ts`, `src/agent-menu-host.ts`, `src/controllers/agent-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-mcp-menu.spec.ts`

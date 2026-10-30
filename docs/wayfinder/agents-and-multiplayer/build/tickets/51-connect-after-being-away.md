@@ -1,7 +1,7 @@
 ---
 title: "After being away, Connect to MCP tells the truth and copies the prompt"
 type: task (AFK)
-status: open
+status: closed
 assignee: am-51
 builder: claude
 blocked_by: []
@@ -46,3 +46,14 @@ Reproduced locally on the native-save fixture (real Worker and relay, MCP client
 1. `turnOnAgents`: a press that finds the reconnect paused by the recovery (not by the site owner: `ports.paused()` false) retries it, as for `reconnecting`, then branches as before (copy again, new prompt, or stuck).
 2. Agent menu: a press during which the sign-in ended shows the problem dot on its site (`failedOn`), copying nothing. A resume that finds the sign-in ended stays `off` (native-agent-lifecycle spec).
 3. Agent menu `wake`: when the tab comes back or the menu opens (a popover holding the menu toggles open), with remote agents on, read the connections when the button offers Disconnect MCP and the last read is at least 5 minutes old (Wait for MCP and the failed dot keep their 2 s rule). The 5 minutes keep native-agent-live's "one hub read on return, no polling".
+
+## Done (2026-10-30)
+
+Causes, as diagnosed above: (1) a reconnect that gave up while away leaves the connection `paused`, and Connect to MCP only retried a `reconnecting` one, so the press did nothing, on every press and reload; (2) a sign-in that ended during a press turned agents off and the press ended with no copy and no dot; (3) a return to the tab or the menu opening never re-read the connections while the button offered Disconnect MCP, so an expired permission or ended sign-in kept showing it.
+
+- `src/agent-resume.ts` `turnOnAgents`: a press finding the connection paused by the reconnect (not by the site owner) retries it, as for a reconnect, then copies again, makes a new prompt or shows the press stuck.
+- `src/components/agent-menu.ts`: a press during which the sign-in ends shows the problem dot on its site, copying nothing (a resume that finds it ended still stays off). Offering Disconnect MCP, a return to the tab or the menu's popover opening reads the connections when the last read is at least 5 minutes old (Wait for MCP and the failed dot keep their 2 s rule): one read after time away, no polling.
+- Tests: the paused rows in `tests/agent-menu-resume.test.ts` and the four "away" specs in `tests/native-save/native-mcp-menu.spec.ts` failed before the fix and pass now.
+- UX check on the MCP menu: no new control, label or toast; every press ends in Copied or the problem dot on the button.
+- Validation: `RESULT: ok unit 832/832 (31 files)`; `RESULT: ok specs 17/17 passed` (kit specs --affected); `npm run check` and `npm run lint` pass.
+- Feature list: F-agent-01 Good line updated (state after time away).
