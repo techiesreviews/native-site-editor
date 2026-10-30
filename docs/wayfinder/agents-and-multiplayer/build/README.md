@@ -96,6 +96,7 @@ The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slice
 | [51 After being away, Connect to MCP tells the truth and copies the prompt](tickets/51-connect-after-being-away.md) | S–M | visible | – | – |
 | [52 A long wait job holds one wait, and never loses a pin (follow-up on 17)](tickets/52-one-look-per-long-job.md) | S | – | – | 17 |
 | [53 Connect to MCP works after a failed takeover too (follow-up on 51)](tickets/53-connect-after-failed-takeover.md) | S | visible | – | 51 |
+| [54 An older look at a long job always says "still working" (follow-up on 52)](tickets/54-older-look-says-still-working.md) | S | – | – | 52 |
 | [39 `get_site` names the section an agent is asking about (follow-up on 11)](tickets/39-get-site-names-the-question-section.md) | S | – | – | 11 |
 | [40 Exact-part edits: second-look fixes (follow-up on 10)](tickets/40-exact-part-edits-second-look-fixes.md) | S | – | – | 10 |
 | [41 An all-copies edit whose copies all changed is told to read again (follow-up on 40)](tickets/41-all-copies-changed-reads-again.md) | S | – | – | 40 |
