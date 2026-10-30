@@ -477,9 +477,9 @@ export async function liveRoomObjectName(repoId: number, branch: string): Promis
 export async function liveRoomTag(file: string): Promise<string> {
   return sha256(file);
 }
+const hex = (bytes: Uint8Array) => Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
 async function sha256(value: string) {
-  const hash = await crypto.subtle.digest("SHA-256", utf8.encode(value));
-  return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("");
+  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", utf8.encode(value))));
 }
 
 export interface LiveSocket {
@@ -489,25 +489,28 @@ export interface LiveSocket {
   serializeAttachment(value: unknown): void;
   deserializeAttachment(): unknown;
 }
-interface LiveAttachment { role: "live"; room: string; peer: string; access: LiveAccess }
+/** `keyed`: holds the room key, or was told to make it. `since`: join order, for choosing who makes a new key. */
+interface LiveAttachment { role: "live"; room: string; peer: string; access: LiveAccess; keyed: boolean; since: number }
 const readLive = (value: unknown): LiveAttachment | null => {
   const item = value as Partial<LiveAttachment> | null;
   return item && typeof item === "object" && item.role === "live" && typeof item.room === "string" && /^[a-f\d]{64}$/.test(item.room) &&
-    typeof item.peer === "string" && (item.access === "editor" || item.access === "agent") ? item as LiveAttachment : null;
+    typeof item.peer === "string" && (item.access === "editor" || item.access === "agent") && typeof item.keyed === "boolean" &&
+    Number.isFinite(item.since) ? item as LiveAttachment : null;
 };
 
 /** Forwards each room's frames and stores nothing: no storage port, no history, no keys. Who is in
- * which room lives in the socket attachments, which hibernation keeps with the sockets. Binary
- * frames (ciphertext) go to the room's other sockets unread; the only text frames it acts on are
- * the key handover's public keys and wrapped keys (shared/live-room.ts). */
+ * which room, and who holds its key, lives in the socket attachments, which hibernation keeps with
+ * the sockets. Binary frames (ciphertext) go to the room's other sockets unread; the only text
+ * frames it acts on are the key handover's (shared/live-room.ts). */
 export class LiveRooms {
   static readonly identityHeader = "X-Live-Room";
   private sockets = new Map<LiveSocket, LiveAttachment>();
 
+  /** Keeps closing sockets too: after hibernation a close wakes the object with that socket no longer open, and its leave must still be announced. */
   constructor(sockets: LiveSocket[]) {
     for (const socket of sockets) {
       const metadata = readLive(socket.deserializeAttachment());
-      if (metadata && socket.readyState === 1) this.sockets.set(socket, metadata);
+      if (metadata) this.sockets.set(socket, metadata);
     }
   }
 
@@ -520,19 +523,25 @@ export class LiveRooms {
     try { socket.send(message instanceof ArrayBuffer ? message : JSON.stringify(message)); }
     catch { this.leave(socket); }
   }
+  private markKeyed(socket: LiveSocket, metadata: LiveAttachment) {
+    metadata.keyed = true;
+    socket.serializeAttachment(metadata);
+    for (const [other] of this.members(metadata.room, socket)) this.send(other, { type: "keyed", peer: metadata.peer });
+  }
 
   /** An agent joins only a room a tab has open: only a tab makes the room key. */
   admits(room: string, access: LiveAccess) {
     return access !== "agent" || this.members(room).some(([, metadata]) => metadata.access !== "agent");
   }
-  /** Refuses (false) whom `admits` refuses. */
+  /** Refuses (false) whom `admits` refuses. The first one into an empty room makes the key. */
   join(socket: LiveSocket, room: string, access: LiveAccess): boolean {
     if (!this.admits(room, access)) return false;
     const others = this.members(room);
-    const metadata: LiveAttachment = { role: "live", room, peer: Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join(""), access };
+    const since = Math.max(Date.now(), ...others.map(([, other]) => other.since + 1));
+    const metadata: LiveAttachment = { role: "live", room, peer: hex(crypto.getRandomValues(new Uint8Array(16))), access, keyed: others.length === 0, since };
     socket.serializeAttachment(metadata);
     this.sockets.set(socket, metadata);
-    this.send(socket, { type: "welcome", peer: metadata.peer, peers: others.map(([, other]) => ({ peer: other.peer, access: other.access })) });
+    this.send(socket, { type: "welcome", peer: metadata.peer, peers: others.map(([, other]) => ({ peer: other.peer, access: other.access, keyed: other.keyed })) });
     for (const [other] of others) this.send(other, { type: "joined", peer: metadata.peer, access });
     return true;
   }
@@ -551,6 +560,11 @@ export class LiveRooms {
     }
     const value = readLiveClientMessage(message);
     if (!value) return false;
+    if (value.type === "keyed") {
+      if (metadata.keyed) return false;
+      this.markKeyed(socket, metadata);
+      return true;
+    }
     if (value.type === "key-request") {
       for (const [other] of this.members(metadata.room, socket)) this.send(other, { type: "key-request", from: metadata.peer, publicKey: value.publicKey });
       return true;
@@ -561,17 +575,24 @@ export class LiveRooms {
     return true;
   }
 
-  /** A clean leave is announced at once. The room's last tab leaving closes the agents still in it. */
+  /** A clean leave is announced at once. The room's last tab leaving closes the agents still in it;
+   * its last key holder leaving has the longest-present tab make a new key. */
   leave(socket: LiveSocket) {
     const metadata = this.sockets.get(socket);
     if (!metadata) return;
     this.sockets.delete(socket);
     const others = this.members(metadata.room);
     for (const [other] of others) this.send(other, { type: "left", peer: metadata.peer });
-    if (metadata.access === "agent" || others.some(([, other]) => other.access !== "agent")) return;
-    for (const [other] of others) {
-      this.sockets.delete(other);
-      try { other.close(LIVE_ROOM_CLOSED, "No tab has this room open."); } catch { /* Already closed. */ }
+    if (!others.some(([, other]) => other.access !== "agent")) {
+      for (const [other] of others) {
+        this.sockets.delete(other);
+        try { other.close(LIVE_ROOM_CLOSED, "No tab has this room open."); } catch { /* Already closed. */ }
+      }
+      return;
     }
+    if (others.some(([, other]) => other.keyed)) return;
+    const maker = others.filter(([, other]) => other.access !== "agent").sort(([, a], [, b]) => a.since - b.since || (a.peer < b.peer ? -1 : 1))[0];
+    this.send(maker[0], { type: "make-key" });
+    if (this.sockets.has(maker[0])) this.markKeyed(...maker);
   }
 }
