@@ -300,12 +300,9 @@ export function createAgentMenu(options: {
   const working = node("ul", "agent-menu__agents");
   working.setAttribute("aria-label", "Agents working now");
   // Where the focus goes after a Stop (drawAgents): never another Stop or Disconnect MCP. Each is named, so a
-  // screen reader says where the focus landed. A click on the menu's padding focuses the group too, on purpose
-  // (no ring for a mouse focus).
-  working.tabIndex = -1;
-  root.tabIndex = -1;
+  // screen reader says where the focus landed.
   root.setAttribute("role", "group");
-  root.setAttribute("aria-label", "MCP");
+  root.setAttribute("aria-label", "MCP connection");
   // A hairline between the agents and the button, as in the approved mock-up (prototypes/10-asking-agents.html).
   const afterAgents = node("div", "agent-menu__divider");
   afterAgents.setAttribute("aria-hidden", "true");
@@ -608,7 +605,16 @@ export function createAgentMenu(options: {
     // Its agent still listed: its Stop again. Gone (stopped, or its time ended): the list, or the menu once it is
     // empty, never another Stop or Disconnect MCP, so a second Enter or a key repeat ends no one else.
     const row = ([...working.children] as HTMLElement[]).find(each => each.dataset.key === focusedKey);
-    (row?.querySelector<HTMLElement>("button") ?? (working.hidden ? root : working)).focus();
+    const stop = row?.querySelector<HTMLElement>("button");
+    if (stop) stop.focus();
+    else holdFocus(working.hidden ? root : working);
+  }
+  /** Focuses `element` (the list or the menu) until the focus leaves it: focusable only meanwhile, so a click in the
+   * Requests flyout (inside the menu) or on the list never takes the focus there and closes the flyout. */
+  function holdFocus(element: HTMLElement) {
+    element.tabIndex = -1;
+    element.addEventListener("blur", () => element.removeAttribute("tabindex"), { once: true });
+    element.focus();
   }
   const unlisten = options.agents?.listen(() => { if (!disposed) drawAgents(); });
   // The flyout: the requests waiting for an agent or for the user, each showing its pin; an

@@ -915,6 +915,11 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     await expect(waiting.locator(".flyout__note")).toHaveCount(0);
     await expect(waiting.getByRole("menuitem")).toHaveCount(1);
     await expect(waiting.getByRole("menuitem").locator(".agent-menu__question-line")).toHaveText("Make this heading friendlier");
+    // A click on the flyout's padding, its request focused, keeps it open: the menu around it takes no focus (am-50).
+    await waiting.getByRole("menuitem").focus();
+    await waiting.click({ position: { x: 2, y: 2 } });
+    await expect(waiting).toBeVisible();
+    await expect(page.locator(".agent-menu")).not.toBeFocused();
     await page.keyboard.press("Escape");
     await expect(waiting).toBeHidden();
 
