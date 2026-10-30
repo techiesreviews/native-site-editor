@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { signal } from "@preact/signals-core";
 import { createDraftStore } from "../src/draft-store";
 import { draftKey, type DraftScope } from "../src/drafts";
-import { LIVE_TEXT_CATCH_UP_MS, startLiveText, type CopyKeeper, type KeptCopy } from "../src/live-text";
+import { LIVE_TEXT_CATCH_UP_MS, startLiveText, typedSince, type CopyKeeper, type KeptCopy } from "../src/live-text";
 import { forEachAwait, type AwaitRace } from "./support/await-race";
 import type { LiveClock, LiveRoomOptions } from "../src/live-room";
 import type { LiveAccess } from "../shared/live-room";
@@ -379,4 +379,109 @@ test("a save landing at any await of loading the copy starts it from the saved t
     if (run.loading) assert.deepEqual(tags.filter(tag => tag !== saved), [], "no frame under the old version's tag");
     endRace(run);
   });
+});
+
+test("Discard while a tab is alone with its draft takes it out of the room; a tab joining later with that draft's copy brings nothing back", async () => {
+  const room = fakeRoom(), draft = `${base}<p>Shared once.</p>\n`;
+  const anna = tab(room, draft), lex = tab(room, draft);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  // Lex closes the page (keeping his copy); Anna, alone with no copy loaded any more after reopening, discards.
+  lex.stop();
+  anna.openFile.value = "about.html";
+  await quiet();
+  anna.openFile.value = path;
+  await quiet();
+  const loadsBefore = anna.yjsLoads;
+  assert.equal(anna.store.discard(scope, path).ok, true);
+  await quiet();
+  assert.equal([...room.members].filter(member => member.access === "editor").length, 0, "Anna left the room");
+  const back = tab(room, draft, { keeper: lex.keeper });
+  await quiet();
+  await quiet();
+  assert.equal(anna.text, base, "Anna stays on GitHub's text");
+  assert.equal(anna.yjsLoads, loadsBefore, "and loads no copy");
+  assert.equal(back.text, draft);
+  anna.stop(); back.stop();
+});
+
+test("Discard at any await of loading the copy leaves the draft on GitHub's text and sends nothing", async () => {
+  await forEachAwait(race => {
+    const run: RaceRun = { done: Promise.resolve(), room: fakeRoom(), at: 0, loading: true };
+    run.done = (async () => {
+      run.anna = tab(run.room, `${base}<p>Anna's unsaved line.</p>\n`, { race });
+      await quiet();
+      run.lex = tab(run.room);
+      await until(() => run.anna!.yjsLoads > 0 && run.lex!.yjsLoads > 0, "both loading");
+      await new Promise(resolve => setTimeout(resolve, 120));
+    })();
+    return run;
+  }, run => {
+    run.at = run.room.log.length;
+    assert.equal(run.anna!.store.discard(scope, path).ok, true);
+  }, async run => {
+    await quiet();
+    assert.equal(run.anna!.text, base, "the discarded draft stays GitHub's text");
+    assert.deepEqual(tagsSent(run.room, run.anna!.sockets, run.at), [], "nothing sent after the Discard");
+    endRace(run);
+  });
+});
+
+test("a kept copy Yjs cannot apply is dropped, and the tab still catches up from the room", async () => {
+  const room = fakeRoom();
+  const lex = tab(room);
+  await quiet();
+  lex.type(0, "<!-- Lex -->");
+  const draft = `${base}<p>Anna's line.</p>\n`, damaged = Uint8Array.from([255, 255, 255, 1, 2, 3, 4, 5]);
+  const kept = keeper();
+  kept.copies.set(draftKey(scope, path), { tag: Uint8Array.from(sha.match(/../g)!, pair => parseInt(pair, 16)), update: damaged });
+  const anna = tab(room, draft, { keeper: kept });
+  await until(() => anna.text === lex.text && anna.text.startsWith("<!-- Lex -->") && anna.text.includes("Anna's line"), "Anna caught up, her line kept");
+  assert.notDeepEqual(kept.copies.get(draftKey(scope, path))?.update, damaged, "the damaged copy is gone");
+  anna.stop(); lex.stop();
+});
+
+test("clearing the drafts (sign-out, another workspace) closes the file's room", async () => {
+  const room = fakeRoom();
+  const anna = tab(room);
+  await quiet();
+  assert.equal(room.members.size, 1);
+  anna.store.clear();
+  await quiet();
+  assert.equal(room.members.size, 0, "no room socket outlives the drafts");
+  anna.stop();
+});
+
+test("resuming adds only what was typed since the share began, wherever the kept copy and the draft disagreed", () => {
+  const apply = (text: string, change: ReturnType<typeof typedSince>) => change ? text.slice(0, change.start) + change.text + text.slice(change.end) : text;
+  // Nothing typed since: nothing added, even when the kept copy missed the last shared change.
+  assert.equal(typedSince("<h1>A</h1>", "<h1>warm A</h1>", "<h1>warm A</h1>"), undefined);
+  // Kept and draft agreed: the typing as it is.
+  assert.equal(apply("<h1>A</h1>", typedSince("<h1>A</h1>", "<h1>A</h1>", "<h1>A!</h1>")), "<h1>A!</h1>");
+  // They disagreed (the copy lacks "warm "): typing after that range moves by it, typing before stays.
+  assert.equal(apply("<h1>A</h1><p>x</p>", typedSince("<h1>A</h1><p>x</p>", "<h1>warm A</h1><p>x</p>", "<h1>warm A</h1><p>xy</p>")), "<h1>A</h1><p>xy</p>");
+  assert.equal(apply("<p>x</p><h1>A</h1>", typedSince("<p>x</p><h1>A</h1>", "<p>x</p><h1>warm A</h1>", "<p>zx</p><h1>warm A</h1>")), "<p>zx</p><h1>A</h1>");
+});
+
+test("a reload whose kept copy missed the last shared change does not add that change again", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Crusty ");
+  await until(() => lex.text.includes("Crusty"), "Anna's edit");
+  await new Promise(resolve => setTimeout(resolve, 400));
+  const older = anna.keeper.copies.get(draftKey(scope, path))!;
+  assert.ok(older, "Anna kept her copy");
+  lex.type(4, "Warm ");
+  await until(() => anna.text.includes("Warm Crusty"), "Lex's edit followed by Anna");
+  // Her page goes away; the reload keeps the draft's last write but not the copy's.
+  anna.stop();
+  anna.keeper.copies.set(draftKey(scope, path), older);
+  const again = tab(room, anna.text, { keeper: anna.keeper });
+  await until(() => again.yjsLoads === 1, "the copy");
+  await quiet(); await quiet();
+  assert.equal(again.text, lex.text);
+  assert.deepEqual([times(again.text, "Warm "), times(again.text, "Crusty ")], [1, 1]);
+  again.stop(); lex.stop();
 });

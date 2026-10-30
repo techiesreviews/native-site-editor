@@ -388,7 +388,7 @@ const workspace = createWorkspaceMount({
   app, element, appStore, editorModule, workspaceSession, runtime, finishedWork, mediaHistoryHome, parkedSteps, guardedEdits, mediaController,
   paletteController, previewSelection, pageStructureController, linkedStyles, versions, cards, pagesAndFiles, setup, repositoryIndex, cleanSources,
   draftScope, shownScope, nextLoad, setCurrentPage, errorMessage, announce,
-  site: { active: nativeModeActive, deactivate: deactivateNative, update: updateNativePreviewSources, painted: () => { noteNativePainted(); void liveText(); }, assets: loadNativeAssets,
+  site: { active: nativeModeActive, deactivate: deactivateNative, update: updateNativePreviewSources, painted: () => { noteNativePainted(); void liveText().catch(() => undefined); }, assets: loadNativeAssets,
     shown: loadNativeShownFiles, routeSources: nativeRouteShownSources, styles: loadNativeComponentStyles, files: nativeSiteFiles, route: nativeRouteForPath },
   builder: { choices: nativeSectionChoices, addPoint: nativeElementAddPoint, addPoints: nativeAddPoints, insert: insertNativeComponent, drag: dragPageBlock,
     dropTree: structureDrop, loadDrag: loadBlockDrag, loadInsert: loadBlockInsert, insertPorts: blockInsertPorts, finishTyping: finishRailTyping,
