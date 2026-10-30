@@ -542,7 +542,7 @@ function filteredParticipant(h: ReturnType<typeof relayHarness>, clock: LiveCloc
       } satisfies LiveRoomSocket;
     },
   });
-  return { live, got, get server() { return made!.server; } };
+  return { live, got, get server() { return made!.server; }, drop: () => made!.drop() };
 }
 const peerOf = (server: LiveSocket) => (server.deserializeAttachment() as { peer: string }).peer;
 const typeOf = (data: unknown) => typeof data === "string" && data.startsWith("{") ? JSON.parse(data) as { type: string; from?: string } : undefined;
@@ -575,6 +575,38 @@ test("the key holder leaving while its key to a joiner is held back leaves both 
     await until(() => j.got.length > 0 && k.got.length > 0, "both hearing each other");
     assert.deepEqual([j.got, k.got], [["from K"], ["from J"]]);
     j.live.close(); k.live.close();
+  });
+});
+
+test("a joiner handed a key it never unwrapped reconnects in place of its socket without making a second key", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness();
+    const holder = participant(h, time.clock);
+    await holder.live.ready();
+    const holderPeer = peerOf(holder.server);
+    // The holder's first answer reaches the relay (which counts J as handed the key) but J's socket drops before J reads it.
+    let dropped = false;
+    const j = filteredParticipant(h, time.clock, data => {
+      if (dropped || typeOf(data)?.type !== "key" || typeOf(data)?.from !== holderPeer) return true;
+      dropped = true;
+      queueMicrotask(() => j.drop());
+      return false;
+    });
+    await until(() => dropped, "the key to J in flight");
+    const ghost = j.server;
+    await settle();
+    await time.advance(1_000);
+    await until(() => j.server !== ghost, "J's reconnect with the same rejoin secret");
+    const welcome = JSON.parse(j.server.texts.find(text => text.startsWith("{") && JSON.parse(text).type === "welcome")!);
+    assert.equal(welcome.keyed, false, "a key only handed to the old socket does not carry over");
+    await j.live.ready();
+    assert.equal(keys.length, 1, "no second key");
+    assert.equal(await j.live.send(new TextEncoder().encode("from J")), true);
+    assert.equal(await holder.live.send(new TextEncoder().encode("from H")), true);
+    await until(() => j.got.length > 0 && holder.got.length > 0, "J and H hearing each other");
+    assert.deepEqual([j.got, holder.got], [["from H"], ["from J"]]);
+    j.live.close(); holder.live.close();
   });
 });
 
