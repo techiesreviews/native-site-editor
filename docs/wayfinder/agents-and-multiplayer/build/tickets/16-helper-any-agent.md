@@ -107,3 +107,9 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - Declined:
     - The manual run with the real Claude Code — reason: the lead's step (this builder may not start agents); still the one open "Done when" item, so the status stays `open`.
   - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 1225/1225 (54 files)` (`kit unit --affected`; the helper's 18 tests among them, three runs in a row green). `kit specs --affected`, all 48 (the builder limit lifted): `RESULT: ok specs 48/48 passed`. `npm run check` and `npm run lint` are clean.
+- After round 3 (am-16 runner, by hand; only P0/P1 block now):
+  - "Pins go to" is no longer read (Lex removed the menu choice, 2026-10-30; lead): the helper starts Claude Code unless its start command says `--agent codex|gemini|opencode`; one it cannot limit says so and ends before reaching the editor. The editor's waits, `worker/mcp.ts`, `src/agent-watch.ts` and `shared/agent.ts` are as on dev.
+  - The detached Linux form is `systemd-run --user --collect …`, so a helper that ended with a failure (an expired token) does not block the next day's `--unit editor-helper` (P1).
+  - A closed terminal's failing log writes no longer crash the helper before it answers its pins (`process.stderr` error listener). Stopping "Pin helper" in the menu answers its agents' unfinished pins ("… stopped: the helper was stopped in the editor."). A turn re-checks that the helper still runs after reading whether its agent was stopped.
+  - F-agent-14 lists only the editor's file and says Claude Code has no shell or file tools; "Allow …?" is for agents given with `--agent-command`.
+  - `RESULT: ok unit 52/52 (3 files)` (features list, agent-watch, editor-helper); `npm run check` clean.

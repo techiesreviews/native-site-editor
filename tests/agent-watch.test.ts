@@ -575,7 +575,7 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   // A background job of the conversation ends with it: the helper starts detached, or the user runs it themselves.
   // Each detached form carries the token itself: systemd-run passes no environment, and nohup runs env, which sets it.
   const detached = helperDetached("https://editor.example/mcp", "ase_token");
-  assert.equal(detached.systemd, 'systemd-run --user --unit editor-helper --setenv=EDITOR_HELPER_TOKEN=ase_token --setenv=PATH="$PATH" "$(command -v npx)" -y @techiesreviews/editor-helper@0.1.0 https://editor.example/mcp');
+  assert.equal(detached.systemd, 'systemd-run --user --collect --unit editor-helper --setenv=EDITOR_HELPER_TOKEN=ase_token --setenv=PATH="$PATH" "$(command -v npx)" -y @techiesreviews/editor-helper@0.1.0 https://editor.example/mcp');
   assert.equal(detached.nohup, "nohup env EDITOR_HELPER_TOKEN=ase_token npx -y @techiesreviews/editor-helper@0.1.0 https://editor.example/mcp >/dev/null 2>&1 &");
   assert.ok(prompt.includes(`on Linux run \`${detached.systemd}\` (stop it with \`systemctl --user stop editor-helper\`), elsewhere \`${detached.nohup}\`. Check a few seconds later that it still runs`));
   assert.match(prompt, /If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me: the one time you repeat the token\./);

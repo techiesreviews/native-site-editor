@@ -1134,11 +1134,11 @@ its number unused.
 - Steps: none yet (needs a connected agent)
 
 ### F-agent-14 The helper starts your agent for each pin
-- Try: Choose Connect to MCP, paste the prompt into Claude Code and ask it to keep picking up your pins after the conversation (it starts the helper detached from the chat, or tells you to run its command in a terminal you keep open). Close the chat, then pin "Make this friendlier" on a heading.
-- Good: Within seconds the pin turns to Claude Code, in its colour and name, without any chat open. Its question comes to the pin; your answer goes back to the same agent, which finishes and turns the pin grey. When it wants anything beyond the editor's own tools (a shell command, the computer's files), the pin asks "Allow …?" first, and only a yes lets it. Disconnect MCP ends the helper and its agents. No toast or explainer (S1, S4).
-- Files: `helper/src/helper.ts`, `helper/src/agents.ts`, `helper/src/acp.ts`, `helper/src/cli.ts`, `src/agent-prompts.ts`
-- Phone: no (the helper runs on a computer)
-- Spec: `tests/editor-helper.test.ts` (unit, against the local Worker)
+- Try: Choose Connect to MCP, paste the prompt into Claude Code and ask it to keep picking up your pins after the conversation (it starts the helper, `helper/`, detached from the chat, or tells you to run its command in a terminal you keep open; `tests/editor-helper.test.ts` tries it against the local Worker). Close the chat, then pin "Make this friendlier" on a heading.
+- Good: Within seconds the pin turns to Claude Code, in its colour and name, without any chat open. Its question comes to the pin; your answer goes back to the same agent, which finishes and turns the pin grey. Claude Code has no shell or file tools there; an agent started with its own command (`--agent-command`) that wants a tool outside the editor's asks "Allow …?" on the pin first, and only a yes lets it. Disconnect MCP ends the helper and its agents. No toast or explainer (S1, S4).
+- Files: `src/agent-prompts.ts`
+- Phone: no
+- Spec: none
 - Steps: none yet (needs the helper published and running)
 
 ## Command palette

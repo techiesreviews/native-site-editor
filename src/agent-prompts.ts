@@ -61,7 +61,7 @@ export function helperCommand(url: string, token: string) {
  */
 export function helperDetached(url: string, token: string) {
   return {
-    systemd: `systemd-run --user --unit editor-helper --setenv=EDITOR_HELPER_TOKEN=${token} --setenv=PATH="$PATH" "$(command -v npx)" -y ${HELPER_PACKAGE} ${url}`,
+    systemd: `systemd-run --user --collect --unit editor-helper --setenv=EDITOR_HELPER_TOKEN=${token} --setenv=PATH="$PATH" "$(command -v npx)" -y ${HELPER_PACKAGE} ${url}`,
     nohup: `nohup env EDITOR_HELPER_TOKEN=${token} npx -y ${HELPER_PACKAGE} ${url} >/dev/null 2>&1 &`,
   };
 }
