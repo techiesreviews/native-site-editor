@@ -1,7 +1,7 @@
 ---
 title: "The helper: any agent picks up pins"
 type: task (AFK)
-status: open
+status: closed
 assignee: am-16
 builder: claude
 blocked_by: [12-mcp-menu-agents, 13-pin-conversation]
@@ -113,3 +113,5 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - A closed terminal's failing log writes no longer crash the helper before it answers its pins (`process.stderr` error listener). Stopping "Pin helper" in the menu answers its agents' unfinished pins ("… stopped: the helper was stopped in the editor."). A turn re-checks that the helper still runs after reading whether its agent was stopped.
   - F-agent-14 lists only the editor's file and says Claude Code has no shell or file tools; "Allow …?" is for agents given with `--agent-command`.
   - `RESULT: ok unit 52/52 (3 files)` (features list, agent-watch, editor-helper); `npm run check` clean.
+- Real Claude Code run moved to Lex's stage 1 end check (lead, 2026-10-30): it needs a Connect to MCP token and a pin Lex places, so it is in the Tuesday pack (`docs/work/tuesday/2026-11-03.md`, "Try the helper with your own Claude Code"). The command, from the repository root on the lead's machine with the token from Connect to MCP on the preview: `(cd helper && npm run build) && EDITOR_HELPER_TOKEN=<token> node helper/dist/cli.js https://preview-editor.techies.tools/mcp`. Then Lex pins a heading and watches Claude Code answer it, closes Claude Code's chat and pins again. The result goes here. `kit pr` lands with this "Done when" item waived (lead).
+- Final head (698b789af): `kit specs --affected` `RESULT: ok specs 48/48 passed`; `kit unit` (full) `RESULT: ok unit 5153/5153 (381 files)`. Second look: skipped (Grok weekly budget 8/8 used in 2026-W44; free OpenCode gave no session within 300 s).
