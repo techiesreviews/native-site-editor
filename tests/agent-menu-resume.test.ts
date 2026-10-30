@@ -71,18 +71,19 @@ for (const how of ["switch", "destroy", "disconnect"] as const) {
 // "other-owner": another tab of this browser holds the socket and an agent uses the site's connection;
 // "taken-over": another tab holds it with no connection of the site at all. `found` "paused": the
 // reconnect gave up while the user was away (ticket am-51), so the press finds it paused, not reconnecting.
-function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "connected" | "other-owner" | "taken-over" | "reconnecting", found: "reconnecting" | "paused" = "reconnecting", owner = false) {
-  let site = "main", pinned = "", activation = 0, remote = false, retried = false;
+// `owner`: the site owner paused remote agents, known before the press or found while the socket opens.
+function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "connected" | "other-owner" | "taken-over" | "reconnecting", found: "reconnecting" | "paused" = "reconnecting", owner: "none" | "before" | "open" = "none") {
+  let site = "main", pinned = "", activation = 0, remote = false, retried = false, retries = 0, ownerPaused = owner === "before";
   const writes: string[] = [];
   const live = (at: number) => remote && activation === at && site === pinned;
   const done = turnOnAgents({
     start: () => { remote = true; activation++; pinned = site; return activation; },
     live,
-    paused: () => owner,
+    paused: () => ownerPaused,
     read: race.port("read", async () => true),
-    open: race.port("open", async () => {}),
+    open: race.port("open", async () => { if (owner === "open") ownerPaused = true; }),
     state: () => retried ? after : found,
-    retry: race.port("retry", async () => { retried = true; }),
+    retry: race.port("retry", async () => { retries++; retried = true; }),
     retryWaits: () => false,
     offer: now => now === "waiting" ? "wait" : now === "connected" || now === "other-owner" ? "disconnect" : "connect",
     fresh: now => now === "idle" || now === "other-owner" || now === "taken-over",
@@ -99,6 +100,7 @@ function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "
       if (how === "again") { remote = true; activation++; pinned = site; }
     },
     writes,
+    retries: () => retries,
   };
 }
 
@@ -118,10 +120,14 @@ test("Connect to MCP after a reconnect gave up while away: it retries as for a r
     await run.done;
     assert.deepEqual(run.writes, [write], after);
   }
-  // Paused by the site owner, not by a reconnect that gave up: the press neither retries nor prompts.
-  const owner = press({ port: (_name, work) => work }, "idle", "paused", true);
-  await owner.done;
-  assert.deepEqual(owner.writes, []);
+  // Paused by the site owner, not by a reconnect that gave up, whether known before the press or
+  // found while the socket opens (a retry would lift the owner's pause): no retry, no prompt.
+  for (const when of ["before", "open"] as const) {
+    const owner = press({ port: (_name, work) => work }, "idle", "paused", when);
+    await owner.done;
+    assert.equal(owner.retries(), 0, when);
+    assert.deepEqual(owner.writes, [], when);
+  }
 });
 
 for (const how of ["off", "switch", "again"] as const) {
