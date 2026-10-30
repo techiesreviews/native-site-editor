@@ -58,10 +58,11 @@ function waitBudget(command: JsonValue): number | undefined {
   const wanted = typeof command.waitMs === "number" && Number.isFinite(command.waitMs) ? command.waitMs : WAIT_LIMIT_MS;
   return Math.min(WAIT_LIMIT_MS, Math.max(10_000, Math.floor(wanted)));
 }
-/** A long job's id (ticket am-17, worker/mcp.ts). Its cancel is remembered far longer than a call's, at most
- * JOB_CANCELS of them, ids only: a job's looks come up to a minute apart, and a cancelled job never waits again. */
+/** A long job's id (ticket am-17, worker/mcp.ts). Its cancel is remembered far longer than a call's, ids only: a
+ * job's looks come up to a minute apart, and a cancelled job never waits again. At most JOB_CANCELS per connection,
+ * so one connection's cancels never push out another's; a connection's own grant ids bound the whole. */
 export const JOB_ID_PREFIX = "wait:";
-const JOB_CANCEL_MS = 24 * 60 * 60_000, JOB_CANCELS = 256;
+const JOB_CANCEL_MS = 24 * 60 * 60_000, JOB_CANCELS = 16;
 const sameScope = (a: RelayScope, b: RelayScope) => a.tabId === b.tabId && a.generation === b.generation && workspaceKey(a.workspace) === workspaceKey(b.workspace);
 
 /** Shared by the editor upgrade and future MCP dispatchers. Repository names can
@@ -135,17 +136,21 @@ export class AgentRelay {
   private intakes = new Map<{ cancelled: boolean; stop: AbortController }, RelayCancelKey>();
   /** Brief cancellation memory only; lazy expiry leaves idle hibernation possible. */
   private recentCancels = new Map<string, number>();
-  /** Cancelled long jobs, in memory only like the rest: a wake forgets them. */
-  private cancelledJobs = new Map<string, number>();
+  /** Cancelled long jobs by connection, then job id, with their expiry; in memory only like the rest: a wake forgets them. */
+  private cancelledJobs = new Map<string, Map<string, number>>();
 
   private cancelId(key: RelayCancelKey) { return JSON.stringify([key.grantId, key.requestId]); }
   private pruneCancels() {
-    for (const memory of [this.recentCancels, this.cancelledJobs])
-      for (const [key, expiry] of memory) if (expiry <= this.clock.now()) memory.delete(key);
+    for (const [key, expiry] of this.recentCancels) if (expiry <= this.clock.now()) this.recentCancels.delete(key);
+    for (const [grant, jobs] of this.cancelledJobs) {
+      for (const [job, expiry] of jobs) if (expiry <= this.clock.now()) jobs.delete(job);
+      if (!jobs.size) this.cancelledJobs.delete(grant);
+    }
   }
   private recentlyCancelled(key?: RelayCancelKey) {
     this.pruneCancels();
-    return key !== undefined && (this.recentCancels.has(this.cancelId(key)) || this.cancelledJobs.has(this.cancelId(key)));
+    return key !== undefined && (this.recentCancels.has(this.cancelId(key)) ||
+      typeof key.requestId === "string" && this.cancelledJobs.get(key.grantId)?.has(key.requestId) === true);
   }
 
   constructor(sockets: RelaySocket[], private clock: RelayClock = {
@@ -376,11 +381,17 @@ export class AgentRelay {
   cancel(key: RelayCancelKey) {
     this.pruneCancels();
     const id = this.cancelId(key);
-    const job = typeof key.requestId === "string" && key.requestId.startsWith(JOB_ID_PREFIX);
-    const memory = job ? this.cancelledJobs : this.recentCancels;
-    memory.delete(id);
-    memory.set(id, this.clock.now() + (job ? JOB_CANCEL_MS : 10_000));
-    if (memory.size > (job ? JOB_CANCELS : 32)) memory.delete(memory.keys().next().value!);
+    if (typeof key.requestId === "string" && key.requestId.startsWith(JOB_ID_PREFIX)) {
+      const jobs = this.cancelledJobs.get(key.grantId) ?? new Map<string, number>();
+      jobs.delete(key.requestId);
+      jobs.set(key.requestId, this.clock.now() + JOB_CANCEL_MS);
+      if (jobs.size > JOB_CANCELS) jobs.delete(jobs.keys().next().value!);
+      this.cancelledJobs.set(key.grantId, jobs);
+    } else {
+      this.recentCancels.delete(id);
+      this.recentCancels.set(id, this.clock.now() + 10_000);
+      if (this.recentCancels.size > 32) this.recentCancels.delete(this.recentCancels.keys().next().value!);
+    }
     for (const [reservation, intakeKey] of this.intakes)
       if (this.cancelId(intakeKey) === id) { reservation.cancelled = true; reservation.stop.abort(); }
     for (const call of [...this.calls.values()])

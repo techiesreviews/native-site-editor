@@ -276,7 +276,7 @@ export async function startCountedWorker() {
     },
     async dispose() { try { await Promise.all(pending); } finally { clock.uninstall(); } },
   };
-  return { worker, dispatchFetch: (url: string, init?: RequestInit) => worker.dispatchFetch(url, init), counters, clock, github, namespace,
+  return { worker, dispatchFetch: (url: string, init?: RequestInit) => worker.dispatchFetch(url, init), counters, clock, github, namespace, env,
     storage: (name: string) => object(name).storage,
     /** Restore a hibernated editor socket, then deliver its real scope handshake. */
     attach(name: string, socket: RelaySocket, handshake: string) {

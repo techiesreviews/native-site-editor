@@ -574,3 +574,29 @@ test("each command frame carries only the remaining total budget, even after a d
   restored.message(h.editor, reply(sent.id));
   assert.deepEqual(await waiting, { ok: true, result: { applied: true } });
 });
+
+test("a long job's cancel lasts a day, at most sixteen per connection, so no connection pushes out another's", () => {
+  const h = fixture();
+  const refused = (requestId: string | number, grantId: string) => {
+    const reservation = h.relay.reserve(1, { requestId, grantId });
+    if ("ok" in reservation) return !reservation.ok && reservation.code === "cancelled";
+    reservation.release();
+    return false;
+  };
+  h.relay.cancel({ requestId: "wait:job", grantId: "one" });
+  h.relay.cancel({ requestId: 7, grantId: "one" });
+  h.advance(11_000);
+  assert.equal(refused("wait:job", "one"), true, "a job stays cancelled past a call's 10 s");
+  assert.equal(refused(7, "one"), false, "a call's cancel still lasts 10 s");
+  assert.equal(refused("wait:job", "two"), false, "only for its own connection");
+  // Another connection's cancels, however many, never push this one out.
+  for (let job = 0; job < 40; job++) h.relay.cancel({ requestId: `wait:other-${job}`, grantId: "two" });
+  assert.equal(refused("wait:job", "one"), true);
+  assert.equal(refused("wait:other-0", "two"), false, "its own oldest dropped out past sixteen");
+  assert.equal(refused("wait:other-39", "two"), true);
+  // Its own sixteen more push the first out.
+  for (let job = 0; job < 16; job++) h.relay.cancel({ requestId: `wait:more-${job}`, grantId: "one" });
+  assert.equal(refused("wait:job", "one"), false);
+  h.advance(24 * 60 * 60_000);
+  assert.equal(refused("wait:more-15", "one"), false, "after a day it is forgotten");
+});
