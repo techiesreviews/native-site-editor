@@ -83,6 +83,7 @@ Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **C
 | [62 `kit pr` opens the PR in the project's own repo, not an `upstream`](tickets/62-kit-pr-picks-the-origin-repo.md) | S | claude | 30 |
 | [63 The kit never prints a token from a remote's URL](tickets/63-never-print-a-remote-token.md) | S | claude | 62 |
 | [64 The nova-youtube-agent skill moves into chat; the skill guard allows a project's own skill by name](tickets/64-nova-skill-into-chat.md) | S–M | claude | 42 |
+| [65 One home for skills: one folder every agent reads, own skills in a private repo](tickets/65-one-home-for-skills.md) | M | claude, **needs the repo from Lex** | 64 |
 
 ## 2. Setup pieces (tickets 01, 05; research 04)
 
