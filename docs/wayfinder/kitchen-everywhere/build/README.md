@@ -127,23 +127,23 @@ Each move waits for Lex's OK and for the one before it, so a problem in one proj
 
 ## 6. From the 2026-10-30 retros (lexvd.nl, script-editor, techies-prompter)
 
-Lex (2026-10-30): the project threads stopped their own kit work and handed it here; for the prompter, "update [the shared kit] to the things found here, and matching my design preferences". Every slice is built in the kit repo (`~/Projects/agent-kit`) and lands through its own `kit pr`; the order puts the rules and the push guard that protect live sites first, then the doctor warnings, red tests and failure details, then the browser tester, the release check and the shared slider, and the motion check last (it starts with a survey).
+Lex (2026-10-30): the project threads stopped their own kit work and handed it here; for the prompter, "update [the shared kit] to the things found here, and matching my design preferences". Every slice is built in the kit repo (`~/Projects/agent-kit`) and lands through its own `kit pr`. Ticket 77 checked every one against the kit as it is ([retro check](retro-check-2026-10-30.md)): 12 tickets became 8 slices, with 73 dropped, 70 waiting, and 75 merged into 67.
 
 | Slice | Size | Builder | Blocked by |
 | --- | --- | --- | --- |
-| [66 Kitchen rules: kit changes through this board, a build's tests in its project, reports in plain English, short AGENTS.md](tickets/66-kit-changes-only-through-this-board.md) | S | claude | – |
-| [68 A raw push to a live branch is stopped and pointed to `kit pr` (first half of the gate)](tickets/68-push-guard-for-live-branches.md) | S–M | claude | – |
-| [67 Testing and review rules: natural gestures, presses end every way, new tests fail on old code, motion in CSS](tickets/67-testing-and-review-rules.md) | S | claude | 66 |
-| [75 House style: native shared controls, text on see-through patches checked over every surface, components list their colours](tickets/75-house-style-native-controls-and-contrast.md) | S | claude | 67 |
-| [69 `kit doctor` warns when no tests are wired, lists overdue reminders and long always-read files; the review brief names the test commands](tickets/69-doctor-warns-no-tests-and-due-reminders.md) | S–M | claude | 64 (its kit PR #6), 67 |
-| [70 `kit unit --red`: a new test must fail on the old code](tickets/70-new-tests-must-go-red.md) | M | claude | 69 |
-| [74 A failed check keeps its details in `error.txt`, named on its RESULT line](tickets/74-failure-details-kept.md) | S–M | claude | 70 |
-| [71 One shared browser tester (`browser.mjs`, `kit browser`), close-ups and suites by name, from the `browser-tester` WIP](tickets/71-shared-browser-tester.md) | M | claude | – |
-| [72 `kit release-check` before every deploy (second half of the gate begun in 68)](tickets/72-release-check.md) | M | claude | 68, 69, 74 |
-| [76 One shared slider for every site (the prompter's range field, native HTML and CSS)](tickets/76-shared-range-field.md) | M | claude | 69, 71, 75 |
-| [77 Check and define the retro tickets (66–76) before any is built](tickets/77-check-the-retro-tickets.md) | S | claude | – |
-| [78 `kit bg` and `kit pr`'s long steps outlive a T3 restart](tickets/78-kit-bg-outlives-the-session.md) | M | claude | 77 |
-| [73 `kit ux` flags JavaScript-timed motion without a `motion-exception` note](tickets/73-kit-ux-motion-check.md) | S–M | claude | 60, 61, 67, 75 |
+| [66 Kitchen rules: kit changes through this board, a build's tests in its project, reports in plain English, short AGENTS.md (finish the WIP)](tickets/66-kit-changes-only-through-this-board.md) | S | claude | 77 |
+| [68 A raw push to a live branch is stopped and pointed to `kit pr` (finish the WIP)](tickets/68-push-guard-for-live-branches.md) | S–M | claude | 77 |
+| [78 `kit bg` jobs outlive a turn end and a T3 restart (`systemd-run --user --scope`, a time limit)](tickets/78-kit-bg-outlives-the-session.md) | S | claude | 77 |
+| [67 Testing, review and house-style rules from the retros (with 75 and the rule halves of 70 and 74)](tickets/67-testing-and-review-rules.md) | S | claude | 66 |
+| [74 A failed `kit pr` step names its log on the RESULT line](tickets/74-failure-details-kept.md) | XS | opencode/deepseek-v4.1-flash-free | 77 |
+| [69 `kit doctor` warns when no tests are wired and notes long always-read files; the review brief lists unit tests](tickets/69-doctor-warns-no-tests-and-due-reminders.md) | S | claude | 64 (its kit PR #6), 66 |
+| [71 Browser checks on Playwright everywhere: one shared install, `gestures.mjs` for touch and pen, close-ups and suites by name](tickets/71-shared-browser-tester.md) | S | claude | 67 |
+| [72 `kit release-check` before every live deploy: nothing unsaved, exactly the release branch](tickets/72-release-check.md) | S | claude | 68 |
+| [76 One shared slider for every site (the prompter's range field), copied by hand until a second site uses it](tickets/76-shared-range-field.md) | S–M | claude | 67, 71, Lex's answer on its home |
+| [77 Check and define the retro tickets before any is built](tickets/77-check-the-retro-tickets.md) | S | claude | – (closed) |
+| ~~[70 `kit unit --red`](tickets/70-new-tests-must-go-red.md)~~ waits (rule in 67) | – | – | `wontfix` for now |
+| ~~[73 Motion check in `kit ux`](tickets/73-kit-ux-motion-check.md)~~ dropped | – | – | `wontfix` |
+| ~~[75 House style lines](tickets/75-house-style-native-controls-and-contrast.md)~~ merged into 67 | – | – | `wontfix` (merged) |
 
 ## Suggested waves
 
@@ -156,7 +156,7 @@ The frontier decides; this is one order that keeps to the rules (at most 5 at on
 5. 30 alone; then 31 (Lex's OK for both given 2026-10-27).
 6. 40 to 46, one after another (Lex's one OK, 2026-10-27), stopping at the first problem; 47 whenever Lex builds in `camframe` again.
 7. 50 last, with Lex's approved wording.
-8. The 2026-10-30 retro slices, in this order: 66 and 68 side by side (the kitchen rules and `hooks/bash-guard.sh`, no shared kit file); 67 after 66 (`docs/kitchen.md`), then 75 (`docs/house-style.md`); 69 once agent-kit PR #6 (ticket 64's kit part) and 67 are in (`kit.d/doctor`, `review-brief.mjs`); 70 after 69 (`review-brief.mjs`), then 74 (`kit.d/unit`, `kit.d/fix`, `kit-lib.mjs`); 71 any time (new files only), but after those by the order; 72 after 68, 69 and 74 (the gate, the shared "tests wired" helper, `kit.d/pr`); 76 after 69, 71 and 75 (`kit.d/doctor`, the tester, the rule); 73 last, after 60, 61, 67 and 75 (`kit.d/ux`, `docs/house-style.md`). The 50s and 60s slices still open keep their own places.
+8. The 2026-10-30 retro slices (order from the [retro check](retro-check-2026-10-30.md)): 66, 68 and 78 now, side by side (`docs/kitchen.md` and `review-brief.mjs`; `hooks/bash-guard.sh`; `kit.d/bg`); 74 any time as a free-model chore (`kit.d/pr`), before 72; 67 after 66 (`docs/kitchen.md`, `review-brief.mjs`); 69 once agent-kit PR #6 (ticket 64's kit part) and 66 are in (`kit.d/doctor`, `review-brief.mjs`); 71 after 67 (station 7); 72 after 68 and 74 (`kit.d/pr`); 76 after 67, 71 and Lex's answer on its home. The 50s and 60s slices still open keep their own places.
 
 ## Waiting for Lex
 

@@ -1,7 +1,7 @@
 ---
-title: "Check and define the retro tickets (66–76) before any of them is built"
+title: "Check and define the retro tickets (66–76, and 78) before any of them is built"
 type: research (AFK)
-status: open
+status: closed
 assignee: ke-77
 builder: claude
 blocked_by: []
@@ -33,3 +33,12 @@ The page exists, every ticket 66–76 has a verdict, and Lex can approve the lis
 ## Kit commands and evidence
 
 Read-only research; land the docs with `scripts/agents/kit pr` (docs tier) into `dev`.
+
+## Done (2026-10-30)
+
+- The page: [retro-check-2026-10-30.md](../retro-check-2026-10-30.md), one row per ticket with verdict, evidence and cost. 78 was added by the lead mid-check and is checked too.
+- Verdicts: build as is: 66 and 68 (finish their WIP). Build: 67, which takes in 75 and the rule halves of 70 and 74. Build smaller: 69 (reminders dropped), 71 (on Playwright, no `kit browser`), 72 (clean tree plus exactly the release branch), 74 (the log path on `kit pr`'s failure line, a free-model chore), 76 (no `kit ui add` yet) and 78 (`--scope` and a time limit, no service unit). Waits: 70 (`wontfix` for now). Dropped: 73 (`wontfix`). Merged: 75 into 67 (`wontfix`, merged).
+- Tickets updated: each has a `## Check (ke-77, 2026-10-30)` section. Where the verdict is build, Decided behaviour, Files and Done when are rewritten. `blocked_by` lists drop the closed-off tickets. The build README's table and wave 8 follow.
+- Evidence gathered read-only: the kit at `1c217e6`, the WIP branches (ke-66 `053b2ee`, ke-68 `e2b69a3`, `browser-tester` `a8eb190`), prompter `shared-kit` `cf596c7`, and git history and settings across `~/Projects/*`. Two tries on Lex's machine, nothing kept: Playwright's hover and pointer queries on desktop and phone, and `systemd-run --user --scope` leaving the turn's scope with fd, environment and `RuntimeMaxSec`. Also one node:test log check of `expected`/`actual`, in a temporary folder that was removed.
+- Questions for Lex: the [3 Nov Tuesday pack](../../../../work/tuesday/2026-11-03.md#kitchen-retro-tickets-checked-ticket-77).
+- Nothing in the kit was built or changed.
