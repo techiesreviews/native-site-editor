@@ -195,7 +195,7 @@ export async function runHelper(options: HelperOptions): Promise<HelperEnd> {
         const text = typeof prompt === "string" ? prompt : prompt();
         await job.acp!.request("session/prompt", { sessionId: job.session, prompt: [{ type: "text", text }] });
         // Stopped in the editor meanwhile, its calls were refused and its pin is left: say so as the helper.
-        if (!job.closed && !stopping && await stoppedName(job.request, job.name)) {
+        if (!job.closed && !stopping && await stoppedName(job.request, job.name) && !job.closed && !stopping) {
           close(job);
           await sayAs(job.request, HELPER_AGENT, "answered", `${job.name} was stopped in the editor. Send again for another agent.`).catch(() => {});
         }
@@ -344,7 +344,8 @@ export async function runHelper(options: HelperOptions): Promise<HelperEnd> {
         continue;
       }
       if (answer.error) {
-        if (STOPPED.test(answer.text)) return await stop({ why: "The editor's user stopped the helper.", failed: true });
+        // Only the helper's own name is refused: its agents' pins still hear it.
+        if (STOPPED.test(answer.text)) return await stop({ why: "The editor's user stopped the helper.", failed: true }, "the helper was stopped in the editor.");
         log(`The editor refused the wait: ${answer.text}`);
         await sleep(10_000, options.signal);
         continue;
