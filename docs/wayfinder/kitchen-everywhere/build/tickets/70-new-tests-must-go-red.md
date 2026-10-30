@@ -1,17 +1,25 @@
 ---
 title: "`kit unit --red`: a new or changed test must fail on the old code, checked in every fix round"
 type: task (AFK)
-status: open
+status: wontfix
 assignee:
 builder: claude
-blocked_by: [69-doctor-warns-no-tests-and-due-reminders, 77-check-the-retro-tickets]
+blocked_by: [77-check-the-retro-tickets]
 ---
 
 ## Goal
 
 Lex (2026-10-30), after the lexvd.nl retro: a builder's regression test passed on the old code too, so it could not catch the bug it was written for, and the review did not notice. Ticket 67 writes the rule (a new test fails on the old code); this ticket makes the kit check it.
 
-## Decided behaviour
+## Check (ke-77, 2026-10-30): the rule goes into 67, the command waits
+
+Verdict on the [retro check](../retro-check-2026-10-30.md): `wontfix` for now. The rule ("a regression test is shown failing on the old code, both runs quoted in Done") goes into [67](67-testing-and-review-rules.md). Why the command waits:
+
+- One missed case (lexvd, 2026-10-30). The Claude review already finds tests that would still pass in about 36 of the editor's 536 review folders.
+- Cost: a temporary base worktree and a second test run in every fix round. The editor's Playwright specs can't run on an old base without its build and server.
+- Reopen with the same design when the weekly learning routine finds a second test that could not fail and still landed.
+
+## Decided behaviour (kept for a later reopening)
 
 - `kit unit --red [--base REF]` (base: the landing branch's merge base, as `--affected` uses) finds the test files the change added or changed, runs them against the base's source (the base's non-test files with the change's test files on top, in a temporary worktree), and expects them to fail. A test that passes there "can't fail": the run fails and names it (`RESULT: fail red <file>: passes on <base> too, so it can't catch the change`). A test that cannot run on the base (it imports something the change adds) counts as red and says so.
 - A change with no new or changed tests: `RESULT: ok red no new tests` (ticket 67's rule and the review decide whether one was needed).
