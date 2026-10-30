@@ -53,6 +53,18 @@ export const HELPER_PACKAGE = "@techiesreviews/editor-helper@0.1.0";
 export function helperCommand(url: string, token: string) {
   return `EDITOR_HELPER_TOKEN=${token} npx -y ${HELPER_PACKAGE} ${url}`;
 }
+/**
+ * The same command started apart from the conversation that runs it, so it outlives it; each carries the token
+ * itself. Linux: a user service (`systemd-run` passes no environment of its own, so the token and PATH are set, and
+ * npx is found by its full path), stopped with `systemctl --user stop editor-helper`. Elsewhere: `nohup` through
+ * `env`, which sets the token for the program it starts.
+ */
+export function helperDetached(url: string, token: string) {
+  return {
+    systemd: `systemd-run --user --unit editor-helper --setenv=EDITOR_HELPER_TOKEN=${token} --setenv=PATH="$PATH" "$(command -v npx)" -y ${HELPER_PACKAGE} ${url}`,
+    nohup: `nohup env EDITOR_HELPER_TOKEN=${token} npx -y ${HELPER_PACKAGE} ${url} >/dev/null 2>&1 &`,
+  };
+}
 
 /**
  * What to paste into an agent so it talks to the editor over a temporary,
@@ -83,5 +95,5 @@ A change to the part I am typing in answers waiting and lands once I leave that 
 
 Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token. If you stop before that, first answer each request you took but did not finish with reply_to_request (status answered, saying you stopped). The token also stops working when I sign out of the editor (at most eight hours).
 
-If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog: ${code(helperCommand(url, token))} (it needs Node 24 or later). A background job of this conversation ends with it, so start the helper detached from it (${code("systemd-run --user")} on Linux, else ${code("nohup … &")} or ${code("setsid")}), check a few seconds later that it still runs, then stop the watchdog and tell me how you started it and how to stop it. If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me: the one time you repeat the token. For each pin the helper starts Claude Code, until Disconnect MCP.`;
+If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog: ${code(helperCommand(url, token))} (it needs Node 24 or later). A background job of this conversation ends with it, so start the helper apart from it: on Linux run ${code(helperDetached(url, token).systemd)} (stop it with ${code("systemctl --user stop editor-helper")}), elsewhere ${code(helperDetached(url, token).nohup)}. Check a few seconds later that it still runs, then stop the watchdog and tell me how you started it and how to stop it. If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me: the one time you repeat the token. For each pin the helper starts Claude Code, until Disconnect MCP.`;
 }
