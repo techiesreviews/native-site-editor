@@ -2,7 +2,7 @@
 title: "`kit release-check` before every live deploy: nothing unsaved, and exactly what is on the release branch (second half of the gate begun in 68)"
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-72
 builder: claude
 blocked_by: [68-push-guard-for-live-branches, 77-check-the-retro-tickets]
 ---
