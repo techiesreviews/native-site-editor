@@ -31,3 +31,4 @@ On agents-and-multiplayer slice 45 (PR #259) the builder found that the test run
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines.
 - Lead, 2026-10-30: also take this here: the `kit ux` reviewer returned no verdict for one feature three times on agents-and-multiplayer slice 14 (F-canvas-13), stopping the slice each time until a rerun. A missing verdict should be retried once by `kit ux` itself, then reported as "no verdict" without stopping the slice.
+- Lead, 2026-10-30: also here: a free OpenCode second look that opened a session but never finished ran for 72+ minutes on agents-and-multiplayer slice 15 (the 300 s silence check only covers a session that never starts). Give the second look an overall time limit (about 25 minutes), after which it ends as "skipped (timed out)" and the slice goes on.
