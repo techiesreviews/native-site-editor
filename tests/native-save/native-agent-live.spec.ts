@@ -20,7 +20,8 @@ async function countPongs(page: Page) {
     window.WebSocket = class extends NativeSocket {
       constructor(url: string | URL, protocols?: string | string[]) {
         super(url, protocols);
-        this.addEventListener("message", event => {
+        // The agent relay's pongs only: the page's live room socket pings too (src/live-room.ts).
+        if (String(url).includes("/api/agent/relay")) this.addEventListener("message", event => {
           if (event.data === "pong") document.documentElement.dataset.agentPongs = String(Number(document.documentElement.dataset.agentPongs ?? 0) + 1);
         });
       }

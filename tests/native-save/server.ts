@@ -163,7 +163,8 @@ import { handle, type Env } from "../../worker/app.ts";
 import { admitRegistration, isBudgetKey, REGISTRATION_ROUTE } from "../../worker/oauth-registration.ts";
 import { clearHub, hubView, type HubStorage } from "../../worker/agent-store.ts";
 import { fakeHubRoute, fakeRelayRoute, resetFixtureRelays, restartFixtureRelays, serializeObject, type RelayConnect } from "./fake-hub.ts";
-import { installRelayUpgrade } from "./fake-websocket.ts";
+import { installRelayUpgrade, livePingedAt, type LiveConnect } from "./fake-websocket.ts";
+import { LiveRooms } from "../../worker/agent-relay.ts";
 import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "../../worker/oauth-pending.ts";
 import type { AgentHub } from "../../worker/agent-context.ts";
 import { tarball } from "../tar-helper.ts";
@@ -974,7 +975,20 @@ function newSessionId(): string {
   return createHash("sha256").update(`${Date.now()}:${Math.random()}`).digest("hex");
 }
 
-function env(connect?: RelayConnect, relaySession = "anonymous"): Env {
+// Live rooms (ADR 0003), one instance per Durable Object name as SessionStore holds them: shared by every
+// sign-in, so two browsers on the same repository and branch meet, whatever their clones.
+const liveRooms = new Map<string, LiveRooms>();
+function liveJoin(id: string, request: Request, live?: LiveConnect) {
+  let identity: { room?: unknown; access?: unknown; rejoin?: unknown } | null = null;
+  try { identity = JSON.parse(request.headers.get(LiveRooms.identityHeader) ?? "null"); } catch { /* Refused below. */ }
+  const room = identity?.room, access = identity?.access, rejoin = identity?.rejoin;
+  if (!live || typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || access !== "editor" || (rejoin !== undefined && typeof rejoin !== "string"))
+    return new Response(null, { status: 400 });
+  const rooms = liveRooms.get(id) ?? liveRooms.set(id, new LiveRooms([], () => Date.now(), livePingedAt)).get(id)!;
+  return live(rooms, { room, access, ...(typeof rejoin === "string" ? { rejoin } : {}) });
+}
+
+function env(connect?: RelayConnect, relaySession = "anonymous", live?: LiveConnect): Env {
   // eslint-disable-next-line no-restricted-syntax -- The local server implements only the Durable Object namespace surface exercised by worker requests.
   return {
     ...agentControlsBySession.get(relaySession),
@@ -1001,6 +1015,7 @@ function env(connect?: RelayConnect, relaySession = "anonymous"): Env {
           // Real relay core over Node sockets; absent owners refuse tools immediately.
           // Each demo sign-in has its own clone and browser ownership database, even though
           // all fixture accounts use DEMO_LOGIN. Tabs of that sign-in still share one relay.
+          if (url.pathname === "/live/join") return liveJoin(id, request, live);
           const relayResponse = await fakeRelayRoute(`${relaySession}:${id}`, request, connect);
           if (relayResponse) return relayResponse;
           // The agent hub, as worker/index.ts runs it.
@@ -1154,7 +1169,7 @@ const gitOf = (key: string, id: string | null, repoName: string | null) =>
   (repoName && onboardingOf(key).repos.get(repoName)?.git) || sessions.get(id ?? key)!.git!;
 
 // HTTP and WebSocket requests share the real Worker's session/repository authorization.
-async function workerResponse(req: Connect.IncomingMessage, bodyBuffer: Buffer, connect?: RelayConnect): Promise<Response> {
+async function workerResponse(req: Connect.IncomingMessage, bodyBuffer: Buffer, connect?: RelayConnect, live?: LiveConnect): Promise<Response> {
   const request = toRequest(req, bodyBuffer);
   // An MCP request carries an agent token, not a cookie: it reads the
   // repositories of the editor session the token belongs to.
@@ -1180,7 +1195,7 @@ async function workerResponse(req: Connect.IncomingMessage, bodyBuffer: Buffer, 
   if (slot && !slot.fixtureGits) slot.fixtureGits = new Map();
   const fixtureGits = slot?.fixtureGits ?? new Map<string, Git>();
 
-  return handle(request, env(connect, id ?? "anonymous"), githubFetch(git, fixtureGits, (id && sessionActions.get(id)) || NO_ACTIONS, onboardingKey ? onboardingOf(onboardingKey) : newOnboarding(), id ? hostingOf(id) : newHosting()));
+  return handle(request, env(connect, id ?? "anonymous", live), githubFetch(git, fixtureGits, (id && sessionActions.get(id)) || NO_ACTIONS, onboardingKey ? onboardingOf(onboardingKey) : newOnboarding(), id ? hostingOf(id) : newHosting()));
 }
 
 function workerMiddleware(): Connect.NextHandleFunction {
@@ -1536,7 +1551,7 @@ async function main() {
       preview: { host: "127.0.0.1", port: appPort, strictPort: true },
     });
     keepIdleConnections(server.httpServer);
-    installRelayUpgrade(server.httpServer, (request, connect) => workerResponse(request, Buffer.alloc(0), connect));
+    installRelayUpgrade(server.httpServer, (request, connect, live) => workerResponse(request, Buffer.alloc(0), connect, live));
     const close = () => void server.close().catch(() => undefined).finally(() => process.exit(0));
     process.once("SIGTERM", close);
     process.once("SIGINT", close);
@@ -1578,7 +1593,7 @@ async function main() {
   await app.listen();
   if (app.httpServer) {
     keepIdleConnections(app.httpServer);
-    installRelayUpgrade(app.httpServer, (request, connect) => workerResponse(request, Buffer.alloc(0), connect));
+    installRelayUpgrade(app.httpServer, (request, connect, live) => workerResponse(request, Buffer.alloc(0), connect, live));
   }
   const cleanup = async () => {
     await app.close().catch(() => undefined);

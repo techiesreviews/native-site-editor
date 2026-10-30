@@ -382,11 +382,13 @@ const { loadPagesActions, loadFileOps, pagesController, savePublish, filesTreeCo
 
 // The workspace's screen, the code panes and the source editor, a folder's summary, and closing it all (src/workspace-mount.ts).
 // By value: consts declared above and hoisted functions; `let` state goes in as accessors (tests/main-ts-ceiling.test.ts).
+// The open file's shared copy (src/live-text.ts, ADR 0003): loaded after the first paint, Yjs once someone else has the file open.
+const liveText = lazyModule(() => import("./live-text").then(live => live.startLiveText({ store: editorModule.sourceStore(), openFile: appStore.openFile, scope: draftScope })));
 const workspace = createWorkspaceMount({
   app, element, appStore, editorModule, workspaceSession, runtime, finishedWork, mediaHistoryHome, parkedSteps, guardedEdits, mediaController,
   paletteController, previewSelection, pageStructureController, linkedStyles, versions, cards, pagesAndFiles, setup, repositoryIndex, cleanSources,
   draftScope, shownScope, nextLoad, setCurrentPage, errorMessage, announce,
-  site: { active: nativeModeActive, deactivate: deactivateNative, update: updateNativePreviewSources, painted: noteNativePainted, assets: loadNativeAssets,
+  site: { active: nativeModeActive, deactivate: deactivateNative, update: updateNativePreviewSources, painted: () => { noteNativePainted(); void liveText(); }, assets: loadNativeAssets,
     shown: loadNativeShownFiles, routeSources: nativeRouteShownSources, styles: loadNativeComponentStyles, files: nativeSiteFiles, route: nativeRouteForPath },
   builder: { choices: nativeSectionChoices, addPoint: nativeElementAddPoint, addPoints: nativeAddPoints, insert: insertNativeComponent, drag: dragPageBlock,
     dropTree: structureDrop, loadDrag: loadBlockDrag, loadInsert: loadBlockInsert, insertPorts: blockInsertPorts, finishTyping: finishRailTyping,
