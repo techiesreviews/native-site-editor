@@ -3,20 +3,18 @@ import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fixtureKind } from "../tests/native-save/fixture-contract.ts";
+import { specTestGroups } from "./spec-groups.mjs";
 
-// The native save suite in three fixture groups, chosen by the specs' own
+// The native save suite in three fixture groups, chosen by the tests' own
 // Playwright tags: `@actual` needs the actual starter, `@native-static` the
-// native static starter (a spec can carry both); the default group is
-// everything else.
+// native static starter (a test can carry both); the default group is every
+// test with neither, so a file mixing them runs in each of its groups.
 const grep = {
   default: ["--grep-invert", "@actual|@native-static"],
   actual: ["--grep", "@actual"],
   "native-static": ["--grep", "@native-static"],
 };
-const tagged = (name, tag) => readFileSync(`tests/native-save/${name}`, "utf8").includes(`"${tag}"`);
-const inGroup = (name, group) => group === "default"
-  ? !tagged(name, "@actual") && !tagged(name, "@native-static")
-  : tagged(name, `@${group}`);
+const inGroup = (name, group) => specTestGroups(readFileSync(`tests/native-save/${name}`, "utf8")).includes(group);
 
 const args = process.argv.slice(2);
 const group = args.shift();

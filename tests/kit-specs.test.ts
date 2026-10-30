@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { BUILDER_SPEC_CAP, builderSpecs, combineOutcomes, importsOf, namedSpecs, planShards, removedStrings, routeSpecs, selectAffected, selectionLine, SHARD_MIN_SPECS, shardCount, specGroups, summarizeRun, ticketSpecs } from "../scripts/agents/specs-affected.mjs";
+import { specTestGroups } from "../scripts/spec-groups.mjs";
 import { specsDigest } from "../scripts/agents/specs-digest.mjs";
 import { kitEnv } from "./support/kit-env.ts";
 
@@ -553,7 +554,8 @@ test("selection lines count all reason kinds including reasons beyond the first 
 
 test("fixture rules match exact tags and collect every applicable reason", t => {
   const f = fixture(t);
-  assert.deepEqual(specGroups(save("single"), "'@actual'"), ["default"]);
+  assert.deepEqual(specGroups(save("single"), "'@actual-starter'"), ["default"]);
+  assert.deepEqual(specGroups(save("single"), "test('a', { tag: '@actual' }, async () => {});"), ["actual"]);
   const actual = selectAffected({ files: f.files, changed: ["fixtures/actual-starter/index.html"] });
   assert.deepEqual(actual.map(spec => spec.file), [save("actual"), save("both")]);
   const defaults = selectAffected({ files: f.files, changed: ["fixtures/native-starter/index.html"] });
@@ -568,12 +570,27 @@ test("fixture rules match exact tags and collect every applicable reason", t => 
   assert.equal(selectionLine(spec), `${save("actual")} [actual] — one; two; three (+2 more)`);
 });
 
+test("a spec file with one @actual test and two plain ones runs all three: the plain two in the default run", () => {
+  const mixed = save("mixed-actual");
+  const text = 'test("plain one", async () => {});\ntest("needs the actual starter", { tag: "@actual" }, async () => {});\ntest(`plain two`, async () => {});\n';
+  const [spec] = namedSpecs([mixed], { [mixed]: text });
+  assert.deepEqual(spec.groups, ["default", "actual"]);
+  const runs = routeSpecs([spec]);
+  assert.deepEqual(runs.map(run => [run.group, run.files]), [["default", [mixed]], ["actual", [mixed]]]);
+  // The default run skips the tagged test (it runs in its own group), the actual run takes only that one.
+  assert.deepEqual(runs[0].command, ["npx", "playwright", "test", "--project=native-save", "--grep-invert", "@actual|@native-static", "--workers=1", mixed]);
+  assert.deepEqual(runs[1].command.slice(4, 5), ["actual"]);
+  // Every test tagged (a conditional skip is no test): the file stays out of the default run.
+  assert.deepEqual(specGroups(mixed, 'test.skip(!process.env.X, "why");\ntest("a", { tag: "@actual" }, async () => {});\ntest(\n  "b",\n  { tag: ["@smoke", "@native-static"] },\n  async () => {});\n'), ["actual", "native-static"]);
+  assert.deepEqual(specTestGroups('test.describe("group", () => {\n  test.fixme("plain", async () => {});\n  test("tagged", { tag: "@native-static" }, async () => {});\n});\n'), ["default", "native-static"]);
+});
+
 test("routing batches defaults and preview, runs tagged specs individually and both tags twice", t => {
   const f = fixture(t);
   const specs = namedSpecs(["imports.spec.ts", "actual.spec.ts", "static.spec.ts", "both.spec.ts", "preview.spec.ts"], f.files);
   const runs = routeSpecs(specs);
   assert.deepEqual(runs.map(run => run.group), ["default", "actual", "actual", "native-static", "native-static", "native-preview"]);
-  assert.deepEqual(runs[0].command, ["npx", "playwright", "test", "--project=native-save", "--workers=1", save("imports")]);
+  assert.deepEqual(runs[0].command, ["npx", "playwright", "test", "--project=native-save", "--grep-invert", "@actual|@native-static", "--workers=1", save("imports")]);
   assert.deepEqual(runs[1].command, ["node", "--import", "tsx", "scripts/native-browser-tests.mjs", "actual", "--port", "$ASE_TEST_PORT", "--workers=1", "--spec", "actual.spec.ts"]);
   assert.deepEqual(runs.at(-1)?.command, ["npx", "playwright", "test", "--project=native-preview", "--workers=1", preview]);
   assert.equal(runs.filter(run => run.files.includes(save("both"))).length, 2);
@@ -621,11 +638,11 @@ test("routing shards only large default groups and counts test calls from snapsh
   assert.deepEqual(runs.filter(run => run.group === "default").map(run => run.files), [[defaults[0].file], defaults.slice(1).map(spec => spec.file)]);
   assert.deepEqual(runs.filter(run => run.group !== "default"), routeSpecs(tagged));
   for (const run of runs.filter(run => run.group === "default")) {
-    assert.deepEqual(run.command, ["npx", "playwright", "test", "--project=native-save", "--workers=1", ...run.files]);
+    assert.deepEqual(run.command, ["npx", "playwright", "test", "--project=native-save", "--grep-invert", "@actual|@native-static", "--workers=1", ...run.files]);
   }
   const small = defaults.slice(0, SHARD_MIN_SPECS - 1);
   assert.deepEqual(routeSpecs(small, small, { shards: 4, texts }), routeSpecs(small));
-  assert.deepEqual(routeSpecs(small)[0].command, ["npx", "playwright", "test", "--project=native-save", "--workers=1", ...small.map(spec => spec.file)]);
+  assert.deepEqual(routeSpecs(small)[0].command, ["npx", "playwright", "test", "--project=native-save", "--grep-invert", "@actual|@native-static", "--workers=1", ...small.map(spec => spec.file)]);
 });
 
 test("real CLI --list includes committed, staged, unstaged and untracked changes, runs nothing", t => {
