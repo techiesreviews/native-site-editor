@@ -10,6 +10,7 @@ import { agentCommandFiles, agentCommandSignals, createAgentTools, siteCommandPi
 import { agentFileReader, type AgentReadPorts } from "./agent-tools-read";
 import { changesWork, landWaited, waitedReplacements } from "./agent-site";
 import { workingPart } from "./working-part";
+import { keptChange } from "./agent-changes";
 
 interface Options {
   workspace: AgentWorkspace;
@@ -182,7 +183,7 @@ export function createAgentEditTools(options: Options) {
           const files = new SiteFiles(agentFileReader(source, shared.context, signal), source.repo, shared.context, async hash => {
             check(); return shared.texts.get(hash);
           });
-          const prepared = await prepareAgentEdit(request, shared.context, files, readOnce);
+          const prepared = await prepareAgentEdit(request, shared.context, files, readOnce, id => keptChange(workspace, id));
           check();
           const context = shared.context;
           if ("unchanged" in prepared || typeof prepared.input.expectedHash !== "string" || request.tool !== "edit_file" && !PAGE_COMMANDS.has(request.tool))

@@ -78,6 +78,8 @@ export interface AgentCommandArgs {
   width?: "editor" | "phone";
   /** working_here: the agent finished, and shows nowhere. */
   done?: boolean;
+  /** discard_change: the requestId of the agent's own change to undo (ticket am-15). */
+  change?: string;
   /** make_component / inspect_preview: the element by outline id; inspect_preview also takes a CSS selector and count. */
   element?: string;
   selector?: string;

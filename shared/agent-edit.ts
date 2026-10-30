@@ -25,6 +25,7 @@ export interface AgentEditArgsMap {
   add_section: { page: string; component: string; expectedHash: string; before?: string; after?: string };
   move_section: { page: string; section: string; expectedHash: string; before?: string; after?: string };
   remove_section: { page: string; section: string; expectedHash: string };
+  discard_change: { change: string };
 }
 export type AgentEditTool = keyof AgentEditArgsMap;
 export type AgentEdit = { [K in AgentEditTool]: {
@@ -78,7 +79,8 @@ export function editShapeProblem<K extends AgentEditTool>(tool: K, input: AgentE
     case "add_section": return oneAnchor(args.before, args.after);
     case "move_section": return !args.before && !args.after ? "Say before or after which section it goes." : oneAnchor(args.before, args.after);
     case "open_page":
-    case "remove_section": return undefined;
+    case "remove_section":
+    case "discard_change": return undefined;
   }
 }
 
@@ -229,12 +231,14 @@ function editClash(file: { path: string; hash: string; content: string }, edits:
 
 /** What the tab's preparation reads of the shared context: the pages, and the page shown. */
 export type EditContext = Pick<EditorContext, "pages"> & { site?: Pick<NonNullable<EditorContext["site"]>, "openRoute"> | null };
+/** An agent change the receiving tab keeps (src/agent-changes.ts): its connection and the page it was on, for discard_change. */
+export type KeptChange = (id: string) => { grant: string; page: string } | undefined;
 
 /**
  * The command an agent's edit becomes, in the receiving tab: its page found by name, a file edit's text
  * from what it was read as. The edit's shape was the Worker's to check; the live page is the command's.
  */
-export async function prepareAgentEdit(request: AgentEdit, context: EditContext, files: SiteFiles, read?: (hash: string) => string | undefined): Promise<PreparedEdit> {
+export async function prepareAgentEdit(request: AgentEdit, context: EditContext, files: SiteFiles, read?: (hash: string) => string | undefined, changes?: KeptChange): Promise<PreparedEdit> {
   const refuse = (message: string): never => { throw new HttpError(400, message); };
   const unchanged = (value: { state: "unchanged"; message: string }): PreparedEdit => ({ unchanged: value });
   // The command an edit becomes is its table row's (edit_file: write_file).
@@ -360,6 +364,13 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditContext,
     case "remove_section": {
       const { page: ref, section, expectedHash } = request.args;
       return queue({ path: findPage(context, ref).file, expectedHash, args: { section } });
+    }
+    case "discard_change": {
+      // Its own change, kept here: the page it was on is where the undo runs (src/agent-site.ts checks its files now).
+      const { change } = request.args, kept = changes?.(change);
+      if (!kept) return refuse(`No change ${change} is kept in this editor tab: it was never applied, was undone already, or the tab reloaded since. Change it back with the edit tools.`);
+      if (kept.grant !== request.grantId) return refuse(`${change} is another connection's change. Only the agent that made it, or the user, undoes it.`);
+      return queue({ path: kept.page, args: { change } });
     }
   }
 }

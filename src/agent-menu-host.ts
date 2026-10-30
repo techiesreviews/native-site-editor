@@ -29,7 +29,7 @@ export interface AgentMenuHostPorts {
   runtime: ReturnType<typeof createNativeSiteRuntime>;
   guardedEdits: Pick<GuardedEdits, "stamp">;
   cleanSources: Pick<CleanSourceCache, "get">;
-  agentCommands: Pick<ReturnType<typeof createAgentCommands>, "apply" | "reload">;
+  agentCommands: Pick<ReturnType<typeof createAgentCommands>, "apply" | "reload" | "undoable">;
   setupController: Pick<ReturnType<typeof createSetupHost>["setupController"], "noteAgent">;
   pageStructureController: Pick<ReturnType<typeof createPageStructureController>, "renderEditBar">;
   mediaPorts: { pin?(): MediaPin | undefined };
@@ -63,6 +63,9 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
   function pinRequests(requests: PinRequest[]) {
     pinned = { requests, names: pinNames(requests) };
     ports.nativePreview?.setRequests(requests.map(request => {
+      // A done pin's agent changes this tab keeps have Undo on its card (ticket am-15).
+      const undo = request.state === "done" || request.state === "answered" ? agentCommands.undoable(request.reply?.requestIds) : undefined;
+      if (undo) request = { ...request, undo };
       const who = agentPresence.onPin(request.id);
       if (!who) return request;
       const { agentTook: _took, ...rest } = request;
@@ -131,6 +134,15 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
         pinRequests(requests);
       },
       onQuestions: (count) => workspace.repositoryMenu?.setQuestions(count),
+      // An agent's own question (ask_user, ticket am-15): pinned on an element of a page, the one shown when it names none.
+      place: async (page, element) => {
+        const site = runtime.site, repository = appStore.repository.value, scope = draftScope();
+        if (!site || !repository || !scope) return { refuse: "The editor shows no site now. Open it, then ask again." };
+        const ref = page ?? ports.nativePreview?.route();
+        if (!ref) return { refuse: "The editor shows no page now. Give page." };
+        const placed = (await loadAgentSite()).agentElementAt(site, ref, element, file => runtime.source(file, scope));
+        return "refuse" in placed ? placed : { element: placed.element, repository: repository.full_name };
+      },
       // A question in the selector's list: its pin, card open, answer box focused.
       onShowRequest: (id) => {
         workspace.repositoryMenu?.close();

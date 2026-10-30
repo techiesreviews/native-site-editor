@@ -20,6 +20,8 @@ const next = {
   here: "Make your change. Call working_here again when you move on, and with done when you finish.",
   // working_here with done: the agent finished.
   finished: answer,
+  // discard_change: the change is gone, the page as it was before it.
+  discarded: `Check the page with screenshot_preview. ${answer}`,
 };
 
 /**
@@ -75,9 +77,11 @@ export const agentTools = {
   add_section: { route: "edit", effect: "edit", operation: "add_section", atomic: true, next: next.added },
   move_section: { route: "edit", effect: "edit", operation: "move_section", atomic: true, next: next.look },
   remove_section: { route: "edit", effect: "remove", operation: "remove_section", atomic: true, next: next.removed },
+  discard_change: { route: "edit", effect: "remove", operation: "discard_change", atomic: true, next: next.discarded },
   wait_for_requests: { route: "requests", effect: "read", idempotent: false },
   get_selection: { route: "read", effect: "read" },
   reply_to_request: { route: "requests", effect: "edit", idempotent: false },
+  ask_user: { route: "requests", effect: "edit", idempotent: false },
   get_request: { route: "requests", effect: "read", mcp: false },
 } as const satisfies Record<string, {
   route: "read" | "status" | "edit" | "media" | "requests";

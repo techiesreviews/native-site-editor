@@ -35,7 +35,7 @@ export interface AgentSiteHostPorts {
   stamp(): Stamp;
   files?(): AgentReadFiles | undefined;
   source?(path: string): string | undefined;
-  load(): Promise<Pick<typeof import("./agent-site"), "buildAgentContext">>;
+  load(): Promise<Pick<typeof import("./agent-site"), "buildAgentContext" | "agentElementAt">>;
   input(): AgentSiteInput | undefined;
   /** The workspace shown, pinned for Media work (src/controllers/media-pin.ts). */
   mediaPin?(): MediaPin | undefined;
@@ -155,6 +155,10 @@ export function createAgentCommands(ports: AgentCommandPorts) {
     isMounted: (path) => Boolean(editorModule?.isMounted(path)),
     edits,
     atomicText: () => atomic,
+    shown: () => {
+      const scope = draftScope();
+      return scope && { scope, draft: path => draftStore().get(scope, path), openFile: appStore.openFile.value };
+    },
     loaderPlan: nativeComponentLoaderPlan,
     writeDraft: async (path, content, create, expected) => {
       if (!atomic && !runtime.site && !runtime.engaged && create) {
@@ -386,5 +390,26 @@ export function createAgentCommands(ports: AgentCommandPorts) {
       draft: path => draftStore().get(scope, path), mounted: path => at.holds() && path === appStore.openFile.value ? editorModule?.getMountedSource(path) : undefined,
       restore: path => restoreFile(path, at) });
   }
-  return { actions: agentSiteActions, apply: applyAgentSiteCommand, reload, acting: () => agentActingDepth > 0 };
+  // The agent changes this tab keeps for their undo (ticket am-15), loaded with the first agent command.
+  let changes: typeof import("./agent-changes") | undefined;
+  const loadChanges = async () => changes ??= await import("./agent-changes");
+  /** The user's Undo on a done pin's card: the agent's changes for it, newest first, each put back as before it (one Undo step each). */
+  async function undo(ids: readonly string[]) {
+    const scope = draftScope();
+    if (!scope) throw new Error("Open the site first.");
+    const { keptChange, discardPlan, changeUndone, undoState } = await loadChanges();
+    const kept = ids.map(id => keptChange(scope, id)).filter(change => change !== undefined).reverse();
+    // Undone already (the agent discarded it meanwhile): nothing more to do.
+    if (!kept.length && undoState(scope, ids) === "undone") return;
+    if (!kept.length) throw new Error("This tab no longer keeps the agent's change. Change it back by hand.");
+    for (const change of kept) {
+      const outcome = await guardedEdits.run(r => discardPlan(change, r, path => draftStore().get(scope, path), appStore.openFile.value));
+      if (!outcome.ok) throw new Error(outcome.message);
+      changeUndone(change);
+    }
+  }
+  /** Whether a pin's changes can be undone here: one is kept ("ready"), or they were undone. */
+  const undoable = (ids: readonly string[] | undefined) => { const scope = draftScope(); return scope && changes ? changes.undoState(scope, ids) : undefined; };
+  const apply = (command: AgentCommand) => { void loadChanges().catch(() => undefined); return applyAgentSiteCommand(command); };
+  return { actions: agentSiteActions, apply, reload, undo, undoable, acting: () => agentActingDepth > 0 };
 }
