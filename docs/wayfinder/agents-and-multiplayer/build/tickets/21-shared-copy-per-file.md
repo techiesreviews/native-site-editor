@@ -2,7 +2,7 @@
 title: "Each open file has a shared copy"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-21
 builder: claude
 blocked_by: [20-live-rooms-relay]
 ---
