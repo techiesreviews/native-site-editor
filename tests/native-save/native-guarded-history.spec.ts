@@ -4,7 +4,8 @@ import { storedDraft } from "./drafts";
 // Undo and Redo of guarded edits (sturdy-base slice 17, src/guarded-edit.ts): a range edit on
 // the open page (a block from the rail) selects what was selected before and says so; a plain
 // repository's Files tab renames with no file open and undoes; Undo of Make component closes
-// the new component's stylesheet pane. Default native-starter fixture group.
+// the new component's stylesheet pane; Done while that mode still loads returns to the new component
+// with its stylesheet. Default native-starter fixture group.
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const status = (page: Page) => page.locator("#status");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
@@ -77,8 +78,6 @@ test("Undo of Make component closes the new component's stylesheet pane", async 
   await tree(page).getByRole("treeitem", { name: "Section A native browser preview", exact: true }).first().locator(".page-structure__label").first().click();
   await bar(page).getByRole("button", { name: "Make component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", `components/${tag}/${tag}.html`);
-  // Done only once the mode is on: a Done while it still loads has no instance to select back on the page.
-  await expect(page.locator(".edit-mode__title")).toHaveText(`Editing<${tag}>`);
   await page.getByRole("button", { name: "Done editing component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   // Back on the page, the new component's stylesheet still shows beside it.
@@ -88,4 +87,27 @@ test("Undo of Make component closes the new component's stylesheet pane", async 
   await expect(frame(page).locator(tag)).toHaveCount(0);
   await expect.poll(() => storedDraft(page, cssPath)).toBeUndefined();
   await expect(page.locator("#secondary-pane")).toBeHidden();
+});
+
+test("Done while the new component's mode still loads returns to it on the page, its stylesheet beside it", async ({ page, baseURL }) => {
+  const tag = "section-a-native-browser", cssPath = `components/${tag}/${tag}.css`;
+  await openHome(page, baseURL);
+  // The mode's lazily loaded view is held: Done comes before the mode is on.
+  let release!: () => void, requested = false;
+  const held = new Promise<void>((done) => { release = done; });
+  const view = /\/edit-component-mode(?:\.ts|-[\w-]+\.js)/;
+  await page.route(view, async (route) => { requested = true; await held; await route.continue().catch(() => undefined); });
+  try {
+    await tree(page).getByRole("treeitem", { name: "Section A native browser preview", exact: true }).first().locator(".page-structure__label").first().click();
+    await bar(page).getByRole("button", { name: "Make component", exact: true }).click();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", `components/${tag}/${tag}.html`);
+    await expect.poll(() => requested).toBe(true);
+    await page.getByRole("button", { name: "Done editing component", exact: true }).click();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  } finally { release(); await page.unroute(view); }
+  // Back on the page, the new component is selected and its stylesheet shows beside it; no mode starts late.
+  await expect(tree(page).getByRole("treeitem", { selected: true })).toHaveAccessibleName(new RegExp(tag.replaceAll("-", "[- ]"), "i"));
+  await expect(page.locator("#secondary-pane")).toBeVisible();
+  await expect(page.locator("#secondary-title")).toContainText(cssPath);
+  await expect(page.locator(".canvas-bar .edit-mode__title")).toHaveCount(0);
 });

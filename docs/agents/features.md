@@ -589,7 +589,7 @@ its number unused.
 
 ### F-component-03 Edit component mode
 - Try: Select an instance and press its pencil (or Edit component).
-- Good: The instance is framed in place, its template edits for every page, the page around is not clickable, Done leaves without reload (B11).
+- Good: The instance is framed in place, its template edits for every page, the page around is not clickable, Done leaves without reload, back to the instance selected with its stylesheet, even pressed while the mode still loads (B11).
 - Files: `src/page-builder/edit-component-mode.ts`, `src/page-builder/edit-component-mode.css`, `src/page-builder/component-mode.ts`, `src/page-builder/edit-mode-bar-fit.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-edit-component-mode-actual.spec.ts`
