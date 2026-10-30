@@ -610,6 +610,29 @@ test("a joiner handed a key it never unwrapped reconnects in place of its socket
   });
 });
 
+test("a tab joining a room where nobody holds a key any more makes it, and a waiting member takes that one", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness();
+    // A key holder that never answers; J waits for it. Then its socket dies and the relay never hears it leave
+    // (no make-key goes out), so J is the room's only open member and holds no key.
+    const holder = h.pair("editor");
+    const j = participant(h, time.clock);
+    await until(() => h.seen.some(frame => typeof frame === "string" && frame.startsWith("{") && JSON.parse(frame).type === "key-request"), "J asking");
+    holder.server.readyState = 3;
+    const k = participant(h, time.clock);
+    await k.live.ready();
+    const welcome = JSON.parse(k.server.texts.find(text => text.startsWith("{") && JSON.parse(text).type === "welcome")!);
+    assert.equal(welcome.keyed, true, "K makes the key");
+    await j.live.ready();
+    assert.equal(keys.length, 1, "J took K's key");
+    assert.equal(await j.live.send(new TextEncoder().encode("from J")), true);
+    await until(() => k.got.length > 0, "K hearing J");
+    assert.deepEqual(k.got, ["from J"]);
+    j.live.close(); k.live.close();
+  });
+});
+
 test("a key holder silent for 60 s but pinging is not closed when a joiner asks, and no new key is made", async () => {
   await capturingRoomKeys(async keys => {
     const time = fakeClock();

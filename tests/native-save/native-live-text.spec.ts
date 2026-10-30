@@ -52,6 +52,15 @@ test("two people editing one page end identical, and a late joiner catches up", 
     // Its own edit reaches both.
     await insert(sam.page, "Fresh bread: ", "warm ");
     for (const other of [anna, lex]) await expect.poll(() => source(other.page)).toContain("Fresh bread: warm A native");
+
+    // Anna reloads while Lex types: she comes back from the copy this browser kept (IndexedDB), so nothing she shared goes in twice.
+    await anna.page.reload();
+    await insert(lex.page, "Fresh bread: warm ", "and fresh ");
+    await expect(anna.page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await expect.poll(() => source(anna.page), { timeout: 20_000 }).toContain("Fresh bread: warm and fresh A native");
+    await expect.poll(() => source(lex.page)).toBe(await source(anna.page));
+    const after = await source(anna.page);
+    for (const part of ["Fresh bread: ", "warm ", "and fresh ", ", together,"]) expect(count(after, part), part).toBe(1);
   } finally {
     for (const tab of tabs) await tab.context.close();
   }
