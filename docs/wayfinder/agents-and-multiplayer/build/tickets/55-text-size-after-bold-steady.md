@@ -42,7 +42,7 @@ The spec that picks a Text size right after pressing Bold (added around slice 43
 
 - **Cause: the test.** `native-component-tools-after-paint.spec.ts` › "component tools that land right after a Bold leave the next bar change working" waited for the bar to say "Paragraph" after adding a paragraph, but the lead's bar already said "Paragraph", so Bold sometimes landed on the lead before the new paragraph was selected; the Text size pick in that stale bar was then refused by ticket 43's rule ("The source changed…"). The app behaved as decided; no app change.
 - **Fix.** The spec now waits on what the user sees: the selected crumb reads `p.lead` after clicking the lead, the Paragraph button is the one in the "Blocks" navigation, and Bold waits until the selected crumb reads `p` (the new paragraph).
-- **Runs.** 30/30 alone; 30/30 beside a 4-shard `kit specs` load of 60 native-save specs (load average about 22; the load run passed 60/60).
+- **Runs.** A second pair of runs after the build, separate from the diagnosis's pair (30/30 alone, 30/30 under load at a load average of about 28): 30/30 alone; 30/30 beside a 4-shard `kit specs` load of 60 native-save specs (load average about 22; the load run passed 60/60).
 - **Checks.** `kit unit --affected`: `RESULT: ok unit none affected`. `kit specs --affected`: `RESULT: ok specs 3/3 passed`. `npm run lint` passed.
 - Feature list: no change (test-only fix).
 - The `native-lazy-panels.spec.ts` rename refusal from the diagnosis stays a follow-up.
