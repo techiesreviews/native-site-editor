@@ -3,10 +3,10 @@
 // so every frame the relay sees is on record, with a fake clock for presence.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { LiveRooms, liveRoomObjectName, type LiveSocket } from "../worker/agent-relay";
+import { LIVE_AGENT_CHECK_MS, LiveRooms, liveRoomObjectName, type LiveSocket } from "../worker/agent-relay";
 import { LiveRoomClosed, openLiveRoom, type LiveClock, type LivePeer, type LiveRoomSocket } from "../src/live-room";
 import { editorTab, origin, repo, signIn, startWorker } from "./mcp-harness";
-import { LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, liveRoomFile, readLiveClientMessage, type LiveAccess } from "../shared/live-room";
+import { LIVE_ACCESS_ENDED, LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, liveRoomFile, readLiveClientMessage, type LiveAccess } from "../shared/live-room";
 
 const room = "a".repeat(64);
 const settle = async () => { for (let index = 0; index < 40; index++) await new Promise(resolve => setImmediate(resolve)); };
@@ -51,7 +51,7 @@ function relayHarness() {
   const seen: (string | Uint8Array)[] = [];
   const servers: LiveSocket[] = [];
   const record = (message: string | ArrayBuffer) => seen.push(typeof message === "string" ? message : new Uint8Array(message.slice(0)));
-  function pair(access: LiveAccess, tag = room) {
+  function pair(access: LiveAccess, tag = room, rejoin?: string) {
     const listeners = { message: [] as ((event: { data: unknown }) => void)[], close: [] as ((event: { code?: number }) => void)[] };
     let attachment: unknown = null;
     /** A vanished participant: its frames stop reaching the relay, and nobody is told. */
@@ -88,10 +88,12 @@ function relayHarness() {
       },
       addEventListener(type: "message" | "close", listener: never) { (listeners[type] as unknown[]).push(listener); },
     };
+    /** The tab sees its socket drop (1006) before the relay does: the relay still counts it as open. */
+    const drop = () => { link.cut = true; for (const listener of listeners.close) listener({ code: 1006 }); };
     // The Worker refuses before any socket exists (409); an agent's connect reports that as LiveRoomClosed.
     link.joined = relay.admits(tag, access);
-    if (link.joined) { servers.push(server); relay.join(server, tag, access); }
-    return { client, server, link };
+    if (link.joined) { servers.push(server); relay.join(server, tag, access, rejoin === undefined ? {} : { rejoin }); }
+    return { client, server, link, drop };
   }
   return {
     seen,
@@ -109,8 +111,8 @@ function participant(h: ReturnType<typeof relayHarness>, clock: LiveClock, acces
   let closed = false;
   const live = openLiveRoom({
     repo: "lex/starter", branch: "main", file: "index.html", clock,
-    connect: async () => {
-      made = h.pair(access);
+    connect: async url => {
+      made = h.pair(access, room, new URL(url, origin).searchParams.get("rejoin") ?? undefined);
       if (!made.link.joined) throw new LiveRoomClosed();
       return made.client;
     },
@@ -118,7 +120,7 @@ function participant(h: ReturnType<typeof relayHarness>, clock: LiveClock, acces
     onPeers: next => { peers = next; },
     onClosed: () => { closed = true; },
   });
-  return { live, got, get peers() { return peers; }, get link() { return made!.link; }, get server() { return made!.server; }, get closed() { return closed; } };
+  return { live, got, get peers() { return peers; }, get link() { return made!.link; }, get server() { return made!.server; }, drop: () => made!.drop(), get closed() { return closed; } };
 }
 
 /** Captures every room key made in memory, to prove it never crosses the relay. */
@@ -364,6 +366,125 @@ test("closing while a handed-over key is being unwrapped sends nothing more and 
   anna.live.close();
 });
 
+test("a reconnect the relay has not yet seen replaces the tab's own socket and keeps its key", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness();
+    const anna = participant(h, time.clock);
+    await anna.live.ready();
+    const lex = participant(h, time.clock);
+    await lex.live.ready();
+    const ghost = anna.server;
+    anna.drop();
+    await settle();
+    await time.advance(1_000);
+    await until(() => anna.server !== ghost, "the reconnect");
+    await anna.live.ready();
+    assert.equal(ghost.readyState, 3, "the relay closed the socket it had not seen drop");
+    assert.equal(keys.length, 1, "Anna kept the key she had");
+    assert.equal(await anna.live.send(new TextEncoder().encode("back")), true);
+    await until(() => lex.got.length > 0, "Lex hears Anna under the same key");
+    assert.deepEqual(lex.got, ["back"]);
+    anna.live.close(); lex.live.close();
+  });
+});
+
+test("a key wrapped for a joiner is not sent on a socket that replaced the one it was wrapped on", async () => {
+  const time = fakeClock();
+  const h = relayHarness();
+  const anna = participant(h, time.clock);
+  await anna.live.ready();
+  const subtle = crypto.subtle, wrapKey = subtle.wrapKey.bind(subtle);
+  let release!: () => void, stale: Uint8Array | undefined, held = false;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  Object.defineProperty(subtle, "wrapKey", { configurable: true, value: async (...args: Parameters<typeof wrapKey>) => {
+    const result = new Uint8Array(await wrapKey(...args));
+    if (!held) { held = true; await gate; stale = result; }
+    return result.buffer;
+  } });
+  try {
+    const lex = participant(h, time.clock);
+    await until(() => held, "Anna wrapping the key for Lex");
+    const old = anna.server;
+    anna.drop();
+    await settle();
+    await time.advance(1_000);
+    await until(() => anna.server !== old, "Anna's reconnect");
+    const fresh = anna.server;
+    release();
+    await lex.live.ready();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const sent = h.seen.filter(frame => typeof frame === "string" && JSON.parse(frame).type === "key" && JSON.parse(frame).to !== undefined) as string[];
+    const staleSent = sent.some(frame => Buffer.from(JSON.parse(frame).wrapped, "base64url").subarray(12).equals(Buffer.from(stale!)));
+    assert.equal(staleSent, false, "the wrap from before the reconnect never went out");
+    assert.notEqual(fresh, old);
+    lex.live.close();
+  } finally { Reflect.deleteProperty(subtle, "wrapKey"); anna.live.close(); }
+});
+
+test("closing while a presence frame decrypts reports nothing more and leaves no timers", async () => {
+  const shared = fakeClock(), own = fakeClock();
+  const h = relayHarness();
+  const anna = participant(h, shared.clock);
+  await anna.live.ready();
+  let armed = false, closed = false, after = 0;
+  const live: ReturnType<typeof openLiveRoom> = openLiveRoom({
+    repo: "lex/starter", branch: "main", file: "index.html", clock: own.clock,
+    onMessage: () => { if (closed) after++; },
+    onPeers: () => { if (closed) after++; },
+    connect: async () => {
+      const socket = h.pair("editor").client;
+      return {
+        send: data => socket.send(data),
+        close: (code, reason) => socket.close(code, reason),
+        addEventListener(type: "message" | "close", listener: (event: never) => void) {
+          socket.addEventListener(type, ((event: { data?: unknown }) => {
+            (listener as (event: unknown) => void)(event);
+            if (armed && type === "message" && typeof event.data !== "string") queueMicrotask(() => { closed = true; live.close(); });
+          }) as never);
+        },
+      } satisfies LiveRoomSocket;
+    },
+  });
+  await live.ready();
+  await new Promise(resolve => setTimeout(resolve, 50));
+  armed = true;
+  anna.live.setPresence({ name: "Anna" });
+  await until(() => closed, "Anna's presence arriving");
+  await new Promise(resolve => setTimeout(resolve, 50));
+  await own.advance(60_000);
+  assert.equal(after, 0, "no onPeers or onMessage after close");
+  assert.equal(own.pending, 0, "no sweep timer left");
+  anna.live.close();
+});
+
+test("agent sockets are checked again once a minute and removed when their connection ends", () => {
+  const sockets = Array.from({ length: 2 }, () => {
+    let attachment: unknown = null;
+    return {
+      readyState: 1, texts: [] as string[], closedWith: undefined as number | undefined,
+      send(message: string | ArrayBuffer) { if (typeof message === "string") this.texts.push(message); },
+      close(code?: number) { this.readyState = 3; this.closedWith = code; },
+      serializeAttachment(value: unknown) { attachment = structuredClone(value); },
+      deserializeAttachment() { return structuredClone(attachment); },
+    };
+  });
+  const [tab, agentSocket] = sockets;
+  const relay = new LiveRooms([]);
+  const agent = { id: "grant-1", sessionId: "s".repeat(64), generation: 1, repoId: 1, branch: "main" };
+  relay.join(tab, room, "editor");
+  relay.join(agentSocket, room, "agent", { agent });
+  const now = Date.now();
+  assert.deepEqual(relay.agentsDue(now), [], "just checked when it joined");
+  assert.deepEqual(relay.agentsDue(now + LIVE_AGENT_CHECK_MS).map(due => due.agent), [agent]);
+  assert.deepEqual(relay.agentsDue(now + LIVE_AGENT_CHECK_MS + 1), [], "once a minute, not on every frame");
+  assert.deepEqual(new LiveRooms([tab, agentSocket]).agentsDue(now + LIVE_AGENT_CHECK_MS + 1), [], "the last check survives hibernation");
+  assert.deepEqual(relay.agentSockets("grant-1"), [agentSocket]);
+  relay.end(agentSocket, LIVE_ACCESS_ENDED, "This agent connection ended.");
+  assert.equal(agentSocket.closedWith, LIVE_ACCESS_ENDED);
+  assert.equal(JSON.parse(tab.texts.at(-1)!).type, "left", "the tab hears the agent left");
+});
+
 test("room files and participants' text frames are read strictly", () => {
   for (const path of ["index.html", "about/index.html", "components/feature-block/feature-block.css"]) assert.equal(liveRoomFile(path), true);
   for (const path of ["", "/index.html", "a//b", "../x", "a/./b", "a\\b", "a\nb", "x".repeat(1025), 7]) assert.equal(liveRoomFile(path), false);
@@ -394,7 +515,9 @@ test("Miniflare: two signed-in tabs share a room over the real Worker; storage s
       } satisfies LiveRoomSocket;
     };
     const got: string[] = [];
-    const open = (cookie: string) => openLiveRoom({ repo: repo.full_name, branch: "main", file: "index.html", connect: () => joinAs(cookie), onMessage: bytes => got.push(new TextDecoder().decode(bytes)) });
+    // A fake clock: no heartbeat or reconnect timer keeps the test process alive if an assertion fails.
+    const tabsClock = fakeClock().clock;
+    const open = (cookie: string) => openLiveRoom({ repo: repo.full_name, branch: "main", file: "index.html", clock: tabsClock, connect: () => joinAs(cookie), onMessage: bytes => got.push(new TextDecoder().decode(bytes)) });
     const first = open(anna.cookie);
     await first.ready();
     // An observer in the room records what the relay hands a member: it never answers a key request.
@@ -422,7 +545,10 @@ test("Miniflare: two signed-in tabs share a room over the real Worker; storage s
     assert.equal((await upgrade({ Origin: "https://attacker.example", Cookie: anna.cookie })).status, 403);
     assert.equal((await upgrade({ Origin: origin, Cookie: anna.cookie }, roomUrl("../secret"))).status, 400);
     // Agents: past the check with their connection, but only into a room a tab has open, on their own branch.
-    const { token } = await (await editorTab(worker, anna.cookie).post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json() as { token: string };
+    // A plain request (no upgrade) gets the same answer, so a tab can tell a refusal from a network failure.
+    assert.equal((await worker.dispatchFetch(roomUrl())).status, 401);
+    assert.equal((await worker.dispatchFetch(roomUrl(), { headers: { Cookie: anna.cookie } })).status, 400, "allowed in; only the upgrade is missing");
+    const { id: grantId, token } = await (await editorTab(worker, anna.cookie).post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json() as { id: string; token: string };
     assert.equal((await upgrade({ Authorization: `Bearer ${token}` }, roomUrl("about/index.html"))).status, 409, "no tab has that room open");
     // The agent's client hears the 409 as LiveRoomClosed: it ends and never tries again.
     const later = fakeClock();
@@ -439,10 +565,25 @@ test("Miniflare: two signed-in tabs share a room over the real Worker; storage s
     await later.advance(120_000);
     assert.deepEqual([connects, later.pending], [1, 0]);
     assert.equal((await upgrade({ Authorization: `Bearer ${token}` }, roomUrl("index.html", "other"))).status, 403);
-    const agent = await upgrade({ Authorization: `Bearer ${token}` });
+    // GitHub names are case-insensitive: the agent's repository written in other case still matches.
+    const agent = await upgrade({ Authorization: `Bearer ${token}` }, roomUrl().replace(encodeURIComponent(repo.full_name), encodeURIComponent(repo.full_name.toUpperCase())));
     assert.equal(agent.status, 101);
+    let agentPeer = "", agentFrames = 0;
+    agent.webSocket!.addEventListener("message", event => {
+      if (typeof event.data !== "string") agentFrames++;
+      else if (JSON.parse(event.data).type === "welcome") agentPeer = JSON.parse(event.data).peer;
+    });
     agent.webSocket!.accept();
-    agent.webSocket!.close(1000);
+    await until(() => agentPeer !== "", "the agent's welcome");
+    // Revoking the connection removes its agent from the room at once: it may hold the key, so it must not keep listening.
+    // (Miniflare's client reports the 4403 close only once its side of the closing handshake ends; the room unit tests check the code.)
+    assert.equal((await editorTab(worker, anna.cookie).post("/api/agent/revoke", { id: grantId })).status, 200);
+    await until(() => observed.some(data => typeof data === "string" && JSON.parse(data).type === "left" && JSON.parse(data).peer === agentPeer), "the room hearing the agent left");
+    const framesBefore = agentFrames, observedBefore = observed.length;
+    await first.send(new TextEncoder().encode("after the revoke"));
+    await until(() => observed.length > observedBefore, "the next edit reaching the room");
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(agentFrames, framesBefore, "the revoked agent gets nothing more");
     github.allowed = false;
     assert.equal((await upgrade({ Origin: origin, Cookie: anna.cookie })).status, 403);
 

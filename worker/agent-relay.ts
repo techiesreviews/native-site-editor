@@ -489,13 +489,22 @@ export interface LiveSocket {
   serializeAttachment(value: unknown): void;
   deserializeAttachment(): unknown;
 }
-/** `keyed`: holds the room key, or was told to make it. `since`: join order, for choosing who makes a new key. */
-interface LiveAttachment { role: "live"; room: string; peer: string; access: LiveAccess; keyed: boolean; since: number }
+/** The agent connection a live room socket came in with, kept to check it again (`liveAgentAllowed` in worker/app.ts). */
+export interface LiveAgent { id: string; sessionId: string; generation: number; repoId: number; branch: string }
+/** An agent socket's connection is checked again this often, on the room's frames (heartbeats keep them coming). */
+export const LIVE_AGENT_CHECK_MS = 60_000;
+/** `keyed`: holds the room key, or was told to make it. `since`: join order, for choosing who makes a new key.
+ * `rejoin`: the tab's own secret, never sent to peers, so its reconnect replaces a socket the relay has not yet seen drop.
+ * `gone`: replaced by that reconnect; its late close is ignored. */
+interface LiveAttachment {
+  role: "live"; room: string; peer: string; access: LiveAccess; keyed: boolean; since: number;
+  rejoin?: string; agent?: LiveAgent & { checkedAt: number }; gone?: true;
+}
 const readLive = (value: unknown): LiveAttachment | null => {
   const item = value as Partial<LiveAttachment> | null;
   return item && typeof item === "object" && item.role === "live" && typeof item.room === "string" && /^[a-f\d]{64}$/.test(item.room) &&
     typeof item.peer === "string" && (item.access === "editor" || item.access === "agent") && typeof item.keyed === "boolean" &&
-    Number.isFinite(item.since) ? item as LiveAttachment : null;
+    Number.isFinite(item.since) && !item.gone ? item as LiveAttachment : null;
 };
 
 /** Forwards each room's frames and stores nothing: no storage port, no history, no keys. Who is in
@@ -514,7 +523,11 @@ export class LiveRooms {
     }
   }
 
-  static owns(socket: { deserializeAttachment(): unknown }) { return readLive(socket.deserializeAttachment()) !== null; }
+  /** Every live room socket, replaced ones included, so none falls through to the agent relay. */
+  static owns(socket: { deserializeAttachment(): unknown }) {
+    const value = socket.deserializeAttachment() as { role?: unknown } | null;
+    return value?.role === "live";
+  }
 
   private members(room: string, except?: LiveSocket) {
     return [...this.sockets].filter(([socket, metadata]) => socket !== except && metadata.room === room && socket.readyState === 1);
@@ -533,17 +546,59 @@ export class LiveRooms {
   admits(room: string, access: LiveAccess) {
     return access !== "agent" || this.members(room).some(([, metadata]) => metadata.access !== "agent");
   }
-  /** Refuses (false) whom `admits` refuses. The first one into an empty room makes the key. */
-  join(socket: LiveSocket, room: string, access: LiveAccess): boolean {
+  /** Refuses (false) whom `admits` refuses. The first one into an empty room makes the key. A reconnect
+   * naming its `rejoin` secret replaces its earlier socket and keeps whether it held the key. */
+  join(socket: LiveSocket, room: string, access: LiveAccess, options: { rejoin?: string; agent?: LiveAgent } = {}): boolean {
     if (!this.admits(room, access)) return false;
+    let inherited = false;
+    const ghost = options.rejoin === undefined ? undefined :
+      [...this.sockets].find(([, other]) => other.room === room && other.access === access && other.rejoin === options.rejoin);
+    if (ghost) {
+      const [old, metadata] = ghost;
+      inherited = metadata.keyed;
+      this.sockets.delete(old);
+      old.serializeAttachment({ ...metadata, gone: true });
+      try { old.close(1000, "Replaced by a reconnect."); } catch { /* Already closed. */ }
+      for (const [other] of this.members(room)) this.send(other, { type: "left", peer: metadata.peer });
+    }
     const others = this.members(room);
     const since = Math.max(Date.now(), ...others.map(([, other]) => other.since + 1));
-    const metadata: LiveAttachment = { role: "live", room, peer: hex(crypto.getRandomValues(new Uint8Array(16))), access, keyed: others.length === 0, since };
+    const metadata: LiveAttachment = {
+      role: "live", room, peer: hex(crypto.getRandomValues(new Uint8Array(16))), access, keyed: others.length === 0 || inherited, since,
+      ...(options.rejoin === undefined ? {} : { rejoin: options.rejoin }),
+      ...(options.agent ? { agent: { ...options.agent, checkedAt: Date.now() } } : {}),
+    };
     socket.serializeAttachment(metadata);
     this.sockets.set(socket, metadata);
-    this.send(socket, { type: "welcome", peer: metadata.peer, peers: others.map(([, other]) => ({ peer: other.peer, access: other.access, keyed: other.keyed })) });
-    for (const [other] of others) this.send(other, { type: "joined", peer: metadata.peer, access });
+    this.send(socket, { type: "welcome", peer: metadata.peer, keyed: metadata.keyed, peers: others.map(([, other]) => ({ peer: other.peer, access: other.access, keyed: other.keyed })) });
+    for (const [other] of others) {
+      this.send(other, { type: "joined", peer: metadata.peer, access });
+      if (inherited) this.send(other, { type: "keyed", peer: metadata.peer });
+    }
     return true;
+  }
+
+  /** Agent sockets whose connection is due another check, marked checked now. */
+  agentsDue(now: number) {
+    const due: { socket: LiveSocket; agent: LiveAgent }[] = [];
+    for (const [socket, metadata] of this.sockets) {
+      if (!metadata.agent || socket.readyState !== 1 || now - metadata.agent.checkedAt < LIVE_AGENT_CHECK_MS) continue;
+      metadata.agent.checkedAt = now;
+      socket.serializeAttachment(metadata);
+      const { checkedAt: _, ...agent } = metadata.agent;
+      due.push({ socket, agent });
+    }
+    return due;
+  }
+  /** The agent sockets that came in with this connection (it was revoked). */
+  agentSockets(id: string) {
+    return [...this.sockets].filter(([, metadata]) => metadata.agent?.id === id).map(([socket]) => socket);
+  }
+  /** Removes a participant whose access ended: its leave is announced, then its socket closed. */
+  end(socket: LiveSocket, code: number, reason: string) {
+    if (!this.sockets.has(socket)) return;
+    this.leave(socket);
+    try { socket.close(code, reason); } catch { /* Already closed. */ }
   }
 
   message(socket: LiveSocket, message: string | ArrayBuffer): boolean {
