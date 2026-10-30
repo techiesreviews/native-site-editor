@@ -362,7 +362,7 @@ test("three overlapping looks at one job hold one wait, and a pin sent during th
   const h = await connected({ hold: true });
   try {
     const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
-    const answers: any[] = [];
+    const answers: { status: string; pollIntervalMs?: number; result?: unknown }[] = [];
     const look = (id: number) => h.modern("tasks/get", { taskId }, true, id).then(reply => { answers[id] = reply.result; });
     const looks = [look(1)];
     await until(() => h.commands.length === 1);
@@ -456,10 +456,13 @@ test("a look after the owner pauses watching ends the held wait and answers at o
     await until(() => h.commands.length === 2);
     assert.equal(h.commands[1].command.waitMs, 0, "the paused look's own command reaches the tab");
     assert.ok(h.frames.some(frame => frame.type === "cancel" && frame.id === h.commands[0].id), "the tab ends the held wait");
-    // The ended wait was sent, so it may have taken requests: that look ends with the all: true hint.
+    // The ended wait was sent, so it may have taken requests: that look ends with the all: true hint, and the
+    // pause's stop text, since a client may stop at this first completed answer.
     const earlier = (await first).result;
     assert.equal(earlier.status, "completed");
-    assert.match(payload(earlier.result).hint, /\(replaced\).*come back with all: true/);
+    assert.match(payload(earlier.result).hint, /took over its wait; requests it may have taken come back with all: true/);
+    assert.match(payload(earlier.result).hint, new RegExp(WATCH_PAUSED));
+    assert.doesNotMatch(payload(earlier.result).hint, /replaced|did not answer/);
     h.answerOne(h.commands[1].id);
     const paused = (await second).result;
     assert.equal(paused.status, "completed");
@@ -479,5 +482,62 @@ test("tasks/cancel during overlapping looks cancels the newest, after the earlie
     assert.equal((await second).result.status, "cancelled");
     assert.equal(h.frames.filter(frame => frame.type === "cancel").length, 1);
     assert.equal(h.commands.length, 1);
+  } finally { await h.worker.dispose(); }
+});
+
+test("a job's looks from two connections each hold their own wait: a takeover stays within one connection", async () => {
+  const h = await connected({ hold: true });
+  try {
+    const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    let answered = 0;
+    const looks = [h.token, h.otherToken].map((as, index) => h.modern("tasks/get", { taskId }, true, index + 1, as).then(reply => { answered++; return reply; }));
+    await until(() => h.commands.length === 2 || answered > 0);
+    assert.equal(h.commands.length, 2);
+    assert.equal(answered, 0, "neither look was replaced");
+    h.release();
+    for (const look of looks) assert.equal((await look).result.status, "working");
+  } finally { await h.worker.dispose(); }
+});
+
+test("a look whose dispatch finds agents paused, after the router let it in, ends the job with the refusal", async () => {
+  const h = await connected();
+  try {
+    const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    // Count the reads of the relay control in one look: the last is the dispatch's own check.
+    let reads = 0;
+    Object.defineProperty(h.env, "AGENT_RELAY", { configurable: true, get: () => { reads++; return "on"; } });
+    h.pins.push(h.pin("req-count"));
+    assert.equal((await h.modern("tasks/get", { taskId }, true, 1)).result.status, "completed");
+    const perLook = reads, sent = h.commands.length;
+    // The owner pauses agents while the next look is past the router: only the dispatch sees it.
+    reads = 0;
+    Object.defineProperty(h.env, "AGENT_RELAY", { configurable: true, get: () => ++reads >= perLook ? "off" : "on" });
+    const look = (await h.modern("tasks/get", { taskId }, true, 2)).result;
+    assert.equal(look.status, "completed");
+    assert.equal(look.result.isError, true);
+    assert.match(JSON.stringify(look.result.content), new RegExp(AGENTS_PAUSED));
+    assert.equal(h.commands.length, sent, "nothing reached the tab");
+  } finally { await h.worker.dispose(); }
+});
+
+test("a client's own request id that starts with wait: is cancelled for 10 seconds only, never a day", async () => {
+  const h = await connected({ hold: true });
+  try {
+    const call = (id: string) => h.dispatchFetch(origin + "/mcp", modernRequest(h.token, "tools/call", { name: "wait_for_requests", arguments: {} }, false, id))
+      .then(response => response.text());
+    const first = call("wait:x");
+    await until(() => h.commands.length === 1);
+    const cancelled = await h.dispatchFetch(origin + "/mcp", { method: "POST", headers: { Authorization: `Bearer ${h.token}`,
+      "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: "wait:x" } }) });
+    assert.equal(cancelled.status, 202);
+    await first;
+    assert.deepEqual(h.frames.filter(frame => frame.type === "cancel").map(frame => frame.id), [h.commands[0].id]);
+    h.clock.install();
+    await new Promise(resolve => setTimeout(resolve, 11_000));
+    const again = call("wait:x");
+    await until(() => h.commands.length === 2);
+    h.release();
+    assert.equal(payload(JSON.parse(await again).result).requests.length, 0);
   } finally { await h.worker.dispose(); }
 });

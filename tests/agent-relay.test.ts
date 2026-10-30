@@ -689,3 +689,17 @@ test("a newer look with another command ends the held wait in the tab and sends 
   assert.deepEqual(await second, { ok: true, result: { requests: [] } });
   h.idle();
 });
+
+test("a takeover keeps the held wait's deadline: the newest look times out when the first look's wait would have", async () => {
+  const h = fixture();
+  const first = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  h.advance(15_000);
+  const second = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "not-sent" });
+  h.advance(6_000);
+  assert.deepEqual(await second, { ok: false, code: "timeout", outcome: "unknown" });
+  const cancels = h.editor.sent.map(message => JSON.parse(message) as { type: string; reason?: string }).filter(frame => frame.type === "cancel");
+  assert.deepEqual(cancels.map(frame => frame.reason), ["timeout"]);
+  assert.equal(h.relay.waits, 0);
+  h.idle();
+});
