@@ -7,16 +7,21 @@
 /** How a participant got past the room access check. Synced-session links (slice 30) add their own kind. */
 export type LiveAccess = "editor" | "agent";
 
-/** Sent by the relay. `welcome` lists who was already in; an empty list means the joiner makes the room key. */
+/** Sent by the relay. `welcome` lists who was already in; an empty list means the joiner makes the room key.
+ * `keyed`: a member now holds the key (members send presence; a joiner still waiting asks again). `make-key`:
+ * the last key holder left, so this tab makes a new key. */
 export type LiveServerMessage =
-  | { type: "welcome"; peer: string; peers: { peer: string; access: LiveAccess }[] }
+  | { type: "welcome"; peer: string; peers: { peer: string; access: LiveAccess; keyed: boolean }[] }
   | { type: "joined"; peer: string; access: LiveAccess }
   | { type: "left"; peer: string }
+  | { type: "keyed"; peer: string }
+  | { type: "make-key" }
   | { type: "key-request"; from: string; publicKey: string }
   | { type: "key"; from: string; publicKey: string; wrapped: string };
 
-/** Sent by a participant: a joiner's one-time ECDH public key, or the room key wrapped for that joiner. */
+/** Sent by a participant: "I hold the key now", a joiner's one-time ECDH public key, or the room key wrapped for that joiner. */
 export type LiveClientMessage =
+  | { type: "keyed" }
   | { type: "key-request"; publicKey: string }
   | { type: "key"; to: string; publicKey: string; wrapped: string };
 
@@ -43,6 +48,7 @@ export function liveRoomFile(value: unknown): value is string {
 export function readLiveClientMessage(text: string): LiveClientMessage | null {
   let value: Record<string, unknown>;
   try { value = JSON.parse(text) as Record<string, unknown>; } catch { return null; }
+  if (value && typeof value === "object" && value.type === "keyed") return { type: "keyed" };
   if (!value || typeof value !== "object" || typeof value.publicKey !== "string" || !keyPattern.test(value.publicKey)) return null;
   if (value.type === "key-request") return { type: "key-request", publicKey: value.publicKey };
   if (value.type === "key" && typeof value.to === "string" && peerPattern.test(value.to) && typeof value.wrapped === "string" && keyPattern.test(value.wrapped))
@@ -61,9 +67,10 @@ export function readLiveServerMessage(text: string): LiveServerMessage | null {
   switch (value.type) {
     case "welcome":
       return peer("peer") && Array.isArray(value.peers) && value.peers.every(item => item && typeof item === "object" &&
-        typeof item.peer === "string" && peerPattern.test(item.peer) && access(item.access)) ? value as LiveServerMessage : null;
+        typeof item.peer === "string" && peerPattern.test(item.peer) && access(item.access) && typeof item.keyed === "boolean") ? value as LiveServerMessage : null;
     case "joined": return peer("peer") && access(value.access) ? value as LiveServerMessage : null;
-    case "left": return peer("peer") ? value as LiveServerMessage : null;
+    case "left": case "keyed": return peer("peer") ? value as LiveServerMessage : null;
+    case "make-key": return { type: "make-key" };
     case "key-request": return peer("from") && key("publicKey") ? value as LiveServerMessage : null;
     case "key": return peer("from") && key("publicKey") && key("wrapped") ? value as LiveServerMessage : null;
     default: return null;

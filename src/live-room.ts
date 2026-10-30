@@ -22,6 +22,10 @@ export interface LiveRoomSocket {
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
   addEventListener(type: "close", listener: (event: { code?: number }) => void): void;
 }
+/** What `connect` throws when the room refuses this participant for good: an agent while no tab has the room open (HTTP 409). */
+export class LiveRoomClosed extends Error {
+  constructor() { super("No tab has this room open."); }
+}
 export interface LiveClock {
   now(): number;
   setTimeout(callback: () => void, delay: number): unknown;
@@ -32,7 +36,8 @@ export interface LiveRoomOptions {
   repo: string;
   branch: string;
   file: string;
-  /** Opens the room's socket; the default is the browser's WebSocket to this editor. Agents pass one that sends their connection. */
+  /** Opens the room's socket; the default is the browser's WebSocket to this editor. Agents pass one that sends their
+   * connection, and throws LiveRoomClosed on a 409. */
   connect?: (url: string) => Promise<LiveRoomSocket>;
   /** Another participant's decrypted content frame. */
   onMessage(bytes: Uint8Array): void;
@@ -45,6 +50,8 @@ export interface LiveRoomOptions {
 
 const DATA = 0, PRESENCE = 1;
 const RECONNECT_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
+/** A key request nobody answered is sent again this often (a backstop: `keyed` and `make-key` normally settle it). */
+const REREQUEST_MS = 5_000;
 const HANDOVER = new TextEncoder().encode("native-site-editor live room key v1");
 
 const b64u = {
@@ -131,7 +138,7 @@ export function openLiveRoom(options: LiveRoomOptions) {
     keyed.promise.catch(() => undefined);
   };
   resetKeyed();
-  let heartbeat: unknown, sweep: unknown, retry: unknown;
+  let heartbeat: unknown, sweep: unknown, retry: unknown, rerequest: unknown;
 
   const peers = () => {
     const now = clock.now(), out = new Map<string, LivePeer>();
@@ -158,9 +165,11 @@ export function openLiveRoom(options: LiveRoomOptions) {
   const sendFrame = async (kind: number, payload: Uint8Array) => {
     const key = await keyed.promise;
     const frame = await seal(key, joined(Uint8Array.of(kind), payload));
-    if (roomKey === key) socket?.send(frame);
+    if (closed || roomKey !== key || !socket) return false;
+    try { socket.send(frame); return true; } catch { return false; }
   };
   const sayHere = () => {
+    if (closed) return;
     clock.clearTimeout(heartbeat);
     heartbeat = clock.setTimeout(sayHere, PRESENCE_HEARTBEAT_MS);
     if (!roomKey || !peer) return;
@@ -171,22 +180,32 @@ export function openLiveRoom(options: LiveRoomOptions) {
     try { sendControl({ type: "key", to: from, ...await wrapFor(roomKey, b64u.decode(publicKey)) }); }
     catch { /* A malformed public key gets no answer. */ }
   };
-  const keyReady = (key: CryptoKey) => {
+  /** `handed`: the key came from a member, so the relay is told this tab holds it now. */
+  const keyReady = (key: CryptoKey, handed = false) => {
     roomKey = key;
     request = null;
+    clock.clearTimeout(rerequest);
+    if (handed) sendControl({ type: "keyed" });
     keyed.resolve(key);
     const queued = waiting;
     waiting = [];
     for (const item of queued) if (members.has(item.from)) void answer(item.from, item.publicKey);
     sayHere();
   };
-  const makeKey = async () => keyReady(await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]));
-  const askForKey = async () => {
-    request = await oneTimeKeys();
+  const ask = () => {
+    if (!request) return;
     sendControl({ type: "key-request", publicKey: b64u.encode(request.publicKey) });
+    clock.clearTimeout(rerequest);
+    rerequest = clock.setTimeout(ask, REREQUEST_MS);
   };
 
-  const control = async (message: LiveServerMessage) => {
+  /** Handles one relay frame from `from`. After every await it re-checks that the room is open and `from` is still its socket. */
+  const control = async (message: LiveServerMessage, from: LiveRoomSocket) => {
+    const current = () => !closed && socket === from;
+    const makeKey = async () => {
+      const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+      if (current() && !roomKey) keyReady(key);
+    };
     switch (message.type) {
       case "welcome": {
         peer = message.peer;
@@ -198,7 +217,10 @@ export function openLiveRoom(options: LiveRoomOptions) {
         // Alone: keep the key this tab already had, or make one. Others in: take theirs.
         if (!members.size) { if (roomKey) keyReady(roomKey); else await makeKey(); return; }
         if (roomKey) { roomKey = null; resetKeyed(); }
-        await askForKey();
+        const keys = await oneTimeKeys();
+        if (!current() || roomKey) return;
+        request = keys;
+        ask();
         return;
       }
       case "joined": members.set(message.peer, message.access); return;
@@ -207,15 +229,21 @@ export function openLiveRoom(options: LiveRoomOptions) {
         presence.delete(message.peer);
         waiting = waiting.filter(item => item.from !== message.peer);
         changed();
-        // Everyone who could hand the key over left first: this tab makes it.
-        if (!roomKey && request && !members.size) await makeKey();
         return;
+      // The last key holder left: the relay chose this tab to make a new one.
+      case "make-key": if (!roomKey) await makeKey(); return;
+      // A member holds the key now: say who is here so it sees this tab at once, or ask it if still waiting.
+      case "keyed": if (roomKey) sayHere(); else ask(); return;
       case "key-request": await answer(message.from, message.publicKey); return;
-      case "key":
-        if (!request || roomKey) return;
-        try { keyReady(await unwrapFrom(request, message.publicKey, message.wrapped)); }
-        catch { /* A forged or broken handover is ignored; another member's answer may still come. */ }
+      case "key": {
+        const pending = request;
+        if (!pending || roomKey) return;
+        let key: CryptoKey;
+        try { key = await unwrapFrom(pending, message.publicKey, message.wrapped); }
+        catch { return; /* A forged or broken handover is ignored; another member's answer may still come. */ }
+        if (current() && !roomKey && request === pending) keyReady(key, true);
         return;
+      }
     }
   };
   const frame = async (data: Bytes) => {
@@ -242,14 +270,18 @@ export function openLiveRoom(options: LiveRoomOptions) {
   const join = async () => {
     let next: LiveRoomSocket;
     try { next = await connect(url); }
-    catch { reconnect(); return; }
+    catch (error) {
+      if (error instanceof LiveRoomClosed && !closed) { stop(); options.onClosed?.(); return; }
+      reconnect();
+      return;
+    }
     if (closed) { next.close(1000); return; }
     socket = next;
     peer = "";
     next.addEventListener("message", event => {
       if (socket !== next) return;
       queue = queue.then(async () => {
-        if (typeof event.data === "string") { const message = readLiveServerMessage(event.data); if (message) await control(message); }
+        if (typeof event.data === "string") { const message = readLiveServerMessage(event.data); if (message) await control(message, next); }
         else if (event.data instanceof ArrayBuffer) await frame(new Uint8Array(event.data));
         else if (ArrayBuffer.isView(event.data)) await frame(Uint8Array.from(new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)));
       }).catch(() => undefined);
@@ -265,7 +297,8 @@ export function openLiveRoom(options: LiveRoomOptions) {
   };
   const stop = () => {
     closed = true;
-    for (const timer of [heartbeat, sweep, retry]) clock.clearTimeout(timer);
+    for (const timer of [heartbeat, sweep, retry, rerequest]) clock.clearTimeout(timer);
+    request = null;
     keyed.reject(new Error("The live room is closed."));
     roomKey = null;
   };
@@ -274,7 +307,9 @@ export function openLiveRoom(options: LiveRoomOptions) {
   return {
     /** Settles once this participant holds the room key (made, kept or handed over); rejects once closed. */
     ready: () => keyed.promise.then(() => undefined),
-    /** Sends content to everyone else in the room, once this tab has the room key. */
+    /** Sends content to everyone else in the room, once this tab has the room key. Resolves true once handed to the
+     * socket; false when it was not sent (the key changed during a handover, or the socket is down): send again after
+     * `ready()`. Rejects once the room is closed. */
     send: (bytes: Uint8Array) => sendFrame(DATA, bytes),
     /** What this participant shows others (name, colour, caret); sent now and with every heartbeat. */
     setPresence(state: JsonValue) { ownState = state; sayHere(); },
