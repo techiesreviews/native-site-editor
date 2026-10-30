@@ -4,7 +4,7 @@ type: task (HITL)
 status: open
 assignee:
 builder: claude
-blocked_by: [43-move-creator-studio]
+blocked_by: [42-move-chat]
 ---
 
 ## Goal
