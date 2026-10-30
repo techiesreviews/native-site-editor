@@ -6,7 +6,8 @@ import { CLIENT_CAPABILITIES_META_KEY, CLIENT_INFO_META_KEY, PROTOCOL_VERSION_ME
 import type { AgentRequest } from "../shared/agent";
 import { AgentRelay, relayObjectName, type RelaySocket } from "../worker/agent-relay";
 import { LIFECYCLE_KEY } from "../worker/agent-lifecycle";
-import { WATCH_PAUSED } from "../worker/agent-controls";
+import { AGENTS_PAUSED, WATCH_PAUSED } from "../worker/agent-controls";
+import type { Env } from "../worker/app";
 import { JOB_HOLD_MS, TASKS_EXTENSION } from "../worker/mcp";
 import { startCountedWorker } from "./fakes/counted-agent";
 import { editorTab, origin, payload, repo, signIn, startWorker } from "./mcp-harness";
@@ -88,7 +89,9 @@ async function connected(options: { editor?: boolean; hold?: boolean; refuse?: s
   const pin = (id: string): AgentRequest => ({ id, text: pinText, createdAt: Date.now(), repoId: repo.id, repository: repo.full_name, branch: "main",
     state: "open", element: { file: "index.html", id: "1.0.0", tag: "h1", text: "Welcome", html: "<h1>Welcome</h1>" },
     thread: [{ from: "user", text: pinText, at: Date.now() }] });
-  return { ...h, name, token, otherToken, pins, pin, frames, commands, held, release, modern };
+  /** Answers one command the tab holds. */
+  const answerOne = (id: string) => answer(held.splice(held.findIndex(frame => frame.id === id), 1)[0]);
+  return { ...h, name, token, otherToken, pins, pin, frames, commands, held, release, answerOne, modern };
 }
 
 test("a tasks-capable client gets wait_for_requests as a job whose result is the pin, and no storage holds the pin", async () => {
@@ -191,8 +194,8 @@ test("a job keeps working through a closed editor, full waits and a busy editor,
   try {
     const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
     const until = async (count: number) => { while (h.commands.length < count) await new Promise(resolve => setImmediate(resolve)); };
-    // WAITS_PER_SITE looks hold the site's waits; one more is asked to look again in 30 s.
-    const holding = [1, 2, 3].map(id => h.modern("tasks/get", { taskId }, true, id));
+    // Other agents' waits (WAITS_PER_SITE) hold the site's waits; a look is asked to look again in 30 s.
+    const holding = [1, 2, 3].map(id => h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, false, id, id === 1 ? h.token : h.otherToken));
     await until(3);
     const full = (await h.modern("tasks/get", { taskId }, true, 4)).result;
     assert.equal(full.status, "working");
@@ -279,13 +282,11 @@ test("a cancel of a look's own request id never ends the job: the look runs out 
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 41 } }) });
     assert.equal(cancelled.status, 202);
     // The look waits under its task id, not its request id: the tab keeps its wait, and the look has not answered.
-    const next = h.modern("tasks/get", { taskId }, true, 42);
-    while (h.commands.length < 2) await new Promise(resolve => setImmediate(resolve));
+    for (let turn = 0; turn < 10; turn++) await new Promise(resolve => setImmediate(resolve));
     assert.equal(h.frames.some(frame => frame.type === "cancel"), false);
     assert.equal(answered, false);
     h.release();
     assert.equal((await look).result.status, "working");
-    assert.equal((await next).result.status, "working");
   } finally { await h.worker.dispose(); }
 });
 
@@ -314,7 +315,7 @@ test("a look whose answer is too large, or whose relay request throws, ends the 
   try {
     const { taskId } = (await lost.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
     const sessions = lost.env.SESSIONS;
-    lost.env.SESSIONS = { ...sessions, get: id => id === lost.name ? { fetch: () => Promise.reject(new Error("Lost subrequest")) } : sessions.get(id) };
+    lost.env.SESSIONS = { ...sessions, get: id => id === lost.name ? { fetch: () => Promise.reject(new Error("Lost subrequest")) } : sessions.get(id) } satisfies Env["SESSIONS"];
     const look = (await lost.modern("tasks/get", { taskId }, true)).result;
     lost.env.SESSIONS = sessions;
     assert.equal(look.status, "completed");
@@ -352,4 +353,94 @@ test("a job ends without a pin on a refusal from the tab, a connection that must
     assert.match(payload(look.result).hint, new RegExp(WATCH_PAUSED));
     assert.equal(paused.commands[0].command.waitMs, 0, "paused, the tab answers at once");
   } finally { await paused.worker.dispose(); }
+});
+
+/** Waits until `done` holds, a turn at a time. */
+const until = async (done: () => boolean) => { while (!done()) await new Promise(resolve => setImmediate(resolve)); };
+
+test("three overlapping looks at one job hold one wait, and a pin sent during them reaches the job once", async () => {
+  const h = await connected({ hold: true });
+  try {
+    const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    const answers: any[] = [];
+    const look = (id: number) => h.modern("tasks/get", { taskId }, true, id).then(reply => { answers[id] = reply.result; });
+    const looks = [look(1)];
+    await until(() => h.commands.length === 1);
+    // Each newer look takes over the wait the tab holds: the earlier one answers at once that the job still works.
+    for (const id of [2, 3]) {
+      looks.push(look(id));
+      await until(() => answers[id - 1] !== undefined || h.commands.length > 1);
+      assert.equal(h.commands.length, 1, "the job holds one wait in the tab");
+      assert.equal(answers[id - 1].status, "working");
+      assert.equal(answers[id - 1].pollIntervalMs, 1_000);
+    }
+    h.pins.push(h.pin("req-once"));
+    h.release();
+    await Promise.all(looks);
+    assert.equal(answers[3].status, "completed");
+    assert.equal(payload(answers[3].result).requests[0].id, "req-once");
+    assert.equal(answers.filter(answer => JSON.stringify(answer).includes("req-once")).length, 1, "the pin reaches the job once");
+    assert.equal(h.frames.some(frame => frame.type === "cancel"), false, "the tab's one wait was never ended early");
+  } finally { await h.worker.dispose(); }
+});
+
+test("while a job is looking, another agent's wait still gets its pins", async () => {
+  const h = await connected({ hold: true });
+  try {
+    const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    const looks = [1, 2, 3].map(id => h.modern("tasks/get", { taskId }, true, id));
+    await until(() => h.commands.length >= 1);
+    await Promise.all(looks.slice(0, 2));
+    // Another connection's agent waits beside the job: it is not told that others already wait.
+    const other = h.modern("tools/call", { name: "wait_for_requests", arguments: { agent: "Other" } }, false, 4, h.otherToken);
+    await until(() => h.commands.length === 2);
+    assert.equal(h.commands[1].command.agent, "Other");
+    h.pins.push(h.pin("req-other"));
+    h.answerOne(h.commands[1].id);
+    assert.equal(payload((await other).result).requests[0].id, "req-other");
+    h.release();
+    assert.equal((await looks[2]).result.status, "working");
+  } finally { await h.worker.dispose(); }
+});
+
+test("a look while the owner pauses agents is refused at once, and nothing reaches the tab", async () => {
+  const h = await connected();
+  try {
+    const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    h.env.AGENT_RELAY = "off";
+    const response = await h.dispatchFetch(origin + "/mcp", modernRequest(h.token, "tasks/get", { taskId }, true));
+    assert.equal(response.status, 403);
+    const refused = await response.json() as { error: { code: number; message: string } };
+    assert.equal(refused.error.code, -32003);
+    assert.equal(refused.error.message, AGENTS_PAUSED);
+    assert.equal(h.commands.length, 0);
+  } finally { await h.worker.dispose(); }
+});
+
+test("a job's look is answered without the tasks extension declared: its id is all it needs", async () => {
+  const h = await connected();
+  try {
+    const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    h.pins.push(h.pin("req-undeclared"));
+    const look = (await h.modern("tasks/get", { taskId }, false)).result;
+    assert.equal(look.status, "completed");
+    assert.equal(payload(look.result).requests[0].id, "req-undeclared");
+  } finally { await h.worker.dispose(); }
+});
+
+test("a client's request id that looks like a job's is cancelled like any call's, for 10 seconds", async () => {
+  const h = await connected({ hold: true });
+  try {
+    const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    const look = h.modern("tasks/get", { taskId }, true, 1);
+    await until(() => h.commands.length === 1);
+    // notifications/cancelled names the task id as a request id: the job's look is not the request it names.
+    const cancelled = await h.dispatchFetch(origin + "/mcp", { method: "POST", headers: { Authorization: `Bearer ${h.token}`,
+      "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25" },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: taskId } }) });
+    assert.equal(cancelled.status, 202);
+    assert.equal(h.frames.some(frame => frame.type === "cancel"), false);
+    h.release();
+    assert.equal((await look).result.status, "working");
+  } finally { await h.worker.dispose(); }
 });
