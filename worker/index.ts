@@ -88,7 +88,8 @@ export class SessionStore extends DurableObject {
   private live() {
     if (!this.liveCore) {
       this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
-      this.liveCore = new LiveRooms(this.ctx.getWebSockets("live"));
+      this.liveCore = new LiveRooms(this.ctx.getWebSockets("live"), () => Date.now(),
+        socket => this.ctx.getWebSocketAutoResponseTimestamp(socket as WebSocket)?.getTime() ?? null);
     }
     return this.liveCore;
   }

@@ -10,7 +10,7 @@
 // protect against a changed server.
 
 import {
-  LIVE_ACCESS_ENDED, LIVE_ROOM_CLOSED, PRESENCE_HEARTBEAT_MS, PRESENCE_TIMEOUT_MS, readLiveServerMessage,
+  LIVE_ACCESS_ENDED, LIVE_PING, LIVE_PING_MS, LIVE_ROOM_CLOSED, PRESENCE_HEARTBEAT_MS, PRESENCE_TIMEOUT_MS, readLiveServerMessage,
   type LiveAccess, type LiveClientMessage, type LiveServerMessage,
 } from "../shared/live-room";
 import type { JsonValue } from "../shared/agent-command";
@@ -44,6 +44,12 @@ export interface LiveRoomOptions {
   onMessage(bytes: Uint8Array): void;
   /** Who is here now: everyone heard from within the presence timeout, by relay peer id. */
   onPeers?(peers: ReadonlyMap<string, LivePeer>): void;
+  /** Who else the relay says is connected (heard from or not), by relay peer id: on joining (each reconnect too)
+   * and on each join and leave. A dropped socket says nothing: being cut off is not being alone. */
+  onMembers?(members: ReadonlyMap<string, LiveAccess>): void;
+  /** This participant holds a room key: the first, a new one, or one taken again after a reconnect. Frames sent
+   * meanwhile may not have arrived, so a caller that keeps state in step syncs it again here. */
+  onKey?(): void;
   /** The room ended for this participant and does not reconnect: no tab has it open (agents), its connection ended, or it was refused. */
   onClosed?(): void;
   clock?: LiveClock;
@@ -154,7 +160,7 @@ export function openLiveRoom(options: LiveRoomOptions) {
     keyed.promise.catch(() => undefined);
   };
   resetKeyed();
-  let heartbeat: unknown, sweep: unknown, retry: unknown, rerequest: unknown;
+  let heartbeat: unknown, sweep: unknown, retry: unknown, rerequest: unknown, ping: unknown;
 
   const peers = () => {
     const now = clock.now(), out = new Map<string, LivePeer>();
@@ -163,6 +169,7 @@ export function openLiveRoom(options: LiveRoomOptions) {
     return out;
   };
   const changed = () => options.onPeers?.(peers());
+  const membersChanged = () => options.onMembers?.(new Map(members));
   /** Drops whoever has not been heard from within the timeout, then waits for the next one due. */
   const expire = () => {
     clock.clearTimeout(sweep);
@@ -192,7 +199,8 @@ export function openLiveRoom(options: LiveRoomOptions) {
     if (closed) return;
     clock.clearTimeout(heartbeat);
     heartbeat = clock.setTimeout(sayHere, PRESENCE_HEARTBEAT_MS);
-    if (!roomKey || !peer) return;
+    // Alone, nobody needs telling: the relay is not woken (its pings keep the socket counted as alive).
+    if (!roomKey || !peer || !members.size) return;
     void sendFrame(PRESENCE, new TextEncoder().encode(JSON.stringify({ peer, state: ownState ?? null }))).catch(() => undefined);
   };
   /** Wraps the key for a joiner; sends it only if the room, socket and key are still the ones it was wrapped on. */
@@ -215,6 +223,14 @@ export function openLiveRoom(options: LiveRoomOptions) {
     waiting = [];
     for (const item of queued) if (members.has(item.from)) void answer(item.from, item.publicKey);
     sayHere();
+    options.onKey?.();
+  };
+  /** The relay's runtime answers this itself, so a quiet socket still counts as alive there. */
+  const pingRelay = () => {
+    if (closed) return;
+    clock.clearTimeout(ping);
+    ping = clock.setTimeout(pingRelay, LIVE_PING_MS);
+    try { socket?.send(LIVE_PING); } catch { /* The close handler reconnects. */ }
   };
   const ask = () => {
     if (!request) return;
@@ -238,6 +254,7 @@ export function openLiveRoom(options: LiveRoomOptions) {
         for (const item of message.peers) members.set(item.peer, item.access);
         for (const id of presence.keys()) if (!members.has(id)) presence.delete(id);
         changed();
+        membersChanged();
         // Holding the key (first in, or back in place of its own earlier socket): keep the one it had, or make one. Otherwise take theirs.
         if (message.keyed) { if (roomKey) keyReady(roomKey); else await makeKey(); return; }
         if (roomKey) { roomKey = null; resetKeyed(); }
@@ -247,12 +264,13 @@ export function openLiveRoom(options: LiveRoomOptions) {
         ask();
         return;
       }
-      case "joined": members.set(message.peer, message.access); return;
+      case "joined": members.set(message.peer, message.access); membersChanged(); return;
       case "left":
         members.delete(message.peer);
         presence.delete(message.peer);
         waiting = waiting.filter(item => item.from !== message.peer);
         changed();
+        membersChanged();
         return;
       // The last key holder left: the relay chose this tab to make a new one.
       case "make-key": if (!roomKey) await makeKey(); return;
@@ -302,6 +320,7 @@ export function openLiveRoom(options: LiveRoomOptions) {
     if (closed) { next.close(1000); return; }
     socket = next;
     peer = "";
+    pingRelay();
     next.addEventListener("message", event => {
       if (socket !== next) return;
       queue = queue.then(async () => {
@@ -321,7 +340,7 @@ export function openLiveRoom(options: LiveRoomOptions) {
   };
   const stop = () => {
     closed = true;
-    for (const timer of [heartbeat, sweep, retry, rerequest]) clock.clearTimeout(timer);
+    for (const timer of [heartbeat, sweep, retry, rerequest, ping]) clock.clearTimeout(timer);
     request = null;
     // Callers still waiting hold the pending promise: reject it. The key may have arrived already, and a settled
     // promise cannot reject, so later calls get a fresh, rejected one.

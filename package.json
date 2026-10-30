@@ -57,6 +57,7 @@
     "pdfjs-dist": "6.4.299",
     "svgo": "4.1.0",
     "tweetnacl": "^1.0.3",
+    "yjs": "^13.6.33",
     "zod": "^4.6.5"
   },
   "overrides": {

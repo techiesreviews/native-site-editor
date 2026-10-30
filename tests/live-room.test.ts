@@ -7,7 +7,7 @@ import { LIVE_AGENT_CHECK_MS, LiveRooms, liveRoomObjectName, type LiveSocket } f
 import { forEachAwait, type AwaitRace } from "./support/await-race";
 import { LiveRoomClosed, openLiveRoom, type LiveClock, type LivePeer, type LiveRoomSocket } from "../src/live-room";
 import { editorTab, origin, repo, signIn, startWorker } from "./mcp-harness";
-import { LIVE_ACCESS_ENDED, LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, liveRoomFile, readLiveClientMessage, type LiveAccess } from "../shared/live-room";
+import { LIVE_ACCESS_ENDED, LIVE_MESSAGE_LIMIT, LIVE_PING, LIVE_ROOM_CLOSED, liveRoomFile, readLiveClientMessage, type LiveAccess } from "../shared/live-room";
 
 const room = "a".repeat(64);
 const settle = async () => { for (let index = 0; index < 40; index++) await new Promise(resolve => setImmediate(resolve)); };
@@ -49,7 +49,10 @@ function fakeClock() {
 /** One relay, every frame through it on record: what reached it and what it sent. */
 /** `now`: the relay's clock (the fake clock in tests that time silence). */
 function relayHarness(now: () => number = () => Date.now()) {
-  let relay = new LiveRooms([], now);
+  // The runtime answers a socket's ping itself (setWebSocketAutoResponse): the relay only reads when.
+  const pinged = new Map<LiveSocket, number>();
+  const pingedAt = (socket: LiveSocket) => pinged.get(socket) ?? null;
+  let relay = new LiveRooms([], now, pingedAt);
   const seen: (string | Uint8Array)[] = [];
   const servers: LiveSocket[] = [];
   const record = (message: string | ArrayBuffer) => seen.push(typeof message === "string" ? message : new Uint8Array(message.slice(0)));
@@ -80,6 +83,11 @@ function relayHarness(now: () => number = () => Date.now()) {
     const client: LiveRoomSocket = {
       send(data) {
         if (link.cut || server.readyState !== 1) return;
+        if (data === LIVE_PING) {
+          pinged.set(server, now());
+          setImmediate(() => { for (const listener of listeners.message) listener({ data: "pong" }); });
+          return;
+        }
         record(data);
         relay.message(server, typeof data === "string" ? data : data.slice(0));
       },
@@ -101,7 +109,7 @@ function relayHarness(now: () => number = () => Date.now()) {
     seen,
     pair,
     /** The Durable Object woke from hibernation: a fresh relay rebuilt from every socket the runtime still lists, closing ones included. */
-    wake() { relay = new LiveRooms(servers, now); },
+    wake() { relay = new LiveRooms(servers, now, pingedAt); },
     get relay() { return relay; },
   };
 }
@@ -353,7 +361,7 @@ test("closing while a handed-over key is being unwrapped sends nothing more and 
           socket.addEventListener(type, ((event: { data?: unknown }) => {
             (listener as (event: unknown) => void)(event);
             // The key arrives: close while its unwrap is still running.
-            if (type === "message" && typeof event.data === "string" && JSON.parse(event.data).type === "key") queueMicrotask(() => { closing = true; live.close(); });
+            if (type === "message" && typeof event.data === "string" && event.data !== "pong" && JSON.parse(event.data).type === "key") queueMicrotask(() => { closing = true; live.close(); });
           }) as never);
         },
       } satisfies LiveRoomSocket;
@@ -510,6 +518,85 @@ test("a key holder whose socket died without a close is removed when a joiner as
   await until(() => sam.got.length > 0, "Sam hearing Lex");
   assert.deepEqual(sam.got, ["after Anna"]);
   lex.live.close(); sam.live.close(); anna.live.close();
+});
+
+/** A participant whose incoming relay frames pass through `filter` first: it may drop one (false) or hold it (a promise). */
+function filteredParticipant(h: ReturnType<typeof relayHarness>, clock: LiveClock, filter: (data: unknown) => boolean | Promise<void>) {
+  let made: ReturnType<typeof h.pair> | undefined;
+  const got: string[] = [];
+  const live = openLiveRoom({
+    repo: "lex/starter", branch: "main", file: "index.html", clock, onMessage: bytes => got.push(new TextDecoder().decode(bytes)),
+    connect: async url => {
+      made = h.pair("editor", room, new URL(url, origin).searchParams.get("rejoin") ?? undefined);
+      const socket = made.client;
+      return {
+        send: data => socket.send(data),
+        close: (code, reason) => socket.close(code, reason),
+        addEventListener(type: "message" | "close", listener: (event: never) => void) {
+          socket.addEventListener(type, ((event: { data?: unknown }) => {
+            const verdict = type === "message" ? filter(event.data) : true;
+            if (verdict === true) (listener as (event: unknown) => void)(event);
+            else if (verdict !== false) void verdict.then(() => (listener as (event: unknown) => void)(event));
+          }) as never);
+        },
+      } satisfies LiveRoomSocket;
+    },
+  });
+  return { live, got, get server() { return made!.server; } };
+}
+const peerOf = (server: LiveSocket) => (server.deserializeAttachment() as { peer: string }).peer;
+const typeOf = (data: unknown) => typeof data === "string" && data.startsWith("{") ? JSON.parse(data) as { type: string; from?: string } : undefined;
+
+test("the key holder leaving while its key to a joiner is held back leaves both waiting joiners on one key", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness();
+    const holder = participant(h, time.clock);
+    await holder.live.ready();
+    const holderPeer = peerOf(holder.server);
+    // K is in longer than J; the holder's answer to K never arrives, its answer to J is held.
+    const k = filteredParticipant(h, time.clock, data => typeOf(data)?.type !== "key" || typeOf(data)?.from !== holderPeer);
+    await until(() => h.seen.some(frame => typeOf(frame)?.type === "key"), "the holder answering K");
+    let release!: () => void, held = false;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const j = filteredParticipant(h, time.clock, data => {
+      if (typeOf(data)?.type !== "key" || typeOf(data)?.from !== holderPeer) return true;
+      held = true;
+      return gate;
+    });
+    await until(() => held, "the holder's key to J in flight");
+    holder.live.close();
+    await settle();
+    release();
+    await Promise.all([j.live.ready(), k.live.ready()]);
+    assert.equal(keys.length, 1, "no second key was made");
+    assert.equal(await j.live.send(new TextEncoder().encode("from J")), true);
+    assert.equal(await k.live.send(new TextEncoder().encode("from K")), true);
+    await until(() => j.got.length > 0 && k.got.length > 0, "both hearing each other");
+    assert.deepEqual([j.got, k.got], [["from K"], ["from J"]]);
+    j.live.close(); k.live.close();
+  });
+});
+
+test("a key holder silent for 60 s but pinging is not closed when a joiner asks, and no new key is made", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness(() => time.clock.now());
+    const anna = participant(h, time.clock);
+    await anna.live.ready();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    const framesBefore = h.seen.length;
+    // Alone (or hidden): no content or presence frames reach the relay for a minute, only the auto-answered pings.
+    await time.advance(60_000);
+    assert.equal(h.seen.length, framesBefore, "a tab alone in its room sends the relay nothing it has to wake for");
+    const lex = participant(h, time.clock);
+    await lex.live.ready();
+    assert.equal(anna.server.readyState, 1, "the quiet holder stays");
+    assert.equal(keys.length, 1, "and Lex took its key");
+    assert.equal(await lex.live.send(new TextEncoder().encode("hello Anna")), true);
+    await until(() => anna.got.length > 0, "Anna hearing Lex");
+    anna.live.close(); lex.live.close();
+  });
 });
 
 test("after close, ready() and send() reject even though the key had arrived", async () => {

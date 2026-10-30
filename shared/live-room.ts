@@ -32,6 +32,11 @@ export const LIVE_MESSAGE_LIMIT = 2 * 1024 * 1024;
 export const PRESENCE_HEARTBEAT_MS = 15_000;
 /** A participant not heard from for this long has gone: a crashed tab cannot say it left. */
 export const PRESENCE_TIMEOUT_MS = 30_000;
+/** Each participant sends the relay's auto-answered `ping` this often, so a quiet tab (alone, or hidden and
+ * throttled) still shows the relay its socket is alive without waking it. */
+export const LIVE_PING_MS = 10_000;
+/** The text frame the relay answers with `pong` without waking (`setWebSocketAutoResponse`). */
+export const LIVE_PING = "ping";
 /** The relay closes an agent's socket with this when no tab has the room open (an agent never makes the key). */
 export const LIVE_ROOM_CLOSED = 4404;
 /** The relay closes an agent's socket with this once its connection ends: revoked, rebound, past its 8 hours or agents paused. */
