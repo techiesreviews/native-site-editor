@@ -35,7 +35,7 @@ import { writablePathProblem } from "./site-files";
 import { siteConventions, siteInstructions } from "./site-conventions";
 import { editorOrigin } from "./owner-setup";
 import { editShapeProblem, type AgentEdit, type AgentEditArgsMap, type AgentEditTool } from "../shared/agent-edit";
-import { AgentRelay, JOB_ID_PREFIX, relayObjectName, WAITS_PER_SITE } from "./agent-relay";
+import { AgentRelay, relayObjectName, WAITS_PER_SITE } from "./agent-relay";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
 import { mediaChanges, type AgentMedia } from "../shared/agent-media";
 import { AGENT_ARGUMENT, AGENT_ARGUMENT_HINT, agentTools, mcpTools, nextStep, type McpToolName } from "../shared/agent-tool-table";
@@ -51,7 +51,8 @@ export function pausedMcp(body: unknown) {
   });
 }
 
-type Exchange = { started?: () => void; cancelled?: boolean; requestId?: string | number; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void };
+/** `job`: requestId is a long job's id, which the relay fences apart from a client's own request ids. */
+type Exchange = { started?: () => void; cancelled?: boolean; requestId?: string | number; job?: true; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void };
 
 type Connection = Awaited<ReturnType<typeof authenticateAgent>>;
 
@@ -126,6 +127,7 @@ export const TASKS_EXTENSION = "io.modelcontextprotocol/tasks";
 /** How long one look at a waiting job holds a wait in the editor (under the relay's 25 s), and the pause between looks. */
 export const JOB_HOLD_MS = 20_000;
 const JOB_POLL_MS = 1_000;
+const JOB_ID_PREFIX = "wait:";
 
 /** Whether a request's client declared the tasks extension (per request, in its `_meta`). */
 function declaresTasks(params: unknown) {
@@ -223,7 +225,7 @@ function siteServer(connection: Connection, env: Env, origin: string, exchange: 
         exchange.started?.();
         const pending = env.SESSIONS.get(env.SESSIONS.idFromName(name)).fetch(new Request("https://session.internal/relay/dispatch", {
           method: "POST", headers: { "Content-Type": "application/json", "Content-Length": String(textBytes(body)),
-            [AgentRelay.identityHeader]: JSON.stringify({ workspace: connection.workspace, requestId: exchange.requestId, grantId: connection.id }) }, body, signal: exchange.signal,
+            [AgentRelay.identityHeader]: JSON.stringify({ workspace: connection.workspace, requestId: exchange.requestId, grantId: connection.id, job: exchange.job }) }, body, signal: exchange.signal,
         }));
         exchange.waitUntil?.(pending.catch(() => undefined));
         const response = await pending;
@@ -863,6 +865,8 @@ function siteServer(connection: Connection, env: Env, origin: string, exchange: 
       if (!watching) return { result: waited(requests, `${WATCH_PAUSED} Stop the watchdog: do not call wait_for_requests again on your own; tell the user you are ready.`) };
       return { result: waited(requests), ...(requests.length ? {} : { waitOn: { retryMs: JOB_POLL_MS, why: "Waiting for a request from the editor." } }) };
     }
+    // A newer look at the same job took over this look's wait (ticket am-52): this one took nothing.
+    if (outcome.code === "replaced") return { result: waited([]), waitOn: { retryMs: JOB_POLL_MS, why: "Waiting for a request from the editor." } };
     if (outcome.code === "editor-unavailable") {
       const why = editorClosedMessage(origin, connection.workspace, "Wait about a minute, then call wait_for_requests again.");
       return { result: waited([], why), waitOn: { retryMs: 60_000, why: editorClosedMessage(origin, connection.workspace, "This job keeps waiting.") } };
@@ -1095,11 +1099,11 @@ export async function handleMcp(
     protocolVersionHeader: request.headers.get("MCP-Protocol-Version") ?? undefined,
     mcpMethodHeader: request.headers.get("Mcp-Method") ?? undefined, mcpNameHeader: request.headers.get("Mcp-Name") ?? undefined });
   const body = parsedBody as { id?: unknown; method?: unknown; params?: { requestId?: unknown; taskId?: unknown; name?: unknown; arguments?: unknown } } | null;
-  /** Fences a request in the relay: its pending dispatch (if any) ends, and the same key is refused for 10 s. */
-  const relayCancel = async (requestId: string | number) => {
+  /** Fences a request in the relay: its pending dispatch (if any) ends, and the same key is refused for 10 s (a job: a day). */
+  const relayCancel = async (requestId: string | number, job?: true) => {
     const name = await relayObjectName(connection.workspace);
     await env.SESSIONS.get(env.SESSIONS.idFromName(name)).fetch(new Request("https://session.internal/relay/cancel", {
-      method: "POST", headers: { [AgentRelay.identityHeader]: JSON.stringify({ workspace: connection.workspace, requestId, grantId: connection.id }) },
+      method: "POST", headers: { [AgentRelay.identityHeader]: JSON.stringify({ workspace: connection.workspace, requestId, grantId: connection.id, job }) },
     }));
   };
   if (classification.kind !== "reject" && body?.method === "notifications/cancelled" &&
@@ -1110,6 +1114,7 @@ export async function handleMcp(
   const exchange: Exchange = {
     // A job's look waits under its task id, which tasks/cancel fences (ticket am-17).
     requestId: job === "look" ? taskId : typeof body?.id === "string" || typeof body?.id === "number" ? body.id : undefined,
+    ...(job === "look" ? { job: true as const } : {}),
     // Legacy disconnects are not cancellation; keep their internal subrequest alive after the HTTP caller leaves.
     signal: classification.kind === "modern" ? request.signal : undefined,
     waitUntil: context && (promise => context.waitUntil(promise)),
@@ -1127,7 +1132,7 @@ export async function handleMcp(
     // Cancelled for good: the relay refuses the job's looks from now on, and the answer says so at once.
     if (job === "cancel") {
       if (!known) return answer(undefined);
-      await relayCancel(taskId!);
+      await relayCancel(taskId!, true);
       return answer({ resultType: "complete", ...jobState(taskId!, known, "cancelled") });
     }
     if (job === "update") return answer(known ? { resultType: "complete" } : undefined);
