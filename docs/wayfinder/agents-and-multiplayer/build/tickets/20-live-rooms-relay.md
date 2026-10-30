@@ -95,5 +95,6 @@ Validation:
 - `RESULT: ok unit 689/689 (42 files)` (`kit unit --affected`).
 - `RESULT: ok specs 1/1 passed` (`kit specs --affected`: `native-mcp.spec.ts`, 19 passed).
 - `RESULT: ok size boot 346 KB (±0 KB) vs dev@88fa5af, budget 355 KB`.
+- `tests/frame-guard.test.ts` allows the room socket's `message` listener (not a preview frame), found by `kit pr`'s full unit run.
 - `npm run check` and `npm run lint` clean (`check-exports: 0 failure(s)`).
 
