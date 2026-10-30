@@ -30,9 +30,9 @@ async function agentOnHero(page: Page, baseURL: string | undefined) {
   return { client, call, preview, chips, heading: preview.locator(".hero h1"), undo: chips.getByRole("button", { name: "Undo Copy editor's change" }),
     undone: chips.getByRole("button", { name: "Undone: Copy editor's change" }) };
 }
-const retitle = async (call: Call, to: string) => {
+const retitle = async (call: Call, to: string, from = HEADING) => {
   const read = await call("read_file", { path: "index.html" });
-  expect((await call("edit_file", { path: "index.html", expectedHash: read.hash, edits: [{ oldText: HEADING, newText: to }], requestId: "chip-retitle" })).state).toBe("applied");
+  expect((await call("edit_file", { path: "index.html", expectedHash: read.hash, edits: [{ oldText: from, newText: to }], requestId: "chip-retitle" })).state).toBe("applied");
 };
 /** The user types `text` at the end of the hero heading and finishes; the agent reads it. */
 async function typeInHeading(page: Page, heading: Locator, call: Call, text: string) {
@@ -202,6 +202,46 @@ test("a refusal chip on a section at the very top of the page stands under its o
     });
     expect(header.top).toBeLessThan(box.height);
     expect(box.top).toBeGreaterThanOrEqual(header.bottom - 1);
+  } finally {
+    await client.close();
+  }
+});
+
+test("an earlier version shown in History offers no Undo on the chip, and a press let go outside the page blocks nothing after", async ({ page, baseURL }) => {
+  // A second commit, so History has an earlier version (in the session the first load makes; the editor opens after it).
+  await page.goto(`${baseURL}/?session`);
+  await expect(page.locator("#status")).toBeAttached();
+  const source = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "index.html", content: source.replace(HEADING, "Edited on GitHub") } });
+  const { client, call, chips, heading, undo, preview } = await agentOnHero(page, baseURL);
+  try {
+    await expect(heading).toHaveText("Edited on GitHub");
+    await retitle(call, "Native preview", "Edited on GitHub");
+    await expect(undo).toBeEnabled();
+
+    // A press begun on Undo and let go outside the page's frame: nothing is undone, and the page's own actions go on
+    // as ever after it (Enter on a link selects it, its click no press of the Undo's).
+    const box = (await undo.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(4, 4, { steps: 4 });
+    await page.mouse.up();
+    await expect(heading).toHaveText("Native preview");
+    await preview.locator("a").first().focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".edit-bar")).toBeVisible();
+
+    // An earlier version shown: the chip offers no Undo; back to the latest, it does again.
+    await page.locator("#history-button").click();
+    await page.getByRole("dialog", { name: "History" }).locator(".commit-history__item").nth(1).locator(".commit-history__view").click();
+    const bar = page.getByRole("region", { name: "Earlier version" });
+    await expect(heading).toHaveText(HEADING);
+    await expect(chips).toHaveText(["Copy editor"]);
+    await expect(chips.getByRole("button")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await bar.getByRole("button", { name: "Back to latest" }).click();
+    await expect(heading).toHaveText("Native preview");
+    await expect(undo).toBeEnabled();
   } finally {
     await client.close();
   }

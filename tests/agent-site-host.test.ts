@@ -365,15 +365,14 @@ test("the chip's Undo writes nothing once another branch is shown at any of its 
     const written: string[] = [];
     const reads = { source: (path: string) => draftStore().get(SCOPE, path)?.content, exists: () => true, template: () => undefined, site: () => ({ routes: { "/": "index.html" }, components: {} }) };
     // A guarded edit as the editor's: its plan read, then its guard proved before anything is written.
-    const guardedEdits = unusedPort<AgentCommandPorts["guardedEdits"]>("guardedEdits", {
-      run: race.port("run", async (plan: Parameters<AgentCommandPorts["guardedEdits"]["run"]>[0], options?: { guard?: () => boolean }) => {
-        const planned = await race.port("plan", async () => plan(reads))();
-        if (options?.guard && !options.guard()) return { ok: false as const, reason: "stale" as const, message: "stale" };
-        if ("refuse" in planned) return { ok: false as const, reason: "refused" as const, message: String(planned.refuse) };
-        written.push(id);
-        return { ok: true as const, status: "applied" as const };
-      }) as AgentCommandPorts["guardedEdits"]["run"],
+    const runEdit: AgentCommandPorts["guardedEdits"]["run"] = race.port("run", async (plan, options) => {
+      const planned = await race.port("plan", async () => plan(reads))();
+      if (options?.guard && !options.guard()) return { ok: false, reason: "stale", message: "stale" };
+      if ("refuse" in planned) return { ok: false, reason: "refused", message: String(planned.refuse) };
+      written.push(id);
+      return { ok: true, status: "applied" };
     });
+    const guardedEdits = unusedPort<AgentCommandPorts["guardedEdits"]>("guardedEdits", { run: runEdit });
     const f = commandsFixture({ guardedEdits, draftScope: () => shown, loadChanges: race.port("load", async () => changes) });
     const run = { id, written, shift: () => { shown = { ...SCOPE, branch: "dev" }; }, outcome: undefined as string | undefined, done: Promise.resolve() };
     run.done = f.commands.undoLatest(who, "index.html", id).then(() => { run.outcome = "undone"; }, (error: Error) => { run.outcome = error.message; });
