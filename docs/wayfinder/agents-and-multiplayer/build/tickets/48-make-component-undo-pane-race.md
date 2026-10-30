@@ -1,7 +1,7 @@
 ---
 title: "Undo of Make component keeps the component's stylesheet pane (flaky on dev)"
 type: task (AFK)
-status: open
+status: closed
 assignee: am-48
 builder: claude
 blocked_by: [14-agent-tools-see-and-say]
@@ -30,3 +30,12 @@ blocked_by: [14-agent-tools-see-and-say]
 ## Kit commands and evidence
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit specs --affected`, `kit review`, `kit pr`; report the RESULT lines and the 20-run count.
+
+## Done (2026-10-30)
+
+- Cause, from console traces of 15-run repeats (3 of 15 failed before the change): no late selection update switches the pane. The spec clicked Done while Edit component mode was still loading. `mode.leave()` cancels that entry and returns no instance, and a stale `refresh` selection of the page, refused once the template is open, has already cleared the selection. So `backToPage` (src/page-builder/components.ts) selects nothing back on the page, and the pane keeps the page's default `styles/site.css`. In passing runs the mode came on first, its root got selected, and the return selected the instance, which linked the component's stylesheet.
+- The spec now waits for the mode's title (`Editing<section-a-native-browser>`) before Done, as native-component-loader.spec.ts does. `tests/known-failures.json` is empty again.
+- `src/controllers/linked-styles-controller.ts` is unchanged: it does what it is told, so there is no late update to reproduce in a unit test.
+- Left for a follow-up (outside this ticket's files): Done while the mode is still loading returns to the page with nothing selected and the shared stylesheet beside it. `leave()` in src/page-builder/component-mode.ts could hand back the cancelled entry's instance so the return selects it.
+- Spec: 20/20 alone; 20/20 while `kit specs` ran native-cards, native-components and native-component-loader beside it (load average 6.6).
+- Feature list: no change (test timing only).
