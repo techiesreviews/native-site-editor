@@ -721,6 +721,27 @@ test("in a chain of looks with changing commands, a marked look that is replaced
   h.idle();
 });
 
+test("a marked look whose caller leaves keeps the mark for its job's next look, once", async () => {
+  const h = fixture();
+  const leave = new AbortController();
+  const first = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  const second = h.relay.dispatch(scope, jobWait(0), leave.signal, undefined, jobKey);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "unknown" });
+  leave.abort();
+  assert.deepEqual(await second, { ok: false, code: "cancelled", outcome: "unknown", tookOver: true });
+  // Another job of the connection does not get it; the job's next look does, once.
+  const other = h.relay.dispatch(scope, jobWait(0), undefined, undefined, { ...jobKey, requestId: "wait:other" });
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await other, { ok: true, result: { requests: [] } });
+  const third = h.relay.dispatch(scope, jobWait(0), undefined, undefined, jobKey);
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await third, { ok: true, result: { requests: [] }, tookOver: true });
+  const fourth = h.relay.dispatch(scope, jobWait(0), undefined, undefined, jobKey);
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await fourth, { ok: true, result: { requests: [] } });
+  h.idle();
+});
+
 test("a newer look that took over an unsent wait and then leaves ends it unsent: the tab never gets it", async () => {
   const h = fixture();
   h.relay.reset();

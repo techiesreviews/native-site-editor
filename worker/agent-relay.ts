@@ -149,14 +149,29 @@ export class AgentRelay {
   private recentCancels = new Map<string, number>();
   /** Cancelled long jobs by connection, then job id, with their expiry; in memory only like the rest: a wake forgets them. */
   private cancelledJobs = new Map<string, Map<string | number, number>>();
+  /** Jobs whose newest look, marked `tookOver`, ended as its caller left (ticket am-54), kept like a job's cancel:
+   * the job's next look that waits carries the mark on, so the hint still reaches the agent. */
+  private markedJobs = new Map<string, Map<string | number, number>>();
 
   private cancelId(key: RelayCancelKey) { return JSON.stringify([key.grantId, key.requestId, key.job === true]); }
   private pruneCancels() {
     for (const [key, expiry] of this.recentCancels) if (expiry <= this.clock.now()) this.recentCancels.delete(key);
-    for (const [grant, jobs] of this.cancelledJobs) {
+    for (const byGrant of [this.cancelledJobs, this.markedJobs]) for (const [grant, jobs] of byGrant) {
       for (const [job, expiry] of jobs) if (expiry <= this.clock.now()) jobs.delete(job);
-      if (!jobs.size) this.cancelledJobs.delete(grant);
+      if (!jobs.size) byGrant.delete(grant);
     }
+  }
+  /** Remembers a job for a day, at most JOB_CANCELS per connection, so one connection never pushes out another's. */
+  private rememberJob(byGrant: Map<string, Map<string | number, number>>, key: RelayCancelKey) {
+    const jobs = byGrant.get(key.grantId) ?? new Map<string | number, number>();
+    jobs.delete(key.requestId);
+    jobs.set(key.requestId, this.clock.now() + JOB_CANCEL_MS);
+    if (jobs.size > JOB_CANCELS) jobs.delete(jobs.keys().next().value!);
+    byGrant.set(key.grantId, jobs);
+  }
+  /** Takes the mark a job's left look kept for it, if any. */
+  private takeMark(key?: RelayCancelKey) {
+    return key?.job === true && this.markedJobs.get(key.grantId)?.delete(key.requestId) === true;
   }
   private recentlyCancelled(key?: RelayCancelKey) {
     this.pruneCancels();
@@ -297,10 +312,15 @@ export class AgentRelay {
     // - the newest look gets the tab's answer, or cancelled (its caller leaves, tasks/cancel), timeout or lost, marked
     //   `tookOver` when a sent wait of its job was ended on the way: only that answer may say what the wait took;
     // - a look marked `tookOver` that a newer look replaces (either way) passes the mark on and answers `replaced`
-    //   unmarked, so it still answers working: each chain of takeovers has one marked answer, the newest look's.
+    //   unmarked, so it still answers working: each chain of takeovers has one marked answer, the newest look's;
+    // - a marked newest look whose caller leaves keeps the mark for its job: the job's next look that waits (adopted
+    //   or sent) carries it; tasks/cancel ends the job, so its mark goes with it.
     const json = JSON.stringify(command);
     const held = cancelKey?.job ? [...this.calls.values()].find(call => call.cancelKey && sameKey(call.cancelKey, cancelKey) && sameScope(call.scope, scope)) : undefined;
-    if (held?.command === json) return new Promise(resolve => held.adopt(resolve, signal));
+    if (held?.command === json) {
+      if (this.takeMark(cancelKey)) held.tookOver = true;
+      return new Promise(resolve => held.adopt(resolve, signal));
+    }
     const freed = { calls: held ? 1 : 0, waits: held && this.waitIds.has(held.id) ? 1 : 0, bytes: held?.bytes ?? 0 };
     const receivers = [...this.sockets].filter(([socket, metadata]) => socket.readyState === 1 && sameScope(metadata, scope));
     const entry = receivers.find(([, metadata]) => metadata.handshaken) ?? receivers[0];
@@ -318,14 +338,17 @@ export class AgentRelay {
     if (this.buffered - freed.bytes + this.reserved.bytes + length > AgentRelay.maxBytes) return Promise.resolve(failure("too-large"));
     const deadline = started + (wait ?? 10_000);
     if (this.clock.now() >= deadline) return Promise.resolve(failure("timeout"));
-    const tookOver = held !== undefined && (held.unsent === undefined || held.tookOver);
+    const tookOver = this.takeMark(cancelKey) || held !== undefined && (held.unsent === undefined || held.tookOver);
     held?.finish(failure("replaced", held.unsent === undefined ? "unknown" : "not-sent"));
     const id = crypto.randomUUID();
     const message = candidate.replace(placeholder, id);
     const framed = (now: number) => message.replace('"remainingMs":10000', `"remainingMs":${Math.max(0, Math.floor(deadline - now))}`);
     return new Promise(first => {
       let resolve: (outcome: Outcome) => void = first, listening = signal;
-      const cancel = () => call.finish(failure("cancelled", call.unsent === undefined ? "unknown" : "not-sent"));
+      const cancel = () => {
+        if (call.tookOver && call.cancelKey?.job) this.rememberJob(this.markedJobs, call.cancelKey);
+        call.finish(failure("cancelled", call.unsent === undefined ? "unknown" : "not-sent"));
+      };
       const call: Pending = { id, cancelKey, command: json, tookOver, socket: receiver, scope, bytes: length, deadline, timer: undefined, adopt: (next, nextSignal) => {
         const earlier = resolve;
         listening?.removeEventListener("abort", cancel);
@@ -419,11 +442,8 @@ export class AgentRelay {
     this.pruneCancels();
     const id = this.cancelId(key);
     if (key.job) {
-      const jobs = this.cancelledJobs.get(key.grantId) ?? new Map<string | number, number>();
-      jobs.delete(key.requestId);
-      jobs.set(key.requestId, this.clock.now() + JOB_CANCEL_MS);
-      if (jobs.size > JOB_CANCELS) jobs.delete(jobs.keys().next().value!);
-      this.cancelledJobs.set(key.grantId, jobs);
+      this.rememberJob(this.cancelledJobs, key);
+      this.takeMark(key);
     } else {
       this.recentCancels.delete(id);
       this.recentCancels.set(id, this.clock.now() + 10_000);
