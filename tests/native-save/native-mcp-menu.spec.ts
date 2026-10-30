@@ -346,7 +346,6 @@ test("after a failed takeover, Connect to MCP takes over again and copies a work
     await expect.poll(() => dot(page).then(shown => shown.color)).toBe(await danger(page));
     await onlyLabel(page, "Connect to MCP");
     // The press tries the takeover again rather than doing nothing, then copies.
-    await page.evaluate(() => navigator.clipboard.writeText("before the press"));
     const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
     await action.click();
     const { token } = await (await made).json() as { token: string };
@@ -355,6 +354,63 @@ test("after a failed takeover, Connect to MCP takes over again and copies a work
     expect((await call("get_site")).repository, "the earlier agent keeps working").toBe("native-demo-user/native-demo");
     await expect(action).toHaveText("Disconnect MCP");
     await expect(menu).toHaveAttribute("data-state", "connected");
+  } finally { await client.close().catch(() => undefined); }
+});
+
+/** Another holder of the receiving lock the next takeover asks for (the old site's next fence), so
+ * that takeover fails again; resolves to its release. */
+const holdNextOwnerLock = async (page: Page) => {
+  await page.evaluate(async () => {
+    const [{ indexedDbAgentRecords }, { workspaceKey }] = await Promise.all([import("/src/agent-records.ts"), import("/shared/agent-command.ts")]);
+    const workspace = { account: "native-demo-user", repoId: 501, branch: "main" };
+    const { generation } = await indexedDbAgentRecords().workspace(workspace);
+    const host = window as Window & { releaseOwnerLock?: () => void };
+    await new Promise<void>(held => {
+      void navigator.locks.request(`native-site-editor:agent-owner:${workspaceKey(workspace)}:${generation + 1}`, () => {
+        held();
+        return new Promise<void>(release => { host.releaseOwnerLock = release; });
+      });
+    });
+  });
+  return () => page.evaluate(() => (window as Window & { releaseOwnerLock?: () => void }).releaseOwnerLock?.());
+};
+
+test("a takeover that fails again on the press: the problem dot stays, nothing is copied; once it can, the next press copies", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, action, menu } = await connectedAgent(page, baseURL, "takeover-agent");
+  try {
+    await takeoverFailed(page);
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await page.locator(".repository-menu__trigger").click();
+    await expect(menu).toHaveAttribute("data-state", "takeover-failed", { timeout: 15_000 });
+    const release = await holdNextOwnerLock(page);
+    let connects = 0;
+    page.on("request", request => { if (new URL(request.url()).pathname === "/api/agent/connect" && request.method() === "POST") connects++; });
+    await menu.evaluate(element => {
+      const host = window as Window & { agentStates?: string[] };
+      host.agentStates = [];
+      new MutationObserver(() => host.agentStates!.push(element.dataset.state ?? "")).observe(element, { attributes: true, attributeFilter: ["data-state"] });
+    });
+    await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+    await action.click();
+    await expect.poll(() => page.evaluate(() => (window as Window & { agentStates?: string[] }).agentStates)).toEqual(expect.arrayContaining(["taking-over"]));
+    await expect(menu).toHaveAttribute("data-state", "takeover-failed", { timeout: 15_000 });
+    // fixed-wait: the press ends at once after its takeover fails; a wrong prompt would show by now.
+    await page.waitForTimeout(1_000);
+    expect(await page.evaluate(() => (window as Window & { agentStates?: string[] }).agentStates?.at(-1))).toBe("takeover-failed");
+    expect((await dot(page)).color).toBe(await danger(page));
+    await onlyLabel(page, "Connect to MCP");
+    expect(connects, "no prompt made").toBe(0);
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+    // The other holder gone: the next press takes over and copies a working prompt.
+    await release();
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
   } finally { await client.close().catch(() => undefined); }
 });
 
@@ -397,7 +453,7 @@ test("a sign-in that ended while away: the tab coming back offers Connect to MCP
     // fixed-wait: the failed dot shows before the press drops its copy; a wrong write would show by now.
     await page.waitForTimeout(1_000);
     // clipboard-ready: the fixed wait above.
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
   } finally { await client.close().catch(() => undefined); }
 });
 
@@ -463,7 +519,7 @@ test("a sign-in that ends during a press of Wait for MCP, or of Connect to MCP w
     // fixed-wait: the failed dot shows before the press drops its copy; a wrong write would show by now.
     await page.waitForTimeout(1_000);
     // clipboard-ready: the fixed wait above.
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
   };
   await action.click();
   await expect(action).toHaveText("Wait for MCP");
@@ -1072,7 +1128,7 @@ test("while the site owner pauses agents the menu offers Connect to MCP; once un
     // fixed-wait: the press's dropped copy has had time to settle; a wrong write would show by now.
     await page.waitForTimeout(1_000);
     // clipboard-ready: the fixed wait above.
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
     // The dot is the problem colour, not the plain off grey.
     const paused = await dot(page);
     expect(paused.color).toBe(await danger(page));
