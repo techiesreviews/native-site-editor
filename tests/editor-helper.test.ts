@@ -7,11 +7,11 @@ import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import { createInterface } from "node:readline";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { HELPER_AGENT as EDITOR_HELPER_AGENT, PIN_AGENTS as EDITOR_PIN_AGENTS, type AgentRequest } from "../shared/agent";
+import type { AgentRequest } from "../shared/agent";
 import { requestOperation } from "../shared/agent-requests";
 import { acpConnection, choose, type PermissionRequest } from "../helper/src/acp";
 import {
-  ALLOWED_TOOLS, approvalQuestion, approves, commandName, editorTool, HELPER_AGENT, PIN_AGENTS, refuses, sessionMeta, toolAllowed,
+  AGENT_COMMANDS, AGENT_FLAGS, ALLOWED_TOOLS, approvalQuestion, approves, commandName, editorTool, HELPER_AGENT, LOCKED_DOWN, notLockedDown, PIN_AGENTS, refuses, sessionMeta, toolAllowed,
 } from "../helper/src/agents";
 import { answerTo, HELPER_VERSION, runHelper, type AgentProcess } from "../helper/src/helper";
 import { HELPER_PACKAGE } from "../src/agent-prompts";
@@ -25,9 +25,13 @@ const OPTIONS = [
   { optionId: "no", name: "Reject", kind: "reject_once" as const },
 ];
 
-test("the helper's names, agents and version are the editor's", () => {
-  assert.equal(HELPER_AGENT, EDITOR_HELPER_AGENT);
-  assert.deepEqual(PIN_AGENTS, EDITOR_PIN_AGENTS);
+test("the helper's agent comes from its own start command: Claude Code, unless --agent names another", () => {
+  assert.equal(PIN_AGENTS[0], "Claude Code");
+  assert.deepEqual(Object.entries(AGENT_FLAGS), [["claude", "Claude Code"], ["codex", "Codex"], ["gemini", "Gemini CLI"], ["opencode", "OpenCode"]]);
+  assert.deepEqual(Object.keys(AGENT_COMMANDS), [...PIN_AGENTS]);
+});
+
+test("the helper's version is the one the copied start command names", () => {
   // The copied start command names the version the package is.
   const helper = JSON.parse(readFileSync(new URL("../helper/package.json", import.meta.url), "utf8"));
   assert.equal(HELPER_PACKAGE, `${helper.name}@${helper.version}`);
@@ -181,7 +185,9 @@ function fakeAgent(worker: Parameters<typeof workerFetch>[0], script?: (turn: Tu
     } else if (!message.method && waiting.has(message.id)) { waiting.get(message.id)!(message.result.outcome); waiting.delete(message.id); }
   });
   const agent: AgentProcess = { input: fromAgent, output: toAgent, stop: () => { seen.stopped++; if (!fromAgent.writableEnded) fromAgent.end(); void client?.close(); } };
-  return { agent, seen };
+  /** The agent's program ends now, as Ctrl+C in a shared terminal would end it. */
+  const die = () => { if (!fromAgent.writableEnded) fromAgent.end(); };
+  return { agent, seen, die };
 }
 
 async function until<T>(what: string, check: () => T | undefined | false, ms = 15_000): Promise<T> {
@@ -199,8 +205,7 @@ test("a pin starts one agent through the local Worker: its question returns to t
   const stopping = new AbortController();
   try {
     const { cookie } = await signIn(worker);
-    let choice = "Codex";
-    const tab = await receivingTab(worker, cookie, github, { pinsGoTo: () => choice });
+    const tab = await receivingTab(worker, cookie, github);
     const { id: grant, token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json();
     await tab.show(await siteContext());
     const element = { file: "index.html", id: "1.0.0", tag: "h1", text: "Welcome", html: "<h1>Welcome</h1>" };
@@ -211,17 +216,6 @@ test("a pin starts one agent through the local Worker: its question returns to t
       const { list } = requestOperation([...tab.conversations.values()], { type: "answer", id: pin.id, text }) as { list: AgentRequest[] };
       tab.conversations.set(pin.id, list.find(item => item.id === pin.id)!);
     };
-
-    // Only the helper's waits are told "Pins go to" (on another connection, which leaves this one's pin untaken).
-    const probe = new Client({ name: "probe", version: "1" });
-    const other = (await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json()).token;
-    await probe.connect(new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${other}` } }, fetch: workerFetch(worker) }));
-    const agent = payload(await probe.callTool({ name: "wait_for_requests", arguments: { waitSeconds: 0, agent: "Copy editor" } }));
-    assert.deepEqual([agent.requests.length, "pinsGoTo" in agent], [1, false]);
-    const helper = payload(await probe.callTool({ name: "wait_for_requests", arguments: { all: true, waitSeconds: 0, agent: HELPER_AGENT } }));
-    assert.deepEqual([helper.requests.length, helper.pinsGoTo], [1, "Codex"]);
-    await probe.close();
-    choice = "Claude Code";
 
     const fake = fakeAgent(worker), launched: string[] = [], lines: string[] = [];
     const url = `${origin}/mcp`;
@@ -286,7 +280,7 @@ test("a pin starts one agent through the local Worker: its question returns to t
 /** A signed-in tab on the real Worker with its own connection, and a way to pin and answer requests there. */
 async function site(worker: Awaited<ReturnType<typeof startWorker>>["worker"], github: Awaited<ReturnType<typeof startWorker>>["github"]) {
   const { cookie } = await signIn(worker);
-  const tab = await receivingTab(worker, cookie, github, { pinsGoTo: () => "Claude Code" });
+  const tab = await receivingTab(worker, cookie, github);
   await tab.show(await siteContext());
   const connect = async () => (await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json()) as { id: string; token: string };
   const element = { file: "index.html", id: "1.0.0", tag: "h1", text: "Welcome", html: "<h1>Welcome</h1>" };
@@ -410,4 +404,85 @@ test("Ctrl+C says on each unfinished pin that its agent stopped before the helpe
     }
     assert.equal(said(pin("req-done")), "Done.");
   } finally { quit.abort(); await worker.dispose(); }
+});
+
+/** A pin's agent that finishes at once ("Done."), or keeps at work for a pin saying "hang". */
+const doneOrHang = (working?: Set<string>) => async (turn: Turn) => {
+  working?.add(turn.request);
+  if (/hang/.test((await turn.call("get_selection", { request: turn.request })).text)) return new Promise<void>(() => {});
+  await turn.call("reply_to_request", { request: turn.request, status: "done", message: "Done." });
+};
+
+test("an agent with nothing to do makes room at once; only agents the helper can limit take pins", async () => {
+  const { worker, github } = await startWorker();
+  const quit = new AbortController();
+  try {
+    const { connect, add, pin } = await site(worker, github);
+    const { token } = await connect(), launched: number[] = [];
+    // Default idleMs (15 minutes): a done agent still gives way to the next pin.
+    const running = runHelper({ url: `${origin}/mcp`, token, fetch: workerFetch(worker), waitSeconds: 0, pollMs: 20, maxAgents: 1, signal: quit.signal,
+      launch: () => { launched.push(Date.now()); return fakeAgent(worker, doneOrHang()).agent; } });
+    add("req-one", "Fix one");
+    await until("the first pin done", () => pin("req-one").state === "done");
+    const done = Date.now();
+    add("req-two", "Fix two");
+    await until("the second pin done", () => pin("req-two").state === "done", 5_000);
+    assert.equal(launched.length, 2);
+    assert.ok(launched[1] - done < 5_000);
+    quit.abort();
+    assert.equal(await running, "Stopped.");
+    // Started for Codex (--agent codex), not one whose own tools the helper can turn off: it says so and ends,
+    // without reaching the editor or starting anything; a pin waits for another agent.
+    assert.deepEqual(LOCKED_DOWN, ["Claude Code"]);
+    let reached = 0;
+    const codex = await runHelper({ url: `${origin}/mcp`, token, agent: "Codex", fetch: async () => { reached++; return new Response(null, { status: 500 }); },
+      launch: () => { launched.push(Date.now()); return fakeAgent(worker, doneOrHang()).agent; } });
+    assert.equal(codex, notLockedDown("Codex"));
+    assert.deepEqual([reached, launched.length], [0, 2]);
+  } finally { quit.abort(); await worker.dispose(); }
+});
+
+test("Ctrl+C as the agent's program ends: no new agent, and every unfinished pin says the helper was closed", async () => {
+  const { worker, github } = await startWorker();
+  const quit = new AbortController();
+  try {
+    const { connect, add, pin } = await site(worker, github);
+    const { token } = await connect(), working = new Set<string>(), fakes: ReturnType<typeof fakeAgent>[] = [];
+    const running = runHelper({ url: `${origin}/mcp`, token, fetch: workerFetch(worker), waitSeconds: 0, pollMs: 20, maxAgents: 1, signal: quit.signal,
+      launch: () => { const fake = fakeAgent(worker, doneOrHang(working)); fakes.push(fake); return fake.agent; } });
+    add("req-busy", "hang"); add("req-queued", "Fix it");
+    await until("the busy agent at work and the second pin queued", () => working.has("req-busy") && pin("req-queued").state === "seen");
+    // The agent's program and the helper get the signal at once (a shared process group before the fix).
+    fakes[0].die();
+    quit.abort();
+    assert.equal(await running, "Stopped.");
+    assert.equal(fakes.length, 1, "no agent starts while the helper ends");
+    for (const id of ["req-busy", "req-queued"]) assert.equal(said(pin(id)), "Claude Code stopped: the helper on this computer was closed. Send again to retry.", id);
+  } finally { quit.abort(); await worker.dispose(); }
+});
+
+test("the site owner's pause ends the helper, and the pins its last wait took say it stopped", async () => {
+  const { worker, github } = await startWorker({ bindings: { AGENT_WATCH: "off" } });
+  try {
+    const { connect, add, pin } = await site(worker, github);
+    const { token } = await connect(), launched: string[] = [];
+    add("req-paused", "Fix it");
+    const why = await runHelper({ url: `${origin}/mcp`, token, fetch: workerFetch(worker), waitSeconds: 0, pollMs: 20,
+      launch: agent => { launched.push(agent); return fakeAgent(worker).agent; } });
+    assert.equal(why, "Waiting for requests is paused by the site owner.");
+    assert.deepEqual(launched, []);
+    assert.equal(pin("req-paused").state, "answered");
+    assert.equal(said(pin("req-paused")), "Claude Code stopped: waiting for pins is paused in the editor. Send again to retry.");
+  } finally { await worker.dispose(); }
+});
+
+test("offline at the start, the helper tries again; only an HTTP 401 ends it, never a message that says 401", async () => {
+  const quit = new AbortController(), lines: string[] = [], sleeps: number[] = [];
+  const why = await runHelper({ url: "https://editor.example/mcp", token: "ase_x", signal: quit.signal, launch: () => { throw new Error("no pin"); },
+    fetch: async () => { throw new Error("connect ECONNREFUSED 127.0.0.1:401"); },
+    sleep: async ms => { sleeps.push(ms); if (sleeps.length === 2) quit.abort(); }, log: line => lines.push(line) });
+  assert.equal(why, "Stopped.");
+  assert.deepEqual(sleeps, [10_000, 10_000]);
+  assert.ok(lines.some(line => line.startsWith("The editor did not answer")), lines.join("\n"));
+  assert.ok(!lines.some(line => /refused the token/.test(line)));
 });
