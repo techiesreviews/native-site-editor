@@ -85,10 +85,10 @@ interface PinHandlers {
   onShowElement(id: string): void;
   /** The pins moved or changed (the edit bar keeps clear of the selection's). */
   onLayout?(): void;
-  /** Undo the agent's changes for a request (its reply's requestIds, ticket am-15); rejects with why not. */
-  onUndo?(id: string, changes: string[]): Promise<void>;
-  /** Whether those changes can be undone ("ready"), are undone (the files as before them), or are not kept here (none). */
-  undoState?(changes: string[]): "ready" | "undone" | undefined;
+  /** Undo the agent's changes for a request (its reply's requestIds, those of its agent's connection `grant`, ticket am-15); rejects with why not. */
+  onUndo?(id: string, changes: string[], grant: string | undefined): Promise<void>;
+  /** Whether those changes can be undone ("ready"), are undone (the files as before them), or are not that connection's kept here (none). */
+  undoState?(changes: string[], grant: string | undefined): "ready" | "undone" | undefined;
 }
 
 const stateLabels: Record<string, string> = {
@@ -495,10 +495,10 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     const actions = node("div", "agent-pin-card__actions");
     const answered = request.state === "done" || request.state === "answered";
     const changes = request.reply?.requestIds ?? [];
-    const undoState = answered && changes.length ? handlers.undoState?.(changes) : undefined;
+    const undoState = answered && changes.length ? handlers.undoState?.(changes, request.agent?.grant) : undefined;
     if (handlers.onUndo && undoState) {
       const was = undoState === "undone";
-      const undo = button(was ? "Undone" : "Undo", () => void undoChanges(request.id, changes), "text-button agent-pin-card__undo");
+      const undo = button(was ? "Undone" : "Undo", () => void undoChanges(request.id, changes, request.agent?.grant), "text-button agent-pin-card__undo");
       undo.disabled = was || undoing.has(request.id);
       const problem = problems.get(`undo:${request.id}`);
       if (problem) {
@@ -573,14 +573,14 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     requestAnimationFrame(() => fit(input));
     return box;
   }
-  async function undoChanges(id: string, changes: string[]) {
+  async function undoChanges(id: string, changes: string[], grant: string | undefined) {
     if (undoing.has(id)) return;
     undoing.add(id);
     problems.delete(`undo:${id}`);
     cardKey = "";
     layout();
     try {
-      await handlers.onUndo!(id, changes);
+      await handlers.onUndo!(id, changes, grant);
     } catch (error) {
       problems.set(`undo:${id}`, (error as Error).message || "The change could not be undone.");
     } finally {
@@ -637,7 +637,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     card.setAttribute("aria-label", `Request ${numberOf(request.id)}`);
     card.dataset.state = request.state;
     draw(JSON.stringify([request, route, problems.get(request.id), problems.get(`undo:${request.id}`), undoing.has(request.id),
-      request.reply?.requestIds && handlers.undoState?.(request.reply.requestIds)]), () => [requestBody(request, false)]);
+      request.reply?.requestIds && handlers.undoState?.(request.reply.requestIds, request.agent?.grant)]), () => [requestBody(request, false)]);
     card.hidden = false;
     atPin(pin);
   }

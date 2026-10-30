@@ -524,8 +524,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       onAnswerRequest: async (id, text) => {
         await ports.agentController.answer(id, text);
       },
-      onUndoChanges: (ids) => ports.agentCommands.undo(ids),
-      undoChangesState: (ids) => ports.agentCommands.undoable(ids),
+      onUndoChanges: (ids, grant) => ports.agentCommands.undo(ids, grant),
+      undoChangesState: (ids, grant) => ports.agentCommands.undoable(ids, grant),
       // The Add panel docks over the page structure sidebar; under a phone's sheet (folded or not), over the page and sheet.
       addPanelDock: () => {
         const area = ports.app.querySelector<HTMLElement>(".workspace")?.getBoundingClientRect();

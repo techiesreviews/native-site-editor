@@ -22,16 +22,18 @@ function manualClock(start = 1_000_000) {
     advance(ms: number) { now += ms; for (const [id, timer] of [...timers]) if (timer.at <= now) { timers.delete(id); timer.run(); } },
   };
 }
-/** This browser's requests in memory, with the menu's in-transaction accept; questions go on the heading of the home page. */
-/** `race` wraps the tools' awaits (place, list, save); `current` is the connection's proof. */
+/**
+ * This browser's requests in memory, with the menu's in-transaction accept; questions go on the heading of the home
+ * page. `race` wraps the tools' awaits (place, list, save); `current` is the connection's proof.
+ */
 function browser(options: { race?: AwaitRace; current?: () => boolean } = {}) {
   const clock = manualClock(), kept = new Map<string, AgentRequest>();
-  let ids = 0, reading: (() => void) | undefined;
+  let ids = 0, reads = 0, reading: (() => void) | undefined;
   const places: [string | undefined, string][] = [];
   const port = <A extends unknown[], V>(name: string, work: (...args: A) => Promise<V>) => options.race ? options.race.port(name, work) : work;
   const tools = createRequestTools({
     workspace, now: clock.now, clock, newId: () => `req-asked-${++ids}`,
-    list: port("list", async () => { const held = reading; reading = undefined; held?.(); return [...kept.values()].map(item => structuredClone(item)); }),
+    list: port("list", async () => { reads++; const held = reading; reading = undefined; held?.(); return [...kept.values()].map(item => structuredClone(item)); }),
     save: port("save", async (request: AgentRequest, accept: (stored: AgentRequest | undefined) => boolean) => {
       if (!accept(kept.get(request.id))) return false;
       kept.set(request.id, structuredClone(request));
@@ -54,7 +56,7 @@ function browser(options: { race?: AwaitRace; current?: () => boolean } = {}) {
   };
   /** Runs `during` inside the next list read, before it answers (a wake that lands while the tools read). */
   const duringNextRead = (during: () => void) => { reading = during; };
-  return { clock, kept, tools, run, answer, places, duringNextRead };
+  return { clock, kept, tools, run, answer, places, duringNextRead, reads: () => reads };
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
 /** What the request tools answer, as these tests read it: an ask's answer, a wait's requests. */
@@ -217,4 +219,22 @@ test("an ask whose connection ends at any of its awaits asks nothing more and ta
     else assert.equal(state, "open", "the answer is still there for its next call");
   });
   assert.equal(answered, 2);
+});
+
+test("an ask whose call is cancelled while it holds stops reading at once and answers no answer yet", async () => {
+  const b = browser();
+  await valueOf(b.run("ask_user", { question: "Ghost?", element: "1.0" }, { waitMs: 0 }));
+  const cancel = new AbortController(), before = b.reads();
+  const asking = b.tools.run({ operation: "requests", tool: "ask_user", args: { request: "req-asked-1" }, grantId: "grant-a", agent: "Copy editor" },
+    () => true, b.clock.now() + 24_000, undefined, cancel.signal);
+  await settle();
+  assert.equal(b.tools.holding, 1);
+  // The relay's cancel aborts the signal; the connection itself stays live.
+  cancel.abort();
+  const result = await asking;
+  assert.ok(b.reads() - before <= 2, `${b.reads() - before} reads`);
+  assert.equal(b.tools.holding, 0);
+  // The run answers a cancelled call as it does any (the relay drops it): no answer was taken.
+  assert.equal(b.kept.get("req-asked-1")!.state, "question");
+  if (result.ok) assert.equal((result.value as Told).answer, null);
 });
