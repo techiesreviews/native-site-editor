@@ -966,7 +966,7 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       // each is as it left them, as one step of the editor's own Undo.
       // Its undo runs where the change is shown, never in another site or branch.
       const id = String(args.change ?? ""), shown = actions.shown?.();
-      if (!shown || shown.scope.repoId !== command.repoId || shown.scope.branch !== command.branch)
+      if (!shown || !sameBranch(shown.scope, { repoId: command.repoId, branch: command.branch }))
         throw new Conflict("Show this site and branch in the editor, then undo the change again.");
       const change = keptChange(shown.scope, id);
       if (!change || change.grant !== command.grantId) throw new Conflict(`No change ${id} of yours is kept in this editor tab any more. Change it back with the edit tools.`);

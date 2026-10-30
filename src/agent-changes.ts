@@ -13,6 +13,7 @@
 
 import type { DraftScope, SavedDraft } from "./drafts";
 import type { GuardedEdits, Outcome, PlanResult, Reads } from "./guarded-edit";
+import { githubScope, same } from "./workspace-session";
 
 export interface AgentChange {
   /** The change's requestId (the receipt's operation id) and the connection and name that made it. */
@@ -39,8 +40,7 @@ let noted = 0;
 const keyOf = (scope: Scope, id: string) => JSON.stringify([scope.account.toLowerCase(), scope.repoId, scope.branch, id]);
 const sizeOf = (drafts: Map<string, SavedDraft | undefined>) => [...drafts.values()].reduce((sum, draft) => sum + (draft ? draft.content.length + draft.original.length : 0), 0);
 /** Whether two workspaces are the same account, repository and branch. */
-export const sameScope = (a: Scope | undefined, b: Scope | undefined) =>
-  Boolean(a && b) && a!.account.toLowerCase() === b!.account.toLowerCase() && a!.repoId === b!.repoId && a!.branch === b!.branch;
+export const sameScope = (a: Scope | undefined, b: Scope | undefined) => !!a && !!b && same(githubScope(a), githubScope(b));
 
 /** A change that landed: `before` and `after` as its commit wrote them; only the files it changed are kept. */
 export function noteAgentChange(change: AgentChange) {
