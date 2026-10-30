@@ -89,3 +89,8 @@ Agent Kit is required (`scripts/agents/kit`). `kit unit --affected`, `kit specs 
 - UX review (kit ux, 2026-10-30 15:24): F-agent-15 and the other agent features read fine (the chip is not in its shots: its steps need a connected agent; this slice's own shots show it). Two other features were flagged, each already on `dev` and outside this slice; no change made:
   - F-canvas-14: the "Text changed" strip after a structure edit, the Publish count, code words in the crumbs, and small targets on the phone's add-panel toggle, crumbs and code pane (`page-structure-controller.ts`, `components.ts`, `publish-menu`, the crumbs; none touched here).
   - F-phone-03: the phone's top bar in several rows. `kit shots editor add-panel --compare dev --width 390` shows the same top bar before and after this branch.
+
+### UX follow-ups
+
+- UX (looks off): F-canvas-14 the heading and the CSS rule update in place with the scroll kept (h2→h1 rule follows in the code pane), but after each edit a dark "Text changed" strip pops up at the bottom in both themes and covers the code lines being worked on; at 390 px the Add toggle (30 px tall), the breadcrumb crumbs (26x24) and the code-pane rule buttons (20 px tall) are below touch size (.scratch/ux/am-49/20261030-153139-gwjzin/add-panel-F-canvas-14-390-light-live-strip.webp)
+- UX (looks off): F-phone-03 at 390 px Publish stays in view and the open explorer sits below it without covering it, but the top bar is not one row: the account, the Undo/Redo/History/Publish row, the page picker and the tool row stack into four rows that take about a third of the screen height (.scratch/ux/am-49/20261030-153139-gwjzin/screens-contact-2.webp)
