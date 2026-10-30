@@ -629,6 +629,17 @@ test("leave (Done) after the page changed under a loading entry does not return 
   assert.deepEqual(s.live(), []);
 });
 
+test("leave (Done) while an entry on a page it could not read loads returns nothing", async () => {
+  const s = setup();
+  const ready = deferred(), mounted = deferred();
+  const pending = s.mode.enter({ tag: "site-card", template: CARD_PATH, instance: { path: "missing.html", node: [0, 0] }, ready: ready.promise }, { mounted: () => mounted.resolve() });
+  await mounted.promise;
+  assert.equal(s.mode.leave(), undefined);
+  ready.resolve();
+  assert.deepEqual(await pending, { status: "stale" });
+  assert.deepEqual(s.live(), []);
+});
+
 test("leave (Done) with a mode on while an entry with no instance loads returns the mode's instance", async () => {
   const s = setup();
   await card(s, [0, 0]);
