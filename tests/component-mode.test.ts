@@ -616,6 +616,33 @@ test("leave (Done) while the first entry still loads (Make component, Done at on
   assert.deepEqual(s.live(), []);
 });
 
+test("leave (Done) after the page changed under a loading entry does not return its node, which may be another element now", async () => {
+  const s = setup();
+  const ready = deferred(), mounted = deferred();
+  const pending = card(s, [0, 1], { ready: ready.promise }, () => mounted.resolve());
+  await mounted.promise;
+  // A paragraph above the cards: [0, 1] is now the first card.
+  s.m.writeDraft("index.html", PAGE.replace("<main>", "<main><p>New</p>"));
+  assert.equal(s.mode.leave(), undefined);
+  ready.resolve();
+  assert.deepEqual(await pending, { status: "stale" });
+  assert.deepEqual(s.live(), []);
+});
+
+test("leave (Done) with a mode on while an entry with no instance loads returns the mode's instance", async () => {
+  const s = setup();
+  await card(s, [0, 0]);
+  const hold = s.m.holdOpen();
+  const pending = s.mode.enter({ tag: "site-badge", template: BADGE_PATH });
+  await hold.reached;
+  // The new entry has nowhere to return to: Done goes back to the instance the mode is on.
+  assert.deepEqual(s.mode.leave(), { page: "index.html", node: [0, 0], tag: "site-card", template: CARD_PATH });
+  hold.release();
+  assert.deepEqual(await pending, { status: "stale" });
+  assert.equal(s.mode.now(), undefined);
+  assert.deepEqual(s.live(), []);
+});
+
 test("leave (Done) after an entry settled without the mode returns nothing", async () => {
   const s = setup();
   s.refuseOpens();
