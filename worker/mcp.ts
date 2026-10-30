@@ -860,9 +860,10 @@ function siteServer(connection: Connection, env: Env, origin: string, exchange: 
     const outcome = await call.requestCommand("wait_for_requests", { all }, watching ? waitMs : 0);
     // A look that ended its job's wait the tab already had (the command changed between looks, ticket am-54)
     // gives the job's only final answer, even with nothing come: its hint brings back what that wait took.
-    if (!outcome.tookOver) return answerWait(outcome, watching);
+    // A replaced look still works whatever it carries: the newest look gives the job's answer.
+    if (!outcome.tookOver || outcome.code === "replaced") return answerWait(outcome, watching);
     const once = answerWait(outcome, watching, tookOverHint);
-    return once.waitOn ? { result: waited([], tookOverHint) } : once;
+    return once.waitOn ? { result: once.result } : once;
   }
   const tookOverHint = "This look ended an earlier look's wait at this job; requests that wait may have taken come back with all: true.";
   function answerWait(outcome: Awaited<ReturnType<Calls["requestCommand"]>>, watching: boolean, more?: string): Awaited<ReturnType<typeof waitOnce>> {

@@ -497,24 +497,32 @@ test("a look under a changed agent name ends the held wait: the earlier look sti
     const earlier = (await first).result;
     assert.equal(earlier.status, "working");
     assert.equal(earlier.pollIntervalMs, 1_000);
+    // Renamed again while the second look holds its wait: the second, itself a takeover, still works.
+    await h.rename("Again");
+    const third = h.modern("tasks/get", { taskId }, true, 3);
+    await until(() => h.commands.length === 3);
+    assert.equal(h.commands[2].command.agent, "Again");
+    const middle = (await second).result;
+    assert.equal(middle.status, "working");
     h.pins.push(h.pin("req-late"));
-    h.answerOne(h.commands[1].id);
-    const newest = (await second).result;
+    h.answerOne(h.commands[2].id);
+    const newest = (await third).result;
     assert.equal(newest.status, "completed");
     assert.deepEqual(payload(newest.result).requests.map((request: { id: string }) => request.id), ["req-late"]);
     assert.match(payload(newest.result).hint, /ended an earlier look's wait.*come back with all: true/);
-    assert.equal([earlier, newest].filter(answer => answer.status === "completed").length, 1, "the job has one final answer");
-    assert.equal([earlier, newest].filter(answer => JSON.stringify(answer).includes("req-late")).length, 1, "the pin reaches the job once");
+    const looks = [earlier, middle, newest];
+    assert.equal(looks.filter(answer => answer.status === "completed").length, 1, "the job has one final answer");
+    assert.equal(looks.filter(answer => JSON.stringify(answer).includes("req-late")).length, 1, "the pin reaches the job once");
 
     // Nothing comes for a look that ended a sent wait: the job still ends, so the hint reaches the agent.
-    const third = h.modern("tasks/get", { taskId }, true, 3);
-    await until(() => h.commands.length === 3);
-    await h.rename("Again");
     const fourth = h.modern("tasks/get", { taskId }, true, 4);
     await until(() => h.commands.length === 4);
-    assert.equal((await third).result.status, "working");
-    h.answerOne(h.commands[3].id);
-    const quiet = (await fourth).result;
+    await h.rename("Once more");
+    const fifth = h.modern("tasks/get", { taskId }, true, 5);
+    await until(() => h.commands.length === 5);
+    assert.equal((await fourth).result.status, "working");
+    h.answerOne(h.commands[4].id);
+    const quiet = (await fifth).result;
     assert.equal(quiet.status, "completed");
     assert.deepEqual(payload(quiet.result).requests, []);
     assert.match(payload(quiet.result).hint, /ended an earlier look's wait.*come back with all: true/);
