@@ -428,7 +428,7 @@ test("a job's look is answered without the tasks extension declared: its id is a
   } finally { await h.worker.dispose(); }
 });
 
-test("a client's request id that looks like a job's is cancelled like any call's, for 10 seconds", async () => {
+test("a notifications/cancelled naming a job's id as a request id leaves the job's look running", async () => {
   const h = await connected({ hold: true });
   try {
     const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
@@ -442,5 +442,42 @@ test("a client's request id that looks like a job's is cancelled like any call's
     assert.equal(h.frames.some(frame => frame.type === "cancel"), false);
     h.release();
     assert.equal((await look).result.status, "working");
+  } finally { await h.worker.dispose(); }
+});
+
+test("a look after the owner pauses watching ends the held wait and answers at once in the tab", async () => {
+  const h = await connected({ hold: true });
+  try {
+    const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    const first = h.modern("tasks/get", { taskId }, true, 1);
+    await until(() => h.commands.length === 1);
+    h.env.AGENT_WATCH = "off";
+    const second = h.modern("tasks/get", { taskId }, true, 2);
+    await until(() => h.commands.length === 2);
+    assert.equal(h.commands[1].command.waitMs, 0, "the paused look's own command reaches the tab");
+    assert.ok(h.frames.some(frame => frame.type === "cancel" && frame.id === h.commands[0].id), "the tab ends the held wait");
+    // The ended wait was sent, so it may have taken requests: that look ends with the all: true hint.
+    const earlier = (await first).result;
+    assert.equal(earlier.status, "completed");
+    assert.match(payload(earlier.result).hint, /\(replaced\).*come back with all: true/);
+    h.answerOne(h.commands[1].id);
+    const paused = (await second).result;
+    assert.equal(paused.status, "completed");
+    assert.match(payload(paused.result).hint, new RegExp(WATCH_PAUSED));
+  } finally { await h.worker.dispose(); }
+});
+
+test("tasks/cancel during overlapping looks cancels the newest, after the earlier one answered working", async () => {
+  const h = await connected({ hold: true });
+  try {
+    const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    const first = h.modern("tasks/get", { taskId }, true, 1);
+    await until(() => h.commands.length === 1);
+    const second = h.modern("tasks/get", { taskId }, true, 2);
+    assert.equal((await first).result.status, "working");
+    assert.equal((await h.modern("tasks/cancel", { taskId }, true, 3)).result.status, "cancelled");
+    assert.equal((await second).result.status, "cancelled");
+    assert.equal(h.frames.filter(frame => frame.type === "cancel").length, 1);
+    assert.equal(h.commands.length, 1);
   } finally { await h.worker.dispose(); }
 });

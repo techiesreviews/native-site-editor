@@ -34,6 +34,8 @@ export interface RelayTarget {
 export interface RelayCancelKey { requestId: string | number; grantId: string; job?: true }
 interface Pending {
   cancelKey?: RelayCancelKey;
+  /** The command as JSON: a newer look takes over this wait only with the same command. */
+  command: string;
   /** A newer look at the same job takes over this wait: the earlier look answers `replaced`. */
   adopt(resolve: (outcome: Outcome) => void, signal?: AbortSignal): void;
   socket: RelaySocket;
@@ -280,10 +282,17 @@ export class AgentRelay {
     if (!owner || owner.tabId === null || (wanted.tabId !== undefined && wanted.tabId !== owner.tabId) ||
       (wanted.generation !== undefined && wanted.generation !== owner.generation)) return Promise.resolve(failure("editor-unavailable"));
     const scope: RelayScope = { workspace: wanted.workspace, tabId: owner.tabId, generation: owner.generation };
-    // A job holds one wait (ticket am-52): a newer look takes over the one the tab holds, so whatever the tab
-    // answers reaches exactly one look, and one job's looks never crowd out other agents' waits.
+    // A job holds one wait (ticket am-52), so whatever the tab answers reaches exactly one look, and one job's
+    // looks never crowd out other agents' waits. How each look settles:
+    // - a newer look with the same command takes the wait over: the earlier look answers `replaced` (not sent) at
+    //   once, and its caller leaving no longer ends the wait; an unsent wait is still sent once, on the handshake;
+    // - a newer look with another command (watching paused: answer at once) ends the held wait as `replaced`,
+    //   unknown once sent (the tab is told, as for a cancel), and sends its own;
+    // - the newest look gets the tab's answer, or cancelled (its caller leaves, tasks/cancel), timeout or lost.
+    const json = JSON.stringify(command);
     const held = cancelKey?.job ? [...this.calls.values()].find(call => call.cancelKey && sameKey(call.cancelKey, cancelKey) && sameScope(call.scope, scope)) : undefined;
-    if (held) return new Promise(resolve => held.adopt(resolve, signal));
+    if (held?.command === json) return new Promise(resolve => held.adopt(resolve, signal));
+    held?.finish(failure("replaced", held.unsent === undefined ? "unknown" : "not-sent"));
     const receivers = [...this.sockets].filter(([socket, metadata]) => socket.readyState === 1 && sameScope(metadata, scope));
     const entry = receivers.find(([, metadata]) => metadata.handshaken) ?? receivers[0];
     if (!entry) return Promise.resolve(failure("editor-unavailable"));
@@ -306,7 +315,7 @@ export class AgentRelay {
     return new Promise(first => {
       let resolve: (outcome: Outcome) => void = first, listening = signal;
       const cancel = () => call.finish(failure("cancelled", call.unsent === undefined ? "unknown" : "not-sent"));
-      const call: Pending = { cancelKey, socket: receiver, scope, bytes: length, deadline, timer: undefined, adopt: (next, nextSignal) => {
+      const call: Pending = { cancelKey, command: json, socket: receiver, scope, bytes: length, deadline, timer: undefined, adopt: (next, nextSignal) => {
         const earlier = resolve;
         listening?.removeEventListener("abort", cancel);
         resolve = next;
@@ -322,8 +331,9 @@ export class AgentRelay {
         this.clock.clearTimeout(call.timer);
         listening?.removeEventListener("abort", cancel);
         resolve(outcome);
-        if (sent && !outcome.ok && (outcome.code === "cancelled" || outcome.code === "timeout")) {
-          try { call.socket.send(JSON.stringify({ type: "cancel", id, ...call.scope, reason: outcome.code })); }
+        if (sent && !outcome.ok && (outcome.code === "cancelled" || outcome.code === "timeout" || outcome.code === "replaced")) {
+          // The tab ends a wait on `cancelled` or `timeout`; a replaced wait ends as cancelled there.
+          try { call.socket.send(JSON.stringify({ type: "cancel", id, ...call.scope, reason: outcome.code === "replaced" ? "cancelled" : outcome.code })); }
           catch { this.disconnect(call.socket); }
         }
       } };
