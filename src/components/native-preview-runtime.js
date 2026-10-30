@@ -107,12 +107,16 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   // menu or key handling, which never sees it (it selects nothing, starts no drag, and Enter or Space on it is its click).
   // Busy or Undone it is aria-disabled, not disabled, so it keeps the keyboard's focus: its presses do nothing then.
   // A press begun on it and let go over the page is no press on the page either (the click then lands on what holds both).
+  // Abandoned (let go outside the frame, or cancelled), it blocks nothing after: it ends just after its release, on a
+  // cancel, and a click with no press of its own (Enter on a link, a script's click) is never one of its.
   var chipPressed = false;
+  window.addEventListener("pointercancel", function () { chipPressed = false; }, true);
   ["pointerdown", "pointerup", "mousedown", "mouseup", "click", "dblclick", "auxclick", "contextmenu", "keydown", "keyup"].forEach(function (type) {
     window.addEventListener(type, function (e) {
       var undo = e.target && e.target.closest ? e.target.closest("[data-native-chip-undo]") : null;
       if (type === "pointerdown") chipPressed = !!undo;
-      if (!undo && chipPressed && (type === "pointerup" || type === "mouseup" || type === "click")) {
+      if (type === "pointerup" && chipPressed) setTimeout(function () { chipPressed = false; }, 0);
+      if (!undo && chipPressed && (type === "pointerup" || type === "mouseup" || type === "click" && e.detail > 0)) {
         e.stopImmediatePropagation();
         if (type === "click") chipPressed = false;
         return;
@@ -4369,7 +4373,12 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       if (rect.bottom < 0 || rect.top > window.innerHeight) revealWithBar(wanted, true);
       return;
     }
-    if (msg.type === "viewing") { if (state) state.viewing = msg.viewing === true; return; }
+    if (msg.type === "viewing") {
+      if (state) state.viewing = msg.viewing === true;
+      // The insert controls go with it: a chip no longer keeps clear of their "+" until they are reported again.
+      if (msg.viewing === true) insertPluses = [];
+      return;
+    }
     if (msg.type === "drop-probe") {
       if (typeof msg.x !== "number" || typeof msg.y !== "number" || !isFinite(msg.x) || !isFinite(msg.y)) return;
       // In Edit component mode, the edited template's parts.

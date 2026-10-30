@@ -91,3 +91,16 @@ test("a press names the change its chip offered, and one for a mark no longer dr
   await chipUndo.press([copy], token, "mcp-7");
   assert.deepEqual(pressed, [["Copy", "mcp-7"]]);
 });
+
+test("refused because the agent changed the page again, the chip says so and offers that newer change", async () => {
+  const offers: Record<string, ChipUndoOffer | undefined> = { Copy: { change: "mcp-1", state: "ready" } };
+  const { chipUndo } = chips(offers, async () => {
+    // Meanwhile the agent's newer change landed: the chip's offer is that one now.
+    offers.Copy = { change: "mcp-2", state: "ready" };
+    throw new Error("Copy changed this page again meanwhile. Nothing was undone; try again.");
+  });
+  const copy = mark("Copy"), { token } = chipUndo.fields(copy)!;
+  chipUndo.marks([copy]);
+  await chipUndo.press([copy], token, "mcp-1");
+  assert.deepEqual(chipUndo.fields(copy), { token, change: "mcp-2", undo: "ready", problem: "Copy changed this page again meanwhile. Nothing was undone; try again." });
+});
