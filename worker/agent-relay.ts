@@ -314,7 +314,11 @@ export class AgentRelay {
     // - a look marked `tookOver` that a newer look replaces (either way) passes the mark on and answers `replaced`
     //   unmarked, so it still answers working: each chain of takeovers has one marked answer, the newest look's;
     // - a marked newest look whose caller leaves keeps the mark for its job: the job's next look that waits (adopted
-    //   or sent) carries it; tasks/cancel ends the job, so its mark goes with it.
+    //   or sent) carries it; tasks/cancel ends the job, so its mark goes with it;
+    // - a next look refused before it waits (editor-unavailable, busy, waiting, too large, timeout) leaves the mark for
+    //   a later look: it is taken only once a look passes every check;
+    // - the relay wakes between the left look and the next one: the mark, in memory like a job's cancel, is forgotten,
+    //   so that look waits on unmarked and the ended wait's requests come back only with all: true.
     const json = JSON.stringify(command);
     const held = cancelKey?.job ? [...this.calls.values()].find(call => call.cancelKey && sameKey(call.cancelKey, cancelKey) && sameScope(call.scope, scope)) : undefined;
     if (held?.command === json) {
@@ -443,7 +447,7 @@ export class AgentRelay {
     const id = this.cancelId(key);
     if (key.job) {
       this.rememberJob(this.cancelledJobs, key);
-      this.takeMark(key);
+      this.markedJobs.get(key.grantId)?.delete(key.requestId);
     } else {
       this.recentCancels.delete(id);
       this.recentCancels.set(id, this.clock.now() + 10_000);

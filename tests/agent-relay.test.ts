@@ -742,6 +742,50 @@ test("a marked look whose caller leaves keeps the mark for its job's next look, 
   h.idle();
 });
 
+/** A look of `key`'s job marked `tookOver` (another command ended its job's sent wait) whose caller then leaves. */
+async function leaveMarked(h: ReturnType<typeof fixture>, key: typeof jobKey) {
+  const leave = new AbortController();
+  const first = h.relay.dispatch(scope, jobWait(), undefined, undefined, key);
+  const second = h.relay.dispatch(scope, jobWait(0), leave.signal, undefined, key);
+  await first;
+  leave.abort();
+  assert.equal((await second).tookOver, true);
+}
+/** One look of `key`'s job that the tab answers at once with nothing. */
+function look(h: ReturnType<typeof fixture>, key: typeof jobKey) {
+  const outcome = h.relay.dispatch(scope, jobWait(0), undefined, undefined, key);
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  return outcome;
+}
+
+test("a kept mark waits out a look refused before it waits, and goes to the first look that waits", async () => {
+  const h = fixture();
+  await leaveMarked(h, jobKey);
+  const others = [1, 2, 3].map(requestId => h.relay.dispatch(scope, jobWait(), undefined, undefined, { requestId, grantId: "two" }));
+  const otherIds = h.editor.sent.map(message => JSON.parse(message) as { type: string; id: string }).filter(frame => frame.type === "command").slice(-3).map(frame => frame.id);
+  assert.deepEqual(await h.relay.dispatch(scope, jobWait(0), undefined, undefined, jobKey), { ok: false, code: "waiting", outcome: "not-sent" });
+  assert.equal(h.relay.message(h.editor, reply(otherIds[0], scope, { requests: [] })), true);
+  assert.equal((await look(h, jobKey)).tookOver, true);
+  for (const id of otherIds.slice(1)) h.relay.message(h.editor, reply(id, scope, { requests: [] }));
+  await Promise.all(others);
+  h.idle();
+});
+
+test("a kept mark expires after a day, at most sixteen per connection, and only its own connection's look takes it", async () => {
+  const h = fixture();
+  await leaveMarked(h, jobKey);
+  assert.equal((await look(h, { ...jobKey, grantId: "two" })).tookOver, undefined, "another connection's job of the same id");
+  h.advance(24 * 60 * 60_000);
+  assert.equal((await look(h, jobKey)).tookOver, undefined, "forgotten after a day");
+  // Seventeen marks push this connection's oldest out; another connection's stays.
+  await leaveMarked(h, { ...jobKey, grantId: "two" });
+  for (let job = 0; job <= 16; job++) await leaveMarked(h, { ...jobKey, requestId: `wait:mark-${job}` });
+  assert.equal((await look(h, { ...jobKey, requestId: "wait:mark-0" })).tookOver, undefined);
+  assert.equal((await look(h, { ...jobKey, requestId: "wait:mark-16" })).tookOver, true);
+  assert.equal((await look(h, { ...jobKey, grantId: "two" })).tookOver, true);
+  h.idle();
+});
+
 test("a newer look that took over an unsent wait and then leaves ends it unsent: the tab never gets it", async () => {
   const h = fixture();
   h.relay.reset();
