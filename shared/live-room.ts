@@ -7,11 +7,12 @@
 /** How a participant got past the room access check. Synced-session links (slice 30) add their own kind. */
 export type LiveAccess = "editor" | "agent";
 
-/** Sent by the relay. `welcome` lists who was already in; an empty list means the joiner makes the room key.
+/** Sent by the relay. `welcome` lists who was already in; its `keyed` says the joiner holds the key: it was first in
+ * (so it makes one) or it reconnected in place of its own earlier socket (so it keeps the key it had).
  * `keyed`: a member now holds the key (members send presence; a joiner still waiting asks again). `make-key`:
  * the last key holder left, so this tab makes a new key. */
 export type LiveServerMessage =
-  | { type: "welcome"; peer: string; peers: { peer: string; access: LiveAccess; keyed: boolean }[] }
+  | { type: "welcome"; peer: string; keyed: boolean; peers: { peer: string; access: LiveAccess; keyed: boolean }[] }
   | { type: "joined"; peer: string; access: LiveAccess }
   | { type: "left"; peer: string }
   | { type: "keyed"; peer: string }
@@ -33,6 +34,8 @@ export const PRESENCE_HEARTBEAT_MS = 15_000;
 export const PRESENCE_TIMEOUT_MS = 30_000;
 /** The relay closes an agent's socket with this when no tab has the room open (an agent never makes the key). */
 export const LIVE_ROOM_CLOSED = 4404;
+/** The relay closes an agent's socket with this once its connection ends: revoked, rebound, past its 8 hours or agents paused. */
+export const LIVE_ACCESS_ENDED = 4403;
 
 const peerPattern = /^[a-f\d]{16,32}$/;
 // Base64url: a raw P-256 public key is 87 characters; a wrapped 256-bit key (IV, key, tag) is 80.
@@ -66,7 +69,7 @@ export function readLiveServerMessage(text: string): LiveServerMessage | null {
   const key = (name: string) => typeof value[name] === "string" && keyPattern.test(value[name]);
   switch (value.type) {
     case "welcome":
-      return peer("peer") && Array.isArray(value.peers) && value.peers.every(item => item && typeof item === "object" &&
+      return peer("peer") && typeof value.keyed === "boolean" && Array.isArray(value.peers) && value.peers.every(item => item && typeof item === "object" &&
         typeof item.peer === "string" && peerPattern.test(item.peer) && access(item.access) && typeof item.keyed === "boolean") ? value as LiveServerMessage : null;
     case "joined": return peer("peer") && access(value.access) ? value as LiveServerMessage : null;
     case "left": case "keyed": return peer("peer") ? value as LiveServerMessage : null;

@@ -3,14 +3,15 @@ import { cleanupObject, inventoryObject } from "./agent-maintenance";
 import { tokenId, clearTemporaryData, removeCleanedGrants, TEMPORARY_ROUTE, type AgentHub } from "./agent-context";
 import { clearHub, clearTemporary, hubOperation, hubView } from "./agent-store";
 import { DurableObject } from "cloudflare:workers";
-import { handle, type Env, type StoredValue } from "./app";
+import { handle, liveAgentAllowed, type Env, type StoredValue } from "./app";
 import { admitRegistration, finalizeRegistration, isBudgetKey, pruneRegistration, releaseRegistration, REGISTRATION_ROUTE } from "./oauth-registration";
 import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "./oauth-pending";
 import type { RepositoryCache } from "./github";
 import type { GitHubAppConfig } from "./owner-setup";
-import { AgentRelay, LiveRooms, readRelayBody } from "./agent-relay";
+import { AgentRelay, LiveRooms, readRelayBody, type LiveAgent } from "./agent-relay";
 import { accountMetadata, METADATA_KEY, METADATA_ROUTE, type Ledger, type MetadataAction } from "./agent-metadata";
 import { workspaceKey } from "../shared/agent-command";
+import { LIVE_ACCESS_ENDED } from "../shared/live-room";
 import { AgentLifecycle, AlarmDeadlines } from "./agent-lifecycle";
 
 interface RepositoryCacheChunks { chunks: number }
@@ -92,7 +93,14 @@ export class SessionStore extends DurableObject {
     return this.liveCore;
   }
   async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
-    if (LiveRooms.owns(socket)) { this.live().message(socket, message); return; }
+    if (LiveRooms.owns(socket)) {
+      const live = this.live();
+      live.message(socket, message);
+      // Agents stay only while their connection does: one hub read per agent socket a minute, on the room's frames.
+      for (const due of live.agentsDue(Date.now()))
+        if (await liveAgentAllowed(this.env as Env, due.agent) === false) live.end(due.socket, LIVE_ACCESS_ENDED, "This agent connection ended.");
+      return;
+    }
     const relay = this.relay();
     // Only a socket's first successful handshake can end a grace; results stay memory-only
     // (and are not parsed twice: a handshaken socket is already presence).
@@ -127,19 +135,29 @@ export class SessionStore extends DurableObject {
     const url = new URL(request.url);
     if (url.pathname === "/maintenance/cleanup") return this.ctx.blockConcurrencyWhile(() => cleanupObject(request, storage, { sockets: this.ctx.getWebSockets().length }));
     if (url.pathname === "/maintenance/inventory") return inventoryObject(request, storage);
-    if (url.pathname === "/live/join") {
+    if (url.pathname === "/live/join" || url.pathname === "/live/end-agent") {
       // Worker-internal only: app.ts checks room access and names the room; this stores nothing.
-      let identity: { room?: unknown; access?: unknown } | null = null;
+      let identity: { room?: unknown; access?: unknown; rejoin?: unknown; agent?: Partial<LiveAgent> } | null = null;
       try { identity = JSON.parse(request.headers.get(LiveRooms.identityHeader) ?? "null"); } catch { /* Refuse malformed trusted metadata. */ }
-      const room = identity?.room, access = identity?.access;
-      if (request.method !== "GET" || request.headers.get("Upgrade")?.toLowerCase() !== "websocket" ||
-        typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || (access !== "editor" && access !== "agent")) return new Response(null, { status: 400 });
       const live = this.live();
+      // A revoked connection's agents leave every room here at once (worker/app.ts, /api/agent/revoke).
+      if (url.pathname === "/live/end-agent") {
+        if (request.method !== "POST" || typeof identity?.agent?.id !== "string") return new Response(null, { status: 400 });
+        for (const socket of live.agentSockets(identity.agent.id)) live.end(socket, LIVE_ACCESS_ENDED, "This agent connection ended.");
+        return new Response(null, { status: 204 });
+      }
+      const room = identity?.room, access = identity?.access, rejoin = identity?.rejoin, agent = identity?.agent;
+      if (request.method !== "GET" || request.headers.get("Upgrade")?.toLowerCase() !== "websocket" ||
+        typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || (access !== "editor" && access !== "agent") ||
+        (rejoin !== undefined && (typeof rejoin !== "string" || !/^[a-f\d]{32}$/.test(rejoin))) ||
+        (access === "agent") !== (agent !== undefined) ||
+        (agent && (typeof agent.id !== "string" || typeof agent.sessionId !== "string" || !Number.isSafeInteger(agent.generation) ||
+          !Number.isSafeInteger(agent.repoId) || typeof agent.branch !== "string"))) return new Response(null, { status: 400 });
       // Refused before a socket exists: an agent waits for a tab to open the room.
       if (!live.admits(room, access)) return new Response(null, { status: 409 });
       const { 0: client, 1: server } = new WebSocketPair();
       this.ctx.acceptWebSocket(server, ["live"]);
-      live.join(server, room, access);
+      live.join(server, room, access, { ...(rejoin === undefined ? {} : { rejoin }), ...(agent ? { agent: agent as LiveAgent } : {}) });
       return new Response(null, { status: 101, webSocket: client });
     }
     if (url.pathname.startsWith("/relay/")) {

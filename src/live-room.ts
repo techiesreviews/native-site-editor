@@ -10,7 +10,7 @@
 // protect against a changed server.
 
 import {
-  LIVE_ROOM_CLOSED, PRESENCE_HEARTBEAT_MS, PRESENCE_TIMEOUT_MS, readLiveServerMessage,
+  LIVE_ACCESS_ENDED, LIVE_ROOM_CLOSED, PRESENCE_HEARTBEAT_MS, PRESENCE_TIMEOUT_MS, readLiveServerMessage,
   type LiveAccess, type LiveClientMessage, type LiveServerMessage,
 } from "../shared/live-room";
 import type { JsonValue } from "../shared/agent-command";
@@ -22,9 +22,10 @@ export interface LiveRoomSocket {
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
   addEventListener(type: "close", listener: (event: { code?: number }) => void): void;
 }
-/** What `connect` throws when the room refuses this participant for good: an agent while no tab has the room open (HTTP 409). */
+/** What `connect` throws when the room refuses this participant for good, so it stops instead of retrying: an agent
+ * while no tab has the room open (409), or a tab signed out (401) or without access to the repository (403). */
 export class LiveRoomClosed extends Error {
-  constructor() { super("No tab has this room open."); }
+  constructor(message = "No tab has this room open.") { super(message); }
 }
 export interface LiveClock {
   now(): number;
@@ -43,7 +44,7 @@ export interface LiveRoomOptions {
   onMessage(bytes: Uint8Array): void;
   /** Who is here now: everyone heard from within the presence timeout, by relay peer id. */
   onPeers?(peers: ReadonlyMap<string, LivePeer>): void;
-  /** No tab has the room open (an agent only): the room has ended and does not reconnect. */
+  /** The room ended for this participant and does not reconnect: no tab has it open (agents), its connection ended, or it was refused. */
   onClosed?(): void;
   clock?: LiveClock;
 }
@@ -103,12 +104,18 @@ async function unwrapFrom(request: { privateKey: CryptoKey; publicKey: Bytes }, 
     { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
 }
 
+/** A failed upgrade hides its status, so one plain request (same check, no socket) tells a refusal from a network failure. */
 function browserSocket(url: string): Promise<LiveRoomSocket> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(new URL(url, location.href).href.replace(/^http/, "ws"));
     socket.binaryType = "arraybuffer";
     socket.addEventListener("open", () => resolve(socket), { once: true });
-    socket.addEventListener("close", () => reject(new Error("The live room could not be joined.")), { once: true });
+    socket.addEventListener("close", () => {
+      fetch(url, { credentials: "same-origin" }).then(
+        response => reject(response.status === 401 ? new LiveRoomClosed("Sign in again to join this live room.")
+          : response.status === 403 ? new LiveRoomClosed("This live room is not open to you.") : new Error("The live room could not be joined.")),
+        () => reject(new Error("The live room could not be joined.")));
+    }, { once: true });
   });
 }
 const systemClock: LiveClock = {
@@ -120,7 +127,9 @@ const systemClock: LiveClock = {
 export function openLiveRoom(options: LiveRoomOptions) {
   const clock = options.clock ?? systemClock;
   const connect = options.connect ?? browserSocket;
-  const url = `/api/live/room?${new URLSearchParams({ repo: options.repo, branch: options.branch, file: options.file })}`;
+  // Only this participant knows it: a reconnect names it so the relay replaces a socket it has not yet seen drop.
+  const rejoin = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
+  const url = `/api/live/room?${new URLSearchParams({ repo: options.repo, branch: options.branch, file: options.file, rejoin })}`;
   let socket: LiveRoomSocket | null = null;
   let peer = "";
   let closed = false, attempt = 0;
@@ -175,10 +184,14 @@ export function openLiveRoom(options: LiveRoomOptions) {
     if (!roomKey || !peer) return;
     void sendFrame(PRESENCE, new TextEncoder().encode(JSON.stringify({ peer, state: ownState ?? null }))).catch(() => undefined);
   };
-  const answer = async (from: string, publicKey: string) => {
-    if (!roomKey) { waiting.push({ from, publicKey }); return; }
-    try { sendControl({ type: "key", to: from, ...await wrapFor(roomKey, b64u.decode(publicKey)) }); }
-    catch { /* A malformed public key gets no answer. */ }
+  /** Wraps the key for a joiner; sends it only if the room, socket and key are still the ones it was wrapped on. */
+  const answer = async (to: string, publicKey: string) => {
+    const key = roomKey, on = socket;
+    if (!key) { waiting.push({ from: to, publicKey }); return; }
+    let wrapped: Awaited<ReturnType<typeof wrapFor>>;
+    try { wrapped = await wrapFor(key, b64u.decode(publicKey)); }
+    catch { return; /* A malformed public key gets no answer. */ }
+    if (!closed && socket === on && roomKey === key) sendControl({ type: "key", to, ...wrapped });
   };
   /** `handed`: the key came from a member, so the relay is told this tab holds it now. */
   const keyReady = (key: CryptoKey, handed = false) => {
@@ -214,8 +227,8 @@ export function openLiveRoom(options: LiveRoomOptions) {
         for (const item of message.peers) members.set(item.peer, item.access);
         for (const id of presence.keys()) if (!members.has(id)) presence.delete(id);
         changed();
-        // Alone: keep the key this tab already had, or make one. Others in: take theirs.
-        if (!members.size) { if (roomKey) keyReady(roomKey); else await makeKey(); return; }
+        // Holding the key (first in, or back in place of its own earlier socket): keep the one it had, or make one. Otherwise take theirs.
+        if (message.keyed) { if (roomKey) keyReady(roomKey); else await makeKey(); return; }
         if (roomKey) { roomKey = null; resetKeyed(); }
         const keys = await oneTimeKeys();
         if (!current() || roomKey) return;
@@ -246,10 +259,10 @@ export function openLiveRoom(options: LiveRoomOptions) {
       }
     }
   };
-  const frame = async (data: Bytes) => {
+  const frame = async (data: Bytes, from: LiveRoomSocket) => {
     if (!roomKey) return;
     const plain = await open(roomKey, data);
-    if (!plain?.length) return;
+    if (closed || socket !== from || !plain?.length) return;
     if (plain[0] === DATA) { options.onMessage(plain.subarray(1)); return; }
     if (plain[0] !== PRESENCE) return;
     let value: { peer?: unknown; state?: JsonValue };
@@ -282,8 +295,8 @@ export function openLiveRoom(options: LiveRoomOptions) {
       if (socket !== next) return;
       queue = queue.then(async () => {
         if (typeof event.data === "string") { const message = readLiveServerMessage(event.data); if (message) await control(message, next); }
-        else if (event.data instanceof ArrayBuffer) await frame(new Uint8Array(event.data));
-        else if (ArrayBuffer.isView(event.data)) await frame(Uint8Array.from(new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)));
+        else if (event.data instanceof ArrayBuffer) await frame(new Uint8Array(event.data), next);
+        else if (ArrayBuffer.isView(event.data)) await frame(Uint8Array.from(new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength)), next);
       }).catch(() => undefined);
     });
     next.addEventListener("close", event => {
@@ -291,7 +304,7 @@ export function openLiveRoom(options: LiveRoomOptions) {
       socket = null;
       members.clear();
       changed();
-      if (event.code === LIVE_ROOM_CLOSED) { stop(); options.onClosed?.(); return; }
+      if (event.code === LIVE_ROOM_CLOSED || event.code === LIVE_ACCESS_ENDED) { stop(); options.onClosed?.(); return; }
       reconnect();
     });
   };

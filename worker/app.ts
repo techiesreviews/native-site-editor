@@ -3,7 +3,7 @@ import { AGENT_PERMISSION_LIFETIME } from "./agent-lifecycle";
 import { cleanupRoute, inventoryRoute } from "./agent-maintenance";
 import { requestJson } from "./http";
 import { ASSET_TYPES } from "../shared/asset-types";
-import { AgentRelay, LiveRooms, liveRoomObjectName, liveRoomTag, relayObjectName } from "./agent-relay";
+import { AgentRelay, LiveRooms, liveRoomObjectName, liveRoomTag, relayObjectName, type LiveAgent } from "./agent-relay";
 import { liveRoomFile, type LiveAccess } from "../shared/live-room";
 import {
   validAgentBranch,
@@ -408,20 +408,35 @@ const OBSOLETE_AGENT_ROUTES = new Set([
 
 /** The live room access check (ADR 0003): editor sign-in to a repository the GitHub connection
  * lists, or an agent connection pinned to this repository and branch. Encryption keeps strangers
- * from reading edits; this keeps them from joining at all. Synced-session links (slice 30) add their token here. */
-async function liveRoomAccess(request: Request, env: Env, url: URL, fetcher: typeof fetch, fullName: string, branch: string): Promise<{ repoId: number; access: LiveAccess }> {
+ * from reading edits; this keeps them from joining at all. Synced-session links (slice 30) add their token here.
+ * A plain request (no upgrade) gets the same answer, so a tab can tell "refused" from "network". */
+async function liveRoomAccess(request: Request, env: Env, url: URL, fetcher: typeof fetch, fullName: string, branch: string): Promise<{ repoId: number; access: LiveAccess; agent?: LiveAgent }> {
   if (request.headers.has("Authorization")) {
     if (!agentControls(env).relay) throw new HttpError(403, AGENTS_PAUSED);
     const connection = await authenticateAgent(request, env, fetcher);
-    if (connection.workspace.repo !== fullName || connection.workspace.branch !== branch)
+    // GitHub names are case-insensitive; the repository id is the identity (authenticateAgent checked it).
+    if (connection.workspace.repo.toLowerCase() !== fullName.toLowerCase() || connection.workspace.branch !== branch)
       throw new HttpError(403, "This agent connection is for another repository or branch.");
-    return { repoId: connection.workspace.repoId, access: "agent" };
+    const { repoId } = connection.workspace;
+    return { repoId, access: "agent", agent: { id: connection.id, sessionId: connection.grant.sessionId, generation: connection.grant.generation, repoId, branch } };
   }
-  if (request.headers.get("Origin") !== url.origin) throw new HttpError(403, "Invalid request origin.");
+  // Only a socket can carry the room's traffic to another site's page: plain requests learn a status, nothing more.
+  if (request.headers.has("Upgrade") && request.headers.get("Origin") !== url.origin) throw new HttpError(403, "Invalid request origin.");
   const user = await session(request, env);
   if (!user) throw new SignedOutError(401, "Connect GitHub to join a live room.");
   const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, fullName);
   return { repoId: repo.id, access: "editor" };
+}
+
+/** Whether an agent in a live room may stay: its connection is still listed for this repository and branch, at the
+ * same generation, within its 8 hours, with agents not paused. One hub read; undefined when the hub cannot be read. */
+export async function liveAgentAllowed(env: Env, agent: LiveAgent): Promise<boolean | undefined> {
+  if (!agentControls(env).relay) return false;
+  let hub: AgentHub | undefined;
+  try { hub = await getHub(env, agent.sessionId); } catch { return undefined; }
+  const listed = hub?.grants.find(grant => grant.id === agent.id);
+  return listed !== undefined && listed.repoId === agent.repoId && listed.branch === agent.branch &&
+    listed.generation === agent.generation && listed.createdAt + AGENT_PERMISSION_LIFETIME > Date.now();
 }
 
 async function route(
@@ -667,15 +682,17 @@ async function route(
     );
   }
   if (path === "/api/live/room") {
-    if (request.method !== "GET" || request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
-      throw new HttpError(400, "Use a WebSocket upgrade.");
-    const branch = url.searchParams.get("branch"), file = url.searchParams.get("file");
-    if (["repo", "branch", "file"].some(key => url.searchParams.getAll(key).length !== 1) || !validAgentBranch(branch) || !liveRoomFile(file))
+    if (request.method !== "GET") throw new HttpError(405, "Use GET.");
+    const branch = url.searchParams.get("branch"), file = url.searchParams.get("file"), rejoin = url.searchParams.get("rejoin");
+    if (["repo", "branch", "file"].some(key => url.searchParams.getAll(key).length !== 1) || url.searchParams.getAll("rejoin").length > 1 ||
+      !validAgentBranch(branch) || !liveRoomFile(file) || (rejoin !== null && !/^[a-f\d]{32}$/.test(rejoin)))
       throw new HttpError(400, "Choose a repository, branch and file.");
-    const { repoId, access } = await liveRoomAccess(request, env, url, fetcher, url.searchParams.get("repo") ?? "", branch);
+    const { repoId, access, agent } = await liveRoomAccess(request, env, url, fetcher, url.searchParams.get("repo") ?? "", branch);
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") throw new HttpError(400, "Use a WebSocket upgrade.");
     // Fresh headers: no cookie or bearer credential crosses into the room.
+    const identity = { room: await liveRoomTag(file), access, ...(rejoin === null ? {} : { rejoin }), ...(agent ? { agent } : {}) };
     return env.SESSIONS.get(env.SESSIONS.idFromName(await liveRoomObjectName(repoId, branch))).fetch(
-      new Request("https://session.internal/live/join", { headers: { Upgrade: "websocket", [LiveRooms.identityHeader]: JSON.stringify({ room: await liveRoomTag(file), access }) } }),
+      new Request("https://session.internal/live/join", { headers: { Upgrade: "websocket", [LiveRooms.identityHeader]: JSON.stringify(identity) } }),
     );
   }
   if (path.startsWith("/api/agent/")) {
@@ -738,6 +755,10 @@ async function route(
         if (grant && (grant.sessionId !== sessionId || grant.login !== user.login))
           throw new HttpError(403, "This connection belongs to another editor session.");
         if (grant || /^[a-f0-9]{64}$/.test(id)) await revokeGrant(env, id, sessionId);
+        // Its agents leave their live room now; sign-out, rebinding and the 8 hours are caught by the room's own check.
+        if (grant) await env.SESSIONS.get(env.SESSIONS.idFromName(await liveRoomObjectName(grant.repoId, grant.branch))).fetch(
+          new Request("https://session.internal/live/end-agent", { method: "POST", headers: { [LiveRooms.identityHeader]: JSON.stringify({ agent: { id } }) } }),
+        ).catch(() => undefined);
       }
       return json({ ok: true, revoked: ids.length });
     }
