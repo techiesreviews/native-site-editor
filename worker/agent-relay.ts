@@ -20,7 +20,8 @@ export interface RelayClock {
 type Attachment = RelayScope & { role: "editor"; handshaken: boolean; everHandshaken?: boolean; owner?: { tabId: string | null; generation: number } };
 /** `replaced`: a newer look at the same long job took over this look's wait, so this one took nothing. */
 type FailureCode = "editor-unavailable" | "busy" | "waiting" | "too-large" | "cancelled" | "timeout" | "unknown-outcome" | "connect-agent-again" | "replaced";
-type Outcome = { ok: true; result: JsonValue } | { ok: false; code: FailureCode; outcome: "unknown" | "not-sent" };
+/** `tookOver`: this look ended its job's wait the tab already had (ticket am-54), which may have taken requests. */
+type Outcome = ({ ok: true; result: JsonValue } | { ok: false; code: FailureCode; outcome: "unknown" | "not-sent" }) & { tookOver?: true };
 /** A dispatcher names the workspace; tab and generation are optional fences. The
  * relay resolves the current owner (an MCP grant does not know which tab owns). */
 /** `signal` aborts when a matching cancel arrives during intake, so the body reader stops at once. */
@@ -39,6 +40,8 @@ interface Pending {
   command: string;
   /** A newer look at the same job takes over this wait: the earlier look answers `replaced`. */
   adopt(resolve: (outcome: Outcome) => void, signal?: AbortSignal): void;
+  /** It ended a sent wait of its job, or took one over that had: whichever look it answers is told (`tookOver`). */
+  tookOver: boolean;
   socket: RelaySocket;
   scope: RelayScope;
   bytes: number;
@@ -290,7 +293,8 @@ export class AgentRelay {
     // - a newer look with another command (the grant's generation or the look's agent name changed) passes the
     //   checks below with the held wait's place, wait and bytes counted as free, then ends the held wait as
     //   `replaced`, unknown once sent (the tab is told, as for a cancel), and sends its own; refused, it ends nothing;
-    // - the newest look gets the tab's answer, or cancelled (its caller leaves, tasks/cancel), timeout or lost.
+    // - the newest look gets the tab's answer, or cancelled (its caller leaves, tasks/cancel), timeout or lost, marked
+    //   `tookOver` when a sent wait of its job was ended on the way: only that answer may say what the wait took.
     const json = JSON.stringify(command);
     const held = cancelKey?.job ? [...this.calls.values()].find(call => call.cancelKey && sameKey(call.cancelKey, cancelKey) && sameScope(call.scope, scope)) : undefined;
     if (held?.command === json) return new Promise(resolve => held.adopt(resolve, signal));
@@ -311,6 +315,7 @@ export class AgentRelay {
     if (this.buffered - freed.bytes + this.reserved.bytes + length > AgentRelay.maxBytes) return Promise.resolve(failure("too-large"));
     const deadline = started + (wait ?? 10_000);
     if (this.clock.now() >= deadline) return Promise.resolve(failure("timeout"));
+    const tookOver = held !== undefined && (held.unsent === undefined || held.tookOver);
     held?.finish(failure("replaced", held.unsent === undefined ? "unknown" : "not-sent"));
     const id = crypto.randomUUID();
     const message = candidate.replace(placeholder, id);
@@ -318,7 +323,7 @@ export class AgentRelay {
     return new Promise(first => {
       let resolve: (outcome: Outcome) => void = first, listening = signal;
       const cancel = () => call.finish(failure("cancelled", call.unsent === undefined ? "unknown" : "not-sent"));
-      const call: Pending = { id, cancelKey, command: json, socket: receiver, scope, bytes: length, deadline, timer: undefined, adopt: (next, nextSignal) => {
+      const call: Pending = { id, cancelKey, command: json, tookOver, socket: receiver, scope, bytes: length, deadline, timer: undefined, adopt: (next, nextSignal) => {
         const earlier = resolve;
         listening?.removeEventListener("abort", cancel);
         resolve = next;
@@ -333,7 +338,7 @@ export class AgentRelay {
         call.unsent = undefined;
         this.clock.clearTimeout(call.timer);
         listening?.removeEventListener("abort", cancel);
-        resolve(outcome);
+        resolve(call.tookOver ? { ...outcome, tookOver: true } : outcome);
         if (sent && !outcome.ok && (outcome.code === "cancelled" || outcome.code === "timeout" || outcome.code === "replaced")) {
           // The tab ends a wait on `cancelled` or `timeout`; a replaced wait ends as cancelled there.
           try { call.socket.send(JSON.stringify({ type: "cancel", id, ...call.scope, reason: outcome.code === "replaced" ? "cancelled" : outcome.code })); }

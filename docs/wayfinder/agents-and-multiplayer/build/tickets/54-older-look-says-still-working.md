@@ -1,7 +1,7 @@
 ---
 title: "An older look at a long job always says \"still working\" (follow-up on 52)"
 type: task (AFK)
-status: open
+status: closed
 assignee: am-54
 builder: claude
 blocked_by: [52-one-look-per-long-job]
@@ -28,3 +28,12 @@ Slice 52 (PR #273) made each long wait job hold one relay wait, a newer look tak
 ## Kit commands and evidence
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines.
+
+## Done (2026-10-30)
+
+- An older look that a newer look took over now always answers "still working" (`working`, 1 s), including when the agent's name changed or watching was switched off between the two looks. Only the newest look gives the job's final answer.
+- The relay marks the newest look's answer `tookOver` when it ended a wait the tab already had, and passes the mark on to any later look that takes over from it. That look ends the job with the hint "This look ended an earlier look's wait at this job; requests that wait may have taken come back with all: true.", even when nothing came, so the hint always reaches the agent (`worker/agent-relay.ts`, `worker/mcp.ts`).
+- Tests (`tests/agent-long-job.test.ts`): "watching switched off between looks" (reworked) and "name changed between looks" (new). In both, the earlier look says working, the pin sent to the newest look reaches the job once, and only one look completes. Both fail on the code before the fix. A third new test covers a late takeover near the held deadline: the tab never answers, and the job ends with the timeout hint at the MCP level.
+- Tests (`tests/agent-relay.test.ts`): `tookOver` on the newest look's outcome, passed on through a same-command takeover and absent when nothing sent was ended. Also a takeover of an unsent wait whose newer look then leaves: it settles cancelled/not-sent, with no cancel frame, no waits left, and no command on the handshake.
+- Feature list: no change (agent-facing job answers only; nothing in the editor changes).
+- Checks: `kit unit --affected` ok 661/661, `npm run check` ok, `npm run lint` ok, `kit doctor` ok 11/11.
