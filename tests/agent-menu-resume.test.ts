@@ -137,12 +137,13 @@ test("Connect to MCP after a reconnect gave up while away: it retries as for a r
   }
 });
 
-test("Connect to MCP after a failed takeover: it retries the takeover, then prompts, copies again or shows the press stuck; failed again, it writes nothing", async () => {
+test("Connect to MCP after a failed takeover: it retries the takeover (and a reconnect it leaves), then prompts, copies again or shows the press stuck; failed again, it writes nothing", async () => {
   for (const [after, write] of [["idle", ["POST /api/agent/connect"]], ["waiting", ["copy"]], ["connected", ["copy"]], ["other-owner", ["copy"]], ["taken-over", ["POST /api/agent/connect"]], ["reconnecting", ["stuck"]], ["paused", ["stuck"]], ["takeover-failed", []], ["quota", []], ["unavailable", []]] as const) {
     const run = press({ port: (_name, work) => work }, after, "takeover-failed");
     await run.done;
     assert.equal(run.takeovers(), 1, after);
-    assert.equal(run.retries(), 0, `${after}: no reconnect retry`);
+    // The takeover left a reconnect under way or given up: retried as well, in the same press.
+    assert.equal(run.retries(), after === "reconnecting" || after === "paused" ? 1 : 0, `${after}: reconnect retries`);
     assert.deepEqual(run.writes, write, after);
   }
   // Paused by the site owner before the press: no takeover, no prompt. (The owner's pause is never
@@ -174,7 +175,9 @@ for (const how of ["off", "switch", "again"] as const) {
         const points = await forEachAwait(race => press(race, after, found), run => run.disturb(how), run => {
           assert.deepEqual(run.writes, [], `${found} → ${after}: nothing written after the ${how}`);
         });
-        assert.equal(points, 3, `${found} → ${after}: read, open and ${found === "takeover-failed" ? "takeover" : "retry"}`);
+        // A takeover that leaves a reconnect under way or given up retries it too: one await more.
+        const both = found === "takeover-failed" && (after === "reconnecting" || after === "paused");
+        assert.equal(points, both ? 4 : 3, `${found} → ${after}: read, open, ${found === "takeover-failed" ? `takeover${both ? " and retry" : ""}` : "retry"}`);
       }
     }
   });
