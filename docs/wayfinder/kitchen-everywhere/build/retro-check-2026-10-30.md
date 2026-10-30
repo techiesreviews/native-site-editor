@@ -31,3 +31,8 @@ Ticket [77](tickets/77-check-the-retro-tickets.md), owner ke-77. Lex (2026-10-30
 ## Order once approved
 
 66 and 68 now, side by side (both WIP, no shared file), and 78 beside them (`kit.d/bg` only). Then 67 (with 75), 74 as a free chore, 69 once agent-kit PR #6 is in, 71 after 67, 72 after 68, and 76 after 71 and Lex's answer. The questions are in the [3 Nov Tuesday pack](../../../work/tuesday/2026-11-03.md#kitchen-retro-tickets-checked-ticket-77).
+
+
+## Approved
+
+Lex, 2026-10-30: approved the checked list ("Approve, build it"), with the Tuesday-pack defaults: stop raw pushes to live, Playwright for browser checks, a 6-hour limit on long jobs, the shared slider in the shared kit. 66 and 68 first.
