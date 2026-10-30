@@ -43,3 +43,18 @@ Verdict on the [retro check](../retro-check-2026-10-30.md): build as is, finishi
 ## Kit commands and evidence
 
 Agent Kit is required. In `~/Projects/agent-kit`: `scripts/agents/kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA, and one refused push shown from a test. This ticket's Done lands on `dev` here with `scripts/agents/kit pr` (docs tier).
+
+## Comments
+
+- ke-68, 2026-10-30, before any code: every routine that pushes a landing or release branch today, read from the kit, `~/Projects/*/scripts`, T3's scheduled tasks, the user `systemd` units and the projects' workflows (the crontab could not be read: permission denied; none known). The guard reads `branches.release`; a live landing branch is guarded by naming it as the release branch too (`land` equal to `release`), so no `branches.live` key.
+  - `kit next --start` claim commits: `HEAD:<land>` from Node inside the kit command; the hook never sees it. Still works.
+  - `kit pr`: pushes only the PR branch, from Node; merges through `gh pr merge`. The hook never sees either. Still works.
+  - Leads' docs and ticket commits pushed straight to this editor's `dev`: the hook sees them and lets them through, since `dev` is not `branches.release` (`main`). Probed with the new guard from `native-site-editor-dev`: `git push`, `git push origin dev` and `git push origin HEAD:dev` pass; `git push origin main` is refused.
+  - The old `scripts/agents/land.sh` in editor checkouts: pushes `HEAD:refs/heads/dev`. Passes (`dev`).
+  - chat's own commits (its "backups") to chat's `main`: chat's settings name no release branch, so they pass.
+  - T3 schedule "Tuesday sweep" (this editor): lands through `kit pr`. Unaffected.
+  - User timers `agent-kit-update`, `mini-pc-health`, `t3-code-update`, `t3-memory-dream`, `t3-weekly-content-sync`, `weekly-cleanup`: no `git push` in their scripts (`weekly-cleanup` only reads git). Unaffected.
+  - CI that pushes: this editor's `update-editor.yml`, techies-playground's `sync-wordpress-release.yml`. They run on GitHub, outside any agent shell. Unaffected.
+  - The Native Site Editor's saves to `techies-reviews` and `lexvd-site` `main`: GitHub API from the Worker, never a shell. Unaffected.
+  - Lex pushing from his own terminal: hooks run only in Claude and Codex sessions. Unaffected.
+  - Guarded once this lands (settings name `branches.release`): agent-kit (`main`, which is also its landing branch, so a raw docs push there goes through `kit pr`), this editor (`main`), TechiesTools (`main`, once its move lands). Not guarded until their settings say `"release": "main"`: chat, techies-playground, lexvd-site, techies-prompter, camframe, script-editor.
