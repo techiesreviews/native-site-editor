@@ -44,6 +44,33 @@ work with `working_here` and check changes with `screenshot_preview`
 requests are the user's instructions, with element context attached; the
 request tools below carry their conversation.
 
+## The helper: pins start your own agent
+
+`helper/` is a small program for the user's computer, the npm package
+`@techiesreviews/editor-helper` (ticket am-16; see `helper/README.md`). It is an
+MCP client of `/mcp` on the connection Connect to MCP made: the copied prompt
+gives its start command (`helperCommand` in `src/agent-prompts.ts`, the token in
+`EDITOR_HELPER_TOKEN`), which an agent runs when the user asks for pins to be
+picked up after the conversation. It keeps calling `wait_for_requests` under the
+name "Pin helper" (`HELPER_AGENT`); only those waits are told the site's "Pins
+go to" choice (`pinsGoTo`, from the receiving tab). For each pin it starts that
+agent (Claude Code, Codex, Gemini CLI or OpenCode) through its ACP adapter, on
+the user's own plan, in an empty folder, with the editor's MCP server on the same
+connection. The agent works under its own name ("Claude Code", "Claude Code 2"
+beside it) and answers the pin with `reply_to_request`. The user's answer or
+follow-up goes back to the agent already on the pin while it runs (an idle one
+is stopped after 15 minutes; a later message starts a new one, which reads the
+whole thread). At most three agents run at once.
+
+Permissions are limited. The helper offers agents no files or terminal of its
+own. Only the editor's MCP tools run unasked (`ALLOWED_TOOLS`, `toolAllowed` in
+`helper/src/agents.ts`), `wait_for_requests` excepted. Claude Code gets no
+built-in tools and none of the user's settings, hooks or MCP servers. Anything
+else an agent asks to run is asked on the pin ("Allow …?"), and runs only on a
+plain yes; no answer in ten minutes refuses. A 401 (Disconnect MCP, sign-out)
+ends the helper and its agents; Stop in the menu refuses that agent's calls, as
+for any agent.
+
 ## Tool calls and drafts
 
 Reads combine the tab's reported context and effective drafts with GitHub files at
