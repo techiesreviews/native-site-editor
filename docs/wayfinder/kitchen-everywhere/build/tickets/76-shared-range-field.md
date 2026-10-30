@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [69-doctor-warns-no-tests-and-due-reminders, 71-shared-browser-tester, 75-house-style-native-controls-and-contrast]
+blocked_by: [69-doctor-warns-no-tests-and-due-reminders, 71-shared-browser-tester, 75-house-style-native-controls-and-contrast, 77-check-the-retro-tickets]
 ---
 
 ## Goal

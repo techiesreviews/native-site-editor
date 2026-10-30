@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [68-push-guard-for-live-branches, 69-doctor-warns-no-tests-and-due-reminders, 74-failure-details-kept]
+blocked_by: [68-push-guard-for-live-branches, 69-doctor-warns-no-tests-and-due-reminders, 74-failure-details-kept, 77-check-the-retro-tickets]
 ---
 
 ## Goal

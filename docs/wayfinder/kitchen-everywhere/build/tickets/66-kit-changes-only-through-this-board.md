@@ -2,9 +2,9 @@
 title: "Kitchen rules: shared-kit changes go through this board; a build's tests live in its project; reports in plain English; AGENTS.md holds rules and pointers"
 type: task (AFK)
 status: open
-assignee: ke-66
+assignee:
 builder: claude
-blocked_by: []
+blocked_by: [77-check-the-retro-tickets]
 ---
 
 ## Goal
