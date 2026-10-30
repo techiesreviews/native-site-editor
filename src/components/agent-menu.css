@@ -8,7 +8,7 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: var(--size-control);
+  min-block-size: max(var(--size-control), var(--size-tap));
   padding: 4px 8px;
   border: 0;
   border-radius: var(--radius);
