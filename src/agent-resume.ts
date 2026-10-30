@@ -36,9 +36,10 @@ export async function resumeAgents(ports: {
  * idle or when another tab receives, or marks the press stuck: still reconnecting with no recorded
  * retry time to wait for, or still paused by a reconnect that gave up (the retry did nothing or
  * failed again). Finding an earlier takeover failed (the site left paused in this browser, ticket
- * am-53), it tries the takeover, unless the socket's opening already tried it in this press; one
- * that fails again writes nothing more, as `takeover-failed` is itself the problem dot. A turn-off, another turn-on or a site move while it
- * waits ends it with no write.
+ * am-53), it asks the `takeover` port first (the port skips one this press already made), then
+ * goes on from what that leaves, a reconnect that gave up included; one that fails again writes
+ * nothing more, as `takeover-failed` is itself the problem dot. A turn-off, another turn-on or a
+ * site move while it waits ends it with no write.
  */
 export async function turnOnAgents(ports: {
   /** Turns remote agents on for the open site and returns this activation. */
@@ -79,11 +80,16 @@ export async function turnOnAgents(ports: {
   // A reconnect that gave up (paused while the user was away, ticket am-51) is retried as one
   // still under way; a pause by the site owner (also one the socket found while opening) is not.
   const gaveUp = (state: string) => state === "paused" && !ports.paused();
-  // An earlier takeover that failed (ticket am-53) is tried again. The owner's pause is never
+  // An earlier takeover that failed (ticket am-53) is tried again, and the reconnect it opens may
+  // still have given up (this browser's record of the tries). The owner's pause is never
   // `takeover-failed` (`ownerPause`), so no owner check here.
-  const found = ports.state();
-  if (found === "takeover-failed") await ports.takeover();
-  else if (found === "reconnecting" || gaveUp(found)) await ports.retry();
+  let found = ports.state();
+  if (found === "takeover-failed") {
+    await ports.takeover();
+    if (!ports.live(at)) return;
+    found = ports.state();
+  }
+  if (found === "reconnecting" || gaveUp(found)) await ports.retry();
   if (!ports.live(at)) return;
   const now = ports.state();
   if (ports.offer(now) !== "connect") await ports.copyAgain();
