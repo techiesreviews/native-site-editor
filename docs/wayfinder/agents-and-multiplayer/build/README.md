@@ -93,6 +93,7 @@ The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slice
 | [47 The mock-ups page shows which ones are built and live](tickets/47-mockups-show-what-shipped.md) | S | – | – | 38 |
 | [48 Undo of Make component keeps the component's stylesheet pane (flaky on dev)](tickets/48-make-component-undo-pane-race.md) | S | – | – | 14 |
 | [50 The MCP menu loses its "Pins go to" choice](tickets/50-remove-pins-go-to.md) | S | visible | – | 16 |
+| [51 After being away, Connect to MCP tells the truth and copies the prompt](tickets/51-connect-after-being-away.md) | S–M | visible | – | – |
 | [39 `get_site` names the section an agent is asking about (follow-up on 11)](tickets/39-get-site-names-the-question-section.md) | S | – | – | 11 |
 | [40 Exact-part edits: second-look fixes (follow-up on 10)](tickets/40-exact-part-edits-second-look-fixes.md) | S | – | – | 10 |
 | [41 An all-copies edit whose copies all changed is told to read again (follow-up on 40)](tickets/41-all-copies-changed-reads-again.md) | S | – | – | 40 |
