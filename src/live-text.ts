@@ -25,8 +25,15 @@
 //   changes, and this tab shows GitHub's text until it opens the file again.
 //
 // Frames (inside the room's encryption): a kind byte, whether the sender is
-// caught up, the 20-byte starting-text tag, then a Yjs state vector or update.
-// Copies with another tag (a tab on another version of the file) are ignored.
+// caught up, the 20-byte starting-text tag, a 4-byte copy id (the sender's;
+// in a REPLY, the copy whose request it answers), then a Yjs state vector or
+// update. Copies with another tag (a tab on another version of the file) are
+// ignored, and a tab counts as caught up only by a REPLY to its own request:
+// one to someone else's holds only what they lacked.
+//
+// Live sharing is off unless switched on (`liveSharingOn`): the ticket's
+// default is no room socket for a tab alone with a file, and no cheaper way to
+// be found exists. Lex decides in the Tuesday pack whether it is on for all.
 
 import { effect, untracked, type ReadonlySignal } from "@preact/signals-core";
 import { applyChanges, diffRange, type DraftEvent, type DraftTextStore, type TextChange } from "./draft-store";
@@ -50,6 +57,8 @@ export interface LiveTextPorts {
   loadYjs?: () => Promise<Yjs>;
   keeper?: CopyKeeper;
   clock?: LiveClock;
+  /** Live sharing switched on (`liveSharingOn` by default). */
+  on?: boolean;
 }
 /** A copy this browser shared, kept to start from when the file opens again: its starting-text tag and its Yjs state.
  * Only the shapes are checked on reading; a state Yjs cannot apply is dropped then (`load`). */
@@ -61,7 +70,7 @@ export interface CopyKeeper {
 }
 
 const HELLO = 1, ASK = 2, REPLY = 3, UPDATE = 4;
-const HEAD = 2 + 20;
+const HEAD = 2 + 20 + 4;
 /** A tab that found others waits this long, after asking, for one of them to catch it up; then it starts from its own draft. */
 export const LIVE_TEXT_CATCH_UP_MS = 5_000;
 /** Frames that arrive while Yjs loads wait, up to this many. */
@@ -79,7 +88,7 @@ const isKept = (value: unknown): value is KeptCopy => {
 };
 /** Memory first (this page's newest), then IndexedDB (a reload); writes go to both, best effort. The database opens at once,
  * so a write when the page hides starts its transaction then, as the drafts' does. */
-function browserKeeper(): CopyKeeper {
+export function browserKeeper(): CopyKeeper {
   const memory = new Map<string, KeptCopy | undefined>();
   let opened: Promise<IDBDatabase | undefined> | undefined, ready: IDBDatabase | undefined;
   const open = () => opened ??= new Promise<IDBDatabase | undefined>(resolve => {
@@ -245,7 +254,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       }
       for (const bytes of inbox.splice(0)) copy.receive(bytes);
       if (!editors || aloneOnce) await copy.startOwn(); else copy.hello();
-    } catch { /* Yjs did not load: this tab keeps its own draft, as before. */ }
+    } catch { /* Yjs did not load, or starting the copy failed: this tab keeps its own draft, as before, until the room changes again. */ }
     finally { loading = false; }
   }
 
@@ -273,19 +282,22 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (synced && !discarded) keeper.write(start.key, { tag, update: Y.encodeStateAsUpdate(doc) });
     };
     /** Catch-up requests that came before this copy could answer: answered once it can. */
-    let asked: { kind: number; theirs: boolean; vector: Uint8Array }[] = [];
+    let asked: { kind: number; theirs: boolean; from: number; vector: Uint8Array }[] = [];
+    /** This copy's id in frames: a REPLY naming it answers this tab's own request. */
+    const me = crypto.getRandomValues(new Uint32Array(1))[0];
 
-    const frame = (kind: number, payload: Uint8Array) => {
+    const frame = (kind: number, payload: Uint8Array, id: number) => {
       const out = new Uint8Array(HEAD + payload.length);
       out[0] = kind;
       out[1] = synced ? 1 : 0;
       out.set(tag, 2);
+      new DataView(out.buffer).setUint32(22, id);
       out.set(payload, HEAD);
       return out;
     };
-    const send = (kind: number, payload: Uint8Array) => {
+    const send = (kind: number, payload: Uint8Array, id = me) => {
       if (stopped || HEAD + payload.length > FRAME_LIMIT) return Promise.resolve(false);
-      return room.send(frame(kind, payload)).catch(() => false);
+      return room.send(frame(kind, payload, id)).catch(() => false);
     };
     /** The draft now follows the shared copy (outside history: someone else's change). */
     const follow = (changes?: TextChange[]) => {
@@ -308,6 +320,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     });
     const unsubscribe = store.subscribe((event: DraftEvent) => {
       if (event.type !== "text" || event.key !== start.key || discarded || !synced || event.origin === "shared" || event.origin === "discard") return;
+      // Another tab of this browser's saved draft, adopted (`reload`): it may lag behind this copy, so the draft
+      // follows the copy again rather than sending that text to everyone as this tab's edit.
+      if (event.origin === "external") { follow(); return; }
       const now = text.toString();
       if (event.text === now) return;
       const changes = changesBetween(now, event.text, event.changes).sort((a, b) => b.start - a.start);
@@ -343,7 +358,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       synced = true;
       starting = false;
       follow();
-      for (const request of asked.splice(0)) answer(request.kind, request.theirs, request.vector);
+      for (const request of asked.splice(0)) answer(request.kind, request.theirs, request.from, request.vector);
       keep();
       // Caught up, it asks the others for what only it has (a resumed copy, its own changes); starting its own
       // copy, it tells the room, in case another did the same meanwhile.
@@ -360,23 +375,24 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     }
     // Every caught-up copy answers every request, and after a new key every copy asks: frames grow with the square of the
     // people in the room, fine for the 2-5 this is for (ADR 0003, join traffic).
-    function answer(kind: number, theirs: boolean, vector: Uint8Array) {
-      void send(REPLY, Y.encodeStateAsUpdate(doc, vector));
+    function answer(kind: number, theirs: boolean, from: number, vector: Uint8Array) {
+      void send(REPLY, Y.encodeStateAsUpdate(doc, vector), from);
       if (kind === HELLO && theirs) void send(ASK, Y.encodeStateVector(doc));
     }
     function receive(bytes: Uint8Array) {
-      if (bytes.length < HEAD || !sameTag(bytes.subarray(2, HEAD), tag)) return;
-      const kind = bytes[0], theirs = bytes[1] === 1, payload = bytes.subarray(HEAD);
+      if (bytes.length < HEAD || !sameTag(bytes.subarray(2, 22), tag)) return;
+      const kind = bytes[0], theirs = bytes[1] === 1, id = new DataView(bytes.buffer, bytes.byteOffset).getUint32(22), payload = bytes.subarray(HEAD);
       try {
         if (kind === HELLO || kind === ASK) {
           // Only a copy that is caught up answers: a seed alone would tell a waiting tab the room is empty.
-          if (synced && !starting) answer(kind, theirs, payload);
-          else if (asked.length < INBOX_LIMIT) asked.push({ kind, theirs, vector: Uint8Array.from(payload) });
+          if (synced && !starting) answer(kind, theirs, id, payload);
+          else if (asked.length < INBOX_LIMIT) asked.push({ kind, theirs, from: id, vector: Uint8Array.from(payload) });
           return;
         }
         if (kind !== REPLY && kind !== UPDATE) return;
         Y.applyUpdate(doc, payload, REMOTE);
-        if (kind === REPLY && theirs && !synced) void begin(true);
+        // Caught up only by an answer to its own request: one to another tab's holds only what that tab lacked.
+        if (kind === REPLY && theirs && id === me && !synced) void begin(true);
       } catch { /* A broken update is dropped; the next catch-up brings what it lacked. */ }
     }
     return {
@@ -396,8 +412,16 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   };
 }
 
+/** The switch for live sharing: on in this browser when its localStorage holds `native-site-editor:live-sharing` = `on`
+ * (and in tests that pass `on`). Off by default until Lex decides (Tuesday pack). */
+export const LIVE_SHARING_KEY = "native-site-editor:live-sharing";
+function liveSharingOn() {
+  try { return globalThis.localStorage?.getItem(LIVE_SHARING_KEY) === "on"; } catch { return false; }
+}
+
 /** Shares the open file while it is open in the draft store, for as long as this runs; returns its stop. */
 export function startLiveText(ports: LiveTextPorts) {
+  if (!(ports.on ?? liveSharingOn())) return () => undefined;
   let current: { key: string; stop(): void } | undefined;
   /** The file this tab discarded while sharing: it stays out of the copy until another file shows. */
   let left: string | undefined;
