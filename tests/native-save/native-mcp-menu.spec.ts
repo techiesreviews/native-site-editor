@@ -211,6 +211,26 @@ const gaveUp = (page: Page) => page.evaluate(key => {
 }, recoveryKey);
 /** Time away: the clock moves on without firing timers, as after the machine sleeps. */
 const away = async (page: Page, minutes: number) => page.clock.setSystemTime(await page.evaluate(() => Date.now()) + minutes * 60_000);
+/** The tab hidden and seen again; resolves to how many connections reads this page has begun
+ * (counted by `countReads`; a read begins inside the visibilitychange handler). */
+const backToTab = (page: Page) => page.evaluate(() => {
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+  document.dispatchEvent(new Event("visibilitychange"));
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+  document.dispatchEvent(new Event("visibilitychange"));
+  return window.connectionReads ?? 0;
+});
+/** Counts the connections reads the page begins from now on, as each fetch is called. */
+const countReads = (page: Page) => page.evaluate(() => {
+  window.connectionReads = 0;
+  const fetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    if (new URL(String(input instanceof Request ? input.url : input), location.href).pathname === "/api/agent/connections") window.connectionReads = (window.connectionReads ?? 0) + 1;
+    return fetch(input, init);
+  };
+});
+const readsBegun = (page: Page) => page.evaluate(() => window.connectionReads ?? 0);
+declare global { interface Window { /** Connections reads begun since `countReads`. */ connectionReads?: number } }
 async function connectedAgent(page: Page, baseURL: string | undefined, name: string) {
   await page.locator(".repository-menu__trigger").click();
   const action = page.locator(".agent-menu__action");
@@ -304,12 +324,7 @@ test("a sign-in that ended while away: the tab coming back offers Connect to MCP
   try {
     await page.route("**/api/agent/**", route => route.fulfill({ status: 401, json: { error: "Sign in again.", code: "signed-out" } }));
     await away(page, 10);
-    await page.evaluate(() => {
-      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
-      document.dispatchEvent(new Event("visibilitychange"));
-      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
-      document.dispatchEvent(new Event("visibilitychange"));
-    });
+    await backToTab(page);
     await expect(action).toHaveText("Connect to MCP");
     await expect(menu).toHaveAttribute("data-state", "off");
     await page.evaluate(() => navigator.clipboard.writeText("before the press"));
@@ -320,6 +335,57 @@ test("a sign-in that ended while away: the tab coming back offers Connect to MCP
     // clipboard-ready: the press has ended on the failed dot, so no copy is still on its way.
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
   } finally { await client.close().catch(() => undefined); }
+});
+
+test("offering Disconnect MCP, coming back or opening the menu reads the connections once after 5 minutes away, never sooner", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, action } = await connectedAgent(page, baseURL, "away-agent");
+  try {
+    await page.keyboard.press("Escape");
+    await countReads(page);
+    await away(page, 1);
+    expect(await backToTab(page), "a minute away: no read").toBe(0);
+    await away(page, 6);
+    await page.locator(".repository-menu__trigger").click();
+    await expect.poll(() => readsBegun(page), { message: "the menu opening after 7 minutes: one read" }).toBe(1);
+    await expect(action).toHaveText("Disconnect MCP");
+    expect(await backToTab(page), "the read just made holds: no second").toBe(1);
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("a sign-in that ends during a press of Wait for MCP, or of Connect to MCP with agents on: the problem dot, copying nothing", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
+  const signedOut = () => page.route("**/api/agent/**", route => route.fulfill({ status: 401, json: { error: "Sign in again.", code: "signed-out" } }));
+  const pressFails = async () => {
+    await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+    await action.click();
+    await expect(menu).toHaveAttribute("data-state", "failed");
+    expect((await dot(page)).color).toBe(await danger(page));
+    await onlyLabel(page, "Connect to MCP");
+    // clipboard-ready: the press has ended on the failed dot, so no copy is still on its way.
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+  };
+  await action.click();
+  await expect(action).toHaveText("Wait for MCP");
+  // Wait for MCP: its read of the connections finds the sign-in ended.
+  await signedOut();
+  await pressFails();
+  // Signed in again, the next press copies; then, its token gone from the list (agents still on,
+  // offering Connect to MCP), a press whose new connection finds the sign-in ended.
+  await page.unroute("**/api/agent/**");
+  await action.click();
+  await expect(action).toHaveText("Wait for MCP");
+  await page.route("**/api/agent/connections", route => route.fulfill({ json: { grants: [], controls: { watch: true } } }));
+  await away(page, 1);
+  await refresh(page);
+  await expect(menu).toHaveAttribute("data-state", "idle");
+  await expect(action).toHaveText("Connect to MCP");
+  await signedOut();
+  await pressFails();
 });
 
 test("reduced motion: the dot does not pulse while waiting or reconnecting", async ({ page, context, baseURL }) => {
