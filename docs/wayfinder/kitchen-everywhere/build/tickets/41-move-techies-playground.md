@@ -2,7 +2,7 @@
 title: techies-playground moves to the shared kit (full kitchen)
 type: task (HITL)
 status: open
-assignee:
+assignee: ke-41
 builder: claude
 blocked_by: [40-move-techies-reviews]
 ---
@@ -37,3 +37,4 @@ Agent Kit is required. After Lex's OK the lead starts a T3 thread in `~/Projects
 ## Comments
 
 - Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.
+- Lead, 2026-10-30: skill check: no `SKILL.md` or `skills/` in techies-playground's history; its checkout is clean on `main`. Starts after kit fix 62 (PR techies-reviews `upstream` bug) reached the machine copy (2497c0d).
