@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createGuardedEdits, type GuardedEdits, type PlanResult } from "../src/guarded-edit";
-import { discardPlan, keptChange, keptChanges, latestChange, noteAgentChange, undoAgentChanges, undoState, type AgentChange } from "../src/agent-changes";
+import { discardPlan, keptChange, keptChanges, latestChange, noteAgentChange, undoLatestChange, undoAgentChanges, undoState, type AgentChange } from "../src/agent-changes";
 import { applySiteCommand, type AgentSiteActions } from "../src/agent-site";
 import { prepareAgentEdit, type AgentEdit } from "../shared/agent-edit";
 import type { AgentCommand } from "../shared/agent";
@@ -120,6 +120,11 @@ test("the tab keeps the latest 40 changes per site and branch", () => {
   // A change that wrote nothing is not kept.
   noteAgentChange({ id: "c-none", grant: "g", agent: "A", operation: "write_file", scope, page: "a.html", before: new Map(), after: new Map() });
   assert.equal(keptChange(scope, "c-none"), undefined);
+  // A file its commit lists as it was (the page open, which it stayed on) is no file it changed.
+  noteAgentChange({ id: "c-open", grant: "g", agent: "A", operation: "write_file", scope, page: "b.html",
+    before: new Map([["a.html", draft(44)], ["b.html", undefined]]), after: new Map([["a.html", { ...draft(44), updatedAt: 99 }], ["b.html", { ...draft(1), path: "b.html" }]]) });
+  assert.deepEqual([...keptChange(scope, "c-open")!.after.keys()], ["b.html"]);
+  assert.equal(latestChange(scope, { grant: "g", name: "A" }, "a.html")?.id, "c-44");
 });
 
 const request = (change: string, grantId = "grant-a"): AgentEdit => ({ operation: "edit", tool: "discard_change", args: { change }, id: "mcp-undo", grantId, createdAt: 1 });
@@ -184,7 +189,7 @@ test("the pin's Undo is whole or nothing: one of its changes changed since refus
   await agentChange(m, edits, "whole-b", ["about.html"], { edits: new Map([["about.html", "<main><h1>Team</h1></main>"]]), done: "2.", undone: "2." });
   m.typeInto("index.html");
   const was = JSON.stringify(sources(m, ["index.html", "about.html"])), steps = m.steps().length;
-  await assert.rejects(undoAgentChanges(["whole-a", "whole-b"], "grant-a", undoPorts(m, edits)), { message: "index.html changed since Copy editor's change. Nothing was undone." });
+  await assert.rejects(undoAgentChanges(["whole-a", "whole-b"], "grant-a", undoPorts(m, edits)), { message: "This page changed since Copy editor's change. Nothing was undone." });
   assert.equal(JSON.stringify(sources(m, ["index.html", "about.html"])), was);
   assert.equal(m.steps().length, steps);
 });
@@ -253,13 +258,19 @@ test("a move is undone whole: the file at its old path, the new one gone, a page
   assert.equal(m.workspace.source("old.css"), "p {}");
 });
 
-test("in the user's words: a refusal on the pin's card names the file and the agent, not the change's id or the agent's tools", () => {
+test("in the user's words: a refusal names the page and the agent, never a file path, the change's id or the agent's tools", () => {
   const { m } = setup();
   const typed = { ...m.scope, version: 1 as const, path: "index.html", baseSha: "sha-0", original: PAGE, content: "typed", updatedAt: 9 };
   const change: AgentChange = { id: "mcp-words", grant: "g", agent: "Copy editor", operation: "write_file", scope: m.scope, page: "index.html",
     before: new Map([["index.html", undefined]]), after: new Map([["index.html", { ...typed, content: "agent" }]]) };
   const reads = { source: () => undefined, exists: () => true, template: () => undefined, site: () => site };
-  assert.deepEqual(discardPlan([change], reads, () => typed, "index.html", "user"), { refuse: "index.html changed since Copy editor's change. Nothing was undone." });
+  assert.deepEqual(discardPlan([change], reads, () => typed, "index.html", "user"), { refuse: "This page changed since Copy editor's change. Nothing was undone." });
+  // Another page shown: the changed one by its title, else as another page; a file that is no page, as one of the change's.
+  const titled = { ...reads, source: (path: string) => path === "index.html" ? "<!doctype html><html><head><title>Home &amp; studio</title></head><body><main></main></body></html>" : undefined };
+  assert.deepEqual(discardPlan([change], titled, () => typed, "about.html", "user"), { refuse: "The page “Home & studio” changed since Copy editor's change. Nothing was undone." });
+  assert.deepEqual(discardPlan([change], reads, () => typed, "about.html", "user"), { refuse: "Another page changed since Copy editor's change. Nothing was undone." });
+  const styles = { ...change, page: "site.css", after: new Map([["site.css", { ...typed, path: "site.css", content: "agent" }]]), before: new Map([["site.css", undefined]]) };
+  assert.deepEqual(discardPlan([styles], reads, () => ({ ...typed, path: "site.css" }), "index.html", "user"), { refuse: "A file it changed changed since Copy editor's change. Nothing was undone." });
   assert.deepEqual(discardPlan([change], reads, () => typed, "index.html"),
     { refuse: "index.html changed since Copy editor's change mcp-words, so it cannot be undone as a whole. Change it back with the edit tools." });
   assert.deepEqual(discardPlan([change], reads, () => undefined, "index.html", "user"), { refuse: "This is undone already." });
@@ -287,12 +298,10 @@ test("an agent's chip finds its latest change to the page it shows on: by connec
   const { m, edits } = setup();
   const who = { grant: "grant-chip", name: "Copy editor" };
   await agentChange(m, edits, "chip-1", ["index.html"], { edits: new Map([["index.html", PAGE.replace("Hello", "One")]]), done: "1.", undone: "1." }, who.grant);
-  // About the home page, but it changed about.html alone: the chip on about.html offers it, as does the home page's.
-  const other = await agentChange(m, edits, "chip-2", ["about.html"], { edits: new Map([["about.html", "<main><h1>Team</h1></main>"]]), done: "2.", undone: "2." }, who.grant);
+  // Its command about the home page, but it changed about.html alone: only about.html's chip offers it (it waits on that page).
+  await agentChange(m, edits, "chip-2", ["about.html"], { edits: new Map([["about.html", "<main><h1>Team</h1></main>"]]), done: "2.", undone: "2." }, who.grant);
   assert.equal(latestChange(m.scope, who, "about.html")?.id, "chip-2");
-  assert.equal(latestChange(m.scope, who, "index.html")?.id, "chip-2", "its page is index.html");
-  noteAgentChange({ ...other, page: "about.html" });
-  assert.equal(latestChange(m.scope, who, "index.html")?.id, "chip-1");
+  assert.equal(latestChange(m.scope, who, "index.html")?.id, "chip-1", "a change that landed on another page");
   await agentChange(m, edits, "chip-3", ["index.html"], { edits: new Map([["index.html", PAGE.replace("Hello", "Three")]]), done: "3.", undone: "3." }, who.grant);
   assert.equal(latestChange(m.scope, who, "index.html")?.id, "chip-3");
   assert.equal(latestChange(m.scope, { ...who, name: "Designer" }, "index.html"), undefined, "another agent on the connection");
@@ -317,7 +326,38 @@ test("the chip's Undo puts back the agent's latest change, reads Undone, is offe
   // Typed in since: refused in the user's words, nothing written.
   m.typeInto("index.html");
   const text = m.workspace.source("index.html"), steps = m.steps().length;
-  await assert.rejects(undoAgentChanges([latest().id], who.grant, undoPorts(m, edits)), { message: "index.html changed since Copy editor's change. Nothing was undone." });
+  await assert.rejects(undoAgentChanges([latest().id], who.grant, undoPorts(m, edits)), { message: "This page changed since Copy editor's change. Nothing was undone." });
   assert.equal(m.workspace.source("index.html"), text);
   assert.equal(m.steps().length, steps);
+});
+
+test("the chip's Undo is refused when the agent changed the page again since the chip offered its change, and nothing is written", async () => {
+  const { m, edits } = setup();
+  const who = { grant: "grant-chip-newer", name: "Copy editor" };
+  await agentChange(m, edits, "chip-offered", ["index.html"], { edits: new Map([["index.html", PAGE.replace("Hello", "One")]]), done: "1.", undone: "1." }, who.grant);
+  await agentChange(m, edits, "chip-newer", ["index.html"], { edits: new Map([["index.html", PAGE.replace("Hello", "Two")]]), done: "2.", undone: "2." }, who.grant);
+  const steps = m.steps().length;
+  await assert.rejects(undoLatestChange(who, "index.html", "chip-offered", undoPorts(m, edits)), { message: "Copy editor changed this page again meanwhile. Nothing was undone; try again." });
+  assert.equal(m.workspace.source("index.html"), PAGE.replace("Hello", "Two"));
+  assert.equal(m.steps().length, steps);
+  // The one offered now goes.
+  await undoLatestChange(who, "index.html", "chip-newer", undoPorts(m, edits));
+  assert.equal(m.workspace.source("index.html"), PAGE.replace("Hello", "One"));
+});
+
+let chipRaces = 0;
+test("the chip's Undo writes nothing once another site or branch is shown at any of its awaits", async () => {
+  let shownScope: DraftScope | undefined;
+  const awaits = await forEachAwait(race => {
+    const { m, edits } = setup(), id = `chip-race-${++chipRaces}`, who = { grant: `grant-${id}`, name: "Copy editor" };
+    shownScope = m.scope;
+    const raced: Pick<GuardedEdits, "run"> = { run: (plan, options) => race.port("run", () => edits.run(r => race.port("plan", async () => plan(r))(), options))() };
+    const done = agentChange(m, edits, id, ["index.html"], { edits: new Map([["index.html", PAGE.replace("Hello", "Race")]]), done: "r.", undone: "r." }, who.grant)
+      .then(() => undoLatestChange(who, "index.html", id, undoPorts(m, raced, () => shownScope)).then(() => undefined, (error: Error) => error.message));
+    return { done, m };
+  }, () => { shownScope = { ...shownScope!, branch: "other" }; }, async run => {
+    assert.equal(run.m.workspace.source("index.html"), PAGE.replace("Hello", "Race"), "nothing undone");
+    assert.equal(await run.done, "The site changed meanwhile. Nothing was undone; try again.");
+  });
+  assert.equal(awaits, 2);
 });

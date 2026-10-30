@@ -21,7 +21,7 @@ import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../../sha
 import { withSlottedRules } from "../../shared/slotted-css";
 import type { NativeCascade, NativeSelectedRule } from "../style-cascade";
 import { watchEditorTheme } from "../theme";
-import { AGENT_COLOURS, type AgentMark } from "../agent-presence";
+import { AGENT_COLOURS, createChipUndo, type AgentMark, type ChipUndoOffer } from "../agent-presence";
 import type { AddPanelHandlers } from "../page-builder/add-panel";
 import { createPageBuilder } from "../page-builder/page-builder";
 import type { DraggedBlock, DropTarget } from "../page-builder/drop-target";
@@ -269,8 +269,8 @@ export interface NativePreviewHandlers {
   onUndoChanges?: (ids: string[], grant: string | undefined) => Promise<void>;
   undoChangesState?: (ids: string[], grant: string | undefined) => "ready" | "undone" | undefined;
   // The same Undo on an agent's chip, for its latest change to the page it shows on, and whether it is offered (ticket am-49).
-  onUndoAgentChip?: (mark: AgentMark) => Promise<void>;
-  agentChipUndoState?: (mark: AgentMark) => "ready" | "undone" | undefined;
+  onUndoAgentChip?: (mark: AgentMark, change: string) => Promise<void>;
+  agentChipUndoState?: (mark: AgentMark) => ChipUndoOffer | undefined;
   // Grids of repeated items: what each is and how to add to it (src/components/card-grid-controls.ts),
   // and the grids under the pointer and around the selection whenever they change.
   cards?: CardGridHandlers;
@@ -431,8 +431,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const postTheme = () => link.send({ type: "theme", focus: previewFocus, component: componentColor });
   // The agents working on sections of the site's pages (tickets 33, am-11): each drawn as its presence box on the page shown, sent again to a new document.
   let agentMarks: readonly AgentMark[] = [];
-  // The chips' Undo (ticket am-49), by mark key: one under way, and a refusal said on the chip until the next press.
-  const chipUndoing = new Set<string>(), chipProblems = new Map<string, string>();
+  // The chips' Undo (ticket am-49): what each offers, the press under way and a refusal said on the chip.
+  const chipUndo = createChipUndo({
+    offer: mark => handlers.agentChipUndoState?.(mark),
+    ...(handlers.onUndoAgentChip ? { undo: handlers.onUndoAgentChip } : {}),
+    changed: () => { if (frameState.ready) postPresence(false); },
+  });
   // `again` false: sent only when it differs from the last sent (drafts changed, which may change a chip's Undo).
   let presenceSent = "";
   const postPresence = (again = true) => {
@@ -440,30 +444,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       const color = agentColors[mark.colour] ?? "", chip = mark.asking ? questionColor : color;
       // An agent working through a pin here has its name on the pin, not on its outline (ticket am-13).
       if (!mark.node || !color || !chip) return [];
-      const state = !mark.pinned && handlers.onUndoAgentChip ? handlers.agentChipUndoState?.(mark) : undefined, problem = chipProblems.get(mark.key);
-      return [{ request: { path: mark.path, node: [...mark.node] }, name: mark.name, color, chip, ...(mark.pinned ? { bare: true as const } : {}),
-        ...(state ? { key: mark.key, undo: chipUndoing.has(mark.key) ? "busy" as const : state, ...(problem ? { problem } : {}) } : {}) }];
+      const undo = chipUndo.fields(mark);
+      return [{ request: { path: mark.path, node: [...mark.node] }, name: mark.name, color, chip, ...(mark.pinned ? { bare: true as const } : {}), ...undo }];
     });
     const key = JSON.stringify(agents);
     if (!again && key === presenceSent) return;
     presenceSent = key;
     link.send({ type: "agent-presence", agents });
   };
-  async function undoFromChip(key: string) {
-    const mark = agentMarks.find(mark => mark.key === key);
-    if (!mark || chipUndoing.has(key) || !handlers.onUndoAgentChip) return;
-    chipUndoing.add(key);
-    chipProblems.delete(key);
-    postPresence(false);
-    try {
-      await handlers.onUndoAgentChip(mark);
-    } catch (error) {
-      chipProblems.set(key, (error as Error).message || "The change could not be undone.");
-    } finally {
-      chipUndoing.delete(key);
-      if (frameState.ready) postPresence(false);
-    }
-  }
   // The component whose template is open: its instances show outlined.
   let focusTag = "";
   const postFocus = () => {
@@ -827,7 +815,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   link.on("dismiss-context-menu", () => handlers.onDismissContextMenu?.());
   link.on("shortcut", (message) => handlers.onShortcut?.(message.name));
   link.on("refusal-note-action", () => handlers.onRefusalNoteAction?.());
-  link.on("agent-chip-undo", (message) => { if (!viewing) void undoFromChip(message.key); });
+  link.on("agent-chip-undo", (message) => { if (!viewing) void chipUndo.press(agentMarks, message.token, message.change); });
   link.on("media-ended", (message) => handlers.onMediaEnded?.(message.id));
   link.on("slot-ghosts", (message) => {
     const report = site && frameState.active && !viewing && readSlotGhostReport(message.report,
@@ -1279,7 +1267,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
      */
     agentPresence(marks: readonly AgentMark[]) {
       agentMarks = marks;
-      for (const key of chipProblems.keys()) if (!marks.some(mark => mark.key === key)) chipProblems.delete(key);
+      chipUndo.marks(marks);
       if (frameState.ready) postPresence();
     },
     /** The next selection of this element (a block just inserted or moved) flashes. */

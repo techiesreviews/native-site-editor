@@ -135,7 +135,7 @@ const cases: Record<FrameMessage["type"], Case> = {
   shortcut: { valid: { name: "palette" }, malformed: [{ name: 1 }] },
   "refusal-note-action": { valid: {}, malformed: [] },
   "media-ended": { valid: { id: 4 }, malformed: [{ id: "4" }, { id: 1.5 }, { id: undefined }] },
-  "agent-chip-undo": { valid: { key: '["grant-a","Copy editor"]' }, malformed: [{ key: 4 }, { key: undefined }, { key: "k".repeat(501) }] },
+  "agent-chip-undo": { valid: { token: "agent-1", change: "mcp-1" }, malformed: [{ token: 4 }, { change: undefined }, { token: "k".repeat(41) }, { change: "c".repeat(201) }] },
 };
 
 const message = (type: string, fields: Record<string, unknown>) => ({ source: FRAME_SOURCE, type, context, ...fields });

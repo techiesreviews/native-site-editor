@@ -60,7 +60,7 @@ test("an agent asks in an orange pin, the user answers in the pin, the agent goe
     await call("reply_to_request", { request: answered.request.id, status: "done", message: "Shorter heading.", requestIds: ["ask-retitle"] });
     await expect(pin).toHaveAttribute("data-state", "done");
 
-    // Another change of the agent's on top of it: the pin's Undo is refused in its card, naming the file, nothing
+    // Another change of the agent's on top of it: the pin's Undo is refused in its card, naming the page, nothing
     // undone, Undo still there, and no toast.
     const lead = page.frameLocator(".native-preview-frame").locator(".hero .lead");
     const read = await call("read_file", { path: "index.html" });
@@ -70,9 +70,10 @@ test("an agent asks in an orange pin, the user answers in the pin, the agent goe
     const done = page.getByRole("dialog", { name: "Request 1" });
     const undo = done.getByRole("button", { name: "Undo" });
     await undo.click();
-    // In the user's words: the file and the agent, never the change's id or the agent's tools.
+    // In the user's words: the page and the agent, never a file path, the change's id or the agent's tools.
     const alert = done.getByRole("alert");
-    await expect(alert).toHaveText("index.html changed since Copy editor's change. Nothing was undone.");
+    await expect(alert).toHaveText("This page changed since Copy editor's change. Nothing was undone.");
+    await expect(alert).not.toContainText("index.html");
     await expect(alert).not.toContainText("ask-retitle");
     await expect(alert).not.toContainText("edit tools");
     await expect(undo).toBeEnabled();
