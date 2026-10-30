@@ -98,6 +98,7 @@ The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slice
 | [53 Connect to MCP works after a failed takeover too (follow-up on 51)](tickets/53-connect-after-failed-takeover.md) | S | visible | – | 51 |
 | [54 An older look at a long job always says "still working" (follow-up on 52)](tickets/54-older-look-says-still-working.md) | S | – | – | 52 |
 | [55 "Text size after Bold" passes every time (flaky since 43)](tickets/55-text-size-after-bold-steady.md) | S | – | – | – |
+| [56 Files rename after chunk recovery works under load too (flaky since 53)](tickets/56-lazy-panels-rename-under-load.md) | S | – | – | – |
 | [39 `get_site` names the section an agent is asking about (follow-up on 11)](tickets/39-get-site-names-the-question-section.md) | S | – | – | 11 |
 | [40 Exact-part edits: second-look fixes (follow-up on 10)](tickets/40-exact-part-edits-second-look-fixes.md) | S | – | – | 10 |
 | [41 An all-copies edit whose copies all changed is told to read again (follow-up on 40)](tickets/41-all-copies-changed-reads-again.md) | S | – | – | 40 |
