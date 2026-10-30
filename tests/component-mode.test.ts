@@ -593,13 +593,34 @@ test("leave (Done) during an entry's load ends it too: it is stale, nothing fram
   const ready = deferred(), mounted = deferred();
   const pending = card(s, [0, 1], { ready: ready.promise }, () => mounted.resolve());
   await mounted.promise;
-  s.mode.leave();
+  // The latest entry wins: Done returns to the instance still loading, not the mode before it.
+  assert.deepEqual(s.mode.leave(), { page: "index.html", node: [0, 1], tag: "site-card", template: CARD_PATH });
   assert.deepEqual(s.live(), []);
   ready.resolve();
   assert.deepEqual(await pending, { status: "stale" });
   assert.equal(s.mode.now(), undefined);
   assert.equal(s.frames.at(-1), undefined);
   assert.deepEqual(s.live(), []);
+});
+
+test("leave (Done) while the first entry still loads (Make component, Done at once) returns its instance, once", async () => {
+  const s = setup();
+  const ready = deferred(), mounted = deferred();
+  const pending = card(s, [0, 1], { ready: ready.promise }, () => mounted.resolve());
+  await mounted.promise;
+  assert.deepEqual(s.mode.leave(), { page: "index.html", node: [0, 1], tag: "site-card", template: CARD_PATH });
+  assert.equal(s.mode.leave(), undefined);
+  ready.resolve();
+  assert.deepEqual(await pending, { status: "stale" });
+  assert.equal(s.mode.now(), undefined);
+  assert.deepEqual(s.live(), []);
+});
+
+test("leave (Done) after an entry settled without the mode returns nothing", async () => {
+  const s = setup();
+  s.refuseOpens();
+  assert.deepEqual(await card(s), { status: "stale" });
+  assert.equal(s.mode.leave(), undefined);
 });
 
 test("leave (Done) during a level's open releases its share at once", async () => {
