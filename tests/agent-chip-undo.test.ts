@@ -36,6 +36,7 @@ test("a press is busy while it runs, its refusal is said on the chip, cleared by
     finish = () => fail ? reject(new Error("This page changed since Copy's change. Nothing was undone.")) : resolve();
   }));
   const copy = mark("Copy"), { token } = chipUndo.fields(copy)!;
+  chipUndo.marks([copy]);
   const running = chipUndo.press([copy], token, "mcp-1");
   assert.equal(chipUndo.fields(copy)?.undo, "busy");
   assert.equal(told(), 1);
@@ -63,9 +64,27 @@ test("a press is busy while it runs, its refusal is said on the chip, cleared by
   assert.equal(chipUndo.fields(copy)?.problem, undefined);
 });
 
+test("a refusal that comes back after its chip went is not kept for that agent's next chip", async () => {
+  let refuse!: () => void;
+  const { chipUndo } = chips({ Copy: { change: "mcp-1", state: "ready" } }, () => new Promise<void>((_, reject) => { refuse = () => reject(new Error("Refused.")); }));
+  const copy = mark("Copy"), { token } = chipUndo.fields(copy)!;
+  chipUndo.marks([copy]);
+  const running = chipUndo.press([copy], token, "mcp-1");
+  // The agent moves on while the undo runs: its chip goes, then comes back on another section.
+  chipUndo.marks([]);
+  refuse();
+  await running;
+  const elsewhere = mark("Copy", { node: [1, 3] });
+  chipUndo.marks([elsewhere]);
+  assert.equal(chipUndo.fields(elsewhere)?.problem, undefined);
+  // Its token went with it: the chip drawn again has a new one, and a press with the old one does nothing.
+  assert.notEqual(chipUndo.fields(elsewhere)?.token, token);
+});
+
 test("a press names the change its chip offered, and one for a mark no longer drawn does nothing", async () => {
   const { chipUndo, pressed } = chips({ Copy: { change: "mcp-7", state: "ready" } }, async () => {});
   const copy = mark("Copy"), { token } = chipUndo.fields(copy)!;
+  chipUndo.marks([copy]);
   await chipUndo.press([], token, "mcp-7");
   await chipUndo.press([copy], "agent-99", "mcp-7");
   assert.deepEqual(pressed, []);

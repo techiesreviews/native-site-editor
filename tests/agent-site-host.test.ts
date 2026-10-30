@@ -348,3 +348,39 @@ test("an agent's new file before the site is native, switched to another branch 
   });
   assert.ok(count >= 1);
 });
+
+// The chip's Undo (ticket am-49) through the agent commands: the workspace of the press, taken before the agent changes
+// load, proved after that load and through its guarded edit; another branch shown at any of those awaits writes nothing.
+let chipRaces = 0;
+test("the chip's Undo writes nothing once another branch is shown at any of its awaits, the agent changes' load included", async (t) => {
+  t.after(() => draftStore().remove(SCOPE, "index.html"));
+  const changes = await import("../src/agent-changes");
+  const awaits = await forEachAwait(race => {
+    const id = `chip-host-${++chipRaces}`, who = { grant: `grant-${id}`, name: "Copy editor" };
+    const after: SavedDraft = { ...SCOPE, version: 1, path: "index.html", baseSha: "sha-0", original: "<h1>Home</h1>", content: `<h1>${id}</h1>`, updatedAt: 1 };
+    draftStore().save(after);
+    changes.noteAgentChange({ id, grant: who.grant, agent: who.name, operation: "write_file", scope: SCOPE, page: "index.html",
+      before: new Map([["index.html", undefined]]), after: new Map([["index.html", after]]) });
+    let shown: DraftScope = SCOPE;
+    const written: string[] = [];
+    const reads = { source: (path: string) => draftStore().get(SCOPE, path)?.content, exists: () => true, template: () => undefined, site: () => ({ routes: { "/": "index.html" }, components: {} }) };
+    // A guarded edit as the editor's: its plan read, then its guard proved before anything is written.
+    const guardedEdits = unusedPort<AgentCommandPorts["guardedEdits"]>("guardedEdits", {
+      run: race.port("run", async (plan: Parameters<AgentCommandPorts["guardedEdits"]["run"]>[0], options?: { guard?: () => boolean }) => {
+        const planned = await race.port("plan", async () => plan(reads))();
+        if (options?.guard && !options.guard()) return { ok: false as const, reason: "stale" as const, message: "stale" };
+        if ("refuse" in planned) return { ok: false as const, reason: "refused" as const, message: String(planned.refuse) };
+        written.push(id);
+        return { ok: true as const, status: "applied" as const };
+      }) as AgentCommandPorts["guardedEdits"]["run"],
+    });
+    const f = commandsFixture({ guardedEdits, draftScope: () => shown, loadChanges: race.port("load", async () => changes) });
+    const run = { id, written, shift: () => { shown = { ...SCOPE, branch: "dev" }; }, outcome: undefined as string | undefined, done: Promise.resolve() };
+    run.done = f.commands.undoLatest(who, "index.html", id).then(() => { run.outcome = "undone"; }, (error: Error) => { run.outcome = error.message; });
+    return run;
+  }, run => run.shift(), run => {
+    assert.deepEqual(run.written, [], "nothing written");
+    assert.equal(run.outcome, "The site changed meanwhile. Nothing was undone; try again.");
+  });
+  assert.equal(awaits, 3);
+});

@@ -124,10 +124,10 @@ export function undoState(scope: Scope, ids: readonly string[] | undefined, draf
   return walk(list, drafts).state === "undone" ? "undone" : "ready";
 }
 
-/** A file as the user's refusal names it, never by its path (S7): the page shown, another page by its title, else a file of the change. */
+/** A file as the user's refusal names it, never by its path (S7): the page shown, another page by its title, else one of the change's files. */
 function userFile(path: string, r: Reads, openFile: string | undefined) {
   if (path === openFile) return "This page";
-  if (!Object.values(r.site()?.routes ?? {}).includes(path)) return "A file it changed";
+  if (!Object.values(r.site()?.routes ?? {}).includes(path)) return "One of its files";
   const text = r.source(path), title = text === undefined ? undefined : nativePageHead(text).title?.trim();
   return title ? `The page “${title}”` : "Another page";
 }
