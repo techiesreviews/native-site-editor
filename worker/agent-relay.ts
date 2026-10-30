@@ -18,7 +18,8 @@ export interface RelayClock {
   clearTimeout(timer: unknown): void;
 }
 type Attachment = RelayScope & { role: "editor"; handshaken: boolean; everHandshaken?: boolean; owner?: { tabId: string | null; generation: number } };
-type FailureCode = "editor-unavailable" | "busy" | "waiting" | "too-large" | "cancelled" | "timeout" | "unknown-outcome" | "connect-agent-again";
+/** `replaced`: a newer look at the same long job took over this look's wait, so this one took nothing. */
+type FailureCode = "editor-unavailable" | "busy" | "waiting" | "too-large" | "cancelled" | "timeout" | "unknown-outcome" | "connect-agent-again" | "replaced";
 type Outcome = { ok: true; result: JsonValue } | { ok: false; code: FailureCode; outcome: "unknown" | "not-sent" };
 /** A dispatcher names the workspace; tab and generation are optional fences. The
  * relay resolves the current owner (an MCP grant does not know which tab owns). */
@@ -29,9 +30,12 @@ export interface RelayTarget {
   tabId?: string;
   generation?: number;
 }
-export interface RelayCancelKey { requestId: string | number; grantId: string }
+/** `job`: the key is a long job's id (ticket am-17), set by the job's own messages only: a client's request id may look like one. */
+export interface RelayCancelKey { requestId: string | number; grantId: string; job?: true }
 interface Pending {
   cancelKey?: RelayCancelKey;
+  /** A newer look at the same job takes over this wait: the earlier look answers `replaced`. */
+  adopt(resolve: (outcome: Outcome) => void, signal?: AbortSignal): void;
   socket: RelaySocket;
   scope: RelayScope;
   bytes: number;
@@ -58,11 +62,11 @@ function waitBudget(command: JsonValue): number | undefined {
   const wanted = typeof command.waitMs === "number" && Number.isFinite(command.waitMs) ? command.waitMs : WAIT_LIMIT_MS;
   return Math.min(WAIT_LIMIT_MS, Math.max(10_000, Math.floor(wanted)));
 }
-/** A long job's id (ticket am-17, worker/mcp.ts). Its cancel is remembered far longer than a call's, ids only: a
+/** A long job's cancel (ticket am-17, worker/mcp.ts) is remembered far longer than a call's, ids only: a
  * job's looks come up to a minute apart, and a cancelled job never waits again. At most JOB_CANCELS per connection,
  * so one connection's cancels never push out another's; a connection's own grant ids bound the whole. */
-export const JOB_ID_PREFIX = "wait:";
 const JOB_CANCEL_MS = 24 * 60 * 60_000, JOB_CANCELS = 16;
+const sameKey = (a: RelayCancelKey, b: RelayCancelKey) => a.grantId === b.grantId && a.requestId === b.requestId && a.job === b.job;
 const sameScope = (a: RelayScope, b: RelayScope) => a.tabId === b.tabId && a.generation === b.generation && workspaceKey(a.workspace) === workspaceKey(b.workspace);
 
 /** Shared by the editor upgrade and future MCP dispatchers. Repository names can
@@ -137,9 +141,9 @@ export class AgentRelay {
   /** Brief cancellation memory only; lazy expiry leaves idle hibernation possible. */
   private recentCancels = new Map<string, number>();
   /** Cancelled long jobs by connection, then job id, with their expiry; in memory only like the rest: a wake forgets them. */
-  private cancelledJobs = new Map<string, Map<string, number>>();
+  private cancelledJobs = new Map<string, Map<string | number, number>>();
 
-  private cancelId(key: RelayCancelKey) { return JSON.stringify([key.grantId, key.requestId]); }
+  private cancelId(key: RelayCancelKey) { return JSON.stringify([key.grantId, key.requestId, key.job === true]); }
   private pruneCancels() {
     for (const [key, expiry] of this.recentCancels) if (expiry <= this.clock.now()) this.recentCancels.delete(key);
     for (const [grant, jobs] of this.cancelledJobs) {
@@ -150,7 +154,7 @@ export class AgentRelay {
   private recentlyCancelled(key?: RelayCancelKey) {
     this.pruneCancels();
     return key !== undefined && (this.recentCancels.has(this.cancelId(key)) ||
-      typeof key.requestId === "string" && this.cancelledJobs.get(key.grantId)?.has(key.requestId) === true);
+      key.job === true && this.cancelledJobs.get(key.grantId)?.has(key.requestId) === true);
   }
 
   constructor(sockets: RelaySocket[], private clock: RelayClock = {
@@ -276,6 +280,10 @@ export class AgentRelay {
     if (!owner || owner.tabId === null || (wanted.tabId !== undefined && wanted.tabId !== owner.tabId) ||
       (wanted.generation !== undefined && wanted.generation !== owner.generation)) return Promise.resolve(failure("editor-unavailable"));
     const scope: RelayScope = { workspace: wanted.workspace, tabId: owner.tabId, generation: owner.generation };
+    // A job holds one wait (ticket am-52): a newer look takes over the one the tab holds, so whatever the tab
+    // answers reaches exactly one look, and one job's looks never crowd out other agents' waits.
+    const held = cancelKey?.job ? [...this.calls.values()].find(call => call.cancelKey && sameKey(call.cancelKey, cancelKey) && sameScope(call.scope, scope)) : undefined;
+    if (held) return new Promise(resolve => held.adopt(resolve, signal));
     const receivers = [...this.sockets].filter(([socket, metadata]) => socket.readyState === 1 && sameScope(metadata, scope));
     const entry = receivers.find(([, metadata]) => metadata.handshaken) ?? receivers[0];
     if (!entry) return Promise.resolve(failure("editor-unavailable"));
@@ -295,16 +303,24 @@ export class AgentRelay {
     const id = crypto.randomUUID();
     const message = candidate.replace(placeholder, id);
     const framed = (now: number) => message.replace('"remainingMs":10000', `"remainingMs":${Math.max(0, Math.floor(deadline - now))}`);
-    return new Promise(resolve => {
+    return new Promise(first => {
+      let resolve: (outcome: Outcome) => void = first, listening = signal;
       const cancel = () => call.finish(failure("cancelled", call.unsent === undefined ? "unknown" : "not-sent"));
-      const call: Pending = { cancelKey, socket: receiver, scope, bytes: length, deadline, timer: undefined, finish: outcome => {
+      const call: Pending = { cancelKey, socket: receiver, scope, bytes: length, deadline, timer: undefined, adopt: (next, nextSignal) => {
+        const earlier = resolve;
+        listening?.removeEventListener("abort", cancel);
+        resolve = next;
+        listening = nextSignal;
+        listening?.addEventListener("abort", cancel, { once: true });
+        earlier(failure("replaced"));
+      }, finish: outcome => {
         if (!this.calls.delete(id)) return;
         this.waitIds.delete(id);
         this.buffered -= length;
         const sent = call.unsent === undefined;
         call.unsent = undefined;
         this.clock.clearTimeout(call.timer);
-        signal?.removeEventListener("abort", cancel);
+        listening?.removeEventListener("abort", cancel);
         resolve(outcome);
         if (sent && !outcome.ok && (outcome.code === "cancelled" || outcome.code === "timeout")) {
           try { call.socket.send(JSON.stringify({ type: "cancel", id, ...call.scope, reason: outcome.code })); }
@@ -381,8 +397,8 @@ export class AgentRelay {
   cancel(key: RelayCancelKey) {
     this.pruneCancels();
     const id = this.cancelId(key);
-    if (typeof key.requestId === "string" && key.requestId.startsWith(JOB_ID_PREFIX)) {
-      const jobs = this.cancelledJobs.get(key.grantId) ?? new Map<string, number>();
+    if (key.job) {
+      const jobs = this.cancelledJobs.get(key.grantId) ?? new Map<string | number, number>();
       jobs.delete(key.requestId);
       jobs.set(key.requestId, this.clock.now() + JOB_CANCEL_MS);
       if (jobs.size > JOB_CANCELS) jobs.delete(jobs.keys().next().value!);
@@ -395,7 +411,7 @@ export class AgentRelay {
     for (const [reservation, intakeKey] of this.intakes)
       if (this.cancelId(intakeKey) === id) { reservation.cancelled = true; reservation.stop.abort(); }
     for (const call of [...this.calls.values()])
-      if (call.cancelKey?.requestId === key.requestId && call.cancelKey.grantId === key.grantId)
+      if (call.cancelKey && sameKey(call.cancelKey, key))
         call.finish(failure("cancelled", call.unsent === undefined ? "unknown" : "not-sent"));
   }
 

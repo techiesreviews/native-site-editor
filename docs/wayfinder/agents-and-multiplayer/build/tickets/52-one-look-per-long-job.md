@@ -1,7 +1,7 @@
 ---
 title: "A long wait job holds one wait, and never loses a pin (follow-up on 17)"
 type: task (AFK)
-status: open
+status: closed
 assignee: am-52
 builder: claude
 blocked_by: [17-long-job-wait]
@@ -30,3 +30,11 @@ Slice 17's final review left a P2 race ([ticket 17 Follow-ups](17-long-job-wait.
 ## Kit commands and evidence
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines.
+
+## Done (2026-10-30)
+
+- A long job holds one wait in the relay. A newer look at the same job takes over the wait the tab already holds (no second command reaches the tab); the earlier look answers at once that the job still works (`replaced`, poll again in 1 s). Whatever the tab answers reaches only the newest look, so a pin is handed to exactly one look, and one job's looks take one of the site's three waits, never all of them (`worker/agent-relay.ts` `dispatch`, `worker/mcp.ts` `waitOnce`).
+- A job's key carries an explicit `job` flag, set only by `tasks/get` and `tasks/cancel` (`worker/mcp.ts`, read in `worker/index.ts`). Only a flagged cancel lasts a day; a client's own request id that starts with `wait:` is fenced for 10 s like any call's, and never ends a job's look (ticket 17 P3). `JOB_ID_PREFIX` moved into `worker/mcp.ts`, its only user.
+- Tests (`tests/agent-long-job.test.ts`): three overlapping looks hold one wait and the pin reaches the job once (fails before the fix: each look sent its own command); another connection's agent waits beside a looking job and gets its pin; a look while agents are paused is refused with the `AGENTS_PAUSED` error and nothing reaches the tab; a look from a client that does not declare the tasks extension is still answered; a `notifications/cancelled` naming the task id leaves the look running. The lost-subrequest `SESSIONS` fake is typed with `satisfies` (ticket 17 P3). Two ticket 17 tests that relied on one job sending several waits now fill the site's waits with other agents' waits, and check a cancelled request id with a single look.
+- Tests (`tests/agent-relay.test.ts`): a newer look takes over the wait, beside two other agents' waits, and a late answer reaches no look; an unflagged `wait:` cancel lasts 10 s only.
+- Feature list: no change (relay-internal fix; nothing new in the editor).

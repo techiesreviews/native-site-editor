@@ -124,9 +124,9 @@ export class SessionStore extends DurableObject {
       // Worker-internal only: the public router never forwards this path. Browser
       // work is awaited outside blockConcurrencyWhile and never touches storage.
       const target = AgentRelay.readTarget(identity);
-      const key = identity as { requestId?: unknown; grantId?: unknown } | null;
+      const key = identity as { requestId?: unknown; grantId?: unknown; job?: unknown } | null;
       const cancelKey = key && (typeof key.requestId === "string" || typeof key.requestId === "number" && Number.isFinite(key.requestId)) &&
-        typeof key.grantId === "string" && key.grantId ? { requestId: key.requestId, grantId: key.grantId } : undefined;
+        typeof key.grantId === "string" && key.grantId ? { requestId: key.requestId, grantId: key.grantId, ...(key.job === true ? { job: true as const } : {}) } : undefined;
       if (url.pathname === "/relay/cancel" && request.method === "POST" && target && cancelKey) {
         this.relay().cancel(cancelKey);
         return new Response(null, { status: 202 });
