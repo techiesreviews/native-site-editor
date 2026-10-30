@@ -81,6 +81,7 @@ Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **C
 | [59 A builder's spec run stays small, and a timed-out build can resume](tickets/59-builder-specs-capped-and-resume-after-timeout.md) | S–M | claude | – |
 | [60 A spec file with an `@actual` test still runs its other tests; ticket 59's resume follow-ups](tickets/60-specs-actual-tag-keeps-the-rest.md) | S | claude | 30 |
 | [62 `kit pr` opens the PR in the project's own repo, not an `upstream`](tickets/62-kit-pr-picks-the-origin-repo.md) | S | claude | 30 |
+| [63 The kit never prints a token from a remote's URL](tickets/63-never-print-a-remote-token.md) | S | claude | 62 |
 
 ## 2. Setup pieces (tickets 01, 05; research 04)
 
