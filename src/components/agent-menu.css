@@ -148,6 +148,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Where the focus lands after a Stop (the list, or the menu once it is empty): the editor's own ring, inside. */
+.agent-menu:focus-visible,
+.agent-menu__agents:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
 .agent-menu__divider {
   block-size: 1px;
   margin-block: 6px;
