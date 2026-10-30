@@ -2,7 +2,7 @@
 title: "Claude Code waits as a long job"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-17
 builder: claude
 blocked_by: [14-agent-tools-see-and-say]
 ---
