@@ -28,6 +28,7 @@ Decided with Lex on 2026-10-26: right after the clean-up release is live in prod
 - **The editor works the same after every slice.** Same commands, same output, same evidence folders; proven by the existing kit tests and one real `kit doctor` and `kit status` run per slice.
 - **Waiting for Lex:** tickets with `type: task (HITL)` are never handed out by `kit next`. The lead asks Lex in plain words (in the Tuesday pack, [kitchen.md](../../../agents/kitchen.md#tuesday-review)), writes his answer with its date under the ticket's `## Comments`, and only then starts it. These are: creating the kit repo (30), the user-level timer (31), every change in another project (40–47), and the `lex-coding` wording (50).
 - **Other projects** (40–47): after Lex's OK the lead starts one T3 thread per project, working in that project's folder with that project's kit (set up by `kit init`) and landing with that project's own `kit pr` into its landing branch. Nothing reaches another project's landing branch except through a reviewed PR. The thread reports back here; the lead closes the ticket with a small docs PR on `dev`.
+- **Shared-kit changes come through this board** (Lex, 2026-10-30: "the agents stop their own work, we add it to a todo list for the shared kit, and one thread orchestrates the improvements"): a kit change any thread wants is a ticket here, built only by the thread that orchestrates this board, as a PR into agent-kit through its own `kit pr` (ticket 66 puts the line in the shared rulebook).
 - **Paid skills never go public** (Lex, 2026-10-29, "really important"): no skill file or skill text from `~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills` or plugins ever enters a repo. Before each project's move (40–47), its tracked files and history are checked for a `SKILL.md`, a `skills/` folder or lines from the local skill files; a hit stops that move and goes to Lex. The guard from ticket 30 runs in every project's `kit pr`.
 - **Editor saves stay untouched.** On sites the Native Site Editor saves to (`techies-reviews`, `lexvd-site`), its commits keep going straight to `main` (ticket 05 point 3): no branch rule that demands PRs on `main`, no hook or kit check that flags those commits.
 - **The hooks never fail silently** (research 04 risk): a missing or broken kit is said out loud at session start and by `kit doctor`, never just turned off (ticket 21).
@@ -124,6 +125,24 @@ Each move waits for Lex's OK and for the one before it, so a problem in one proj
 | --- | --- | --- | --- |
 | [50 The `lex-coding` kit rule: never copy, run `kit init`](tickets/50-lex-coding-rule.md) | S | claude, **waits for Lex** | 40, 41, 42, 43, 44, 45, 46 |
 
+## 6. From the 2026-10-30 retros (lexvd.nl, script-editor, techies-prompter)
+
+Lex (2026-10-30): the project threads stopped their own kit work and handed it here; for the prompter, "update [the shared kit] to the things found here, and matching my design preferences". Every slice is built in the kit repo (`~/Projects/agent-kit`) and lands through its own `kit pr`; the order puts the rules and the push guard that protect live sites first, then the doctor warnings, red tests and failure details, then the browser tester, the release check and the shared slider, and the motion check last (it starts with a survey).
+
+| Slice | Size | Builder | Blocked by |
+| --- | --- | --- | --- |
+| [66 Kitchen rules: kit changes through this board, a build's tests in its project, reports in plain English, short AGENTS.md](tickets/66-kit-changes-only-through-this-board.md) | S | claude | – |
+| [68 A raw push to a live branch is stopped and pointed to `kit pr` (first half of the gate)](tickets/68-push-guard-for-live-branches.md) | S–M | claude | – |
+| [67 Testing and review rules: natural gestures, presses end every way, new tests fail on old code, motion in CSS](tickets/67-testing-and-review-rules.md) | S | claude | 66 |
+| [75 House style: native shared controls, text on see-through patches checked over every surface, components list their colours](tickets/75-house-style-native-controls-and-contrast.md) | S | claude | 67 |
+| [69 `kit doctor` warns when no tests are wired, lists overdue reminders and long always-read files; the review brief names the test commands](tickets/69-doctor-warns-no-tests-and-due-reminders.md) | S–M | claude | 64 (its kit PR #6), 67 |
+| [70 `kit unit --red`: a new test must fail on the old code](tickets/70-new-tests-must-go-red.md) | M | claude | 69 |
+| [74 A failed check keeps its details in `error.txt`, named on its RESULT line](tickets/74-failure-details-kept.md) | S–M | claude | 70 |
+| [71 One shared browser tester (`browser.mjs`, `kit browser`), close-ups and suites by name, from the `browser-tester` WIP](tickets/71-shared-browser-tester.md) | M | claude | – |
+| [72 `kit release-check` before every deploy (second half of the gate begun in 68)](tickets/72-release-check.md) | M | claude | 68, 69, 74 |
+| [76 One shared slider for every site (the prompter's range field, native HTML and CSS)](tickets/76-shared-range-field.md) | M | claude | 69, 71, 75 |
+| [73 `kit ux` flags JavaScript-timed motion without a `motion-exception` note](tickets/73-kit-ux-motion-check.md) | S–M | claude | 60, 61, 67, 75 |
+
 ## Suggested waves
 
 The frontier decides; this is one order that keeps to the rules (at most 5 at once).
@@ -135,6 +154,7 @@ The frontier decides; this is one order that keeps to the rules (at most 5 at on
 5. 30 alone; then 31 (Lex's OK for both given 2026-10-27).
 6. 40 to 46, one after another (Lex's one OK, 2026-10-27), stopping at the first problem; 47 whenever Lex builds in `camframe` again.
 7. 50 last, with Lex's approved wording.
+8. The 2026-10-30 retro slices, in this order: 66 and 68 side by side (the kitchen rules and `hooks/bash-guard.sh`, no shared kit file); 67 after 66 (`docs/kitchen.md`), then 75 (`docs/house-style.md`); 69 once agent-kit PR #6 (ticket 64's kit part) and 67 are in (`kit.d/doctor`, `review-brief.mjs`); 70 after 69 (`review-brief.mjs`), then 74 (`kit.d/unit`, `kit.d/fix`, `kit-lib.mjs`); 71 any time (new files only), but after those by the order; 72 after 68, 69 and 74 (the gate, the shared "tests wired" helper, `kit.d/pr`); 76 after 69, 71 and 75 (`kit.d/doctor`, the tester, the rule); 73 last, after 60, 61, 67 and 75 (`kit.d/ux`, `docs/house-style.md`). The 50s and 60s slices still open keep their own places.
 
 ## Waiting for Lex
 
