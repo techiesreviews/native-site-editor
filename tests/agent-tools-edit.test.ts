@@ -217,7 +217,7 @@ const refusals: Refusal[] = [
   refusal("screenshot_preview", "preparation", ". get_site lists the pages.", "shared/agent-edit.ts", () => ({ page: "/absent/" })),
   refusal("screenshot_preview", "live page", " could not be shown in the preview.", "src/agent-site.ts", () => ({ page: "/" }), undefined, { open: async () => false }),
   // Its own change, kept in this tab (ticket am-15; tests/agent-changes.test.ts takes the live page's refusals).
-  refusal("discard_change", "preparation", " is kept in this editor tab: it was never applied, was undone already, or the tab reloaded since.", "shared/agent-edit.ts", () => ({ change: "mcp-gone" })),
+  refusal("discard_change", "preparation", " is kept in this editor tab: it was never applied here, the tab reloaded since, or it is one of the oldest.", "shared/agent-edit.ts", () => ({ change: "mcp-gone" })),
   refusal("working_here", "Worker", "Give done alone, or the page you work on.", "shared/agent-edit.ts", () => ({ page: "/", done: true })),
   refusal("working_here", "Worker", "Give the page you work on (and its section), or done: true once you finished.", "shared/agent-edit.ts", () => ({ section: "1.0" })),
   refusal("working_here", "Worker", " is not an element id; get_page lists them.", "shared/agent-edit.ts", () => ({ page: "/", section: "bad.id" })),

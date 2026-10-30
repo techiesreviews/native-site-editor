@@ -276,6 +276,8 @@ export function createMemoryWorkspace(init: {
     },
     /** Another tab or an agent wrote a draft: the bytes change, no model revision. */
     writeDraft(path: string, content: string) { saveText(path, content); },
+    /** A draft record exactly as another writer (the Media workspace's transaction) left it. */
+    putDraft(draft: SavedDraft) { records.set(draft.path, structuredClone(draft)); },
     /** Another tab or an agent deleted a file. */
     deleteFile(path: string) {
       const base = branch.get(path);

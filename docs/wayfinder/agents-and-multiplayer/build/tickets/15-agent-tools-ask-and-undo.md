@@ -93,4 +93,20 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
     - Undo and Clear sit together as text actions; Undone is disabled with its label alone;
     - no toast after the pin's Undo (the first shots showed "Undid Copy editor's change." as a toast, now quiet).
     One thing to look at: Undo and Clear are small text buttons at 390, as Clear already was.
-  - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3824/3824 (255 files)` (`kit unit --affected`). `RESULT: ok specs 8/8 passed; 179 more run in kit pr` (`kit specs --affected`). `RESULT: ok specs 4/4 passed` (native-agent-pins, native-mcp, native-guarded-history, native-several-agents). `RESULT: ok shots raw spec`. `npm run check` and `npm run lint` are clean.
+  - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3824/3824 (255 files)` (`kit unit --affected`). `RESULT: ok specs 8/8 passed; 179 more run in kit pr` (`kit specs --affected`). `RESULT: ok specs 4/4 passed` (native-agent-pins, native-mcp, native-guarded-history, native-several-agents). `RESULT: ok shots raw spec`. `npm run check` and `npm run lint` are clean. Boot bytes after round 1: 344 KB of 355 KB, as before it (`npm run test:budget`).
+
+- Review round 2:
+  - An agent's discard_change is said in the status line only, no toast, as the pin's Undo is: every undo plan is quiet (`discardPlan`).
+  - A pin's Undo offers and undoes only its own agent's changes: of the ids its reply names, those its agent's connection made (`request.agent.grant`, `keptChanges`). Another connection's ids, or a pin with no agent, offer nothing.
+  - discard_change's refusal for a change not kept no longer gives "undone already" as a reason (an undone change stays kept and is refused as such later).
+  - ask_user stops reading once its call is cancelled. Its loop already ended then (the request tools' proof includes the signal); the check is now explicit before and after the hold.
+  - Tests:
+    - `tests/agent-changes.test.ts`:
+      - a pin naming another connection's change offers nothing;
+      - a move (old path, new path, a rewritten link) undone whole, with Undo and Redo back and forth.
+    - `tests/agent-media-commit.test.ts`: the Media change's undo runs through the guarded commit (memory workspace holding its drafts; `putDraft` on the fake), and all three drafts go in one step.
+    - `tests/agent-ask-user.test.ts`: a cancelled ask stops at once (at most 2 reads) and takes no answer.
+    - `native-agent-ask-undo.spec.ts`:
+      - the agent's discard sets the status line and shows no toast;
+      - with the done pin's card still open, Ctrl+Z after its Undo brings the agent's heading back, and the same card offers Undo again.
+  - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3827/3827 (255 files)` (`kit unit --affected`). `RESULT: ok specs 4/4 passed` (native-agent-ask-undo, native-agent-pins, native-mcp, native-guarded-history). `npm run check` and `npm run lint` are clean. Boot bytes 344 KB of 355 KB (`npm run test:budget`), unchanged.

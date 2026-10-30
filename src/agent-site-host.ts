@@ -393,15 +393,15 @@ export function createAgentCommands(ports: AgentCommandPorts) {
   // The agent changes this tab keeps for their undo (ticket am-15), loaded with the first agent command.
   let changes: typeof import("./agent-changes") | undefined;
   const loadChanges = async () => changes ??= await import("./agent-changes");
-  /** The user's Undo on a done pin's card: the agent's changes for it, newest first, put back as one step (src/agent-changes.ts). */
-  async function undo(ids: readonly string[]) {
+  /** The user's Undo on a done pin's card: its agent's (connection `grant`) changes for it, newest first, put back as one step (src/agent-changes.ts). */
+  async function undo(ids: readonly string[], grant: string | undefined) {
     const { undoAgentChanges } = await loadChanges();
-    await undoAgentChanges(ids, { scope: draftScope, edits: guardedEdits, draft: (scope, path) => draftStore().get(scope, path), openFile: () => appStore.openFile.value });
+    await undoAgentChanges(ids, grant, { scope: draftScope, edits: guardedEdits, draft: (scope, path) => draftStore().get(scope, path), openFile: () => appStore.openFile.value });
   }
   /** Whether a pin's changes can be undone here now: "ready", "undone" (the files as before them), or neither. */
-  const undoable = (ids: readonly string[] | undefined) => {
+  const undoable = (ids: readonly string[] | undefined, grant: string | undefined) => {
     const scope = draftScope();
-    return scope && changes ? changes.undoState(scope, ids, path => draftStore().get(scope, path)) : undefined;
+    return scope && changes ? changes.undoState(scope, ids, path => draftStore().get(scope, path), grant) : undefined;
   };
   const apply = (command: AgentCommand) => { void loadChanges().catch(() => undefined); return applyAgentSiteCommand(command); };
   return { actions: agentSiteActions, apply, reload, undo, undoable, acting: () => agentActingDepth > 0 };

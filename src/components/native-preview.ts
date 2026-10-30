@@ -266,8 +266,8 @@ export interface NativePreviewHandlers {
   onDismissRequest?: (id: string) => void;
   onAnswerRequest?: (id: string, text: string) => Promise<void>;
   // The user's Undo of an agent's changes from a done pin's card, and whether they can be undone now (ticket am-15).
-  onUndoChanges?: (ids: string[]) => Promise<void>;
-  undoChangesState?: (ids: string[]) => "ready" | "undone" | undefined;
+  onUndoChanges?: (ids: string[], grant: string | undefined) => Promise<void>;
+  undoChangesState?: (ids: string[], grant: string | undefined) => "ready" | "undone" | undefined;
   // Grids of repeated items: what each is and how to add to it (src/components/card-grid-controls.ts),
   // and the grids under the pointer and around the selection whenever they change.
   cards?: CardGridHandlers;
@@ -503,7 +503,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         if (!handlers.onAnswerRequest) throw new Error("No agent is connected.");
         await handlers.onAnswerRequest(id, text);
       },
-      ...(handlers.onUndoChanges ? { onUndo: (_id: string, ids: string[]) => handlers.onUndoChanges!(ids), undoState: (ids: string[]) => handlers.undoChangesState?.(ids) } : {}),
+      ...(handlers.onUndoChanges ? { onUndo: (_id: string, ids: string[], grant: string | undefined) => handlers.onUndoChanges!(ids, grant),
+        undoState: (ids: string[], grant: string | undefined) => handlers.undoChangesState?.(ids, grant) } : {}),
       onShowPage: (target) => void followRoute(target),
       onShowElement: (id) => link.send({ type: "show-pin", id }),
       onLayout: () => editBar.refit(),
