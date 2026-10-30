@@ -2,7 +2,7 @@
 title: "The kit never prints a token from a remote's URL (follow-up on 62)"
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-63
 builder: claude
 blocked_by: [62-kit-pr-picks-the-origin-repo]
 ---
