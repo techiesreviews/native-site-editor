@@ -708,6 +708,19 @@ test("a look that takes over a look which ended a sent wait is told so too, and 
   h.idle();
 });
 
+test("in a chain of looks with changing commands, a marked look that is replaced passes the mark on and answers replaced", async () => {
+  const h = fixture();
+  const first = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  const second = h.relay.dispatch(scope, jobWait(0), undefined, undefined, jobKey);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "unknown" });
+  const third = h.relay.dispatch(scope, jobWait(15_000), undefined, undefined, jobKey);
+  assert.deepEqual(await second, { ok: false, code: "replaced", outcome: "unknown" }, "the replaced look is not marked");
+  assert.equal(h.relay.waits, 1);
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await third, { ok: true, result: { requests: [] }, tookOver: true });
+  h.idle();
+});
+
 test("a newer look that took over an unsent wait and then leaves ends it unsent: the tab never gets it", async () => {
   const h = fixture();
   h.relay.reset();

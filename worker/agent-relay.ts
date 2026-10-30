@@ -40,7 +40,8 @@ interface Pending {
   command: string;
   /** A newer look at the same job takes over this wait: the earlier look answers `replaced`. */
   adopt(resolve: (outcome: Outcome) => void, signal?: AbortSignal): void;
-  /** It ended a sent wait of its job, or took one over that had: whichever look it answers is told (`tookOver`). */
+  /** It ended a sent wait of its job, or took one over that had: the look it gives its answer is told (`tookOver`);
+   * replaced, it passes the mark on to the newer look and answers `replaced` unmarked. */
   tookOver: boolean;
   socket: RelaySocket;
   scope: RelayScope;
@@ -294,7 +295,9 @@ export class AgentRelay {
     //   checks below with the held wait's place, wait and bytes counted as free, then ends the held wait as
     //   `replaced`, unknown once sent (the tab is told, as for a cancel), and sends its own; refused, it ends nothing;
     // - the newest look gets the tab's answer, or cancelled (its caller leaves, tasks/cancel), timeout or lost, marked
-    //   `tookOver` when a sent wait of its job was ended on the way: only that answer may say what the wait took.
+    //   `tookOver` when a sent wait of its job was ended on the way: only that answer may say what the wait took;
+    // - a look marked `tookOver` that a newer look replaces (either way) passes the mark on and answers `replaced`
+    //   unmarked, so it still answers working: each chain of takeovers has one marked answer, the newest look's.
     const json = JSON.stringify(command);
     const held = cancelKey?.job ? [...this.calls.values()].find(call => call.cancelKey && sameKey(call.cancelKey, cancelKey) && sameScope(call.scope, scope)) : undefined;
     if (held?.command === json) return new Promise(resolve => held.adopt(resolve, signal));
@@ -338,7 +341,7 @@ export class AgentRelay {
         call.unsent = undefined;
         this.clock.clearTimeout(call.timer);
         listening?.removeEventListener("abort", cancel);
-        resolve(call.tookOver ? { ...outcome, tookOver: true } : outcome);
+        resolve(call.tookOver && (outcome.ok || outcome.code !== "replaced") ? { ...outcome, tookOver: true } : outcome);
         if (sent && !outcome.ok && (outcome.code === "cancelled" || outcome.code === "timeout" || outcome.code === "replaced")) {
           // The tab ends a wait on `cancelled` or `timeout`; a replaced wait ends as cancelled there.
           try { call.socket.send(JSON.stringify({ type: "cancel", id, ...call.scope, reason: outcome.code === "replaced" ? "cancelled" : outcome.code })); }
