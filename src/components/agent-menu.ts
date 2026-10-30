@@ -12,7 +12,7 @@ import type { AgentReadPorts } from "../agent-tools-read";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
 import { agentHistoryKey } from "../controllers/agent-controller";
-import { pressSignedOut, resumeAgents, revokeUnused, serialReads, siteFull, turnOnAgents } from "../agent-resume";
+import { ownerPause, pressSignedOut, resumeAgents, revokeUnused, serialReads, siteFull, turnOnAgents } from "../agent-resume";
 import { mountFlyout } from "./flyout";
 import { githubScope, same, sameBranch } from "../workspace-session";
 import type { createAgentPresence } from "../agent-presence";
@@ -259,7 +259,7 @@ export function createAgentMenu(options: {
         if (disposed || !remote || activation !== at || workspaceChanged) return;
         transportState = next;
         if (next.mode !== "reconnecting" && next.mode !== "paused") stuckOn = false;
-        ownerPaused = next.mode === "paused" && Boolean(next.message);
+        ownerPaused = ownerPause(next);
         paint();
       },
     });
@@ -692,8 +692,9 @@ export function createAgentMenu(options: {
       // its attempts outlive the connection) would wait out its backoff. A failed retry is the
       // recovery's to report: the dot shows it.
       retry: async () => { await transport?.retry().catch(() => undefined); },
-      // An earlier takeover failed and left the site paused in this browser (ticket am-53): the
-      // transport reports a new failure itself (takeover-failed on the dot).
+      // An earlier takeover failed and left the site paused in this browser (ticket am-53). A new
+      // failure is the transport's to report (takeover-failed on the dot); it never rejects, so the
+      // catch is only defensive.
       takeover: async () => { await transport?.takeover().catch(() => undefined); },
       retryWaits: () => (transportState?.retryAt ?? 0) > Date.now(),
       offer: now => offer(now as ReturnType<typeof state>),
@@ -703,9 +704,8 @@ export function createAgentMenu(options: {
       // already uses the site's connection: Connect to MCP still copies a prompt, this tab's own if
       // it still waits, otherwise a new one.
       copyAgain: () => copyAgain(slot, task),
-      // Still reconnecting (another tab of this browser holds the attempt, or it failed again), still
-      // paused by a reconnect that gave up (its retry did nothing or failed again), or a takeover that
-      // failed again (takeover-failed already shows the problem dot): the press
+      // Still reconnecting (another tab of this browser holds the attempt, or it failed again), or
+      // still paused by a reconnect that gave up (its retry did nothing or failed again): the press
       // made no prompt, so the dot shows a problem until the reconnect ends or the next press.
       stuck: () => { stuckOn = true; paint(); },
     });
