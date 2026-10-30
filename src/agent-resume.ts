@@ -72,13 +72,37 @@ export async function turnOnAgents(ports: {
   if (!ports.live(at)) return;
   // A reconnect that gave up (paused while the user was away, ticket am-51) is retried as one
   // still under way; a pause by the site owner (also one the socket found while opening) is not.
+  const gaveUp = (state: string) => state === "paused" && !ports.paused();
   const found = ports.state();
-  if (found === "reconnecting" || (found === "paused" && !ports.paused())) await ports.retry();
+  if (found === "reconnecting" || gaveUp(found)) await ports.retry();
   if (!ports.live(at)) return;
   const now = ports.state();
   if (ports.offer(now) !== "connect") await ports.copyAgain();
   else if (ports.fresh(now)) await ports.prompt();
-  else if ((now === "reconnecting" && !ports.retryWaits()) || (now === "paused" && !ports.paused())) ports.stuck();
+  else if ((now === "reconnecting" && !ports.retryWaits()) || gaveUp(now)) ports.stuck();
+}
+
+/**
+ * A press of Connect to MCP during which the sign-in ended (ticket am-51): the menu turned agents
+ * off and the press copied nothing, so `failed` marks the press's own site, read before its first
+ * await, for the dot. A newer press begun meanwhile shows its own outcome instead: nothing written.
+ */
+export async function pressSignedOut<Site>(ports: {
+  /** The site shown when the press began. */
+  site: Site | undefined;
+  /** Sign-ins found ended so far. */
+  signOuts(): number;
+  /** The last prompt confirmed on the clipboard. */
+  copied(): unknown;
+  /** Presses begun so far, this one included. */
+  presses(): number;
+  /** The press itself. */
+  run(): Promise<void>;
+  failed(site: Site): void;
+}) {
+  const site = ports.site, signOuts = ports.signOuts(), copied = ports.copied(), presses = ports.presses();
+  await ports.run();
+  if (site !== undefined && ports.signOuts() !== signOuts && ports.copied() === copied && ports.presses() === presses) ports.failed(site);
 }
 
 /**
