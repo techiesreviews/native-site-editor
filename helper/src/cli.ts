@@ -36,6 +36,8 @@ The token comes from ${TOKEN_VARIABLE}; Connect to MCP in the editor copies the 
   if (values.agent !== undefined && !agent) { console.error(`--agent is one of ${Object.keys(AGENT_FLAGS).join(", ")}.`); process.exitCode = 1; return; }
   const most = values["max-agents"] === undefined ? undefined : Number(values["max-agents"]);
   if (most !== undefined && !(Number.isInteger(most) && most >= 1)) { console.error("--max-agents is a whole number, 1 or more."); process.exitCode = 1; return; }
+  // A closed terminal makes writing the log fail (EIO, EPIPE): the pins are still answered.
+  process.stderr.on("error", () => {});
   const stopping = new AbortController();
   // Ctrl+C, a stop, and a closed terminal (SIGHUP) all end the helper the same way: each unfinished pin hears it.
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.once(signal, () => stopping.abort());
