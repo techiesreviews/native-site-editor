@@ -175,6 +175,7 @@ export function createAgentMenu(options: {
       list: async () => (await records.conversations(workspace)).map(item => item.content as unknown as AgentRequest),
       save: (request, accept, owner) => keep(workspace, request as StoredRequest, current => accept(current?.content as unknown as AgentRequest | undefined), owner),
       ...(options.place ? { place: options.place } : {}),
+      pinsGoTo: () => pinAgent(workspace),
     });
     let editTools: Promise<ReturnType<typeof import("../agent-tools-edit")["createAgentEditTools"]>> | undefined;
     let mediaTools: Promise<ReturnType<typeof import("../agent-tools-media")["createAgentMediaTools"]>> | undefined;

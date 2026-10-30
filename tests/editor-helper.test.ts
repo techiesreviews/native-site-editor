@@ -1,0 +1,259 @@
+// The helper (helper/, ticket am-16) against the real Worker in Miniflare and a receiving tab, with a fake ACP
+// agent in place of Claude Code: a pin starts one agent, its question comes back to the pin, its change lands,
+// a tool outside the allowed list is asked on the pin, and Disconnect MCP ends the helper.
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { PassThrough } from "node:stream";
+import { createInterface } from "node:readline";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { HELPER_AGENT as EDITOR_HELPER_AGENT, PIN_AGENTS as EDITOR_PIN_AGENTS, type AgentRequest } from "../shared/agent";
+import { requestOperation } from "../shared/agent-requests";
+import { acpConnection, choose, type PermissionRequest } from "../helper/src/acp";
+import {
+  ALLOWED_TOOLS, approvalQuestion, approves, editorTool, HELPER_AGENT, PIN_AGENTS, sessionMeta, toolAllowed,
+} from "../helper/src/agents";
+import { HELPER_VERSION, runHelper, type AgentProcess } from "../helper/src/helper";
+import { HELPER_PACKAGE } from "../src/agent-prompts";
+import { launchAgent, TOKEN_VARIABLE } from "../helper/src/launch";
+import { files, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness";
+import { receivingTab } from "./support/receiving-tab";
+
+const OPTIONS = [
+  { optionId: "yes", name: "Allow", kind: "allow_once" as const },
+  { optionId: "always", name: "Always allow", kind: "allow_always" as const },
+  { optionId: "no", name: "Reject", kind: "reject_once" as const },
+];
+
+test("the helper's names, agents and version are the editor's", () => {
+  assert.equal(HELPER_AGENT, EDITOR_HELPER_AGENT);
+  assert.deepEqual(PIN_AGENTS, EDITOR_PIN_AGENTS);
+  // The copied start command names the version the package is.
+  const helper = JSON.parse(readFileSync(new URL("../helper/package.json", import.meta.url), "utf8"));
+  assert.equal(HELPER_PACKAGE, `${helper.name}@${helper.version}`);
+  assert.equal(HELPER_VERSION, helper.version);
+});
+
+test("only the editor's MCP tools run unasked: no shell, files, web or the helper's own waiting", () => {
+  assert.deepEqual(ALLOWED_TOOLS, ["mcp__native-site-editor"]);
+  const claude = (toolName: string, kind = "other") => ({ title: toolName, kind, _meta: { claudeCode: { toolName } } });
+  for (const call of [claude("mcp__native-site-editor__edit_file"), claude("mcp__native-site-editor__reply_to_request"),
+    { title: "native-site-editor.get_site" }, { title: "native-site-editor/screenshot_preview", kind: "read" }, { title: "native_site_editor_get_page" }])
+    assert.equal(toolAllowed(call), true, JSON.stringify(call));
+  for (const call of [claude("Bash", "execute"), claude("Read", "read"), claude("Edit", "edit"), claude("WebFetch", "fetch"),
+    claude("mcp__other-server__run"), claude("mcp__native-site-editor__wait_for_requests"),
+    // A shell command that names an editor tool is still a shell command.
+    { title: "mcp__native-site-editor__get_site", kind: "execute" }, { title: "echo mcp__native-site-editor__get_site" },
+    // Claude's own name wins over a title made to look like an editor tool.
+    { title: "mcp__native-site-editor__get_site", _meta: { claudeCode: { toolName: "Bash" } } }, {}])
+    assert.equal(toolAllowed(call), false, JSON.stringify(call));
+  assert.equal(editorTool(claude("mcp__native-site-editor__get_site")), "get_site");
+  // Claude Code gets no built-in tools, the editor's allowed, and none of the user's settings, hooks or servers.
+  assert.deepEqual(sessionMeta("Claude Code"), { _meta: { claudeCode: { options: {
+    tools: [], allowedTools: ["mcp__native-site-editor"], disallowedTools: ["mcp__native-site-editor__wait_for_requests"], settingSources: [],
+  } } } });
+  assert.deepEqual(sessionMeta("Codex"), {});
+  // An allow is once only; a refusal takes reject_once, else reject_always, else a cancel.
+  assert.deepEqual(choose(OPTIONS, "allow"), { outcome: "selected", optionId: "yes" });
+  assert.deepEqual(choose(OPTIONS, "reject"), { outcome: "selected", optionId: "no" });
+  assert.deepEqual(choose([OPTIONS[1]], "allow"), { outcome: "cancelled" });
+  // The pin's question fits its 60 characters; only a plain yes allows.
+  assert.equal(approvalQuestion({ title: "npm install" }), "Allow npm install?");
+  assert.ok(approvalQuestion({ title: "x".repeat(100) }).length <= 60);
+  assert.equal(approvalQuestion({}), "Allow a tool?");
+  for (const answer of ["yes", "Yes please", "ok", "allow it"]) assert.equal(approves(answer), true, answer);
+  for (const answer of ["no", "not yes", "", undefined, "nope"]) assert.equal(approves(answer), false, String(answer));
+});
+
+test("an agent program runs over its own stdin and stdout, without the helper's token in its environment", async () => {
+  // A one-line ACP agent: it asks before a shell command and an editor tool, and reports the answers.
+  const script = `
+    const lines = require("node:readline").createInterface({ input: process.stdin });
+    const send = message => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n");
+    const asked = new Map(); let prompt;
+    lines.on("line", line => {
+      const message = JSON.parse(line);
+      if (message.method === "initialize") send({ id: message.id, result: { protocolVersion: 1, token: process.env.${TOKEN_VARIABLE} ?? null } });
+      else if (message.method === "session/prompt") {
+        prompt = message.id;
+        for (const [id, toolName, kind] of [["a", "Bash", "execute"], ["b", "mcp__native-site-editor__get_site", "other"]])
+          send({ id, method: "session/request_permission", params: { sessionId: "s", toolCall: { toolCallId: id, title: toolName, kind, _meta: { claudeCode: { toolName } } },
+            options: ${JSON.stringify(OPTIONS)} } });
+      } else if (message.id === "a" || message.id === "b") {
+        asked.set(message.id, message.result.outcome);
+        if (asked.size === 2) send({ id: prompt, result: { stopReason: "end_turn", outcomes: Object.fromEntries(asked) } });
+      } else if (message.method) send({ id: message.id, error: { code: -32601, message: "no" } });
+    });`;
+  process.env[TOKEN_VARIABLE] = "ase_secret";
+  let agent: AgentProcess | undefined;
+  try {
+    agent = launchAgent([process.execPath, "-e", script]);
+    const permissions: PermissionRequest[] = [];
+    const acp = acpConnection(agent, { permission: async asked => { permissions.push(asked); return choose(asked.options, toolAllowed(asked.toolCall) ? "allow" : "reject"); } });
+    assert.deepEqual(await acp.request("initialize", { protocolVersion: 1 }), { protocolVersion: 1, token: null });
+    const turn = await acp.request<{ outcomes: Record<string, unknown> }>("session/prompt", { sessionId: "s", prompt: [] });
+    assert.deepEqual(turn.outcomes, { a: { outcome: "selected", optionId: "no" }, b: { outcome: "selected", optionId: "yes" } });
+    assert.equal(permissions.length, 2);
+    agent.stop();
+    await acp.closed;
+    await assert.rejects(acp.request("session/prompt", {}), /The agent stopped/);
+  } finally {
+    delete process.env[TOKEN_VARIABLE];
+    agent?.stop();
+  }
+});
+
+/** A fake ACP agent in this process: it works on its pin through the MCP server its session was given. */
+function fakeAgent(worker: Parameters<typeof workerFetch>[0]) {
+  const toAgent = new PassThrough(), fromAgent = new PassThrough();
+  const seen = { methods: [] as string[], sessions: [] as Record<string, any>[], modes: [] as string[], prompts: [] as string[], outcomes: [] as unknown[], stopped: 0 };
+  const send = (message: object) => fromAgent.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
+  let asks = 0;
+  const waiting = new Map<string, (outcome: unknown) => void>();
+  const ask = (toolCall: object) => new Promise(resolve => {
+    const id = `ask-${asks++}`;
+    waiting.set(id, resolve);
+    send({ id, method: "session/request_permission", params: { sessionId: "session-1", toolCall: { toolCallId: id, ...toolCall }, options: OPTIONS } });
+  });
+  let client: Client | undefined;
+  async function work(text: string) {
+    const name = /You are "([^"]+)"|agent: "([^"]+)"/.exec(text)!.slice(1).find(Boolean)!;
+    const request = /request[: ]+"?(req-[\w-]+)/.exec(text)![1];
+    if (!client) {
+      const server = seen.sessions[0].mcpServers[0];
+      client = new Client({ name: "fake-agent", version: "1" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(server.url), {
+        requestInit: { headers: Object.fromEntries(server.headers.map((header: any) => [header.name, header.value])) }, fetch: workerFetch(worker),
+      }));
+    }
+    const call = async (tool: string, args: Record<string, unknown> = {}) => payload(await client!.callTool({ name: tool, arguments: { ...args, agent: name } }));
+    const pin = await call("get_selection", { request });
+    const answer = pin.thread.filter((item: any) => item.from === "user").slice(1).at(-1)?.text;
+    // First turn: the agent needs the user's word first.
+    if (!answer) { await call("reply_to_request", { request, status: "question", message: "Which word?" }); return; }
+    // An editor tool runs unasked; a shell command waits for the pin's answer.
+    seen.outcomes.push(await ask({ title: "mcp__native-site-editor__edit_file", kind: "edit", _meta: { claudeCode: { toolName: "mcp__native-site-editor__edit_file" } } }));
+    seen.outcomes.push(await ask({ title: "npm install", kind: "execute", _meta: { claudeCode: { toolName: "Bash" } } }));
+    const read = await call("read_file", { path: "index.html" });
+    const edit = await call("edit_file", { path: "index.html", expectedHash: read.hash, edits: [{ oldText: "<h1>Welcome</h1>", newText: `<h1>${answer}</h1>` }], requestId: "pin-edit-1", waitSeconds: 0 });
+    assert.equal(edit.state, "applied");
+    await call("get_selection", { request });
+    await call("reply_to_request", { request, status: "done", message: `The heading says ${answer}.`, requestIds: ["pin-edit-1"] });
+  }
+  createInterface({ input: toAgent }).on("line", line => {
+    const message = JSON.parse(line);
+    if (message.method) seen.methods.push(message.method);
+    if (message.method === "initialize") send({ id: message.id, result: { protocolVersion: 1, agentCapabilities: { mcpCapabilities: { http: true } } } });
+    else if (message.method === "session/new") {
+      seen.sessions.push(message.params);
+      send({ id: message.id, result: { sessionId: "session-1", modes: { currentModeId: "bypassPermissions", availableModes: [{ id: "bypassPermissions" }, { id: "default" }] } } });
+    } else if (message.method === "session/set_mode") { seen.modes.push(message.params.modeId); send({ id: message.id, result: {} }); }
+    else if (message.method === "session/prompt") {
+      const text = message.params.prompt[0].text;
+      seen.prompts.push(text);
+      work(text).then(() => send({ id: message.id, result: { stopReason: "end_turn" } }),
+        error => send({ id: message.id, error: { code: -32603, message: String(error) } }));
+    } else if (!message.method && waiting.has(message.id)) { waiting.get(message.id)!(message.result.outcome); waiting.delete(message.id); }
+  });
+  const agent: AgentProcess = { input: fromAgent, output: toAgent, stop: () => { seen.stopped++; fromAgent.end(); void client?.close(); } };
+  return { agent, seen };
+}
+
+async function until<T>(what: string, check: () => T | undefined | false, ms = 15_000): Promise<T> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const value = check();
+    if (value) return value;
+    if (Date.now() > end) throw new Error(`Timed out waiting for ${what}.`);
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+}
+
+test("a pin starts one agent through the local Worker: its question returns to the pin, its change lands, and Disconnect ends the helper", async () => {
+  const { worker, github } = await startWorker();
+  const stopping = new AbortController();
+  try {
+    const { cookie } = await signIn(worker);
+    let choice = "Codex";
+    const tab = await receivingTab(worker, cookie, github, { pinsGoTo: () => choice });
+    const { id: grant, token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json();
+    await tab.show(await siteContext());
+    const element = { file: "index.html", id: "1.0.0", tag: "h1", text: "Welcome", html: "<h1>Welcome</h1>" };
+    const pin: AgentRequest = { id: "req-helper", text: "Make this friendlier", createdAt: Date.now(), repoId: repo.id,
+      repository: repo.full_name, branch: "main", state: "open", element, thread: [{ from: "user", text: "Make this friendlier", at: Date.now() }] };
+    tab.conversations.set(pin.id, pin);
+    const answer = (text: string) => {
+      const { list } = requestOperation([...tab.conversations.values()], { type: "answer", id: pin.id, text }) as { list: AgentRequest[] };
+      tab.conversations.set(pin.id, list.find(item => item.id === pin.id)!);
+    };
+
+    // Only the helper's waits are told "Pins go to" (on another connection, which leaves this one's pin untaken).
+    const probe = new Client({ name: "probe", version: "1" });
+    const other = (await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json()).token;
+    await probe.connect(new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${other}` } }, fetch: workerFetch(worker) }));
+    const agent = payload(await probe.callTool({ name: "wait_for_requests", arguments: { waitSeconds: 0, agent: "Copy editor" } }));
+    assert.deepEqual([agent.requests.length, "pinsGoTo" in agent], [1, false]);
+    const helper = payload(await probe.callTool({ name: "wait_for_requests", arguments: { all: true, waitSeconds: 0, agent: HELPER_AGENT } }));
+    assert.deepEqual([helper.requests.length, helper.pinsGoTo], [1, "Codex"]);
+    await probe.close();
+    choice = "Claude Code";
+
+    const fake = fakeAgent(worker), launched: string[] = [], lines: string[] = [];
+    const url = `${origin}/mcp`;
+    const running = runHelper({ url, token, fetch: workerFetch(worker), waitSeconds: 0, pollMs: 20, signal: stopping.signal,
+      launch: agent => { launched.push(agent); return fake.agent; }, log: line => lines.push(line) });
+
+    // The agent's question is on the pin, under its name.
+    const asked = await until("the agent's question", () => { const now = tab.conversations.get(pin.id)!; return now.state === "question" && now; });
+    assert.equal(asked.thread!.at(-1)!.text, "Which word?");
+    assert.equal(asked.agent?.name, "Claude Code");
+    // Its session reaches the editor's MCP server on this connection, in an empty folder, ready to ask before anything else.
+    const session = fake.seen.sessions[0];
+    assert.deepEqual(session.mcpServers, [{ type: "http", name: "native-site-editor", url, headers: [{ name: "Authorization", value: `Bearer ${token}` }] }]);
+    assert.match(session.cwd, /editor-helper-/);
+    assert.deepEqual(session._meta, sessionMeta("Claude Code")._meta);
+    assert.deepEqual(fake.seen.modes, ["default"]);
+    assert.match(fake.seen.prompts[0], /You are "Claude Code"[\s\S]*get_selection \(request: "req-helper", agent: "Claude Code"\)/);
+
+    // The user's answer goes back to the same agent, which asks before a shell command: the pin asks the user.
+    answer("Hello");
+    const approval = await until("the approval question", () => { const now = tab.conversations.get(pin.id)!; return now.state === "question" && now.thread!.at(-1)!.text.startsWith("Allow") && now; });
+    assert.equal(approval.thread!.at(-1)!.text, "Allow npm install?");
+    answer("no");
+    const done = await until("the done reply", () => { const now = tab.conversations.get(pin.id)!; return now.state === "done" && now; });
+    assert.equal(done.thread!.at(-1)!.text, "The heading says Hello.");
+    assert.equal(done.agent?.name, "Claude Code");
+    // The editor tool ran unasked; the shell command was refused.
+    assert.deepEqual(fake.seen.outcomes, [{ outcome: "selected", optionId: "yes" }, { outcome: "selected", optionId: "no" }]);
+    // One agent, one session, two turns: the pin and the user's answer.
+    assert.deepEqual(launched, ["Claude Code"]);
+    assert.equal(fake.seen.methods.filter(method => method === "session/new").length, 1);
+    assert.equal(fake.seen.prompts.length, 2);
+    assert.match(fake.seen.prompts[1], /The user added to request req-helper/);
+    // The change landed in the tab as a draft write of the page.
+    const writes = tab.commands.filter(command => command.operation === "write_file");
+    assert.equal(writes.length, 1);
+    assert.equal((writes[0] as any).path, "index.html");
+    assert.equal((writes[0] as any).content, files["index.html"].replace("<h1>Welcome</h1>", "<h1>Hello</h1>"));
+    // The helper waited under its own name; the agent worked under its own.
+    assert.ok(tab.received.some(command => command.tool === "wait_for_requests" && command.agent === HELPER_AGENT));
+    assert.ok(tab.received.some(command => command.tool === "edit_file" && command.agent === "Claude Code"));
+
+    // Ctrl+C ends a helper during its 25-second wait at once.
+    const quit = new AbortController(), started = Date.now();
+    const second = runHelper({ url, token, fetch: workerFetch(worker), signal: quit.signal, launch: () => { throw new Error("no pin"); } });
+    await until("the second helper's wait", () => tab.received.filter(command => command.tool === "wait_for_requests").length > 0 && Date.now() - started > 300);
+    quit.abort();
+    assert.equal(await second, "Stopped.");
+    assert.ok(Date.now() - started < 5_000);
+
+    // Disconnect MCP: the helper's next wait is refused, and it stops its agent and ends.
+    assert.equal((await tab.post("/api/agent/revoke", { id: grant })).status, 200);
+    assert.match(await running, /ended this connection/);
+    assert.equal(fake.seen.stopped, 1);
+    assert.ok(lines.includes("Claude Code takes req-helper."), lines.join("\n"));
+  } finally {
+    stopping.abort();
+    await worker.dispose();
+  }
+});

@@ -47,6 +47,13 @@ ${n + 1}. ${buildSitePrompt(options.about)}
 Your changes appear in my editor as unsaved drafts; I review them and save them to GitHub.`;
 }
 
+/** The helper's package (helper/, ticket am-16), its version pinned. */
+export const HELPER_PACKAGE = "@techiesreviews/editor-helper@0.1.0";
+/** The command that starts the helper on this connection: it waits for pins and starts the agent "Pins go to" names for each. */
+export function helperCommand(url: string, token: string) {
+  return `EDITOR_HELPER_TOKEN=${token} npx -y ${HELPER_PACKAGE} ${url}`;
+}
+
 /**
  * What to paste into an agent so it talks to the editor over a temporary,
  * direct connection (curl, no MCP configuration). A "watchdog" subagent keeps
@@ -74,5 +81,7 @@ Give yourself and each subagent you start a short name of a few words (e.g. "Cop
 
 A change to the part I am typing in answers waiting and lands once I leave that part (click away, or stop typing in the code pane): get_command_status tells you when it applied; do not send it again.
 
-Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token. If you stop before that, first answer each request you took but did not finish with reply_to_request (status answered, saying you stopped). The token also stops working when I sign out of the editor (at most eight hours).`;
+Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token. If you stop before that, first answer each request you took but did not finish with reply_to_request (status answered, saying you stopped). The token also stops working when I sign out of the editor (at most eight hours).
+
+If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog: run ${code(helperCommand(url, token))} in the background (it needs Node 24 or later), then stop the watchdog. For each pin it starts the agent I chose in "Pins go to", until Disconnect MCP.`;
 }

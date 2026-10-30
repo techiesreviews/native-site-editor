@@ -1133,6 +1133,14 @@ its number unused.
 - Spec: `tests/native-save/native-agent-ask-undo.spec.ts`
 - Steps: none yet (needs a connected agent)
 
+### F-agent-14 The helper starts your agent for each pin
+- Try: Choose Connect to MCP, paste the prompt into Claude Code and ask it to keep picking up your pins after the conversation (it starts the helper from the prompt's command), or run that command in a terminal yourself. Close the chat, then pin "Make this friendlier" on a heading.
+- Good: Within seconds the pin turns to the agent chosen in "Pins go to" (Claude Code by default), in its colour and name, without any chat open. Its question comes to the pin; your answer goes back to the same agent, which finishes and turns the pin grey. When it wants anything beyond the editor's own tools (a shell command, the computer's files), the pin asks "Allow …?" first, and only a yes lets it. Disconnect MCP ends the helper and its agents. No toast or explainer (S1, S4).
+- Files: `helper/src/helper.ts`, `helper/src/agents.ts`, `helper/src/acp.ts`, `helper/src/cli.ts`, `src/agent-prompts.ts`, `src/agent-watch.ts`, `worker/mcp.ts`
+- Phone: no (the helper runs on a computer)
+- Spec: `tests/editor-helper.test.ts` (unit, against the local Worker)
+- Steps: none yet (needs the helper published and running)
+
 ## Command palette
 
 ### F-palette-01 Go to a page or file
