@@ -240,6 +240,17 @@ test("failed takeover stays durably paused after Turn off; Try again can recover
   assert.equal(b.sockets.length, 0); await b.transport.takeover(); assert.equal(b.transport.state().mode, "live"); b.transport.stop();
 });
 
+test("refused browser storage: start ends takeover-failed without taking over; one takeover after it (the press's) tries once and ends there again", async () => {
+  const f = fixture(), seen: string[] = [];
+  const records = { ...f.records, workspace: () => Promise.reject(new Error("Browser storage is unavailable.")) };
+  const a = f.tab("a", { records, listen: state => { seen.push(state.mode); } });
+  await a.transport.start();
+  assert.deepEqual(seen, ["takeover-failed"], "no taking-over shown: the press's takeover port does not skip");
+  await a.transport.takeover(); await f.tick(120_000);
+  assert.deepEqual(seen, ["takeover-failed", "taking-over", "takeover-failed"], "one takeover, no loop");
+  assert.equal(a.sockets.length, 0); a.transport.stop();
+});
+
 test("workspace change drops socket and refuses late commands without reconnecting when switched back", async () => {
   const f = fixture(), a = f.tab("a"); await a.transport.start();
   a.change({ ...workspace, branch: "other" }); a.deliver(); await drain();

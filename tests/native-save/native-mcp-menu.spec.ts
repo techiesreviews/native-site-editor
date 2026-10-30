@@ -357,25 +357,22 @@ test("after a failed takeover, Connect to MCP takes over again and copies a work
   } finally { await client.close().catch(() => undefined); }
 });
 
-/** Another holder of the receiving lock the next takeover asks for (the old site's next fence), so
- * that takeover fails again; resolves to its release. */
-const holdNextOwnerLock = async (page: Page) => {
-  await page.evaluate(async () => {
-    const [{ indexedDbAgentRecords }, { workspaceKey }] = await Promise.all([import("/src/agent-records.ts"), import("/shared/agent-command.ts")]);
-    const workspace = { account: "native-demo-user", repoId: 501, branch: "main" };
-    const { generation } = await indexedDbAgentRecords().workspace(workspace);
-    const host = window as Window & { releaseOwnerLock?: () => void };
-    await new Promise<void>(held => {
-      void navigator.locks.request(`native-site-editor:agent-owner:${workspaceKey(workspace)}:${generation + 1}`, () => {
-        held();
-        return new Promise<void>(release => { host.releaseOwnerLock = release; });
-      });
+/** Another holder of the receiving lock the next takeover asks for (the stored fence plus one), kept
+ * for the rest of the test, so that takeover fails. It still moves the stored fence on first, so
+ * the takeover after it asks for the fence after that: free. */
+const holdNextOwnerLock = (page: Page) => page.evaluate(async () => {
+  const [{ indexedDbAgentRecords }, { workspaceKey }] = await Promise.all([import("/src/agent-records.ts"), import("/shared/agent-command.ts")]);
+  const workspace = { account: "native-demo-user", repoId: 501, branch: "main" };
+  const { generation } = await indexedDbAgentRecords().workspace(workspace);
+  await new Promise<void>(held => {
+    void navigator.locks.request(`native-site-editor:agent-owner:${workspaceKey(workspace)}:${generation + 1}`, () => {
+      held();
+      return new Promise<void>(() => {});
     });
   });
-  return () => page.evaluate(() => (window as Window & { releaseOwnerLock?: () => void }).releaseOwnerLock?.());
-};
+});
 
-test("a takeover that fails again on the press: the problem dot stays, nothing is copied; once it can, the next press copies", async ({ page, context, baseURL }) => {
+test("a takeover that fails again on the press: the problem dot stays, nothing is copied; the next press, asking for the next fence, copies", async ({ page, context, baseURL }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await open(page, baseURL);
   const { client, action, menu } = await connectedAgent(page, baseURL, "takeover-agent");
@@ -385,7 +382,7 @@ test("a takeover that fails again on the press: the problem dot stays, nothing i
     await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
     await page.locator(".repository-menu__trigger").click();
     await expect(menu).toHaveAttribute("data-state", "takeover-failed", { timeout: 15_000 });
-    const release = await holdNextOwnerLock(page);
+    await holdNextOwnerLock(page);
     let connects = 0;
     page.on("request", request => { if (new URL(request.url()).pathname === "/api/agent/connect" && request.method() === "POST") connects++; });
     await menu.evaluate(element => {
@@ -404,13 +401,38 @@ test("a takeover that fails again on the press: the problem dot stays, nothing i
     await onlyLabel(page, "Connect to MCP");
     expect(connects, "no prompt made").toBe(0);
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
-    // The other holder gone: the next press takes over and copies a working prompt.
-    await release();
+    // The lock stays held, but the failed takeover used up its fence: the next press asks for the
+    // one after it, takes over and copies a working prompt.
+    expect(await page.evaluate(async () => (await navigator.locks.query()).held?.length ?? 0), "the other holder still holds its lock").toBeGreaterThan(0);
     const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
     await action.click();
     const { token } = await (await made).json() as { token: string };
     await expect(action).toHaveText("Copied");
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("after a failed takeover with the reconnect given up as well: one press takes over, retries the reconnect and copies a working prompt", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, call, token: first, action, menu } = await connectedAgent(page, baseURL, "takeover-agent");
+  try {
+    await gaveUp(page);
+    await expect(menu).toHaveAttribute("data-state", "paused");
+    await takeoverFailed(page);
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await page.locator(".repository-menu__trigger").click();
+    await expect(menu).toHaveAttribute("data-state", "takeover-failed", { timeout: 15_000 });
+    // The takeover opens a reconnect this browser's record says gave up: the same press retries it.
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    expect(token).not.toBe(first);
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+    expect((await call("get_site")).repository, "the earlier agent keeps working").toBe("native-demo-user/native-demo");
+    await expect(menu).toHaveAttribute("data-state", "connected");
   } finally { await client.close().catch(() => undefined); }
 });
 
