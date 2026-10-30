@@ -1,6 +1,7 @@
 import { posix } from "node:path";
 import { createRequire } from "node:module";
 import { knownFailure } from "./suite-summary.mjs";
+import { GROUP_TAGS, specTestGroups } from "../spec-groups.mjs";
 
 // The repo's lint dependency supplies the compiler API (TypeScript 7 has none).
 const ts = createRequire(import.meta.url)("typescript-eslint-api");
@@ -43,8 +44,7 @@ function changedRoutes(diff) {
 
 export function specGroups(file, text) {
   if (file.startsWith("tests/native-preview/")) return ["native-preview"];
-  const groups = ["actual", "native-static"].filter(group => text.includes(`"@${group}"`));
-  return groups.length ? groups : ["default"];
+  return specTestGroups(text);
 }
 
 export function importsOf(text) {
@@ -368,7 +368,9 @@ export function routeSpecs(specs, available = specs, { shards = 1, texts = {} } 
       const files = selected.map(spec => spec.file);
       const weights = Object.fromEntries(files.map(file => [file, Math.max(1, (texts[file] ?? "").match(/\btest(?:\.(?:only|skip|fixme|fail))?\s*\(/g)?.length ?? 0)]));
       const batches = group === "default" && files.length >= SHARD_MIN_SPECS ? planShards(files, shards, weights) : [files];
-      for (const files of batches) runs.push({ group, project, files, command: ["npx", "playwright", "test", `--project=${project}`, "--workers=1", ...files] });
+      // A native-save file can mix plain and tagged tests; its tagged ones run in their own groups.
+      const plain = project === "native-save" ? ["--grep-invert", GROUP_TAGS.map(tag => `@${tag}`).join("|")] : [];
+      for (const files of batches) runs.push({ group, project, files, command: ["npx", "playwright", "test", `--project=${project}`, ...plain, "--workers=1", ...files] });
     } else for (const spec of selected) {
       const name = posix.basename(spec.file);
       if (available.filter(other => other.file.startsWith("tests/native-save/") && other.groups.includes(group) && posix.basename(other.file).includes(name)).length !== 1) throw new Error(`ambiguous --spec filter: ${name}`);

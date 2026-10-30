@@ -27,7 +27,8 @@ run timing through `timing.sh`. Stop only processes you started.
   pushes to `dev` (`deploy-preview.yml`): only `@smoke`.
 - Specs a change reaches: `scripts/agents/kit specs --affected` picks them and
   their fixture groups; the commands below run groups by hand.
-- Default group: `port.sh npx playwright test --project=native-save --workers=1 <files>`.
+- Default group: `port.sh npx playwright test --project=native-save --grep-invert "@actual|@native-static" --workers=1 <files>`
+  (a file can mix plain and tagged tests; each tagged test runs in its own group).
 - Tagged groups need their own fixture and command:
   `port.sh bash -c 'npm run test:browser:native-static -- --port $ASE_TEST_PORT --workers=1'`,
   and the same with `test:browser:actual`. A tagged spec run in the default
