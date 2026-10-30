@@ -49,10 +49,11 @@ export const agentStops = {
 
 /**
  * What a held wait_for_requests of an agent stopped meanwhile answers: the stop's refusal, unless the wait was
- * already handed requests (marked delivered to it): those come back, so none is lost.
+ * already handed requests (marked delivered to it): those come back, so none is lost. So does an answer an
+ * ask_user call took (ticket am-15).
  */
 export function afterStoppedWait(result: AgentReadResult): AgentReadResult {
   const value = result.ok ? result.value : undefined;
-  const handed = value && typeof value === "object" && !Array.isArray(value) && Array.isArray(value.requests) && value.requests.length > 0;
+  const handed = value && typeof value === "object" && !Array.isArray(value) && (Array.isArray(value.requests) && value.requests.length > 0 || typeof value.answer === "string");
   return handed ? result : { ok: false, message: AGENT_STOPPED };
 }

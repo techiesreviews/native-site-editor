@@ -10,6 +10,10 @@
 // thread and the request waits again, returned first to the agent on it
 // (the first to take it, then whoever replied), and to every connection once
 // FOLLOW_UP_HOLD_MS pass without that agent taking it.
+// An agent may ask first (ask_user, ticket am-15): its question is a request
+// of its own on an element, its thread opening with the question, which the
+// pin shows orange; Lex's answer goes back to the asking call, which waits
+// for it, and the agent then answers the pin as any other.
 // A request belongs to the repository and branch it was asked on: a
 // connection sees only the ones of the workspace it is pinned to.
 const inWorkspace = (request: AgentRequest, action: Workspace) =>
@@ -42,10 +46,11 @@ interface Workspace { repoId?: number; branch?: string }
 /** What the tab does to its requests: the user asks, answers or dismisses; an agent takes, reads or replies. */
 type RequestAction =
   | { type: "ask"; request: AgentRequest }
-  | { type: "take-requests"; grantId?: string; all?: boolean; by?: AgentWho; now?: number } & Workspace
+  | { type: "take-requests"; grantId?: string; all?: boolean; by?: AgentWho; now?: number; except?: ReadonlySet<string> } & Workspace
   | { type: "request"; id?: string; by?: AgentWho } & Workspace
   | { type: "reply"; id?: string; status?: string; message?: string; requestIds?: unknown; by?: AgentWho } & Workspace
   | { type: "answer"; id?: string; text?: string; now?: number }
+  | { type: "asked"; id?: string; grantId?: string; by?: AgentWho; now?: number } & Workspace
   | { type: "dismiss"; id?: string };
 
 // A message added to a request's thread, which keeps its first message (what
@@ -121,6 +126,8 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
     // IndexedDB returns request ID order, so delivery must restore creation order.
     for (const request of [...list].sort((a, b) => a.createdAt - b.createdAt)) {
       if (!inWorkspace(request, action) || !waiting(request)) continue;
+      // An answer an agent's own ask_user waits for goes to that call, not to a watchdog.
+      if (action.except?.has(request.id)) continue;
       if (!action.all && request.returnedTo?.includes(grantId)) continue;
       if (heldFromOthers(request, grantId, now)) {
         heldUntil = Math.min(heldUntil ?? Infinity, request.heldUntil!);
@@ -199,6 +206,26 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
     if (request.agent) request.heldUntil = now + FOLLOW_UP_HOLD_MS;
     return { list, changed: true, result: request };
   }
+  if (type === "asked") {
+    // An agent's question (ask_user): once the user's answer is last in its thread, the asking agent takes it,
+    // as a take would (read, worked on by it, returned to its connection); before that, nothing changes.
+    if (!request || !inWorkspace(request, action)) throw new HttpError(404, "No such request in the site and branch this connection works on.");
+    if (request.state === "dismissed") throw new HttpError(409, DISMISSED_QUESTION);
+    const last = requestThread(request).at(-1)!;
+    if (request.state === "question" || last.from !== "user") {
+      if (request.state !== "question") throw new HttpError(409, "This request waits for no answer of the user's. Read it with get_selection (request).");
+      return { list, changed: false, result: { request } };
+    }
+    const now = action.now ?? Date.now(), grantId = String(action.grantId ?? "");
+    read(request, action.by);
+    if (action.by) request.agent = action.by;
+    delete request.agentTook;
+    delete request.heldUntil;
+    request.state = "seen";
+    request.seenAt ??= now;
+    if (!request.returnedTo?.includes(grantId)) request.returnedTo = [...(request.returnedTo ?? []), grantId].slice(-RETURNED_TO);
+    return { list, changed: true, result: { request, answer: last.text } };
+  }
   if (type === "dismiss") {
     if (!request) return { list, changed: false, result: { ok: true } };
     request.state = "dismissed";
@@ -207,13 +234,31 @@ export function requestOperation(list: AgentRequest[], action: RequestAction): {
   throw new HttpError(400, "Invalid agent action.");
 }
 
+/** What an agent whose question the user dismissed is told. */
+export const DISMISSED_QUESTION = "The user dismissed your question without answering it. Go on without it, or stop and say why.";
+
+/**
+ * An agent's question on an element (ask_user, ticket am-15), as the tab keeps it: a request of its own, the
+ * question first in its thread and as its reply, so its pin is orange with the question, the agent on it.
+ */
+export function agentQuestion(input: { id: string; question: string; element: AgentRequest["element"]; repoId: number; repository: string; branch: string; by: AgentWho; now: number }): AgentRequest {
+  const { id, question, element, repoId, repository, branch, by, now } = input;
+  return {
+    id, text: question, createdAt: now, repoId, repository, branch, state: "question", element, agent: by, seenAt: now,
+    reply: { status: "question", message: question, at: now, by },
+    thread: [{ from: "agent", text: question, at: now, status: "question", ...(by.name ? { name: by.name } : {}) }],
+  };
+}
+
 /** The request tools as one relay command to the receiving tab. `waitMs` (wait only) is
  * how long the agent will wait (0 answers at once); the tab holds it until a request arrives. */
 export type AgentRequestTool = AgentToolOn<"requests">;
 export interface AgentRequests {
   operation: "requests";
   tool: AgentRequestTool;
-  args: { all?: boolean; request?: string; status?: string; message?: string; requestIds?: string[] };
+  args: { all?: boolean; request?: string; status?: string; message?: string; requestIds?: string[];
+    /** ask_user: the question, and the element it is about (a page and get_page's id; the page shown when none). */
+    question?: string; page?: string; element?: string };
   grantId: string;
   /** Who calls on that connection (shared/agent.ts AgentWho). */
   agent?: string;

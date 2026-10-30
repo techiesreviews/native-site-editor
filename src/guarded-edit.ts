@@ -24,7 +24,7 @@
 
 import type { AnnounceAs } from "./components/toast-rules";
 import type { NativeSite } from "../shared/native-project";
-import type { DraftScope } from "./drafts";
+import type { DraftScope, SavedDraft } from "./drafts";
 import type { DraftAccess, MovableFile } from "./file-changes";
 import { createCommit } from "./guarded-edit/commit";
 import type { ParkedStep } from "./guarded-edit/parked";
@@ -75,6 +75,11 @@ export interface Planned {
   deletes?: string[];
   /** `from` read through `r`; `to` must not exist. */
   moves?: { from: string; to: string }[];
+  /**
+   * Drafts put back as they were, by path, each read through `r` (none: the branch's file, or no file): one
+   * agent change undone (ticket am-15). Written as given, beside no other writes; the page is opened after (`open`).
+   */
+  restore?: Map<string, SavedDraft | undefined>;
   /**
    * Selected once the preview renders the new bytes (`after`, flashed with `flash`); Undo selects `before`, Redo `after`.
    * `historyOnly`: the step itself leaves the selection where the user has it by then (the caller decides), and
@@ -308,6 +313,9 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     for (const move of moves) { read(move.from, "moves"); write(move.from); write(move.to); }
     for (const path of deletes) { read(path, "deletes"); write(path); }
     for (const file of creates) write(file.path);
+    const restore = new Map(planned.restore ?? []);
+    for (const path of restore.keys()) { read(path, "restores"); write(path); }
+    if (restore.size && (moves.length || deletes.length || creates.length || planned.edits?.size)) misuse("a restore goes alone.");
     const arriving = new Map(moves.map(move => [move.to, move.from]));
     const edits = new Map<string, string>();
     const ranges = new Map<string, Required<RangeEdit>[]>();
@@ -330,8 +338,8 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
       edits.set(path, text + base.slice(at));
       ranges.set(path, sorted.map(range => ({ ...range, expected: base.slice(range.start, range.end) })));
     }
-    const unchanged = !moves.length && !deletes.length && !creates.length && [...edits].every(([path, text]) => reads.sources.get(path) === text);
-    return { moves, deletes, creates, edits, ranges, unchanged };
+    const unchanged = !moves.length && !deletes.length && !creates.length && !restore.size && [...edits].every(([path, text]) => reads.sources.get(path) === text);
+    return { moves, deletes, creates, edits, ranges, restore, unchanged };
   }
   type Prepared = ReturnType<typeof prepare>;
 
@@ -357,7 +365,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
 
   /** The range path: one mounted file, its anchor, ranges only; the editor's own step. */
   const rangePath = (writes: Prepared, anchor: string, planned: Planned) =>
-    !writes.moves.length && !writes.deletes.length && !writes.creates.length && planned.open === undefined
+    !writes.moves.length && !writes.deletes.length && !writes.creates.length && !writes.restore.size && planned.open === undefined
     && writes.edits.size === 1 && writes.edits.has(anchor);
 
   /**
@@ -460,6 +468,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     let recorded = false;
     const error = await commit({
       reads: reads.sources, edits: writes!.edits, creates: writes!.creates, deletes: writes!.deletes, moves: writes!.moves, anchor,
+      ...writes!.restore.size ? { restore: writes!.restore } : {},
       open: result.open, focus: result.focus, done: result.done, undone: result.undone,
       current: () => !(current() ?? places.changed()), recorded: () => { recorded = true; }, selection: { before: result.select?.before, after },
       ...options.finish ? { elsewhere: away } : {},
@@ -490,7 +499,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
       if (typeof (result as { then?: unknown }).then === "function") misuse("now() takes a synchronous plan; use run().");
     } finally { reads.seal(); }
     const writes = "done" in result ? prepare(result, reads) : undefined;
-    if ("done" in result && (writes!.creates.length || writes!.moves.length || writes!.deletes.length || result.open !== undefined))
+    if ("done" in result && (writes!.creates.length || writes!.moves.length || writes!.deletes.length || writes!.restore.size || result.open !== undefined))
       misuse("now() cannot create, delete, move or open files (they need async reads); use run().");
     if ("done" in result && result.select?.historyOnly) misuse("now() takes the editor's own step, which selects nothing on Undo; use run() for `historyOnly`.");
     if (writes && [...writes.edits.keys()].some(path => path !== anchor))

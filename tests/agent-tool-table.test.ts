@@ -51,16 +51,17 @@ test("MCP tools/list is dev's: same tools, order, descriptions, schemas and hint
     "move_file", "delete_file", "create_page", "set_page_details", "open_page", "inspect_preview", "screenshot_preview", "working_here", "list_media",
     "preview_media", "remove_media", "keep_media", "restore_media", "replace_media", "frame_image", "place_media",
     "improve_images", "loop_video", "video_still", "write_subtitles", "describe_media", "change_collection",
-    "adding_settings", "make_component", "add_section", "move_section", "remove_section", "wait_for_requests",
-    "get_selection", "reply_to_request",
+    "adding_settings", "make_component", "add_section", "move_section", "remove_section", "discard_change", "wait_for_requests",
+    "get_selection", "reply_to_request", "ask_user",
   ]);
   // The whole tools/list result as dev (3c5518e4) answered it, before the table; since ticket 52,
   // get_command_status's description names the waiting state; since ticket 10, edit_file and the section tools
   // say an edit lands while its own part is unchanged; since ticket am-11, every tool takes the caller's own name (agent);
   // since ticket am-13, wait_for_requests says a follow-up on any request brings it back, to the agent on it first,
   // and reply_to_request that only an agent that read the user's latest message replies; since ticket am-14,
-  // screenshot_preview (no requestId: it keeps no receipt) and working_here follow inspect_preview.
-  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "d164a83b9c3d880af6d6e9646d5d497cedff3aeb28070fcf93a399f7145b9d47");
+  // screenshot_preview (no requestId: it keeps no receipt) and working_here follow inspect_preview; since ticket am-15,
+  // discard_change follows remove_section and ask_user ends the list.
+  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "71b588322aa8e31544dc6cb949d65439304a263902f9cb1ae3069891c6ccb044");
   for (const tool of result.tools as { name: string; inputSchema?: { properties?: Record<string, { type?: string; description?: string }>; required?: string[] } }[]) {
     const agent = tool.inputSchema?.properties?.agent;
     assert.equal(agent?.type, "string", tool.name);
@@ -87,6 +88,7 @@ test("every change names the step after it, and these are the lines (ticket am-1
     make_component: look,
     add_section: "Fill it with edit_file (get_page gives its id and the page's hash), then check it with screenshot_preview.",
     move_section: look, remove_section: `Check how the page looks with screenshot_preview (and width phone). ${answer}`,
+    discard_change: `Check the page with screenshot_preview. ${answer}`,
   });
   // working_here with done: the agent finished, so the step after is answering, not making its change.
   assert.equal(nextStep("working_here", { done: true }), answer);
@@ -187,7 +189,7 @@ test("applySiteCommand has a case for every table operation, and only the table'
 
 test("the draft/receipt transaction takes the table's atomic commands, as before the table", () => {
   const atomic = [...operations, "update_active_draft", "create_file_draft"].filter(isAtomicOperation);
-  assert.deepEqual(atomic.sort(), ["add_section", "create_file_draft", "create_page", "delete_file", "make_component", "move_file",
+  assert.deepEqual(atomic.sort(), ["add_section", "create_file_draft", "create_page", "delete_file", "discard_change", "make_component", "move_file",
     "move_section", "remove_section", "set_page_details", "update_active_draft", "write_file"]);
   // atomicAgentCommand reads the operation only.
   assert.equal(atomicAgentCommand({ operation: "write_file" } satisfies Pick<AgentCommand, "operation"> as AgentCommand), true);

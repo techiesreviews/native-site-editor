@@ -33,6 +33,10 @@ import "./agent-pins.css";
 // element's marching outline its colour too; done, the pin is grey with no
 // name. One element holds as many pins as it is asked about.
 //
+// A done request whose agent's changes this tab still keeps (ticket am-15)
+// has Undo in its card: one click puts the files they changed back as they
+// were before them, and the button then says Undone.
+//
 // An agent's question needs the user: its pin turns orange with a "?" and
 // the question itself (agents keep it to a few words), read without opening
 // anything, and its card has a box for the answer, focused as a held card
@@ -55,6 +59,8 @@ import "./agent-pins.css";
 export type PinRequest = Pick<AgentRequest, "id" | "text" | "state" | "createdAt" | "reply" | "thread" | "repoId" | "branch" | "agent" | "agentTook"> & {
   element: Pick<AgentRequest["element"], "file" | "route" | "id" | "tag" | "selector" | "host">;
   colour?: number;
+  /** Its agent's changes (its reply's requestIds), as this tab keeps them (ticket am-15): undoable here, or undone. */
+  undo?: "ready" | "undone";
 };
 
 /** Where the runtime looks for a pin's element (native-preview-runtime.js `locatePin`). */
@@ -80,6 +86,8 @@ interface PinHandlers {
   onShowElement(id: string): void;
   /** The pins moved or changed (the edit bar keeps clear of the selection's). */
   onLayout?(): void;
+  /** Undo the agent's changes for a request (its reply's requestIds, ticket am-15); rejects with why not. */
+  onUndo?(id: string, changes: string[]): Promise<void>;
 }
 
 const stateLabels: Record<string, string> = {
@@ -166,6 +174,8 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
   const drafts = new Map<string, string>();
   const releaseReloadGuard = guardChunkReload(() => [...drafts.values()].some((answer) => answer.length > 0));
   const problems = new Map<string, string>();
+  // The requests whose changes Undo is putting back now, or has (until the host says so too).
+  const undoing = new Set<string>(), undone = new Set<string>();
   let pending: string | undefined;
   // The pending request whose element was asked to scroll into view.
   let scrolledTo: string | undefined;
@@ -483,6 +493,20 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     if (request.state === "question" || !inTray) body.append(answerBox(request));
     const actions = node("div", "agent-pin-card__actions");
     const answered = request.state === "done" || request.state === "answered";
+    const changes = request.reply?.requestIds ?? [];
+    if (answered && handlers.onUndo && changes.length && (request.undo || undone.has(request.id))) {
+      const was = request.undo === "undone" || undone.has(request.id);
+      const undo = button(was ? "Undone" : "Undo", () => void undoChanges(request.id, changes), "text-button agent-pin-card__undo");
+      undo.disabled = was || undoing.has(request.id);
+      undo.title = was ? "The agent's change is undone" : "Put back what the agent changed for this";
+      const problem = problems.get(`undo:${request.id}`);
+      if (problem) {
+        const error = node("p", "agent-pin-card__error", problem);
+        error.setAttribute("role", "alert");
+        body.append(error);
+      }
+      actions.append(undo);
+    }
     const dismiss = button(answered ? "Clear" : "Dismiss", () => {
       close(false);
       handlers.onDismiss(request.id);
@@ -548,6 +572,24 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     requestAnimationFrame(() => fit(input));
     return box;
   }
+  async function undoChanges(id: string, changes: string[]) {
+    if (undoing.has(id) || undone.has(id)) return;
+    undoing.add(id);
+    problems.delete(`undo:${id}`);
+    cardKey = "";
+    layout();
+    try {
+      await handlers.onUndo!(id, changes);
+      undone.add(id);
+    } catch (error) {
+      problems.set(`undo:${id}`, (error as Error).message || "The change could not be undone.");
+    } finally {
+      undoing.delete(id);
+      cardKey = "";
+      layout();
+      card.querySelector<HTMLButtonElement>(".agent-pin-card__undo")?.focus();
+    }
+  }
   function fit(input: HTMLTextAreaElement) {
     if (sizesItself) return;
     input.style.height = "auto";
@@ -594,7 +636,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     if (!pin) return;
     card.setAttribute("aria-label", `Request ${numberOf(request.id)}`);
     card.dataset.state = request.state;
-    draw(JSON.stringify([request, route, problems.get(request.id)]), () => [requestBody(request, false)]);
+    draw(JSON.stringify([request, route, problems.get(request.id), problems.get(`undo:${request.id}`), undoing.has(request.id), undone.has(request.id)]), () => [requestBody(request, false)]);
     card.hidden = false;
     atPin(pin);
   }
@@ -703,6 +745,9 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
           finishing.delete(id);
           drafts.delete(id);
           problems.delete(id);
+          problems.delete(`undo:${id}`);
+          undoing.delete(id);
+          undone.delete(id);
         }
       if (shown !== route) {
         route = shown;

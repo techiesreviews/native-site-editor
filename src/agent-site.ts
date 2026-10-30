@@ -22,6 +22,8 @@ import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorCon
 import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./drafts";
 import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
 import { changedSinceRead } from "../shared/agent-edit";
+import { findPageRef } from "../shared/agent-read";
+import { changeUndone, discardPlan, keptChange, noteAgentChange } from "./agent-changes";
 import { applyReplacements } from "../shared/agent-replacements";
 import { toPageAddress } from "../shared/site-rules";
 import type { AgentTextCommit } from "./editor-workspace";
@@ -384,6 +386,22 @@ export function agentElement(input: ElementInput, site: NativeSite, source: stri
   return element;
 }
 
+/** The element `id` (get_page's) of the page `ref` (its URL or file), as an agent's question is pinned on it (ask_user, ticket am-15); or why not. */
+export function agentElementAt(site: NativeSite, ref: string, id: string, source: (file: string) => string | undefined): { element: AgentElement } | { refuse: string } {
+  const page = findPageRef(Object.entries(site.routes).map(([route, file]) => ({ route, file })), ref);
+  if (!page?.file) return { refuse: `${ref} is not a page of this site (get_site lists them).` };
+  const node = parseOutlineId(id), text = source(page.file), missing = { refuse: `${page.file} has no element ${id}; get_page lists its ids.` };
+  if (!node || text === undefined) return missing;
+  let element: Element | undefined, parent: ParentNode = parseMarked(text).root;
+  for (const index of node) {
+    element = parent.children[index];
+    if (!element) return missing;
+    parent = element;
+  }
+  const about = agentElement({ path: page.file, node, route: page.route, tag: element!.localName, text: element!.textContent ?? "" }, site, text);
+  return about ? { element: about } : missing;
+}
+
 // ---- Where the user is working (ticket 52) ----
 
 type Span = { start: number; end: number };
@@ -696,6 +714,8 @@ export interface AgentSiteActions {
    * It answers why nothing shows, if nothing does.
    */
   workingHere?: (who: AgentWho) => (path: string | undefined, node: number[] | undefined) => Promise<string | undefined> | string | undefined;
+  /** discard_change (ticket am-15): the workspace shown, its drafts now and the file open there. */
+  shown?(): { scope: DraftScope; draft(path: string): SavedDraft | undefined; openFile?: string } | undefined;
 }
 
 export class Conflict extends Error {}
@@ -941,6 +961,19 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
         },
       };
     }
+    case "discard_change": {
+      // The agent's own change, kept in this tab (src/agent-changes.ts): its files' drafts before it, put back while
+      // each is as it left them, as one step of the editor's own Undo.
+      const id = String(args.change ?? ""), change = keptChange({ repoId: command.repoId ?? -1, branch: command.branch }, id);
+      if (!change || change.grant !== command.grantId) throw new Conflict(`No change ${id} of yours is kept in this editor tab any more. Change it back with the edit tools.`);
+      // Its undo runs where the change is shown, never in another site or branch.
+      const shown = actions.shown?.();
+      if (!shown || shown.scope.account !== change.scope.account || shown.scope.repoId !== change.scope.repoId || shown.scope.branch !== change.scope.branch)
+        throw new Conflict("Show this site and branch in the editor, then undo the change again.");
+      await guarded(actions.edits.run(r => discardPlan(change, r, path => shown.draft(path), shown.openFile)));
+      changeUndone(change);
+      return { message: `Undid change ${id}: its files are as they were before it, unsaved.`, result: { files: [...change.after.keys()].join(", ") } };
+    }
     case "add_section":
     case "move_section":
     case "remove_section": {
@@ -1147,6 +1180,8 @@ async function structuralOutcome(command: AgentCommand, after: Map<string, Saved
     case "move_file": return { message: `Moved ${path} to ${String(args.to ?? "")}, unsaved.`, result: { path: String(args.to ?? "") } };
     case "delete_file": return { message: `Deleted ${path}, unsaved (Restore brings it back).` };
     case "remove_section": return { message: `Section ${args.section} removed from ${path}, unsaved.`, result: { ...await hash(path) } };
+    case "discard_change": return { message: `Undid change ${String(args.change ?? "")}: its files are as they were before it, unsaved.`,
+      result: { files: [...after.keys()].join(", "), ...await hash(path) } };
     case "add_section": case "move_section": {
       if (!plan?.after) break;
       const section = outlineId(plan.after.node);
@@ -1258,6 +1293,9 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
             drafts: [...after].map(([path, record]) => [draftKey(scope, path), record ?? null]), receipt });
           lastAfter = after;
           committed = true;
+          // Kept for its undo (ticket am-15); an undo is not undone in its turn by an agent.
+          if (!result.duplicate && command.operation !== "discard_change")
+            noteAgentChange({ id: command.id, grant: command.grantId!, agent: agentName(command.agent), operation: command.operation, scope, page: command.path, before, after });
           return !result.duplicate;
         } catch (error) { return refuse(error); }
       },

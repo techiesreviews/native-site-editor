@@ -98,6 +98,8 @@ export function createAgentMenu(options: {
   onShowRequest?: (id: string) => void;
   /** The agents working now, which the open menu lists (dot, name, Stop), and the ones the user stopped, whose calls are refused (ticket am-12). */
   agents?: Pick<ReturnType<typeof createAgentPresence>, "agents" | "stop" | "stopped" | "heard" | "listen">;
+  /** Where an agent's question goes (ask_user, ticket am-15): an element of a page, as its pin is placed. */
+  place?: NonNullable<Parameters<typeof createRequestTools>[0]["place"]>;
   /** This browser's agent records (tests inject one). */
   records?: AgentRecords;
   reload?: (snapshot: Awaited<ReturnType<AgentRecords["snapshot"]>>) => Promise<void>;
@@ -172,6 +174,7 @@ export function createAgentMenu(options: {
       workspace,
       list: async () => (await records.conversations(workspace)).map(item => item.content as unknown as AgentRequest),
       save: (request, accept, owner) => keep(workspace, request as StoredRequest, current => accept(current?.content as unknown as AgentRequest | undefined), owner),
+      ...(options.place ? { place: options.place } : {}),
     });
     let editTools: Promise<ReturnType<typeof import("../agent-tools-edit")["createAgentEditTools"]>> | undefined;
     let mediaTools: Promise<ReturnType<typeof import("../agent-tools-media")["createAgentMediaTools"]>> | undefined;

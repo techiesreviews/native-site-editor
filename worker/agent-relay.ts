@@ -47,13 +47,14 @@ const placeholder = "00000000-0000-0000-0000-000000000000";
 const failure = (code: FailureCode, outcome: "unknown" | "not-sent" = "not-sent"): Outcome => ({ ok: false, code, outcome });
 /** A call lost before it reached the browser was never sent; after, its outcome is unknown. */
 const lost = (call: { unsent?: unknown }) => call.unsent === undefined ? failure("unknown-outcome", "unknown") : failure("editor-unavailable");
-/** A wait_for_requests the tab holds until a request arrives. It gets its own total deadline of
- * 10–25 s (the agent's waitMs). Several agents may share one connection, each with its watchdog
+/** A wait_for_requests the tab holds until a request arrives, or an ask_user until the user answers (ticket
+ * am-15). It gets its own total deadline of 10–25 s (the agent's waitMs). Several agents may share one connection, each with its watchdog
  * waiting: at most WAITS_PER_SITE waits per workspace, leaving pending slots for their edits. */
 export const WAIT_LIMIT_MS = 25_000;
+const heldTools = new Set(["wait_for_requests", "ask_user"]);
 export const WAITS_PER_SITE = 3;
 function waitBudget(command: JsonValue): number | undefined {
-  if (!command || typeof command !== "object" || Array.isArray(command) || command.operation !== "requests" || command.tool !== "wait_for_requests") return undefined;
+  if (!command || typeof command !== "object" || Array.isArray(command) || command.operation !== "requests" || !heldTools.has(String(command.tool))) return undefined;
   const wanted = typeof command.waitMs === "number" && Number.isFinite(command.waitMs) ? command.waitMs : WAIT_LIMIT_MS;
   return Math.min(WAIT_LIMIT_MS, Math.max(10_000, Math.floor(wanted)));
 }

@@ -328,8 +328,8 @@ export function createLiveTransport(options: Options) {
           const arrived = session;
           // The relay's remaining total budget, counted from arrival here (never a fresh 10 s), less 1 s for transit.
           // An ordered cancel frame closes the remaining transit gap; the receipt decides a commit that already won.
-          // A request wait (ticket 18) has the relay's longer wait budget, at most 25 s.
-          const most = value.command?.operation === "requests" && value.command.tool === "wait_for_requests" ? 25_000 : 10_000;
+          // A request wait (ticket 18) and an agent's question (ask_user, ticket am-15) have the relay's longer wait budget, at most 25 s.
+          const most = value.command?.operation === "requests" && (value.command.tool === "wait_for_requests" || value.command.tool === "ask_user") ? 25_000 : 10_000;
           const remaining = typeof value.remainingMs === "number" && Number.isFinite(value.remainingMs) ? Math.min(most, Math.max(0, value.remainingMs)) : 10_000;
           const deadline = Date.now() + remaining - 1_000;
           // Before any await (readiness, ownership proof, lazy executor): the page a media change's element id points into.

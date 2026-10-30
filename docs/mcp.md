@@ -2,7 +2,7 @@
 
 The editor serves MCP at https://editor.techies.tools/mcp using Streamable HTTP.
 `createSiteServer` in `worker/mcp.ts` defines the tools, resources and prompts.
-The server exposes 38 tools through 36 registration calls: one call registers
+The server exposes 40 tools through 38 registration calls: one call registers
 three tools in a loop. `tests/mcp-runtime.test.ts` checks the live names and count.
 
 Changes go through the open editor tab as ordinary unsaved drafts. Undo and Discard
@@ -157,6 +157,7 @@ not rewrite links.
 | `make_component` | Turns a selected whole element into a component and slots through the editor's Make component operation. |
 | `move_section` | Moves a section before/after a sibling, using the page hash. Image re-measurement can join the move's Undo step. |
 | `remove_section` | Removes a section through the edit bar's operation, using the page hash. |
+| `discard_change` | `change`: the `requestId` of one of this connection's own changes. Puts every file it changed (its page, components, styles, files it created, moved or deleted) back as it was just before it, as one Undo step of its own (ticket am-15). The receiving tab keeps each change's drafts before and after it in memory (`src/agent-changes.ts`, the latest 40), so a reload forgets them. Refused when a file changed since (typing, another change on top), naming it; then the agent changes it back with the edit tools. The person undoes the same changes with Undo on a done pin's card. |
 | `move_file` | Files' rename/move of a file or folder. Updates page links and optional forwarding; media uses Rename everywhere. Written addresses include the site prefix. GitHub Pages ignores forwarding in _redirects. |
 | `delete_file` | Files' guarded delete, with restore available. Protects the home page and refuses still-used files; media additionally respects Always keep and whole families. |
 | `open_page` | Shows a page in preview/source, or opens any file in the source editor. |
@@ -167,6 +168,7 @@ not rewrite links.
 | `wait_for_requests` | Returns unseen Ask agent requests, or all waiting when requested, from the receiving tab. With none it waits up to 25 seconds for a request (at most 3 waits at a time per site, so several agents can share one connection), then asks the agent to call again: a watchdog subagent keeps waiting until the person chooses Disconnect MCP. An answered question returns again with its thread. |
 | `get_selection` | Current preview selection or a request's element, with source, selector, component/slot context and conversation. |
 | `reply_to_request` | Replies done, answered or question, with optional edit request ids. Messages are at most 200 characters; questions at most 60. A question waits for the person's answer and returns in the request thread. |
+| `ask_user` | Asks the person first (ticket am-15): `question` (at most 60 characters) on an `element` (an id from `get_page`) of `page` (default: the page shown) puts an orange question pin there, the agent named on it, and the call waits up to 25 seconds (`waitSeconds`) for the answer, which it returns with the request and its thread. No answer yet: it returns `answer: null` with the request id; called again with `request` it waits again. While it waits, the answer goes to it, not to a watchdog's `wait_for_requests`, which returns it otherwise. Answered, the agent is on the pin and answers it with `reply_to_request` when it finishes. A dismissed question is refused. It shares the relay's wait slots with `wait_for_requests`. |
 
 ## Resources, prompts and limits
 

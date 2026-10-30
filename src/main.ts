@@ -399,7 +399,7 @@ const workspace = createWorkspaceMount({
   get componentTools() { return componentTools; }, set componentTools(value) { componentTools = value; },
   get nativePreviewBehind() { return sitePreview.nativePreviewBehind; }, get nativeMountListener() { return nativeMountListener; },
   // Declared further down: read at call time.
-  get boot() { return boot; }, get agentController() { return agentController; }, get workspaceBoot() { return workspaceBoot; },
+  get boot() { return boot; }, get agentController() { return agentController; }, get workspaceBoot() { return workspaceBoot; }, get agentCommands() { return agentCommands; },
   account: { reload: () => refreshRepositoryList(), switchTo: (login) => switchAccount(login), signOut: () => disconnect(),
     choose: () => chooseRepository(), load: () => loadSnapshot() },
 });
