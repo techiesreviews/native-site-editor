@@ -9,9 +9,15 @@ export const DEFAULT_URL = "https://editor.techies.tools/mcp";
 export function launchAgent(command: string[], verbose = false): AgentProcess {
   const env = { ...process.env };
   delete env[TOKEN_VARIABLE];
-  const child = spawn(command[0], command.slice(1), { stdio: ["pipe", "pipe", verbose ? "inherit" : "ignore"], env });
+  // Its own process group: Ctrl+C in the helper's terminal reaches the helper alone, which then stops the agents.
+  const child = spawn(command[0], command.slice(1), { stdio: ["pipe", "pipe", verbose ? "inherit" : "ignore"], env, detached: true });
   // A program that cannot start, or that stops while the helper still writes to it (EPIPE), ends its connection only.
   child.on("error", () => child.stdout.destroy());
   child.stdin.on("error", () => child.stdout.destroy());
-  return { input: child.stdout, output: child.stdin, stop: () => { child.stdin.end(); child.kill(); } };
+  const stop = () => {
+    child.stdin.end();
+    // The whole group: an npx wrapper and the agent it started.
+    try { if (child.pid) process.kill(-child.pid, "SIGTERM"); } catch { child.kill(); }
+  };
+  return { input: child.stdout, output: child.stdin, stop };
 }

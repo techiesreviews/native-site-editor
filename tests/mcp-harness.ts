@@ -99,7 +99,7 @@ export async function fakeGitHub(request: Pick<Request, "url" | "method" | "json
 }
 
 /** `requestSignal` mirrors the wrangler configs (enable_request_signal); false shows the runtime without it. */
-export async function startWorker(options: { requestSignal?: boolean; streaming?: boolean } = {}) {
+export async function startWorker(options: { requestSignal?: boolean; streaming?: boolean; bindings?: Record<string, string> } = {}) {
   const { outputFiles } = await build({
     entryPoints: ["worker/index.ts"],
     bundle: true,
@@ -122,7 +122,8 @@ export async function startWorker(options: { requestSignal?: boolean; streaming?
       compatibilityDate: "2026-09-17",
       ...(options.requestSignal !== false ? { compatibilityFlags: ["enable_request_signal"] } : {}),
       durableObjects: { SESSIONS: { className: "SessionStore", useSQLite: true } },
-      bindings: { GITHUB_CLIENT_ID: "test", GITHUB_CLIENT_SECRET: "test", GITHUB_APP_SLUG: "test" },
+      // `bindings`: more Worker switches, e.g. AGENT_WATCH "off" (worker/agent-controls.ts).
+      bindings: { GITHUB_CLIENT_ID: "test", GITHUB_CLIENT_SECRET: "test", GITHUB_APP_SLUG: "test", ...options.bindings },
       outboundService: (request) => fakeGitHub(request, github),
     }),
   );

@@ -289,9 +289,6 @@ export const AGENT_STOPPED = "The editor's user stopped you. Nothing was read or
  */
 export const PIN_AGENTS = ["Claude Code", "Codex", "Gemini CLI", "OpenCode"] as const;
 export type PinAgent = (typeof PIN_AGENTS)[number];
-/** The name the helper (helper/, ticket am-16) waits for requests under: its waits alone are told the site's
- * "Pins go to" choice (`pinsGoTo`), which other agents have no use for. helper/src/agents.ts keeps the same. */
-export const HELPER_AGENT = "Pin helper";
 
 /**
  * The most text a request (and each answer) holds, the source of its

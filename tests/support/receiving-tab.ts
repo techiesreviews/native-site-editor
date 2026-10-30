@@ -14,7 +14,7 @@ import { editorTab, fakeGitHub, githubState, origin, repo, type startWorker } fr
 /** A receiving tab over the real runtime socket. Content and receipts live in the test browser,
  * never in SessionStore. The host executor captures prepared commands for contract assertions. */
 export async function receivingTab(worker: Awaited<ReturnType<typeof startWorker>>["worker"], cookie: string,
-  state = githubState(), options: { pinsGoTo?: () => string } = {}) {
+  state = githubState()) {
   const tab = editorTab(worker, cookie), workspace = { account: "lex", repoId: repo.id, branch: "main" };
   const scope = { workspace, tabId: tab.tabId, generation: 1 };
   const github = new GitHub("github-private-token", (input, init) => fakeGitHub(new Request(input, init), state));
@@ -52,7 +52,7 @@ export async function receivingTab(worker: Awaited<ReturnType<typeof startWorker
   const reads = createAgentReadTools(ports), edits = createAgentEditTools({ workspace, ports, records, run });
   const media = createAgentMediaTools({ workspace, ports, records, run });
   const conversations = new Map<string, AgentRequest>();
-  const requests = createRequestTools({ workspace, ...(options.pinsGoTo ? { pinsGoTo: options.pinsGoTo } : {}), list: async () => structuredClone([...conversations.values()]),
+  const requests = createRequestTools({ workspace, list: async () => structuredClone([...conversations.values()]),
     save: async (request, accept) => { if (!accept(conversations.get(request.id))) return false; conversations.set(request.id, request); return true; } });
   let socket: Awaited<ReturnType<typeof worker.dispatchFetch>>["webSocket"];
   return {
