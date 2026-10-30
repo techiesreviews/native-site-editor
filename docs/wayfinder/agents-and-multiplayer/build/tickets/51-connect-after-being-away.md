@@ -31,3 +31,18 @@ Lex, 2026-10-30: "when it is connected, and then I go away for a while, the butt
 ## Kit commands and evidence
 
 `kit doctor`, `kit slice --ticket <this> --builder claude-opus-5-5`, `kit unit --affected`, `kit specs --affected`, `kit review`, `kit pr`; report the cause and the RESULT lines.
+
+## Diagnosis (am-51, 2026-10-30)
+
+Reproduced locally on the native-save fixture (real Worker and relay, MCP client agent), Chromium. The failing tests are committed before the fix: `tests/agent-menu-resume.test.ts` (paused rows) and the four "away" specs in `tests/native-save/native-mcp-menu.spec.ts` ("after the reconnect gave up while away…", "a reload after the reconnect gave up…", "a permission that ended while away…", "a sign-in that ended while away…").
+
+- **Cause 1, Lex's report (machine asleep, tab in the background, network gone for a while).** The socket drops; the reconnect (`src/agent-recovery.ts` `schedule`, five tries within two minutes) gives up and writes `paused: "transient"` into this browser's recovery record (localStorage, so it survives a reload). The menu shows `paused`: Connect to MCP with the red dot. A press turns off and on again, and the new socket finds the record paused (`src/agent-transport.ts` `open`, `allowAutomatic()` false). `turnOnAgents` (`src/agent-resume.ts:72`) retries only when the state is `reconnecting`, so in `paused` no branch runs: no retry, no prompt, no copy, no new dot. Nothing clears the record except a retry, so every later press and reload does the same. Repro (real timing, socket cut until the tries ran out): state `paused`, press, state `paused`, clipboard unchanged; after a reload the press goes `taking-over` → `paused`, same result. The same code is on `main` (`turnOnAgents` and the recovery are identical), so the live editor has it too.
+- **Cause 2, sign-in ended.** A press whose reads answer signed-out turns agents off (`failed` → `turnOff(true)` in `src/components/agent-menu.ts`); the press then sees its activation gone and returns with nothing shown (`turnOnAgents` after `read`, `start` inside its `made()` catch, `copyAgain` after its read). Repro: state `off`, no copy, no dot.
+- **Cause 3, stale state on return.** Coming back to the tab reads the connections only while the button offers Wait for MCP or shows the failed dot (`wake`), and opening the menu reads nothing. A permission past its 8 hours, or an ended sign-in, still shows Disconnect MCP until something else reads. Repro: Disconnect MCP stays after the list went empty.
+- **Not broken:** the agent process ending leaves its connection (Disconnect MCP is true: the permission still holds; its row leaves the agents list after ten minutes, ticket am-12). A tab hidden 10+ minutes on a working network reconnects by itself; with the network gone it ends as cause 1.
+
+### Fix plan
+
+1. `turnOnAgents`: a press that finds the reconnect paused by the recovery (not by the site owner: `ports.paused()` false) retries it, as for `reconnecting`, then branches as before (copy again, new prompt, or stuck).
+2. Agent menu: a press during which the sign-in ended shows the problem dot on its site (`failedOn`), copying nothing. A resume that finds the sign-in ended stays `off` (native-agent-lifecycle spec).
+3. Agent menu `wake`: when the tab comes back or the menu opens (a popover holding the menu toggles open), with remote agents on, read the connections when the button offers Disconnect MCP and the last read is at least 5 minutes old (Wait for MCP and the failed dot keep their 2 s rule). The 5 minutes keep native-agent-live's "one hub read on return, no polling".

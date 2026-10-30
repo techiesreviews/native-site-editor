@@ -200,6 +200,127 @@ test("a lost connection with this tab's agent connected: Connect to MCP copies a
   } finally { await client.close().catch(() => undefined); }
 });
 
+// Ticket am-51 (Lex, 2026-10-30): connected, then away for a while; the menu must tell the truth and
+// every press of Connect to MCP must copy a working prompt or show the problem dot.
+const recoveryKey = "native-site-editor:agent-recovery:native-demo-user:501";
+/** The connection's retries gave up while the user was away (the laptop slept, the tab sat in the
+ * background): what the reconnect leaves in this browser once its five tries in two minutes fail. */
+const gaveUp = (page: Page) => page.evaluate(key => {
+  localStorage.setItem(key, JSON.stringify({ attempts: [1, 2, 3, 4, 5].map(n => Date.now() - n * 10_000), since: Date.now() - 60_000, paused: "transient" }));
+  window.dispatchEvent(new StorageEvent("storage", { key }));
+}, recoveryKey);
+/** Time away: the clock moves on without firing timers, as after the machine sleeps. */
+const away = async (page: Page, minutes: number) => page.clock.setSystemTime(await page.evaluate(() => Date.now()) + minutes * 60_000);
+async function connectedAgent(page: Page, baseURL: string | undefined, name: string) {
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action");
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  const connected = await agent(baseURL, token, name);
+  await connected.call("get_site");
+  await expect.poll(async () => { await refresh(page); return action.textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+  return { ...connected, token, action, menu: page.locator(".agent-menu") };
+}
+
+test("after the reconnect gave up while away, Connect to MCP reconnects and copies a new prompt; the agent keeps working", async ({ page, context, baseURL }) => {
+  let cut = false;
+  const sockets: WebSocketRoute[] = [];
+  await context.routeWebSocket("**/api/agent/relay?*", route => {
+    if (cut) { void route.close(); return; }
+    sockets.push(route);
+    route.connectToServer();
+  });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, call, token: first, action, menu } = await connectedAgent(page, baseURL, "away-agent");
+  try {
+    cut = true;
+    for (const socket of sockets) await socket.close();
+    await expect(menu).toHaveAttribute("data-state", "reconnecting", { timeout: 15_000 });
+    await gaveUp(page);
+    await expect(menu).toHaveAttribute("data-state", "paused");
+    await onlyLabel(page, "Connect to MCP");
+    // Back, with the network: the press tries the connection again rather than doing nothing.
+    cut = false;
+    await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    expect(token).not.toBe(first);
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+    expect((await call("get_site")).repository, "the earlier agent keeps working").toBe("native-demo-user/native-demo");
+    await expect(action).toHaveText("Disconnect MCP");
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("a reload after the reconnect gave up: Connect to MCP reconnects and copies a working prompt", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, action, menu } = await connectedAgent(page, baseURL, "away-agent");
+  try {
+    await gaveUp(page);
+    await expect(menu).toHaveAttribute("data-state", "paused");
+    await open(page, baseURL);
+    await page.locator(".repository-menu__trigger").click();
+    await expect(menu).toHaveAttribute("data-state", "paused", { timeout: 15_000 });
+    await expect(action).toHaveText("Connect to MCP");
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+    const next = await agent(baseURL, token, "after-reload");
+    try { expect((await next.call("get_site")).repository).toBe("native-demo-user/native-demo"); } finally { await next.client.close(); }
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("a permission that ended while away: the reopened menu offers Connect to MCP, whose press copies a working prompt", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, action, menu } = await connectedAgent(page, baseURL, "away-agent");
+  try {
+    await page.keyboard.press("Escape");
+    // Past its 8 hours, the list leaves the connection out (native-agent-lifecycle.spec.ts).
+    await page.route("**/api/agent/connections", route => route.fulfill({ json: { grants: [], controls: { watch: true } } }));
+    await away(page, 10);
+    await page.locator(".repository-menu__trigger").click();
+    await expect(action).toHaveText("Connect to MCP");
+    await expect(menu).toHaveAttribute("data-state", "idle");
+    await page.unroute("**/api/agent/connections");
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("a sign-in that ended while away: the tab coming back offers Connect to MCP, and its press shows the problem dot, copying nothing", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, action, menu } = await connectedAgent(page, baseURL, "away-agent");
+  try {
+    await page.route("**/api/agent/**", route => route.fulfill({ status: 401, json: { error: "Sign in again.", code: "signed-out" } }));
+    await away(page, 10);
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+      document.dispatchEvent(new Event("visibilitychange"));
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await expect(action).toHaveText("Connect to MCP");
+    await expect(menu).toHaveAttribute("data-state", "off");
+    await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+    await action.click();
+    await expect(menu).toHaveAttribute("data-state", "failed");
+    expect((await dot(page)).color).toBe(await danger(page));
+    await onlyLabel(page, "Connect to MCP");
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+  } finally { await client.close().catch(() => undefined); }
+});
+
 test("reduced motion: the dot does not pulse while waiting or reconnecting", async ({ page, context, baseURL }) => {
   let cut = false;
   const sockets: WebSocketRoute[] = [];
