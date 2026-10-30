@@ -301,7 +301,9 @@ export function createChipUndo(ports: {
   changed(): void;
 }) {
   const undoing = new Set<string>(), problems = new Map<string, string>(), tokens = new Map<string, string>();
-  const tokenOf = (key: string) => { let token = tokens.get(key); if (!token) tokens.set(key, token = `agent-${tokens.size + 1}`); return token; };
+  // The marks drawn now (the latest `marks`), by key: a refusal is said only on a chip still drawn.
+  let drawn = new Set<string>(), made = 0;
+  const tokenOf = (key: string) => { let token = tokens.get(key); if (!token) tokens.set(key, token = `agent-${++made}`); return token; };
   return {
     /** The fields of `mark`'s chip Undo, none when it offers nothing. */
     fields(mark: AgentMark): ChipUndoFields | undefined {
@@ -318,15 +320,18 @@ export function createChipUndo(ports: {
       try {
         await ports.undo(mark, change);
       } catch (error) {
-        problems.set(mark.key, (error as Error).message || "The change could not be undone.");
+        // Its chip gone meanwhile, the refusal goes with it: it would show on that agent's next chip, elsewhere.
+        if (drawn.has(mark.key)) problems.set(mark.key, (error as Error).message || "The change could not be undone.");
       } finally {
         undoing.delete(mark.key);
         ports.changed();
       }
     },
-    /** The marks now: a refusal goes with its mark. */
+    /** The marks drawn now: a refusal and a token go with their mark. */
     marks(marks: readonly AgentMark[]) {
-      for (const key of problems.keys()) if (!marks.some(mark => mark.key === key)) problems.delete(key);
+      drawn = new Set(marks.map(mark => mark.key));
+      for (const key of problems.keys()) if (!drawn.has(key)) problems.delete(key);
+      for (const key of tokens.keys()) if (!drawn.has(key)) tokens.delete(key);
     },
   };
 }

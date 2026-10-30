@@ -68,8 +68,14 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   // over it; preview only, like the selection boxes. So does an empty
   // Section or Div (a block just added), dashed, so a block can be dropped
   // into it (src/page-builder/block-drag.ts).
+  // An agent chip's Undo (ticket am-49, drawPresence): its press target reaches past its 16 px line, the chip's look
+  // unchanged (24 px tall, 44 px on a touch screen); its focus ring is in the chip's ink, and a press dims it.
   runtimeSheet.replaceSync("[data-native-empty]{display:none !important}[contenteditable]:focus{outline:none !important}#page main:not(:has(*)){min-height:min(480px,72vh)}" +
-    "#page main :is(section,div):empty{min-height:72px;outline:1.5px dashed rgba(127,127,127,.55);outline-offset:-2px}");
+    "#page main :is(section,div):empty{min-height:72px;outline:1.5px dashed rgba(127,127,127,.55);outline-offset:-2px}" +
+    "[data-native-chip-undo]{position:relative}[data-native-chip-undo]::before{content:'';position:absolute;inset:-4px}" +
+    "@media (pointer:coarse){[data-native-chip-undo]::before{inset:-14px -8px}}" +
+    "[data-native-chip-undo]:focus-visible{outline:2px solid currentColor;outline-offset:1px}" +
+    "[data-native-chip-undo]:active:not([aria-disabled=true]){opacity:.6}");
   // Subtle scrollbars for the frame's own viewport, only while the site
   // declares no scrollbar styling of its own (see siteStylesScrollbars). The
   // sheet is adopted first by the document alone, so its layer comes before
@@ -99,24 +105,25 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   document.addEventListener("pointerdown", function () { emit("refusal-note-action"); }, true);
   // An agent chip's Undo (ticket am-49, drawPresence below): heard here, before any of the canvas's own press, click,
   // menu or key handling, which never sees it (it selects nothing, starts no drag, and Enter or Space on it is its click).
-  // A press shows on its label while held (its :active state).
-  var pressedChipUndo = null;
-  function releaseChipUndo() {
-    if (pressedChipUndo) pressedChipUndo.style.opacity = "";
-    pressedChipUndo = null;
-  }
-  ["pointerdown", "pointerup", "mousedown", "mouseup", "click", "dblclick", "auxclick", "contextmenu", "keydown"].forEach(function (type) {
+  // Busy or Undone it is aria-disabled, not disabled, so it keeps the keyboard's focus: its presses do nothing then.
+  // A press begun on it and let go over the page is no press on the page either (the click then lands on what holds both).
+  var chipPressed = false;
+  ["pointerdown", "pointerup", "mousedown", "mouseup", "click", "dblclick", "auxclick", "contextmenu", "keydown", "keyup"].forEach(function (type) {
     window.addEventListener(type, function (e) {
-      if (type === "pointerup") releaseChipUndo();
       var undo = e.target && e.target.closest ? e.target.closest("[data-native-chip-undo]") : null;
-      if (!undo || (type === "keydown" && e.key !== "Enter" && e.key !== " ")) return;
+      if (type === "pointerdown") chipPressed = !!undo;
+      if (!undo && chipPressed && (type === "pointerup" || type === "mouseup" || type === "click")) {
+        e.stopImmediatePropagation();
+        if (type === "click") chipPressed = false;
+        return;
+      }
+      if (type === "click") chipPressed = false;
+      if (!undo || ((type === "keydown" || type === "keyup") && e.key !== "Enter" && e.key !== " ")) return;
       e.stopImmediatePropagation();
-      if (type === "pointerdown" && !undo.disabled) { pressedChipUndo = undo.firstChild; pressedChipUndo.style.opacity = "0.6"; }
-      if (type === "click" && e.button === 0 && !undo.disabled)
+      if (type === "click" && e.button === 0 && undo.getAttribute("aria-disabled") !== "true")
         emit("agent-chip-undo", { token: undo.getAttribute("data-native-chip-undo"), change: undo.getAttribute("data-native-chip-change") });
     }, true);
   });
-  window.addEventListener("pointercancel", releaseChipUndo, true);
 
   function reportError(message) {
     hadError = true;
@@ -4189,9 +4196,6 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   // once put back, and a refusal said under it.
   var presenceAgents = [];
   var presenceBoxes = [];
-  // The Undo's press target reaches past its 16 px line, the chip's look unchanged: 24 px tall, 44 px on a touch screen.
-  var coarsePointer = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
-  var chipHitY = coarsePointer ? 14 : 4, chipHitX = coarsePointer ? 8 : 4;
   function presenceChip() {
     var chip = canvasOverlay("agent-presence-chip");
     chip.style.cssText += "z-index:2147483647;padding:0 6px;border-radius:3px 3px 3px 0;" +
@@ -4202,21 +4206,15 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     name.style.cssText = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;";
     var undo = document.createElement("button");
     undo.type = "button";
-    undo.style.cssText = "flex:none;margin:-" + chipHitY + "px -" + chipHitX + "px -" + chipHitY + "px " + (8 - chipHitX) + "px;" +
-      "padding:" + chipHitY + "px " + chipHitX + "px;border:0;outline:none;background:none;color:inherit;font:inherit;letter-spacing:inherit;" +
-      "cursor:pointer;pointer-events:auto;";
-    // Its label carries the look: underlined while it can be pressed, and the focus ring in the chip's ink (U7).
-    var label = document.createElement("span");
-    label.style.cssText = "display:block;border-radius:2px;text-underline-offset:2px;outline-offset:1px;";
-    undo.append(label);
-    undo.addEventListener("focus", function () { if (undo.matches(":focus-visible")) label.style.outline = "2px solid currentColor"; });
-    undo.addEventListener("blur", function () { label.style.outline = ""; });
+    // Its press target, focus ring and pressed look are the runtime sheet's (above).
+    undo.style.cssText = "flex:none;margin:0 0 0 8px;padding:0;border:0;border-radius:2px;background:none;color:inherit;font:inherit;letter-spacing:inherit;" +
+      "text-underline-offset:2px;cursor:pointer;pointer-events:auto;";
     var problem = document.createElement("p");
     problem.setAttribute("role", "alert");
     problem.style.cssText = "margin:0 0 2px;font-weight:500;";
     row.append(name, undo);
     chip.append(row, problem);
-    return { chip: chip, name: name, undo: undo, label: label, problem: problem };
+    return { chip: chip, name: name, undo: undo, problem: problem };
   }
   // The section "+" controls the editor draws on the page's gaps (insert points, in the frame's viewport): a chip keeps clear of them.
   var insertPluses = [];
@@ -4245,18 +4243,18 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       if (parts.name.textContent !== agent.name) parts.name.textContent = agent.name;
       if (agent.undo) {
         var label = agent.undo === "undone" ? "Undone" : "Undo";
-        if (parts.label.textContent !== label) parts.label.textContent = label;
+        if (parts.undo.textContent !== label) parts.undo.textContent = label;
         parts.undo.setAttribute("aria-label", (agent.undo === "undone" ? "Undone: " : "Undo ") + agent.name + "'s change");
         parts.undo.setAttribute("data-native-chip-undo", agent.token);
         parts.undo.setAttribute("data-native-chip-change", agent.change);
-        parts.undo.disabled = agent.undo !== "ready";
-        parts.label.style.textDecoration = agent.undo === "ready" ? "underline" : "none";
+        parts.undo.setAttribute("aria-disabled", agent.undo === "ready" ? "false" : "true");
+        parts.undo.style.textDecoration = agent.undo === "ready" ? "underline" : "none";
         parts.undo.style.cursor = agent.undo === "ready" ? "pointer" : "default";
         parts.undo.style.display = "";
       } else {
         parts.undo.removeAttribute("data-native-chip-undo");
         parts.undo.removeAttribute("data-native-chip-change");
-        parts.label.textContent = "";
+        parts.undo.textContent = "";
         parts.undo.style.display = "none";
       }
       if (parts.problem.textContent !== (agent.problem || "")) parts.problem.textContent = agent.problem || "";
@@ -4268,10 +4266,12 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       // On the outline's top-left corner, just above it, or inside it at the top of the page; after the chips there
       // already and clear of the edit bar, kept within the page's width: a chip that would pass its right edge starts a row below.
       // A chip saying a refusal is taller: it grows upward, its bottom on the outline, clear of the section it is about.
-      // One that would cover a section's "+" rises clear of it (else steps past it); a name chip keeps its place on the corner.
+      // With no room above (a section at the very top of the page), it stands under the outline instead, off what was typed.
+      // One that would cover a section's "+" moves clear of it, up (down, under), else past it; a name chip keeps its place on the corner.
       var rect = rectOf(target);
       var width = pair.chip.offsetWidth, height = Math.max(16, pair.chip.offsetHeight), view = document.documentElement.clientWidth;
-      var top = rect.top + window.scrollY >= height ? rect.top - height : rect.top;
+      var above = rect.top + window.scrollY >= height, below = !above && !!agent.problem;
+      var top = above ? rect.top - height : below ? rect.bottom : rect.top;
       var start = Math.max(0, Math.min(rect.left, view - width)), left = start;
       for (var moved = true, tries = 0; moved && tries < 24; tries++) {
         moved = false;
@@ -4281,7 +4281,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
         }
         var plus = agent.problem ? plusCovering(left, top, width, height) : null;
         if (plus) {
-          if (plus.top - 2 - height + window.scrollY >= 0) top = plus.top - 2 - height;
+          if (below) top = plus.bottom + 2;
+          else if (plus.top - 2 - height + window.scrollY >= 0) top = plus.top - 2 - height;
           else left = plus.right + 2;
           moved = true;
         }
