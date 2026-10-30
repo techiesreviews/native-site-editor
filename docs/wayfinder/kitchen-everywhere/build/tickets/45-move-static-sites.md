@@ -37,3 +37,4 @@ Agent Kit is required. After Lex's OK the lead starts one T3 thread per site wit
 ## Comments
 
 - Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.
+- Lead, 2026-10-30: `lexvd-site` goes live on every push to `main` (Workers Builds), and on 2026-10-30 an agent's raw `git push` put an unreviewed change live. When it runs the kit, set its branches so `main` counts as live, so ticket 68's push guard covers it; editor saves to `main` stay untouched.
