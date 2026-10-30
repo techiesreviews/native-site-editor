@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: []
+blocked_by: [77-check-the-retro-tickets]
 ---
 
 ## Goal

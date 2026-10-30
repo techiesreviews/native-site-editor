@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [66-kit-changes-only-through-this-board]
+blocked_by: [66-kit-changes-only-through-this-board, 77-check-the-retro-tickets]
 ---
 
 ## Goal

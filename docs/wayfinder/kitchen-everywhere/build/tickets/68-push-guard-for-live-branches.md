@@ -2,9 +2,9 @@
 title: "A raw push to a live branch is stopped and pointed to `kit pr` (first half of the gate before going live; 72 is the second)"
 type: task (AFK)
 status: open
-assignee: ke-68
+assignee:
 builder: claude
-blocked_by: []
+blocked_by: [77-check-the-retro-tickets]
 ---
 
 ## Goal

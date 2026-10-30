@@ -141,6 +141,7 @@ Lex (2026-10-30): the project threads stopped their own kit work and handed it h
 | [71 One shared browser tester (`browser.mjs`, `kit browser`), close-ups and suites by name, from the `browser-tester` WIP](tickets/71-shared-browser-tester.md) | M | claude | – |
 | [72 `kit release-check` before every deploy (second half of the gate begun in 68)](tickets/72-release-check.md) | M | claude | 68, 69, 74 |
 | [76 One shared slider for every site (the prompter's range field, native HTML and CSS)](tickets/76-shared-range-field.md) | M | claude | 69, 71, 75 |
+| [77 Check and define the retro tickets (66–76) before any is built](tickets/77-check-the-retro-tickets.md) | S | claude | – |
 | [73 `kit ux` flags JavaScript-timed motion without a `motion-exception` note](tickets/73-kit-ux-motion-check.md) | S–M | claude | 60, 61, 67, 75 |
 
 ## Suggested waves

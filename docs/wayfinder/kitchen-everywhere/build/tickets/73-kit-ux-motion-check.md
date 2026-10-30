@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [60-specs-actual-tag-keeps-the-rest, 61-kit-ux-screen-map-in-project-settings, 67-testing-and-review-rules, 75-house-style-native-controls-and-contrast]
+blocked_by: [60-specs-actual-tag-keeps-the-rest, 61-kit-ux-screen-map-in-project-settings, 67-testing-and-review-rules, 75-house-style-native-controls-and-contrast, 77-check-the-retro-tickets]
 ---
 
 ## Goal

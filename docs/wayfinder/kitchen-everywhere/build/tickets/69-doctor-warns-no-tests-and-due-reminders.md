@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [64-nova-skill-into-chat, 67-testing-and-review-rules]
+blocked_by: [64-nova-skill-into-chat, 67-testing-and-review-rules, 77-check-the-retro-tickets]
 ---
 
 ## Goal

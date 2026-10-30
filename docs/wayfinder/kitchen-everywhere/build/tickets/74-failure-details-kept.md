@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [70-new-tests-must-go-red]
+blocked_by: [70-new-tests-must-go-red, 77-check-the-retro-tickets]
 ---
 
 ## Goal
