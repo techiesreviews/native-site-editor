@@ -29,7 +29,7 @@ export interface AgentMenuHostPorts {
   runtime: ReturnType<typeof createNativeSiteRuntime>;
   guardedEdits: Pick<GuardedEdits, "stamp">;
   cleanSources: Pick<CleanSourceCache, "get">;
-  agentCommands: Pick<ReturnType<typeof createAgentCommands>, "apply" | "reload" | "undoable">;
+  agentCommands: Pick<ReturnType<typeof createAgentCommands>, "apply" | "reload">;
   setupController: Pick<ReturnType<typeof createSetupHost>["setupController"], "noteAgent">;
   pageStructureController: Pick<ReturnType<typeof createPageStructureController>, "renderEditBar">;
   mediaPorts: { pin?(): MediaPin | undefined };
@@ -63,9 +63,6 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
   function pinRequests(requests: PinRequest[]) {
     pinned = { requests, names: pinNames(requests) };
     ports.nativePreview?.setRequests(requests.map(request => {
-      // A done pin's agent changes this tab keeps have Undo on its card (ticket am-15).
-      const undo = request.state === "done" || request.state === "answered" ? agentCommands.undoable(request.reply?.requestIds) : undefined;
-      if (undo) request = { ...request, undo };
       const who = agentPresence.onPin(request.id);
       if (!who) return request;
       const { agentTook: _took, ...rest } = request;

@@ -4,11 +4,15 @@
 // Its undo is a guarded edit that puts the drafts before it back whole (`restore`, src/guarded-edit/commit.ts),
 // once every file is still as the change left it: one step of its own, which Undo and Redo take back and forth.
 //
+// Whether a change is undone is read from the drafts now, never recorded: Undo of the undo (Ctrl+Z) brings the
+// change back, and its pin card offers Undo again. Several changes (a pin's requestIds) are undone newest first
+// as one step, whole or not at all.
+//
 // Kept in memory only, like the editor's Undo history: a reload forgets them, and the oldest go first past
 // KEPT changes or BUDGET characters of text.
 
 import type { DraftScope, SavedDraft } from "./drafts";
-import type { PlanResult, Reads } from "./guarded-edit";
+import type { GuardedEdits, Outcome, PlanResult, Reads } from "./guarded-edit";
 
 export interface AgentChange {
   /** The change's requestId (the receipt's operation id) and the connection and name that made it. */
@@ -23,23 +27,28 @@ export interface AgentChange {
   before: Map<string, SavedDraft | undefined>;
   after: Map<string, SavedDraft | undefined>;
 }
+type Kept = AgentChange & { size: number; seq: number };
+type Scope = Pick<DraftScope, "account" | "repoId" | "branch">;
+type Drafts = (path: string) => SavedDraft | undefined;
 
 const KEPT = 40;
 const BUDGET = 16 * 1024 * 1024;
-const changes = new Map<string, AgentChange & { size: number }>();
-// Undone here: the pin card says so (at most KEPT kept).
-const undone = new Set<string>();
-const keyOf = (scope: Pick<DraftScope, "repoId" | "branch">, id: string) => JSON.stringify([scope.repoId, scope.branch, id]);
+const changes = new Map<string, Kept>();
+// The order changes were noted in: newest first is the order their undo takes.
+let noted = 0;
+const keyOf = (scope: Scope, id: string) => JSON.stringify([scope.account.toLowerCase(), scope.repoId, scope.branch, id]);
 const sizeOf = (drafts: Map<string, SavedDraft | undefined>) => [...drafts.values()].reduce((sum, draft) => sum + (draft ? draft.content.length + draft.original.length : 0), 0);
+/** Whether two workspaces are the same account, repository and branch. */
+export const sameScope = (a: Scope | undefined, b: Scope | undefined) =>
+  Boolean(a && b) && a!.account.toLowerCase() === b!.account.toLowerCase() && a!.repoId === b!.repoId && a!.branch === b!.branch;
 
 /** A change that landed: `before` and `after` as its commit wrote them; only the files it changed are kept. */
 export function noteAgentChange(change: AgentChange) {
   const after = new Map(change.after), before = new Map([...after.keys()].map(path => [path, change.before.get(path)] as const));
   if (!after.size) return;
-  const key = keyOf(change.scope, change.id), kept = { ...change, scope: { ...change.scope }, before, after, size: sizeOf(before) + sizeOf(after) };
+  const key = keyOf(change.scope, change.id);
   changes.delete(key);
-  undone.delete(key);
-  changes.set(key, kept);
+  changes.set(key, { ...change, scope: { ...change.scope }, before, after, size: sizeOf(before) + sizeOf(after), seq: ++noted });
   let total = [...changes.values()].reduce((sum, item) => sum + item.size, 0);
   for (const [old, item] of changes) {
     if (changes.size <= KEPT && total <= BUDGET) break;
@@ -48,24 +57,13 @@ export function noteAgentChange(change: AgentChange) {
   }
 }
 
-/** The change `id` of this repository and branch, while it is kept and not undone. */
-export function keptChange(scope: Pick<DraftScope, "repoId" | "branch">, id: string): AgentChange | undefined {
+/** The change `id` of this account, repository and branch, while it is kept (undone or not). */
+export function keptChange(scope: Scope, id: string): AgentChange | undefined {
   return changes.get(keyOf(scope, id));
 }
-
-/** Whether the user can undo these changes (a pin's requestIds): one is kept ("ready"), or all that were are undone. */
-export function undoState(scope: Pick<DraftScope, "repoId" | "branch">, ids: readonly string[] | undefined): "ready" | "undone" | undefined {
-  if (!ids?.length) return undefined;
-  if (ids.some(id => changes.has(keyOf(scope, id)))) return "ready";
-  return ids.some(id => undone.has(keyOf(scope, id))) ? "undone" : undefined;
-}
-
-/** The change was undone: no second undo of it. */
-export function changeUndone(change: Pick<AgentChange, "scope" | "id">) {
-  const key = keyOf(change.scope, change.id);
-  changes.delete(key);
-  undone.add(key);
-  for (const old of undone) { if (undone.size <= KEPT) break; undone.delete(old); }
+/** The kept changes of `ids`, newest first (the order of their undo), whatever order the ids are in. */
+export function keptChanges(scope: Scope, ids: readonly string[]): AgentChange[] {
+  return [...new Set(ids)].flatMap(id => changes.get(keyOf(scope, id)) ?? []).sort((a, b) => b.seq - a.seq);
 }
 
 // A draft as it stands for the undo: its text and where it came from, whenever it was written.
@@ -73,30 +71,87 @@ const sameDraft = (a: SavedDraft | undefined, b: SavedDraft | undefined) =>
   a === b || Boolean(a && b) && JSON.stringify({ ...a, updatedAt: 0 }) === JSON.stringify({ ...b, updatedAt: 0 });
 
 /**
- * The guarded edit that undoes `change`: its files' drafts before it, put back, while each is still as the change
- * left it (`drafts`: the draft of a path now). The page shown stays open when it is still there after; else the
- * change's own page, else the home page.
+ * `list` (newest first) against the drafts now: "ready" when each, newest first, finds its files as it left them
+ * (the changes as they landed), "undone" when each, oldest first, finds them as they were before it, else
+ * `changed`: the first file found otherwise. `merged`: by path, the draft before the oldest change of it, and that
+ * change's after (which tells whether a branch file was there).
  */
-export function discardPlan(change: AgentChange, r: Reads, drafts: (path: string) => SavedDraft | undefined, openFile: string | undefined): PlanResult {
-  const who = change.agent || "the agent";
-  for (const [path, after] of change.after) {
-    r.source(path);
-    if (!sameDraft(drafts(path), after))
-      return { refuse: `${path} changed since ${who}'s change ${change.id}, so it cannot be undone as a whole. Change it back with the edit tools.` };
-  }
-  // A file it changed is there after the undo when it was before (a draft not deleted, or the branch's file).
-  const there = (path: string) => {
-    if (!change.after.has(path)) return r.exists(path);
-    const before = change.before.get(path), after = change.after.get(path);
-    return before ? !before.deleted : Boolean(after && after.baseSha !== null && !after.movedFrom);
+function walk(list: readonly AgentChange[], drafts: Drafts) {
+  const step = (order: readonly AgentChange[], from: "after" | "before", to: "after" | "before") => {
+    const now = new Map<string, SavedDraft | undefined>();
+    for (const change of order)
+      for (const [path, expected] of change[from]) {
+        const seen = now.has(path) ? now.get(path) : drafts(path);
+        if (!sameDraft(seen, expected)) return { path, change };
+        now.set(path, change[to].get(path));
+      }
+    return undefined;
   };
-  const routes = r.site()?.routes ?? {}, pages = new Set(Object.values(routes));
-  const open = [openFile, pages.has(change.page) ? change.page : undefined, routes["/"]].find((path): path is string => Boolean(path) && there(path!));
+  const merged = new Map<string, { before: SavedDraft | undefined; after: SavedDraft | undefined }>();
+  for (const change of list) for (const path of change.after.keys()) merged.set(path, { before: change.before.get(path), after: change.after.get(path) });
+  const changed = step(list, "after", "before");
+  if (!changed) return { state: "ready" as const, merged };
+  return step([...list].reverse(), "before", "after") ? { state: "changed" as const, changed, merged } : { state: "undone" as const, merged };
+}
+
+/**
+ * Whether the user can undo these changes (a pin's requestIds) now: "undone" while the files are as before them,
+ * else "ready" (a file changed since is refused once pressed, saying which); none when this tab keeps none of them.
+ */
+export function undoState(scope: Scope, ids: readonly string[] | undefined, drafts: Drafts): "ready" | "undone" | undefined {
+  const list = keptChanges(scope, ids ?? []);
+  if (!list.length) return undefined;
+  return walk(list, drafts).state === "undone" ? "undone" : "ready";
+}
+
+/**
+ * The guarded edit that undoes `list` (newest first) as one step: the drafts before each, put back, while each
+ * finds its files as it left them (`drafts`: the draft of a path now). The page shown stays open when it is
+ * still there after; else the newest change's own page, else the home page.
+ */
+export function discardPlan(list: readonly AgentChange[], r: Reads, drafts: Drafts, openFile: string | undefined): PlanResult {
+  const names = [...new Set(list.map(change => change.agent || "the agent"))].join(", ");
+  const { state, changed, merged } = walk(list, drafts);
+  for (const path of merged.keys()) r.source(path);
+  if (state === "undone") return { refuse: `${list.map(change => change.id).join(", ")} ${list.length === 1 ? "is" : "are"} undone already: the files are as they were before.` };
+  if (state === "changed")
+    return { refuse: `${changed.path} changed since ${changed.change.agent || "the agent"}'s change ${changed.change.id}, so it cannot be undone as a whole. Change it back with the edit tools.` };
+  // A file changed is there after the undo when it was before (a draft not deleted, or the branch's file).
+  const there = (path: string) => {
+    const file = merged.get(path);
+    if (!file) return r.exists(path);
+    return file.before ? !file.before.deleted : Boolean(file.after && file.after.baseSha !== null && !file.after.movedFrom);
+  };
+  const routes = r.site()?.routes ?? {}, pages = new Set(Object.values(routes)), page = list[0].page;
+  const open = [openFile, pages.has(page) ? page : undefined, routes["/"]].find((path): path is string => Boolean(path) && there(path!));
   const now = Date.now();
   return {
-    restore: new Map([...change.before].map(([path, draft]) => [path, draft && { ...draft, updatedAt: now }])),
-    done: `Undid ${who}'s change.`,
-    undone: `Brought back ${who}'s change.`,
+    restore: new Map([...merged].map(([path, { before }]) => [path, before && { ...before, updatedAt: now }])),
+    done: `Undid ${names}'s change${list.length === 1 ? "" : "s"}.`,
+    undone: `Brought back ${names}'s change${list.length === 1 ? "" : "s"}.`,
     ...(open ? { open } : {}),
   };
+}
+
+/**
+ * The user's Undo on a done pin's card: the kept changes of `ids`, newest first, put back as one step, in the
+ * workspace they were made in, while it is the one shown. Undone already (the agent discarded them), nothing
+ * happens; refused, nothing is written and the reason is thrown.
+ */
+export async function undoAgentChanges(ids: readonly string[], ports: {
+  scope(): DraftScope | undefined;
+  edits: Pick<GuardedEdits, "run">;
+  draft(scope: DraftScope, path: string): SavedDraft | undefined;
+  openFile(): string | undefined;
+}) {
+  const scope = ports.scope();
+  if (!scope) throw new Error("Open the site first.");
+  const list = keptChanges(scope, ids);
+  if (!list.length) throw new Error("This tab no longer keeps the agent's change. Change it back by hand.");
+  const drafts: Drafts = path => ports.draft(scope, path);
+  if (walk(list, drafts).state === "undone") return;
+  // Said only: the card's Undone shows it (no toast).
+  const plan = (r: Reads): PlanResult => { const planned = discardPlan(list, r, drafts, ports.openFile()); return "restore" in planned ? { ...planned, quiet: true } : planned; };
+  const outcome: Outcome = await ports.edits.run(plan, { guard: () => sameScope(ports.scope(), scope) });
+  if (!outcome.ok) throw new Error(outcome.reason === "stale" ? "The site changed meanwhile. Nothing was undone; try again." : outcome.message);
 }

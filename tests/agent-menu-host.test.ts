@@ -63,7 +63,7 @@ function setup(options: { draftScope?: () => DraftScope | undefined } = {}) {
   const record = (name: string) => (...args: unknown[]) => { calls.push(`${name} ${args.map((arg) => JSON.stringify(arg)).join(" ")}`.trim()); };
   const ports = {
     appStore, runtime, guardedEdits: { stamp: () => stamp }, cleanSources,
-    agentCommands: { apply: async (command) => { calls.push(`apply ${command.id}`); }, reload: async (snapshot) => { calls.push(`reload ${snapshot.revision}`); }, undoable: () => undefined },
+    agentCommands: { apply: async (command) => { calls.push(`apply ${command.id}`); }, reload: async (snapshot) => { calls.push(`reload ${snapshot.revision}`); } },
     setupController: { noteAgent: record("noteAgent") }, pageStructureController: { renderEditBar: record("renderEditBar") },
     mediaPorts: { pin: () => { pins.push("pin"); return PIN; } },
     workspace: { activeFileContext: null, repositoryMenu: { setQuestions: record("questions"), close: record("close menu") } },

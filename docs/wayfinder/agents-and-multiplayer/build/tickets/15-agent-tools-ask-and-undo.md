@@ -42,7 +42,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - **Undo of one change.** Each agent change's drafts before and after it are kept in the tab as its receipt commits, text, page, file and Media changes alike (`src/agent-changes.ts`, the latest 40 and 16 M characters, in memory: a reload forgets them). Its undo is a guarded edit that puts the drafts before it back whole (`restore`, in `src/guarded-edit.ts` and `src/guarded-edit/commit.ts`), as one step of its own that Undo and Redo take back and forth. It runs only while every file is still as the change left it; otherwise it is refused, naming the file. The page shown stays open when it is still there; otherwise the change's page, then the home page.
   - `discard_change` (new edit tool, atomic, `next`: check with screenshot_preview): `change` is the requestId of one of the connection's own changes. Another connection's change, or one not kept, is refused in preparation (`shared/agent-edit.ts`). Another site or branch shown is refused on the live page.
   - Lex's Undo: a done (or answered) pin whose reply's requestIds this tab still keeps has Undo in its card. One click puts back the agent's changes for it, newest first, and the button then reads Undone (disabled). A refusal shows in the card. No toast (`src/components/agent-pins.ts`, `src/agent-site-host.ts` `undo`/`undoable`, wired through `native-preview.ts`, `workspace-mount.ts`, `agent-menu-host.ts`, `main.ts`).
-  - Not built: Undo from an agent's chip when it worked without a pin (decided behaviour, not in Done when). The Undo of the discard step does not make the change discardable again.
+  - Not built: Undo from an agent's chip when it worked without a pin (decided behaviour, not in Done when): follow-up [ticket 49](49-undo-from-the-agent-chip.md).
 - **Instructions.** The server's instructions name ask_user and discard_change in one sentence (3,773 characters in all). `docs/mcp.md` lists both tools (40 tools).
 - Files beyond the expected list: `shared/agent.ts`, `shared/agent-edit.ts`, `src/agent-changes.ts` (new), `src/agent-site.ts`, `src/agent-site-host.ts`, `src/agent-media-actions.ts`, `src/agent-menu-host.ts`, `src/agent-stops.ts`, `src/agent-transport.ts`, `src/agent-watch.ts`, `src/components/agent-menu.ts`, `src/components/native-preview.ts`, `src/guarded-edit.ts`, `src/workspace-mount.ts`, `src/main.ts`, `worker/agent-relay.ts`, `worker/site-conventions.ts`, `docs/agents/code-map.md`. `src/agent-presence.ts` needed no change.
 - Tests:
@@ -63,3 +63,34 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - New `tests/native-save/native-agent-ask-undo.spec.ts`, over the real MCP: the agent asks on the hero heading, the pin is orange with its question, Lex answers in the card, the held ask_user returns the answer and the pin turns the agent's. The agent edits the heading and replies done with its requestId. Undo on the done pin's card puts the heading back and reads Undone. An edit then discarded with discard_change leaves the page as before, and a second discard is refused.
 - Feature list: F-agent-13 added.
 - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3815/3815 (255 files)` (`kit unit --affected`). `RESULT: ok specs 6/6 passed` (native-agent-ask-undo, native-agent-pins, native-agent-presence, native-mcp-menu, native-mcp, native-several-agents). `npm run check` and `npm run lint` are clean; boot bytes 344 KB of 355 KB (`npm run test:budget`). `kit specs --affected` and `kit shots` were not run here.
+
+- Review round 1:
+  - Whether a change is undone is read from the drafts now, never recorded (`walk`, `src/agent-changes.ts`). The editor's Undo of the pin's Undo brings the agent's change back, the card offers Undo again, and discard_change works on it again. A second discard of an undone change is refused as "undone already".
+  - The pin's Undo puts back all of the request's changes as one step, newest first by the order they landed (whatever order the agent listed its requestIds in), whole or not at all: one refused leaves every file as it was (`undoAgentChanges`). The step is said in the status line only, no toast, since the card shows Undone (`quiet` on a guarded edit's plan). Its workspace is proved through the guarded edit (`guard`), so another site or branch shown meanwhile writes nothing.
+  - The card's Undo shows whenever this tab keeps the changes (a file changed since is refused in the card, naming it), reads its state each time it is drawn, and has no tooltips (S1, S3).
+  - ask_user: a wake during its read looks again at once instead of ending the wait; only the connection whose agent is on a question takes its answer (409 otherwise, the pin stays that agent's).
+  - Kept changes are keyed by account too; a change with no connection is not kept.
+  - Follow-up: [49 Undo from the agent's chip](49-undo-from-the-agent-chip.md), listed in the build README.
+  - Tests:
+    - `tests/agent-changes.test.ts`:
+      - two changes of one file, ids in either order, undone as one quiet step, and Ctrl+Z brings both back;
+      - whole or nothing;
+      - already discarded: the Undo does nothing;
+      - an await race: another branch shown at each await, nothing written;
+      - Ctrl+Z and Redo following the state;
+      - typed fakes.
+    - `tests/agent-ask-user.test.ts`:
+      - another connection refused;
+      - a wake during the read;
+      - await races of a new ask and of taking an answer.
+    - `tests/agent-media-commit.test.ts`: a Media change is kept and its undo restores all three of its drafts.
+    - `native-agent-ask-undo.spec.ts`:
+      - with another change on top, the card's Undo is refused in an alert naming index.html, still enabled, no toast;
+      - after discard_change of that one, Undo works and reads Undone with no toast;
+      - the editor's Undo brings the agent's heading back and the card offers Undo again.
+  - Shots (`kit shots --spec .scratch/am15-shots.spec.ts`, real starter, 1280 and 390 wide, light and dark): the orange question pin, its card, the done card with Undo, and with Undone. UX review against the rulebook:
+    - the question pin reads in both themes, the agent's chip above it;
+    - Undo and Clear sit together as text actions; Undone is disabled with its label alone;
+    - no toast after the pin's Undo (the first shots showed "Undid Copy editor's change." as a toast, now quiet).
+    One thing to look at: Undo and Clear are small text buttons at 390, as Clear already was.
+  - `RESULT: ok doctor 11/11 checks passed`. `RESULT: ok unit 3824/3824 (255 files)` (`kit unit --affected`). `RESULT: ok specs 8/8 passed; 179 more run in kit pr` (`kit specs --affected`). `RESULT: ok specs 4/4 passed` (native-agent-pins, native-mcp, native-guarded-history, native-several-agents). `RESULT: ok shots raw spec`. `npm run check` and `npm run lint` are clean.

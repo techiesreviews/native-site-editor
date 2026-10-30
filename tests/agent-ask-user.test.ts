@@ -3,10 +3,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { QUESTION_TEXT_LIMIT, type AgentElement, type AgentRequest } from "../shared/agent";
-import { DISMISSED_QUESTION, requestOperation, type AgentRequests } from "../shared/agent-requests";
+import { DISMISSED_QUESTION, agentQuestion, requestOperation, type AgentRequests } from "../shared/agent-requests";
 import { answerRequest, createRequestTools } from "../src/agent-watch";
 import { afterStoppedWait } from "../src/agent-stops";
 import type { AgentReadResult } from "../shared/agent-read";
+import { forEachAwait, type AwaitRace } from "./support/await-race";
 
 const workspace = { account: "lex", repoId: 7, branch: "main" };
 const heading: AgentElement = { file: "index.html", route: "/", id: "1.0", tag: "h1", text: "Welcome", html: "<h1>Welcome</h1>" };
@@ -22,22 +23,28 @@ function manualClock(start = 1_000_000) {
   };
 }
 /** This browser's requests in memory, with the menu's in-transaction accept; questions go on the heading of the home page. */
-function browser() {
+/** `race` wraps the tools' awaits (place, list, save); `current` is the connection's proof. */
+function browser(options: { race?: AwaitRace; current?: () => boolean } = {}) {
   const clock = manualClock(), kept = new Map<string, AgentRequest>();
-  let ids = 0;
+  let ids = 0, reading: (() => void) | undefined;
   const places: [string | undefined, string][] = [];
+  const port = <A extends unknown[], V>(name: string, work: (...args: A) => Promise<V>) => options.race ? options.race.port(name, work) : work;
   const tools = createRequestTools({
     workspace, now: clock.now, clock, newId: () => `req-asked-${++ids}`,
-    list: async () => [...kept.values()].map(item => structuredClone(item)),
-    save: async (request, accept) => { if (!accept(kept.get(request.id))) return false; kept.set(request.id, structuredClone(request)); return true; },
-    place: async (page, element) => {
+    list: port("list", async () => { const held = reading; reading = undefined; held?.(); return [...kept.values()].map(item => structuredClone(item)); }),
+    save: port("save", async (request: AgentRequest, accept: (stored: AgentRequest | undefined) => boolean) => {
+      if (!accept(kept.get(request.id))) return false;
+      kept.set(request.id, structuredClone(request));
+      return true;
+    }),
+    place: port("place", async (page: string | undefined, element: string) => {
       places.push([page, element]);
       return element === "1.0" ? { element: heading, repository: "lex/site" } : { refuse: `index.html has no element ${element}; get_page lists its ids.` };
-    },
+    }),
   });
-  const run = (tool: AgentRequests["tool"], args: AgentRequests["args"], options: { waitMs?: number; grantId?: string; agent?: string } = {}) =>
-    tools.run({ operation: "requests", tool, args, grantId: options.grantId ?? "grant-a", agent: options.agent ?? "Copy editor",
-      ...(options.waitMs === undefined ? {} : { waitMs: options.waitMs }) }, () => true, clock.now() + 24_000);
+  const run = (tool: AgentRequests["tool"], args: AgentRequests["args"], options_: { waitMs?: number; grantId?: string; agent?: string } = {}) =>
+    tools.run({ operation: "requests", tool, args, grantId: options_.grantId ?? "grant-a", agent: options_.agent ?? "Copy editor",
+      ...(options_.waitMs === undefined ? {} : { waitMs: options_.waitMs }) }, options.current ?? (() => true), clock.now() + 24_000);
   /** The user's answer from the pin's card, as the menu keeps it. */
   const answer = (id: string, text: string) => {
     const { request, accept } = answerRequest([...kept.values()].map(item => structuredClone(item)), id, text, clock.now());
@@ -45,13 +52,18 @@ function browser() {
     kept.set(id, request);
     tools.notify();
   };
-  return { clock, kept, tools, run, answer, places };
+  /** Runs `during` inside the next list read, before it answers (a wake that lands while the tools read). */
+  const duringNextRead = (during: () => void) => { reading = during; };
+  return { clock, kept, tools, run, answer, places, duringNextRead };
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
-const valueOf = async (pending: Promise<AgentReadResult>) => {
+/** What the request tools answer, as these tests read it: an ask's answer, a wait's requests. */
+interface Told { answer?: string | null; state?: string; request?: unknown; requests?: AgentRequest[] }
+interface Asked { answer: string; request: { id: string; thread: { from: string; text: string }[] } }
+const valueOf = async <T = Told>(pending: Promise<AgentReadResult>) => {
   const result = await pending;
   assert.ok(result.ok, JSON.stringify(result));
-  return result.value as any;
+  return result.value as T;
 };
 
 test("ask_user pins an orange question on the element, holds until the user answers in the pin, and hands the agent the answer", async () => {
@@ -72,7 +84,7 @@ test("ask_user pins an orange question on the element, holds until the user answ
   // Lex answers in the pin's card: the held call returns the answer.
   b.clock.advance(3_000);
   b.answer("req-asked-1", "Outline");
-  const answered = await valueOf(asking);
+  const answered = await valueOf<Asked>(asking);
   assert.equal(answered.answer, "Outline");
   assert.equal(answered.request.id, "req-asked-1");
   assert.deepEqual(answered.request.thread.map((message: { from: string; text: string }) => [message.from, message.text]), [["agent", "Ghost or outline?"], ["user", "Outline"]]);
@@ -151,4 +163,58 @@ test("the asked action takes an answer once and changes nothing before it", () =
 test("an agent stopped while its ask waited still gets an answer it took", () => {
   assert.deepEqual(afterStoppedWait({ ok: true, value: { request: { id: "req-q" }, answer: "Ghost" } }), { ok: true, value: { request: { id: "req-q" }, answer: "Ghost" } });
   assert.equal(afterStoppedWait({ ok: true, value: { request: "req-q", state: "question", answer: null } }).ok, false);
+});
+
+test("another connection cannot take an agent's answer: its pin stays that agent's", async () => {
+  const b = browser();
+  await valueOf(b.run("ask_user", { question: "Ghost?", element: "1.0" }, { waitMs: 0 }));
+  b.answer("req-asked-1", "Ghost");
+  const taken = await b.run("ask_user", { request: "req-asked-1" }, { waitMs: 0, grantId: "grant-b", agent: "Other" });
+  assert.deepEqual(taken, { ok: false, message: "This question is another connection's. Wait for your own requests with wait_for_requests." });
+  assert.deepEqual(b.kept.get("req-asked-1")!.agent, { grant: "grant-a", name: "Copy editor" });
+  assert.equal(b.kept.get("req-asked-1")!.state, "open");
+  assert.equal((await valueOf(b.run("ask_user", { request: "req-asked-1" }, { waitMs: 0 }))).answer, "Ghost");
+});
+
+test("a wake while the ask reads looks again at once: the answer arriving then reaches the ask, not a watchdog", async () => {
+  const b = browser();
+  await valueOf(b.run("ask_user", { question: "Ghost?", element: "1.0" }, { waitMs: 0 }));
+  // Another request changes while the waiting ask reads (the wake comes before the read answers).
+  b.duringNextRead(() => b.tools.notify());
+  const asking = b.run("ask_user", { request: "req-asked-1" });
+  await settle();
+  assert.equal(b.tools.holding, 1, "still waiting");
+  b.answer("req-asked-1", "Outline");
+  assert.equal((await valueOf(asking)).answer, "Outline");
+});
+
+test("an ask whose connection ends at any of its awaits asks nothing more and takes no answer", async () => {
+  let live = true;
+  const awaits = await forEachAwait(race => {
+    live = true;
+    const b = browser({ race, current: () => live });
+    const done = b.run("ask_user", { question: "Ghost?", element: "1.0" }, { waitMs: 0 });
+    return { done, b };
+  }, () => { live = false; }, async run => {
+    const result = await run.done;
+    const kept = [...run.b.kept.values()];
+    // Ended before its pin was kept: no pin, and the call says nothing was asked; after: the pin waits, no answer taken.
+    if (!kept.length) assert.equal(result.ok, false);
+    else assert.deepEqual(kept.map(request => request.state), ["question"]);
+  });
+  assert.equal(awaits, 3);
+  // Answered, an ask that loses its connection while it takes the answer leaves it for the agent's next call.
+  const answered = await forEachAwait(race => {
+    live = true;
+    const b = browser({ race, current: () => live });
+    b.kept.set("req-q", agentQuestion({ id: "req-q", question: "Ghost?", element: heading, repoId: 7, repository: "lex/site", branch: "main",
+      by: { grant: "grant-a", name: "Copy editor" }, now: b.clock.now() }));
+    b.answer("req-q", "Ghost");
+    return { done: b.run("ask_user", { request: "req-q" }, { waitMs: 0 }), b };
+  }, () => { live = false; }, async run => {
+    const result = await run.done, state = run.b.kept.get("req-q")!.state;
+    if (result.ok && (result.value as Told).answer === "Ghost") assert.equal(state, "seen");
+    else assert.equal(state, "open", "the answer is still there for its next call");
+  });
+  assert.equal(answered, 2);
 });

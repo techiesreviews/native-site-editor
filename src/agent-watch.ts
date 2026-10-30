@@ -174,13 +174,11 @@ export function createRequestTools(ports: RequestPorts) {
           lost++;
           continue;
         }
-        const ms = version !== seen ? 0 : end - now();
+        // Its time or the connection ended (this read was the last look); a wake during the read looks again at once.
+        const ms = end - now();
         if (ms <= 0 || !current()) break;
+        if (version !== seen) continue;
         await hold(ms, signal);
-        if (now() >= end) {
-          if (current()) continue;
-          break;
-        }
       }
       return ok({ request: id, state: "question", answer: null });
     } finally {
