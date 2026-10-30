@@ -70,8 +70,13 @@ test("an agent asks in an orange pin, the user answers in the pin, the agent goe
     const done = page.getByRole("dialog", { name: "Request 1" });
     const undo = done.getByRole("button", { name: "Undo" });
     await undo.click();
-    await expect(done.getByRole("alert")).toContainText("index.html changed since Copy editor's change ask-retitle");
+    // In the user's words: the file and the agent, never the change's id or the agent's tools.
+    const alert = done.getByRole("alert");
+    await expect(alert).toHaveText("index.html changed since Copy editor's change. Nothing was undone.");
+    await expect(alert).not.toContainText("ask-retitle");
+    await expect(alert).not.toContainText("edit tools");
     await expect(undo).toBeEnabled();
+    await expect(undo).toBeFocused();
     await expect(heading).toHaveText("Native preview");
     const toasts = page.locator(".editor-toast");
     await expect(toasts.filter({ hasText: "changed since" })).toBeHidden();
@@ -87,11 +92,15 @@ test("an agent asks in an orange pin, the user answers in the pin, the agent goe
     await undo.click();
     await expect(heading).toHaveText(HEADING);
     await expect(done.getByRole("button", { name: "Undone" })).toBeDisabled();
+    // The focus stays in the card: on Clear, as Undone cannot take it.
+    await expect(done.getByRole("button", { name: "Clear" })).toBeFocused();
     await expect(page.locator("#status")).toHaveText("Undid Copy editor's change.");
     await expect(undid).toBeHidden();
     expect((await call("read_file", { path: "index.html" })).content).toContain(HEADING);
     // With the card still open, the editor's Undo takes that undo back: the agent's heading again, and the same
-    // card offers Undo again without being opened anew.
+    // card offers Undo again without being opened anew. (Ctrl+Z inside a dialog is the dialog's: the focus leaves
+    // the card first, which stays open.)
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("ControlOrMeta+z");
     await expect(heading).toHaveText("Native preview");
     await expect(done).toBeVisible();

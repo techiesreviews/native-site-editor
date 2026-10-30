@@ -150,8 +150,9 @@ test("the discard_change command undoes the agent's own change where it is shown
 });
 
 /** The user's Undo on a pin's card over the memory workspace (src/agent-changes.ts `undoAgentChanges`). */
-const undoPorts = (m: MemoryWorkspace, edits: Pick<GuardedEdits, "run">, scope: () => DraftScope | undefined = () => m.scope) =>
-  ({ scope, edits, draft: (_scope: DraftScope, path: string) => m.draft(path), openFile: () => m.openFile() });
+/** `shown`: the workspace shown now; the click's own is the memory workspace's, taken as it is pressed. */
+const undoPorts = (m: MemoryWorkspace, edits: Pick<GuardedEdits, "run">, shown: () => DraftScope | undefined = () => m.scope) =>
+  ({ scope: m.scope, shown, edits, draft: (_scope: DraftScope, path: string) => m.draft(path), openFile: () => m.openFile() });
 
 for (const order of ["oldest first", "newest first"] as const)
   test(`the pin's Undo puts back two changes of one file newest first, as one step, with their ids ${order}`, async () => {
@@ -183,7 +184,7 @@ test("the pin's Undo is whole or nothing: one of its changes changed since refus
   await agentChange(m, edits, "whole-b", ["about.html"], { edits: new Map([["about.html", "<main><h1>Team</h1></main>"]]), done: "2.", undone: "2." });
   m.typeInto("index.html");
   const was = JSON.stringify(sources(m, ["index.html", "about.html"])), steps = m.steps().length;
-  await assert.rejects(undoAgentChanges(["whole-a", "whole-b"], "grant-a", undoPorts(m, edits)), /index\.html changed since Copy editor's change whole-a/);
+  await assert.rejects(undoAgentChanges(["whole-a", "whole-b"], "grant-a", undoPorts(m, edits)), { message: "index.html changed since Copy editor's change. Nothing was undone." });
   assert.equal(JSON.stringify(sources(m, ["index.html", "about.html"])), was);
   assert.equal(m.steps().length, steps);
 });
@@ -250,4 +251,34 @@ test("a move is undone whole: the file at its old path, the new one gone, a page
   assert.equal(m.redo(), true);
   assert.equal(m.workspace.exists("styles/new.css"), false);
   assert.equal(m.workspace.source("old.css"), "p {}");
+});
+
+test("in the user's words: a refusal on the pin's card names the file and the agent, not the change's id or the agent's tools", () => {
+  const { m } = setup();
+  const typed = { ...m.scope, version: 1 as const, path: "index.html", baseSha: "sha-0", original: PAGE, content: "typed", updatedAt: 9 };
+  const change: AgentChange = { id: "mcp-words", grant: "g", agent: "Copy editor", operation: "write_file", scope: m.scope, page: "index.html",
+    before: new Map([["index.html", undefined]]), after: new Map([["index.html", { ...typed, content: "agent" }]]) };
+  const reads = { source: () => undefined, exists: () => true, template: () => undefined, site: () => site };
+  assert.deepEqual(discardPlan([change], reads, () => typed, "index.html", "user"), { refuse: "index.html changed since Copy editor's change. Nothing was undone." });
+  assert.deepEqual(discardPlan([change], reads, () => typed, "index.html"),
+    { refuse: "index.html changed since Copy editor's change mcp-words, so it cannot be undone as a whole. Change it back with the edit tools." });
+  assert.deepEqual(discardPlan([change], reads, () => undefined, "index.html", "user"), { refuse: "This is undone already." });
+});
+
+test("the pin's Undo of a click whose site was left before it ran writes nothing", async () => {
+  const { m, edits } = setup();
+  await agentChange(m, edits, "left-a", ["index.html"], { edits: new Map([["index.html", PAGE.replace("Hello", "Left")]]), done: "l.", undone: "l." });
+  await assert.rejects(undoAgentChanges(["left-a"], "grant-a", undoPorts(m, edits, () => ({ ...m.scope, branch: "other" }))),
+    { message: "The site changed meanwhile. Nothing was undone; try again." });
+  assert.equal(m.workspace.source("index.html"), PAGE.replace("Hello", "Left"));
+});
+
+test("past 16 M characters of text, the oldest changes go first", () => {
+  const scope = { account: "lex", repoId: 77, repo: "lex/big", branch: "main" };
+  const big = (n: number) => ({ ...scope, version: 1 as const, path: `big-${n}.html`, baseSha: null, original: "", content: "x".repeat(9 * 1024 * 1024), updatedAt: n });
+  noteAgentChange({ id: "big-1", grant: "g", agent: "A", operation: "write_file", scope, page: "big-1.html", before: new Map(), after: new Map([["big-1.html", big(1)]]) });
+  assert.equal(keptChange(scope, "big-1")?.id, "big-1");
+  noteAgentChange({ id: "big-2", grant: "g", agent: "A", operation: "write_file", scope, page: "big-2.html", before: new Map(), after: new Map([["big-2.html", big(2)]]) });
+  assert.equal(keptChange(scope, "big-1"), undefined);
+  assert.equal(keptChange(scope, "big-2")?.id, "big-2");
 });
