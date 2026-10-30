@@ -33,3 +33,7 @@ Lex, 2026-10-30, while dropping creator-studio (ticket 43): its own skill `skill
 ## Kit commands and evidence
 
 agent-kit: `kit doctor`, `kit unit --affected`, `kit review`, `kit pr`. chat and creator-studio: their `kit pr` (creator-studio has no kit: a plain reviewed PR through `gh`, after `kit review` run from the machine kit with `--base`). Report PR URLs and merge SHAs.
+
+## Comments
+
+- Lead, 2026-10-30: ticket 69 also changes `kit.d/doctor` and waits for this ticket's kit PR (agent-kit #6) to merge; it does not wait for the chat and creator-studio parts.

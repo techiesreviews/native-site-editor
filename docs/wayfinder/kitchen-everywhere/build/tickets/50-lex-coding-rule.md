@@ -37,3 +37,4 @@ Agent Kit is required. The skill file is outside every repo, so the lead edits i
 ## Comments
 
 - Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.
+- Lead, 2026-10-30, proposal for Lex (from [ticket 66](66-kit-changes-only-through-this-board.md)), nothing written yet: add one line to the `lex-coding` skill, in the lead's own words: "A change to the shared kit is a ticket on the kitchen-everywhere board (native-site-editor `dev`, `docs/wayfinder/kitchen-everywhere/build/`); write the ticket and go on with your own work, the board's orchestrator thread builds it." It can go in now, ahead of the rest of this ticket's wording, or together with it (Tuesday pack 3 Nov).
