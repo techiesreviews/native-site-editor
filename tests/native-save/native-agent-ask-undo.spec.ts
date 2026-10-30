@@ -4,8 +4,9 @@ import { waitForConnection } from "./mcp-prompt";
 
 // Ticket am-15, over the real MCP on the default native-save fixture: an agent asks first (ask_user) with an
 // orange pin on the hero heading, the user answers in the pin's card, and the held call hands the agent the
-// answer, so it goes on and finishes the pin; an agent's discard_change puts the page back as it was; and the
-// user's Undo on a done pin's card puts back what the agent changed for it.
+// answer, so it goes on and finishes the pin; the user's Undo on a done pin's card puts back what the agent
+// changed for it (refused in the card while another change sits on top; offered again once the editor's Undo
+// takes that undo back); and an agent's discard_change puts the page back as it was.
 const HEADING = "A native browser preview";
 
 test("an agent asks in an orange pin, the user answers in the pin, the agent goes on; discard_change and the pin's Undo put the page back", async ({ page, baseURL }) => {
@@ -59,15 +60,42 @@ test("an agent asks in an orange pin, the user answers in the pin, the agent goe
     await call("reply_to_request", { request: answered.request.id, status: "done", message: "Shorter heading.", requestIds: ["ask-retitle"] });
     await expect(pin).toHaveAttribute("data-state", "done");
 
-    // The user's Undo on the done pin's card: the heading is back as before the agent's change, and the button says so.
+    // Another change of the agent's on top of it: the pin's Undo is refused in its card, naming the file, nothing
+    // undone, Undo still there, and no toast.
+    const lead = page.frameLocator(".native-preview-frame").locator(".hero .lead");
+    const read = await call("read_file", { path: "index.html" });
+    expect((await call("edit_file", { path: "index.html", expectedHash: read.hash, edits: [{ oldText: "Edit plain HTML", newText: "Edit HTML" }], requestId: "on-top" })).state).toBe("applied");
+    await expect(lead).toContainText("Edit HTML");
     await pin.click();
     const done = page.getByRole("dialog", { name: "Request 1" });
     const undo = done.getByRole("button", { name: "Undo" });
-    await expect(undo).toBeVisible();
+    await undo.click();
+    await expect(done.getByRole("alert")).toContainText("index.html changed since Copy editor's change ask-retitle");
+    await expect(undo).toBeEnabled();
+    await expect(heading).toHaveText("Native preview");
+    await expect(page.locator(".editor-toast")).toBeHidden();
+    await page.keyboard.press("Escape");
+    // The agent takes that one back; now the pin's Undo puts the heading back, and the button says so.
+    expect((await call("discard_change", { change: "on-top" })).state).toBe("applied");
+    await expect(lead).toContainText("Edit plain HTML");
+    // The agent's step says itself in a toast, as every agent change does; it goes before the user's Undo below.
+    const undid = page.locator(".editor-toast", { hasText: "Undid" });
+    await expect(undid).toBeHidden({ timeout: 15_000 });
+    await pin.click();
     await undo.click();
     await expect(heading).toHaveText(HEADING);
     await expect(done.getByRole("button", { name: "Undone" })).toBeDisabled();
+    // The card says it; no toast does.
+    await expect(undid).toBeHidden();
     expect((await call("read_file", { path: "index.html" })).content).toContain(HEADING);
+    await page.keyboard.press("Escape");
+    // The editor's Undo takes that undo back: the agent's heading again, and the card offers Undo again.
+    await page.locator(".code-editor__undo").first().click();
+    await expect(heading).toHaveText("Native preview");
+    await pin.click();
+    await expect(undo).toBeEnabled();
+    await undo.click();
+    await expect(heading).toHaveText(HEADING);
     await page.keyboard.press("Escape");
 
     // The agent discards a change of its own: the page is back as it was.
@@ -77,10 +105,10 @@ test("an agent asks in an orange pin, the user answers in the pin, the agent goe
     expect(discarded.next).toContain("screenshot_preview");
     await expect(heading).toHaveText(HEADING);
     expect((await call("read_file", { path: "index.html" })).content).toContain(HEADING);
-    // Once undone, it is not kept any more.
+    // Undone, a second discard is refused as such.
     const again = await client.callTool({ name: "discard_change", arguments: { change: "discard-me", agent: "Copy editor" } });
     expect(again.isError).toBe(true);
-    expect(JSON.stringify(again.content)).toContain("is kept in this editor tab");
+    expect(JSON.stringify(again.content)).toContain("discard-me is undone already");
   } finally {
     await client.close();
   }
