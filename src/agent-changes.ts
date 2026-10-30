@@ -4,6 +4,8 @@
 // Its undo is a guarded edit that puts the drafts before it back whole (`restore`, src/guarded-edit/commit.ts),
 // once every file is still as the change left it: one step of its own, which Undo and Redo take back and forth.
 //
+// The chip on an agent's presence outline (ticket am-49) undoes the same way its latest change to that page.
+//
 // Whether a change is undone is read from the drafts now, never recorded: Undo of the undo (Ctrl+Z) brings the
 // change back, and its pin card offers Undo again. Several changes (a pin's requestIds) are undone newest first
 // as one step, whole or not at all.
@@ -68,6 +70,17 @@ export function keptChange(scope: Scope, id: string): AgentChange | undefined {
 export function keptChanges(scope: Scope, ids: readonly string[], grant?: string): AgentChange[] {
   return [...new Set(ids)].flatMap(id => changes.get(keyOf(scope, id)) ?? [])
     .filter(change => grant === undefined || change.grant === grant).sort((a, b) => b.seq - a.seq);
+}
+/**
+ * The newest kept change (undone or not) the agent `who` (its connection and name) made to the page `page` in this
+ * workspace: what its chip's Undo puts back (ticket am-49). A change about that page, or one that changed its file.
+ */
+export function latestChange(scope: Scope, who: { grant: string; name: string }, page: string): AgentChange | undefined {
+  let latest: Kept | undefined;
+  for (const change of changes.values())
+    if (change.grant === who.grant && change.agent === who.name && (change.page === page || change.after.has(page)) && sameScope(change.scope, scope)
+      && (!latest || change.seq > latest.seq)) latest = change;
+  return latest;
 }
 
 // A draft as it stands for the undo: its text and where it came from, whenever it was written.

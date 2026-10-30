@@ -169,7 +169,7 @@ export interface WorkspaceMountPorts {
   readonly boot: Pick<ReturnType<typeof createBootController>, "ensureList" | "reset">;
   readonly agentController: Pick<ReturnType<typeof createAgentController>, "ensure" | "dismiss" | "answer" | "destroy">;
   /** The user's Undo of an agent's changes from its pin card (ticket am-15). */
-  readonly agentCommands: Pick<ReturnType<typeof createAgentCommands>, "undo" | "undoable">;
+  readonly agentCommands: Pick<ReturnType<typeof createAgentCommands>, "undo" | "undoable" | "undoLatest" | "latestUndoable">;
   readonly workspaceBoot: { dropGuess(): void };
   draftScope: () => DraftScope | undefined;
   shownScope: () => WorkspaceScope | undefined;
@@ -526,6 +526,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       },
       onUndoChanges: (ids, grant) => ports.agentCommands.undo(ids, grant),
       undoChangesState: (ids, grant) => ports.agentCommands.undoable(ids, grant),
+      onUndoAgentChip: (mark) => ports.agentCommands.undoLatest(mark.who, mark.path),
+      agentChipUndoState: (mark) => ports.agentCommands.latestUndoable(mark.who, mark.path),
       // The Add panel docks over the page structure sidebar; under a phone's sheet (folded or not), over the page and sheet.
       addPanelDock: () => {
         const area = ports.app.querySelector<HTMLElement>(".workspace")?.getBoundingClientRect();

@@ -97,6 +97,16 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
 
   // A sandboxed frame's presses cannot bubble to the host's refusal note (typing here is left to its timeout).
   document.addEventListener("pointerdown", function () { emit("refusal-note-action"); }, true);
+  // An agent chip's Undo (ticket am-49, drawPresence below): heard here, before any of the canvas's own press, click,
+  // menu or key handling, which never sees it (it selects nothing, starts no drag, and Enter or Space on it is its click).
+  ["pointerdown", "pointerup", "mousedown", "mouseup", "click", "dblclick", "auxclick", "contextmenu", "keydown"].forEach(function (type) {
+    window.addEventListener(type, function (e) {
+      var undo = e.target && e.target.closest ? e.target.closest("[data-native-chip-undo]") : null;
+      if (!undo || (type === "keydown" && e.key !== "Enter" && e.key !== " ")) return;
+      e.stopImmediatePropagation();
+      if (type === "click" && e.button === 0 && !undo.disabled) emit("agent-chip-undo", { key: undo.getAttribute("data-native-chip-undo") });
+    }, true);
+  });
 
   function reportError(message) {
     hadError = true;
@@ -2043,6 +2053,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   }
 
   function deepestElementFromPath(path, target, forHover) {
+    // The editor's own drawing (an agent chip's Undo, ticket am-49) is no element of the page.
+    if (path[0] instanceof Element && path[0].closest("[data-native-selection-box]")) return null;
     var inMode = editModeTarget(path);
     if (inMode !== undefined) return inMode;
     var from = 0;
@@ -4156,14 +4168,34 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   // part of it and never a click target; the editor ends each once its change
   // lands or stops. The editor sends each agent's colour, from its theme:
   // nothing is drawn without one. Chips on one corner stand side by side.
+  // A chip whose agent has a change to this page kept for its undo has an Undo
+  // after its name (ticket am-49), the one control here: Undone (disabled)
+  // once put back, and a refusal said under it.
   var presenceAgents = [];
   var presenceBoxes = [];
+  function presenceChip() {
+    var chip = canvasOverlay("agent-presence-chip");
+    chip.style.cssText += "z-index:2147483647;padding:0 6px;border-radius:3px 3px 3px 0;" +
+      "font:600 11px/16px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:0;max-width:60vw;overflow:hidden;";
+    var row = document.createElement("div");
+    row.style.cssText = "display:flex;";
+    var name = document.createElement("span");
+    name.style.cssText = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;";
+    var undo = document.createElement("button");
+    undo.type = "button";
+    undo.style.cssText = "flex:none;margin:0 0 0 8px;padding:0;border:0;background:none;color:inherit;font:inherit;letter-spacing:inherit;" +
+      "text-decoration:underline;text-underline-offset:2px;cursor:pointer;pointer-events:auto;";
+    var problem = document.createElement("p");
+    problem.setAttribute("role", "alert");
+    problem.style.cssText = "margin:0 0 2px;font-weight:500;";
+    row.append(name, undo);
+    chip.append(row, problem);
+    return { chip: chip, name: name, undo: undo, problem: problem };
+  }
   function drawPresence() {
     while (presenceBoxes.length < presenceAgents.length) {
-      var chip = canvasOverlay("agent-presence-chip");
-      chip.style.cssText += "z-index:2147483647;padding:0 6px;border-radius:3px 3px 3px 0;white-space:nowrap;" +
-        "font:600 11px/16px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:0;max-width:60vw;overflow:hidden;text-overflow:ellipsis;";
-      presenceBoxes.push({ box: canvasOverlay("agent-presence"), chip: chip });
+      var parts = presenceChip();
+      presenceBoxes.push({ box: canvasOverlay("agent-presence"), chip: parts.chip, parts: parts });
     }
     var placed = [];
     presenceBoxes.forEach(function (pair, index) {
@@ -4174,26 +4206,45 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       pair.box.style.border = "2px solid " + agent.color;
       // Its name is on the pin it works through (ticket am-13): the outline alone here.
       if (agent.bare) { pair.chip.style.display = "none"; return; }
-      pair.chip.textContent = agent.name;
+      var parts = pair.parts;
+      if (parts.name.textContent !== agent.name) parts.name.textContent = agent.name;
+      if (agent.undo) {
+        var label = agent.undo === "undone" ? "Undone" : "Undo";
+        if (parts.undo.textContent !== label) parts.undo.textContent = label;
+        parts.undo.setAttribute("aria-label", (agent.undo === "undone" ? "Undone: " : "Undo ") + agent.name + "'s change");
+        parts.undo.setAttribute("data-native-chip-undo", agent.key);
+        parts.undo.disabled = agent.undo !== "ready";
+        parts.undo.style.textDecoration = agent.undo === "ready" ? "underline" : "none";
+        parts.undo.style.cursor = agent.undo === "ready" ? "pointer" : "default";
+        parts.undo.style.display = "";
+      } else {
+        parts.undo.removeAttribute("data-native-chip-undo");
+        parts.undo.textContent = "";
+        parts.undo.style.display = "none";
+      }
+      if (parts.problem.textContent !== (agent.problem || "")) parts.problem.textContent = agent.problem || "";
+      parts.problem.style.display = agent.problem ? "" : "none";
+      pair.chip.style.maxWidth = agent.problem ? "min(60vw, 280px)" : "60vw";
       pair.chip.style.background = agent.chip;
       pair.chip.style.color = canvasInk(agent.chip);
       pair.chip.style.display = "block";
       // On the outline's top-left corner, just above it, or inside it at the top of the page; after the chips there
       // already and clear of the edit bar, kept within the page's width: a chip that would pass its right edge starts a row below.
+      // A chip saying a refusal is taller: it grows upward, its bottom on the outline, clear of the section it is about.
       var rect = rectOf(target);
-      var width = pair.chip.offsetWidth, view = document.documentElement.clientWidth;
-      var top = rect.top + window.scrollY >= 16 ? rect.top - 16 : rect.top;
+      var width = pair.chip.offsetWidth, height = Math.max(16, pair.chip.offsetHeight), view = document.documentElement.clientWidth;
+      var top = rect.top + window.scrollY >= height ? rect.top - height : rect.top;
       var start = Math.max(0, Math.min(rect.left, view - width)), left = start;
       for (var moved = true; moved;) {
         moved = false;
         for (var i = 0; i < placed.length; i++) {
           var other = placed[i];
-          if (Math.abs(other.top - top) < 16 && left < other.right && other.left < left + width) { left = other.right + 2; moved = true; }
+          if (top < other.bottom && other.top < top + height && left < other.right && other.left < left + width) { left = other.right + 2; moved = true; }
         }
-        if (canvasCovered(left, top, width, 16)) { left = canvasAvoid.right + 2; moved = true; }
+        if (canvasCovered(left, top, width, height)) { left = canvasAvoid.right + 2; moved = true; }
         if (left + width > view && left !== start) { left = start; top += 16; moved = true; }
       }
-      placed.push({ left: left, right: left + width, top: top });
+      placed.push({ left: left, right: left + width, top: top, bottom: top + height });
       pair.chip.style.left = left + window.scrollX + "px";
       pair.chip.style.top = top + window.scrollY + "px";
     });
@@ -4320,7 +4371,10 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
         return agent && agent.request && Array.isArray(agent.request.node) && typeof agent.color === "string" && agent.color;
       }).slice(0, 32).map(function (agent) {
         return { request: agent.request, color: agent.color, chip: typeof agent.chip === "string" && agent.chip ? agent.chip : agent.color,
-          name: typeof agent.name === "string" && agent.name ? agent.name.slice(0, 60) : "Agent", bare: agent.bare === true };
+          name: typeof agent.name === "string" && agent.name ? agent.name.slice(0, 60) : "Agent", bare: agent.bare === true,
+          key: typeof agent.key === "string" ? agent.key : "",
+          undo: typeof agent.key === "string" && (agent.undo === "ready" || agent.undo === "undone" || agent.undo === "busy") ? agent.undo : "",
+          problem: typeof agent.problem === "string" ? agent.problem.slice(0, 300) : "" };
       });
       drawPresence();
       return;
