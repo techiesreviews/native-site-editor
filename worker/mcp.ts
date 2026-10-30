@@ -127,6 +127,8 @@ export const TASKS_EXTENSION = "io.modelcontextprotocol/tasks";
 /** How long one look at a waiting job holds a wait in the editor (under the relay's 25 s), and the pause between looks. */
 export const JOB_HOLD_MS = 20_000;
 const JOB_POLL_MS = 1_000;
+/** A long job's final answer after one of its looks ended a wait the tab had (ticket am-54). */
+const TOOK_OVER_HINT = "This look ended an earlier look's wait at this job; requests that wait may have taken come back with all: true.";
 const JOB_ID_PREFIX = "wait:";
 
 /** Whether a request's client declared the tasks extension (per request, in its `_meta`). */
@@ -862,10 +864,9 @@ function siteServer(connection: Connection, env: Env, origin: string, exchange: 
     // gives the job's only final answer, even with nothing come: its hint brings back what that wait took.
     // A replaced look still works whatever it carries: the newest look gives the job's answer.
     if (!outcome.tookOver || outcome.code === "replaced") return answerWait(outcome, watching);
-    const once = answerWait(outcome, watching, tookOverHint);
+    const once = answerWait(outcome, watching, TOOK_OVER_HINT);
     return once.waitOn ? { result: once.result } : once;
   }
-  const tookOverHint = "This look ended an earlier look's wait at this job; requests that wait may have taken come back with all: true.";
   function answerWait(outcome: Awaited<ReturnType<Calls["requestCommand"]>>, watching: boolean, more?: string): Awaited<ReturnType<typeof waitOnce>> {
     const hinted = (requests: unknown[], hint?: string) => waited(requests, [hint, more].filter(Boolean).join(" ") || undefined);
     if (outcome.ok && outcome.result) {
