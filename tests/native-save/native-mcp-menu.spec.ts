@@ -317,6 +317,7 @@ test("a sign-in that ended while away: the tab coming back offers Connect to MCP
     await expect(menu).toHaveAttribute("data-state", "failed");
     expect((await dot(page)).color).toBe(await danger(page));
     await onlyLabel(page, "Connect to MCP");
+    // clipboard-ready: the press has ended on the failed dot, so no copy is still on its way.
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
   } finally { await client.close().catch(() => undefined); }
 });
