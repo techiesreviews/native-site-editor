@@ -35,7 +35,7 @@ import { writablePathProblem } from "./site-files";
 import { siteConventions, siteInstructions } from "./site-conventions";
 import { editorOrigin } from "./owner-setup";
 import { editShapeProblem, type AgentEdit, type AgentEditArgsMap, type AgentEditTool } from "../shared/agent-edit";
-import { AgentRelay, relayObjectName, WAITS_PER_SITE } from "./agent-relay";
+import { AgentRelay, JOB_ID_PREFIX, relayObjectName, WAITS_PER_SITE } from "./agent-relay";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
 import { mediaChanges, type AgentMedia } from "../shared/agent-media";
 import { AGENT_ARGUMENT, AGENT_ARGUMENT_HINT, agentTools, mcpTools, nextStep, type McpToolName } from "../shared/agent-tool-table";
@@ -136,14 +136,13 @@ function declaresTasks(params: unknown) {
 
 /** A job keeps no record anywhere, the relay included: its id carries what each look needs. */
 interface WaitJob { createdAt: number; all: boolean; agent: string }
-const JOB_PREFIX = "wait:";
 function jobId(job: WaitJob) {
-  return JOB_PREFIX + encodeURIComponent(JSON.stringify([job.createdAt, job.all, job.agent, crypto.randomUUID()]));
+  return JOB_ID_PREFIX + encodeURIComponent(JSON.stringify([job.createdAt, job.all, job.agent, crypto.randomUUID()]));
 }
 function readJob(id: unknown): WaitJob | undefined {
-  if (typeof id !== "string" || !id.startsWith(JOB_PREFIX) || id.length > 1024) return undefined;
+  if (typeof id !== "string" || !id.startsWith(JOB_ID_PREFIX) || id.length > 1024) return undefined;
   try {
-    const [createdAt, all, agent, nonce] = JSON.parse(decodeURIComponent(id.slice(JOB_PREFIX.length))) as unknown[];
+    const [createdAt, all, agent, nonce] = JSON.parse(decodeURIComponent(id.slice(JOB_ID_PREFIX.length))) as unknown[];
     if (!Number.isSafeInteger(createdAt) || typeof all !== "boolean" || typeof agent !== "string" || typeof nonce !== "string") return undefined;
     return { createdAt: createdAt as number, all, agent: agentName(agent) };
   } catch { return undefined; }
@@ -865,8 +864,11 @@ function siteServer(connection: Connection, env: Env, origin: string, exchange: 
       return { result: waited([], `${why} Wait about 30 seconds, then call wait_for_requests again.`), waitOn: { retryMs: 30_000, why } };
     }
     const result = waited([], `The editor did not answer this wait (${outcome.code ?? "connection lost"}). Wait about 10 seconds, then call wait_for_requests again. Requests it took come back with all: true.`);
-    if (outcome.code === "busy") return { result, waitOn: { retryMs: 10_000, why: "The editor is busy with other agents' changes." } };
-    return outcome.code === "cancelled" ? { result, cancelled: true } : { result };
+    if (outcome.code === "cancelled") return { result, cancelled: true };
+    // Only a wait that can never work ends the job; a passing loss (timeout, lost connection, busy) waits on.
+    if (outcome.code === "connect-agent-again" || outcome.code === "too-large") return { result };
+    return { result, waitOn: { retryMs: 10_000, why: outcome.code === "busy" ? "The editor is busy with other agents' changes."
+      : `The editor did not answer this wait (${outcome.code ?? "connection lost"}). Requests it took come back with all: true.` } };
   }
 
   register(
@@ -1000,7 +1002,6 @@ function siteServer(connection: Connection, env: Env, origin: string, exchange: 
         : jobState(id as string, job, "completed", { result: { resultType: "complete", ...once.result } });
       return { resultType: "complete", ...state };
     },
-    known: (id: unknown) => readJob(id) !== undefined,
   };
 
   // ---- Resources and prompts ----
@@ -1114,15 +1115,17 @@ export async function handleMcp(
   // tools/call results are complete only. Arguments the tool refuses go on to the SDK for its own answer.
   let response: Promise<Response> | undefined;
   if (job) {
-    const { jobs } = siteServer(connection, env, origin, exchange);
     const answer = (result: object | undefined) => Response.json({ jsonrpc: "2.0", id: body?.id ?? null, ...(result ? { result }
       : { error: { code: -32602, message: "No such task. Only wait_for_requests runs as a task; call it again." } }) }, { headers: { "Cache-Control": "no-store" } });
+    const known = readJob(taskId);
+    // Cancelled for good: the relay refuses the job's looks from now on, and the answer says so at once.
     if (job === "cancel") {
-      if (!jobs.known(taskId)) return answer(undefined);
+      if (!known) return answer(undefined);
       await relayCancel(taskId!);
-      return answer({ resultType: "complete" });
+      return answer({ resultType: "complete", ...jobState(taskId!, known, "cancelled") });
     }
-    if (job === "update") return answer(jobs.known(taskId) ? { resultType: "complete" } : undefined);
+    if (job === "update") return answer(known ? { resultType: "complete" } : undefined);
+    const { jobs } = siteServer(connection, env, origin, exchange);
     if (job === "start") {
       const started = jobs.start(body?.params?.arguments);
       if (started) return answer(started);
