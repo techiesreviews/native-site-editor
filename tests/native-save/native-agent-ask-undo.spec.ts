@@ -73,26 +73,28 @@ test("an agent asks in an orange pin, the user answers in the pin, the agent goe
     await expect(done.getByRole("alert")).toContainText("index.html changed since Copy editor's change ask-retitle");
     await expect(undo).toBeEnabled();
     await expect(heading).toHaveText("Native preview");
-    await expect(page.locator(".editor-toast")).toBeHidden();
+    const toasts = page.locator(".editor-toast");
+    await expect(toasts.filter({ hasText: "changed since" })).toBeHidden();
     await page.keyboard.press("Escape");
-    // The agent takes that one back; now the pin's Undo puts the heading back, and the button says so.
+    // The agent takes that one back: said in the status line only, no toast. Now the pin's Undo puts the heading
+    // back, and the button says so, again with no toast.
     expect((await call("discard_change", { change: "on-top" })).state).toBe("applied");
     await expect(lead).toContainText("Edit plain HTML");
-    // The agent's step says itself in a toast, as every agent change does; it goes before the user's Undo below.
-    const undid = page.locator(".editor-toast", { hasText: "Undid" });
-    await expect(undid).toBeHidden({ timeout: 15_000 });
+    await expect(page.locator("#status")).toHaveText("Undid Copy editor's change.");
+    const undid = toasts.filter({ hasText: "Undid" });
+    await expect(undid).toBeHidden();
     await pin.click();
     await undo.click();
     await expect(heading).toHaveText(HEADING);
     await expect(done.getByRole("button", { name: "Undone" })).toBeDisabled();
-    // The card says it; no toast does.
+    await expect(page.locator("#status")).toHaveText("Undid Copy editor's change.");
     await expect(undid).toBeHidden();
     expect((await call("read_file", { path: "index.html" })).content).toContain(HEADING);
-    await page.keyboard.press("Escape");
-    // The editor's Undo takes that undo back: the agent's heading again, and the card offers Undo again.
-    await page.locator(".code-editor__undo").first().click();
+    // With the card still open, the editor's Undo takes that undo back: the agent's heading again, and the same
+    // card offers Undo again without being opened anew.
+    await page.keyboard.press("ControlOrMeta+z");
     await expect(heading).toHaveText("Native preview");
-    await pin.click();
+    await expect(done).toBeVisible();
     await expect(undo).toBeEnabled();
     await undo.click();
     await expect(heading).toHaveText(HEADING);

@@ -176,9 +176,11 @@ export function createRequestTools(ports: RequestPorts) {
         }
         // Its time or the connection ended (this read was the last look); a wake during the read looks again at once.
         const ms = end - now();
-        if (ms <= 0 || !current()) break;
+        // The call's signal is part of its proof: cancelled, it reads no more (a hold would end at once).
+        if (signal?.aborted || ms <= 0 || !current()) break;
         if (version !== seen) continue;
         await hold(ms, signal);
+        if (signal?.aborted) break;
       }
       return ok({ request: id, state: "question", answer: null });
     } finally {

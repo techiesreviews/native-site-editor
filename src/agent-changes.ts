@@ -61,9 +61,13 @@ export function noteAgentChange(change: AgentChange) {
 export function keptChange(scope: Scope, id: string): AgentChange | undefined {
   return changes.get(keyOf(scope, id));
 }
-/** The kept changes of `ids`, newest first (the order of their undo), whatever order the ids are in. */
-export function keptChanges(scope: Scope, ids: readonly string[]): AgentChange[] {
-  return [...new Set(ids)].flatMap(id => changes.get(keyOf(scope, id)) ?? []).sort((a, b) => b.seq - a.seq);
+/**
+ * The kept changes of `ids` made on the connection `grant` (with none given: any), newest first (the order of
+ * their undo), whatever order the ids are in. A pin's ids are its agent's words: only its own changes count.
+ */
+export function keptChanges(scope: Scope, ids: readonly string[], grant?: string): AgentChange[] {
+  return [...new Set(ids)].flatMap(id => changes.get(keyOf(scope, id)) ?? [])
+    .filter(change => grant === undefined || change.grant === grant).sort((a, b) => b.seq - a.seq);
 }
 
 // A draft as it stands for the undo: its text and where it came from, whenever it was written.
@@ -98,8 +102,9 @@ function walk(list: readonly AgentChange[], drafts: Drafts) {
  * Whether the user can undo these changes (a pin's requestIds) now: "undone" while the files are as before them,
  * else "ready" (a file changed since is refused once pressed, saying which); none when this tab keeps none of them.
  */
-export function undoState(scope: Scope, ids: readonly string[] | undefined, drafts: Drafts): "ready" | "undone" | undefined {
-  const list = keptChanges(scope, ids ?? []);
+export function undoState(scope: Scope, ids: readonly string[] | undefined, drafts: Drafts, grant: string | undefined): "ready" | "undone" | undefined {
+  if (!grant) return undefined;
+  const list = keptChanges(scope, ids ?? [], grant);
   if (!list.length) return undefined;
   return walk(list, drafts).state === "undone" ? "undone" : "ready";
 }
@@ -127,6 +132,8 @@ export function discardPlan(list: readonly AgentChange[], r: Reads, drafts: Draf
   const now = Date.now();
   return {
     restore: new Map([...merged].map(([path, { before }]) => [path, before && { ...before, updatedAt: now }])),
+    // Said in the status line only, no toast: the pin's card shows Undone, and an agent's discard needs none (S4).
+    quiet: true,
     done: `Undid ${names}'s change${list.length === 1 ? "" : "s"}.`,
     undone: `Brought back ${names}'s change${list.length === 1 ? "" : "s"}.`,
     ...(open ? { open } : {}),
@@ -134,11 +141,11 @@ export function discardPlan(list: readonly AgentChange[], r: Reads, drafts: Draf
 }
 
 /**
- * The user's Undo on a done pin's card: the kept changes of `ids`, newest first, put back as one step, in the
+ * The user's Undo on a done pin's card: the kept changes of `ids` its agent's connection (`grant`) made, newest first, put back as one step, in the
  * workspace they were made in, while it is the one shown. Undone already (the agent discarded them), nothing
  * happens; refused, nothing is written and the reason is thrown.
  */
-export async function undoAgentChanges(ids: readonly string[], ports: {
+export async function undoAgentChanges(ids: readonly string[], grant: string | undefined, ports: {
   scope(): DraftScope | undefined;
   edits: Pick<GuardedEdits, "run">;
   draft(scope: DraftScope, path: string): SavedDraft | undefined;
@@ -146,12 +153,10 @@ export async function undoAgentChanges(ids: readonly string[], ports: {
 }) {
   const scope = ports.scope();
   if (!scope) throw new Error("Open the site first.");
-  const list = keptChanges(scope, ids);
+  const list = grant ? keptChanges(scope, ids, grant) : [];
   if (!list.length) throw new Error("This tab no longer keeps the agent's change. Change it back by hand.");
   const drafts: Drafts = path => ports.draft(scope, path);
   if (walk(list, drafts).state === "undone") return;
-  // Said only: the card's Undone shows it (no toast).
-  const plan = (r: Reads): PlanResult => { const planned = discardPlan(list, r, drafts, ports.openFile()); return "restore" in planned ? { ...planned, quiet: true } : planned; };
-  const outcome: Outcome = await ports.edits.run(plan, { guard: () => sameScope(ports.scope(), scope) });
+  const outcome: Outcome = await ports.edits.run(r => discardPlan(list, r, drafts, ports.openFile()), { guard: () => sameScope(ports.scope(), scope) });
   if (!outcome.ok) throw new Error(outcome.reason === "stale" ? "The site changed meanwhile. Nothing was undone; try again." : outcome.message);
 }

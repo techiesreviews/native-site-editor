@@ -368,7 +368,7 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditContext,
     case "discard_change": {
       // Its own change, kept here: the page it was on is where the undo runs (src/agent-site.ts checks its files now).
       const { change } = request.args, kept = changes?.(change);
-      if (!kept) return refuse(`No change ${change} is kept in this editor tab: it was never applied, was undone already, or the tab reloaded since. Change it back with the edit tools.`);
+      if (!kept) return refuse(`No change ${change} is kept in this editor tab: it was never applied here, the tab reloaded since, or it is one of the oldest. Change it back with the edit tools.`);
       if (kept.grant !== request.grantId) return refuse(`${change} is another connection's change. Only the agent that made it, or the user, undoes it.`);
       return queue({ path: kept.page, args: { change } });
     }

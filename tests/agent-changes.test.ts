@@ -50,7 +50,7 @@ test("an agent's change is undone whole: its page edited, a file created and one
   const changed = JSON.stringify(sources(m, paths));
   assert.notEqual(changed, was);
   const drafts = (path: string) => m.draft(path);
-  assert.equal(undoState(m.scope, ["mcp-all"], drafts), "ready");
+  assert.equal(undoState(m.scope, ["mcp-all"], drafts, "grant-a"), "ready");
 
   const kept = keptChange(m.scope, "mcp-all")!;
   const outcome = await edits.run(r => discardPlan([kept], r, drafts, m.openFile()));
@@ -64,17 +64,17 @@ test("an agent's change is undone whole: its page edited, a file created and one
   // The undo is one step of its own, after the change's two.
   assert.deepEqual(m.steps(), ["operation", "operation", "operation"]);
   // Read from the drafts: undone now, and a second undo is refused as such.
-  assert.equal(undoState(m.scope, ["mcp-all"], drafts), "undone");
+  assert.equal(undoState(m.scope, ["mcp-all"], drafts, "grant-a"), "undone");
   assert.deepEqual(await edits.run(r => discardPlan([kept], r, drafts, m.openFile())),
     { ok: false, reason: "refused", message: "mcp-all is undone already: the files are as they were before." });
   // Undo (Ctrl+Z) brings the change back, and with it its Undo; Redo undoes it again.
   assert.equal(m.undo(), true);
   assert.equal(JSON.stringify(sources(m, paths).map(([path, text]) => [path, text])), JSON.stringify(JSON.parse(changed).map(([path, text]: string[]) => [path, text])));
-  assert.equal(undoState(m.scope, ["mcp-all"], drafts), "ready");
+  assert.equal(undoState(m.scope, ["mcp-all"], drafts, "grant-a"), "ready");
   assert.equal(m.redo(), true);
   assert.equal(m.workspace.source("index.html"), PAGE);
   assert.equal(m.workspace.exists("new.css"), false);
-  assert.equal(undoState(m.scope, ["mcp-all"], drafts), "undone");
+  assert.equal(undoState(m.scope, ["mcp-all"], drafts, "grant-a"), "undone");
 });
 
 test("a change whose file changed since is refused, naming the file, and nothing is written", async () => {
@@ -88,7 +88,7 @@ test("a change whose file changed since is refused, naming the file, and nothing
   assert.equal(m.steps().length, steps);
   assert.equal(m.workspace.source("index.html"), text);
   // Still offered (pressed, it says which file), as the user may type it back.
-  assert.equal(undoState(m.scope, ["mcp-typed"], path => m.draft(path)), "ready");
+  assert.equal(undoState(m.scope, ["mcp-typed"], path => m.draft(path), "grant-a"), "ready");
 });
 
 test("the page shown stays open after an undo while it is there; one the change created gives way to the change's page, then the home page", () => {
@@ -112,9 +112,9 @@ test("the tab keeps the latest 40 changes per site and branch", () => {
   assert.equal(keptChange(scope, "c-4"), undefined);
   assert.equal(keptChange(scope, "c-5")?.id, "c-5");
   assert.equal(keptChange({ ...scope, branch: "main" }, "c-44"), undefined);
-  assert.equal(undoState(scope, ["c-1", "c-44"], () => draft(44)), "ready");
-  assert.equal(undoState(scope, ["c-1"], () => undefined), undefined, "none kept");
-  assert.equal(undoState(scope, [], () => undefined), undefined);
+  assert.equal(undoState(scope, ["c-1", "c-44"], () => draft(44), "g"), "ready");
+  assert.equal(undoState(scope, ["c-1"], () => undefined, "g"), undefined, "none kept");
+  assert.equal(undoState(scope, [], () => undefined, "g"), undefined);
   // Another account's site of the same id and branch is another workspace.
   assert.equal(keptChange({ ...scope, account: "sam" }, "c-44"), undefined);
   // A change that wrote nothing is not kept.
@@ -163,18 +163,18 @@ for (const order of ["oldest first", "newest first"] as const)
     assert.deepEqual(keptChanges(m.scope, ids).map(change => change.id), [`two-b-${order}`, `two-a-${order}`]);
     const steps = m.steps().length, said: unknown[] = [], workspace = m.workspace, announce = workspace.announce.bind(workspace);
     workspace.announce = (message, as) => { said.push(as); announce(message, as); };
-    await undoAgentChanges(ids, undoPorts(m, edits));
+    await undoAgentChanges(ids, "grant-a", undoPorts(m, edits));
     // Said only, no toast: the card's Undone shows it.
     assert.deepEqual(said, ["quiet"]);
     assert.equal(m.workspace.source("index.html"), PAGE);
     assert.equal(m.draft("index.html"), undefined);
     assert.equal(m.steps().length, steps + 1, "one step");
     assert.equal(m.announced.at(-1), "Undid Copy editor's changes.");
-    assert.equal(undoState(m.scope, ids, path => m.draft(path)), "undone");
+    assert.equal(undoState(m.scope, ids, path => m.draft(path), "grant-a"), "undone");
     // Ctrl+Z brings both back.
     assert.equal(m.undo(), true);
     assert.equal(m.workspace.source("index.html"), PAGE.replace("Hello", "Two"));
-    assert.equal(undoState(m.scope, ids, path => m.draft(path)), "ready");
+    assert.equal(undoState(m.scope, ids, path => m.draft(path), "grant-a"), "ready");
   });
 
 test("the pin's Undo is whole or nothing: one of its changes changed since refuses all, and nothing is undone", async () => {
@@ -183,7 +183,7 @@ test("the pin's Undo is whole or nothing: one of its changes changed since refus
   await agentChange(m, edits, "whole-b", ["about.html"], { edits: new Map([["about.html", "<main><h1>Team</h1></main>"]]), done: "2.", undone: "2." });
   m.typeInto("index.html");
   const was = JSON.stringify(sources(m, ["index.html", "about.html"])), steps = m.steps().length;
-  await assert.rejects(undoAgentChanges(["whole-a", "whole-b"], undoPorts(m, edits)), /index\.html changed since Copy editor's change whole-a/);
+  await assert.rejects(undoAgentChanges(["whole-a", "whole-b"], "grant-a", undoPorts(m, edits)), /index\.html changed since Copy editor's change whole-a/);
   assert.equal(JSON.stringify(sources(m, ["index.html", "about.html"])), was);
   assert.equal(m.steps().length, steps);
 });
@@ -193,10 +193,10 @@ test("the pin's Undo of a change the agent discarded already does nothing, and i
   const change = await agentChange(m, edits, "gone-a", ["index.html"], { edits: new Map([["index.html", PAGE.replace("Hello", "One")]]), done: "1.", undone: "1." });
   await edits.run(r => discardPlan([change], r, path => m.draft(path), m.openFile()));
   const steps = m.steps().length;
-  await undoAgentChanges(["gone-a"], undoPorts(m, edits));
+  await undoAgentChanges(["gone-a"], "grant-a", undoPorts(m, edits));
   assert.equal(m.steps().length, steps);
-  assert.equal(undoState(m.scope, ["gone-a"], path => m.draft(path)), "undone");
-  await assert.rejects(undoAgentChanges(["never-kept"], undoPorts(m, edits)), /no longer keeps the agent's change/);
+  assert.equal(undoState(m.scope, ["gone-a"], path => m.draft(path), "grant-a"), "undone");
+  await assert.rejects(undoAgentChanges(["never-kept"], "grant-a", undoPorts(m, edits)), /no longer keeps the agent's change/);
 });
 
 let races = 0;
@@ -208,10 +208,46 @@ test("the pin's Undo writes nothing once another site or branch is shown at any 
     // Its guarded edit, and the plan within it, each an await the switch may land in.
     const raced: Pick<GuardedEdits, "run"> = { run: (plan, options) => race.port("run", () => edits.run(r => race.port("plan", async () => plan(r))(), options))() };
     const done = agentChange(m, edits, id, ["index.html"], { edits: new Map([["index.html", PAGE.replace("Hello", "Race")]]), done: "r.", undone: "r." })
-      .then(() => undoAgentChanges([id], undoPorts(m, raced, () => shownScope)).catch(() => undefined));
+      .then(() => undoAgentChanges([id], "grant-a", undoPorts(m, raced, () => shownScope)).catch(() => undefined));
     return { done, m };
   }, () => { shownScope = { ...shownScope!, branch: "other" }; }, run => {
     assert.equal(run.m.workspace.source("index.html"), PAGE.replace("Hello", "Race"), "nothing undone");
   });
   assert.equal(awaits, 2);
+});
+
+test("a pin offers to undo only its own agent's changes: ids of another connection's are left alone", async () => {
+  const { m, edits } = setup();
+  await agentChange(m, edits, "theirs-b", ["about.html"], { edits: new Map([["about.html", "<main><h1>Team</h1></main>"]]), done: "b.", undone: "b." }, "grant-b");
+  const drafts = (path: string) => m.draft(path);
+  // Agent A's pin names B's change: nothing to undo from it.
+  assert.equal(undoState(m.scope, ["theirs-b"], drafts, "grant-a"), undefined);
+  assert.equal(undoState(m.scope, ["theirs-b"], drafts, undefined), undefined, "a pin with no agent");
+  await assert.rejects(undoAgentChanges(["theirs-b"], "grant-a", undoPorts(m, edits)), /no longer keeps the agent's change/);
+  assert.equal(m.workspace.source("about.html"), "<main><h1>Team</h1></main>");
+  // B's own pin does.
+  assert.equal(undoState(m.scope, ["theirs-b"], drafts, "grant-b"), "ready");
+});
+
+test("a move is undone whole: the file at its old path, the new one gone, a page's rewritten link as before, Undo and Redo back and forth", async () => {
+  const { m, edits } = setup();
+  const paths = ["old.css", "styles/new.css", "index.html"], linked = PAGE.replace("</main>", '<link href="/styles/new.css"></main>');
+  const change = await agentChange(m, edits, "mcp-move", paths, {
+    moves: [{ from: "old.css", to: "styles/new.css" }], edits: new Map([["index.html", linked]]), done: "Moved.", undone: "Moved back." });
+  assert.equal(m.draft("styles/new.css")?.movedFrom, "old.css");
+  assert.equal(m.workspace.exists("old.css"), false);
+  const moved = JSON.stringify(sources(m, paths));
+  const drafts = (path: string) => m.draft(path);
+  assert.deepEqual(await edits.run(r => discardPlan([change], r, drafts, m.openFile())), { ok: true, status: "applied" });
+  assert.equal(m.workspace.source("old.css"), "p {}");
+  assert.equal(m.draft("old.css"), undefined);
+  assert.equal(m.workspace.exists("styles/new.css"), false);
+  assert.equal(m.workspace.source("index.html"), PAGE);
+  assert.equal(undoState(m.scope, ["mcp-move"], drafts, "grant-a"), "undone");
+  assert.equal(m.undo(), true);
+  assert.equal(JSON.stringify(sources(m, paths).map(([path, text]) => [path, text])), JSON.stringify(JSON.parse(moved).map(([path, text]: string[]) => [path, text])));
+  assert.equal(undoState(m.scope, ["mcp-move"], drafts, "grant-a"), "ready");
+  assert.equal(m.redo(), true);
+  assert.equal(m.workspace.exists("styles/new.css"), false);
+  assert.equal(m.workspace.source("old.css"), "p {}");
 });
