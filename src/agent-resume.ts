@@ -36,8 +36,9 @@ export async function resumeAgents(ports: {
  * idle or when another tab receives, or marks the press stuck: still reconnecting with no recorded
  * retry time to wait for, or still paused by a reconnect that gave up (the retry did nothing or
  * failed again). Finding an earlier takeover failed (the site left paused in this browser, ticket
- * am-53), it retries the takeover instead, and is stuck if that fails again. A turn-off, another
- * turn-on or a site move while it waits ends it with no write.
+ * am-53), it retries the takeover instead; one that fails again writes nothing more, as
+ * `takeover-failed` is itself the problem dot. A turn-off, another turn-on or a site move while it
+ * waits ends it with no write.
  */
 export async function turnOnAgents(ports: {
   /** Turns remote agents on for the open site and returns this activation. */
@@ -86,7 +87,16 @@ export async function turnOnAgents(ports: {
   const now = ports.state();
   if (ports.offer(now) !== "connect") await ports.copyAgain();
   else if (ports.fresh(now)) await ports.prompt();
-  else if ((now === "reconnecting" && !ports.retryWaits()) || gaveUp(now) || failed(now)) ports.stuck();
+  else if ((now === "reconnecting" && !ports.retryWaits()) || gaveUp(now)) ports.stuck();
+}
+
+/**
+ * Whether a transport state is the site owner's pause: `paused` with the relay's message. A reconnect
+ * that gave up (`paused` with none) and a failed takeover (`takeover-failed`, ticket am-53) are not:
+ * Connect to MCP retries those.
+ */
+export function ownerPause(state: { mode: string; message?: string }) {
+  return state.mode === "paused" && Boolean(state.message);
 }
 
 /**
