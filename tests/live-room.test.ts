@@ -633,6 +633,40 @@ test("a tab joining a room where nobody holds a key any more makes it, and a wai
   });
 });
 
+test("a joiner handed a key it cannot unwrap asks again, and once the holder has gone the room makes one key for it and later joiners", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness();
+    const holder = participant(h, time.clock);
+    await holder.live.ready();
+    const holderPeer = peerOf(holder.server);
+    // The holder's handover reaches J broken (the unwrap fails and J ignores it); the relay counts J as handed the key.
+    let broken = false;
+    const j = filteredParticipant(h, time.clock, data => {
+      if (broken || typeOf(data)?.type !== "key" || typeOf(data)?.from !== holderPeer) return true;
+      broken = true;
+      const frame = JSON.parse(data as string) as { wrapped: string };
+      const flipped = frame.wrapped.endsWith("A") ? "B" : "A";
+      queueMicrotask(() => j.server.send(JSON.stringify({ ...frame, wrapped: frame.wrapped.slice(0, -1) + flipped })));
+      return false;
+    });
+    await until(() => broken, "the broken handover");
+    await settle();
+    holder.live.close();
+    await settle();
+    // J asks again (its backstop): the handed key does not count, nobody else holds one, so J makes it.
+    await time.advance(5_000);
+    await j.live.ready();
+    const k = participant(h, time.clock);
+    await k.live.ready();
+    assert.equal(keys.length, 2, "the holder's key, then the one J made");
+    assert.equal(await k.live.send(new TextEncoder().encode("from K")), true);
+    await until(() => j.got.length > 0, "J hearing K");
+    assert.deepEqual(j.got, ["from K"]);
+    j.live.close(); k.live.close();
+  });
+});
+
 test("a key holder silent for 60 s but pinging is not closed when a joiner asks, and no new key is made", async () => {
   await capturingRoomKeys(async keys => {
     const time = fakeClock();

@@ -4,7 +4,8 @@ import { openEditor } from "../support/scenarios";
 // The open file's shared copy (ticket am-21, ADR 0003): two browsers signed in
 // to the same repository and branch, each with its own drafts, share the page
 // they both have open through its live room (the real Worker route and relay
-// rooms, src/live-text.ts over src/live-room.ts). Default fixture group.
+// rooms, src/live-text.ts over src/live-room.ts). Live sharing is off by default
+// (the Tuesday pack decides); these browsers switch it on. Default fixture group.
 const pageErrors: string[] = [];
 const file = "index.html";
 
@@ -18,8 +19,11 @@ const insert = (page: Page, after: string, text: string) => page.evaluate(async 
 }, { path: file, after, text });
 const count = (text: string, part: string) => text.split(part).length - 1;
 
-async function browserTab(browser: Browser) {
+async function browserTab(browser: Browser, sharing = true) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  // The dev server loads hundreds of modules: room in the resource list to see the lazy chunks arrive.
+  await context.addInitScript(() => { if (window === window.top) performance.setResourceTimingBufferSize(10_000); });
+  if (sharing) await context.addInitScript(() => { if (window === window.top) localStorage.setItem("native-site-editor:live-sharing", "on"); });
   const page = await context.newPage();
   page.on("pageerror", (error) => pageErrors.push(error.message));
   return { context, page };
@@ -87,5 +91,52 @@ test("two people opening a page nobody has open, at once, do not double its text
   } finally {
     await anna.context.close();
     await lex.context.close();
+  }
+});
+
+test("a joiner whose only other tab leaves before answering goes on from its own changes, and a later joiner gets them", async ({ browser, baseURL }) => {
+  const anna = await browserTab(browser), lex = await browserTab(browser);
+  const tabs = [anna, lex];
+  try {
+    // Anna's answers never reach the room: her binary frames are dropped once Lex is coming.
+    let dropping = false;
+    await anna.page.routeWebSocket(/\/api\/live\/room/, ws => {
+      const server = ws.connectToServer();
+      ws.onMessage(message => { if (!dropping || typeof message === "string") server.send(message); });
+      server.onMessage(message => ws.send(message));
+    });
+    await openEditor(anna.page, baseURL);
+    dropping = true;
+    await openEditor(lex.page, baseURL);
+    await expect.poll(() => lex.page.evaluate(() => performance.getEntriesByType("resource").some(entry => /yjs/.test(entry.name))), { timeout: 20_000 }).toBe(true);
+    // Lex types while still waiting to be caught up; then Anna closes her page without having answered.
+    await insert(lex.page, '<h1 data-key="hero-title">', "Waiting: ");
+    expect(await source(anna.page)).not.toContain("Waiting: ");
+    await anna.context.close();
+    tabs.shift();
+    // Sam opens the page: the copy comes from Lex, with what he typed.
+    const sam = await browserTab(browser);
+    tabs.push(sam);
+    await openEditor(sam.page, baseURL);
+    await expect.poll(() => source(sam.page), { timeout: 20_000 }).toContain("Waiting: A native browser preview");
+    expect(await source(sam.page)).toBe(await source(lex.page));
+    expect(count(await source(sam.page), "Waiting: ")).toBe(1);
+  } finally {
+    for (const tab of tabs) await tab.context.close();
+  }
+});
+
+test("with live sharing switched off (the default), a page opens no room socket", async ({ browser, baseURL }) => {
+  const anna = await browserTab(browser, false);
+  try {
+    const sockets: string[] = [];
+    anna.page.on("websocket", socket => sockets.push(socket.url()));
+    await openEditor(anna.page, baseURL);
+    // The shared copy's module loads after the first paint and stops there.
+    await expect.poll(() => anna.page.evaluate(() => performance.getEntriesByType("resource").some(entry => /live-text/.test(entry.name))), { timeout: 20_000 }).toBe(true);
+    await insert(anna.page, '<h1 data-key="hero-title">', "Alone: ");
+    expect(sockets.filter(url => url.includes("/api/live/room"))).toEqual([]);
+  } finally {
+    await anna.context.close();
   }
 });

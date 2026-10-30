@@ -414,7 +414,7 @@ its number unused.
 - Steps: `scripts/agents/shots/features/F-canvas-14.json`
 
 ### F-canvas-15 Two people on one page share one copy
-- Try: Open the same page on the same site and branch in two browsers (two sign-ins), change its text in one, then in the other; then open it in a third browser.
+- Try: Live sharing is off until switched on: in each browser, run `localStorage.setItem("native-site-editor:live-sharing", "on")` in the console and reload. Then open the same page on the same site and branch in two browsers (two sign-ins), change its text in one, then in the other; then open it in a third browser.
 - Good: Each change shows in the other browser's page and code within a moment, with nothing typed lost, and both end with the very same text; the third browser opens on that shared text, not GitHub's. Opening a page nobody else has open at the same moment as someone else never doubles its text. Each browser keeps the shared text as its own unsaved change. Someone else's change clears your Undo over that page (per-person Undo comes later). Going to another page or reloading and coming back adds nothing twice. Discard takes only you out of the shared copy: the others keep their changes, and opening the page again brings you back to them. There are no carets or names yet, and no toast (S4).
 - Files: `src/live-text.ts`, `src/live-room.ts`, `shared/live-room.ts`, `worker/agent-relay.ts`
 - Phone: yes

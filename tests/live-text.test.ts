@@ -4,9 +4,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { signal } from "@preact/signals-core";
-import { createDraftStore } from "../src/draft-store";
-import { draftKey, type DraftScope } from "../src/drafts";
-import { LIVE_TEXT_CATCH_UP_MS, startLiveText, typedSince, type CopyKeeper, type KeptCopy } from "../src/live-text";
+import { createDraftStore, type DraftPersistence } from "../src/draft-store";
+import { draftKey, type DraftScope, type SavedDraft } from "../src/drafts";
+import { browserKeeper, LIVE_TEXT_CATCH_UP_MS, startLiveText, typedSince, type CopyKeeper, type KeptCopy } from "../src/live-text";
+import { fakeIndexedDB } from "./support/fake-agent-indexeddb";
+import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 import { forEachAwait, type AwaitRace } from "./support/await-race";
 import type { LiveClock, LiveRoomOptions } from "../src/live-room";
 import type { LiveAccess } from "../shared/live-room";
@@ -24,7 +26,8 @@ const quiet = () => new Promise(resolve => setTimeout(resolve, 40));
 
 /** One room for the file: frames go to everyone else in it, members hear joins and leaves, a joiner holds the key at once. */
 function fakeRoom() {
-  type Member = { id: string; options: LiveRoomOptions; access: LiveAccess; cut: boolean };
+  /** `cut`: nothing in or out; `mute`: what it sends is lost, what others send still arrives. */
+  type Member = { id: string; options: LiveRoomOptions; access: LiveAccess; cut: boolean; mute?: boolean };
   const members = new Set<Member>();
   let next = 0;
   const others = (me: Member) => new Map([...members].filter(other => other !== me).map(other => [other.id, other.access]));
@@ -46,7 +49,7 @@ function fakeRoom() {
       return {
         me,
         async send(bytes: Uint8Array) {
-          if (!members.has(me) || me.cut) return false;
+          if (!members.has(me) || me.cut || me.mute) return false;
           room.frames++;
           const copy = Uint8Array.from(bytes);
           room.log.push({ from: me.id, bytes: copy });
@@ -65,8 +68,8 @@ function keeper(): CopyKeeper & { copies: Map<string, KeptCopy | undefined> } {
   return { copies, read: async key => copies.get(key), write: (key, copy) => { copies.set(key, copy); } };
 }
 
-function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?: string; clock?: LiveClock; keeper?: CopyKeeper; race?: AwaitRace } = {}) {
-  const store = createDraftStore();
+function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?: string; clock?: LiveClock; keeper?: CopyKeeper; race?: AwaitRace; persistence?: DraftPersistence; loadYjs?: () => Promise<typeof import("yjs")> } = {}) {
+  const store = createDraftStore(options.persistence ? { persistence: options.persistence } : {});
   store.open(scope, path, { text: base, baseSha: options.baseSha ?? sha });
   if (text !== base) store.edit({ scope, path, text, label: "Earlier draft" });
   const openFile = signal<string | undefined>(path);
@@ -76,10 +79,10 @@ function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?
   let keptRead = false;
   const race = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => options.race ? options.race.port(name, work) : work;
   const stop = startLiveText({
-    store, openFile, scope: () => scope, ...(options.clock ? { clock: options.clock } : {}),
+    store, openFile, scope: () => scope, on: true, ...(options.clock ? { clock: options.clock } : {}),
     keeper: { read: key => race("kept copy", (key: string) => kept.read(key))(key).finally(() => { keptRead = true; }), write: (key, copy) => kept.write(key, copy) },
     openRoom: roomOptions => { socket = room.open(roomOptions); sockets.push(socket.me.id); return socket; },
-    loadYjs: race("Yjs", () => { yjsLoads++; return import("yjs"); }),
+    loadYjs: race("Yjs", () => { yjsLoads++; return options.loadYjs ? options.loadYjs() : import("yjs"); }),
   });
   return {
     store, openFile, stop, keeper: kept, sockets,
@@ -484,4 +487,143 @@ test("a reload whose kept copy missed the last shared change does not add that c
   assert.equal(again.text, lex.text);
   assert.deepEqual([times(again.text, "Warm "), times(again.text, "Crusty ")], [1, 1]);
   again.stop(); lex.stop();
+});
+
+function fakeTimers() {
+  let now = 0, id = 0;
+  const timers = new Map<number, { at: number; run(): void }>();
+  const clock: LiveClock = { now: () => now, setTimeout(run, delay) { timers.set(++id, { at: now + delay, run }); return id; }, clearTimeout(timer) { timers.delete(timer as number); } };
+  return { clock, timers, advance(ms: number) { now += ms; for (const [key, timer] of [...timers]) if (timer.at <= now) { timers.delete(key); timer.run(); } } };
+}
+
+test("a joiner whose only other tab leaves before answering starts from its own draft at once, without the 5 s wait", async () => {
+  const time = fakeTimers(), room = fakeRoom(), draft = `${base}<p>Lex's line.</p>\n`;
+  const anna = tab(room);
+  await quiet();
+  // Anna never answers: her socket carries nothing from before Lex comes (she still hears who joins).
+  anna.socket.me.cut = true;
+  const lex = tab(room, draft, { clock: time.clock });
+  await until(() => lex.sockets.length === 1 && room.members.size === 2, "Lex in the room");
+  const fromLex = (caughtUp: number) => room.log.some(item => item.from === lex.sockets[0] && item.bytes[0] === 1 && item.bytes[1] === caughtUp);
+  await until(() => fromLex(0), "Lex asking to be caught up");
+  await until(() => time.timers.size > 0, "Lex waiting for an answer");
+  assert.equal(fromLex(1), false, "not caught up yet");
+  anna.stop();
+  // The clock never moved: Lex starts the copy himself and says so.
+  await until(() => fromLex(1), "Lex starting from his own draft");
+  const sam = tab(room);
+  await until(() => sam.text === draft, "Sam caught up from Lex");
+  assert.equal(lex.text, draft);
+  lex.stop(); sam.stop();
+});
+
+test("a joiner does not count an answer to another tab's request as its own catch-up", async () => {
+  const time = fakeTimers(), room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Warm ");
+  lex.type(base.length, "<p>Closed Mondays.</p>\n");
+  await until(() => anna.text === lex.text && anna.text.includes("Warm") && anna.text.includes("Mondays"), "both edits");
+  // Sam opens the page with the room's text as his draft; his own request is lost.
+  const sam = tab(room, anna.text, { clock: time.clock });
+  await until(() => sam.sockets.length === 1, "Sam in the room");
+  sam.socket.me.mute = true;
+  await until(() => sam.yjsLoads === 1, "Sam's copy");
+  await quiet();
+  // Lex asks again (a reconnect): Anna's answer to him reaches Sam too, holding only what Lex lacked.
+  const before = room.log.length;
+  lex.socket.me.options.onKey?.();
+  await until(() => room.log.slice(before).some(item => item.bytes[0] === 3), "Anna answering Lex");
+  await quiet();
+  assert.equal(sam.text, anna.text, "Sam did not start from that partial answer");
+  // His own request gets through: caught up, nothing doubled.
+  sam.socket.me.mute = false;
+  sam.socket.me.options.onKey?.();
+  await quiet(); await quiet();
+  assert.equal(sam.text, anna.text);
+  assert.deepEqual([times(sam.text, "Warm "), times(sam.text, "Mondays")], [1, 1]);
+  sam.type(0, "x");
+  await until(() => anna.text.startsWith("x"), "Sam's edit after");
+  assert.deepEqual([times(anna.text, "Warm "), times(anna.text, "Mondays")], [1, 1]);
+  anna.stop(); lex.stop(); sam.stop();
+});
+
+test("another tab's older saved draft adopted while sharing does not take newer changes away from everyone", async () => {
+  const records = new Map<string, SavedDraft>();
+  const persistence: DraftPersistence = {
+    get: (draftScope, file) => records.get(draftKey(draftScope, file)),
+    save: record => { records.set(draftKey(record, record.path), record); return true; },
+    remove: (draftScope, file) => records.delete(draftKey(draftScope, file)),
+  };
+  const room = fakeRoom();
+  const anna = tab(room, base, { persistence }), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Warm ");
+  await until(() => lex.text.includes("Warm"), "Anna's edit");
+  const older = records.get(draftKey(scope, path))!;
+  lex.type(base.length, "<p>Newer line.</p>\n");
+  await until(() => anna.text.includes("Newer line"), "Lex's edit followed");
+  // Another tab of Anna's browser wrote the older draft; her code pane mounting adopts it.
+  records.set(draftKey(scope, path), { ...older, updatedAt: older.updatedAt + 1 });
+  assert.equal(anna.store.reload(scope, path), true);
+  await quiet();
+  assert.ok(lex.text.includes("Newer line"), "Lex keeps the newer change");
+  assert.equal(anna.text, lex.text, "and Anna's draft follows the copy again");
+  anna.stop(); lex.stop();
+});
+
+test("the browser keeper keeps copies in IndexedDB: a fresh keeper reads them, a removal deletes, a wrong shape reads as none", async () => {
+  const fake = fakeIndexedDB();
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: fake.factory });
+  try {
+    const copy: KeptCopy = { tag: new Uint8Array(20).fill(7), update: Uint8Array.from([1, 2, 3]) };
+    browserKeeper().write("file-a", copy);
+    await until(() => fake.stores.get("copies")?.has("file-a") ?? false, "the write");
+    assert.deepEqual(await browserKeeper().read("file-a"), copy, "a reload reads it back");
+    browserKeeper().write("file-a", undefined);
+    await until(() => !(fake.stores.get("copies")?.has("file-a") ?? true), "the removal");
+    assert.equal(await browserKeeper().read("file-a"), undefined);
+    fake.stores.get("copies")!.set("file-b", { tag: "not bytes", update: [1] });
+    assert.equal(await browserKeeper().read("file-b"), undefined, "a record of the wrong shape");
+  } finally {
+    if (saved) Object.defineProperty(globalThis, "indexedDB", saved); else Reflect.deleteProperty(globalThis, "indexedDB");
+  }
+});
+
+test("an update over the room's frame limit is not sent, and the joiner goes on from its own draft after the wait", async () => {
+  const time = fakeTimers(), room = fakeRoom();
+  const anna = tab(room);
+  await quiet();
+  anna.type(base.length, `<p>${"x".repeat(LIVE_MESSAGE_LIMIT)}</p>\n`);
+  const lex = tab(room, base, { clock: time.clock });
+  await until(() => lex.yjsLoads === 1 && anna.yjsLoads === 1, "both copies");
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.ok(room.log.every(item => item.bytes.length <= LIVE_MESSAGE_LIMIT), "no frame over the room's limit went out");
+  assert.equal(lex.text, base, "Lex is not caught up with a copy that cannot be sent");
+  time.advance(LIVE_TEXT_CATCH_UP_MS);
+  await quiet();
+  lex.type(0, "<!-- Lex -->");
+  await until(() => anna.text.startsWith("<!-- Lex -->"), "Lex's small edit still reaching Anna");
+  assert.equal(lex.text, `<!-- Lex -->${base}`);
+  anna.stop(); lex.stop();
+});
+
+test("frames past the inbox limit while Yjs loads are dropped, and the catch-up still brings everything", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const sam = tab(room, base, { loadYjs: async () => { await gate; return import("yjs"); } });
+  await until(() => sam.yjsLoads === 1, "Sam loading Yjs");
+  for (let index = 0; index < 600; index++) anna.type(0, "y");
+  await until(() => lex.text.startsWith("y".repeat(600)), "the edits reaching Lex");
+  release();
+  await until(() => sam.text === anna.text, "Sam caught up");
+  assert.equal(times(sam.text, "y".repeat(600)), 1);
+  anna.stop(); lex.stop(); sam.stop();
 });
