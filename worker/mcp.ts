@@ -865,10 +865,12 @@ function siteServer(connection: Connection, env: Env, origin: string, exchange: 
     }
     const result = waited([], `The editor did not answer this wait (${outcome.code ?? "connection lost"}). Wait about 10 seconds, then call wait_for_requests again. Requests it took come back with all: true.`);
     if (outcome.code === "cancelled") return { result, cancelled: true };
-    // Only a wait that can never work ends the job; a passing loss (timeout, lost connection, busy) waits on.
-    if (outcome.code === "connect-agent-again" || outcome.code === "too-large") return { result };
+    // A wait the relay never sent (busy, expired before delivery) took nothing: the job waits on. One sent and lost
+    // may have taken requests, and one that can never work (connect again, too large) never will: the job ends
+    // with this answer, whose hint brings them back with all: true.
+    if (outcome.outcome !== "not-sent" || outcome.code === "connect-agent-again" || outcome.code === "too-large") return { result };
     return { result, waitOn: { retryMs: 10_000, why: outcome.code === "busy" ? "The editor is busy with other agents' changes."
-      : `The editor did not answer this wait (${outcome.code ?? "connection lost"}). Requests it took come back with all: true.` } };
+      : `The editor did not receive this wait (${outcome.code ?? "connection lost"}).` } };
   }
 
   register(
@@ -1125,6 +1127,7 @@ export async function handleMcp(
       return answer({ resultType: "complete", ...jobState(taskId!, known, "cancelled") });
     }
     if (job === "update") return answer(known ? { resultType: "complete" } : undefined);
+    if (job === "look" && !known) return answer(undefined);
     const { jobs } = siteServer(connection, env, origin, exchange);
     if (job === "start") {
       const started = jobs.start(body?.params?.arguments);
