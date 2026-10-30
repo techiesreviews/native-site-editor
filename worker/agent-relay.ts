@@ -33,6 +33,7 @@ export interface RelayTarget {
 /** `job`: the key is a long job's id (ticket am-17), set by the job's own messages only: a client's request id may look like one. */
 export interface RelayCancelKey { requestId: string | number; grantId: string; job?: true }
 interface Pending {
+  id: string;
   cancelKey?: RelayCancelKey;
   /** The command as JSON: a newer look takes over this wait only with the same command. */
   command: string;
@@ -286,36 +287,38 @@ export class AgentRelay {
     // looks never crowd out other agents' waits. How each look settles:
     // - a newer look with the same command takes the wait over: the earlier look answers `replaced` (not sent) at
     //   once, and its caller leaving no longer ends the wait; an unsent wait is still sent once, on the handshake;
-    // - a newer look with another command (watching paused: answer at once) ends the held wait as `replaced`,
-    //   unknown once sent (the tab is told, as for a cancel), and sends its own;
+    // - a newer look with another command (the grant's generation or the look's agent name changed) passes the
+    //   checks below with the held wait's place, wait and bytes counted as free, then ends the held wait as
+    //   `replaced`, unknown once sent (the tab is told, as for a cancel), and sends its own; refused, it ends nothing;
     // - the newest look gets the tab's answer, or cancelled (its caller leaves, tasks/cancel), timeout or lost.
     const json = JSON.stringify(command);
     const held = cancelKey?.job ? [...this.calls.values()].find(call => call.cancelKey && sameKey(call.cancelKey, cancelKey) && sameScope(call.scope, scope)) : undefined;
     if (held?.command === json) return new Promise(resolve => held.adopt(resolve, signal));
-    held?.finish(failure("replaced", held.unsent === undefined ? "unknown" : "not-sent"));
+    const freed = { calls: held ? 1 : 0, waits: held && this.waitIds.has(held.id) ? 1 : 0, bytes: held?.bytes ?? 0 };
     const receivers = [...this.sockets].filter(([socket, metadata]) => socket.readyState === 1 && sameScope(metadata, scope));
     const entry = receivers.find(([, metadata]) => metadata.handshaken) ?? receivers[0];
     if (!entry) return Promise.resolve(failure("editor-unavailable"));
     const [receiver, receiverMetadata] = entry;
-    if (this.calls.size + this.reserved.count >= 5) return Promise.resolve(failure("busy"));
+    if (this.calls.size - freed.calls + this.reserved.count >= 5) return Promise.resolve(failure("busy"));
     const wait = waitBudget(command);
-    if (wait !== undefined && this.waitIds.size >= WAITS_PER_SITE) return Promise.resolve(failure("waiting"));
+    if (wait !== undefined && this.waitIds.size - freed.waits >= WAITS_PER_SITE) return Promise.resolve(failure("waiting"));
     // Measure the complete wire envelope before allocating a correlation id,
     // promise, pending entry or timer. UUIDs have the placeholder's fixed width.
     // remainingMs is filled in at each send (at most 5 digits, measured at its widest): the tab fences
     // commits against this total deadline without comparing clocks.
     const candidate = JSON.stringify({ type: "command", id: placeholder, ...scope, remainingMs: 10_000, command });
     const length = bytes(candidate) + (cancelKey ? bytes(JSON.stringify(cancelKey)) : 0);
-    if (this.buffered + this.reserved.bytes + length > AgentRelay.maxBytes) return Promise.resolve(failure("too-large"));
+    if (this.buffered - freed.bytes + this.reserved.bytes + length > AgentRelay.maxBytes) return Promise.resolve(failure("too-large"));
     const deadline = started + (wait ?? 10_000);
     if (this.clock.now() >= deadline) return Promise.resolve(failure("timeout"));
+    held?.finish(failure("replaced", held.unsent === undefined ? "unknown" : "not-sent"));
     const id = crypto.randomUUID();
     const message = candidate.replace(placeholder, id);
     const framed = (now: number) => message.replace('"remainingMs":10000', `"remainingMs":${Math.max(0, Math.floor(deadline - now))}`);
     return new Promise(first => {
       let resolve: (outcome: Outcome) => void = first, listening = signal;
       const cancel = () => call.finish(failure("cancelled", call.unsent === undefined ? "unknown" : "not-sent"));
-      const call: Pending = { cancelKey, command: json, socket: receiver, scope, bytes: length, deadline, timer: undefined, adopt: (next, nextSignal) => {
+      const call: Pending = { id, cancelKey, command: json, socket: receiver, scope, bytes: length, deadline, timer: undefined, adopt: (next, nextSignal) => {
         const earlier = resolve;
         listening?.removeEventListener("abort", cancel);
         resolve = next;

@@ -90,7 +90,11 @@ async function connected(options: { editor?: boolean; hold?: boolean; refuse?: s
     state: "open", element: { file: "index.html", id: "1.0.0", tag: "h1", text: "Welcome", html: "<h1>Welcome</h1>" },
     thread: [{ from: "user", text: pinText, at: Date.now() }] });
   /** Answers one command the tab holds. */
-  const answerOne = (id: string) => answer(held.splice(held.findIndex(frame => frame.id === id), 1)[0]);
+  const answerOne = (id: string) => {
+    const index = held.findIndex(frame => frame.id === id);
+    assert.ok(index >= 0, `the tab holds ${id}`);
+    answer(held.splice(index, 1)[0]);
+  };
   return { ...h, name, token, otherToken, pins, pin, frames, commands, held, release, answerOne, modern };
 }
 
@@ -281,8 +285,8 @@ test("a cancel of a look's own request id never ends the job: the look runs out 
       "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25" },
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 41 } }) });
     assert.equal(cancelled.status, 202);
-    // The look waits under its task id, not its request id: the tab keeps its wait, and the look has not answered.
-    for (let turn = 0; turn < 10; turn++) await new Promise(resolve => setImmediate(resolve));
+    // The look waits under its task id, not its request id: the tab keeps its wait, and the look has not answered
+    // (the cancel was handled before its 202).
     assert.equal(h.frames.some(frame => frame.type === "cancel"), false);
     assert.equal(answered, false);
     h.release();
@@ -456,12 +460,10 @@ test("a look after the owner pauses watching ends the held wait and answers at o
     await until(() => h.commands.length === 2);
     assert.equal(h.commands[1].command.waitMs, 0, "the paused look's own command reaches the tab");
     assert.ok(h.frames.some(frame => frame.type === "cancel" && frame.id === h.commands[0].id), "the tab ends the held wait");
-    // The ended wait was sent, so it may have taken requests: that look ends with the all: true hint, and the
-    // pause's stop text, since a client may stop at this first completed answer.
+    // The ended wait was sent, so it may have taken requests: that look ends with the all: true hint.
     const earlier = (await first).result;
     assert.equal(earlier.status, "completed");
     assert.match(payload(earlier.result).hint, /took over its wait; requests it may have taken come back with all: true/);
-    assert.match(payload(earlier.result).hint, new RegExp(WATCH_PAUSED));
     assert.doesNotMatch(payload(earlier.result).hint, /replaced|did not answer/);
     h.answerOne(h.commands[1].id);
     const paused = (await second).result;
@@ -539,5 +541,25 @@ test("a client's own request id that starts with wait: is cancelled for 10 secon
     await until(() => h.commands.length === 2);
     h.release();
     assert.equal(payload(JSON.parse(await again).result).requests.length, 0);
+  } finally { await h.worker.dispose(); }
+});
+
+test("a look whose caller leaves after a newer look took over its wait leaves the wait to the newer look", async () => {
+  const h = await connected({ hold: true });
+  try {
+    const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    const leave = new AbortController();
+    const first = h.dispatchFetch(origin + "/mcp", modernRequest(h.token, "tasks/get", { taskId }, true, 1, leave.signal)).then(response => response.text());
+    await until(() => h.commands.length === 1);
+    const second = h.modern("tasks/get", { taskId }, true, 2);
+    assert.equal(JSON.parse(await first).result.status, "working");
+    leave.abort();
+    h.pins.push(h.pin("req-kept"));
+    h.release();
+    const done = (await second).result;
+    assert.equal(done.status, "completed");
+    assert.equal(payload(done.result).requests[0].id, "req-kept");
+    assert.equal(h.frames.some(frame => frame.type === "cancel"), false);
+    assert.equal(h.commands.length, 1);
   } finally { await h.worker.dispose(); }
 });

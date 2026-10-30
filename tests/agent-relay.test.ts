@@ -703,3 +703,30 @@ test("a takeover keeps the held wait's deadline: the newest look times out when 
   assert.equal(h.relay.waits, 0);
   h.idle();
 });
+
+test("a look with another command ends the held wait only once it passes its own checks, the held wait's place counted free", async () => {
+  const h = fixture();
+  const first = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  const held = h.id();
+  let settled = false;
+  void first.then(() => { settled = true; });
+  // Refused (too large): the held wait stays, and the tab is told nothing.
+  assert.deepEqual(await h.relay.dispatch(scope, { ...jobWait(0), pad: "x".repeat(AgentRelay.maxBytes) }, undefined, undefined, jobKey),
+    { ok: false, code: "too-large", outcome: "not-sent" });
+  await Promise.resolve();
+  assert.equal(settled, false);
+  assert.equal(h.relay.waits, 1);
+  assert.equal(h.editor.sent.some(message => JSON.parse(message).type === "cancel"), false);
+  // With every other place taken, the newer look still fits in the held wait's place.
+  const others = [1, 2, 3, 4].map(requestId => h.relay.dispatch(scope, { edit: requestId }, undefined, undefined, { requestId, grantId: "two" }));
+  assert.equal(h.relay.pendingCount, 5);
+  const second = h.relay.dispatch(scope, jobWait(0), undefined, undefined, jobKey);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "unknown" });
+  assert.deepEqual(h.editor.sent.map(message => JSON.parse(message) as { type: string; id: string }).filter(frame => frame.type === "cancel").map(frame => frame.id), [held]);
+  assert.equal(h.relay.pendingCount, 5);
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await second, { ok: true, result: { requests: [] } });
+  h.relay.disconnect(h.editor);
+  await Promise.all(others);
+  h.idle();
+});
