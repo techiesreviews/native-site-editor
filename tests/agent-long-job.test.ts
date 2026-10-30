@@ -101,7 +101,9 @@ async function connected(options: { editor?: boolean; hold?: boolean; refuse?: s
     const session = await hub.get("session") as { grants: { id: string; client?: string }[] };
     await hub.put("session", { ...session, grants: session.grants.map(grant => grant.id === grantId ? { ...grant, client } : grant) });
   };
-  return { ...h, name, token, otherToken, pins, pin, frames, commands, held, release, answerOne, modern, rename };
+  /** The editor tab closes. */
+  const closeTab = () => h.close(name, socket);
+  return { ...h, name, token, otherToken, pins, pin, frames, commands, held, release, answerOne, modern, rename, closeTab };
 }
 
 test("a tasks-capable client gets wait_for_requests as a job whose result is the pin, and no storage holds the pin", async () => {
@@ -527,6 +529,63 @@ test("a look under a changed agent name ends the held wait: the earlier look sti
     assert.deepEqual(payload(quiet.result).requests, []);
     assert.match(payload(quiet.result).hint, /ended an earlier look's wait.*come back with all: true/);
   } finally { await h.worker.dispose(); }
+});
+
+/** A job whose first look the tab holds, and a second look under a changed agent name that ended its wait. */
+async function renamedTakeover(h: Awaited<ReturnType<typeof connected>>, signal?: AbortSignal) {
+  const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+  const first = h.modern("tasks/get", { taskId }, true, 1);
+  await until(() => h.commands.length === 1);
+  await h.rename("Renamed");
+  const second = h.dispatchFetch(origin + "/mcp", modernRequest(h.token, "tasks/get", { taskId }, true, 2, signal))
+    .then(async response => JSON.parse(await response.text()).result as any);
+  await until(() => h.commands.length === 2);
+  assert.equal((await first).result.status, "working");
+  return { taskId, second };
+}
+
+test("a marked look whose caller leaves hands its mark to the job's next look, which ends the job with the hint", async () => {
+  const h = await connected({ hold: true });
+  try {
+    const leave = new AbortController();
+    const { taskId, second } = await renamedTakeover(h, leave.signal);
+    leave.abort();
+    await second.catch(() => undefined);
+    assert.ok(h.frames.some(frame => frame.type === "cancel" && frame.id === h.commands[1].id), "the tab ends the left look's wait");
+    const third = h.modern("tasks/get", { taskId }, true, 3);
+    await until(() => h.commands.length === 3);
+    h.answerOne(h.commands[2].id);
+    const next = (await third).result;
+    assert.equal(next.status, "completed");
+    assert.deepEqual(payload(next.result).requests, []);
+    assert.match(payload(next.result).hint, /ended an earlier look's wait.*come back with all: true/);
+    // The mark was used once: the job's look after waits on as usual.
+    const fourth = h.modern("tasks/get", { taskId }, true, 4);
+    await until(() => h.commands.length === 4);
+    h.answerOne(h.commands[3].id);
+    assert.equal((await fourth).result.status, "working");
+  } finally { await h.worker.dispose(); }
+});
+
+test("a marked look that loses the editor, or that the tab refuses, ends the job with its reason and the hint", async () => {
+  const lost = await connected({ hold: true });
+  try {
+    const { second } = await renamedTakeover(lost);
+    await lost.closeTab();
+    const closed = await second;
+    assert.equal(closed.status, "completed");
+    assert.match(payload(closed.result).hint, /did not answer this wait \(unknown-outcome\).*ended an earlier look's wait.*come back with all: true/);
+  } finally { await lost.worker.dispose(); }
+
+  const refused = await connected({ hold: true, refuse: "The editor's user stopped you." });
+  try {
+    const { second } = await renamedTakeover(refused);
+    refused.answerOne(refused.commands[1].id);
+    const answer = await second;
+    assert.equal(answer.status, "completed");
+    assert.equal(answer.result.isError, true);
+    assert.match(JSON.stringify(answer.result.content), /stopped you\. This look ended an earlier look's wait.*come back with all: true/);
+  } finally { await refused.worker.dispose(); }
 });
 
 test("a look that takes over a held wait close to its deadline ends the job with the all: true hint when the tab never answers", async () => {
