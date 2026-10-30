@@ -1,9 +1,10 @@
-import { agentControls, agentsPaused, type AgentControlEnv } from "./agent-controls";
+import { AGENTS_PAUSED, agentControls, agentsPaused, type AgentControlEnv } from "./agent-controls";
 import { AGENT_PERMISSION_LIFETIME } from "./agent-lifecycle";
 import { cleanupRoute, inventoryRoute } from "./agent-maintenance";
 import { requestJson } from "./http";
 import { ASSET_TYPES } from "../shared/asset-types";
-import { AgentRelay, relayObjectName } from "./agent-relay";
+import { AgentRelay, LiveRooms, liveRoomObjectName, liveRoomTag, relayObjectName } from "./agent-relay";
+import { liveRoomFile, type LiveAccess } from "../shared/live-room";
 import {
   validAgentBranch,
   authenticateAgent,
@@ -405,6 +406,24 @@ const OBSOLETE_AGENT_ROUTES = new Set([
   "/api/agent/ack", "/api/agent/pause", "/api/agent/ask", "/api/agent/answer", "/api/agent/dismiss",
 ]);
 
+/** The live room access check (ADR 0003): editor sign-in to a repository the GitHub connection
+ * lists, or an agent connection pinned to this repository and branch. Encryption keeps strangers
+ * from reading edits; this keeps them from joining at all. Synced-session links (slice 30) add their token here. */
+async function liveRoomAccess(request: Request, env: Env, url: URL, fetcher: typeof fetch, fullName: string, branch: string): Promise<{ repoId: number; access: LiveAccess }> {
+  if (request.headers.has("Authorization")) {
+    if (!agentControls(env).relay) throw new HttpError(403, AGENTS_PAUSED);
+    const connection = await authenticateAgent(request, env, fetcher);
+    if (connection.workspace.repo !== fullName || connection.workspace.branch !== branch)
+      throw new HttpError(403, "This agent connection is for another repository or branch.");
+    return { repoId: connection.workspace.repoId, access: "agent" };
+  }
+  if (request.headers.get("Origin") !== url.origin) throw new HttpError(403, "Invalid request origin.");
+  const user = await session(request, env);
+  if (!user) throw new SignedOutError(401, "Connect GitHub to join a live room.");
+  const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, fullName);
+  return { repoId: repo.id, access: "editor" };
+}
+
 async function route(
   request: Request,
   env: Env,
@@ -645,6 +664,18 @@ async function route(
     // credentials cross into the workspace relay.
     return env.SESSIONS.get(env.SESSIONS.idFromName(await relayObjectName(scope.workspace))).fetch(
       new Request("https://session.internal/relay/connect", { headers: { Upgrade: "websocket", [AgentRelay.identityHeader]: JSON.stringify(scope) } }),
+    );
+  }
+  if (path === "/api/live/room") {
+    if (request.method !== "GET" || request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
+      throw new HttpError(400, "Use a WebSocket upgrade.");
+    const branch = url.searchParams.get("branch"), file = url.searchParams.get("file");
+    if (["repo", "branch", "file"].some(key => url.searchParams.getAll(key).length !== 1) || !validAgentBranch(branch) || !liveRoomFile(file))
+      throw new HttpError(400, "Choose a repository, branch and file.");
+    const { repoId, access } = await liveRoomAccess(request, env, url, fetcher, url.searchParams.get("repo") ?? "", branch);
+    // Fresh headers: no cookie or bearer credential crosses into the room.
+    return env.SESSIONS.get(env.SESSIONS.idFromName(await liveRoomObjectName(repoId, branch))).fetch(
+      new Request("https://session.internal/live/join", { headers: { Upgrade: "websocket", [LiveRooms.identityHeader]: JSON.stringify({ room: await liveRoomTag(file), access }) } }),
     );
   }
   if (path.startsWith("/api/agent/")) {
