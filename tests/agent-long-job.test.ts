@@ -95,7 +95,13 @@ async function connected(options: { editor?: boolean; hold?: boolean; refuse?: s
     assert.ok(index >= 0, `the tab holds ${id}`);
     answer(held.splice(index, 1)[0]);
   };
-  return { ...h, name, token, otherToken, pins, pin, frames, commands, held, release, answerOne, modern };
+  /** Renames the connection's agent as its hub lists it: the next look's command names the agent so. */
+  const rename = async (client: string) => {
+    const hub = h.storage(h.counters.log.find(row => row.name.startsWith("agent-hub:"))!.name);
+    const session = await hub.get("session") as { grants: { id: string; client?: string }[] };
+    await hub.put("session", { ...session, grants: session.grants.map(grant => grant.id === grantId ? { ...grant, client } : grant) });
+  };
+  return { ...h, name, token, otherToken, pins, pin, frames, commands, held, release, answerOne, modern, rename };
 }
 
 test("a tasks-capable client gets wait_for_requests as a job whose result is the pin, and no storage holds the pin", async () => {
@@ -460,15 +466,85 @@ test("a look after the owner pauses watching ends the held wait and answers at o
     await until(() => h.commands.length === 2);
     assert.equal(h.commands[1].command.waitMs, 0, "the paused look's own command reaches the tab");
     assert.ok(h.frames.some(frame => frame.type === "cancel" && frame.id === h.commands[0].id), "the tab ends the held wait");
-    // The ended wait was sent, so it may have taken requests: that look ends with the all: true hint.
+    // The earlier look took nothing and says the job still works; the newest gives the job's one final answer.
     const earlier = (await first).result;
-    assert.equal(earlier.status, "completed");
-    assert.match(payload(earlier.result).hint, /took over its wait; requests it may have taken come back with all: true/);
-    assert.doesNotMatch(payload(earlier.result).hint, /replaced|did not answer/);
+    assert.equal(earlier.status, "working");
+    assert.equal(earlier.pollIntervalMs, 1_000);
+    h.pins.push(h.pin("req-late"));
     h.answerOne(h.commands[1].id);
     const paused = (await second).result;
     assert.equal(paused.status, "completed");
+    assert.deepEqual(payload(paused.result).requests.map((request: { id: string }) => request.id), ["req-late"]);
     assert.match(payload(paused.result).hint, new RegExp(WATCH_PAUSED));
+    // The ended wait was sent, so it may have taken requests: the final answer's hint brings them back.
+    assert.match(payload(paused.result).hint, /ended an earlier look's wait.*come back with all: true/);
+    assert.equal([earlier, paused].filter(answer => JSON.stringify(answer).includes("req-late")).length, 1, "the pin reaches the job once");
+  } finally { await h.worker.dispose(); }
+});
+
+test("a look under a changed agent name ends the held wait: the earlier look still works, the newest gets the pin", async () => {
+  const h = await connected({ hold: true });
+  try {
+    const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    const first = h.modern("tasks/get", { taskId }, true, 1);
+    await until(() => h.commands.length === 1);
+    await h.rename("Renamed");
+    const second = h.modern("tasks/get", { taskId }, true, 2);
+    await until(() => h.commands.length === 2);
+    assert.equal(h.commands[1].command.agent, "Renamed");
+    assert.notEqual(h.commands[0].command.agent, "Renamed");
+    assert.ok(h.frames.some(frame => frame.type === "cancel" && frame.id === h.commands[0].id), "the tab ends the held wait");
+    const earlier = (await first).result;
+    assert.equal(earlier.status, "working");
+    assert.equal(earlier.pollIntervalMs, 1_000);
+    h.pins.push(h.pin("req-late"));
+    h.answerOne(h.commands[1].id);
+    const newest = (await second).result;
+    assert.equal(newest.status, "completed");
+    assert.deepEqual(payload(newest.result).requests.map((request: { id: string }) => request.id), ["req-late"]);
+    assert.match(payload(newest.result).hint, /ended an earlier look's wait.*come back with all: true/);
+    assert.equal([earlier, newest].filter(answer => answer.status === "completed").length, 1, "the job has one final answer");
+    assert.equal([earlier, newest].filter(answer => JSON.stringify(answer).includes("req-late")).length, 1, "the pin reaches the job once");
+
+    // Nothing comes for a look that ended a sent wait: the job still ends, so the hint reaches the agent.
+    const third = h.modern("tasks/get", { taskId }, true, 3);
+    await until(() => h.commands.length === 3);
+    await h.rename("Again");
+    const fourth = h.modern("tasks/get", { taskId }, true, 4);
+    await until(() => h.commands.length === 4);
+    assert.equal((await third).result.status, "working");
+    h.answerOne(h.commands[3].id);
+    const quiet = (await fourth).result;
+    assert.equal(quiet.status, "completed");
+    assert.deepEqual(payload(quiet.result).requests, []);
+    assert.match(payload(quiet.result).hint, /ended an earlier look's wait.*come back with all: true/);
+  } finally { await h.worker.dispose(); }
+});
+
+test("a look that takes over a held wait close to its deadline ends the job with the all: true hint when the tab never answers", async () => {
+  const h = await connected({ hold: true });
+  try {
+    const { taskId } = (await h.modern("tools/call", { name: "wait_for_requests", arguments: {} }, true)).result;
+    h.clock.install();
+    const first = h.modern("tasks/get", { taskId }, true, 1);
+    await until(() => h.commands.length === 1);
+    // Time runs to a second before the held wait's deadline, then a newer look takes it over.
+    await new Promise(resolve => setTimeout(resolve, JOB_HOLD_MS - 1_000));
+    // The fake clock jumps to the next timer whenever the worker idles: until the takeover, it only crawls.
+    let crawling = true;
+    const crawl = () => { if (crawling) setTimeout(crawl, 1); };
+    crawl();
+    const second = h.modern("tasks/get", { taskId }, true, 2);
+    const earlier = (await first).result;
+    crawling = false;
+    assert.equal(earlier.status, "working");
+    const late = (await second).result;
+    assert.equal(h.commands.length, 1, "the newer look holds the same wait");
+    assert.equal(late.status, "completed");
+    assert.deepEqual(payload(late.result).requests, []);
+    assert.match(payload(late.result).hint, /did not answer this wait \(timeout\).*come back with all: true/);
+    assert.doesNotMatch(payload(late.result).hint, /ended an earlier look's wait/, "the same command took the wait over, ending nothing");
+    h.held.splice(0);
   } finally { await h.worker.dispose(); }
 });
 

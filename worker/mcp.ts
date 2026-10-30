@@ -229,7 +229,7 @@ function siteServer(connection: Connection, env: Env, origin: string, exchange: 
         }));
         exchange.waitUntil?.(pending.catch(() => undefined));
         const response = await pending;
-        const outcome = await response.json() as { ok: boolean; result?: AgentReadResult; code?: string; outcome?: "unknown" | "not-sent" };
+        const outcome = await response.json() as { ok: boolean; result?: AgentReadResult; code?: string; outcome?: "unknown" | "not-sent"; tookOver?: true };
         if (outcome.code === "cancelled") exchange.cancelled = true;
         return outcome;
       } catch { return { ok: false, code: "unknown-outcome" }; }
@@ -858,27 +858,34 @@ function siteServer(connection: Connection, env: Env, origin: string, exchange: 
   async function waitOnce(call: Calls, all: boolean, waitMs: number): Promise<{ result: CallToolResult; waitOn?: { retryMs: number; why: string }; cancelled?: true }> {
     const watching = agentControls(env).watch;
     const outcome = await call.requestCommand("wait_for_requests", { all }, watching ? waitMs : 0);
+    // A look that ended its job's wait the tab already had (the command changed between looks, ticket am-54)
+    // gives the job's only final answer, even with nothing come: its hint brings back what that wait took.
+    if (!outcome.tookOver) return answerWait(outcome, watching);
+    const once = answerWait(outcome, watching, tookOverHint);
+    return once.waitOn ? { result: waited([], tookOverHint) } : once;
+  }
+  const tookOverHint = "This look ended an earlier look's wait at this job; requests that wait may have taken come back with all: true.";
+  function answerWait(outcome: Awaited<ReturnType<Calls["requestCommand"]>>, watching: boolean, more?: string): Awaited<ReturnType<typeof waitOnce>> {
+    const hinted = (requests: unknown[], hint?: string) => waited(requests, [hint, more].filter(Boolean).join(" ") || undefined);
     if (outcome.ok && outcome.result) {
-      if (!outcome.result.ok) return { result: failure(outcome.result.message) };
+      if (!outcome.result.ok) return { result: failure([outcome.result.message, more].filter(Boolean).join(" ")) };
       const value = outcome.result.value as unknown as { requests?: unknown[] };
       const requests = Array.isArray(value?.requests) ? value.requests : [];
-      if (!watching) return { result: waited(requests, `${WATCH_PAUSED} Stop the watchdog: do not call wait_for_requests again on your own; tell the user you are ready.`) };
-      return { result: waited(requests), ...(requests.length ? {} : { waitOn: { retryMs: JOB_POLL_MS, why: "Waiting for a request from the editor." } }) };
+      if (!watching) return { result: hinted(requests, `${WATCH_PAUSED} Stop the watchdog: do not call wait_for_requests again on your own; tell the user you are ready.`) };
+      return { result: hinted(requests), ...(requests.length ? {} : { waitOn: { retryMs: JOB_POLL_MS, why: "Waiting for a request from the editor." } }) };
     }
-    // A newer look at the same job took over this look's wait (ticket am-52): this one took nothing. One that
-    // ended a sent wait (its command differed) may have lost requests: the job ends with the all: true hint.
-    if (outcome.code === "replaced") return outcome.outcome === "not-sent"
-      ? { result: waited([]), waitOn: { retryMs: JOB_POLL_MS, why: "Waiting for a request from the editor." } }
-      : { result: waited([], "A newer look at this job took over its wait; requests it may have taken come back with all: true.") };
+    // A newer look at the same job took over this look's wait (ticket am-52): this one took nothing, and the job
+    // still works; the newest look gives its answer (ticket am-54), with what an ended sent wait may have taken.
+    if (outcome.code === "replaced") return { result: waited([]), waitOn: { retryMs: JOB_POLL_MS, why: "Waiting for a request from the editor." } };
     if (outcome.code === "editor-unavailable") {
       const why = editorClosedMessage(origin, connection.workspace, "Wait about a minute, then call wait_for_requests again.");
-      return { result: waited([], why), waitOn: { retryMs: 60_000, why: editorClosedMessage(origin, connection.workspace, "This job keeps waiting.") } };
+      return { result: hinted([], why), waitOn: { retryMs: 60_000, why: editorClosedMessage(origin, connection.workspace, "This job keeps waiting.") } };
     }
     if (outcome.code === "waiting") {
       const why = `Other agents already wait for this site's requests (at most ${WAITS_PER_SITE} at a time).`;
-      return { result: waited([], `${why} Wait about 30 seconds, then call wait_for_requests again.`), waitOn: { retryMs: 30_000, why } };
+      return { result: hinted([], `${why} Wait about 30 seconds, then call wait_for_requests again.`), waitOn: { retryMs: 30_000, why } };
     }
-    const result = waited([], `The editor did not answer this wait (${outcome.code ?? "connection lost"}). Wait about 10 seconds, then call wait_for_requests again. Requests it took come back with all: true.`);
+    const result = hinted([], `The editor did not answer this wait (${outcome.code ?? "connection lost"}). Wait about 10 seconds, then call wait_for_requests again. Requests it took come back with all: true.`);
     if (outcome.code === "cancelled") return { result, cancelled: true };
     // A wait the relay never sent (busy, expired before delivery) took nothing: the job waits on. One sent and lost
     // may have taken requests, and one that can never work (connect again, too large) never will: the job ends
