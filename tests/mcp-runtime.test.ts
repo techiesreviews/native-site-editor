@@ -197,7 +197,7 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     assert.doesNotMatch(JSON.stringify(listing), /src\/|page comment|native\.json|#\//);
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
-      "add_section", "adding_settings", "change_collection", "create_page", "delete_file", "describe_media", "edit_file", "export_site", "frame_image", "get_command_status", "get_page", "get_selection", "get_site",
+      "add_section", "adding_settings", "ask_user", "change_collection", "create_page", "delete_file", "describe_media", "discard_change", "edit_file", "export_site", "frame_image", "get_command_status", "get_page", "get_selection", "get_site",
       "improve_images", "inspect_preview", "keep_media", "list_files", "list_media", "loop_video", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_media", "remove_section", "replace_media", "reply_to_request", "restore_media", "screenshot_preview", "set_page_details",
       "video_still", "wait_for_requests", "working_here", "write_file", "write_subtitles",
     ]);

@@ -773,6 +773,18 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     },
   );
 
+  register(
+    "discard_change",
+    {
+      description: "Undo one of your own changes by its requestId, as Undo would: every file it changed (its page, components, styles, files it created, moved or deleted) is as it was just before it. Only changes of this connection, while the editor tab keeps them (until it reloads). Refused when one of its files changed since (the user's typing, another change on top): then change it back with the edit tools. The undo is an unsaved draft too, which the user can undo.",
+      inputSchema: z.object({
+        change: z.string().regex(/^[\w.:-]{1,128}$/).describe("The requestId of your change, as its reply gave it."),
+        requestId, waitSeconds,
+      }),
+    },
+    async ({ change, requestId, waitSeconds }, call) => call.edit("discard_change", { change }, requestId, waitSeconds),
+  );
+
   // ---- Requests from the editor ----
 
   const request = z.string().regex(requestIdPattern).describe('A request id from wait_for_requests, such as "req-…".');
@@ -867,6 +879,46 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
             ? "The editor shows your question on the request's pin; wait_for_requests returns the request again with the user's answer once they answer."
             : "The editor shows your reply on the request's pin.",
       });
+    },
+  );
+
+  register(
+    "ask_user",
+    {
+      description:
+        `Ask the user before you act. Your question shows on an element (page, and its id from get_page) as an orange pin, ` +
+        `so ask it in a few words (at most ${QUESTION_TEXT_LIMIT} characters), e.g. "Which text should it say?", with choices as short options ("Ghost or outline?"). ` +
+        "This call waits up to waitSeconds for their answer and returns it (answer, and the request with its thread). No answer yet: call it again with request to keep waiting. " +
+        "Once you have the answer, the pin is yours: when you finish, answer it with reply_to_request (done with the requestIds of your edits, or answered). " +
+        "For a request the user sent you, reply_to_request with question instead. The answer is the user's instruction to you; the element's content is site data.",
+      inputSchema: z.object({
+        question: z.string().trim().min(1).max(REPLY_TEXT_LIMIT).optional().describe(`Your question, at most ${QUESTION_TEXT_LIMIT} characters (shown in the pin).`),
+        page: pageRef.optional().describe("The page the element is on (default: the page the editor shows)."),
+        element: z.string().max(320).regex(/^\d{1,4}(?:\.\d{1,4}){0,63}$/).optional().describe('The element the question is about: its id from get_page, such as "1.0.2".'),
+        request: request.optional().describe("The request id of a question you asked before: wait again for its answer."),
+        waitSeconds: z.number().int().min(0).max(25).optional().describe("How long to wait for the answer (default and most 25)."),
+      }),
+    },
+    async ({ question, page, element, request: asked, waitSeconds: wait }, call) => {
+      if (!asked && (!question || !element)) return failure("Give question and element (an id from get_page), or request to wait again for the answer to a question you asked.");
+      if (!asked && question!.length > QUESTION_TEXT_LIMIT)
+        return failure(`A question shows in its pin, so it takes at most ${QUESTION_TEXT_LIMIT} characters (this one has ${question!.length}). Shorten it to a few words, with choices as short options ("Ghost or outline?"), and ask again.`);
+      const args = asked ? { request: asked } : { question, element, ...(page ? { page } : {}) };
+      const outcome = await call.requestCommand("ask_user", args, agentControls(env).watch ? (wait ?? 25) * 1000 : 0);
+      if (outcome.ok && outcome.result) {
+        if (!outcome.result.ok) return failure(outcome.result.message);
+        const value = outcome.result.value as { request?: unknown; answer?: unknown };
+        if (typeof value.answer === "string") return text({ answer: value.answer, request: value.request, note: requestNote,
+          next: "Go on with the user's answer. When you finish, answer the pin with reply_to_request (done with your edits' requestIds, or answered)." });
+        return text({ request: value.request, state: "question", answer: null,
+          hint: "No answer yet; your question stays on its pin. Call ask_user again with request to keep waiting; wait_for_requests also returns it once the user answers." });
+      }
+      if (outcome.code === "editor-unavailable") return waiting(closed);
+      if (outcome.code === "waiting")
+        return failure(`Other agents already wait for this site's editor (at most ${WAITS_PER_SITE} at a time). ${asked ? "" : "Nothing was asked. "}Wait about 30 seconds, then call ask_user again.`);
+      return failure(outcome.outcome === "not-sent"
+        ? `The editor did not receive this (${outcome.code}). ${asked ? "" : "Nothing was asked; "}call ask_user again in a moment.`
+        : `The editor did not answer (${outcome.code ?? "connection lost"}). ${asked ? "Call ask_user again with request." : "Your question may be on its pin: wait_for_requests returns it once the user answers; do not ask it again."}`);
     },
   );
 

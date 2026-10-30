@@ -6,9 +6,12 @@
 // arrives here (an in-memory wake, never a storage read) or its time runs out: at most 25 s,
 // clipped to the relay's budget. Agents keep watching (a watchdog subagent calling
 // wait_for_requests again) until the user chooses Disconnect MCP.
-import { agentName, agentWho, type AgentRequest, type AgentWho } from "../shared/agent";
+//
+// An agent's own question (ask_user, ticket am-15) is held the same way: its pin is kept here, and the call
+// waits for the user's answer, which goes to it rather than to a watchdog's wait.
+import { agentName, agentWho, QUESTION_TEXT_LIMIT, type AgentElement, type AgentRequest, type AgentWho } from "../shared/agent";
 import type { AgentReadResult } from "../shared/agent-read";
-import { requestForAgent, requestOperation, type AgentRequests } from "../shared/agent-requests";
+import { agentQuestion, requestForAgent, requestOperation, type AgentRequests } from "../shared/agent-requests";
 import { HttpError } from "../shared/http-error";
 import type { AgentWorkspace, JsonValue } from "../shared/agent-command";
 
@@ -25,6 +28,10 @@ export interface RequestPorts {
   save(request: AgentRequest, accept: (stored: AgentRequest | undefined) => boolean, owner?: number): Promise<boolean>;
   now?: () => number;
   clock?: { setTimeout(callback: () => void, delay: number): unknown; clearTimeout(timer: unknown): void };
+  /** ask_user's element: `element` (get_page's id) on `page` (the page shown when none), with the repository's name; or why not. */
+  place?(page: string | undefined, element: string): Promise<{ element: AgentElement; repository: string } | { refuse: string }>;
+  /** A new id for an agent's question. */
+  newId?: () => string;
 }
 
 /** A change made on a copy read before an await is kept only over that same stored copy: a reply,
@@ -52,6 +59,8 @@ export function createRequestTools(ports: RequestPorts) {
   // Bumped by every notify: a wake that came while a wait was still reading is not lost.
   let version = 0;
   const scope = { repoId: ports.workspace.repoId, branch: ports.workspace.branch };
+  // The questions an ask_user call waits on now: a watchdog's take leaves their answers to it.
+  const asking = new Map<string, number>();
   /** Takes this grant's requests. A save that loses a race (another agent's wait took the same
    * request at the same wake) reads again, at most TAKE_TRIES times, so each grant still gets it. */
   async function take(grantId: string, all: boolean, current: () => boolean, owner?: number, by?: AgentWho) {
@@ -61,7 +70,7 @@ export function createRequestTools(ports: RequestPorts) {
     for (let attempt = 0; attempt < TAKE_TRIES; attempt++) {
       const list = await ports.list();
       const read = new Map(list.map(request => [request.id, structuredClone(request)]));
-      const { result } = requestOperation(list, { type: "take-requests", grantId, all, ...(by ? { by } : {}), now: now(), ...scope }) as
+      const { result } = requestOperation(list, { type: "take-requests", grantId, all, ...(by ? { by } : {}), now: now(), except: new Set(asking.keys()), ...scope }) as
         { result: { requests: AgentRequest[]; heldUntil?: number } };
       heldUntil = result.heldUntil;
       let lost = false;
@@ -129,6 +138,56 @@ export function createRequestTools(ports: RequestPorts) {
     }
     return ok(requestForAgent(result));
   }
+  /**
+   * ask_user: a new question pinned on its element, or (with `request`) one asked before; held until the user's
+   * answer arrives here or the wait ends. Answered, the asking agent takes it (as a take does) and gets the answer.
+   */
+  async function ask(command: AgentRequests, current: () => boolean, deadline: number, owner?: number, signal?: AbortSignal) {
+    const { request: asked, question, page, element } = command.args, by = agentWho(command);
+    let id = asked;
+    if (!id) {
+      const text = String(question ?? "").trim();
+      if (!text || text.length > QUESTION_TEXT_LIMIT) throw new HttpError(400, `A question takes 1 to ${QUESTION_TEXT_LIMIT} characters.`);
+      const placed = await ports.place?.(page, String(element ?? "")) ?? { refuse: "The editor cannot place a question here. Refresh the editor." };
+      if ("refuse" in placed) throw new HttpError(409, placed.refuse);
+      if (!current()) throw new HttpError(409, "The editor stopped receiving for this connection. Nothing was asked; ask again when it is on.");
+      const request = agentQuestion({ id: ports.newId?.() ?? `req-${crypto.randomUUID()}`, question: text, element: placed.element,
+        repoId: scope.repoId, repository: placed.repository, branch: scope.branch, by, now: now() });
+      if (!await ports.save(request, stored => current() && stored === undefined, owner))
+        throw new HttpError(409, "The editor could not keep your question. Nothing was asked; ask again.");
+      id = request.id;
+    }
+    asking.set(id, (asking.get(id) ?? 0) + 1);
+    try {
+      const wanted = typeof command.waitMs === "number" && Number.isFinite(command.waitMs) ? Math.min(WAIT_MS, command.waitMs) : WAIT_MS;
+      const end = Math.min(deadline, now() + Math.max(0, wanted));
+      for (let lost = 0; lost < TAKE_TRIES;) {
+        const seen = version;
+        const list = await ports.list(), read = structuredClone(list.find(request => request.id === id));
+        const outcome = requestOperation(list, { type: "asked", id, grantId: command.grantId, by, now: now(), ...scope }) as
+          { changed: boolean; result: { request: AgentRequest; answer?: string } };
+        const { request, answer } = outcome.result;
+        if (answer !== undefined) {
+          // Lost to another write meanwhile (a dismissal, another of its waits): read it again.
+          if (!current()) break;
+          if (await ports.save(request, unchangedSince(read!, current), owner)) return ok({ request: requestForAgent(request), answer });
+          lost++;
+          continue;
+        }
+        const ms = version !== seen ? 0 : end - now();
+        if (ms <= 0 || !current()) break;
+        await hold(ms, signal);
+        if (now() >= end) {
+          if (current()) continue;
+          break;
+        }
+      }
+      return ok({ request: id, state: "question", answer: null });
+    } finally {
+      const left = (asking.get(id) ?? 1) - 1;
+      if (left > 0) asking.set(id, left); else asking.delete(id);
+    }
+  }
   return {
     /** `owner`: the receiving tab's ownership generation, proved again in every write's transaction. */
     async run(command: AgentRequests, current: () => boolean, deadline: number, owner?: number, signal?: AbortSignal): Promise<AgentReadResult> {
@@ -138,6 +197,7 @@ export function createRequestTools(ports: RequestPorts) {
         if (command.tool === "wait_for_requests") return await wait(command, live, deadline, owner, signal);
         if (command.tool === "reply_to_request") return await reply(command, live, owner);
         if (command.tool === "get_request") return await find(command, live, owner);
+        if (command.tool === "ask_user") return await ask(command, live, deadline, owner, signal);
         return { ok: false, message: "Unknown request tool." };
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : "The editor could not read its requests." };

@@ -1,6 +1,7 @@
 import { agentCommandSignals, mediaCommandPins } from "./agent-tools";
 import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
-import { textHash } from "../shared/agent";
+import { agentName, textHash } from "../shared/agent";
+import { noteAgentChange } from "./agent-changes";
 import { draftKey, type DraftStore } from "./drafts";
 import type { AgentRecords } from "./agent-records";
 import type { createAgentOwner } from "./agent-owner";
@@ -446,6 +447,9 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
           drafts: [...after].map(([path, record]) => [draftKey(scope, path), record ?? null]), receipt });
         applied = true;
         outcome = result.receipt.outcome as Exclude<typeof outcome, void>;
+        // Kept for its undo (ticket am-15): discard_change, or the user's Undo on its pin.
+        if (!result.duplicate && command.grantId)
+          noteAgentChange({ id: command.id, grant: command.grantId, agent: agentName(command.agent), operation: command.operation, scope, page: command.path, before, after });
         return !result.duplicate;
       },
       publish(changes, apply) {
