@@ -2,7 +2,7 @@
 title: chat moves to the shared kit (full kitchen)
 type: task (HITL)
 status: open
-assignee:
+assignee: ke-42
 builder: claude
 blocked_by: [41-move-techies-playground]
 ---
@@ -36,3 +36,4 @@ Agent Kit is required. After Lex's OK the lead starts a T3 thread in `~/Projects
 ## Comments
 
 - Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.
+- Lead, 2026-10-30: skill check: no `SKILL.md` or `skills/` in chat's history. Its main checkout has 74 uncommitted files from Lex's other sessions: the move is built in a separate worktree from `origin/main` and lands by PR; the main checkout and its uncommitted files are not touched.
