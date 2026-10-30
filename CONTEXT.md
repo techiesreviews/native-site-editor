@@ -177,6 +177,10 @@ _Avoid_: notifications, to-do list, alerts
 A live editing session Lex opens from a project with Share live: anyone with its link joins by typing a name, with no account, and edits the pages in it with him. It lasts while his tab is open and ends when he closes the tab or stops sharing. Guests' changes become his unsaved changes; only he saves, publishes and uses agents. (Planned in the agents and multiplayer map.)
 _Avoid_: guest account, invite
 
+**Live room**:
+Everyone with one file of one site and branch open at once: the editor's tabs, collaborators and agents. Their changes travel locked with a room key only the participants hold; the relay passes them on and keeps nothing. Agents join only while a tab has the file open. (ADR 0003; the carrier for typing together, hot preview links and outside-change news.)
+_Avoid_: channel, session (a Synced session is something else)
+
 **External agent workflow**:
 An agent working directly on the site's repository, with its changes reconciled with the editor's drafts.
 
