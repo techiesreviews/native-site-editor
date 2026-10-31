@@ -2,7 +2,7 @@
 title: "Every project lands on `dev`; `main` only takes `dev` (a release); `kit init` sets this up"
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-89
 builder: claude
 blocked_by: [90-fresh-start-branches]
 ---
@@ -43,3 +43,13 @@ In the kit repo: `kit.d/init`, `kit.d/pr`, `kit.d/doctor`, `docs/kitchen.md` (br
 ## Kit commands and evidence
 
 Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA.
+
+## Comments
+
+- Lead, 2026-10-31, from ticket 90's Done. Also in this ticket:
+  - **Sync `main` into `dev`.** lexvd-site, prompter, script and techies-reviews (one "Kit setup" commit each, from ke-84's `kit init --all` PRs into `main`) and agent-kit (9 commits) got commits straight onto `main` while ticket 90 ran. Bring each `main` into its `dev` through a branch from `origin/main` and `kit pr` into `dev`.
+  - **`kit init` and `kit init --all` open their PRs into the landing branch,** never the release branch.
+  - **The push guard also refuses an agent's raw push to `dev`.** A raw push to `dev` deploys techies-reviews' preview.
+  - **`kit wait ci --pr` works on a repo with no PR checks.** It reports "no checks" instead of breaking.
+  - **idea-board gets `dev` and the settings too** (it is in `projects.json`, but wasn't in ticket 90's list).
+  - **prompter's leftover `shared-kit` branch** (3 commits, its own worktree, no PR) goes to the attic and is removed, unless its worktree holds unsaved work; if it does, list it.

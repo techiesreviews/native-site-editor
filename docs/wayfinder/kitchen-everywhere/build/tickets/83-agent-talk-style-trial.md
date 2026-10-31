@@ -66,3 +66,4 @@ Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affe
 - 2026-10-31 ke-88 brief → `wenyan`.
 - 2026-10-31 ke-90 brief → `en`.
 - 2026-10-31 am-22 brief → `wenyan`; ke-91 brief → `en`. ke-88's report came back in wenyan; it was clear and complete.
+- 2026-10-31 ke-89 brief → `wenyan`.
