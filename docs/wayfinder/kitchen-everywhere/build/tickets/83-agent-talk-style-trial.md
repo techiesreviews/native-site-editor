@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: []
+blocked_by: [84-factory-brief-and-go]
 ---
 
 ## Goal
@@ -60,3 +60,4 @@ In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`):
 ## Kit commands and evidence
 
 Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA.
+- Lead, 2026-10-31: the hook on `delegate_task` and the style line in briefs are built by [ticket 84](84-factory-brief-and-go.md) (`kit brief` plus one brief hook); this ticket keeps the trial log, `kit talk-report` and the Chinese-text guard, and runs after 84.
