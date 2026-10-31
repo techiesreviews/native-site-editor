@@ -141,7 +141,7 @@ function commandsFixture(overrides: Partial<AgentCommandPorts> = {}, files: Part
     pagesAndFiles: withPorts(pagesAndFiles, files), api: unused,
     editorModule: { isMounted: () => false, getMountedSource: unused, dropDraft: unused, forgetDraftModel: unused, prepareHistorySources: unused,
       flushAgentTyping: unused, applyAgentDraft: async command => { calls.push(`draft ${command.path}`); } },
-    get info() { return host.info; }, componentTools: undefined,
+    get info() { return host.info; }, componentTools: undefined, loadComponentTools: async () => undefined,
     get pageStructure() { return host.pageStructure; }, get nativePreview() { return host.nativePreview; },
     loadAgentSite: unused, draftScope: () => undefined, shownScope: () => undefined, restoreFile: unused,
     openNewDraft: async draft => { calls.push(`open ${draft.account} ${draft.path}`); }, nativeComponentLoaderPlan: unused,
@@ -192,6 +192,21 @@ test("an agent reads the preview and Page Structure made after its commands' hos
   f.host.pageStructure = { refreshMeta: () => { f.calls.push("meta"); } };
   assert.equal(await f.commands.actions.setPageDetail("index.html", "title", "Home"), undefined);
   assert.deepEqual(f.calls, ["meta", "tree", "label", "context"]);
+});
+
+test("an agent's make_component made before the component tools land waits for them", async () => {
+  type Request = Parameters<NonNullable<AgentCommandPorts["componentTools"]>["makeFromAgent"]>[0];
+  const request: Request = { path: "index.html", source: "<p>Hi</p>", node: [0], tag: "x-hi" };
+  let land!: (tools: Awaited<ReturnType<AgentCommandPorts["loadComponentTools"]>>) => void;
+  const f = commandsFixture({ loadComponentTools: () => new Promise(resolve => { land = resolve; }) });
+  const made = f.commands.actions.makeComponent(request);
+  land({ makeFromAgent: async asked => `made ${asked.tag}` });
+  assert.equal(await made, "made x-hi");
+  // No preview to load them for: the agent hears why.
+  assert.equal(await commandsFixture().commands.actions.makeComponent(request), "The component tools are not ready.");
+  // A load that rejects ends the same way.
+  const failing = commandsFixture({ loadComponentTools: async () => { throw new Error("The component tools did not load."); } });
+  assert.equal(await failing.commands.actions.makeComponent(request), "The component tools are not ready.");
 });
 
 const loaded = { loadPagesActions: () => import("../src/controllers/pages-controller"), loadFileOps: () => import("../src/controllers/file-operation-checks") } satisfies Partial<PagesAndFilesPort>;
@@ -332,4 +347,39 @@ test("an agent's new file before the site is native, switched to another branch 
     assert.deepEqual(run.f.calls, []);
   });
   assert.ok(count >= 1);
+});
+
+// The chip's Undo (ticket am-49) through the agent commands: the workspace of the press, taken before the agent changes
+// load, proved after that load and through its guarded edit; another branch shown at any of those awaits writes nothing.
+let chipRaces = 0;
+test("the chip's Undo writes nothing once another branch is shown at any of its awaits, the agent changes' load included", async (t) => {
+  t.after(() => draftStore().remove(SCOPE, "index.html"));
+  const changes = await import("../src/agent-changes");
+  const awaits = await forEachAwait(race => {
+    const id = `chip-host-${++chipRaces}`, who = { grant: `grant-${id}`, name: "Copy editor" };
+    const after: SavedDraft = { ...SCOPE, version: 1, path: "index.html", baseSha: "sha-0", original: "<h1>Home</h1>", content: `<h1>${id}</h1>`, updatedAt: 1 };
+    draftStore().save(after);
+    changes.noteAgentChange({ id, grant: who.grant, agent: who.name, operation: "write_file", scope: SCOPE, page: "index.html",
+      before: new Map([["index.html", undefined]]), after: new Map([["index.html", after]]) });
+    let shown: DraftScope = SCOPE;
+    const written: string[] = [];
+    const reads = { source: (path: string) => draftStore().get(SCOPE, path)?.content, exists: () => true, template: () => undefined, site: () => ({ routes: { "/": "index.html" }, components: {} }) };
+    // A guarded edit as the editor's: its plan read, then its guard proved before anything is written.
+    const runEdit: AgentCommandPorts["guardedEdits"]["run"] = race.port("run", async (plan, options) => {
+      const planned = await race.port("plan", async () => plan(reads))();
+      if (options?.guard && !options.guard()) return { ok: false, reason: "stale", message: "stale" };
+      if ("refuse" in planned) return { ok: false, reason: "refused", message: String(planned.refuse) };
+      written.push(id);
+      return { ok: true, status: "applied" };
+    });
+    const guardedEdits = unusedPort<AgentCommandPorts["guardedEdits"]>("guardedEdits", { run: runEdit });
+    const f = commandsFixture({ guardedEdits, draftScope: () => shown, loadChanges: race.port("load", async () => changes) });
+    const run = { id, written, shift: () => { shown = { ...SCOPE, branch: "dev" }; }, outcome: undefined as string | undefined, done: Promise.resolve() };
+    run.done = f.commands.undoLatest(who, "index.html", id).then(() => { run.outcome = "undone"; }, (error: Error) => { run.outcome = error.message; });
+    return run;
+  }, run => run.shift(), run => {
+    assert.deepEqual(run.written, [], "nothing written");
+    assert.equal(run.outcome, "The site changed meanwhile. Nothing was undone; try again.");
+  });
+  assert.equal(awaits, 3);
 });

@@ -39,6 +39,8 @@ export interface AgentCommand {
   args?: AgentCommandArgs;
   /** The connection that queued it; only it can read its status. */
   grantId?: string;
+  /** Who sent it on that connection (ticket am-11): the short name the agent gave itself, else its MCP client's. */
+  agent?: string;
   repoId?: number;
   /** The editor tab applying it. */
   claimedBy?: string;
@@ -72,6 +74,12 @@ export interface AgentCommandArgs {
   /** move_file */
   to?: string;
   keepOldUrl?: boolean;
+  /** screenshot_preview: Lex's width (the preview's own) or a phone's (PICTURE_PHONE_WIDTH). */
+  width?: "editor" | "phone";
+  /** working_here: the agent finished, and shows nowhere. */
+  done?: boolean;
+  /** discard_change: the requestId of the agent's own change to undo (ticket am-15). */
+  change?: string;
   /** make_component / inspect_preview: the element by outline id; inspect_preview also takes a CSS selector and count. */
   element?: string;
   selector?: string;
@@ -100,6 +108,12 @@ export interface AgentCommandArgs {
   folder?: string;
   offset?: number;
 }
+
+/** How wide screenshot_preview draws a page for a phone (ticket am-14), and how tall its first screen is. */
+export const PICTURE_PHONE_WIDTH = 390;
+export const PICTURE_PHONE_HEIGHT = 844;
+/** How long working_here shows an agent after its call (ticket am-14), unless it calls again or is done. */
+export const WORKING_HERE_MS = 5 * 60_000;
 
 /** The most an inspect_preview report may be, as JSON. */
 export const INSPECTION_LIMIT = 24 * 1024;
@@ -210,16 +224,19 @@ export interface AgentRequestMessage {
   /** An agent's: how it replied, and the edits it made for it. */
   status?: AgentReplyStatus;
   requestIds?: string[];
+  /** An agent's: the name it replied under (ticket am-13), shown over its message. */
+  name?: string;
 }
 
 /**
  * Something the user asked agents to do about an element, from the edit
  * bar's Ask agent. This browser keeps them per workspace (src/agent-records.ts):
  * open until an agent fetches it (seen), then done, answered or question by
- * its reply, or dismissed by the user. The user answers a question, which
- * opens it again for agents. `thread` is the conversation, `text` its first
- * message and `reply` the agent's latest (requests kept from before threads
- * have only those two).
+ * its reply, or dismissed by the user. The user adds to any request (answers
+ * a question, or follows up on one waiting, being worked on or done), which
+ * opens it again, for the agent on it first (`agent`, until `heldUntil`).
+ * `thread` is the conversation, `text` its first message and `reply` the
+ * agent's latest (requests kept from before threads have only those two).
  */
 export interface AgentRequest {
   id: string;
@@ -234,9 +251,37 @@ export interface AgentRequest {
   seenAt?: number;
   /** The connections wait_for_requests returned it to (since the user last answered). */
   returnedTo?: string[];
-  reply?: { status: AgentReplyStatus; message: string; at: number; requestIds?: string[] };
+  reply?: { status: AgentReplyStatus; message: string; at: number; requestIds?: string[]; by?: AgentWho };
   thread?: AgentRequestMessage[];
+  /** The agent on it (ticket am-13): the first to read it by its id or reply, else (`agentTook`) the one whose
+   * wait took it, as a watchdog takes requests for the agents that do the work; its pin wears its colour and name. */
+  agent?: AgentWho;
+  /** `agent` is only the one whose wait took it: the first agent to read it by its id is on it instead. */
+  agentTook?: boolean;
+  /** While the user's latest message waits for an answer: the agents (JSON [grant, name]) that read it since,
+   * by a take or by its id; only they can reply. None before the user first adds to the request. */
+  readBy?: string[];
+  /** Reopened by the user's follow-up: until this time only `agent`'s connection gets it, then every connection does. */
+  heldUntil?: number;
 }
+
+/**
+ * One agent at work (ticket am-11): its connection and the name it works under there. Several
+ * subagents share a connection, each under its own name; with none, its MCP client's name.
+ */
+export interface AgentWho { grant: string; name: string }
+/** The most an agent's name holds: a chip's few words. */
+export const AGENT_NAME_LIMIT = 40;
+/** The `agent` field of a command from `value`, an agent's name as the relay brought it: none when it names no one. */
+export const agentNamed = (value: unknown): { agent?: string } => { const name = agentName(value); return name ? { agent: name } : {}; };
+/** An agent's name as it is shown: one line, at most AGENT_NAME_LIMIT characters; "" for none. */
+export function agentName(value: unknown): string {
+  return typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, AGENT_NAME_LIMIT).trim() : "";
+}
+/** Who sent `command`: its connection and the name the relay brought with it. */
+export const agentWho = (command: { grantId?: unknown; agent?: unknown }): AgentWho => ({ grant: typeof command.grantId === "string" ? command.grantId : "", name: agentName(command.agent) });
+/** What a call of an agent the user stopped (ticket am-12) gets back: nothing ran. */
+export const AGENT_STOPPED = "The editor's user stopped you. Nothing was read or changed; end your work on this site and say so to whoever started you.";
 
 /**
  * The most text a request (and each answer) holds, the source of its

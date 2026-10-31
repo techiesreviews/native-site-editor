@@ -73,6 +73,18 @@
 // Events are delivered after a mutation and its journal move are complete,
 // so a listener that edits the store again builds on a settled history.
 //
+// Shared copies (src/live-text.ts). While someone else has the file open,
+// their changes arrive as `edit({ record: false, origin: "shared", rebase })`:
+// the draft follows the shared copy and is persisted as any edit is, and this
+// tab's Undo and Redo keep their steps over the file, moved past the change
+// (per-person Undo, ticket am-24), so they take back only this tab's own
+// words. `rebase` (src/shared-undo.ts `rebaseHistory`) does that through
+// `HistoryAccess`, so its code loads with the live-text chunk, not at boot.
+// It edits the entry and the journals' stacks in place: a change to these
+// internals must be checked against src/shared-undo.ts too.
+// Without `rebase`, as for another tab's draft (`reload`), the histories over
+// the file are cleared.
+//
 // Shared state for the main.ts split (ticket 08) wraps `subscribeState` in
 // @preact/signals-core signals, including persistence-only changes and clears.
 // The store itself needs no reactive library.
@@ -126,7 +138,8 @@ export interface HistoryCompanion {
 /** Returning false refuses the step and keeps it in place. */
 export type HistoryActionCallback = () => void | boolean | Promise<void | boolean>;
 
-export type TextOrigin = "edit" | "typing" | "undo" | "redo" | "receipt" | "discard" | "external";
+/** `shared`: someone else's change, from the file's shared copy (src/live-text.ts). */
+export type TextOrigin = "edit" | "typing" | "undo" | "redo" | "receipt" | "discard" | "external" | "shared";
 export type DraftEvent =
   | { type: "text"; key: string; scope: DraftScope; path: string; text: string; revision: number; origin: TextOrigin;
       /** Ranges of the text before this change, applied as one batch; a whole-text replacement when absent. */
@@ -149,10 +162,30 @@ export interface EditInput {
   /** Keep merging into the last step while it is open (inline typing), until `closeGroup`. */
   group?: boolean | string;
   companion?: HistoryCompanion;
-  /** False: change the text without a history step; histories touching the file are cleared. */
+  /** False: change the text without a history step; histories touching the file are cleared (unless `rebase`). */
   record?: boolean;
   origin?: TextOrigin;
+  /** With `record` false and origin "shared": someone else's change, which the steps over the file are moved past. */
+  rebase?: SharedRebase;
 }
+/** What a shared change moves past: the file's entry, the journals and their parts (src/shared-undo.ts). */
+export interface HistoryAccess {
+  entry: Entry;
+  /** Read-only as a map; each journal's stacks are edited in place. */
+  journals: ReadonlyMap<string, Journal>;
+  /** The file's typing session, if any. */
+  typing: Typing | undefined;
+  /** A new revision. */
+  revision(): number;
+  commitTyping(key: string): void;
+  persist(entry: Entry): void;
+  textEvent(entry: Entry, origin: TextOrigin, changes: TextChange[]): void;
+  emitHistory(history: string): void;
+  disposeStep(step: Step): void;
+  keysOf(step: Step): string[];
+}
+/** Someone else's change, applied with the history moved past it (src/shared-undo.ts `rebaseHistory`, loaded with live text). */
+export type SharedRebase = (history: HistoryAccess, input: EditInput) => StepResult;
 export interface ReceiptFile {
   scope: DraftScope;
   path: string;
@@ -193,7 +226,7 @@ export interface DraftStoreOptions {
 
 export const RECEIPT_REFUSAL = "This change touched several files together and one of them has changed since, so Undo and Redo would change only some of them. Review the current drafts instead.";
 
-interface Entry extends FileState {
+export interface Entry extends FileState {
   key: string;
   scope: DraftScope;
   path: string;
@@ -206,7 +239,7 @@ interface Entry extends FileState {
 type Snapshot = (FileState & { revision: number }) | null;
 /** The persisted records on either side of a step: Undo and Redo put back these very records (their identity proves no foreign write). */
 type Records = { before: SavedDraft | undefined; after: SavedDraft | undefined };
-type EditStep = { kind: "edit"; id: number; label: string; key: string; changes: TextChange[]; inverse: TextChange[]; before: number; after: number; group: boolean | string; companions: HistoryCompanion[]; records: Records };
+export type EditStep = { kind: "edit"; id: number; label: string; key: string; changes: TextChange[]; inverse: TextChange[]; before: number; after: number; group: boolean | string; companions: HistoryCompanion[]; records: Records };
 type ReceiptStep = { kind: "receipt"; id: number; label: string; files: { key: string; scope: DraftScope; path: string; before: Snapshot; after: Snapshot }[] };
 type ActionStep = { kind: "action"; id: number; label: string; undo: HistoryActionCallback; redo?: HistoryActionCallback; dispose?: () => void };
 type TypingState = { text: string; revision: number; version?: number; record?: SavedDraft };
@@ -215,10 +248,10 @@ type TypingState = { text: string; revision: number; version?: number; record?: 
  * to `end`: one native stop at a time while its pane is open. The step is on
  * the undo stack whenever `at` is not `start`.
  */
-type TypingStep = { kind: "typing"; id: number; label: string; key: string; session: Typing; start: TypingState; end: TypingState; at: TypingState; companions: HistoryCompanion[] };
-type Step = EditStep | TypingStep | ReceiptStep | ActionStep;
-type Journal = { undo: Step[]; redo: Step[] };
-type Typing = { history: string; label: string; start?: TypingState; order?: number; version?: number; native?: NativeTyping; ended?: boolean };
+export type TypingStep = { kind: "typing"; id: number; label: string; key: string; session: Typing; start: TypingState; end: TypingState; at: TypingState; companions: HistoryCompanion[] };
+export type Step = EditStep | TypingStep | ReceiptStep | ActionStep;
+export type Journal = { undo: Step[]; redo: Step[] };
+export type Typing = { history: string; label: string; start?: TypingState; order?: number; version?: number; native?: NativeTyping; ended?: boolean };
 
 /** Applies non-overlapping changes; returns the new text and the changes that undo them (in the new text's offsets). */
 export function applyChanges(text: string, changes: readonly TextChange[]) {
@@ -409,7 +442,8 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     if (!session?.start || !entry) return undefined;
     const start = session.start;
     session.start = undefined;
-    if (entry.text === start.text && session.version === start.version) {
+    // A start moved past someone else's change has no Monaco version (src/shared-undo.ts `rebaseHistory`): its text alone tells.
+    if (entry.text === start.text && (start.version === undefined || session.version === start.version)) {
       // No text or native undo movement: the steps below stay valid.
       entry.revision = start.revision;
       stateChanged();
@@ -500,6 +534,8 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     const key = draftKey(input.scope, input.path);
     const entry = files.get(key);
     if (!entry) return { ok: false, error: `${input.path} is not open in the draft store.` };
+    if (input.rebase && input.record === false && input.origin === "shared") return input.rebase({ entry, journals, typing: typing.get(key),
+      revision: () => ++revisions, commitTyping, persist, textEvent, emitHistory, disposeStep, keysOf }, input);
     // Typing still open anywhere in this history (or in the file) is an earlier
     // step: it is committed first, so the journal stays in the order things happened.
     commitHistoryTyping(input.history ?? key, [key]);

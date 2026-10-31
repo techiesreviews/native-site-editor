@@ -14,7 +14,8 @@
   "compatibility_flags": ["enable_request_signal"],
   "workers_dev": false,
   "observability": { "enabled": true },
-  "build": { "command": "npm run build:ui" },
+  // build:preview adds the planning mock-ups at /mockups/ (MOCKUPS=1, vite-mockups.ts); production has none.
+  "build": { "command": "npm run build:preview" },
   "routes": [{ "pattern": "preview-editor.techies.tools", "custom_domain": true }],
   "vars": {
     // Off pauses remote connections and agent tools; existing grants are kept.

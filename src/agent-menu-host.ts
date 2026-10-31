@@ -9,6 +9,7 @@ import { createAgentSiteHost, type AgentSiteHostPorts, type createAgentCommands 
 import type { AgentReadFiles } from "./agent-tools-read";
 import type { AppStore } from "./app-store";
 import type { CleanSourceCache } from "./clean-source-cache";
+import type { PinRequest } from "./components/agent-pins";
 import type { createNativePreview } from "./components/native-preview";
 import { createAgentController } from "./controllers/agent-controller";
 import type { createPageStructureController } from "./controllers/page-structure-controller";
@@ -21,6 +22,7 @@ import type { createSetupHost } from "./setup-host";
 import { workingPart } from "./working-part";
 import type { createWorkspaceMount } from "./workspace-mount";
 import type { SessionInfo } from "../shared/types";
+import type { createAgentPresence } from "./agent-presence";
 
 export interface AgentMenuHostPorts {
   appStore: AppStore;
@@ -33,6 +35,8 @@ export interface AgentMenuHostPorts {
   mediaPorts: { pin?(): MediaPin | undefined };
   workspace: Pick<ReturnType<typeof createWorkspaceMount>, "activeFileContext" | "repositoryMenu">;
   nativeTextIndexGate: SiteIndexGate;
+  /** An agent's question shows on its request's element; get_site tells who works on what; the menu lists and stops them. */
+  agentPresence: Pick<ReturnType<typeof createAgentPresence>, "questions" | "onPin" | "colour" | "atWork" | "agents" | "stop" | "stopped" | "heard" | "listen">;
   /** Host state, read at call time. */
   readonly info: SessionInfo | undefined;
   readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "route" | "setRequests" | "showRequest"> | undefined;
@@ -50,7 +54,22 @@ export interface AgentMenuHostPorts {
 export function createAgentMenuHost(ports: AgentMenuHostPorts) {
   // Consts and functions main.ts never reassigns, read once; its `let` state and later consts stay `ports.` reads.
   const { appStore, runtime, guardedEdits, cleanSources, agentCommands, setupController, pageStructureController, mediaPorts, workspace,
-    nativeTextIndexGate, api, readFile, readFiles, loadAgentSite, loadAgentMenu, draftScope, nativeRouteInfo, pathNow, errorMessage } = ports;
+    nativeTextIndexGate, agentPresence, api, readFile, readFiles, loadAgentSite, loadAgentMenu, draftScope, nativeRouteInfo, pathNow, errorMessage } = ports;
+
+  // The pins of the requests last told, each named as the agent presence names it; told again when an agent acting
+  // or stopped names one anew (ticket am-45), so the name shows without waiting for a request to change.
+  let pinned: { requests: PinRequest[]; names: string } | undefined;
+  const pinNames = (requests: readonly { id: string }[]) => requests.map(request => agentPresence.onPin(request.id)?.name ?? "").join("\n");
+  function pinRequests(requests: PinRequest[]) {
+    pinned = { requests, names: pinNames(requests) };
+    ports.nativePreview?.setRequests(requests.map(request => {
+      const who = agentPresence.onPin(request.id);
+      if (!who) return request;
+      const { agentTook: _took, ...rest } = request;
+      return { ...rest, agent: who, colour: agentPresence.colour(who) };
+    }));
+  }
+  agentPresence.listen(() => { if (pinned && pinNames(pinned.requests) !== pinned.names) pinRequests(pinned.requests); });
 
   // Agents see the whole site (its pages are read after the first paint):
   // the context waits for the complete index of the repository open then.
@@ -62,6 +81,7 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
       api, read: readFile, batch: readFiles, has: (repo, sha) => Boolean(cleanSources.get(repo, sha)) } : undefined,
     stamp: () => guardedEdits.stamp("repository"),
     source: path => runtime.textSource(path),
+    atWork: () => agentPresence.atWork(),
     load: loadAgentSite,
     input: () => {
       const scope = draftScope();
@@ -98,11 +118,28 @@ export function createAgentMenuHost(ports: AgentMenuHostPorts) {
       context: agentContext,
       tools: agentSiteHost.tools(agentContext),
       onCommand: command => agentCommands.apply(command),
+      agents: agentPresence,
       reload: snapshot => agentCommands.reload(snapshot),
       // Ask agent shows in the edit bar while an agent is connected.
       onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
-      onRequests: (requests) => ports.nativePreview?.setRequests(requests),
+      // A pin an agent works on wears its colour, the one its outline and dots have (ticket am-13), and a pin a wait
+      // took the agent presence names for it (ticket am-45: the taker, when it works or is alone on its connection).
+      // Only those: asking for a colour gives an agent its place in the order of arrival, which those of earlier
+      // sessions (on finished requests) and a watchdog that only took one among its connection's agents must not take.
+      onRequests: (requests) => {
+        agentPresence.questions(requests);
+        pinRequests(requests);
+      },
       onQuestions: (count) => workspace.repositoryMenu?.setQuestions(count),
+      // An agent's own question (ask_user, ticket am-15): pinned on an element of a page, the one shown when it names none.
+      place: async (page, element) => {
+        const site = runtime.site, repository = appStore.repository.value, scope = draftScope();
+        if (!site || !repository || !scope) return { refuse: "The editor shows no site now. Open it, then ask again." };
+        const ref = page ?? ports.nativePreview?.route();
+        if (!ref) return { refuse: "The editor shows no page now. Give page." };
+        const placed = (await loadAgentSite()).agentElementAt(site, ref, element, file => runtime.source(file, scope));
+        return "refuse" in placed ? placed : { element: placed.element, repository: repository.full_name };
+      },
       // A question in the selector's list: its pin, card open, answer box focused.
       onShowRequest: (id) => {
         workspace.repositoryMenu?.close();

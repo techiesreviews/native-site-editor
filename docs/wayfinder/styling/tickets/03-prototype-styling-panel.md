@@ -1,7 +1,7 @@
 ---
 title: Prototype the styling panel
 type: prototype (HITL)
-status: open
+status: closed
 assignee: Lex + claude (prototype)
 blocked_by: []
 ---
@@ -32,3 +32,45 @@ Lex: "I would like it to work like done with Bricks. Free field to write anythin
 - **Search controls…:** a field with a filter icon.
 - **Collapsible groups:** Layout, Sizing, Spacing, Borders, Typography. A group with set values gets an × that clears it.
 - **Inside a group:** labels of set properties turn blue. Values are free text (`clamp(32px, …)`, `500`, `1.05`, `-0.03em`), each with its own × to clear. Font Family is a picker, and Text Color shows a swatch plus `var(--ink)`.
+
+## Round 2 with Lex (2026-10-26)
+
+Prototype v2 (unblockwp style, Bricks selector) shown with ten open questions. Lex's answers:
+
+- **Q1, screen sizes:** "check how this is done now with the editor. Don't change that." The canvas bar already has Desktop, Tablet 768 and Mobile 390 (`src/components/canvas-bar.ts:3-7`), shared through `src/page-builder/breakpoints.ts`. The old panel wrote Tablet and Mobile as `@media (max-width: 768px)` and `(max-width: 390px)`, reusing a matching block (`docs/page-builder/style.md` at `1aada9c8c^`). The panel follows the size the canvas shows. It has no size switch of its own.
+- **Q2, hover and focus:** as recommended. Hover is guarded and shared with focus unless split. A switch previews the state.
+- **Q3, the starter's older CSS:** "do not convert, use what exists." In his words:
+  - The panel should know what is site-wide and what is specific. Design values, element styles and shared classes are reused on every page, so it shouldn't list every site-wide selector. Everything must still be findable, and the one "site styles" chip makes sense for that.
+  - Styles can be removed, and classes can be removed.
+  - Variables and search are one thing: click, write, and it searches the relevant variables. The right-click picker goes.
+  - The id and class fields go, because they are part of the selectors. States go into the selectors too.
+  - Offer the modern selectors from good-css.
+- **Q4, site styles:** one chip (in Q3).
+- **Q5, colour swatch in the code:** it also works in the code editor, with a colour picker or another variable.
+- **Q6 and Q7, New look and editing site classes:** not answered. Taken as recommended (yes and yes). Prototype v3 shows site classes as site-wide.
+- **Q8, bare numbers:** rem by default, with a setting to change the default unit.
+- **Q9, the picker staying open:** moot, because the right-click picker goes.
+- **Q10, look buttons as names or pictures:** "can you show?" Prototype v3 has a Names / Pictures switch to compare them.
+
+### Round 3 (2026-10-26)
+
+Prototype v3: [03-styling-panel.html](../prototypes/03-styling-panel.html), also at `am-typing-together-poc.lexvd.workers.dev/mockups/styling-panel-v3.html` (v2 stays at `styling-panel.html`).
+
+Lex: "screen sizes need to stay as is in the current editor, also on the canvas with dragging etc. ok sounds fair."
+
+- **Screen sizes:** the canvas bar stays exactly as built, including the Desktop, Tablet and Mobile buttons, the typed width and the drag handles.
+- **Looks:** names for buttons and text, live pictures for cards and sections (as recommended).
+- **Combining selectors:** one state plus one part (for example `:hover::before`), together with the screen size. Longer chains are written in the code editor (as recommended).
+
+## Resolution (2026-10-26)
+
+Three rounds with Lex, ending in prototype v3. The panel's shape:
+
+- **Layout, unblockwp style:** HTML tag; the CSS Selectors chip field with `*{}` to jump to the rule in the bottom code editor; Search controls; folding groups, where set labels turn blue and each value and group has a × to clear it.
+- **One selector field, Bricks style:** classes, the look, states and modern selectors are all chips. Typing searches one list filtered by element type. A chip's × removes the class from the element, or goes back to normal. There are no id or class fields.
+- **Scope shown on every chip:** Site-wide, This component or This look. One dashed "Site styles" chip opens a searchable list of the site-wide rules that reach the element.
+- **Fields:** free text. Clicking opens one list: the component's variables first, then the site's (with light and dark swatches), then values in this file, then keywords. Typing searches it and hovering previews. There is no right-click picker.
+- **Screen sizes:** the editor's canvas bar as it is. The panel edits whatever size the canvas shows.
+- **Code:** only the existing bottom code editor. A colour swatch there opens a colour picker plus the colour variables.
+- **Bare numbers:** rem by default, with a panel setting for rem, px or em.
+- **Looks:** WordPress-style buttons, with "+ New look". The prototype-only Names / Pictures switch is dropped in the build.

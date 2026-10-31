@@ -391,6 +391,118 @@ test("Bold wraps selected text and unwraps formatted text through the edit bar",
   assert.deepEqual(f.notices, []);
 });
 
+test("Text size chosen right after Bold, before the bar redraws, applies to the bolded source", () => {
+  const f = fixture({ page: "<main><p>Hello world</p></main>" });
+  const control = drawBar(f, f.target.node, textBarPorts(f), undefined, "p");
+  const bold = control("B"), size = control("Text size");
+  assert.ok(bold.kind === "button" && size.kind === "select");
+  bold.onPress();
+  size.onChange("l");
+  assert.equal(f.page(), '<main><p style="font-size: 1.25rem"><strong>Hello</strong> world</p></main>');
+  assert.deepEqual(f.mem.steps(), ["range", "range"]);
+  assert.deepEqual(f.notices, []);
+  assert.deepEqual(f.errors, []);
+});
+
+test("Heading level chosen right after Bold, before the bar redraws, applies to the bolded source", () => {
+  const f = fixture({ page: "<main><h2>Hello world</h2></main>" });
+  const control = drawBar(f, f.target.node, { ...textBarPorts(f), nativeTextTags: new Set(["h2"]), locateNativeElementRange: html => rangeOf(html, "h2") }, undefined, "h2");
+  const bold = control("B"), level = control("Heading level");
+  assert.ok(bold.kind === "button" && level.kind === "select");
+  bold.onPress();
+  level.onChange("h3");
+  assert.equal(f.page(), "<main><h3><strong>Hello</strong> world</h3></main>");
+  assert.deepEqual(f.notices, []);
+  assert.deepEqual(f.errors, []);
+});
+
+test("Text size applies when the latest source changed only inside the element", () => {
+  const f = fixture({ page: "<main><p>Hello world</p></main>" });
+  const size = drawBar(f, f.target.node, textBarPorts(f), undefined, "p")("Text size");
+  assert.ok(size.kind === "select");
+  f.mem.typeInto(PAGE, "<main><p>Hello there</p></main>");
+  size.onChange("l");
+  assert.equal(f.page(), '<main><p style="font-size: 1.25rem">Hello there</p></main>');
+  assert.deepEqual(f.notices, []);
+});
+
+test("Text size refuses once the element's own start tag changed in place", () => {
+  const f = fixture({ page: "<main><p>Hello world</p></main>" });
+  const size = drawBar(f, f.target.node, textBarPorts(f), undefined, "p")("Text size");
+  assert.ok(size.kind === "select");
+  f.mem.typeInto(PAGE, '<main><p class="x">Hello world</p></main>');
+  size.onChange("l");
+  assert.equal(f.page(), '<main><p class="x">Hello world</p></main>');
+  assert.deepEqual(f.notices, ["The source changed. Select the element again and try again."]);
+});
+
+// Finds `node` ([0, i]: the i-th child of <main>) by child index, as the real locator walks the parsed
+// tree; enough for these fixtures, whose children hold no element of their own name.
+function rangeAtPath(html: string, node: number[]) {
+  const main = html.indexOf(">") + 1;
+  const found = [...html.slice(main).matchAll(/<([a-z][a-z0-9]*)\b[^>]*>[\s\S]*?(<\/\1\s*>)/g)][node[1]];
+  if (!found) return undefined;
+  const start = main + found.index, end = start + found[0].length;
+  const tag = startTags(html).find(item => item.start === start)!;
+  return { start, end, tag, close: { start: end - found[2].length, end } };
+}
+
+for (const [moved, page, latest, node] of [
+  ["a new paragraph lands at its old place", "<main><p>A</p><p>B</p></main>", "<main><p>A</p><p>X</p><p>B</p></main>", [0, 1]],
+  ["its paragraph swapped with the next", "<main><p>A</p><p>B</p></main>", "<main><p>B</p><p>A</p></main>", [0, 0]],
+] as const) {
+  test(`Text size refuses once ${moved}, the same tags at the same path and offset`, () => {
+    const f = fixture({ page });
+    const size = drawBar(f, [...node], { ...textBarPorts(f), locateNativeElementRange: rangeAtPath }, undefined, "p")("Text size");
+    assert.ok(size.kind === "select");
+    f.mem.typeInto(PAGE, latest);
+    size.onChange("l");
+    assert.equal(f.page(), latest);
+    assert.deepEqual(f.notices, ["The source changed. Select the element again and try again."]);
+  });
+}
+
+test("Heading level refuses once its close tag changed", () => {
+  const f = fixture({ page: "<main><h2>Hi</h2></main>" });
+  const level = drawBar(f, f.target.node, { ...textBarPorts(f), nativeTextTags: new Set(["h2"]), locateNativeElementRange: rangeAtPath }, undefined, "h2")("Heading level");
+  assert.ok(level.kind === "select");
+  f.mem.typeInto(PAGE, "<main><h2>Hi</h2 ></main>");
+  level.onChange("h3");
+  assert.equal(f.page(), "<main><h2>Hi</h2 ></main>");
+  assert.deepEqual(f.notices, ["The source changed. Select the element again and try again."]);
+});
+
+test("Layout applies when the latest source changed only inside the block", () => {
+  const f = fixture({ page: '<main><div class="flow"><p>A</p></div></main>' });
+  const layout = drawBar(f, f.target.node, { locateNativeElementRange: rangeAtPath }, undefined, "div")("Layout");
+  assert.ok(layout.kind === "select");
+  f.mem.typeInto(PAGE, '<main><div class="flow"><p>A changed</p></div></main>');
+  layout.onChange("cards");
+  assert.equal(f.page(), '<main><div class="cards"><p>A changed</p></div></main>');
+  assert.deepEqual(f.notices, []);
+  assert.deepEqual(f.errors, []);
+});
+
+test("Text size refuses once the source after the element changed", () => {
+  const f = fixture({ page: "<main><p>Hello world</p></main>" });
+  const size = drawBar(f, f.target.node, { ...textBarPorts(f), locateNativeElementRange: rangeAtPath }, undefined, "p")("Text size");
+  assert.ok(size.kind === "select");
+  f.mem.typeInto(PAGE, "<main><p>Hello world</p><p>New</p></main>");
+  size.onChange("l");
+  assert.equal(f.page(), "<main><p>Hello world</p><p>New</p></main>");
+  assert.deepEqual(f.notices, ["The source changed. Select the element again and try again."]);
+});
+
+test("Text size from a bar drawn before its element's start tag moved still refuses", () => {
+  const f = fixture({ page: "<main><p>Hello world</p></main>" });
+  const size = drawBar(f, f.target.node, textBarPorts(f), undefined, "p")("Text size");
+  assert.ok(size.kind === "select");
+  f.mem.typeInto(PAGE, "<main> <p>Hello world</p></main>");
+  size.onChange("l");
+  assert.equal(f.page(), "<main> <p>Hello world</p></main>");
+  assert.deepEqual(f.notices, ["The source changed. Select the element again and try again."]);
+});
+
 test("Link wraps selected text; leaving its unused Address removes the empty link and its undo step", async () => {
   const source = "<main><p>Hello world</p></main>";
   const f = fixture({ page: source });

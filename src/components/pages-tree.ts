@@ -10,6 +10,8 @@ import { isFolderRoute, nativePageRoute } from "../../shared/native-routes";
 import { createRowMenu, type MenuItem } from "./row-menu";
 import { convertWhileTyping, createUrlChange, type UrlPlan } from "./url-change";
 import "./pages-tree.css";
+import type { AgentMark } from "../agent-presence";
+import { setAgentDots } from "./agent-dots";
 import { rowActions } from "./row-actions";
 import { sharedTitleEnding, withoutTitleEnding } from "./page-title-ending";
 
@@ -121,6 +123,8 @@ export function createPagesTree(options: {
   let ending: string | undefined;
   // The row with the tab stop, by key.
   let active: string | undefined;
+  // The agents at work (src/agent-presence.ts), each on its page.
+  let agents: readonly AgentMark[] = [];
 
   const menu = createRowMenu(root, () => options.onInteractionEnd?.());
 
@@ -594,7 +598,9 @@ export function createPagesTree(options: {
         setOpen(item, page.route, item.getAttribute("aria-expanded") !== "true");
       });
     const icon = page.special === "home" ? "house" : page.special === "notFound" ? "link-break" : page.file ? "file" : open ? "folder-open" : "folder";
-    row.append(twisty, pageIcon(icon), label(withoutTitleEnding(page.label, ending)));
+    const name = label(withoutTitleEnding(page.label, ending));
+    row.append(twisty, pageIcon(icon), name);
+    if (page.file) { item.dataset.file = page.file; markAgents(item, name, page.file); }
     if (!page.file) row.append(node("span", "pages-note", "(no page)"));
     if (page.isNew && page.file) row.append(node("span", "file-new", "New"));
     if (page.file && page.special !== "home" && options.changeUrl) {
@@ -683,6 +689,11 @@ export function createPagesTree(options: {
   }
   function label(text: string) {
     return node("span", "pages-label", text);
+  }
+  // Agents at work on a page (ticket am-11): their dots after its name. On the page shown, only those at work on the
+  // page as a whole (its details, a change in no one section): the others show on their sections in the preview and Page Structure.
+  function markAgents(item: HTMLElement, name: HTMLElement, file: string) {
+    setAgentDots(item, name, agents.filter((agent) => agent.path === file && (file !== current || !agent.node)), true);
   }
 
   function setOpen(item: HTMLElement, route: string, open: boolean) {
@@ -828,6 +839,14 @@ export function createPagesTree(options: {
     /** Starts a new page in place under `parent`, as + New page does at the top. */
     startNew(parent = "/") {
       startEditing(parent, parent === "/" ? newButton : rowOfRoute(parent)?.dataset.key ?? newButton);
+    },
+    /** The agents at work (ticket am-11): a page's row wears each one's dot there (the page shown's, those on no one section). */
+    agents(marks: readonly AgentMark[]) {
+      agents = marks;
+      for (const item of rows()) {
+        const file = item.dataset.file, name = item.querySelector<HTMLElement>(":scope > .pages-row > .pages-label");
+        if (file && name) markAgents(item, name, file);
+      }
     },
     /** Focuses the row of the page at `route`, or the page file `file`. */
     focus(target: { file?: string; route?: string }) {

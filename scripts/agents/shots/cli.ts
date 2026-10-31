@@ -2,10 +2,14 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
-// @ts-expect-error Shared kit helpers are plain JavaScript without declarations.
-import { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } from "../kit-lib.mjs";
+import { pathToFileURL } from "node:url";
+// @ts-expect-error This editor's helper is plain JavaScript without declarations.
+import { kitLibraryOrExit } from "../kit-home.mjs";
 import { findingsSections } from "./findings-list";
 import { contactOutput, parseArgs, parseSteps, screens, type Shot } from "./core";
+
+// The shared kit library comes from the kit (KIT_HOME, else the one the launcher picks), never from this project.
+const { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } = await import(pathToFileURL(kitLibraryOrExit()).href);
 
 const featuresFolder = "scripts/agents/shots/features";
 

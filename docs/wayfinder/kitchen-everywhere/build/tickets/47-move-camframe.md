@@ -1,6 +1,6 @@
 ---
 title: camframe gets the shared kit when Lex builds there again
-type: task (HITL)
+type: task (AFK)
 status: open
 assignee:
 builder: claude
@@ -31,3 +31,8 @@ In `~/Projects/camframe`: `scripts/agents/` (launcher, `kit.json`, `project.d/sp
 Agent Kit is required. After Lex's OK the lead starts a T3 thread in `~/Projects/camframe` with builder `claude-opus-5-5`: `~/.local/share/agent-kit/current/kit init --land main`, `kit init --issues`, then `scripts/agents/kit doctor`, `kit unit`, `kit specs`, `kit review` and `kit pr` into `main`; the lead runs `kit init --issues --close` after the merge. The lead closes this ticket here with a docs PR.
 
 - Report: Lex's OK (date), the PR URL and merge SHA, `doctor`, `unit` and `specs` `RESULT:` lines, the Issue count before and after.
+
+## Comments
+
+- Lead, 2026-10-31 (prompter ↔ CamFrame retro, finding 2): also here. Windows tests only run in CI on `v*` tags (`.github/workflows/build-desktop.yml`), so two markup tests broken by Windows CRLF checkouts first failed in the v0.6.0 release build (fixed in `2df0d20`). Add `.gitattributes` `* text=auto eol=lf` (a one-time renormalize commit), and a CI job running `npm test` on `ubuntu-latest` and `windows-latest` for every PR and push to `main` (public repo, so the minutes are free); then `checks` in `kit.json` waits for it. Lex has been building in CamFrame again (2026-10-30/31), which this ticket waits for; his OK to start is in the Tuesday pack.
+- Lex, 2026-10-31: "Camframe should join the shared kit." Go. It already has a light setup on `main` (`scripts/agents/kit`, `kit.json`, hooks; listed in the machine's projects.json): finish it to the full kitchen as decided above. The `.gitattributes` part comes from ticket 81 for every project; the Windows CI job stays here. Its 12 Issues are copied to ticket files; closing them waits for Lex's yes as usual.

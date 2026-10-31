@@ -11,7 +11,8 @@ import type { AgentCommand, AgentCommandArgs } from "../shared/agent.ts";
 import { agentMediaArgsProblem } from "../shared/agent-media-args.ts";
 import { mediaTools } from "../shared/agent-media.ts";
 import { requestTools } from "../shared/agent-requests.ts";
-import { agentTools, agentToolsOn, isAgentOperation, isAtomicOperation, mcpTools, type AgentOperation, type AgentToolName } from "../shared/agent-tool-table.ts";
+import { AGENT_ARGUMENT_HINT, agentTools, agentToolsOn, isAgentOperation, isAtomicOperation, mcpTools, nextStep, type AgentOperation, type AgentToolName } from "../shared/agent-tool-table.ts";
+import { SITE_INSTRUCTIONS_OPENING, siteInstructions } from "../worker/site-conventions.ts";
 import { applySiteCommand, atomicAgentCommand, type AgentSiteActions } from "../src/agent-site.ts";
 import { createAgentEditTools } from "../src/agent-tools-edit.ts";
 import { createAgentMediaTools } from "../src/agent-tools-media.ts";
@@ -47,15 +48,70 @@ test("MCP tools/list is dev's: same tools, order, descriptions, schemas and hint
   const result = await toolsList();
   assert.deepEqual(result.tools.map(tool => tool.name), [
     "get_site", "list_files", "read_file", "export_site", "get_page", "get_command_status", "edit_file", "write_file",
-    "move_file", "delete_file", "create_page", "set_page_details", "open_page", "inspect_preview", "list_media",
+    "move_file", "delete_file", "create_page", "set_page_details", "open_page", "inspect_preview", "screenshot_preview", "working_here", "list_media",
     "preview_media", "remove_media", "keep_media", "restore_media", "replace_media", "frame_image", "place_media",
     "improve_images", "loop_video", "video_still", "write_subtitles", "describe_media", "change_collection",
-    "adding_settings", "make_component", "add_section", "move_section", "remove_section", "wait_for_requests",
-    "get_selection", "reply_to_request",
+    "adding_settings", "make_component", "add_section", "move_section", "remove_section", "discard_change", "wait_for_requests",
+    "get_selection", "reply_to_request", "ask_user",
   ]);
   // The whole tools/list result as dev (3c5518e4) answered it, before the table; since ticket 52,
-  // get_command_status's description names the waiting state.
-  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "3b69cd8b0956de31c0d763186b33d133cc2967ff8a39e2b756aec36e5c4f1d5f");
+  // get_command_status's description names the waiting state; since ticket 10, edit_file and the section tools
+  // say an edit lands while its own part is unchanged; since ticket am-11, every tool takes the caller's own name (agent);
+  // since ticket am-13, wait_for_requests says a follow-up on any request brings it back, to the agent on it first,
+  // and reply_to_request that only an agent that read the user's latest message replies; since ticket am-14,
+  // screenshot_preview (no requestId: it keeps no receipt) and working_here follow inspect_preview; since ticket am-15,
+  // discard_change follows remove_section and ask_user ends the list; since ticket am-17, wait_for_requests says
+  // it runs as a long job where the app runs MCP tasks.
+  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "155958c8b83ee22fbd55cdf84f49c01492527629c73c1f5f3c19a9f283348aad");
+  for (const tool of result.tools as { name: string; inputSchema?: { properties?: Record<string, { type?: string; description?: string }>; required?: string[] } }[]) {
+    const agent = tool.inputSchema?.properties?.agent;
+    assert.equal(agent?.type, "string", tool.name);
+    assert.equal(agent?.description, AGENT_ARGUMENT_HINT, tool.name);
+    assert.ok(!tool.inputSchema?.required?.includes("agent"), tool.name);
+  }
+});
+
+test("every change names the step after it, and these are the lines (ticket am-14)", () => {
+  const answer = "If a request asked for it, answer it with reply_to_request.";
+  const look = `Check how it looks with screenshot_preview (its page and section, and width phone). ${answer}`;
+  const listed = `list_media shows it now. ${answer}`;
+  assert.deepEqual(Object.fromEntries(names.flatMap(name => nextStep(name) ? [[name, nextStep(name)]] : [])), {
+    edit_file: look, write_file: look,
+    move_file: `list_files shows it at its new path, and get_site the pages at their URLs. ${answer}`,
+    delete_file: `list_files shows the files now. ${answer}`,
+    create_page: "Add sections to it with add_section, then check it with screenshot_preview.",
+    set_page_details: answer,
+    screenshot_preview: `Fix what looks wrong and check again. ${answer}`,
+    working_here: "Make your change. Call working_here again when you move on, and with done when you finish.",
+    remove_media: listed, keep_media: listed, restore_media: listed,
+    replace_media: look, frame_image: look, place_media: look, improve_images: look, loop_video: look, video_still: look,
+    write_subtitles: listed, describe_media: listed, change_collection: listed, adding_settings: listed,
+    make_component: look,
+    add_section: "Fill it with edit_file (get_page gives its id and the page's hash), then check it with screenshot_preview.",
+    move_section: look, remove_section: `Check how the page looks with screenshot_preview (and width phone). ${answer}`,
+    discard_change: `Check the page with screenshot_preview. ${answer}`,
+  });
+  // working_here with done: the agent finished, so the step after is answering, not making its change.
+  assert.equal(nextStep("working_here", { done: true }), answer);
+  assert.equal(nextStep("working_here", { page: "/", section: "1.0" }), nextStep("working_here"));
+  // Every tool that changes the site has one; request tools answer with their own message.
+  for (const name of names) {
+    const row: { route: string; effect: string } = agentTools[name];
+    if (row.effect !== "read" && row.route !== "requests") assert.ok(nextStep(name), name);
+  }
+});
+
+test("the server's instructions open with a summary that stands alone in Codex's first 512 characters (ticket am-14)", () => {
+  assert.equal(SITE_INSTRUCTIONS_OPENING, "Native Site Editor: edit the user's website through their open editor tab. " +
+    "Start with get_site; pins come from wait_for_requests: the user's requests about an element, which you answer with reply_to_request. " +
+    "Every edit is an unsaved draft the user reviews and publishes. " +
+    "Before changing a section, show it with working_here; after a change, check it with screenshot_preview (also width phone). " +
+    "Name yourself with agent in every call. Read native-site://conventions before larger changes.");
+  assert.ok(siteInstructions.startsWith(`${SITE_INSTRUCTIONS_OPENING} `));
+  assert.ok(SITE_INSTRUCTIONS_OPENING.length <= 512, String(SITE_INSTRUCTIONS_OPENING.length));
+  assert.ok(siteInstructions.slice(0, 512).includes("Start with get_site; pins come from wait_for_requests"));
+  // Claude Code reads the first 4,096.
+  assert.ok(siteInstructions.length <= 4096, String(siteInstructions.length));
 });
 
 test("the Worker registers exactly the table's MCP tools, in table order", async () => {
@@ -134,7 +190,7 @@ test("applySiteCommand has a case for every table operation, and only the table'
 
 test("the draft/receipt transaction takes the table's atomic commands, as before the table", () => {
   const atomic = [...operations, "update_active_draft", "create_file_draft"].filter(isAtomicOperation);
-  assert.deepEqual(atomic.sort(), ["add_section", "create_file_draft", "create_page", "delete_file", "make_component", "move_file",
+  assert.deepEqual(atomic.sort(), ["add_section", "create_file_draft", "create_page", "delete_file", "discard_change", "make_component", "move_file",
     "move_section", "remove_section", "set_page_details", "update_active_draft", "write_file"]);
   // atomicAgentCommand reads the operation only.
   assert.equal(atomicAgentCommand({ operation: "write_file" } satisfies Pick<AgentCommand, "operation"> as AgentCommand), true);

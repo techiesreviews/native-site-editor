@@ -28,20 +28,25 @@ export async function resumeAgents(ports: {
 
 /**
  * Connect to MCP with remote agents off: turns them on, reads the connections, opens the socket,
- * and, finding a reconnect left from before the press, retries it at once rather than waiting out
- * its backoff. Then it branches on what the button would offer, as the menu's own press does:
- * Wait for MCP or Disconnect MCP (a token waits, or an agent already uses the site's connection,
- * in this tab or another tab that holds the socket) copies a prompt again, this tab's own if it
- * still waits, otherwise a new one; Connect to MCP makes a new prompt when idle or when another
- * tab receives, or, still reconnecting with no recorded retry time to wait for, marks the press
- * stuck. A turn-off, another turn-on or a site move while it waits ends it with no write.
+ * and, finding a reconnect left from before the press (or one that gave up), retries it at once
+ * rather than waiting out its backoff. Then it branches on what the button would offer, as the
+ * menu's own press does: Wait for MCP or Disconnect MCP (a token waits, or an agent already uses
+ * the site's connection, in this tab or another tab that holds the socket) copies a prompt again,
+ * this tab's own if it still waits, otherwise a new one; Connect to MCP makes a new prompt when
+ * idle or when another tab receives, or marks the press stuck: still reconnecting with no recorded
+ * retry time to wait for, or still paused by a reconnect that gave up (the retry did nothing or
+ * failed again). Finding an earlier takeover failed (the site left paused in this browser, ticket
+ * am-53), it asks the `takeover` port first (the port skips one this press already made), then
+ * goes on from what that leaves, a reconnect that gave up included; one that fails again writes
+ * nothing more, as `takeover-failed` is itself the problem dot. A turn-off, another turn-on or a
+ * site move while it waits ends it with no write.
  */
 export async function turnOnAgents(ports: {
   /** Turns remote agents on for the open site and returns this activation. */
   start(): number;
   /** Whether activation `at` still holds. */
   live(at: number): boolean;
-  /** Whether another tab of this browser paused remote agents. */
+  /** Whether the site owner paused remote agents (known before the press or found while the socket opens). */
   paused(): boolean;
   /** Reads the connections. */
   read(): Promise<unknown>;
@@ -51,6 +56,9 @@ export async function turnOnAgents(ports: {
   state(): string;
   /** Retries the reconnect now; its failure is the recovery's to report. */
   retry(): Promise<void>;
+  /** Tries to make this tab the one that receives agent changes, unless this press already tried;
+   * its failure shows on the dot. */
+  takeover(): Promise<void>;
   /** Whether a recorded retry time is still ahead (the button waits for it). */
   retryWaits(): boolean;
   /** What the button offers in `state`. */
@@ -61,7 +69,7 @@ export async function turnOnAgents(ports: {
   prompt(): Promise<void>;
   /** Copies this tab's waiting prompt again, or makes a new one. */
   copyAgain(): Promise<void>;
-  /** Shows that the press found the reconnect still under way. */
+  /** Shows that the press found the reconnect still under way, or still given up. */
   stuck(): void;
 }) {
   const at = ports.start();
@@ -69,12 +77,56 @@ export async function turnOnAgents(ports: {
   if (ports.paused() || !ports.live(at)) return;
   await ports.open();
   if (!ports.live(at)) return;
-  if (ports.state() === "reconnecting") await ports.retry();
+  // A reconnect that gave up (paused while the user was away, ticket am-51) is retried as one
+  // still under way; a pause by the site owner (also one the socket found while opening) is not.
+  const gaveUp = (state: string) => state === "paused" && !ports.paused();
+  // An earlier takeover that failed (ticket am-53) is tried again, and the reconnect it opens may
+  // still have given up (this browser's record of the tries). The owner's pause is never
+  // `takeover-failed` (`ownerPause`), so no owner check here.
+  let found = ports.state();
+  if (found === "takeover-failed") {
+    await ports.takeover();
+    if (!ports.live(at)) return;
+    found = ports.state();
+  }
+  if (found === "reconnecting" || gaveUp(found)) await ports.retry();
   if (!ports.live(at)) return;
   const now = ports.state();
   if (ports.offer(now) !== "connect") await ports.copyAgain();
   else if (ports.fresh(now)) await ports.prompt();
-  else if (now === "reconnecting" && !ports.retryWaits()) ports.stuck();
+  else if ((now === "reconnecting" && !ports.retryWaits()) || gaveUp(now)) ports.stuck();
+}
+
+/**
+ * Whether a transport state is the site owner's pause: `paused` with the relay's message. A reconnect
+ * that gave up (`paused` with none) and a failed takeover (`takeover-failed`, ticket am-53) are not:
+ * Connect to MCP retries those.
+ */
+export function ownerPause(state: { mode: string; message?: string }) {
+  return state.mode === "paused" && Boolean(state.message);
+}
+
+/**
+ * A press of Connect to MCP during which the sign-in ended (ticket am-51): the menu turned agents
+ * off and the press copied nothing, so `failed` marks the press's own site, read before its first
+ * await, for the dot. A newer press begun meanwhile shows its own outcome instead: nothing written.
+ */
+export async function pressSignedOut<Site>(ports: {
+  /** The site shown when the press began. */
+  site: Site | undefined;
+  /** Sign-ins found ended so far. */
+  signOuts(): number;
+  /** The last prompt confirmed on the clipboard. */
+  copied(): unknown;
+  /** Presses begun so far, this one included. */
+  presses(): number;
+  /** The press itself. */
+  run(): Promise<void>;
+  failed(site: Site): void;
+}) {
+  const site = ports.site, signOuts = ports.signOuts(), copied = ports.copied(), presses = ports.presses();
+  await ports.run();
+  if (site !== undefined && ports.signOuts() !== signOuts && ports.copied() === copied && ports.presses() === presses) ports.failed(site);
 }
 
 /**

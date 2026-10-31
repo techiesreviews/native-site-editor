@@ -61,6 +61,9 @@ export interface Mode {
   notes: readonly string[];
 }
 
+/** The instance Done returns to: its page, its node there, and the outermost component. */
+export interface DoneTarget { page: string; node: number[]; tag: string; template: string }
+
 /** What a rename's `run` resolves to when the step was written: where the template went. */
 export interface Renamed { tag: string; template: string; notes: readonly string[] }
 
@@ -121,8 +124,13 @@ export interface ComponentMode {
    * nothing while a transition is in flight (each runs it once it settles).
    */
   sync(): void;
-  /** Ends the mode (Done) and any entry still loading: every share released, the frame told; the instance it was on. */
-  leave(): { page: string; node: number[]; tag: string; template: string } | undefined;
+  /**
+   * Ends the mode (Done) and any entry still loading: every share released, the frame told; the instance
+   * it was on, or the instance of an entry still loading (the latest entry wins), so Done returns to it.
+   * A loading instance whose page changed since its entry read it (or had no source then) is not returned
+   * (its node may be another element), nor is an entry with no instance: Done then returns to the mode's instance, if any.
+   */
+  leave(): DoneTarget | undefined;
   /** Ends everything: the mode (frame told, nothing drawn), pending transitions (they settle "stale"), the opening. */
   destroy(): void;
 }
@@ -157,8 +165,11 @@ export function backChain(chain: readonly Level[], index: number): Level[] {
 /** An opening of a template: the object the stamps hold, with the stamp it was opened under. */
 type Opening = Readonly<{ template: string; stamp: Stamp }>;
 type Wait = { kind: "mounted" | "refused" | "ready" | "timeout" | "cancelled" } | { kind: "error"; error: unknown };
-/** A pending enter: `cancel` settles it "stale" and releases its share at once. */
-type Entry = { cancel(): void; share?: () => void };
+/**
+ * A pending enter: `cancel` settles it "stale" and releases its share at once; `loading`: its
+ * instance until it settles, with the page source it was read from.
+ */
+type Entry = { cancel(): void; share?: () => void; loading?: DoneTarget & { source: string | undefined } };
 
 const once = (release: () => void) => {
   let done = false;
@@ -270,7 +281,7 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
   }
 
   /** Lets go of every share the mode holds and forgets it; `tell`: the host draws again. */
-  function end(tell: boolean) {
+  function end(tell: boolean): DoneTarget | undefined {
     const was = state;
     if (!was) return undefined;
     state = undefined;
@@ -309,6 +320,7 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     const timeout = { status: "failed", error: new EnterTimeout() } as const;
     // Still the latest entry, under the same repository, over the template as read.
     const holds = () => !destroyed && latest === me && scopeHolds(stamp) && ports.shown().open === template && peek.source(template) === templateSource;
+    if (instance) me.loading = { page: instance.path, node: [...instance.node], tag, template, source: pageSource };
     busy++;
     try {
       // The template's edits are undo steps of the framed page from this opening on.
@@ -337,6 +349,7 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
       ports.changed();
       return { status: "mode" };
     } finally {
+      me.loading = undefined;
       clearTimeout(timer);
       me.share?.();
       me.share = undefined;
@@ -442,11 +455,17 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     sync,
     leave() {
       // Done also ends an entry or a level still loading: nothing it started frames later, no share stays.
+      // An entry still loading is where Done returns: its instance, as the mode would have framed it,
+      // while its page reads as the entry read it (a page it could not read gives no instance).
+      const at = latest?.loading;
+      const loading = at && at.source !== undefined && peek.source(at.page) === at.source
+        ? { page: at.page, node: [...at.node], tag: at.tag, template: at.template } : undefined;
       latest?.cancel();
       latest = undefined;
       for (const release of pending) release();
       pending.clear();
-      return end(true);
+      const ended = end(true);
+      return loading ?? ended;
     },
     destroy() {
       if (destroyed) return;

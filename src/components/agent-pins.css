@@ -4,7 +4,10 @@
    tail pointing at the element (flipped under the element's top edge when
    `.is-below`). Every pin is light so its number reads over any page, in
    light and dark themes alike. Open requests are light blue with the action
-   colour's border, one an agent has taken a small spinner; an agent's
+   colour's border; one an agent has taken is a light tint of that agent's
+   colour (`--agent`, its outline's and dots') with its border and its name
+   in a dark ink of its hue (a small spinner for an agent kept from before
+   names); an agent's
    question is orange with a "?" and the question on one line, for the
    user to answer; done (a check) and answered (a speech mark) are grey, so
    they recede. A pin whose element is gone is dashed. Focusing a pin from
@@ -17,6 +20,10 @@
   pointer-events: none;
 }
 .agent-pin {
+  /* A line of words on a pin, the space before one, and the widest name. */
+  --pin-line: 16px;
+  --pin-gap: 6px;
+  --pin-name-max: 160px;
   position: absolute;
   z-index: 1;
   display: flex;
@@ -48,9 +55,27 @@
 .agent-pin__number {
   flex: none;
 }
+/* The agent working on it, in its colour (ticket am-13): light like every
+   pin, a tint of the colour with a dark ink of its hue (src/theme.css). */
+.agent-pin[data-agent] {
+  border-color: var(--agent);
+  background: var(--agent-pin);
+  color: var(--agent-ink);
+}
+.agent-pin__who {
+  max-inline-size: var(--pin-name-max);
+  margin-inline-start: var(--pin-gap);
+  overflow: clip;
+  line-height: var(--pin-line);
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.agent-pin__who:empty {
+  display: none;
+}
 .agent-pin__status:not(:empty) {
   display: flex;
-  margin-left: 3px;
+  margin-inline-start: 3px;
 }
 /* An agent is on it: a ring turning a quarter at a time. */
 .agent-pin__spinner {
@@ -75,30 +100,30 @@
 /* An agent's question, always shown: a few words, cut short if ever
    longer. */
 .agent-pin__question {
-  max-width: 260px;
+  max-inline-size: 260px;
   overflow: hidden;
   /* Tall enough for descenders, which the clipping would cut at line-height 1. */
-  line-height: 16px;
+  line-height: var(--pin-line);
   text-overflow: ellipsis;
   font-weight: 600;
 }
 .agent-pin__question:not(:empty) {
-  margin-left: 6px;
+  margin-inline-start: var(--pin-gap);
 }
 /* The request's first line, folded away until a keyboard focus (or a hover
    while another's card is held open); a question's pin keeps to the
    question. */
 .agent-pin__text {
-  max-width: 0;
+  max-inline-size: 0;
   overflow: hidden;
-  line-height: 16px;
+  line-height: var(--pin-line);
   text-overflow: ellipsis;
   opacity: 0;
   color: var(--agent-pin-text);
   font-weight: 400;
   transition:
-    max-width 160ms ease-out,
-    margin-left 160ms ease-out,
+    max-inline-size 160ms ease-out,
+    margin-inline-start 160ms ease-out,
     opacity 120ms ease-out;
 }
 .agent-pin:hover,
@@ -109,8 +134,8 @@
 /* Hovering a pin opens its card instead, unless another's is held open. */
 .agent-pin:focus-visible:not([aria-expanded="true"], [data-state="question"]) .agent-pin__text,
 .agent-pins.is-holding .agent-pin:hover:not([aria-expanded="true"], [data-state="question"]) .agent-pin__text {
-  max-width: 240px;
-  margin-left: 6px;
+  max-inline-size: 240px;
+  margin-inline-start: var(--pin-gap);
   opacity: 1;
 }
 .agent-pin.is-detached {
@@ -124,6 +149,14 @@
   outline: 2px solid color-mix(in oklch, currentColor 35%, transparent);
   outline-offset: 1px;
 }
+.agent-pin[data-agent][aria-expanded="true"] {
+  outline-color: color-mix(in oklch, var(--agent) 40%, transparent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .agent-pin[data-agent]:hover {
+    outline-color: color-mix(in oklch, var(--agent) 40%, transparent);
+  }
+}
 .agent-pin:focus-visible {
   outline: var(--focus-ring);
   outline-offset: 2px;
@@ -132,16 +165,17 @@
 .agent-pin.is-popping {
   animation: agent-pin-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-/* The element an agent works on: marching ants in the action colour over
-   a faint fill, drawn solid in green as it is done, then fading. */
+/* The element an agent works on: marching ants in its colour (the action
+   colour for one kept from before names) over a faint fill, drawn solid in
+   green as it is done, then fading. */
 .agent-pin-outline {
   position: absolute;
   z-index: 0;
   overflow: visible;
 }
 .agent-pin-outline rect {
-  fill: color-mix(in oklch, var(--primary) 5%, transparent);
-  stroke: var(--primary);
+  fill: color-mix(in oklch, var(--agent, var(--primary)) 5%, transparent);
+  stroke: var(--agent, var(--primary));
   stroke-width: 1.5px;
   stroke-dasharray: 3px 1.5px;
   animation: agent-pin-march 0.6s linear infinite;
@@ -404,15 +438,22 @@
   border-color: var(--agent-done-bubble);
   background: transparent;
 }
-/* The answer to a question: the user's next message, as it is typed. */
+/* The user's next message, as it is typed (an answer to a question, or a
+   follow-up), and Send beside it. */
 .agent-pin-card__answer {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
+.agent-pin-card__reply {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
 .agent-pin-card__answer-input {
   display: block;
-  width: 100%;
+  flex: 1;
+  min-inline-size: 0;
   max-height: 84px;
   box-sizing: border-box;
   margin: 0;
@@ -441,8 +482,34 @@
 .agent-pin-card__answer.is-sending {
   cursor: progress;
 }
-.agent-pin-card__answer.is-sending .agent-pin-card__answer-input {
+.agent-pin-card__answer.is-sending :is(.agent-pin-card__answer-input, .agent-pin-card__send) {
   opacity: 0.6;
+}
+.agent-pin-card__send {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  /* A compact button; a real tap target on touch and narrow layouts. */
+  inline-size: max(var(--size-compact), var(--size-tap));
+  block-size: max(var(--size-compact), var(--size-tap));
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius);
+  padding: 0;
+  background: var(--primary);
+  color: var(--on-primary);
+}
+@media (hover: hover) and (pointer: fine) {
+  .agent-pin-card__send:hover {
+    background: color-mix(in oklch, var(--primary) 85%, var(--text));
+  }
+}
+.agent-pin-card__send:active {
+  scale: 0.94;
+}
+.agent-pin-card__send:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
 }
 .agent-pin-card__error {
   font-size: var(--type-small);

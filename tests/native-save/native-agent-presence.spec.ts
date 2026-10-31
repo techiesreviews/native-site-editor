@@ -40,7 +40,7 @@ test("an agent's change draws its presence on its section and row on the page sh
       const rect = box.getBoundingClientRect();
       const on = [...document.querySelectorAll("main > section")].filter(section => near(section.getBoundingClientRect(), rect));
       seen.push({ page: document.querySelector("h1")?.textContent ?? "", on: on.map(section => section.className), box: rect.toJSON(),
-        chip: chip.textContent ?? "", chipBox: chip.getBoundingClientRect().toJSON(), border: getComputedStyle(box).borderTopColor,
+        chip: chip.querySelector("span")?.textContent ?? "", chipBox: chip.getBoundingClientRect().toJSON(), border: getComputedStyle(box).borderTopColor,
         chipBackground: getComputedStyle(chip).backgroundColor, clickable: getComputedStyle(box).pointerEvents });
     };
     new MutationObserver(look).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["style"], childList: true });
@@ -58,8 +58,8 @@ test("an agent's change draws its presence on its section and row on the page sh
     const tree = document.querySelector('[role="tree"][aria-label="Page structure"]')!;
     const look = () => {
       for (const row of tree.querySelectorAll<HTMLElement>(".page-structure__row--agent")) {
-        const label = row.querySelector(".page-structure__label")!;
-        seen.push(`${row.dataset.node}|${row.getAttribute("aria-busy")}|${getComputedStyle(label, "::after").backgroundColor}|${new URLSearchParams(location.hash.slice(1)).get("file")}`);
+        const dot = row.querySelector(".agent-dots__dot")!;
+        seen.push(`${row.dataset.node}|${row.getAttribute("aria-busy")}|${getComputedStyle(dot).backgroundColor}|${new URLSearchParams(location.hash.slice(1)).get("file")}`);
       }
     };
     new MutationObserver(look).observe(tree, { subtree: true, attributes: true, attributeFilter: ["class"], childList: true });
@@ -103,8 +103,9 @@ test("an agent's change draws its presence on its section and row on the page sh
     await expect(heading).toHaveText("An agent was here");
     const drawn = await frameSeen();
     expect(drawn.length, "the presence box was drawn while the change ran").toBeGreaterThan(0);
-    // The outline stands round the hero section, the chip "Agent" on its top-left corner, in the agent's colour; nothing to click.
-    for (const seen of drawn) expect(seen).toMatchObject({ on: ["hero"], chip: "Agent", border: agentColour.srgb, chipBackground: agentColour.srgb, clickable: "none" });
+    // The outline stands round the hero section, the chip on its top-left corner naming the MCP client (no name of its own given,
+    // ticket am-11), in the agent's colour; the outline is nothing to click (the chip's Undo, once the change landed, is: ticket am-49).
+    for (const seen of drawn) expect(seen).toMatchObject({ on: ["hero"], chip: "presence-spec", border: agentColour.srgb, chipBackground: agentColour.srgb, clickable: "none" });
     expect(Math.abs(drawn[0].chipBox.left - drawn[0].box.left)).toBeLessThan(1);
     expect(Math.abs(drawn[0].chipBox.bottom - drawn[0].box.top)).toBeLessThan(1);
     const rows = await treeSeen();
@@ -239,7 +240,7 @@ test("at the very top of the page the name chip stands inside the outline's corn
   await expect(preview.locator("site-header")).toBeVisible();
   // The editor's own message for the header (node 0, at the page's top), as the presence port sends it.
   await page.evaluate(source => (document.querySelector(".native-preview-frame") as HTMLIFrameElement).contentWindow!.postMessage(
-    { source, type: "agent-presence", request: { path: "index.html", node: [0] }, name: "Agent" }, "*"), HOST_SOURCE);
+    { source, type: "agent-presence", agents: [{ request: { path: "index.html", node: [0] }, name: "Agent", color: "#2e9e5b" }] }, "*"), HOST_SOURCE);
   await expect(box(page)).toBeVisible();
   const chip = preview.locator('[data-native-selection-box="agent-presence-chip"]');
   await expect(chip).toHaveText("Agent");
@@ -253,4 +254,36 @@ test("at the very top of the page the name chip stands inside the outline's corn
   expect(outline.y).toBeLessThan(16);
   expect(tag.y).toBeGreaterThanOrEqual(outline.y - 0.5);
   expect(Math.abs(tag.x - outline.x)).toBeLessThan(1);
+});
+
+test("chips step past the edit bar, and a chip that would pass the page's right edge starts a row below", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  const preview = page.frameLocator(".native-preview-frame");
+  await expect(preview.locator(".hero")).toBeVisible();
+  const frame = (await (await page.locator(".native-preview-frame").elementHandle())!.contentFrame())!;
+  const hero = await frame.evaluate(() => { const at = document.querySelector(".hero")!.getBoundingClientRect(); return { left: at.left, top: at.top }; });
+  // The edit bar (as the editor tells the frame, in the frame's viewport) over the hero's top-left corner, where the first chip would stand.
+  const avoid = { left: hero.left - 4, top: hero.top - 20, right: hero.left + 40, bottom: hero.top };
+  // Two agents on the hero, each with a name long enough to fill its chip's widest (60% of the frame).
+  const name = "W".repeat(60);
+  await page.evaluate(({ source, avoid, name }) => {
+    const frame = (document.querySelector(".native-preview-frame") as HTMLIFrameElement).contentWindow!;
+    frame.postMessage({ source, type: "canvas-avoid", rect: avoid }, "*");
+    frame.postMessage({ source, type: "agent-presence", agents: [
+      { request: { path: "index.html", node: [1, 0] }, name, color: "#2e9e5b", chip: "#2e9e5b" },
+      { request: { path: "index.html", node: [1, 0] }, name: `${name}2`, color: "#8a3ffc", chip: "#8a3ffc" },
+    ] }, "*");
+  }, { source: HOST_SOURCE, avoid, name });
+  const chips = preview.locator('[data-native-selection-box="agent-presence-chip"]').locator("visible=true");
+  await expect(chips).toHaveCount(2);
+  const [first, second] = await chips.evaluateAll(all => all.map(chip => { const at = chip.getBoundingClientRect(); return { left: at.left, top: at.top, right: at.right }; }));
+  const width = await frame.evaluate(() => document.documentElement.clientWidth);
+  // The first: just past the bar, above the outline.
+  expect(Math.abs(first.left - (avoid.right + 2))).toBeLessThan(1);
+  expect(Math.abs(first.top - (hero.top - 16))).toBeLessThan(1);
+  // The second fits neither before the bar nor after the first: a row below, at the outline's left, within the page.
+  expect(first.right + 2 + (second.right - second.left)).toBeGreaterThan(width);
+  expect(Math.abs(second.top - (first.top + 16))).toBeLessThan(1);
+  expect(Math.abs(second.left - hero.left)).toBeLessThan(1);
+  expect(second.right).toBeLessThanOrEqual(width);
 });

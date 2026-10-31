@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 62 History, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 10 Nov review
+  (kitchen station 3 "Show and tell": Today / After switch, demo buttons that play each step).
+  Ticket: build/tickets/62-organism-history.md. Behaviour stays exactly as it is.
+  Today: values and structure copied from src/components/commit-history.css and .ts (heading and Refresh,
+  This file / Whole site tabs, location line, day groups, commit rows, Current/Latest badge, ⋯ shown on
+  hover, files under a site commit, Load older commits, the Restore this file? box, messages),
+  src/version-view.ts (the bar over the preview: Viewing …, Back to latest, Restore this version, and its
+  Restore this version? dialog), src/style.css (.changes-window, .changes-window__title, buttons),
+  src/components/create-dialog.css (the confirm dialog box), src/components/file-row-actions.css (A/M/D
+  letters), src/components/native-preview.css (.version-bar), src/components/source-editor.ts (the clock
+  button in the code pane) (dev, 2026-10-27). Icons are hand-drawn look-alikes of the Phosphor set;
+  commits, people and times are made up.
+  After: the same panel built only from the parts approved in 10-first-parts-and-edit-bar.html (menu panel,
+  list row, tabs, icon button, button, badge, notice, dialog) on the shared spacing and motion tokens.
+  ⋯ Copy commit link shows "Copied" on the menu item itself, as 09-feedback-in-place.html (slice 07) has it.
+  Counts from commit-history.css: 2 own icon-button copies (refresh, ⋯); an own copy of the tabs; 2 badge
+  look-alikes (Current/Latest, A/M/D letters); 2 row looks (commit 6/36/8/8 px padding, file 28 px);
+  1 own confirmation box; 6 hover rules with no mouse check; off-scale 10 and 36 px gaps.
+-->
+<style>
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+  --color-component: oklch(55% 0.2 300);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --component-surface: light-dark(oklch(from var(--color-component) 96% 0.03 h), oklch(from var(--color-component) 28% 0.05 h));
+  --component-text: light-dark(oklch(from var(--color-component) 42% 0.17 h), oklch(from var(--color-component) 85% 0.1 h));
+  --panel-surface: var(--surface-raised);
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px; --type-heading: 20px;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px;
+  --panel-padding: 6px;
+
+  /* After only: the catalogue's shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-size: var(--type-base); -webkit-tap-highlight-color: transparent; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, select:focus-visible, a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.icon { inline-size: 16px; block-size: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+header { display: grid; gap: var(--space-3xs); }
+h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 70ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 5; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; inline-size: 100%; text-wrap: pretty; }
+.demo { display: grid; gap: var(--space-xs); padding: var(--space-s); border: 1.5px dashed var(--line); border-radius: var(--radius-panel); }
+.demo h2 { margin: 0; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.demo .steps { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.demo .steps button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 4px 10px; font-weight: 600; }
+.demo .steps button[aria-pressed="true"] { background: var(--current); border-color: var(--primary); }
+.demo .steps button:active { scale: 0.97; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); min-inline-size: 0; }
+.card h2 { margin: 0; font-size: var(--type-title); }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+:root { --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+/* The editor around History: preview on the left, code pane with the clock button on the right. */
+.frame { position: relative; min-inline-size: 0; block-size: 40rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--background); overflow: clip; display: grid; grid-template-columns: minmax(0, 1fr) clamp(8rem, 30%, 18rem); container: frame / inline-size; }
+.f-preview { display: grid; grid-template-rows: auto 1fr; min-inline-size: 0; }
+.f-page { margin: clamp(0.5rem, 3cqi, 1.5rem); background: light-dark(white, oklch(20% 0.01 265)); border-radius: var(--radius); padding: clamp(0.75rem, 4cqi, 2rem); font-family: Georgia, serif; box-shadow: var(--shadow-small); align-self: start; }
+.f-page h3 { margin: 0 0 var(--space-xs); font-size: clamp(1.1rem, 0.9rem + 2cqi, 1.8rem); }
+.f-page p { margin: 0; color: var(--muted); }
+.f-page.is-viewing { opacity: 0.92; }
+.f-code { border-inline-start: 1px solid var(--line); background: var(--surface-subtle); min-inline-size: 0; display: grid; grid-template-rows: auto 1fr; }
+.f-code-head { display: flex; align-items: center; gap: var(--space-2xs); block-size: 40px; padding-inline: var(--space-xs); border-block-end: 1px solid var(--line); font-size: var(--type-small); color: var(--muted); min-inline-size: 0; }
+.f-code-head span { flex: 1; min-inline-size: 0; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.f-code pre { margin: 0; padding: var(--space-xs); font: 11px/1.6 var(--font-mono); color: var(--muted); overflow: clip; white-space: pre-wrap; }
+.clock { display: inline-grid; place-items: center; inline-size: 28px; block-size: 28px; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.clock[aria-expanded="true"] { background: var(--hover); color: var(--text); }
+.pop { position: absolute; z-index: 3; inset-block-start: 46px; inset-inline-end: 16px; inline-size: min(420px, 100% - 32px); max-block-size: calc(100% - 62px); overflow: auto; }
+.pop[hidden] { display: none; }
+.scrim { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: var(--space-s); background: oklch(from var(--shadow-color) l c h / 0.45); }
+.scrim[hidden] { display: none; }
+.who { display: inline-grid; place-items: center; inline-size: 18px; block-size: 18px; border-radius: 50%; font-size: var(--type-badge); font-weight: 700; color: white; background: var(--c, var(--primary)); flex: none; }
+
+/* =====================  TODAY: real editor CSS  ===================== */
+.today .button { min-block-size: var(--size-control); border: 0; padding: 6px 14px; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--primary); color: var(--on-primary); white-space: nowrap; }
+.today .secondary { background: var(--surface); color: inherit; }
+.today .button:active:not(:disabled) { background: var(--primary-hover); }
+.today .secondary:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+@media (hover: hover) and (pointer: fine) {
+  .today .button:hover:not(:disabled) { background: var(--primary-hover); }
+  .today .secondary:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+}
+.today.changes-window { margin: 0; padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); box-shadow: var(--shadow); }
+.today .changes-window__title { margin: 0; padding: 6px 8px; font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.today .commit-history { display: grid; gap: 4px; }
+.today .commit-history :is(p, h3) { margin: 0; }
+.today .commit-history__header { display: flex; align-items: center; justify-content: space-between; padding-inline-end: 4px; }
+.today :is(.commit-history__refresh, .commit-history__more) { display: inline-grid; place-items: center; flex: none; inline-size: var(--size-icon); block-size: var(--size-icon); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); cursor: pointer; }
+.today :is(.commit-history__refresh:hover:not(:disabled), .commit-history__more:hover, .commit-history__more[aria-expanded="true"]) { background: var(--hover); color: var(--text); }
+.today :is(.commit-history__refresh, .commit-history__more):focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.today .commit-history__scopes { display: flex; gap: 2px; margin: 0 0 4px; border-block-end: 1px solid var(--control-line); }
+.today .commit-history__scope { min-block-size: var(--size-compact); margin-block-end: -1px; padding: 0 8px; border: 0; border-block-end: 2px solid transparent; background: transparent; color: var(--muted); font-weight: 600; }
+.today .commit-history__scope:hover:not(:disabled) { color: var(--text); }
+.today .commit-history__scope[aria-selected="true"] { border-block-end-color: var(--primary); color: var(--text); }
+.today .commit-history__scope:focus-visible { border-radius: var(--radius) var(--radius) 0 0; outline: var(--focus-ring); outline-offset: -2px; }
+.today :is(.commit-history__location, .commit-history__message) { padding: 0 8px; font-size: var(--type-small); overflow-wrap: anywhere; }
+.today .commit-history__location, .today .muted { color: var(--muted); }
+.today .commit-history__message:empty { display: none; }
+.today .commit-history__list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.today .commit-history__day { margin-block-start: 8px; padding: 6px 8px 2px; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.today .commit-history__item { position: relative; border-radius: var(--radius); }
+.today .commit-history__item:hover { background: var(--hover); }
+.today .commit-history__item.is-shown { background: var(--current); }
+.today .commit-history__item:has(> .commit-history__view:focus-visible) { outline: var(--focus-ring); outline-offset: -2px; }
+.today .commit-history__view { display: grid; gap: 2px; inline-size: 100%; padding: 6px 36px 8px 8px; border: 0; border-radius: var(--radius); background: transparent; color: inherit; text-align: start; cursor: pointer; }
+.today .commit-history__view:focus-visible { outline: none; }
+.today .commit-history__line { display: flex; align-items: center; gap: 8px; min-block-size: var(--size-icon); }
+.today .commit-history__time { font-weight: 600; }
+.today .commit-history__ago { color: var(--muted); font-size: var(--type-small); }
+.today .commit-history__badge { padding: 0 6px; border-radius: 999px; background: var(--surface); color: var(--link); font-size: var(--type-badge); font-weight: 600; line-height: 18px; }
+.today .commit-history__more { position: absolute; inset-block-start: 6px; inset-inline-end: 6px; opacity: 0; }
+.today :is(.commit-history__item:hover .commit-history__more, .commit-history__item:focus-within .commit-history__more, .commit-history__more[aria-expanded="true"]) { opacity: 1; }
+@media (hover: none) { .today .commit-history__more { opacity: 1; } }
+.today .commit-history__subject { overflow-wrap: anywhere; }
+.today .commit-history__author { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--type-small); }
+.today .commit-history__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.today .commit-history > .button { margin: 4px 8px 2px; justify-self: start; }
+.today .commit-history__confirmation { display: grid; justify-items: start; gap: 8px; margin-block-start: 4px; padding: 10px; border-radius: var(--radius); background: var(--surface); }
+.today .commit-history__confirmation h3 { font-size: var(--type-base); }
+.today .commit-history__confirmation p { font-size: var(--type-small); color: var(--muted); overflow-wrap: anywhere; }
+.today .commit-history__twisty { display: inline-grid; place-items: center; inline-size: 12px; margin-inline-end: -4px; color: var(--muted); }
+.today .commit-history__files { display: grid; gap: 2px; margin: 0; padding: 0 4px 6px 24px; list-style: none; }
+.today .commit-history__file { display: flex; align-items: center; gap: 8px; inline-size: 100%; min-block-size: var(--size-compact); padding: 0 8px; border: 0; border-radius: var(--radius); background: transparent; font-size: var(--type-small); text-align: start; }
+.today .commit-history__file:hover:not(:disabled) { background: var(--hover); }
+.today .commit-history__file:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.today .commit-history__file-path { min-inline-size: 0; overflow: hidden; font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.today .commit-history__files-note { padding: 4px 8px; color: var(--muted); font-size: var(--type-small); }
+.today .file-status { flex-shrink: 0; min-inline-size: 16px; padding: 0 4px; border-radius: var(--radius-small); font: 600 var(--type-badge)/16px var(--font-mono); text-align: center; }
+.today .file-status.is-A { background: var(--success-bg); color: var(--success-fg); }
+.today .file-status.is-M { background: var(--current); color: var(--link); }
+.today .file-status.is-D { background: var(--warning-bg); color: var(--warning-fg); }
+/* dropdown.css: the ⋯ menu */
+.today .dropdown-panel { position: absolute; z-index: 4; inset-block-start: 30px; inset-inline-end: 6px; padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); box-shadow: var(--shadow); inline-size: 13rem; display: grid; }
+.today .dropdown-panel button { display: flex; align-items: center; gap: 8px; inline-size: 100%; border: 0; background: transparent; padding: 6px 8px; border-radius: var(--radius); text-align: start; }
+.today .dropdown-panel button:hover { background: var(--hover); }
+/* native-preview.css: the version bar */
+.today.version-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px 8px 16px; border-block-end: 1px solid var(--control-line); background: var(--panel-surface); font-size: var(--type-base); min-inline-size: 0; }
+.today .version-bar__text { display: flex; flex: 0 1 auto; align-items: baseline; gap: 8px; min-inline-size: 0; margin: 0; overflow: hidden; white-space: nowrap; }
+.today .version-bar__message { overflow: hidden; color: var(--muted); text-overflow: ellipsis; }
+/* create-dialog.css: the confirm dialog */
+.today.create-dialog { inline-size: min(420px, 100%); border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow); }
+.today .create-dialog__form { display: flex; flex-direction: column; gap: 14px; padding: 16px; }
+.today .create-dialog__title { margin: 0; font-size: var(--type-title); font-weight: 600; overflow-wrap: anywhere; }
+.today .confirm-dialog__notes { display: flex; flex-direction: column; gap: 6px; }
+.today .confirm-dialog__notes p { margin: 0; }
+.today .create-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* =====================  AFTER: catalogue parts  ===================== */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out), opacity var(--dur-hover) var(--ease-out); }
+  .p-press:active:not(:disabled) { scale: 0.97; }
+}
+.after :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+/* Button (file 10) */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: var(--size-control); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; color: var(--text); }
+.p-button[data-tone="primary"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-button:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.p-button[data-tone="primary"]:active:not(:disabled) { background: var(--primary-hover); }
+.p-button:disabled { background: var(--surface-subtle); color: var(--muted); box-shadow: none; cursor: default; }
+@media (hover: hover) and (pointer: fine) {
+  .p-button:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .p-button[data-tone="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
+}
+/* Icon button (file 10), icon size 24 */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-icon); block-size: var(--size-icon); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.p-icon-button[aria-expanded="true"], .p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+.p-icon-button:focus-visible { outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Badge (file 10): words; a letter size for file changes */
+.p-badge { display: inline-flex; align-items: center; justify-content: center; block-size: 18px; padding-inline: var(--space-2xs); border-radius: var(--radius-full); font-size: var(--type-badge); font-weight: 600; background: var(--surface); color: var(--link); flex: none; }
+.p-badge[data-size="letter"] { min-inline-size: 16px; block-size: 16px; padding-inline: var(--space-3xs); border-radius: var(--radius-small); font-family: var(--font-mono); }
+.p-badge[data-tone="success"] { background: var(--success-bg); color: var(--success-fg); }
+.p-badge[data-tone="current"] { background: var(--current); color: var(--link); }
+.p-badge[data-tone="warning"] { background: var(--warning-bg); color: var(--warning-fg); }
+/* Menu panel (file 10) */
+.p-menu { padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); box-shadow: var(--shadow); display: grid; gap: var(--space-3xs); }
+.p-menu[data-floating] { position: absolute; z-index: 4; inset-block-start: 30px; inset-inline-end: var(--space-2xs); inline-size: 13rem; gap: 1px; }
+@media (prefers-reduced-motion: no-preference) { .p-menu { animation: p-menu-in var(--dur-menu) var(--ease-out); } }
+@keyframes p-menu-in { from { opacity: 0; translate: 0 -4px; } }
+.p-menu-item { display: grid; grid-template-columns: 16px 1fr; align-items: center; gap: var(--space-xs); inline-size: 100%; min-block-size: var(--size-control); border: 0; background: transparent; padding-inline: var(--space-xs); border-radius: var(--radius); text-align: start; }
+.p-menu-item[data-state="done"] { color: var(--success-fg); }
+.p-menu-item:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .p-menu-item:hover { background: var(--hover); } }
+.p-list-heading, .card .p-list-heading { margin: 0; padding: var(--space-2xs) var(--space-xs) var(--space-4xs); font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.p-list-heading[data-caps] { letter-spacing: 0.04em; text-transform: uppercase; }
+.p-head { display: flex; align-items: center; justify-content: space-between; padding-inline-end: var(--space-3xs); }
+.p-hint { margin: 0; padding-inline: var(--space-xs); font-size: var(--type-small); color: var(--muted); overflow-wrap: anywhere; }
+.p-hint:empty { display: none; }
+/* Tabs (file 10), compact */
+.p-tabs { display: flex; gap: var(--space-4xs); border-block-end: 1px solid var(--control-line); margin-block-end: var(--space-3xs); }
+.p-tab { min-block-size: var(--size-compact); padding-inline: var(--space-xs); margin-block-end: -1px; border: 0; border-block-end: 2px solid transparent; background: transparent; color: var(--muted); font-weight: 600; }
+.p-tab[aria-selected="true"] { color: var(--text); border-block-end-color: var(--primary); }
+.p-tab:focus-visible { outline-offset: -2px; border-radius: var(--radius) var(--radius) 0 0; }
+@media (hover: hover) and (pointer: fine) { .p-tab:hover { color: var(--text); } }
+/* List row (file 10 menu item, L3): a commit is a two-line row; a file is a 32 px row */
+.p-rows { display: grid; gap: var(--space-4xs); margin: 0; padding: 0; list-style: none; }
+.p-row-item { position: relative; border-radius: var(--radius); }
+.p-row-item[data-shown] { background: var(--current); }
+.p-row-item:has(> .p-row:focus-visible) { outline: var(--focus-ring); outline-offset: -2px; }
+.p-row { display: grid; gap: var(--space-4xs); inline-size: 100%; padding: var(--space-2xs) calc(var(--size-icon) + var(--space-s)) var(--space-xs) var(--space-xs); border: 0; border-radius: var(--radius); background: transparent; text-align: start; }
+.p-row:focus-visible { outline: none; }
+.p-row:active { background: var(--hover); }
+.p-row .line { display: flex; align-items: center; gap: var(--space-xs); min-block-size: var(--size-icon); }
+.p-row time { font-weight: 600; }
+.p-row small, .p-row .by { color: var(--muted); font-size: var(--type-small); }
+.p-row .by { display: flex; align-items: center; gap: var(--space-2xs); }
+.p-row-item > .p-icon-button { position: absolute; inset-block-start: var(--space-2xs); inset-inline-end: var(--space-2xs); opacity: 0; }
+.p-row-item:focus-within > .p-icon-button, .p-row-item > .p-icon-button[aria-expanded="true"] { opacity: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .p-row-item:not([data-shown]):hover { background: var(--hover); }
+  .p-row-item:hover > .p-icon-button { opacity: 1; }
+}
+@media not ((hover: hover) and (pointer: fine)) { .p-row-item > .p-icon-button { opacity: 1; } }
+.p-files { display: grid; gap: var(--space-4xs); margin: 0; padding: 0 var(--space-3xs) var(--space-2xs) var(--space-l); list-style: none; }
+.p-file { display: flex; align-items: center; gap: var(--space-xs); inline-size: 100%; min-block-size: var(--size-control); padding-inline: var(--space-xs); border: 0; border-radius: var(--radius); background: transparent; font-size: var(--type-small); text-align: start; }
+.p-file:active { background: var(--hover); }
+.p-file:focus-visible { outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .p-file:hover { background: var(--hover); } }
+@media (pointer: coarse) { .p-file { min-block-size: var(--size-touch); } }
+.p-file code { min-inline-size: 0; overflow: clip; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+/* Notice (file 10), plain tone for a question in place */
+.p-notice { display: grid; justify-items: start; gap: var(--space-xs); padding: var(--space-s); border-radius: var(--radius-panel); background: var(--surface); }
+.p-notice h3 { margin: 0; font-size: var(--type-base); }
+.p-notice p { margin: 0; font-size: var(--type-small); color: var(--muted); overflow-wrap: anywhere; }
+.p-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); justify-content: end; }
+.p-notice .p-actions { justify-content: start; }
+/* Bar (L4) over the preview */
+.p-bar { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-xs) var(--space-s) var(--space-xs) var(--space-m); border-block-end: 1px solid var(--control-line); background: var(--panel-surface); min-inline-size: 0; }
+.p-bar p { display: flex; align-items: baseline; gap: var(--space-xs); min-inline-size: 0; margin: 0; overflow: clip; white-space: nowrap; }
+.p-bar p span { overflow: clip; text-overflow: ellipsis; color: var(--muted); }
+/* Dialog (file 10) */
+.p-dialog { inline-size: min(420px, 100%); padding: var(--space-m); border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow); display: grid; gap: var(--space-s); }
+@media (prefers-reduced-motion: no-preference) { .p-dialog { animation: p-menu-in var(--dur-menu) var(--ease-out); } }
+.p-dialog h3 { margin: 0; font-size: var(--type-title); }
+.p-dialog p { margin: 0; }
+@container frame (inline-size < 34rem) { .p-bar { flex-wrap: wrap; } .p-bar p { flex-basis: 100%; } }
+@media (max-width: 34rem) { .today.version-bar { flex-wrap: wrap; } }
+</style>
+</head>
+<body data-mode="after">
+<main>
+  <header>
+    <h1>History <span class="tag">mock-up for Tuesday 10 Nov</span></h1>
+    <p class="intro">The clock button beside the code opens History: every saved version of this page (or of the whole site), grouped by day. Choosing an older one shows it in the preview with a bar to go back or restore it. What it does stays the same. After rebuilds the panel and the bar from the approved parts.</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+  </div>
+  <p class="summary today">Today: History draws its own small buttons, tabs, labels, rows and question box.</p>
+  <p class="summary after">After: 2 small-button copies become the icon button · its own tabs become the tabs part · 2 label looks become the badge · 2 row looks become the one list row (file rows 28 → 32 px) · the question box becomes the notice · hover only with a mouse · “Copied” shows on the menu item.</p>
+
+  <section class="demo" aria-labelledby="demo-title">
+    <h2 id="demo-title">Demo steps (not part of the editor). You can also click the rows, ⋯ and buttons yourself.</h2>
+    <div class="steps">
+      <button type="button" data-step="open">1 · Open History</button>
+      <button type="button" data-step="view">2 · View yesterday’s version</button>
+      <button type="button" data-step="barrestore">3 · Restore this version</button>
+      <button type="button" data-step="dlgcancel">4 · Cancel</button>
+      <button type="button" data-step="latest">5 · Back to latest</button>
+      <button type="button" data-step="copy">6 · ⋯ Copy commit link</button>
+      <button type="button" data-step="ask">7 · ⋯ Restore this version…</button>
+      <button type="button" data-step="restore">8 · Restore file</button>
+      <button type="button" data-step="site">9 · Whole site</button>
+      <button type="button" data-step="files">10 · Show a commit’s files</button>
+      <button type="button" data-step="older">11 · Load older commits</button>
+    </div>
+  </section>
+
+  <article class="card">
+    <h2>The editor, with History open</h2>
+    <div class="frame" id="frame">
+      <div class="f-preview"><div id="bar"></div><div class="f-page" id="page"><h3>Our loaves</h3><p id="hours"></p></div></div>
+      <div class="f-code"><div class="f-code-head"><span>loaves/index.html</span><button type="button" class="clock" id="clock" aria-label="History" title="Commit history for this file" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.7"/><path d="M4 4v4.7h4.7M12 8v4l3 2"/></svg></button></div><pre id="code"></pre></div>
+      <div class="pop" id="pop" hidden></div>
+      <div class="scrim" id="scrim" hidden></div>
+    </div>
+    <ul class="changes after"><li>panel is the menu part</li><li>rows are the one list row</li><li>labels are the badge part</li><li>⋯ only on mouse hover, always on touch</li><li>press feedback</li></ul>
+  </article>
+</main>
+
+<script>
+const ICONS = {
+  refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+  dots: '<path d="M6 12h.01M12 12h.01M18 12h.01"/>',
+  caret: '<path d="m9 6 6 6-6 6"/>',
+  caretDown: '<path d="m6 9 6 6 6-6"/>',
+  restore: '<path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.7"/><path d="M4 4v4.7h4.7"/>',
+  github: '<path d="M9 19c-4 1.4-4-2-6-2.5M15 21v-3.5a3 3 0 0 0-.9-2.3c2.9-.3 6-1.4 6-6.4a5 5 0 0 0-1.4-3.5 4.6 4.6 0 0 0-.1-3.5s-1.1-.3-3.6 1.4a12.4 12.4 0 0 0-6.5 0C6 1.5 4.9 1.8 4.9 1.8a4.6 4.6 0 0 0-.1 3.5 5 5 0 0 0-1.4 3.5c0 5 3.1 6.1 6 6.4a3 3 0 0 0-.9 2.3V21"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  check: '<path d="m5 12 5 5 9-10"/>',
+};
+const icon = (n, s = 16) => `<svg class="icon" style="inline-size:${s}px;block-size:${s}px" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const PEOPLE = { Lex: "oklch(52% 0.18 262)", Anna: "oklch(50% 0.2 305)", Claude: "oklch(55% 0.13 50)" };
+let FILE = [
+  { id: "c6", day: "Today", time: "3:08 PM", ago: "19 minutes ago", msg: "Update opening hours", who: "Lex", sha: "8e41c0a", hours: "Open Tuesday to Saturday, 7:00 to 15:00." },
+  { id: "c5", day: "Today", time: "11:42 AM", ago: "4 hours ago", msg: "Add rye loaf photo", who: "Anna", sha: "b17f2d9", hours: "Open Tuesday to Saturday, 8:00 to 14:00." },
+  { id: "c4", day: "Yesterday", time: "4:12 PM", ago: "yesterday", msg: "Add spelt loaf", who: "Lex", sha: "3f2a9c1", label: "Oct 26, 4:12 PM", hours: "Open Tuesday to Saturday, 8:00 to 14:00. Spelt on Fridays." },
+  { id: "c3", day: "Yesterday", time: "9:30 AM", ago: "yesterday", msg: "Rewrite the intro", who: "Claude", sha: "a90d3e4", hours: "Open most mornings." },
+  { id: "c2", day: "Friday, Oct 23", time: "2:05 PM", ago: "4 days ago", msg: "First version of Our loaves", who: "Lex", sha: "41b8e77", hours: "Opening hours to follow." },
+];
+const OLDER = [{ id: "c1", day: "Oct 18", time: "10:15 AM", ago: "9 days ago", msg: "Start from the Starter site", who: "Lex", sha: "0c3d5b2", hours: "" }];
+const SITE_FILES = { c6: [["M", "loaves/index.html"]], c5: [["A", "images/rye.jpg"], ["M", "loaves/index.html"]], c4: [["M", "loaves/index.html"], ["M", "styles/site.css"]], c3: [["M", "index.html"], ["M", "loaves/index.html"]], c2: [["A", "loaves/index.html"], ["D", "loaves.html"]], c1: [["A", "index.html"], ["A", "styles/site.css"]] };
+const S = { open: false, scope: "file", viewing: null, menu: null, copied: false, ask: null, dialog: false, message: "", expanded: null, filesLoading: false, older: false, loadingOlder: false };
+const current = () => FILE[0];
+const list = () => (S.older ? [...FILE, ...OLDER] : FILE);
+
+function rows(m) {
+  const t = m === "today", site = S.scope === "site";
+  let out = "", lastDay = "";
+  for (const c of list()) {
+    if (c.day !== lastDay) { out += t ? `<li class="commit-history__day">${c.day}</li>` : `<li class="p-list-heading">${c.day}</li>`; lastDay = c.day; }
+    const isCurrent = c === current();
+    const shown = S.viewing ? S.viewing === c.id : isCurrent && !site;
+    const badge = isCurrent ? (t ? `<span class="commit-history__badge">${site ? "Latest" : "Current"}</span>` : `<span class="p-badge">${site ? "Latest" : "Current"}</span>`) : "";
+    const twisty = site ? (t ? `<span class="commit-history__twisty">${icon(S.expanded === c.id ? "caretDown" : "caret", 12)}</span>` : icon(S.expanded === c.id ? "caretDown" : "caret", 12)) : "";
+    const who = `<span class="who" style="--c:${PEOPLE[c.who]}">${c.who[0]}</span><span>${c.who}</span>`;
+    const menuOpen = S.menu === c.id;
+    const menu = menuOpen ? (t
+      ? `<div class="dropdown-panel" role="menu">${site ? "" : `<button type="button" role="menuitem" data-act="ask" data-id="${c.id}" ${isCurrent ? "disabled" : ""}>Restore this version…</button>`}<button type="button" role="menuitem">View on GitHub</button><button type="button" role="menuitem" data-act="copy">Copy commit link</button></div>`
+      : `<div class="p-menu" data-floating role="menu">${site ? "" : `<button type="button" class="p-menu-item" role="menuitem" data-act="ask" data-id="${c.id}" ${isCurrent ? "disabled" : ""}>${icon("restore")}Restore this version…</button>`}<button type="button" class="p-menu-item" role="menuitem">${icon("github")}View on GitHub</button><button type="button" class="p-menu-item" role="menuitem" data-act="copy" ${S.copied ? 'data-state="done"' : ""}>${icon(S.copied ? "check" : "link")}${S.copied ? "Copied" : "Copy commit link"}</button></div>`) : "";
+    let files = "";
+    if (site && S.expanded === c.id) {
+      const fl = S.filesLoading ? (t ? `<li class="commit-history__files-note">Loading files…</li>` : `<li class="p-hint">Loading files…</li>`)
+        : SITE_FILES[c.id].map(([k, p]) => t
+          ? `<li><button type="button" class="commit-history__file" title="Open ${p} as it was then"><span class="file-status is-${k}" aria-label="${{ A: "Added", M: "Modified", D: "Deleted" }[k]}">${k}</span><span class="commit-history__file-path">${p}</span></button></li>`
+          : `<li><button type="button" class="p-file p-press" title="Open ${p} as it was then"><span class="p-badge" data-tone="${{ A: "success", M: "current", D: "warning" }[k]}">${{ A: "New", M: "Changed", D: "Deleted" }[k]}</span><code>${p}</code></button></li>`).join("");
+      files = t ? `<ul class="commit-history__files">${fl}</ul>` : `<ul class="p-files">${fl}</ul>`;
+    }
+    const title = site ? "Show the files this commit changed" : isCurrent ? "Show the current version" : "Show this version in the preview";
+    out += t
+      ? `<li class="commit-history__item ${shown ? "is-shown" : ""}"><button type="button" class="commit-history__view" data-act="row" data-id="${c.id}" title="${title}" ${site ? `aria-expanded="${S.expanded === c.id}"` : ""}><span class="commit-history__line">${twisty}<time class="commit-history__time">${c.time}</time><span class="commit-history__ago">${c.ago}</span>${badge}</span><span class="commit-history__subject">${c.msg}</span><span class="commit-history__author">${who}</span></button><button type="button" class="commit-history__more" data-act="menu" data-id="${c.id}" aria-label="Actions for ${c.msg}" aria-expanded="${menuOpen}">${icon("dots")}</button>${menu}${files}</li>`
+      : `<li class="p-row-item" ${shown ? "data-shown" : ""}><button type="button" class="p-row" data-act="row" data-id="${c.id}" title="${title}" ${site ? `aria-expanded="${S.expanded === c.id}"` : ""}><span class="line">${twisty}<time>${c.time}</time><small>${c.ago}</small>${badge}</span><span>${c.msg}</span><span class="by">${who}</span></button><button type="button" class="p-icon-button p-press" data-act="menu" data-id="${c.id}" aria-label="Actions for ${c.msg}" aria-expanded="${menuOpen}">${icon("dots")}</button>${menu}${files}</li>`;
+  }
+  return out;
+}
+function question(m) {
+  if (!S.ask) return "";
+  const c = FILE.find((x) => x.id === S.ask);
+  const words = `Restore loaves/index.html on main to ${c.sha} (${c.msg}). This creates a new commit. Other files stay unchanged.`;
+  return m === "today"
+    ? `<div class="commit-history__confirmation" role="group"><h3>Restore this file?</h3><p>${words}</p><div class="commit-history__actions"><button type="button" class="button primary" data-act="restore">Restore file</button><button type="button" class="button secondary" data-act="unask">Cancel</button></div></div>`
+    : `<div class="p-notice" role="group"><h3>Restore this file?</h3><p>${words}</p><div class="p-actions"><button type="button" class="p-button p-press" data-tone="primary" data-act="restore">Restore file</button><button type="button" class="p-button p-press" data-act="unask">Cancel</button></div></div>`;
+}
+function panel(m) {
+  const t = m === "today", site = S.scope === "site";
+  const tabs = [["file", "This file"], ["site", "Whole site"]].map(([k, l]) => `<button type="button" role="tab" class="${t ? "commit-history__scope" : "p-tab p-press"}" aria-selected="${S.scope === k}" data-act="scope" data-scope="${k}">${l}</button>`).join("");
+  const location = `${site ? "bakery-bloom" : "loaves/index.html"} · main`;
+  const more = S.older ? "" : (t ? `<button type="button" class="button secondary" data-act="older" ${S.loadingOlder ? "disabled" : ""}>Load older commits</button>` : `<button type="button" class="p-button p-press" data-act="older" style="justify-self:start;margin:var(--space-3xs) var(--space-xs) var(--space-4xs)" ${S.loadingOlder ? "disabled" : ""}>Load older commits</button>`);
+  return t
+    ? `<section class="today changes-window" aria-label="History"><div class="commit-history"><div class="commit-history__header"><h2 class="changes-window__title">History</h2><button type="button" class="commit-history__refresh" aria-label="Refresh history" title="Refresh history">${icon("refresh")}</button></div>
+        <div class="commit-history__scopes" role="tablist" aria-label="History of">${tabs}</div><p class="commit-history__location">${location}</p><ul class="commit-history__list">${rows(m)}</ul><p class="muted commit-history__message" role="status">${S.message}</p>${question(m)}${more}</div></section>`
+    : `<section class="after p-menu" aria-label="History"><div class="p-head"><h2 class="p-list-heading" data-caps>History</h2><button type="button" class="p-icon-button p-press" aria-label="Refresh history" title="Refresh history">${icon("refresh")}</button></div>
+        <div class="p-tabs" role="tablist" aria-label="History of">${tabs}</div><p class="p-hint">${location}</p><ul class="p-rows">${rows(m)}</ul><p class="p-hint" role="status">${S.message}</p>${question(m)}${more}</section>`;
+}
+function bar() {
+  if (!S.viewing) return "";
+  const c = FILE.find((x) => x.id === S.viewing);
+  const label = c.label || `Oct 27, ${c.time}`;
+  return `<div class="today version-bar" role="region" aria-label="Earlier version"><p class="version-bar__text" title="${c.msg} (${c.sha})"><strong>Viewing ${label}</strong><span class="version-bar__message">${c.msg}</span></p><button type="button" class="button secondary" data-act="latest">Back to latest</button><button type="button" class="button primary" data-act="barrestore">Restore this version</button></div>
+    <div class="after p-bar" role="region" aria-label="Earlier version"><p title="${c.msg}"><strong>Viewing ${label}</strong><span>${c.msg}</span></p><button type="button" class="p-button p-press" data-act="latest">Back to latest</button><button type="button" class="p-button p-press" data-tone="primary" data-act="barrestore">Restore this version</button></div>`;
+}
+function dialog() {
+  if (!S.dialog) return "";
+  const c = FILE.find((x) => x.id === S.viewing);
+  const label = c.label || `Oct 27, ${c.time}`;
+  const notes = [`loaves/index.html on main goes back to how it was on ${label} (${c.msg}).`, "This creates a new commit. Other files stay unchanged."];
+  return `<div class="today create-dialog" role="dialog" aria-labelledby="t-dlg"><form class="create-dialog__form" onsubmit="return false"><h2 class="create-dialog__title" id="t-dlg">Restore this version?</h2><div class="confirm-dialog__notes">${notes.map((n) => `<p>${n}</p>`).join("")}</div><div class="create-dialog__actions"><button type="button" class="button secondary" data-act="dlgcancel">Cancel</button><button type="button" class="button primary" data-act="restore">Restore version</button></div></form></div>
+    <div class="after p-dialog" role="dialog" aria-labelledby="a-dlg"><h3 id="a-dlg">Restore this version?</h3>${notes.map((n) => `<p>${n}</p>`).join("")}<div class="p-actions"><button type="button" class="p-button p-press" data-act="dlgcancel">Cancel</button><button type="button" class="p-button p-press" data-tone="primary" data-act="restore">Restore version</button></div></div>`;
+}
+function render(focusSel) {
+  const pop = document.getElementById("pop");
+  const scroll = pop.scrollTop;
+  pop.hidden = !S.open;
+  pop.innerHTML = S.open ? panel("today") + panel("after") : "";
+  pop.scrollTop = scroll;
+  document.getElementById("clock").setAttribute("aria-expanded", String(S.open));
+  document.getElementById("bar").innerHTML = bar();
+  const shownCommit = S.viewing ? FILE.find((x) => x.id === S.viewing) : current();
+  document.getElementById("hours").textContent = `Baked every morning with flour from the mill down the road. ${shownCommit.hours}`;
+  document.getElementById("page").classList.toggle("is-viewing", Boolean(S.viewing));
+  document.getElementById("code").textContent = `<section>\n  <h2>Our loaves</h2>\n  <p>${shownCommit.hours}</p>\n</section>`;
+  const scrim = document.getElementById("scrim");
+  scrim.hidden = !S.dialog; scrim.innerHTML = dialog();
+  if (focusSel) document.querySelector(`body[data-mode="today"] .today ${focusSel}, body[data-mode="after"] .after ${focusSel}`)?.focus({ preventScroll: true });
+}
+
+const ACT = {
+  open() { S.open = !S.open; S.menu = null; render(); },
+  row(id) {
+    if (S.scope === "site") { if (S.expanded === id) { S.expanded = null; render(); return; } S.expanded = id; S.filesLoading = true; render(); setTimeout(() => { S.filesLoading = false; render(); }, 600); return; }
+    S.menu = null; S.ask = null;
+    S.viewing = id === current().id ? null : id; render();
+  },
+  latest() { S.viewing = null; render(); },
+  menu(id) { S.menu = S.menu === id ? null : id; S.copied = false; render(); },
+  async copy() { if (document.body.dataset.mode === "today") { S.menu = null; S.message = "Commit link copied."; render(); return; } S.copied = true; render(); await sleep(1400); S.copied = false; S.menu = null; render(); },
+  ask(id) { S.menu = null; S.ask = id; S.message = ""; render(".p-notice button, .commit-history__confirmation button"); document.getElementById("pop").scrollTop = 1e6; },
+  unask() { S.ask = null; render(); },
+  barrestore() { S.dialog = true; render(); },
+  dlgcancel() { S.dialog = false; render(); },
+  async restore() {
+    const target = FILE.find((x) => x.id === (S.dialog ? S.viewing : S.ask));
+    if (!target) return;
+    S.dialog = false; S.ask = null; S.message = "Restoring file…"; render();
+    await sleep(900);
+    FILE = [{ id: "c7", day: "Today", time: "3:27 PM", ago: "just now", msg: `Restore loaves/index.html to ${target.label || "Oct 27, " + target.time}`, who: "Lex", sha: "e52f8b0", hours: target.hours }, ...FILE];
+    SITE_FILES.c7 = [["M", "loaves/index.html"]];
+    S.viewing = null; S.message = ""; S.open = false; render();
+  },
+  scope(_, el) { S.scope = el.dataset.scope; S.expanded = null; S.menu = null; S.ask = null; S.message = ""; render(); },
+  async older() { S.loadingOlder = true; S.message = "Loading commits…"; render(); await sleep(700); S.loadingOlder = false; S.older = true; S.message = ""; render(); document.getElementById("pop").scrollTop = 1e6; },
+};
+document.getElementById("clock").addEventListener("click", () => ACT.open());
+document.getElementById("frame").addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]"); if (!el || el.disabled) return;
+  ACT[el.dataset.act](el.dataset.id, el);
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (S.dialog) ACT.dlgcancel(); else if (S.menu) { S.menu = null; render(); } else if (S.open) { S.open = false; render(); } } });
+
+const ensureOpen = () => { if (!S.open) { S.open = true; render(); } };
+const STEPS = {
+  open: () => { S.open = true; S.scope = "file"; render(); },
+  view: () => { ensureOpen(); S.scope = "file"; ACT.row("c4"); },
+  barrestore: () => { if (!S.viewing) STEPS.view(); ACT.barrestore(); },
+  dlgcancel: () => ACT.dlgcancel(),
+  latest: () => ACT.latest(),
+  copy: () => { ensureOpen(); S.scope = "file"; S.menu = list()[1].id; render(); setTimeout(() => ACT.copy(), 350); },
+  ask: () => { ensureOpen(); S.scope = "file"; S.menu = list()[1].id; render(); setTimeout(() => ACT.ask(list()[1].id), 350); },
+  restore: () => { if (!S.ask) { S.ask = list()[1].id; ensureOpen(); render(); } ACT.restore(); },
+  site: () => { ensureOpen(); ACT.scope(null, { dataset: { scope: "site" } }); },
+  files: () => { ensureOpen(); if (S.scope !== "site") ACT.scope(null, { dataset: { scope: "site" } }); S.expanded = null; ACT.row(list()[1].id); },
+  older: () => { ensureOpen(); ACT.older(); },
+};
+document.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-step]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  STEPS[b.dataset.step]();
+}));
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+STEPS.open();
+</script>
+</body>
+</html>

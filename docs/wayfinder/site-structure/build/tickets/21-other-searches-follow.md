@@ -9,7 +9,7 @@ blocked_by: [11-one-search-matcher]
 
 ## Goal
 
-Finish the DRY step of [ticket 06](../../../tickets/06-grill-search.md#resolution-2026-10-26): the remaining "contains" matchers switch to the shared rule (research 02, section 3). Size: S.
+Finish the DRY step of [ticket 06](../../tickets/06-grill-search.md#resolution-2026-10-26): the remaining "contains" matchers switch to the shared rule (research 02, section 3). Size: S.
 
 ## Decided behaviour
 

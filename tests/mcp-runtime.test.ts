@@ -29,97 +29,12 @@ import { requestOperation } from "../shared/agent-requests.ts";
 import { siteConventions } from "../worker/site-conventions.ts";
 import { conventionsChapter } from "./support/conventions-chapter";
 import { MEDIA_RECORDS_REFUSED } from "../shared/protected-paths.ts";
-import { editorTab, files, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness.ts";
+import { files, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness.ts";
 import { memoryUploadBytes, uploadKey } from "../src/uploads";
 
-import { createRequestTools } from "../src/agent-watch";
 import type { AgentRequest } from "../shared/agent";
-import { GitHub } from "../worker/github";
-import type { EditorContext, Snapshot } from "../shared/types";
-import { createAgentReadTools, type AgentReadPorts } from "../src/agent-tools-read";
-import { createAgentEditTools } from "../src/agent-tools-edit";
-import { createAgentMediaTools } from "../src/agent-tools-media";
-import { indexedDbAgentRecords } from "../src/agent-records";
-import { fakeIndexedDB } from "./support/fake-agent-indexeddb";
-import { fakeGitHub, githubState } from "./mcp-harness";
+import { receivingTab } from "./support/receiving-tab";
 
-/** A receiving tab over the real runtime socket. Content and receipts live in the test browser,
- * never in SessionStore. The host executor captures prepared commands for contract assertions. */
-async function receivingTab(worker: Awaited<ReturnType<typeof startWorker>>["worker"], cookie: string,
-  state = githubState()) {
-  const tab = editorTab(worker, cookie), workspace = { account: "lex", repoId: repo.id, branch: "main" };
-  const scope = { workspace, tabId: tab.tabId, generation: 1 };
-  const github = new GitHub("github-private-token", (input, init) => fakeGitHub(new Request(input, init), state));
-  const records = indexedDbAgentRecords("runtime", fakeIndexedDB().factory);
-  const owner = await records.setFence(workspace, 0, 1);
-  const snapshot: Snapshot = { branch: "main", commit: "c".repeat(40), entries: [] };
-  let context: EditorContext | undefined;
-  const commands: AgentCommand[] = [];
-  const results = new Map<string, AgentCommand["result"]>();
-  const source = { repo, snapshot, api: async <T>() => ({ entries: [] }) as T,
-    read: (_repo: string, sha: string) => github.file(repo, sha),
-    batch: async (_repo: string, shas: string[]) => {
-      await github.prefetchTexts(repo, shas);
-      return Object.fromEntries(await Promise.all(shas.filter(sha => github.hasText(repo, sha)).map(async sha => [sha, await github.file(repo, sha)])));
-    }, has: (_repo: string, sha: string) => github.hasText(repo, sha) };
-  const ports = {
-    stamp: () => ({ holds: () => true, changed: () => undefined }), files: () => source,
-    context: async () => {
-      if (!context) return undefined;
-      if (context.pages) snapshot.tree ??= await github.commitTree(repo, context.commit);
-      return { context, texts: new Map(context.drafts.flatMap(draft => draft.hash && draft.content !== undefined ? [[draft.hash, draft.content]] : [])) };
-    },
-  } satisfies AgentReadPorts;
-  const run = async (command: AgentCommand) => {
-    commands.push(command);
-    const outcome = { message: "Changed.", result: results.get(command.id) ?? { hash: "f".repeat(64) } };
-    const current = await records.workspace(workspace);
-    await records.commit({ workspace, fence: owner.generation, expectedRevision: current.revision, expectedDrafts: [], drafts: [],
-      receipt: { operationId: command.id, authorizationId: command.grantId!, payloadIdentity: command.requestIdentity!, outcome,
-        issuedAt: command.createdAt, createdAt: Date.now() } });
-    return outcome;
-  };
-  const reads = createAgentReadTools(ports), edits = createAgentEditTools({ workspace, ports, records, run });
-  const media = createAgentMediaTools({ workspace, ports, records, run });
-  const conversations = new Map<string, AgentRequest>();
-  const requests = createRequestTools({ workspace, list: async () => structuredClone([...conversations.values()]),
-    save: async (request, accept) => { if (!accept(conversations.get(request.id))) return false; conversations.set(request.id, request); return true; } });
-  let socket: Awaited<ReturnType<typeof worker.dispatchFetch>>["webSocket"];
-  return {
-    ...tab, commands, results, conversations,
-    inspect: async () => ({ ...await (await worker.dispatchFetch(origin + "/api/agent/connections", { headers: { Cookie: cookie } })).json(), commands }),
-    async show(next: EditorContext) {
-      context = structuredClone(next);
-      snapshot.commit = context.commit; snapshot.branch = context.branch;
-      snapshot.tree = context.pages ? await github.commitTree(repo, context.commit).catch(() => undefined) : [];
-      for (const draft of context.drafts) if (draft.content !== undefined) draft.hash ??= await textHash(draft.content);
-      if (!socket) {
-        const response = await worker.dispatchFetch(`${origin}/api/agent/relay?${new URLSearchParams({ repo: repo.full_name, branch: "main", tabId: tab.tabId, generation: "1" })}`, {
-          headers: { Origin: origin, Cookie: cookie, Upgrade: "websocket" },
-        });
-        socket = response.webSocket!; socket.accept();
-        const ready = new Promise<void>((resolve, reject) => socket!.addEventListener("message", event => {
-          void (async () => {
-          const value = JSON.parse(String(event.data));
-          if (value.type === "ready") { resolve(); return; }
-          if (value.type !== "command") return;
-          const request = value.command;
-          const result = context?.repository.id !== repo.id || context.branch !== "main"
-            ? { ok: false, message: "The editor is not sharing this workspace." }
-            : request.operation === "read" ? await reads.run(request.tool, request.args)
-            : request.operation === "requests" ? await requests.run(request, () => true, Date.now() + 24_000)
-            : request.operation === "media" ? await media.run(request, owner.generation, () => true)
-            : await edits.run(request, owner.generation, () => true);
-          socket!.send(JSON.stringify({ type: "result", id: value.id, ...scope, result }));
-          })().catch(reject);
-        }));
-        socket.send(JSON.stringify({ type: "handshake", ...scope, owner: true }));
-        await ready;
-      }
-      return { status: 200 };
-    },
-  };
-}
 
 const mediaFixturePorts = new WeakMap<import("../src/page-builder/media-workspace").MediaWorkspaceContext, MediaControllerPorts>();
 const applyAgentMedia = (...args: Parameters<typeof commitAgentMedia>) => { args[8] ??= mediaFixturePorts.get(args[0]); return commitAgentMedia(...args); };
@@ -194,9 +109,9 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     assert.doesNotMatch(JSON.stringify(listing), /src\/|page comment|native\.json|#\//);
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
-      "add_section", "adding_settings", "change_collection", "create_page", "delete_file", "describe_media", "edit_file", "export_site", "frame_image", "get_command_status", "get_page", "get_selection", "get_site",
-      "improve_images", "inspect_preview", "keep_media", "list_files", "list_media", "loop_video", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_media", "remove_section", "replace_media", "reply_to_request", "restore_media", "set_page_details",
-      "video_still", "wait_for_requests", "write_file", "write_subtitles",
+      "add_section", "adding_settings", "ask_user", "change_collection", "create_page", "delete_file", "describe_media", "discard_change", "edit_file", "export_site", "frame_image", "get_command_status", "get_page", "get_selection", "get_site",
+      "improve_images", "inspect_preview", "keep_media", "list_files", "list_media", "loop_video", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_media", "remove_section", "replace_media", "reply_to_request", "restore_media", "screenshot_preview", "set_page_details",
+      "video_still", "wait_for_requests", "working_here", "write_file", "write_subtitles",
     ]);
     const documentation = readFileSync(new URL("../docs/mcp.md", import.meta.url), "utf8");
     for (const name of tools) assert.ok(documentation.includes(`\`${name}\``), `docs/mcp.md must list ${name}`);
@@ -356,10 +271,10 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     assert.deepEqual([notFound.route, notFound.file, notFound.title], ["/404.html", "404.html", "Page not found"]);
     assert.equal((await call("get_page", { page: "/nowhere/" })).isError, true);
 
-    // edit_file needs the hash just read, and a unique old text.
-    const stale = await call("edit_file", { path: "styles/site.css", expectedHash: "0".repeat(64), edits: [{ oldText: "margin: 0", newText: "margin: 1px" }], waitSeconds: 0 });
+    // edit_file needs a unique old text; read in another text (ticket 10), it is refused only once its words are gone.
+    const stale = await call("edit_file", { path: "styles/site.css", expectedHash: "0".repeat(64), edits: [{ oldText: "margin: 9", newText: "margin: 1px" }], waitSeconds: 0 });
     assert.equal(stale.isError, true);
-    assert.match(JSON.stringify(stale), /changed in the editor since it was read/);
+    assert.match(JSON.stringify(stale), /no longer there: the user or another agent changed them meanwhile/);
     const edit = { path: "styles/site.css", expectedHash: css.hash, edits: [{ oldText: "margin: 0", newText: "margin: 1px" }], requestId: "css-1", waitSeconds: 0 };
     assert.equal(payload(await call("edit_file", edit)).state, "applied");
     assert.equal(payload(await call("edit_file", edit)).state, "applied", "a retry with the same requestId is the same change");
@@ -406,12 +321,49 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     assert.equal(payload(openedRecords).state, "applied");
     const openCommand = (await tab.inspect()).commands.find((item: any) => item.id === "open-media-records");
     assert.equal(openCommand.operation, "open_page");
+    // Who sent it (ticket am-11): unnamed, the name the connection's first MCP client gave (the legacy client above); named, its name on one short line.
+    assert.equal(openCommand.agent, "legacy-test");
+    assert.equal(payload(await call("write_file", { path: "styles/named.css", content: "p {}\n", requestId: "named-css", agent: "  Copy\neditor ", waitSeconds: 0 })).state, "applied");
+    assert.equal((await tab.inspect()).commands.find((item: any) => item.id === "named-css").agent, "Copy editor");
+    // A name too long is clipped, never refused: the change still lands.
+    assert.equal(payload(await call("write_file", { path: "styles/long.css", content: "p {}\n", requestId: "long-name-css", agent: "x".repeat(200), waitSeconds: 0 })).state, "applied");
+    assert.equal((await tab.inspect()).commands.find((item: any) => item.id === "long-name-css").agent, "x".repeat(40));
+    // One batched request of two named calls (ticket am-39): each change carries its own agent's name
+    // (sent at once, the second may land or be refused as the draft changed meanwhile; either way it is its own).
+    const batched = await worker.dispatchFetch(origin + "/mcp", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify([
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "write_file", arguments: { path: "styles/one.css", content: "p {}\n", requestId: "batch-one", agent: "Header writer", waitSeconds: 0 } } },
+        { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "write_file", arguments: { path: "styles/two.css", content: "p {}\n", requestId: "batch-two", agent: "Copy editor", waitSeconds: 0 } } },
+      ]),
+    });
+    assert.equal(batched.status, 200);
+    const answered = await batched.text();
+    for (const id of ["batch-one", "batch-two"]) assert.ok(answered.includes(id), id);
+    assert.deepEqual(["batch-one", "batch-two"].map(id => tab.received.find(item => item.id === id)?.agent), ["Header writer", "Copy editor"]);
+    // The site resource and the edit_site prompt read under the connection's client, never a tool call's name
+    // in the same request.
+    const before = tab.received.length;
+    const mixed = await worker.dispatchFetch(origin + "/mcp", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify([
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_file", arguments: { path: "styles/one.css", agent: "Header writer" } } },
+        { jsonrpc: "2.0", id: 2, method: "resources/read", params: { uri: "native-site://site" } },
+        { jsonrpc: "2.0", id: 3, method: "prompts/get", params: { name: "edit_site", arguments: {} } },
+      ]),
+    });
+    assert.equal(mixed.status, 200);
+    await mixed.text();
+    assert.deepEqual(tab.received.slice(before).map(item => [item.tool, item.agent]).sort(),
+      [["get_site", "legacy-test"], ["get_site", "legacy-test"], ["read_file", "Header writer"]]);
     assert.equal(payload(await call("write_file", { path: "styles/extra.css", content: "p {}\n", requestId: "new-css", waitSeconds: 0 })).state, "applied");
 
     // Make component's shape is the Worker's (shared/agent-edit.ts editShapeProblem); the page, the element and a taken name are the live page's.
     const makeTool = listing.find((tool) => tool.name === "make_component")!;
     assert.deepEqual(makeTool.inputSchema.required, ["page", "element", "tag", "expectedHash"]);
-    assert.deepEqual(Object.keys(makeTool.inputSchema.properties!).sort(), ["element", "expectedHash", "fixed", "page", "requestId", "tag", "waitSeconds"]);
+    assert.deepEqual(Object.keys(makeTool.inputSchema.properties!).sort(), ["agent", "element", "expectedHash", "fixed", "page", "requestId", "tag", "waitSeconds"]);
     const makeArgs = { page: "/", element: "1.0", tag: "section-welcome", expectedHash: page.hash, waitSeconds: 0 };
     for (const [extra, reason] of [
       [{ element: "bad.id" }, /not an element id/],
@@ -790,6 +742,15 @@ test("browser requests reach MCP over the runtime socket, keep threads, and neve
     assert.equal(payload(await call("wait_for_requests", quick)).requests[0].thread.at(-1).text, "Warm");
     assert.equal(payload(await call("reply_to_request", { request: asked.id, status: "done", message: "Updated." })).state, "done");
     assert.deepEqual(payload(await call("wait_for_requests", { all: true, ...quick })).requests, []);
+    // ask_user's shape is the Worker's to refuse (ticket am-15): nothing reaches the tab.
+    const sent = tab.received.length;
+    const unplaced = await call("ask_user", { question: "Ghost or outline?", ...quick });
+    assert.equal(unplaced.isError, true);
+    assert.match(JSON.stringify(unplaced.content), /Give question and element \(an id from get_page\)/);
+    const long = await call("ask_user", { question: "x".repeat(61), element: "1.0.0", ...quick });
+    assert.equal(long.isError, true);
+    assert.match(JSON.stringify(long.content), /at most 60 characters \(this one has 61\)/);
+    assert.equal(tab.received.length, sent);
     assert.equal((await tab.post("/api/agent/ask", { text: "obsolete" })).status, 410);
     assert.equal(github.writes, 0);
   } finally { await client?.close(); await worker.dispose(); }

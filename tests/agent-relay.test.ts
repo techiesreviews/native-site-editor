@@ -574,3 +574,274 @@ test("each command frame carries only the remaining total budget, even after a d
   restored.message(h.editor, reply(sent.id));
   assert.deepEqual(await waiting, { ok: true, result: { applied: true } });
 });
+
+test("a long job's cancel lasts a day, at most sixteen per connection, so no connection pushes out another's", () => {
+  const h = fixture();
+  const refused = (requestId: string | number, grantId: string, job?: true) => {
+    const reservation = h.relay.reserve(1, { requestId, grantId, job });
+    if ("ok" in reservation) return !reservation.ok && reservation.code === "cancelled";
+    reservation.release();
+    return false;
+  };
+  h.relay.cancel({ requestId: "wait:job", grantId: "one", job: true });
+  h.relay.cancel({ requestId: 7, grantId: "one" });
+  h.advance(11_000);
+  assert.equal(refused("wait:job", "one", true), true, "a job stays cancelled past a call's 10 s");
+  assert.equal(refused(7, "one"), false, "a call's cancel still lasts 10 s");
+  assert.equal(refused("wait:job", "two", true), false, "only for its own connection");
+  // Another connection's cancels, however many, never push this one out.
+  for (let job = 0; job < 40; job++) h.relay.cancel({ requestId: `wait:other-${job}`, grantId: "two", job: true });
+  assert.equal(refused("wait:job", "one", true), true);
+  assert.equal(refused("wait:other-0", "two", true), false, "its own oldest dropped out past sixteen");
+  assert.equal(refused("wait:other-39", "two", true), true);
+  // Its own sixteen more push the first out.
+  for (let job = 0; job < 16; job++) h.relay.cancel({ requestId: `wait:more-${job}`, grantId: "one", job: true });
+  assert.equal(refused("wait:job", "one", true), false);
+  h.advance(24 * 60 * 60_000);
+  assert.equal(refused("wait:more-15", "one", true), false, "after a day it is forgotten");
+});
+
+test("only a job's own cancel lasts a day: a client's request id that looks like a job's is fenced for 10 s", () => {
+  const h = fixture();
+  const refused = (key: { requestId: string; grantId: string; job?: true }) => {
+    const reservation = h.relay.reserve(1, key);
+    if ("ok" in reservation) return !reservation.ok && reservation.code === "cancelled";
+    reservation.release();
+    return false;
+  };
+  h.relay.cancel({ requestId: "wait:not-a-job", grantId: "one" });
+  assert.equal(refused({ requestId: "wait:not-a-job", grantId: "one" }), true);
+  assert.equal(refused({ requestId: "wait:not-a-job", grantId: "one", job: true }), false, "a job of the same id is not fenced");
+  h.advance(11_000);
+  assert.equal(refused({ requestId: "wait:not-a-job", grantId: "one" }), false);
+});
+
+test("a job holds one wait: a newer look takes over the tab's wait, and its answer reaches only the newest look", async () => {
+  const h = fixture();
+  const job = { requestId: "wait:job", grantId: "one", job: true as const };
+  const wait = { operation: "requests", tool: "wait_for_requests", waitMs: 20_000 };
+  const first = h.relay.dispatch(scope, wait, undefined, undefined, job);
+  const second = h.relay.dispatch(scope, wait, undefined, undefined, job);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "not-sent" });
+  assert.equal(h.editor.sent.length, 1);
+  assert.equal(h.relay.waits, 1);
+  // Other agents' waits still fit beside it.
+  const others = [1, 2].map(requestId => h.relay.dispatch(scope, wait, undefined, undefined, { requestId, grantId: "two" }));
+  assert.equal(h.relay.waits, 3);
+  const [jobWait, ...otherWaits] = h.editor.sent.map(message => (JSON.parse(message) as { id: string }).id);
+  // A newer look whose caller leaves ends the one wait; the look it replaced already answered.
+  const leave = new AbortController();
+  const third = h.relay.dispatch(scope, wait, leave.signal, undefined, job);
+  assert.deepEqual(await second, { ok: false, code: "replaced", outcome: "not-sent" });
+  leave.abort();
+  assert.deepEqual(await third, { ok: false, code: "cancelled", outcome: "unknown" });
+  assert.equal(JSON.parse(h.editor.sent.at(-1)!).type, "cancel");
+  assert.equal(h.relay.message(h.editor, reply(jobWait)), false, "a late answer reaches no look");
+  for (const id of otherWaits) assert.equal(h.relay.message(h.editor, reply(id, scope, { requests: [] })), true);
+  assert.equal((await Promise.all(others)).every(outcome => outcome.ok), true);
+  h.idle();
+});
+
+const jobKey = { requestId: "wait:job", grantId: "one", job: true as const };
+const jobWait = (waitMs = 20_000) => ({ operation: "requests", tool: "wait_for_requests", waitMs });
+
+test("a look that was taken over no longer ends the wait when its caller leaves", async () => {
+  const h = fixture();
+  const a = new AbortController(), b = new AbortController();
+  const first = h.relay.dispatch(scope, jobWait(), a.signal, undefined, jobKey);
+  const second = h.relay.dispatch(scope, jobWait(), b.signal, undefined, jobKey);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "not-sent" });
+  a.abort();
+  assert.equal(h.editor.sent.filter(message => JSON.parse(message).type === "cancel").length, 0);
+  assert.equal(h.relay.waits, 1);
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await second, { ok: true, result: { requests: [] } });
+  h.idle();
+});
+
+test("a wait taken over before the owner's handshake is sent once, on the handshake", async () => {
+  const h = fixture();
+  h.relay.reset();
+  const restored = new AgentRelay([h.editor], h.clock);
+  h.editor.sent.length = 0;
+  const first = restored.dispatch({ workspace: scope.workspace }, jobWait(), undefined, undefined, jobKey);
+  const second = restored.dispatch({ workspace: scope.workspace }, jobWait(), undefined, undefined, jobKey);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "not-sent" });
+  assert.equal(restored.message(h.editor, handshake()), true);
+  const commands = h.editor.sent.map(message => JSON.parse(message) as { type: string; id: string }).filter(frame => frame.type === "command");
+  assert.equal(commands.length, 1);
+  assert.equal(restored.message(h.editor, reply(commands[0].id, scope, { requests: [] })), true);
+  assert.deepEqual(await second, { ok: true, result: { requests: [] } });
+  assert.equal(restored.pendingCount, 0);
+});
+
+test("a newer look with another command ends the held wait in the tab and sends its own", async () => {
+  const h = fixture();
+  const first = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  const held = h.id();
+  const second = h.relay.dispatch(scope, jobWait(0), undefined, undefined, jobKey);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "unknown" }, "a sent wait may have taken requests");
+  const frames = h.editor.sent.map(message => JSON.parse(message) as { type: string; id: string; reason?: string });
+  assert.deepEqual(frames.filter(frame => frame.type === "cancel").map(frame => [frame.id, frame.reason]), [[held, "cancelled"]]);
+  assert.equal(frames.filter(frame => frame.type === "command").length, 2);
+  assert.equal(h.relay.waits, 1);
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await second, { ok: true, result: { requests: [] }, tookOver: true }, "the newest look is told it ended a sent wait");
+  h.idle();
+});
+
+test("a look that takes over a look which ended a sent wait is told so too, and only it", async () => {
+  const h = fixture();
+  const first = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  const second = h.relay.dispatch(scope, jobWait(0), undefined, undefined, jobKey);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "unknown" });
+  const third = h.relay.dispatch(scope, jobWait(0), undefined, undefined, jobKey);
+  assert.deepEqual(await second, { ok: false, code: "replaced", outcome: "not-sent" });
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await third, { ok: true, result: { requests: [] }, tookOver: true });
+  // A look that took over an unsent or same-command wait ended nothing the tab had.
+  const fourth = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  const fifth = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  assert.deepEqual(await fourth, { ok: false, code: "replaced", outcome: "not-sent" });
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await fifth, { ok: true, result: { requests: [] } });
+  h.idle();
+});
+
+test("in a chain of looks with changing commands, a marked look that is replaced passes the mark on and answers replaced", async () => {
+  const h = fixture();
+  const first = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  const second = h.relay.dispatch(scope, jobWait(0), undefined, undefined, jobKey);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "unknown" });
+  const third = h.relay.dispatch(scope, jobWait(15_000), undefined, undefined, jobKey);
+  assert.deepEqual(await second, { ok: false, code: "replaced", outcome: "unknown" }, "the replaced look is not marked");
+  assert.equal(h.relay.waits, 1);
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await third, { ok: true, result: { requests: [] }, tookOver: true });
+  h.idle();
+});
+
+test("a marked look whose caller leaves keeps the mark for its job's next look, once", async () => {
+  const h = fixture();
+  const leave = new AbortController();
+  const first = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  const second = h.relay.dispatch(scope, jobWait(0), leave.signal, undefined, jobKey);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "unknown" });
+  leave.abort();
+  assert.deepEqual(await second, { ok: false, code: "cancelled", outcome: "unknown", tookOver: true });
+  // Another job of the connection does not get it; the job's next look does, once.
+  const other = h.relay.dispatch(scope, jobWait(0), undefined, undefined, { ...jobKey, requestId: "wait:other" });
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await other, { ok: true, result: { requests: [] } });
+  const third = h.relay.dispatch(scope, jobWait(0), undefined, undefined, jobKey);
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await third, { ok: true, result: { requests: [] }, tookOver: true });
+  const fourth = h.relay.dispatch(scope, jobWait(0), undefined, undefined, jobKey);
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await fourth, { ok: true, result: { requests: [] } });
+  h.idle();
+});
+
+/** A look of `key`'s job marked `tookOver` (another command ended its job's sent wait) whose caller then leaves. */
+async function leaveMarked(h: ReturnType<typeof fixture>, key: typeof jobKey) {
+  const leave = new AbortController();
+  const first = h.relay.dispatch(scope, jobWait(), undefined, undefined, key);
+  const second = h.relay.dispatch(scope, jobWait(0), leave.signal, undefined, key);
+  await first;
+  leave.abort();
+  assert.equal((await second).tookOver, true);
+}
+/** One look of `key`'s job that the tab answers at once with nothing. */
+function look(h: ReturnType<typeof fixture>, key: typeof jobKey) {
+  const outcome = h.relay.dispatch(scope, jobWait(0), undefined, undefined, key);
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  return outcome;
+}
+
+test("a kept mark waits out a look refused before it waits, and goes to the first look that waits", async () => {
+  const h = fixture();
+  await leaveMarked(h, jobKey);
+  const others = [1, 2, 3].map(requestId => h.relay.dispatch(scope, jobWait(), undefined, undefined, { requestId, grantId: "two" }));
+  const otherIds = h.editor.sent.map(message => JSON.parse(message) as { type: string; id: string }).filter(frame => frame.type === "command").slice(-3).map(frame => frame.id);
+  assert.deepEqual(await h.relay.dispatch(scope, jobWait(0), undefined, undefined, jobKey), { ok: false, code: "waiting", outcome: "not-sent" });
+  assert.equal(h.relay.message(h.editor, reply(otherIds[0], scope, { requests: [] })), true);
+  assert.equal((await look(h, jobKey)).tookOver, true);
+  for (const id of otherIds.slice(1)) h.relay.message(h.editor, reply(id, scope, { requests: [] }));
+  await Promise.all(others);
+  h.idle();
+});
+
+test("a kept mark expires after a day, at most sixteen per connection, and only its own connection's look takes it", async () => {
+  const h = fixture();
+  await leaveMarked(h, jobKey);
+  assert.equal((await look(h, { ...jobKey, grantId: "two" })).tookOver, undefined, "another connection's job of the same id");
+  h.advance(24 * 60 * 60_000);
+  assert.equal((await look(h, jobKey)).tookOver, undefined, "forgotten after a day");
+  // Seventeen marks push this connection's oldest out; another connection's stays.
+  await leaveMarked(h, { ...jobKey, grantId: "two" });
+  for (let job = 0; job <= 16; job++) await leaveMarked(h, { ...jobKey, requestId: `wait:mark-${job}` });
+  assert.equal((await look(h, { ...jobKey, requestId: "wait:mark-0" })).tookOver, undefined);
+  assert.equal((await look(h, { ...jobKey, requestId: "wait:mark-16" })).tookOver, true);
+  assert.equal((await look(h, { ...jobKey, grantId: "two" })).tookOver, true);
+  h.idle();
+});
+
+test("a newer look that took over an unsent wait and then leaves ends it unsent: the tab never gets it", async () => {
+  const h = fixture();
+  h.relay.reset();
+  const restored = new AgentRelay([h.editor], h.clock);
+  h.editor.sent.length = 0;
+  const leave = new AbortController();
+  const first = restored.dispatch({ workspace: scope.workspace }, jobWait(), undefined, undefined, jobKey);
+  const second = restored.dispatch({ workspace: scope.workspace }, jobWait(), leave.signal, undefined, jobKey);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "not-sent" });
+  leave.abort();
+  assert.deepEqual(await second, { ok: false, code: "cancelled", outcome: "not-sent" });
+  assert.equal(restored.waits, 0);
+  assert.equal(restored.pendingCount, 0);
+  assert.equal(restored.message(h.editor, handshake()), true);
+  const frames = h.editor.sent.map(message => JSON.parse(message) as { type: string });
+  assert.equal(frames.some(frame => frame.type === "cancel"), false, "no cancel for a wait never sent");
+  assert.equal(frames.some(frame => frame.type === "command"), false, "the handshake sends no command");
+});
+
+test("a takeover keeps the held wait's deadline: the newest look times out when the first look's wait would have", async () => {
+  const h = fixture();
+  const first = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  h.advance(15_000);
+  const second = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "not-sent" });
+  h.advance(6_000);
+  assert.deepEqual(await second, { ok: false, code: "timeout", outcome: "unknown" });
+  const cancels = h.editor.sent.map(message => JSON.parse(message) as { type: string; reason?: string }).filter(frame => frame.type === "cancel");
+  assert.deepEqual(cancels.map(frame => frame.reason), ["timeout"]);
+  assert.equal(h.relay.waits, 0);
+  h.idle();
+});
+
+test("a look with another command ends the held wait only once it passes its own checks, the held wait's place counted free", async () => {
+  const h = fixture();
+  const first = h.relay.dispatch(scope, jobWait(), undefined, undefined, jobKey);
+  const held = h.id();
+  let settled = false;
+  void first.then(() => { settled = true; });
+  // Refused (too large): the held wait stays, and the tab is told nothing.
+  assert.deepEqual(await h.relay.dispatch(scope, { ...jobWait(0), pad: "x".repeat(AgentRelay.maxBytes) }, undefined, undefined, jobKey),
+    { ok: false, code: "too-large", outcome: "not-sent" });
+  await Promise.resolve();
+  assert.equal(settled, false);
+  assert.equal(h.relay.waits, 1);
+  assert.equal(h.editor.sent.some(message => JSON.parse(message).type === "cancel"), false);
+  // With every other place taken, the newer look still fits in the held wait's place.
+  const others = [1, 2, 3, 4].map(requestId => h.relay.dispatch(scope, { edit: requestId }, undefined, undefined, { requestId, grantId: "two" }));
+  assert.equal(h.relay.pendingCount, 5);
+  const second = h.relay.dispatch(scope, jobWait(0), undefined, undefined, jobKey);
+  assert.deepEqual(await first, { ok: false, code: "replaced", outcome: "unknown" });
+  assert.deepEqual(h.editor.sent.map(message => JSON.parse(message) as { type: string; id: string }).filter(frame => frame.type === "cancel").map(frame => frame.id), [held]);
+  assert.equal(h.relay.pendingCount, 5);
+  assert.equal(h.relay.message(h.editor, reply(h.id(), scope, { requests: [] })), true);
+  assert.deepEqual(await second, { ok: true, result: { requests: [] }, tookOver: true });
+  h.relay.disconnect(h.editor);
+  await Promise.all(others);
+  h.idle();
+});

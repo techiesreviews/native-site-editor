@@ -593,13 +593,72 @@ test("leave (Done) during an entry's load ends it too: it is stale, nothing fram
   const ready = deferred(), mounted = deferred();
   const pending = card(s, [0, 1], { ready: ready.promise }, () => mounted.resolve());
   await mounted.promise;
-  s.mode.leave();
+  // The latest entry wins: Done returns to the instance still loading, not the mode before it.
+  assert.deepEqual(s.mode.leave(), { page: "index.html", node: [0, 1], tag: "site-card", template: CARD_PATH });
   assert.deepEqual(s.live(), []);
   ready.resolve();
   assert.deepEqual(await pending, { status: "stale" });
   assert.equal(s.mode.now(), undefined);
   assert.equal(s.frames.at(-1), undefined);
   assert.deepEqual(s.live(), []);
+});
+
+test("leave (Done) while the first entry still loads (Make component, Done at once) returns its instance, once", async () => {
+  const s = setup();
+  const ready = deferred(), mounted = deferred();
+  const pending = card(s, [0, 1], { ready: ready.promise }, () => mounted.resolve());
+  await mounted.promise;
+  assert.deepEqual(s.mode.leave(), { page: "index.html", node: [0, 1], tag: "site-card", template: CARD_PATH });
+  assert.equal(s.mode.leave(), undefined);
+  ready.resolve();
+  assert.deepEqual(await pending, { status: "stale" });
+  assert.equal(s.mode.now(), undefined);
+  assert.deepEqual(s.live(), []);
+});
+
+test("leave (Done) after the page changed under a loading entry does not return its node, which may be another element now", async () => {
+  const s = setup();
+  const ready = deferred(), mounted = deferred();
+  const pending = card(s, [0, 1], { ready: ready.promise }, () => mounted.resolve());
+  await mounted.promise;
+  // A paragraph above the cards: [0, 1] is now the first card.
+  s.m.writeDraft("index.html", PAGE.replace("<main>", "<main><p>New</p>"));
+  assert.equal(s.mode.leave(), undefined);
+  ready.resolve();
+  assert.deepEqual(await pending, { status: "stale" });
+  assert.deepEqual(s.live(), []);
+});
+
+test("leave (Done) while an entry on a page it could not read loads returns nothing", async () => {
+  const s = setup();
+  const ready = deferred(), mounted = deferred();
+  const pending = s.mode.enter({ tag: "site-card", template: CARD_PATH, instance: { path: "missing.html", node: [0, 0] }, ready: ready.promise }, { mounted: () => mounted.resolve() });
+  await mounted.promise;
+  assert.equal(s.mode.leave(), undefined);
+  ready.resolve();
+  assert.deepEqual(await pending, { status: "stale" });
+  assert.deepEqual(s.live(), []);
+});
+
+test("leave (Done) with a mode on while an entry with no instance loads returns the mode's instance", async () => {
+  const s = setup();
+  await card(s, [0, 0]);
+  const hold = s.m.holdOpen();
+  const pending = s.mode.enter({ tag: "site-badge", template: BADGE_PATH });
+  await hold.reached;
+  // The new entry has nowhere to return to: Done goes back to the instance the mode is on.
+  assert.deepEqual(s.mode.leave(), { page: "index.html", node: [0, 0], tag: "site-card", template: CARD_PATH });
+  hold.release();
+  assert.deepEqual(await pending, { status: "stale" });
+  assert.equal(s.mode.now(), undefined);
+  assert.deepEqual(s.live(), []);
+});
+
+test("leave (Done) after an entry settled without the mode returns nothing", async () => {
+  const s = setup();
+  s.refuseOpens();
+  assert.deepEqual(await card(s), { status: "stale" });
+  assert.equal(s.mode.leave(), undefined);
 });
 
 test("leave (Done) during a level's open releases its share at once", async () => {

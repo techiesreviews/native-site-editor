@@ -26,6 +26,7 @@ import type { ElementMenuTarget } from "./components/element-menu";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import type { BlockInsertPorts, createBlockInsertController } from "./controllers/block-insert-controller";
 import type { createAgentController } from "./controllers/agent-controller";
+import type { createAgentCommands } from "./agent-site-host";
 import type { createBootController } from "./controllers/boot-controller";
 import { createCodePanesController } from "./controllers/code-panes-controller";
 import type { createCommandPaletteController } from "./controllers/command-palette-controller";
@@ -104,7 +105,8 @@ export interface WorkspaceBuilderPorts {
   menuItems: (target: ElementMenuTarget) => ReturnType<StructureHandler<"menuItems">>;
   fields: () => string;
   moveItems: StructureHandler<"itemsSlots">;
-  tools: () => ComponentTools;
+  /** The component tools, made once their module has loaded. */
+  tools: () => Promise<ComponentTools>;
 }
 
 /** A page's details and the settings dialogs. */
@@ -128,7 +130,7 @@ export interface WorkspaceAccountPorts {
 export interface WorkspaceMountPorts {
   app: HTMLElement;
   element: <T extends HTMLElement>(id: string) => T;
-  appStore: Pick<AppStore, "openFile" | "branch" | "repository" | "snapshot" | "reset">;
+  appStore: Pick<AppStore, "openFile" | "branch" | "repository" | "snapshot" | "reset" | "selection">;
   editorModule: Pick<typeof SourceEditor, "onUnmountedText" | "setViewLoader" | "mountSourceEditor" | "captureHistoryHost" | "recordHistoryAction"
     | "isMounted" | "captureFileModelState" | "closeActiveEditGroup" | "clearDrafts">;
   workspaceSession: Pick<WorkspaceSession, "begin">;
@@ -136,12 +138,12 @@ export interface WorkspaceMountPorts {
   finishedWork: Pick<ReturnType<typeof createFinishedElsewhere>, "open" | "shown">;
   mediaHistoryHome: Pick<ReturnType<typeof createMediaHistoryHome>, "adopt" | "clear">;
   parkedSteps: Pick<ReturnType<typeof createParkedSteps>, "adopt" | "clear">;
-  guardedEdits: Pick<GuardedEdits, "stamp">;
+  guardedEdits: Pick<GuardedEdits, "stamp" | "peek">;
   mediaController: Pick<ReturnType<typeof createMediaController>, "disposeGallery" | "mediaEnded" | "chooseImage">;
   paletteController: Pick<ReturnType<typeof createCommandPaletteController>, "shortcut" | "mount" | "dispose">;
   previewSelection: Pick<PreviewSelectionController, "handlers">;
   pageStructureController: Pick<ReturnType<typeof createPageStructureController>, "nativeFormatActions" | "applyNativeTextEdit" | "textEdits"
-    | "nativeElementMoveAction" | "removeRow" | "isNativeSectionTag" | "moveBlock">;
+    | "nativeElementMoveAction" | "removeRow" | "isNativeSectionTag" | "moveBlock" | "renderEditBar">;
   linkedStyles: Pick<ReturnType<typeof createLinkedStylesController>, "updateBodyStyles" | "clearSources">;
   versions: { readonly view: ReturnType<typeof createVersionView>["view"]; history: Pick<ReturnType<typeof createVersionView>["history"], "destroy"> };
   cards: Cards;
@@ -166,6 +168,8 @@ export interface WorkspaceMountPorts {
   /** Declared after the host. */
   readonly boot: Pick<ReturnType<typeof createBootController>, "ensureList" | "reset">;
   readonly agentController: Pick<ReturnType<typeof createAgentController>, "ensure" | "dismiss" | "answer" | "destroy">;
+  /** The user's Undo of an agent's changes from its pin card (ticket am-15). */
+  readonly agentCommands: Pick<ReturnType<typeof createAgentCommands>, "undo" | "undoable" | "undoLatest" | "latestUndoable">;
   readonly workspaceBoot: { dropGuess(): void };
   draftScope: () => DraftScope | undefined;
   shownScope: () => WorkspaceScope | undefined;
@@ -173,9 +177,16 @@ export interface WorkspaceMountPorts {
   setCurrentPage: (path?: string) => void;
   errorMessage: (error: unknown) => void;
   announce: (text: string) => void;
+  /** Scheduling seam for the component tools' load; production waits two frames and a beat. Returns its cancel. */
+  afterPaint?: (callback: () => void) => () => void;
 }
 
 export function createWorkspaceMount(ports: WorkspaceMountPorts) {
+  const afterPaint = ports.afterPaint ?? ((callback: () => void) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { frame = 0; timer = setTimeout(callback, 100); }); });
+    return () => { cancelAnimationFrame(frame); clearTimeout(timer); };
+  });
   let repositorySelect: HTMLSelectElement;
   let branchSelect: HTMLSelectElement;
   let refreshButton: HTMLButtonElement;
@@ -186,6 +197,12 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   let siteActions: ReturnType<typeof mountSiteActions> | undefined;
   let sidebarResize: SidebarResize | undefined;
   let blockRail: ReturnType<typeof mountBlockRail> | undefined;
+  // The component tools' load for the preview shown (one at a time; a remount or a failure starts afresh).
+  let toolsLoad: Promise<ComponentTools | undefined> | undefined;
+  // The preview's right-clicks and dismissals, counted: a menu waiting for the component tools opens only for the latest.
+  let contextMenuAsk = 0;
+  // The wait after the paint of the preview shown, cancelled when it is replaced or closed.
+  let cancelToolsWait: (() => void) | undefined;
   let previewElementMenu: ReturnType<typeof createRowMenu> | undefined;
   window.addEventListener("blur", () => previewElementMenu?.close(false));
 
@@ -425,17 +442,40 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     previewElementMenu?.close(false);
     previewElementMenu?.element.remove();
     previewElementMenu = createRowMenu(ports.app);
+    // The component tools never run before the first paint: they load two frames and a beat after it
+    // (the runtime reports the structure just before the frame presents it), for the preview painted.
+    let toolsDue = false;
+    const toolsAfterPaint = () => {
+      if (toolsDue) return;
+      toolsDue = true;
+      const preview = ports.nativePreview;
+      cancelToolsWait = afterPaint(() => {
+        cancelToolsWait = undefined;
+        if (ports.nativePreview !== preview) return;
+        void loadComponentTools();
+      });
+    };
     ports.nativePreview = createNativePreview(ports.element("main"), {
       onShortcut: name => ports.paletteController.shortcut(name),
       onRefusalNoteAction: dismissRefusalNote,
       onMediaEnded: (id) => ports.mediaController.mediaEnded(id),
       ...ports.previewSelection.handlers(),
-      onDismissContextMenu: () => previewElementMenu?.close(false),
+      onDismissContextMenu: () => { contextMenuAsk++; previewElementMenu?.close(false); },
       // The right-clicked element as the edit bar takes it (a shared template's part maps to its instance).
+      // Its entries are the component tools': a right-click before they land loads them at once and
+      // opens the menu when they do, unless it was dismissed, another came or the workspace moved on.
       onContextMenu: (point, anchor, selection) => {
-        const target = ports.componentTools?.mode.opened() ? selection : ports.componentTools?.instanceSelection(selection);
-        const entries = target ? ports.builder.menuItems(target) : [];
-        if (entries.length) previewElementMenu?.open(anchor, entries, point, "Element actions");
+        const open = (tools: ComponentTools) => {
+          const target = tools.mode.opened() ? selection : tools.instanceSelection(selection);
+          const entries = target ? ports.builder.menuItems(target) : [];
+          if (entries.length) previewElementMenu?.open(anchor, entries, point, "Element actions");
+        };
+        const ask = ++contextMenuAsk;
+        if (ports.componentTools) { open(ports.componentTools); return; }
+        const since = ports.guardedEdits.stamp(), menu = previewElementMenu;
+        void loadComponentTools().then((tools) => {
+          if (tools && ask === contextMenuAsk && since.holds() && previewElementMenu === menu) open(tools);
+        });
       },
       // The images of a page shown by following a link are read when it shows.
       // A page the text index has not read yet is read when it shows.
@@ -458,9 +498,11 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       insertPointFor: ports.builder.addPoint,
       insertDestinationText: point => point ? ports.builder.addPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
       onInsert: (point, choice) => void ports.builder.insert(point, choice),
-      onNewComponent: (tag, point) => ports.componentTools?.newComponent(tag, point) ?? Promise.resolve(false),
+      // The Add panel's New component waits for the component tools when it comes before them.
+      onNewComponent: async (tag, point) => (await loadComponentTools())?.newComponent(tag, point) ?? false,
       onStructure: (structure) => {
         if (!structure) { ports.pageStructure?.update(undefined); return; }
+        toolsAfterPaint();
         codePanes.notePreviewPainted();
         ports.site.painted();
         const path = structure.path, source = structure.paintedSource, scope = ports.draftScope();
@@ -482,6 +524,10 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       onAnswerRequest: async (id, text) => {
         await ports.agentController.answer(id, text);
       },
+      onUndoChanges: (ids, grant) => ports.agentCommands.undo(ids, grant),
+      undoChangesState: (ids, grant) => ports.agentCommands.undoable(ids, grant),
+      onUndoAgentChip: (mark, change) => ports.agentCommands.undoLatest(mark.who, mark.path, change),
+      agentChipUndoState: (mark) => ports.agentCommands.latestUndoable(mark.who, mark.path),
       // The Add panel docks over the page structure sidebar; under a phone's sheet (folded or not), over the page and sheet.
       addPanelDock: () => {
         const area = ports.app.querySelector<HTMLElement>(".workspace")?.getBoundingClientRect();
@@ -558,13 +604,48 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       announce: ports.announce,
     });
     ports.componentTools?.destroy();
-    ports.componentTools = ports.builder.tools();
+    ports.componentTools = undefined;
+    toolsLoad = undefined;
+    cancelToolsWait?.();
+    cancelToolsWait = undefined;
     ports.paletteController.mount();
+  }
+
+  // The component tools for the preview shown, made once their module has loaded: Page Structure's
+  // instance and text rows and the edit bar then draw with them. Tools that land for a preview
+  // replaced or closed are destroyed and handed to no one (undefined). A load that fails is reported
+  // once and not tried again for this preview (the browser keeps a failed module import failed until
+  // the page reloads, which chunk recovery's notice asks for): every later ask gets undefined. Never rejects.
+  function loadComponentTools(): Promise<ComponentTools | undefined> {
+    const preview = ports.nativePreview;
+    if (!preview) return Promise.resolve(undefined);
+    if (ports.componentTools) return Promise.resolve(ports.componentTools);
+    const load: Promise<ComponentTools | undefined> = toolsLoad ??= ports.builder.tools().then((tools) => {
+      if (ports.nativePreview !== preview || toolsLoad !== load) { tools.destroy(); return undefined; }
+      ports.componentTools = tools;
+      ports.pageStructure?.refresh();
+      // The edit bar draws again for the selection held only while the page it was painted from is
+      // still the source: with an edit on its way to the preview (a Bold just pressed), its controls
+      // would read bytes the edit replaced; the preview's next selection draws it, tools and all.
+      const selection = ports.appStore.selection.value;
+      if (selection && selection.paintedSource !== undefined && ports.guardedEdits.peek.source(selection.path) === selection.paintedSource)
+        ports.pageStructureController.renderEditBar(selection);
+      return tools;
+    }, (error: unknown) => {
+      if (ports.nativePreview === preview && toolsLoad === load) ports.errorMessage(error);
+      return undefined;
+    });
+    return load;
   }
 
   // Everything open goes before the login page shows (renderLogin, src/setup-host.ts).
   function closeWorkspace() {
     ports.workspaceBoot.dropGuess();
+    cancelToolsWait?.();
+    cancelToolsWait = undefined;
+    toolsLoad = undefined;
+    ports.componentTools?.destroy();
+    ports.componentTools = undefined;
     ports.paletteController.dispose();
     ports.agentController.destroy();
     ports.setup.setupController.dispose();
@@ -652,7 +733,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
 
   return {
     codePanes, nativeHistoryAliases, nativeHistoryShares, nativeHistorySession, closeEditor, openCodeEditor,
-    mountWorkspace, closeWorkspace, setupScope, showDirectory,
+    mountWorkspace, closeWorkspace, setupScope, showDirectory, loadComponentTools,
     get primaryHistoryScope() { return primaryHistoryScope; },
     get activeFileContext() { return activeFileContext; }, set activeFileContext(value) { activeFileContext = value; },
     get repositorySelect() { return repositorySelect; }, get branchSelect() { return branchSelect; }, get refreshButton() { return refreshButton; },

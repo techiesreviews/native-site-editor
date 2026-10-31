@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 15 Outside changes and preview link</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 3 Nov review
+  (kitchen rule "mock-ups ahead", 2026-10-27).
+  Question: do outside changes (update in place with a fading author chip, quiet merge, clash with Lex's words one Undo away) and Share preview (link on a separate preview address, live while the editor is open, not-running page, turn off) feel right? Agents build slices 33 and 35.
+-->
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(oklch(97% 0.012 275), oklch(17% 0.012 265));
+  --surface: light-dark(oklch(99% 0.003 276), oklch(22% 0.015 265));
+  --raised: light-dark(oklch(95.4% 0.019 275), oklch(26% 0.02 265));
+  --toolbar: light-dark(oklch(92% 0.019 275), oklch(20% 0.015 265));
+  --text: light-dark(oklch(15.3% 0.06 263), oklch(94% 0.01 265));
+  --muted: light-dark(oklch(40% 0.045 263), oklch(72% 0.03 265));
+  --line: light-dark(oklch(88.3% 0.048 275), oklch(34% 0.03 265));
+  --action: light-dark(oklch(50% 0.18 263), oklch(72% 0.13 263));
+  --on-action: light-dark(oklch(99% 0.003 276), oklch(16% 0.03 263));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --danger: light-dark(oklch(50% 0.17 25), oklch(74% 0.13 25));
+  --danger-surface: light-dark(oklch(96% 0.03 25), oklch(27% 0.05 25));
+  --warn-surface: light-dark(oklch(96% 0.03 75), oklch(28% 0.05 75));
+  --warn-text: light-dark(oklch(38% 0.07 75), oklch(84% 0.09 80));
+  --ok: light-dark(oklch(46% 0.12 145), oklch(76% 0.13 145));
+  --ok-surface: light-dark(oklch(96% 0.03 145), oklch(27% 0.05 145));
+  --lex: light-dark(oklch(52% 0.2 262), oklch(73% 0.14 262));
+  --anna: light-dark(oklch(50% 0.22 305), oklch(74% 0.15 305));
+  --agent: light-dark(oklch(48% 0.13 150), oklch(75% 0.15 150));
+  --guest: light-dark(oklch(56% 0.16 55), oklch(78% 0.14 60));
+  --sam: light-dark(oklch(52% 0.14 200), oklch(76% 0.12 200));
+  --on-color: light-dark(oklch(100% 0 none), oklch(16% 0 none));
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius-small: 4px;
+  --radius: 6px;
+  --radius-panel: 8px;
+  --radius-dialog: 12px;
+  --shadow: 0 6px 24px light-dark(oklch(15% 0.06 263 / 0.16), oklch(0% 0 none / 0.5));
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; padding: 1rem; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-tap-highlight-color: transparent; }
+main { max-inline-size: 76rem; margin-inline: auto; display: grid; gap: 0.9rem; }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: 1.15rem; text-wrap: balance; }
+.intro { color: var(--muted); max-inline-size: 64ch; text-wrap: pretty; }
+.tag { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 0.1em 0.5em; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); vertical-align: middle; margin-inline-start: 0.4em; }
+svg.i { inline-size: 1rem; block-size: 1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Demo strip: controls for the demo, not editor UI */
+.strip { border: 1.5px dashed var(--line); border-radius: var(--radius-panel); padding: 0.7rem; display: grid; gap: 0.55rem; background: color-mix(in oklch, var(--bg) 60%, var(--raised)); }
+.strip h2 { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+.strip .buttons { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.strip .caption { font-weight: 600; text-wrap: pretty; min-block-size: 1.45em; }
+
+button { font: inherit; color: inherit; }
+.btn, .strip button { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; font-size: 0.85rem; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); min-block-size: 2rem; padding: 0.25rem 0.7rem; cursor: pointer; white-space: nowrap; }
+.btn--primary { background: var(--action); border-color: var(--action); color: var(--on-action); font-weight: 600; }
+.btn--quiet { background: transparent; border-color: transparent; }
+.btn--danger { color: var(--danger); }
+.icon-btn { display: inline-grid; place-items: center; inline-size: 2rem; block-size: 2rem; border-radius: var(--radius); border: 1px solid transparent; background: transparent; color: var(--text); cursor: pointer; padding: 0; position: relative; }
+.icon-btn:disabled, .btn:disabled { opacity: 0.4; cursor: default; }
+:is(.btn, .icon-btn, .strip button, .menu-item):focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+:is(.btn, .icon-btn, .strip button):active:not(:disabled) { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) {
+  :is(.btn, .strip button):hover:not(:disabled) { background: color-mix(in oklch, var(--text) 7%, var(--surface)); }
+  .btn--primary:hover:not(:disabled) { background: color-mix(in oklch, black 12%, var(--action)); }
+  .icon-btn:hover:not(:disabled), .menu-item:hover { background: var(--hover); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :is(.btn, .icon-btn, .strip button) { transition: transform 160ms var(--ease-out), background-color 160ms var(--ease-out); }
+}
+
+/* Editor frame */
+.editor { border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface); display: grid; container-type: inline-size; }
+.editor > :first-child { border-start-start-radius: inherit; border-start-end-radius: inherit; }
+.editor > :last-child { border-end-start-radius: inherit; border-end-end-radius: inherit; }
+.topbar { display: flex; align-items: center; gap: 0.35rem; block-size: 44px; padding-inline: 0.5rem; background: var(--toolbar); border-block-end: 1px solid var(--line); min-inline-size: 0; }
+.topbar .spacer { flex: 1; }
+.project { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 600; border: 0; background: transparent; border-radius: var(--radius); padding: 0.3rem 0.5rem; cursor: pointer; min-inline-size: 0; }
+.project span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mark { inline-size: 1.1rem; block-size: 1.1rem; border-radius: 4px; background: var(--action); flex: none; }
+.save-dot { position: absolute; inset-block-start: 4px; inset-inline-end: 4px; inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--on-action); }
+.canvas { background: var(--raised); padding: clamp(0.6rem, 2cqi, 1.25rem); }
+.site { background: light-dark(white, oklch(19% 0.01 265)); color: light-dark(oklch(22% 0.02 140), oklch(92% 0.01 140)); border-radius: var(--radius); padding: clamp(1rem, 4cqi, 2.5rem); display: grid; gap: 0.6rem; box-shadow: 0 1px 3px light-dark(oklch(0% 0 none / 0.08), oklch(0% 0 none / 0.4)); font-family: Georgia, "Iowan Old Style", serif; }
+.site h2 { font-size: clamp(1.4rem, 1rem + 2cqi, 2.1rem); line-height: 1.15; text-wrap: balance; position: relative; }
+.site p { max-inline-size: 58ch; text-wrap: pretty; }
+
+/* Menus */
+.menu { position: absolute; z-index: 5; min-inline-size: 15rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-panel); box-shadow: var(--shadow); padding: 4px; display: grid; }
+.menu[hidden] { display: none; }
+.menu-item { display: flex; align-items: center; gap: 0.55rem; inline-size: 100%; border: 0; background: transparent; border-radius: var(--radius-small); padding: 0.4rem 0.55rem; cursor: pointer; text-align: start; font-size: 0.875rem; min-block-size: 2rem; }
+.menu-item .meta { margin-inline-start: auto; color: var(--muted); font-size: 0.8rem; }
+.menu-item.is-done { color: var(--ok); }
+.menu hr { border: 0; border-block-start: 1px solid var(--line); margin: 4px 2px; }
+
+/* People */
+.who { display: inline-grid; place-items: center; inline-size: 1.5rem; block-size: 1.5rem; border-radius: 50%; background: var(--c); color: var(--on-color); font-size: 0.72rem; font-weight: 700; flex: none; box-shadow: 0 0 0 2px var(--toolbar); }
+.who svg { inline-size: 0.85rem; block-size: 0.85rem; }
+.people { display: inline-flex; align-items: center; }
+.people .who + .who { margin-inline-start: -0.3rem; }
+.chip { display: inline-flex; align-items: center; gap: 0.3rem; font: 600 0.72rem/1.2 system-ui, sans-serif; color: var(--on-color); background: var(--c); border-radius: 99px; padding: 0.15rem 0.5rem; white-space: nowrap; }
+.chip button { all: unset; display: inline-grid; place-items: center; cursor: pointer; border-radius: 50%; inline-size: 1.1rem; block-size: 1.1rem; }
+.chip button:focus-visible { outline: 2px solid currentColor; }
+.chip svg { inline-size: 0.8rem; block-size: 0.8rem; }
+
+.panes { display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); align-items: start; }
+.label { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-block-end: 0.35rem; }
+.fade-out { animation: fadeout 2.4s var(--ease-out) forwards; }
+@keyframes fadeout { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .fade-out { animation-duration: 0.01s; animation-delay: 2s; } }
+
+
+.anchor { position: relative; }
+.browser { border: 1px solid var(--line); border-radius: var(--radius-panel); overflow: clip; background: var(--surface); }
+.browser__bar { display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.6rem; background: var(--toolbar); border-block-end: 1px solid var(--line); font: 12px/1.3 var(--mono); color: var(--muted); min-inline-size: 0; }
+.browser__bar span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browser__body { min-block-size: 15rem; display: grid; padding: clamp(0.6rem, 2cqi, 1rem); background: var(--raised); container-type: inline-size; }
+.plain { place-self: center; text-align: center; color: var(--muted); display: grid; gap: 0.3rem; padding: 2rem 1rem; font-family: system-ui, sans-serif; }
+.plain b { color: var(--text); font-size: 1rem; }
+.site [data-k] { position: relative; border-radius: 2px; }
+.site .mark-out { outline: 2px solid var(--c); outline-offset: 4px; }
+.site .mark-out > .chip { position: absolute; inset-block-start: -1.55rem; inset-inline-end: 0; font-family: system-ui, sans-serif; }
+.site .has-chip { margin-block-start: 1.5rem; }
+.share { display: grid; gap: 0.4rem; padding: 0.45rem 0.55rem 0.55rem; }
+.share__row { display: flex; gap: 0.35rem; }
+.share__row input { flex: 1; min-inline-size: 0; font: 12px/1.3 var(--mono); color: var(--text); background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.35rem 0.5rem; }
+.share small { color: var(--muted); font-size: 0.75rem; }
+.btn.is-done { color: var(--ok); }
+.draft-dot { display: inline-block; inline-size: 0.45rem; block-size: 0.45rem; border-radius: 50%; background: var(--action); margin-inline-start: 0.35rem; vertical-align: middle; }
+
+</style>
+</head>
+<body>
+
+<main>
+  <header style="display:grid;gap:0.3rem">
+    <h1>Outside changes, and a live preview link <span class="tag">mock-up for Tuesday 3 Nov</span></h1>
+    <p class="intro">Agents build, slices 33 and 35. Someone changes the site on GitHub while Lex has it open: the page updates in place with an author chip that fades, merges with his unsaved words, and on a true clash his words are one Undo away. Share preview gives a customer a link that follows his edits live while his editor is open.</p>
+  </header>
+  <section class="strip" aria-labelledby="s1">
+    <h2 id="s1">Try it (demo buttons, not part of the editor). You can also type in Lex's heading.</h2>
+    <div class="buttons">
+      <button type="button" data-act="push">Sam pushes on GitHub (no unsaved changes)</button>
+      <button type="button" data-act="merge">Lex has unsaved words, Sam changes another line</button>
+      <button type="button" data-act="clash">Both changed the same words</button>
+      <button type="button" data-act="preview">Lex: Share preview</button>
+      <button type="button" data-act="type">Lex types (customer sees it)</button>
+      <button type="button" data-act="close">Lex closes the editor</button>
+      <button type="button" data-act="off">Lex turns the preview off</button>
+      <button type="button" data-act="reset">Reset</button>
+      <span style="margin-inline-start:auto;display:inline-flex;gap:0.3rem"><button type="button" data-theme-set="system" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+    </div>
+    <p class="caption" id="caption" aria-live="polite">Nothing has changed outside the editor yet.</p>
+  </section>
+  <div class="panes">
+    <div>
+      <p class="label">Lex's editor</p>
+      <div class="editor">
+        <div class="topbar">
+          <span class="anchor">
+            <button type="button" class="project" id="projectBtn" aria-haspopup="menu" aria-expanded="false"><span class="mark"></span><span>Bakery site</span><span data-icon="caret"></span></button>
+            <div class="menu" id="projectMenu" role="menu" hidden style="inset-block-start:calc(100% + 4px);inset-inline-start:0;inline-size:min(20rem, 80vw)"></div>
+          </span>
+          <span class="spacer"></span>
+          <button type="button" class="icon-btn" id="undoBtn" aria-label="Undo" title="Undo  Ctrl+Z" disabled data-icon="undo"></button>
+          <button type="button" class="btn btn--primary" id="saveBtn" style="position:relative">Save</button>
+        </div>
+        <div class="canvas"><div class="site" id="site"></div></div>
+      </div>
+    </div>
+    <div>
+      <p class="label">The customer's browser</p>
+      <div class="browser">
+        <div class="browser__bar"><span data-icon="globe"></span><span id="pvUrl">no link yet</span></div>
+        <div class="browser__body" id="pv"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const ICONS = {
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>',
+  caret: '<path d="m6 9 6 6 6-6"/>',
+  check: '<path d="m5 12 5 5 9-10"/>',
+  link: '<path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1"/><path d="M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/>',
+  live: '<circle cx="12" cy="12" r="3"/><path d="M6.3 6.3a8 8 0 0 0 0 11.4M17.7 6.3a8 8 0 0 1 0 11.4"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
+  files: '<path d="M4 4h6l2 3h8v13H4z"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  plug: '<path d="M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0zM12 17v5"/>',
+  dots: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
+  close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  retry: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+  download: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/>',
+  warn: '<path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18h.01"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  bold: '<path d="M7 5h6a4 4 0 0 1 0 8H7zM7 13h7a4 4 0 0 1 0 8H7z"/>',
+  italic: '<path d="M14 4h-4M14 20h-4M15 4l-6 16"/>',
+  sparkle: '<path d="M12 3c.6 4.3 2.7 6.4 7 7-4.3.6-6.4 2.7-7 7-.6-4.3-2.7-6.4-7-7 4.3-.6 6.4-2.7 7-7Z"/>',
+  pin: '<path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z"/><circle cx="12" cy="9" r="2.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>',
+  claude: '<path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/>',
+};
+const icon = (n, cls = "i") => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
+document.querySelectorAll("[data-icon]").forEach((el) => el.insertAdjacentHTML("afterbegin", icon(el.dataset.icon)));
+const themeButtons = document.querySelectorAll("[data-theme-set]");
+themeButtons.forEach((b) => b.addEventListener("click", () => {
+  const t = b.dataset.themeSet;
+  if (t === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  themeButtons.forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const caption = (text) => { const c = document.getElementById("caption"); if (c) c.textContent = text; };
+
+
+let S;
+const PV = "nse-preview.lexvd.workers.dev/s/bakery-4fQ9…";
+function reset() {
+  S = { h: "Fresh bread every morning", p: "Sourdough, rye and seeded loaves from our oven on the corner.", hours: "Open Tuesday to Saturday, 7:00 to 15:00.", mark: null, draft: false, undo: null, preview: "none", copied: false, editorOpen: true };
+  caption("Nothing has changed outside the editor yet."); render();
+}
+function chip(k) { return S.mark?.k === k ? `<span class="chip" style="--c:var(--sam)">Sam · GitHub</span>` : ""; }
+function cls(k) { return S.mark?.k === k ? "mark-out has-chip" : ""; }
+function render() {
+  const site = document.getElementById("site");
+  site.innerHTML = `<h2 data-k="h" class="${cls("h")}" style="--c:var(--sam)" contenteditable="true" spellcheck="false" id="lexH">${S.h}${chip("h")}</h2><p data-k="p" class="${cls("p")}" style="--c:var(--sam)">${S.p}${chip("p")}</p><p data-k="hours" class="${cls("hours")}" style="--c:var(--sam)">${S.hours}${chip("hours")}</p>`;
+  if (S.mark) { site.querySelectorAll(".chip").forEach((c) => c.classList.add("fade-out")); }
+  document.getElementById("undoBtn").disabled = !S.undo;
+  const save = document.getElementById("saveBtn"); save.querySelector(".save-dot")?.remove();
+  if (S.draft) save.insertAdjacentHTML("beforeend", '<span class="save-dot" aria-hidden="true"></span>');
+  renderMenu(); renderPreview();
+}
+function renderMenu() {
+  const m = document.getElementById("projectMenu");
+  const head = `<button type="button" class="menu-item" role="menuitem">${icon("gear")}Site settings</button><button type="button" class="menu-item" role="menuitem">${icon("live")}Share live</button><hr>`;
+  if (S.preview === "none" || S.preview === "off") m.innerHTML = head + `<button type="button" class="menu-item" role="menuitem" data-m="preview">${icon("eye")}Share preview</button>`;
+  else m.innerHTML = head + `<div class="share"><span style="font-weight:600;display:flex;align-items:center;gap:.5rem">${icon("eye")}Preview link</span><div class="share__row"><input readonly value="https://${PV}" aria-label="Preview link"><button type="button" class="btn ${S.copied ? "is-done" : ""}" data-m="copy">${S.copied ? icon("check") + "Copied" : "Copy"}</button></div><small>Works while your editor is open · ends 26 Nov</small></div><button type="button" class="menu-item" role="menuitem" data-m="off">${icon("stop")}Turn preview off</button>`;
+}
+function renderPreview() {
+  const pv = document.getElementById("pv"), url = document.getElementById("pvUrl");
+  url.textContent = S.preview === "none" ? "no link yet" : PV;
+  if (S.preview === "none") pv.innerHTML = '<p class="plain">No link opened yet</p>';
+  else if (S.preview === "off") pv.innerHTML = '<p class="plain"><b>This preview link is turned off.</b></p>';
+  else if (!S.editorOpen) pv.innerHTML = '<p class="plain"><b>Not running</b><span>This preview shows edits while the editor is open.</span></p>';
+  else pv.innerHTML = `<div class="site"><h2>${S.h}</h2><p>${S.p}</p><p>${S.hours}</p></div>`;
+}
+function markFor(k) { S.mark = { k }; render(); clearTimeout(window.mt); window.mt = setTimeout(() => { S.mark = null; render(); }, 2600); }
+const acts = {
+  async push() { S.p = "Sourdough, rye, spelt and seeded loaves from our oven on the corner."; markFor("p"); caption("The page updates in place. A brief outline and an author chip that fades, and no message."); },
+  async merge() { S.h = "Fresh bread every morning in Leiden"; S.draft = true; render(); await sleep(900); S.hours = "Open Tuesday to Sunday, 7:00 to 15:00."; markFor("hours"); caption("Lex's unsaved heading stays. Sam's change to another line merged in by itself."); },
+  async clash() { S.draft = true; S.undo = { h: "Warm bread every morning in Leiden" }; S.h = "Fresh loaves every morning"; markFor("h"); caption("Same words changed on both sides: the latest version shows. Lex's words are one Undo away."); },
+  async preview() { S.preview = "on"; S.editorOpen = true; S.copied = true; openMenu(true); render(); setTimeout(() => { S.copied = false; renderMenu(); }, 2500); caption("Share preview copies a link on a separate preview address. Search engines are told to stay out."); },
+  async type() { if (S.preview !== "on") await acts.preview(); openMenu(false); S.editorOpen = true; const base = S.h; for (const ch of " — now with oat rolls") { S.h += ch; render(); await sleep(35); } S.draft = true; render(); caption("The customer sees each change as Lex makes it. Nothing is stored on the way."); },
+  async close() { if (S.preview !== "on") return; S.editorOpen = false; render(); caption("With Lex's editor closed, the link shows a plain not-running page."); },
+  async off() { if (S.preview === "none") return; S.preview = "off"; openMenu(false); render(); caption("Turned off: the link no longer works. It also ends by itself after 30 days."); },
+  async reset() { openMenu(false); reset(); },
+};
+const projectBtn = document.getElementById("projectBtn"), menu = document.getElementById("projectMenu");
+function openMenu(open) { menu.hidden = !open; projectBtn.setAttribute("aria-expanded", String(open)); }
+projectBtn.addEventListener("click", () => openMenu(menu.hidden));
+menu.addEventListener("click", (e) => { const m = e.target.closest("[data-m]")?.dataset.m; if (m === "preview") acts.preview(); if (m === "copy") { S.copied = true; renderMenu(); setTimeout(() => { S.copied = false; renderMenu(); }, 2500); } if (m === "off") acts.off(); });
+document.addEventListener("click", (e) => { if (!e.target.closest(".anchor") && !e.target.closest(".strip")) openMenu(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") openMenu(false); });
+document.getElementById("undoBtn").addEventListener("click", () => { if (!S.undo) return; S.h = S.undo.h; S.undo = null; S.mark = null; render(); caption("Undo brought back Lex's words."); });
+document.getElementById("site").addEventListener("input", (e) => { if (e.target.id === "lexH") { S.h = e.target.textContent; S.draft = true; renderPreview(); const save = document.getElementById("saveBtn"); if (!save.querySelector(".save-dot")) save.insertAdjacentHTML("beforeend", '<span class="save-dot" aria-hidden="true"></span>'); } });
+document.querySelector(".strip").addEventListener("click", async (e) => { const b = e.target.closest("[data-act]"); if (b) await acts[b.dataset.act](); });
+reset();
+
+</script>
+</body>
+</html>

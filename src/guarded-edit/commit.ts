@@ -18,6 +18,10 @@
 // longer shown (`elsewhere`, ticket 23) plans its drafts the second way and
 // stops once they are written: nothing opened, and its Undo step parked for
 // its own page (`park`, src/guarded-edit/parked.ts, ticket 34).
+//
+// A restore (ticket am-15) is the undo of one agent change apart from the
+// history: its files' drafts as they were before it, given whole, take the
+// second shape's way with no planning (its own receipt, Undo and Redo).
 
 import { GITHUB_CONFIG_REFUSED, splitProtectedEdits, touchesGithubConfig } from "../../shared/protected-paths";
 import { prepareNativeTextHistory } from "../page-builder/native-operation-history";
@@ -38,6 +42,10 @@ export interface CommitRequest {
   creates: { path: string; content: string }[];
   deletes: string[];
   moves: { from: string; to: string }[];
+  /** Drafts put back whole, by path (none: the branch's file, or no file); only with no other writes. */
+  restore?: Map<string, SavedDraft | undefined>;
+  /** The step's first announcement is said only, no toast (its Undo and Redo still say theirs). */
+  quiet?: true;
   /** The open page whose history takes the step; undefined: the page opened after takes it. */
   anchor: string | undefined;
   /** The file to open after; else the anchor where it went (the home page when it went). */
@@ -80,14 +88,14 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
     if (!scope) return "Open a repository first.";
     const store = ws.store;
     const epoch = ws.generation(), scopeKey = ws.scope();
-    const { moves, deletes, creates, anchor } = op;
+    const { moves, deletes, creates, anchor } = op, restore = op.restore ?? new Map<string, SavedDraft | undefined>();
     const agent = ws.agentText?.();
     let edits = op.edits, done = op.done;
     // An agent's step, as planned (a folder's moves, links rewritten in other files, redirects),
     // never reaches .github: a protected file moved, deleted or created refuses it, and link
     // rewrites in protected files are left out.
     if (ws.agentActing()) {
-      const protectedPath = [...moves.flatMap(move => [move.from, move.to]), ...deletes, ...creates.map(file => file.path)].find(touchesGithubConfig);
+      const protectedPath = [...moves.flatMap(move => [move.from, move.to]), ...deletes, ...creates.map(file => file.path), ...restore.keys()].find(touchesGithubConfig);
       if (protectedPath) return GITHUB_CONFIG_REFUSED;
       const { kept, left } = splitProtectedEdits(edits);
       if (left.length) {
@@ -97,7 +105,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
     }
     // Every write proves the bytes its plan read; none is filled in here.
     const arriving = new Set([...moves.map(move => move.to), ...creates.map(file => file.path)]);
-    for (const path of [...moves.map(move => move.from), ...deletes, ...[...edits.keys()].filter(path => !arriving.has(path))])
+    for (const path of [...moves.map(move => move.from), ...deletes, ...[...edits.keys()].filter(path => !arriving.has(path)), ...restore.keys()])
       if (!op.reads.has(path)) throw new Error(`Guarded edit: writes ${path}, which the plan never read through r.`);
     const expected = new Map(op.reads);
     const stale = () => epoch !== ws.generation() || scopeKey !== ws.scope() ||
@@ -145,7 +153,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
     }
     if (stale()) return COMMIT_CHANGED;
 
-    const touched = new Set<string>([...moves.flatMap(move => [move.from, move.to]), ...deletes, ...creates.map(file => file.path), ...edits.keys()]);
+    const touched = new Set<string>([...moves.flatMap(move => [move.from, move.to]), ...deletes, ...creates.map(file => file.path), ...edits.keys(), ...restore.keys()]);
     for (const path of [...touched]) {
       const from = store.get(scope, path)?.movedFrom;
       if (from) touched.add(from);
@@ -175,7 +183,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
     const away = op.elsewhere?.() === true;
 
     // ---- Edits only: the open page's history, no refresh. ----
-    if (!away && !moves.length && !deletes.length && !creates.length && op.open === undefined) {
+    if (!away && !moves.length && !deletes.length && !creates.length && !restore.size && op.open === undefined) {
       if (anchor === undefined || !ws.mounted(anchor)) return "Open a page before changing these files.";
       const after = new Map(before);
       const beforeSources = new Map(expected);
@@ -238,14 +246,14 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
       }
       op.recorded();
       ws.afterFileChanges();
-      ws.announce(done, { undo: anchor });
+      ws.announce(done, op.quiet ? "quiet" : { undo: anchor });
       return undefined;
     }
 
     // ---- Files created, moved, deleted or opened: planned drafts, the page reopened (elsewhere: not). ----
     if (!away && (anchor !== undefined && !ws.mounted(anchor) || agent && anchor === undefined && op.open === undefined && !moves.length)) return "Open an editable page before changing these files.";
     if (anchor !== undefined && !before.has(anchor)) before.set(anchor, store.get(scope, anchor));
-    const after = planNativeStructuralDrafts({ scope, before, movable, bases, moves, deletes, creates, edits, now: Date.now() });
+    const after = restore.size ? new Map(restore) : planNativeStructuralDrafts({ scope, before, movable, bases, moves, deletes, creates, edits, now: Date.now() });
     const beforeSources = new Map(expected);
     if (anchor !== undefined && !beforeSources.has(anchor)) beforeSources.set(anchor, ws.source(anchor));
     // The branch's text of each file, as first seen by this step (the bases and blobs read above win).
@@ -357,7 +365,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
           ws.showRow(initial && op.focus ? op.focus : path ? { file: path } : undefined);
           // The step's first announcement offers its Undo, from the page it reopened, once a page (anchor) records it.
           const undo = initial && anchor !== undefined ? ws.openFile() : undefined;
-          if (message && structuralLive() && receipt.isCurrent() && ws.status() === previousStatus) ws.announce(message, undo === undefined ? undefined : { undo });
+          if (message && structuralLive() && receipt.isCurrent() && ws.status() === previousStatus) ws.announce(message, op.quiet ? "quiet" : undo === undefined ? undefined : { undo });
           return true;
         } finally { end(); }
       };

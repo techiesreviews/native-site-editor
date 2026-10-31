@@ -3,14 +3,15 @@ import { cleanupObject, inventoryObject } from "./agent-maintenance";
 import { tokenId, clearTemporaryData, removeCleanedGrants, TEMPORARY_ROUTE, type AgentHub } from "./agent-context";
 import { clearHub, clearTemporary, hubOperation, hubView } from "./agent-store";
 import { DurableObject } from "cloudflare:workers";
-import { handle, type Env, type StoredValue } from "./app";
+import { handle, liveAgentAllowed, type Env, type StoredValue } from "./app";
 import { admitRegistration, finalizeRegistration, isBudgetKey, pruneRegistration, releaseRegistration, REGISTRATION_ROUTE } from "./oauth-registration";
 import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "./oauth-pending";
 import type { RepositoryCache } from "./github";
 import type { GitHubAppConfig } from "./owner-setup";
-import { AgentRelay, readRelayBody } from "./agent-relay";
+import { AgentRelay, LiveRooms, readRelayBody, type LiveAgent } from "./agent-relay";
 import { accountMetadata, METADATA_KEY, METADATA_ROUTE, type Ledger, type MetadataAction } from "./agent-metadata";
 import { workspaceKey } from "../shared/agent-command";
+import { LIVE_ACCESS_ENDED } from "../shared/live-room";
 import { AgentLifecycle, AlarmDeadlines } from "./agent-lifecycle";
 
 interface RepositoryCacheChunks { chunks: number }
@@ -42,6 +43,7 @@ export class SessionStore extends DurableObject {
   private deadlines = new AlarmDeadlines(this.ctx.storage);
   private lifecycle = new AgentLifecycle(this.ctx.storage, this.deadlines);
   private relayCore?: AgentRelay;
+  private liveCore?: LiveRooms;
   private eligible(workspace?: string) {
     const sockets = this.ctx.getWebSockets("editor");
     if (this.relayCore) return this.relayCore.eligibleEditors(sockets, workspace);
@@ -82,7 +84,24 @@ export class SessionStore extends DurableObject {
     }
     return this.relayCore;
   }
+  /** Live rooms (ADR 0003): a site and branch's instance, apart from the per-account agent relay. */
+  private live() {
+    if (!this.liveCore) {
+      this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+      this.liveCore = new LiveRooms(this.ctx.getWebSockets("live"), () => Date.now(),
+        socket => this.ctx.getWebSocketAutoResponseTimestamp(socket as WebSocket)?.getTime() ?? null);
+    }
+    return this.liveCore;
+  }
   async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
+    if (LiveRooms.owns(socket)) {
+      const live = this.live();
+      live.message(socket, message);
+      // Agents stay only while their connection does: one hub read per agent socket a minute, on the room's frames.
+      for (const due of live.agentsDue(Date.now()))
+        if (await liveAgentAllowed(this.env as Env, due.agent) === false) live.end(due.socket, LIVE_ACCESS_ENDED, "This agent connection ended.");
+      return;
+    }
     const relay = this.relay();
     // Only a socket's first successful handshake can end a grace; results stay memory-only
     // (and are not parsed twice: a handshaken socket is already presence).
@@ -91,12 +110,22 @@ export class SessionStore extends DurableObject {
     await this.ctx.blockConcurrencyWhile(() => this.lifecycle.presence(this.eligible(), true));
   }
   async webSocketClose(socket: WebSocket, code: number, _reason: string, _wasClean: boolean) {
+    if (LiveRooms.owns(socket)) {
+      this.live().leave(socket);
+      try { socket.close(code === 1005 || code === 1006 ? 1000 : code); } catch { /* Already closed. */ }
+      return;
+    }
     const detectedAt = Date.now();
     this.relay().disconnect(socket);
     try { socket.close(code === 1005 || code === 1006 ? 1000 : code); } catch { /* Already closed. */ }
     await this.ctx.blockConcurrencyWhile(() => this.lastEditorLost(detectedAt));
   }
   async webSocketError(socket: WebSocket, _error: unknown) {
+    if (LiveRooms.owns(socket)) {
+      this.live().leave(socket);
+      try { socket.close(1011, "Live room socket failed."); } catch { /* Already closed. */ }
+      return;
+    }
     const detectedAt = Date.now();
     this.relay().disconnect(socket);
     try { socket.close(1011, "Relay socket failed."); } catch { /* Already closed. */ }
@@ -107,6 +136,31 @@ export class SessionStore extends DurableObject {
     const url = new URL(request.url);
     if (url.pathname === "/maintenance/cleanup") return this.ctx.blockConcurrencyWhile(() => cleanupObject(request, storage, { sockets: this.ctx.getWebSockets().length }));
     if (url.pathname === "/maintenance/inventory") return inventoryObject(request, storage);
+    if (url.pathname === "/live/join" || url.pathname === "/live/end-agent") {
+      // Worker-internal only: app.ts checks room access and names the room; this stores nothing.
+      let identity: { room?: unknown; access?: unknown; rejoin?: unknown; agent?: Partial<LiveAgent> } | null = null;
+      try { identity = JSON.parse(request.headers.get(LiveRooms.identityHeader) ?? "null"); } catch { /* Refuse malformed trusted metadata. */ }
+      const live = this.live();
+      // A revoked connection's agents leave every room here at once (worker/app.ts, /api/agent/revoke).
+      if (url.pathname === "/live/end-agent") {
+        if (request.method !== "POST" || typeof identity?.agent?.id !== "string") return new Response(null, { status: 400 });
+        for (const socket of live.agentSockets(identity.agent.id)) live.end(socket, LIVE_ACCESS_ENDED, "This agent connection ended.");
+        return new Response(null, { status: 204 });
+      }
+      const room = identity?.room, access = identity?.access, rejoin = identity?.rejoin, agent = identity?.agent;
+      if (request.method !== "GET" || request.headers.get("Upgrade")?.toLowerCase() !== "websocket" ||
+        typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || (access !== "editor" && access !== "agent") ||
+        (rejoin !== undefined && (typeof rejoin !== "string" || !/^[a-f\d]{32}$/.test(rejoin))) ||
+        (access === "agent") !== (agent !== undefined) ||
+        (agent && (typeof agent.id !== "string" || typeof agent.sessionId !== "string" || !Number.isSafeInteger(agent.generation) ||
+          !Number.isSafeInteger(agent.repoId) || typeof agent.branch !== "string"))) return new Response(null, { status: 400 });
+      // Refused before a socket exists: an agent waits for a tab to open the room.
+      if (!live.admits(room, access)) return new Response(null, { status: 409 });
+      const { 0: client, 1: server } = new WebSocketPair();
+      this.ctx.acceptWebSocket(server, ["live"]);
+      live.join(server, room, access, { ...(rejoin === undefined ? {} : { rejoin }), ...(agent ? { agent: agent as LiveAgent } : {}) });
+      return new Response(null, { status: 101, webSocket: client });
+    }
     if (url.pathname.startsWith("/relay/")) {
       let identity: unknown;
       try { identity = JSON.parse(request.headers.get(AgentRelay.identityHeader) ?? "null"); } catch { /* Refuse malformed trusted metadata. */ }
@@ -124,9 +178,9 @@ export class SessionStore extends DurableObject {
       // Worker-internal only: the public router never forwards this path. Browser
       // work is awaited outside blockConcurrencyWhile and never touches storage.
       const target = AgentRelay.readTarget(identity);
-      const key = identity as { requestId?: unknown; grantId?: unknown } | null;
+      const key = identity as { requestId?: unknown; grantId?: unknown; job?: unknown } | null;
       const cancelKey = key && (typeof key.requestId === "string" || typeof key.requestId === "number" && Number.isFinite(key.requestId)) &&
-        typeof key.grantId === "string" && key.grantId ? { requestId: key.requestId, grantId: key.grantId } : undefined;
+        typeof key.grantId === "string" && key.grantId ? { requestId: key.requestId, grantId: key.grantId, ...(key.job === true ? { job: true as const } : {}) } : undefined;
       if (url.pathname === "/relay/cancel" && request.method === "POST" && target && cancelKey) {
         this.relay().cancel(cancelKey);
         return new Response(null, { status: 202 });

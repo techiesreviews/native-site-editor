@@ -1,5 +1,7 @@
 # Build: agents and multiplayer
 
+**Ready (guess, low confidence, 2026-10-27):** stage 1 live ~3 Nov, all three stages live ~10 Nov.
+
 Lex's first build after the clean-up (order of 2026-10-23): several agents and subagents working at once while he works, asking them with pins, typing together with agents and people, and files that are always the latest version. Every decision comes from the [map](../map.md)'s closed tickets and [ADR 0003](../../../adr/0003-shared-editing-over-a-store-nothing-relay.md); this build does not reopen them.
 
 Research is on branches that are never merged (`git show origin/<branch>:<path>`):
@@ -19,11 +21,13 @@ Tickets live in [tickets/](tickets/), one slice each, numbered by stage: 10s sta
 
 ## Three stages, each shipped on its own
 
-1. **Stage 1: several agents at once, and asking them** (slices 10–17). Lex's end check, then release.
-2. **Stage 2: typing together** (slices 20–26). Starts after stage 1 is released; Lex's end check, then release.
-3. **Stage 3: people and outside changes** (slices 30–36). Starts after stage 2 is released; Lex's end check, then release.
+Tuesday rules (Lex, 2026-10-27; [kitchen.md](../../../agents/kitchen.md#tuesday-review)): a stage's end check goes into the next Tuesday pack, and its release waits for Lex's written go-ahead on a Tuesday. The next stage starts as soon as the stage before has an empty frontier (built and waiting for that check), not when it is released.
 
-The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slices, and 30 and 32 wait for the last stage-2 slices. The lead does not claim a stage's first slice before the stage before it is released. Each stage follows the kitchen's stations 6–12 ([kitchen.md](../../../agents/kitchen.md)).
+1. **Stage 1: several agents at once, and asking them** (slices 10–17). Lex's end check (Tuesday), then release.
+2. **Stage 2: typing together** (slices 20–26). Starts when stage 1's frontier is empty; Lex's end check (Tuesday), then release.
+3. **Stage 3: people and outside changes** (slices 30–37). Starts when stage 2's frontier is empty; Lex's end check (Tuesday), then release.
+
+The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slices, and 30 and 32 wait for the last stage-2 slices. The lead claims a stage's first slice once those have landed on `dev`, without waiting for the release. A fault Lex finds at a Tuesday end check becomes a fix ticket in its stage and goes before the next stage's remaining slices. Each stage follows the kitchen's stations 6–12 ([kitchen.md](../../../agents/kitchen.md)).
 
 ## Rules for the whole build
 
@@ -84,7 +88,26 @@ The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slice
 | [33 Outside changes fold in](tickets/33-outside-changes-fold-in.md) | M | visible | – | 32 |
 | [34 Folder changes merge too](tickets/34-folder-changes-merge.md) | S | – | – | 33 |
 | [35 Hot preview link](tickets/35-hot-preview-link.md) | L | visible | – | 30 |
-| [36 Close-out: checklist, docs, delete the proof of concept](tickets/36-close-out.md) | S | – | – | 31, 33, 35 |
+| [37 Mock-ups on the preview site](tickets/37-mockups-on-preview.md) | S | – | – | – |
+| [38 The preview mock-ups copy only images a mock-up uses](tickets/38-mockups-copy-only-used-images.md) | S | – | – | 37 |
+| [47 The mock-ups page shows which ones are built and live](tickets/47-mockups-show-what-shipped.md) | S | – | – | 38 |
+| [48 Undo of Make component keeps the component's stylesheet pane (flaky on dev)](tickets/48-make-component-undo-pane-race.md) | S | – | – | 14 |
+| [50 The MCP menu loses its "Pins go to" choice](tickets/50-remove-pins-go-to.md) | S | visible | – | 16 |
+| [51 After being away, Connect to MCP tells the truth and copies the prompt](tickets/51-connect-after-being-away.md) | S–M | visible | – | – |
+| [52 A long wait job holds one wait, and never loses a pin (follow-up on 17)](tickets/52-one-look-per-long-job.md) | S | – | – | 17 |
+| [53 Connect to MCP works after a failed takeover too (follow-up on 51)](tickets/53-connect-after-failed-takeover.md) | S | visible | – | 51 |
+| [54 An older look at a long job always says "still working" (follow-up on 52)](tickets/54-older-look-says-still-working.md) | S | – | – | 52 |
+| [55 "Text size after Bold" passes every time (flaky since 43)](tickets/55-text-size-after-bold-steady.md) | S | – | – | – |
+| [56 Files rename after chunk recovery works under load too (flaky since 53)](tickets/56-lazy-panels-rename-under-load.md) | S | – | – | – |
+| [39 `get_site` names the section an agent is asking about (follow-up on 11)](tickets/39-get-site-names-the-question-section.md) | S | – | – | 11 |
+| [40 Exact-part edits: second-look fixes (follow-up on 10)](tickets/40-exact-part-edits-second-look-fixes.md) | S | – | – | 10 |
+| [41 An all-copies edit whose copies all changed is told to read again (follow-up on 40)](tickets/41-all-copies-changed-reads-again.md) | S | – | – | 40 |
+| [45 A pin shows the agent that took it, however it was taken (follow-up on 13)](tickets/45-pin-shows-the-agent-that-took-it.md) | S | visible | – | 13 |
+| [49 Undo an agent's change from its chip when it worked without a pin (follow-up on 15)](tickets/49-undo-from-the-agent-chip.md) | S–M | visible | – | 15 |
+| [42 Boot back under 355 KB, so agent tools fit (tech-debt 12)](tickets/42-boot-back-under-355-kb.md) | M | – | – | 45 |
+| [43 The edit bar on a phone: opens on a new element, and Text size applies](tickets/43-phone-edit-bar-fixes.md) | S–M | visible | – | – |
+| [46 Where the edit bar sits on a phone, so it doesn't cover the element above (follow-up on 43)](tickets/46-phone-edit-bar-placement.md) | S | visible | – | 43 |
+| [36 Close-out: checklist, docs, delete the proof of concept](tickets/36-close-out.md) | S | – | – | 31, 33, 35, 37 |
 
 ## Suggested waves
 
@@ -92,9 +115,9 @@ The frontier decides; this is one order that keeps to the rules.
 
 1. 10, 11.
 2. 12, 13, 14 (all after 11).
-3. 15, 16, 17. Then Lex's stage-1 end check and release.
-4. 20; 21 alone; then 22, 24, 25, 26; 23 after 22. Then Lex's stage-2 end check and release.
-5. 30 beside 32; then 31, 33, 35; 34 once the local-folders build has shipped; last 36. Then Lex's stage-3 end check and release.
+3. 15, 16, 17. Then Lex's stage-1 end check (Tuesday) and release; stage 2 starts at once.
+4. 20; 21 alone; then 22, 24, 25, 26; 23 after 22. Then Lex's stage-2 end check (Tuesday) and release; stage 3 starts at once.
+5. 30 beside 32; then 31, 33, 35; 37 whenever a slot is free; 34 once the local-folders build has shipped; last 36. Then Lex's stage-3 end check (Tuesday) and release.
 
 ## Lead decisions (technical, made in planning; check with Lex where marked)
 
@@ -105,15 +128,32 @@ The frontier decides; this is one order that keeps to the rules.
   - A synced-session link carries the key after `#`.
   - Signed-in tabs and agents of the same workspace get the room key from the receiving tab over the existing relay handshake. Ticket 20 confirms the exchange in `decide`.
 - **The helper (16)** lives in this repository under `helper/`, as its own small Node package. It is an MCP client of the editor's `/mcp`, signing in through the same OAuth as any agent. It starts agents through ACP.
-  - **Installed (Lex, 2026-10-25: "ok"):** one `npx` command copied by Connect to MCP, published to npm as `@techiesreviews/editor-helper`. The first publish still waits for Lex's OK at build time, because publishing is outward-facing.
-  - **Default agent for "Pins go to":** Claude Code (Lex, 2026-10-25).
+  - **Installed (Lex, 2026-10-25: "ok"):** one `npx` command copied by Connect to MCP, published to npm as `@techiesreviews/editor-helper`. The first publish still waits for Lex's OK, because publishing is outward-facing: it goes into the Tuesday pack as a hard-to-undo question, and slices 17 and 20 test against the local package meanwhile.
+  - **Which agent it starts:** the one its own start command names, Claude Code by default (Lex, 2026-10-25). The menu's "Pins go to" choice is gone (Lex, 2026-10-30, ticket 50); pins go to whichever connected agent takes them first.
 - **Preview address (35), Lex 2026-10-25:** "keep it at workers.dev for as long as we can and skip a custom domain for now". The preview runs on a separate small preview Worker with its own `workers.dev` address, so site scripts never share an origin with the editor; each site gets a path (`/<site>/`), not a subdomain. Sites share one origin with each other, which is accepted while this is for internal use. A custom domain returns only if a real need shows up.
 - **Local folders (34)** need the local-folders build (`docs/wayfinder/local-folders/`), which is unbuilt. Slice 34 waits for it; the lead re-plans 34 if that build has not shipped when stage 3 starts.
 - **Cloudflare plan:** stays on Free (ticket 11). The lead tells Lex if a slice's numbers show the daily allowance at risk.
 
+## Already solved in script-editor: reuse, don't solve again
+
+Recorded 2026-10-28 from the script-editor lead (repo `/home/ubulex/Projects/script-editor`, github.com/techiesreviews/script, live at script.techies.tools; all on `main`). Read-only references. Taking any of it into this editor waits for Lex's go-ahead through the script-editor thread "Self-cleaning Durable Object notes"; until then a slice reads it and designs with it in mind, but copies nothing.
+
+- **Self-cleaning Durable Object notes** (commits 22e79eb, 993f7ca; for slices 20 and 30). Rule there: every stored note has an expiry date and cleans itself, and keys carry their birth date.
+  - Agent tokens are minted by the Worker (`POST /api/agent-token`) as `se2-<born base36>-<43 random>`. The Worker's own clock writes and checks the birth time. The relay object is chosen by the sha256 of the whole token, so no signature is needed.
+  - Tokens older than 8 h or from the future are refused before any object is touched (WebSocket close 4003, `/mcp` 401).
+  - The relay note `{createdAt, expiresAt, revoked, agent}` sets an alarm at expiresAt + 60 s, then `deleteAll()`. A revoked token stays refused until then. Old-format tokens were accepted until a fixed cutoff, with their alarm set at the cutoff.
+  - Rooms use one alarm read from the note: a daily check while the host is in, 30 s grace when the host leaves, erased 7 days after the room ends. A host tab silent for 7 days stops instead of reopening the room.
+  - Code: `worker/mcp.js` (`newToken`, `checkToken`), `worker/relay.js`, `worker/room.js`, `public/together/room.js`. Tests: `tests/worker-relay.test.mjs`, `tests/room.test.mjs`. Docs: `docs/data-shape.md`, `docs/together.md`.
+- **An agent shown as its model** (commits 9a9c93d, c64c810; for slices 11, 22 and 23). Lex's choice there: the caret, avatar and button say "Claude", "Codex", "ChatGPT"… with that model's logo, never "(agent)". An unknown agent gets Phosphor's sparkle.
+  - `public/agent-brand.js` is pure: MCP `clientInfo.name` → `{ name, icon }`. VS Code is not mapped to Copilot, because it can run any model.
+  - Logos are Phosphor (MIT) and Simple Icons (CC0) filled single-colour paths, in `public/app.js` ICONS.
+  - Our mock-ups 05, 10 and 13 still label the agent "Claude (agent)". Align them with this choice when Lex says yes.
+- **`public/together/`** (rooms, carets, Undo on the name tag; for slices 20–24 and 30). This build is meant to take it over.
+- **In progress there:** agent answers land straight in the text, lightly marked, with Undo on the agent's name tag, for guests' asks too (script-editor step F). Next: links that open by themselves in the prompter (`docs/build/step-g-links.md`).
+
 ## Lex's checklist: the GitHub App webhook (before slice 32 lands)
 
-Slice 32 first proves the setup on a throwaway test App, including whether installations must approve again when an event is added. Then the lead hands Lex this list, with the exact values filled in by slice 32. About five minutes.
+Slice 32 first proves the setup on a throwaway test App, including whether installations must approve again when an event is added. Then the lead puts this list in the next Tuesday pack, with the exact values filled in by slice 32. About five minutes. Slices 30, 31 and 35 keep running meanwhile.
 
 1. Open github.com → **Settings → Developer settings → GitHub Apps** → the editor's App → **Edit**.
 2. Under **Webhook**, tick **Active**, set the URL the slice gives, and set a secret. The lead asks for the secret through a secret prompt, never the chat.

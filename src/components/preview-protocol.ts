@@ -11,17 +11,21 @@ import type { SelectionRect } from "./edit-bar";
 import type { InsertPoint } from "./insert-controls";
 import type { ItemGridReport } from "./card-grid-controls";
 import type { PinLocator } from "./agent-pins";
+import type { ChipUndoFields } from "../agent-presence";
 import { parseDropReport, type DropReport } from "../page-builder/drop-report";
 import { readCascade, readSelectedRules, type NativeCascade, type NativeSelectedRule } from "../style-cascade";
 import { readCrumbs, type CanvasCrumb } from "../page-builder/canvas-model";
 
 import { FRAME_SOURCE, HOST_SOURCE } from "./preview-wire";
+import { pictureReplyTypes } from "../../shared/media-kinds";
 export { HOST_SOURCE } from "./preview-wire";
 
 /** A component instance around the selection, as the frame reports it (the receiver adds `paintedSource`). */
 export type FrameHost = Omit<NonNullable<NativePreviewSelection["host"]>, "paintedSource">;
 // Rules whose path the frame reported; the receiver keeps those of files it shows.
 type Styles = { selectors: NativeSelectedRule[]; cascade: NativeCascade | undefined };
+/** A picture the frame made (src/agent-picture.ts), or why it made none. */
+export type PictureReport = { error: string } | { data: string; mimeType: string; width: number; height: number; viewport: number };
 type Frame<T extends string, P = object> = { source: typeof FRAME_SOURCE; type: T; context: string | undefined } & P;
 
 export type FrameMessage =
@@ -46,6 +50,8 @@ export type FrameMessage =
   | Frame<"slot-ghosts", { report: unknown }>
   | Frame<"image-measured", { id: number; report: ImageReport }>
   | Frame<"inspect-result", { id: number; report: unknown }>
+  // A picture of the page for an agent (ticket am-14): base64 data, or why there is none.
+  | Frame<"picture-result", { id: number; report: PictureReport }>
   | Frame<"ack", { id: number }>
   | Frame<"ready", { load: string | undefined }>
   | Frame<"error", { message: string }>
@@ -66,6 +72,8 @@ export type FrameMessage =
   | Frame<"component-styles", { tags: string[] }>
   | Frame<"shortcut", { name: string }>
   | Frame<"refusal-note-action">
+  // The Undo on an agent's chip pressed (ticket am-49): the mark it was drawn for (its token) and the change it offered.
+  | Frame<"agent-chip-undo", { token: string; change: string }>
   // The canvas stopped play `id` (its end, an error, or the element redrawn).
   | Frame<"media-ended", { id: number }>;
 
@@ -84,9 +92,12 @@ export type HostMessage =
   | Host<"finish-typing", { id: number }>
   | Host<"measure-image", { id: number; request: NativeNodeRequest & { image?: { width: number; height: number }; slot?: string; style?: string } }>
   | Host<"inspect", { id: number; request: { path?: string; node?: number[]; selector?: string; limit?: number } }>
-  | Host<"theme", { focus: string; component: string; presence: string }>
-  // An agent working on the element at `request` (its page's section, ticket 33); null: no agent at work here.
-  | Host<"agent-presence", { request: NativeNodeRequest | null; name: string }>
+  // `width`/`height`: the frame it is drawn in (none: the preview's own); `node`: the element pictured (none: the first screen).
+  | Host<"picture", { id: number; request: { path: string; node?: number[]; width?: number; height?: number } }>
+  | Host<"theme", { focus: string; component: string }>
+  // The agents working on elements (their pages' sections, tickets 33, am-11), each in its colour, its chip's orange while it asks (sRGB); none: no agent at work.
+  // `bare`: no chip (its name is on a pin); `token`, `change`, `undo`: its chip's Undo for the agent's latest change to the page (ticket am-49), with `problem` its refusal.
+  | Host<"agent-presence", { agents: ({ request: NativeNodeRequest; name: string; color: string; chip: string; bare?: true } & Partial<ChipUndoFields>)[] }>
   | Host<"component-focus", { tag: string }>
   | Host<"edit-component", { mode: EditComponentFrameMode | undefined }>
   | Host<"viewing", { viewing: boolean }>
@@ -123,10 +134,10 @@ export const FRESHNESS: { [T in FrameMessage["type"]]: T extends "press-drag" ? 
   "typing-finished": "reply", "image-drop": "render", "image-edit": "action", patched: "reply", "text-edit": "action", typing: "action",
   route: "action", format: "action", move: "action", "press-drag": { start: "render", move: "action", end: "action", cancel: "action" },
   "canvas-clear": "action", "pin-rects": "whole", "drop-containers": "reply", "dismiss-context-menu": "action",
-  "slot-ghosts": "render", "inspect-result": "reply", "image-measured": "reply", ack: "reply", ready: "lifecycle", error: "render", "clear-error": "render",
+  "slot-ghosts": "render", "inspect-result": "reply", "picture-result": "reply", "image-measured": "reply", ack: "reply", ready: "lifecycle", error: "render", "clear-error": "render",
   "insert-points": "render", "section-hover": "render", "text-selection": "render", "item-grids": "render", structure: "render",
   "selection-rect": "render", select: "render", "default-styles": "render", "component-styles": "render",
-  shortcut: "action", "refusal-note-action": "action", "media-ended": "action",
+  shortcut: "action", "refusal-note-action": "action", "media-ended": "action", "agent-chip-undo": "action",
 };
 
 const object = (value: unknown): Record<string, unknown> | undefined =>
@@ -144,6 +155,7 @@ function readRect(raw: unknown): SelectionRect | undefined {
   if (!rect || !finite(rect.top) || !finite(rect.left) || !finite(rect.width) || !finite(rect.height) || !finite(rect.bottom) || !finite(rect.right)) return undefined;
   const read: SelectionRect = { top: rect.top, left: rect.left, width: rect.width, height: rect.height, bottom: rect.bottom, right: rect.right };
   if (finite(rect.inset) && rect.inset > 0) read.inset = rect.inset;
+  if (finite(rect.clear) && rect.clear < rect.top) read.clear = rect.clear;
   return read;
 }
 
@@ -303,6 +315,9 @@ export function readFrameMessage(data: unknown): FrameMessage | undefined {
     case "clear-error":
     case "refusal-note-action":
       return base(raw.type);
+    case "agent-chip-undo":
+      return typeof raw.token === "string" && raw.token.length <= 40 && typeof raw.change === "string" && raw.change.length <= 200
+        ? { ...base(raw.type), token: raw.token, change: raw.change } : undefined;
     case "pin-rects":
       if (!Array.isArray(raw.rects)) return undefined;
       return {
@@ -342,6 +357,15 @@ export function readFrameMessage(data: unknown): FrameMessage | undefined {
     }
     case "inspect-result":
       return { ...base(raw.type), id: Number(raw.id), report: raw.report };
+    case "picture-result": {
+      const report = object(raw.report);
+      if (!index(raw.id) || !report) return undefined;
+      if (typeof report.error === "string") return { ...base(raw.type), id: raw.id, report: { error: report.error.slice(0, 2000) } };
+      const size = (value: unknown): value is number => integer(value) && value > 0 && value <= 4096;
+      const { data, mimeType, width, height, viewport } = report;
+      if (typeof data !== "string" || !pictureReplyTypes.includes(String(mimeType)) || !size(width) || !size(height) || !size(viewport)) return undefined;
+      return { ...base(raw.type), id: raw.id, report: { data, mimeType: String(mimeType), width, height, viewport } };
+    }
     case "ack":
       return { ...base(raw.type), id: Number(raw.id) };
     case "ready":

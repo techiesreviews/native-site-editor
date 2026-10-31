@@ -1,0 +1,63 @@
+---
+title: The kit launcher names the folder that vanished, and the launcher docs say what the code does (second look on 39)
+type: task (AFK)
+status: closed
+assignee: ke-49
+builder: claude
+blocked_by: [39-launchers-pinned-kit-and-whole-kit]
+---
+
+## Goal
+
+The OpenCode second look on [ticket 39](39-launchers-pinned-kit-and-whole-kit.md#done-2026-10-27) (evidence `.scratch/reviews/unknown/20261027T182212Z` in the main checkout) found:
+
+1. **The "removed while starting" message loses the folder** (P2): in `scripts/agents/launcher/kit:33`, `KIT_HOME=$(cd -- "$KIT_HOME" 2>/dev/null && pwd -P) || { printf '… at %s (removed while starting)' "$KIT_HOME"; … }` overwrites `KIT_HOME` with the empty output before the message reads it, so it prints `RESULT: fail no Agent Kit at  (removed while starting)`. Ticket 39 promises the folder in that message, and the front door keeps the old value for the same message (`scripts/agents/kit:11-13`). It only happens when `kit update` deletes the folder between the whole-kit check and the `cd`, but then the message is the only clue.
+2. **The docs promise less fallback and more sameness than the code** (P3, same look): `docs/agents/agent-scripts.md:65` says a child whose pinned folder was removed "picks again from `current`" (the code also falls back to the cache clone, `launcher/kit:21`, `hooks-run.sh:17`), and that both launchers take only a whole kit "(`kit` executable and `kit-lib.sh`)", while the hook launcher also needs `hooks/run.sh` (`hooks-run.sh:10`). The ticket's Decided behaviour line 20 says the same.
+
+## Decided behaviour
+
+- `launcher/kit` keeps the picked folder in its own variable before resolving it, and the message names it: `RESULT: fail no Agent Kit at <folder> (removed while starting)`.
+- `docs/agents/agent-scripts.md` says "picks again from `current` or the cache clone" and "the hook launcher also needs `hooks/run.sh`".
+- Nit from the same look, fixed here if it stays one line: a fresh clone that fails the whole-kit check says the clone holds no whole kit, not `no machine copy; cannot clone …`.
+
+## Files
+
+- `scripts/agents/launcher/kit`
+- `tests/kit-launcher.test.ts`
+- `docs/agents/agent-scripts.md` (the launcher lines)
+
+## Done when
+
+- Tests, the first failing before the fix: a pinned whole folder removed just before the resolve step (a test seam, e.g. a stub `cd` or a hook variable the test sets) → the message names the folder. From the look's gaps: a pinned whole kit without `hooks/run.sh` → `kit where` keeps it and the hook runs the `current` kit's guard; a removed pinned cache folder → a fresh clone of the newest kit, and the hook runs its guard; a person's `KIT_HOME` beside a different `KIT_HOME_PINNED` → theirs still wins for both launchers.
+- `scripts/agents/kit unit --affected` green.
+
+## Kit commands and evidence
+
+Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). Kit and docs only; writes nothing in Lex's real `~/.local` or `~/.cache` folders during tests.
+
+- `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke49 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/49-launcher-names-removed-folder.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke49 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
+- Second look: as the README says.
+- Report: unit `RESULT:` lines, the message before and after, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- `scripts/agents/launcher/kit` keeps the picked folder in `folder` before resolving it, so the message names it. Before: `RESULT: fail no Agent Kit at  (removed while starting)`; after: `RESULT: fail no Agent Kit at <data>/agent-kit/<commit> (removed while starting)`.
+- Nit: a fresh clone that fails the whole-kit check now ends `(the clone of <repo> holds no whole kit)` instead of `no machine copy; cannot clone …`; a clone that fails still says `cannot clone`, and a whole clone whose time stamp cannot be written ends `(cannot stamp the clone in <cache>)`, and one that cannot be moved over a folder that is not a kit ends `(cannot place the clone at <folder>)`.
+- `docs/agents/agent-scripts.md`: a child picks again from `current` or the cache clone; the hook launcher also needs `hooks/run.sh`; a person's `KIT_HOME` wins over a different `KIT_HOME_PINNED`; both failure messages named.
+- `tests/kit-launcher.test.ts`, four new tests: a picked folder removed just before the resolve step (an exported `cd` function removes it) is named (failed before the fix with the empty folder); a pinned whole kit without `hooks/run.sh` is kept by `kit where` while the hook runs `current`'s guard; a removed pinned cache folder is cloned fresh from the newest kit and the hook then runs its guard; a person's whole `KIT_HOME` beside a different `KIT_HOME_PINNED` wins for both launchers. The two "cannot clone" tests now use an unreachable repo (an empty repo clones, so it now gets the clearer clone message), and the half-kit clone test expects the new message.
+- Fix round test: a whole clone whose `mv` meets a folder that is not a kit (an exported `mv` function makes one) ends `cannot place the clone at <folder>`, not the half-kit message (failed before the fix). The new tests check that `chmod` succeeded.
+- Second fix round test: a launcher whose `mv` loses the race to another launcher's whole clone (an exported `mv` function copies the clone into place first) uses that clone and leaves only `agent-kit` in the cache.
+- PR review fixes (PR #222): a picked cache clone removed just before the resolve step is named too, and an empty kit repo's clone gets `the clone of <repo> holds no whole kit` with the cache left empty (two new tests); `why` names the placement only after the clone is stamped; the docs line names the kit launcher and is rewrapped.
+- PR review fix round 2: a failed time stamp on a whole clone ends `cannot stamp the clone in <cache>` instead of `cannot clone`, with the cache left empty (new test, failed before the fix with `no machine copy; cannot clone …`); the docs line names the stamp message and says a lost move to another launcher's whole clone just uses it.
+- Tests: nine new in `tests/kit-launcher.test.ts` across the build and review rounds (25 in the file). `scripts/agents/kit unit --affected`: `RESULT: ok unit 25/25 (1 files)`; `npm run lint` exit 0.
+- Commits on `dev` (PR #222): 151f296cc (build), 2a683b64e (review fix round 1), a78f1525a (review fix round 2), 8f856fe13 (PR review fixes), 8cc1c4322 (review fixes round 3), ea4c8a81e (follow-ups). Corrected 2026-10-27 by the lead's docs PR (second look, P2): the line first named the PR branch's 61d76ff76, 20e433558, d279f0701, f65f846ed and d49eb6ec5, none of which is on `dev` ([ticket 53](53-done-commits-match-dev.md)).
+- Review decisions: the clone message is now set only when the whole-kit check fails, with a separate placement message (fixed, with a test); the Done section gained this commits line and these decisions (fixed); the stale lines in ticket 39 (Decided behaviour `:20`, Done `:49`) were left alone because ticket 39 is outside this ticket's Files. The clone nit grew past the "one line" Decided behaviour allowed (two launcher lines and a second, placement message), knowingly, because review round 1 found the single message blamed a failed placement on the clone.
+- **Second look (OpenCode `deepseek-v4.1-flash-free`, 2026-10-27):** `ASE_REVIEW_MODEL=opencode/deepseek-v4.1-flash-free KIT_HOME=<copy of dev's scripts/agents> kit review --ticket … --base 151f296cc^` at ea4c8a81e (PR #222, merged): `RESULT: ok review`, findings 7 (P2 2, P3 2, gap 3), evidence `.scratch/reviews/unknown/20261027T201913Z` in the main checkout. Both P2s: the Commits line and the Follow-ups name the PR branch's SHAs, not `dev`'s; fixed in the Commits line above by the lead's docs PR, and the cause → [ticket 53](53-done-commits-match-dev.md). P3s and gaps repeat the Follow-ups below (stale lines in ticket 39 `:20`, `:49`; a test reference at `:205` is really `:456`); not filed.
+- Feature list: no change (agent tooling only; nothing in the editor changes).
+
+### Follow-ups
+
+- Spec (P3): d49eb6ec5:docs/wayfinder/kitchen-everywhere/build/tickets/49-launcher-names-removed-folder.md:53 — P3 ticket: `docs/agents/runner.md:67` says the Done section must list the commits. Two things are wrong in the list. First, it calls d279f0701 "review fix round 2" and then says "PR review fix round 2 follows them", but the commit that follows is d49eb6ec5, whose subject is "Review fixes round 3". So the same round has two different names, and the last commit is not listed. Second, the ticket's Report line (`:40`) asks for the PR and merge SHA, but only PR #222 is given. Fix: name the last round by its commit subject ("Review fixes round 3", d49eb6ec5, or "this commit"), use the same round names in lines 50–53 as in the commit subjects, and add the merge SHA once the PR has landed.
+- Spec (P3): 61d76ff76:docs/wayfinder/kitchen-everywhere/build/tickets/49-launcher-names-removed-folder.md:54 — P3 ticket: Decided behaviour (`:21`) allows the clone nit only "if it stays one line". The fix grew to three launcher lines and two more messages ("cannot stamp…", "cannot place…"). The Done section records this as a knowing choice. But ticket 39's Done (`39-…md:49`) still says a half-kit clone gives `no machine copy; cannot clone …`, which is no longer true, and no follow-up exists to correct it. Fix: add a one-line follow-up to ticket 49 (or the to-do list) to update ticket 39 Done `:49` and Decided behaviour `:20`, so the stale lines are tracked and not just noted.
+- Validation gaps (gap): The "cannot place" test (`tests/kit-launcher.test.ts:205`) leaves a non-kit `agent-kit` folder in the cache. Nothing tests what happens next. Add a step to that test: run `f.kit(["where"])` again with no `mv` stub. Assert status 2 and stdout `RESULT: fail no Agent Kit at ${cache} (${cache} exists but holds no kit; remove it)\n`. Then run `f.hook("bash-guard", stashPop)` and assert it warns (status 0, the `systemMessage` warning), not that it runs something.
+- Validation gaps (gap): No test covers a failed `mkdir`/`mktemp`, which still ends `no machine copy; cannot clone …`. Add one: make `f.cache` a regular file (`writeFileSync(f.cache, "")` before the run). Assert status 2 and the `cannot clone ${f.env.KIT_REPO}` line. This proves the new, more specific messages do not hide the fallback message.

@@ -14,7 +14,7 @@ function addServerSteps(url: string) {
 /** The task that builds a site from nothing, about `about` when the user said. */
 export function buildSitePrompt(about?: string) {
   const subject = about?.trim() ? about.trim().replace(/\s+/g, " ").slice(0, 300) : "<what it is about>";
-  return `Build a site for ${subject} in this repository: call get_site, read the native-site://conventions resource and follow it (with no index.html yet, its "Starting a site from nothing"), write the pages with write_file and create_page, then tell me to review the drafts in the editor and Publish them.`;
+  return `Build a site for ${subject} in this repository: call get_site, read the native-site://conventions resource and follow it (with no index.html yet, its "Starting a site from nothing"), write the pages with write_file and create_page, check each with screenshot_preview (also width phone), then tell me to review the drafts in the editor and Publish them.`;
 }
 
 /**
@@ -47,6 +47,25 @@ ${n + 1}. ${buildSitePrompt(options.about)}
 Your changes appear in my editor as unsaved drafts; I review them and save them to GitHub.`;
 }
 
+/** The helper's package (helper/, ticket am-16), its version pinned. */
+export const HELPER_PACKAGE = "@techiesreviews/editor-helper@0.1.0";
+/** The command that starts the helper on this connection: it waits for pins and starts Claude Code for each (its default; `--agent` names another). */
+export function helperCommand(url: string, token: string) {
+  return `EDITOR_HELPER_TOKEN=${token} npx -y ${HELPER_PACKAGE} ${url}`;
+}
+/**
+ * The same command started apart from the conversation that runs it, so it outlives it; each carries the token
+ * itself. Linux: a user service (`systemd-run` passes no environment of its own, so the token and PATH are set, and
+ * npx is found by its full path), stopped with `systemctl --user stop editor-helper`. Elsewhere: `nohup` through
+ * `env`, which sets the token for the program it starts.
+ */
+export function helperDetached(url: string, token: string) {
+  return {
+    systemd: `systemd-run --user --collect --unit editor-helper --setenv=EDITOR_HELPER_TOKEN=${token} --setenv=PATH="$PATH" "$(command -v npx)" -y ${HELPER_PACKAGE} ${url}`,
+    nohup: `nohup env EDITOR_HELPER_TOKEN=${token} npx -y ${HELPER_PACKAGE} ${url} >/dev/null 2>&1 &`,
+  };
+}
+
 /**
  * What to paste into an agent so it talks to the editor over a temporary,
  * direct connection (curl, no MCP configuration). A "watchdog" subagent keeps
@@ -68,9 +87,13 @@ Send each JSON-RPC message as its own POST with the headers ${code("Authorizatio
 
 1. Initialize the MCP connection and call ${code("get_site")}.
 2. Start a "watchdog" subagent that keeps calling ${code("wait_for_requests")} (each call waits up to 25 seconds) and reports each request it returns back to you, the main thread. Give it the server and token in its instructions only. A hint in an answer that says to stop overrides this loop: the watchdog stops and tells you.${task ? `\n3. ${task}` : ""}
-${task ? 4 : 3}. For each request the watchdog reports, make the change as an unsaved editor draft and answer it with ${code("reply_to_request")}: done when you made the change, answered when you replied without changing the site, question (at most 60 characters) when you need my input.
+${task ? 4 : 3}. For each request the watchdog reports, show me where you work with ${code("working_here")}, make the change as an unsaved editor draft, check how it looks with ${code("screenshot_preview")} (also ${code("width: \"phone\"")}), and answer it with ${code("reply_to_request")}: done when you made the change, answered when you replied without changing the site, question (at most 60 characters) when you need my input.
+
+Give yourself and each subagent you start a short name of a few words (e.g. "Copy editor"), sent as ${code("agent")} in every tool call: I see each name, in its own colour, on what it works on, and ${code("get_site")} lists who works on what, so you leave each other's sections alone.
 
 A change to the part I am typing in answers waiting and lands once I leave that part (click away, or stop typing in the code pane): get_command_status tells you when it applied; do not send it again.
 
-Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token. If you stop before that, first answer each request you took but did not finish with reply_to_request (status answered, saying you stopped). The token also stops working when I sign out of the editor (at most eight hours).`;
+Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token. If you stop before that, first answer each request you took but did not finish with reply_to_request (status answered, saying you stopped). The token also stops working when I sign out of the editor (at most eight hours).
+
+If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog: ${code(helperCommand(url, token))} (it needs Node 24 or later). A background job of this conversation ends with it, so start the helper apart from it: on Linux run ${code(helperDetached(url, token).systemd)} (stop it with ${code("systemctl --user stop editor-helper")}), elsewhere ${code(helperDetached(url, token).nohup)}. Check a few seconds later that it still runs, then stop the watchdog and tell me how you started it and how to stop it. If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me: the one time you repeat the token. For each pin the helper starts Claude Code, until Disconnect MCP.`;
 }

@@ -748,3 +748,71 @@
   white-space: normal;
 }
 .edit-bar__option[aria-selected="true"] .field-suggestions__title { font-weight: 600; }
+
+/* Phones (edit-bar.ts docks it on a phone-wide window): a toolbar in its own
+   row under the frame, as a word editor's on a phone, so no page sits under
+   it and the page's end scrolls clear above it. One row: the name chip first,
+   then the groups, scrolled sideways when they don't fit. Clear of the home
+   indicator; raised onto the on-screen keyboard by a bottom margin (edit-bar.ts),
+   which shortens the frame so the page's end scrolls clear of both. */
+.edit-bar[data-side="docked"] {
+  position: relative;
+  flex: none;
+  flex-direction: row;
+  align-items: center;
+  align-self: stretch;
+  gap: 4px;
+  inline-size: auto;
+  /* As tall as its 44 px touch targets; its foot keeps the phone sheet's handle
+     under it a finger's reach apart, plus the home indicator's room. */
+  padding-block: 0 calc(4px + env(safe-area-inset-bottom, 0px));
+  padding-inline: 8px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+  border-block-start: 1px solid var(--control-line);
+  background: var(--panel-surface);
+  box-shadow: 0 -2px 6px var(--semantic-shadow);
+  pointer-events: auto;
+}
+.edit-bar[data-side="docked"] > .edit-bar__label {
+  flex: none;
+  block-size: 36px;
+  max-inline-size: 45%;
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 1px var(--control-line);
+}
+/* Touch: every control a 44 px target (U6), the name chip's reaching past its 36 px label. */
+.edit-bar[data-side="docked"] :is(.edit-bar__button, .edit-bar__select, .edit-bar__labelled, .edit-bar__check),
+.edit-bar[data-side="docked"] > .edit-bar__label > :is(button:not(.slot-chip), .edit-bar__component-name) {
+  block-size: 44px;
+  min-inline-size: 44px;
+}
+.edit-bar[data-side="docked"] > .edit-bar__controls {
+  flex: none;
+  flex-wrap: nowrap;
+  max-inline-size: none;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.edit-bar[data-side="docked"] .edit-bar__group {
+  flex-wrap: nowrap;
+  max-inline-size: none;
+}
+/* Raised onto the keyboard, which covers the home indicator: no room kept for it. */
+.edit-bar[data-side="docked"][data-lifted] {
+  padding-block-end: 0;
+}
+/* Phones: the bar's fields at 16 px, so iOS opens the keyboard without
+   zooming the page (a zoom would also read as a pinch, edit-bar.ts). */
+@media (max-width: 650px) {
+  :is(.edit-bar, .edit-bar__popover, .edit-bar__note) :is(input:not([type="checkbox"], [type="file"]), select, textarea) {
+    font-size: 16px;
+  }
+  .edit-bar__note-input {
+    line-height: 20px;
+    max-block-size: 120px;
+  }
+}

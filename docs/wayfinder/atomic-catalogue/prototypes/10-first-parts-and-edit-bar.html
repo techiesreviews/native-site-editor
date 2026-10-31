@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 10 First parts and the edit bar, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 3 Nov review
+  (kitchen rule "mock-ups ahead", 2026-10-27). v2 after Lex's feedback (2026-10-27): "I like the way it
+  looks, however these are not the things we really use now, do they?"
+  Today: the editor's real parts, values copied from src/theme.css, src/style.css, src/ui/inline-field.css,
+  src/components/{edit-bar,dropdown,create-dialog,refusal-note,pages-tree,block-rail,agent-pins}.css and
+  src/page-builder/media-detail.css (dev, 2026-10-27).
+  After: the same parts as catalogue parts. Colours and type are unchanged (the techies.tools Framework
+  colours already match, research ac-01); spacing 2/4/6/8/12/16/24 px and --radius-full from the editor
+  Framework set (slice 02); motion tokens from the board proposals (slice 03: press 150, hover 120,
+  tooltip 180, menu 200); one part per kind (slices 10-14, 20-27, research ac-04 counts).
+-->
+<style>
+/* ---------- Shared values: src/theme.css, light and dark written once with light-dark() ---------- */
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --danger: oklch(from var(--color-success) l c 25);
+  --danger-bg: oklch(from var(--success-bg) l c 25);
+  --danger-fg: oklch(from var(--success-fg) l c 25);
+  --panel-surface: var(--surface-raised);
+  --pressed: light-dark(var(--primary), var(--color-primary-light));
+  --on-pressed: light-dark(var(--on-primary), var(--color-primary-darkest));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px; --type-heading: 20px;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px;
+  --panel-padding: 6px;
+
+  /* After only: the catalogue's new shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-size: var(--type-base); }
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, select:focus-visible, a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.icon { inline-size: 16px; block-size: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+header { display: grid; gap: var(--space-3xs); }
+h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 70ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 5; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: var(--space-s); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); align-content: start; min-inline-size: 0; }
+.card h2 { margin: 0; font-size: var(--type-title); }
+.card .count { font-weight: 400; color: var(--muted); font-size: var(--type-small); }
+.stage { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; padding: var(--space-s); border-radius: var(--radius); background: var(--background); min-block-size: 4.5rem; position: relative; }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+.wide { grid-column: 1 / -1; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+.boxes { font-size: var(--type-small); color: var(--muted); inline-size: 100%; margin: 0; }
+.boxes ~ button { background: var(--hover); }
+
+/* =====================  TODAY: real editor CSS  ===================== */
+/* src/style.css buttons */
+.today .button { min-height: var(--size-control); border: 0; padding: 6px 14px; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; }
+.today .primary { background: var(--primary); color: var(--on-primary); }
+.today .secondary { background: var(--surface); color: inherit; }
+.today .text-button { border: 0; background: none; padding: 5px 0; color: var(--link); font-size: var(--type-base); }
+@media (hover: hover) and (pointer: fine) {
+  .today .primary:hover { background: var(--primary-hover); }
+  .today .secondary:hover { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .today .text-button:hover { text-decoration: underline; }
+}
+/* src/page-builder/media-detail.css: Media's own round buttons */
+.today .media-pill { min-block-size: 36px; padding-inline: 14px; border-radius: 18px; border: 0; background: var(--surface-subtle); }
+/* Icon-button copies, sizes from research ac-04 */
+.today .ib { display: inline-grid; place-items: center; border: 0; background: transparent; color: var(--muted); padding: 0; }
+.today .ib:hover { background: var(--hover); color: var(--text); }
+/* src/ui/inline-field.css and create-dialog.css fields, style.css select */
+.today .inline-field { border: 0; background: transparent; box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--control-line) 45%, transparent); padding: 4px 2px; min-inline-size: 0; inline-size: 11rem; transition: background-color 120ms ease-out, box-shadow 120ms ease-out; }
+.today .inline-field:hover:not(:focus) { background-color: var(--hover); box-shadow: inset 0 -1px 0 var(--control-line); }
+.today .inline-field:focus { outline: none; background-color: color-mix(in srgb, var(--primary) 7%, var(--surface-input)); box-shadow: inset 0 -2px 0 var(--primary); }
+.today .boxed { block-size: var(--size-control); padding: 0 8px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-input); inline-size: 11rem; }
+.today select.plain { inline-size: 9rem; background: var(--surface); border: 0; border-radius: var(--radius); block-size: var(--size-control); padding: 0 10px; }
+/* src/style.css .badge plus look-alikes */
+.today .badge { display: inline-flex; font-size: var(--type-small); color: var(--link); background: var(--surface-subtle); padding: 2px 9px; border-radius: 999px; }
+.today .count-a { font-size: var(--type-badge); font-weight: 700; min-inline-size: 18px; block-size: 18px; display: inline-grid; place-items: center; border-radius: 9px; background: var(--primary); color: var(--on-primary); }
+.today .count-b { font-size: var(--type-small); color: var(--muted); }
+.today .kind-tag { font-size: var(--type-small); font-weight: 600; padding: 0 5px; border-radius: 3px; background: var(--current); }
+/* Spinners: style.css .login-spinner, agent-pins.css .agent-pin__spinner */
+.today .login-spinner { inline-size: 18px; block-size: 18px; border: 2px solid var(--control-line); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.9s linear infinite; }
+.today .pin-spinner { inline-size: 8px; block-size: 8px; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s steps(4) infinite; }
+.today progress { inline-size: 9rem; accent-color: var(--primary); }
+@keyframes spin { to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .today .login-spinner, .today .pin-spinner { animation: none; } }
+/* Tooltip today: the browser's plain title box, and block-rail.css's own dark chip */
+.today .native-tip { font: 12px/1.3 system-ui, sans-serif; color: CanvasText; background: Canvas; border: 1px solid GrayText; padding: 2px 5px; box-shadow: 1px 1px 3px oklch(0% 0 none / 0.3); }
+.today .rail-tip { padding: 3px 8px; border-radius: 6px; background: var(--text); color: var(--surface); font-size: var(--type-small); font-weight: 600; white-space: nowrap; }
+/* src/components/dropdown.css */
+.today .dropdown-panel { padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); box-shadow: var(--shadow); inline-size: 13rem; }
+.today .dropdown-panel button { display: flex; align-items: center; gap: 8px; inline-size: 100%; border: 0; background: transparent; padding: 6px 8px; border-radius: var(--radius); text-align: start; }
+.today .dropdown-panel button:hover { background: var(--hover); }
+/* src/components/create-dialog.css, and another dialog's backdrop shade */
+.today .dlg-wrap { position: relative; padding: var(--space-s); border-radius: var(--radius); background: oklch(from var(--shadow-color) l c h / 0.45); }
+.today .dlg-wrap.b2 { background: oklch(0% 0 none / 0.6); }
+.today .create-dialog { inline-size: min(15rem, 100%); padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow); display: grid; gap: 10px; }
+.today .create-dialog h3 { margin: 0; font-size: var(--type-title); }
+/* src/components/pages-tree.css explorer tabs */
+.today .explorer-tab { min-height: var(--size-control); padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-weight: 600; }
+.today .explorer-tab:hover { color: var(--text); }
+.today .explorer-tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--primary); }
+.today .scope-tab { border: 0; background: var(--surface-subtle); padding: 3px 10px; border-radius: 999px; font-size: var(--type-small); }
+.today .scope-tab[aria-selected="true"] { background: var(--current); font-weight: 600; }
+/* src/style.css .empty-message */
+.today .empty-message { color: var(--muted); padding: 40px; font-size: var(--type-base); }
+/* src/style.css .notice and refusal-note.css */
+.today .notice { background: var(--warning-bg); color: var(--warning-fg); padding: 11px 26px; display: flex; gap: 18px; align-items: center; justify-content: center; inline-size: 100%; }
+.today .refusal-note { max-inline-size: 15rem; padding: 9px 12px; border: 1px solid var(--danger); border-radius: 8px; background: var(--panel-surface); box-shadow: 0 4px 16px oklch(0% 0 none / 16%); font-size: 13px; line-height: 1.45; }
+/* src/components/edit-bar.css */
+.today .edit-bar { display: flex; flex-direction: column; align-items: flex-start; }
+.today .edit-bar__label { display: inline-flex; align-items: center; block-size: 24px; padding: 0 8px; border-radius: var(--radius) var(--radius) var(--radius) 0; background: var(--panel-surface); box-shadow: var(--shadow-small); font-size: var(--type-small); font-weight: 600; }
+.today .edit-bar__controls { display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 0 var(--radius) var(--radius) var(--radius); background: var(--panel-surface); box-shadow: var(--shadow-small); flex-wrap: wrap; }
+.today .edit-bar__button { min-height: var(--size-compact); border: 0; border-radius: var(--radius); padding: 0 8px; background: transparent; line-height: 1.3; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.today .edit-bar__button--icon { padding: 0 7px; }
+.today .edit-bar__button:hover { background: var(--hover); }
+.today .edit-bar__button[aria-pressed="true"] { background: var(--pressed); color: var(--on-pressed); }
+.today .edit-bar__select { block-size: var(--size-compact); border: 1px solid var(--control-line); border-radius: var(--radius); padding: 0 6px; background: var(--panel-surface); }
+.today .edit-bar__sep { inline-size: 1px; align-self: stretch; margin: 4px 3px; background: var(--line); }
+
+/* =====================  AFTER: catalogue parts  ===================== */
+/* Shared press and hover behaviour for every pressable part */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  .p-press:active:not(:disabled) { scale: 0.97; }
+}
+/* Button: tones primary, secondary, quiet, danger; sizes compact, control, touch */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: var(--size-control); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.p-button[data-size="compact"] { min-block-size: var(--size-compact); padding-inline: var(--space-xs); }
+.p-button[data-size="touch"] { min-block-size: var(--size-touch); padding-inline: var(--space-m); }
+.p-button[data-tone="primary"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-button[data-tone="quiet"] { background: transparent; box-shadow: none; color: var(--link); }
+.p-button[data-tone="danger"] { background: var(--danger-bg); color: var(--danger-fg); box-shadow: none; }
+.p-button:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.p-button[data-tone="primary"]:active:not(:disabled) { background: var(--primary-hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-button:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .p-button[data-tone="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
+  .p-button[data-tone="quiet"]:hover:not(:disabled) { background: var(--hover); }
+  .p-button[data-tone="danger"]:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--danger-bg); }
+}
+/* Icon button: icon 24, compact 28, control 32 (44 on touch screens) */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); }
+.p-icon-button[data-size="icon"] { inline-size: var(--size-icon); block-size: var(--size-icon); border-radius: var(--radius-small); }
+.p-icon-button[data-size="compact"] { inline-size: var(--size-compact); block-size: var(--size-compact); }
+.p-icon-button[aria-pressed="true"] { background: var(--pressed); color: var(--on-pressed); }
+.p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled, [aria-pressed="true"]) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Field: one part, inline or boxed, one focus and one error look */
+.p-field { inline-size: 11rem; min-inline-size: 0; block-size: var(--size-control); padding-inline: var(--space-xs); border: 0; border-radius: var(--radius-small) var(--radius-small) 0 0; background: transparent; box-shadow: inset 0 -1px 0 var(--control-line); caret-color: var(--primary); }
+.p-field[data-look="boxed"] { border-radius: var(--radius); background: var(--surface-input); box-shadow: inset 0 0 0 1px var(--control-line); }
+.p-field:focus-visible, .p-field:focus { outline: none; background-color: color-mix(in oklch, var(--primary) 7%, var(--surface-input)); box-shadow: inset 0 -2px 0 var(--primary); }
+.p-field[data-look="boxed"]:focus { box-shadow: inset 0 0 0 1px var(--control-line), inset 0 -2px 0 var(--primary); }
+.p-field[aria-invalid="true"] { box-shadow: inset 0 -2px 0 var(--danger); }
+@media (hover: hover) and (pointer: fine) { .p-field:hover:not(:focus) { background-color: var(--hover); } }
+@media (prefers-reduced-motion: no-preference) { .p-field { transition: background-color var(--dur-hover) var(--ease-out), box-shadow var(--dur-hover) var(--ease-out); } }
+.p-select { inline-size: 9rem; block-size: var(--size-control); padding-inline: var(--space-xs); border: 0; border-radius: var(--radius); background: var(--surface-input); box-shadow: inset 0 0 0 1px var(--control-line); }
+/* Badge: one part, pill corner from --radius-full, tones by data attribute */
+.p-badge { display: inline-flex; align-items: center; gap: var(--space-3xs); block-size: 20px; padding-inline: var(--space-xs); border-radius: var(--radius-full); font-size: var(--type-small); font-weight: 600; background: var(--surface-subtle); color: var(--link); }
+.p-badge[data-tone="action"] { background: var(--primary); color: var(--on-primary); }
+.p-badge[data-tone="warning"] { background: var(--warning-bg); color: var(--warning-fg); }
+.p-badge[data-tone="success"] { background: var(--success-bg); color: var(--success-fg); }
+.p-badge[data-tone="component"] { background: oklch(96% 0.03 300); color: oklch(42% 0.17 300); }
+.p-badge[data-size="number"] { min-inline-size: 18px; block-size: 18px; padding-inline: var(--space-3xs); justify-content: center; font-size: var(--type-badge); }
+/* Spinner and progress */
+.p-spinner { inline-size: 16px; block-size: 16px; border: 2px solid var(--control-line); border-block-start-color: var(--primary); border-radius: 50%; animation: spin 0.9s linear infinite; }
+.p-spinner[data-size="small"] { inline-size: 10px; block-size: 10px; border-width: 1.5px; }
+.p-progress { inline-size: 9rem; block-size: 6px; border-radius: var(--radius-full); background: var(--control-line); overflow: clip; }
+.p-progress > i { display: block; block-size: 100%; inline-size: 60%; border-radius: inherit; background: var(--primary); }
+@media (prefers-reduced-motion: reduce) { .p-spinner { animation-duration: 2.4s; } }
+/* Tooltip: words plus an optional key */
+.p-tip-anchor { position: relative; display: inline-block; }
+.p-tooltip { position: absolute; inset-block-end: calc(100% + 6px); inset-inline-start: 50%; translate: -50% 0; display: inline-flex; gap: var(--space-2xs); align-items: center; padding: var(--space-3xs) var(--space-xs); border-radius: var(--radius); background: var(--text); color: var(--surface); font-size: var(--type-small); font-weight: 600; white-space: nowrap; opacity: 0; pointer-events: none; z-index: 3; }
+.p-tooltip kbd { font: inherit; font-weight: 500; opacity: 0.75; }
+.p-tip-anchor:focus-within .p-tooltip, .p-tooltip.is-shown { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .p-tip-anchor:hover .p-tooltip { opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) { .p-tooltip { transition: opacity var(--dur-tooltip) var(--ease-out); } }
+/* Menu: today's dropdown look, one item part with icon, words, key, check */
+.p-menu { padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); box-shadow: var(--shadow); inline-size: 13rem; display: grid; gap: 1px; }
+.p-menu-item { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: var(--space-xs); inline-size: 100%; border: 0; background: transparent; padding: var(--space-2xs) var(--space-xs); border-radius: var(--radius); text-align: start; }
+.p-menu-item kbd { font: inherit; font-size: var(--type-small); color: var(--muted); }
+.p-menu-item[aria-checked="true"] { background: var(--current); font-weight: 600; }
+.p-menu-item[data-tone="danger"] { color: var(--danger); }
+.p-menu-item:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .p-menu-item:hover { background: var(--hover); } }
+/* Dialog: one backdrop */
+.p-dlg-wrap { padding: var(--space-s); border-radius: var(--radius); background: oklch(from var(--shadow-color) l c h / 0.45); }
+.p-dialog { inline-size: min(15rem, 100%); padding: var(--space-m); border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow); display: grid; gap: var(--space-s); }
+.p-dialog h3 { margin: 0; font-size: var(--type-title); }
+.p-row { display: flex; gap: var(--space-xs); justify-content: end; flex-wrap: wrap; }
+/* Tabs: one part (underline) */
+.p-tabs { display: flex; gap: var(--space-4xs); border-block-end: 1px solid var(--line); }
+.p-tab { min-block-size: var(--size-control); padding-inline: var(--space-s); margin-block-end: -1px; border: 0; border-block-end: 2px solid transparent; background: transparent; color: var(--muted); font-weight: 600; }
+.p-tab[aria-selected="true"] { color: var(--text); border-block-end-color: var(--primary); }
+.p-tab:focus-visible { outline-offset: -2px; border-radius: var(--radius) var(--radius) 0 0; }
+@media (hover: hover) and (pointer: fine) { .p-tab:hover { color: var(--text); } }
+/* Empty state: icon, words, one next step */
+.p-empty { display: grid; justify-items: center; gap: var(--space-xs); padding: var(--space-l) var(--space-m); text-align: center; color: var(--muted); inline-size: 100%; }
+.p-empty .icon { inline-size: 24px; block-size: 24px; }
+.p-empty p { margin: 0; text-wrap: balance; }
+/* Notice: tones, shared values */
+.p-notice { display: flex; gap: var(--space-xs); align-items: start; padding: var(--space-xs) var(--space-s); border-radius: var(--radius-panel); font-size: var(--type-base); inline-size: 100%; background: var(--warning-bg); color: var(--warning-fg); }
+.p-notice[data-tone="danger"] { background: var(--panel-surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--danger), var(--shadow-small); max-inline-size: 15rem; }
+.p-notice p { margin: 0; }
+/* Edit bar organism, built from the parts above */
+.p-edit-bar { display: flex; flex-direction: column; align-items: flex-start; }
+.p-edit-bar__label { display: inline-flex; align-items: center; gap: var(--space-3xs); block-size: var(--size-icon); padding-inline: var(--space-xs); border-radius: var(--radius) var(--radius) var(--radius) 0; background: var(--panel-surface); box-shadow: var(--shadow-small); font-size: var(--type-small); font-weight: 600; }
+.p-edit-bar__controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4xs); padding: var(--space-3xs); border-radius: 0 var(--radius) var(--radius) var(--radius); background: var(--panel-surface); box-shadow: var(--shadow-small); }
+.p-edit-bar__sep { inline-size: 1px; align-self: stretch; margin: var(--space-3xs) var(--space-4xs); background: var(--line); }
+.p-edit-bar .p-select { inline-size: auto; block-size: var(--size-compact); background: var(--panel-surface); }
+</style>
+</head>
+<body data-mode="after">
+<main>
+  <header>
+    <h1>First catalogue parts and the edit bar <span class="tag">mock-up for Tuesday 3 Nov</span></h1>
+    <p class="intro">Today shows the editor's real parts as they are now, copied from its stylesheets. After shows the same parts once they're catalogue parts. Switch between them to compare.</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+    <p class="summary after">Same colours and type; many copies become one part each.</p>
+  </div>
+
+  <div class="grid">
+    <!-- Edit bar -->
+    <article class="card wide">
+      <h2>Edit bar</h2>
+      <div class="stage today">
+        <div class="edit-bar">
+          <span class="edit-bar__label">Heading</span>
+          <div class="edit-bar__controls">
+            <select class="edit-bar__select" aria-label="Heading level"><option>H2</option><option>H3</option></select>
+            <span class="edit-bar__sep"></span>
+            <button type="button" class="edit-bar__button edit-bar__button--icon" aria-label="Bold" aria-pressed="true"><svg class="icon" viewBox="0 0 24 24"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/></svg></button>
+            <button type="button" class="edit-bar__button edit-bar__button--icon" aria-label="Italic"><svg class="icon" viewBox="0 0 24 24"><path d="M14 5h-4M14 19h-4M14 5l-4 14"/></svg></button>
+            <button type="button" class="edit-bar__button edit-bar__button--icon" aria-label="Link"><svg class="icon" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg></button>
+            <span class="edit-bar__sep"></span>
+            <button type="button" class="edit-bar__button"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>Ask agent</button>
+            <button type="button" class="edit-bar__button edit-bar__button--icon" aria-label="More"><svg class="icon" viewBox="0 0 24 24"><path d="M6 12h.01M12 12h.01M18 12h.01"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="stage after">
+        <div class="p-edit-bar">
+          <span class="p-edit-bar__label">Heading</span>
+          <div class="p-edit-bar__controls">
+            <select class="p-select" aria-label="Heading level"><option>H2</option><option>H3</option></select>
+            <span class="p-edit-bar__sep"></span>
+            <button type="button" class="p-icon-button p-press" data-size="compact" aria-label="Bold" aria-pressed="true"><svg class="icon" viewBox="0 0 24 24"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/></svg></button>
+            <button type="button" class="p-icon-button p-press" data-size="compact" aria-label="Italic" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M14 5h-4M14 19h-4M14 5l-4 14"/></svg></button>
+            <span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" data-size="compact" aria-label="Link" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg></button><span class="p-tooltip" role="tooltip">Link <kbd>Ctrl K</kbd></span></span>
+            <span class="p-edit-bar__sep"></span>
+            <button type="button" class="p-button p-press" data-size="compact" data-tone="quiet" style="color:inherit"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>Ask agent</button>
+            <button type="button" class="p-icon-button p-press" data-size="compact" aria-label="More"><svg class="icon" viewBox="0 0 24 24"><path d="M6 12h.01M12 12h.01M18 12h.01"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <ul class="changes after"><li>built from the parts below</li><li>hover only with a mouse</li><li>press feedback</li><li>tip names the key</li></ul>
+    </article>
+
+    <!-- Buttons -->
+    <article class="card">
+      <h2>Buttons <span class="count today">· 1 shared look + 131 own classes</span></h2>
+      <div class="stage today">
+        <button type="button" class="button primary">Save</button>
+        <button type="button" class="button secondary">Cancel</button>
+        <button type="button" class="text-button">Show changes</button>
+        <button type="button" class="media-pill">Replace everywhere…</button>
+      </div>
+      <div class="stage after">
+        <button type="button" class="p-button p-press" data-tone="primary">Save</button>
+        <button type="button" class="p-button p-press">Cancel</button>
+        <button type="button" class="p-button p-press" data-tone="quiet">Show changes</button>
+        <button type="button" class="p-button p-press" data-tone="danger">Discard</button>
+        <button type="button" class="p-button p-press" data-size="compact">Compact</button>
+      </div>
+      <ul class="changes after"><li>one button, four tones</li><li>Media's round buttons join it</li><li>press feedback</li></ul>
+    </article>
+
+    <!-- Icon buttons -->
+    <article class="card">
+      <h2>Icon buttons <span class="count today">· 1 shared + 25 copies</span></h2>
+      <div class="stage today">
+        <p class="boxes">shown hovered</p>
+        <button type="button" class="ib" style="inline-size:22px;block-size:22px;border-radius:4px" aria-label="22 px"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button type="button" class="ib" style="inline-size:24px;block-size:24px;border-radius:6px" aria-label="24 px"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button type="button" class="ib" style="inline-size:28px;block-size:28px;border-radius:6px" aria-label="28 px"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button type="button" class="ib" style="inline-size:32px;block-size:32px;border-radius:6px" aria-label="32 px"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button type="button" class="ib" style="inline-size:36px;block-size:36px;border-radius:8px" aria-label="36 px"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button type="button" class="ib" style="inline-size:44px;block-size:44px;border-radius:50%" aria-label="44 px"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+      <div class="stage after">
+        <p class="boxes">shown hovered</p>
+        <button type="button" class="p-icon-button p-press" data-size="icon" aria-label="Small"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button type="button" class="p-icon-button p-press" data-size="compact" aria-label="Compact"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button type="button" class="p-icon-button p-press" aria-label="Control"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button type="button" class="p-icon-button p-press" aria-label="Pressed" aria-pressed="true"><svg class="icon" viewBox="0 0 24 24"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/></svg></button>
+      </div>
+      <ul class="changes after"><li>6 sizes become 3</li><li>44 px on touch screens</li></ul>
+    </article>
+
+    <!-- Fields -->
+    <article class="card">
+      <h2>Fields <span class="count today">· 12 hand-made label + field pairs</span></h2>
+      <div class="stage today">
+        <input class="inline-field" value="Fresh bread" aria-label="Inline field">
+        <input class="boxed" value="about.html" aria-label="Boxed field">
+        <select class="plain" aria-label="Select"><option>Home</option></select>
+      </div>
+      <div class="stage after">
+        <input class="p-field" value="Fresh bread" aria-label="Inline field">
+        <input class="p-field" data-look="boxed" value="about.html" aria-label="Boxed field">
+        <input class="p-field" data-look="boxed" value="about us" aria-invalid="true" aria-label="Field with error">
+        <select class="p-select" aria-label="Select"><option>Home</option></select>
+      </div>
+      <ul class="changes after"><li>one field, two looks</li><li>same focus and error line</li></ul>
+    </article>
+
+    <!-- Badges -->
+    <article class="card">
+      <h2>Badges and counts <span class="count today">· 1 shared + 45 look-alikes</span></h2>
+      <div class="stage today">
+        <span class="badge">Draft</span><span class="count-a">3</span><span class="count-b">12 pages</span><span class="kind-tag">Heading</span>
+      </div>
+      <div class="stage after">
+        <span class="p-badge">Draft</span><span class="p-badge" data-tone="action" data-size="number">3</span><span class="p-badge" data-tone="warning">Unsaved</span><span class="p-badge" data-tone="success">Saved</span><span class="p-badge" data-tone="component">Card</span>
+      </div>
+      <ul class="changes after"><li>pill corner is one value</li><li>tones instead of copies</li></ul>
+    </article>
+
+    <!-- Spinner and progress -->
+    <article class="card">
+      <h2>Spinner and progress <span class="count today">· 2 spinners, 3 bars</span></h2>
+      <div class="stage today"><span class="login-spinner" role="img" aria-label="Loading"></span><span class="pin-spinner" role="img" aria-label="Agent working" style="color:var(--primary)"></span><progress value="60" max="100" aria-label="Adding"></progress></div>
+      <div class="stage after"><span class="p-spinner" role="img" aria-label="Loading"></span><span class="p-spinner" data-size="small" role="img" aria-label="Working"></span><span class="p-progress" role="progressbar" aria-valuenow="60" aria-label="Adding"><i></i></span></div>
+      <ul class="changes after"><li>one spinner, one bar</li><li>slows down, not off, with reduced motion</li></ul>
+    </article>
+
+    <!-- Tooltip -->
+    <article class="card">
+      <h2>Tooltip <span class="count today">· 139 plain browser tips</span></h2>
+      <div class="stage today" style="align-items:end;min-block-size:6rem">
+        <span style="display:grid;gap:4px;justify-items:start"><span class="native-tip">Undo (Ctrl+Z)</span><button type="button" class="ib" style="inline-size:32px;block-size:32px;border-radius:6px" title="Undo (Ctrl+Z)" aria-label="Undo"><svg class="icon" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button></span>
+        <span class="rail-tip">Text</span>
+      </div>
+      <div class="stage after" style="align-items:end;justify-content:center;min-block-size:6rem">
+        <span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" aria-label="Undo"><svg class="icon" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button><span class="p-tooltip is-shown" role="tooltip">Undo <kbd>Ctrl Z</kbd></span></span>
+      </div>
+      <ul class="changes after"><li>in the editor's style</li><li>shows on keyboard focus too</li></ul>
+    </article>
+
+    <!-- Menu -->
+    <article class="card">
+      <h2>Menu</h2>
+      <div class="stage today">
+        <div class="dropdown-panel" role="menu"><button type="button" role="menuitem">Site settings</button><button type="button" role="menuitem">Download site</button><button type="button" role="menuitem" style="color:var(--danger)">Remove project</button></div>
+      </div>
+      <div class="stage after">
+        <div class="p-menu" role="menu">
+          <button type="button" class="p-menu-item" role="menuitemradio" aria-checked="true"><svg class="icon" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg>Pages<kbd>1</kbd></button>
+          <button type="button" class="p-menu-item" role="menuitem"><span></span>Site settings<kbd>Ctrl ,</kbd></button>
+          <button type="button" class="p-menu-item" role="menuitem" data-tone="danger"><span></span>Remove project<span></span></button>
+        </div>
+      </div>
+      <ul class="changes after"><li>same look</li><li>check and key slots</li></ul>
+    </article>
+
+    <!-- Dialog -->
+    <article class="card">
+      <h2>Dialog <span class="count today">· 13 dialogs, 8 backdrop shades</span></h2>
+      <div class="stage today" style="gap:var(--space-xs)">
+        <div class="dlg-wrap"><div class="create-dialog"><h3>New page</h3><input class="boxed" value="about" aria-label="Name" style="inline-size:100%"><div style="display:flex;gap:8px;justify-content:end"><button type="button" class="button secondary">Cancel</button><button type="button" class="button primary">Create</button></div></div></div>
+        <div class="dlg-wrap b2" aria-hidden="true" style="min-inline-size:4rem;min-block-size:4rem"></div>
+      </div>
+      <div class="stage after">
+        <div class="p-dlg-wrap"><div class="p-dialog"><h3>New page</h3><input class="p-field" data-look="boxed" value="about" aria-label="Name" style="inline-size:100%"><div class="p-row"><button type="button" class="p-button p-press">Cancel</button><button type="button" class="p-button p-press" data-tone="primary">Create</button></div></div></div>
+      </div>
+      <ul class="changes after"><li>one backdrop</li><li>buttons and field from the parts</li></ul>
+    </article>
+
+    <!-- Tabs -->
+    <article class="card">
+      <h2>Tabs <span class="count today">· 3 copies, 2 looks</span></h2>
+      <div class="stage today" style="display:grid;gap:var(--space-s)">
+        <div role="tablist" style="display:flex;gap:2px;border-block-end:1px solid var(--line)"><button type="button" class="explorer-tab" role="tab" aria-selected="true">Pages</button><button type="button" class="explorer-tab" role="tab" aria-selected="false">Media</button><button type="button" class="explorer-tab" role="tab" aria-selected="false">Files</button></div>
+        <div role="tablist" style="display:flex;gap:4px"><button type="button" class="scope-tab" role="tab" aria-selected="true">This page</button><button type="button" class="scope-tab" role="tab" aria-selected="false">Whole site</button></div>
+      </div>
+      <div class="stage after">
+        <div class="p-tabs" role="tablist" style="inline-size:100%"><button type="button" class="p-tab" role="tab" aria-selected="true">Pages</button><button type="button" class="p-tab" role="tab" aria-selected="false">Media</button><button type="button" class="p-tab" role="tab" aria-selected="false">Files</button></div>
+      </div>
+      <ul class="changes after"><li>3 copies become 1</li></ul>
+    </article>
+
+    <!-- Empty state -->
+    <article class="card">
+      <h2>Empty state <span class="count today">· 16 copies</span></h2>
+      <div class="stage today"><p class="empty-message" style="margin:0">No pages yet.</p></div>
+      <div class="stage after"><div class="p-empty"><svg class="icon" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4"/></svg><p>No pages yet</p><button type="button" class="p-button p-press" data-size="compact">New page</button></div></div>
+      <ul class="changes after"><li>icon, words and a next step</li></ul>
+    </article>
+
+    <!-- Notice -->
+    <article class="card">
+      <h2>Notice</h2>
+      <div class="stage today" style="display:grid;gap:var(--space-s)">
+        <div class="notice">Your site has no web address yet.</div>
+        <div class="refusal-note">This text comes from a component. Edit it in the component.</div>
+      </div>
+      <div class="stage after" style="display:grid;gap:var(--space-s)">
+        <div class="p-notice"><p>Your site has no web address yet.</p></div>
+        <div class="p-notice" data-tone="danger"><p>This text comes from a component. Edit it in the component.</p></div>
+      </div>
+      <ul class="changes after"><li>shared spacing and corners</li><li>one shadow, a named layer</li></ul>
+    </article>
+  </div>
+</main>
+<script>
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+document.querySelectorAll('[aria-pressed][data-size="compact"].p-icon-button').forEach((b) => b.addEventListener("click", () => b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true"))));
+document.querySelectorAll('[role="tablist"]').forEach((list) => list.addEventListener("click", (e) => {
+  const t = e.target.closest('[role="tab"]'); if (!t) return;
+  list.querySelectorAll('[role="tab"]').forEach((o) => o.setAttribute("aria-selected", String(o === t)));
+}));
+</script>
+</body>
+</html>

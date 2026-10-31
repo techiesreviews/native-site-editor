@@ -11,7 +11,8 @@ import { createNativeSiteRuntime } from "../src/native-site-runtime.ts";
 import type { Stamp } from "../src/guarded-edit.ts";
 import type { NativePreviewSelection } from "../src/components/native-preview.ts";
 import type { MediaPin } from "../src/controllers/media-controller.ts";
-import type { AgentCommand } from "../shared/agent.ts";
+import type { AgentCommand, AgentWho } from "../shared/agent.ts";
+import type { PinRequest } from "../src/components/agent-pins.ts";
 import { resolveNativeProject } from "../shared/native-project.ts";
 import type { Repository, SessionInfo, Snapshot } from "../shared/types.ts";
 
@@ -41,6 +42,8 @@ type MenuOptions = Parameters<Awaited<ReturnType<AgentMenuHostPorts["loadAgentMe
 const SELECTION = { path: "index.html", tag: "p", text: "", reason: "click", selectors: [], node: [0] } satisfies NativePreviewSelection;
 const COMMAND = { id: "c1", operation: "write_file", path: "index.html", branch: "main", commit: "c1", content: "", state: "pending" } satisfies AgentCommand;
 const PIN = {} as MediaPin; // eslint-disable-line no-restricted-syntax -- handed on unread: the test checks only that it arrives.
+// The agent presence names on each pin being worked on (src/agent-presence.ts `onPin`): a take's own taker, or none.
+const ON_PIN = new Map<string, AgentWho>([["req-now", { grant: "grant-Copy editor", name: "Copy editor" }], ["req-named", { grant: "grant-Watchdog", name: "Watchdog" }]]);
 
 // The host over the real runtime, app store and drafts; the menu, the agent's site and the other ports record what they were asked.
 function setup(options: { draftScope?: () => DraftScope | undefined } = {}) {
@@ -64,6 +67,7 @@ function setup(options: { draftScope?: () => DraftScope | undefined } = {}) {
     setupController: { noteAgent: record("noteAgent") }, pageStructureController: { renderEditBar: record("renderEditBar") },
     mediaPorts: { pin: () => { pins.push("pin"); return PIN; } },
     workspace: { activeFileContext: null, repositoryMenu: { setQuestions: record("questions"), close: record("close menu") } },
+    agentPresence: { questions: record("questioned"), onPin: (id: string) => ON_PIN.get(id), colour: (who: AgentWho) => { calls.push(`colour ${who.name}`); return 2; }, atWork: () => [{ name: "Copy editor", file: "index.html", section: "1.0" }], agents: () => [], stop: () => {}, stopped: () => false, heard: () => {}, listen: () => () => {} },
     nativeTextIndexGate: { key: () => "k", indexed: () => late.indexed, settled: async () => true, ensure: async () => { calls.push("index"); late.indexed = true; return undefined; } },
     get info() { return late.info; },
     get nativePreview() { return late.preview ? { route: () => "/", setRequests: record("requests"), showRequest: record("show") } : undefined; },
@@ -97,7 +101,7 @@ test("the menu mounts for the signed-in account and its connection, requests and
   options.onShowRequest?.("r1");
   await options.onCommand(COMMAND);
   await options.reload?.({ revision: 2, generation: 1, drafts: [] });
-  assert.deepEqual(calls, ["noteAgent true", "noteAgent false", `renderEditBar ${JSON.stringify(SELECTION)}`, "requests []", "questions 2", "close menu", 'show "r1"', "apply c1", "reload 2"]);
+  assert.deepEqual(calls, ["noteAgent true", "noteAgent false", `renderEditBar ${JSON.stringify(SELECTION)}`, "questioned []", "requests []", "questions 2", "close menu", 'show "r1"', "apply c1", "reload 2"]);
 });
 
 test("no menu mounts before the session names an account", async () => {
@@ -151,6 +155,8 @@ test("the files agents read are the open repository's, with the clean cache's bl
   assert.deepEqual([files?.has("o/site", "sha-1"), files?.has("o/site", "sha-2")], [true, false]);
   appStore.snapshot.value = undefined;
   assert.equal(tools.files(), undefined);
+  // get_site tells who works on what (ticket am-11).
+  assert.deepEqual(tools.atWork?.(), [{ name: "Copy editor", file: "index.html", section: "1.0" }]);
 });
 
 test("work pinned for Media carries the pin the media ports give", async () => {
@@ -167,11 +173,27 @@ test("before the preview exists, requests and a shown request wait, and the sele
   const options = menus.at(-1)!;
   options.onRequests?.([]);
   options.onShowRequest?.("r1");
-  assert.deepEqual(calls, ["close menu"]);
+  // The questions' presence needs no preview (Page Structure and Pages and files show it too).
+  assert.deepEqual(calls, ["questioned []", "close menu"]);
   const resolved = resolveNativeProject(["index.html"]);
   assert.ok(resolved.ok);
   runtime.site = resolved.site;
   appStore.selection.value = SELECTION;
   assert.ok(await options.context());
   assert.deepEqual([inputs[0].native?.selection?.path, inputs[0].native?.selection?.route], ["index.html", undefined]);
+});
+
+test("only a pin an agent works on asks for its colour (am-13): finished ones of earlier sessions, and a watchdog's take presence names no one for, take no place in the order of arrival", async () => {
+  const { host, calls, menus } = setup();
+  await host.agentController.ensure();
+  const request = (id: string, state: PinRequest["state"], name: string): PinRequest => ({ id, text: id, state, createdAt: 1, repoId: 1, branch: "main",
+    element: { file: "index.html", route: "/", id: "1.0", tag: "h1" }, agent: { grant: `grant-${name}`, name } });
+  const took: PinRequest = { ...request("req-took", "seen", "Watchdog"), agentTook: true };
+  // Ticket am-45: a take presence names its taker for shows that agent, in its colour.
+  const named: PinRequest = { ...request("req-named", "seen", "Watchdog"), agentTook: true };
+  menus[0].onRequests?.([request("req-old", "done", "Old helper"), request("req-now", "seen", "Copy editor"), took, named]);
+  assert.deepEqual(calls.filter(call => call.startsWith("colour")), ["colour Copy editor", "colour Watchdog"]);
+  const told = JSON.parse(calls.find(call => call.startsWith("requests "))!.slice("requests ".length)) as PinRequest[];
+  assert.deepEqual(told.map(item => [item.id, item.colour, item.agent?.name, item.agentTook]),
+    [["req-old", undefined, "Old helper", undefined], ["req-now", 2, "Copy editor", undefined], ["req-took", undefined, "Watchdog", true], ["req-named", 2, "Watchdog", undefined]]);
 });

@@ -1,21 +1,6 @@
 #!/usr/bin/env bash
-# Usage: worktree.sh <branch> [base=origin/dev]; create a sibling worktree with shared dependencies/fixture.
-set -euo pipefail
-[[ $# -ge 1 && $# -le 2 ]] || { echo "Usage: worktree.sh <branch> [base=origin/dev]" >&2; exit 2; }
-root=$(git rev-parse --show-toplevel)
-branch=$1
-base=${2:-origin/dev}
-git check-ref-format --branch "$branch" >/dev/null
-path="$(dirname "$root")/native-site-editor-${branch//\//-}"
-dev_modules=/home/ubulex/Projects/native-site-editor-dev/node_modules
-if [[ -L $dev_modules ]]; then modules=$(realpath "$dev_modules"); else modules=$dev_modules; fi
-[[ -d $modules ]] || { echo "Missing node_modules: $modules" >&2; exit 1; }
-git worktree add -b "$branch" "$path" "$base" >&2
-mkdir -p "$path/.scratch"
-owner=${ASE_OWNER:-unknown}
-owner=${owner//$'\n'/ }
-owner=${owner//$'\r'/ }
-printf '%s %s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$owner" "$branch" "$base" > "$path/.scratch/owner"
-ln -s "$modules" "$path/node_modules"
-ln -s /home/ubulex/Projects/native-site-editor/.scratch/native-static-preview "$path/.scratch/native-static-preview"
-printf '%s\n' "$path"
+# Forwarder: scripts/agents/worktree.sh (named in the docs and briefs) runs the shared kit's worktree.sh, in the kit
+# kit-pick.sh picks and hands down.
+# shellcheck source=scripts/agents/kit-pick.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/kit-pick.sh"
+exec "$KIT_HOME/worktree.sh" "$@"

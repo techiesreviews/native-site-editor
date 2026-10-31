@@ -9,7 +9,7 @@ blocked_by: [41-project-overview]
 
 ## Goal
 
-Each project shows how its site scores ([ticket 07](../../../tickets/07-grill-project-overview.md#resolution-2026-10-26); research 03, section 3). Size: S–M.
+Each project shows how its site scores ([ticket 07](../../tickets/07-grill-project-overview.md#resolution-2026-10-26); research 03, section 3). Size: S–M.
 
 **Waits for** [site-quality build slices 63 and 65](../../../site-quality/build/README.md) (the ring part and the site averages) to be released.
 

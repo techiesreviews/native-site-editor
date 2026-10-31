@@ -60,12 +60,15 @@ test("socket edits apply once; duplicate requestId and status return the receipt
     const beforeDuplicate = await durable();
     expect(beforeDuplicate.drafts).toHaveLength(1); expect(beforeDuplicate.receipts).toHaveLength(1);
     expect(await call("edit_file", args)).toEqual(applied);
-    expect(await call("get_command_status", { requestId: args.requestId })).toEqual(applied);
+    // Its status, as the edit's reply without the edit's next step (ticket am-14).
+    const { next: _next, ...status } = applied;
+    expect(await call("get_command_status", { requestId: args.requestId })).toEqual(status);
     expect(await durable()).toEqual(beforeDuplicate);
     // Exactly one user Undo restores the original text after both deliveries.
     await page.locator(".code-editor__undo").first().click();
     await expect(heading).toHaveText("A native browser preview");
-    expect(await call("edit_file", args)).toEqual(applied);
+    // The same receipt again; the user's Undo since is told (ticket 10), never as the agent's own change.
+    expect(await call("edit_file", args)).toEqual({ ...applied, changesSinceLastRead: { files: [{ path: "index.html", change: "discarded" }], note: expect.any(String) } });
     await expect(heading).toHaveText("A native browser preview");
     const reused = await client.callTool({ name: "write_file", arguments: { path: "bad.txt", content: "different", requestId: args.requestId } });
     expect(reused.isError).toBe(true); expect(JSON.stringify(reused)).toMatch(/different work/);

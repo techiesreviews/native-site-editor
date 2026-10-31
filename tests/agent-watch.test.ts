@@ -3,7 +3,8 @@ import { test } from "node:test";
 import type { AgentRequest } from "../shared/agent";
 import type { AgentRequests } from "../shared/agent-requests";
 import { TAKE_TRIES, WAIT_MS, answerRequest, createRequestTools } from "../src/agent-watch";
-import { connectionPrompt } from "../src/agent-prompts";
+import { FOLLOW_UP_HOLD_MS } from "../shared/agent-requests";
+import { connectionPrompt, helperCommand, helperDetached } from "../src/agent-prompts";
 import { AgentRelay, WAITS_PER_SITE, relayObjectName, type RelayClock, type RelayScope, type RelaySocket } from "../worker/agent-relay";
 import { countedSocket, startCountedWorker } from "./fakes/counted-agent";
 import { indexedDbAgentRecords } from "../src/agent-records";
@@ -39,8 +40,8 @@ function browser(clock = manualClock()) {
       writes++; kept.set(request.id, structuredClone(request)); return true;
     },
   });
-  const run = (tool: AgentRequests["tool"], args: AgentRequests["args"] = {}, waitMs?: number, deadline = clock.now() + 24_000, grantId = "grant-a") =>
-    tools.run({ operation: "requests", tool, args, grantId, ...(waitMs === undefined ? {} : { waitMs }) }, () => true, deadline);
+  const run = (tool: AgentRequests["tool"], args: AgentRequests["args"] = {}, waitMs?: number, deadline = clock.now() + 24_000, grantId = "grant-a", agent?: string) =>
+    tools.run({ operation: "requests", tool, args, grantId, ...(agent ? { agent } : {}), ...(waitMs === undefined ? {} : { waitMs }) }, () => true, deadline);
   const value = async (pending: ReturnType<typeof run>) => { const result = await pending; assert.equal(result.ok, true, JSON.stringify(result)); return (result as { value: any }).value; };
   const ask = (request: AgentRequest) => { kept.set(request.id, request); tools.notify(); };
   return { clock, kept, tools, run, value, ask, writes: () => writes, reads: () => reads };
@@ -170,8 +171,17 @@ test("reply_to_request and get_selection(request) run the hub's rules on this br
   const b = browser();
   b.ask(asked("req-a"));
   await b.value(b.run("wait_for_requests", {}, 0));
-  assert.deepEqual(await b.value(b.run("reply_to_request", { request: "req-a", status: "question", message: "Bold?", requestIds: ["e-1"] })), { id: "req-a", state: "question" });
+  assert.deepEqual(await b.value(b.run("reply_to_request", { request: "req-a", status: "question", message: "Bold?", requestIds: ["e-1"] }, undefined, undefined, "grant-a", "Image finder")), { id: "req-a", state: "question" });
+  // Who asked is kept for its presence (ticket am-11); agents read the reply without it.
+  assert.deepEqual(b.kept.get("req-a")!.reply?.by, { grant: "grant-a", name: "Image finder" });
   const found = await b.value(b.run("get_request", { request: "req-a" }));
+  assert.equal(found.reply.by, undefined);
+  assert.equal(found.reply.message, "Bold?");
+  // A reply naming no one (the Worker had no client name either): its connection alone, shown as "Agent".
+  b.ask(asked("req-unnamed"));
+  await b.value(b.run("wait_for_requests", {}, 0));
+  await b.value(b.run("reply_to_request", { request: "req-unnamed", status: "question", message: "Which?" }));
+  assert.deepEqual(b.kept.get("req-unnamed")!.reply?.by, { grant: "grant-a", name: "" });
   assert.deepEqual(found.thread.map((item: { from: string; text: string }) => [item.from, item.text]), [["user", "Change req-a"], ["agent", "Bold?"]]);
   assert.equal(found.element.html, "<h1>Hi</h1>");
   b.kept.set("req-a", { ...b.kept.get("req-a")!, state: "dismissed" });
@@ -181,6 +191,178 @@ test("reply_to_request and get_selection(request) run the hub's rules on this br
   assert.equal((await b.run("get_request", { request: "req-none" })).ok, false);
   b.kept.set("req-other", asked("req-other", { branch: "other" }));
   assert.equal((await b.run("get_request", { request: "req-other" })).ok, false, "another branch's request");
+});
+
+test("a pin is a conversation (am-13): the first agent to take it is on it, and a follow-up on a done request reopens it for that agent first", async () => {
+  const b = browser();
+  const ids = (value: { requests: AgentRequest[] }) => value.requests.map(item => item.id);
+  b.ask(asked("req-pin"));
+  // Copy editor takes it first: it is on it; another connection's agent also gets it, but does not take it over.
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"))), ["req-pin"]);
+  assert.deepEqual(b.kept.get("req-pin")!.agent, { grant: "grant-a", name: "Copy editor" });
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-b", "Image finder"))), ["req-pin"]);
+  assert.deepEqual(b.kept.get("req-pin")!.agent, { grant: "grant-a", name: "Copy editor" });
+  await b.value(b.run("reply_to_request", { request: "req-pin", status: "done", message: "Shorter now." }, undefined, undefined, "grant-a", "Copy editor"));
+  const done = b.kept.get("req-pin")!;
+  assert.equal(done.state, "done");
+  assert.equal(done.thread!.at(-1)!.name, "Copy editor", "the card names who replied");
+  // The user follows up on the done request: it waits again, held for Copy editor's connection.
+  const followed = answerRequest([structuredClone(done)], "req-pin", "And add a third one", b.clock.now());
+  assert.equal(followed.accept(done), true);
+  b.ask(followed.request);
+  assert.equal(b.kept.get("req-pin")!.state, "open");
+  assert.equal(b.kept.get("req-pin")!.heldUntil, b.clock.now() + FOLLOW_UP_HOLD_MS);
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-b", "Image finder"))), [], "another connection waits its turn");
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests", { all: true }, 0, undefined, "grant-b", "Image finder"))), [], "with all too");
+  const again = await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Watchdog"));
+  assert.deepEqual(ids(again), ["req-pin"]);
+  assert.deepEqual(again.requests[0].thread.map((item: { text: string }) => item.text), ["Change req-pin", "Shorter now.", "And add a third one"]);
+  assert.equal("agent" in again.requests[0] || "heldUntil" in again.requests[0], false, "agents read no editor bookkeeping");
+  const kept = b.kept.get("req-pin")!;
+  assert.equal(kept.state, "seen");
+  assert.deepEqual(kept.agent, { grant: "grant-a", name: "Copy editor" }, "the same agent stays on it, in its colour");
+  assert.equal(kept.heldUntil, undefined);
+});
+
+test("a follow-up on a waiting request (no reply yet) is taken; one held for a gone agent goes to any connection after the hold", async () => {
+  const b = browser();
+  const ids = (value: { requests: AgentRequest[] }) => value.requests.map(item => item.id);
+  b.ask(asked("req-wait"));
+  const waiting = answerRequest([structuredClone(b.kept.get("req-wait")!)], "req-wait", "Keep it short", b.clock.now());
+  assert.equal(waiting.request.state, "open");
+  assert.equal(waiting.request.heldUntil, undefined, "no agent on it: nothing held");
+  assert.deepEqual(waiting.request.thread!.map(item => item.from), ["user", "user"]);
+  b.ask(waiting.request);
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"));
+  await b.value(b.run("reply_to_request", { request: "req-wait", status: "answered", message: "Nothing to change." }, undefined, undefined, "grant-a", "Copy editor"));
+  const followed = answerRequest([structuredClone(b.kept.get("req-wait")!)], "req-wait", "Try again", b.clock.now());
+  b.ask(followed.request);
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-b", "Image finder"))), []);
+  b.clock.advance(FOLLOW_UP_HOLD_MS);
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-b", "Image finder"))), ["req-wait"]);
+  assert.deepEqual(b.kept.get("req-wait")!.agent, { grant: "grant-b", name: "Image finder" }, "the agent that took it over is on it");
+  // A dismissed request takes no follow-up.
+  b.kept.set("req-wait", { ...b.kept.get("req-wait")!, state: "dismissed" });
+  assert.throws(() => answerRequest([structuredClone(b.kept.get("req-wait")!)], "req-wait", "More"), /dismissed/);
+});
+
+test("a follow-up while an agent works on a request (am-13): its reply to what came before is refused, and its next wait returns the follow-up", async () => {
+  const b = browser();
+  const ids = (value: { requests: AgentRequest[] }) => value.requests.map(item => item.id);
+  b.ask(asked("req-x"));
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"));
+  const followed = answerRequest([structuredClone(b.kept.get("req-x")!)], "req-x", "more", b.clock.now());
+  b.ask(followed.request);
+  const refused = await b.run("reply_to_request", { request: "req-x", status: "done", message: "Done." }, undefined, undefined, "grant-a", "Copy editor");
+  assert.equal(refused.ok, false);
+  assert.match((refused as { message: string }).message, /added to this request since you last read it.*get_selection/);
+  assert.equal(b.kept.get("req-x")!.state, "open", "nothing recorded");
+  const again = await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"));
+  assert.deepEqual(ids(again), ["req-x"]);
+  assert.equal(again.requests[0].thread.at(-1).text, "more");
+  assert.deepEqual(await b.value(b.run("reply_to_request", { request: "req-x", status: "done", message: "Did both." }, undefined, undefined, "grant-a", "Copy editor")), { id: "req-x", state: "done" });
+  // A fresh request nobody added to still takes a reply straight away.
+  b.ask(asked("req-fresh"));
+  assert.equal((await b.run("reply_to_request", { request: "req-fresh", status: "answered", message: "Nothing to do." })).ok, true);
+});
+
+test("a wait on another connection held while a request is held for its agent looks again as the hold ends, not 25 s on", async () => {
+  const b = browser();
+  b.ask(asked("req-h"));
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"));
+  await b.value(b.run("reply_to_request", { request: "req-h", status: "done", message: "Done." }, undefined, undefined, "grant-a", "Copy editor"));
+  b.clock.advance(1000);
+  b.ask(answerRequest([structuredClone(b.kept.get("req-h")!)], "req-h", "more", b.clock.now()).request);
+  b.clock.advance(FOLLOW_UP_HOLD_MS - 5000);
+  const pending = b.run("wait_for_requests", {}, 25_000, b.clock.now() + 25_000, "grant-b", "Image finder");
+  await settle(); await settle();
+  assert.equal(b.tools.holding, 1);
+  assert.deepEqual([...b.clock.timers.values()].map(timer => timer.at), [b.kept.get("req-h")!.heldUntil], "held until the hold ends");
+  b.clock.advance(5000);
+  const value = await b.value(pending);
+  assert.deepEqual(value.requests.map((item: AgentRequest) => item.id), ["req-h"]);
+});
+
+test("a watchdog takes requests for the agents that do the work (am-13): the first to read one by its id is on its pin", async () => {
+  const b = browser();
+  b.ask(asked("req-w"));
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Watchdog"));
+  // Taken: the watchdog is on it until an agent reads it.
+  assert.deepEqual(b.kept.get("req-w")!.agent, { grant: "grant-a", name: "Watchdog" });
+  assert.equal(b.kept.get("req-w")!.agentTook, true);
+  const read = await b.value(b.run("get_request", { request: "req-w" }, undefined, undefined, "grant-a", "Copy editor"));
+  assert.equal("agentTook" in read || "readBy" in read || "agent" in read, false, "agents read no editor bookkeeping");
+  assert.deepEqual(b.kept.get("req-w")!.agent, { grant: "grant-a", name: "Copy editor" }, "its pin and colour are Copy editor's (agent-presence pins its outline)");
+  assert.equal(b.kept.get("req-w")!.agentTook, undefined);
+  // A second reader does not take it over.
+  await b.value(b.run("get_request", { request: "req-w" }, undefined, undefined, "grant-a", "Link checker"));
+  assert.deepEqual(b.kept.get("req-w")!.agent, { grant: "grant-a", name: "Copy editor" });
+  await b.value(b.run("reply_to_request", { request: "req-w", status: "done", message: "Done." }, undefined, undefined, "grant-a", "Copy editor"));
+  assert.deepEqual(b.kept.get("req-w")!.agent, { grant: "grant-a", name: "Copy editor" });
+});
+
+test("a stale reply after the watchdog took the follow-up (am-13): refused until the agent reads it", async () => {
+  const b = browser();
+  b.ask(asked("req-s"));
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Watchdog"));
+  await b.value(b.run("get_request", { request: "req-s" }, undefined, undefined, "grant-a", "Copy editor"));
+  // The user follows up while Copy editor works; the watchdog's held wait takes it at once (seen again).
+  b.ask(answerRequest([structuredClone(b.kept.get("req-s")!)], "req-s", "more", b.clock.now()).request);
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Watchdog"));
+  assert.equal(b.kept.get("req-s")!.state, "seen");
+  assert.deepEqual(b.kept.get("req-s")!.agent, { grant: "grant-a", name: "Copy editor" }, "its connection keeps Copy editor on it");
+  // Copy editor replies to the first instruction, the follow-up unread: refused, nothing recorded.
+  const stale = await b.run("reply_to_request", { request: "req-s", status: "done", message: "Done." }, undefined, undefined, "grant-a", "Copy editor");
+  assert.equal(stale.ok, false);
+  assert.match((stale as { message: string }).message, /since you last read it/);
+  assert.equal(b.kept.get("req-s")!.state, "seen");
+  // Read, then answered: done, its thread ending with the reply.
+  const read = await b.value(b.run("get_request", { request: "req-s" }, undefined, undefined, "grant-a", "Copy editor"));
+  assert.equal(read.thread.at(-1).text, "more");
+  await b.value(b.run("reply_to_request", { request: "req-s", status: "done", message: "Did both." }, undefined, undefined, "grant-a", "Copy editor"));
+  assert.equal(b.kept.get("req-s")!.state, "done");
+  assert.equal(b.kept.get("req-s")!.readBy, undefined);
+});
+
+test("two agents reading one request at once (am-13): the read whose save lost reads again, and its reply is accepted", async () => {
+  const clock = manualClock();
+  const kept = new Map<string, AgentRequest>();
+  // Another agent's read lands just before this one's save, once.
+  let interfere: (() => void) | undefined;
+  const tools = createRequestTools({
+    workspace, now: clock.now, clock,
+    list: async () => [...kept.values()].map(item => structuredClone(item)),
+    save: async (request, accept) => {
+      const other = interfere;
+      interfere = undefined;
+      other?.();
+      if (!accept(kept.get(request.id))) return false;
+      kept.set(request.id, structuredClone(request)); return true;
+    },
+  });
+  const run = (tool: AgentRequests["tool"], args: AgentRequests["args"], agent: string) =>
+    tools.run({ operation: "requests", tool, args, grantId: "grant-a", agent }, () => true, clock.now() + 24_000);
+  kept.set("req-r", asked("req-r", { state: "seen", agent: { grant: "grant-a", name: "Copy editor" }, readBy: [] }));
+  interfere = () => { const stored = kept.get("req-r")!; kept.set("req-r", { ...stored, readBy: [...stored.readBy!, JSON.stringify(["grant-a", "Link checker"])] }); };
+  assert.equal((await run("get_request", { request: "req-r" }, "Copy editor")).ok, true);
+  assert.deepEqual(kept.get("req-r")!.readBy, [JSON.stringify(["grant-a", "Link checker"]), JSON.stringify(["grant-a", "Copy editor"])], "both reads kept");
+  assert.equal((await run("reply_to_request", { request: "req-r", status: "done", message: "Done." }, "Copy editor")).ok, true);
+});
+
+test("a follow-up whose hold ran out, taken by another connection's watchdog (am-13): the original agent reading it is on it again and replies", async () => {
+  const b = browser();
+  b.ask(asked("req-o"));
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-a", "Copy editor"));
+  await b.value(b.run("reply_to_request", { request: "req-o", status: "done", message: "Done." }, undefined, undefined, "grant-a", "Copy editor"));
+  b.ask(answerRequest([structuredClone(b.kept.get("req-o")!)], "req-o", "more", b.clock.now()).request);
+  b.clock.advance(FOLLOW_UP_HOLD_MS);
+  await b.value(b.run("wait_for_requests", {}, 0, undefined, "grant-b", "Watchdog"));
+  assert.deepEqual(b.kept.get("req-o")!.agent, { grant: "grant-b", name: "Watchdog" });
+  assert.equal(b.kept.get("req-o")!.agentTook, true, "the watchdog only took it: its pin names no one yet");
+  await b.value(b.run("get_request", { request: "req-o" }, undefined, undefined, "grant-a", "Copy editor"));
+  assert.deepEqual(b.kept.get("req-o")!.agent, { grant: "grant-a", name: "Copy editor" });
+  assert.equal(b.kept.get("req-o")!.agentTook, undefined);
+  assert.deepEqual(await b.value(b.run("reply_to_request", { request: "req-o", status: "done", message: "Did more." }, undefined, undefined, "grant-a", "Copy editor")), { id: "req-o", state: "done" });
 });
 
 function relayFixture() {
@@ -377,7 +559,8 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   assert.doesNotMatch(prompt, /while :|run this loop|curl -s|Watch/);
   assert.match(prompt, /1\. Initialize the MCP connection and call `get_site`\./);
   assert.match(prompt, /2\. Start a "watchdog" subagent that keeps calling `wait_for_requests` \(each call waits up to 25 seconds\) and reports each request it returns back to you, the main thread\./);
-  assert.match(prompt, /3\. For each request the watchdog reports, make the change as an unsaved editor draft and answer it with `reply_to_request`/);
+  // Ticket am-14: it shows where it works, and checks its change with a picture.
+  assert.match(prompt, /3\. For each request the watchdog reports, show me where you work with `working_here`, make the change as an unsaved editor draft, check how it looks with `screenshot_preview` \(also `width: "phone"`\), and answer it with `reply_to_request`/);
   assert.match(prompt, /Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token\./);
   assert.match(prompt, /Keep the token in memory; never save it or repeat it in responses\./);
   assert.match(prompt, /Give it the server and token in its instructions only\./);
@@ -387,6 +570,18 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   // A task comes before the requests, the watchdog still running.
   const task = connectionPrompt("https://editor.example/mcp", "ase_token", "lex/site", "Build the site.");
   assert.match(task, /\n3\. Build the site\.\n4\. For each request the watchdog reports/);
+  // Ticket am-16: the helper's start command, on this connection, only when the user asks for it.
+  assert.match(prompt, /If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog: `EDITOR_HELPER_TOKEN=ase_token npx -y @techiesreviews\/editor-helper@0\.1\.0 https:\/\/editor\.example\/mcp`/);
+  // A background job of the conversation ends with it: the helper starts detached, or the user runs it themselves.
+  // Each detached form carries the token itself: systemd-run passes no environment, and nohup runs env, which sets it.
+  const detached = helperDetached("https://editor.example/mcp", "ase_token");
+  assert.equal(detached.systemd, 'systemd-run --user --collect --unit editor-helper --setenv=EDITOR_HELPER_TOKEN=ase_token --setenv=PATH="$PATH" "$(command -v npx)" -y @techiesreviews/editor-helper@0.1.0 https://editor.example/mcp');
+  assert.equal(detached.nohup, "nohup env EDITOR_HELPER_TOKEN=ase_token npx -y @techiesreviews/editor-helper@0.1.0 https://editor.example/mcp >/dev/null 2>&1 &");
+  assert.ok(prompt.includes(`on Linux run \`${detached.systemd}\` (stop it with \`systemctl --user stop editor-helper\`), elsewhere \`${detached.nohup}\`. Check a few seconds later that it still runs`));
+  assert.match(prompt, /If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me: the one time you repeat the token\./);
+  // Lex removed the menu's "Pins go to" (2026-10-30): the default command starts Claude Code.
+  assert.match(prompt, /For each pin the helper starts Claude Code, until Disconnect MCP\.`?$/);
+  assert.equal(helperCommand("https://e.example/mcp", "ase_x"), "EDITOR_HELPER_TOKEN=ase_x npx -y @techiesreviews/editor-helper@0.1.0 https://e.example/mcp");
 });
 
 test("a wake while a wait is still reading is not lost: no hold, no timer", async () => {

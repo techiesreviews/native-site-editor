@@ -49,8 +49,9 @@ const cases: Record<FrameMessage["type"], Case> = {
   },
   "canvas-clear": { valid: {}, malformed: [] },
   "pin-rects": {
-    valid: { rects: [{ id: "a", rect }, { id: "b", rect: { top: 1 } }, { rect }] },
-    read: { rects: [{ id: "a", rect }, { id: "b", rect: null }] },
+    // A pin's element tells the top of what stands just above it (am-45): kept only when above its own top.
+    valid: { rects: [{ id: "a", rect }, { id: "b", rect: { top: 1 } }, { rect }, { id: "c", rect: { ...rect, clear: rect.top - 20 } }, { id: "d", rect: { ...rect, clear: rect.top } }] },
+    read: { rects: [{ id: "a", rect }, { id: "b", rect: null }, { id: "c", rect: { ...rect, clear: rect.top - 20 } }, { id: "d", rect }] },
     malformed: [{ rects: { id: "a" } }],
   },
   "drop-containers": {
@@ -65,6 +66,11 @@ const cases: Record<FrameMessage["type"], Case> = {
     malformed: [{ id: NaN }, { report: {} }, { report: { facts: [] } }, { report: { facts: [{ viewport: 390 }] } }],
   },
   "inspect-result": { valid: { id: 7, report: { found: 1 } }, malformed: [] },
+  "picture-result": {
+    valid: { id: 6, report: { data: "UklGRg==", mimeType: "image/webp", width: 390, height: 844, viewport: 390 } },
+    malformed: [{ id: -1 }, { report: { data: 1, mimeType: "image/webp", width: 390, height: 844, viewport: 390 } },
+      { report: { data: "x", mimeType: "text/html", width: 390, height: 844, viewport: 390 } }, { report: { data: "x", mimeType: "image/png", width: 0, height: 1, viewport: 390 } }],
+  },
   ack: { valid: { id: 9 }, malformed: [] },
   ready: { valid: { load: "2" }, malformed: [{ load: 2 }] },
   error: { valid: { message: "Bad define" }, malformed: [{ message: undefined }] },
@@ -129,6 +135,7 @@ const cases: Record<FrameMessage["type"], Case> = {
   shortcut: { valid: { name: "palette" }, malformed: [{ name: 1 }] },
   "refusal-note-action": { valid: {}, malformed: [] },
   "media-ended": { valid: { id: 4 }, malformed: [{ id: "4" }, { id: 1.5 }, { id: undefined }] },
+  "agent-chip-undo": { valid: { token: "agent-1", change: "mcp-1" }, malformed: [{ token: 4 }, { change: undefined }, { token: "k".repeat(41) }, { change: "c".repeat(201) }] },
 };
 
 const message = (type: string, fields: Record<string, unknown>) => ({ source: FRAME_SOURCE, type, context, ...fields });

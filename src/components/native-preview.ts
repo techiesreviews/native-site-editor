@@ -21,6 +21,7 @@ import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../../sha
 import { withSlottedRules } from "../../shared/slotted-css";
 import type { NativeCascade, NativeSelectedRule } from "../style-cascade";
 import { watchEditorTheme } from "../theme";
+import { AGENT_COLOURS, createChipUndo, type AgentMark, type ChipUndoOffer } from "../agent-presence";
 import type { AddPanelHandlers } from "../page-builder/add-panel";
 import { createPageBuilder } from "../page-builder/page-builder";
 import type { DraggedBlock, DropTarget } from "../page-builder/drop-target";
@@ -56,6 +57,8 @@ import "./native-preview.css";
 // /assets/ URL in the build, cached as immutable.
 // The URL is absolute so the about:srcdoc frame needs no base URL.
 const RUNTIME_URL = new URL("./native-preview-runtime.js", import.meta.url).href;
+// The page picture (src/agent-picture.ts), bundled the same way; only a picture's measuring frame loads it.
+const PICTURE_URL = new URL("../agent-picture.ts", import.meta.url).href;
 // A tab opened before a deploy asks for the previous hash, which is gone: the
 // sandboxed frame's failed <script> never reaches the parent, so the host
 // waits this long for `ready` once the frame is attached and then treats it
@@ -71,7 +74,7 @@ const RUNTIME_DOC = `<!doctype html>
 <meta name="ase-frame-load" content="__FRAME_LOAD__" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Native preview</title>
-<script src="${RUNTIME_URL}" defer></script>
+<script src="${RUNTIME_URL}" data-picture="${PICTURE_URL}" defer></script>
 </head>
 <body><div id="root" data-key="root"><div id="page" data-key="page"></div></div></body>
 </html>`;
@@ -262,6 +265,12 @@ export interface NativePreviewHandlers {
   // A request to agents dismissed from its pin, and the user's answer to an agent's question.
   onDismissRequest?: (id: string) => void;
   onAnswerRequest?: (id: string, text: string) => Promise<void>;
+  // The user's Undo of an agent's changes from a done pin's card, and whether they can be undone now (ticket am-15).
+  onUndoChanges?: (ids: string[], grant: string | undefined) => Promise<void>;
+  undoChangesState?: (ids: string[], grant: string | undefined) => "ready" | "undone" | undefined;
+  // The same Undo on an agent's chip, for its latest change to the page it shows on, and whether it is offered (ticket am-49).
+  onUndoAgentChip?: (mark: AgentMark, change: string) => Promise<void>;
+  agentChipUndoState?: (mark: AgentMark) => ChipUndoOffer | undefined;
   // Grids of repeated items: what each is and how to add to it (src/components/card-grid-controls.ts),
   // and the grids under the pointer and around the selection whenever they change.
   cards?: CardGridHandlers;
@@ -416,11 +425,34 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // The runtime draws its hover and selection boxes in the editor's color.
   let previewFocus = "";
   let componentColor = "";
-  let presenceColor = "";
-  const postTheme = () => link.send({ type: "theme", focus: previewFocus, component: componentColor, presence: presenceColor });
-  // An agent working on a section of the page shown (ticket 33): drawn as its presence box, sent again to a new document.
-  let agentPresence: { request: NativeNodeRequest; name: string } | undefined;
-  const postPresence = () => link.send({ type: "agent-presence", request: agentPresence?.request ?? null, name: agentPresence?.name ?? "" });
+  // The agents' colours in order of arrival, and a question's orange (src/agent-presence.ts).
+  let agentColors: string[] = [];
+  let questionColor = "";
+  const postTheme = () => link.send({ type: "theme", focus: previewFocus, component: componentColor });
+  // The agents working on sections of the site's pages (tickets 33, am-11): each drawn as its presence box on the page shown, sent again to a new document.
+  let agentMarks: readonly AgentMark[] = [];
+  // The chips' Undo (ticket am-49): what each offers, the press under way and a refusal said on the chip.
+  const chipUndo = createChipUndo({
+    offer: mark => handlers.agentChipUndoState?.(mark),
+    ...(handlers.onUndoAgentChip ? { undo: handlers.onUndoAgentChip } : {}),
+    changed: () => { if (frameState.ready) postPresence(false); },
+  });
+  // `again` false: sent only when it differs from the last sent (drafts changed, which may change a chip's Undo).
+  let presenceSent = "";
+  const postPresence = (again = true) => {
+    const agents = agentMarks.flatMap(mark => {
+      const color = agentColors[mark.colour] ?? "", chip = mark.asking ? questionColor : color;
+      // An agent working through a pin here has its name on the pin, not on its outline (ticket am-13).
+      if (!mark.node || !color || !chip) return [];
+      // An earlier version shown (History) offers no Undo: the change is the latest version's.
+      const undo = viewing ? undefined : chipUndo.fields(mark);
+      return [{ request: { path: mark.path, node: [...mark.node] }, name: mark.name, color, chip, ...(mark.pinned ? { bare: true as const } : {}), ...undo }];
+    });
+    const key = JSON.stringify(agents);
+    if (!again && key === presenceSent) return;
+    presenceSent = key;
+    link.send({ type: "agent-presence", agents });
+  };
   // The component whose template is open: its instances show outlined.
   let focusTag = "";
   const postFocus = () => {
@@ -491,6 +523,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         if (!handlers.onAnswerRequest) throw new Error("No agent is connected.");
         await handlers.onAnswerRequest(id, text);
       },
+      ...(handlers.onUndoChanges ? { onUndo: (_id: string, ids: string[], grant: string | undefined) => handlers.onUndoChanges!(ids, grant),
+        undoState: (ids: string[], grant: string | undefined) => handlers.undoChangesState?.(ids, grant) } : {}),
       onShowPage: (target) => void followRoute(target),
       onShowElement: (id) => link.send({ type: "show-pin", id }),
       onLayout: () => editBar.refit(),
@@ -613,8 +647,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const stopTheme = watchEditorTheme(({ colors }) => {
     previewFocus = colors["preview-focus"];
     componentColor = colors.component;
-    presenceColor = colors["agent-presence"];
-    if (frameState.ready) postTheme();
+    agentColors = AGENT_COLOURS.map(token => colors[token]);
+    questionColor = colors["agent-question-strong"];
+    if (frameState.ready) { postTheme(); postPresence(); }
   });
   // A load/site failure (frame hidden) outranks a transient runtime error
   // (banner only), so runtime "clear-error" must not wipe a hard load error.
@@ -781,6 +816,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   link.on("dismiss-context-menu", () => handlers.onDismissContextMenu?.());
   link.on("shortcut", (message) => handlers.onShortcut?.(message.name));
   link.on("refusal-note-action", () => handlers.onRefusalNoteAction?.());
+  link.on("agent-chip-undo", (message) => { if (!viewing) void chipUndo.press(agentMarks, message.token, message.change); });
   link.on("media-ended", (message) => handlers.onMediaEnded?.(message.id));
   link.on("slot-ghosts", (message) => {
     const report = site && frameState.active && !viewing && readSlotGhostReport(message.report,
@@ -1098,6 +1134,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       schedule();
       pageBuilder.sourcesChanged();
       cardGrids?.sourcesChanged();
+      // An agent chip's Undo reads the drafts: Undone once its change is put back, offered again once that is undone.
+      if (input.sources && agentMarks.length && frameState.ready) postPresence(false);
     },
     /**
      * Select an element of the rendered page now and bring it into the
@@ -1173,6 +1211,21 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!answer) throw new Error("The preview did not answer. Keep the editor tab visible and try again.");
       return answer.report;
     },
+    /**
+     * A picture of the page `path` shows, for an agent (ticket am-14): drawn in a hidden frame `width` × `height`
+     * (none: the preview's own size, as the user sees it), of its element `node` (none: the first screen). After any
+     * pending render, once the preview shows that page (it was just opened: at most 1.5 s). Its waits stay within the
+     * relay's ten seconds for the whole command (worker/agent-relay.ts), opening the page included: 1.5 s, then 5.5 s.
+     */
+    async picture(request: { path: string; width?: number; height?: number; node?: number[] }) {
+      for (let wait = 0; wait < 15 && site?.routes[route] !== request.path; wait++) await new Promise((resolve) => setTimeout(resolve, 100));
+      if (!frameState.active || !site || !frameState.ready || site.routes[route] !== request.path) throw new Error("The preview is not showing the page yet. Try again in a moment.");
+      if (rafHandle) await new Promise((resolve) => requestAnimationFrame(resolve));
+      const answer = await link.ask({ type: "picture", request }, 5500);
+      if (!answer) throw new Error("The preview did not answer. Keep the editor tab visible and try again.");
+      if ("error" in answer.report) throw new Error(answer.report.error);
+      return answer.report;
+    },
     paintedSource(path: string) { return site?.routes[route] === path ? link.painted()?.[path] : undefined; },
     /** Measure a rendered image without resizing the visible preview. */
     async measureImage(request: NativeNodeRequest & { image?: { width: number; height: number }; slot?: string; style?: string }, expectedSource?: string) {
@@ -1209,11 +1262,13 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (frameState.active) link.send({ type: "select-parent" });
     },
     /**
-     * An agent working on the element at `request` (ticket 33): its outline in the agent's colour with
-     * the `name` chip on its corner, drawn while that page is shown; undefined ends it. Never a click target.
+     * The agents at work (tickets 33, am-11): each one's outline on its element in its colour, with its name
+     * chip on the corner (orange while it asks), drawn while that page is shown; none ends them. Only the chip's Undo
+     * (ticket am-49) is a click target.
      */
-    agentPresence(request: NativeNodeRequest | undefined, name = "Agent") {
-      agentPresence = request ? { request: { path: request.path, node: [...request.node] }, name } : undefined;
+    agentPresence(marks: readonly AgentMark[]) {
+      agentMarks = marks;
+      chipUndo.marks(marks);
       if (frameState.ready) postPresence();
     },
     /** The next selection of this element (a block just inserted or moved) flashes. */
@@ -1280,6 +1335,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         cardGrids?.clear();
         postClearSelection();
       }
+      // The chips' Undo goes with an earlier version shown and comes back with the latest.
+      if (frameState.ready) postPresence(false);
     },
     /** The top bar's "+ Add" opens the Add panel (src/page-builder/add-panel.ts). */
     attachAddButton(addButton: HTMLButtonElement) {
@@ -1369,8 +1426,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       // Parks the pane and reloads its frame: the pane never leaves the host.
       if (!frameState.deactivate()) return;
       endPress();
-      // Every deactivation comes with a new load (nextLoad, just before or after it), which clears the agent's presence (src/agent-presence.ts).
-      agentPresence = undefined;
+      // The agents' marks stay for the new document (its `ready` sends them): every deactivation comes with a new load
+      // (nextLoad, just before or after it), which paints them again, cleared of what no longer holds (src/agent-presence.ts).
       site = undefined;
       shownRoute = undefined;
       editableTemplatePath = undefined;

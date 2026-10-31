@@ -1,0 +1,59 @@
+---
+title: "Reviewer notes and headings without a severity do not block a slice"
+type: task (AFK)
+status: closed
+assignee: ke-52
+builder: claude
+blocked_by: [17-second-look-per-kind]
+---
+
+## Goal
+
+`openFindings` in `scripts/agents/review-findings.mjs` turns every line under a Defects group into a finding, and a finding with no `P0`–`P3` gets `severity: null`. `kit pr` (`kit.d/pr:485`) and `kit slice` (`kit.d/slice:218`) treat every open finding as blocking (after the fix rounds, `blockingFindings` still keeps the ones with no severity, line 8), so reviewer prose stops a slice that has no real defect. It happened twice:
+
+1. **Slice 12** (PR #202): a Standards note saying no section applies was read as a defect and held the PR until a fresh review.
+2. **Slice 48** (PR #223, `.scratch/reviews/ke-48/20261027T194246Z` in the main checkout): the reviewer wrote the group as an italic `*Spec*` line. `clean` strips `**` and `__` but not a single `*` or `_`, so `*Spec*` became the finding `{ "group": "Defects", "severity": null, "text": "*Spec*" }` and stopped `kit pr`. The Standards prose line ("CODING_STANDARDS.md has no section for kit plumbing…") is the same kind.
+
+## Decided behaviour
+
+- A Defects line that names no `P0`–`P3` and does not start with a location (`LOCATION`, `review-findings.mjs:41`) is a note, not a finding: it is kept in `findings.json` under a `notes` count, never blocks, and is not sent to `kit fix`.
+- A line that does start with a location but names no severity still blocks (fail closed, as today), and so does an unreadable review.
+- Group headings written in single `*` or `_` emphasis (`*Spec*`, `_Standards_`) open their group like the bold and `#` forms.
+
+## Files
+
+- `scripts/agents/review-findings.mjs`
+- `tests/review-findings.test.ts`
+
+## Done when
+
+- Tests in `tests/review-findings.test.ts`, each failing before the fix: slice 48's `result.md` (copied as a fixture) gives two findings (its P2 and P3) and no `*Spec*`; a Standards group holding only "No section of CODING_STANDARDS.md applies to this change." gives no finding; `_Standards_` opens the Standards group; a located line with no severity still gives a blocking finding; `REVIEW_STATUS` missing still gives `review format unreadable`.
+- `scripts/agents/kit unit --affected` green, including `tests/kit-pr.test.ts`.
+
+## Kit commands and evidence
+
+Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). Kit and tests only.
+
+- `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke52 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/52-review-notes-do-not-block.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke52 --timeout 2h`. While building: `scripts/agents/kit unit --affected`.
+- Second look: as the README says.
+- Report: unit `RESULT:` lines, the findings for slice 48's review before and after, review decisions, PR and merge SHA.
+
+## Done (2026-10-28)
+
+- `openFindings` returns `{ findings, notes, readable }`. A Defects line (Spec, Standards or plain Defects) that names no `P0`–`P3` and does not start with a location is a note: it is not in `findings`, so it never blocks `kit pr` or `kit slice` and is left out of the open-findings list `kit fix` sends (the builder still reads the verbatim `result.md`). A line that names `P0`–`P3` anywhere, even past the 80-character severity window, stays a finding with severity none and blocks. A located line with no severity is still a blocking finding, and a review without `REVIEW_STATUS: complete` or a Defects heading is still `review format unreadable`.
+- `clean` also strips a leading single `*` or `_` emphasis, so `*Spec*`, `_Standards_` and `*Spec:* none` open their groups like the bold and `#` forms.
+- `findingsRecord` (findings.json) gains a `notes` count.
+- Slice 48's review, before: `*Spec*` (severity none, blocking), the P2, the P3 and 4 gaps. After: the P2, the P3 and 4 gaps, plus one Standards note ("CODING_STANDARDS.md has no section for kit plumbing…"); nothing blocks after the fix rounds.
+- Tests in `tests/review-findings.test.ts`: slice 48's `result.md` as the fixture `tests/fixtures/review-findings/ke-48-result.md`; a Standards group holding only "No section of CODING_STANDARDS.md applies to this change." (heading line, plain line, bullet) gives no finding and one note; `*Spec*`, `_Standards_` and `*Spec:*` open their groups; a located line with no severity, or an unlocated one naming `P1` past 80 characters, still blocks; a missing `REVIEW_STATUS` is still unreadable. Each fails on the old parser (the missing-`REVIEW_STATUS` one only through the new `notes` key, since that behaviour is unchanged).
+- Existing fixtures whose sample defects were bare prose ("A defect.", "Turn off can be undone.") now start with a location such as `a.ts:1`, so they still test grouping and blocking: in `tests/review-findings.test.ts`, `tests/kit-pr.test.ts` and `tests/kit-review.test.ts` (the last also expects `notes: 0`, and a prose-only review writes `notes: 1` with `findings 0`). `tests/kit-pr.test.ts` runs the slice 12 case end to end: a saved or fresh review whose Standards group holds only a no-section-applies sentence waits for CI and merges.
+- An unindented, unbulleted line in a Defects group that starts with a location starts its own item, so `a.ts:1 the guard is missing.` after a prose paragraph still blocks while the paragraph is a note. The single-emphasis cleaning only touches words (`*Spec*`, `_Standards:_`), so a path such as `_site/a.ts:1` keeps its location.
+- `tests/kit-slice.test.ts` gains a `CLEAN_REVIEW` hook in its fake reviewer and checks that a notes-only review runs no fix round and goes on to `kit pr`; `tests/kit-fix.test.ts` checks that a notes-only review is `ok fix clean` and that a round's open-findings list holds only the located defect while the verbatim review keeps the prose. `docs/agents/runner.md` says a line with no location and no P0–P3 is a note.
+- Outside the ticket's Files: the fixture, `tests/kit-pr.test.ts`, `tests/kit-review.test.ts`, `tests/kit-slice.test.ts`, `tests/kit-fix.test.ts` and `docs/agents/runner.md`; the ticket's `kit-pr.test.ts` check and the review's gaps needed them.
+- Feature list: no change (kit review parsing only; nothing in the editor changes).
+
+### Follow-ups
+
+- Spec (P2): 99093104b:scripts/agents/review-findings.mjs:144 — P2 fault: the new `located` split can turn one P2/P3 defect into an extra finding with no severity, and that finding blocks. This is the kind of false block the ticket was written to remove. The split runs for every unindented, unbulleted line in a Defects group that starts with a location. That includes a lazy continuation line under a bulleted defect. Take `Defects:\nSpec:\n- a.ts:1 — P2 fault: x\nb.ts:2 has the same bug.\n`. Before this change the second line joined the P2. Now line 145 flushes the P2, and `b.ts:2 has the same bug.` becomes its own finding. At line 88 it passes `LOCATION.test`, so it is kept as a finding, `classify` gives it severity `null`, and `blockingFindings` (line 9) keeps it after three fix rounds. A review whose only real defect is a P2 or P3 then stops `kit pr`/`kit slice`. Fix: split on a located line only when no bulleted item is pending (`located && (!pending || pending.indent < 0 || pending.isProse)`), or simpler, only when the pending item has no location and no severity, i.e. it would become a note. That keeps the ticket's "prose paragraph, then located defect" case (Done bullet 6) and stops a located defect's continuation lines from being split off.
+- Validation gaps (gap): `tests/review-findings.test.ts`: add `openFindings(review("Defects:\nSpec:\n- a.ts:1 — P2 fault: x\nb.ts:2 has the same bug.\nValidation gaps: none."))`. Assert one finding, `finding("Spec", "a.ts:1 — P2 fault: x b.ts:2 has the same bug.", "P2", "fault")`, and `blockingFindings(...)` equal to `[]`. This pins the defect above; today it gives two findings, and the second blocks.
+- Validation gaps (gap): `tests/kit-review.test.ts` or a `scoreReview` unit test in the kit-lib tests: feed `scoreReview` a folder that has a notes-only `result.md` and no `findings.json`. Assert the entry's `counts` are all zero and it is not `unreadable`. That fallback path (`scripts/agents/kit-lib.mjs:478`) now goes through the notes logic but has no test.
+

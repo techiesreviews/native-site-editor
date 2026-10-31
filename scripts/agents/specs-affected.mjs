@@ -1,6 +1,7 @@
 import { posix } from "node:path";
 import { createRequire } from "node:module";
 import { knownFailure } from "./suite-summary.mjs";
+import { GROUP_TAGS, specTestGroups } from "../spec-groups.mjs";
 
 // The repo's lint dependency supplies the compiler API (TypeScript 7 has none).
 const ts = createRequire(import.meta.url)("typescript-eslint-api");
@@ -43,8 +44,7 @@ function changedRoutes(diff) {
 
 export function specGroups(file, text) {
   if (file.startsWith("tests/native-preview/")) return ["native-preview"];
-  const groups = ["actual", "native-static"].filter(group => text.includes(`"@${group}"`));
-  return groups.length ? groups : ["default"];
+  return specTestGroups(text);
 }
 
 export function importsOf(text) {
@@ -294,6 +294,44 @@ export function namedSpecs(names, files) {
   return [...selected.values()].sort((a, b) => a.file.localeCompare(b.file));
 }
 
+/** Specs a ticket's text names (paths, relative links or basenames); unknown, ambiguous or glob names are skipped. */
+export function ticketSpecs(text, files) {
+  const found = new Map();
+  for (const [mention] of text.matchAll(/[\w./-]*\.spec\.ts\b/g)) {
+    // A link from a ticket under docs/ reaches tests/ through ../ segments.
+    const name = mention.replace(/^(?:\.{1,2}\/)+/, "");
+    try { for (const spec of namedSpecs([name], files)) found.set(spec.file, spec); } catch { /* Not a spec here. */ }
+  }
+  return [...found.values()].sort((a, b) => a.file.localeCompare(b.file));
+}
+
+export const BUILDER_SPEC_CAP = 20;
+// Within an affected selection that fits the cap, a builder keeps reasons in this order after named and direct specs.
+const BUILDER_REASON_RANK = { import: 2, fixture: 2, server: 2, "removed string": 3 };
+
+/** A builder's run, at most `cap` specs: the ticket's named specs, then specs that changed or import a changed
+ * file themselves. When the affected selection fits the cap, its other specs follow by reason; when it does not,
+ * they are left out. `left` counts the affected specs left for kit pr (a spec only the ticket names is not
+ * affected, so kit pr does not run it). */
+export function builderSpecs(selected, { files, changed, named = [], cap = BUILDER_SPEC_CAP }) {
+  const changes = new Set(changed), paths = new Set([...Object.keys(files), ...changed]);
+  const direct = spec => changes.has(spec.file)
+    || importsOf(files[spec.file] ?? "").some(value => changes.has(resolveImport(spec.file, value, paths)));
+  const rank = spec => spec.reasons.includes("named spec") ? 0 : direct(spec) ? 1
+    : Math.min(...spec.reasons.map(reason => BUILDER_REASON_RANK[reason.split(":")[0]] ?? 4));
+  const byFile = new Map(selected.map(spec => [spec.file, spec]));
+  for (const spec of named) {
+    const found = byFile.get(spec.file);
+    byFile.set(spec.file, found ? { ...found, reasons: ["named spec", ...found.reasons] } : spec);
+  }
+  const fits = selected.length <= cap;
+  const kept = [...byFile.values()].map(spec => ({ spec, rank: rank(spec) })).filter(({ rank }) => fits || rank <= 1)
+    .sort((a, b) => a.rank - b.rank || b.spec.reasons.length - a.spec.reasons.length || a.spec.file.localeCompare(b.spec.file))
+    .slice(0, cap).map(({ spec }) => spec).sort((a, b) => a.file.localeCompare(b.file));
+  const run = new Set(kept.map(spec => spec.file));
+  return { specs: kept, left: selected.filter(spec => !run.has(spec.file)).length };
+}
+
 export const SHARD_MIN_SPECS = 40;
 
 /** Greedy largest-first partitioning, with stable ties independent of input order. */
@@ -330,7 +368,9 @@ export function routeSpecs(specs, available = specs, { shards = 1, texts = {} } 
       const files = selected.map(spec => spec.file);
       const weights = Object.fromEntries(files.map(file => [file, Math.max(1, (texts[file] ?? "").match(/\btest(?:\.(?:only|skip|fixme|fail))?\s*\(/g)?.length ?? 0)]));
       const batches = group === "default" && files.length >= SHARD_MIN_SPECS ? planShards(files, shards, weights) : [files];
-      for (const files of batches) runs.push({ group, project, files, command: ["npx", "playwright", "test", `--project=${project}`, "--workers=1", ...files] });
+      // A native-save file can mix plain and tagged tests; its tagged ones run in their own groups.
+      const plain = project === "native-save" ? ["--grep-invert", GROUP_TAGS.map(tag => `@${tag}`).join("|")] : [];
+      for (const files of batches) runs.push({ group, project, files, command: ["npx", "playwright", "test", `--project=${project}`, ...plain, "--workers=1", ...files] });
     } else for (const spec of selected) {
       const name = posix.basename(spec.file);
       if (available.filter(other => other.file.startsWith("tests/native-save/") && other.groups.includes(group) && posix.basename(other.file).includes(name)).length !== 1) throw new Error(`ambiguous --spec filter: ${name}`);

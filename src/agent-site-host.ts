@@ -1,6 +1,7 @@
 import type { AgentReadFiles } from "./agent-tools-read";
+import type { AgentAtWork } from "../shared/agent-read";
 import type { AgentAwayPorts, AgentSiteActions, AgentSiteInput, SharedContext, agentStructuralActions } from "./agent-site";
-import type { AgentCommand } from "../shared/agent";
+import type { AgentCommand, AgentWho } from "../shared/agent";
 import type { SessionInfo } from "../shared/types";
 import { createGuardedEdits, type GuardedEdits, type Reads, type Stamp } from "./guarded-edit";
 import type { createMediaController, MediaControllerPorts, MediaPin } from "./controllers/media-controller";
@@ -34,10 +35,12 @@ export interface AgentSiteHostPorts {
   stamp(): Stamp;
   files?(): AgentReadFiles | undefined;
   source?(path: string): string | undefined;
-  load(): Promise<Pick<typeof import("./agent-site"), "buildAgentContext">>;
+  load(): Promise<Pick<typeof import("./agent-site"), "buildAgentContext" | "agentElementAt">>;
   input(): AgentSiteInput | undefined;
   /** The workspace shown, pinned for Media work (src/controllers/media-pin.ts). */
   mediaPin?(): MediaPin | undefined;
+  /** Who works on what (src/agent-presence.ts), which get_site tells. */
+  atWork?(): AgentAtWork[];
 }
 
 /** Agent waits belong to the repository they began on; the host supplies live inputs after loading. */
@@ -69,7 +72,8 @@ export function createAgentSiteHost(ports: AgentSiteHostPorts) {
     } };
   }
   function tools(build = context) {
-    return { stamp: () => ports.stamp(), context: build, pin: () => pin(build), files: () => ports.files?.(), source: (path: string) => ports.source?.(path) };
+    return { stamp: () => ports.stamp(), context: build, pin: () => pin(build), files: () => ports.files?.(), source: (path: string) => ports.source?.(path),
+      atWork: () => ports.atWork?.() ?? [] };
   }
   return { context, tools };
 }
@@ -89,7 +93,7 @@ export interface AgentCommandPorts {
   mediaController: ReturnType<typeof createMediaController>;
   mediaPorts: MediaControllerPorts;
   blockMoves: Pick<ReturnType<typeof createBlockMoves>, "move">;
-  agentPresence: Pick<ReturnType<typeof createAgentPresence>, "show">;
+  agentPresence: Pick<ReturnType<typeof createAgentPresence>, "show" | "begin" | "stopped">;
   /** The Pages & files host (src/pages-and-files-host.ts): `nativeResyncDone` and `pageActions` read at call time, the rest taken as it is made. */
   pagesAndFiles: Pick<PagesAndFiles, "nativeResyncDone" | "pageActions" | "loadPagesActions" | "loadFileOps" | "pagePorts" | "filePorts"
     | "branchText" | "pathNow" | "treeState" | "branchPathProblem" | "afterFileChanges"> & {
@@ -99,8 +103,10 @@ export interface AgentCommandPorts {
   api: ReturnType<typeof createGitHubReads>["api"];
   readonly info: SessionInfo;
   readonly componentTools: Pick<ComponentTools, "makeFromAgent" | "typingTemplate"> | undefined;
+  /** The component tools once they have loaded for the preview shown (src/workspace-mount.ts); undefined without one or once their load failed. Never rejects. */
+  loadComponentTools: () => Promise<Pick<ComponentTools, "makeFromAgent"> | undefined>;
   readonly pageStructure: { refreshMeta(): void } | undefined;
-  readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "isActive" | "inspect"> | undefined;
+  readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "isActive" | "inspect" | "picture"> | undefined;
   loadAgentSite: () => Promise<typeof import("./agent-site")>;
   draftScope: () => DraftScope | undefined;
   shownScope: () => WorkspaceScope | undefined;
@@ -113,6 +119,8 @@ export interface AgentCommandPorts {
   refreshNativeRoutes: () => void;
   updateCurrentPageLabel: () => void;
   updateAgentContext: () => void;
+  /** The agent changes this tab keeps (src/agent-changes.ts), loaded with the first agent command; a test may pass its own. */
+  loadChanges?: () => Promise<typeof import("./agent-changes")>;
 }
 
 /** An agent's commands, applied through the editor's own actions; `acting` while one runs (src/guarded-edit/commit.ts). */
@@ -133,8 +141,12 @@ export function createAgentCommands(ports: AgentCommandPorts) {
       throw new Error("The editor tab switched to another site meanwhile. Call get_site and try again.");
   }
   const agentSiteActions = makeAgentSiteActions();
+  // working_here's holds (src/agent-working-here.ts), loaded with the first.
+  // Kept once made, not as the import's promise: a failed chunk load is tried again by the next working_here.
+  let workingHere: ReturnType<typeof import("./agent-working-here").createWorkingHere> | undefined;
   function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false): AgentSiteActions { return {
-    makeComponent: async (request) => ports.componentTools?.makeFromAgent(request) ?? "The component tools are not ready.",
+    // The tools load after the first paint: an agent quicker than that waits for them.
+    makeComponent: async (request) => (await ports.loadComponentTools().catch(() => undefined))?.makeFromAgent(request) ?? "The component tools are not ready.",
     async text(path) {
       await awaitNativeResync();
       const scope = draftScope();
@@ -145,6 +157,10 @@ export function createAgentCommands(ports: AgentCommandPorts) {
     isMounted: (path) => Boolean(editorModule?.isMounted(path)),
     edits,
     atomicText: () => atomic,
+    shown: () => {
+      const scope = draftScope();
+      return scope && { scope, draft: path => draftStore().get(scope, path), openFile: appStore.openFile.value };
+    },
     loaderPlan: nativeComponentLoaderPlan,
     writeDraft: async (path, content, create, expected) => {
       if (!atomic && !runtime.site && !runtime.engaged && create) {
@@ -228,6 +244,10 @@ export function createAgentCommands(ports: AgentCommandPorts) {
       if (!ports.nativePreview?.isActive()) throw new Error("The preview is not showing a page.");
       return ports.nativePreview.inspect(request);
     },
+    picture(request) {
+      if (!ports.nativePreview?.isActive()) throw new Error("The preview is not showing a page.");
+      return ports.nativePreview.picture(request);
+    },
     async listMedia(request) {
       // The workspace shown as it was asked: listed from there whatever is shown by the time it is read (ticket 27).
       // With nothing to pin, the stamp taken before the chunk loads must hold.
@@ -249,7 +269,16 @@ export function createAgentCommands(ports: AgentCommandPorts) {
       return runAgentMedia(mediaController, mediaPorts, command, page, since);
     },
     legacy: applyAgentCommand,
-    presence: (path, find) => agentPresence.show(path, find),
+    presence: (path, find, who) => agentPresence.show(path, find, who),
+    workingHere: who => {
+      // The load shown as it arrives, before its code loads.
+      const at = agentPresence.begin();
+      return async (path, node) => {
+        const { createWorkingHere } = await import("./agent-working-here");
+        workingHere ??= createWorkingHere(agentPresence);
+        return workingHere.hold(who, at)(path, node);
+      };
+    },
   }; }
   async function applyAgentSiteCommand(command: AgentCommand) {
     const [{ applySiteCommand, applyStructural, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, holdWorkspace, retryProof, pinnedMedia, pinnedMediaActions, pinnedMediaAway }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
@@ -363,5 +392,31 @@ export function createAgentCommands(ports: AgentCommandPorts) {
       draft: path => draftStore().get(scope, path), mounted: path => at.holds() && path === appStore.openFile.value ? editorModule?.getMountedSource(path) : undefined,
       restore: path => restoreFile(path, at) });
   }
-  return { actions: agentSiteActions, apply: applyAgentSiteCommand, reload, acting: () => agentActingDepth > 0 };
+  // The agent changes this tab keeps for their undo (ticket am-15), loaded with the first agent command.
+  let changes: typeof import("./agent-changes") | undefined;
+  const loadChanges = async () => changes ??= await (ports.loadChanges?.() ?? import("./agent-changes"));
+  /** The user's Undo on a done pin's card: its agent's (connection `grant`) changes for it, newest first, put back as one step (src/agent-changes.ts). */
+  async function undo(ids: readonly string[], grant: string | undefined) {
+    // The workspace the click was in, taken before any wait.
+    const scope = draftScope(), { undoAgentChanges } = await loadChanges();
+    await undoAgentChanges(ids, grant, { scope, shown: draftScope, edits: guardedEdits, draft: (scope, path) => draftStore().get(scope, path), openFile: () => appStore.openFile.value });
+  }
+  /** Whether a pin's changes can be undone here now: "ready", "undone" (the files as before them), or neither. */
+  const undoable = (ids: readonly string[] | undefined, grant: string | undefined) => {
+    const scope = draftScope();
+    return scope && changes ? changes.undoState(scope, ids, path => draftStore().get(scope, path), grant) : undefined;
+  };
+  /** The user's Undo on an agent's chip (ticket am-49): the change `change` it offered, `who`'s latest to the page `page`, put back as the pin card's Undo does. */
+  async function undoLatest(who: AgentWho, page: string, change: string) {
+    // The workspace the press was in, taken before any wait.
+    const scope = draftScope(), { undoLatestChange } = await loadChanges();
+    await undoLatestChange(who, page, change, { scope, shown: draftScope, edits: guardedEdits, draft: (scope, path) => draftStore().get(scope, path), openFile: () => appStore.openFile.value });
+  }
+  /** What the chip offers now: `who`'s latest change to `page` and whether it is undone, as `undoable` tells it for that change. */
+  const latestUndoable = (who: AgentWho, page: string) => {
+    const scope = draftScope(), change = scope && changes?.latestChange(scope, who, page), state = change && undoable([change.id], who.grant);
+    return change && state ? { change: change.id, state } : undefined;
+  };
+  const apply = (command: AgentCommand) => { void loadChanges().catch(() => undefined); return applyAgentSiteCommand(command); };
+  return { actions: agentSiteActions, apply, reload, undo, undoable, undoLatest, latestUndoable, acting: () => agentActingDepth > 0 };
 }

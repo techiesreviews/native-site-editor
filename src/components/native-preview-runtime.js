@@ -4,6 +4,7 @@
 import { imageBreakpoints, imageViewports } from "../page-builder/image-sizes.ts";
 import { canvasPath, canvasRoute } from "./canvas-path.ts";
 import { FRAME_SOURCE, HOST_SOURCE } from "./preview-wire.ts";
+import { clearAbove } from "./agent-pin-geometry.ts";
 import { canvasGesture } from "../page-builder/rules/canvas-gesture.ts";
 import { hasHeadingSlot, isCardSlot, isCardTag, isItemsSlot } from "../page-builder/rules/cards.ts";
 import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts";
@@ -21,6 +22,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   var measurement = document.getElementById("ase-image-measure");
   if (measurement) { measureDocument(JSON.parse(measurement.textContent)); return; }
   var runtimeUrl = document.currentScript.src;
+  // The page picture's own script (native-preview.ts PICTURE_URL): only a picture's measuring frame loads it.
+  var pictureUrl = document.currentScript.dataset.picture;
   // The page and templates as the shared rules read them (rules/tree.ts):
   // the runtime's own injected styles are not there.
   var ruleView = domView(injectedStyle);
@@ -65,8 +68,14 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   // over it; preview only, like the selection boxes. So does an empty
   // Section or Div (a block just added), dashed, so a block can be dropped
   // into it (src/page-builder/block-drag.ts).
+  // An agent chip's Undo (ticket am-49, drawPresence): its press target reaches past its 16 px line, the chip's look
+  // unchanged (24 px tall, 44 px on a touch screen); its focus ring is in the chip's ink, and a press dims it.
   runtimeSheet.replaceSync("[data-native-empty]{display:none !important}[contenteditable]:focus{outline:none !important}#page main:not(:has(*)){min-height:min(480px,72vh)}" +
-    "#page main :is(section,div):empty{min-height:72px;outline:1.5px dashed rgba(127,127,127,.55);outline-offset:-2px}");
+    "#page main :is(section,div):empty{min-height:72px;outline:1.5px dashed rgba(127,127,127,.55);outline-offset:-2px}" +
+    "[data-native-chip-undo]{position:relative}[data-native-chip-undo]::before{content:'';position:absolute;inset:-4px}" +
+    "@media (pointer:coarse){[data-native-chip-undo]::before{inset:-14px -8px}}" +
+    "[data-native-chip-undo]:focus-visible{outline:2px solid currentColor;outline-offset:1px}" +
+    "[data-native-chip-undo]:active:not([aria-disabled=true]){opacity:.6}");
   // Subtle scrollbars for the frame's own viewport, only while the site
   // declares no scrollbar styling of its own (see siteStylesScrollbars). The
   // sheet is adopted first by the document alone, so its layer comes before
@@ -94,6 +103,31 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
 
   // A sandboxed frame's presses cannot bubble to the host's refusal note (typing here is left to its timeout).
   document.addEventListener("pointerdown", function () { emit("refusal-note-action"); }, true);
+  // An agent chip's Undo (ticket am-49, drawPresence below): heard here, before any of the canvas's own press, click,
+  // menu or key handling, which never sees it (it selects nothing, starts no drag, and Enter or Space on it is its click).
+  // Busy or Undone it is aria-disabled, not disabled, so it keeps the keyboard's focus: its presses do nothing then.
+  // A press begun on it and let go over the page is no press on the page either (the click then lands on what holds both).
+  // Abandoned (let go outside the frame, or cancelled), it blocks nothing after: it ends just after its release, on a
+  // cancel, and a click with no press of its own (Enter on a link, a script's click) is never one of its.
+  var chipPressed = false;
+  window.addEventListener("pointercancel", function () { chipPressed = false; }, true);
+  ["pointerdown", "pointerup", "mousedown", "mouseup", "click", "dblclick", "auxclick", "contextmenu", "keydown", "keyup"].forEach(function (type) {
+    window.addEventListener(type, function (e) {
+      var undo = e.target && e.target.closest ? e.target.closest("[data-native-chip-undo]") : null;
+      if (type === "pointerdown") chipPressed = !!undo;
+      if (type === "pointerup" && chipPressed) setTimeout(function () { chipPressed = false; }, 0);
+      if (!undo && chipPressed && (type === "pointerup" || type === "mouseup" || type === "click" && e.detail > 0)) {
+        e.stopImmediatePropagation();
+        if (type === "click") chipPressed = false;
+        return;
+      }
+      if (type === "click") chipPressed = false;
+      if (!undo || ((type === "keydown" || type === "keyup") && e.key !== "Enter" && e.key !== " ")) return;
+      e.stopImmediatePropagation();
+      if (type === "click" && e.button === 0 && undo.getAttribute("aria-disabled") !== "true")
+        emit("agent-chip-undo", { token: undo.getAttribute("data-native-chip-undo"), change: undo.getAttribute("data-native-chip-change") });
+    }, true);
+  });
 
   function reportError(message) {
     hadError = true;
@@ -1401,6 +1435,12 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       if (key === lastInsertPoints) return;
       lastInsertPoints = key;
       emit("insert-points", { path: String(state && state.pagePaths[state.route] || ""), points: points });
+      // Each "+" (24 px, with room for its ring) centred on its point, as src/components/insert-controls.ts draws it.
+      insertPluses = points.filter(function (point) { return !point.empty; }).map(function (point) {
+        var x = point.left + point.width / 2;
+        return { left: x - 14, right: x + 14, top: point.top - 14, bottom: point.top + 14 };
+      });
+      if (presenceAgents.length) drawPresence();
     });
   }
 
@@ -1834,10 +1874,13 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     for (var at = inner; at; at = at.parentElement || (at.parentNode && at.parentNode.host)) if (at === outer) return true;
     return false;
   }
-  // The selected element's rectangle, with the top inset the bar keeps clear of.
+  // The selected element's rectangle, with the top inset the bar keeps clear of, and (as a pin's) the top of
+  // what stands just above it, which Ask agent's note stands clear of as its pins do.
   function selectionRectOf(el) {
     var rect = rectOf(el);
     rect.inset = topInset(el);
+    var clear = clearAboveEl(el, rect);
+    if (clear !== undefined) rect.clear = clear;
     return rect;
   }
 
@@ -1943,6 +1986,15 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     }
     return el;
   }
+  // The top of what stands just above `el` (ticket am-45: an eyebrow line over a heading), from its earlier
+  // siblings, nearest first, measured only as far as the rule reads them: its pins stand clear of it.
+  function clearAboveEl(el, rect) {
+    // Headings only: an eyebrow stands over a heading; a run of paragraphs or items keeps each pin on its own element.
+    if (!/^H[1-6]$/.test(el.tagName)) return undefined;
+    return clearAbove(rect, (function* () {
+      for (var at = el.previousElementSibling; at; at = at.previousElementSibling) yield rectOf(at);
+    })());
+  }
   function schedulePins() {
     if (pinFrame || !pins.length && !lastPins) return;
     pinFrame = requestAnimationFrame(function () {
@@ -1950,6 +2002,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       var rects = pins.map(function (pin) {
         var el = locatePin(pin);
         var rect = el && el.isConnected ? rectOf(el) : null;
+        var clear = rect ? clearAboveEl(el, rect) : undefined;
+        if (clear !== undefined) rect.clear = clear;
         return { id: pin.id, rect: rect && (rect.width || rect.height) ? rect : null };
       });
       var key = JSON.stringify(rects);
@@ -2026,6 +2080,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   }
 
   function deepestElementFromPath(path, target, forHover) {
+    // The editor's own drawing (an agent chip's Undo, ticket am-49) is no element of the page.
+    if (path[0] instanceof Element && path[0].closest("[data-native-selection-box]")) return null;
     var inMode = editModeTarget(path);
     if (inMode !== undefined) return inMode;
     var from = 0;
@@ -3525,101 +3581,206 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
         }
       });
     }
-    function answer(report) { emit("image-measured", { id: config.id, context: config.context, report: report }); }
+    function answer(report) {
+      if (config.picture) emit("picture-result", { id: config.id, context: config.context, report: report });
+      else emit("image-measured", { id: config.id, context: config.context, report: report });
+    }
+    // Laid out at the parent's width once its styles, images and fonts are in: `then` runs, else a timeout's error answers.
+    function whenSettled(width, then) {
+      var deadline = Date.now() + (config.picture ? 3500 : 5000);
+      (function read() {
+        try {
+          if (Date.now() >= deadline) throw new Error((config.picture ? "The picture" : "Image measurement") + " timed out waiting for styles or images.");
+          var links = Array.prototype.slice.call(document.querySelectorAll('link[rel="stylesheet"]'));
+          roots.forEach(function (root) { links = links.concat(Array.prototype.slice.call(root.querySelectorAll('link[rel="stylesheet"]'))); });
+          // The child's viewport follows the parent's resize; wait until it has.
+          if (innerWidth !== width || links.some(function (link) { return !link.sheet; }) || images.some(function (image) { return !image.complete; }) || document.fonts && document.fonts.status === "loading") {
+            setTimeout(read, 25);
+            return;
+          }
+          then();
+        } catch (error) { answer({ error: String(error && error.message || error) }); }
+      })();
+    }
+    // The section asked for, else the first screen, painted (src/agent-picture.ts, loaded before this runtime).
+    function picture() {
+      var rect = target && target.getBoundingClientRect();
+      var box = rect ? { left: rect.left + scrollX, top: rect.top + scrollY, width: rect.width, height: rect.height } : { left: 0, top: 0, width: innerWidth, height: innerHeight };
+      if (!window.asePicture) { answer({ error: "The picture could not load. Reload the editor and try again." }); return; }
+      window.asePicture.paintPicture(document, box).then(function (made) {
+        answer({ data: made.data, mimeType: made.mimeType, width: made.width, height: made.height, viewport: innerWidth });
+      }, function (error) { answer({ error: String(error && error.message || error) }); });
+    }
+    function measure() {
+      try {
+        var rect = target.getBoundingClientRect();
+        if (!target.naturalWidth || !target.naturalHeight) throw new Error("The image has no natural size.");
+        var style = getComputedStyle(target);
+        var w = parseFloat(style.width), h = parseFloat(style.height);
+        if (style.boxSizing === "border-box") {
+          w -= parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+          h -= parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+        }
+        if (!rect.width && !rect.height) { w = 0; h = 0; }
+        if (!isFinite(w) || !isFinite(h)) throw new Error("The image content box could not be measured.");
+        var pageImages = [];
+        if (innerWidth === 390 || innerWidth === 1280) document.querySelectorAll("img[data-native-measure-node]").forEach(function (image) {
+          var box = image.getBoundingClientRect(), first = box.top >= 0 && box.top < innerHeight && box.width > 0 && box.height > 0;
+          pageImages.push({ node: JSON.parse(image.getAttribute("data-native-measure-node")), firstScreen: first, large: first && box.width * box.height >= 50000 });
+        });
+        var device = innerWidth === 390 || innerWidth === 1280;
+        answer({ images: pageImages, large: device && rect.top >= 0 && rect.top < innerHeight && rect.width * rect.height >= 50000, facts: [{ viewport: innerWidth, viewportHeight: innerHeight, top: w || h ? rect.top : innerHeight, width: Math.max(0, w), height: Math.max(0, h), naturalWidth: target.naturalWidth, naturalHeight: target.naturalHeight, fit: style.objectFit }] });
+      } catch (error) { answer({ error: String(error && error.message || error) }); }
+    }
     try {
       sheets(document, config.sheets[0]);
       visit(document);
-      if (!target) throw new Error("The image could not be cloned.");
-      // A first slot fill shows the slot and its wrappers, which the preview hides while unfilled.
-      if (config.slot) for (var up = target; up; up = up.parentElement) up.removeAttribute("data-native-empty");
-      if (config.style !== undefined) target.setAttribute("style", config.style);
-      if (config.image) {
-        // Placing a new picture unwraps a <picture> (slice 34): measure the plain image in its place.
-        var wrapper = target.parentElement;
-        if (wrapper && wrapper.localName === "picture") {
-          if (!target.hasAttribute("slot") && wrapper.hasAttribute("slot")) target.setAttribute("slot", wrapper.getAttribute("slot"));
-          wrapper.replaceWith(target);
+      if (config.picture) {
+        // A picture (ticket am-14): no scrollbar takes the page's width.
+        var bare = new CSSStyleSheet();
+        bare.replaceSync("html{scrollbar-width:none}");
+        document.adoptedStyleSheets = document.adoptedStyleSheets.concat([bare]);
+      } else {
+        if (!target) throw new Error("The image could not be cloned.");
+        // A first slot fill shows the slot and its wrappers, which the preview hides while unfilled.
+        if (config.slot) for (var up = target; up; up = up.parentElement) up.removeAttribute("data-native-empty");
+        if (config.style !== undefined) target.setAttribute("style", config.style);
+        if (config.image) {
+          // Placing a new picture unwraps a <picture> (slice 34): measure the plain image in its place.
+          var wrapper = target.parentElement;
+          if (wrapper && wrapper.localName === "picture") {
+            if (!target.hasAttribute("slot") && wrapper.hasAttribute("slot")) target.setAttribute("slot", wrapper.getAttribute("slot"));
+            wrapper.replaceWith(target);
+          }
+          target.removeAttribute("srcset"); target.removeAttribute("sizes");
+          target.width = config.image.width; target.height = config.image.height;
+          target.src = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="' + config.image.width + '" height="' + config.image.height + '"/>');
         }
-        target.removeAttribute("srcset"); target.removeAttribute("sizes");
-        target.width = config.image.width; target.height = config.image.height;
-        target.src = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="' + config.image.width + '" height="' + config.image.height + '"/>');
       }
       window.addEventListener("message", function (event) {
         var msg = event.data || {};
-        if (event.source !== parent || msg.source !== HOST_SOURCE || msg.type !== "measure-image") return;
-        var deadline = Date.now() + 5000;
-        function read() {
-          try {
-            if (Date.now() >= deadline) throw new Error("Image measurement timed out waiting for styles or images.");
-            var rect = target.getBoundingClientRect();
-            var links = Array.prototype.slice.call(document.querySelectorAll('link[rel="stylesheet"]'));
-            roots.forEach(function (root) { links = links.concat(Array.prototype.slice.call(root.querySelectorAll('link[rel="stylesheet"]'))); });
-            // The child's viewport follows the parent's resize; wait until it has.
-            if (innerWidth !== msg.width || links.some(function (link) { return !link.sheet; }) || images.some(function (image) { return !image.complete; }) || document.fonts && document.fonts.status === "loading") {
-              setTimeout(read, 25);
-              return;
-            }
-            if (!target.naturalWidth || !target.naturalHeight) throw new Error("The image has no natural size.");
-            var style = getComputedStyle(target);
-            var w = parseFloat(style.width), h = parseFloat(style.height);
-            if (style.boxSizing === "border-box") {
-              w -= parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
-              h -= parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
-            }
-            if (!rect.width && !rect.height) { w = 0; h = 0; }
-            if (!isFinite(w) || !isFinite(h)) throw new Error("The image content box could not be measured.");
-            var pageImages = [];
-            if (innerWidth === 390 || innerWidth === 1280) document.querySelectorAll("img[data-native-measure-node]").forEach(function (image) {
-              var box = image.getBoundingClientRect(), first = box.top >= 0 && box.top < innerHeight && box.width > 0 && box.height > 0;
-              pageImages.push({ node: JSON.parse(image.getAttribute("data-native-measure-node")), firstScreen: first, large: first && box.width * box.height >= 50000 });
-            });
-            var device = innerWidth === 390 || innerWidth === 1280;
-            answer({ images: pageImages, large: device && rect.top >= 0 && rect.top < innerHeight && rect.width * rect.height >= 50000, facts: [{ viewport: innerWidth, viewportHeight: innerHeight, top: w || h ? rect.top : innerHeight, width: Math.max(0, w), height: Math.max(0, h), naturalWidth: target.naturalWidth, naturalHeight: target.naturalHeight, fit: style.objectFit }] });
-          } catch (error) { answer({ error: String(error && error.message || error) }); }
-        }
-        read();
+        if (event.source !== parent || msg.source !== HOST_SOURCE) return;
+        if (config.picture ? msg.type === "picture" : msg.type === "measure-image") whenSettled(msg.width, config.picture ? picture : measure);
       });
       emit("ready");
     } catch (error) { answer({ error: String(error && error.message || error) }); }
   }
 
-  function measureImage(msg) {
-    var frame = null, timer = 0, ended = false;
-    var context = state && state.context;
-    function finish(report) {
-      if (ended) return;
-      ended = true;
-      clearTimeout(timer);
-      window.removeEventListener("message", receive);
-      if (frame) frame.remove();
-      // Stamp the render we cloned, even if a new render arrived meanwhile.
-      emit("image-measured", { id: msg.id, context: context, report: report });
+  // A copy of the page shown for a measuring frame (image measurement, pictures): its document with each
+  // shadow tree declarative and `target` marked, without the editor's overlays, scripts or handlers; `sources`
+  // holds each root's sheets, by the index its host carries.
+  function measuringCopy(target) {
+    var doc = document.implementation.createHTMLDocument("");
+    var base = doc.createElement("base");
+    base.href = document.baseURI;
+    doc.head.appendChild(base);
+    var sources = [];
+    function adopted(root) {
+      var index = sources.length;
+      // The editor's own sheet stays out, except its rule hiding unfilled slots (they take no space).
+      sources.push(["[data-native-empty]{display:none !important}"].concat(Array.prototype.filter.call(root.adoptedStyleSheets || [], function (item) {
+        return item !== runtimeSheet && item !== viewportScrollbarSheet;
+      }).map(function (item) {
+        return Array.prototype.map.call(item.cssRules, function (rule) { return rule.cssText; }).join("\n");
+      })));
+      return index;
     }
-    var widths, facts = [], pageImages = [], large = false, at = 0;
-    function next() {
-      if (state.context !== context) { finish({ error: "The preview changed during image measurement." }); return; }
-      frame.style.setProperty("width", widths[at] + "px", "important");
-      frame.style.setProperty("height", (widths[at] === 390 ? 844 : 800) + "px", "important");
-      // Lay the frame out now so the child's viewport already has this width.
-      frame.getBoundingClientRect();
-      frame.contentWindow.postMessage({ source: HOST_SOURCE, type: "measure-image", id: msg.id, request: msg.request, width: widths[at] }, "*");
-    }
-    function receive(event) {
-      var data = event.data || {};
-      if (!frame || event.source !== frame.contentWindow || data.source !== FRAME_SOURCE || ended) return;
-      if (data.type === "ready") { next(); return; }
-      if (data.type !== "image-measured" || data.id !== msg.id) return;
-      if (data.report.error) { finish(data.report); return; }
-      facts.push(data.report.facts[0]);
-      large = large || data.report.large === true;
-      (data.report.images || []).forEach(function (image, i) {
-        if (!pageImages[i]) pageImages[i] = image;
-        else { pageImages[i].firstScreen = pageImages[i].firstScreen || image.firstScreen; pageImages[i].large = pageImages[i].large || image.large; }
+    adopted(document);
+    var originals = Array.prototype.slice.call(pageEl.querySelectorAll("img")).slice(0, 1000);
+    function clone(from) {
+      if (from.nodeType === 1 && (from.localName === "script" || from.localName === "base" || from.localName === "meta" && from.hasAttribute("http-equiv") || from.hasAttribute("data-native-selection-box"))) return null;
+      var to = doc.importNode(from, false);
+      if (to.nodeType === 1) {
+        Array.prototype.slice.call(to.attributes).forEach(function (attr) {
+          if (/^on/i.test(attr.name) || attr.name === "contenteditable" || /^data-native-measure-/.test(attr.name)) to.removeAttribute(attr.name);
+        });
+        if (to.localName === "img") {
+          to.loading = "eager";
+          if (originals.indexOf(from) >= 0) to.setAttribute("data-native-measure-node", JSON.stringify(elementIndexPath(from)));
+        }
+        // An embed keeps its box (it can push the image below the fold) but loads nothing.
+        if (to.localName === "iframe") {
+          to.removeAttribute("src");
+          to.removeAttribute("srcdoc");
+          to.setAttribute("sandbox", "");
+          return to;
+        }
+        if (from === target) to.setAttribute("data-native-measure-target", "");
+      }
+      Array.prototype.forEach.call(from.childNodes, function (child) {
+        var copy = clone(child);
+        if (copy) to.appendChild(copy);
       });
-      if (++at === widths.length) finish({ facts: facts, images: pageImages, large: large });
-      else next();
+      if (from.shadowRoot) {
+        to.setAttribute("data-native-measure-root", String(adopted(from.shadowRoot)));
+        var template = doc.createElement("template");
+        template.setAttribute("shadowrootmode", "open");
+        Array.prototype.forEach.call(from.shadowRoot.childNodes, function (child) {
+          var copy = clone(child);
+          if (copy) template.content.appendChild(copy);
+        });
+        to.prepend(template);
+      }
+      return to;
     }
-    try {
+    Array.prototype.forEach.call(document.documentElement.attributes, function (attr) { doc.documentElement.setAttribute(attr.name, attr.value); });
+    Array.prototype.forEach.call(document.body.attributes, function (attr) { doc.body.setAttribute(attr.name, attr.value); });
+    Array.prototype.forEach.call(document.head.children, function (el) {
+      var copy = clone(el);
+      if (copy) doc.head.appendChild(copy);
+    });
+    doc.body.appendChild(clone(document.getElementById("root")));
+    return { doc: doc, sources: sources };
+  }
+  // The hidden measuring frame of `copy`, whose runtime runs only its measuring branch with `config`.
+  function measuringFrame(copy, settings) {
+    var doc = copy.doc;
+    // Only the measurement branch of our runtime executes. JSON's '<'
+    // is escaped so site CSS cannot end the inert configuration element.
+    var config = doc.createElement("script");
+    config.id = "ase-image-measure";
+    config.type = "application/json";
+    config.textContent = JSON.stringify(settings).replace(/</g, "\\u003c");
+    doc.head.appendChild(config);
+    // Deferred scripts run in order: the picture's painter is there before the runtime asks for it.
+    if (settings.picture) {
+      var painter = doc.createElement("script");
+      painter.src = pictureUrl;
+      painter.defer = true;
+      doc.head.appendChild(painter);
+    }
+    var script = doc.createElement("script");
+    script.src = runtimeUrl;
+    script.defer = true;
+    doc.head.appendChild(script);
+    var frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.tabIndex = -1;
+    frame.style.cssText = "all:initial!important;position:fixed!important;inset-inline-start:-10000px!important;inset-block-start:0!important;border:0!important;padding:0!important;box-sizing:content-box!important;visibility:hidden!important;pointer-events:none!important";
+    frame.srcdoc = "<!doctype html>" + doc.documentElement.outerHTML;
+    return frame;
+  }
+
+  // A picture of the page shown for an agent (ticket am-14): its copy drawn `width` wide in a measuring frame
+  // (none: as wide as this preview), whose runtime paints it (src/agent-picture.ts): the element `node` (a
+  // section), else the first screen.
+  function takePicture(msg) {
+    var request = msg.request || {};
+    inMeasuringFrame(msg, true, function (context) {
+      if (!state || !pageEl) throw new Error("The preview is not showing a page yet.");
+      var target = request.node ? resolveNodePath({ path: request.path, node: request.node }) : null;
+      if (request.node && !target) throw new Error("No such section on the page shown.");
+      var copy = measuringCopy(target);
+      return measuringFrame(copy, { picture: true, id: msg.id, context: context, sheets: copy.sources });
+    }, function (report, post, finish) {
+      if (report) finish(report);
+      else post(request.width || innerWidth, request.height || innerHeight);
+    });
+  }
+
+  function measureImage(msg) {
+    var widths, facts = [], pageImages = [], large = false, at = 0;
+    inMeasuringFrame(msg, false, function (context) {
       var standin = msg.request.image, standinStyle = msg.request.style;
       if (standinStyle !== undefined && (typeof standinStyle !== "string" || standinStyle.length > 16384)) throw new Error("Invalid image style.");
       if (standin !== undefined && (!standin || Array.isArray(standin) || !Number.isFinite(standin.width) || standin.width <= 0 || standin.width > 100000 || !Number.isFinite(standin.height) || standin.height <= 0 || standin.height > 100000)) throw new Error("Invalid image size.");
@@ -3649,84 +3810,58 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       rootSheets(document);
       shadowRoots.forEach(rootSheets);
       widths = imageViewports(imageBreakpoints(conditions));
-      var doc = document.implementation.createHTMLDocument("");
-      var base = doc.createElement("base");
-      base.href = document.baseURI;
-      doc.head.appendChild(base);
-      var sources = [];
-      function adopted(root) {
-        var index = sources.length;
-        // The editor's own sheet stays out, except its rule hiding unfilled slots (they take no space).
-        sources.push(["[data-native-empty]{display:none !important}"].concat(Array.prototype.filter.call(root.adoptedStyleSheets || [], function (item) {
-          return item !== runtimeSheet && item !== viewportScrollbarSheet;
-        }).map(function (item) {
-          return Array.prototype.map.call(item.cssRules, function (rule) { return rule.cssText; }).join("\n");
-        })));
-        return index;
-      }
-      adopted(document);
-      var originals = Array.prototype.slice.call(pageEl.querySelectorAll("img")).slice(0, 1000);
-      function clone(from) {
-        if (from.nodeType === 1 && (from.localName === "script" || from.localName === "base" || from.localName === "meta" && from.hasAttribute("http-equiv") || from.hasAttribute("data-native-selection-box"))) return null;
-        var to = doc.importNode(from, false);
-        if (to.nodeType === 1) {
-          Array.prototype.slice.call(to.attributes).forEach(function (attr) {
-            if (/^on/i.test(attr.name) || attr.name === "contenteditable" || /^data-native-measure-/.test(attr.name)) to.removeAttribute(attr.name);
-          });
-          if (to.localName === "img") {
-            to.loading = "eager";
-            if (originals.indexOf(from) >= 0) to.setAttribute("data-native-measure-node", JSON.stringify(elementIndexPath(from)));
-          }
-          // An embed keeps its box (it can push the image below the fold) but loads nothing.
-          if (to.localName === "iframe") {
-            to.removeAttribute("src");
-            to.removeAttribute("srcdoc");
-            to.setAttribute("sandbox", "");
-            return to;
-          }
-          if (from === target) to.setAttribute("data-native-measure-target", "");
-        }
-        Array.prototype.forEach.call(from.childNodes, function (child) {
-          var copy = clone(child);
-          if (copy) to.appendChild(copy);
+      var copy = measuringCopy(target);
+      return measuringFrame(copy, { id: msg.id, context: context, sheets: copy.sources, image: standin, style: standinStyle, slot: typeof slotName === "string" });
+    }, function (report, post, finish) {
+      if (report) {
+        if (report.error) { finish(report); return; }
+        facts.push(report.facts[0]);
+        large = large || report.large === true;
+        (report.images || []).forEach(function (image, i) {
+          if (!pageImages[i]) pageImages[i] = image;
+          else { pageImages[i].firstScreen = pageImages[i].firstScreen || image.firstScreen; pageImages[i].large = pageImages[i].large || image.large; }
         });
-        if (from.shadowRoot) {
-          to.setAttribute("data-native-measure-root", String(adopted(from.shadowRoot)));
-          var template = doc.createElement("template");
-          template.setAttribute("shadowrootmode", "open");
-          Array.prototype.forEach.call(from.shadowRoot.childNodes, function (child) {
-            var copy = clone(child);
-            if (copy) template.content.appendChild(copy);
-          });
-          to.prepend(template);
-        }
-        return to;
+        if (++at === widths.length) { finish({ facts: facts, images: pageImages, large: large }); return; }
       }
-      Array.prototype.forEach.call(document.documentElement.attributes, function (attr) { doc.documentElement.setAttribute(attr.name, attr.value); });
-      Array.prototype.forEach.call(document.body.attributes, function (attr) { doc.body.setAttribute(attr.name, attr.value); });
-      Array.prototype.forEach.call(document.head.children, function (el) {
-        var copy = clone(el);
-        if (copy) doc.head.appendChild(copy);
-      });
-      doc.body.appendChild(clone(document.getElementById("root")));
-      // Only the measurement branch of our runtime executes. JSON's '<'
-      // is escaped so site CSS cannot end the inert configuration element.
-      var config = doc.createElement("script");
-      config.id = "ase-image-measure";
-      config.type = "application/json";
-      config.textContent = JSON.stringify({ id: msg.id, context: context, sheets: sources, image: standin, style: standinStyle, slot: typeof slotName === "string" }).replace(/</g, "\\u003c");
-      doc.head.appendChild(config);
-      var script = doc.createElement("script");
-      script.src = runtimeUrl;
-      script.defer = true;
-      doc.head.appendChild(script);
-      frame = document.createElement("iframe");
-      frame.setAttribute("aria-hidden", "true");
-      frame.tabIndex = -1;
-      frame.style.cssText = "all:initial!important;position:fixed!important;inset-inline-start:-10000px!important;inset-block-start:0!important;border:0!important;padding:0!important;box-sizing:content-box!important;visibility:hidden!important;pointer-events:none!important";
+      post(widths[at], widths[at] === 390 ? 844 : 800);
+    });
+  }
+
+  // One run of a measuring frame, a page picture's or image measurement's: `start` makes the frame for the
+  // render shown now. On its `ready` and on each answer (`report`), `step` lays it out and asks again (`post`), or
+  // ends the run (`finish`): the answer, stamped with that render even if a new one arrived meanwhile, goes to the
+  // host. A new render before an ask, or the timeout, ends it with an error.
+  function inMeasuringFrame(msg, picture, start, step) {
+    var frame = null, timer = 0, ended = false, context = state && state.context;
+    function finish(report) {
+      if (ended) return;
+      ended = true;
+      clearTimeout(timer);
+      window.removeEventListener("message", receive);
+      if (frame) frame.remove();
+      var answer = { id: msg.id, context: context, report: report };
+      if (picture) emit("picture-result", answer);
+      else emit("image-measured", answer);
+    }
+    function post(width, height) {
+      if (state.context !== context) { finish({ error: picture ? "The preview changed while it was pictured. Try again." : "The preview changed during image measurement." }); return; }
+      frame.style.setProperty("width", width + "px", "important");
+      frame.style.setProperty("height", height + "px", "important");
+      // Lay the frame out now so the child's viewport already has this width.
+      frame.getBoundingClientRect();
+      frame.contentWindow.postMessage({ source: HOST_SOURCE, type: picture ? "picture" : "measure-image", id: msg.id, request: msg.request, width: width }, "*");
+    }
+    function receive(event) {
+      var data = event.data || {};
+      if (!frame || event.source !== frame.contentWindow || data.source !== FRAME_SOURCE || ended) return;
+      if (data.type === "ready") step(null, post, finish);
+      else if (data.type === (picture ? "picture-result" : "image-measured") && data.id === msg.id) step(data.report, post, finish);
+    }
+    try {
+      frame = start(context);
       window.addEventListener("message", receive);
-      timer = setTimeout(function () { finish({ error: "Image measurement timed out waiting for the measuring frame." }); }, 6000);
-      frame.srcdoc = "<!doctype html>" + doc.documentElement.outerHTML;
+      // A picture's is within the host's 5.5 s ask (native-preview.ts `picture`), so its own error reaches the agent.
+      timer = setTimeout(function () { finish({ error: picture ? "The picture timed out waiting for the page to draw." : "Image measurement timed out waiting for the measuring frame." }); }, picture ? 5000 : 6000);
       document.body.appendChild(frame);
     } catch (error) { finish({ error: String(error && error.message || error) }); }
   }
@@ -4052,40 +4187,116 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   }
   // ---- End of canvas ----
 
-  // ---- Agent presence (ticket 33) ----
-  // An agent working on a section of this page, shown as a collaborator is in
-  // Figma or Paper: a thin outline in the agent's colour (the editor's
-  // connected MCP dot) with its name in a chip on the outline's top-left
-  // corner, and nothing else. Drawn over the page, never part of it and never
-  // a click target; the editor ends it once the change lands or stops. The
-  // colour is the editor's --agent-presence token only: nothing is drawn
-  // until the editor's `theme` message has brought it.
-  var presenceColor = "";
-  var presenceRequest = null;
-  var presenceName = "";
-  var presenceBox = null;
-  var presenceChip = null;
-  function drawPresence() {
-    if (!presenceBox) {
-      presenceBox = canvasOverlay("agent-presence");
-      presenceChip = canvasOverlay("agent-presence-chip");
-      presenceChip.style.cssText += "z-index:2147483647;padding:0 6px;border-radius:3px 3px 3px 0;white-space:nowrap;" +
-        "font:600 11px/16px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:0;max-width:60vw;overflow:hidden;text-overflow:ellipsis;";
+  // ---- Agent presence (tickets 33, am-11) ----
+  // Each agent working on a section of this page, shown as collaborators are
+  // in Figma or Paper: a thin outline in the agent's colour with its name in
+  // a chip on the outline's top-left corner (the chip orange while the agent
+  // asks the user a question), and nothing else. Drawn over the page, never
+  // part of it and never a click target; the editor ends each once its change
+  // lands or stops. The editor sends each agent's colour, from its theme:
+  // nothing is drawn without one. Chips on one corner stand side by side.
+  // A chip whose agent has a change to this page kept for its undo has an Undo
+  // after its name (ticket am-49), the one control here: Undone (disabled)
+  // once put back, and a refusal said under it.
+  var presenceAgents = [];
+  var presenceBoxes = [];
+  function presenceChip() {
+    var chip = canvasOverlay("agent-presence-chip");
+    chip.style.cssText += "z-index:2147483647;padding:0 6px;border-radius:3px 3px 3px 0;" +
+      "font:600 11px/16px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:0;max-width:60vw;";
+    var row = document.createElement("div");
+    row.style.cssText = "display:flex;";
+    var name = document.createElement("span");
+    name.style.cssText = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;";
+    var undo = document.createElement("button");
+    undo.type = "button";
+    // Its press target, focus ring and pressed look are the runtime sheet's (above).
+    undo.style.cssText = "flex:none;margin:0 0 0 8px;padding:0;border:0;border-radius:2px;background:none;color:inherit;font:inherit;letter-spacing:inherit;" +
+      "text-underline-offset:2px;cursor:pointer;pointer-events:auto;";
+    var problem = document.createElement("p");
+    problem.setAttribute("role", "alert");
+    problem.style.cssText = "margin:0 0 2px;font-weight:500;";
+    row.append(name, undo);
+    chip.append(row, problem);
+    return { chip: chip, name: name, undo: undo, problem: problem };
+  }
+  // The section "+" controls the editor draws on the page's gaps (insert points, in the frame's viewport): a chip keeps clear of them.
+  var insertPluses = [];
+  function plusCovering(left, top, width, height) {
+    for (var i = 0; i < insertPluses.length; i++) {
+      var plus = insertPluses[i];
+      if (left < plus.right && left + width > plus.left && top < plus.bottom && top + height > plus.top) return plus;
     }
-    var target = presenceRequest && presenceColor ? resolveNodePath(presenceRequest) : null;
-    drawBox(presenceBox, target);
-    if (presenceBox.style.display === "none") { presenceChip.style.display = "none"; return; }
-    presenceBox.style.border = "2px solid " + presenceColor;
-    presenceChip.textContent = presenceName;
-    presenceChip.style.background = presenceColor;
-    presenceChip.style.color = canvasInk(presenceColor);
-    presenceChip.style.display = "block";
-    // On the outline's top-left corner, just above it, or inside it at the top of the page.
-    var rect = rectOf(target);
-    var left = Math.max(0, Math.min(rect.left, document.documentElement.clientWidth - presenceChip.offsetWidth));
-    var top = rect.top + window.scrollY >= 16 ? rect.top - 16 : rect.top;
-    presenceChip.style.left = left + window.scrollX + "px";
-    presenceChip.style.top = top + window.scrollY + "px";
+    return null;
+  }
+  function drawPresence() {
+    while (presenceBoxes.length < presenceAgents.length) {
+      var parts = presenceChip();
+      presenceBoxes.push({ box: canvasOverlay("agent-presence"), chip: parts.chip, parts: parts });
+    }
+    var placed = [];
+    presenceBoxes.forEach(function (pair, index) {
+      var agent = presenceAgents[index];
+      var target = agent ? resolveNodePath(agent.request) : null;
+      drawBox(pair.box, target);
+      if (pair.box.style.display === "none") { pair.chip.style.display = "none"; return; }
+      pair.box.style.border = "2px solid " + agent.color;
+      // Its name is on the pin it works through (ticket am-13): the outline alone here.
+      if (agent.bare) { pair.chip.style.display = "none"; return; }
+      var parts = pair.parts;
+      if (parts.name.textContent !== agent.name) parts.name.textContent = agent.name;
+      if (agent.undo) {
+        var label = agent.undo === "undone" ? "Undone" : "Undo";
+        if (parts.undo.textContent !== label) parts.undo.textContent = label;
+        parts.undo.setAttribute("aria-label", (agent.undo === "undone" ? "Undone: " : "Undo ") + agent.name + "'s change");
+        parts.undo.setAttribute("data-native-chip-undo", agent.token);
+        parts.undo.setAttribute("data-native-chip-change", agent.change);
+        parts.undo.setAttribute("aria-disabled", agent.undo === "ready" ? "false" : "true");
+        parts.undo.style.textDecoration = agent.undo === "ready" ? "underline" : "none";
+        parts.undo.style.cursor = agent.undo === "ready" ? "pointer" : "default";
+        parts.undo.style.display = "";
+      } else {
+        parts.undo.removeAttribute("data-native-chip-undo");
+        parts.undo.removeAttribute("data-native-chip-change");
+        parts.undo.textContent = "";
+        parts.undo.style.display = "none";
+      }
+      if (parts.problem.textContent !== (agent.problem || "")) parts.problem.textContent = agent.problem || "";
+      parts.problem.style.display = agent.problem ? "" : "none";
+      pair.chip.style.maxWidth = agent.problem ? "min(60vw, 280px)" : "60vw";
+      pair.chip.style.background = agent.chip;
+      pair.chip.style.color = canvasInk(agent.chip);
+      pair.chip.style.display = "block";
+      // On the outline's top-left corner, just above it, or inside it at the top of the page; after the chips there
+      // already and clear of the edit bar, kept within the page's width: a chip that would pass its right edge starts a row below.
+      // A chip saying a refusal is taller: it grows upward, its bottom on the outline, clear of the section it is about.
+      // With no room above (a section at the very top of the page), it stands under the outline instead, off what was typed.
+      // One that would cover a section's "+" moves clear of it, up (down, under), else past it; a name chip keeps its place on the corner.
+      var rect = rectOf(target);
+      var width = pair.chip.offsetWidth, height = Math.max(16, pair.chip.offsetHeight), view = document.documentElement.clientWidth;
+      var above = rect.top + window.scrollY >= height, below = !above && !!agent.problem;
+      var top = above ? rect.top - height : below ? rect.bottom : rect.top;
+      var start = Math.max(0, Math.min(rect.left, view - width)), left = start;
+      for (var moved = true, tries = 0; moved && tries < 24; tries++) {
+        moved = false;
+        for (var i = 0; i < placed.length; i++) {
+          var other = placed[i];
+          if (top < other.bottom && other.top < top + height && left < other.right && other.left < left + width) { left = other.right + 2; moved = true; }
+        }
+        var plus = agent.problem ? plusCovering(left, top, width, height) : null;
+        if (plus) {
+          if (below) top = plus.bottom + 2;
+          else if (plus.top - 2 - height + window.scrollY >= 0) top = plus.top - 2 - height;
+          else left = plus.right + 2;
+          moved = true;
+        }
+        if (canvasCovered(left, top, width, height)) { left = canvasAvoid.right + 2; moved = true; }
+        if (left + width > view && left !== start) { left = start; top += 16; moved = true; }
+      }
+      placed.push({ left: left, right: left + width, top: top, bottom: top + height });
+      pair.chip.style.left = left + window.scrollX + "px";
+      pair.chip.style.top = top + window.scrollY + "px";
+    });
   }
 
   function refreshScroll(event) {
@@ -4128,6 +4339,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       var bar = msg.rect;
       canvasAvoid = bar && ["top", "left", "bottom", "right"].every(function (key) { return typeof bar[key] === "number" && isFinite(bar[key]); }) ? bar : null;
       canvasPaintLabel();
+      drawPresence();
       return;
     }
     // A crumb of the breadcrumb, by its place in the last path sent; -1 is the page itself.
@@ -4161,7 +4373,12 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       if (rect.bottom < 0 || rect.top > window.innerHeight) revealWithBar(wanted, true);
       return;
     }
-    if (msg.type === "viewing") { if (state) state.viewing = msg.viewing === true; return; }
+    if (msg.type === "viewing") {
+      if (state) state.viewing = msg.viewing === true;
+      // The insert controls go with it: a chip no longer keeps clear of their "+" until they are reported again.
+      if (msg.viewing === true) insertPluses = [];
+      return;
+    }
     if (msg.type === "drop-probe") {
       if (typeof msg.x !== "number" || typeof msg.y !== "number" || !isFinite(msg.x) || !isFinite(msg.y)) return;
       // In Edit component mode, the edited template's parts.
@@ -4198,15 +4415,21 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     if (msg.type === "theme") {
       if (typeof msg.focus === "string" && msg.focus) boxColor = msg.focus;
       if (typeof msg.component === "string" && msg.component) componentColor = msg.component;
-      if (typeof msg.presence === "string" && msg.presence) presenceColor = msg.presence;
       paintBoxes();
       if (selectBox) { selectBox.__tint = hoverBox.__tint = ""; }
       updateBoxes();
       return;
     }
     if (msg.type === "agent-presence") {
-      presenceRequest = msg.request && Array.isArray(msg.request.node) ? msg.request : null;
-      presenceName = typeof msg.name === "string" && msg.name ? msg.name.slice(0, 60) : "Agent";
+      presenceAgents = (Array.isArray(msg.agents) ? msg.agents : []).filter(function (agent) {
+        return agent && agent.request && Array.isArray(agent.request.node) && typeof agent.color === "string" && agent.color;
+      }).slice(0, 32).map(function (agent) {
+        return { request: agent.request, color: agent.color, chip: typeof agent.chip === "string" && agent.chip ? agent.chip : agent.color,
+          name: typeof agent.name === "string" && agent.name ? agent.name.slice(0, 60) : "Agent", bare: agent.bare === true,
+          token: typeof agent.token === "string" ? agent.token : "", change: typeof agent.change === "string" ? agent.change : "",
+          undo: typeof agent.token === "string" && typeof agent.change === "string" && (agent.undo === "ready" || agent.undo === "undone" || agent.undo === "busy") ? agent.undo : "",
+          problem: typeof agent.problem === "string" ? agent.problem.slice(0, 300) : "" };
+      });
       drawPresence();
       return;
     }
@@ -4251,6 +4474,10 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     }
     if (msg.type === "inspect") {
       inspectWhenSettled(msg);
+      return;
+    }
+    if (msg.type === "picture") {
+      takePicture(msg);
       return;
     }
     // Kept (drawn again after renders) until the host ends or drops it.

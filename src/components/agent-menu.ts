@@ -3,7 +3,7 @@ import { recordFailure, recoveryHolds } from "../agent-recovery";
 import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
-import { REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, type AgentCommand, type AgentElement, type AgentRequest } from "../../shared/agent";
+import { AGENT_STOPPED, REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, agentWho, type AgentCommand, type AgentElement, type AgentRequest } from "../../shared/agent";
 import { answerRequest, createRequestTools } from "../agent-watch";
 import { workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
 import { AgentRecordsError, agentStorageStatus, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords } from "../agent-records";
@@ -12,9 +12,12 @@ import type { AgentReadPorts } from "../agent-tools-read";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
 import { agentHistoryKey } from "../controllers/agent-controller";
-import { resumeAgents, revokeUnused, serialReads, siteFull, turnOnAgents } from "../agent-resume";
+import { ownerPause, pressSignedOut, resumeAgents, revokeUnused, serialReads, siteFull, turnOnAgents } from "../agent-resume";
 import { mountFlyout } from "./flyout";
 import { githubScope, same, sameBranch } from "../workspace-session";
+import type { createAgentPresence } from "../agent-presence";
+import { STOPPED_AGENTS_KEY, agentStops, afterStoppedWait } from "../agent-stops";
+import "./agent-dots.css";
 import "./agent-menu.css";
 
 // Remote agents are opt-in per site, remembered in this browser until turned off (a reload or
@@ -74,6 +77,9 @@ export const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
 const FRESH_TOKEN_MS = 2 * 60_000;
 /** How long the button's own label confirms a copy. */
 const CONFIRM_MS = 2000;
+/** Offering Disconnect MCP, a return to the tab or its focus reads the connections again once the
+ * last read is this old: one read after time away, no polling (native-agent-live spec). */
+const STALE_READ_MS = 5 * 60_000;
 
 export function createAgentMenu(options: {
   account: string;
@@ -91,6 +97,10 @@ export function createAgentMenu(options: {
   onQuestions?: (count: number) => void;
   /** Show a request's pin with its card open (closing the menus). */
   onShowRequest?: (id: string) => void;
+  /** The agents working now, which the open menu lists (dot, name, Stop), and the ones the user stopped, whose calls are refused (ticket am-12). */
+  agents?: Pick<ReturnType<typeof createAgentPresence>, "agents" | "stop" | "stopped" | "heard" | "listen">;
+  /** Where an agent's question goes (ask_user, ticket am-15): an element of a page, as its pin is placed. */
+  place?: NonNullable<Parameters<typeof createRequestTools>[0]["place"]>;
   /** This browser's agent records (tests inject one). */
   records?: AgentRecords;
   reload?: (snapshot: Awaited<ReturnType<AgentRecords["snapshot"]>>) => Promise<void>;
@@ -102,14 +112,19 @@ export function createAgentMenu(options: {
   /** The site whose last press failed with nothing to show for it: the dot shows it until the
    * next press, a turn on or off, another site shown, or an agent using a connection. */
   let failedOn: ReturnType<typeof options.repository>;
-  // A press found the reconnect still under way: the dot shows a problem until it ends or the next press.
+  // A press found the reconnect still under way, or still given up (paused, not by the site owner):
+  // the dot shows a problem until it ends or the next press.
   let stuckOn = false;
+  // This activation's socket already tried a takeover (shown taking-over): a press tries once.
+  let triedTakeover = false;
   let disposed = false,
     changing = false,
     remote = false,
     // Each Connect and Turn off starts a new activation; work begun in an older one writes nothing.
     activation = 0;
   let lastRead = 0;
+  // Presses of Connect to MCP begun (the button's, or `connect`), and sign-ins found ended.
+  let presses = 0, signOuts = 0;
   let consentChecks: ReturnType<typeof setTimeout>[] = [];
   let ownerPaused = false;
   let transport: ReturnType<typeof createLiveTransport> | undefined;
@@ -138,6 +153,15 @@ export function createAgentMenu(options: {
   function broadcast(key: string) {
     try { channel?.postMessage(key); } catch { /* Closed channel: they read again when seen. */ }
   }
+  /** Whether the user stopped the agent that sent `call`: it is refused before anything runs. */
+  function stopped(call: { grantId?: unknown; agent?: unknown }) { return options.agents?.stopped(agentWho(call)) ?? false; }
+  /** Lets a call in unless its agent is stopped, and records that agent as heard on its connection, acting unless the
+   * call is a wait (whom a pin a wait took names, ticket am-45). False: refused, nothing recorded. */
+  function admit(call: { grantId?: unknown; agent?: unknown; tool?: unknown }) {
+    if (stopped(call)) return false;
+    options.agents?.heard(agentWho(call), call.tool !== "wait_for_requests");
+    return true;
+  }
   async function activateSocket() {
     if (!remote || disposed || ownerPaused || workspaceChanged || transportMode !== "pending" || !pinned) return;
     const at = activation, repo = pinned;
@@ -145,6 +169,7 @@ export function createAgentMenu(options: {
     if (!live(at) || transportMode !== "pending") return;
     transportMode = "socket";
     const run = async (command: AgentCommand) => {
+      if (!admit(command)) throw new Error(AGENT_STOPPED);
       const outcome = await options.onCommand(command);
       const grant = hub.grants.find(each => each.id === command.grantId);
       if (grant && !grant.usedAt && live(at)) { grant.usedAt = Date.now(); paint(); }
@@ -155,6 +180,7 @@ export function createAgentMenu(options: {
       workspace,
       list: async () => (await records.conversations(workspace)).map(item => item.content as unknown as AgentRequest),
       save: (request, accept, owner) => keep(workspace, request as StoredRequest, current => accept(current?.content as unknown as AgentRequest | undefined), owner),
+      ...(options.place ? { place: options.place } : {}),
     });
     let editTools: Promise<ReturnType<typeof import("../agent-tools-edit")["createAgentEditTools"]>> | undefined;
     let mediaTools: Promise<ReturnType<typeof import("../agent-tools-media")["createAgentMediaTools"]>> | undefined;
@@ -163,6 +189,7 @@ export function createAgentMenu(options: {
       current: scope, records, reload: snapshot => options.reload?.(snapshot) ?? Promise.resolve(),
       source: path => options.tools?.source?.(path),
       media: async (request, fence, current, deadline, seen, signal) => {
+        if (!admit(request)) return { ok: false, message: AGENT_STOPPED };
         const ports = options.tools, stamp = ports?.stamp(), source = ports?.files(), commit = source?.snapshot.commit;
         if (!ports || !stamp) return { ok: false, message: "Browser media tools are unavailable. Refresh the editor." };
         // As an edit (below): held before its tools load, a Media change finishes in its own workspace
@@ -175,15 +202,17 @@ export function createAgentMenu(options: {
         return (await mediaTools).run(request, fence, () => current() && (pin ? stamp.changed() === "scope" || shown() : stamp.holds() && shown()), deadline, seen, signal, held);
       },
       edit: async (request, fence, current, signal) => {
+        if (!admit(request)) return { ok: false, message: AGENT_STOPPED };
         const ports = options.tools, stamp = ports?.stamp();
         const source = ports?.files(), commit = source?.snapshot.commit;
         if (!ports || !stamp) return { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
         // The workspace the edit arrived in, held before its tools load: another site or branch shown
         // meanwhile stops nothing, and the edit finishes in its own (ticket 23).
         const pin = ports.pin?.(), held = { source, stamp, pin: pin ?? { away: () => false, context: () => ports.context() }, pinned: Boolean(pin) };
-        editTools ??= import("../agent-tools-edit").then(({ createAgentEditTools }) => createAgentEditTools({
+        editTools ??= Promise.all([import("../agent-tools-edit"), import("../agent-part")]).then(([{ createAgentEditTools }, { tellAgent }]) => createAgentEditTools({
           workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, ports, records,
           run,
+          tell: async (request, result) => tellAgent(await ports.context().catch(() => undefined), { repoId: repo.id, branch: repo.branch }, request.grantId, result),
         }));
         // Pinned, its branch shown again (a new load of it) is no move either; on show its revision must
         // hold. With no pin, the stamp it arrived with must hold.
@@ -191,10 +220,16 @@ export function createAgentMenu(options: {
         return (await editTools).run(request, fence, () => current() && (pin ? stamp.changed() === "scope" || shown() : stamp.holds() && shown()), signal, held);
       },
       read: async (read, signal) => {
+        if (!admit(read)) return { ok: false, message: AGENT_STOPPED };
         const ports = options.tools, stamp = ports?.stamp();
         if (!ports || !stamp) return { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
-        const { createAgentReadTools } = await import("../agent-tools-read");
-        const result = await createAgentReadTools({ ...ports, stamp: () => stamp }).run(read.tool, read.args, signal);
+        const [{ createAgentReadTools }, { rememberRead, tellAgent }] = await Promise.all([import("../agent-tools-read"), import("../agent-part")]);
+        let result = await createAgentReadTools({ ...ports, stamp: () => stamp }).run(read.tool, read.args, signal);
+        // What it read is what its next edit is read against; what changed since its last call comes with it (ticket 10).
+        if (result.ok) {
+          rememberRead(result.value);
+          result = tellAgent(await ports.context().catch(() => undefined), { repoId: repo.id, branch: repo.branch }, read.grantId, result);
+        }
         // The requests agents wait on live here now: count this browser's, not the hub's.
         if (read.tool === "get_site" && result.ok && result.value && typeof result.value === "object" && !Array.isArray(result.value)) {
           const kept = await records.conversations(workspace).catch(() => []);
@@ -203,12 +238,17 @@ export function createAgentMenu(options: {
         return result;
       },
       requests: async (request, fence, current, deadline, signal) => {
+        if (!admit(request)) return { ok: false, message: AGENT_STOPPED };
         const tools = requestTools;
         if (!tools) return { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
         // An agent asking for requests is connected, as one sending a change is.
         const grant = hub.grants.find(each => each.id === request.grantId);
         if (grant && !grant.usedAt) { grant.usedAt = Date.now(); paint(); }
-        try { return await tools.run(request, current, deadline, fence, signal); }
+        // A wait held when its agent is stopped (Stop wakes it) takes nothing more, and ends refused.
+        try {
+          const result = await tools.run(request, () => current() && !stopped(request), deadline, fence, signal);
+          return stopped(request) ? afterStoppedWait(result) : result;
+        }
         finally {
           if (request.tool !== "get_request") broadcast(workspaceKey(workspace));
           if (live(at)) paint();
@@ -220,8 +260,9 @@ export function createAgentMenu(options: {
         // takeover updates must not be lost (a real move sets workspaceChanged and a new activation).
         if (disposed || !remote || activation !== at || workspaceChanged) return;
         transportState = next;
-        if (next.mode !== "reconnecting") stuckOn = false;
-        ownerPaused = next.mode === "paused" && Boolean(next.message);
+        if (next.mode !== "reconnecting" && next.mode !== "paused") stuckOn = false;
+        if (next.mode === "taking-over") triedTakeover = true;
+        ownerPaused = ownerPause(next);
         paint();
       },
     });
@@ -234,8 +275,9 @@ export function createAgentMenu(options: {
   // One button and its dot (Lex, 2026-10-23): "Connect to MCP" makes a token and copies a prompt
   // that tells an agent how to connect, its label confirming the copy; "Wait for MCP" copies it
   // again until an agent first uses the connection; then "Disconnect MCP" revokes the
-  // repository's connections (OAuth ones included). No hints, toasts or other controls: the dot
-  // shows in-between states and problems, which return the button to Connect to MCP.
+  // repository's connections (OAuth ones included). No hints or toasts: the dot shows in-between
+  // states and problems, which return the button to Connect to MCP. The only other controls are the
+  // agents' Stop (ticket am-12, below) and the storage exception's download.
   const root = node("div", "agent-menu");
   const action = button("", () => void act(), "text-button agent-menu__action");
   const actionLabel = node("span", "agent-menu__label", "Connect to MCP");
@@ -256,7 +298,18 @@ export function createAgentMenu(options: {
   const waitingOn = node("div", "agent-menu__waiting");
   waitingOn.id = "agent-waiting";
   waitingOn.setAttribute("role", "menu");
-  root.append(action, download, waitingOn);
+  // While remote agents are on (ticket am-12): the agents working now, each with its dot and a Stop that ends
+  // that agent only (Disconnect MCP ends them all).
+  const working = node("ul", "agent-menu__agents");
+  working.setAttribute("aria-label", "Agents working now");
+  // Where the focus goes after a Stop (drawAgents): never another Stop or Disconnect MCP. Each is named, so a
+  // screen reader says where the focus landed.
+  root.setAttribute("role", "group");
+  root.setAttribute("aria-label", "MCP connection");
+  // A hairline between the agents and the button, as in the approved mock-up (prototypes/10-asking-agents.html).
+  const afterAgents = node("div", "agent-menu__divider");
+  afterAgents.setAttribute("aria-hidden", "true");
+  root.append(working, afterAgents, action, download, waitingOn);
   const flyout = mountFlyout({
     panel: waitingOn,
     label: "Requests",
@@ -325,9 +378,11 @@ export function createAgentMenu(options: {
     consentChecks = [];
   }
   function failed(error: AgentFailureError) {
-    // Sign-in ended: back to Connect to MCP.
-    if (error.failure.kind === "auth") turnOff(true);
-    else if (transportMode === "socket") transport?.report(error.failure);
+    // Sign-in ended: back to Connect to MCP (a press under way shows it: `press`).
+    if (error.failure.kind === "auth") {
+      signOuts++;
+      turnOff(true);
+    } else if (transportMode === "socket") transport?.report(error.failure);
     else if (pinned) {
       try { recordFailure(localStorage, { account: options.account.toLowerCase(), repoId: pinned.id }, error.failure, Date.now()); } catch { /* Activation still reports the failure below. */ }
     }
@@ -360,7 +415,7 @@ export function createAgentMenu(options: {
     if (!remote) return "off";
     if (workspaceChanged) return "workspace-changed";
     if (transportMode === "pending") return "connecting";
-    if (transportMode === "socket" && stuckOn && transportState?.mode === "reconnecting") return "failed";
+    if (transportMode === "socket" && stuckOn && (transportState?.mode === "reconnecting" || (transportState?.mode === "paused" && !ownerPaused))) return "failed";
     if (transportMode === "socket" && transportState && transportState.mode !== "live") return transportState.mode;
     if (usedGrants().length) return "connected";
     return waiting() ? "waiting" : "idle";
@@ -482,6 +537,7 @@ export function createAgentMenu(options: {
     root.classList.toggle("is-asking", asked > 0);
     count.hidden = !asked;
     count.textContent = asked ? String(asked) : "";
+    drawAgents(offered);
     download.hidden = !storage.problem || current === "closed";
     download.disabled = exporting;
     root.dataset.storage = storage.problem?.reason ?? "";
@@ -520,6 +576,50 @@ export function createAgentMenu(options: {
       if (!disposed) paint();
     }
   }
+  let drawnAgents = "", agentsTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The agents working now, while connected: drawn again only when they changed, and when the next one's
+   * time on the list ends. */
+  function drawAgents(offered = offer()) {
+    const agents = offered === "disconnect" ? options.agents?.agents() ?? [] : [];
+    clearTimeout(agentsTimer);
+    const until = Math.min(...agents.map(agent => agent.until ?? Infinity));
+    if (until < Infinity) agentsTimer = setTimeout(() => { if (!disposed) drawAgents(); }, Math.max(0, until - Date.now()) + 50);
+    working.hidden = afterAgents.hidden = !agents.length;
+    const want = JSON.stringify(agents.map(agent => [agent.key, agent.name, agent.colour, agent.asking]));
+    if (want === drawnAgents) return;
+    drawnAgents = want;
+    // The agent whose Stop has the focus, if any (below: where the focus goes after the redraw).
+    const focusedKey = ([...working.children] as HTMLElement[]).find(row => row.contains(document.activeElement))?.dataset.key;
+    working.replaceChildren(...agents.map(agent => {
+      const row = node("li", `agent-menu__agent${agent.asking ? " is-asking" : ""}`);
+      row.dataset.key = agent.key;
+      const dot = node("i", "agent-dots__dot agent-menu__agent-dot");
+      dot.dataset.agentColour = String(agent.colour);
+      const stop = button("Stop", () => {
+        options.agents?.stop(agent.who);
+        // Its held wait, if any, wakes and takes nothing.
+        requestTools?.notify();
+      }, "agent-menu__stop");
+      stop.setAttribute("aria-label", `Stop ${agent.name}`);
+      row.append(dot, node("span", "agent-menu__agent-name", agent.name), stop);
+      return row;
+    }));
+    if (focusedKey === undefined) return;
+    // Its agent still listed: its Stop again. Gone (stopped, or its time ended): the list, or the menu once it is
+    // empty, never another Stop or Disconnect MCP, so a second Enter or a key repeat ends no one else.
+    const row = ([...working.children] as HTMLElement[]).find(each => each.dataset.key === focusedKey);
+    const stop = row?.querySelector<HTMLElement>("button");
+    if (stop) stop.focus();
+    else holdFocus(working.hidden ? root : working);
+  }
+  /** Focuses `element` (the list or the menu) until the focus leaves it: focusable only meanwhile, so a click in the
+   * Requests flyout (inside the menu) or on the list never takes the focus there and closes the flyout. */
+  function holdFocus(element: HTMLElement) {
+    element.tabIndex = -1;
+    element.addEventListener("blur", () => element.removeAttribute("tabindex"), { once: true });
+    element.focus();
+  }
+  const unlisten = options.agents?.listen(() => { if (!disposed) drawAgents(); });
   // The flyout: the requests waiting for an agent or for the user, each showing its pin; an
   // agent's question shows instead of the request's text.
   function drawWaiting() {
@@ -554,7 +654,7 @@ export function createAgentMenu(options: {
       await revoke();
       return;
     }
-    await pressCopy(async (slot) => {
+    await press(async (slot) => {
       // Wait for MCP copies this tab's prompt again while its token still waits; a tab without
       // it (another tab copied it, a reload, or it was revoked) copies a prompt of its own.
       if (offered === "wait") await copyAgain(slot);
@@ -565,6 +665,19 @@ export function createAgentMenu(options: {
         turnOff();
         await turnOn(slot);
       }
+    });
+  }
+  /** A press that may copy a prompt (pressCopy). One during which the sign-in ended, copying
+   * nothing, shows the problem dot on its site until the next press (src/agent-resume.ts). */
+  async function press(run: (slot: Copy) => Promise<void>) {
+    presses++;
+    await pressSignedOut({
+      site: options.repository(),
+      signOuts: () => signOuts,
+      copied: () => copied,
+      presses: () => presses,
+      run: () => pressCopy(run),
+      failed: repo => { if (!disposed) { failedOn = repo; paint(); } },
     });
   }
   // Connect to MCP while remote agents are off: an agent connected before is used again (it may
@@ -582,6 +695,11 @@ export function createAgentMenu(options: {
       // its attempts outlive the connection) would wait out its backoff. A failed retry is the
       // recovery's to report: the dot shows it.
       retry: async () => { await transport?.retry().catch(() => undefined); },
+      // An earlier takeover failed and left the site paused in this browser (ticket am-53). One the
+      // socket's opening just tried and failed is not tried again in the same press. A new failure is
+      // the transport's to report (takeover-failed on the dot); it never rejects, so the catch is
+      // only defensive.
+      takeover: async () => { if (!triedTakeover) await transport?.takeover().catch(() => undefined); },
       retryWaits: () => (transportState?.retryAt ?? 0) > Date.now(),
       offer: now => offer(now as ReturnType<typeof state>),
       fresh: now => now === "idle" || elsewhere(now),
@@ -590,8 +708,9 @@ export function createAgentMenu(options: {
       // already uses the site's connection: Connect to MCP still copies a prompt, this tab's own if
       // it still waits, otherwise a new one.
       copyAgain: () => copyAgain(slot, task),
-      // Still reconnecting (another tab of this browser holds the attempt, or it failed again): the
-      // press made no prompt, so the dot shows a problem until the reconnect ends or the next press.
+      // Still reconnecting (another tab of this browser holds the attempt, or it failed again), or
+      // still paused by a reconnect that gave up (its retry did nothing or failed again): the press
+      // made no prompt, so the dot shows a problem until the reconnect ends or the next press.
       stuck: () => { stuckOn = true; paint(); },
     });
   }
@@ -614,14 +733,16 @@ export function createAgentMenu(options: {
     ownerPaused = false;
     failedOn = undefined;
     stuckOn = false;
+    triedTakeover = false;
     activation++;
     pinned = options.repository();
     remember(true);
     workspaceChanged = false;
     transportMode = "pending";
     transportState = undefined;
-    document.addEventListener("visibilitychange", wake);
-    window.addEventListener("focus", wake);
+    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("focus", onWake);
+    document.addEventListener("toggle", opened, true);
     paint();
   }
   /** Stops this tab's live connection and pending consent checks; `forget` also turns remote
@@ -639,8 +760,9 @@ export function createAgentMenu(options: {
     transportState = undefined;
     requestTools?.notify(); requestTools = undefined;
     workspaceChanged = false;
-    document.removeEventListener("visibilitychange", wake);
-    window.removeEventListener("focus", wake);
+    document.removeEventListener("visibilitychange", onWake);
+    window.removeEventListener("focus", onWake);
+    document.removeEventListener("toggle", opened, true);
     for (const grant of hub.grants) declined.add(grant.id);
     hub = { grants: [] };
     landing.clear();
@@ -708,7 +830,10 @@ export function createAgentMenu(options: {
       // Every agent on this site's connections, the shared token's and ones this tab has not
       // read yet included (the server lists them).
       const at = activation, shown = pinned ?? options.repository();
+      const ended = shown ? hub.grants.filter(grant => sameBranch(grant, branchOf(shown))).map(grant => grant.id) : [];
       if (shown) await api("revoke", { all: true, repoId: shown.id, branch: shown.branch });
+      // Their connections ended, the agents stopped on them are forgotten: a stop lasts until Disconnect MCP.
+      agentStops.forget(ended);
       token = tokenId = undefined;
       landing.clear();
       changing = false;
@@ -813,12 +938,23 @@ export function createAgentMenu(options: {
       open: activateSocket,
     });
   }
-  function wake() {
+  /** `menuOpened`: the menu itself opening, a user's look: offering Disconnect MCP it reads after 2 s
+   * too, where a return to the tab or its focus waits STALE_READ_MS (one read after time away). */
+  function wake(menuOpened = false) {
     // Waiting for an agent, or after a failed press with remote agents still on (another tab's
     // token waits): returning to the tab looks once whether an agent connected meanwhile.
     // Also in a tab where another tab receives: what the button offers (Wait for MCP) decides.
-    if (!workspaceChanged && document.visibilityState === "visible" && (offer() === "wait" || state() === "failed") && Date.now() - lastRead >= 2000)
+    // Offering Disconnect MCP, it looks whether the connections still hold (past 8 hours, or the
+    // sign-in ended; ticket am-51).
+    if (workspaceChanged || document.visibilityState !== "visible") return;
+    const age = Date.now() - lastRead;
+    if (((offer() === "wait" || state() === "failed") && age >= 2000) || (offer() === "disconnect" && age >= (menuOpened ? 2000 : STALE_READ_MS)))
       void readConnections();
+  }
+  const onWake = () => wake();
+  /** The menu's popover opening (it does not bubble: heard on the way down). */
+  function opened(event: Event) {
+    if ((event as ToggleEvent).newState === "open" && event.target instanceof Node && event.target.contains(root)) wake(true);
   }
   // A connection approved in this browser turns remote agents on only for
   // the exact approval, repository and branch named by the consent page.
@@ -872,9 +1008,12 @@ export function createAgentMenu(options: {
     // Turned off for this site in another tab (Disconnect, sign-in ended, connections gone): off here
     // too, so this tab never takes over agents that were turned off.
     if (remote && pinned && event.newValue === null && event.key === agentsOnKey(site(pinned))) { turnOff(); paint(); }
+    // An agent stopped in another tab: its held wait here wakes and takes nothing.
+    // (main.ts hears it first and reads the list again: src/agent-stops.ts.)
+    if (event.key === STOPPED_AGENTS_KEY) requestTools?.notify();
   };
   window.addEventListener("storage", onStorage);
-  forgetWatch();
+  forgetRetired();
   paint();
   void resume();
   return {
@@ -886,7 +1025,7 @@ export function createAgentMenu(options: {
      * Resolves to whether the prompt was copied.
      */
     async connect(task: string) {
-      await pressCopy(async (slot) => {
+      await press(async (slot) => {
         if (state() === "waiting" && token) await copyAgain(slot, task);
         else if (!remote) await turnOn(slot, task);
         else await start(slot, task);
@@ -964,6 +1103,8 @@ export function createAgentMenu(options: {
       disposed = true;
       clearTimeout(repaintTimer);
       clearTimeout(confirmTimer);
+      clearTimeout(agentsTimer);
+      unlisten?.();
       flyout.destroy();
       turnOff();
       window.removeEventListener("storage", onStorage);
@@ -975,12 +1116,13 @@ export function createAgentMenu(options: {
   };
 }
 
-/** Watch records of the removed Watch control (`native-site-editor:agent-watch:…`): nothing reads
- * them now. A one-off clean-up (ticket 29, 2026-10-23): remove it after 2027-01-31. */
-function forgetWatch() {
+/** Records of removed controls: nothing reads them now. One-off clean-ups, each to remove after its date: the
+ * Watch control (ticket 29, 2026-10-23; after 2027-01-31) and "Pins go to" (am-50, 2026-10-30; after 2027-02-28). */
+const RETIRED_KEYS = ["native-site-editor:agent-watch:", "native-site-editor:pins-go-to:"];
+function forgetRetired() {
   try {
     const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
-    for (const key of keys) if (key?.startsWith("native-site-editor:agent-watch:")) localStorage.removeItem(key);
+    for (const key of keys) if (key && RETIRED_KEYS.some(prefix => key.startsWith(prefix))) localStorage.removeItem(key);
   } catch { /* Storage blocked: nothing to forget. */ }
 }
 

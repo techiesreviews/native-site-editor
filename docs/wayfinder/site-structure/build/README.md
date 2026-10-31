@@ -1,5 +1,7 @@
 # Build: site structure
 
+**Ready (guess, low confidence, 2026-10-27):** live ~8 Dec (search, slices 11, 20 and 21, starts ~12 Nov).
+
 Lex's fifth build (order of 2026-10-23): a new way to see and shape a site.
 
 - **Site map:** a zoomable map of every page, from a name block to the real page you can read, where pages are moved and added in place.
@@ -28,7 +30,7 @@ Find takeable slices with `node scripts/agents/tickets.mjs frontier site-structu
 
 ## Gate
 
-**Nothing here starts before the [site quality build](../../site-quality/build/README.md)'s last release** (Lex's order: agents and multiplayer, catalogue, detail pass, site quality, then this; see question 1 for search).
+**Nothing here starts before the [site quality build](../../site-quality/build/README.md) has an empty frontier** (built and waiting for Lex's Tuesday end check; Lex's order: agents and multiplayer, catalogue, detail pass, site quality, then this). Search (slices 11, 20 and 21, question 1) starts as soon as the [atomic catalogue build](../../atomic-catalogue/build/README.md)'s frontier is empty. Releases still wait for Lex's written go-ahead on a Tuesday (Tuesday rules of 2026-10-27, [kitchen.md](../../../agents/kitchen.md#tuesday-review)). Below, "released" next to another map's slice means landed on `dev`.
 
 This build also leans on other maps' slices. `blocked_by` can't point to another map, so each slice names them in its text and the lead checks them before claiming:
 
@@ -43,7 +45,7 @@ This build also leans on other maps' slices. `blocked_by` can't point to another
 2. **The site map** (stage 3): slices 30–36.
 3. **The project overview** (stage 4): slices 40–44. It may run beside stage 3 once 12 has landed.
 
-Then 49. Each release follows the kitchen's stations 6–12 ([kitchen.md](../../../agents/kitchen.md)), with Lex's end check before it.
+Then 49. Each release follows the kitchen's stations 6–12 ([kitchen.md](../../../agents/kitchen.md)), with Lex's end check (Tuesday) before it; the next stage starts once the one before has landed, without waiting for the release.
 
 ## Rules for the whole build
 
@@ -123,9 +125,9 @@ Then 49. Each release follows the kitchen's stations 6–12 ([kitchen.md](../../
 
 The frontier decides; this is one order that keeps to the rules.
 
-1. 10, 11, 12, 13 (and 40); then 20 and 21. Lex's end check and the search release.
-2. 30; then 31, 32, 33, 34, 35 and 36 (33 and 34 touch the same tile code: one after the other). Lex's end check and the site map release.
-3. 41 once 40 and 12 have landed; then 42, 43 and 44. Lex's end check and the overview release.
+1. 10, 11, 12, 13 (and 40); then 20 and 21. Lex's end check (Tuesday) and the search release.
+2. 30; then 31, 32, 33, 34, 35 and 36 (33 and 34 touch the same tile code: one after the other). Lex's end check (Tuesday) and the site map release.
+3. 41 once 40 and 12 have landed; then 42, 43 and 44. Lex's end check (Tuesday) and the overview release.
 4. 49.
 
 ## Lead decisions (technical, made in planning)

@@ -9,7 +9,7 @@ blocked_by: []
 
 ## Goal
 
-Every page gets a small picture, taken inside its own sandboxed frame and kept in the browser, for the site map and the project overview ([ticket 04](../../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26), [ticket 07](../../../tickets/07-grill-project-overview.md#resolution-2026-10-26); research 01, sections "Taking a picture" and "Where pictures live"; research 03, section 1). Size: L.
+Every page gets a small picture, taken inside its own sandboxed frame and kept in the browser, for the site map and the project overview ([ticket 04](../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26), [ticket 07](../../tickets/07-grill-project-overview.md#resolution-2026-10-26); research 01, sections "Taking a picture" and "Where pictures live"; research 03, section 1). Size: L.
 
 ## Decided behaviour
 

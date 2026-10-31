@@ -13,6 +13,7 @@ import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
 import type { Snapshot, TreeEntry } from "../shared/types";
 import { createAgentEditTools } from "../src/agent-tools-edit";
+import { READ_TEXTS, readText, rememberText, tellAgent } from "../src/agent-part";
 import { workingPart } from "../src/working-part";
 import { agentCommandFiles } from "../src/agent-tools";
 import { agentFileReader, type AgentReadPorts } from "../src/agent-tools-read";
@@ -109,9 +110,10 @@ test("every migrated tool prepares the existing command shape from the browser's
 test("hash, unchanged, folders and parent files retain their contracts", async () => {
   const f = await fixture(), hash = f.context.site!.outlines[0].hash;
   const prepare = (input: AgentEdit) => prepareAgentEdit(input, f.context, f.local());
-  for (const input of [request("edit_file", { path: "index.html", expectedHash: "0".repeat(64), edits: [{ oldText: "Welcome", newText: "Hello" }] }),
-    request("write_file", { path: "index.html", content: "text", expectedHash: "0".repeat(64) })])
-    await assert.rejects(prepare(input), /changed in the editor since it was read/);
+  // A whole write needs the hash it read; a file edit, only its words (ticket 10, below).
+  await assert.rejects(prepare(request("write_file", { path: "index.html", content: "text", expectedHash: "0".repeat(64) })), /changed in the editor since it was read/);
+  assert.partialDeepStrictEqual(await prepare(request("edit_file", { path: "index.html", expectedHash: "0".repeat(64), edits: [{ oldText: "Welcome", newText: "Hello" }] })),
+    { operation: "write_file", input: { path: "index.html", content: files["index.html"].replace("Welcome", "Hello"), expectedHash: hash } });
   assert.partialDeepStrictEqual(await prepare(request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: "Welcome", newText: "Welcome" }] })), { unchanged: { state: "unchanged", message: "The edits change nothing." } });
   assert.partialDeepStrictEqual(await prepare(request("write_file", { path: "index.html", content: files["index.html"], expectedHash: hash })), { unchanged: { message: "The file already has this text." } });
   // Protected paths, media as text and the size limit are the Worker's (the refusals below).
@@ -176,7 +178,8 @@ const refusals: Refusal[] = [
   refusal("edit_file", "Worker", GITHUB_CONFIG_REFUSED, "shared/protected-paths.ts", f => ({ path: ".github/workflows/ci.yml", expectedHash: homeHash(f), edits: [{ oldText: "x", newText: "y" }] })),
   refusal("edit_file", "Worker", "Invalid path. Use a repository path such as about/index.html.", "shared/site-rules.ts", f => ({ path: "../secret", expectedHash: homeHash(f), edits: [{ oldText: "x", newText: "y" }] })),
   refusal("edit_file", "preparation", " does not exist. Use write_file to create it.", "shared/agent-edit.ts", f => ({ path: "missing.txt", expectedHash: homeHash(f), edits: [{ oldText: "x", newText: "y" }] })),
-  unless(refusal("edit_file", "preparation", " changed in the editor since it was read. Read it again.", "shared/agent-edit.ts", () => ({ path: "index.html", expectedHash: "0".repeat(64), edits: [{ oldText: "Welcome", newText: "Hello" }] })), f => written("index.html", files["index.html"].replace("Welcome", "Hello"), homeHash(f))),
+  // Read in another text, its words changed since (ticket 10): the clash. Its words still there, it lands (below).
+  refusal("edit_file", "preparation", " were changed meanwhile, by the user or another agent.", "shared/agent-edit.ts", () => ({ path: "index.html", expectedHash: "0".repeat(64), edits: [{ oldText: "Welcome\nno longer here", newText: "Hello" }] })),
   refusal("edit_file", "preparation", "oldText was not found", "shared/agent-replacements.ts", f => ({ path: "index.html", expectedHash: homeHash(f), edits: [{ oldText: "absent", newText: "y" }] })),
   unless(refusal("edit_file", "preparation", "Drafts hold text files up to ", "shared/agent-edit.ts", f => ({ path: "index.html", expectedHash: homeHash(f), edits: [{ oldText: "Welcome", newText: "\0" }] })), f => written("index.html", files["index.html"].replace("Welcome", "\0"), homeHash(f))),
   // Typed in the editor after the tab read it: the guarded write's own proof.
@@ -209,6 +212,18 @@ const refusals: Refusal[] = [
   refusal("inspect_preview", "preparation", "The editor shows no page now. Give page.", "shared/agent-edit.ts", () => ({ selector: "h1" }), f => { f.context.site!.openRoute = null; }),
   refusal("inspect_preview", "live page", " could not be shown in the preview.", "src/agent-site.ts", () => ({ selector: "h1" }), undefined, { open: async () => false }),
   refusal("inspect_preview", "live page", "The preview could not be inspected.", "src/agent-site.ts", () => ({ selector: "h1" }), undefined, { inspect: async () => null }),
+  refusal("screenshot_preview", "Worker", " is not an element id; get_page lists them.", "shared/agent-edit.ts", () => ({ section: "bad.id" })),
+  refusal("screenshot_preview", "preparation", "The editor shows no page now. Give page.", "shared/agent-edit.ts", () => ({}), f => { f.context.site!.openRoute = null; }),
+  refusal("screenshot_preview", "preparation", ". get_site lists the pages.", "shared/agent-edit.ts", () => ({ page: "/absent/" })),
+  refusal("screenshot_preview", "live page", " could not be shown in the preview.", "src/agent-site.ts", () => ({ page: "/" }), undefined, { open: async () => false }),
+  // Its own change, kept in this tab (ticket am-15; tests/agent-changes.test.ts takes the live page's refusals).
+  refusal("discard_change", "preparation", " is kept in this editor tab: it was never applied here, the tab reloaded since, or it is one of the oldest.", "shared/agent-edit.ts", () => ({ change: "mcp-gone" })),
+  refusal("working_here", "Worker", "Give done alone, or the page you work on.", "shared/agent-edit.ts", () => ({ page: "/", done: true })),
+  refusal("working_here", "Worker", "Give the page you work on (and its section), or done: true once you finished.", "shared/agent-edit.ts", () => ({ section: "1.0" })),
+  refusal("working_here", "Worker", " is not an element id; get_page lists them.", "shared/agent-edit.ts", () => ({ page: "/", section: "bad.id" })),
+  refusal("working_here", "preparation", ". get_site lists the pages.", "shared/agent-edit.ts", () => ({ page: "/absent/" })),
+  refusal("working_here", "live page", " on this page. get_page lists them.", "src/agent-site.ts", () => ({ page: "/", section: "1.9" })),
+  refusal("working_here", "live page", " is not there any more.", "src/agent-site.ts", () => ({ page: "/" }), gone("index.html")),
   refusal("make_component", "Worker", " is not an element id; get_page lists them.", "shared/agent-edit.ts", f => ({ page: "/", element: "", tag: "section-intro", expectedHash: homeHash(f) })),
   refusal("make_component", "Worker", "A component's name has a dash in it", "shared/site-rules.ts", f => ({ page: "/", element: "1.0", tag: "section", expectedHash: homeHash(f) })),
   refusal("make_component", "preparation", ". get_site lists the pages.", "shared/agent-edit.ts", f => ({ page: "/absent/", element: "1.0", tag: "section-intro", expectedHash: homeHash(f) })),
@@ -238,7 +253,7 @@ const refusals: Refusal[] = [
 
 /** The ports applySiteCommand uses for the edit tools. */
 type LivePorts = Pick<AgentSiteActions, "text" | "isMounted" | "open" | "sectionTags" | "edits" | "writeDraft" | "moveSection" | "makeComponent"
-  | "createPage" | "setPageDetails" | "moveFile" | "deleteFile" | "inspect">;
+  | "createPage" | "setPageDetails" | "moveFile" | "deleteFile" | "inspect" | "picture" | "workingHere">;
 /** The live page as applySiteCommand reads it: texts now, the fixture's components; every editor control succeeds. */
 function liveActions(live: Live, override: Partial<LivePorts> = {}): AgentSiteActions {
   const components: Record<string, string> = { "feature-block": "components/feature-block/feature-block.html", "site-header": "components/site-header/site-header.html" };
@@ -255,6 +270,7 @@ function liveActions(live: Live, override: Partial<LivePorts> = {}): AgentSiteAc
     makeComponent: async request => ({ tag: request.tag, files: [], slots: [], cards: [], notes: [] }),
     createPage: async () => ({ file: "about/team/index.html", route: "/about/team/" }), setPageDetails: async () => undefined,
     moveFile: async () => undefined, deleteFile: async () => undefined, inspect: async () => ({ elements: [], matched: 0 }),
+    picture: async () => ({ data: "UklGRg==", mimeType: "image/webp", width: 390, height: 844, viewport: 390 }), workingHere: () => () => {},
     ...override,
   } satisfies LivePorts;
   // Deliberate: the edit tools use only these ports; a call to another fails as a TypeError, never as a refusal.
@@ -304,7 +320,7 @@ async function firstRefusal(r: Refusal): Promise<{ layer: Layer; message: string
 }
 
 test("each refusal listed for an agent edit is decided in one layer, by one file of the command's path", async t => {
-  const agentPath = ["worker/mcp.ts", "shared/agent-edit.ts", "shared/site-files.ts", "src/agent-tools-edit.ts", "src/agent-site.ts"];
+  const agentPath = ["worker/mcp.ts", "shared/agent-edit.ts", "shared/site-files.ts", "src/agent-tools-edit.ts", "src/agent-part.ts", "src/agent-site.ts"];
   const sources = new Map<string, string>();
   // The code only: a comment may quote a refusal. Only whole comment lines and blocks go, so no string is cut short.
   const code = (text: string) => text.replace(/^\s*\/\*[\s\S]*?\*\//gm, "").replace(/^\s*\/\/.*$/gm, "");
@@ -372,6 +388,81 @@ test("a page change refused by the page's text never opens the page", async t =>
   assert.ok("operation" in prepared);
   await applySiteCommand(liveActions(live, { open }), commandOf(input, prepared));
   assert.equal(opened, 1);
+});
+
+test("a stale page command keeps its read when the tab's texts are full: keeping the page now never lets that read go first", async t => {
+  installOutlineDocument(t);
+  const f = await fixture(), read = files["index.html"], now = read.replace("<main>\n", "<main>\n  <section>Added</section>\n");
+  // The agent's read is the oldest text the tab keeps, at its cap of 200; the page now is not kept yet.
+  rememberText(await textHash(read), read);
+  for (let i = 0; i < READ_TEXTS - 1; i++) rememberText(`full-${i}`, String(i));
+  f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(now), content: now });
+  await f.run(request("remove_section", { page: "/", section: "1.1", expectedHash: await textHash(read) }));
+  // The section added before it moved it: its id follows, against the page's hash now.
+  assert.equal(f.commands.length, 1);
+  assert.equal(f.commands[0].expectedHash, await textHash(now));
+  assert.deepEqual(f.commands[0].args, { section: "1.2" });
+  assert.equal(readText(await textHash(now)), now);
+});
+
+test("a stale page command prepared again after a race keeps its read too, though keeping the page let it go from the tab's texts", async t => {
+  installOutlineDocument(t);
+  const f = await fixture(), read = files["index.html"], now = read.replace("<main>\n", "<main>\n  <section>Added</section>\n");
+  const newer = now.replace("<h1>Welcome</h1>", "<h1>Hello</h1>");
+  const draft = async (text: string) => {
+    f.context.drafts = f.context.drafts.filter(item => item.path !== "index.html");
+    f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(text), content: text });
+  };
+  // The agent's read is the oldest text the tab keeps, at its cap; keeping the page now lets it go.
+  rememberText(await textHash(read), read);
+  for (let i = 0; i < READ_TEXTS - 1; i++) rememberText(`race-full-${i}`, String(i));
+  await draft(now);
+  const ran: AgentCommand[] = [];
+  let race = true;
+  const tools = createAgentEditTools({ workspace, records: f.records, ports: f.ports, run: async command => {
+    ran.push({ ...command });
+    if (race) {
+      // Another change landed between preparing and applying: refused with nothing kept, so it is prepared again.
+      race = false;
+      await draft(newer);
+      throw new Error("index.html changed in the editor since it was read. Read it again. Nothing was changed; your drafts are as they were.");
+    }
+    return { message: "Applied.", result: { path: command.path } };
+  } });
+  await tools.run(request("remove_section", { page: "/", section: "1.1", expectedHash: await textHash(read) }, "race-page"), 0, () => true);
+  assert.equal(readText(await textHash(read)), undefined, "the tab let the read go");
+  assert.equal(ran.length, 2);
+  assert.equal(ran[1].expectedHash, await textHash(newer));
+  assert.deepEqual(ran[1].args, { section: "1.2" });
+});
+
+test("a stale edit_file prepared again after a race keeps its read too: an edit with all still lands on the text now", async () => {
+  const f = await fixture(), read = files["index.html"], now = read.replace(">Fast<", ">Rapid<");
+  const newer = now.replace("<main>\n", "<main>\n  <section>Added</section>\n");
+  const draft = async (text: string) => {
+    f.context.drafts = f.context.drafts.filter(item => item.path !== "index.html");
+    f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(text), content: text });
+  };
+  // The agent's read is the oldest text the tab keeps, at its cap; keeping the text now lets it go.
+  rememberText(await textHash(read), read);
+  for (let i = 0; i < READ_TEXTS - 1; i++) rememberText(`edit-race-full-${i}`, String(i));
+  await draft(now);
+  const ran: AgentCommand[] = [];
+  let race = true;
+  const tools = createAgentEditTools({ workspace, records: f.records, ports: f.ports, run: async command => {
+    ran.push({ ...command });
+    if (race) {
+      race = false;
+      await draft(newer);
+      throw new Error("index.html changed in the editor since it was read. Read it again. Nothing was changed; your drafts are as they were.");
+    }
+    return { message: "Applied.", result: { path: command.path } };
+  } });
+  await tools.run(request("edit_file", { path: "index.html", expectedHash: await textHash(read), edits: [{ oldText: "Welcome", newText: "Hi", all: true }] }, "race-edit"), 0, () => true);
+  assert.equal(readText(await textHash(read)), undefined, "the tab let the read go");
+  assert.equal(ran.length, 2);
+  assert.equal(ran[1].expectedHash, await textHash(newer));
+  assert.equal(ran[1].content, newer.replace("Welcome", "Hi"));
 });
 
 test("duplicate edit_file joins in flight and returns the receipt before re-reading a changed hash", async () => {
@@ -483,7 +574,10 @@ test("already-authorized edit and duplicate: 3 auth + 1 real relay dispatch, 0 r
       h.counters.reset(); h.github.requests.length = 0;
       const result = await h.rpc(tool, argsForTool);
       assert.equal(body({ ok: true, value: json(payload(result)) }).state, "applied", JSON.stringify(result));
-      if (!first) first = result; else assert.deepEqual(result, first);
+      // A duplicate answers as the edit did; its status the same, without the edit's next step (ticket am-14).
+      const { next, ...told } = payload(result) as { next?: string };
+      assert.equal(Boolean(next), tool === "edit_file", tool);
+      if (!first) first = told; else assert.deepEqual(told, first);
       assert.equal(h.counters.byCategory.auth.calls, 3);
       assert.equal(h.counters.byCategory.control.calls, 1);
       assert.equal(h.counters.byCategory.data.calls, 0);
@@ -1058,4 +1152,221 @@ test("the code pane's lines are left by a pause in typing; an element only by le
   workingPart.left({ path: "index.html" });
   await settle();
   assert.equal(workingPart.now(), undefined);
+});
+
+test("an edit that loses a race with another change to its file is prepared again on that text and lands; a clash then carries the part", async () => {
+  // Ticket 10: two agents' edits of one page, prepared on the same text; the second to apply finds the first landed.
+  const f = await fixture(), home = files["index.html"], hash = f.context.site!.outlines[0].hash;
+  const ran: AgentCommand[] = [];
+  let landFirst: string | undefined;
+  const tools = createAgentEditTools({ workspace, records: f.records, ports: f.ports, run: async command => {
+    ran.push({ ...command });
+    if (landFirst !== undefined) {
+      // Another agent's change landed between this edit's preparation and its application.
+      const text = landFirst; landFirst = undefined;
+      f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(text), content: text });
+      throw new Error("index.html changed in the editor since it was read. Read it again. Nothing was changed; your drafts are as they were.");
+    }
+    return f.run(request("write_file", { path: command.path, content: command.content, expectedHash: null }, `${command.id}-landed`)).then(() => ({ message: "Applied.", result: { path: command.path } }));
+  } });
+  landFirst = home.replace("<h1>Welcome</h1>", "<h1>Hello</h1>");
+  const landed = body(await tools.run(request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: ">Fast<", newText: ">Quick<" }] }, "race-1"), 0, () => true));
+  assert.equal(landed.state, "applied", JSON.stringify(landed));
+  assert.equal(ran.length, 2);
+  assert.equal(ran[1].content, home.replace("<h1>Welcome</h1>", "<h1>Hello</h1>").replace(">Fast<", ">Quick<"));
+  // The same words changed in the race: the clash, with the part as it is now; nothing more runs.
+  f.context.drafts.length = 0;
+  landFirst = home.replace(">Fast<", ">Rapid<");
+  const clash = body(await tools.run(request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: ">Fast<", newText: ">Quick<" }] }, "race-2"), 0, () => true));
+  assert.equal(clash.state, "conflict");
+  assert.match(clash.message, /were changed meanwhile/);
+  assert.match(clash.part.text, />Rapid</);
+  assert.equal(clash.part.hash, await textHash(home.replace(">Fast<", ">Rapid<")));
+  assert.equal(ran.length, 3);
+});
+
+test("an edit prepared again after a race waits when it now changes the part the user types in (ticket 52 holds on retry)", async t => {
+  t.after(() => workingPart.left());
+  const live: Record<string, string> = { ...files };
+  const f = await fixture({ source: path => live[path] }), home = files["index.html"], hash = f.context.site!.outlines[0].hash;
+  const ports = { ...f.ports, source: (path: string) => live[path], pin: () => ({ away: () => false, context: f.ports.context }) } satisfies AgentReadPorts;
+  const ran: AgentCommand[] = [];
+  const tools = createAgentEditTools({ workspace, records: f.records, ports, run: async command => {
+    ran.push({ ...command });
+    if (ran.length === 1) {
+      // The user started typing in the heading meanwhile: their text is written, and they are still in it.
+      const typed = home.replace("<h1>Welcome</h1>", "<h1>Welcome to</h1>");
+      live["index.html"] = typed;
+      f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(typed), content: typed });
+      workingPart.typed(heading);
+      throw new Error("index.html changed in the editor since it was read. Read it again. Nothing was changed; your drafts are as they were.");
+    }
+    const state = await f.records.workspace(workspace);
+    await f.records.commit({ workspace, fence: command.ownerGeneration!, expectedRevision: state.revision, expectedDrafts: [], drafts: [],
+      receipt: { operationId: command.id, authorizationId: command.grantId!, payloadIdentity: command.requestIdentity!, outcome: { message: "Applied." }, createdAt: Date.now(), issuedAt: command.createdAt } });
+    live[command.path] = command.content;
+    return { message: "Applied." };
+  } });
+  const edit = request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: "Welcome", newText: "Hello" }] }, "retry-waits");
+  assert.equal(body(await tools.run(edit, 0, () => true)).state, "waiting");
+  assert.equal(ran.length, 1, "the retry waits for the user, never runs over their typing");
+  workingPart.left(heading);
+  // Bounded by time, not turns: the retry hashes off the main thread, which can outlast many turns under load.
+  for (const until = Date.now() + 2000; ran.length < 2 && Date.now() < until;) await settle();
+  assert.equal(ran.length, 2);
+  assert.equal(ran[1].content, home.replace("<h1>Welcome</h1>", "<h1>Hello to</h1>"));
+  assert.equal(body(await tools.run({ operation: "status", id: edit.id, grantId: edit.grantId }, 0, () => true)).state, "applied");
+});
+
+const raceLost = () => new Error("index.html changed in the editor since it was read. Read it again. Nothing was changed; your drafts are as they were.");
+
+test("a changed revision at every await of a race retry (its proof, preparation and reads) stops it: nothing runs again, nothing is recorded", async () => {
+  const points = await forEachAwait(race => {
+    const state = { disturb: () => {}, writes: 0, receipts: () => 0, done: Promise.resolve() };
+    state.done = (async () => {
+      const f = await fixture(), home = files["index.html"];
+      state.disturb = () => { f.snapshot.commit = "different revision"; };
+      state.receipts = () => f.fake.stores.get("receipts")?.size ?? 0;
+      let lost = false;
+      const source = f.ports.files();
+      const ports: AgentReadPorts = { ...f.ports, context: race.port("context", () => f.ports.context()),
+        files: () => ({ ...source, read: race.port("file", (repo, sha) => source.read(repo, sha)) }) };
+      const records: AgentRecords = { ...f.records, receipt: race.port("receipt", (...args) => f.records.receipt(...args)),
+        workspace: race.port("workspace", (...args) => f.records.workspace(...args)), status: race.port("status", (...args) => f.records.status(...args)) };
+      const tools = createAgentEditTools({ workspace, ports, records, run: async () => {
+        if (!lost) {
+          // Another agent's change landed first: the retry prepares again on it.
+          lost = true;
+          const text = home.replace("<h1>Welcome</h1>", "<h1>Hello</h1>");
+          f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(text), content: text });
+          throw raceLost();
+        }
+        state.writes++;
+        return { message: "Applied." };
+      } });
+      await tools.run(request("edit_file", { path: "index.html", expectedHash: f.context.site!.outlines[0].hash, edits: [{ oldText: ">Fast<", newText: ">Quick<" }] }), 0, () => true);
+    })();
+    return state;
+  }, state => state.disturb(), state => { assert.equal(state.writes, 0); assert.equal(state.receipts(), 0); });
+  assert.ok(points >= 6, `${points} await points`);
+});
+
+test("an edit that waited and landed is not told back to its agent on the status lookup that says applied", async t => {
+  t.after(() => workingPart.left());
+  const live: Record<string, string> = { ...files };
+  const f = await fixture({ source: path => live[path] });
+  const ports = { ...f.ports, source: (path: string) => live[path], pin: () => ({ away: () => false, context: f.ports.context }) } satisfies AgentReadPorts;
+  const tell = async (input: AgentEdit | { operation: "status"; id: string; grantId: string }, result: AgentReadResult) =>
+    tellAgent(await f.ports.context(), { repoId: repo.id, branch: "main" }, input.grantId, result);
+  const tools = createAgentEditTools({ workspace, records: f.records, ports, tell, run: async command => {
+    const state = await f.records.workspace(workspace), outcome = { message: "Applied.", result: { path: command.path, hash: await textHash(command.content) } };
+    await f.records.commit({ workspace, fence: command.ownerGeneration!, expectedRevision: state.revision, expectedDrafts: [], drafts: [],
+      receipt: { operationId: command.id, authorizationId: command.grantId!, payloadIdentity: command.requestIdentity!, outcome, createdAt: Date.now(), issuedAt: command.createdAt } });
+    live[command.path] = command.content;
+    f.context.drafts.push({ path: command.path, baseSha: null, updatedAt: Date.now(), hash: outcome.result.hash, content: command.content });
+    return outcome;
+  } });
+  // Its read (get_page) set its mark; then it edits the heading the user types in.
+  tellAgent(await f.ports.context(), { repoId: repo.id, branch: "main" }, "grant-own", { ok: true, value: {} });
+  workingPart.typed(heading);
+  const edit = { ...request("edit_file", { path: "index.html", expectedHash: f.context.site!.outlines[0].hash, edits: [{ oldText: "Welcome", newText: "Hello" }] }, "waited-own"), grantId: "grant-own" };
+  assert.equal(body(await tools.run(edit, 0, () => true)).state, "waiting");
+  workingPart.left(heading);
+  for (let turn = 0; turn < 100 && !live["index.html"].includes("Hello"); turn++) await settle();
+  const status = body(await tools.run({ operation: "status", id: edit.id, grantId: edit.grantId }, 0, () => true));
+  assert.equal(status.state, "applied");
+  assert.equal(status.changesSinceLastRead, undefined, JSON.stringify(status));
+});
+
+test("a race retry that finds its edits now change nothing keeps an unchanged receipt only at the revision proved before that preparation", async () => {
+  // Read in a text the tab does not keep: its replacements make a change on the text it first meets, and none
+  // on the text another agent leaves meanwhile (the second puts back what the first takes out there).
+  const home = files["index.html"], first = home.replace("</main>", "<p>Kqz1</p>\n<p>Kqy</p>\n</main>");
+  const edits = [{ oldText: "Kqz", newText: "Kq" }, { oldText: "Kqy", newText: "Kqzy" }];
+  const attempt = async (meanwhile: boolean) => {
+    const f = await fixture();
+    const draft = async (text: string) => {
+      f.context.drafts = f.context.drafts.filter(item => item.path !== "index.html");
+      f.context.drafts.push({ path: "index.html", baseSha: "1".repeat(40), updatedAt: Date.now(), hash: await textHash(text), content: text });
+    };
+    await draft(first);
+    let calls = 0, lost = false;
+    const records: AgentRecords = { ...f.records, workspace: async ws => {
+      const state = await f.records.workspace(ws);
+      // Right after the retry's proof: another agent's commit lands.
+      if (++calls === 2 && meanwhile) assert.equal(body(await f.run(request("write_file", { path: "meanwhile.txt", content: "agent" }, "meanwhile"))).state, "applied");
+      return state;
+    } };
+    const tools = createAgentEditTools({ workspace, records, ports: f.ports, run: async () => {
+      if (lost) assert.fail("must not run again");
+      lost = true;
+      await draft(home.replace("</main>", "<p>Kqzy</p>\n</main>"));
+      throw raceLost();
+    } });
+    const input = request("edit_file", { path: "index.html", expectedHash: "0".repeat(64), edits }, "same-change");
+    return { reply: body(await tools.run(input, 0, () => true)), receipt: await f.records.receipt(workspace, input.id, input.grantId), calls };
+  };
+  const kept = await attempt(false);
+  assert.equal(kept.reply.state, "unchanged", JSON.stringify(kept.reply));
+  assert.ok(kept.receipt);
+  const refused = await attempt(true);
+  assert.notEqual(refused.reply.state, "unchanged");
+  assert.equal(refused.receipt, undefined);
+});
+
+test("a parallel read while an agent's text edit lands is not told that edit as another's", async () => {
+  const f = await fixture(), gate = deferred<void>(), drafted = deferred<void>();
+  const shared = async () => f.ports.context();
+  const workspaceId = { repoId: repo.id, branch: "main" };
+  // Its earlier read set its mark.
+  tellAgent(await shared(), workspaceId, "grant-parallel", { ok: true, value: {} });
+  const tools = createAgentEditTools({ workspace, records: f.records, ports: f.ports, run: async command => {
+    // The draft shows before the run resolves.
+    f.context.drafts.push({ path: command.path, baseSha: null, updatedAt: Date.now(), hash: await textHash(command.content), content: command.content });
+    drafted.resolve();
+    await gate.promise;
+    return { message: "Applied.", result: { path: command.path, hash: await textHash(command.content) } };
+  } });
+  const edit = { ...request("edit_file", { path: "index.html", expectedHash: f.context.site!.outlines[0].hash, edits: [{ oldText: "Welcome", newText: "Hello" }] }, "parallel"), grantId: "grant-parallel" };
+  const pending = tools.run(edit, 0, () => true);
+  await drafted.promise;
+  const read = tellAgent(await shared(), workspaceId, "grant-parallel", { ok: true, value: { files: [] } });
+  assert.equal(read.ok && (read.value as { changesSinceLastRead?: unknown }).changesSinceLastRead, undefined, JSON.stringify(read));
+  gate.resolve();
+  assert.equal(body(await pending).state, "applied");
+});
+
+test("screenshot_preview's reply: the picture as an image, none taken refused, and a late one told to take it again, never to look up its status (ticket am-14)", async t => {
+  const h = await connected();
+  let now = Date.now(); t.mock.method(Date, "now", () => now);
+  const scope = { workspace, tabId: "picture-tab", generation: 1 }, name = await relayObjectName(workspace);
+  let attachment: unknown = { ...scope, role: "editor", owner: { tabId: scope.tabId, generation: 1 } };
+  // What the tab answers each picture with, and whether it answers after the relay's ten seconds.
+  let answer: { result: Record<string, unknown>; late?: true } = { result: {} };
+  const socket = { readyState: 1, close() {}, serializeAttachment(value: unknown) { attachment = value; }, deserializeAttachment: () => attachment,
+    send(message: string) {
+      const value = JSON.parse(message); if (value.type !== "command") return;
+      if (answer.late) now += 10_001;
+      const result = { ok: true, value: { requestId: value.command.id, state: "applied", message: "A picture of index.html, 390 px wide.", result: answer.result } };
+      queueMicrotask(() => h.message(name, socket, JSON.stringify({ type: "result", id: value.id, ...scope, result })));
+    },
+  } satisfies RelaySocket;
+  try {
+    h.attach(name, socket, JSON.stringify({ type: "handshake", ...scope, owner: true }));
+    await h.settle(name);
+    type Reply = { isError?: boolean; content: { type: string; data?: string; mimeType?: string; text?: string }[] };
+    answer = { result: { data: "UklGRg==", mimeType: "image/webp", width: 390, height: 844, viewport: 390 } };
+    const taken = await h.rpc("screenshot_preview", { width: "phone" }) as Reply;
+    assert.equal(taken.isError, undefined);
+    assert.deepEqual(taken.content[0], { type: "image", data: "UklGRg==", mimeType: "image/webp" });
+    assert.deepEqual(JSON.parse(taken.content[1].text!).result, { width: 390, height: 844, viewport: 390 });
+    answer = { result: { width: 390, height: 844, viewport: 390 } };
+    const none = await h.rpc("screenshot_preview", {}) as Reply;
+    assert.equal(none.isError, true); assert.equal(none.content[0].text, "The editor took no picture. Try again.");
+    answer = { result: { data: "UklGRg==", mimeType: "image/webp", width: 390, height: 844, viewport: 390 }, late: true };
+    const late = await h.rpc("screenshot_preview", {}) as Reply;
+    assert.equal(late.isError, true);
+    assert.match(late.content[0].text!, /^No picture came back \(.+\)\. Nothing was changed; take it again\.$/);
+    assert.doesNotMatch(late.content[0].text!, /get_command_status/);
+  } finally { await h.worker.dispose(); }
 });

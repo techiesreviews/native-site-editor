@@ -26,6 +26,7 @@ const postAllowlist: AllowlistEntry[] = [
 ];
 const listenerAllowlist: AllowlistEntry[] = [
   { file: "src/agent-transport.ts", match: "source", reason: "Pinned agent relay WebSocket, not a preview frame; transport tests prove socket, workspace, tab and generation checks." },
+  { file: "src/live-room.ts", match: "next", reason: "Live room WebSocket (ticket am-20), not a preview frame; live-room.test.ts proves it reads only its own socket's frames." },
   { file: "src/components/agent-menu.ts", match: "channel", reason: REQUESTS },
   { file: "src/drafts.ts", match: "channel", reason: DRAFTS },
   { file: "src/page-builder/media-optimise.ts", match: "worker", reason: OPTIMISER },

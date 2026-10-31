@@ -232,7 +232,8 @@ test("live: watching is automatic: a wait is held until Ask agent, an empty one 
     // Connected: one button, no Watch controls, no explainer lines and no Turn off.
     const action = page.locator(".agent-menu__action");
     await expect(action).toHaveText("Disconnect MCP");
-    await expect(page.locator(".agent-menu")).toHaveText("Disconnect MCP", { useInnerText: true });
+    // Beside the agents working now (ticket am-12), only the button.
+    await expect(page.locator(".agent-menu > :not(.agent-menu__agents, .agent-menu__divider):visible")).toHaveText(["Disconnect MCP"]);
     await expect(page.locator(".agent-menu")).not.toHaveAttribute("data-watch");
     await expect(page.getByRole("button", { name: /Watch|Stop watching|Turn off/ })).toHaveCount(0);
     expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.includes("agent-watch")))).toEqual([]);
@@ -395,7 +396,8 @@ test("waiting paused by owner: waits answer at once and ask the agent to stop; t
     const result = await client.callTool({ name: "wait_for_requests", arguments: {} });
     expect(Date.now() - started).toBeLessThan(8_000);
     await expect(page.locator(".agent-menu__action")).toHaveText("Disconnect MCP", { timeout: 15_000 });
-    await expect(page.locator(".agent-menu")).toHaveText("Disconnect MCP", { useInnerText: true });
+    // Beside the agents working now (ticket am-12), only the button.
+    await expect(page.locator(".agent-menu > :not(.agent-menu__agents, .agent-menu__divider):visible")).toHaveText(["Disconnect MCP"]);
     expect(result.isError).toBeFalsy();
     const value = JSON.parse((result.content as { text: string }[])[0].text);
     expect(value.requests).toEqual([]);

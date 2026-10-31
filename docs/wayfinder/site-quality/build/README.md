@@ -1,5 +1,7 @@
 # Build: site quality
 
+**Ready (guess, low confidence, 2026-10-27):** live ~1 Dec (checks, slices 10–11, start ~12 Nov).
+
 Lex's fourth build (order of 2026-10-23): every site made in the editor scores Lighthouse 100 for accessibility, best practices, SEO and Agents and 99 for speed by default, is found and quoted by AI search, and stays that way while Lex edits, with the rules kept current every month. The editor does it by itself on every save, with nothing marked "by agent"; what only the user can supply goes to a new **Inbox** in the top bar, and every page shows its five scores (Lighthouse's four plus Agents, its Agentic Browsing category), measured in the user's own browser to match Lighthouse, with one "Let AI fix it" button that copies a fix-it prompt or sends it to a connected agent. Every decision comes from the [map](../map.md)'s closed tickets; this build does not reopen them.
 
 Research is on branches that are never merged (`git show origin/<branch>:<path>`):
@@ -24,12 +26,12 @@ Find takeable slices with `node scripts/agents/tickets.mjs frontier site-quality
 
 ## Gate
 
-**Nothing here starts before the [detail pass](../../detail-pass/map.md) is released to production**, except slices 10 and 11 (checks only), which start right after the catalogue release (Lex, 2026-10-26) (Lex's order: agents and multiplayer, catalogue, detail pass, then this). The detail pass itself waits for the [atomic catalogue build](../../atomic-catalogue/build/README.md)'s last release, which brings the slim top bar (catalogue slice 66) the Inbox sits in. The lead checks `kit status` before claiming the first slice.
+**Nothing here starts before the [detail pass](../../detail-pass/map.md) has an empty frontier** (built and waiting for Lex's Tuesday end check), except slices 10 and 11 (checks only), which start as soon as the [atomic catalogue build](../../atomic-catalogue/build/README.md)'s frontier is empty (Lex, 2026-10-26; Lex's order: agents and multiplayer, catalogue, detail pass, then this; Tuesday rules of 2026-10-27, [kitchen.md](../../../agents/kitchen.md#tuesday-review)). Releases still wait for Lex's written go-ahead on a Tuesday. The detail pass itself waits for the catalogue's frontier to empty, which brings the slim top bar (catalogue slice 66) the Inbox sits in. The lead checks both frontiers (`node scripts/agents/tickets.mjs frontier <map>`) before claiming the first slice.
 
 ## Two releases
 
-1. **Site output** (stages 1–3, and 50): slices 10–32 and 50. Lex's end check, then release.
-2. **The Inbox and page scores** (stages 4 and 6) and the monthly check (51): slices 40, 41, 43, 44, 51 and 60–67. They touch editor screens, not site output, so they may run beside stages 2–3 once their blockers have landed; the release follows the site-output release. Then 69.
+1. **Site output** (stages 1–3, and 50): slices 10–32 and 50. Lex's end check (Tuesday), then release. This release changes visitors' sites (robots, `_headers`, llms.txt), so it is hard to undo and is marked so in the pack.
+2. **The Inbox and page scores** (stages 4 and 6) and the monthly check (51): slices 40, 41, 43, 44, 51 and 60–67. They touch editor screens, not site output, so they may run beside stages 2–3 once their blockers have landed; the release follows the site-output release, and their work does not wait for it. Then 69.
 
 Each release follows the kitchen's stations 6–12 ([kitchen.md](../../../agents/kitchen.md)).
 
@@ -135,8 +137,8 @@ The planned slice 42 (a dot on pages with an open item) is folded into slice 63:
 The frontier decides; this is one order that keeps to the rules.
 
 1. 10, 12, 13; then 11, 14, 50; then 15; then 16.
-2. 20, 21, 22, 27, 30, 31, 32 as their blockers land; 23 after 20; then 24, 25 and 26. Lex's end check and the site-output release.
-3. 40 (it may start beside step 2); then 41, 43 and 44. 60 once 11 and 12 have landed; then 61 and 62; 63 after 61 and 41; then 64, then 65; 66 once the agents build's helper is released; 67 once 65 has landed and the agents build's pins (slice 13) are released. The lead runs 51 once 11 has landed and Lex has OK'd the schedule. Lex's end check and the Inbox and page scores release.
+2. 20, 21, 22, 27, 30, 31, 32 as their blockers land; 23 after 20; then 24, 25 and 26. Lex's end check (Tuesday) and the site-output release; step 3 keeps going meanwhile.
+3. 40 (it may start beside step 2); then 41, 43 and 44. 60 once 11 and 12 have landed; then 61 and 62; 63 after 61 and 41; then 64, then 65; 66 once the agents build's helper (slice 16) has landed; 67 once 65 has landed and the agents build's pins (slice 13) have landed. The lead runs 51 once 11 has landed and Lex has OK'd the schedule (in a Tuesday pack). Lex's end check (Tuesday) and the Inbox and page scores release.
 4. 69.
 
 ## Lead decisions (technical, made in planning)

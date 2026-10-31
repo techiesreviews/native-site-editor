@@ -1,8 +1,8 @@
 ---
 title: The project settings file, this editor first
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: ke-11
 builder: claude
 blocked_by: [10-fixes-from-old-copies]
 ---
@@ -41,3 +41,111 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-ke11 -- scripts/agents/kit slice --ticket docs/wayfinder/kitchen-everywhere/build/tickets/11-project-settings-file.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-ke11 --timeout 2h`. While building: `scripts/agents/kit unit --affected`, then `scripts/agents/kit unit tests/kit*.test.ts`.
 - Second look: as the README says.
 - Report: unit `RESULT:` lines, the `grep` output, before-and-after `doctor` and `status` lines, review decisions, PR and merge SHA.
+
+## Done (2026-10-27)
+
+- **Settings file:** `scripts/agents/kit.json` holds this editor's values (the research 04 keys). Readers: `kitSettings()`, `kitBranch()`, `kitDevRoot()`, `kitMaps()` in `kit-lib.mjs`; `kit_setting <jq path>`, `kit_settings_problems`, `kit_dev_root` in `kit-lib.sh`. Both read the file from the project's top folder (`KIT_ROOT`, else `git rev-parse --show-toplevel`). Only `project` and `branches.land` are required.
+- **Main root:** `KIT_MAIN_ROOT`, then `mainRoot`, then the main worktree (the git common folder's parent). The hard-coded `/home/ubulex/Projects/native-site-editor` fallback is gone.
+- **Land branch:** `review`, `unit --affected`, `pr` (default `--base`, the refused branches, and the `--release` pairing with `branches.release`), `status`, `wait ci` (`branches.ci`, else `land`), `doctor`, `next` and `worktree.sh` read `origin/<land>`. `next --help` fills in the branch, so it prints what it printed before.
+- **Other keys:** `devRoot` for `next`, `heartbeat`, `deps add` and doctor's dev-worktree check. `worktreePrefix` (else `<project>-`) and `sharedNodeModules` for `worktree.sh` and doctor. `checks` for `kit pr`'s check, unit, lint and extra steps. `unit.run`/`unit.files` for `unit.sh`. `paths`, `featureList` and `unit.docsGuards` for `pr-tier.mjs`. `standards` for the review brief. `maps` for `status`, `score`, `feedback`, `next`, `heartbeat`, `sweep`, `tickets.mjs` and the scoreboard map. `sharedFile` for `next` rule 3 and `sweep`. `techDebt` for `sweep`. `preview` for `status`.
+- **Missing optional keys** switch their feature off with a plain line:
+  - `status`: no preview row, and `tickets: none (no maps folder …)`.
+  - `next` and `heartbeat`: `needs a dev worktree; add devRoot …`.
+  - `kit pr`: `check: skipped (no checks.check …)`.
+  - `unit.sh`: `needs unit.run …`.
+  - `sweep`: drops the shared-file section.
+  - `worktree.sh`: no `node_modules` link, with a line saying so.
+  - With no `paths` or `featureList`, every change is code and the feature-list guard is off.
+- **Doctor:** a missing, broken or incomplete file makes doctor fail with `✗ settings: <what to add>`. The first line is now `✓ settings: scripts/agents/kit.json (native-site-editor, lands on dev)` and the count is `9/9`. The other doctor lines on this editor are unchanged. `kit status kitchen-everywhere` and `kit next --help` print byte-for-byte what they printed before.
+- **Environment overrides still win:** `KIT_MAIN_ROOT`, `KIT_DEV_ROOT`, `KIT_PREVIEW_URL`.
+- **Tests:**
+  - New `tests/kit-settings.test.ts` covers: required keys in both readers; missing, broken and incomplete files failing doctor; missing optional keys; environment overrides; and a `land: main` repo getting `main` from `review`, `unit --affected`, `pr --dry-run`, `status` and `wait ci` (fake `gh`).
+  - The temp repos in `kit`, `kit-unit`, `kit-status`, `kit-sweep`, `kit-score`, `kit-feedback`, `kit-doctor`, `kit-next`, `kit-review`, `kit-fix` and `kit-pr` tests now carry a settings file. Doctor's tests expect the settings line.
+  - `docs/agents/agent-scripts.md` gains the settings paragraph.
+- **What the grep still finds,** and why:
+  - The editor's own commands, as allowed: `kit.d/specs`, `kit.d/size`, `kit.d/preview` and `shots.sh`.
+  - Comments only: `context-card.mjs` 68–69, `kit.d/learn` 90, and `deploy-preview.sh` 2 (its usage comment).
+  - Files outside this ticket's list, left for a follow-up:
+    - `kit.d/learn` 15: the `defaultSlug` should read `project`.
+    - `kit.d/ux` 17 and 61: the default `--base origin/dev`. Research 04 counts `ux` among the editor's own commands.
+    - `worktrees.mjs` 71, 121, 124 and 155: the protected dev worktree and the merged-branch hint. This is the helper behind `worktrees.sh`.
+- **Values the grep does not catch, still in the code:**
+  - `kit pr`'s `colours` step (`scripts/check-colours.mjs`).
+  - The `slice` and `fix` brief text (`npm run check`, `npm run lint`, `docs/agents/features.md`), which is outside this ticket's files.
+  - The front door still lists `kit.d/` itself, and nothing reads the `commands` and `rulebookExtras` keys yet (that is launcher work).
+  - In `pr-tier.mjs`: `cleanGuard` (`^scripts/agents/`, `^tests/kit-`) and `unitTest` (`tests/*.test.ts`).
+  - In `kit pr`: the `tests` folder it reads for focused unit files, and its "CI still runs … no Sol review" line.
+  - In `sweep`: the "Hand-typed values in src/**/*.css" section.
+- **Review round 1 fixes:**
+  - `worktree.sh` makes the static-preview link again even before main builds the fixture.
+  - `kitSettings()` strips trailing slashes from `maps` once, for every reader.
+  - Bash `kit_main_root` takes `mainRoot` only from a valid file, as node does.
+  - `deps add` lets `KIT_DEV_ROOT` win even without a usable file.
+  - `unit.sh` prints the settings problem before asking for `unit.run`.
+  - The review brief reads `standards` from the top folder of the worktree it was given. Because of that, the temp repo in `tests/agent-scripts.test.ts` now carries a settings file too (the only test outside `tests/kit*.test.ts` that needed one).
+  - The layout paragraph in `agent-scripts.md` now points to the settings file.
+  - New tests cover `worktree.sh`, sweep's missing-key lines, `kit pr`'s release pairing, the `deps add` prefix, a trailing-slash `maps` (heartbeat and `scoreMap`) and bash/node agreement on `mainRoot`.
+- **Review round 2 fixes:**
+  - `kit pr` resolves its default `--base` after reading the settings file, so a settings problem fails with exit 1, not as a usage error.
+  - `kit score` lists records without a maps folder; only `--snapshot` and `--html` need one.
+  - Doctor's fix tells the user to edit an existing file rather than add it.
+  - The review brief takes its default scope and standards from the same checkout.
+  - A bad `paths` pattern names its `kit.json` key.
+  - New tests:
+    - `kit next --start` on a project that lands on `main`.
+    - `kit next --help` with this editor's file and with a broken one.
+    - The no-maps lines of `next`, `heartbeat`, `tickets.mjs` and `score`.
+    - `kit pr` running two `checks.extra` commands in order and skipping a missing `lint`.
+- **Review round 3 fixes:**
+  - `kit review` resolves its default base after the arguments are read, so a settings problem exits 1 with a `problem:` line and no usage text.
+  - `unit.sh` exits 1 on a settings problem.
+  - The score page labels feedback logs under `maps`.
+  - `tickets.mjs` keeps no `docs/wayfinder` defaults.
+  - `agent-scripts.md` points the tier patterns, visible paths and feature list at `kit.json` and states that `checks.extra` holds kit-plumbing checks. They run only in the full tier when `scripts/agents/**` or `tests/kit-*.test.ts` change (the hard-coded `cleanGuard`) and are logged as `kit-clean`. A test pins that a diff outside kit files never runs them.
+  - The docs note that this editor's file holds machine folders.
+  - New tests:
+    - `kit review` and `unit.sh` with a bad file.
+    - `checks.extra` on a non-kit diff.
+    - Sweep corrections under `notes/maps`.
+- **Still open, outside this ticket's Files:** `scripts/agents/worktrees.mjs` (lines 71, 121, 124) protects only `native-site-editor-dev` or branch `dev` and hard-codes `origin/dev`/`origin/main`, so a project landing on `main` loses dev-worktree protection in `worktrees.sh`. `kit.d/learn`'s `defaultSlug` should read `project`, and `kit.d/learn` line 271 should read `maps` instead of `join(root, "docs/wayfinder")`. `kit.d/slice` line 42 refuses the literal `dev`/`main` instead of `kitBranch("land")`/`kitBranch("release")`. `docs/agents/runner.md` line 73 still says the visible paths live in `pr-tier.mjs` (they are `paths.visible` in `kit.json`). Filed as [ticket 25](25-editor-values-left-after-11.md) (`worktrees.mjs` uses `kitDevRoot()`, `kitBranch("land")` and `kitBranch("release")`).
+- **PR review fixes (PR #200):**
+  - P0: `tickets.mjs` reads `maps` from the settings file of the repo it runs in. The two `tests/agent-tickets.test.ts` cases that start it in a temp git repo passed locally only because the `kit` wrapper exports `KIT_ROOT`; under plain `npm test` (as CI runs it) they failed. Both temp repos now carry a `kit.json` and drop `KIT_ROOT`/`KIT_MAIN_ROOT`/`KIT_DEV_ROOT`. A new case pins the `no scripts/agents/kit.json` failure. Proved: the old test file fails 2/14 without `KIT_ROOT`; `npm test` without the kit roots passes 5911/5911.
+  - P3: `kit wait ci --pr N` and `--sha S` no longer read the settings file (they take their branch from GitHub). Pinned in `kit-settings.test.ts` together with `branches.ci` winning over `land`; the test fails without the fix.
+  - Validation gap: `kit-next.test.ts` now covers a settings file without `sharedFile` (`src/main.ts` waits like any shared file).
+  - P3 ticket: `assignee` is back to `ke-11`; the evidence below is pasted in.
+- **Commits:** `09fcc62ba` the settings file; `fb2a8c4e3`, `c1e720b92`, `0b9a6bea2` review rounds 1–3; then the PR review fixes.
+- **Evidence:**
+  - Unit: `RESULT: ok unit 742/742 (31 files)` (`tests/kit*.test.ts`, `agent-tickets`, `agent-scripts`); `npm test` with no `KIT_*` roots: 5911 pass, 0 fail.
+  - Doctor before: `RESULT: ok doctor 8/8 checks passed`. After: the same lines plus `✓ settings: scripts/agents/kit.json (native-site-editor, lands on dev)`, `RESULT: ok doctor 9/9 checks passed`.
+  - `kit status kitchen-everywhere` before and after: the same rows and columns. The only differences come from dev moving meanwhile (new tickets 18 and 19, `origin/dev` 270d9cb) and this PR being open.
+  - `kit next --help`: byte-for-byte the same.
+  - The grep (`grep -rn "origin/dev\|native-site-editor" scripts/agents/kit.d scripts/agents/*.mjs scripts/agents/*.sh`) finds 20 lines, all listed above: `kit.d/ux` 17, 61; `kit.d/learn` 15, 90; `kit.d/specs` 16, 121; `kit.d/size` 16; `kit.d/preview` 2, 13, 112, 206, 207; `worktrees.mjs` 71, 121, 124, 155; `deploy-preview.sh` 2; `context-card.mjs` 68, 69; `shots.sh` 8.
+- **Feature list:** no change (kit plumbing for agents; no editor UI).
+- **Second look (Grok 4.7, 2026-10-27):** two P2s and two validation gaps, evidence `.scratch/reviews/review/ke11-second-look/20261027T080225Z` in the main checkout. `kit.d/next:183` still finds a running slice's map with a `docs/wayfinder` pattern, so with another `maps` a running `runs_alone` slice stops blocking its map (→ [ticket 25](25-editor-values-left-after-11.md)). `kit unit --affected` exits 2 with `Usage:` on a settings problem instead of 1 with a `problem:` line (→ [ticket 26](26-settings-messages-and-tests.md)). Standards: none.
+
+### Follow-ups
+
+- Spec (P2): 09fcc62ba:scripts/agents/pr-tier.mjs:64 — P2 ticket: the ticket's Decided behaviour says "Every hard-coded editor value goes", and it names `pr-tier.mjs`. `clas
+- Spec (P2): 09fcc62ba:scripts/agents/kit.d/pr:235 — P2 fault: the `colours` step is still hard-wired to `node scripts/check-colours.mjs` and runs on every css-tier PR. A pr
+- Spec (P3): 8eca5b3ff:docs/agents/runner.md:73 — P3 ticket: the runner guide is part of the spec, and it still says the visible paths live in `pr-tier.mjs`. They are now `p
+- Standards (P3): 0b9a6bea2:scripts/agents/unit.sh:15 — P3 fault: a missing `unit.run` (line 15) or `unit.files` (line 18) exits 2. `agent-scripts.md` says "2 usage error", and r
+- Standards (P3): 09fcc62ba:scripts/agents/kit-lib.sh:29 — P3 fault: if `jq` is missing, `kit_settings_problems` prints `scripts/agents/kit.json is unreadable: …jq: command not f
+- Standards (P3): 09fcc62ba:scripts/agents/kit.d/doctor:116 — P3 fault: the `node_modules` messages on lines 116 and 120 still say "restore node_modules in the dev worktree" and 
+- Standards (P3): 09fcc62ba:scripts/agents/kit.d/pr:234 — P3 fault: `checks.extra` written as a string (`"extra": "npm run test:kit-clean"`) is dropped without warning and logged
+- Validation gaps (gap): `worktree.sh` with `sharedNodeModules` set: nothing tests that the link goes to the realpath of a symlinked folder, or that a missing folder exits 1 before `git
+- Validation gaps (gap): `kit pr` refusing to run on a branch named after `branches.release` when that isn't `main`: in the `prod` repo of "kit pr pairs --release…", `git switch -c prod
+- Validation gaps (gap): `kit status` with a broken or incomplete file (the exit-1 path at `status:1023`): add a `repo(t, '{ "project": ')` case asserting exit 1 and a `RESULT: fail` li
+- Validation gaps (gap): `kit feedback <map>` without `maps`: add a case asserting its `no "maps" folder in scripts/agents/kit.json` line and the exit code.
+- Validation gaps (gap): A full-suite `unit.sh` run with no file arguments, driven by `unit.files`: in `tests/kit-unit.test.ts`, run `unit.sh` with no args against a settings glob that 
+- Validation gaps (gap): Doctor on a project with no `sharedNodeModules` and an installed `node_modules`: assert `✓ node_modules: … (not shared: no sharedNodeModules in scripts/agents/k
+
+The lines above are cut at 160 characters ([ticket 18](18-full-follow-ups.md)); the full findings are in `.scratch/reviews/build/ke-11-project-settings-file/20261027T073718Z` in the main checkout. Where each went:
+
+- [Ticket 25](25-editor-values-left-after-11.md), the editor values left in shared code: both Spec P2s (`pr-tier.mjs` patterns, the colour check), `runner.md:73`, `checks.extra` as a string, the `kit pr` release-branch gap, plus the Done's `worktrees.mjs`, `learn`, `slice`, `kit pr`'s `tests` folder and "no Sol review" line.
+- [Ticket 26](26-settings-messages-and-tests.md), settings messages and tests: `unit.sh` exit 2, missing `jq`, doctor's `node_modules` messages, and the other five validation gaps.
+- Not worth a ticket yet, left here:
+  - The `slice` and `fix` brief text (`npm run check`, `npm run lint`, `docs/agents/features.md`): [ticket 14](14-settings-for-other-projects.md) already makes those briefs name only the checks that are set.
+  - `kit.d/ux` 17 and 61 (`--base origin/dev`): an editor-own command, moved by [ticket 12](12-own-commands-folder.md).
+  - The front door listing `kit.d/` and the unread `commands` and `rulebookExtras` keys: launcher work in tickets 12 and 21.
+  - `sweep`'s "Hand-typed values in src/**/*.css" section: P3, and `sweep` is busy in tickets 15 and 24; take it into 24 if it bites.
+  - The review's optional nits: the dead `[[ $main == "$path" ]]` guard in `worktree.sh:113`, the `/home/ubulex/...` paths committed in `kit.json` (`mainRoot` could go), and `kitSettings()` caching with no reset.

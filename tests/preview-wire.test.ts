@@ -6,7 +6,7 @@ import { FRESHNESS, type FrameMessage, type HostMessage } from "../src/component
 const FRAME_TYPES = FRESHNESS satisfies Record<FrameMessage["type"], unknown>;
 const HOST_TYPES = {
   update: true, "drop-probe": true, "patch-text": true, "image-look": true, "media-play": true, "finish-typing": true,
-  inspect: true, "measure-image": true, theme: true, "component-focus": true, "edit-component": true,
+  inspect: true, picture: true, "measure-image": true, theme: true, "component-focus": true, "edit-component": true,
   viewing: true, "scroll-by": true, pins: true, "show-pin": true, assets: true,
   "canvas-crumb": true, "canvas-avoid": true, "canvas-hint": true, "canvas-code-select": true,
   "clear-selection": true, "select-node": true, "select-parent": true, "item-grid-track": true, "agent-presence": true,
@@ -20,8 +20,8 @@ function emittedTypes(source: string) {
   const literals = [...calls.matchAll(/\bemit\s*\(\s*(["'])([^"']+)\1\s*[,)]/g)];
   assert.equal([...calls.matchAll(/\bemit\s*\(/g)].length, literals.length, "emit calls must have a literal type");
   const direct = [...calls.matchAll(/\bparent\.postMessage\s*\(\s*\{\s*source:\s*FRAME_SOURCE,\s*type:\s*(["'])([^"']+)\1/g)];
-  // The isolated measuring child receives only this literal host request.
-  const children = [...calls.matchAll(/\bframe\.contentWindow\.postMessage\s*\(\s*\{\s*source:\s*HOST_SOURCE,\s*type:\s*"measure-image"/g)];
+  // The isolated measuring child receives only these literal host requests: a picture's, or image measurement's.
+  const children = [...calls.matchAll(/\bframe\.contentWindow\.postMessage\s*\(\s*\{\s*source:\s*HOST_SOURCE,\s*type:\s*picture \? "picture" : "measure-image"/g)];
   assert.equal([...calls.matchAll(/\bpostMessage\s*\(/g)].length, direct.length + children.length + 1, "posts must go through emit or name their type first");
   return new Set([...literals, ...direct].map(match => match[2]));
 }

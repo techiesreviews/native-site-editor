@@ -7,9 +7,12 @@ import { basename, extname, isAbsolute, join, relative, resolve } from "node:pat
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } from "../kit-lib.mjs";
+import { kitLibrary, kitLibraryOrExit, kitShellLibrary } from "../kit-home.mjs";
 import { contactOutput, parseArgs, parseSteps } from "./core.ts";
 import { findingsSections } from "./findings-list.ts";
+
+// The shared kit library comes from the kit the launcher picks (once per process), never from this project.
+const { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } = await import(pathToFileURL(kitLibraryOrExit()).href);
 
 export function splitCompare(args) {
   const rest = [];
@@ -26,9 +29,8 @@ export function splitCompare(args) {
 
 export const toolingFiles = [
   "scripts/agents/kit",
-  "scripts/agents/kit-lib.sh",
-  "scripts/agents/kit-lib.mjs",
-  "scripts/agents/kit.d/shots",
+  "scripts/agents/kit-home.mjs",
+  "scripts/agents/project.d/shots",
   "scripts/agents/shots/",
   "tests/support/scenarios.ts",
   "tests/native-save/open-picker.ts",
@@ -38,7 +40,7 @@ export const toolingFiles = [
 ];
 
 /** Hash paths and bytes, including a stable marker for missing tooling. */
-export async function toolingHash(root) {
+export async function toolingHash(root, libraries = [kitShellLibrary(), kitLibrary()]) {
   const paths = [];
   async function collect(path) {
     if (!path.endsWith("/")) { paths.push(path); return; }
@@ -56,6 +58,17 @@ export async function toolingHash(root) {
   }
   for (const path of toolingFiles) await collect(path);
   const hash = createHash("sha256");
+  // The kit's libraries kit shots runs on (the ones this process loads): a kit change is a tooling change too.
+  for (const [index, path] of libraries.entries()) {
+    let content;
+    try { content = await readFile(path); }
+    catch (error) {
+      if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+      hash.update(JSON.stringify([`kit:${index}`, "missing"])).update("\0");
+      continue;
+    }
+    hash.update(JSON.stringify([`kit:${index}`, content.length])).update("\0").update(content).update("\0");
+  }
   for (const path of paths.sort()) {
     let content;
     try { content = await readFile(join(root, path)); }
@@ -337,7 +350,7 @@ async function capture(root, scenario, name, out, widths, themes, env, stamp) {
   const file = join(stepsDir, `${stamp}-${randomUUID()}.json`);
   try {
     await writeFile(file, JSON.stringify({ screen: scenario.screen, steps: scenario.steps, name }));
-    return await run(join(root, "scripts/agents/kit.d/shots"), ["--steps", file, "--out", out, ...matrixArgs(widths, themes)], {
+    return await run(join(root, "scripts/agents/project.d/shots"), ["--steps", file, "--out", out, ...matrixArgs(widths, themes)], {
       cwd: root, env: { ...env, KIT_ROOT: root }, forward: line => !line.startsWith(out) && !line.startsWith("contact:") && !/^\d+ files:/.test(line),
     });
   } finally { await rm(file, { force: true }); }

@@ -4,6 +4,7 @@ import { monacoDompurify } from "./vite-monaco-dompurify.ts";
 import { monacoTrim } from "./vite-monaco-trim.ts";
 import { previewRuntime } from "./vite-preview-runtime.ts";
 import { pdfjsAssets } from "./vite-pdfjs-assets.ts";
+import { mockups } from "./vite-mockups.ts";
 
 const monaco = monacoTrim();
 const dompurify = monacoDompurify();
@@ -11,7 +12,8 @@ const dompurify = monacoDompurify();
 export default defineConfig({
   // The self-contained browser bundle keeps Mediabunny from splitting shared boot helpers into new chunks.
   resolve: { alias: [{ find: /^mediabunny$/, replacement: fileURLToPath(new URL("./node_modules/mediabunny/dist/bundles/mediabunny.mjs", import.meta.url)) }] },
-  plugins: [monaco.plugin, dompurify.plugin, previewRuntime(), pdfjsAssets()],
+  // MOCKUPS=1 (`npm run build:preview`) adds the planning mock-ups at /mockups/; production never has them.
+  plugins: [monaco.plugin, dompurify.plugin, previewRuntime(), pdfjsAssets(), ...(process.env.MOCKUPS === "1" ? [mockups(fileURLToPath(new URL(".", import.meta.url)))] : [])],
   worker: { format: "es" },
   // SVGO and oxipng are reached only from the optimise worker; prebundle them so the dev server never reloads
   // mid-session. jSquash WebP/AVIF resolve their WASM next to their own files, so they stay unbundled.

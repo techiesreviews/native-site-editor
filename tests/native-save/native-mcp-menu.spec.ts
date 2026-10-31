@@ -14,9 +14,14 @@ const dot = (page: Page) => page.locator(".agent-menu__action").evaluate(element
   const style = getComputedStyle(element, "::before");
   return { color: style.backgroundColor, animation: style.animationName };
 });
-/** The menu shows only its button's label: no hint, link, Watch control or tab text. */
+/** The menu shows only its button's label: no hint, link, Watch control, picker (am-50) or tab text. The
+ * agents working now (ticket am-12) are controls, each a name and its Stop. */
 async function onlyLabel(page: Page, label: string) {
-  await expect(page.locator(".agent-menu")).toHaveText(label, { useInnerText: true });
+  await expect.poll(() => page.locator(".agent-menu").evaluate(menu => {
+    const parts = [...menu.children].filter(part => part.checkVisibility() && !part.matches(".agent-menu__agents, .agent-menu__divider")) as HTMLElement[];
+    return parts.map(part => part.innerText).join("").trim();
+  })).toBe(label);
+  await expect(page.locator(".agent-menu select")).toHaveCount(0);
   await expect(page.locator(".editor-toast")).toHaveCount(0);
 }
 async function agent(baseURL: string | undefined, token: string, name: string) {
@@ -192,6 +197,439 @@ test("a lost connection with this tab's agent connected: Connect to MCP copies a
     expect((await call("get_site")).repository, "the earlier agent keeps working").toBe("native-demo-user/native-demo");
     await expect(action).toHaveText("Disconnect MCP");
   } finally { await client.close().catch(() => undefined); }
+});
+
+// Ticket am-51 (Lex, 2026-10-30): connected, then away for a while; the menu must tell the truth and
+// every press of Connect to MCP must copy a working prompt or show the problem dot.
+const recoveryKey = "native-site-editor:agent-recovery:native-demo-user:501";
+/** The connection's retries gave up while the user was away (the laptop slept, the tab sat in the
+ * background): what the reconnect leaves in this browser once its five tries in two minutes fail. */
+const gaveUp = (page: Page) => page.evaluate(key => {
+  localStorage.setItem(key, JSON.stringify({ attempts: [1, 2, 3, 4, 5].map(n => Date.now() - n * 10_000), since: Date.now() - 60_000, paused: "transient" }));
+  window.dispatchEvent(new StorageEvent("storage", { key }));
+}, recoveryKey);
+/** Time away: the clock moves on without firing timers, as after the machine sleeps. */
+const away = async (page: Page, minutes: number) => page.clock.setSystemTime(await page.evaluate(() => Date.now()) + minutes * 60_000);
+/** The tab hidden and seen again; resolves to how many connections reads this page has begun
+ * (counted by `countReads`; a read begins inside the visibilitychange handler). */
+const backToTab = (page: Page) => page.evaluate(() => {
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+  document.dispatchEvent(new Event("visibilitychange"));
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+  document.dispatchEvent(new Event("visibilitychange"));
+  return window.connectionReads ?? 0;
+});
+/** Counts the connections reads the page begins from now on, as each fetch is called. */
+const countReads = (page: Page) => page.evaluate(() => {
+  window.connectionReads = 0;
+  const fetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    if (new URL(String(input instanceof Request ? input.url : input), location.href).pathname === "/api/agent/connections") window.connectionReads = (window.connectionReads ?? 0) + 1;
+    return fetch(input, init);
+  };
+});
+const readsBegun = (page: Page) => page.evaluate(() => window.connectionReads ?? 0);
+declare global { interface Window { /** Connections reads begun since `countReads`. */ connectionReads?: number } }
+async function connectedAgent(page: Page, baseURL: string | undefined, name: string) {
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action");
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  const connected = await agent(baseURL, token, name);
+  await connected.call("get_site");
+  await expect.poll(async () => { await refresh(page); return action.textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+  return { ...connected, token, action, menu: page.locator(".agent-menu") };
+}
+
+test("after the reconnect gave up while away, Connect to MCP reconnects and copies a new prompt; the agent keeps working", async ({ page, context, baseURL }) => {
+  let cut = false;
+  const sockets: WebSocketRoute[] = [];
+  await context.routeWebSocket("**/api/agent/relay?*", route => {
+    if (cut) { void route.close(); return; }
+    sockets.push(route);
+    route.connectToServer();
+  });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, call, token: first, action, menu } = await connectedAgent(page, baseURL, "away-agent");
+  try {
+    cut = true;
+    for (const socket of sockets) await socket.close();
+    await expect(menu).toHaveAttribute("data-state", "reconnecting", { timeout: 15_000 });
+    await gaveUp(page);
+    await expect(menu).toHaveAttribute("data-state", "paused");
+    await onlyLabel(page, "Connect to MCP");
+    // Back, with the network: the press tries the connection again rather than doing nothing.
+    cut = false;
+    await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    expect(token).not.toBe(first);
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+    expect((await call("get_site")).repository, "the earlier agent keeps working").toBe("native-demo-user/native-demo");
+    await expect(action).toHaveText("Disconnect MCP");
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("the real reconnect giving up while the relay is cut ends paused; Connect to MCP then reconnects and copies a new prompt", async ({ page, context, baseURL }) => {
+  let cut = false;
+  const sockets: WebSocketRoute[] = [];
+  await context.routeWebSocket("**/api/agent/relay?*", route => {
+    if (cut) { void route.close(); return; }
+    sockets.push(route);
+    route.connectToServer();
+  });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  // Time runs as usual until the tries are fast-forwarded below.
+  await page.clock.install();
+  await open(page, baseURL);
+  const { client, token: first, action, menu } = await connectedAgent(page, baseURL, "away-agent");
+  try {
+    cut = true;
+    for (const socket of sockets) await socket.close();
+    await expect(menu).toHaveAttribute("data-state", "reconnecting", { timeout: 15_000 });
+    // The five tries within two minutes, each refused, then the recovery gives up by itself.
+    await expect.poll(async () => { await page.clock.runFor(10_000); return menu.getAttribute("data-state"); }, { timeout: 60_000 }).toBe("paused");
+    await onlyLabel(page, "Connect to MCP");
+    cut = false;
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    expect(token).not.toBe(first);
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("a reload after the reconnect gave up: Connect to MCP reconnects and copies a working prompt", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, action, menu } = await connectedAgent(page, baseURL, "away-agent");
+  try {
+    await gaveUp(page);
+    await expect(menu).toHaveAttribute("data-state", "paused");
+    await open(page, baseURL);
+    await page.locator(".repository-menu__trigger").click();
+    await expect(menu).toHaveAttribute("data-state", "paused", { timeout: 15_000 });
+    await expect(action).toHaveText("Connect to MCP");
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+    const next = await agent(baseURL, token, "after-reload");
+    try { expect((await next.call("get_site")).repository).toBe("native-demo-user/native-demo"); } finally { await next.client.close(); }
+  } finally { await client.close().catch(() => undefined); }
+});
+
+/** What a failed takeover leaves in this browser (ticket am-53): the site's stored record paused,
+ * so turning agents on again, here or after a reload, finds the takeover failed. */
+const takeoverFailed = (page: Page) => page.evaluate(async () => {
+  const { indexedDbAgentRecords } = await import("/src/agent-records.ts");
+  const records = indexedDbAgentRecords(), workspace = { account: "native-demo-user", repoId: 501, branch: "main" };
+  await records.pause(workspace, (await records.workspace(workspace)).generation);
+});
+
+test("after a failed takeover, Connect to MCP takes over again and copies a working prompt; the agent keeps working", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, call, action, menu } = await connectedAgent(page, baseURL, "takeover-agent");
+  try {
+    await takeoverFailed(page);
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await page.locator(".repository-menu__trigger").click();
+    await expect(menu).toHaveAttribute("data-state", "takeover-failed", { timeout: 15_000 });
+    await expect.poll(() => dot(page).then(shown => shown.color)).toBe(await danger(page));
+    await onlyLabel(page, "Connect to MCP");
+    // The press tries the takeover again rather than doing nothing, then copies.
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+    expect((await call("get_site")).repository, "the earlier agent keeps working").toBe("native-demo-user/native-demo");
+    await expect(action).toHaveText("Disconnect MCP");
+    await expect(menu).toHaveAttribute("data-state", "connected");
+  } finally { await client.close().catch(() => undefined); }
+});
+
+/** Another holder of the receiving lock the next takeover asks for (the stored fence plus one), kept
+ * for the rest of the test, so that takeover fails. It still moves the stored fence on first, so
+ * the takeover after it asks for the fence after that: free. */
+const holdNextOwnerLock = (page: Page) => page.evaluate(async () => {
+  const [{ indexedDbAgentRecords }, { workspaceKey }] = await Promise.all([import("/src/agent-records.ts"), import("/shared/agent-command.ts")]);
+  const workspace = { account: "native-demo-user", repoId: 501, branch: "main" };
+  const { generation } = await indexedDbAgentRecords().workspace(workspace);
+  await new Promise<void>(held => {
+    void navigator.locks.request(`native-site-editor:agent-owner:${workspaceKey(workspace)}:${generation + 1}`, () => {
+      held();
+      return new Promise<void>(() => {});
+    });
+  });
+});
+
+test("a takeover that fails again on the press: the problem dot stays, nothing is copied; the next press, asking for the next fence, copies", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, action, menu } = await connectedAgent(page, baseURL, "takeover-agent");
+  try {
+    await takeoverFailed(page);
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await page.locator(".repository-menu__trigger").click();
+    await expect(menu).toHaveAttribute("data-state", "takeover-failed", { timeout: 15_000 });
+    await holdNextOwnerLock(page);
+    let connects = 0;
+    page.on("request", request => { if (new URL(request.url()).pathname === "/api/agent/connect" && request.method() === "POST") connects++; });
+    await menu.evaluate(element => {
+      const host = window as Window & { agentStates?: string[] };
+      host.agentStates = [];
+      new MutationObserver(() => host.agentStates!.push(element.dataset.state ?? "")).observe(element, { attributes: true, attributeFilter: ["data-state"] });
+    });
+    await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+    await action.click();
+    await expect.poll(() => page.evaluate(() => (window as Window & { agentStates?: string[] }).agentStates)).toEqual(expect.arrayContaining(["taking-over"]));
+    await expect(menu).toHaveAttribute("data-state", "takeover-failed", { timeout: 15_000 });
+    // fixed-wait: the press ends at once after its takeover fails; a wrong prompt would show by now.
+    await page.waitForTimeout(1_000);
+    expect(await page.evaluate(() => (window as Window & { agentStates?: string[] }).agentStates?.at(-1))).toBe("takeover-failed");
+    expect((await dot(page)).color).toBe(await danger(page));
+    await onlyLabel(page, "Connect to MCP");
+    expect(connects, "no prompt made").toBe(0);
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+    // The lock stays held, but the failed takeover used up its fence: the next press asks for the
+    // one after it, takes over and copies a working prompt.
+    expect(await page.evaluate(async () => (await navigator.locks.query()).held?.length ?? 0), "the other holder still holds its lock").toBeGreaterThan(0);
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("after a failed takeover with the reconnect given up as well: one press takes over, retries the reconnect and copies a working prompt", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, call, token: first, action, menu } = await connectedAgent(page, baseURL, "takeover-agent");
+  try {
+    await gaveUp(page);
+    await expect(menu).toHaveAttribute("data-state", "paused");
+    await takeoverFailed(page);
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await page.locator(".repository-menu__trigger").click();
+    await expect(menu).toHaveAttribute("data-state", "takeover-failed", { timeout: 15_000 });
+    // The takeover opens a reconnect this browser's record says gave up: the same press retries it.
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    expect(token).not.toBe(first);
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+    expect((await call("get_site")).repository, "the earlier agent keeps working").toBe("native-demo-user/native-demo");
+    await expect(menu).toHaveAttribute("data-state", "connected");
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("a press whose own takeover fails tries it once: the problem dot, nothing copied; the next press takes over and copies", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
+  // Agents off and the site not paused: the socket's opening takes over by itself, and fails.
+  await holdNextOwnerLock(page);
+  let connects = 0;
+  page.on("request", request => { if (new URL(request.url()).pathname === "/api/agent/connect" && request.method() === "POST") connects++; });
+  await menu.evaluate(element => {
+    const host = window as Window & { agentStates?: string[] };
+    host.agentStates = [];
+    new MutationObserver(() => host.agentStates!.push(element.dataset.state ?? "")).observe(element, { attributes: true, attributeFilter: ["data-state"] });
+  });
+  await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+  await action.click();
+  await expect(menu).toHaveAttribute("data-state", "takeover-failed", { timeout: 15_000 });
+  // fixed-wait: a second takeover would begin at once after the first failed; it would show by now.
+  await page.waitForTimeout(1_000);
+  const states = await page.evaluate(() => (window as Window & { agentStates?: string[] }).agentStates ?? []);
+  expect(states.filter(state => state === "taking-over"), `one takeover in ${states.join(", ")}`).toHaveLength(1);
+  expect(states.at(-1)).toBe("takeover-failed");
+  expect((await dot(page)).color).toBe(await danger(page));
+  await onlyLabel(page, "Connect to MCP");
+  expect(connects, "no prompt made").toBe(0);
+  // clipboard-ready: the fixed wait above.
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+  // That failure left the site paused: the next press tries again (the next fence is free) and copies.
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  await expect(action).toHaveText("Copied");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+});
+
+test("a permission that ended while away: the reopened menu offers Connect to MCP, whose press copies a working prompt", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, action, menu } = await connectedAgent(page, baseURL, "away-agent");
+  try {
+    await page.keyboard.press("Escape");
+    // Past its 8 hours, the list leaves the connection out (native-agent-lifecycle.spec.ts).
+    await page.route("**/api/agent/connections", route => route.fulfill({ json: { grants: [], controls: { watch: true } } }));
+    await away(page, 10);
+    await page.locator(".repository-menu__trigger").click();
+    await expect(action).toHaveText("Connect to MCP");
+    await expect(menu).toHaveAttribute("data-state", "idle");
+    await page.unroute("**/api/agent/connections");
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 15_000 });
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("a sign-in that ended while away: the tab coming back offers Connect to MCP, and its press shows the problem dot, copying nothing", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, action, menu } = await connectedAgent(page, baseURL, "away-agent");
+  try {
+    await page.route("**/api/agent/**", route => route.fulfill({ status: 401, json: { error: "Sign in again.", code: "signed-out" } }));
+    await away(page, 10);
+    await backToTab(page);
+    await expect(action).toHaveText("Connect to MCP");
+    await expect(menu).toHaveAttribute("data-state", "off");
+    await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+    await action.click();
+    await expect(menu).toHaveAttribute("data-state", "failed");
+    expect((await dot(page)).color).toBe(await danger(page));
+    await onlyLabel(page, "Connect to MCP");
+    // fixed-wait: the failed dot shows before the press drops its copy; a wrong write would show by now.
+    await page.waitForTimeout(1_000);
+    // clipboard-ready: the fixed wait above.
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("offering Disconnect MCP, coming back reads the connections once after 5 minutes away, never sooner; opening the menu reads after 2 seconds", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, action } = await connectedAgent(page, baseURL, "away-agent");
+  try {
+    await page.keyboard.press("Escape");
+    await countReads(page);
+    await away(page, 2);
+    expect(await backToTab(page), "two minutes away, coming back: no read").toBe(0);
+    // Opening the menu is the user looking: it reads, as Wait for MCP does, once 2 seconds have passed.
+    const toggled = page.evaluate(() => new Promise<void>(resolve => document.addEventListener("toggle", () => resolve(), { capture: true, once: true })));
+    await page.locator(".repository-menu__trigger").click();
+    await toggled;
+    await expect.poll(() => readsBegun(page), { message: "opening the menu: one read" }).toBe(1);
+    await expect(action).toHaveText("Disconnect MCP");
+    await page.keyboard.press("Escape");
+    await away(page, 2);
+    expect(await backToTab(page), "two more minutes away, coming back: no read").toBe(1);
+    await away(page, 6);
+    // Another popover of the page opening and closing is not the menu opening.
+    await page.evaluate(() => new Promise<void>(resolve => {
+      const other = document.createElement("div");
+      other.popover = "auto";
+      document.body.append(other);
+      other.addEventListener("toggle", event => { if (event.newState === "closed") { other.remove(); resolve(); } });
+      other.showPopover();
+      other.hidePopover();
+    }));
+    expect(await readsBegun(page), "another popover: no read").toBe(1);
+    expect(await backToTab(page), "six more minutes away, coming back: one read").toBe(2);
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("offering Disconnect MCP, the window regaining focus after 6 minutes away reads the connections once", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const { client, action } = await connectedAgent(page, baseURL, "away-agent");
+  try {
+    await page.keyboard.press("Escape");
+    await countReads(page);
+    await away(page, 6);
+    await refresh(page);
+    await expect.poll(() => readsBegun(page), { message: "focus after 6 minutes: one read" }).toBe(1);
+    await expect(action).toHaveText("Disconnect MCP");
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("a sign-in that ends during a press of Wait for MCP, or of Connect to MCP with agents on: the problem dot, copying nothing", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
+  const signedOut = () => page.route("**/api/agent/**", route => route.fulfill({ status: 401, json: { error: "Sign in again.", code: "signed-out" } }));
+  const pressFails = async () => {
+    await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+    await action.click();
+    await expect(menu).toHaveAttribute("data-state", "failed");
+    expect((await dot(page)).color).toBe(await danger(page));
+    await onlyLabel(page, "Connect to MCP");
+    // fixed-wait: the failed dot shows before the press drops its copy; a wrong write would show by now.
+    await page.waitForTimeout(1_000);
+    // clipboard-ready: the fixed wait above.
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+  };
+  await action.click();
+  await expect(action).toHaveText("Wait for MCP");
+  // Wait for MCP: its read of the connections finds the sign-in ended.
+  await signedOut();
+  await pressFails();
+  // Signed in again, the next press copies; then, its token gone from the list (agents still on,
+  // offering Connect to MCP), a press whose new connection finds the sign-in ended.
+  await page.unroute("**/api/agent/**");
+  await action.click();
+  await expect(action).toHaveText("Wait for MCP");
+  await page.route("**/api/agent/connections", route => route.fulfill({ json: { grants: [], controls: { watch: true } } }));
+  await away(page, 1);
+  await refresh(page);
+  await expect(menu).toHaveAttribute("data-state", "idle");
+  await expect(action).toHaveText("Connect to MCP");
+  await signedOut();
+  await pressFails();
+});
+
+test("a sign-in that ends during a press, after another branch is shown: the dot marks the press's own branch, not the one shown", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const index = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+  await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature", path: "index.html", content: index } });
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let asked!: () => void;
+  const reached = new Promise<void>(resolve => { asked = resolve; });
+  await page.route("**/api/agent/connect", async route => {
+    asked();
+    await held;
+    await route.fulfill({ status: 401, json: { error: "Sign in again.", code: "signed-out" } });
+  });
+  await action.click();
+  await reached;
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => { location.hash = "#repo=501&branch=feature&file=index.html"; });
+  await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
+  const answered = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect");
+  release();
+  await answered;
+  await page.locator(".repository-menu__trigger").click();
+  await expect(action).toHaveText("Connect to MCP");
+  await expect(menu).not.toHaveAttribute("data-state", "failed");
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => { location.hash = "#repo=501&branch=main&file=index.html"; });
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await page.locator(".repository-menu__trigger").click();
+  await expect(menu).toHaveAttribute("data-state", "failed");
+  expect((await dot(page)).color).toBe(await danger(page));
 });
 
 test("reduced motion: the dot does not pulse while waiting or reconnecting", async ({ page, context, baseURL }) => {
@@ -747,7 +1185,7 @@ test("while the site owner pauses agents the menu offers Connect to MCP; once un
     // fixed-wait: the press's dropped copy has had time to settle; a wrong write would show by now.
     await page.waitForTimeout(1_000);
     // clipboard-ready: the fixed wait above.
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
     // The dot is the problem colour, not the plain off grey.
     const paused = await dot(page);
     expect(paused.color).toBe(await danger(page));
@@ -933,14 +1371,17 @@ test("Wait for MCP after another tab reclaimed this tab's token, with the connec
   } finally { await second.close(); }
 });
 
-test("old Watch records left in the browser are removed when the menu opens", async ({ page, baseURL }) => {
+// Records of removed controls: the Watch control's (ticket 29) and the "Pins go to" choice (am-50).
+test("old Watch and Pins go to records left in the browser are removed when the menu opens", async ({ page, baseURL }) => {
   await page.addInitScript(() => {
-    if (window.top === window) localStorage.setItem('native-site-editor:agent-watch:["native-demo-user",501,"main"]', JSON.stringify({ startedAt: 1, until: 2, waits: 0 }));
+    if (window.top !== window) return;
+    localStorage.setItem('native-site-editor:agent-watch:["native-demo-user",501,"main"]', JSON.stringify({ startedAt: 1, until: 2, waits: 0 }));
+    localStorage.setItem('native-site-editor:pins-go-to:["native-demo-user",501]', "Codex");
   });
   await open(page, baseURL);
   await page.locator(".repository-menu__trigger").click();
   await expect(page.locator(".agent-menu__action")).toHaveText("Connect to MCP");
-  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("native-site-editor:agent-watch:")))).toEqual([]);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => /^native-site-editor:(agent-watch|pins-go-to):/.test(key)))).toEqual([]);
 });
 
 test("a failed first prompt: Connect to MCP shows the problem dot, not the plain off one, with no toast; the next press tries again", async ({ page, context, baseURL }) => {
@@ -1118,4 +1559,254 @@ test("Wait for MCP while the tab switches to another site: nothing is copied and
   // clipboard-ready: the fixed wait above; the clipboard must still hold what was written before the press.
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
   expect(connects).toEqual([]);
+});
+
+// Ticket am-12: the open menu lists the agents working now (dot, name, Stop); Stop ends that agent only: its
+// outline and dots go, every later call of its is refused (a wait it holds included), while the others keep
+// working.
+test("Stop ends one of three agents: its row, outline and dots go, the focus stays off every other Stop and Disconnect MCP, its calls and held wait are refused, the others keep working", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  // What the relay hands the tab: a wait is held there once its frame arrives.
+  const frames: string[] = [];
+  page.on("websocket", socket => {
+    if (socket.url().includes("/api/agent/relay?")) socket.on("framereceived", ({ payload }) => frames.push(String(payload)));
+  });
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action");
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  // Waiting: no picker (am-50) and no agents' list.
+  await expect(page.locator(".agent-menu select")).toHaveCount(0);
+  const list = page.locator(".agent-menu__agents");
+  await expect(list).toBeHidden();
+  const subagents = await agent(baseURL, token, "stop-spec");
+  const as = (name: string, tool: string, args: Record<string, unknown> = {}) => subagents.client.callTool({ name: tool, arguments: { ...args, agent: name } });
+  const refused = async (response: Promise<Awaited<ReturnType<typeof as>>>) => {
+    const answer = await response;
+    expect(answer.isError, JSON.stringify(answer)).toBe(true);
+    expect(JSON.stringify(answer.content)).toContain("stopped you");
+  };
+  // Each place_media loads its module while it runs (agent-site.ts): held, all three stay at work until it is let go.
+  let release!: () => void;
+  const released = new Promise<void>(resolve => { release = resolve; });
+  let reached!: () => void;
+  const loading = new Promise<void>(resolve => { reached = resolve; });
+  await page.route(url => url.pathname === "/src/page-builder/media-insert.ts", async route => { reached(); await released; await route.continue(); });
+  const place = (name: string, element: string) => as(name, "place_media",
+    { path: "index.html", element, file: "images/studio-desk.svg", requestId: `stop-${name.replace(/\W/g, "-")}`, waitSeconds: 0 }).catch(() => undefined);
+  const preview = page.frameLocator(".native-preview-frame");
+  const chips = preview.locator('[data-native-selection-box="agent-presence-chip"]').locator("visible=true");
+  const chipNames = async () => (await chips.allTextContents()).sort();
+  const tree = page.getByRole("tree", { name: "Page structure" });
+  const rowDots = (node: string) => tree.locator(`[data-node="${node}"] .agent-dots__dot`);
+  try {
+    expect((await subagents.call("get_site", { agent: "Header writer" })).repository).toBe("native-demo-user/native-demo");
+    await page.keyboard.press("Escape");
+    const placings = [place("Header writer", "1.0.2")];
+    await loading;
+    // One after the other, so their order of arrival (and colour) is known.
+    const copying = place("Copy editor", "1.1.0");
+    placings.push(copying);
+    await expect(chips).toHaveCount(2);
+    placings.push(place("Caption writer", "1.1.1"));
+    await expect.poll(chipNames).toEqual(["Caption writer", "Copy editor", "Header writer"]);
+    await expect(rowDots("1.0")).toHaveCount(1);
+    await expect(rowDots("1.1")).toHaveCount(2);
+    // Copy editor also waits for requests: held in the tab.
+    const held = as("Copy editor", "wait_for_requests", { waitSeconds: 20 });
+    await expect.poll(() => frames.some(frame => frame.includes('"wait_for_requests"') && frame.includes('"Copy editor"'))).toBe(true);
+
+    // The open menu lists all three in order of arrival, each with its dot in its colour and a Stop; Disconnect MCP stays below.
+    await page.locator(".repository-menu__trigger").click();
+    await expect.poll(async () => { await refresh(page); return action.textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+    const names = page.locator(".agent-menu__agent .agent-menu__agent-name");
+    await expect(names).toHaveText(["Header writer", "Copy editor", "Caption writer"]);
+    expect(new Set(await page.locator(".agent-menu__agent .agent-dots__dot").evaluateAll(dots => dots.map(dot => getComputedStyle(dot).backgroundColor))).size).toBe(3);
+    await expect(page.locator(".agent-menu select")).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath("menu-agents.png") });
+
+    // Stop the second by keyboard: its row, outline, chip and dot go at once; the others stay. The focus goes to
+    // the agents' list, not to Caption writer's Stop now in its place (a second Enter stops no one else). The menu
+    // stays open, with no toast.
+    await page.getByRole("button", { name: "Stop Copy editor" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(names).toHaveText(["Header writer", "Caption writer"]);
+    await expect(list).toBeFocused();
+    await expect(list).toHaveAccessibleName("Agents working now");
+    // Focused by keyboard: the editor's focus ring shows on it.
+    expect(await list.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe("none");
+    await page.keyboard.press("Enter");
+    await expect(names).toHaveText(["Header writer", "Caption writer"]);
+    await expect.poll(chipNames).toEqual(["Caption writer", "Header writer"]);
+    await expect(rowDots("1.0")).toHaveCount(1);
+    await expect(rowDots("1.1")).toHaveCount(1);
+    await expect(page.locator(".editor-toast")).toHaveCount(0);
+    await expect(action).toHaveText("Disconnect MCP");
+
+    // Its held wait ends refused, and every later call of its is refused before anything runs: nothing is written.
+    await refused(held);
+    await refused(as("Copy editor", "set_page_details", { page: "/", title: "Stopped title", requestId: "stop-refused-details" }));
+    await refused(as("Copy editor", "place_media", { path: "index.html", element: "1.0.2", file: "images/studio-desk.svg", requestId: "stop-refused-media" }));
+    await refused(as("Copy editor", "wait_for_requests", { waitSeconds: 10 }));
+    await refused(as("Copy editor", "get_site"));
+    expect(JSON.stringify(await subagents.call("read_file", { path: "index.html", agent: "Header writer" }))).not.toContain("Stopped title");
+
+    // A change not yet applied when its agent is stopped is refused: Caption writer's page details wait for the
+    // edit tools' module (its first edit loads it), Stop comes meanwhile. The last row left keeps the focus.
+    let editsLoaded!: () => void, letEditsLoad!: () => void;
+    const editsLoading = new Promise<void>(resolve => { editsLoaded = resolve; });
+    const editsHeld = new Promise<void>(resolve => { letEditsLoad = resolve; });
+    await page.route(url => url.pathname === "/src/agent-tools-edit.ts", async route => { editsLoaded(); await editsHeld; await route.continue(); });
+    const captioning = as("Caption writer", "set_page_details", { page: "/", title: "Caption title", requestId: "stop-caption-details" });
+    await editsLoading;
+    await page.getByRole("button", { name: "Stop Caption writer" }).click();
+    await expect(names).toHaveText(["Header writer"]);
+    await expect(list).toBeFocused();
+    // Focused after a click: no ring.
+    expect(await list.evaluate(element => getComputedStyle(element).outlineStyle)).toBe("none");
+    letEditsLoad();
+    await refused(captioning);
+    expect(JSON.stringify(await subagents.call("read_file", { path: "index.html", agent: "Header writer" }))).not.toContain("Caption title");
+
+    // A change already being applied when its agent was stopped (Copy editor's placement, held while it loads)
+    // finishes, drawn nowhere. The others land and keep working; get_site no longer lists the stopped ones.
+    release();
+    await Promise.all(placings);
+    expect(JSON.stringify(await copying)).not.toContain("stopped you");
+    await expect.poll(chipNames).toEqual([]);
+    expect((await subagents.call("set_page_details", { page: "/", title: "Still working", requestId: "stop-header-again", agent: "Header writer" })).state).toBe("applied");
+    expect((await subagents.call("get_site", { agent: "Header writer" })).agents.map((each: { name: string }) => each.name)).toEqual(["Header writer"]);
+
+    // A request pinned now goes to Header writer's wait.
+    const next = subagents.call("wait_for_requests", { waitSeconds: 20, agent: "Header writer" });
+    await page.keyboard.press("Escape");
+    await preview.locator(".hero h1").click();
+    await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Ask agent" }).click();
+    await page.keyboard.type("After the stop");
+    await page.keyboard.press("Enter");
+    expect((await next).requests.map((request: { text: string }) => request.text)).toEqual(["After the stop"]);
+
+    // After a reload the stop holds, and Header writer works on.
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await page.locator(".repository-menu__trigger").click();
+    await expect.poll(async () => { await refresh(page); return action.textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+    await expect.poll(async () => JSON.stringify((await as("Copy editor", "get_site")).content)).toContain("stopped you");
+    expect((await subagents.call("set_page_details", { page: "/", title: "Working after a reload", requestId: "stop-header-reload", agent: "Header writer" })).state).toBe("applied");
+    await expect(names).toHaveText(["Header writer"]);
+    // Stopping the last one listed leaves the focus on the menu, not on Disconnect MCP: a second Enter ends nothing more.
+    await page.getByRole("button", { name: "Stop Header writer" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(list).toBeHidden();
+    await expect(page.locator(".agent-menu")).toBeFocused();
+    await expect(page.locator(".agent-menu")).toHaveAccessibleName("MCP connection");
+    expect(await page.locator(".agent-menu").evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe("none");
+    await page.keyboard.press("Enter");
+    await expect(action).toHaveText("Disconnect MCP");
+    // A stop lasts until Disconnect MCP: ending the connection forgets its agents' stops.
+    const stops = () => page.evaluate(() => JSON.parse(localStorage.getItem("native-site-editor:agents-stopped") ?? "[]").map((who: { name: string }) => who.name));
+    expect((await stops()).sort()).toEqual(["Caption writer", "Copy editor", "Header writer"]);
+    await action.click();
+    await expect(action).toHaveText("Connect to MCP");
+    expect(await stops()).toEqual([]);
+  } finally {
+    release();
+    await subagents.client.close().catch(() => undefined);
+  }
+});
+
+// Ticket am-12: Stop pressed in another tab of this browser reaches the tab receiving the agents' calls (the
+// storage event): the agent's held wait ends refused, its chip and dot go there without a reload. Another tab
+// lists only agents asking (its presence sees no calls); the asking agent is the one stopped here.
+test("a Stop pressed in another tab ends the agent in the receiving tab: its held wait is refused, its chip and dot go", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const frames: string[] = [];
+  page.on("websocket", socket => {
+    if (socket.url().includes("/api/agent/relay?")) socket.on("framereceived", ({ payload }) => frames.push(String(payload)));
+  });
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await page.locator(".agent-menu__action").click();
+  const { token } = await (await made).json() as { token: string };
+  await page.keyboard.press("Escape");
+  const finder = await agent(baseURL, token, "other-tab-spec");
+  const preview = page.frameLocator(".native-preview-frame");
+  const chips = preview.locator('[data-native-selection-box="agent-presence-chip"]').locator("visible=true");
+  const dots = page.getByRole("tree", { name: "Page structure" }).locator(".agent-dots__dot");
+  const other = await context.newPage();
+  try {
+    // Image finder asks back about a pinned request: its orange chip and its dot show in the receiving tab.
+    expect((await finder.call("wait_for_requests", { waitSeconds: 0, agent: "Image finder" })).requests).toEqual([]);
+    await preview.locator(".hero h1").click();
+    await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Ask agent" }).click();
+    await page.keyboard.type("A photo here?");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".agent-pin")).toHaveCount(1);
+    const [request] = (await finder.call("wait_for_requests", { waitSeconds: 0, agent: "Image finder" })).requests;
+    await finder.call("reply_to_request", { request: request.id, status: "question", message: "Wide or square?", agent: "Image finder" });
+    await expect(chips).toHaveText(["Image finder"]);
+    await expect(dots).toHaveCount(1);
+    // Then it waits, held in the receiving tab.
+    const held = finder.client.callTool({ name: "wait_for_requests", arguments: { waitSeconds: 20, agent: "Image finder" } });
+    await expect.poll(() => frames.some(frame => frame.includes('"wait_for_requests"') && frame.includes('"waitMs":20000'))).toBe(true);
+
+    // The other tab lists it and stops it.
+    await open(other, baseURL);
+    await other.locator(".repository-menu__trigger").click();
+    await expect.poll(async () => { await refresh(other); return other.locator(".agent-menu__label").textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+    await expect(other.locator(".agent-menu__agent-name")).toHaveText(["Image finder"]);
+    await other.getByRole("button", { name: "Stop Image finder" }).click();
+    await expect(other.locator(".agent-menu__agents")).toBeHidden();
+    await expect(other.locator(".agent-menu")).toBeFocused();
+    await expect(other.locator(".agent-menu")).toHaveAccessibleName("MCP connection");
+
+    // The receiving tab: the held wait ends refused, the chip and dot go, with no reload.
+    const answer = await held;
+    expect(answer.isError, JSON.stringify(answer)).toBe(true);
+    expect(JSON.stringify(answer.content)).toContain("stopped you");
+    await expect(chips).toHaveCount(0);
+    await expect(dots).toHaveCount(0);
+    // Its question still waits on the pin for any other agent.
+    await expect(page.locator(".agent-pin")).toHaveCount(1);
+  } finally {
+    await other.close();
+    await finder.client.close().catch(() => undefined);
+  }
+});
+
+// Ticket am-12: an agent whose change has ended stays listed as working for ten minutes (AT_WORK_MS), then its
+// row leaves the open menu by itself; a Stop with the focus keeps it while its agent stays listed.
+test("an agent's row leaves the open menu ten minutes after its last change; the focused Stop keeps the focus", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.clock.install();
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action");
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  const stylist = await agent(baseURL, token, "expiry-spec");
+  try {
+    expect((await stylist.call("set_page_details", { page: "/", title: "Styled", requestId: "expiry-details", agent: "Stylist" })).state).toBe("applied");
+    await expect.poll(async () => { await refresh(page); return page.locator(".agent-menu__label").textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+    const names = page.locator(".agent-menu__agent-name");
+    await expect(names).toHaveText(["Stylist"]);
+    // Five minutes on, Painter changes the page too; its Stop has the focus.
+    await page.clock.fastForward(5 * 60_000);
+    expect((await stylist.call("set_page_details", { page: "/", title: "Painted", requestId: "expiry-painter", agent: "Painter" })).state).toBe("applied");
+    await expect(names).toHaveText(["Stylist", "Painter"]);
+    await page.getByRole("button", { name: "Stop Painter" }).focus();
+    await page.clock.fastForward(4 * 60_000);
+    await expect(names).toHaveText(["Stylist", "Painter"]);
+    // Stylist's ten minutes end: its row leaves by itself, and Painter's Stop keeps the focus.
+    await page.clock.fastForward(60_000 + 1_000);
+    await expect(names).toHaveText(["Painter"]);
+    await expect(page.getByRole("button", { name: "Stop Painter" })).toBeFocused();
+    await page.clock.fastForward(5 * 60_000);
+    await expect(page.locator(".agent-menu__agents")).toBeHidden();
+    await expect(action).toHaveText("Disconnect MCP");
+  } finally { await stylist.client.close().catch(() => undefined); }
 });

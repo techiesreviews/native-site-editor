@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { baseKey, beforeShots, breakGuard, breakStale, ensureBase, hasLiveLease, isHit, lockHolder, planBase, pruneTargets, saveCache, setupLock, splitCompare, toolingFiles, toolingHash } from "../scripts/agents/shots/compare.mjs";
 import { contactHtml, type Scenario, type Shot } from "../scripts/agents/shots/core";
+import { kitEnv } from "./support/kit-env.ts";
 
 const temporary: string[] = [];
 after(async () => { for (const dir of temporary) await rm(dir, { recursive: true, force: true }); });
@@ -85,7 +86,7 @@ test("toolingHash includes listed paths and recursive files, ignores other files
 
 test("shots config validates app root and overrides only the server cwd", async () => {
   const dir = await temp();
-  const env = { ...process.env, ASE_TEST_PORT: "5299", ASE_KIT_SHOTS_REQUEST: "test" };
+  const env = { ...kitEnv(), ASE_TEST_PORT: "5299", ASE_KIT_SHOTS_REQUEST: "test" };
   delete env.ASE_KIT_SHOTS_APP_ROOT;
   const run = (override: Record<string, string> = {}) => spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e",
     "import config from './scripts/agents/shots/config.ts'; console.log(JSON.stringify(config));",
@@ -389,7 +390,7 @@ process.exitCode = failed ? 1 : 0;
 
 test("compare coordinates fake captures, remote refs, cache reuse and partial matrices", async () => {
   const dir = await temp(), repo = join(dir, "repo"), mainRoot = join(dir, "main"), out = join(dir, "out"), fixture = join(dir, "fixture");
-  await mkdir(join(repo, "scripts/agents/kit.d"), { recursive: true });
+  await mkdir(join(repo, "scripts/agents/project.d"), { recursive: true });
   await mkdir(join(repo, "node_modules"));
   await mkdir(fixture);
   const fixtureLink = join(dir, "fixture-link");
@@ -405,14 +406,14 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
   const remote = join(dir, "remote.git");
   git(repo, "clone", "--bare", "-q", repo, remote);
   git(repo, "remote", "add", "origin", remote);
-  const command = join(repo, "scripts/agents/kit.d/shots");
+  const command = join(repo, "scripts/agents/project.d/shots");
   await writeFile(command, fakeCapture);
   await chmod(command, 0o755);
   git(repo, "add", ".");
   const currentSha = commit(repo);
   git(repo, "branch", "-f", "dev", currentSha);
   const log = join(dir, "events.jsonl");
-  const env = { ...process.env, KIT_ROOT: repo, KIT_MAIN_ROOT: mainRoot, ASE_NATIVE_SAVE_FIXTURE: fixtureLink, ASE_NATIVE_SAVE_FIXTURE_KIND: "actual", ASE_KIT_SHOTS_REQUEST: "inherited", ASE_KIT_SHOTS_APP_ROOT: "inherited-invalid-root", ASE_TEST_PORT: "9999", TEST_LOG: log, TEST_SHOTS_CORE: pathToFileURL(resolve("scripts/agents/shots/core.ts")).href };
+  const env = { ...kitEnv(), KIT_ROOT: repo, KIT_MAIN_ROOT: mainRoot, ASE_NATIVE_SAVE_FIXTURE: fixtureLink, ASE_NATIVE_SAVE_FIXTURE_KIND: "actual", ASE_KIT_SHOTS_REQUEST: "inherited", ASE_KIT_SHOTS_APP_ROOT: "inherited-invalid-root", ASE_TEST_PORT: "9999", TEST_LOG: log, TEST_SHOTS_CORE: pathToFileURL(resolve("scripts/agents/shots/core.ts")).href };
   const run = (args: string[], extraEnv = {}) => spawnSync(process.execPath, ["--import", "tsx", comparePath, ...args], { env: { ...env, ...extraEnv }, cwd: process.cwd(), encoding: "utf8", timeout: 30_000 });
   const args = ["editor", "--compare", "dev", "--width", "390", "--out", out];
   const first = run(args);
@@ -426,7 +427,7 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
   assert.match(first.stderr, /child diagnostic/);
   assert.doesNotMatch(first.stderr, /captured no ok shots/);
   const base = join(mainRoot, ".scratch/shots-base", baseSha);
-  await assert.rejects(lstat(join(base, "scripts/agents/kit.d/shots")), { code: "ENOENT" });
+  await assert.rejects(lstat(join(base, "scripts/agents/project.d/shots")), { code: "ENOENT" });
   const second = run(args);
   assert.equal(second.status, 0, second.stderr);
   assert.match(second.stdout, /base 2 cached, 0 shot; after ok/);
@@ -505,7 +506,7 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
 });
 
 test("wrapper help and rejected compare arguments never capture", () => {
-  const run = (args: string[]) => spawnSync("scripts/agents/kit.d/shots", args, { encoding: "utf8", timeout: 15_000 });
+  const run = (args: string[]) => spawnSync("scripts/agents/project.d/shots", args, { env: kitEnv(), encoding: "utf8", timeout: 15_000 });
   for (const flag of ["--help", "-h"]) {
     const help = run(["--compare", "dev", flag]);
     assert.equal(help.status, 0, help.stderr);

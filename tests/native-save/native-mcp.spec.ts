@@ -43,7 +43,8 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   await expect(page.getByRole("button", { name: "Wait for MCP", exact: true })).toBeVisible();
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
   // Waiting shows only its one button: no explainer line, no links and no Turn off.
-  await expect(page.locator(".agent-menu")).toHaveText("Wait for MCP", { useInnerText: true });
+  // Beside the agents working now (ticket am-12), only the button.
+  await expect(page.locator(".agent-menu > :not(.agent-menu__agents, .agent-menu__divider):visible")).toHaveText(["Wait for MCP"]);
   await expect(page.getByRole("button", { name: "Turn off", exact: true })).toHaveCount(0);
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
@@ -750,9 +751,13 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
     expect(first.element.html).toBe('<h1 data-key="hero-title">A native browser preview</h1>');
     expect(second.element).toMatchObject({ file: indexPath, tag: "p", component: { tag: "project-card", in: "slot", slot: "body" } });
     expect(second.element.text).toContain("header and footer are custom elements");
-    // Taken: each pin spins and its element has a marching outline.
+    // Taken by the agent's own wait (am-45): each pin names it at once (its MCP client's name), no spinner, and
+    // its element has a marching outline; reading one by its id keeps it.
     await expect(page.locator('.agent-pin[data-state="seen"]')).toHaveCount(2);
-    await expect(page.locator('.agent-pin[data-state="seen"] .agent-pin__spinner')).toHaveCount(2);
+    await expect(page.locator('.agent-pin[data-state="seen"] .agent-pin__spinner')).toHaveCount(0);
+    await expect(page.locator('.agent-pin[data-state="seen"] .agent-pin__who')).toHaveText(["playwright-agent", "playwright-agent"]);
+    await call("get_selection", { request: first.id });
+    await expect(pins.first().locator(".agent-pin__who")).toHaveText("playwright-agent");
     await expect(page.locator(".agent-pin-outline")).toHaveCount(2);
 
     // It edits the heading, and says so; the pin shows it.
@@ -795,7 +800,7 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
     // A click holds it open, the pointer gone; hovering another pin then
     // unfolds its first line.
     await done.click();
-    await expect(card.getByRole("button", { name: "Clear" })).toBeFocused();
+    await expect(card.getByRole("textbox", { name: "Add to this request" })).toBeFocused();
     await other.hover();
     await expect(other.locator(".agent-pin__text")).toHaveText("Is this sentence true?");
     await expect(other.locator(".agent-pin__text")).toBeVisible();
@@ -910,6 +915,11 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     await expect(waiting.locator(".flyout__note")).toHaveCount(0);
     await expect(waiting.getByRole("menuitem")).toHaveCount(1);
     await expect(waiting.getByRole("menuitem").locator(".agent-menu__question-line")).toHaveText("Make this heading friendlier");
+    // A click on the flyout's padding, its request focused, keeps it open: the menu around it takes no focus (am-50).
+    await waiting.getByRole("menuitem").focus();
+    await waiting.click({ position: { x: 2, y: 2 } });
+    await expect(waiting).toBeVisible();
+    await expect(page.locator(".agent-menu")).not.toBeFocused();
     await page.keyboard.press("Escape");
     await expect(waiting).toBeHidden();
 
@@ -971,7 +981,7 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     await expect(card).toBeVisible();
     await atPin(card, pin, "below");
     await expect(card.locator(".agent-pin-card__state")).toHaveText("Question");
-    await expect(card.locator(".agent-pin-card__from")).toHaveText(["You", "Agent"]);
+    await expect(card.locator(".agent-pin-card__from")).toHaveText(["You", "playwright-agent"]);
     await expect(card.locator(".agent-pin-card__bubble")).toHaveText(["Make this heading friendlier", "Warmer, or shorter?"]);
     expect(orange(await rgb(page, ".agent-pin-card__message.is-question .agent-pin-card__bubble", "border-top-color"))).toBe(true);
     await expect(answer).toBeFocused();
@@ -1004,7 +1014,7 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
       ["user", "Warmer\nand keep it short"],
     ]);
     await expect(pin).toHaveAttribute("data-state", "seen");
-    await expect(pin.locator(".agent-pin__spinner")).toHaveCount(1);
+    await expect(pin.locator(".agent-pin__who")).toHaveText("playwright-agent");
 
     // Done: the pin and its card turn grey.
     const home = await call("read_file", { path: indexPath });
@@ -1018,8 +1028,9 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     await expect(card).toHaveAttribute("data-state", "done");
     await expect(card.locator(".agent-pin-card__state")).toHaveText("Done");
     expect(grey(await rgb(page, ".agent-pin-card", "background-color"))).toBe(true);
-    await expect(card.locator(".agent-pin-card__from")).toHaveText(["You", "Agent", "You", "Agent"]);
-    await expect(card.getByRole("textbox")).toHaveCount(0);
+    await expect(card.locator(".agent-pin-card__from")).toHaveText(["You", "playwright-agent", "You", "playwright-agent"]);
+    // A done request takes a follow-up (ticket am-13, native-agent-pins.spec.ts): its box, not an answer's.
+    await expect(card.getByRole("textbox", { name: "Add to this request" })).toBeFocused();
     await card.getByRole("button", { name: "Clear" }).click();
     await expect(pin).toHaveCount(0);
   } finally {

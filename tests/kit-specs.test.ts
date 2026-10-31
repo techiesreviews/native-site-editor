@@ -6,10 +6,14 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import { combineOutcomes, importsOf, namedSpecs, planShards, removedStrings, routeSpecs, selectAffected, selectionLine, SHARD_MIN_SPECS, shardCount, specGroups, summarizeRun } from "../scripts/agents/specs-affected.mjs";
+import { BUILDER_SPEC_CAP, builderSpecs, combineOutcomes, importsOf, namedSpecs, planShards, removedStrings, routeSpecs, selectAffected, selectionLine, SHARD_MIN_SPECS, shardCount, specGroups, summarizeRun, ticketSpecs } from "../scripts/agents/specs-affected.mjs";
+import { fileLevelFixtureChecks, specTestGroups } from "../scripts/spec-groups.mjs";
 import { specsDigest } from "../scripts/agents/specs-digest.mjs";
+import { kitEnv } from "./support/kit-env.ts";
 
 const kit = resolve("scripts/agents/kit");
+// The fake projects have no settings file naming their commands folder, so name this project's.
+const commands = resolve("scripts/agents/project.d");
 const save = (name: string) => `tests/native-save/${name}.spec.ts`;
 const preview = "tests/native-preview/preview.spec.ts";
 
@@ -290,7 +294,7 @@ main().catch(error => { console.error(error); process.exit(1); });
     assert.equal(result.status, 0);
   }
   const run = (args: string[], env: NodeJS.ProcessEnv = {}) => spawnSync(kit, ["specs", ...args], {
-    cwd: root, env: { ...process.env, ASE_SPEC_SHARDS: undefined, KIT_SPECS_FREE_SLOTS: undefined, KIT_ROOT: root, KIT_SPECS_RUNNER: join(root, "fake-runner"), ...env }, encoding: "utf8", timeout: 15_000,
+    cwd: root, env: { ...kitEnv(), ASE_SPEC_SHARDS: undefined, KIT_SPECS_FREE_SLOTS: undefined, KIT_BUILDER_TICKET: undefined, KIT_ROOT: root, KIT_COMMANDS_DIR: commands, KIT_SPECS_RUNNER: join(root, "fake-runner"), ...env }, encoding: "utf8", timeout: 15_000,
   });
   return { root, put, git, files, base, run, calls };
 }
@@ -550,7 +554,8 @@ test("selection lines count all reason kinds including reasons beyond the first 
 
 test("fixture rules match exact tags and collect every applicable reason", t => {
   const f = fixture(t);
-  assert.deepEqual(specGroups(save("single"), "'@actual'"), ["default"]);
+  assert.deepEqual(specGroups(save("single"), "'@actual-starter'"), ["default"]);
+  assert.deepEqual(specGroups(save("single"), "test('a', { tag: '@actual' }, async () => {});"), ["actual"]);
   const actual = selectAffected({ files: f.files, changed: ["fixtures/actual-starter/index.html"] });
   assert.deepEqual(actual.map(spec => spec.file), [save("actual"), save("both")]);
   const defaults = selectAffected({ files: f.files, changed: ["fixtures/native-starter/index.html"] });
@@ -565,12 +570,51 @@ test("fixture rules match exact tags and collect every applicable reason", t => 
   assert.equal(selectionLine(spec), `${save("actual")} [actual] — one; two; three (+2 more)`);
 });
 
+test("a spec file with one @actual test and two plain ones runs all three: the plain two in the default run", () => {
+  const mixed = save("mixed-actual");
+  const text = 'test("plain one", async () => {});\ntest("needs the actual starter", { tag: "@actual" }, async () => {});\ntest(`plain two`, async () => {});\n';
+  const [spec] = namedSpecs([mixed], { [mixed]: text });
+  assert.deepEqual(spec.groups, ["default", "actual"]);
+  const runs = routeSpecs([spec]);
+  assert.deepEqual(runs.map(run => [run.group, run.files]), [["default", [mixed]], ["actual", [mixed]]]);
+  // The default run skips the tagged test (it runs in its own group), the actual run takes only that one.
+  assert.deepEqual(runs[0].command, ["npx", "playwright", "test", "--project=native-save", "--grep-invert", "@actual|@native-static", "--workers=1", mixed]);
+  assert.deepEqual(runs[1].command.slice(4, 5), ["actual"]);
+  // Every test tagged (a conditional skip is no test): the file stays out of the default run.
+  assert.deepEqual(specGroups(mixed, 'test.skip(!process.env.X, "why");\ntest("a", { tag: "@actual" }, async () => {});\ntest(\n  "b",\n  { tag: ["@smoke", "@native-static"] },\n  async () => {});\n'), ["actual", "native-static"]);
+  assert.deepEqual(specTestGroups('test.describe("group", () => {\n  test.fixme("plain", async () => {});\n  test("tagged", { tag: "@native-static" }, async () => {});\n});\n'), ["default", "native-static"]);
+  // A plain test with a function callback does not borrow the next test's tag.
+  assert.deepEqual(specTestGroups('test("a", async function ({ page }) {});\ntest("b", { tag: "@actual" }, async () => {});\n'), ["default", "actual"]);
+  // A title holding "=>", or a tag in a comment or a string, changes nothing.
+  assert.deepEqual(specTestGroups('test("x => y", { tag: "@actual" }, async () => {});\n'), ["actual"]);
+  assert.deepEqual(specTestGroups('// test("old", async () => {});\nconst note = "test(\'n\', () => 1)";\ntest("t", { tag: "@actual" }, async () => {});\n'), ["actual"]);
+  // A tagged describe tags the tests inside it; a plain test after it is still plain.
+  const inside = 'test.describe("d", { tag: "@actual" }, () => {\n  test("x", async () => { if (a) { b(); } });\n});\n';
+  assert.deepEqual(specTestGroups(inside), ["actual"]);
+  assert.deepEqual(specTestGroups(inside + 'test("after", async () => {});\n'), ["default", "actual"]);
+  // A regex literal with quotes, a tag named in a comment or a string, and a call before the tag read right.
+  assert.deepEqual(specTestGroups('const sizes = /sizes="(?!auto)[^"]+"/;\ntest("plain", async () => {});\ntest("t", { tag: "@actual" }, async () => {});\n'), ["default", "actual"]);
+  assert.deepEqual(specTestGroups('// run under "@actual"\nconst note = "@actual";\ntest("plain", async () => {});\n'), ["default"]);
+  assert.deepEqual(specTestGroups('test("t", { annotation: { type: "x", description: String(1) }, tag: "@actual" }, async () => {});\n'), ["actual"]);
+  assert.deepEqual(specTestGroups('for (const n of [1, 2]) test(`t ${n}`, { tag: "@actual" }, async () => {});\n'), ["actual"]);
+  // A title in a variable still declares its test; a step is no test.
+  assert.deepEqual(specTestGroups('const name = "t";\ntest(name, { tag: "@actual" }, async () => { await test.step("s", async () => {}); });\n'), ["actual"]);
+  assert.deepEqual(specTestGroups('test(name, async () => {});\ntest("t", { tag: "@actual" }, async () => {});\n'), ["default", "actual"]);
+});
+
+test("a file with plain and tagged tests keeps its fixture checks inside the tagged tests", () => {
+  const checks = 'requireActualFixture();\ntest.skip(!process.env.X, "why");\ntest("plain", async () => {});\ntest("t", { tag: "@actual" }, async () => { test.skip(!process.env.X, "why"); });\n';
+  assert.deepEqual(fileLevelFixtureChecks(checks), [1, 2]);
+  // In a file of one group a file-level check skips nothing it should not.
+  assert.deepEqual(fileLevelFixtureChecks('requireActualFixture();\ntest("t", { tag: "@actual" }, async () => {});\n'), []);
+});
+
 test("routing batches defaults and preview, runs tagged specs individually and both tags twice", t => {
   const f = fixture(t);
   const specs = namedSpecs(["imports.spec.ts", "actual.spec.ts", "static.spec.ts", "both.spec.ts", "preview.spec.ts"], f.files);
   const runs = routeSpecs(specs);
   assert.deepEqual(runs.map(run => run.group), ["default", "actual", "actual", "native-static", "native-static", "native-preview"]);
-  assert.deepEqual(runs[0].command, ["npx", "playwright", "test", "--project=native-save", "--workers=1", save("imports")]);
+  assert.deepEqual(runs[0].command, ["npx", "playwright", "test", "--project=native-save", "--grep-invert", "@actual|@native-static", "--workers=1", save("imports")]);
   assert.deepEqual(runs[1].command, ["node", "--import", "tsx", "scripts/native-browser-tests.mjs", "actual", "--port", "$ASE_TEST_PORT", "--workers=1", "--spec", "actual.spec.ts"]);
   assert.deepEqual(runs.at(-1)?.command, ["npx", "playwright", "test", "--project=native-preview", "--workers=1", preview]);
   assert.equal(runs.filter(run => run.files.includes(save("both"))).length, 2);
@@ -618,11 +662,11 @@ test("routing shards only large default groups and counts test calls from snapsh
   assert.deepEqual(runs.filter(run => run.group === "default").map(run => run.files), [[defaults[0].file], defaults.slice(1).map(spec => spec.file)]);
   assert.deepEqual(runs.filter(run => run.group !== "default"), routeSpecs(tagged));
   for (const run of runs.filter(run => run.group === "default")) {
-    assert.deepEqual(run.command, ["npx", "playwright", "test", "--project=native-save", "--workers=1", ...run.files]);
+    assert.deepEqual(run.command, ["npx", "playwright", "test", "--project=native-save", "--grep-invert", "@actual|@native-static", "--workers=1", ...run.files]);
   }
   const small = defaults.slice(0, SHARD_MIN_SPECS - 1);
   assert.deepEqual(routeSpecs(small, small, { shards: 4, texts }), routeSpecs(small));
-  assert.deepEqual(routeSpecs(small)[0].command, ["npx", "playwright", "test", "--project=native-save", "--workers=1", ...small.map(spec => spec.file)]);
+  assert.deepEqual(routeSpecs(small)[0].command, ["npx", "playwright", "test", "--project=native-save", "--grep-invert", "@actual|@native-static", "--workers=1", ...small.map(spec => spec.file)]);
 });
 
 test("real CLI --list includes committed, staged, unstaged and untracked changes, runs nothing", t => {
@@ -647,6 +691,92 @@ test("real CLI --list includes committed, staged, unstaged and untracked changes
   assert.match(result.stdout, /RESULT: ok specs 7 selected \(list only\)\n$/);
   assert.equal(existsSync(f.calls), false);
   assert.equal(f.run(["--affected", "--list"]).stdout, result.stdout);
+});
+
+test("over the cap a builder runs only named and direct specs; under it the rest follow, cut at the cap counting named ones", () => {
+  const files: Record<string, string> = { "shared/wide.ts": "export const wide = 1;\n", "tests/native-save/helpers.ts": 'import "../../shared/wide.ts";\n' };
+  const wide = Array.from({ length: 30 }, (_, i) => save(`wide-${String(i).padStart(2, "0")}`));
+  for (const file of wide) files[file] = 'import "./helpers";\n';
+  files[save("zz-direct")] = 'import "../../shared/wide.ts";\n';
+  files[save("zz-named")] = 'test("named", () => {});\n';
+  const selected = selectAffected({ files, changed: ["shared/wide.ts"] });
+  assert.equal(selected.length, 31);
+  const named = ticketSpecs("Run `tests/native-save/zz-named.spec.ts`, [it](../../../../tests/native-save/zz-named.spec.ts), unknown.spec.ts and zz-named.spec.ts.", files);
+  assert.deepEqual(named.map(spec => spec.file), [save("zz-named")]);
+  assert.deepEqual(ticketSpecs("See [the spec](../../../../tests/native-save/zz-direct.spec.ts).", files).map(spec => spec.file), [save("zz-direct")]);
+  const over = builderSpecs(selected, { files, changed: ["shared/wide.ts"], named });
+  assert.deepEqual(over.specs.map(spec => spec.file), [save("zz-direct"), save("zz-named")]);
+  assert.equal(over.left, 30);
+  // 19 affected plus 3 named specs the change does not reach: 22, cut to 20 with the named ones first.
+  const nineteen = selected.filter(spec => spec.file !== save("zz-direct")).slice(0, 19);
+  const others = ["a", "b", "c"].map(name => save(`other-${name}`));
+  for (const file of others) files[file] = "";
+  const under = builderSpecs(nineteen, { files, changed: ["shared/wide.ts"], named: ticketSpecs(others.join(" "), files) });
+  assert.equal(under.specs.length, BUILDER_SPEC_CAP); assert.equal(under.left, 2);
+  assert.ok(others.every(file => under.specs.some(spec => spec.file === file)));
+  assert.deepEqual(under.specs.map(spec => spec.file), [...under.specs.map(spec => spec.file)].sort());
+  // A selection under the cap with no named specs is kept whole.
+  assert.deepEqual(builderSpecs(selected.slice(0, 5), { files, changed: ["shared/wide.ts"] }), { specs: selected.slice(0, 5), left: 0 });
+});
+
+test("ticket spec mentions skip ambiguous basenames and globs, and over-cap names leave only affected specs to kit pr", () => {
+  const files: Record<string, string> = { [save("dup")]: "", "tests/native-preview/dup.spec.ts": "", [save("one")]: "" };
+  assert.deepEqual(ticketSpecs("Run dup.spec.ts, tests/native-save/*.spec.ts and one.spec.ts.", files).map(spec => spec.file), [save("one")]);
+  assert.deepEqual(ticketSpecs("Run tests/native-preview/dup.spec.ts.", files).map(spec => spec.file), ["tests/native-preview/dup.spec.ts"]);
+  const named = Array.from({ length: 25 }, (_, i) => save(`named-${String(i).padStart(2, "0")}`));
+  for (const file of named) files[file] = "";
+  files["src/a.ts"] = ""; files[save("affected-a")] = 'import "../../src/a.ts";\n'; files[save("affected-b")] = 'import "../../src/a.ts";\n';
+  const selected = selectAffected({ files, changed: ["src/a.ts"] });
+  assert.equal(selected.length, 2);
+  const { specs, left } = builderSpecs(selected, { files, changed: ["src/a.ts"], named: ticketSpecs(named.join(" "), files) });
+  assert.equal(specs.length, BUILDER_SPEC_CAP); assert.ok(specs.every(spec => spec.reasons[0] === "named spec"));
+  assert.equal(left, 2, "named specs that were cut are not counted for kit pr");
+});
+
+test("real CLI under a builder keeps a widely used file's run to named and direct specs and says how many kit pr runs", t => {
+  const f = fixture(t);
+  f.put("shared/wide.ts", "export const wide = 1;\n");
+  f.put("tests/native-save/wide-helpers.ts", 'import "../../shared/wide.ts";\n');
+  const wide = Array.from({ length: 25 }, (_, i) => save(`wide-${String(i).padStart(2, "0")}`));
+  for (const file of wide) f.put(file, 'import "./wide-helpers";\ntest("case", () => {});\n');
+  f.put(save("zz-direct"), 'import "../../shared/wide.ts";\ntest("case", () => {});\n');
+  f.put("shared/mid.ts", "export const mid = 1;\n");
+  f.put("tests/native-save/mid-helpers.ts", 'import "../../shared/mid.ts";\n');
+  for (let i = 0; i < 19; i++) f.put(save(`mid-${String(i).padStart(2, "0")}`), 'import "./mid-helpers";\ntest("case", () => {});\n');
+  f.put("docs/ticket.md", "Touched specs: `zz-direct.spec.ts`, [moved](../tests/native-save/moved.spec.ts).\n");
+  f.put("docs/three.md", "Touched specs: label.spec.ts, moved.spec.ts, custom.spec.ts.\n");
+  f.git("add", "."); f.git("commit", "--quiet", "-m", "wide helper");
+  f.git("update-ref", "refs/remotes/origin/dev", "HEAD");
+  const builder = { KIT_BUILDER_TICKET: "docs/ticket.md" };
+  // A change one spec's module reaches picks it as before.
+  f.put("src/media.ts", 'export const media = "changed";\n');
+  const near = f.run(["--affected", "--list"], builder);
+  assert.equal(near.status, 0, near.stderr);
+  assert.match(near.stdout, /imports.spec.ts \[default\] — import: src\/media.ts/);
+  assert.doesNotMatch(near.stdout, /builder run:|more run in kit pr/);
+  f.git("checkout", "--quiet", "src/media.ts");
+  // 19 affected specs and 3 named ones the change does not reach: cut at 20, counting the named ones.
+  f.put("shared/mid.ts", "export const mid = 2;\n");
+  const mid = f.run(["--affected", "--list"], { KIT_BUILDER_TICKET: "docs/three.md" });
+  assert.equal(mid.status, 0, mid.stderr);
+  assert.match(mid.stdout, /^builder run: 20 specs \(named, changed or importing a changed file\); 2 more run in kit pr$/m);
+  assert.match(mid.stdout, /RESULT: ok specs 20 selected \(list only\); 2 more run in kit pr\n$/);
+  f.git("checkout", "--quiet", "shared/mid.ts");
+  f.put("shared/wide.ts", "export const wide = 2;\n");
+  assert.match(f.run(["--affected", "--list"]).stdout, /RESULT: ok specs 26 selected \(list only\)\n$/);
+  const list = f.run(["--affected", "--list"], builder);
+  assert.equal(list.status, 0, list.stderr);
+  assert.match(list.stdout, /^builder run: 2 specs \(named, changed or importing a changed file\); 25 more run in kit pr$/m);
+  assert.match(list.stdout, /zz-direct.spec.ts \[default\] — named spec; import: shared\/wide.ts/);
+  assert.match(list.stdout, /moved.spec.ts \[default\] — named spec/);
+  assert.match(list.stdout, /RESULT: ok specs 2 selected \(list only\); 25 more run in kit pr\n$/);
+  const kept = list.stdout.split("\n").filter(line => line.startsWith("tests/")).map(line => line.split(" ")[0]);
+  assert.deepEqual(kept, [save("moved"), save("zz-direct")]);
+  f.put("reports.json", JSON.stringify({ "native-save": { suites: [{ specs: kept.map(file => reportSpec(file, "case")) }] } }));
+  const result = f.run(["--affected"], builder);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /RESULT: ok specs 2\/2 passed; 25 more run in kit pr\n$/);
+  assert.deepEqual(readFileSync(f.calls, "utf8").trim().split("\n").map(line => JSON.parse(line)).flatMap(callFiles).sort(), kept);
 });
 
 function reportSpec(file: string, title: string, status = "expected", results = true) {
@@ -722,7 +852,7 @@ for (const signal of ["SIGINT", "SIGTERM"] satisfies NodeJS.Signals[]) {
     const files = largeSelection(f);
     const child = spawn(kit, ["specs", ...files, save("actual")], {
       cwd: f.root,
-      env: { ...process.env, KIT_ROOT: f.root, KIT_SPECS_RUNNER: join(f.root, "fake-runner"), ASE_SPEC_SHARDS: "2", FAKE_WAIT_FOR_SIGNAL: "1" },
+      env: { ...kitEnv(), KIT_ROOT: f.root, KIT_COMMANDS_DIR: commands, KIT_SPECS_RUNNER: join(f.root, "fake-runner"), ASE_SPEC_SHARDS: "2", FAKE_WAIT_FOR_SIGNAL: "1" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     const closed = once(child, "close", { signal: AbortSignal.timeout(15_000) });

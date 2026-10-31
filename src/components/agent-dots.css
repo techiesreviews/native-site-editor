@@ -1,0 +1,23 @@
+/* The agents' dots on a row (src/components/agent-dots.ts), each in its agent's colour (src/theme.css). */
+.agent-dots {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+  align-items: center;
+}
+.agent-dots__dot {
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--agent-presence);
+}
+.agent-dots__dot[data-agent-colour="1"] { background: var(--agent-presence-2); }
+.agent-dots__dot[data-agent-colour="2"] { background: var(--agent-presence-3); }
+.agent-dots__dot[data-agent-colour="3"] { background: var(--agent-presence-4); }
+@media (prefers-reduced-motion: no-preference) {
+  .agent-dots__dot { animation: agent-dot-in 200ms cubic-bezier(0.23, 1, 0.32, 1); }
+}
+@keyframes agent-dot-in {
+  from { transform: scale(0.3); opacity: 0; }
+}

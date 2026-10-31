@@ -3,7 +3,7 @@ import { handleChunkLoadFailure } from "../chunk-recovery";
 import { node, button } from "../ui/dom";
 import { icon as phosphorIcon, type IconName as PhosphorName } from "../icons";
 import { noteAnchor, noteTop, PIN_HEIGHT } from "./agent-pin-geometry";
-import { editBarPlacement, roomScroll, type EditBarPlacementOptions } from "./edit-bar-placement";
+import { dockLift, dockScroll, editBarPlacement, type DockScrollOptions } from "./edit-bar-placement";
 import { componentIcon, mark } from "../page-builder/component-icon";
 import "./edit-bar.css";
 
@@ -13,7 +13,9 @@ import "./edit-bar.css";
 // follows the User Editor reference: 8 px above the selection when that fits,
 // below it otherwise, else pinned inside the frame where it covers the least
 // visible selection; never past the frame's sides; hidden while the selection
-// is scrolled out of view unless its controls retain focus.
+// is scrolled out of view unless its controls retain focus. On a phone-wide
+// window it is docked instead: a toolbar in its own row under the frame, like
+// a word editor's on a phone, raised onto the on-screen keyboard.
 
 export interface SelectionRect {
   top: number;
@@ -24,6 +26,9 @@ export interface SelectionRect {
   right: number;
   /** Height the page's own sticky/fixed top bar covers at the frame's top, kept clear by the edit bar. */
   inset?: number;
+  /** A pin's or the selection's element (ticket am-45): the top of what stands just above it, too close for a row of
+   * pins between (an eyebrow line over a heading). Its pins and Ask agent's note stand above that while there is room. */
+  clear?: number;
 }
 
 export type EditBarControl =
@@ -208,6 +213,8 @@ const NOTE_SENT_MS = 180;
 const NOTE_MAX_HEIGHT = 84;
 const noteSizesItself = typeof CSS !== "undefined" && CSS.supports("field-sizing", "content");
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+// The editor's phone layout (style.css), where the bar docks.
+const phoneWide = () => matchMedia("(max-width: 650px)").matches;
 
 interface Note {
   label: string;
@@ -222,8 +229,8 @@ interface Note {
 
 /**
  * `scroll` scrolls the page by dy px: on a phone-wide window, a new selection
- * the bar would cover is scrolled clear of it once (after a double-click's
- * second press could land), so the bar sits above or below it.
+ * hidden behind the docked bar or the keyboard is scrolled into view above it
+ * once (after a double-click's second press could land).
  */
 export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: EditBarDrag, pinRow?: PinRow, scroll?: (dy: number) => void) {
   let suggestionRows: typeof import("./suggestion-rows") | undefined;
@@ -243,10 +250,12 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   pane.append(bar);
 
   let rect: SelectionRect | undefined;
-  // The last pinned placement's geometry, and the selection shown (its source place, else its kind).
-  let pinned: Omit<EditBarPlacementOptions, "visible"> | undefined;
+  // The docked bar's last geometry, and the selection shown (its source place, else its kind).
+  let docked: DockScrollOptions | undefined;
   let shownKey = "";
   let roomTimer = 0;
+  // A new selection's scroll into view is waiting (room).
+  let roomDue = false;
   let onFormat: EditBarModel["onFormat"];
   let onMove: EditBarModel["onMove"];
   // The open menu or field, under its button.
@@ -297,15 +306,24 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     position();
   }
   function placePopover(trigger: HTMLElement) {
-    // Under the button, kept inside the frame's width.
+    // Under the button, kept inside the frame's width; over the docked bar,
+    // as tall as the room above it allows.
     const paneRect = pane.getBoundingClientRect();
     const frameRect = frame.getBoundingClientRect();
     const anchor = trigger.getBoundingClientRect();
     const width = popover.offsetWidth;
     const left = Math.max(frameRect.left - paneRect.left + 8, Math.min(anchor.left - paneRect.left, frameRect.right - paneRect.left - width - 8));
+    popover.style.left = `${left}px`;
+    if (docked) {
+      // From the bar's top edge, never taller than the room up to the frame's top (its content scrolls).
+      const top = bar.getBoundingClientRect().top;
+      popover.style.maxHeight = `${Math.max(0, Math.min(320, top - frameRect.top - 8))}px`;
+      popover.style.top = `${top - paneRect.top - 4 - popover.offsetHeight}px`;
+      return;
+    }
+    popover.style.maxHeight = "";
     const below = anchor.bottom - paneRect.top + 4;
     const fits = below + popover.offsetHeight <= frameRect.bottom - paneRect.top - 4;
-    popover.style.left = `${left}px`;
     popover.style.top = `${fits ? below : Math.max(frameRect.top - paneRect.top + 4, anchor.top - paneRect.top - 4 - popover.offsetHeight)}px`;
   }
   popover.addEventListener("keydown", (event) => {
@@ -422,38 +440,112 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const frameRect = frame.getBoundingClientRect();
     const paneRect = pane.getBoundingClientRect();
     const visible = rect.bottom > 0 && rect.top < frameRect.height && rect.right > 0 && rect.left < frameRect.width;
+    const dock = phoneWide();
     if (note) note.element.hidden = !visible;
     const keepControls = !popover.hidden || bar.contains(document.activeElement) || popover.contains(document.activeElement);
-    if (!visible && !keepControls) {
+    // The docked bar stays while its selection does, scrolled away or not.
+    if (!visible && !keepControls && !dock) {
       bar.hidden = true;
       return;
     }
     bar.hidden = false;
     const frameLeft = frameRect.left - paneRect.left;
     const frameTop = frameRect.top - paneRect.top;
-    const frameRight = frameRect.right - paneRect.left;
+    if (dock) dockBar(rect, frameRect, frameLeft, frameTop);
+    else float(rect, frameRect, frameLeft, frameTop, visible);
+    pane.dispatchEvent(new Event("edit-bar-layout"));
+    if (!popover.hidden && popoverButton) placePopover(popoverButton);
+  }
+  // By the selection: above it, then below (also under a sticky header). If
+  // neither fits, pinned to the canvas edge that covers less of the visible selection.
+  function float(at: SelectionRect, frameRect: DOMRect, frameLeft: number, frameTop: number, visible: boolean) {
+    docked = undefined;
+    delete bar.dataset.toastAvoid;
+    delete bar.dataset.lifted;
+    bar.style.marginBlockEnd = bar.style.translate = "";
+    applied = 0;
+    undock();
+    const frameRight = frameRect.right - frameRect.left + frameLeft;
     bar.style.maxWidth = `${Math.max(180, frameRect.width - 16)}px`;
     fitPanel();
     const width = bar.offsetWidth;
     const height = bar.offsetHeight;
     // Clear of the selection and of the notes on it (its pins, Ask agent's note).
-    const row = placeNote(rect, frameRect, frameLeft, frameTop);
-    // Prefer above, then below (also under a sticky header). If neither fits,
-    // pin to the canvas edge that covers less of the visible selection.
-    const placement = {
-      selectionTop: Math.min(rect.top, row?.top ?? rect.top),
-      selectionBottom: Math.max(rect.bottom, row?.bottom ?? rect.bottom),
+    const row = placeNote(at, frameRect, frameLeft, frameTop);
+    const { top, side } = editBarPlacement({
+      selectionTop: Math.min(at.top, row?.top ?? at.top),
+      selectionBottom: Math.max(at.bottom, row?.bottom ?? at.bottom),
       frameHeight: frameRect.height,
       barHeight: height,
-      inset: rect.inset,
-    };
-    const { top, side } = editBarPlacement({ ...placement, visible });
-    pinned = side === "pinned" && visible ? placement : undefined;
+      inset: at.inset,
+      visible,
+    });
     bar.dataset.side = side;
-    bar.style.left = `${Math.max(frameLeft + 8, Math.min(frameLeft + rect.left, frameRight - width - 8))}px`;
+    bar.style.left = `${Math.max(frameLeft + 8, Math.min(frameLeft + at.left, frameRight - width - 8))}px`;
     bar.style.top = `${frameTop + top}px`;
-    pane.dispatchEvent(new Event("edit-bar-layout"));
-    if (!popover.hidden && popoverButton) placePopover(popoverButton);
+  }
+  // Phones: in its own row under the frame (edit-bar.css), so no page sits
+  // under it, raised onto the keyboard with the frame ending above it, so the
+  // page's end still scrolls clear of both (or onto a zoomed view's foot). A toast
+  // keeps above it (data-toast-avoid; toast.ts re-places on edit-bar-dock).
+  function dockBar(at: SelectionRect, frameRect: DOMRect, frameLeft: number, frameTop: number) {
+    bar.dataset.side = "docked";
+    bar.dataset.toastAvoid = "";
+    bar.style.left = bar.style.top = bar.style.maxWidth = "";
+    const panel = bar.querySelector<HTMLElement>(":scope > .edit-bar__controls");
+    if (panel) panel.style.width = "";
+    const view = window.visualViewport;
+    // Where the bar stands unlifted, in whole px so a fractional layout does not flip it.
+    const measure = () => {
+      const barTop = Math.round(bar.getBoundingClientRect().top + applied);
+      const lift = view ? Math.round(dockLift({ barTop, barBottom: barTop + bar.offsetHeight, viewportTop: view.offsetTop, viewportHeight: view.height })) : 0;
+      return { barTop, lift };
+    };
+    let { barTop, lift } = measure();
+    // Lifted onto the keyboard, its foot drops the home indicator's room (edit-bar.css).
+    if (Boolean(lift) !== (bar.dataset.lifted !== undefined)) {
+      bar.toggleAttribute("data-lifted", Boolean(lift));
+      ({ barTop, lift } = measure());
+    }
+    // A toast where it rests: it rises 8 px into place as it opens (toast.css).
+    const shown = document.querySelector<HTMLElement>(".editor-toast:popover-open");
+    const toast = shown?.getBoundingClientRect();
+    const rising = shown ? parseFloat(getComputedStyle(shown).translate.split(" ")[1] ?? "") || 0 : 0;
+    // A keyboard's lift shortens the frame; a pinch-zoomed view's (panned all the time) only moves the bar.
+    const zoomed = Boolean(view && Math.abs(view.scale - 1) > 0.01);
+    bar.style.marginBlockEnd = lift && !zoomed ? `${lift}px` : "";
+    bar.style.translate = lift && zoomed ? `0 ${-lift}px` : "";
+    applied = lift;
+    // Toasts re-place over it only when it moved (toast.ts), not on every page scroll.
+    const place = `${Math.round(barTop - lift)} ${bar.offsetHeight}`;
+    if (place !== dockedPlace) {
+      dockedPlace = place;
+      pane.dispatchEvent(new Event("edit-bar-dock"));
+    }
+    // The page shows down to the bar, or to a toast standing on it.
+    const toastTop = toast ? toast.top - rising : 0;
+    const foot = toast && toastTop < barTop - lift && toastTop + toast.height > barTop - lift - 24 ? toastTop : barTop - lift;
+    const visibleBottom = Math.min(frameRect.height, foot - frameRect.top);
+    // A visual viewport panned down (a zoomed view, iOS keeping a caret in sight) starts below the frame's top.
+    const visibleTop = view ? Math.max(0, view.offsetTop - frameRect.top) : 0;
+    // Ask agent's note stays by the selection, above the bar.
+    const row = placeNote(at, frameRect, frameLeft, frameTop, visibleBottom - 4);
+    docked = {
+      selectionTop: Math.min(at.top, row?.top ?? at.top),
+      selectionBottom: Math.max(at.bottom, row?.bottom ?? at.bottom),
+      visibleTop,
+      visibleBottom,
+      inset: at.inset,
+    };
+  }
+  // The lift last applied to the docked bar (a margin, or a translate in a zoomed view).
+  let applied = 0;
+  // Where the docked bar last stood, for toasts; empty while it is not docked.
+  let dockedPlace = "";
+  function undock() {
+    if (!dockedPlace) return;
+    dockedPlace = "";
+    pane.dispatchEvent(new Event("edit-bar-dock"));
   }
   // A wrapped flex box keeps the width of the line it wrapped from, so a
   // panel that wraps would end in empty space: fit it to its widest row.
@@ -470,35 +562,71 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const end = parseFloat(style.paddingRight) + parseFloat(style.borderRightWidth);
     panel.style.width = `${Math.ceil(Math.max(...rects.map((r) => r.right)) - panel.getBoundingClientRect().left + end)}px`;
   }
-  // On a phone-wide window a selection the bar covers is scrolled clear (roomScroll): when it
-  // is chosen, after a double-click's second press could land, and when the canvas changes
-  // height (the phone sheet) and has settled; never on a scroll. Still covered (the page
-  // could not scroll that way), the other way once.
-  function room(key: string) {
-    if (!scroll || !matchMedia("(max-width: 650px)").matches) return;
+  // On a phone-wide window a selection hidden behind the docked bar, the keyboard or a
+  // toast is scrolled into view above it (dockScroll), measured once things settled: when
+  // it is chosen, after a double-click's second press could land; and when the canvas,
+  // the bar or the keyboard changes height or a toast shows (`follow`, the geometry
+  // before), only if it was in view then, so one the user scrolled away stays put; and
+  // only if it has not moved since, so a scroll of the user's meanwhile wins. A toast
+  // checks at once (`wait` 0): it covers what it covers from its first frame.
+  function room(key: string, follow?: { was: DockScrollOptions | undefined }, wait = 400) {
+    if (!scroll || !phoneWide()) return;
+    if (follow && !roomDue && !(follow.was && !dockScroll(follow.was))) return;
+    // A new selection's check, still to come, measures this change too; only a toast hurries it.
+    if (follow && roomDue && wait >= 400) return;
+    if (!follow) roomDue = true;
+    const seen = roomDue ? undefined : docked?.selectionTop;
     clearTimeout(roomTimer);
-    const nudge = (tried: number) => {
-      const dy = pinned && shownKey === key ? roomScroll(pinned, tried) : 0;
-      if (!dy) return;
-      scroll(dy);
-      if (!tried) roomTimer = window.setTimeout(() => nudge(dy), 500);
-    };
-    roomTimer = window.setTimeout(() => nudge(0), 400);
+    roomTimer = window.setTimeout(() => {
+      roomDue = false;
+      position();
+      if (!docked || shownKey !== key || seen !== undefined && Math.abs(docked.selectionTop - seen) > 1) return;
+      const dy = dockScroll(docked);
+      if (dy) scroll(dy);
+    }, wait);
   }
   let frameHeight = 0;
+  let barHeight = 0;
   const resize = new ResizeObserver(() => {
+    const was = docked;
     position();
     const height = frame.getBoundingClientRect().height;
-    if (frameHeight && height !== frameHeight && shownKey) room(shownKey);
+    const own = bar.offsetHeight;
+    if ((frameHeight && height !== frameHeight || barHeight && own && own !== barHeight) && shownKey) room(shownKey, { was });
     frameHeight = height;
+    if (own) barHeight = own;
   });
   resize.observe(frame);
   resize.observe(pane);
   resize.observe(bar);
+  // The keyboard opening or closing resizes the visual viewport (index.html keeps
+  // the layout viewport put); a pinch-zoomed view scrolls it.
+  const view = window.visualViewport;
+  // A keyboard changes the height at a fixed scale; a pinch-zoom changes the scale, and never scrolls.
+  let viewHeight = view?.height ?? 0;
+  let viewScale = view?.scale ?? 1;
+  function onViewResize() {
+    const was = docked;
+    position();
+    if (view && view.height !== viewHeight && view.scale === viewScale && shownKey) room(shownKey, { was });
+    viewHeight = view?.height ?? 0;
+    viewScale = view?.scale ?? 1;
+  }
+  view?.addEventListener("resize", onViewResize);
+  view?.addEventListener("scroll", position);
+  // A toast shown or gone: the docked bar keeps out from under it, and the
+  // selection out from under a toast that came.
+  function onToggle(event: Event) {
+    if (!(event.target as Element).classList?.contains("editor-toast")) return;
+    const was = docked;
+    position();
+    if ((event as ToggleEvent).newState === "open" && shownKey) room(shownKey, { was }, 0);
+  }
+  document.addEventListener("toggle", onToggle, true);
 
   // The note after the selection's pins, where the next pin will stand,
   // and that row's extent in frame coordinates.
-  function placeNote(at: SelectionRect, frameRect: DOMRect, frameLeft: number, frameTop: number) {
+  function placeNote(at: SelectionRect, frameRect: DOMRect, frameLeft: number, frameTop: number, floor = Infinity) {
     const slot = pinRow?.(at);
     const anchor = noteAnchor(at, frameRect);
     if (note) {
@@ -508,7 +636,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       element.style.maxWidth = `${Math.max(120, frameRect.width - 8)}px`;
       const x = Math.max(4, Math.min(anchor.x + (slot?.offset ?? 0), frameRect.width - element.offsetWidth - 4));
       element.style.left = `${frameLeft + x}px`;
-      element.style.top = `${frameTop + Math.max(2, noteTop(anchor, element.offsetHeight))}px`;
+      element.style.top = `${frameTop + Math.max(2, Math.min(noteTop(anchor, element.offsetHeight), floor - element.offsetHeight))}px`;
     }
     const height = Math.max((note?.element ?? leaving)?.offsetHeight ?? 0, slot?.offset ? PIN_HEIGHT : 0);
     if (!height) return undefined;
@@ -1144,15 +1272,20 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       rect = undefined;
       shownKey = "";
       clearTimeout(roomTimer);
+      roomDue = false;
       delete bar.dataset.model;
       bar.hidden = true;
       bar.replaceChildren();
+      undock();
     },
     destroy() {
       clearTimeout(roomTimer);
       window.removeEventListener("pointerup", release, true);
       window.removeEventListener("pointercancel", release, true);
       resize.disconnect();
+      view?.removeEventListener("resize", onViewResize);
+      view?.removeEventListener("scroll", position);
+      document.removeEventListener("toggle", onToggle, true);
       document.removeEventListener("pointerdown", onPointerDown, true);
       closeNote(false);
       leaving?.remove();

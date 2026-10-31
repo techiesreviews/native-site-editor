@@ -413,12 +413,20 @@ its number unused.
 - Spec: `tests/native-preview/native-preview.spec.ts`
 - Steps: `scripts/agents/shots/features/F-canvas-14.json`
 
+### F-canvas-15 Two people on one page share one copy
+- Try: Live sharing is off until switched on: in each browser, run `localStorage.setItem("native-site-editor:live-sharing", "on")` in the console and reload. Then open the same page on the same site and branch in two browsers (two sign-ins), change its text in one, then in the other; then open it in a third browser.
+- Good: Each change shows in the other browser's page and code within a moment, with nothing typed lost, and both end with the very same text; the third browser opens on that shared text, not GitHub's. Opening a page nobody else has open at the same moment as someone else never doubles its text. Each browser keeps the shared text as its own unsaved change. Your Undo and Redo, on the page and in the code pane, take back only your own changes and leave the others' words in place; someone else's change no longer clears them. Someone typing inside your words leaves your Undo whole: it takes back your words around theirs. A change of yours that someone else then deleted or rewrote part of drops out of your Undo, together with all your older changes; so does any page-builder step (a section move, a component made, a media step) in your Undo for that page, with your older changes. Undoing someone's change from their caret's name tag (comes with carets, slices 22 and 23) is your own step: your Undo brings their words back. Going to another page or reloading and coming back adds nothing twice. Discard takes only you out of the shared copy: the others keep their changes, and opening the page again brings you back to them. There are no carets or names yet, and no toast (S4).
+- Files: `src/live-text.ts`, `src/shared-undo.ts`, `src/live-room.ts`, `shared/live-room.ts`, `worker/agent-relay.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-live-text.spec.ts`
+- Steps: none yet (needs two browsers signed in at once)
+
 ## Edit bar
 
 ### F-bar-01 Edit bar on the selection
 - Try: Select a heading, a section and a component part.
-- Good: The bar sits by the element with its name as a label and never covers the text being edited; groups wrap whole on narrow frames (L4, U5).
-- Files: `src/components/edit-bar.ts`, `src/components/edit-bar.css`, `src/components/edit-bar-placement.ts`, `src/controllers/page-structure-controller.ts`
+- Good: The bar sits by the element with its name as a label and never covers the text being edited; groups wrap whole on narrow frames (L4, U5). On a phone it is docked at the foot of the canvas instead, one row that scrolls sideways with the name chip first: no page content sits under it, it rides on top of the on-screen keyboard, and a selection it (or the keyboard, or a toast on it) would hide scrolls into view above it.
+- Files: `src/components/edit-bar.ts`, `src/components/edit-bar.css`, `src/components/edit-bar-placement.ts`, `src/controllers/page-structure-controller.ts`, `src/components/toast.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-edit-bar.spec.ts`
 - Steps: `scripts/agents/shots/features/F-bar-01.json`
@@ -433,7 +441,7 @@ its number unused.
 
 ### F-bar-03 Text size
 - Try: Select text and open Text size.
-- Good: Offers the site's own size classes or variables, written as the site writes them.
+- Good: Offers the site's own size classes or variables, written as the site writes them; the chosen size applies at once, also right after Bold, with no "source changed" refusal.
 - Files: `src/native-text-size.ts`, `src/controllers/page-structure-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-text-size.spec.ts`
@@ -589,7 +597,7 @@ its number unused.
 
 ### F-component-03 Edit component mode
 - Try: Select an instance and press its pencil (or Edit component).
-- Good: The instance is framed in place, its template edits for every page, the page around is not clickable, Done leaves without reload (B11).
+- Good: The instance is framed in place, its template edits for every page, the page around is not clickable, Done leaves without reload, back to the instance selected with its stylesheet, even pressed while the mode still loads (B11).
 - Files: `src/page-builder/edit-component-mode.ts`, `src/page-builder/edit-component-mode.css`, `src/page-builder/component-mode.ts`, `src/page-builder/edit-mode-bar-fit.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-edit-component-mode-actual.spec.ts`
@@ -1031,7 +1039,7 @@ its number unused.
 
 ### F-agent-01 Connect to MCP
 - Try: Open the project menu and press Connect to MCP, then paste the prompt into an agent.
-- Good: Three actions only (Connect to MCP, Wait for MCP, Disconnect MCP); the label confirms the copy and the dot shows the state, with no toast or explainer (S1, S4). Connect to MCP copies a prompt even when an agent already uses the site's connection, then offers Disconnect MCP. Whatever the clipboard does (an Electron webview that never answers included), the button ends in Copied or the problem dot within a few seconds.
+- Good: Three actions only (Connect to MCP, Wait for MCP, Disconnect MCP), beside the agents working now while agents are on (F-agent-11); the label confirms the copy and the dot shows the state, with no toast or explainer (S1, S4). Connect to MCP copies a prompt even when an agent already uses the site's connection, then offers Disconnect MCP. Whatever the clipboard does (an Electron webview that never answers included), the button ends in Copied or the problem dot within a few seconds. After time away (the laptop asleep, the connection's retries used up, a permission past its 8 hours, the sign-in ended), coming back or opening the menu shows the real state, and a press still copies a working prompt or shows the problem dot (am-51). After a failed attempt to make this tab the one that receives agent changes, the press tries that again, then copies (am-53).
 - Files: `src/components/agent-menu.ts`, `src/components/agent-menu.css`, `src/agent-resume.ts`, `src/agent-menu-host.ts`, `src/controllers/agent-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-mcp-menu.spec.ts`
@@ -1054,20 +1062,20 @@ its number unused.
 - Steps: none yet (needs a connected agent)
 
 ### F-agent-04 Ask agent and pins
-- Try: Select an element, press Ask agent and type a request; answer its question on the pin.
-- Good: A numbered pin shows waiting, working, a question (orange) or done (grey); history stays in this browser.
-- Files: `src/components/agent-pins.ts`, `src/components/agent-pins.css`, `src/components/agent-pin-geometry.ts`, `src/agent-records.ts`
+- Try: Select an element, press Ask agent and type a request; ask again on the same element; answer a question on its pin, or open a done pin and send a follow-up.
+- Good: A numbered pin shows waiting (blue), the agent on it in that agent's colour with its name, a question (orange) or done (grey, no name); taken by an agent's wait, the pin shows that agent at once; a watchdog's take (an agent that only waits) shows the connection's one agent at work (with several, the spinner until one reads or replies; with none, the watchdog until one acts) and keeps it until done; one element holds several pins side by side, they and Ask agent's note standing clear of a short line just above a heading (an eyebrow) when there is room; every pin's card has a box and Send, and a follow-up reopens the pin for the same agent; that agent's outline on the element has no second name chip; Ask agent stays icon-only; history stays in this browser.
+- Files: `src/components/agent-pins.ts`, `src/components/agent-pins.css`, `src/components/agent-pin-geometry.ts`, `src/components/native-preview-runtime.js`, `src/agent-records.ts`, `shared/agent-requests.ts`, `src/agent-presence.ts`, `src/agent-menu-host.ts`, `src/components/agent-menu.ts`
 - Phone: yes
-- Spec: `tests/native-save/native-mcp.spec.ts`
+- Spec: `tests/native-save/native-mcp.spec.ts`, `tests/native-save/native-agent-pins.spec.ts`, `tests/native-save/native-agent-pins-actual.spec.ts`
 - Steps: none yet (needs a connected agent)
 
 ### F-agent-05 Agent presence
-- Try: Watch while an agent works on a section.
-- Good: The section is outlined with the agent's name chip and a dot in Page structure.
-- Files: `src/agent-presence.ts`
+- Try: Watch while several agents (or one agent's named subagents) work on sections of the page shown and on another page; let one ask you a question.
+- Good: Each agent's section is outlined in its own colour (green, violet, pink, teal, in order of arrival) with its name chip (its own name, else its program's, else "Agent"); its dot sits on that section's Page structure row, and an agent on another page (or on the shown page as a whole, such as its details) dots that page's row in Pages and files; a question turns only that agent's chip orange; nothing else (no bars, status text or toasts; S1).
+- Files: `src/agent-presence.ts`, `src/components/agent-dots.ts`, `src/components/agent-dots.css`, `src/components/native-preview-runtime.js`, `src/components/page-structure.ts`, `src/components/pages-tree.ts`
 - Phone: yes
-- Spec: `tests/native-save/native-agent-presence.spec.ts`
-- Steps: none yet (needs a connected agent)
+- Spec: `tests/native-save/native-several-agents.spec.ts`, `tests/native-save/native-agent-presence.spec.ts`
+- Steps: none yet (needs connected agents)
 
 ### F-agent-06 Agents stay on across tabs and reloads
 - Try: Reload, open a second tab, close the first.
@@ -1100,6 +1108,54 @@ its number unused.
 - Phone: yes
 - Spec: `tests/native-save/native-agent-recovery.spec.ts`
 - Steps: none yet (needs a connected agent and full browser storage)
+
+### F-agent-10 Several agents on one page
+- Try: Have two agents change different sections of the same page at once.
+- Good: Both changes land; an agent is refused only when another changed the very same words or section, and then it retries at once.
+- Files: `shared/agent-edit.ts`, `src/agent-part.ts`, `src/agent-tools-edit.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-agent-exact-part.spec.ts`
+- Steps: none yet (needs two connected agents)
+
+### F-agent-11 Stop one agent
+- Try: With two agents at work, open the project menu and press Stop beside one of them.
+- Good: The open menu lists the agents working now, each with its coloured dot (orange while it asks), its name and Stop. Stop ends that agent only: its row, outline, chip and dots go at once, its next calls are refused, the focus goes to the agents' list, or the menu once none is left (never another Stop or Disconnect MCP), and the other keeps working. A stop lasts until Disconnect MCP, which still ends them all. A tab not receiving the agents' calls lists only the agents asking a question. The menu has no "Pins go to" (removed, am-50): pins go to whichever connected agent takes them first, and the helper starts the agent its own start command names (Claude Code by default). No toast or explainer (S1, S4); Stop is a 44 px target on touch (U6).
+- Files: `src/components/agent-menu.ts`, `src/components/agent-menu.css`, `src/agent-presence.ts`, `src/agent-stops.ts`, `shared/agent.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-mcp-menu.spec.ts`
+- Steps: none yet (needs connected agents)
+
+### F-agent-12 An agent shows where it works and checks its work with a picture
+- Try: Ask a connected agent to say where it works before changing a section (working_here), then to take a picture of the page at your width and at a phone's (screenshot_preview).
+- Good: Before it changes anything, the agent's outline and name chip stand on the section it names, with its dot on that section's Page structure row (on another page: that page's row in Pages and files); it moves when the agent says it moved, and goes when it says it is done or five minutes later. The picture shows the page as your preview draws it, at your width or 390 px wide (the phone picture laid out for a phone), its first screen or one section; nothing changes on your screen but the page shown. No toast or status text (S1, S4).
+- Files: `src/agent-picture.ts`, `src/components/native-preview-runtime.js`, `src/components/native-preview.ts`, `src/agent-presence.ts`, `src/agent-site.ts`, `worker/mcp.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-agent-picture.spec.ts`
+- Steps: none yet (needs a connected agent)
+
+### F-agent-13 An agent asks first, and its change undoes in one click
+- Try: Ask a connected agent to check with you before it changes the hero heading (ask_user), answer in the orange pin, and let it finish. Then open the done pin and choose Undo. Ask it to change something and take it back (discard_change).
+- Good: The agent's question stands in an orange pin on the element it names, its name in the card; your answer from the pin's box goes straight to the agent, which goes on (its pin in its colour, then grey when done). Undo on a done pin's card puts back every file the agent changed for it, as one step, and then reads Undone, with no toast; the editor's Undo brings the agent's change back and the card offers Undo again. It shows only while this tab still keeps the change (not after a reload). A change the agent discards leaves the page as it was, said in the status line only. A pin offers Undo only for its own agent's changes. A file changed since (your typing, another change on top) is refused in the card in plain words ("This page changed since Copy editor's change. Nothing was undone.", another page by its title, never a file path); after Undo the focus stays in the card. No toast (S1, S4).
+- Files: `src/agent-watch.ts`, `shared/agent-requests.ts`, `src/agent-changes.ts`, `src/guarded-edit/commit.ts`, `src/components/agent-pins.ts`, `src/agent-site.ts`, `src/agent-site-host.ts`, `worker/mcp.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-agent-ask-undo.spec.ts`
+- Steps: none yet (needs a connected agent)
+
+### F-agent-14 The helper starts your agent for each pin
+- Try: Choose Connect to MCP, paste the prompt into Claude Code and ask it to keep picking up your pins after the conversation (it starts the helper, `helper/`, detached from the chat, or tells you to run its command in a terminal you keep open; `tests/editor-helper.test.ts` tries it against the local Worker). Close the chat, then pin "Make this friendlier" on a heading.
+- Good: Within seconds the pin turns to Claude Code, in its colour and name, without any chat open. Its question comes to the pin; your answer goes back to the same agent, which finishes and turns the pin grey. Claude Code has no shell or file tools there; an agent started with its own command (`--agent-command`) that wants a tool outside the editor's asks "Allow …?" on the pin first, and only a yes lets it. Disconnect MCP ends the helper and its agents. No toast or explainer (S1, S4).
+- Files: `src/agent-prompts.ts`
+- Phone: no
+- Spec: none
+- Steps: none yet (needs the helper published and running)
+
+### F-agent-15 Undo an agent's change from its name chip
+- Try: Ask a connected agent to say where it works (working_here) on the hero and change its heading, with no pin. Choose Undo on its name chip on the page. Then press Ctrl+Z. Type in the heading and choose the chip's Undo again.
+- Good: The chip on the agent's outline reads "Copy editor  Undo" once it changed that page. Undo puts the page back as it was before the agent's latest change there, as one step of its own, and then reads Undone (disabled), with no toast and nothing selected on the page. Ctrl+Z brings the change back and the chip offers Undo again. It offers only a change that wrote this page: one the agent made to another page waits on that page. Undo works by click, or from the keyboard (Tab reaches it, Enter or Space presses it, with a focus ring, and the focus stays on it), and on a phone its press target is 44 px tall. A right-click or a drag from it does nothing to the page. Once you typed in that section, the chip says in plain words why nothing was undone ("This page changed since Copy editor's change. Nothing was undone."), the chip growing upward (under the section when there is no room above) so it stays off the section, the edit bar and the section's "+". If the agent changed the page again since the chip offered its change, nothing is undone and the chip offers the newer one. The chip shows only while the agent is at work there, and Undo only while this tab keeps its change (not after a reload). Undo works the same as a done pin's (F-agent-13). Light and dark (S1, S3, S4).
+- Files: `src/agent-changes.ts`, `src/agent-site-host.ts`, `src/agent-presence.ts`, `src/components/native-preview.ts`, `src/components/native-preview-runtime.js`, `src/workspace-mount.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-agent-chip-undo.spec.ts`
+- Steps: none yet (needs a connected agent)
 
 ## Command palette
 

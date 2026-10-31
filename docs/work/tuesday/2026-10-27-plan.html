@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tuesday pack · 27 October 2026</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --page: light-dark(oklch(98.5% 0 none), oklch(18% 0 none));
+  --surface: light-dark(oklch(100% 0 none), oklch(23% 0 none));
+  --ink: light-dark(oklch(22% 0 none), oklch(94% 0 none));
+  --muted: light-dark(oklch(48% 0 none), oklch(70% 0 none));
+  --line: light-dark(oklch(90% 0 none), oklch(32% 0 none));
+  --build: light-dark(oklch(62% 0.13 250), oklch(68% 0.12 250));
+  --early: light-dark(oklch(78% 0.08 250), oklch(48% 0.08 250));
+  --live: light-dark(oklch(58% 0.15 150), oklch(72% 0.15 150));
+  --lex: light-dark(oklch(68% 0.15 70), oklch(78% 0.14 75));
+  --warn: light-dark(oklch(55% 0.18 30), oklch(72% 0.15 35));
+  --radius: 0.5rem;
+  --space: clamp(0.75rem, 0.6rem + 0.8vw, 1.25rem);
+  font: 400 clamp(0.94rem, 0.9rem + 0.2vw, 1rem)/1.5 system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); }
+main { max-inline-size: 72rem; margin-inline: auto; padding: var(--space); display: grid; gap: calc(var(--space) * 1.5); }
+h1 { font-size: clamp(1.4rem, 1.2rem + 1vw, 1.9rem); margin: 0; text-wrap: balance; }
+h2 { font-size: 1.1rem; margin: 0 0 0.5rem; }
+p { margin: 0; text-wrap: pretty; }
+.sub { color: var(--muted); }
+section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space); }
+.verdict { border-inline-start: 4px solid var(--live); display: grid; gap: 0.5rem; }
+table { border-collapse: collapse; inline-size: 100%; }
+th, td { text-align: start; padding: 0.45rem 0.6rem; border-block-end: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
+td:last-child { font-weight: 600; }
+.pace-yes { color: var(--warn); }
+
+/* Timeline: one column per day from Tue 27 Oct (day 0) to Tue 22 Dec (day 56). */
+.chart { overflow-x: auto; }
+.gantt { display: grid; grid-template-columns: minmax(9rem, 12rem) repeat(57, minmax(0.7rem, 1fr)); row-gap: 0.55rem; min-inline-size: 48rem; position: relative; }
+.gantt .name { grid-column: 1; font-weight: 600; font-size: 0.9rem; align-self: center; padding-inline-end: 0.5rem; }
+.gantt .name small { display: block; color: var(--muted); font-weight: 400; }
+.wk { grid-row: 1; font-size: 0.75rem; color: var(--muted); border-inline-start: 1px solid var(--line); padding-inline-start: 0.2rem; white-space: nowrap; }
+.wk b { color: var(--lex); }
+.bar, .mark { grid-row: var(--r); grid-column: calc(var(--s) + 2) / calc(var(--e) + 2); align-self: center; block-size: 1.15rem; border-radius: 0.3rem; }
+.bar { background: var(--build); }
+.bar.early { background: var(--early); }
+.mark { grid-column: calc(var(--s) + 2) / span 1; justify-self: center; inline-size: 1.15rem; display: grid; place-items: center; font-size: 0.8rem; line-height: 1; }
+.mark.live { background: var(--live); rotate: 45deg; inline-size: 0.95rem; block-size: 0.95rem; border-radius: 0.15rem; }
+.mark.lex { background: var(--lex); border-radius: 50%; inline-size: 0.95rem; block-size: 0.95rem; }
+.tue { grid-row: 1 / -1; grid-column: calc(var(--s) + 2) / span 1; border-inline-start: 1px dashed var(--lex); opacity: 0.55; pointer-events: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; margin-block-start: 0.75rem; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+.legend i { display: inline-block; inline-size: 0.9rem; block-size: 0.9rem; border-radius: 0.2rem; }
+
+.compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--space); }
+.compare div { border: 1px solid var(--line); border-radius: var(--radius); padding: 0.75rem; display: grid; gap: 0.3rem; align-content: start; }
+.compare .pick { border-color: var(--live); border-width: 2px; }
+.compare strong { font-size: 1.05rem; }
+.compare em { font-style: normal; color: var(--muted); }
+
+ol.q { margin: 0; padding-inline-start: 1.25rem; display: grid; gap: 0.9rem; }
+ol.q li::marker { font-weight: 700; }
+.rec { color: var(--live); font-weight: 600; }
+.done { color: var(--live); font-weight: 700; }
+#next-mockups:empty::after { content: "Mock-ups are being made this week."; color: var(--muted); }
+.hard { color: var(--warn); font-weight: 600; }
+ul { margin: 0.25rem 0 0; padding-inline-start: 1.1rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Tuesday pack · 27 October</h1>
+    <p class="sub">You approved all five. Here's what's set up, the new ready dates, and what comes on 3 November.</p>
+  </header>
+
+  <section class="verdict">
+    <h2>Decided today</h2>
+    <ul>
+      <li><span class="done">✓</span> <b>One queue, in the same order.</b> Two lanes and their rebuild list are dropped. Building stays at 5 at once, within your $200 Claude plan.</li>
+      <li><span class="done">✓</span> <b>The next build starts once the last one is built.</b> It goes live on a Tuesday, after your written OK.</li>
+      <li><span class="done">✓</span> <b>Easy-to-undo choices go ahead</b> and are listed here every Tuesday, so you can reverse them.</li>
+      <li><span class="done">✓</span> <b>Toolkit steps 30 onwards: one OK for all,</b> in order, stopping at the first problem. Closing GitHub Issues still comes to you per project.</li>
+      <li><span class="done">✓</span> <b>Mock-ups move to your preview site</b> before the test site is deleted.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Working rules now in the rulebook</h2>
+    <ol class="q">
+      <li><b>Mock-ups ahead.</b> The week before, I make mock-ups of the next visible changes, and you approve them in one batch on Tuesday. This week that's agents + multiplayer, then the catalogue.</li>
+      <li><b>Releases wait for Tuesday, work doesn't.</b> A finished build waits in this pack for your OK while the next one starts building. Going live still needs your written go-ahead.</li>
+      <li><b>Easy-to-undo defaults.</b> Mid-week, agents take my recommended answer when it's easy to undo, and it's listed here. Hard-to-undo choices wait: going live, public repos, packages or Issues, money, deleting, your visitors' sites, keys and secrets.</li>
+      <li><b>Small chores on free models.</b> Low-risk tidying runs on the free worker, beside the queue, in files the running build doesn't touch. Each chore gets one short Claude check before it merges, and that check is its only Claude use.</li>
+      <li><b>The sweep is moved to Tuesday 07:00</b> (from Monday 09:00), so its top 3 are in this pack when you open it.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Where a rule clashed, what I picked (all easy to undo)</h2>
+    <ul>
+      <li><b>"Grilling questions and mock-ups always wait for Lex."</b> They still come to you, but the work they steer may go ahead on my recommendation while it isn't live yet.</li>
+      <li><b>"Nothing starts before X's release"</b> in the build plans now means "before X is built". Releases themselves still wait for you.</li>
+      <li><b>Chat learning</b> ran two hours after the Monday sweep, so it moves with it and runs right after the Tuesday sweep.</li>
+      <li><b>"Questions in their own thread"</b> (from 26 Oct): only an urgent, hard-to-undo blocker still gets its own thread. Everything else comes here.</li>
+      <li><b>The free worker</b> is used only while it's confirmed free. Its chores run only when a build slot is free, so the queue always comes first.</li>
+      <li><b>The big files</b> (the agent file at 1,476 lines, the preview script at 4,313) are what agents + multiplayer edits next, so they can't be chores right now. The first chores are the small ticket-check fixes from the retro (19 and 24).</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What sets the pace</h2>
+    <table>
+      <thead><tr><th>Candidate</th><th>What the past builds show</th><th>Sets the pace?</th></tr></thead>
+      <tbody>
+        <tr><td>Claude allowance</td><td>The limit was hit only with 10–15 builders at once (9–10 Oct). With 5 at once, the clean-up build ran about 10 slices a day without hitting it.</td><td>Not at 5 at once, but there's no room for more</td></tr>
+        <tr><td>5 build slots</td><td>Shared by every build, and at most 2 slices in the main editor file at once. That is about 10 slices a day.</td><td>Sets the building speed</td></tr>
+        <tr><td>Review rounds</td><td>Up to 3 fix rounds per slice. The worst cases were 7.5 hours and 5.6 hours on a single slice.</td><td>Slows single slices</td></tr>
+        <tr><td>Your approvals</td><td>About 27% of the time from first slice to live went to waiting. The new rules let building carry on while it waits.</td><td class="pace-yes">Yes, now softened</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Ready dates (rough guesses)</h2>
+    <div class="chart">
+      <div class="gantt" role="img" aria-label="Timeline from 27 October to mid December with a ready date per build">
+        <span class="name" style="grid-row:1"></span>
+        <span class="wk" style="grid-column:2/9"><b>Tue</b> 27 Oct</span><span class="wk" style="grid-column:9/16"><b>Tue</b> 3 Nov</span><span class="wk" style="grid-column:16/23"><b>Tue</b> 10 Nov</span><span class="wk" style="grid-column:23/30"><b>Tue</b> 17 Nov</span><span class="wk" style="grid-column:30/37"><b>Tue</b> 24 Nov</span><span class="wk" style="grid-column:37/44"><b>Tue</b> 1 Dec</span><span class="wk" style="grid-column:44/51"><b>Tue</b> 8 Dec</span><span class="wk" style="grid-column:51/58"><b>Tue</b> 15 Dec</span>
+        <i class="tue" style="--s:0"></i><i class="tue" style="--s:7"></i><i class="tue" style="--s:14"></i><i class="tue" style="--s:21"></i><i class="tue" style="--s:28"></i><i class="tue" style="--s:35"></i><i class="tue" style="--s:42"></i><i class="tue" style="--s:49"></i>
+        <span class="name" style="grid-row:2">Toolkit<small>built ~31 Oct; your other projects to ~21 Nov</small></span><i class="bar" style="--r:2;--s:0;--e:4" title="Steps 10–24"></i><i class="bar early" style="--r:2;--s:4;--e:25" title="Steps 30+: own repo, then one project at a time"></i><span class="name" style="grid-row:3">Agents + multiplayer<small>stage 1 ~3 Nov, all ~10 Nov</small></span><i class="bar" style="--r:3;--s:4;--e:8"></i><i class="mark live" style="--r:3;--s:7" title="Stage 1 live"></i><i class="mark live" style="--r:3;--s:14" title="Live"></i><span class="name" style="grid-row:4">Atomic catalogue<small>live ~24 Nov</small></span><i class="mark lex" style="--r:4;--s:7" title="Approve its mock-ups (3 Nov)"></i><i class="bar" style="--r:4;--s:8;--e:16"></i><i class="mark lex" style="--r:4;--s:14" title="Confirm the built parts"></i><i class="mark lex" style="--r:4;--s:21" title="Confirm the screens"></i><i class="mark live" style="--r:4;--s:28" title="Live"></i><span class="name" style="grid-row:5">Detail pass<small>live ~1 Dec</small></span><i class="mark lex" style="--r:5;--s:21" title="Your walk-through and picks"></i><i class="bar" style="--r:5;--s:22;--e:27"></i><i class="mark live" style="--r:5;--s:35" title="Live"></i><span class="name" style="grid-row:6">Site quality<small>live ~1 Dec</small></span><i class="bar early" style="--r:6;--s:16;--e:18" title="Early: its checks"></i><i class="bar" style="--r:6;--s:27;--e:31"></i><i class="mark live" style="--r:6;--s:35" title="Live (changes your visitors' sites)"></i><span class="name" style="grid-row:7">Site structure<small>live ~8 Dec</small></span><i class="bar early" style="--r:7;--s:17;--e:20" title="Early: search"></i><i class="bar" style="--r:7;--s:31;--e:34"></i><i class="mark live" style="--r:7;--s:42" title="Live"></i><span class="name" style="grid-row:8">Styling<small>fixes ~17 Nov, panel ~8 Dec</small></span><i class="bar early" style="--r:8;--s:16;--e:20" title="Components fixes"></i><i class="mark live" style="--r:8;--s:21" title="Components fixes live"></i><i class="bar" style="--r:8;--s:34;--e:38" title="Style panel"></i><i class="mark live" style="--r:8;--s:42" title="Live"></i>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--build)"></i>building</span>
+      <span><i style="background:var(--early)"></i>runs alongside (agreed exceptions)</span>
+      <span><i style="background:var(--lex);border-radius:50%"></i>your Tuesday step</span>
+      <span><i style="background:var(--live);rotate:45deg"></i>goes live (Tuesday, after your OK)</span>
+    </div>
+    <p class="sub" style="margin-block-start:.75rem">Everything should be live by about 8 December, instead of mid-February under the old rules. These are low-confidence guesses at about 10 slices a day. Each build plan carries its own guess, updated when a build lands, with no live tracking.</p>
+  </section>
+
+  <section>
+    <h2>For Tuesday 3 November: mock-ups to approve</h2>
+    <ul id="next-mockups"><li><a href="https://am-typing-together-poc.lexvd.workers.dev/mockups/13-code-pane-and-undo.html">Agents: seeing each other in the code pane, and Undo per person</a></li><li><a href="https://am-typing-together-poc.lexvd.workers.dev/mockups/14-share-live.html">Agents: Share live with guests and collaborators</a></li><li><a href="https://am-typing-together-poc.lexvd.workers.dev/mockups/15-outside-changes-and-preview-link.html">Agents: changes made outside the editor, and the live preview link</a></li><li><a href="https://am-typing-together-poc.lexvd.workers.dev/mockups/catalogue-feedback-in-place.html">Catalogue: feedback in place instead of toasts (Today / After switch)</a></li><li><a href="https://am-typing-together-poc.lexvd.workers.dev/mockups/catalogue-first-parts.html">Catalogue: the first parts in light and dark, and the edit bar built from them</a></li></ul>
+    <p class="sub" style="margin-block-start:.5rem">Have a look whenever suits you. You approve them all at once on 3 November, and building carries on meanwhile. The catalogue's remaining screens come next week.</p>
+  </section>
+</main>
+</body>
+</html>

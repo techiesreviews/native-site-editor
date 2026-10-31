@@ -3,6 +3,9 @@ import { test, type TestContext } from "node:test";
 import { agentCommandSignals } from "../src/agent-tools";
 import { forEachAwait, type AwaitRace } from "./support/await-race";
 import { applyAgentMedia } from "../src/agent-media-actions";
+import { discardPlan, keptChanges, undoState } from "../src/agent-changes";
+import { createGuardedEdits } from "../src/guarded-edit";
+import { createMemoryWorkspace } from "./fakes/memory-workspace";
 import type { AgentCommand } from "../shared/agent";
 import { indexedDbAgentRecords } from "../src/agent-records";
 import { DraftStore, draftDatabaseName, indexedDbDrafts, type DraftScope, type SavedDraft } from "../src/drafts";
@@ -401,4 +404,33 @@ test("abort at every real media preparation, upload and commit await cancels wit
   assert.ok(count >= 12, `covered ${count} media awaits`);
   t.diagnostic(`Raced ${count} real media awaits: ${cancelled} cancelled, ${applied} applied.`);
   assert.ok(cancelled > 0); assert.ok(applied > 0, "commit can win first; cancellation never undoes it");
+});
+
+test("a Media change is kept for its undo (ticket am-15): every file it wrote goes back whole", async t => {
+  const f = await setup(t);
+  await f.run();
+  const [change] = keptChanges(f.scope, ["operation"]);
+  assert.equal(change?.grant, "grant");
+  const written = f.store.list(f.scope).map(draft => draft.path).sort();
+  assert.equal(written.length, 3);
+  assert.deepEqual([...change.after.keys()].sort(), written);
+  const drafts = (path: string) => f.store.get(f.scope, path);
+  assert.equal(undoState(f.scope, ["operation"], drafts, "grant"), "ready");
+  // Its undo: the three drafts it wrote go (none before it), the page open stays.
+  const reads = { source: () => undefined, exists: () => true, template: () => undefined, site: () => ({ routes: { "/": "index.html" }, components: {} }) };
+  const plan = discardPlan([change], reads, drafts, "index.html");
+  assert.ok("restore" in plan);
+  assert.deepEqual([...plan.restore!].sort(), written.map(path => [path, undefined]));
+  assert.equal(plan.open, "index.html");
+  // Once they are as before it, it reads undone.
+  assert.equal(undoState(f.scope, ["operation"], () => undefined, "grant"), "undone");
+  // Through the guarded commit (the memory workspace holding the drafts it left): all three go, as one step.
+  // No page open: a mounted model would hold the branch's text, not the drafts put in.
+  const m = createMemoryWorkspace({ branch: { "index.html": '<video src="media/film.mp4"></video>' }, site: { routes: { "/": "index.html" }, components: {} } });
+  for (const path of written) m.putDraft(f.store.get(f.scope, path)!);
+  const edits = createGuardedEdits(m.workspace);
+  assert.deepEqual(await edits.run(r => discardPlan([change], r, path => m.draft(path), undefined)), { ok: true, status: "applied" });
+  assert.deepEqual(written.map(path => m.draft(path)), [undefined, undefined, undefined]);
+  assert.equal(m.workspace.source("index.html"), '<video src="media/film.mp4"></video>');
+  assert.deepEqual(m.steps(), ["operation"]);
 });

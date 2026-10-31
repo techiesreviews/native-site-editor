@@ -2,7 +2,7 @@
 title: "Code pane: typing together and carets"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-22
 builder: claude
 blocked_by: [21-shared-copy-per-file]
 ---
@@ -19,6 +19,7 @@ Typing together in the code pane, with others' carets.
 - Others show as a thin caret in their colour with a small circle on top: their first letter, or for an agent a tiny icon of its program (Claude, OpenAI, Gemini, …; from `clientInfo.name` or the helper).
 - The full name shows on hover, and a selection shows as a light tint.
 - The caret look is shared with slice 23 ([Lex's reference](../../prototypes/12-caret-circle-reference.png)).
+- Mock-up approved by Lex (2026-10-27): [13-code-pane-and-undo.html](../../prototypes/13-code-pane-and-undo.html)
 
 ## Files
 
@@ -27,6 +28,7 @@ Expected (confirm while designing): `src/components/source-editor.ts` (+ CSS), `
 ## Done when
 
 - A spec: Lex and Anna type in the code pane; each sees the other's caret with circle and letter, the name on hover, and an agent's icon circle.
+- Moved here from slice 24 (am-24, 2026-10-31): Anna's caret name tag in the code pane ends with an undo icon while `LiveText.canUndoAuthor` (src/live-text.ts) says her change can be taken back; clicking it runs `LiveText.undoAuthor` and the spec shows her words gone in both tabs and Lex's still there. The caret names the author by the Yjs client id its own changes carry.
 
 ## Kit commands and evidence
 

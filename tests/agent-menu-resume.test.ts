@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resumeAgents, revokeUnused, serialReads, siteFull, turnOnAgents } from "../src/agent-resume.ts";
+import { ownerPause, pressSignedOut, resumeAgents, revokeUnused, serialReads, siteFull, turnOnAgents } from "../src/agent-resume.ts";
 import { forEachAwait } from "./support/await-race.ts";
 import { startCountedWorker } from "./fakes/counted-agent.ts";
 import { editorTab, repo, signIn } from "./mcp-harness.ts";
@@ -67,22 +67,30 @@ for (const how of ["switch", "destroy", "disconnect"] as const) {
 }
 
 // The agent menu's Connect to MCP press with agents off (turnOn): the connection is found
-// reconnecting, its retry leaves the menu `after`, and the press then prompts, copies or is stuck.
+// reconnecting, its retry leaves the menu `after`, and the press then prompts, copies or is stuck
+// ("paused" after: the retry did nothing, its recorded retry time still ahead, or failed again).
 // "other-owner": another tab of this browser holds the socket and an agent uses the site's connection;
-// "taken-over": another tab holds it with no connection of the site at all.
-function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "connected" | "other-owner" | "taken-over" | "reconnecting") {
-  let site = "main", pinned = "", activation = 0, remote = false, retried = false;
+// "taken-over": another tab holds it with no connection of the site at all. `found` "paused": the
+// reconnect gave up while the user was away (ticket am-51), so the press finds it paused, not reconnecting.
+// `owner`: the site owner paused remote agents, known before the press or found while the socket opens.
+// `waits`: a recorded retry time is still ahead after the retry (the button waits for it).
+// `found` "takeover-failed": an earlier takeover failed and left the site paused in this browser
+// (ticket am-53), so the press retries the takeover instead ("takeover-failed" after: it failed again,
+// and that state is itself the problem dot).
+function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "connected" | "other-owner" | "taken-over" | "reconnecting" | "paused" | "takeover-failed" | "quota" | "unavailable", found: "reconnecting" | "paused" | "takeover-failed" = "reconnecting", owner: "none" | "before" | "open" = "none", waits = false) {
+  let site = "main", pinned = "", activation = 0, remote = false, acted = false, retries = 0, takeovers = 0, ownerPaused = owner === "before";
   const writes: string[] = [];
   const live = (at: number) => remote && activation === at && site === pinned;
   const done = turnOnAgents({
     start: () => { remote = true; activation++; pinned = site; return activation; },
     live,
-    paused: () => false,
+    paused: () => ownerPaused,
     read: race.port("read", async () => true),
-    open: race.port("open", async () => {}),
-    state: () => retried ? after : "reconnecting",
-    retry: race.port("retry", async () => { retried = true; }),
-    retryWaits: () => false,
+    open: race.port("open", async () => { if (owner === "open") ownerPaused = true; }),
+    state: () => acted ? after : found,
+    retry: race.port("retry", async () => { retries++; acted = true; }),
+    takeover: race.port("takeover", async () => { takeovers++; acted = true; }),
+    retryWaits: () => waits,
     offer: now => now === "waiting" ? "wait" : now === "connected" || now === "other-owner" ? "disconnect" : "connect",
     fresh: now => now === "idle" || now === "other-owner" || now === "taken-over",
     prompt: async () => { writes.push("POST /api/agent/connect"); },
@@ -98,29 +106,123 @@ function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "
       if (how === "again") { remote = true; activation++; pinned = site; }
     },
     writes,
+    retries: () => retries,
+    takeovers: () => takeovers,
   };
 }
 
 test("Connect to MCP finding a reconnect: undisturbed, it retries and then prompts, copies again or shows the press stuck", async () => {
   // An agent already uses the site's connection (here or in the tab holding the socket): the press
   // still copies a prompt; another tab holding it with nothing connected: a new prompt.
-  for (const [after, write] of [["idle", "POST /api/agent/connect"], ["waiting", "copy"], ["connected", "copy"], ["other-owner", "copy"], ["taken-over", "POST /api/agent/connect"], ["reconnecting", "stuck"]] as const) {
+  for (const [after, write] of [["idle", "POST /api/agent/connect"], ["waiting", "copy"], ["connected", "copy"], ["other-owner", "copy"], ["taken-over", "POST /api/agent/connect"], ["reconnecting", "stuck"], ["paused", "stuck"]] as const) {
     const run = press({ port: (_name, work) => work }, after);
     await run.done;
     assert.deepEqual(run.writes, [write], after);
   }
 });
 
+test("Connect to MCP after a reconnect gave up while away: it retries as for a reconnect, then prompts, copies again or shows the press stuck", async () => {
+  for (const [after, write] of [["idle", "POST /api/agent/connect"], ["waiting", "copy"], ["connected", "copy"], ["other-owner", "copy"], ["taken-over", "POST /api/agent/connect"], ["reconnecting", "stuck"], ["paused", "stuck"]] as const) {
+    const run = press({ port: (_name, work) => work }, after, "paused");
+    await run.done;
+    assert.deepEqual(run.writes, [write], after);
+  }
+  // Paused by the site owner, not by a reconnect that gave up, whether known before the press or
+  // found while the socket opens (a retry would lift the owner's pause): no retry, no prompt.
+  for (const when of ["before", "open"] as const) {
+    const owner = press({ port: (_name, work) => work }, "idle", "paused", when);
+    await owner.done;
+    assert.equal(owner.retries(), 0, when);
+    assert.deepEqual(owner.writes, [], when);
+  }
+});
+
+test("Connect to MCP after a failed takeover: it retries the takeover (and a reconnect it leaves), then prompts, copies again or shows the press stuck; failed again, it writes nothing", async () => {
+  for (const [after, write] of [["idle", ["POST /api/agent/connect"]], ["waiting", ["copy"]], ["connected", ["copy"]], ["other-owner", ["copy"]], ["taken-over", ["POST /api/agent/connect"]], ["reconnecting", ["stuck"]], ["paused", ["stuck"]], ["takeover-failed", []], ["quota", []], ["unavailable", []]] as const) {
+    const run = press({ port: (_name, work) => work }, after, "takeover-failed");
+    await run.done;
+    assert.equal(run.takeovers(), 1, after);
+    // The takeover left a reconnect under way or given up: retried as well, in the same press.
+    assert.equal(run.retries(), after === "reconnecting" || after === "paused" ? 1 : 0, `${after}: reconnect retries`);
+    assert.deepEqual(run.writes, write, after);
+  }
+  // Paused by the site owner before the press: no takeover, no prompt. (The owner's pause is never
+  // `takeover-failed`, so one found while the socket opens shows as `paused` instead.)
+  const owner = press({ port: (_name, work) => work }, "idle", "takeover-failed", "before");
+  await owner.done;
+  assert.equal(owner.takeovers(), 0);
+  assert.deepEqual(owner.writes, []);
+});
+
+test("the menu's owner pause is only the relay's paused-with-a-message: a failed takeover after it, or a reconnect that gave up, is not", () => {
+  // The menu reads each transport update in turn (agent-menu.ts `listen`); `paused()` is the latest one's.
+  const seen = [{ mode: "paused", message: "Remote agents are paused by the site owner." }, { mode: "takeover-failed" }, { mode: "paused" }].map(ownerPause);
+  assert.deepEqual(seen, [true, false, false]);
+});
+
+test("Connect to MCP with a recorded retry time still ahead: still reconnecting waits for it with no stuck dot; still paused by a reconnect that gave up is stuck", async () => {
+  for (const [found, after, write] of [["reconnecting", "reconnecting", []], ["paused", "paused", ["stuck"]], ["reconnecting", "paused", ["stuck"]]] as const) {
+    const run = press({ port: (_name, work) => work }, after, found, "none", true);
+    await run.done;
+    assert.deepEqual(run.writes, write, `${found} → ${after}`);
+  }
+});
+
 for (const how of ["off", "switch", "again"] as const) {
   test(`Connect to MCP finding a reconnect: a ${how} at any await makes no prompt, no copy and no stuck dot`, async () => {
-    for (const after of ["idle", "waiting", "connected", "other-owner", "taken-over", "reconnecting"] as const) {
-      const points = await forEachAwait(race => press(race, after), run => run.disturb(how), run => {
-        assert.deepEqual(run.writes, [], `${after}: nothing written after the ${how}`);
-      });
-      assert.equal(points, 3, `${after}: read, open and retry`);
+    for (const found of ["reconnecting", "paused", "takeover-failed"] as const) {
+      for (const after of ["idle", "waiting", "connected", "other-owner", "taken-over", "reconnecting", "paused", "takeover-failed"] as const) {
+        const points = await forEachAwait(race => press(race, after, found), run => run.disturb(how), run => {
+          assert.deepEqual(run.writes, [], `${found} → ${after}: nothing written after the ${how}`);
+        });
+        // A takeover that leaves a reconnect under way or given up retries it too: one await more.
+        const both = found === "takeover-failed" && (after === "reconnecting" || after === "paused");
+        assert.equal(points, both ? 4 : 3, `${found} → ${after}: read, open, ${found === "takeover-failed" ? `takeover${both ? " and retry" : ""}` : "retry"}`);
+      }
     }
   });
 }
+
+// The agent menu's press (src/components/agent-menu.ts `press`): the sign-in may end during it
+// (`signOut`), it may copy, and a newer press or a site switch may come at its await.
+function signedOutPress(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], outcome: "signed-out" | "copied" | "signed-out-copied") {
+  let site = "main", signOuts = 0, copied = 0, presses = 1;
+  const failed: string[] = [];
+  const done = pressSignedOut({
+    site,
+    signOuts: () => signOuts,
+    copied: () => copied,
+    presses: () => presses,
+    run: race.port("run", async () => {
+      if (outcome !== "copied") signOuts++;
+      if (outcome !== "signed-out") copied++;
+    }),
+    failed: repo => { failed.push(repo); },
+  });
+  return {
+    done,
+    disturb(how: "again" | "switch") { if (how === "again") presses++; else site = "feature"; },
+    failed,
+  };
+}
+
+test("a press during which the sign-in ended marks its own site failed; one that copied, or with the sign-in still on, marks nothing", async () => {
+  for (const [outcome, failed] of [["signed-out", ["main"]], ["copied", []], ["signed-out-copied", []]] as const) {
+    const run = signedOutPress({ port: (_name, work) => work }, outcome);
+    await run.done;
+    assert.deepEqual(run.failed, failed, outcome);
+  }
+});
+
+test("a press during which the sign-in ended: a newer press at its await writes nothing; a site switch leaves the mark on the press's own site", async () => {
+  const again = await forEachAwait(race => signedOutPress(race, "signed-out"), run => run.disturb("again"), run => {
+    assert.deepEqual(run.failed, [], "the newer press shows its own outcome");
+  });
+  const moved = await forEachAwait(race => signedOutPress(race, "signed-out"), run => run.disturb("switch"), run => {
+    assert.deepEqual(run.failed, ["main"], "the site read before the await, never the one shown after");
+  });
+  assert.deepEqual([again, moved], [1, 1]);
+});
 
 test("connections reads: a skipped read answers false; two waiters behind a read in flight each make their own read, one after another", async () => {
   const log: string[] = [];

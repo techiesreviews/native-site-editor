@@ -126,3 +126,31 @@ test("the Vite dev server answers the runtime's URL with the bundle, uncached", 
     await vite.close();
   }
 });
+
+test("the page picture is its own classic script with the asePicture global, left out of the runtime", async () => {
+  const picture = await bundlePreviewRuntime({ entry: join(root, "src/agent-picture.ts"), minify: true, sourcemap: "external", target, globalName: "asePicture" });
+  const context: { asePicture?: { paintPicture?: unknown } } = {};
+  new Script(picture.code).runInNewContext(context);
+  assert.equal(typeof context.asePicture?.paintPicture, "function");
+  assert.match(immutableRuntimeAsset(picture, "agent-picture").fileName, /^agent-picture-[\da-f]{12}\.js$/);
+  // Boot loads the runtime in every preview; the painter only loads in a picture's measuring frame.
+  const runtime = await bundlePreviewRuntime({ entry, minify: true, sourcemap: "external", target });
+  assert.ok(!runtime.inputs.includes(join(root, "src/agent-picture.ts")));
+});
+
+test("the Vite dev server answers the picture's URL with its bundle", async () => {
+  const vite = await createServer({ configFile: false, root, logLevel: "silent", plugins: [previewRuntime()], server: { middlewareMode: true, ws: false } });
+  const http = createHttpServer(vite.middlewares);
+  await new Promise<void>((done) => http.listen(0, "127.0.0.1", done));
+  try {
+    const response = await fetch(`http://127.0.0.1:${(http.address() as AddressInfo).port}/src/agent-picture.ts`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type") ?? "", /^text\/javascript/);
+    const context: { asePicture?: { paintPicture?: unknown } } = {};
+    new Script(await response.text()).runInNewContext(context);
+    assert.equal(typeof context.asePicture?.paintPicture, "function");
+  } finally {
+    await new Promise((done) => http.close(done));
+    await vite.close();
+  }
+});

@@ -7,13 +7,17 @@ Automated checks for mistakes made during Phase 5 (retro, 2026-10-08). Each one 
 ## Hooks
 
 Claude Code loads `.claude/settings.json`; Codex loads `.codex/hooks.json`. Both call
-`scripts/agents/hooks/run.sh`, which resolves the repo from `CLAUDE_PROJECT_DIR` when set,
+`scripts/agents/hooks/run.sh`, the hook launcher, which runs the kit's own `hooks/run.sh` (the machine copy, from
+the agent-kit repo) and its guard scripts; without a kit it warns ("Agent Kit not found: guards are off") and never
+blocks. Only the context card and the bash guard's server hint read the project, found from `CLAUDE_PROJECT_DIR` when set,
 otherwise from `git rev-parse --show-toplevel` in the session cwd. The shared scripts enforce:
 
 - **Stash**: commit work in progress on your own branch. Bash rejects `git stash` except `list`/`show`; worktrees share stashes, risking another runner’s work.
-- **Timeout**: run `port.sh` directly. Claude uses `run_in_background` for long runs; Codex waits in the foreground or its background terminal. Bash rejects `timeout`/`gtimeout` around `port.sh` or `full-suite.sh`; releasing the lock can leave a server holding the port.
+- **Timeout**: run `port.sh` directly. Long runs go through `scripts/agents/kit go`, waited for in the foreground (Claude and Codex alike). Bash rejects `timeout`/`gtimeout` around `port.sh` or `full-suite.sh`; releasing the lock can leave a server holding the port.
 - **Processes**: kill your own PID or process group (`kill -- -PGID`). Bash rejects `pkill`, `killall` and `pgrep -f` pipelines into `xargs kill`; patterns hit other runners and the caller’s shell. Start servers through `scripts/agents/port.sh`; `setsid` arguments mentioning `server`, `vite`, `http.server` or `playwright` are blocked.
 - **Subagents (Claude)**: wait at five live or pending agents to avoid account session exhaustion. Set `CLAUDE_AGENT_CAP` in the session environment to override. A per-session `flock` makes counting and reserving each launch atomic under `${XDG_RUNTIME_DIR:-/tmp}/claude-agent-cap/`. Start events consume the oldest reservation and record the agent ID; stop events remove it. Live entries expire after six hours; pending reservations after three minutes. PostToolUse and PostToolUseFailure release their call’s remaining reservation by `tool_use_id`, reconciling out-of-order starts; missing tool events or IDs rely on expiry. Codex SubagentStart/Stop only track valid IDs, fail open, and do not enforce the cap: enforcement requires Claude's Agent/Task PreToolUse launch event, where the account session limit problem lives.
+- **Briefs (Claude)** (once `kit init` adds its hook entry here, ticket 92): a child agent's coding brief (T3 `delegate_task`, `Agent`, `Task`) must be the output of `scripts/agents/kit brief <ticket>`, which ends with a `kit-brief:` marker line; research, review-only and question tasks start with `kit-brief: none (<reason>)`, and the read-only Explore and Plan agents pass. The brief-guard hook refuses anything else and names `kit brief`; agent-cap books no slot for a refused brief.
+- **Turn end** (once `kit init` adds its hook entry here, ticket 92): the Stop hook (Claude and Codex) refuses to end a turn while a `kit go` job of the worktree, or a `kit-*` systemd unit working in it, still runs, naming the job and the command to wait with. It gives way past the job's time limit, after six refusals in a row, or with `KIT_ALLOW_STOP=1`; the kit's own headless agents set that.
 - **Waiting**: wait with `scripts/agents/kit wait` (pid, output or ci). Bash rejects `sleep` and `pgrep -f` inside a loop (`while`/`until`/`for`/`select` up to `done`, including conditions, `$(…)`, `sh -c`, `eval` and shell heredocs; `case` patterns such as `while)` do not count). Bare `pgrep -f` and a lone `sleep 1` outside loops stay allowed; retry loops with `sleep` are rejected too.
 - **Node**: when system Node is older than 24, SessionStart finds the highest installed Node ≥24 in npm’s npx cache or nvm. Claude appends PATH to `CLAUDE_ENV_FILE`; other CLIs receive SessionStart `additionalContext` JSON instructing them to prefix shell commands with the discovered PATH export. Node ≥24 makes the hook silent.
 - **Context card**: SessionStart prints Lex's [context card](context-card.md) for the session cwd as `additionalContext` JSON (Claude and Codex); no notes or an error reading them gives the one no-notes line; a crash, a missing script or the 1-second limit prints nothing.
@@ -68,7 +72,7 @@ Use `tests/support/source-guard.ts` for parsing, bound names and aliases, destru
 
 ## CI
 
-`.github/workflows/ci.yml` (**CI / checks**, on every pull request into `dev` or `main`) and `.github/workflows/deploy-preview.yml` (on every push to `dev`) both run `check`, `test`, `lint`, the byte budget (`tests/perf/byte-budget.ts`, 362 KB, enforced) and the smoke browser tests. Branch rules that require the check: [github-settings.md](github-settings.md).
+`.github/workflows/ci.yml` (**CI / checks**, on every pull request into `dev` or `main`) and `.github/workflows/deploy-preview.yml` (on every push to `dev`) both run `check`, `test`, `lint`, the byte budget (`tests/perf/byte-budget.ts`, 355 KB, enforced) and the smoke browser tests. Branch rules that require the check: [github-settings.md](github-settings.md).
 
 ## Pre-commit hook
 

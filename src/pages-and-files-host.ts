@@ -17,6 +17,7 @@ import type { mountDropdown } from "./components/dropdown";
 import type { createFileRowActions } from "./components/file-row-actions";
 import type { createPagePicker } from "./components/page-picker";
 import type { createPagesTree } from "./components/pages-tree";
+import type { AgentMark } from "./agent-presence";
 import { refuse } from "./components/refusal-note";
 import type { mountSiteActions } from "./components/site-actions";
 import type * as sourceEditor from "./components/source-editor";
@@ -245,6 +246,8 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
   // The explorer's Pages | Media | Files tabs: tab state and tree rendering
   // live in the Pages controller; the host mounts the DOM and paints the tabs.
   let pagesTree: ReturnType<typeof createPagesTree> | undefined;
+  // The agents at work (src/agent-presence.ts), kept for a tree mounted later.
+  let agentMarks: readonly AgentMark[] = [];
   const loadPagesTree = ports.lazyModule(async () => (await Promise.all([import("./components/pages-tree"), loadPagesActions()]))[0]);
   let pagesTreeMount: Promise<void> | undefined;
   function ensurePagesTree() {
@@ -283,6 +286,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
         drop: (source, parent) => void pageActions!.confirmMove(source, parent),
         cardOffer: (parent) => ports.cards.cardOffer(parent),
       });
+      pagesTree.agents(agentMarks);
       ports.element("explorer-pages").replaceChildren(pagesTree.root);
 
       if (ports.explorerDropdown?.isOpen()) pagesController.renderTree();
@@ -746,6 +750,11 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     get pageActions() { return pageActions; },
     get pagesTree() { return pagesTree; },
     get fileOps() { return fileOps; },
+    /** The agents at work (ticket am-11): their dots on other pages' rows. */
+    agents(marks: readonly AgentMark[]) {
+      agentMarks = marks;
+      pagesTree?.agents(marks);
+    },
     get nativeResyncDone() { return nativeResyncDone; },
     loadPagesActions, loadFileOps, pagePorts, filePorts, pagesController, savePublish, filesTreeController,
     mountExplorer, ensureExplorer, openCreate, treeState, pathNow, nativePathExists, nativeSiteReadForCreate,

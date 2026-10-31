@@ -2,7 +2,9 @@
 
 prefix: ke
 
-**Not started:** starts once the clean-up release is live in production (Lex, 2026-10-26); then only slices 10–24, inside this repo.
+**Ready (guess, low confidence, 2026-10-27):** slices 10–24 built ~31 Oct (nothing for Lex to release); 30 onwards ~7 Nov, then one project at a time to ~21 Nov.
+
+Started 2026-10-26: the clean-up release is live (Worker 972eddd7) and Lex's first-hour check passed. Slices 10–24 only, inside this repo.
 
 Builds what the [map](../map.md) decided: one shared Agent Kit in its own repo that every project runs, always the newest; one settings file and a folder of own commands per project; `kit init` to set a project up; a shared rulebook with per-project extras; reviews without OpenAI models, with a second look on every change; then each of Lex's chosen projects moves over, and the `lex-coding` rule changes last. Every decision comes from the map's closed tickets; this build does not reopen them:
 
@@ -17,26 +19,28 @@ Tickets live in [tickets/](tickets/), one slice each, numbered by group: 10s get
 
 ## When it starts
 
-Decided with Lex on 2026-10-26: right after the clean-up release is live in production, and before the [agents and multiplayer build](../../agents-and-multiplayer/build/README.md). The lead then removes the **Not started** line and builds **slices 10–24 only** (this editor's repo). Slices 30 and later (the kit's own repo, the timer, other projects, the `lex-coding` rule) wait for Lex's go, asked once 10–24 have landed. Nothing Lex sees in the editor changes: this build is kit, docs and other projects' agent setup only.
+Decided with Lex on 2026-10-26: right after the clean-up release is live in production, and before the [agents and multiplayer build](../../agents-and-multiplayer/build/README.md). The lead then removes the **Not started** line and builds **slices 10–24 only** (this editor's repo). Slices 30 and later (the kit's own repo, the timer, other projects, the `lex-coding` rule) had to wait for Lex's go; he gave one OK for all of them on 2026-10-27 (Tuesday pack, Q3): in order, once 10–24 have landed, stopping at the first problem. Closing GitHub Issues (44, 47) still comes to him separately, in the Tuesday pack for that project. Nothing Lex sees in the editor changes: this build is kit, docs and other projects' agent setup only.
 
 ## Rules for the whole build
 
 - **Agent Kit is required** for every slice and every model: `scripts/agents/kit` ([agent-scripts.md](../../../agents/agent-scripts.md#kit), [runner.md](../../../agents/runner.md), [kitchen.md](../../../agents/kitchen.md)). `kit doctor` first; `kit slice` under `kit bg`; `kit unit --affected` while building; `kit review`; `kit pr` into `dev`. Each ticket names its commands and the evidence its builder reports. A kit command that cannot run is said in the report, never skipped silently or claimed.
-- **Prepare here, move last** (helper decision 1). Tickets 10–24 change the kit inside this repo, where `kit slice`, `kit pr` and CI already work, and the editor keeps working the same after each one. Ticket 30 then moves the shared part to its own repo. After 30, a kit change is a PR into the kit repo through that repo's own `kit pr`, and its CI also runs this editor's `npm test` and `npm run lint` against the changed kit (ticket 01 point 3: that gate stands in for a version pin).
+- **Prepare here, move last** (helper decision 1). Tickets 10–24 change the kit inside this repo, where `kit slice`, `kit pr` and CI already work, and the editor keeps working the same after each one. Ticket 30 moved the shared part to its own repo (2026-10-29). Now a kit change lands as a PR into [techiesreviews/agent-kit](https://github.com/techiesreviews/agent-kit) (checked out at `~/Projects/agent-kit`) through that repo's own `kit pr`, whose CI also runs this editor's `npm test` and `npm run lint` from `dev` against the changed kit (ticket 01 point 3: that gate stands in for a version pin); this map's tickets still record the work, and ticket 31's timer brings each kit merge to this machine within 15 minutes.
 - **The editor works the same after every slice.** Same commands, same output, same evidence folders; proven by the existing kit tests and one real `kit doctor` and `kit status` run per slice.
-- **Waiting for Lex:** tickets with `type: task (HITL)` are never handed out by `kit next`. The lead asks Lex in plain words, writes his answer with its date under the ticket's `## Comments`, and only then starts it. These are: creating the kit repo (30), the user-level timer (31), every change in another project (40–47), and the `lex-coding` wording (50).
+- **Waiting for Lex:** tickets with `type: task (HITL)` are never handed out by `kit next`. The lead asks Lex in plain words (in the Tuesday pack, [kitchen.md](../../../agents/kitchen.md#tuesday-review)), writes his answer with its date under the ticket's `## Comments`, and only then starts it. These are: creating the kit repo (30), the user-level timer (31), every change in another project (40–47), and the `lex-coding` wording (50).
 - **Other projects** (40–47): after Lex's OK the lead starts one T3 thread per project, working in that project's folder with that project's kit (set up by `kit init`) and landing with that project's own `kit pr` into its landing branch. Nothing reaches another project's landing branch except through a reviewed PR. The thread reports back here; the lead closes the ticket with a small docs PR on `dev`.
+- **Shared-kit changes come through this board** (Lex, 2026-10-30: "the agents stop their own work, we add it to a todo list for the shared kit, and one thread orchestrates the improvements"): a kit change any thread wants is a ticket here, built only by the thread that orchestrates this board, as a PR into agent-kit through its own `kit pr` (ticket 66 puts the line in the shared rulebook).
+- **Paid skills never go public** (Lex, 2026-10-29, "really important"): no skill file or skill text from `~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills` or plugins ever enters a repo. Before each project's move (40–47), its tracked files and history are checked for a `SKILL.md`, a `skills/` folder or lines from the local skill files; a hit stops that move and goes to Lex. The guard from ticket 30 runs in every project's `kit pr`.
 - **Editor saves stay untouched.** On sites the Native Site Editor saves to (`techies-reviews`, `lexvd-site`), its commits keep going straight to `main` (ticket 05 point 3): no branch rule that demands PRs on `main`, no hook or kit check that flags those commits.
 - **The hooks never fail silently** (research 04 risk): a missing or broken kit is said out loud at session start and by `kit doctor`, never just turned off (ticket 21).
-- **One kit file, one slice at a time:** the `blocked_by` lines chain every pair of slices that share a kit file (the front door `scripts/agents/kit`, `kit-lib.*`, `kit.d/review`, `kit.d/doctor`, `kit.d/pr`, `kit.d/sweep`); the only slices that run side by side are 15 with 21, and 23 with 24, which touch different kit files apart from small additions to `docs/agents/agent-scripts.md` and `tests/agent-scripts.test.ts`; the second to land brings the first in before its `kit pr`.
+- **One kit file, one slice at a time:** the `blocked_by` lines chain every pair of slices that share a kit file (the front door `scripts/agents/kit`, `kit-lib.*`, `kit.d/review`, `kit.d/doctor`, `kit.d/pr`, `kit.d/sweep`); the only slices that run side by side are 15 with 21, 23 with 24, and the review fixes 25 (`kit pr`, `pr-tier.mjs`, `worktrees.mjs`, `learn`, `slice`), 26 (`unit.sh`, `kit-lib.sh`, `doctor`), 28 (kit tests only) 32 (the front door alone), 33 (`agent-run.mjs`, `kit.d/review`), 37 (`unit.sh`), 38 (`kit.d/update`), 39 (the two launchers), 48 (`kit.d/ux`), 49 (`launcher/kit`), 51 (`kit.d/unit`), 52 (`review-findings.mjs`) and 54 (`kit.d/ux`) beside the slices of their time that leave those files alone, which touch different kit files apart from small additions to `docs/agents/agent-scripts.md`, `tests/agent-scripts.test.ts` and `tests/kit-settings.test.ts`; the second to land brings the first in before its `kit pr`.
 - **The kitchen moves with the code.** A slice that changes how agents work rewrites its own lines in `docs/agents/kitchen.md` and `docs/agents/agent-scripts.md#kit`; a new kit command gets its `kit.d/<command>` with a `# kit:` summary and its own `tests/kit-<command>.test.ts`.
-- **Lex's settings and other projects wait for Lex** (the kitchen's "Always waits for Lex"): anything under `~/.config`, `~/.claude`, `~/.codex`, `~/.codex/skills`, T3 schedules or another project's files is prepared by a slice and done by the lead after his yes.
+- **Lex's settings and other projects wait for Lex** (the kitchen's hard-to-undo list in "Tuesday review"): anything under `~/.config`, `~/.claude`, `~/.codex`, `~/.codex/skills`, T3 schedules or another project's files is prepared by a slice and done by the lead after his yes.
 
 ## Builders and review
 
 Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **Claude Opus 5.5 builds** every slice (`kit slice --builder claude-opus-5-5`, high); **Claude Opus 5.5 reviews** every slice (`ASE_REVIEW_MODEL=claude-opus-5-5`, read-only, separate session). **No OpenAI models** build or review (ticket 01 point 4).
 
-**Second look on every change, after Claude's review** (ticket 01 point 4): until ticket 17 lands, `kit slice` cannot run it before landing, so the lead runs it right after each slice merges, `ASE_REVIEW_MODEL=grok-4.7 scripts/agents/kit review --ticket <ticket>` on the slice's branch, and turns any P0–P2 finding into a fix ticket in this build; if Grok's weekly count is used up, the ticket's Done says "second look: skipped (Grok cap)". From 17 on, `kit slice` and `kit pr` run the second look themselves, before landing.
+**Second look on every change, after Claude's review** (ticket 01 point 4): until ticket 17 lands, `kit slice` cannot run it before landing, so the lead runs it right after each slice merges, `ASE_REVIEW_MODEL=grok-4.7 scripts/agents/kit review --ticket <ticket>` on the slice's branch, and turns any P0–P2 finding into a fix ticket in this build; if Grok cannot run (weekly count used up, or out of paid credit as on 2026-10-27), the free OpenCode model takes the look (`ASE_REVIEW_MODEL=opencode/deepseek-v4.1-flash-free`, since ticket 16), and only when both fail does the ticket's Done say "second look: skipped (<reason>)". A slice range older than ticket 16 is reviewed with today's kit (`KIT_HOME=<a copy of dev's scripts/agents> <that copy>/kit review --base <first commit>^` at the slice's last commit): the kit at those commits sends `opencode/…` to Codex (ticket 34). From 17 on, `kit slice` and `kit pr` run the second look themselves, before landing.
 
 ## 1. Ready inside this repo, the editor working the same (tickets 01, 05; research 03, 04)
 
@@ -49,7 +53,38 @@ Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **C
 | [14 Settings for projects unlike the editor](tickets/14-settings-for-other-projects.md) | M | claude | 13 |
 | [15 One Grok count for the computer, its weekly use in the sweep](tickets/15-machine-wide-state.md) | M | claude | 14 |
 | [16 An OpenCode path in `kit review`](tickets/16-opencode-review-path.md) | M | claude | 15 |
-| [17 A second look on every change, per review kind](tickets/17-second-look-per-kind.md) | M | claude | 14, 16 |
+| [17 A second look on every change, per review kind](tickets/17-second-look-per-kind.md) | M | claude | 14, 16, 25, 33 |
+| [18 Follow-ups written in full (second look on 10)](tickets/18-full-follow-ups.md) | S | claude | – |
+| [19 A broken `--help` does not stop the fix builder (second look on 10)](tickets/19-doctor-gate-and-fix-builder.md) | S–M | claude | – |
+| [25 The editor values slice 11 left in shared code (review of 11)](tickets/25-editor-values-left-after-11.md) | M | claude | 14, 18 |
+| [26 Settings problems say the right thing, and their untested paths get tests (review of 11)](tickets/26-settings-messages-and-tests.md) | S–M | claude | 15, 19, 21 |
+| [27 Doctor's commands check says so when the settings file is broken (second look on 12)](tickets/27-doctor-commands-on-broken-settings.md) | S | claude | 26 |
+| [28 Kit tests ignore a person's `KIT_HOME`, and its untested paths get tests (review and second look on 13)](tickets/28-kit-home-test-env-and-gaps.md) | S | claude | 14 |
+| [29 `kit pr` waits for push workflows that may run on a PR branch, and a slice keeps its claim owner (review of 14)](tickets/29-pr-ci-filters-and-claim-owner.md) | S–M | claude | 17 |
+| [32 The `playwright` setting reaches project commands (review of 14)](tickets/32-playwright-setting-reaches-commands.md) | S | claude | 14 |
+| [33 Out of credit is its own result, and a CLI's own error is the last problem line (16 follow-up, second look on 16)](tickets/33-out-of-credit-and-last-problem.md) | M | claude | 16 |
+| [34 Review counts cannot be dodged, doubled or lifted (second looks on 15 and 16)](tickets/34-review-counts-honest.md) | M | claude | 17 |
+| [35 Follow-ups keep the ticket's line endings and match old cuts through an emoji (second look on 18)](tickets/35-follow-ups-line-endings-and-old-cuts.md) | S | claude | 29 |
+| [36 Doctor skips a failing `kit home` only when `version` caused it (second look on 19)](tickets/36-doctor-kit-home-skip-only-for-version.md) | S | claude | 27 |
+| [37 `unit.sh` works when run from its own folder (second look on 14)](tickets/37-unit-sh-from-its-own-folder.md) | S | claude | 26 |
+| [38 An emergency `kit update --previous` holds, and checks the kit it goes back to (review and second look on 21)](tickets/38-kit-update-previous-holds.md) | S–M | claude | 21 |
+| [39 The launchers recover a retired kit folder and accept only a whole kit (review and second look on 21)](tickets/39-launchers-pinned-kit-and-whole-kit.md) | S–M | claude | 21 |
+| [48 `kit ux` takes its base and colour check from the settings (second look on 25)](tickets/48-kit-ux-land-branch-and-colour-setting.md) | S–M | claude | 25 |
+| [49 The kit launcher names the folder that vanished, and the launcher docs say what the code does (second look on 39)](tickets/49-launcher-names-removed-folder.md) | S | claude | 39 |
+| [51 `kit unit` with named files says which setting is wrong, and its untested paths get tests (second looks on 26 and 37)](tickets/51-kit-unit-names-settings-problem.md) | S | claude | 27, 37 |
+| [52 Reviewer notes and headings without a severity do not block a slice](tickets/52-review-notes-do-not-block.md) | S | claude | 17 |
+| [53 A ticket's Done names commits that can be found on dev](tickets/53-done-commits-match-dev.md) | S–M | claude | 35 |
+| [54 `kit ux` keeps colour findings in paths with spaces, and its docs say the CSS-first rule (second look on 48)](tickets/54-kit-ux-spaced-paths-and-docs.md) | S | claude | 48 |
+| [55 `kit ux` names a path followed by a space (follow-up on 54)](tickets/55-kit-ux-path-before-a-space.md) | S | claude | 54 |
+| [56 A located continuation line stays with its defect (follow-up on 52)](tickets/56-located-continuation-joins-its-defect.md) | S | claude | 52 |
+| [57 The `kit pr` tests always clean up their temp folders (flake after 29)](tickets/57-kit-pr-tests-leave-no-trace.md) | S | claude | 29, 35 |
+| [58 A counted review that already worked keeps its count when a retry goes silent (follow-up on 34)](tickets/58-silent-retry-keeps-its-count.md) | S | claude | 34 |
+| [59 A builder's spec run stays small, and a timed-out build can resume](tickets/59-builder-specs-capped-and-resume-after-timeout.md) | S–M | claude | – |
+| [60 A spec file with an `@actual` test still runs its other tests; ticket 59's resume follow-ups](tickets/60-specs-actual-tag-keeps-the-rest.md) | S | claude | 30 |
+| [62 `kit pr` opens the PR in the project's own repo, not an `upstream`](tickets/62-kit-pr-picks-the-origin-repo.md) | S | claude | 30 |
+| [63 The kit never prints a token from a remote's URL](tickets/63-never-print-a-remote-token.md) | S | claude | 62 |
+| [64 The skill guard allows a project's own skill folders by name; nova leaves creator-studio for the skills repo (65)](tickets/64-nova-skill-into-chat.md) | S–M | claude | 42 |
+| [65 One home for skills: one folder every agent reads, own skills in a private repo](tickets/65-one-home-for-skills.md) | M | claude, **needs the repo from Lex** | 64 |
 
 ## 2. Setup pieces (tickets 01, 05; research 04)
 
@@ -65,8 +100,9 @@ Pins ([kitchen](../../../agents/kitchen.md#who-cooks-pins-from-2026-10-22)): **C
 
 | Slice | Size | Builder | Blocked by |
 | --- | --- | --- | --- |
-| [30 The kit moves to its own repo; this editor runs it through the launcher](tickets/30-kit-repo-and-move.md) | L | claude, **waits for Lex** | 17, 20, 21, 22, 23, 24 |
+| [30 The kit moves to its own repo; this editor runs it through the launcher](tickets/30-kit-repo-and-move.md) | L | claude, **waits for Lex** | 17, 20, 21, 22, 23, 24, 29, 38, 39, 48, 49, 51, 52, 53, 54, 55, 56, 57, 58 |
 | [31 The 15-minute update timer](tickets/31-update-timer.md) | S | claude, **waits for Lex** | 30 |
+| [61 `kit ux`'s screen map moves into each project's settings](tickets/61-kit-ux-screen-map-in-project-settings.md) | S | claude | 30 |
 
 ## 4. Each project's move, in the decided order (ticket 05; research 02, 03)
 
@@ -89,25 +125,61 @@ Each move waits for Lex's OK and for the one before it, so a problem in one proj
 | --- | --- | --- | --- |
 | [50 The `lex-coding` kit rule: never copy, run `kit init`](tickets/50-lex-coding-rule.md) | S | claude, **waits for Lex** | 40, 41, 42, 43, 44, 45, 46 |
 
+## 6. From the 2026-10-30 retros (lexvd.nl, script-editor, techies-prompter)
+
+Lex (2026-10-30): the project threads stopped their own kit work and handed it here; for the prompter, "update [the shared kit] to the things found here, and matching my design preferences". Every slice is built in the kit repo (`~/Projects/agent-kit`) and lands through its own `kit pr`. Ticket 77 checked every one against the kit as it is ([retro check](retro-check-2026-10-30.md)): 12 tickets became 8 slices, with 73 dropped, 70 waiting, and 75 merged into 67.
+
+| Slice | Size | Builder | Blocked by |
+| --- | --- | --- | --- |
+| [66 Kitchen rules: kit changes through this board, a build's tests in its project, reports in plain English, short AGENTS.md (finish the WIP)](tickets/66-kit-changes-only-through-this-board.md) | S | claude | 77 |
+| [68 A raw push to a live branch is stopped and pointed to `kit pr` (finish the WIP)](tickets/68-push-guard-for-live-branches.md) | S–M | claude | 77 |
+| [78 `kit bg` jobs outlive a turn end and a T3 restart (`systemd-run --user --scope`, a time limit)](tickets/78-kit-bg-outlives-the-session.md) | S | claude | 77 |
+| [67 Testing, review and house-style rules from the retros (with 75 and the rule halves of 70 and 74)](tickets/67-testing-and-review-rules.md) | S | claude | 66 |
+| [74 A failed `kit pr` step names its log on the RESULT line](tickets/74-failure-details-kept.md) | XS | opencode/deepseek-v4.1-flash-free | 77 |
+| [69 `kit doctor` warns when no tests are wired and notes long always-read files; the review brief lists unit tests](tickets/69-doctor-warns-no-tests-and-due-reminders.md) | S | claude | 64 (its kit PR #6), 66 |
+| [71 Browser checks on Playwright everywhere: one shared install, `gestures.mjs` for touch and pen, close-ups and suites by name](tickets/71-shared-browser-tester.md) | S | claude | 67 |
+| [72 `kit release-check` before every live deploy: nothing unsaved, exactly the release branch](tickets/72-release-check.md) | S | claude | 68 |
+| [76 One shared slider for every site (the prompter's range field), copied by hand until a second site uses it](tickets/76-shared-range-field.md) | S–M | claude | 67, 71, Lex's answer on its home |
+| [79 A builder can't end its turn while its own kit job runs (Stop hook, with a way out)](tickets/79-builder-keeps-its-turn-while-its-job-runs.md) | S | claude | 78 |
+| [80 The prompter finishes its move onto the shared kit; test builds on localhost, never a file](tickets/80-prompter-finishes-its-move.md) | S | claude | – |
+| [81 New kit setup reaches every project: `kit doctor` names missing pieces, `kit init --all`; line endings first](tickets/81-existing-projects-get-new-setup.md) | S–M | claude | – |
+| [82 The editor's live deploy runs `kit release-check` first (follow-up on 72)](tickets/82-editor-deploy-runs-release-check.md) | XS | claude | 72 |
+| [83 Agents talk to each other in a short style, added at every agent start; 7-day trial of short English vs Classical Chinese](tickets/83-agent-talk-style-trial.md) | S–M | claude | – (after 81, next) |
+| [84 The factory: `kit brief` writes every child's brief, `kit go` starts and waits for long jobs, hooks refuse hand-written briefs and early turn ends (takes in 79)](tickets/84-factory-brief-and-go.md) | M | claude | 81 |
+| [85 The factory runs on T3 Code: build, review, second look and fix as T3 threads that wake their runner; PRs watched; headless fallback outside T3](tickets/85-t3-native-factory-check.md) | M–L | claude | 84 |
+| [86 Kit commits never borrow another person's name; a repo without an identity gets the machine's kit identity](tickets/86-kit-commits-never-borrow-a-name.md) | XS | opencode/deepseek-v4.1-flash-free | – |
+| [87 Packages updated monthly in every project; daily security check; critical holes with a fix go live at once](tickets/87-monthly-updates-and-security-hotfixes.md) | M | claude | – |
+| [88 Full browser runs stop failing on a busy machine: one full run at a time, a lone retry for a failed file](tickets/88-busy-machine-browser-runs.md) | S–M | claude | – (next; unblocks 60's #289) |
+| [90 Fresh start: old branches to the attic and removed, `dev` from `main` everywhere; TechiesTools starts over](tickets/90-fresh-start-branches.md) | M | claude | – (now) |
+| [89 Every project lands on `dev`; `main` only takes `dev`](tickets/89-main-only-takes-dev.md) | S | claude | 90 |
+| [91 Skill guard: prefixed licence files in skill folders count as licences, so a project's own LICENSE lands (from idea-board)](tickets/91-skill-guard-licence-names.md) | XS | claude | – (next free slot) |
+| [92 Factory follow-ups from 84's reviews and rollout: stop-guard's count, pins in one place, model families, the talk-style lock, task slugs, the launcher's warnings](tickets/92-factory-follow-ups.md) | S | claude | 84 |
+| [77 Check and define the retro tickets before any is built](tickets/77-check-the-retro-tickets.md) | S | claude | – (closed) |
+| ~~[70 `kit unit --red`](tickets/70-new-tests-must-go-red.md)~~ waits (rule in 67) | – | – | `wontfix` for now |
+| ~~[73 Motion check in `kit ux`](tickets/73-kit-ux-motion-check.md)~~ dropped | – | – | `wontfix` |
+| ~~[75 House style lines](tickets/75-house-style-native-controls-and-contrast.md)~~ merged into 67 | – | – | `wontfix` (merged) |
+
 ## Suggested waves
 
 The frontier decides; this is one order that keeps to the rules (at most 5 at once).
 
 1. 10, then 11, 12 and 13 one at a time (they share the front door and the kit library).
-2. 14; then 15 and 21 side by side.
-3. 16, then 17.
+2. 14; then 15 and 21 side by side, with 25 once 18 is in.
+3. 16, then 17 (after 25); 26 beside them once 15, 19 and 21 are in; 27 after 26 (both change `kit.d/doctor`); 28 any time after 14 (kit tests only, beside the others); 32 any time after 14 (the front door, which no other open slice changes); 29 after 17 (both change `kit pr` and `kit slice`), and before 30, so projects 40–47 never land past a CI run that could fail; 33 now, beside 21 (it shares only small additions to `tests/agent-scripts.test.ts` and `docs/agents/agent-scripts.md`), and before 17, so a second look that meets an empty Grok account says skipped and falls back; 34 after 17 (both change `kit.d/review`); 35 after 29 (`kit pr`); 36 after 27 (`kit.d/doctor`); 37 after 26 (`unit.sh`); 38 and 39 now, side by side and beside the others (`kit.d/update` and the launchers, which no other open slice changes), and before 30, which moves both files. 48 and 49 now, side by side and beside 26 and 33 (`kit.d/ux` and `launcher/kit`, which no other open slice changes; they share only small additions to `docs/agents/agent-scripts.md`), and before 30. 51 after 27 (`tests/kit-doctor.test.ts`; `kit.d/unit`, which no other open slice changes); 52 after 17 (`review-findings.mjs`, read by `kit.d/pr` and `kit.d/slice`); 53 after 35 (`kit pr`, the last in the 17, 29, 35 chain); 54 now (`kit.d/ux`, which no other open slice changes); 55 after 54 (`kit.d/ux`); 56 after 52 (`review-findings.mjs`); 57 after 35 (`tests/kit-pr.test.ts`); 58 after 34 (`agent-run.mjs`, `kit.d/review`); all eight before 30.
 4. 20, then 22, then 23 and 24.
-5. 30 alone, after Lex's OK; then 31 after Lex's OK.
-6. 40 to 46, one after another, each after Lex's OK; 47 whenever Lex builds in `camframe` again.
+5. 30 alone; then 31 (Lex's OK for both given 2026-10-27).
+6. 40 to 46, one after another (Lex's one OK, 2026-10-27), stopping at the first problem; 47 whenever Lex builds in `camframe` again.
 7. 50 last, with Lex's approved wording.
+8. The 2026-10-30 retro slices (order from the [retro check](retro-check-2026-10-30.md)): 66, 68 and 78 now, side by side (`docs/kitchen.md` and `review-brief.mjs`; `hooks/bash-guard.sh`; `kit.d/bg`); 74 any time as a free-model chore (`kit.d/pr`), before 72; 67 after 66 (`docs/kitchen.md`, `review-brief.mjs`); 69 once agent-kit PR #6 (ticket 64's kit part) and 66 are in (`kit.d/doctor`, `review-brief.mjs`); 71 after 67 (station 7); 72 after 68 and 74 (`kit.d/pr`); 76 after 67, 71 and Lex's answer on its home. From the prompter ↔ CamFrame retro (2026-10-31, checked by the lead): 81 first (`kit.d/init`, `kit.d/doctor`), then 79 after 78 and 81 (`hooks/`, `docs/runner.md`); Lex 2026-10-31: CamFrame joins now (47) and the prompter gets its preview address in 80; 80 any time (prompter repo only); finding 4's doctor warning rides with 69, finding 2 with 47; the get_format finding was already done (`b1745616`). The 50s and 60s slices still open keep their own places.
 
 ## Waiting for Lex
 
-- **When the build begins** (the Not started line).
+- **Given 2026-10-27 (Tuesday pack, Q3):** one OK for 30, 31, 40–46 and 50, in order, stopping at the first problem. The questions inside 40, 43, 44 and 46 take their recommended answers mid-week when easy to undo, and are listed in the next Tuesday pack so he can reverse them. What still waits for a Tuesday:
 - **30:** creating the public repo `techiesreviews/agent-kit` (the name is his to change) and turning on its CI.
 - **31:** a user-level `systemd` timer on his computer that updates the kit every 15 minutes.
-- **40–47:** every change in another project, each its own OK. Questions inside them: what happens to `techies-reviews`' `feat/melapress-course` first (40); `creator-studio-poc`'s landing branch, `dev` or `main`, and whether to wait for its server move (43); which of `TechiesTools`' own agent rules stay as its extras, and closing its 19 GitHub Issues (44); the starter in or out (46); closing `camframe`'s 12 Issues (47).
-- **50:** the `lex-coding` wording, drafted by the lead.
+- **40–47:** every change in another project (OK given for 40–46). Questions inside them: what happens to `techies-reviews`' `feat/melapress-course` first (40); `creator-studio-poc`'s landing branch, `dev` or `main`, and whether to wait for its server move (43); which of `TechiesTools`' own agent rules stay as its extras, and closing its 19 GitHub Issues (44); the starter in or out (46); closing `camframe`'s 12 Issues (47).
+- **50:** the `lex-coding` wording, drafted by the lead; the wording itself goes into a Tuesday pack.
+- **Still his, each in its Tuesday pack:** closing `TechiesTools`' 19 and `camframe`'s 12 GitHub Issues (outward-facing).
 - The helper decisions below.
 
 ## Helper decisions (made in planning; check with Lex)
@@ -116,12 +188,12 @@ The frontier decides; this is one order that keeps to the rules (at most 5 at on
 2. **Own commands live in `scripts/agents/project.d/`** in every project, named in the settings file. A different name from the shared `kit.d/` keeps the two apart before the move and avoids a rename after it; the old copies' own commands move there too.
 3. **The shared rulebook ships inside the kit.** `kit rulebook` prints it followed by the project's extras file; each project's `docs/agents/kitchen.md` becomes a short pointer that `kit init` writes. This editor's facts (pins it alone uses, previews, feature list, release steps) move to `docs/agents/kitchen-extras.md`.
 4. **One second look per change**, its kind chosen from the changed paths (agent setup, then UX, then DX, then code). The table of which model looks at which kind lives in the kit, one place for every project, with the date it was last checked. If the chosen model cannot run (Grok's weekly count used up, OpenCode down), the other family takes the look; only when both fail does the change land with "second look: skipped (reason)" in its report.
-5. **Grok's weekly cap stays at today's 8** until the Monday sweep has shown a few weeks of real use; then Lex sets it.
+5. **Grok's weekly cap stays at today's 8** until the Tuesday sweep has shown a few weeks of real use; then Lex sets it.
 6. **A machine-wide project list** (`~/.local/state/agent-kit/projects.json`, written by `kit init`) tells the combined table and the sweep where each project lives. Scoreboards and feedback logs stay in each project (ticket 05 point 5); the combined table reads them where they are.
 7. **A missing kit warns, it does not block.** The hook launcher prints a clear warning at session start and on each guarded command ("Agent Kit not found: guards are off; run `scripts/agents/kit doctor`"), and `kit doctor` fails. The other way, blocking every command until the kit is back, is safer but can lock a session; Lex can pick it.
 8. **`techies-reviews` keeps its own checks** (`specs`, `shots`, `size` for the course, lab and CSM pages, research 03) beside the light kitchen; they are its own commands, not part of the shared kit, and dropping them would lose working checks.
 9. **The starter is recommended to stay out.** Every new site the editor creates is a copy of `native-site-editor-starter` (`docs/native-starter-source.md`), so kit files there would land in every user's site.
 10. **Moves run one after another** in the decided order, each after Lex's OK.
 11. **GitHub Issues become `needs-triage` tickets** in a `docs/wayfinder/backlog/` map in their project, one file each with the Issue's title, text, labels and link.
-12. **Machine-wide lines go in this editor's Monday sweep only** (Grok use for the week, kit problems per project); other projects get no sweep of their own unless Lex asks.
-13. **Until the timer is on** (31), the lead runs `kit update` by hand after each kit merge; `kit doctor` warns when the machine copy is more than a day old.
+12. **Machine-wide lines go in this editor's Tuesday sweep only** (Grok use for the week, kit problems per project); other projects get no sweep of their own unless Lex asks.
+13. **The timer is on** (31, since 2026-10-29): `agent-kit-update.timer` runs `kit update` every 15 minutes; `kit doctor` warns when the machine copy is more than a day old.

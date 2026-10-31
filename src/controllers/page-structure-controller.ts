@@ -15,7 +15,7 @@ import { handleChunkLoadFailure } from "../chunk-recovery";
 import { isSectionTemplate } from "../native-insert";
 import type { MoveStep } from "../page-builder/block-move-rules";
 import { type BlockMoves, type MoveAt, type MoveOptions, type Settled } from "../page-builder/block-move";
-import { type ComponentTools } from "../page-builder/components";
+import type { ComponentTools } from "../page-builder/components";
 import { type createAgentController } from "../controllers/agent-controller";
 import { type createPageStructure } from "../components/page-structure";
 import { type NativeSite } from "../../shared/native-project";
@@ -195,6 +195,21 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const change = (edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) => {
       return editOpenPage(path, source, edits, next, message);
     };
+    // Own-tag controls (Text size, Heading level, Layout) apply to the latest source when only the
+    // element's content changed since the bar was drawn (its own Bold, say): everything up to the end
+    // of its start tag, its close tag and everything after it as they were. Otherwise the bar's
+    // source, which editOpenPage refuses as stale; its check against the source stays the proof.
+    const ownTags = (own: ElementRange): { at: string; own: ElementRange } => {
+      const latest = ports.nativeEditableSource(path) ?? "";
+      const tail = source.length - own.end;
+      const before = latest.slice(0, own.tag.end) === source.slice(0, own.tag.end);
+      const after = latest.slice(latest.length - tail) === source.slice(own.end);
+      const found = latest !== source && node && before && after ? ports.locateNativeElementRange(latest, node) : undefined;
+      // The element found there ends where the unchanged tail begins, with the same close tag.
+      const close = (range: ElementRange, html: string) => range.close && html.slice(range.close.start, range.close.end);
+      const same = found && found.tag.end === own.tag.end && found.end === latest.length - tail && close(found, latest) === close(own, source);
+      return same ? { at: latest, own: found } : { at: source, own };
+    };
     const controls: EditBarControl[] = [];
     if (range && node && ports.nativeSite) {
       if (selection.tag === "site-header" || selection.tag === "header" || selection.tag === "nav")
@@ -202,17 +217,21 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
     nativeFormatActions = {};
     if (/^h[1-6]$/.test(selection.tag) && range?.close && range.tag.name === selection.tag) {
-      const close = range.close;
       const length = range.tag.name.length;
       controls.push({
         kind: "select",
         label: "Heading level",
         options: [1, 2, 3, 4, 5, 6].map((level) => ({ label: `H${level}`, value: `h${level}` })),
         value: selection.tag,
-        onChange: (value) => change([
-          { start: range.tag.start + 1, end: range.tag.nameEnd, text: value },
-          { start: close.start + 2, end: close.start + 2 + length, text: value },
-        ], node, `Heading level ${value.toUpperCase()}`),
+        onChange: (value) => {
+          const { at, own } = ownTags(range);
+          // ownTags keeps a close tag it was given; said aloud should that ever change.
+          if (!own.close) { refuse("The source changed. Select the element again and try again."); return; }
+          editOpenPage(path, at, [
+            { start: own.tag.start + 1, end: own.tag.nameEnd, text: value },
+            { start: own.close.start + 2, end: own.close.start + 2 + length, text: value },
+          ], node, `Heading level ${value.toUpperCase()}`);
+        },
       });
     }
     if (range && node) {
@@ -222,8 +241,9 @@ export function createPageStructureController(ports: PageStructurePorts) {
         options: [{ label: "Stack", value: "flow" }, { label: "Grid", value: "cards" }],
         value: layout,
         onChange: (value) => {
-          const edit = blockLayoutEdit(source, range.tag, value);
-          if (edit) change([edit], node, `Layout: ${value === "cards" ? "Grid" : "Stack"}`);
+          const { at, own } = ownTags(range);
+          const edit = blockLayoutEdit(at, own.tag, value);
+          if (edit) editOpenPage(path, at, [edit], node, `Layout: ${value === "cards" ? "Grid" : "Stack"}`);
         },
       });
     }
@@ -243,9 +263,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
         options,
         value,
         onChange: (next) => {
-          const edit = textSizeEdit(source, range.tag, scale, next);
+          const { at, own } = ownTags(range);
+          const edit = textSizeEdit(at, own.tag, scale, next);
           const size = scale.sizes.find((item) => item.value === next);
-          if (edit) change([edit], node, size ? `Text size ${size.label}` : "Default text size");
+          if (edit) editOpenPage(path, at, [edit], node, size ? `Text size ${size.label}` : "Default text size");
         },
       });
     }

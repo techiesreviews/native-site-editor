@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 53 Media pane and picker, Today / After</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code. Mock-up ahead for Lex's Tuesday 10 Nov review
+  (kitchen station 3, "Show and tell"), for build ticket
+  docs/wayfinder/atomic-catalogue/build/tickets/53-organism-media.md.
+  Today: the Media tab and the Media picker as they are on dev (2026-10-27), values copied from
+  src/theme.css, src/style.css (.button, .text-button), src/page-builder/media-picker.css (bar, grid,
+  tiles, selection bar, picker, sheet), media-detail.css (File details, switches, chips, save bar) and
+  src/components/row-menu.css; structure and words from src/page-builder/media-library-shell.ts, -view.ts,
+  -grid.ts, -details.ts, -replace.ts, media-file-details.ts and media-picker.ts.
+  After: the same screens from the approved catalogue parts of prototype 10 (button, icon button, field,
+  badge with words only, tooltip, menu, dialog, tile) and the board's switch (08). Colours and type
+  unchanged; spacing 2/4/6/8/12/16/24 and motion tokens from slices 02 and 03.
+  Feedback in both views follows prototype 09, which lands before this slice: Replace shows no message
+  (the new picture is the feedback, and Undo stays on the picture); Copy path says "Copied" on the item;
+  Download says "Preparing…" on the item. Icons are hand-drawn stand-ins for the editor's Phosphor set.
+-->
+<style>
+/* ---------- Shared values: src/theme.css, light and dark written once with light-dark() ---------- */
+:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --danger: oklch(from var(--color-success) l c 25);
+  --danger-bg: oklch(from var(--success-bg) l c 25);
+  --danger-fg: oklch(from var(--success-fg) l c 25);
+  --panel-surface: var(--surface-raised);
+  --pressed: light-dark(var(--primary), var(--color-primary-light));
+  --on-pressed: light-dark(var(--on-primary), var(--color-primary-darkest));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px; --type-heading: 20px;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px;
+  --panel-padding: 6px; --panel-padding-roomy: 12px;
+  /* file-type tints, src/theme.css 94-102 */
+  --tint-page: oklch(66% 0.17 45); --tint-style: oklch(62% 0.15 255); --tint-picture: oklch(64% 0.15 150);
+
+  /* After only: the catalogue's new shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-size: var(--type-base); }
+button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, select:focus-visible, a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.icon { inline-size: 16px; block-size: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; display: block; }
+.icon[data-s="12"] { inline-size: 12px; block-size: 12px; }
+.icon[data-s="14"] { inline-size: 14px; block-size: 14px; }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- Mock-up frame (not part of the editor) ---------- */
+main { max-inline-size: 76rem; margin-inline: auto; padding: clamp(0.75rem, 0.5rem + 1.2vw, 1.5rem); display: grid; gap: var(--space-m); }
+header { display: grid; gap: var(--space-3xs); }
+h1 { margin: 0; font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); text-wrap: balance; }
+.tag { font-size: var(--type-small); font-weight: 600; color: var(--warning-fg); background: var(--warning-bg); border-radius: var(--radius-full); padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+.intro { margin: 0; color: var(--muted); max-inline-size: 70ch; text-wrap: pretty; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; position: sticky; inset-block-start: 0; z-index: 30; padding-block: var(--space-xs); background: var(--background); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--surface-subtle); }
+.seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: var(--radius-small); font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.summary { margin: 0; font-weight: 600; max-inline-size: 70ch; text-wrap: pretty; }
+.demo { border: 1.5px dashed var(--line); border-radius: var(--radius-panel); padding: var(--space-s); display: grid; gap: var(--space-xs); }
+.demo h2 { margin: 0; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.demo .buttons { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.demo button { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 4px 10px; font-weight: 600; font-size: var(--type-small); }
+.demo button[aria-pressed="true"] { background: var(--current); }
+.demo button:active { scale: 0.97; }
+.demo .now { margin: 0; color: var(--muted); font-size: var(--type-small); min-block-size: 1.5em; }
+.stage { position: relative; display: grid; justify-items: center; padding: clamp(var(--space-xs), 2vw, var(--space-l)); border-radius: var(--radius-panel); background: color-mix(in oklch, var(--background) 70%, var(--surface-subtle)); min-block-size: 30rem; }
+.changes { display: flex; flex-wrap: wrap; gap: var(--space-3xs); margin: 0; padding: 0; list-style: none; }
+.changes li { font-size: var(--type-small); font-weight: 600; color: var(--success-fg); background: var(--success-bg); border-radius: var(--radius-full); padding: 1px 8px; }
+body[data-mode="today"] .after, body[data-mode="after"] .today { display: none !important; }
+.mock-note { color: var(--muted); font-size: var(--type-small); padding: var(--space-m); border: 1px dashed var(--line); border-radius: var(--radius); margin-block: var(--space-s); }
+
+/* Pictures: CSS gradients stand in for photos */
+.pic { background: linear-gradient(160deg, oklch(86% 0.04 80), oklch(62% 0.06 50)); }
+
+.stage { padding: clamp(0px, 1.5vw, var(--space-l)); }
+.pic-1 { background: radial-gradient(ellipse 30% 22% at 35% 62%, oklch(68% 0.12 60) 0 70%, transparent 72%), radial-gradient(ellipse 26% 20% at 66% 56%, oklch(62% 0.13 48) 0 70%, transparent 72%), linear-gradient(165deg, oklch(88% 0.04 85), oklch(60% 0.06 50)); }
+.pic-2 { background: radial-gradient(circle at 70% 30%, oklch(92% 0.08 95) 0 12%, transparent 13%), linear-gradient(180deg, oklch(78% 0.08 230) 0 55%, oklch(58% 0.12 150) 55%); }
+.pic-3 { background: radial-gradient(circle at 30% 40%, oklch(70% 0.17 350) 0 9%, transparent 10%), radial-gradient(circle at 60% 55%, oklch(75% 0.15 20) 0 8%, transparent 9%), radial-gradient(circle at 45% 70%, oklch(72% 0.16 330) 0 9%, transparent 10%), linear-gradient(160deg, oklch(70% 0.1 150), oklch(45% 0.08 160)); }
+.pic-4 { background: linear-gradient(135deg, oklch(75% 0.09 60), oklch(55% 0.1 30)); }
+.pic-5 { background: radial-gradient(ellipse 40% 30% at 50% 60%, oklch(96% 0.01 90) 0 60%, transparent 62%), linear-gradient(170deg, oklch(66% 0.05 60), oklch(38% 0.04 50)); }
+.pic-6 { background: linear-gradient(180deg, oklch(82% 0.07 70) 0 40%, oklch(66% 0.1 230) 40% 70%, oklch(78% 0.06 85) 70%); }
+.pic-7 { background: radial-gradient(circle at 50% 45%, oklch(62% 0.18 30) 0 18%, transparent 19%), linear-gradient(150deg, oklch(90% 0.03 100), oklch(74% 0.05 90)); }
+.pic-8 { background: repeating-linear-gradient(90deg, oklch(58% 0.07 50) 0 12%, oklch(64% 0.08 55) 12% 24%); }
+.pic-9 { background: radial-gradient(ellipse 50% 30% at 50% 100%, oklch(52% 0.13 150) 0 70%, transparent 72%), linear-gradient(180deg, oklch(80% 0.09 240), oklch(90% 0.05 220)); }
+.pic-new { background: radial-gradient(circle at 30% 35%, oklch(66% 0.17 265) 0 7%, transparent 8%), radial-gradient(circle at 55% 50%, oklch(62% 0.18 275) 0 8%, transparent 9%), radial-gradient(circle at 75% 35%, oklch(68% 0.15 260) 0 7%, transparent 8%), linear-gradient(170deg, oklch(78% 0.1 150), oklch(48% 0.1 150)); }
+:root { --on-media: oklch(100% 0 none); --media-scrim: oklch(18.23% 0.0315 261.1); --shadow-ink: oklch(0% 0 none); --surface-card: light-dark(var(--surface), color-mix(in oklch, var(--panel-surface), white 6%)); }
+.pane-frame { inline-size: min(1040px, 100%); border-radius: var(--radius-panel); background: var(--panel-surface); box-shadow: var(--shadow); align-self: start; min-block-size: 36rem; overflow-x: clip; position: relative; display: flex; flex-direction: column; }
+.pane-tabs { display: flex; gap: 2px; padding: 12px 12px 0; border-block-end: 1px solid var(--control-line); margin-inline: 12px; padding-inline: 0; }
+.pane-tabs span { min-block-size: 32px; padding: 0 12px; display: inline-flex; align-items: center; font-weight: 600; color: var(--muted); border-block-end: 2px solid transparent; margin-block-end: -1px; }
+.pane-tabs span[aria-current] { color: var(--text); border-block-end-color: var(--primary); }
+
+/* =====================  TODAY: real editor CSS  ===================== */
+/* media-picker.css 1-27: base */
+.today.media-library { container-type: inline-size; display: flex; flex-direction: column; flex: 1; }
+.today.media-library button { cursor: pointer; min-height: var(--size-control); border-radius: var(--radius); }
+.today.media-library :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.today.media-library input:not([type=checkbox]), .today.media-library textarea { min-height: 32px; border: 1px solid var(--control-line); border-radius: var(--radius); padding: 6px 10px; background: var(--surface-input); }
+.today.media-library :is(input, textarea):focus-visible { outline-offset: -1px; }
+@media (pointer: coarse) { .today.media-library button { min-height: 44px; } }
+.today .muted, .today .hint { color: var(--muted); font-size: var(--type-small); margin: 0; }
+.today .hint { line-height: 1.5; }
+/* media-picker.css 216-249: the one bar */
+.today .bar { position: sticky; top: 0; z-index: 5; background: var(--panel-surface); padding: 12px; display: grid; grid-template-columns: minmax(0, 1fr) fit-content(45%); gap: 8px; align-items: center; }
+.today .bar > * { height: 44px; }
+.today .search { position: relative; }
+.today .search .icon { position: absolute; inset-block: 0; inset-inline-start: 12px; margin-block: auto; inline-size: 18px; block-size: 18px; color: var(--muted); }
+.today .search input { inline-size: 100%; block-size: 100%; padding: 0 8px 0 38px !important; border-radius: 22px !important; }
+.today .tools { display: flex; }
+.today .tools > button { width: 44px; height: 100%; padding: 0; border: 1px solid var(--control-line); border-radius: 0; background: var(--surface-input); font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.today .tools > button + button { margin-inline-start: -1px; }
+.today .tools > button:first-child { border-radius: 12px 0 0 12px; }
+.today .tools > button:last-child { border-radius: 0 12px 12px 0; }
+.today .tools > button:is(:active, [aria-expanded=true]) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .today .tools > button:hover { background: var(--hover); } }
+.today .tools .filter { width: auto; min-width: 44px; gap: 5px; padding: 0 14px; font-weight: 500; }
+.today .filter-name { color: var(--muted); font-weight: 400; }
+@container (width <= 540px) { .today .bar { grid-template-columns: minmax(0, 1fr) fit-content(60%); } .today .tools .filter { gap: 4px; padding: 0 10px; } }
+/* media-picker.css 116-212: grid and tiles */
+.today .browse { padding: 4px 12px 12px; container: browse / inline-size; flex: 1; }
+.today .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; }
+@container browse (width >= 520px) { .today .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container browse (width >= 800px) { .today .grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.today .card { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: var(--radius-small); background: var(--surface-subtle); color: var(--on-media); --chrome: 1; --label: 0; }
+@media (hover: hover) and (pointer: fine) {
+  .today .card { --label: var(--chrome); }
+  .today .grid:not(.has-selection) .card:not(:hover, :focus-within, .is-hover) { --chrome: 0; }
+}
+.today .card .pic { position: absolute; inset: 0; }
+.today .card::after { content: ""; position: absolute; inset: 0; z-index: 3; border-radius: inherit; pointer-events: none; }
+.today .card.is-selected::after { box-shadow: inset 0 0 0 2px var(--primary); }
+.today .card.is-chosen::after { box-shadow: inset 0 0 0 3px var(--primary); }
+.today .card .open { position: absolute; inset: 0; padding: 0; border: 0; border-radius: 0 !important; background: none; }
+.today .card .open:focus-visible { outline: none; }
+.today .card:has(.open:focus-visible)::after { outline: var(--focus-ring); outline-offset: -2px; }
+.today .shade { position: absolute; inset-inline: 0; top: 0; height: 36px; background: linear-gradient(oklch(from var(--media-scrim) l c h / 0.35), transparent); opacity: var(--chrome); pointer-events: none; }
+.today .name { position: absolute; inset-inline: 0; bottom: 0; padding: 21px 6px 5px; font-size: 12px; font-weight: 600; line-height: 1.35; text-shadow: 0 1px 2px oklch(from var(--shadow-ink) l c h / 0.47); background: linear-gradient(transparent, oklch(from var(--media-scrim) l c h / 0.64) 55%, oklch(from var(--media-scrim) l c h / 0.82)); opacity: var(--label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.today .usage, .today .select { position: absolute; top: 0; z-index: 2; width: 44px; height: 44px; display: grid; place-items: center; opacity: var(--chrome); }
+.today .usage { left: 0; padding: 0; border: 0; background: none; color: var(--on-media); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; text-shadow: 0 0 4px oklch(from var(--media-scrim) l c h / 0.7), 0 1px 3px oklch(from var(--shadow-ink) l c h / 0.6); }
+.today .usage:focus-visible { outline: 2px solid currentColor !important; outline-offset: -2px !important; }
+.today .usage-label { position: absolute; top: 46px; left: 4px; z-index: 4; padding: 4px 8px; border-radius: 8px; background: oklch(from var(--media-scrim) l c h / 0.8); color: var(--on-media); font-size: 12px; font-weight: 600; line-height: 1.3; white-space: nowrap; box-shadow: 0 0 10px 2px oklch(from var(--media-scrim) l c h / 0.35); }
+.today .select { right: 0; }
+.today .select i { width: 22px; height: 22px; border: 1.5px solid var(--on-media); border-radius: 50%; background: oklch(from var(--media-scrim) l c h / 0.12); box-shadow: 0 1px 3px oklch(from var(--shadow-ink) l c h / 0.4); display: grid; place-items: center; }
+.today .is-selected .select i, .today .is-chosen .select i { background: var(--primary); }
+@media (prefers-reduced-motion: no-preference) { .today :is(.shade, .usage, .select, .name) { transition: opacity 150ms ease-out; } }
+/* media-picker.css 373-395: selection bar */
+.today .bulk { position: sticky; bottom: 8px; z-index: 4; display: flex; align-items: center; gap: 4px; padding: 4px; margin-block-start: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-surface); box-shadow: var(--shadow-small); }
+.today .bulk button { min-height: 36px; padding: 0 10px; border: 0; border-radius: 18px !important; background: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.today .bulk button:is(:active, [aria-expanded=true]) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .today .bulk button:hover { background: var(--hover); } }
+.today .bulk .count { font-weight: 600; }
+.today .bulk .remove { margin-inline-start: auto; color: var(--danger-fg); }
+.today .bulk .more { width: 36px; padding: 0; justify-content: center; }
+@container (width <= 560px) { .today .bulk .wide { display: none; } }
+/* media-picker.css 487-557 and media-detail.css: File details */
+.today .sheet { padding: 8px 12px 20px; display: flex; flex-direction: column; gap: 8px; container: detail / inline-size; flex: 1; }
+.today .round-icon { width: 44px; height: 44px; border-radius: 50% !important; border: 0; background: none; display: grid; place-items: center; padding: 0; color: var(--text); flex: none; }
+.today .round-icon:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .today .round-icon:hover { background: var(--hover); } }
+.today .sheet-head { display: flex; align-items: center; gap: 4px; }
+.today .sheet-head h3 { margin: 0; font-size: 15px; }
+.today .detail { display: grid; gap: 16px; --stage: color-mix(in oklch, var(--panel-surface), var(--surface-subtle)); }
+.today .preview { position: relative; margin: 0; border-radius: var(--radius-dialog); background: var(--stage); display: grid; place-items: center; block-size: 260px; padding: 16px; }
+.today .preview .pic { block-size: 100%; aspect-ratio: 3 / 4; max-inline-size: 100%; border-radius: 2px; }
+@container detail (width >= 720px) { .today .detail { grid-template-columns: minmax(0, 1fr) clamp(300px, 34cqi, 400px); gap: 24px; align-items: start; } .today .preview { block-size: 420px; padding: 24px; } }
+.today .title { display: block; inline-size: calc(100% + 16px); min-block-size: 36px; margin-inline: -8px; padding-inline: 8px !important; border-color: transparent !important; background: transparent !important; font-size: 15px; font-weight: 600; }
+@media (hover: hover) and (pointer: fine) { .today .title:hover { border-color: var(--control-line) !important; } }
+.today .title:focus { border-color: var(--control-line) !important; background: var(--surface-input) !important; }
+.today .facts { margin: 0; color: var(--muted); font-size: 12px; }
+.today .actions { display: flex; flex-wrap: wrap; gap: 8px; padding-block: 12px 16px; position: relative; }
+.today .actions button, .today .foot button { min-block-size: 36px; padding-inline: 14px; border-radius: 18px !important; }
+.today .sheet .secondary { background: var(--surface-card); border: 1px solid var(--control-line); }
+.today .actions .detail-more { min-inline-size: 36px; padding: 0; display: grid; place-items: center; }
+.today .section { display: grid; gap: 8px; padding: 16px 0; border-top: 1px solid var(--control-line); }
+.today .section h4 { margin: 0; font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.today .section h4 span { color: var(--muted); font-size: 12px; font-weight: 400; }
+.today .section textarea { min-height: 92px; padding: 8px 10px; line-height: 1.5; resize: vertical; inline-size: 100%; }
+.today .switch-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; min-block-size: 44px; align-items: center; }
+.today .switch-row .hint { grid-column: 1; }
+.today .switch { grid-row: 1 / span 2; grid-column: 2; position: relative; width: 36px; height: 20px; border-radius: 999px; background: var(--control-line); border: 0; padding: 0; min-height: 0 !important; }
+.today .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--on-media); }
+.today .switch[aria-checked="true"] { background: var(--primary); }
+.today .switch[aria-checked="true"]::after { translate: 16px 0; }
+@media (prefers-reduced-motion: no-preference) { .today .switch::after { transition: translate 140ms ease-out; } }
+.today .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.today .chip { display: inline-flex; align-items: center; gap: 6px; min-block-size: 32px; padding-inline: 12px; border: 1px solid var(--control-line); border-radius: 999px; background: var(--surface-card); cursor: pointer; }
+.today .chip[aria-checked="true"] { border-color: transparent; background: var(--current); font-weight: 600; }
+.today .chip.new { border-style: dashed; background: transparent; color: var(--muted); }
+.today .foot { position: sticky; bottom: 0; display: flex; align-items: center; gap: 8px; padding-block: 12px; border-top: 1px solid var(--control-line); background: var(--panel-surface); }
+.today .foot p { margin: 0 auto 0 0; font-weight: 600; }
+.today .foot button { min-inline-size: 96px; }
+/* style.css .button, .text-button */
+.today .button { min-height: var(--size-control); border: 0; padding: 6px 14px; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.today .primary { background: var(--primary); color: var(--on-primary); }
+.today .secondary { background: var(--surface); }
+.today .primary:active { background: var(--primary-hover); }
+.today .secondary:active { background: linear-gradient(var(--hover) 0 0), var(--surface-card); }
+@media (hover: hover) and (pointer: fine) { .today .primary:hover { background: var(--primary-hover); } .today .secondary:hover { background: linear-gradient(var(--hover) 0 0), var(--surface-card); } }
+.today .button:disabled { background: var(--surface-subtle); color: var(--muted); }
+.today .text-button { border: 0; background: none; padding: 5px 0; color: var(--link); }
+@media (hover: hover) and (pointer: fine) { .today .text-button:hover { text-decoration: underline; } }
+/* row-menu.css, used by the ⋯ menus */
+.today .pages-menu { position: absolute; inset-block-start: calc(100% - 8px); inset-inline-start: 0; z-index: 20; display: flex; flex-direction: column; gap: 2px; min-width: 170px; padding: 6px; border-radius: var(--radius-panel); background: var(--panel-surface); box-shadow: var(--shadow); }
+.today .pages-menu__item { min-height: var(--size-control); border: 0; border-radius: var(--radius); padding: 4px 8px; background: transparent; text-align: left; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+.today .pages-menu__item:hover, .today .pages-menu__item:focus-visible { background: var(--hover); }
+.today .row-menu__danger { color: var(--danger-fg); }
+.today .spinner { inline-size: 12px; block-size: 12px; border: 2px solid var(--control-line); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.9s linear infinite; }
+/* Replace's confirm screen, media-library-replace.ts */
+.today .compare { display: grid; gap: 8px; }
+.today .compare-row { display: grid; grid-template-columns: 64px 1fr; gap: 12px; align-items: center; }
+.today .compare-row .pic { inline-size: 64px; aspect-ratio: 1; border-radius: var(--radius-small); }
+.today .shows-on { padding: 10px 12px; border-radius: var(--radius-panel); background: var(--surface-card); margin: 0; }
+.today .sheet-actions { position: sticky; bottom: 0; display: flex; justify-content: end; gap: 8px; padding-block: 12px; margin-block-start: 4px; border-top: 1px solid var(--line); background: var(--panel-surface); }
+.today .sheet-actions button { min-height: 44px; border-radius: 22px !important; }
+.today .undo-on-pic { position: absolute; inset-block-start: 8px; inset-inline-end: 8px; min-height: 36px !important; padding-inline: 14px; border: 0; border-radius: 18px !important; background: oklch(from var(--media-scrim) l c h / 0.62); color: var(--on-media); font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+/* media-picker.css 573-621: the picker */
+.today .picker-backdrop { position: absolute; inset: 0; z-index: 25; display: grid; place-items: center; padding: 16px; border-radius: inherit; background: color-mix(in oklch, var(--background) 72%, transparent); }
+.today .picker { container-type: inline-size; inline-size: min(960px, 100%); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); display: flex; flex-direction: column; max-block-size: 100%; }
+.today .picker header { display: flex; align-items: center; gap: 8px; padding: 14px 12px 8px 24px; }
+.today .picker header h2 { margin: 0; font-size: 15px; }
+.today .picker header div { flex: 1; min-width: 0; }
+.today .picker .bar { position: static; padding: 4px 24px; background: transparent; }
+.today .picker .browse { padding: 12px 24px; overflow: auto; flex: 1 1 auto; min-block-size: 0; }
+.today .choice { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 24px; border-top: 1px solid var(--line); }
+.today .chosen { display: flex; align-items: center; gap: 10px; min-height: 44px; flex: 1; min-width: 0; }
+.today .chosen .pic { inline-size: 44px; block-size: 44px; border-radius: var(--radius-small); flex: none; }
+.today .chosen b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today .choice-actions { display: flex; gap: 8px; }
+.today .choice-actions button { min-width: 112px; min-height: 44px; border-radius: 22px !important; }
+@container (width <= 580px) { .today .picker header { padding: 8px 4px 4px 16px; } .today .picker .bar { padding: 4px 12px; } .today .picker .browse { padding: 8px 12px; } .today .choice { flex-direction: column; align-items: stretch; gap: 8px; padding: 8px 12px; } .today .choice-actions button { flex: 1; min-width: 0; } }
+@keyframes spin { to { rotate: 1turn; } }
+
+/* =====================  AFTER: catalogue parts  ===================== */
+.p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (prefers-reduced-motion: no-preference) {
+  .p-press { transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  .p-press:active:not(:disabled) { scale: 0.97; }
+}
+/* Button: tones primary, secondary, quiet, danger; sizes compact, control, touch */
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2xs); min-block-size: var(--size-control); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); font-size: var(--type-base); font-weight: 600; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; }
+.p-button[data-size="compact"] { min-block-size: var(--size-compact); padding-inline: var(--space-xs); }
+.p-button[data-size="touch"] { min-block-size: var(--size-touch); padding-inline: var(--space-m); }
+.p-button[data-tone="primary"] { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.p-button[data-tone="quiet"] { background: transparent; box-shadow: none; color: var(--link); }
+.p-button[data-tone="danger"] { background: var(--danger-bg); color: var(--danger-fg); box-shadow: none; }
+.p-button[aria-checked="true"] { background: var(--current); box-shadow: none; }
+.p-button:active:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+.p-button[data-tone="primary"]:active:not(:disabled) { background: var(--primary-hover); }
+.p-button[data-tone="quiet"]:active:not(:disabled) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .p-button:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--surface); }
+  .p-button[data-tone="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
+  .p-button[data-tone="quiet"]:hover:not(:disabled) { background: var(--hover); }
+  .p-button[aria-checked="true"]:hover { background: linear-gradient(var(--hover) 0 0), var(--current); }
+}
+@media (pointer: coarse) { .p-button { min-block-size: var(--size-touch); } }
+/* Icon button: icon 24, compact 28, control 32 (44 on touch screens) */
+.p-icon-button { display: inline-grid; place-items: center; inline-size: var(--size-control); block-size: var(--size-control); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.p-icon-button[data-size="icon"] { inline-size: var(--size-icon); block-size: var(--size-icon); border-radius: var(--radius-small); }
+.p-icon-button[data-size="compact"] { inline-size: var(--size-compact); block-size: var(--size-compact); }
+.p-icon-button[aria-pressed="true"], .p-icon-button[aria-expanded="true"] { background: var(--hover); color: var(--text); }
+.p-icon-button:active:not(:disabled) { background: var(--hover); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-icon-button:hover:not(:disabled) { background: var(--hover); color: var(--text); } }
+@media (pointer: coarse) { .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } }
+/* Field: one part, inline or boxed, one focus and one error look */
+.p-field { inline-size: 100%; min-inline-size: 0; block-size: var(--size-control); padding-inline: var(--space-xs); border: 0; border-radius: var(--radius); background: var(--surface-input); box-shadow: inset 0 0 0 1px var(--control-line); caret-color: var(--primary); font-size: var(--type-base); }
+.p-field[data-size="compact"] { block-size: var(--size-compact); }
+.p-field:focus, .p-field.is-focus { outline: none; box-shadow: inset 0 0 0 1px var(--control-line), inset 0 -2px 0 var(--primary); background-color: color-mix(in oklch, var(--primary) 7%, var(--surface-input)); }
+.p-field[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--control-line), inset 0 -2px 0 var(--danger); }
+@media (hover: hover) and (pointer: fine) { .p-field:hover:not(:focus, .is-focus) { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--text) 32%, transparent); } }
+@media (prefers-reduced-motion: no-preference) { .p-field { transition: background-color var(--dur-hover) var(--ease-out), box-shadow var(--dur-hover) var(--ease-out); } }
+.p-field-label { display: grid; gap: var(--space-3xs); font-size: var(--type-small); color: var(--muted); }
+.p-field-note { margin: 0; font-size: var(--type-small); color: var(--muted); }
+.p-field-note[data-tone="error"] { color: var(--danger-fg); }
+/* Badge: words only, pill corner from --radius-full */
+.p-badge { display: inline-flex; align-items: center; flex: none; block-size: 18px; padding-inline: var(--space-2xs); border-radius: var(--radius-full); font-size: var(--type-badge); font-weight: 600; background: var(--surface-subtle); color: var(--link); }
+.p-badge[data-tone="success"] { background: var(--success-bg); color: var(--success-fg); }
+.p-badge[data-tone="warning"] { background: var(--warning-bg); color: var(--warning-fg); }
+.p-badge[data-tone="info"] { background: var(--current); color: var(--link); }
+/* Tooltip */
+.p-tip-anchor { position: relative; display: inline-grid; }
+.p-tooltip { position: absolute; inset-block-end: calc(100% + 6px); inset-inline-end: 0; display: inline-flex; gap: var(--space-2xs); align-items: center; padding: var(--space-3xs) var(--space-xs); border-radius: var(--radius); background: var(--text); color: var(--surface); font-size: var(--type-small); font-weight: 600; white-space: nowrap; opacity: 0; pointer-events: none; z-index: 15; }
+.p-tip-anchor:has(:focus-visible) .p-tooltip { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .p-tip-anchor:hover .p-tooltip { opacity: 1; transition-delay: 400ms; } }
+@media (prefers-reduced-motion: no-preference) { .p-tooltip { transition: opacity var(--dur-tooltip) var(--ease-out); } }
+/* Menu */
+.p-menu { position: absolute; inset-block-start: calc(100% + var(--space-3xs)); inset-inline-end: 0; z-index: 20; display: grid; gap: var(--space-4xs); min-inline-size: 13rem; padding: var(--panel-padding); border-radius: var(--radius-panel); background: var(--panel-surface); color: var(--text); font-weight: 400; box-shadow: var(--shadow); }
+.p-menu-item { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: var(--space-xs); inline-size: 100%; min-block-size: var(--size-control); border: 0; background: transparent; padding-inline: var(--space-xs); border-radius: var(--radius); text-align: start; white-space: nowrap; }
+.p-menu-item__words { display: inline-flex; align-items: center; gap: var(--space-2xs); }
+.p-menu-item kbd { font: inherit; font-size: var(--type-small); color: var(--muted); }
+.p-menu-item[data-tone="danger"] { color: var(--danger-fg); }
+.p-menu-item[data-state="done"] { color: var(--success-fg); }
+.p-menu-item:active { background: var(--hover); }
+.p-menu-item:focus-visible { outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) { .p-menu-item:hover { background: var(--hover); } }
+@media (pointer: coarse) { .p-menu-item { min-block-size: var(--size-touch); } }
+.p-menu-sep { block-size: 1px; margin: var(--space-3xs) var(--space-4xs); background: var(--line); }
+/* Dialog: one backdrop */
+.p-backdrop { position: absolute; inset: 0; z-index: 25; display: grid; place-items: center; padding: var(--space-m); border-radius: inherit; background: oklch(from var(--shadow-color) l c h / 0.45); }
+.p-dialog { inline-size: min(420px, 100%); padding: var(--space-m); border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--surface); box-shadow: var(--shadow); display: grid; gap: var(--space-s); }
+.p-dialog h3 { margin: 0; font-size: var(--type-title); }
+.p-row { display: flex; gap: var(--space-xs); justify-content: end; flex-wrap: wrap; }
+.p-choices { display: flex; gap: var(--space-2xs); }
+/* Tabs */
+.p-tabs { display: flex; flex: 1; gap: var(--space-4xs); min-inline-size: 0; }
+.p-tab { flex: 1; min-inline-size: 0; min-block-size: var(--size-control); padding-inline: var(--space-s); margin-block-end: -1px; border: 0; border-block-end: 2px solid transparent; background: transparent; color: var(--muted); font-weight: 600; }
+.p-tab[aria-selected="true"] { color: var(--text); border-block-end-color: var(--primary); }
+.p-tab:focus-visible { outline-offset: -2px; border-radius: var(--radius) var(--radius) 0 0; }
+.p-tab:active { color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .p-tab:hover { color: var(--text); } }
+@container (width >= 36rem) { .p-tab { flex: none; } }
+/* Empty state */
+.p-empty { display: grid; justify-items: center; gap: var(--space-xs); padding: var(--space-l) var(--space-m); text-align: center; color: var(--muted); }
+.p-empty .icon { inline-size: 24px; block-size: 24px; }
+.p-empty p { margin: 0; }
+/* Entry motion for menus and dialogs, only on the render that opens them */
+@media (prefers-reduced-motion: no-preference) {
+  .p-enter { animation: p-in var(--dur-menu) var(--ease-out); }
+  .p-enter.p-backdrop { animation: p-fade var(--dur-menu) var(--ease-out); }
+  .p-enter .p-dialog { animation: p-in var(--dur-menu) var(--ease-out); }
+}
+@keyframes p-in { from { opacity: 0; scale: 0.97; } }
+@keyframes p-fade { from { opacity: 0; } }
+
+/* Tile: a picture with its controls; name, use and select come in on hover, focus or selection */
+.p-tile { position: relative; aspect-ratio: 1; overflow: clip; border-radius: var(--radius-small); background: var(--surface-subtle); color: var(--on-media); --chrome: 1; --label: 0; }
+@media (hover: hover) and (pointer: fine) {
+  .p-tile { --label: var(--chrome); }
+  .p-tiles:not([data-selecting]) .p-tile:not(:hover, :focus-within, .is-hover) { --chrome: 0; }
+}
+.p-tile .pic { position: absolute; inset: 0; }
+.p-tile::after { content: ""; position: absolute; inset: 0; z-index: 3; border-radius: inherit; pointer-events: none; }
+.p-tile[aria-selected="true"]::after { box-shadow: inset 0 0 0 2px var(--primary); }
+.p-tile:has(.p-tile__open:focus-visible)::after { outline: var(--focus-ring); outline-offset: -2px; }
+.p-tile__open { position: absolute; inset: 0; padding: 0; border: 0; background: none; }
+.p-tile__open:focus-visible { outline-offset: -2px; }
+.p-tile__shade { position: absolute; inset-inline: 0; inset-block-start: 0; block-size: 36px; background: linear-gradient(oklch(from var(--media-scrim) l c h / 0.35), transparent); opacity: var(--chrome); pointer-events: none; }
+.p-tile__name { position: absolute; inset-inline: 0; inset-block-end: 0; padding: var(--space-l) var(--space-2xs) var(--space-3xs); font-size: var(--type-small); font-weight: 600; text-shadow: 0 1px 2px oklch(from var(--shadow-ink) l c h / 0.47); background: linear-gradient(transparent, oklch(from var(--media-scrim) l c h / 0.72)); opacity: var(--label); white-space: nowrap; overflow: clip; text-overflow: ellipsis; pointer-events: none; }
+.p-tile__corner { position: absolute; inset-block-start: 0; z-index: 2; display: grid; place-items: center; inline-size: var(--size-touch); block-size: var(--size-touch); padding: 0; border: 0; background: none; color: var(--on-media); opacity: var(--chrome); }
+.p-tile__corner[data-at="start"] { inset-inline-start: 0; font-weight: 600; font-variant-numeric: tabular-nums; text-shadow: 0 0 4px oklch(from var(--media-scrim) l c h / 0.7); }
+.p-tile__corner[data-at="end"] { inset-inline-end: 0; }
+.p-tile__corner:focus-visible { outline-offset: -4px; }
+.p-tile__circle { display: grid; place-items: center; inline-size: 22px; block-size: 22px; border: 1.5px solid var(--on-media); border-radius: var(--radius-full); background: oklch(from var(--media-scrim) l c h / 0.12); box-shadow: 0 1px 3px oklch(from var(--shadow-ink) l c h / 0.4); }
+.p-tile[aria-selected="true"] .p-tile__circle { background: var(--primary); }
+.p-tile .p-tooltip { inset-block: calc(var(--size-touch) + var(--space-4xs)) auto; inset-inline: var(--space-3xs) auto; }
+.p-tile .p-tip-anchor { position: static; }
+@media (prefers-reduced-motion: no-preference) { .p-tile :is(.p-tile__shade, .p-tile__name, .p-tile__corner) { transition: opacity var(--dur-hover) var(--ease-out); } }
+/* Switch (board 08) */
+.p-switch { position: relative; flex: none; inline-size: 32px; block-size: 18px; margin: 0; padding: 0; border: 0; border-radius: var(--radius-full); background: color-mix(in oklch, var(--text) 22%, transparent); }
+.p-switch::after { content: ""; position: absolute; inset-block-start: 2px; inset-inline-start: 2px; inline-size: 14px; block-size: 14px; border-radius: var(--radius-full); background: var(--on-media); box-shadow: 0 1px 2px oklch(0% 0 none / 0.3); }
+.p-switch[aria-checked="true"] { background: var(--primary); }
+.p-switch[aria-checked="true"]::after { translate: 14px 0; }
+.p-switch:active { background: color-mix(in oklch, var(--text) 32%, transparent); }
+.p-switch[aria-checked="true"]:active { background: var(--primary-hover); }
+@media (hover: hover) and (pointer: fine) { .p-switch:hover { background: color-mix(in oklch, var(--text) 32%, transparent); } .p-switch[aria-checked="true"]:hover { background: var(--primary-hover); } }
+@media (prefers-reduced-motion: no-preference) { .p-switch { transition: background-color var(--dur-press) ease; } .p-switch::after { transition: translate var(--dur-menu) var(--ease-out); } }
+.p-spinner { inline-size: 12px; block-size: 12px; border: 2px solid var(--control-line); border-block-start-color: var(--primary); border-radius: 50%; animation: spin 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .p-spinner { animation-duration: 2.4s; } }
+@keyframes spin { to { rotate: 1turn; } }
+/* Options the screen needs: a round field (search), a group of joined buttons, a plain-ink button, round chips */
+.p-field[data-shape="round"] { border-radius: var(--radius-full); padding-inline-start: calc(var(--space-s) + 18px + var(--space-xs)); }
+.p-field[data-size="touch"] { block-size: var(--size-touch); }
+.p-field-icon { position: relative; display: block; }
+.p-field-icon > .icon { position: absolute; inset-block: 0; inset-inline-start: var(--space-s); margin-block: auto; inline-size: 18px; block-size: 18px; color: var(--muted); pointer-events: none; }
+textarea.p-field { block-size: auto; min-block-size: 92px; padding-block: var(--space-xs); line-height: 1.5; resize: vertical; }
+.p-field[data-look="inline"] { background: transparent; box-shadow: none; }
+@media (hover: hover) and (pointer: fine) { .p-field[data-look="inline"]:hover:not(:focus) { background: var(--hover); } }
+.p-group { display: flex; }
+.p-group > .p-button { border-radius: 0; background: var(--surface-input); box-shadow: inset 0 0 0 1px var(--control-line); }
+.p-group > .p-button + .p-button { margin-inline-start: -1px; }
+.p-group > .p-button:first-child { border-start-start-radius: var(--radius-dialog); border-end-start-radius: var(--radius-dialog); }
+.p-group > .p-button:last-child { border-start-end-radius: var(--radius-dialog); border-end-end-radius: var(--radius-dialog); }
+.p-group > .p-button:focus-visible { z-index: 1; }
+.p-button[data-tone="plain"] { background: transparent; box-shadow: none; color: inherit; font-weight: 500; }
+.p-button[data-tone="plain"]:active, .p-button[data-tone="plain"][aria-expanded="true"] { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .p-button[data-tone="plain"]:hover:not(:disabled) { background: var(--hover); } }
+.p-button[data-tone="plain"][data-ink="danger"] { color: var(--danger-fg); }
+.p-button[data-shape="round"] { border-radius: var(--radius-full); font-weight: 400; }
+.p-button[data-shape="round"][aria-checked="true"] { font-weight: 600; }
+.p-button:disabled { background: var(--surface-subtle); color: var(--muted); box-shadow: none; cursor: default; }
+.p-button[data-place="picture"] { background: oklch(from var(--media-scrim) l c h / 0.62); color: var(--on-media); box-shadow: none; }
+@media (hover: hover) and (pointer: fine) { .p-button[data-place="picture"]:hover { background: oklch(from var(--media-scrim) l c h / 0.85); } }
+.p-button[data-place="picture"]:active { background: oklch(from var(--media-scrim) l c h / 0.85); }
+.p-menu[data-from="start"] { inset-inline: 0 auto; inset-block-start: calc(100% - var(--space-xs)); }
+
+/* Media organism, built from the parts above: layout values only */
+.m-pane { container-type: inline-size; display: flex; flex-direction: column; flex: 1; }
+.m-bar { position: sticky; inset-block-start: 0; z-index: 5; background: var(--panel-surface); padding: var(--space-s); display: grid; grid-template-columns: minmax(0, 1fr) fit-content(45%); gap: var(--space-xs); align-items: center; }
+@container (width <= 540px) { .m-bar { grid-template-columns: minmax(0, 1fr) fit-content(60%); } }
+.m-bar .p-group > .p-button { min-block-size: var(--size-touch); min-inline-size: var(--size-touch); padding-inline: 0; }
+.m-bar .p-group > .p-button[data-filter] { padding-inline: var(--space-s); gap: var(--space-3xs); font-weight: 500; }
+.m-bar [data-filter] span:first-child { color: var(--muted); font-weight: 400; }
+.m-browse { padding: var(--space-3xs) var(--space-s) var(--space-s); container: m-browse / inline-size; flex: 1; }
+.p-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4xs); }
+@container m-browse (width >= 520px) { .p-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container m-browse (width >= 800px) { .p-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.m-selbar { position: sticky; inset-block-end: var(--space-xs); z-index: 4; display: flex; align-items: center; gap: var(--space-3xs); padding: var(--space-3xs); margin-block-start: var(--space-s); border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--panel-surface); box-shadow: var(--shadow-small); }
+.m-selbar [data-ink="danger"] { margin-inline-start: auto; }
+@container (width <= 560px) { .m-selbar [data-wide] { display: none; } }
+.m-sheet { padding: var(--space-xs) var(--space-s) var(--space-l); display: flex; flex-direction: column; gap: var(--space-xs); container: m-detail / inline-size; flex: 1; }
+.m-sheet__head { display: flex; align-items: center; gap: var(--space-3xs); }
+.m-sheet__head h3 { margin: 0; font-size: var(--type-title); }
+.m-detail { display: grid; gap: var(--space-m); --stage: color-mix(in oklch, var(--panel-surface), var(--surface-subtle)); }
+.m-preview { position: relative; margin: 0; border-radius: var(--radius-dialog); background: var(--stage); display: grid; place-items: center; block-size: 260px; padding: var(--space-m); }
+.m-preview .pic { block-size: 100%; aspect-ratio: 3 / 4; max-inline-size: 100%; border-radius: 2px; }
+@container m-detail (width >= 720px) { .m-detail { grid-template-columns: minmax(0, 1fr) clamp(300px, 34cqi, 400px); gap: var(--space-l); align-items: start; } .m-preview { block-size: 420px; padding: var(--space-l); } }
+.m-preview > .p-button { position: absolute; inset-block-start: var(--space-xs); inset-inline-end: var(--space-xs); }
+.m-title { font-size: var(--type-title); font-weight: 600; block-size: 36px; margin-inline: calc(var(--space-xs) * -1); inline-size: calc(100% + var(--space-m)); }
+.m-facts { margin: 0; color: var(--muted); font-size: var(--type-small); }
+.m-actions { position: relative; display: flex; flex-wrap: wrap; gap: var(--space-xs); padding-block: var(--space-s) var(--space-m); }
+.m-section { display: grid; gap: var(--space-xs); padding-block: var(--space-m); border-block-start: 1px solid var(--control-line); }
+.m-section h4 { margin: 0; font-size: var(--type-base); display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-xs); }
+.m-section h4 span { color: var(--muted); font-size: var(--type-small); font-weight: 400; }
+.m-hint { margin: 0; color: var(--muted); font-size: var(--type-small); }
+.m-switch-row { display: grid; grid-template-columns: 1fr auto; gap: var(--space-4xs) var(--space-s); min-block-size: var(--size-touch); align-items: center; }
+.m-switch-row .p-switch { grid-row: 1 / span 2; grid-column: 2; }
+.m-chips { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.m-chips .p-button[data-new] { box-shadow: inset 0 0 0 1px var(--control-line); background: transparent; color: var(--muted); font-weight: 400; outline: 1px dashed var(--control-line); outline-offset: -1px; }
+.m-foot { position: sticky; inset-block-end: 0; display: flex; align-items: center; gap: var(--space-xs); padding-block: var(--space-s); border-block-start: 1px solid var(--control-line); background: var(--panel-surface); }
+.m-foot p { margin: 0 auto 0 0; font-weight: 600; }
+.m-compare { display: grid; gap: var(--space-xs); }
+.m-compare > div { display: grid; grid-template-columns: 64px 1fr; gap: var(--space-s); align-items: center; }
+.m-compare .pic { inline-size: 64px; aspect-ratio: 1; border-radius: var(--radius-small); }
+.m-shows { margin: 0; padding: var(--space-xs) var(--space-s); border-radius: var(--radius-panel); background: var(--surface-card); }
+.m-picker { inline-size: min(960px, 100%); padding: 0; gap: 0; max-block-size: 100%; display: flex; flex-direction: column; container-type: inline-size; }
+.m-picker header { display: flex; align-items: center; gap: var(--space-xs); padding: var(--space-s) var(--space-s) var(--space-xs) var(--space-l); }
+.m-picker header > div { flex: 1; min-inline-size: 0; }
+.m-picker h2 { margin: 0; font-size: var(--type-title); }
+.m-picker .m-bar { position: static; padding: var(--space-3xs) var(--space-l); background: transparent; }
+.m-picker .m-browse { padding: var(--space-s) var(--space-l); overflow: auto; flex: 1 1 auto; min-block-size: 0; }
+.m-choice { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-s); padding: var(--space-s) var(--space-l); border-block-start: 1px solid var(--line); }
+.m-chosen { display: flex; align-items: center; gap: var(--space-xs); min-block-size: var(--size-touch); flex: 1; min-inline-size: 0; }
+.m-chosen .pic { inline-size: 44px; block-size: 44px; border-radius: var(--radius-small); flex: none; }
+.m-chosen b { overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+@container (width <= 580px) { .m-picker header { padding: var(--space-xs) var(--space-3xs) var(--space-3xs) var(--space-m); } .m-picker .m-bar, .m-picker .m-browse { padding-inline: var(--space-s); } .m-choice { flex-direction: column; align-items: stretch; gap: var(--space-xs); padding: var(--space-xs) var(--space-s); } .m-choice .p-row > * { flex: 1; } }
+.p-backdrop:has(.m-picker), .today .picker-backdrop { grid-template-rows: minmax(0, 1fr); }
+.m-picker .p-tile[aria-selected="true"]::after { box-shadow: inset 0 0 0 3px var(--primary); }
+</style>
+</head>
+<body data-mode="after">
+<main>
+  <header>
+    <h1>Media, rebuilt from catalogue parts <span class="tag">mock-up for Tuesday 10 Nov</span></h1>
+    <p class="intro">This is the Media tab, where every picture, video and file of the site lives, with File details for one file and the picker that opens when you choose an image for a page. Nothing it does changes. After shows the same screens built only from the approved parts. Both views already give the feedback approved in mock-up 09: no messages, the result shows on the control or the picture.</p>
+  </header>
+
+  <div class="strip">
+    <span class="seg" role="group" aria-label="Compare"><button type="button" data-mode-set="today" aria-pressed="false">Today</button><button type="button" data-mode-set="after" aria-pressed="true">After</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button type="button" data-theme-set="light dark" aria-pressed="true">System</button><button type="button" data-theme-set="light" aria-pressed="false">Light</button><button type="button" data-theme-set="dark" aria-pressed="false">Dark</button></span>
+  </div>
+  <p class="summary today">Today: the Media tab as it is now, copied from the editor's stylesheets.</p>
+  <p class="summary after">Same colours, type and layout. About 30 button styles become 3 parts, 15 corner sizes become the 5 shared ones, 9 field looks become 1 field and 1 switch, 9 pill and label looks become 1 badge and 1 tip, and 6 focus-ring styles become 1.</p>
+
+  <section class="demo" aria-labelledby="demo-h">
+    <h2 id="demo-h">Demo steps (not part of the editor)</h2>
+    <div class="buttons">
+      <button type="button" data-step="hover">1 Point at a picture</button>
+      <button type="button" data-step="select">2 Select three</button>
+      <button type="button" data-step="details">3 Open File details</button>
+      <button type="button" data-step="copy">4 Copy path</button>
+      <button type="button" data-step="download">5 Download</button>
+      <button type="button" data-step="describe">6 Describe it</button>
+      <button type="button" data-step="replace">7 Replace everywhere</button>
+      <button type="button" data-step="undo">8 Undo the replace</button>
+      <button type="button" data-step="picker">9 Choose in the picker</button>
+      <button type="button" data-step="reset">Start again</button>
+    </div>
+    <p class="now" id="now" aria-live="polite"></p>
+  </section>
+
+  <div class="stage" id="stage"></div>
+  <ul class="changes after">
+    <li>Media's round buttons become the shared button</li><li>back and close become the shared icon button</li><li>search keeps its round shape as a field option</li>
+    <li>one switch, one chip, one menu</li><li>the use count's label becomes the shared tip</li><li>one focus ring</li><li>one dialog backdrop</li><li>spacing on the shared scale</li>
+  </ul>
+</main>
+
+<script>
+const P = {
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  dots: '<circle cx="6" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
+  check: '<path d="m5 12 5 5 9-10"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
+};
+const icon = (n, s) => `<svg class="icon"${s ? ` style="inline-size:${s}px;block-size:${s}px"` : ""} viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const FILES = [
+  ["loaves.jpg", 1, 2], ["sky-field.jpg", 2, 1], ["garden-flowers.jpg", 3, 3], ["crust-close-up.jpg", 4, 0], ["flour-bowl.jpg", 5, 1], ["harbour.jpg", 6, 2],
+  ["tomato.jpg", 7, 1], ["bread-shelf.jpg", 8, 4], ["hills.jpg", 9, 0], ["morning-rolls.jpg", 4, 1], ["studio-desk.jpg", 6, 1], ["rye.jpg", 1, 0],
+];
+
+function freshState() {
+  return { mode: document.body.dataset.mode || "after", view: "grid", hover: null, selected: [], file: 0, pic: 1, replaced: false,
+    menu: false, item: null, desc: "", savedDesc: "", decorative: false, keep: false, chips: { Bakery: true, Garden: false },
+    picker: null, fresh: new Set() };
+}
+let S = freshState();
+const say = (t) => { document.getElementById("now").textContent = t; };
+const A = () => S.mode === "after";
+const usageWords = (n) => n === 0 ? "No uses found" : `Used on ${n} page${n === 1 ? "" : "s"}`;
+
+/* ---------- One bar ---------- */
+function bar(inPicker) {
+  if (!A()) return `<div class="bar"><div class="search">${icon("search")}<input type="search" placeholder="Search" aria-label="Search media"></div>
+    <div class="tools"><button type="button" class="filter" aria-haspopup="menu" aria-label="Filter: All"><span class="filter-name">Filter</span><span>All</span></button><button type="button" aria-label="Add files" title="Add files">${icon("plus", 22)}</button>${inPicker ? "" : `<button type="button" aria-label="More" aria-haspopup="menu">${icon("dots", 24)}</button>`}</div></div>`;
+  return `<div class="m-bar"><span class="p-field-icon">${icon("search")}<input class="p-field" type="search" data-shape="round" data-size="touch" placeholder="Search" aria-label="Search media"></span>
+    <div class="p-group"><button type="button" class="p-button p-press" data-filter aria-haspopup="menu" aria-label="Filter: All"><span>Filter</span><span>All</span></button><button type="button" class="p-button p-press" aria-label="Add files">${icon("plus", 20)}</button>${inPicker ? "" : `<button type="button" class="p-button p-press" aria-label="More" aria-haspopup="menu">${icon("dots", 20)}</button>`}</div></div>`;
+}
+
+/* ---------- Tiles ---------- */
+function tile(f, i, picker) {
+  const [name, pic, uses] = f, sel = picker ? S.picker.chosen === i : S.selected.includes(i), hov = S.hover === i;
+  const p = i === 0 && S.replaced ? "new" : pic;
+  const showTip = hov && !picker;
+  if (!A()) return `<article class="card${sel ? (picker ? " is-chosen" : " is-selected") : ""}${hov ? " is-hover" : ""}" data-tile="${i}">
+      <span class="pic pic-${p}"></span><span class="shade"></span>
+      <button type="button" class="open" aria-label="${picker ? "Choose" : "Details for"} media/${esc(name)}"></button>
+      <span class="name">${esc(name)}</span>
+      ${picker ? "" : `<button type="button" class="usage" aria-haspopup="dialog" aria-label="${usageWords(uses)}">${uses}</button>${showTip ? `<span class="usage-label">${usageWords(uses)}</span>` : ""}`}
+      <label class="select" aria-label="Select media/${esc(name)}"><i>${sel ? icon("check", 14) : ""}</i></label></article>`;
+  return `<article class="p-tile${hov ? " is-hover" : ""}" data-tile="${i}" aria-selected="${sel}">
+      <span class="pic pic-${p}"></span><span class="p-tile__shade"></span>
+      <button type="button" class="p-tile__open" aria-label="${picker ? "Choose" : "Details for"} media/${esc(name)}"></button>
+      <span class="p-tile__name">${esc(name)}</span>
+      ${picker ? "" : `<span class="p-tip-anchor"><button type="button" class="p-tile__corner" data-at="start" aria-haspopup="dialog" aria-label="${usageWords(uses)}">${uses}</button><span class="p-tooltip${showTip ? " is-shown" : ""}" role="tooltip"${showTip ? ' style="opacity:1"' : ""}>${usageWords(uses)}</span></span>`}
+      <span class="p-tile__corner" data-at="end" role="checkbox" aria-checked="${sel}" aria-label="Select media/${esc(name)}"><i class="p-tile__circle">${sel ? icon("check", 14) : ""}</i></span></article>`;
+}
+function grid(picker) {
+  const list = FILES.map((f, i) => tile(f, i, picker)).join("");
+  const selecting = !picker && S.selected.length > 0;
+  return A() ? `<div class="p-tiles" role="grid"${selecting ? " data-selecting" : ""}>${list}</div>` : `<div class="grid${selecting ? " has-selection" : ""}">${list}</div>`;
+}
+function selectionBar() {
+  const n = S.selected.length; if (!n) return "";
+  if (!A()) return `<div class="bulk" role="group" aria-label="Selected files"><button type="button" class="count" data-act="clear" aria-label="${n} selected. Clear selection">${icon("x", 16)}${n}<span class="wide"> selected</span></button><button type="button" aria-haspopup="menu">Add to collection</button><button type="button" class="wide remove">Remove files</button><button type="button" class="button secondary more" aria-label="More for selected files">${icon("dots", 20)}</button></div>`;
+  const enter = S.fresh.has("bar") ? " p-enter" : "";
+  return `<div class="m-selbar${enter}" role="group" aria-label="Selected files"><button type="button" class="p-button p-press" data-tone="plain" data-act="clear" aria-label="${n} selected. Clear selection" style="font-weight:600">${icon("x")}${n}<span data-wide> selected</span></button><button type="button" class="p-button p-press" data-tone="plain" aria-haspopup="menu">Add to collection</button><button type="button" class="p-button p-press" data-tone="plain" data-ink="danger" data-wide>Remove files</button><span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" aria-label="More for selected files">${icon("dots")}</button><span class="p-tooltip" role="tooltip">More</span></span></div>`;
+}
+
+/* ---------- File details ---------- */
+function detailMenu() {
+  if (!S.menu) return "";
+  const copy = S.item === "copy", dl = S.item === "download";
+  if (!A()) return `<div class="pages-menu" role="menu" aria-label="More for this file"><button type="button" class="pages-menu__item" role="menuitem" data-act="copy">${copy ? "Copied" : "Copy path"}</button><button type="button" class="pages-menu__item" role="menuitem" data-act="download"${dl ? " aria-disabled=\"true\"" : ""}>${dl ? '<span class="spinner"></span>Preparing…' : "Download"}</button><button type="button" class="pages-menu__item row-menu__danger" role="menuitem">Remove…</button></div>`;
+  return `<div class="p-menu${S.fresh.has("menu") ? " p-enter" : ""}" data-from="start" role="menu" aria-label="More for this file">
+    <button type="button" class="p-menu-item" role="menuitem" data-act="copy"${copy ? ' data-state="done"' : ""}><span style="display:inline-flex;gap:6px;align-items:center">${copy ? icon("check") + "Copied" : "Copy path"}</span><span></span></button>
+    <button type="button" class="p-menu-item" role="menuitem" data-act="download"${dl ? ' aria-disabled="true"' : ""}><span style="display:inline-flex;gap:6px;align-items:center">${dl ? '<span class="p-spinner"></span>Preparing…' : "Download"}</span><span></span></button>
+    <div class="p-menu-sep" role="separator"></div><button type="button" class="p-menu-item" role="menuitem" data-tone="danger"><span>Remove…</span><span></span></button></div>`;
+}
+function details() {
+  const [name] = FILES[S.file], p = S.replaced ? "new" : FILES[S.file][1], dirty = S.desc !== S.savedDesc;
+  const descState = S.savedDesc ? "" : S.decorative ? "Decorative" : "Not described yet";
+  const facts = S.replaced ? "JPG · 2400 × 3200 · 1.12 MB · media" : "JPG · 3024 × 4032 · 1.61 MB · media";
+  const sw = (on, label, act) => A() ? `<button type="button" class="p-switch" role="switch" aria-checked="${on}" aria-label="${label}" data-act="${act}"></button>` : `<button type="button" class="switch" role="switch" aria-checked="${on}" aria-label="${label}" data-act="${act}"></button>`;
+  const chips = Object.entries(S.chips).map(([c, on]) => A()
+    ? `<button type="button" class="p-button p-press" data-size="compact" data-shape="round" role="checkbox" aria-checked="${on}" data-chip="${c}">${on ? icon("check", 14) : ""}${c}</button>`
+    : `<span class="chip" role="checkbox" aria-checked="${on}" data-chip="${c}">${on ? icon("check", 14) : ""}${c}</span>`).join("");
+  if (!A()) return `<div class="sheet"><div class="sheet-head"><button type="button" class="round-icon" data-act="back" aria-label="Back">${icon("back", 20)}</button><h3>File details</h3></div>
+    <div class="detail"><figure class="preview"><span class="pic pic-${p}" role="img" aria-label="${esc(name)}"></span>${S.replaced ? `<button type="button" class="undo-on-pic" data-act="undo">${icon("undo")}Undo</button>` : ""}</figure>
+    <form class="info" onsubmit="return false"><input class="title" value="${esc(name)}" aria-label="File name"><p class="facts">${facts}</p><p class="facts">Added 14 Oct</p>
+      <div class="actions"><button type="button" class="button secondary" data-act="replace">Replace everywhere…</button><button type="button" class="button secondary">Optimise…</button><button type="button" class="button secondary detail-more" data-act="more" aria-label="More for this file" aria-expanded="${S.menu}">${icon("dots", 20)}</button>${detailMenu()}</div>
+      <section class="section"><h4>Description<span>${descState}</span></h4><textarea rows="3" aria-label="Description">${esc(S.desc)}</textarea><p class="hint">Read aloud to people who can't see the picture.</p>
+        <div class="switch-row"><span>Decorative</span>${sw(S.decorative, "Decorative", "decorative")}<p class="hint">No description: screen readers skip it.</p></div></section>
+      <section class="section"><h4>Collections</h4><div class="chips">${chips}<span class="chip new">+ New collection</span></div></section>
+      <section class="section"><div class="switch-row"><span>Always keep</span>${sw(S.keep, "Always keep", "keep")}<p class="hint">Never suggested for clean-up. For files used outside the site.</p></div></section>
+      ${dirty ? `<footer class="foot"><p>Unsaved changes</p><button type="button" class="button secondary" data-act="discard">Discard</button><button type="button" class="button primary" data-act="save">Save details</button></footer>` : ""}
+    </form></div></div>`;
+  return `<div class="m-sheet"><div class="m-sheet__head"><span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" data-act="back" aria-label="Back">${icon("back")}</button><span class="p-tooltip" role="tooltip" style="inset-inline:0 auto">Back</span></span><h3>File details</h3></div>
+    <div class="m-detail"><figure class="m-preview"><span class="pic pic-${p}" role="img" aria-label="${esc(name)}"></span>${S.replaced ? `<button type="button" class="p-button p-press" data-place="picture" data-act="undo">${icon("undo")}Undo</button>` : ""}</figure>
+    <form onsubmit="return false"><input class="p-field m-title" data-look="inline" value="${esc(name)}" aria-label="File name"><p class="m-facts">${facts}</p><p class="m-facts">Added 14 Oct</p>
+      <div class="m-actions"><button type="button" class="p-button p-press" data-act="replace">Replace everywhere…</button><button type="button" class="p-button p-press">Optimise…</button><span class="p-tip-anchor"><button type="button" class="p-icon-button p-press" style="box-shadow:inset 0 0 0 1px var(--line);background:var(--surface)" data-act="more" aria-label="More for this file" aria-haspopup="menu" aria-expanded="${S.menu}">${icon("dots")}</button><span class="p-tooltip" role="tooltip" style="inset-inline:0 auto">More</span></span>${detailMenu()}</div>
+      <section class="m-section"><h4>Description<span>${descState}</span></h4><textarea class="p-field${S.typing ? " is-focus" : ""}" rows="3" aria-label="Description">${esc(S.desc)}</textarea><p class="m-hint">Read aloud to people who can't see the picture.</p>
+        <div class="m-switch-row"><span>Decorative</span>${sw(S.decorative, "Decorative", "decorative")}<p class="m-hint">No description: screen readers skip it.</p></div></section>
+      <section class="m-section"><h4>Collections</h4><div class="m-chips">${chips}<button type="button" class="p-button p-press" data-size="compact" data-shape="round" data-new>+ New collection</button></div></section>
+      <section class="m-section"><div class="m-switch-row"><span>Always keep</span>${sw(S.keep, "Always keep", "keep")}<p class="m-hint">Never suggested for clean-up. For files used outside the site.</p></div></section>
+      ${dirty ? `<footer class="m-foot"><p>Unsaved changes</p><button type="button" class="p-button p-press" data-act="discard">Discard</button><button type="button" class="p-button p-press" data-tone="primary" data-act="save">Save details</button></footer>` : ""}
+    </form></div></div>`;
+}
+function replaceScreen() {
+  const [name, pic, uses] = FILES[S.file];
+  const body = (now, nw) => `<div class="${A() ? "m-compare" : "compare"}"><div class="${A() ? "" : "compare-row"}"><span class="pic pic-${pic}"></span><span><b>Now</b><br><span class="${A() ? "m-hint" : "muted"}">${usageWords(uses)} · 3024 × 4032</span></span></div><div class="${A() ? "" : "compare-row"}"><span class="pic pic-new"></span><span><b>New</b><br><span class="${A() ? "m-hint" : "muted"}">No page uses it · 2400 × 3200</span></span></div></div>
+      <p class="${A() ? "m-shows" : "shows-on"}">Shows on: Home and About</p><p class="${A() ? "m-hint" : "hint"}">Same name and address, so links from other sites show it too.</p><p class="${A() ? "m-hint" : "hint"}">The old picture goes to Recently removed for 30 days.</p>`;
+  if (!A()) return `<div class="sheet"><div class="sheet-head"><button type="button" class="round-icon" data-act="details" aria-label="Back">${icon("back", 20)}</button><h3>Replace ${esc(name)} everywhere?</h3></div>${body()}
+    <div class="sheet-actions"><button type="button" class="button secondary" data-act="details">Cancel</button><button type="button" class="button primary" data-act="doreplace">Replace everywhere</button></div></div>`;
+  return `<div class="m-sheet"><div class="m-sheet__head"><button type="button" class="p-icon-button p-press" data-act="details" aria-label="Back">${icon("back")}</button><h3>Replace ${esc(name)} everywhere?</h3></div>${body()}
+    <div class="m-foot" style="justify-content:end"><button type="button" class="p-button p-press" data-size="touch" data-act="details">Cancel</button><button type="button" class="p-button p-press" data-size="touch" data-tone="primary" data-act="doreplace">Replace everywhere</button></div></div>`;
+}
+function picker() {
+  if (!S.picker) return "";
+  const c = S.picker.chosen, chosen = c == null ? null : FILES[c];
+  const useLabel = chosen ? "Use image" : "Use";
+  if (!A()) return `<div class="picker-backdrop"><div class="picker media-library" role="dialog" aria-modal="true" aria-labelledby="pk-h">
+      <header><div><h2 id="pk-h">Choose image</h2><p class="muted">Home · Studio desk</p></div><button type="button" class="round-icon" data-act="closepicker" aria-label="Close">${icon("x", 20)}</button></header>
+      ${bar(true)}<div class="browse">${grid(true)}</div>
+      <footer class="choice"><div class="chosen">${chosen ? `<span class="pic pic-${chosen[1]}"></span><b>${esc(chosen[0])}</b><button type="button" class="text-button">File details</button>` : ""}</div>
+        <div class="choice-actions"><button type="button" class="button secondary" data-act="closepicker">Cancel</button><button type="button" class="button primary" data-act="use"${chosen ? "" : " disabled"}>${useLabel}</button></div></footer></div></div>`;
+  return `<div class="p-backdrop${S.fresh.has("picker") ? " p-enter" : ""}"><div class="p-dialog m-picker" role="dialog" aria-modal="true" aria-labelledby="pk-h">
+      <header><div><h2 id="pk-h">Choose image</h2><p class="m-hint">Home · Studio desk</p></div><button type="button" class="p-icon-button p-press" data-act="closepicker" aria-label="Close">${icon("x")}</button></header>
+      ${bar(true)}<div class="m-browse">${grid(true)}</div>
+      <footer class="m-choice"><div class="m-chosen">${chosen ? `<span class="pic pic-${chosen[1]}"></span><b>${esc(chosen[0])}</b><button type="button" class="p-button p-press" data-size="compact" data-tone="quiet">File details</button>` : ""}</div>
+        <div class="p-row"><button type="button" class="p-button p-press" data-size="touch" data-act="closepicker">Cancel</button><button type="button" class="p-button p-press" data-size="touch" data-tone="primary" data-act="use"${chosen ? "" : " disabled"}>${useLabel}</button></div></footer></div></div>`;
+}
+function render() {
+  const stage = document.getElementById("stage");
+  const inner = S.view === "grid" ? (A() ? `${bar()}<div class="m-browse">${grid()}${selectionBar()}</div>` : `${bar()}<div class="browse">${grid()}${selectionBar()}</div>`)
+    : S.view === "details" ? details() : replaceScreen();
+  stage.innerHTML = `<div class="pane-frame"><div class="pane-tabs" aria-hidden="true"><span>Pages</span><span aria-current="true">Media</span><span>Files</span></div>
+    ${A() ? `<section class="after m-pane" role="region" aria-label="Media">${inner}</section>` : `<section class="today media-library" role="region" aria-label="Media">${inner}</section>`}
+    ${A() ? `<div class="after" style="display:contents">${picker()}</div>` : `<div class="today media-library" style="display:contents">${picker()}</div>`}</div>`;
+  S.fresh.clear();
+}
+
+/* ---------- Steps ---------- */
+let running = 0, stepId = 0;
+const wait = async (ms) => { await sleep(ms); if (stepId !== running) throw new Error("stopped"); };
+const toGrid = () => { S.view = "grid"; S.menu = false; S.item = null; S.picker = null; };
+const toDetails = () => { S.view = "details"; S.menu = false; S.item = null; S.picker = null; S.hover = null; S.selected = []; };
+const STEPS = {
+  async hover() { toGrid(); S.selected = []; S.hover = 2; render(); say("Pointing at a picture brings in its name, its use count with a tip, and the select circle. On touch they always show."); },
+  async select() {
+    toGrid(); S.hover = null; S.selected = []; render();
+    for (const i of [0, 2, 5]) { await wait(350); S.selected.push(i); if (S.selected.length === 1) S.fresh.add("bar"); render(); }
+    say("Selecting shows every circle and the selection bar at the bottom.");
+  },
+  async details() { toDetails(); render(); say("A tap on a picture opens File details."); },
+  async copy() {
+    toDetails(); render(); await wait(300); S.menu = true; S.fresh.add("menu"); render(); await wait(600);
+    S.item = "copy"; render(); say("Copy path: the item itself says Copied. No message."); await wait(1300); S.menu = false; S.item = null; render();
+  },
+  async download() {
+    toDetails(); render(); await wait(300); S.menu = true; S.fresh.add("menu"); render(); await wait(600);
+    S.item = "download"; render(); say("Download: the item says Preparing… until the file is ready."); await wait(1800); S.menu = false; S.item = null; render(); say("The download has started.");
+  },
+  async describe() {
+    toDetails(); S.desc = S.savedDesc; S.typing = true; render(); await wait(300);
+    const text = "Three round loaves cooling on a wooden board";
+    for (let i = 1; i <= text.length; i += 2) { S.desc = text.slice(0, i); render(); await wait(35); }
+    S.desc = text; render(); say("Typing shows the save bar: Unsaved changes, Discard, Save details."); await wait(1200);
+    S.savedDesc = S.desc; S.typing = false; render(); say("Save details: the bar goes and the description stays. No message.");
+  },
+  async replace() {
+    toDetails(); S.replaced = false; render(); await wait(400); S.view = "replace"; render(); say("Replace everywhere… shows what changes before it happens (after choosing the new picture in the picker)."); await wait(1600);
+    S.view = "details"; S.replaced = true; render(); say("Replaced: the new picture is the feedback. Undo stays on the picture until you leave.");
+  },
+  async undo() {
+    if (!S.replaced) { toDetails(); S.replaced = true; render(); await wait(700); }
+    S.replaced = false; render(); say("Undo on the picture brings the old one back.");
+  },
+  async picker() {
+    toGrid(); S.selected = []; S.hover = null; S.picker = { chosen: null }; S.fresh.add("picker"); render(); say("Choosing an image for a page opens the picker over the page."); await wait(900);
+    S.picker.chosen = 10; render(); say("A tap chooses: the picture gets a ring and Use becomes Use image."); await wait(1400);
+    S.picker = null; render(); say("Use puts it on the page; the picture on the page is the feedback.");
+  },
+  async reset() { const m = S.mode; S = freshState(); S.mode = m; render(); say(""); },
+};
+document.querySelector(".demo").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-step]"); if (!b) return;
+  const id = stepId = ++running; S.typing = false;
+  document.querySelectorAll("[data-step]").forEach((o) => o.setAttribute("aria-pressed", String(o === b && b.dataset.step !== "reset")));
+  try { await STEPS[b.dataset.step](); } catch (err) { if (err.message !== "stopped") throw err; }
+  if (id === running) b.setAttribute("aria-pressed", "false");
+});
+document.getElementById("stage").addEventListener("click", async (e) => {
+  const t = e.target, act = t.closest("[data-act]")?.dataset.act;
+  if (act === "more") { S.menu = !S.menu; S.item = null; if (S.menu) S.fresh.add("menu"); render(); return; }
+  if (act === "copy") { S.item = "copy"; render(); await sleep(1300); S.menu = false; S.item = null; render(); return; }
+  if (act === "download") { S.item = "download"; render(); await sleep(1800); S.menu = false; S.item = null; render(); return; }
+  if (act === "back") { toGrid(); render(); return; }
+  if (act === "details") { S.view = "details"; render(); return; }
+  if (act === "replace") { S.view = "replace"; S.menu = false; render(); return; }
+  if (act === "doreplace") { S.view = "details"; S.replaced = true; render(); return; }
+  if (act === "undo") { S.replaced = false; render(); return; }
+  if (act === "decorative") { S.decorative = !S.decorative; render(); return; }
+  if (act === "keep") { S.keep = !S.keep; render(); return; }
+  if (act === "save") { S.savedDesc = S.desc; render(); return; }
+  if (act === "discard") { S.desc = S.savedDesc; render(); return; }
+  if (act === "clear") { S.selected = []; render(); return; }
+  if (act === "closepicker" || act === "use") { S.picker = null; render(); return; }
+  const chip = t.closest("[data-chip]"); if (chip) { S.chips[chip.dataset.chip] = !S.chips[chip.dataset.chip]; render(); return; }
+  const tl = t.closest("[data-tile]");
+  if (tl) {
+    const i = +tl.dataset.tile;
+    if (S.picker) { S.picker.chosen = i; render(); return; }
+    if (t.closest("[role=checkbox], .select")) { S.selected = S.selected.includes(i) ? S.selected.filter((x) => x !== i) : [...S.selected, i]; render(); return; }
+    if (t.closest(".open, .p-tile__open")) { S.file = i; toDetails(); S.file = i; render(); return; }
+  }
+  if (S.menu && !t.closest("[role=menu]")) { S.menu = false; render(); }
+});
+document.getElementById("stage").addEventListener("input", (e) => { if (e.target.matches("textarea")) { S.desc = e.target.value; const pos = e.target.selectionStart; render(); const ta = document.querySelector("#stage textarea"); ta.focus(); ta.setSelectionRange(pos, pos); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && (S.menu || S.picker)) { S.menu = false; S.picker = null; render(); } });
+document.querySelectorAll("[data-mode-set]").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.mode = S.mode = b.dataset.modeSet;
+  document.querySelectorAll("[data-mode-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+  render();
+}));
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  document.documentElement.style.colorScheme = b.dataset.themeSet;
+  document.querySelectorAll("[data-theme-set]").forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+}));
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,924 @@
+// Live rooms (ticket am-20, ADR 0003): real participants (src/live-room.ts)
+// talking through the relay's room class (worker/agent-relay.ts) in-process,
+// so every frame the relay sees is on record, with a fake clock for presence.
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { LIVE_AGENT_CHECK_MS, LiveRooms, liveRoomObjectName, type LiveSocket } from "../worker/agent-relay";
+import { forEachAwait, type AwaitRace } from "./support/await-race";
+import { LiveRoomClosed, openLiveRoom, type LiveClock, type LivePeer, type LiveRoomSocket } from "../src/live-room";
+import { editorTab, origin, repo, signIn, startWorker } from "./mcp-harness";
+import { LIVE_ACCESS_ENDED, LIVE_MESSAGE_LIMIT, LIVE_PING, LIVE_ROOM_CLOSED, liveRoomFile, readLiveClientMessage, type LiveAccess } from "../shared/live-room";
+
+const room = "a".repeat(64);
+const settle = async () => { for (let index = 0; index < 40; index++) await new Promise(resolve => setImmediate(resolve)); };
+/** Crypto runs off the event loop: wait (in real time) until a condition holds. */
+async function until(check: () => boolean, what: string) {
+  for (const started = Date.now(); !check(); await new Promise(resolve => setTimeout(resolve, 2)))
+    if (Date.now() - started > 3_000) assert.fail(`timed out waiting: ${what}`);
+}
+
+function fakeClock() {
+  let now = 0, next = 0;
+  const timers = new Map<number, { at: number; run(): void }>();
+  const clock: LiveClock = {
+    now: () => now,
+    setTimeout(run, delay) { const id = ++next; timers.set(id, { at: now + delay, run }); return id; },
+    clearTimeout(id) { timers.delete(id as number); },
+  };
+  return {
+    clock,
+    /** Timers still set: none once a room is closed. */
+    get pending() { return timers.size; },
+    async advance(ms: number) {
+      const end = now + ms;
+      for (;;) {
+        const due = [...timers].filter(([, timer]) => timer.at <= end).sort(([, a], [, b]) => a.at - b.at)[0];
+        if (!due) break;
+        now = due[1].at;
+        timers.delete(due[0]);
+        due[1].run();
+        // A heartbeat's encryption runs off the event loop: give it real time to land.
+        await new Promise(resolve => setTimeout(resolve, 15));
+      }
+      now = end;
+      await settle();
+    },
+  };
+}
+
+/** One relay, every frame through it on record: what reached it and what it sent. */
+/** `now`: the relay's clock (the fake clock in tests that time silence). */
+function relayHarness(now: () => number = () => Date.now()) {
+  // The runtime answers a socket's ping itself (setWebSocketAutoResponse): the relay only reads when.
+  const pinged = new Map<LiveSocket, number>();
+  const pingedAt = (socket: LiveSocket) => pinged.get(socket) ?? null;
+  let relay = new LiveRooms([], now, pingedAt);
+  const seen: (string | Uint8Array)[] = [];
+  const servers: LiveSocket[] = [];
+  const record = (message: string | ArrayBuffer) => seen.push(typeof message === "string" ? message : new Uint8Array(message.slice(0)));
+  function pair(access: LiveAccess, tag = room, rejoin?: string) {
+    const listeners = { message: [] as ((event: { data: unknown }) => void)[], close: [] as ((event: { code?: number }) => void)[] };
+    let attachment: unknown = null;
+    /** A vanished participant: its frames stop reaching the relay, and nobody is told. */
+    const link = { cut: false, joined: true };
+    /** What the relay sent this socket (text frames), and the code it closed it with. */
+    const server: LiveSocket & { readyState: number; texts: string[]; closedWith?: number } = {
+      readyState: 1,
+      texts: [],
+      send(message) {
+        record(message);
+        if (typeof message === "string") server.texts.push(message);
+        const data = typeof message === "string" ? message : message.slice(0);
+        setImmediate(() => { for (const listener of listeners.message) listener({ data }); });
+      },
+      close(code) {
+        if (server.readyState === 3) return;
+        server.readyState = 3;
+        server.closedWith = code;
+        setImmediate(() => { for (const listener of listeners.close) listener({ code }); });
+      },
+      serializeAttachment(value) { attachment = structuredClone(value); },
+      deserializeAttachment() { return structuredClone(attachment); },
+    };
+    const client: LiveRoomSocket = {
+      send(data) {
+        if (link.cut || server.readyState !== 1) return;
+        if (data === LIVE_PING) {
+          pinged.set(server, now());
+          setImmediate(() => { for (const listener of listeners.message) listener({ data: "pong" }); });
+          return;
+        }
+        record(data);
+        relay.message(server, typeof data === "string" ? data : data.slice(0));
+      },
+      close() {
+        if (server.readyState !== 1) return;
+        server.readyState = 3;
+        relay.leave(server);
+      },
+      addEventListener(type: "message" | "close", listener: never) { (listeners[type] as unknown[]).push(listener); },
+    };
+    /** The tab sees its socket drop (1006) before the relay does: the relay still counts it as open. */
+    const drop = () => { link.cut = true; for (const listener of listeners.close) listener({ code: 1006 }); };
+    // The Worker refuses before any socket exists (409); an agent's connect reports that as LiveRoomClosed.
+    link.joined = relay.admits(tag, access);
+    if (link.joined) { servers.push(server); relay.join(server, tag, access, rejoin === undefined ? {} : { rejoin }); }
+    return { client, server, link, drop };
+  }
+  return {
+    seen,
+    pair,
+    /** The Durable Object woke from hibernation: a fresh relay rebuilt from every socket the runtime still lists, closing ones included. */
+    wake() { relay = new LiveRooms(servers, now, pingedAt); },
+    get relay() { return relay; },
+  };
+}
+
+function participant(h: ReturnType<typeof relayHarness>, clock: LiveClock, access: LiveAccess = "editor") {
+  const got: string[] = [];
+  let peers: ReadonlyMap<string, LivePeer> = new Map();
+  let made: ReturnType<typeof h.pair> | undefined;
+  let closed = false;
+  const live = openLiveRoom({
+    repo: "lex/starter", branch: "main", file: "index.html", clock,
+    connect: async url => {
+      made = h.pair(access, room, new URL(url, origin).searchParams.get("rejoin") ?? undefined);
+      if (!made.link.joined) throw new LiveRoomClosed();
+      return made.client;
+    },
+    onMessage: bytes => got.push(new TextDecoder().decode(bytes)),
+    onPeers: next => { peers = next; },
+    onClosed: () => { closed = true; },
+  });
+  return { live, got, get peers() { return peers; }, get link() { return made!.link; }, get server() { return made!.server; }, drop: () => made!.drop(), get closed() { return closed; } };
+}
+
+/** Captures every room key made in memory, to prove it never crosses the relay. */
+async function capturingRoomKeys<T>(run: (keys: CryptoKey[]) => Promise<T>) {
+  const subtle = crypto.subtle, original = subtle.generateKey.bind(subtle);
+  const keys: CryptoKey[] = [];
+  Object.defineProperty(subtle, "generateKey", { configurable: true, value: async (...args: Parameters<typeof original>) => {
+    const key = await (original as (...input: unknown[]) => Promise<CryptoKey | CryptoKeyPair>)(...args);
+    if ("algorithm" in key && key.algorithm.name === "AES-GCM") keys.push(key);
+    return key;
+  } });
+  try { return await run(keys); }
+  finally { Reflect.deleteProperty(subtle, "generateKey"); }
+}
+const contains = (haystack: Uint8Array, needle: Uint8Array) => {
+  outer: for (let start = 0; start + needle.length <= haystack.length; start++) {
+    for (let index = 0; index < needle.length; index++) if (haystack[start + index] !== needle[index]) continue outer;
+    return true;
+  }
+  return false;
+};
+const b64u = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
+
+test("two participants exchange encrypted messages; the relay sees only ciphertext, public keys and wrapped keys", async () => {
+  await capturingRoomKeys(async keys => {
+    const { clock } = fakeClock();
+    const h = relayHarness();
+    const anna = participant(h, clock);
+    await anna.live.ready();
+    const lex = participant(h, clock);
+    await lex.live.ready();
+    assert.equal(keys.length, 1, "only the first one in makes the room key");
+    assert.equal(await anna.live.send(new TextEncoder().encode("Fresh bread every morning")), true);
+    assert.equal(await lex.live.send(new TextEncoder().encode("Come early for warm loaves")), true);
+    await until(() => lex.got.length > 0 && anna.got.length > 0, "both messages");
+    assert.deepEqual(lex.got, ["Fresh bread every morning"]);
+    assert.deepEqual(anna.got, ["Come early for warm loaves"]);
+
+    const raw = new Uint8Array(await crypto.subtle.exportKey("raw", keys[0]));
+    const text = new TextEncoder();
+    for (const frame of h.seen) {
+      const bytes = typeof frame === "string" ? text.encode(frame) : frame;
+      for (const secret of ["Fresh bread", "warm loaves"]) assert.equal(contains(bytes, text.encode(secret)), false, "no plaintext crosses the relay");
+      assert.equal(contains(bytes, raw), false, "the room key never crosses the relay");
+      assert.equal(typeof frame === "string" && frame.includes(b64u(raw)), false, "nor encoded");
+      if (typeof frame === "string") assert.match(JSON.parse(frame).type, /^(welcome|joined|left|keyed|key-request|key)$/);
+    }
+    assert.ok(h.seen.some(frame => typeof frame === "string" && JSON.parse(frame).type === "key"), "the key went over wrapped");
+    anna.live.close(); lex.live.close();
+  });
+});
+
+test("a third participant gets the key from a member; a reconnect alone keeps its key and hands it on", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness();
+    const first = participant(h, time.clock);
+    await first.live.ready();
+    const second = participant(h, time.clock);
+    await second.live.ready();
+    const third = participant(h, time.clock);
+    await third.live.ready();
+    await third.live.send(new TextEncoder().encode("hello"));
+    await until(() => first.got.length > 0 && second.got.length > 0, "the third's message");
+    assert.deepEqual([first.got, second.got], [["hello"], ["hello"]]);
+    second.live.close(); third.live.close();
+
+    // The first's socket drops; it reconnects to an empty room and keeps the key it had.
+    h.relay.leave(first.server);
+    first.server.close(1006);
+    await settle();
+    assert.equal(await first.live.send(new TextEncoder().encode("lost")), false, "send says when nothing left");
+    await time.advance(1_000);
+    await until(() => first.server.readyState === 1, "the reconnect");
+    await first.live.ready();
+    const fourth = participant(h, time.clock);
+    await fourth.live.ready();
+    await first.live.send(new TextEncoder().encode("still the same key"));
+    await until(() => fourth.got.length > 0, "the message after reconnecting");
+    assert.deepEqual(fourth.got, ["still the same key"]);
+    assert.equal(keys.length, 1, "no new key was made");
+    first.live.close(); fourth.live.close();
+  });
+});
+
+test("a vanished participant's presence ends after 30 seconds; a clean leave ends it at once", async () => {
+  const time = fakeClock();
+  const h = relayHarness();
+  const anna = participant(h, time.clock);
+  await anna.live.ready();
+  const lex = participant(h, time.clock);
+  await lex.live.ready();
+  const sam = participant(h, time.clock);
+  await sam.live.ready();
+  lex.live.setPresence({ name: "Lex" });
+  sam.live.setPresence({ name: "Sam" });
+  anna.live.setPresence({ name: "Anna" });
+  const names = () => [...anna.peers.values()].map(peer => (peer.state as { name?: string } | null)?.name ?? "").sort();
+  await until(() => names().join() === "Lex,Sam", "both others' presence");
+
+  // Let frames still being encrypted land at time 0 (members also say who is here when Sam got the key).
+  await new Promise(resolve => setTimeout(resolve, 100));
+  // Lex's network drops without a close: the relay cannot say Lex left.
+  lex.link.cut = true;
+  await time.advance(29_000);
+  assert.equal(anna.peers.size, 2, "still shown within the timeout");
+  await time.advance(1_000);
+  assert.deepEqual(names(), ["Sam"], "gone 30 s after last heard");
+  // Sam's heartbeat keeps Sam shown well past the timeout.
+  await time.advance(60_000);
+  assert.deepEqual(names(), ["Sam"]);
+
+  sam.live.close();
+  await settle();
+  assert.equal(anna.peers.size, 0, "a clean leave is announced at once");
+  anna.live.close(); lex.live.close();
+});
+
+test("an agent joins only a room a tab has open, gets the key from it, and leaves with the last tab", async () => {
+  const time = fakeClock();
+  const h = relayHarness();
+  const early = participant(h, time.clock, "agent");
+  await settle();
+  assert.equal(early.link.joined, false, "no tab open means no room");
+  assert.equal(early.closed, true, "and the agent does not keep trying");
+
+  const tab = participant(h, time.clock);
+  await tab.live.ready();
+  const agent = participant(h, time.clock, "agent");
+  await agent.live.ready();
+  await agent.live.send(new TextEncoder().encode("agent edit"));
+  await until(() => tab.got.length > 0, "the agent's message");
+  assert.deepEqual(tab.got, ["agent edit"]);
+  tab.live.close();
+  await settle();
+  assert.equal(agent.closed, true, "the room ends when its last tab leaves");
+});
+
+test("the relay forwards only to its room, refuses oversized frames and unknown targets, and survives hibernation", async () => {
+  const h = relayHarness();
+  const one = h.pair("editor"), two = h.pair("editor");
+  // Another file's room in the same Durable Object instance.
+  const elsewhere = h.pair("editor", "b".repeat(64));
+  h.seen.length = 0;
+
+  assert.equal(h.relay.message(one.server, new Uint8Array([1, 2, 3]).buffer), true);
+  assert.equal(h.relay.message(one.server, JSON.stringify({ type: "key", to: "f".repeat(32), publicKey: "A".repeat(87), wrapped: "B".repeat(80) })), false);
+  assert.equal(h.relay.message(one.server, "not json"), false);
+  assert.equal(h.relay.message(one.server, JSON.stringify({ type: "key-request", publicKey: "short" })), false);
+  assert.deepEqual(h.seen.filter(frame => frame instanceof Uint8Array).length, 1, "the binary frame reached the one other member only");
+  assert.equal(elsewhere.server.texts.length, 1, "the other room's socket heard nothing after its own welcome");
+
+  h.wake();
+  const before = h.seen.length;
+  assert.equal(h.relay.message(two.server, new Uint8Array([4]).buffer), true, "membership came back from the attachments");
+  assert.equal(h.seen.length, before + 1);
+
+  assert.equal(h.relay.message(one.server, new ArrayBuffer(LIVE_MESSAGE_LIMIT + 1)), false);
+  assert.equal(one.server.readyState, 3, "an oversized frame closes the socket");
+  assert.ok(h.seen.some(frame => typeof frame === "string" && JSON.parse(frame).type === "left"), "and the others hear it left");
+});
+
+test("after hibernation, a close that wakes the relay still announces the leave and ends the room's agents", () => {
+  const h = relayHarness();
+  const lex = h.pair("editor"), anna = h.pair("editor"), agent = h.pair("agent");
+  const types = (socket: { texts: string[] }) => socket.texts.map(text => JSON.parse(text).type as string);
+  // Lex's tab closes while the object hibernates: the runtime has already answered the close, so the socket is no longer open.
+  lex.server.readyState = 3;
+  h.wake();
+  h.relay.leave(lex.server);
+  assert.equal(types(anna.server).includes("left"), true, "the others hear it at once");
+  assert.equal(types(agent.server).includes("left"), true);
+  assert.equal(types(anna.server).includes("make-key"), true, "Lex held the key (first in), so the longest-present tab makes a new one");
+  anna.server.readyState = 3;
+  h.wake();
+  h.relay.leave(anna.server);
+  assert.equal(agent.server.closedWith, LIVE_ROOM_CLOSED, "the last tab gone ends the room for its agent");
+});
+
+test("two joiners waiting when the only key holder leaves both get one new key", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness();
+    // A key holder that never answers: first in, so the relay counts it as holding the key.
+    const holder = h.pair("editor");
+    const one = participant(h, time.clock);
+    const two = participant(h, time.clock);
+    await until(() => h.seen.filter(frame => typeof frame === "string" && JSON.parse(frame).type === "key-request").length >= 2, "both key requests");
+    holder.server.readyState = 3;
+    h.relay.leave(holder.server);
+    await Promise.all([one.live.ready(), two.live.ready()]);
+    assert.equal(keys.length, 1, "exactly one new key");
+    await one.live.send(new TextEncoder().encode("shared"));
+    await until(() => two.got.length > 0, "a message under the new key");
+    assert.deepEqual(two.got, ["shared"]);
+    one.live.close(); two.live.close();
+  });
+});
+
+test("a member already here shows up for a joiner as soon as the joiner has the key", async () => {
+  const time = fakeClock();
+  const h = relayHarness();
+  const anna = participant(h, time.clock);
+  await anna.live.ready();
+  anna.live.setPresence({ name: "Anna" });
+  const lex = participant(h, time.clock);
+  await lex.live.ready();
+  await until(() => lex.peers.size === 1, "Anna's presence without waiting for a heartbeat");
+  assert.deepEqual([...lex.peers.values()][0].state, { name: "Anna" });
+  anna.live.close(); lex.live.close();
+});
+
+test("closing while a handed-over key is being unwrapped sends nothing more and leaves no timers", async () => {
+  const shared = fakeClock(), own = fakeClock();
+  const h = relayHarness();
+  const anna = participant(h, shared.clock);
+  await anna.live.ready();
+  let made: ReturnType<typeof h.pair> | undefined, sentAfterClose = 0, closing = false;
+  const live = openLiveRoom({
+    repo: "lex/starter", branch: "main", file: "index.html", clock: own.clock, onMessage: () => undefined,
+    connect: async () => {
+      made = h.pair("editor");
+      const socket = made.client;
+      return {
+        send: data => { if (closing) sentAfterClose++; socket.send(data); },
+        close: (code, reason) => socket.close(code, reason),
+        addEventListener(type: "message" | "close", listener: (event: never) => void) {
+          socket.addEventListener(type, ((event: { data?: unknown }) => {
+            (listener as (event: unknown) => void)(event);
+            // The key arrives: close while its unwrap is still running.
+            if (type === "message" && typeof event.data === "string" && event.data !== "pong" && JSON.parse(event.data).type === "key") queueMicrotask(() => { closing = true; live.close(); });
+          }) as never);
+        },
+      } satisfies LiveRoomSocket;
+    },
+  });
+  await until(() => closing, "the handover");
+  await new Promise(resolve => setTimeout(resolve, 50));
+  await own.advance(60_000);
+  assert.equal(sentAfterClose, 0, "no keyed notice, presence or request after close");
+  assert.equal(own.pending, 0, "no timers left");
+  await assert.rejects(live.ready());
+  anna.live.close();
+});
+
+test("a reconnect the relay has not yet seen replaces the tab's own socket and keeps its key", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness();
+    const anna = participant(h, time.clock);
+    await anna.live.ready();
+    const lex = participant(h, time.clock);
+    await lex.live.ready();
+    const ghost = anna.server;
+    anna.drop();
+    await settle();
+    await time.advance(1_000);
+    await until(() => anna.server !== ghost, "the reconnect");
+    await anna.live.ready();
+    assert.equal(ghost.readyState, 3, "the relay closed the socket it had not seen drop");
+    assert.equal(keys.length, 1, "Anna kept the key she had");
+    assert.equal(await anna.live.send(new TextEncoder().encode("back")), true);
+    await until(() => lex.got.length > 0, "Lex hears Anna under the same key");
+    assert.deepEqual(lex.got, ["back"]);
+    anna.live.close(); lex.live.close();
+  });
+});
+
+test("a key wrapped for a joiner is not sent on a socket that replaced the one it was wrapped on", async () => {
+  const time = fakeClock();
+  const h = relayHarness();
+  const anna = participant(h, time.clock);
+  await anna.live.ready();
+  const subtle = crypto.subtle, wrapKey = subtle.wrapKey.bind(subtle);
+  let release!: () => void, stale: Uint8Array | undefined, held = false;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  Object.defineProperty(subtle, "wrapKey", { configurable: true, value: async (...args: Parameters<typeof wrapKey>) => {
+    const result = new Uint8Array(await wrapKey(...args));
+    if (!held) { held = true; await gate; stale = result; }
+    return result.buffer;
+  } });
+  try {
+    const lex = participant(h, time.clock);
+    await until(() => held, "Anna wrapping the key for Lex");
+    const old = anna.server;
+    anna.drop();
+    await settle();
+    await time.advance(1_000);
+    await until(() => anna.server !== old, "Anna's reconnect");
+    const fresh = anna.server;
+    release();
+    await lex.live.ready();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const sent = h.seen.filter(frame => typeof frame === "string" && JSON.parse(frame).type === "key" && JSON.parse(frame).to !== undefined) as string[];
+    const staleSent = sent.some(frame => Buffer.from(JSON.parse(frame).wrapped, "base64url").subarray(12).equals(Buffer.from(stale!)));
+    assert.equal(staleSent, false, "the wrap from before the reconnect never went out");
+    assert.notEqual(fresh, old);
+    lex.live.close();
+  } finally { Reflect.deleteProperty(subtle, "wrapKey"); anna.live.close(); }
+});
+
+test("closing while a presence frame decrypts reports nothing more and leaves no timers", async () => {
+  const shared = fakeClock(), own = fakeClock();
+  const h = relayHarness();
+  const anna = participant(h, shared.clock);
+  await anna.live.ready();
+  let armed = false, closed = false, after = 0;
+  const live: ReturnType<typeof openLiveRoom> = openLiveRoom({
+    repo: "lex/starter", branch: "main", file: "index.html", clock: own.clock,
+    onMessage: () => { if (closed) after++; },
+    onPeers: () => { if (closed) after++; },
+    connect: async () => {
+      const socket = h.pair("editor").client;
+      return {
+        send: data => socket.send(data),
+        close: (code, reason) => socket.close(code, reason),
+        addEventListener(type: "message" | "close", listener: (event: never) => void) {
+          socket.addEventListener(type, ((event: { data?: unknown }) => {
+            (listener as (event: unknown) => void)(event);
+            if (armed && type === "message" && typeof event.data !== "string") queueMicrotask(() => { closed = true; live.close(); });
+          }) as never);
+        },
+      } satisfies LiveRoomSocket;
+    },
+  });
+  await live.ready();
+  await new Promise(resolve => setTimeout(resolve, 50));
+  armed = true;
+  anna.live.setPresence({ name: "Anna" });
+  await until(() => closed, "Anna's presence arriving");
+  await new Promise(resolve => setTimeout(resolve, 50));
+  await own.advance(60_000);
+  assert.equal(after, 0, "no onPeers or onMessage after close");
+  assert.equal(own.pending, 0, "no sweep timer left");
+  anna.live.close();
+});
+
+test("agent sockets are checked again once a minute and removed when their connection ends", () => {
+  const sockets = Array.from({ length: 2 }, () => {
+    let attachment: unknown = null;
+    return {
+      readyState: 1, texts: [] as string[], closedWith: undefined as number | undefined,
+      send(message: string | ArrayBuffer) { if (typeof message === "string") this.texts.push(message); },
+      close(code?: number) { this.readyState = 3; this.closedWith = code; },
+      serializeAttachment(value: unknown) { attachment = structuredClone(value); },
+      deserializeAttachment() { return structuredClone(attachment); },
+    } satisfies LiveSocket & { texts: string[]; closedWith?: number };
+  });
+  const [tab, agentSocket] = sockets;
+  const relay = new LiveRooms([]);
+  const agent = { id: "grant-1", sessionId: "s".repeat(64), generation: 1, repoId: 1, branch: "main" };
+  relay.join(tab, room, "editor");
+  relay.join(agentSocket, room, "agent", { agent });
+  const now = Date.now();
+  assert.deepEqual(relay.agentsDue(now), [], "just checked when it joined");
+  assert.deepEqual(relay.agentsDue(now + LIVE_AGENT_CHECK_MS).map(due => due.agent), [agent]);
+  assert.deepEqual(relay.agentsDue(now + LIVE_AGENT_CHECK_MS + 1), [], "once a minute, not on every frame");
+  assert.deepEqual(new LiveRooms([tab, agentSocket]).agentsDue(now + LIVE_AGENT_CHECK_MS + 1), [], "the last check survives hibernation");
+  assert.deepEqual(relay.agentSockets("grant-1"), [agentSocket]);
+  relay.end(agentSocket, LIVE_ACCESS_ENDED, "This agent connection ended.");
+  assert.equal(agentSocket.closedWith, LIVE_ACCESS_ENDED);
+  assert.equal(JSON.parse(tab.texts.at(-1)!).type, "left", "the tab hears the agent left");
+});
+
+test("a key holder whose socket died without a close is removed when a joiner asks, and the room makes a new key", async () => {
+  const time = fakeClock();
+  const h = relayHarness(() => time.clock.now());
+  const anna = participant(h, time.clock);
+  await anna.live.ready();
+  // Anna's network dies: her frames stop, and the relay is not told.
+  anna.link.cut = true;
+  const silent = anna.server;
+  const lex = participant(h, time.clock);
+  await until(() => h.seen.some(frame => typeof frame === "string" && JSON.parse(frame).type === "key-request"), "Lex asking for the key");
+  let ready = false;
+  void lex.live.ready().then(() => { ready = true; });
+  await time.advance(20_000);
+  assert.equal(ready, false, "within the presence timeout Anna still counts as holding the key");
+  await time.advance(25_000);
+  await until(() => ready, "Lex making a new key once Anna was silent past the timeout");
+  assert.equal(silent.readyState, 3, "the silent holder's socket was closed (her tab may come back as a new joiner)");
+  const sam = participant(h, time.clock);
+  await sam.live.ready();
+  assert.equal(await lex.live.send(new TextEncoder().encode("after Anna")), true);
+  await until(() => sam.got.length > 0, "Sam hearing Lex");
+  assert.deepEqual(sam.got, ["after Anna"]);
+  lex.live.close(); sam.live.close(); anna.live.close();
+});
+
+/** A participant whose incoming relay frames pass through `filter` first: it may drop one (false) or hold it (a promise). */
+function filteredParticipant(h: ReturnType<typeof relayHarness>, clock: LiveClock, filter: (data: unknown) => boolean | Promise<void>) {
+  let made: ReturnType<typeof h.pair> | undefined;
+  const got: string[] = [];
+  const live = openLiveRoom({
+    repo: "lex/starter", branch: "main", file: "index.html", clock, onMessage: bytes => got.push(new TextDecoder().decode(bytes)),
+    connect: async url => {
+      made = h.pair("editor", room, new URL(url, origin).searchParams.get("rejoin") ?? undefined);
+      const socket = made.client;
+      return {
+        send: data => socket.send(data),
+        close: (code, reason) => socket.close(code, reason),
+        addEventListener(type: "message" | "close", listener: (event: never) => void) {
+          socket.addEventListener(type, ((event: { data?: unknown }) => {
+            const verdict = type === "message" ? filter(event.data) : true;
+            if (verdict === true) (listener as (event: unknown) => void)(event);
+            else if (verdict !== false) void verdict.then(() => (listener as (event: unknown) => void)(event));
+          }) as never);
+        },
+      } satisfies LiveRoomSocket;
+    },
+  });
+  return { live, got, get server() { return made!.server; }, drop: () => made!.drop() };
+}
+const peerOf = (server: LiveSocket) => (server.deserializeAttachment() as { peer: string }).peer;
+const typeOf = (data: unknown) => typeof data === "string" && data.startsWith("{") ? JSON.parse(data) as { type: string; from?: string } : undefined;
+
+test("the key holder leaving while its key to a joiner is held back leaves both waiting joiners on one key", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness();
+    const holder = participant(h, time.clock);
+    await holder.live.ready();
+    const holderPeer = peerOf(holder.server);
+    // K is in longer than J; the holder's answer to K never arrives, its answer to J is held.
+    const k = filteredParticipant(h, time.clock, data => typeOf(data)?.type !== "key" || typeOf(data)?.from !== holderPeer);
+    await until(() => h.seen.some(frame => typeOf(frame)?.type === "key"), "the holder answering K");
+    let release!: () => void, held = false;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const j = filteredParticipant(h, time.clock, data => {
+      if (typeOf(data)?.type !== "key" || typeOf(data)?.from !== holderPeer) return true;
+      held = true;
+      return gate;
+    });
+    await until(() => held, "the holder's key to J in flight");
+    holder.live.close();
+    await settle();
+    release();
+    await Promise.all([j.live.ready(), k.live.ready()]);
+    assert.equal(keys.length, 1, "no second key was made");
+    assert.equal(await j.live.send(new TextEncoder().encode("from J")), true);
+    assert.equal(await k.live.send(new TextEncoder().encode("from K")), true);
+    await until(() => j.got.length > 0 && k.got.length > 0, "both hearing each other");
+    assert.deepEqual([j.got, k.got], [["from K"], ["from J"]]);
+    j.live.close(); k.live.close();
+  });
+});
+
+test("a joiner handed a key it never unwrapped reconnects in place of its socket without making a second key", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness();
+    const holder = participant(h, time.clock);
+    await holder.live.ready();
+    const holderPeer = peerOf(holder.server);
+    // The holder's first answer reaches the relay (which counts J as handed the key) but J's socket drops before J reads it.
+    let dropped = false;
+    const j = filteredParticipant(h, time.clock, data => {
+      if (dropped || typeOf(data)?.type !== "key" || typeOf(data)?.from !== holderPeer) return true;
+      dropped = true;
+      queueMicrotask(() => j.drop());
+      return false;
+    });
+    await until(() => dropped, "the key to J in flight");
+    const ghost = j.server;
+    await settle();
+    await time.advance(1_000);
+    await until(() => j.server !== ghost, "J's reconnect with the same rejoin secret");
+    const welcome = JSON.parse(j.server.texts.find(text => text.startsWith("{") && JSON.parse(text).type === "welcome")!);
+    assert.equal(welcome.keyed, false, "a key only handed to the old socket does not carry over");
+    await j.live.ready();
+    assert.equal(keys.length, 1, "no second key");
+    assert.equal(await j.live.send(new TextEncoder().encode("from J")), true);
+    assert.equal(await holder.live.send(new TextEncoder().encode("from H")), true);
+    await until(() => j.got.length > 0 && holder.got.length > 0, "J and H hearing each other");
+    assert.deepEqual([j.got, holder.got], [["from H"], ["from J"]]);
+    j.live.close(); holder.live.close();
+  });
+});
+
+test("a tab joining a room where nobody holds a key any more makes it, and a waiting member takes that one", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness();
+    // A key holder that never answers; J waits for it. Then its socket dies and the relay never hears it leave
+    // (no make-key goes out), so J is the room's only open member and holds no key.
+    const holder = h.pair("editor");
+    const j = participant(h, time.clock);
+    await until(() => h.seen.some(frame => typeof frame === "string" && frame.startsWith("{") && JSON.parse(frame).type === "key-request"), "J asking");
+    holder.server.readyState = 3;
+    const k = participant(h, time.clock);
+    await k.live.ready();
+    const welcome = JSON.parse(k.server.texts.find(text => text.startsWith("{") && JSON.parse(text).type === "welcome")!);
+    assert.equal(welcome.keyed, true, "K makes the key");
+    await j.live.ready();
+    assert.equal(keys.length, 1, "J took K's key");
+    assert.equal(await j.live.send(new TextEncoder().encode("from J")), true);
+    await until(() => k.got.length > 0, "K hearing J");
+    assert.deepEqual(k.got, ["from J"]);
+    j.live.close(); k.live.close();
+  });
+});
+
+test("a joiner handed a key it cannot unwrap asks again, and once the holder has gone the room makes one key for it and later joiners", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness();
+    const holder = participant(h, time.clock);
+    await holder.live.ready();
+    const holderPeer = peerOf(holder.server);
+    // The holder's handover reaches J broken (the unwrap fails and J ignores it); the relay counts J as handed the key.
+    let broken = false;
+    const j = filteredParticipant(h, time.clock, data => {
+      if (broken || typeOf(data)?.type !== "key" || typeOf(data)?.from !== holderPeer) return true;
+      broken = true;
+      const frame = JSON.parse(data as string) as { wrapped: string };
+      const flipped = frame.wrapped.endsWith("A") ? "B" : "A";
+      queueMicrotask(() => j.server.send(JSON.stringify({ ...frame, wrapped: frame.wrapped.slice(0, -1) + flipped })));
+      return false;
+    });
+    await until(() => broken, "the broken handover");
+    await settle();
+    holder.live.close();
+    await settle();
+    // J asks again (its backstop): the handed key does not count, nobody else holds one, so J makes it.
+    await time.advance(5_000);
+    await j.live.ready();
+    const k = participant(h, time.clock);
+    await k.live.ready();
+    assert.equal(keys.length, 2, "the holder's key, then the one J made");
+    assert.equal(await k.live.send(new TextEncoder().encode("from K")), true);
+    await until(() => j.got.length > 0, "J hearing K");
+    assert.deepEqual(j.got, ["from K"]);
+    j.live.close(); k.live.close();
+  });
+});
+
+test("a key holder silent for 60 s but pinging is not closed when a joiner asks, and no new key is made", async () => {
+  await capturingRoomKeys(async keys => {
+    const time = fakeClock();
+    const h = relayHarness(() => time.clock.now());
+    const anna = participant(h, time.clock);
+    await anna.live.ready();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    const framesBefore = h.seen.length;
+    // Alone (or hidden): no content or presence frames reach the relay for a minute, only the auto-answered pings.
+    await time.advance(60_000);
+    assert.equal(h.seen.length, framesBefore, "a tab alone in its room sends the relay nothing it has to wake for");
+    const lex = participant(h, time.clock);
+    await lex.live.ready();
+    assert.equal(anna.server.readyState, 1, "the quiet holder stays");
+    assert.equal(keys.length, 1, "and Lex took its key");
+    assert.equal(await lex.live.send(new TextEncoder().encode("hello Anna")), true);
+    await until(() => anna.got.length > 0, "Anna hearing Lex");
+    anna.live.close(); lex.live.close();
+  });
+});
+
+test("after close, ready() and send() reject even though the key had arrived", async () => {
+  const time = fakeClock();
+  const h = relayHarness();
+  const anna = participant(h, time.clock);
+  await anna.live.ready();
+  anna.live.close();
+  await assert.rejects(anna.live.ready());
+  await assert.rejects(anna.live.send(new Uint8Array([1])));
+  // Calls already waiting for a key that never came reject too.
+  h.pair("editor"); // a key holder that never answers, so Lex waits
+  const lex = participant(h, time.clock);
+  const waiting = lex.live.ready(), sending = lex.live.send(new Uint8Array([2]));
+  await until(() => h.seen.some(frame => typeof frame === "string" && JSON.parse(frame).type === "key-request"), "Lex asking for the key");
+  lex.live.close();
+  await assert.rejects(waiting);
+  await assert.rejects(sending);
+});
+
+test("a tab's socket that opened never asks for its status when it drops; one refused before opening stops", async () => {
+  const fetched: string[] = [], sockets: FakeBrowserSocket[] = [];
+  let status = 426;
+  class FakeBrowserSocket extends EventTarget {
+    binaryType = "blob";
+    constructor(readonly url: string) { super(); sockets.push(this); }
+    send() { /* Nothing is sent before the welcome in this test. */ }
+    close() { /* The test drives closes. */ }
+  }
+  const saved = ["WebSocket", "location", "fetch"].map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
+  const set = (name: string, value: unknown) => Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
+  set("WebSocket", FakeBrowserSocket);
+  set("location", { href: origin + "/" });
+  set("fetch", async (url: string) => { fetched.push(url); return new Response(null, { status }); });
+  const closeEvent = (code: number) => Object.assign(new Event("close"), { code });
+  try {
+    const time = fakeClock();
+    let ended = false;
+    openLiveRoom({ repo: repo.full_name, branch: "main", file: "index.html", clock: time.clock, onMessage: () => undefined, onClosed: () => { ended = true; } });
+    await settle();
+    assert.match(sockets[0].url, /^wss:\/\/editor\.example\/api\/live\/room\?/);
+    sockets[0].dispatchEvent(new Event("open"));
+    await settle();
+    sockets[0].dispatchEvent(closeEvent(1006));
+    await settle();
+    assert.deepEqual(fetched, [], "a socket that opened reconnects without the status request");
+    await time.advance(1_000);
+    status = 401;
+    sockets[1].dispatchEvent(closeEvent(1006));
+    await until(() => ended, "the refused tab to stop");
+    assert.equal(fetched.length, 1, "one status request, for the socket that never opened");
+    await time.advance(120_000);
+    assert.deepEqual([sockets.length, time.pending], [2, 0], "and it never tries again");
+  } finally {
+    for (const [name, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else Reflect.deleteProperty(globalThis, name);
+    }
+  }
+});
+
+/** Every Web Crypto call the participants make, as await points `forEachAwait` can disturb. Returns the undo. */
+function cryptoPorts(race: AwaitRace) {
+  const subtle = crypto.subtle;
+  const names = ["generateKey", "encrypt", "decrypt", "wrapKey", "unwrapKey", "deriveBits", "deriveKey", "importKey", "exportKey"] satisfies (keyof SubtleCrypto)[];
+  for (const name of names) {
+    const original: (...args: unknown[]) => Promise<unknown> = Reflect.get(subtle, name);
+    Object.defineProperty(subtle, name, { configurable: true, value: race.port(name, (...args: unknown[]) => Reflect.apply(original, subtle, args) as Promise<unknown>) });
+  }
+  return () => { for (const name of names) Reflect.deleteProperty(subtle, name); };
+}
+/** A joiner whose sends after `run.closed` are counted; `run.live` is closed at once if the disturbance came first. */
+function racingJoiner(h: ReturnType<typeof relayHarness>, run: { closed: boolean; sentAfter: number; own: ReturnType<typeof fakeClock>; live?: ReturnType<typeof openLiveRoom> }) {
+  run.live = openLiveRoom({
+    repo: repo.full_name, branch: "main", file: "index.html", clock: run.own.clock, onMessage: () => undefined,
+    connect: async url => {
+      const { client } = h.pair("editor", room, new URL(url, origin).searchParams.get("rejoin") ?? undefined);
+      return { ...client, send: data => { if (run.closed) run.sentAfter++; client.send(data); } } satisfies LiveRoomSocket;
+    },
+  });
+  if (run.closed) run.live.close();
+  return run.live;
+}
+const noStaleWrite = async (run: { sentAfter: number; own: ReturnType<typeof fakeClock> }) => {
+  await run.own.advance(60_000);
+  assert.equal(run.sentAfter, 0, "nothing sent after close");
+  assert.equal(run.own.pending, 0, "no timer left after close");
+};
+
+test("closing at any crypto await of a join, handover, presence or send sends nothing more and leaves no timers", async () => {
+  const points = await forEachAwait(race => {
+    const restore = cryptoPorts(race), shared = fakeClock(), h = relayHarness();
+    const run = { closed: false, sentAfter: 0, own: fakeClock(), live: undefined as ReturnType<typeof openLiveRoom> | undefined, done: Promise.resolve() as Promise<unknown> };
+    // The baseline run gets no assertion call: each run undoes its own crypto ports and closes its holder.
+    let anna: ReturnType<typeof participant> | undefined;
+    run.done = (async () => {
+      anna = participant(h, shared.clock);
+      await anna.live.ready();
+      anna.live.setPresence({ name: "Anna" });
+      const joiner = racingJoiner(h, run);
+      await joiner.ready().catch(() => undefined);
+      joiner.setPresence({ name: "Joiner" });
+      await joiner.send(new TextEncoder().encode("edit")).catch(() => undefined);
+      await new Promise(resolve => setTimeout(resolve, 30));
+    })().finally(() => { anna?.live.close(); restore(); });
+    return run;
+  }, run => { run.closed = true; run.live?.close(); }, noStaleWrite);
+  assert.ok(points > 10, `every crypto await was disturbed (${points})`);
+});
+
+test("closing at any crypto await while making a new key (make-key) sends nothing more and leaves no timers", async () => {
+  const points = await forEachAwait(race => {
+    const restore = cryptoPorts(race), h = relayHarness();
+    const run = { closed: false, sentAfter: 0, own: fakeClock(), live: undefined as ReturnType<typeof openLiveRoom> | undefined, done: Promise.resolve() as Promise<unknown> };
+    run.done = (async () => {
+      // A holder that never answers, then leaves: the relay tells the joiner to make the key.
+      const holder = h.pair("editor");
+      const joiner = racingJoiner(h, run);
+      await until(() => run.closed || h.seen.some(frame => typeof frame === "string" && JSON.parse(frame).type === "key-request"), "the key request");
+      holder.server.readyState = 3;
+      h.relay.leave(holder.server);
+      await joiner.ready().catch(() => undefined);
+      await joiner.send(new TextEncoder().encode("edit")).catch(() => undefined);
+      await new Promise(resolve => setTimeout(resolve, 30));
+    })().finally(restore);
+    return run;
+  }, run => { run.closed = true; run.live?.close(); }, noStaleWrite);
+  assert.ok(points > 3, `every crypto await was disturbed (${points})`);
+});
+
+test("room files and participants' text frames are read strictly", () => {
+  for (const path of ["index.html", "about/index.html", "components/feature-block/feature-block.css"]) assert.equal(liveRoomFile(path), true);
+  for (const path of ["", "/index.html", "a//b", "../x", "a/./b", "a\\b", "a\nb", "x".repeat(1025), 7]) assert.equal(liveRoomFile(path), false);
+  assert.deepEqual(readLiveClientMessage(JSON.stringify({ type: "key-request", publicKey: "A".repeat(87), extra: "dropped" })), { type: "key-request", publicKey: "A".repeat(87) });
+  assert.equal(readLiveClientMessage(JSON.stringify({ type: "key", to: "nope", publicKey: "A".repeat(87), wrapped: "B".repeat(80) })), null);
+  assert.equal(readLiveClientMessage(JSON.stringify({ type: "content", publicKey: "A".repeat(87) })), null);
+});
+
+test("Miniflare: two signed-in tabs share a room over the real Worker; storage stays empty and strangers are refused", async () => {
+  const { worker, github } = await startWorker();
+  const roomUrl = (file = "index.html", branch = "main") => `${origin}/api/live/room?${new URLSearchParams({ repo: repo.full_name, branch, file })}`;
+  const upgrade = async (headers: Record<string, string>, url = roomUrl()) => worker.dispatchFetch(url, { headers: { Upgrade: "websocket", ...headers } });
+  try {
+    const anna = await signIn(worker), lex = await signIn(worker);
+    const joinAs = async (cookie: string) => {
+      const response = await upgrade({ Origin: origin, Cookie: cookie });
+      assert.equal(response.status, 101);
+      // Miniflare delivers frames once accepted: accept as the first listener attaches, as a browser socket's open does.
+      const socket = response.webSocket!;
+      let accepted = false;
+      return {
+        send: data => socket.send(data),
+        close: (code, reason) => socket.close(code, reason),
+        addEventListener(type: "message" | "close", listener: (event: never) => void) {
+          socket.addEventListener(type, listener as never);
+          if (!accepted) { accepted = true; socket.accept(); }
+        },
+      } satisfies LiveRoomSocket;
+    };
+    const got: string[] = [];
+    // A fake clock: no heartbeat or reconnect timer keeps the test process alive if an assertion fails.
+    const tabsClock = fakeClock().clock;
+    const open = (cookie: string) => openLiveRoom({ repo: repo.full_name, branch: "main", file: "index.html", clock: tabsClock, connect: () => joinAs(cookie), onMessage: bytes => got.push(new TextDecoder().decode(bytes)) });
+    const first = open(anna.cookie);
+    await first.ready();
+    // An observer in the room records what the relay hands a member: it never answers a key request.
+    const observer = await joinAs(lex.cookie);
+    const observed: unknown[] = [];
+    observer.addEventListener("message", event => observed.push(event.data));
+    const second = open(lex.cookie);
+    await second.ready();
+    await first.send(new TextEncoder().encode("Fresh bread every morning"));
+    await until(() => got.length === 1, "the message through the real relay");
+    assert.deepEqual(got, ["Fresh bread every morning"]);
+    await until(() => observed.some(data => typeof data !== "string"), "the observer's copy");
+    for (const data of observed) {
+      const bytes = typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data as ArrayBuffer);
+      assert.equal(contains(bytes, new TextEncoder().encode("Fresh bread")), false, "only ciphertext");
+    }
+
+    const namespace = await worker.getDurableObjectNamespace("SESSIONS");
+    const stub = namespace.get(namespace.idFromName(await liveRoomObjectName(repo.id, "main")));
+    const inventory = await (await stub.fetch("https://session.internal/maintenance/inventory", { method: "POST" })).json() as { totalKeys: number; alarm: number | null };
+    assert.deepEqual([inventory.totalKeys, inventory.alarm], [0, null], "the room's Durable Object stores nothing");
+
+    // Strangers: signed out, another site's page, a bad file, a repository the connection does not list.
+    assert.equal((await upgrade({ Origin: origin })).status, 401);
+    assert.equal((await upgrade({ Origin: "https://attacker.example", Cookie: anna.cookie })).status, 403);
+    assert.equal((await upgrade({ Origin: origin, Cookie: anna.cookie }, roomUrl("../secret"))).status, 400);
+    // Agents: past the check with their connection, but only into a room a tab has open, on their own branch.
+    // A plain request (no upgrade) gets the same answer, so a tab can tell a refusal from a network failure.
+    assert.equal((await worker.dispatchFetch(roomUrl())).status, 401);
+    assert.equal((await worker.dispatchFetch(roomUrl(), { headers: { Cookie: anna.cookie } })).status, 426, "allowed in; only the upgrade is missing");
+    assert.equal((await worker.dispatchFetch(roomUrl("../secret"), { headers: { Cookie: anna.cookie } })).status, 400, "a bad address is final");
+    const { id: grantId, token } = await (await editorTab(worker, anna.cookie).post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json() as { id: string; token: string };
+    assert.equal((await upgrade({ Authorization: `Bearer ${token}` }, roomUrl("about/index.html"))).status, 409, "no tab has that room open");
+    // The agent's client hears the 409 as LiveRoomClosed: it ends and never tries again.
+    const later = fakeClock();
+    let connects = 0, ended = false;
+    openLiveRoom({
+      repo: repo.full_name, branch: "main", file: "about/index.html", clock: later.clock, onMessage: () => undefined, onClosed: () => { ended = true; },
+      connect: async url => {
+        connects++;
+        const response = await worker.dispatchFetch(origin + url, { headers: { Upgrade: "websocket", Authorization: `Bearer ${token}` } });
+        throw response.status === 409 ? new LiveRoomClosed() : new Error(`unexpected ${response.status}`);
+      },
+    });
+    await until(() => ended, "the refused agent's room to end");
+    await later.advance(120_000);
+    assert.deepEqual([connects, later.pending], [1, 0]);
+    assert.equal((await upgrade({ Authorization: `Bearer ${token}` }, roomUrl("index.html", "other"))).status, 403);
+    // GitHub names are case-insensitive: the agent's repository written in other case still matches.
+    const agent = await upgrade({ Authorization: `Bearer ${token}` }, roomUrl().replace(encodeURIComponent(repo.full_name), encodeURIComponent(repo.full_name.toUpperCase())));
+    assert.equal(agent.status, 101);
+    let agentPeer = "", agentFrames = 0;
+    agent.webSocket!.addEventListener("message", event => {
+      if (typeof event.data !== "string") agentFrames++;
+      else if (JSON.parse(event.data).type === "welcome") agentPeer = JSON.parse(event.data).peer;
+    });
+    agent.webSocket!.accept();
+    await until(() => agentPeer !== "", "the agent's welcome");
+    // Revoking the connection removes its agent from the room at once: it may hold the key, so it must not keep listening.
+    // (Miniflare's client reports the 4403 close only once its side of the closing handshake ends; the room unit tests check the code.)
+    assert.equal((await editorTab(worker, anna.cookie).post("/api/agent/revoke", { id: grantId })).status, 200);
+    await until(() => observed.some(data => typeof data === "string" && JSON.parse(data).type === "left" && JSON.parse(data).peer === agentPeer), "the room hearing the agent left");
+    const framesBefore = agentFrames, observedBefore = observed.length;
+    await first.send(new TextEncoder().encode("after the revoke"));
+    await until(() => observed.length > observedBefore, "the next edit reaching the room");
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(agentFrames, framesBefore, "the revoked agent gets nothing more");
+    github.allowed = false;
+    assert.equal((await upgrade({ Origin: origin, Cookie: anna.cookie })).status, 403);
+
+    first.close(); second.close(); observer.close(1000);
+  } finally { await worker.dispose(); }
+});

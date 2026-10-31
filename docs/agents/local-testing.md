@@ -27,11 +27,13 @@ run timing through `timing.sh`. Stop only processes you started.
   pushes to `dev` (`deploy-preview.yml`): only `@smoke`.
 - Specs a change reaches: `scripts/agents/kit specs --affected` picks them and
   their fixture groups; the commands below run groups by hand.
-- Default group: `port.sh npx playwright test --project=native-save --workers=1 <files>`.
+- Default group: `port.sh npx playwright test --project=native-save --grep-invert "@actual|@native-static" --workers=1 <files>`
+  (a file can mix plain and tagged tests; each tagged test runs in its own group, and a
+  fixture check sits inside the tagged test or describe, never at file level).
 - Tagged groups need their own fixture and command:
   `port.sh bash -c 'npm run test:browser:native-static -- --port $ASE_TEST_PORT --workers=1'`,
-  and the same with `test:browser:actual`. A tagged spec run in the default
-  group shows as skipped, not as passed.
+  and the same with `test:browser:actual`. A bare `npx playwright test` run of
+  a tagged spec without its fixture shows it as skipped, not as passed.
 - Smoke: `port.sh npm run test:browser:smoke -- --workers=1`.
 - Visible changes: `scripts/agents/kit ux` tries the features a diff touches on the real starter (their `kit shots --steps` files) and packs the scripted UX findings into a small bundle.
 - CI fonts (DejaVu Sans, wider than the local Noto Sans): put
@@ -57,11 +59,13 @@ Playwright logs as binary; use `grep -a` or the JSON results.
 fresh `npm run build:ui`; check that `<outprefix>.served` names the built
 `dist/assets/index-*.js`. Compare before and after in one sitting, alternating
 builds: runs from different sittings differ by about 30 ms.
-For boot bytes against dev (the 362 KB budget), `scripts/agents/kit size` is
+For boot bytes against dev (the 355 KB budget), `scripts/agents/kit size` is
 enough; it caches results per commit.
 
 ## Preview and CI deploys
 
 The lead deploys the preview with `kit preview`, which also checks the live
-bundle. CI deploys `dev` by itself only once Lex adds the Cloudflare secret:
-[github-settings.md](github-settings.md).
+bundle. The preview builds with `npm run build:preview`, which adds every
+`docs/wayfinder/*/prototypes/` mock-up at `/mockups/` (index by map);
+`build:ui` has none. CI deploys `dev` by itself only once Lex adds the
+Cloudflare secret: [github-settings.md](github-settings.md).

@@ -49,6 +49,8 @@ function build() {
   };
   document.addEventListener("toggle", moved, true);
   document.addEventListener("close", moved, true);
+  // The edit bar docked at the canvas foot on a phone moved, came or went (edit-bar.ts): keep above it.
+  document.addEventListener("edit-bar-dock", () => { if (toast!.matches(":popover-open")) lift(); }, true);
   const status = document.getElementById("status");
   if (status) new MutationObserver(() => { if (status.textContent !== shown) dismissToast(); }).observe(status, { childList: true, characterData: true, subtree: true });
 }
@@ -68,16 +70,23 @@ function place() {
     if (toast!.matches(":popover-open")) { toast!.dataset.moving = ""; toast!.hidePopover(); }
     into.append(toast!);
   }
-  toast!.style.removeProperty("--toast-lift");
   if (!toast!.matches(":popover-open")) toast!.showPopover();
   if (toast!.dataset.moving !== undefined) requestAnimationFrame(() => { delete toast!.dataset.moving; });
+  lift();
+}
+
+/** Lifted above anything in its layer it would cover, measured where it rests (not mid-entrance). */
+function lift() {
+  toast!.style.removeProperty("--toast-lift");
   const box = toast!.getBoundingClientRect();
+  // Computed `translate` is "none", "<x>" or "<x> <y>" (toast.css moves it on y only).
+  const entering = parseFloat(getComputedStyle(toast!).translate.split(" ")[1] ?? "") || 0;
   // Only the layer's own buttons: what it covers is out of sight anyway.
-  const obstacles = [...into.querySelectorAll<HTMLElement>(AVOID)]
+  const obstacles = [...toast!.parentElement!.querySelectorAll<HTMLElement>(AVOID)]
     .filter(element => !toast!.contains(element) && element.checkVisibility())
     .map(element => element.getBoundingClientRect());
-  const lift = toastLift(box, obstacles, innerHeight);
-  if (lift) toast!.style.setProperty("--toast-lift", `${Math.round(lift)}px`);
+  const by = toastLift({ left: box.left, top: box.top - entering, width: box.width, height: box.height }, obstacles, innerHeight);
+  if (by) toast!.style.setProperty("--toast-lift", `${Math.round(by)}px`);
 }
 
 function schedule(ms: number) {

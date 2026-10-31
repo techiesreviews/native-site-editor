@@ -1,7 +1,7 @@
 ---
 title: creator-studio-poc gets the shared kit (full kitchen)
 type: task (HITL)
-status: open
+status: wontfix
 assignee:
 builder: claude
 blocked_by: [42-move-chat]
@@ -32,3 +32,8 @@ In `~/Projects/creator-studio-poc`: `scripts/agents/` (launcher, `kit.json`, `pr
 Agent Kit is required. After Lex's OK the lead starts a T3 thread in `~/Projects/creator-studio-poc` with builder `claude-opus-5-5`: `~/.local/share/agent-kit/current/kit init --land <branch>`, then `scripts/agents/kit doctor`, `kit unit`, `kit specs`, `kit review` and `kit pr`. The lead closes this ticket here with a docs PR.
 
 - Report: Lex's answers (dates), the PR URL and merge SHA, `doctor`, `unit` and both `specs` `RESULT:` lines, review decisions.
+
+## Comments
+
+- Lex (2026-10-27): yes, Tuesday pack Q3. One OK for 30, 31, 40–46 and 50: go in order once 10–24 have landed, and stop at the first problem. Easy-to-undo questions inside a slice take their recommended answer and are listed in the next Tuesday pack. Closing GitHub Issues still waits for his own OK in that project's Tuesday pack.
+- Lex, 2026-10-30: creator-studio is abandoned for now ("I think I am going to abandon creator kit for now, preferring separate tools that can hand over things from one to another doing something specific"). Not moved; the landing-branch question is moot. Its own skill `nova-youtube-agent` goes out of the project and into `chat`, for the ideation part (ticket 64).

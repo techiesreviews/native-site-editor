@@ -6,6 +6,7 @@ import { STALE_MESSAGE, type GuardedEdits, type Outcome, type RunOptions, type S
 import { createComponentMode, EnterTimeout, scopeHolds, type Level } from "./component-mode";
 import type { ElementMenuTarget } from "../components/element-menu";
 import type { MenuItem } from "../components/row-menu";
+import type { LiveTextPorts } from "../live-text";
 // Components, first class (docs/page-builder/components.md): what the page
 // builder does around a component instance, alongside the edit bar and the
 // page structure.
@@ -124,6 +125,8 @@ export interface ComponentDeps {
   currentPath: () => string | undefined;
   /** The preview's selection, as the editor last heard it. */
   selection: () => NativePreviewSelection | undefined;
+  /** The open file's shared copy (src/live-text.ts, ADR 0003): started once, with the first tools made. */
+  live?: Pick<LiveTextPorts, "store" | "openFile" | "scope">;
   /** Opens a file in the code pane; resolves once it is mounted (true) or not. */
   openFile: (path: string) => Promise<boolean>;
   /** Said and shown as the toast; mode notes the component bar already shows are "quiet". */
@@ -257,7 +260,15 @@ export interface ComponentStructureModel {
 /** The status line when Edit component mode gave up at its deadline (component-mode.ts). */
 const LATE_MODE = `${new EnterTimeout().message} The template's code is open.`;
 
+// Live text loads here, not at boot: these tools come two frames and a beat after the first paint,
+// so the boot chunk carries only its ports. Yjs loads later still, once someone else has the file open.
+let liveText: Promise<unknown> | undefined;
+function startLiveText(live: NonNullable<ComponentDeps["live"]>) {
+  liveText ??= import("../live-text").then(module => module.startLiveText(live)).catch(() => { liveText = undefined; });
+}
+
 export function createComponentTools(deps: ComponentDeps) {
+  if (deps.live) startLiveText(deps.live);
   const refuse = (reason: string) => { deps.announce(reason); showRefusal(reason); };
   const panel = node("section", "component-panel");
   panel.setAttribute("aria-label", "Component properties");

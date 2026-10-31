@@ -16,12 +16,14 @@ import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePage
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import { mediaChanges, type MediaTool } from "../shared/agent-media";
 import { isAtomicOperation } from "../shared/agent-tool-table";
-import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, WORKING_NOTE, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement, type AgentWorking } from "../shared/agent";
+import { agentName, type AgentWho, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, WORKING_NOTE, outlineId, PICTURE_PHONE_HEIGHT, PICTURE_PHONE_WIDTH, WORKING_HERE_MS, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement, type AgentWorking } from "../shared/agent";
 import { lineOf, type WorkingPart } from "./working-part";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./drafts";
 import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
 import { changedSinceRead } from "../shared/agent-edit";
+import { findPageRef } from "../shared/agent-read";
+import { discardedMessage, discardPlan, keptChange, noteAgentChange } from "./agent-changes";
 import { applyReplacements } from "../shared/agent-replacements";
 import { toPageAddress } from "../shared/site-rules";
 import type { AgentTextCommit } from "./editor-workspace";
@@ -35,6 +37,7 @@ import { removeEdit } from "./native-structure";
 import type { createGuardedEdits, EditorWorkspace, GuardedEdits, NodeRef, Outcome, Reads } from "./guarded-edit";
 import { addSectionStep, type LoaderPlanner, type SectionPlanned } from "./page-builder/component-plans";
 import { readSource, type SourceNode } from "./page-builder/source-tree";
+import { presenceWithin, sectionLike as isSection } from "./agent-presence";
 import type { AgentCommandOutcome } from "./components/agent-menu";
 import type { MediaPin } from "./controllers/media-controller";
 
@@ -383,6 +386,22 @@ export function agentElement(input: ElementInput, site: NativeSite, source: stri
   return element;
 }
 
+/** The element `id` (get_page's) of the page `ref` (its URL or file), as an agent's question is pinned on it (ask_user, ticket am-15); or why not. */
+export function agentElementAt(site: NativeSite, ref: string, id: string, source: (file: string) => string | undefined): { element: AgentElement } | { refuse: string } {
+  const page = findPageRef(Object.entries(site.routes).map(([route, file]) => ({ route, file })), ref);
+  if (!page?.file) return { refuse: `${ref} is not a page of this site (get_site lists them).` };
+  const node = parseOutlineId(id), text = source(page.file), missing = { refuse: `${page.file} has no element ${id}; get_page lists its ids.` };
+  if (!node || text === undefined) return missing;
+  let element: Element | undefined, parent: ParentNode = parseMarked(text).root;
+  for (const index of node) {
+    element = parent.children[index];
+    if (!element) return missing;
+    parent = element;
+  }
+  const about = agentElement({ path: page.file, node, route: page.route, tag: element!.localName, text: element!.textContent ?? "" }, site, text);
+  return about ? { element: about } : missing;
+}
+
 // ---- Where the user is working (ticket 52) ----
 
 type Span = { start: number; end: number };
@@ -677,19 +696,31 @@ export interface AgentSiteActions {
   deleteFile(path: string): Promise<string | undefined>;
   /** The preview's inspection of the page `path` shows (see native-preview.ts `inspect`). */
   inspect(request: { path: string; node?: number[]; selector?: string; limit?: number }): Promise<unknown>;
+  /** A picture of the page `path` shows (ticket am-14, native-preview.ts `picture`): drawn `width` × `height` (none: the preview's own size), of its section `node` (none: its first screen). */
+  picture(request: { path: string; width?: number; height?: number; node?: number[] }): Promise<{ data: string; mimeType: string; width: number; height: number; viewport: number }>;
   listMedia(request: { folder?: string; offset: number; limit: number }): Promise<string>;
   previewMedia(path: string): Promise<{ data: string; mimeType: string; width: number; height: number; originalWidth: number; originalHeight: number }>;
   media(command: AgentCommand): Promise<void | { message: string; result: Record<string, string> }>;
   /** The Astro-era active-file operations. */
   legacy(command: AgentCommand): Promise<void>;
   /**
-   * An agent at work on the page `path` (ticket 33): `find` names the element it works on in that page's
-   * text now (its section), which shows the agent's presence while that page is shown; ended by the returned call.
+   * The agent `who` at work on the file `path` (tickets 33, am-11): `find` names the element it works on in
+   * that page's text now (its section), which shows the agent's presence while that page is shown; ended by the returned call.
    */
-  presence?: (path: string, find: (source: string) => number[] | undefined) => () => void;
+  presence?: (path: string, find: (source: string) => number[] | undefined, who?: AgentWho) => () => void;
+  /**
+   * "I'm working here" (ticket am-14), taken as the command arrives: the returned call shows `who` on the page `path`'s
+   * element `node` (none: the page alone) until it says otherwise, in the workspace shown as it arrived; no path: nowhere.
+   * It answers why nothing shows, if nothing does.
+   */
+  workingHere?: (who: AgentWho) => (path: string | undefined, node: number[] | undefined) => Promise<string | undefined> | string | undefined;
+  /** discard_change (ticket am-15): the workspace shown, its drafts now and the file open there. */
+  shown?(): { scope: DraftScope; draft(path: string): SavedDraft | undefined; openFile?: string } | undefined;
 }
 
 export class Conflict extends Error {}
+const gone = (path: string) => `${path} is not there any more.`;
+const notShown = (path: string) => `${path} could not be shown in the preview.`;
 
 interface InspectionReport {
   error?: string;
@@ -724,7 +755,7 @@ async function expectHash(actions: AgentSiteActions, path: string, expected: str
     if (text !== undefined) throw new Conflict(`${path} exists now. Read it and edit it instead.`);
     return text;
   }
-  if (text === undefined) throw new Conflict(`${path} is not there any more.`);
+  if (text === undefined) throw new Conflict(gone(path));
   if ((await textHash(text)) !== expected) throw new Conflict(changedSinceRead(path));
   return text;
 }
@@ -800,6 +831,9 @@ function refuseProtected(command: AgentCommand) {
 
 // ---- Agent presence (ticket 33) ----
 
+/** Commands that show no presence of their own while they run (ticket am-14). */
+const UNSHOWN = new Set<string>(["screenshot_preview", "working_here"]);
+
 /**
  * The element of the page `source` an agent's change works on, as its presence shows it (ticket 33):
  * the section the change is in (a section moved or removed, the section of an element it changes, of a
@@ -809,13 +843,9 @@ function refuseProtected(command: AgentCommand) {
  */
 export function agentPresenceTarget(command: AgentCommand, source: string, sectionTags: ReadonlySet<string>): number[] | undefined {
   const args = command.args ?? {}, tree = readSource(source, { page: true });
-  const sectionLike = (el: SourceNode | undefined) => el?.type === "element" && (el.name === "section" || sectionTags.has(el.name));
+  const sectionLike = (el: SourceNode | undefined) => isSection(el, sectionTags);
   // The deepest section holding the element at `node` (or being it), else that element.
-  const within = (node: number[] | undefined) => {
-    if (!node?.length || !tree.at(node)) return undefined;
-    for (let depth = node.length; depth > 0; depth--) if (sectionLike(tree.at(node.slice(0, depth)))) return node.slice(0, depth);
-    return node;
-  };
+  const within = (node: number[] | undefined) => presenceWithin(tree, node, sectionTags);
   switch (command.operation) {
     case "move_section":
     case "remove_section": return within(parseOutlineId(String(args.section ?? "")));
@@ -865,10 +895,12 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
   if (mediaProblem) throw new Conflict(mediaProblem);
   for (const candidate of [args.file, args.with, ...args.files ?? []])
     if (candidate && touchesMediaRecords(candidate)) throw new Error(MEDIA_RECORDS_REFUSED);
-  // Admitted: the agent is at work from here until the change lands or stops.
+  // Admitted: the agent is at work from here until the change lands or stops. A picture changes nothing, so it shows
+  // nothing (an agent holding a section stays there); working_here shows the agent itself, held.
   let end = () => {};
-  try {
-    const started = actions.presence?.(command.path, source => agentPresenceTarget(command, source, actions.sectionTags()));
+  if (!UNSHOWN.has(command.operation)) try {
+    const started = actions.presence?.(command.path, source => agentPresenceTarget(command, source, actions.sectionTags()),
+      { grant: command.grantId ?? "", name: agentName(command.agent) });
     if (typeof started === "function") end = started;
   } catch { /* Presence is a picture of the work: it never stops it. */ }
   try { return await applyAdmitted(actions, command); }
@@ -928,6 +960,18 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
           cards: made.cards.join(", "), notes: made.notes.join("\n"), hash: await hashOf(actions, path),
         },
       };
+    }
+    case "discard_change": {
+      // The agent's own change, kept in this tab (src/agent-changes.ts): its files' drafts before it, put back while
+      // each is as it left them, as one step of the editor's own Undo.
+      // Its undo runs where the change is shown, never in another site or branch.
+      const id = String(args.change ?? ""), shown = actions.shown?.();
+      if (!shown || !sameBranch(shown.scope, { repoId: command.repoId, branch: command.branch }))
+        throw new Conflict("Show this site and branch in the editor, then undo the change again.");
+      const change = keptChange(shown.scope, id);
+      if (!change || change.grant !== command.grantId) throw new Conflict(`No change ${id} of yours is kept in this editor tab any more. Change it back with the edit tools.`);
+      await guarded(actions.edits.run(r => discardPlan([change], r, path => shown.draft(path), shown.openFile)));
+      return { message: discardedMessage(id), result: { files: [...change.after.keys()].join(", ") } };
     }
     case "add_section":
     case "move_section":
@@ -1057,9 +1101,34 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       if (!isPreviewablePicture(path)) throw new Error(picturePreviewRefusal(path));
       return { message: `Previewed ${path}.`, result: { ...await actions.previewMedia(path) } };
     }
+    case "screenshot_preview": {
+      const node = args.section !== undefined ? elementOf(args.section) : undefined;
+      if (!(await actions.open(path))) throw new Conflict(notShown(path));
+      const picture = await actions.picture({ path, ...(args.width === "phone" ? { width: PICTURE_PHONE_WIDTH, height: PICTURE_PHONE_HEIGHT } : {}), ...(node ? { node } : {}) });
+      return {
+        message: `A picture of ${node ? `section ${args.section} of ` : ""}${path}, ${picture.viewport} px wide.`,
+        result: { data: picture.data, mimeType: picture.mimeType, width: picture.width, height: picture.height, viewport: picture.viewport },
+      };
+    }
+    case "working_here": {
+      // Taken before the page is read: a site or branch shown meanwhile gets no hold (its same-named page is another).
+      const hold = actions.workingHere?.({ grant: command.grantId ?? "", name: agentName(command.agent) });
+      if (args.done) {
+        await hold?.(undefined, undefined);
+        return { message: "You show nowhere now." };
+      }
+      const node = args.section !== undefined ? elementOf(args.section) : undefined;
+      const source = await actions.text(path);
+      if (source === undefined) throw new Conflict(gone(path));
+      const tree = readSource(source, { page: true });
+      if (node && !tree.at(node)) throw new Conflict(noSection(args.section!));
+      const unheld = await hold?.(path, node && presenceWithin(tree, node, actions.sectionTags()));
+      if (unheld) throw new Conflict(unheld);
+      return { message: `The user sees you at work on ${node ? `section ${args.section} of ` : ""}${path} for ${WORKING_HERE_MS / 60_000} minutes, or until you call working_here again.` };
+    }
     case "inspect_preview": {
       const node = args.element !== undefined ? elementOf(args.element) : undefined;
-      if (!(await actions.open(path))) throw new Conflict(`${path} could not be shown in the preview.`);
+      if (!(await actions.open(path))) throw new Conflict(notShown(path));
       const report = (await actions.inspect({
         path,
         ...(node ? { node } : {}),
@@ -1110,6 +1179,8 @@ async function structuralOutcome(command: AgentCommand, after: Map<string, Saved
     case "move_file": return { message: `Moved ${path} to ${String(args.to ?? "")}, unsaved.`, result: { path: String(args.to ?? "") } };
     case "delete_file": return { message: `Deleted ${path}, unsaved (Restore brings it back).` };
     case "remove_section": return { message: `Section ${args.section} removed from ${path}, unsaved.`, result: { ...await hash(path) } };
+    case "discard_change": return { message: discardedMessage(String(args.change ?? "")),
+      result: { files: [...after.keys()].join(", "), ...await hash(path) } };
     case "add_section": case "move_section": {
       if (!plan?.after) break;
       const section = outlineId(plan.after.node);
@@ -1221,6 +1292,9 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
             drafts: [...after].map(([path, record]) => [draftKey(scope, path), record ?? null]), receipt });
           lastAfter = after;
           committed = true;
+          // Kept for its undo (ticket am-15); an undo is not undone in its turn by an agent.
+          if (!result.duplicate && command.grantId && command.operation !== "discard_change")
+            noteAgentChange({ id: command.id, grant: command.grantId, agent: agentName(command.agent), operation: command.operation, scope, page: command.path, before, after });
           return !result.duplicate;
         } catch (error) { return refuse(error); }
       },
@@ -1270,7 +1344,7 @@ export function pinnedMediaActions(actions: AgentSiteActions, command: AgentComm
     open: async path => left() ? true : actions.open(path),
     isMounted: path => left() || actions.isMounted(path),
     // Its presence shows only on its own page shown (ticket 33).
-    presence: (path, find) => left() ? () => {} : actions.presence?.(path, find) ?? (() => {}),
+    presence: (path, find, who) => left() ? () => {} : actions.presence?.(path, find, who) ?? (() => {}),
   };
 }
 
@@ -1375,7 +1449,7 @@ export interface AgentAwayPorts {
  * the agent records with its receipt, then into the draft store, as another tab's would. A page or
  * file command runs in its background site (src/background-site.ts, `away`): the editor's own
  * controllers over the workspace it held as it arrived, its step parked for its own page's Undo.
- * Only a command that needs the page on screen (open_page, inspect_preview) refuses.
+ * Only a command that needs the page on screen (open_page, inspect_preview, screenshot_preview, working_here) refuses.
  */
 export async function finishAgentTextElsewhere(command: AgentCommand, shown: () => DraftScope | undefined, account: string | undefined, store: DraftStore,
   find: (files: AgentReadFiles, path: string) => Promise<{ sha: string } | undefined>, away?: AgentAwayPorts): Promise<AgentCommandOutcome | undefined> {

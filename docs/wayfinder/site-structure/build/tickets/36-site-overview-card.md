@@ -9,7 +9,7 @@ blocked_by: [30-site-map]
 
 ## Goal
 
-A quiet card in the map's corner with the site at a glance (map destination (b); [ticket 04](../../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26)). Size: M.
+A quiet card in the map's corner with the site at a glance (map destination (b); [ticket 04](../../tickets/04-grill-map-behaviour.md#resolution-2026-10-26)). Size: M.
 
 ## Decided behaviour
 

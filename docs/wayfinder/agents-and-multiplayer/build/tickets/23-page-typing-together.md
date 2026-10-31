@@ -16,7 +16,7 @@ Typing together on the visual page, as in the [demo](../../prototypes/08-typing-
 [ADR 0003](../../../../adr/0003-shared-editing-over-a-store-nothing-relay.md) decision 3 and [ticket 12](../../tickets/12-prototype-typing-together-poc.md#resolution-2026-10-25):
 
 - Typing in the preview reaches the shared copy letter by letter (today it reaches the source on click-away).
-- Others' carets show in the page's text with the shared caret look, and no element highlight.
+- Others' carets show in the page's text with the shared caret look, and no element highlight. The look is from [mock-up 13](../../prototypes/13-code-pane-and-undo.html), approved by Lex on 2026-10-27: a circle with the first letter, or the agent's icon. On hover or focus it widens and the rest of the name slides out from behind the letter (blur, slide, fade, about 200 ms ease-out; fade only with reduced motion). The same look is used in the code pane (22) and for guests (30). A caret shows at the same spot on the page as in the code pane, and the undo on its name tag works in both places (Lex, 2026-10-27).
 - An agent's change replacing the element someone types in waits until they click away (clean-up slice 52).
 
 ## Files
@@ -27,6 +27,7 @@ Expected (confirm while designing): `src/components/native-preview-runtime.js`, 
 
 - A spec: both type in one paragraph on the page and end identical; carets show in the page's text.
 - An agent's heading change waits while Lex types in the heading and lands after he clicks away.
+- Moved here from slice 24 (am-24, 2026-10-31): on the page, Anna's caret name tag ends with an undo icon while `LiveText.canUndoAuthor` (src/live-text.ts) says her change can be taken back; clicking it runs `LiveText.undoAuthor`, and the spec shows her words gone in both tabs and Lex's still there.
 
 ## Kit commands and evidence
 

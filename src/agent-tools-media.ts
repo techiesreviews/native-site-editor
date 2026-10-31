@@ -1,4 +1,4 @@
-import { textHash, textBytes, type AgentCommand } from "../shared/agent";
+import { agentNamed, textHash, textBytes, type AgentCommand } from "../shared/agent";
 import { payloadIdentity, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
 import { mediaChanges, type AgentMedia } from "../shared/agent-media";
 import { agentToolsOn } from "../shared/agent-tool-table";
@@ -74,7 +74,7 @@ export function createAgentMediaTools(options: {
         check();
         if (!source || !sameBranch({ repoId: source.repo.id, branch: source.snapshot.branch }, workspace)) throw new Error("The editor is unavailable. Open the connected site and branch.");
         const command: AgentCommand = { id: request.id, operation: request.tool, args: request.args, path: request.path, content: "",
-          branch: source.snapshot.branch, commit: commit!, repoId: source.repo.id, ownerGeneration: fence, grantId: request.grantId, generation: request.generation,
+          branch: source.snapshot.branch, commit: commit!, repoId: source.repo.id, ownerGeneration: fence, grantId: request.grantId, ...agentNamed(request.agent), generation: request.generation,
           requestIdentity: identity, state: "pending", createdAt: request.createdAt };
         beforeCommit();
         mediaCommandProofs.set(command, beforeCommit);

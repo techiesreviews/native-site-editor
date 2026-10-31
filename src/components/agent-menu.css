@@ -8,7 +8,7 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: var(--size-control);
+  min-block-size: max(var(--size-control), var(--size-tap));
   padding: 4px 8px;
   border: 0;
   border-radius: var(--radius);
@@ -130,4 +130,68 @@
 /* A request still with an agent: its number is grey; an agent's question keeps the orange. */
 .agent-menu__question:not(.is-asking) .agent-menu__question-number {
   background: var(--muted);
+}
+/* While agents are on (ticket am-12): the agents working now, each with its dot and a Stop that ends that
+   agent only. */
+.agent-menu__agent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-block-size: max(var(--size-control), var(--size-tap));
+  padding-block: 2px;
+  padding-inline: 8px 4px;
+}
+.agent-menu__agent-name {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Where the focus lands after a Stop (the list, or the menu once it is empty): the editor's own ring, inside. */
+.agent-menu:focus-visible,
+.agent-menu__agents:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+.agent-menu__divider {
+  block-size: 1px;
+  margin-block: 6px;
+  margin-inline: 4px;
+  background: var(--control-line);
+}
+.agent-menu__agents {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* An agent asking a question: its dot orange, as its chip on the page. */
+.agent-menu__agent.is-asking .agent-menu__agent-dot {
+  background: var(--agent-question-strong);
+}
+.agent-menu__stop {
+  flex: none;
+  min-block-size: max(var(--size-compact), var(--size-tap));
+  padding-block: 0;
+  padding-inline: 10px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: transparent;
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+@media (hover: hover) and (pointer: fine) {
+  .agent-menu__stop:hover {
+    background: var(--hover);
+  }
+}
+.agent-menu__stop:active {
+  background: var(--hover);
+}
+.agent-menu__stop:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
 }
