@@ -60,9 +60,11 @@ export interface LiveTextPorts {
   /** Live sharing switched on (`liveSharingOn` by default). */
   on?: boolean;
 }
-/** A copy this browser shared, kept to start from when the file opens again: its starting-text tag and its Yjs state.
+/** A copy this browser shared, kept to start from when the file opens again: its starting-text tag, its Yjs state and
+ * the draft's text when it was kept (`draft`; none in copies kept before it was added). The draft and the copy are saved
+ * apart and a reload can keep one write and lose the other: `draft` tells what the draft took on after the copy's last write.
  * Only the shapes are checked on reading; a state Yjs cannot apply is dropped then (`load`). */
-export interface KeptCopy { tag: Uint8Array; update: Uint8Array }
+export interface KeptCopy { tag: Uint8Array; update: Uint8Array; draft?: string }
 /** Where kept copies live: this browser only (memory, then IndexedDB), never the server. */
 export interface CopyKeeper {
   read(key: string): Promise<KeptCopy | undefined>;
@@ -84,7 +86,8 @@ const KEEP_MS = 200;
 
 const isKept = (value: unknown): value is KeptCopy => {
   const copy = value as Partial<KeptCopy> | null;
-  return !!copy && copy.tag instanceof Uint8Array && copy.tag.length === 20 && copy.update instanceof Uint8Array;
+  return !!copy && copy.tag instanceof Uint8Array && copy.tag.length === 20 && copy.update instanceof Uint8Array
+    && (copy.draft === undefined || typeof copy.draft === "string");
 };
 /** Memory first (this page's newest), then IndexedDB (a reload); writes go to both, best effort. The database opens at once,
  * so a write when the page hides starts its transaction then, as the drafts' does. */
@@ -263,23 +266,14 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     const text = doc.getText("source");
     if (seed) Y.applyUpdate(doc, seed, START);
     let synced = false, starting = false, waiting: unknown, keeping: unknown;
-    if (resume) {
-      // Its own earlier copy, then what this tab typed since this share began (as changes on that copy, so they merge
-      // as edits do). The draft and the kept copy are saved apart and a reload can keep one write and lose the other:
-      // where they disagreed when the share began, that difference was shared already (the room, or this copy, has it).
-      Y.applyUpdate(doc, resume.update, START);
-      const change = typedSince(text.toString(), start.text, store.text(scope, path)!);
-      if (change) {
-        doc.transact(() => {
-          if (change.end > change.start) text.delete(change.start, change.end - change.start);
-          if (change.text) text.insert(change.start, change.text);
-        }, START);
-      }
-    }
+    // Its own earlier copy. What the draft took on after that copy was kept goes in when this tab starts its part (`begin`).
+    if (resume) Y.applyUpdate(doc, resume.update, START);
+    const keptText = text.toString();
     const keep = () => {
       clock.clearTimeout(keeping);
       keeping = undefined;
-      if (synced && !discarded) keeper.write(start.key, { tag, update: Y.encodeStateAsUpdate(doc) });
+      const draft = store.text(scope, path);
+      if (synced && !discarded) keeper.write(start.key, { tag, update: Y.encodeStateAsUpdate(doc), ...(draft === undefined ? {} : { draft }) });
     };
     /** Catch-up requests that came before this copy could answer: answered once it can. */
     let asked: { kind: number; theirs: boolean; from: number; vector: Uint8Array }[] = [];
@@ -312,7 +306,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     page?.addEventListener("pagehide", keep);
     page?.document.addEventListener("visibilitychange", hidden);
     doc.on("update", (update: Uint8Array, origin: unknown) => {
-      if (origin !== REMOTE) void send(UPDATE, update);
+      // Alone, nothing goes out: whoever joins next is caught up by HELLO and REPLY.
+      if (origin !== REMOTE && editors) void send(UPDATE, update);
       if (synced && keeping === undefined) keeping = clock.setTimeout(keep, KEEP_MS);
     });
     text.observe((event, transaction) => {
@@ -344,7 +339,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (synced || starting) return;
       starting = true;
       clock.clearTimeout(waiting);
-      // Resumed from its own kept copy: the draft is in it already, so nothing more goes in.
+      // Resumed from its own kept copy: what the draft took on after the copy was kept goes in, unless the copy has it now.
+      if (resume) resumeDraft(resume);
       for (; !resume;) {
         const own = store.text(scope, path);
         const adds = (now: string | undefined) => now !== undefined && now !== base && (!caught || now !== text.toString());
@@ -363,6 +359,39 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       // Caught up, it asks the others for what only it has (a resumed copy, its own changes); starting its own
       // copy, it tells the room, in case another did the same meanwhile.
       hello();
+    }
+
+    /**
+     * The draft's changes after the kept copy's last write (`typedSince` from the draft as it was kept; from the share's
+     * start for copies kept without it), placed on the copy as it is now. The room may have caught this copy up with
+     * them already (they were shared before a reload lost the copy's write): what lies between the change's two ends is
+     * read again here. Already there: nothing goes in. As kept: the change goes in. Changed by others too: its text goes
+     * in after theirs, so nobody's words are lost.
+     */
+    function resumeDraft(resume: KeptCopy) {
+      const own = store.text(scope, path);
+      const change = own === undefined ? undefined : typedSince(keptText, resume.draft ?? start.text, own);
+      if (!change) return;
+      // The kept copy again, apart, to name the change's ends by Yjs item (the same items as in this copy).
+      const kept = new Y.Doc();
+      if (seed) Y.applyUpdate(kept, seed);
+      Y.applyUpdate(kept, resume.update);
+      const keptType = kept.getText("source");
+      const from = Y.createRelativePositionFromTypeIndex(keptType, change.start, -1), to = Y.createRelativePositionFromTypeIndex(keptType, change.end);
+      kept.destroy();
+      const at = Y.createAbsolutePositionFromRelativePosition(from, doc)?.index, till = Y.createAbsolutePositionFromRelativePosition(to, doc)?.index;
+      const now = text.toString(), was = keptText.slice(change.start, change.end);
+      doc.transact(() => {
+        if (at === undefined || till === undefined || till < at) {
+          if (change.text) text.insert(Math.min(change.start, now.length), change.text);
+          return;
+        }
+        const between = now.slice(at, till);
+        if (between === was) {
+          if (till > at) text.delete(at, till - at);
+          if (change.text) text.insert(at, change.text);
+        } else if (change.text && !between.includes(change.text)) text.insert(till, change.text);
+      }, START);
     }
 
     function hello() {
