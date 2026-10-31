@@ -56,3 +56,11 @@ In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`): `kit.d/deps`
 ## Kit commands and evidence
 
 Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA.
+- Lead, 2026-10-31, first check by hand (`npm audit --package-lock-only`):
+  - native-site-editor (dev): 2 critical (dompurify via monaco-editor), 8 high (among them @modelcontextprotocol/server 2.0.0–2.2.0, 'shared transport delivered one HTTP client's messages to another', which matters for the live /mcp), 11 moderate.
+  - TechiesTools (main): 1 critical (astro <=7.3.2: RCE via AVIF images, auth bypass, XSS), 14 high.
+  - camframe: 4 high, 16 moderate.
+  - techies-playground: 6 high.
+  - agent-kit: none.
+  - prompter and script have no lock file, so they can't be checked: the monthly update should add one.
+  - The two criticals went to a hot-fix child at once, under Lex's rule. The highs wait for this ticket's same-day path, or a hand fix if this ticket isn't built by Tuesday.
