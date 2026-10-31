@@ -63,3 +63,4 @@ Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affe
 - Lead, 2026-10-31: the hook on `delegate_task` and the style line in briefs are built by [ticket 84](84-factory-brief-and-go.md) (`kit brief` plus one brief hook); this ticket keeps the trial log, `kit talk-report` and the Chinese-text guard, and runs after 84.
 - Lead's hand log, style per brief: 2026-10-31 ke-84 brief → `en` (short English).
 - 2026-10-31 security hot-fix brief → `en` (wenyan skipped: a live hot fix is no place for the trial).
+- 2026-10-31 ke-88 brief → `wenyan`.

@@ -2,7 +2,7 @@
 title: "Full browser runs stop failing when the machine is busy: one full run at a time per machine, and a lone retry for a failed file"
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-88
 builder: claude
 blocked_by: []
 ---
