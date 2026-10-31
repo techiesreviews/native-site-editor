@@ -1,5 +1,5 @@
 ---
-title: "Packages updated monthly in every project; a daily security check; critical holes with a fix go live at once"
+title: "Packages updated monthly in every project; a security check twice a day; critical holes with a fix go live at once"
 type: task (AFK)
 status: open
 assignee:
@@ -34,7 +34,7 @@ Today no project has Dependabot or Renovate. The `gh` token can't read GitHub's 
   - If any check, the review or the release check fails, nothing goes live, and an urgent question thread asks Lex.
   - High-severity holes: fixed and landed the same day, live with the Tuesday ship.
   - Moderate and low: in the monthly update.
-- **Where it runs:** the commands live in the kit, so they work in every project and every new one. The schedules are T3 `schedule_task` routines started by the lead once this lands (monthly: Mondays 06:00, acting only on the first Monday; daily audit: 07:00). Without T3 the same commands run from a user systemd timer.
+- **Where it runs:** the commands live in the kit, so they work in every project and every new one. The schedules are T3 `schedule_task` routines started by the lead once this lands (monthly: Mondays 06:00, acting only on the first Monday; security check twice a day: 07:00 and 19:00). Without T3 the same commands run from a user systemd timer.
 - **Not in this ticket:** GitHub's own Dependabot alerts. They are a repo setting that needs Lex's click; the Tuesday pack mentions them as an optional extra email.
 
 ## Files
@@ -64,3 +64,4 @@ Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affe
   - agent-kit: none.
   - prompter and script have no lock file, so they can't be checked: the monthly update should add one.
   - The two criticals went to a hot-fix child at once, under Lex's rule. The highs wait for this ticket's same-day path, or a hand fix if this ticket isn't built by Tuesday.
+- Lex, 2026-10-31: "a daily check is needed for hot fixes maybe twice a day": `kit deps audit --all` runs at 07:00 and 19:00.
