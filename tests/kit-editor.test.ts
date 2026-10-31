@@ -536,10 +536,14 @@ test("new worktrees link the native-static fixture the browser suite reads", () 
 test("every timing spec in kit.json names exactly one browser spec file, so a rename never drops it quietly", () => {
   const { timing } = JSON.parse(read("scripts/agents/kit.json")) as { timing?: string[] };
   assert.ok(timing?.length, "timing in scripts/agents/kit.json lists the speed and memory specs");
+  // The folders kit specs picks browser specs from (`available` in scripts/agents/project.d/specs).
   const specs = ["tests/native-save", "tests/native-preview"].flatMap(folder => readdirSync(resolve(folder)).filter(name => name.endsWith(".spec.ts")).map(name => `${folder}/${name}`));
   // kit pr matches an entry by path, file name, or name without .spec.ts (isTiming in the kit's browser-runs.mjs).
   for (const entry of timing) {
-    const matches = specs.filter(file => file === entry || file.endsWith(`/${entry}`) || file.endsWith(`/${entry}.spec.ts`));
+    const matches = specs.filter(file => {
+      const name = file.slice(file.lastIndexOf("/") + 1);
+      return entry === file || entry === name || `${entry}.spec.ts` === name;
+    });
     assert.equal(matches.length, 1, `timing entry ${entry} matches ${matches.length} spec files`);
   }
 });
