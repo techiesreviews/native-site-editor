@@ -4,7 +4,7 @@
 // and Redo take back only this tab's own words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyChanges, createDraftStore, type DraftEvent, type TextChange } from "../src/draft-store.ts";
+import { applyChanges, createDraftStore, type DraftEvent, type NativeTyping, type TextChange } from "../src/draft-store.ts";
 import { rebaseChanges, rebaseHistory } from "../src/shared-undo.ts";
 
 const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
@@ -127,7 +127,7 @@ test("a host action over the page goes with the steps under it; steps over other
 test("typing in the code pane: open typing stays open and committed typing undoes whole, past Anna's change", async () => {
   const lex = setup("<p>a</p>");
   let nativeCalls = 0;
-  const native = { undo: () => { nativeCalls++; return undefined; }, redo: () => { nativeCalls++; return undefined; } };
+  const native = { undo: () => { nativeCalls++; return undefined; }, redo: () => { nativeCalls++; return undefined; } } satisfies NativeTyping;
   const typing = lex.store.beginTyping(scope, path, history, { version: 1, native });
   typing.input("<p>aX</p>", 2); typing.input("<p>aXY</p>", 3);
   typing.commit();
@@ -156,7 +156,7 @@ test("a typing step partly undone through Monaco's stops goes, and an open group
   const native = {
     undo(expected: number) { if (stops[at].version !== expected || at === 0) return undefined; return stops[--at]; },
     redo(expected: number) { if (stops[at].version !== expected || at === stops.length - 1) return undefined; return stops[++at]; },
-  };
+  } satisfies NativeTyping;
   const typing = lex.store.beginTyping(scope, path, history, { version: 1, native });
   typing.input("xab", 3); typing.input("xabcd", 5);
   typing.commit();
@@ -175,4 +175,60 @@ test("a typing step partly undone through Monaco's stops goes, and an open group
   assert.equal(lex.now(), "BAxab1");
   await lex.store.undo(history);
   assert.equal(lex.now(), "BAxab");
+});
+
+test("a multi-file receipt over the page goes with the steps under it; Lex's later edit still undoes", async () => {
+  const lex = setup("<p>a</p>");
+  lex.store.open(scope, "site.css", { text: "p{}", baseSha: sha });
+  const after = (text: string, base: string) => ({ text, base, baseSha: sha });
+  assert.equal(lex.store.applyReceipt(history, "Rename class", [
+    { scope, path, after: after('<p class="b">a</p>', "<p>a</p>") },
+    { scope, path: "site.css", after: after(".b{}", "p{}") },
+  ]).ok, true);
+  lex.mine(lex.at("a</p>"), lex.at("a</p>"), "Lex ");
+  lex.theirs([{ start: 0, end: 0, text: "<h1>Anna</h1>" }]);
+  await lex.store.undo(history);
+  assert.equal(lex.now(), '<h1>Anna</h1><p class="b">a</p>');
+  assert.equal(lex.store.canUndo(history), false, "the receipt and the steps under it went");
+  assert.equal(lex.store.text(scope, "site.css"), ".b{}", "its other file is untouched");
+});
+
+test("a typing step fully undone, on the redo side, comes back whole after Anna's text without Monaco's stops", async () => {
+  const lex = setup("x");
+  const stops = [{ text: "x", version: 1 }, { text: "xab", version: 3 }];
+  let at = 1, redoCalls = 0;
+  const native = {
+    undo(expected: number) { if (stops[at].version !== expected || at === 0) return undefined; return stops[--at]; },
+    redo() { redoCalls++; return undefined; },
+  } satisfies NativeTyping;
+  const typing = lex.store.beginTyping(scope, path, history, { version: 1, native });
+  typing.input("xab", 3);
+  typing.commit();
+  await lex.store.undo(history);
+  assert.equal(lex.now(), "x");
+  lex.theirs([{ start: 0, end: 0, text: "Anna " }]);
+  assert.equal((await lex.store.redo(history)).ok, true);
+  assert.equal(lex.now(), "Anna xab");
+  assert.equal(redoCalls, 0);
+  typing.dispose();
+});
+
+test("Anna's change while Lex's Undo waits: that Undo stops, her change is there once, and the next Undo takes his back", async () => {
+  const lex = setup("<p>a</p>");
+  let release!: () => void, asked = 0, undone = 0;
+  const companion = {
+    ready: () => { asked++; return asked === 1 ? new Promise<undefined>(resolve => { release = () => resolve(undefined); }) : undefined; },
+    undo: () => { undone++; },
+    redo: () => {},
+  };
+  assert.equal(lex.store.edit({ scope, path, history, changes: [{ start: 3, end: 3, text: "Lex " }], companion }).ok, true);
+  const waiting = lex.store.undo(history);
+  lex.theirs([{ start: 0, end: 0, text: "<h1>Anna</h1>" }]);
+  release();
+  assert.deepEqual(await waiting, { ok: false, error: "The history changed meanwhile." });
+  assert.equal(lex.now(), "<h1>Anna</h1><p>Lex a</p>");
+  assert.equal(undone, 0);
+  assert.equal((await lex.store.undo(history)).ok, true);
+  assert.equal(lex.now(), "<h1>Anna</h1><p>a</p>");
+  assert.equal(undone, 1);
 });

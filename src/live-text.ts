@@ -384,6 +384,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       follow();
       for (const request of asked.splice(0)) answer(request.kind, request.theirs, request.from, request.vector);
       keep();
+      // Changes others sent while this tab was catching up can be taken back from now on.
+      if (authors.size) authorsChanged();
       // Caught up, it asks the others for what only it has (a resumed copy, its own changes); starting its own
       // copy, it tells the room, in case another did the same meanwhile.
       hello();
@@ -464,9 +466,12 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       } satisfies AuthorUndo,
       destroy() {
         clock.clearTimeout(waiting); keep(); unsubscribe(); page?.removeEventListener("pagehide", keep); page?.document.removeEventListener("visibilitychange", hidden);
+        // Gone before anyone hears it: a name tag asking now finds nothing to take back.
+        const had = authors.size > 0;
         for (const { undo } of authors.values()) undo.destroy();
+        authors.clear();
         doc.destroy();
-        if (authors.size) authorsChanged();
+        if (had) authorsChanged();
       },
     };
   }

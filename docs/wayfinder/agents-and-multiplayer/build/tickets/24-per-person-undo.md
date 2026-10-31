@@ -67,6 +67,7 @@ Choices left open, taken the safe way (for Lex's Tuesday pack):
 2. A section move or other whole-page step under Anna's change leaves Lex's Undo with the steps under it, as all of them did before.
 3. Lex's typing that spans Anna's change undoes as one step, not stop by stop.
 4. The name-tag Undo names authors by their Yjs client id, and counts only changes they sent live (not what a joiner's catch-up brought).
+5. Lex's own Undo is not a Yjs `UndoManager` tracking his origin (the decided behaviour's wording): his draft-store steps are moved past others' changes instead (`src/shared-undo.ts`), because the page builder's actions, the steps' companions (selection on Undo) and the code pane's Monaco stops all live in the draft-store history, which a Yjs `UndoManager` would not see. Yjs `UndoManager` serves only the name-tag Undo. Its visible effect is choice 1.
 
 Known limits:
 
@@ -87,4 +88,18 @@ Validation:
 - `RESULT: ok size boot 347 KB (+1 KB) vs dev@6863e02, budget 355 KB` (the draft store grew 93 bytes gzip; the report rounds to whole KB).
 - `npm run check` clean; `npm run lint` clean (`check-exports: 15 unused export(s), 0 failure(s)`).
 
+Review round 1:
+
+- The name-tag Undo drops its authors before it says so when a copy goes (another file, a restart, a stop), so a name tag asking then gets false; and it tells the name tags once a tab is caught up, when changes that arrived meanwhile become undoable.
+- The name-tag line now stands in the Done when of slices 22, 23 and 25, and the five choices are in the 3 November Tuesday pack.
+- New tests: `tests/per-person-undo.test.ts` (+3, 11): a multi-file receipt over the page goes with the steps under it while Lex's later edit undoes and its other file is untouched; a fully undone typing step on the redo side comes back whole after Anna's text without Monaco's stops; Anna's change while Lex's Undo waits on a companion stops that Undo ("The history changed meanwhile."), her change is there once, and the next Undo takes his back. The fake Monaco stacks are typed `satisfies NativeTyping`. `tests/live-text.test.ts` (+2, 31): name tags hear only false after a file switch and a stop (fails without dropping the authors first); a late joiner's catch-up is not Anna's name-tag change, while what she types after is, and taking it back leaves everyone else's words.
+- `RESULT: ok doctor 11/11 checks passed; warning: 4 setup pieces missing (run scripts/agents/kit init)`
+- `RESULT: ok unit 2920/2920 (178 files)` (`kit unit --affected`); `RESULT: ok unit 42/42 (2 files)` (`kit unit tests/per-person-undo.test.ts tests/live-text.test.ts`).
+- `RESULT: ok specs 1/1 passed; 189 more run in kit pr` (`kit specs --affected`: `native-live-text.spec.ts`, 5).
+- `npm run check` clean; `npm run lint` clean (`check-exports: 15 unused export(s), 0 failure(s)`).
+
+shots: none (no visible change: Undo behaviour only; F-canvas-15 has no steps file, it needs two browsers signed in at once)
+
 Feature list: F-canvas-15 updated (Undo with two people).
+
+Commits: Your Undo undoes your own typing; docs: 24-per-person-undo notes for the build
