@@ -2,7 +2,7 @@
 title: "The factory: `kit brief` writes every child's brief, `kit go` starts and waits for a long job, a hook refuses hand-written briefs"
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-84
 builder: claude
 blocked_by: [81-existing-projects-get-new-setup]
 ---
