@@ -119,12 +119,13 @@ test("a step Anna's change overlaps goes with the steps under it; newer steps st
 test("a host action over the page goes with the steps under it; steps over other files keep", async () => {
   const lex = setup("<p>a</p>");
   lex.store.open(scope, "site.css", { text: "p{}", baseSha: sha });
-  let undone = 0;
+  let undone = 0, disposed = 0;
   lex.mine(0, 0, "<!-- 1 -->");
-  lex.store.recordAction(history, { label: "Move section", undo: () => { undone++; } });
+  lex.store.recordAction(history, { label: "Move section", undo: () => { undone++; }, dispose: () => { disposed++; } });
   lex.store.edit({ scope, path: "site.css", history, text: "p{color:red}" });
   lex.mine(lex.now().length, lex.now().length, "<!-- 2 -->");
   lex.theirs([{ start: lex.at("a"), end: lex.at("a") + 1, text: "b" }]);
+  assert.equal(disposed, 1, "the dropped action is cleaned up");
   await lex.store.undo(history);
   assert.equal(lex.now(), "<!-- 1 --><p>b</p>");
   await lex.store.undo(history);
@@ -261,4 +262,22 @@ test("open typing back at its moved start keeps Lex's earlier Undo through Anna'
   await lex.store.undo(history);
   assert.equal(lex.now(), "<h1>A</h1><p>a</p>");
   typing.dispose();
+});
+
+test("Anna's change while a host action's Undo runs: that Undo stops, the action is cleaned up once, her change stands", async () => {
+  const lex = setup("<p>a</p>");
+  let release!: () => void, disposed = 0;
+  lex.mine(3, 3, "Lex ");
+  lex.store.recordAction(history, {
+    label: "Move section",
+    undo: () => new Promise<void>(resolve => { release = resolve; }),
+    dispose: () => { disposed++; },
+  });
+  const waiting = lex.store.undo(history);
+  lex.theirs([{ start: 0, end: 0, text: "<h1>Anna</h1>" }]);
+  release();
+  assert.deepEqual(await waiting, { ok: false, error: "The history changed meanwhile." });
+  assert.equal(disposed, 1);
+  assert.equal(lex.now(), "<h1>Anna</h1><p>Lex a</p>");
+  assert.equal(lex.store.canUndo(history), false, "the action and the steps under it went");
 });

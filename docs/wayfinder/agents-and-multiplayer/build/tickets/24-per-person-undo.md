@@ -71,7 +71,6 @@ Choices left open, taken the safe way (for Lex's Tuesday pack):
 
 Known limits:
 
-- `canUndoAuthor` is true while the author's change is in its Undo list, even when someone has since removed those words (then the Undo takes back nothing more).
 - A typing step that typed in two places within one settle period is one range: Anna's change between the two places counts as an overlap.
 - A change Anna sent while Lex's tab was still catching up, built on text Lex did not have yet, waits inside Yjs and comes in with the catch-up answer instead, which counts as no one's: her name tag cannot take that one back. Applying her frame again later would not help (Yjs has it already), so this stays; it is only the first moments after joining.
 
@@ -107,6 +106,18 @@ Review round 2:
 - New tests: `tests/per-person-undo.test.ts` (+2, 13): two of Lex's ranges with Anna's change between them, both orders the same text and hers moved back by one; open typing back at its moved start keeps Lex's earlier Undo through Anna's next change. The companion fake is typed `satisfies HistoryCompanion`. `tests/live-text.test.ts` (+1, 32): a tab never counts its own changes as an author's, and taking back Anna's change from her name tag leaves Lex's Undo and Redo, whose Redo then puts his words back on both.
 - `RESULT: ok doctor 11/11 checks passed; warning: 4 setup pieces missing (run scripts/agents/kit init)`
 - `RESULT: ok unit 2923/2923 (178 files)` (`kit unit --affected`); `RESULT: ok unit 45/45 (2 files)` (`kit unit tests/per-person-undo.test.ts tests/live-text.test.ts`).
+- `RESULT: ok specs 1/1 passed; 189 more run in kit pr` (`kit specs --affected`: `native-live-text.spec.ts`, 5).
+- `npm run check` clean; `npm run lint` clean (`check-exports: 15 unused export(s), 0 failure(s)`).
+
+Review round 3:
+
+- The name-tag Undo is this tab's own step: `undoAuthor(author, history)` records it in that Undo list (the page's or pane's, the file's own by default) as "Undo their change", so Lex's Undo puts the author's words back on every tab and his Redo takes them again. Like any new step, it ends Lex's Redo.
+- `canUndoAuthor` is true only while undoing would change the text: some of the author's words are still there, or words they removed can be put back. Any text change tells the name tags to look again. `undoAuthor` was already false when nothing changed (Yjs skips items that change nothing).
+- With live sharing off, stopping clears the name-tag listeners too.
+- F-canvas-15: any page-builder step in your Undo for the page drops with older ones; the name-tag Undo is your own step.
+- New tests: `tests/per-person-undo.test.ts` (+1, 14): Anna's change while a host action's Undo awaits stops that Undo ("The history changed meanwhile."), cleans the action up once, and her change stands; the host action test checks a dropped action is cleaned up once. `tests/live-text.test.ts` (+2, 34): a name tag whose words someone removed has nothing to take back, and both texts stay (fails with the old check); a name-tag Undo is Lex's own step, his Undo brings her words back on both and his Redo takes them again. Two tests now step back through the name-tag Undo before Lex's older steps.
+- `RESULT: ok doctor 11/11 checks passed; warning: 4 setup pieces missing (run scripts/agents/kit init)`
+- `RESULT: ok unit 2926/2926 (178 files)` (`kit unit --affected`); `RESULT: ok unit 48/48 (2 files)` (`kit unit tests/per-person-undo.test.ts tests/live-text.test.ts`).
 - `RESULT: ok specs 1/1 passed; 189 more run in kit pr` (`kit specs --affected`: `native-live-text.spec.ts`, 5).
 - `npm run check` clean; `npm run lint` clean (`check-exports: 15 unused export(s), 0 failure(s)`).
 

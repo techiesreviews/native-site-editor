@@ -80,6 +80,8 @@
 // (per-person Undo, ticket am-24), so they take back only this tab's own
 // words. `rebase` (src/shared-undo.ts `rebaseHistory`) does that through
 // `HistoryAccess`, so its code loads with the live-text chunk, not at boot.
+// It edits the entry and the journals' stacks in place: a change to these
+// internals must be checked against src/shared-undo.ts too.
 // Without `rebase`, as for another tab's draft (`reload`), the histories over
 // the file are cleared.
 //
