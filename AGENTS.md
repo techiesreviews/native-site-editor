@@ -29,3 +29,6 @@ The repo's review and model-routing rules in docs/agents/ take priority over glo
 Running a review: `scripts/agents/kit review` (see `docs/agents/agent-scripts.md#kit`).
 Reviewing a diff: apply `CODING_STANDARDS.md`.
 UX: `docs/agents/ux-rulebook.md`.
+
+Kitchen rulebook: `scripts/agents/kit rulebook` (stations, who decides, builder and reviewer pins).
+Agent commands: `scripts/agents/kit --help`; `scripts/agents/kit <command> --help` for one.
