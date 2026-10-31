@@ -206,7 +206,7 @@ export function typedSince(kept: string, began: string, own: string): TextChange
 
 /** The name-tag Undo (ticket am-24): takes back someone else's latest text change in the open file's shared copy. */
 interface AuthorUndo {
-  undo(author: number): boolean;
+  undo(author: number, history?: string): boolean;
   can(author: number): boolean;
 }
 
@@ -323,10 +323,15 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       return room.send(frame(kind, payload, id)).catch(() => false);
     };
     /** The draft now follows the shared copy (outside history: someone else's change). */
-    const follow = (changes?: TextChange[]) => {
+    /** A name-tag Undo running in this tab: this tab's own step, recorded in `history`. */
+    let taking: { undo: import("yjs").UndoManager; history: string | undefined } | undefined;
+    const follow = (changes?: TextChange[], own?: { history: string | undefined }) => {
       const now = text.toString(), draft = store.text(scope, path);
       if (draft === undefined || draft === now) return;
-      store.edit({ scope, path, changes: changesBetween(draft, now, changes), record: false, origin: "shared", rebase: rebaseHistory });
+      const between = changesBetween(draft, now, changes);
+      // A name-tag Undo is this tab's own step: its Undo puts their words back (as this tab's), its Redo takes them again.
+      if (own && store.edit({ scope, path, history: own.history, label: "Undo their change", changes: between }).ok) return;
+      store.edit({ scope, path, changes: between, record: false, origin: "shared", rebase: rebaseHistory });
     };
 
     // A reload or a closed tab keeps the newest copy too.
@@ -340,8 +345,22 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (synced && keeping === undefined) keeping = clock.setTimeout(keep, KEEP_MS);
     });
     text.observe((event, transaction) => {
-      if (synced && transaction.origin !== LOCAL) follow(deltaChanges(event.delta as { retain?: number; insert?: unknown; delete?: number }[]));
+      if (synced && transaction.origin !== LOCAL)
+        follow(deltaChanges(event.delta as { retain?: number; insert?: unknown; delete?: number }[]), taking && transaction.origin === taking.undo ? taking : undefined);
+      // Any change can make someone's change undoable or not (their words removed since): the name tags look again.
+      if (authors.size) authorsChanged();
     });
+    /** Whether undoing `item` changes the text: some of the words it added are still there, or it removed words
+     * (other than its own) that Yjs can put back. Yjs itself skips items that change nothing. */
+    const undoable = (item: import("yjs").UndoManager["undoStack"][number]) => {
+      for (const [client, ranges] of item.deletions.clients) for (const { clock, len } of ranges)
+        for (let at = clock; at < clock + len; at++) if (!Y.isDeleted(item.insertions, Y.createID(client, at))) return true;
+      if (!item.insertions.clients.size) return false;
+      const gone = Y.createDeleteSetFromStructStore(doc.store);
+      for (const [client, ranges] of item.insertions.clients) for (const { clock, len } of ranges)
+        for (let at = clock; at < clock + len; at++) if (!Y.isDeleted(gone, Y.createID(client, at))) return true;
+      return false;
+    };
     const unsubscribe = store.subscribe((event: DraftEvent) => {
       if (event.type !== "text" || event.key !== start.key || discarded || !synced || event.origin === "shared" || event.origin === "discard") return;
       // Another tab of this browser's saved draft, adopted (`reload`): it may lag behind this copy, so the draft
@@ -459,11 +478,17 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       receive, hello,
       /** Alone in the room (first in, or everyone else left before catching this tab up): its own draft starts the copy. */
       startOwn: () => begin(false),
-      /** The name-tag Undo: `author`'s latest change (its UPDATE frames, grouped as Yjs groups typing), taken back in the
-       * copy, which everyone follows. Changes it has taken back are not counted; its words someone removed since stay removed. */
+      /** The name-tag Undo: `author`'s latest change that still changes the text (its UPDATE frames, grouped as Yjs groups
+       * typing), taken back in the copy, which everyone follows, and recorded as this tab's own step in `history`.
+       * Changes it has taken back are not counted; a change whose words someone removed since is skipped. */
       authors: {
-        undo: author => synced && !discarded && (authors.get(author)?.undo.undo() ?? null) !== null,
-        can: author => synced && !discarded && Boolean(authors.get(author)?.undo.canUndo()),
+        undo(author, history) {
+          const found = authors.get(author);
+          if (!synced || discarded || !found) return false;
+          taking = { undo: found.undo, history };
+          try { return found.undo.undo() !== null; } finally { taking = undefined; }
+        },
+        can: author => synced && !discarded && Boolean(authors.get(author)?.undo.undoStack.some(undoable)),
       } satisfies AuthorUndo,
       destroy() {
         clock.clearTimeout(waiting); keep(); unsubscribe(); page?.removeEventListener("pagehide", keep); page?.document.removeEventListener("visibilitychange", hidden);
@@ -478,7 +503,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   }
 
   const authors: AuthorUndo = {
-    undo: author => copy?.authors.undo(author) ?? false,
+    undo: (author, history) => copy?.authors.undo(author, history) ?? false,
     can: author => copy?.authors.can(author) ?? false,
   };
   const stop = () => {
@@ -504,8 +529,12 @@ function liveSharingOn() {
  */
 export interface LiveText {
   (): void;
-  /** Takes back `author`'s latest text change in the open file; false when there is none to take back. */
-  undoAuthor(author: number): boolean;
+  /**
+   * Takes back `author`'s latest text change in the open file; false when there is none to take back. It is this tab's
+   * own step in `history` (the Undo list of the page or pane the name tag is on; the file's own by default), so its
+   * Undo puts their words back and its Redo takes them again.
+   */
+  undoAuthor(author: number, history?: string): boolean;
   /** Whether `author` has a text change in the open file the name tag can take back. */
   canUndoAuthor(author: number): boolean;
   /** Called when what the name tags can take back may have changed; returns its unsubscribe. */
@@ -518,11 +547,11 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
   const listeners = new Set<() => void>();
   const changed = () => { for (const listener of [...listeners]) try { listener(); } catch { /* A name tag must not break sharing. */ } };
   const port = (stop: () => void): LiveText => Object.assign(stop, {
-    undoAuthor: (author: number) => current?.authors?.undo(author) ?? false,
+    undoAuthor: (author: number, history?: string) => current?.authors?.undo(author, history) ?? false,
     canUndoAuthor: (author: number) => current?.authors?.can(author) ?? false,
     onAuthorUndo(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
   });
-  if (!(ports.on ?? liveSharingOn())) return port(() => undefined);
+  if (!(ports.on ?? liveSharingOn())) return port(() => { listeners.clear(); });
   /** The file this tab discarded while sharing: it stays out of the copy until another file shows. */
   let left: string | undefined;
   const check = () => {
