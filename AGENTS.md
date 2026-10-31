@@ -1,9 +1,9 @@
 # Agents
 
-Start here: `docs/agents/kitchen.md` (the kitchen rulebook) gives every station from idea to release, who decides, and the builder and reviewer pins.
+Start here: `docs/agents/kitchen.md` (the kitchen rulebook; `scripts/agents/kit rulebook` prints it) gives every station from idea to release, who decides, and the builder and reviewer pins.
 Finding code: read `docs/agents/code-map.md`.
 Running a build slice: follow `docs/agents/runner.md` (order of steps: build, review, `kit pr`, report).
-Agent commands: `scripts/agents/kit <command> --help`; one line each in `docs/agents/agent-scripts.md#kit`.
+Agent commands: `scripts/agents/kit --help`; `scripts/agents/kit <command> --help` for one; one line each in `docs/agents/agent-scripts.md#kit`.
 
 ## Agent skills
 
@@ -29,6 +29,3 @@ The repo's review and model-routing rules in docs/agents/ take priority over glo
 Running a review: `scripts/agents/kit review` (see `docs/agents/agent-scripts.md#kit`).
 Reviewing a diff: apply `CODING_STANDARDS.md`.
 UX: `docs/agents/ux-rulebook.md`.
-
-Kitchen rulebook: `scripts/agents/kit rulebook` (stations, who decides, builder and reviewer pins).
-Agent commands: `scripts/agents/kit --help`; `scripts/agents/kit <command> --help` for one.
