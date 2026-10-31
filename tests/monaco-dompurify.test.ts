@@ -34,3 +34,21 @@ test("the plugin runs in the build and in the dev server's pre-bundling", () => 
   assert.ok(names(config.optimizeDeps?.rolldownOptions?.plugins).includes("monaco-dompurify"),
     "vite.config.ts optimizeDeps.rolldownOptions.plugins lack monaco-dompurify");
 });
+
+const vendored = /monaco-editor[\\/]esm[\\/]vs[\\/]base[\\/]browser[\\/]dompurify[\\/]dompurify\.js$/;
+
+test("a real build and the dev pre-bundle ship the installed DOMPurify, not Monaco's copy", async () => {
+  const { rolldown } = await import("rolldown");
+  const { build } = await import("vite");
+  const output = await build({ configFile: false, logLevel: "silent", plugins: [config.plugins],
+    build: { write: false, rolldownOptions: { input: sanitizer } } });
+  const built = [output].flat().flatMap(result => "output" in result ? result.output : [])
+    .flatMap(chunk => chunk.type === "chunk" ? chunk.moduleIds : []);
+  const bundle = await rolldown({ input: sanitizer, plugins: config.optimizeDeps?.rolldownOptions?.plugins, logLevel: "silent" });
+  const prebundled = (await bundle.generate()).output.flatMap(chunk => chunk.type === "chunk" ? chunk.moduleIds : []);
+  await bundle.close();
+  for (const [where, ids] of [["build", built], ["pre-bundle", prebundled]] as const) {
+    assert.ok(ids.includes(dompurifyEntry), `${where} lacks ${dompurifyEntry}`);
+    assert.ok(!ids.some(id => vendored.test(id)), `${where} still holds Monaco's vendored DOMPurify`);
+  }
+});
