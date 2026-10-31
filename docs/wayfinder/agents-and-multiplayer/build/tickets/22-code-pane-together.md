@@ -85,3 +85,6 @@ UX review (F-code-01, F-code-08, F-canvas-15): F-code-08 and F-canvas-15 fine. F
 
 Not done (review nits): no native tooltip removed from the name (it shows a cut name whole); no Esc from a focused tag back to the code (the tag is not a menu, and Tab and a click in the code leave it); no retry of a failed carets load (it is tried again when the file is shared anew). Declined: the relay stamping each peer's login and peer id (worker and relay changes, a ticket of its own), and caret tokens in `src/theme.css` (outside this slice's files; the press areas use `--size-icon` and `--size-tap`).
 
+### UX follow-ups
+
+- UX (looks off): F-code-01 at 1280 px the code pane shows syntax colours in light and dark and starts with the head and sections folded, but a pop-up "Heading added. Into Section "Recent work" › after Div" notice with Undo appears after the action and sits on top of the code lines, and at 390 px the same notice covers the bottom of the canvas above the edit bar (.scratch/ux/am-22/20261031-190443-smiPdj/editor-F-code-01-1280-light-code-strip.webp)
