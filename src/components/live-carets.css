@@ -1,0 +1,115 @@
+/* Others' carets (src/components/live-carets.ts, ticket am-22): a thin line in their colour with a small
+   circle on top, opened into the name on hover or keyboard focus. The presence colours (src/theme.css):
+   the line in the colour, the tag light with a dark ink of its hue (4.5:1 and more in all four). */
+.live-caret {
+  --live-caret: var(--agent-presence);
+  --live-caret-pin: var(--agent-presence-pin);
+  --live-caret-ink: var(--agent-presence-ink);
+  --live-caret-mark: 18px;
+  position: relative;
+  inline-size: 0;
+  block-size: var(--live-caret-line, 19px);
+  /* Monaco gives every content widget a height: the caret itself takes no room and no clicks. */
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 160ms ease-out;
+}
+@starting-style {
+  .live-caret { opacity: 0; }
+}
+.live-caret[data-leaving] { opacity: 0; }
+/* Two carets at one spot: the tag being read sits on top. */
+.live-caret:has(.live-caret__flag:is(:hover, :focus-within)) { z-index: 1; }
+.live-caret[data-colour="1"] { --live-caret: var(--agent-presence-2); --live-caret-pin: var(--agent-presence-2-pin); --live-caret-ink: var(--agent-presence-2-ink); }
+.live-caret[data-colour="2"] { --live-caret: var(--agent-presence-3); --live-caret-pin: var(--agent-presence-3-pin); --live-caret-ink: var(--agent-presence-3-ink); }
+.live-caret[data-colour="3"] { --live-caret: var(--agent-presence-4); --live-caret-pin: var(--agent-presence-4-pin); --live-caret-ink: var(--agent-presence-4-ink); }
+
+.live-caret__line {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: -1px;
+  inline-size: 2px;
+  border-radius: 1px;
+  background: var(--live-caret);
+}
+
+/* The tag: a circle until opened, then the whole name and, while their change can be taken back, Undo. */
+.live-caret__flag {
+  position: absolute;
+  inset-block-end: calc(100% - 2px);
+  inset-inline-start: calc(var(--live-caret-mark) / -2);
+  display: flex;
+  align-items: center;
+  block-size: var(--live-caret-mark);
+  padding-inline-end: 6px;
+  border-radius: calc(var(--live-caret-mark) / 2);
+  background: var(--live-caret-pin);
+  color: var(--live-caret-ink);
+  box-shadow: 0 0 0 1.5px var(--live-caret);
+  font: 700 var(--type-badge) / 1 system-ui, sans-serif;
+  white-space: nowrap;
+  cursor: default;
+  pointer-events: auto;
+  clip-path: inset(-2px calc(100% - var(--live-caret-mark) - 2px) -2px -2px round calc(var(--live-caret-mark) / 2 + 2px));
+}
+.live-caret[data-below] .live-caret__flag { inset-block: calc(100% - 2px) auto; }
+.live-caret__mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: var(--live-caret-mark);
+  block-size: 100%;
+}
+.live-caret__mark b { font: inherit; }
+.live-caret__program { inline-size: 11px; block-size: 11px; }
+/* A person's letter reads on into the rest of the name. */
+.live-caret__flag:not([data-agent]) .live-caret__name { margin-inline-start: -5px; }
+.live-caret__flag[data-agent] .live-caret__name { margin-inline-start: 1px; }
+
+.live-caret__undo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 16px;
+  block-size: 16px;
+  margin-inline: 4px -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.live-caret__undo[hidden] { display: none; }
+/* The press area: at least 24 px, 44 px on touch, around the small round button. */
+.live-caret__undo::after {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  inline-size: max(24px, var(--size-tap));
+  block-size: max(24px, var(--size-tap));
+  translate: -50% -50%;
+}
+.live-caret__undo:active { background: color-mix(in oklch, currentColor 28%, transparent); }
+.live-caret__undo:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.live-caret__flag:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+
+.live-caret__name, .live-caret__undo { opacity: 0; }
+.live-caret__flag:is(:focus-visible, :focus-within) { clip-path: inset(-6px round calc(var(--live-caret-mark) / 2 + 6px)); }
+.live-caret__flag:is(:focus-visible, :focus-within) :is(.live-caret__name, .live-caret__undo) { opacity: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .live-caret__flag:hover { clip-path: inset(-6px round calc(var(--live-caret-mark) / 2 + 6px)); }
+  .live-caret__flag:hover :is(.live-caret__name, .live-caret__undo) { opacity: 1; }
+  .live-caret__undo:hover { background: color-mix(in oklch, currentColor 18%, transparent); }
+}
+.live-caret__name, .live-caret__undo { transition: opacity 160ms ease-out; }
+@media (prefers-reduced-motion: no-preference) {
+  .live-caret__flag { transition: clip-path 200ms cubic-bezier(0.23, 1, 0.32, 1); }
+}
+
+/* A selection: a light tint of their colour behind the text. */
+.live-caret-tint { background: color-mix(in oklch, var(--agent-presence) 22%, transparent); }
+.live-caret-tint--1 { background: color-mix(in oklch, var(--agent-presence-2) 22%, transparent); }
+.live-caret-tint--2 { background: color-mix(in oklch, var(--agent-presence-3) 22%, transparent); }
+.live-caret-tint--3 { background: color-mix(in oklch, var(--agent-presence-4) 22%, transparent); }

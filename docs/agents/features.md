@@ -415,7 +415,7 @@ its number unused.
 
 ### F-canvas-15 Two people on one page share one copy
 - Try: Live sharing is off until switched on: in each browser, run `localStorage.setItem("native-site-editor:live-sharing", "on")` in the console and reload. Then open the same page on the same site and branch in two browsers (two sign-ins), change its text in one, then in the other; then open it in a third browser.
-- Good: Each change shows in the other browser's page and code within a moment, with nothing typed lost, and both end with the very same text; the third browser opens on that shared text, not GitHub's. Opening a page nobody else has open at the same moment as someone else never doubles its text. Each browser keeps the shared text as its own unsaved change. Your Undo and Redo, on the page and in the code pane, take back only your own changes and leave the others' words in place; someone else's change no longer clears them. Someone typing inside your words leaves your Undo whole: it takes back your words around theirs. A change of yours that someone else then deleted or rewrote part of drops out of your Undo, together with all your older changes; so does any page-builder step (a section move, a component made, a media step) in your Undo for that page, with your older changes. Undoing someone's change from their caret's name tag (comes with carets, slices 22 and 23) is your own step: your Undo brings their words back. Going to another page or reloading and coming back adds nothing twice. Discard takes only you out of the shared copy: the others keep their changes, and opening the page again brings you back to them. There are no carets or names yet, and no toast (S4).
+- Good: Each change shows in the other browser's page and code within a moment, with nothing typed lost, and both end with the very same text; the third browser opens on that shared text, not GitHub's. Opening a page nobody else has open at the same moment as someone else never doubles its text. Each browser keeps the shared text as its own unsaved change. Your Undo and Redo, on the page and in the code pane, take back only your own changes and leave the others' words in place; someone else's change no longer clears them. Someone typing inside your words leaves your Undo whole: it takes back your words around theirs. A change of yours that someone else then deleted or rewrote part of drops out of your Undo, together with all your older changes; so does any page-builder step (a section move, a component made, a media step) in your Undo for that page, with your older changes. Undoing someone's change from their caret's name tag (comes with carets, slices 22 and 23) is your own step: your Undo brings their words back. Going to another page or reloading and coming back adds nothing twice. Discard takes only you out of the shared copy: the others keep their changes, and opening the page again brings you back to them. Carets show in the code pane (F-code-08); none on the page yet, and no toast (S4).
 - Files: `src/live-text.ts`, `src/shared-undo.ts`, `src/live-room.ts`, `shared/live-room.ts`, `worker/agent-relay.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-live-text.spec.ts`
@@ -934,6 +934,14 @@ its number unused.
 - Phone: yes
 - Spec: `tests/native-save/native-monaco-deferred.spec.ts`
 - Steps: none yet (needs typing in the page before the code editor loads)
+
+### F-code-08 Others' carets in the code pane
+- Try: With live sharing switched on in two browsers (see F-canvas-15), open the same page in both with its code showing, and type in the code pane of each; connect an agent to the same page if you have one. Hover the small circle on top of the other person's caret, then click the undo at the end of their name tag.
+- Good: Each browser shows the other's caret as a thin line in their colour with a small circle on top: their first letter, or for an agent a tiny icon of its program (Claude, OpenAI, Gemini, or a plain one). Hover or keyboard focus opens the circle into the full name; a selection shows as a light tint of their colour. While their latest change can be taken back, the open name tag ends with an undo button; it takes back only their words, in every browser, and your Undo brings them back. A caret fades in and out and moves with the words around it as others type; with reduced motion nothing slides (U6, U7, U8; S4: no toast).
+- Files: `src/components/live-carets.ts`, `src/components/live-carets.css`, `src/live-text.ts`, `src/components/code-editor.ts`, `src/components/source-editor.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-code-carets.spec.ts`
+- Steps: none yet (needs two browsers signed in at once)
 
 ## Versions and history
 
