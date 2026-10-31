@@ -16,8 +16,10 @@ export default defineConfig({
   // SVGO and oxipng are reached only from the optimise worker; prebundle them so the dev server never reloads
   // mid-session. jSquash WebP/AVIF resolve their WASM next to their own files, so they stay unbundled.
   optimizeDeps: {
-    // Both helpers set only Rolldown plugins here; merge any other key they add.
-    rolldownOptions: { plugins: [monaco.optimizeDeps?.rolldownOptions?.plugins, dompurify.optimizeDeps?.rolldownOptions?.plugins] },
+    ...monaco.optimizeDeps, ...dompurify.optimizeDeps,
+    // Every helper's pre-bundle plugins run, not only the last helper's.
+    rolldownOptions: { ...monaco.optimizeDeps?.rolldownOptions, ...dompurify.optimizeDeps?.rolldownOptions,
+      plugins: [monaco.optimizeDeps?.rolldownOptions?.plugins, dompurify.optimizeDeps?.rolldownOptions?.plugins] },
     include: ["mediabunny", "pdfjs-dist", "svgo/browser", "@jsquash/oxipng/codec/pkg/squoosh_oxipng.js"], exclude: ["@jsquash/webp", "@jsquash/avif"] },
   server: {
     proxy: {
