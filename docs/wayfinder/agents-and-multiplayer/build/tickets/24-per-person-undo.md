@@ -2,7 +2,7 @@
 title: "Your Undo undoes your own typing"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-24
 builder: claude
 blocked_by: [21-shared-copy-per-file, 15-agent-tools-ask-and-undo]
 ---
