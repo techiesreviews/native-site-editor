@@ -33,3 +33,7 @@ In `~/Projects/techies-prompter`: the merge, `docs/agents/kitchen-extras.md`. La
 ## Kit commands and evidence
 
 Agent Kit is required. In the prompter: `scripts/agents/kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA. This ticket's Done lands on `dev` here with `scripts/agents/kit pr` (docs tier).
+
+## Comments
+
+- Lex, 2026-10-31: yes to the preview address, "on next build": build `preview.prompter.techies.tools` (a second Worker custom domain) and CamFrame's `originAllowed` entry for it in this ticket, not as a later follow-up. Test builds for Lex go there.

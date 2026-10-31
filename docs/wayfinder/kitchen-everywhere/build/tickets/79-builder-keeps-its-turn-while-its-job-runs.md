@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [78-kit-bg-outlives-the-session]
+blocked_by: [78-kit-bg-outlives-the-session, 81-existing-projects-get-new-setup]
 ---
 
 ## Goal
@@ -34,3 +34,7 @@ In the kit repo (`~/Projects/agent-kit`, a PR through its own `kit pr`): `hooks/
 ## Kit commands and evidence
 
 Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA.
+
+## Comments
+
+- Lead, 2026-10-31: the Stop hook's entry is a piece `kit init` writes into each project, so it reaches the projects already set up through ticket 81 (`kit doctor` names it missing; `kit init --all` adds it). Done includes `kit init --all` after this lands.
