@@ -75,8 +75,10 @@ export interface LiveTextPorts {
 }
 
 /** Someone else's caret in the open file, in this tab's text (ticket am-22). `author`: the Yjs client id their own changes
- * carry, which the name-tag Undo takes; `agent`: the program an agent works in (`clientInfo.name`), none for a person. */
-export interface LiveCaret { peer: string; author: number; name: string; agent?: string; anchor: number; head: number }
+ * carry, which the name-tag Undo takes; `agent`: the program an agent works in (`clientInfo.name`), none for a person.
+ * Name and author are what each participant says of itself (the relay vouches for neither): `contested` marks an author
+ * id another participant here also claims, or this tab's own, whose name tag offers no Undo. */
+export interface LiveCaret { peer: string; author: number; name: string; agent?: string; anchor: number; head: number; contested?: boolean }
 /** The open file's carets as the code pane draws them (src/components/live-carets.ts). */
 export interface CaretShare {
   scope: DraftScope;
@@ -110,6 +112,8 @@ export const LIVE_TEXT_CATCH_UP_MS = 5_000;
 const CARET_MS = 50;
 /** A name longer than this is cut: presence is only what others say of themselves. */
 const NAME_LIMIT = 80;
+/** A name cut to NAME_LIMIT characters, never inside one. */
+const cut = (name: string) => [...name].slice(0, NAME_LIMIT).join("");
 /** Frames that arrive while Yjs loads wait, up to this many. */
 const INBOX_LIMIT = 500;
 /** The room closes a socket over its limit: a larger copy is not sent (the room's own framing needs a little room). */
@@ -491,7 +495,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     function tellCaret() {
       if (!synced || discarded || stopped) return;
       const at = (index: number) => Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(text, Math.min(index, text.length))) as JsonValue;
-      told = { author: me, name: scope.account.slice(0, NAME_LIMIT), caret: selection ? { anchor: at(selection.anchor), head: at(selection.head) } : null };
+      told = { author: me, name: cut(scope.account), caret: selection ? { anchor: at(selection.anchor), head: at(selection.head) } : null };
       telling ??= clock.setTimeout(() => { telling = undefined; if (!stopped && told !== undefined) room.setPresence?.(told); }, CARET_MS);
     }
     /** Others' carets in this tab's text: whoever says where theirs is in a copy of this file that this one has the words of. */
@@ -507,9 +511,13 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         };
         const anchor = at(said.caret.anchor), head = at(said.caret.head);
         if (anchor === undefined || head === undefined) continue;
-        const agent = access === "agent" ? (typeof said.agent === "string" ? said.agent.slice(0, NAME_LIMIT) : "") : undefined;
-        out.push({ peer, author: said.author as number, name: said.name.slice(0, NAME_LIMIT), ...(agent === undefined ? {} : { agent }), anchor, head });
+        const agent = access === "agent" ? (typeof said.agent === "string" ? cut(said.agent) : "") : undefined;
+        out.push({ peer, author: said.author as number, name: cut(said.name), ...(agent === undefined ? {} : { agent }), anchor, head });
       }
+      // Two participants naming the same author (or this tab's own id): one of them is not who it says, so neither tag takes anything back.
+      const claims = new Map<number, number>();
+      for (const caret of out) claims.set(caret.author, (claims.get(caret.author) ?? 0) + 1);
+      for (const caret of out) if (caret.author === me || claims.get(caret.author)! > 1) caret.contested = true;
       return out;
     }
 
