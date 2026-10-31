@@ -110,6 +110,10 @@ Tests:
 
 Validation:
 
+- After the UX review: `RESULT: ok unit 3446/3446 (212 files)` (`kit unit --affected`); `RESULT: ok specs 8/8 passed; 183 more run in kit pr` (`kit specs --affected`: `native-agent-live` 2, `native-agent-presence` 5, `native-component-edit-overlay` 9, `native-components` 19, `native-edit-component` 2, `native-live-text` 4, `native-mcp-menu` 49, `native-mcp` 19); `npm run lint` clean (`check-exports: 15 unused export(s), 0 failure(s)`).
+
+Earlier:
+
 - After the live text trigger moved into the component tools (boot unchanged): `RESULT: ok unit 3446/3446 (212 files)` (`kit unit --affected`); `npm run lint` clean (`check-exports: 15 unused export(s), 0 failure(s)`).
 - `kit specs --affected` (8 files, in parallel shards): `RESULT: fail specs 1 of 8 failed: native-mcp-menu.spec.ts`. The failure is "a prompt another tab revoked as unused is never copied again": the clipboard held another test's prompt. Live sharing is off in that spec. Rerun alone, it passed (`1 passed`). A rerun of the whole file stalled after 29 passing tests and was stopped at its 20-minute limit.
 
