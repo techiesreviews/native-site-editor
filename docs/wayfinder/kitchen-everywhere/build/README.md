@@ -152,6 +152,7 @@ Lex (2026-10-30): the project threads stopped their own kit work and handed it h
 | [88 Full browser runs stop failing on a busy machine: one full run at a time, a lone retry for a failed file](tickets/88-busy-machine-browser-runs.md) | S–M | claude | – (next; unblocks 60's #289) |
 | [90 Fresh start: old branches to the attic and removed, `dev` from `main` everywhere; TechiesTools starts over](tickets/90-fresh-start-branches.md) | M | claude | – (now) |
 | [89 Every project lands on `dev`; `main` only takes `dev`](tickets/89-main-only-takes-dev.md) | S | claude | 90 |
+| [91 Skill guard: prefixed licence files in skill folders count as licences, so a project's own LICENSE lands (from idea-board)](tickets/91-skill-guard-licence-names.md) | XS | claude | – (next free slot) |
 | [77 Check and define the retro tickets before any is built](tickets/77-check-the-retro-tickets.md) | S | claude | – (closed) |
 | ~~[70 `kit unit --red`](tickets/70-new-tests-must-go-red.md)~~ waits (rule in 67) | – | – | `wontfix` for now |
 | ~~[73 Motion check in `kit ux`](tickets/73-kit-ux-motion-check.md)~~ dropped | – | – | `wontfix` |
