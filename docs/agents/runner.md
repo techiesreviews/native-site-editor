@@ -32,7 +32,7 @@ and each `--help`. A build's own `runner-extras.md` (next to its map) wins where
 ## Waiting
 
 - A short check runs in the foreground. A long job (a slice, a long `kit pr`, specs) runs as `scripts/agents/kit go <name> -- <command…>`: its own systemd scope, records and log in `.scratch/kit-jobs/<name>/`, a turn end or app exit does not stop it.
-- `kit go` waits at most 9 minutes per call. On `RUNNING: <name> (…). Run again: scripts/agents/kit go <name>` (exit 75) run that line again at once, in the foreground (Claude and Codex alike),
+- `kit go` waits at most 9 minutes per call: give each call a 10-minute tool limit (Claude's Bash `timeout: 600000`). On `RUNNING: <name> (…). Run again: scripts/agents/kit go <name>` (exit 75) run that line again at once, in the foreground (Claude and Codex alike),
   until the job's RESULT line. Never wait in the background and post no progress between waits.
 - `kit bg --list` shows state and log paths; `kit bg --stop <name>` stops only that group. Other owned processes, logs or CI: `scripts/agents/kit wait pid|output|ci`.
   Never look up pids with `ps | grep`; never write `until … sleep` or `pgrep -f` loops.
