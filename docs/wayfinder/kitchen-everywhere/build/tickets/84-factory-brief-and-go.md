@@ -61,3 +61,22 @@ In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`): `kit.d/brief
 
 Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA.
 - Lex, 2026-10-31: "Can the kit invoke skills etc? Like done through a cli?" Lead's check: yes. The kit starts builders and reviewers with `claude -p` (`agent-run.mjs`), which loads the skills in `~/.claude/skills` and plugins and runs one explicitly when the prompt names it as `/skill-name`. Codex reads `~/.agents/skills`; Grok and OpenCode have none. Today the kit names no skill anywhere. Add to this ticket: a **skills map** in the rulebook (job kind to skill names: talk style to caveman; CSS to good-css; UI review to emil-ui-review and break-ui; motion to animate; …, with a project override in `kit.json` `skills`), used by `kit brief` and by the kit's own build and review prompts. Each entry is an invocation by name (`/name`) for Claude, a mention for Codex, and a one-line own-words fallback for models without skills. Skills are only ever named, never copied, so paid skills stay on this machine (guard unchanged). A skill missing on a machine is a `kit doctor` note, not a failure.
+- Lex, 2026-10-31: "also for styling or building ui elements look at emil skills that will be helpful during the front end development process." The skills map's front-end part (all names checked on this machine; Emil's skills are paid, so the kit names them and never copies them):
+  - **Any UI build or styling:** good-css, emil-design-foundations, emil-ui-polish.
+  - **By what the slice touches:**
+    - forms, inputs and buttons: emil-forms-and-inputs;
+    - type: emil-typography;
+    - colour and tokens: emil-color;
+    - menus, popovers, panels and dialogs: emil-surfaces;
+    - touch and accessibility: emil-touch-and-accessibility;
+    - phone layouts: emil-mobile-native;
+    - motion: emil-animations, plus animate;
+    - speed: emil-performance;
+    - component APIs: emil-component-design;
+    - the design system docs: emil-design-system-docs;
+    - marketing pages: emil-marketing-pages.
+  - **UI review** (`kit review` on a UI diff, and `kit ux`): emil-ui-review, emil-unslop-design, break-ui.
+  - **Before a release:** emil-prep-for-prod.
+  - **How skills are picked:** `kit brief` picks from the ticket's file list and kind (CSS and UI files bring the UI set). The project's `kit.json` `skills` adds to or removes from the set.
+  - **House rules beat skill advice.** An example is the editor's "no toasts, feedback in place", which wins over any skill that suggests a toast. The brief says this in one line.
+  - **Where the skills aren't installed** (CI, another computer), the brief carries a one-line plain fallback, and `kit doctor` notes which skills are missing.
