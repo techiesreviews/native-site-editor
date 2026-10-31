@@ -81,5 +81,7 @@ Feature list: added F-code-08 (Others' carets in the code pane); F-canvas-15 now
 
 Commits: "docs: 22-code-pane-together notes for the build (lazy load, sharing stays off, safe defaults)", "Code pane: typing together and carets", "Review fixes round 1", "Review fixes round 2", and this fourth pass.
 
+UX review (F-code-01, F-code-08, F-canvas-15): F-code-08 and F-canvas-15 fine. F-code-01 showed the block-insert flash ("Heading added. Into Section … after Div", with Undo) over the code pane's bottom lines and over the page at 390 px (HS1, S4, U5). It comes from `src/controllers/block-insert-controller.ts` and `src/page-builder/block-insert.ts`, which this slice does not change: left for a ticket of its own.
+
 Not done (review nits): no native tooltip removed from the name (it shows a cut name whole); no Esc from a focused tag back to the code (the tag is not a menu, and Tab and a click in the code leave it); no retry of a failed carets load (it is tried again when the file is shared anew). Declined: the relay stamping each peer's login and peer id (worker and relay changes, a ticket of its own), and caret tokens in `src/theme.css` (outside this slice's files; the press areas use `--size-icon` and `--size-tap`).
 
