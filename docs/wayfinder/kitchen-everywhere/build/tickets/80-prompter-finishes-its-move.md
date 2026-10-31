@@ -2,7 +2,7 @@
 title: "The prompter finishes its move onto the shared kit (merge `shared-kit` into `main`), and test builds use https, never a file"
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-80
 builder: claude
 blocked_by: []
 ---
