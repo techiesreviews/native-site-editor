@@ -46,9 +46,10 @@ async function typeInCode(page: Page, after: string, text: string, phone = false
 }
 
 /** An agent connected over MCP (from a third tab, as the fixture's own account, with live sharing off) joins the page's
- * room as the relay lets agents in (a bearer token, from Node), and says it works in Claude Code with its caret where
- * `follow`'s is. Agents' own text joins the copy in a later slice (am-25). */
-async function agentAt(browser: Browser, baseURL: string, follow: string) {
+ * room as the relay lets agents in (a bearer token, from Node), and says it works in Claude Code (as `name`) with its
+ * caret where `follow`'s is; with `claim`, it says it is that person's author id. Agents' own text joins the copy in a
+ * later slice (am-25). */
+async function agentAt(browser: Browser, baseURL: string, follow: string, { name = "Claude Code", claim }: { name?: string; claim?: string } = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -68,10 +69,11 @@ async function agentAt(browser: Browser, baseURL: string, follow: string) {
   const room = openLiveRoom({
     repo: "native-demo-user/native-demo", branch: "main", file, connect, onMessage: () => undefined,
     onPeers(peers) {
-      const theirs = [...peers.values()].map(peer => peer.state as { name?: string; caret?: JsonValue } | null).find(state => state?.name === follow && state.caret);
-      if (!theirs || said) return;
+      const states = [...peers.values()].map(peer => peer.state as { name?: string; author?: number; caret?: JsonValue } | null);
+      const theirs = states.find(state => state?.name === follow && state.caret), claimed = claim ? states.find(state => state?.name === claim)?.author : 7;
+      if (!theirs || claimed === undefined || said) return;
       said = true;
-      room.setPresence({ author: 7, name: "Claude Code", agent: "claude-code", caret: theirs.caret! });
+      room.setPresence({ author: claimed, name, agent: "claude-code", caret: theirs.caret! });
     },
   });
   return { room, context };
@@ -111,7 +113,7 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
     await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("opacity", "1");
     // An agent in the room: its circle holds the icon of its program, its name on hover.
     agent = await agentAt(browser, baseURL!, "Lex");
-    const agentAtLex = lex.page.locator(".live-caret__flag[data-agent]");
+    const agentAtLex = lex.page.locator('.live-caret__flag[data-agent][aria-label="Claude Code"]');
     await expect(agentAtLex).toBeVisible({ timeout: 20_000 });
     await expect(agentAtLex).toHaveAccessibleName("Claude Code");
     await expect(agentAtLex.locator("svg.live-caret__program")).toBeVisible();
@@ -119,7 +121,35 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
     await expect(agentAtLex.locator(".live-caret__name")).toHaveText("Claude Code");
     await expect(agentAtLex.locator(".live-caret__undo")).toBeHidden();
 
+    // Lex scrolls his own line to the top of his pane; then an agent appears there for the first time, saying it is Anna
+    // (her author id), and nothing else happens. Its circle is inside the pane, its tag below the caret; and as two say
+    // they are Anna's author, her tag offers no Undo until the other leaves.
+    await lex.page.evaluate(async () => {
+      const { monaco } = await import("/src/components/monaco.ts");
+      const editor = monaco.editor.getEditors().find(view => view.getModel()?.uri.path.endsWith("/index.html"))!;
+      const model = editor.getModel()!, line = model.getPositionAt(model.getValue().indexOf(", by Lex,")).lineNumber;
+      await editor.getAction("editor.unfoldAll")?.run();
+      editor.setScrollTop(editor.getTopForLineNumber(line));
+    });
+    const impostor = await agentAt(browser, baseURL!, "Lex", { name: "Impostor", claim: "Anna" });
+    try {
+      const impostorAtLex = lex.page.locator('.live-caret__flag[aria-label="Impostor"]');
+      const pane = lex.page.locator(".code-editor .monaco-editor").first();
+      await expect.poll(async () => {
+        const box = await pane.boundingBox(), mark = await impostorAtLex.locator(".live-caret__mark").boundingBox();
+        return Boolean(box && mark && mark.y >= box.y && mark.y + mark.height <= box.y + box.height);
+      }, { timeout: 20_000 }).toBe(true);
+      await expect(impostorAtLex.locator("xpath=..")).toHaveAttribute("data-below", "");
+      await expect(annaAtLex.locator(".live-caret__undo")).toHaveAttribute("hidden", "");
+    } finally {
+      impostor.room.close();
+      await impostor.context.close();
+    }
+    await expect(lex.page.locator('.live-caret__flag[aria-label="Impostor"]')).toHaveCount(0, { timeout: 45_000 });
+    await expect(annaAtLex.locator(".live-caret__undo")).not.toHaveAttribute("hidden");
+
     // Anna's tag ends with an undo while her change can be taken back: it takes back her words in both tabs, Lex's stay.
+    await reveal(lex.page, (await source(lex.page)).indexOf("Anna was here: ") + "Anna was here: ".length);
     await annaAtLex.locator(".live-caret__mark").hover();
     const undo = annaAtLex.getByRole("button", { name: "Undo Anna's change" });
     await expect(undo).toBeVisible();
@@ -220,6 +250,25 @@ test("on a phone the tag opens on a tap with 44 px targets inside the pane, even
       const pane = await editorBox(), mark = await annaAtLex.locator(".live-caret__mark").boundingBox();
       return Boolean(pane && mark && mark.x >= pane.x && mark.x + mark.width <= pane.x + pane.width);
     }, { timeout: 20_000 }).toBe(true);
+    // An agent at the same place (its tag never has an undo) opens to the side with room: its tag stays in the pane with
+    // more than a letter of its name; when it leaves, its caret goes.
+    const agent = await agentAt(browser, baseURL!, longName);
+    try {
+      const agentAtLex = lex.page.locator('.live-caret__flag[aria-label="Claude Code"]');
+      await expect(agentAtLex).toBeVisible({ timeout: 20_000 });
+      const mark = (await agentAtLex.locator(".live-caret__mark").boundingBox())!;
+      await lex.page.touchscreen.tap(mark.x + mark.width / 2, mark.y + mark.height / 2);
+      await expect(agentAtLex).toBeFocused();
+      await expect.poll(async () => {
+        const pane = await editorBox(), box = await agentAtLex.boundingBox();
+        return Boolean(pane && box && box.x >= pane.x && box.x + box.width <= pane.x + pane.width);
+      }).toBe(true);
+      expect(await agentAtLex.locator(".live-caret__name").evaluate(name => name.clientWidth)).toBeGreaterThan(10);
+    } finally {
+      agent.room.close();
+      await agent.context.close();
+    }
+    await expect(lex.page.locator('.live-caret__flag[aria-label="Claude Code"]')).toHaveCount(0, { timeout: 45_000 });
     // Reduced motion: the tag's reveal does not move.
     expect(await annaAtLex.evaluate(flag => getComputedStyle(flag, "::before").transitionProperty)).not.toContain("clip-path");
     // A tap on her circle opens the tag and keeps focus there (the code does not take it back).
