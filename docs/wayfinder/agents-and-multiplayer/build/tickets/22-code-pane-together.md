@@ -79,7 +79,7 @@ Choices left open, taken the safe way (for Lex's Tuesday pack):
 
 Feature list: added F-code-08 (Others' carets in the code pane); F-canvas-15 now points to it.
 
-Commits: "docs: 22-code-pane-together notes for the build (lazy load, sharing stays off, safe defaults)", "Code pane: typing together and carets", "Review fixes round 1", "Review fixes round 2", "Review fixes round 3", "Review fixes round 4", "docs: 22-code-pane-together UX follow-ups" and this commit.
+Commits: "docs: 22-code-pane-together notes for the build (lazy load, sharing stays off, safe defaults)", "Code pane: typing together and carets", "Review fixes round 1", "Review fixes round 2", "Review fixes round 3", "Review fixes round 4", "docs: 22-code-pane-together UX follow-ups", "docs: 22-code-pane-together commits by subject", "Spec: mark the carets spec's settle wait as a deliberate fixed wait", "Review fixes round 5" and this commit.
 
 UX review (F-code-01, F-code-08, F-canvas-15): F-code-08 and F-canvas-15 fine. F-code-01 showed the block-insert flash ("Heading added. Into Section … after Div", with Undo) over the code pane's bottom lines and over the page at 390 px (HS1, S4, U5). It comes from `src/controllers/block-insert-controller.ts` and `src/page-builder/block-insert.ts`, which this slice does not change: left for a ticket of its own.
 
