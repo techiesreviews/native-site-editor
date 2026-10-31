@@ -5,6 +5,7 @@
   --live-caret: var(--agent-presence);
   --live-caret-pin: var(--agent-presence-pin);
   --live-caret-ink: var(--agent-presence-ink);
+  /* The circle (Lex's approved mock-up); its press area comes from the theme's control sizes. */
   --live-caret-mark: 18px;
   position: relative;
   inline-size: 0;
@@ -18,8 +19,8 @@
   .live-caret { opacity: 0; }
 }
 .live-caret[data-leaving] { opacity: 0; }
-/* Two carets at one spot: the tag being read sits on top. */
-.live-caret:has(.live-caret__flag:is(:hover, :focus-within)) { z-index: 1; }
+/* Two carets at one spot: the tag being read sits on top (hover only where hover is real, U6). */
+.live-caret:has(.live-caret__flag:focus-within) { z-index: 1; }
 .live-caret[data-colour="1"] { --live-caret: var(--agent-presence-2); --live-caret-pin: var(--agent-presence-2-pin); --live-caret-ink: var(--agent-presence-2-ink); }
 .live-caret[data-colour="2"] { --live-caret: var(--agent-presence-3); --live-caret-pin: var(--agent-presence-3-pin); --live-caret-ink: var(--agent-presence-3-ink); }
 .live-caret[data-colour="3"] { --live-caret: var(--agent-presence-4); --live-caret-pin: var(--agent-presence-4-pin); --live-caret-ink: var(--agent-presence-4-ink); }
@@ -33,38 +34,79 @@
   background: var(--live-caret);
 }
 
-/* The tag: a circle until opened, then the whole name and, while their change can be taken back, Undo. */
+/* The tag: a circle until opened, then the whole name and, while their change can be taken back, Undo.
+   Only its background (::before) is clipped to the circle, so the press areas below reach past it.
+   Closed, only the circle takes presses; open, the whole tag does. */
 .live-caret__flag {
+  --live-caret-press: max(var(--size-icon), var(--size-tap));
+  --live-caret-closed: inset(-2px calc(100% - var(--live-caret-mark) - 2px) -2px -2px round calc(var(--live-caret-mark) / 2 + 2px));
+  --live-caret-open: inset(-2px round calc(var(--live-caret-mark) / 2 + 2px));
   position: absolute;
   inset-block-end: calc(100% - 2px);
   inset-inline-start: calc(var(--live-caret-mark) / -2);
+  isolation: isolate;
   display: flex;
   align-items: center;
   block-size: var(--live-caret-mark);
   padding-inline-end: 6px;
   border-radius: calc(var(--live-caret-mark) / 2);
-  background: var(--live-caret-pin);
   color: var(--live-caret-ink);
-  box-shadow: 0 0 0 1.5px var(--live-caret);
   font: 700 var(--type-badge) / 1 system-ui, sans-serif;
   white-space: nowrap;
   cursor: default;
-  pointer-events: auto;
-  clip-path: inset(-2px calc(100% - var(--live-caret-mark) - 2px) -2px -2px round calc(var(--live-caret-mark) / 2 + 2px));
+  pointer-events: none;
+}
+.live-caret__flag::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--live-caret-pin);
+  box-shadow: 0 0 0 1.5px var(--live-caret);
+  clip-path: var(--live-caret-closed);
 }
 .live-caret[data-below] .live-caret__flag { inset-block: calc(100% - 2px) auto; }
+/* Near the pane's right edge the tag opens to the left of the caret, the circle staying on it. */
+.live-caret[data-flip] .live-caret__flag {
+  --live-caret-closed: inset(-2px -2px -2px calc(100% - var(--live-caret-mark) - 2px) round calc(var(--live-caret-mark) / 2 + 2px));
+  inset-inline: auto calc(var(--live-caret-mark) / -2);
+  flex-direction: row-reverse;
+  padding-inline: 6px 0;
+}
 .live-caret__mark {
+  position: relative;
   display: grid;
   place-items: center;
   flex: none;
   inline-size: var(--live-caret-mark);
   block-size: 100%;
+  pointer-events: auto;
+}
+/* The circle's press area: at least 24 px, 44 px on touch. */
+.live-caret__mark::after, .live-caret__undo::after {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  inline-size: var(--live-caret-press);
+  block-size: var(--live-caret-press);
+  translate: -50% -50%;
 }
 .live-caret__mark b { font: inherit; }
 .live-caret__program { inline-size: 11px; block-size: 11px; }
-/* A person's letter reads on into the rest of the name. */
+/* A long name ends in an ellipsis, cut to the room the pane leaves beside the caret (live-carets.ts `place`, less the
+   circle, the undo, the padding and the part of the undo's press area past it): the undo and all its press area show. */
+.live-caret__name {
+  max-inline-size: max(1ch, min(16ch, var(--live-caret-room, 100vw) - var(--live-caret-mark) - 26px - (var(--live-caret-press) - 16px) / 2));
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A person's letter reads on into the rest of the name; opened to the left the name shows whole. */
+.live-caret__initial { display: none; }
 .live-caret__flag:not([data-agent]) .live-caret__name { margin-inline-start: -5px; }
 .live-caret__flag[data-agent] .live-caret__name { margin-inline-start: 1px; }
+.live-caret[data-flip] .live-caret__name { margin-inline: 0 2px; }
+.live-caret[data-flip] .live-caret__initial { display: inline; }
 
 .live-caret__undo {
   position: relative;
@@ -81,31 +123,30 @@
   color: inherit;
   cursor: pointer;
 }
+.live-caret[data-flip] .live-caret__undo { margin-inline: -4px 4px; }
 .live-caret__undo[hidden] { display: none; }
-/* The press area: at least 24 px, 44 px on touch, around the small round button. */
-.live-caret__undo::after {
-  content: "";
-  position: absolute;
-  inset: 50% auto auto 50%;
-  inline-size: max(24px, var(--size-tap));
-  block-size: max(24px, var(--size-tap));
-  translate: -50% -50%;
-}
 .live-caret__undo:active { background: color-mix(in oklch, currentColor 28%, transparent); }
 .live-caret__undo:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
 .live-caret__flag:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 
-.live-caret__name, .live-caret__undo { opacity: 0; }
-.live-caret__flag:is(:focus-visible, :focus-within) { clip-path: inset(-6px round calc(var(--live-caret-mark) / 2 + 6px)); }
-.live-caret__flag:is(:focus-visible, :focus-within) :is(.live-caret__name, .live-caret__undo) { opacity: 1; }
+/* Closed, the name and Undo are not there for presses or Tab; open (focus, or hover where hover is real) they are. */
+.live-caret__name, .live-caret__undo {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 160ms ease-out, visibility 0s linear 160ms;
+}
+.live-caret__flag:focus-within { pointer-events: auto; }
+.live-caret__flag:focus-within::before { clip-path: var(--live-caret-open); }
+.live-caret__flag:focus-within :is(.live-caret__name, .live-caret__undo) { opacity: 1; visibility: visible; transition: opacity 160ms ease-out, visibility 0s; }
 @media (hover: hover) and (pointer: fine) {
-  .live-caret__flag:hover { clip-path: inset(-6px round calc(var(--live-caret-mark) / 2 + 6px)); }
-  .live-caret__flag:hover :is(.live-caret__name, .live-caret__undo) { opacity: 1; }
+  .live-caret:has(.live-caret__flag:hover) { z-index: 1; }
+  .live-caret__flag:hover { pointer-events: auto; }
+  .live-caret__flag:hover::before { clip-path: var(--live-caret-open); }
+  .live-caret__flag:hover :is(.live-caret__name, .live-caret__undo) { opacity: 1; visibility: visible; transition: opacity 160ms ease-out, visibility 0s; }
   .live-caret__undo:hover { background: color-mix(in oklch, currentColor 18%, transparent); }
 }
-.live-caret__name, .live-caret__undo { transition: opacity 160ms ease-out; }
 @media (prefers-reduced-motion: no-preference) {
-  .live-caret__flag { transition: clip-path 200ms cubic-bezier(0.23, 1, 0.32, 1); }
+  .live-caret__flag::before { transition: clip-path 200ms cubic-bezier(0.23, 1, 0.32, 1); }
 }
 
 /* A selection: a light tint of their colour behind the text. */
