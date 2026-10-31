@@ -42,6 +42,10 @@ export function initialOf(name: string) {
   return { first, letter: upper, rest: name.slice(first.length) };
 }
 
+/** Whether `name`'s first strong letter is written right to left (Hebrew, Arabic, Syriac, Thaana, N'Ko, …). */
+export const rightToLeft = (name: string) =>
+  /^[^\p{L}]*[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u.test(name);
+
 /** A caret's name tag: the circle, the rest of the name and the undo button (shown while `undoable`). */
 export function caretFlag(caret: Pick<LiveCaret, "name" | "agent">, onUndo: () => void) {
   const flag = document.createElement("span");
@@ -90,14 +94,18 @@ export function caretFlag(caret: Pick<LiveCaret, "name" | "agent">, onUndo: () =
       initial.textContent = parts.first;
       after.textContent = parts.rest;
       rest.replaceChildren(initial, after);
+      // A right-to-left name cannot read on from a circle on its left: it shows whole, in its own direction.
+      flag.toggleAttribute("data-rtl", rightToLeft(full));
     } else {
+      flag.removeAttribute("data-rtl");
       flag.dataset.agent = next.agent;
       mark.replaceChildren(programIcon(next.agent));
       rest.textContent = full;
     }
+    rest.dir = "auto";
     rest.title = full;
     flag.setAttribute("aria-label", full);
-    undo.setAttribute("aria-label", `Undo ${full.split(/\s/)[0]}'s change`);
+    undo.setAttribute("aria-label", `Undo ${full}'s change`);
     changed?.();
   };
   let changed: (() => void) | undefined;
@@ -147,14 +155,17 @@ function attach(share: CaretShare, pane: CaretPane) {
   const model = editor.getModel();
   if (!model) return () => {};
   const { CursorChangeReason, ContentWidgetPositionPreference, EditorOption } = monaco.editor;
-  const own = () => {
+  // Read when the room is told, not when the caret moved: a caret placed before this tab caught up is told where it is in
+  // the shared text the pane then shows (others' text moving it reports nothing, below).
+  const read = () => {
     const selection = editor.getSelection();
-    if (!selection || model.isDisposed()) return;
-    share.own({
+    if (!selection || model.isDisposed()) return undefined;
+    return {
       anchor: model.getOffsetAt({ lineNumber: selection.selectionStartLineNumber, column: selection.selectionStartColumn }),
       head: model.getOffsetAt(selection.getPosition()),
-    });
+    };
   };
+  const own = () => share.own(read);
   // Others' text moving this caret along is not a move of its own: its relative position already follows.
   const moved = editor.onDidChangeCursorSelection(event => {
     if (event.reason !== CursorChangeReason.RecoverFromMarkers && event.reason !== CursorChangeReason.ContentFlush) own();
@@ -193,6 +204,8 @@ function attach(share: CaretShare, pane: CaretPane) {
     const right = layout.width - layout.verticalScrollbarWidth - at.left + half, left = at.left + half - layout.contentLeft;
     const flip = widget.width > right && left > right;
     widget.root.toggleAttribute("data-flip", flip);
+    // On the pane's top line (scrolled or not) the tag sits below the caret, inside the pane.
+    widget.root.toggleAttribute("data-below", at.top < half * 2 + 2);
     widget.root.style.setProperty("--live-caret-room", `${Math.floor(flip ? left : right)}px`);
   };
   const widget = (caret: LiveCaret): Widget => {
@@ -228,8 +241,6 @@ function attach(share: CaretShare, pane: CaretPane) {
       found.caret = caret;
       found.flag.name(caret);
       found.root.dataset.colour = String(caretColour(caret.author));
-      // On the first line the tag sits below the caret, inside the pane.
-      found.root.toggleAttribute("data-below", position(caret.head).lineNumber === 1);
       editor.layoutContentWidget(found);
       place(found);
     }
@@ -255,8 +266,8 @@ function attach(share: CaretShare, pane: CaretPane) {
   const lineHeight = () => editor.getDomNode()?.style.setProperty("--live-caret-line", `${editor.getOption(EditorOption.lineHeight)}px`);
   lineHeight();
   const options = editor.onDidChangeConfiguration(event => { if (event.hasChanged(EditorOption.lineHeight)) lineHeight(); });
-  // Scrolling sideways or resizing the pane moves the right edge: tags look again (no measuring).
-  const scrolled = editor.onDidScrollChange(event => { if (event.scrollLeftChanged) for (const found of widgets.values()) place(found); });
+  // Scrolling or resizing the pane moves its edges: tags look again (no measuring).
+  const scrolled = editor.onDidScrollChange(event => { if (event.scrollLeftChanged || event.scrollTopChanged) for (const found of widgets.values()) place(found); });
   const resized = editor.onDidLayoutChange(() => { for (const found of widgets.values()) place(found); });
   const stopCarets = share.onCarets(drawSoon);
   const stopUndo = share.onAuthorUndo(askUndo);
