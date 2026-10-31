@@ -93,6 +93,8 @@
   translate: -50% -50%;
 }
 .live-caret__mark b { font: inherit; }
+/* Pressed: the circle darkens, as the undo does. */
+.live-caret__mark:active { border-radius: 50%; background: color-mix(in oklch, currentColor 20%, transparent); }
 .live-caret__program { inline-size: 11px; block-size: 11px; }
 /* A long name ends in an ellipsis, cut to the room the pane leaves beside the caret (live-carets.ts `place`, less the
    circle, the undo, the padding and the part of the undo's press area past it): the undo and all its press area show. */
@@ -107,6 +109,9 @@
 .live-caret__flag[data-agent] .live-caret__name { margin-inline-start: 1px; }
 .live-caret[data-flip] .live-caret__name { margin-inline: 0 2px; }
 .live-caret[data-flip] .live-caret__initial { display: inline; }
+/* A right-to-left name shows whole beside its circle, in its own direction. */
+.live-caret__flag[data-rtl] .live-caret__name { margin-inline: 2px 0; }
+.live-caret__flag[data-rtl] .live-caret__initial { display: inline; }
 
 .live-caret__undo {
   position: relative;
