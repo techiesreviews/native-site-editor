@@ -145,6 +145,7 @@ Lex (2026-10-30): the project threads stopped their own kit work and handed it h
 | [81 New kit setup reaches every project: `kit doctor` names missing pieces, `kit init --all`; line endings first](tickets/81-existing-projects-get-new-setup.md) | S–M | claude | – |
 | [82 The editor's live deploy runs `kit release-check` first (follow-up on 72)](tickets/82-editor-deploy-runs-release-check.md) | XS | claude | 72 |
 | [83 Agents talk to each other in a short style, added at every agent start; 7-day trial of short English vs Classical Chinese](tickets/83-agent-talk-style-trial.md) | S–M | claude | – (after 81, next) |
+| [84 The factory: `kit brief` writes every child's brief, `kit go` starts and waits for long jobs, hooks refuse hand-written briefs and early turn ends (takes in 79)](tickets/84-factory-brief-and-go.md) | M | claude | 81 |
 | [77 Check and define the retro tickets before any is built](tickets/77-check-the-retro-tickets.md) | S | claude | – (closed) |
 | ~~[70 `kit unit --red`](tickets/70-new-tests-must-go-red.md)~~ waits (rule in 67) | – | – | `wontfix` for now |
 | ~~[73 Motion check in `kit ux`](tickets/73-kit-ux-motion-check.md)~~ dropped | – | – | `wontfix` |

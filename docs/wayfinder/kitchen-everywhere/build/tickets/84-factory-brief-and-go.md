@@ -1,0 +1,62 @@
+---
+title: "The factory: `kit brief` writes every child's brief, `kit go` starts and waits for a long job, a hook refuses hand-written briefs"
+type: task (AFK)
+status: open
+assignee:
+builder: claude
+blocked_by: [81-existing-projects-get-new-setup]
+---
+
+## Goal
+
+Lex (2026-10-31): "I am thinking that we can create the right tools as part of the factory so that these mistakes don't happen." He had asked for one shared kit, skills and factory, "so there is one thing to update" (2026-10-30).
+
+The mistakes, all from 2026-10-30/31:
+- **Builders stop watching their own jobs.** am-21, ke-72 and am-24 (twice) ended their turn while their own slice or tests still ran (ticket 79). The same happened twice in CamFrame.
+- **Each brief is a long hand-written text the lead retypes.** Items get dropped (the wait method, the style line, the "never end your turn" line), and fixing a rule means changing every future brief by memory.
+- **Builders build the `systemd-run …` line and the wait loop themselves.** Some get it wrong.
+
+The fix: the instructions and the waiting live in tools. A brief is generated, never typed, and a long job is one command that returns only when it is finished or tells the agent exactly what to run next.
+
+## Decided behaviour
+
+- **`kit brief <ticket> [--owner <id>] [--repo <path>]`** prints the full brief for a delegated child, from the ticket, `kit.json` and the rulebook:
+  - owner, worktree setup, builder and review pins;
+  - the commands to run and the evidence to report;
+  - the house rules (paid skills never in a repo; second look never OpenAI; waiver after three rounds; no toasts, theme tokens);
+  - the talk-style line (ticket 83), "finish in this turn, wait with `kit go`", and the report's last line.
+  - Free text for this one job goes in with `--note "<text>"`.
+  - It ends with a marker line (`kit-brief: <version> <ticket>`).
+  - The lead passes its output to `delegate_task`; a rule change is made once, in the kit.
+- **`kit go <job> -- <command>` / `kit go <job>`** starts the job in its own systemd scope (ticket 78's `kit bg` path) and then waits in the foreground. It never runs past 9 minutes per call (under the 10-minute tool limit).
+  - While the job runs, it ends with `RUNNING: <job> (<elapsed>, step <step>). Run again: scripts/agents/kit go <job>` and exit code 75.
+  - When the job ends, it prints the job's RESULT line and exits with the job's code.
+  - `kit slice` and long `kit pr`/specs runs are started this way; the runner guide teaches only this.
+- **Hooks as the backstop:**
+  - A `PreToolUse` hook on `mcp__t3-code__delegate_task` (and `Agent|Task`) refuses a coding brief without a `kit-brief:` marker, naming `kit brief`. Research, review-only and question tasks are allowed by a first line `kit-brief: none (<reason>)`.
+  - Ticket 79's Stop hook refuses a turn end while a `kit go` job of this worktree runs.
+- **Same in every project and every new one:** commands and hook scripts come from the machine copy (15-minute timer); the hook entries are pieces `kit init` writes, rolled out by `kit init --all` (ticket 81).
+
+## Folds in
+
+- Ticket 79: its Stop hook and runner line are built here, so 79 closes as merged.
+- Ticket 83: its style line comes from `kit brief` and the kit's prompts. Its own hook on `delegate_task` becomes this ticket's hook, so there is one hook, not two; 83 keeps the trial log, `talk-report` and the Chinese-text guard.
+
+## Files
+
+In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`): `kit.d/brief`, `kit.d/go`, `kit.d/bg` (shared scope start), `hooks/brief-guard.sh`, `hooks/stop-guard.sh`, `kit.d/init` (hook entries), `docs/runner.md`, `docs/kitchen.md`, `tests/`.
+
+## Done when
+
+- Tests, failing first:
+  - `kit brief` holds every house-rule line and the marker;
+  - `kit go` returns `RUNNING` with code 75 before 9 minutes and the job's RESULT at the end;
+  - the brief hook refuses an unmarked coding brief and allows a marked one or `kit-brief: none (…)`;
+  - the Stop hook cases from ticket 79.
+- The next three children the lead starts get their briefs from `kit brief`, and none of them ends its turn while its job runs (noted in Done).
+- `kit init --all` has added the hooks to every project.
+- agent-kit's `npm test`, `npm run lint` and `npm run test:kit-clean` pass.
+
+## Kit commands and evidence
+
+Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA.
