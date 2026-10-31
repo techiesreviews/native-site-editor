@@ -41,6 +41,8 @@ function fakeRoom() {
     frames: 0,
     /** Every frame sent, by sender. */
     log: [] as { from: string; bytes: Uint8Array }[],
+    /** Every presence said, by sender. */
+    said: [] as { from: string; state: JsonValue }[],
     members,
     open(options: LiveRoomOptions, access: LiveAccess = "editor") {
       const me: Member = { id: String(++next), options, access, cut: false };
@@ -63,6 +65,7 @@ function fakeRoom() {
         },
         close() { if (members.delete(me)) tell(me); },
         setPresence(state: JsonValue) {
+          room.said.push({ from: me.id, state });
           me.state = state;
           for (const other of members) if (other !== me && !other.cut) other.options.onPeers?.(peers(other));
         },
@@ -92,7 +95,7 @@ function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?
     keeper: { read: key => race("kept copy", (key: string) => kept.read(key))(key).finally(() => { keptRead = true; }), write: (key, copy) => kept.write(key, copy) },
     openRoom: roomOptions => { socket = room.open(roomOptions); sockets.push(socket.me.id); return socket; },
     loadYjs: race("Yjs", () => { yjsLoads++; return options.loadYjs ? options.loadYjs() : import("yjs"); }),
-    ...(options.carets ? { loadCarets: async () => options.carets! } : {}),
+    ...(options.carets ? { loadCarets: race("carets", async () => options.carets!) } : {}),
   });
   return {
     store, openFile, stop, keeper: kept, sockets,
@@ -886,3 +889,53 @@ test("carets (am-22): each tab tells the room where its caret is; others read it
   lex.stop();
   assert.equal(shares.size, 0);
 });
+
+test("a caret whose author someone else here also claims (or this tab's own) offers no Undo, whatever name it says", async () => {
+  const room = fakeRoom();
+  const shares = new Map<string, CaretShare>();
+  const drawn = (who: string) => (share: CaretShare) => { shares.set(who, share); return () => { shares.delete(who); }; };
+  const anna = tab(room, base, { carets: drawn("anna") }), lex = tab(room, base, { carets: drawn("lex") });
+  await until(() => shares.size === 2, "carets drawn");
+  await quiet();
+  shares.get("anna")!.own({ anchor: 4, head: 4 });
+  anna.type(4, "Warm ");
+  await until(() => shares.get("lex")!.carets().length === 1 && lex.text.includes("Warm"), "Anna's caret and words");
+  const author = authorOf(room, anna);
+  assert.equal(shares.get("lex")!.carets()[0].contested, undefined, "hers alone: her tag can take back her words");
+  // Someone else in the room says it is "Lex", with Anna's author id, and its caret where hers is.
+  const said = [...room.members].find(member => anna.sockets.includes(member.id))!.state as { caret: JsonValue };
+  const spoof = room.open({ repo: scope.repo, branch: scope.branch, file: path, onMessage: () => undefined });
+  await quiet();
+  spoof.setPresence({ author, name: "Lex", caret: said.caret });
+  await until(() => shares.get("lex")!.carets().length === 2, "the second claim");
+  assert.deepEqual(shares.get("lex")!.carets().map(caret => [caret.author, caret.contested]), [[author, true], [author, true]]);
+  spoof.close();
+  await until(() => shares.get("lex")!.carets().length === 1, "the claim gone");
+  assert.equal(shares.get("lex")!.carets()[0].contested, undefined);
+  anna.stop(); lex.stop();
+});
+
+test("stopping at any await of loading the carets starts no carets and tells the room no caret", async () => {
+  type Run = { done: Promise<unknown>; room: ReturnType<typeof fakeRoom>; anna?: ReturnType<typeof tab>; lex?: ReturnType<typeof tab>; started: number; at: number };
+  const points = await forEachAwait((race): Run => {
+    const run: Run = { done: Promise.resolve(), room: fakeRoom(), started: 0, at: 0 };
+    run.done = (async () => {
+      run.anna = tab(run.room, base, { race, carets: share => { run.started++; share.own({ anchor: 1, head: 1 }); return () => undefined; } });
+      await quiet();
+      run.lex = tab(run.room);
+      await until(() => run.anna!.yjsLoads > 0 && run.lex!.yjsLoads > 0, "both loading");
+      await new Promise(resolve => setTimeout(resolve, 120));
+    })();
+    return run;
+  }, run => {
+    run.at = run.room.said.length;
+    run.anna!.stop();
+  }, async run => {
+    await quiet();
+    assert.equal(run.started, 0, "no carets after the stop");
+    assert.deepEqual(run.room.said.slice(run.at).filter(item => run.anna!.sockets.includes(item.from)), [], "no caret told after the stop");
+    run.lex?.stop();
+  });
+  assert.ok(points >= 2, `the carets' load was disturbed (${points})`);
+});
+
