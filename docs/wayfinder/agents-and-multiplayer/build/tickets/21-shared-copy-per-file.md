@@ -110,6 +110,11 @@ Tests:
 
 Validation:
 
+- After the live text trigger moved into the component tools (boot unchanged): `RESULT: ok unit 3446/3446 (212 files)` (`kit unit --affected`); `npm run lint` clean (`check-exports: 15 unused export(s), 0 failure(s)`).
+- `kit specs --affected` (8 files, in parallel shards): `RESULT: fail specs 1 of 8 failed: native-mcp-menu.spec.ts`. The failure is "a prompt another tab revoked as unused is never copied again": the clipboard held another test's prompt. Live sharing is off in that spec. Rerun alone, it passed (`1 passed`). A rerun of the whole file stalled after 29 passing tests and was stopped at its 20-minute limit.
+
+Before that move:
+
 After the PR review (am-21 runner, 2026-10-31), two P1 findings fixed by hand:
 
 - Boot: live sharing starts with the component tools (choice 4 above). `RESULT: ok size boot 346 KB (±0 KB) vs dev@0410d63, budget 355 KB`.
