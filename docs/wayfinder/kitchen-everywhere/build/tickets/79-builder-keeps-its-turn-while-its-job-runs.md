@@ -1,8 +1,8 @@
 ---
 title: "A builder can't end its turn while its own kit job runs (a Stop hook, with a way out)"
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: ke-84
 builder: claude
 blocked_by: [78-kit-bg-outlives-the-session, 81-existing-projects-get-new-setup]
 ---
@@ -40,3 +40,11 @@ Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affe
 - Lead, 2026-10-31: the Stop hook's entry is a piece `kit init` writes into each project, so it reaches the projects already set up through ticket 81 (`kit doctor` names it missing; `kit init --all` adds it). Done includes `kit init --all` after this lands.
 - Lead, 2026-10-31: more evidence. am-24 ended its turn twice in one hour, both times right after a background wait plus `t3_background_wait` returned ("I'm waiting on it"). So the background-wait pattern in every brief is itself the trigger. The working pattern: a foreground loop of `timeout 580 kit wait pid <pid>` calls (each under the 10-minute tool limit) until the unit is inactive. `docs/runner.md` should teach that loop, and the Stop hook backs it up.
 - Lead, 2026-10-31: folded into [ticket 84](84-factory-brief-and-go.md) (the factory), which builds this Stop hook beside `kit brief` and `kit go`; closes as merged when 84 lands.
+
+## Done (2026-10-31)
+
+- Built and merged as part of [ticket 84](84-factory-brief-and-go.md): `hooks/stop-guard.sh` and `stop-guard.mjs` in the kit, in https://github.com/techiesreviews/agent-kit/pull/14 (`RESULT: ok merged #14 ed29ab6`). The Stop hook (Claude and Codex) refuses a turn end while a `kit go` job of the worktree, or a `kit-*` systemd unit working in it, still runs, naming the job and the command to wait with (`kit go <job>`, or `kit wait pid <pid> --timeout 9m` for a unit). It lets the turn end past the job's time limit, after six refusals in a row, or with `KIT_ALLOW_STOP=1`, and never blocks a session with no kit job. The kit's own headless agents set `KIT_ALLOW_STOP=1`, so a slice's builder is never held for the job that runs it.
+- Tests (`tests/agent-hooks-factory.test.ts`): a running job is refused with its name and wait command; a finished job, no job, another worktree, the time limit, the sixth refusal, `KIT_ALLOW_STOP=1`, a unit in this worktree, a unit in a worktree nested inside it, and a Codex payload. They failed before the change.
+- The runner line: this repo's `docs/agents/runner.md` teaches long jobs only through `kit go`, waited for in the foreground; the kit's rulebook station 6 says the same. The hook entries reach projects through `kit init --all` (see ticket 84's Done and ticket 92).
+- One real delegated child staying in its turn until its slice's RESULT line: the lead's to record.
+
