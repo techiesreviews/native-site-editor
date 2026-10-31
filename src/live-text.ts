@@ -79,6 +79,8 @@ export interface LiveTextPorts {
  * Name and author are what each participant says of itself (the relay vouches for neither): `contested` marks an author
  * id another participant here also claims, or this tab's own, whose name tag offers no Undo. */
 export interface LiveCaret { peer: string; author: number; name: string; agent?: string; anchor: number; head: number; contested?: boolean }
+/** A caret as offsets in this tab's text: where the selection began and where the caret is. */
+export interface CaretSelection { anchor: number; head: number }
 /** The open file's carets as the code pane draws them (src/components/live-carets.ts). */
 export interface CaretShare {
   scope: DraftScope;
@@ -87,8 +89,9 @@ export interface CaretShare {
   carets(): LiveCaret[];
   /** Called when a caret may have moved: someone moved theirs, typed, came or left. Returns its unsubscribe. */
   onCarets(listener: () => void): () => void;
-  /** This tab's own caret, as offsets in its text; none takes it away. */
-  own(selection: { anchor: number; head: number } | undefined): void;
+  /** Where this tab's own caret is: read (as offsets in its text) each time the room is told, so a caret placed before
+   * the copy caught up is told where it is in the shared text; none takes it away. */
+  own(selection: (() => CaretSelection | undefined) | undefined): void;
   canUndo(author: number): boolean;
   undo(author: number, history?: string): boolean;
   onAuthorUndo(listener: () => void): () => void;
@@ -255,7 +258,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   let copy: ReturnType<typeof makeCopy> | undefined, loading = false;
   const inbox: Uint8Array[] = [];
   /** Others here, as the room's presence says; this tab's own caret (offsets in its text) and whoever draws carets. */
-  let peers: ReadonlyMap<string, LivePeer> = new Map(), selection: { anchor: number; head: number } | undefined;
+  let peers: ReadonlyMap<string, LivePeer> = new Map(), selection: (() => CaretSelection | undefined) | undefined;
   const caretWatchers = new Set<() => void>();
   const caretsMoved = () => { for (const watcher of [...caretWatchers]) try { watcher(); } catch { /* A caret must not break sharing. */ } };
   // Discard is this tab's own, from the moment it shares the file (alone, loading Yjs, or with a copy): it leaves the
@@ -490,12 +493,14 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     }
 
     /** This tab's caret as the room hears it: who it is (the Yjs client id its changes carry, its GitHub name) and where,
-     * as relative positions read when it moved, so text others add meanwhile does not shift it. At most every CARET_MS. */
+     * as relative positions read when it moved (the pane's selection read now, in the text as it is), so text others add
+     * meanwhile does not shift it. At most every CARET_MS. */
     let telling: unknown, told: JsonValue | undefined;
     function tellCaret() {
       if (!synced || discarded || stopped) return;
       const at = (index: number) => Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(text, Math.min(index, text.length))) as JsonValue;
-      told = { author: me, name: cut(scope.account), caret: selection ? { anchor: at(selection.anchor), head: at(selection.head) } : null };
+      const now = selection?.();
+      told = { author: me, name: cut(scope.account), caret: now ? { anchor: at(now.anchor), head: at(now.head) } : null };
       telling ??= clock.setTimeout(() => { telling = undefined; if (!stopped && told !== undefined) room.setPresence?.(told); }, CARET_MS);
     }
     /** Others' carets in this tab's text: whoever says where theirs is in a copy of this file that this one has the words of. */
@@ -505,9 +510,16 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       for (const [peer, { access, state }] of peers) {
         const said = state as { author?: unknown; name?: unknown; agent?: unknown; caret?: { anchor?: unknown; head?: unknown } | null } | null;
         if (!said || typeof said !== "object" || !Number.isSafeInteger(said.author) || typeof said.name !== "string" || !said.caret) continue;
+        // Someone else's say: only a position in this file's text counts. A named root type is looked up only when it is this
+        // text's, as Yjs would make any other name a new empty type in this copy.
         const at = (json: unknown) => {
           if (!json || typeof json !== "object") return undefined;
-          try { return Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(json), doc)?.index; } catch { return undefined; }
+          const said = json as { tname?: unknown; type?: unknown };
+          if ((said.tname != null && said.tname !== "source") || said.type != null) return undefined;
+          try {
+            const found = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(json), doc);
+            return found?.type === text ? found.index : undefined;
+          } catch { return undefined; }
         };
         const anchor = at(said.caret.anchor), head = at(said.caret.head);
         if (anchor === undefined || head === undefined) continue;
@@ -586,7 +598,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   const carets = {
     list: () => copy?.carets() ?? [],
     on: (watcher: () => void) => { caretWatchers.add(watcher); return () => { caretWatchers.delete(watcher); }; },
-    own: (next: { anchor: number; head: number } | undefined) => { selection = next; copy?.tellCaret(); },
+    own: (next: (() => CaretSelection | undefined) | undefined) => { selection = next; copy?.tellCaret(); },
   };
   const stop = () => {
     stopped = true;

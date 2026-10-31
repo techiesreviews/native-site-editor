@@ -96,6 +96,9 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
     // Each sees the other's caret in the code pane: a circle with the first letter, the whole name only on hover.
     const annaAtLex = lex.page.locator(".live-caret__flag", { has: lex.page.locator("b", { hasText: "A" }) });
     const lexAtAnna = anna.page.locator(".live-caret__flag", { has: anna.page.locator("b", { hasText: "L" }) });
+    // Each one's caret in the other's code, unfolded and scrolled to (sections open folded; a caret in a fold is not shown).
+    await reveal(lex.page, (await source(lex.page)).indexOf("Anna was here: ") + "Anna was here: ".length);
+    await reveal(anna.page, (await source(anna.page)).indexOf(", by Lex,") + ", by Lex,".length);
     await expect(annaAtLex).toBeVisible({ timeout: 20_000 });
     await expect(annaAtLex).toHaveAccessibleName("Anna");
     await expect(lexAtAnna).toBeVisible({ timeout: 20_000 });
@@ -128,6 +131,48 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
     // Nothing more of hers to take back: the undo goes, her caret stays.
     await expect(undo).toBeHidden();
     await expect(annaAtLex).toBeVisible();
+
+    // Her selection shows at Lex's as a tint over the same words, and goes when she collapses it.
+    const word = "native browser";
+    await anna.page.evaluate(async (word) => {
+      const { monaco } = await import("/src/components/monaco.ts");
+      const editor = monaco.editor.getEditors().find(view => view.getModel()?.uri.path.endsWith("/index.html"))!;
+      const model = editor.getModel()!, start = model.getValue().indexOf(word);
+      editor.setSelection(monaco.Range.fromPositions(model.getPositionAt(start), model.getPositionAt(start + word.length)));
+    }, word);
+    const tints = () => lex.page.evaluate(async () => {
+      const { monaco } = await import("/src/components/monaco.ts");
+      const model = monaco.editor.getEditors().find(view => view.getModel()?.uri.path.endsWith("/index.html"))!.getModel()!;
+      return model.getAllDecorations().filter(item => item.options.className?.includes("live-caret-tint"))
+        .map(item => model.getValueInRange(item.range));
+    });
+    await expect.poll(tints, { timeout: 20_000 }).toEqual([word]);
+    await expect(lex.page.locator(".live-caret-tint").first()).toBeVisible();
+    await anna.page.evaluate(async () => {
+      const { monaco } = await import("/src/components/monaco.ts");
+      const editor = monaco.editor.getEditors().find(view => view.getModel()?.uri.path.endsWith("/index.html"))!;
+      editor.setPosition(editor.getSelection()!.getEndPosition());
+    });
+    await expect.poll(tints).toEqual([]);
+
+    // Her caret on the top line Lex's pane shows (scrolled there, not the file's first line): its circle is in the pane.
+    await lex.page.evaluate(async (word) => {
+      const { monaco } = await import("/src/components/monaco.ts");
+      const editor = monaco.editor.getEditors().find(view => view.getModel()?.uri.path.endsWith("/index.html"))!;
+      const model = editor.getModel()!, line = model.getPositionAt(model.getValue().indexOf(word)).lineNumber;
+      await editor.getAction("editor.unfoldAll")?.run();
+      editor.setScrollTop(editor.getTopForLineNumber(line));
+    }, word);
+    const editorOf = annaAtLex.locator("xpath=ancestor::div[contains(concat(' ', @class, ' '), ' monaco-editor ')][1]");
+    await expect.poll(async () => {
+      const pane = await editorOf.boundingBox(), mark = await annaAtLex.locator(".live-caret__mark").boundingBox();
+      return Boolean(pane && mark && mark.y >= pane.y && mark.y + mark.height <= pane.y + pane.height);
+    }, { timeout: 20_000 }).toBe(true);
+    await expect(annaAtLex.locator("xpath=..")).toHaveAttribute("data-below", "");
+
+    // Anna leaves: her caret fades out and goes.
+    await anna.context.close();
+    await expect(annaAtLex).toHaveCount(0, { timeout: 45_000 });
   } finally {
     agent?.room.close();
     await agent?.context.close();
@@ -152,12 +197,15 @@ test("on a phone the tag opens on a tap with 44 px targets inside the pane, even
     await openEditor(lex.page, baseURL);
     await editorMounted(anna.page);
     await editorMounted(lex.page);
-    // Lex types, and his page settles on it (it shows his words, the code following his cursor); then Anna types at the
-    // end of a line, by the right edge of Lex's narrow pane.
+    // Lex types, and his page shows his words; then Anna types at the end of a line, by the right edge of his narrow pane.
     await typeInCode(lex.page, "Edit plain HTML", ", by Lex,", true);
     await expect.poll(() => source(anna.page), { timeout: 20_000 }).toContain("Edit plain HTML, by Lex,");
     await expect(lex.page.frameLocator(".native-preview-frame").locator("p.lead")).toContainText("Edit plain HTML, by Lex,");
-    await lex.page.waitForTimeout(1_000);
+    // Deliberate fixed wait: his typing settles TYPING_SETTLE_MS after the last key (src/components/code-editor.ts), and
+    // then the page selects what he typed and his code scrolls back to it. Nothing on screen marks that moment, and the
+    // scroll would undo showing Anna's caret below, so the spec lets it pass first.
+    const settle = await lex.page.evaluate(async () => (await import("/src/components/code-editor.ts")).TYPING_SETTLE_MS);
+    await lex.page.waitForTimeout(settle + 300);
     await typeInCode(anna.page, "<head>", "<!--A-->");
     await expect.poll(() => source(lex.page), { timeout: 20_000 }).toContain("<head><!--A-->");
 
@@ -178,7 +226,7 @@ test("on a phone the tag opens on a tap with 44 px targets inside the pane, even
     await annaAtLex.locator(".live-caret__mark").tap();
     await expect(annaAtLex).toBeFocused();
     await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("opacity", "1");
-    const undo = annaAtLex.getByRole("button", { name: "Undo Annabel's change" });
+    const undo = annaAtLex.getByRole("button", { name: `Undo ${longName}'s change` });
     await expect(undo).toBeVisible();
     // The undo stays inside the pane (the tag places itself once its undo shows), and presses 44 px around it reach it.
     await expect.poll(async () => {
