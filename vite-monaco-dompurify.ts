@@ -25,11 +25,10 @@ export function resolveMonacoDompurify(source: string, importer: string | undefi
 }
 
 export function monacoDompurify() {
-  const resolveId = (source: string, importer: string | undefined) => resolveMonacoDompurify(source, importer);
-  const plugin: Plugin = { name: "monaco-dompurify", enforce: "pre", resolveId };
+  const plugin: Plugin = { name: "monaco-dompurify", enforce: "pre", resolveId: resolveMonacoDompurify };
   // The pre-bundler is Rolldown; the same resolveId hook works there.
   const optimizeDeps: UserConfig["optimizeDeps"] = {
-    rolldownOptions: { plugins: [{ name: "monaco-dompurify", resolveId }] },
+    rolldownOptions: { plugins: [{ name: "monaco-dompurify", resolveId: resolveMonacoDompurify }] },
   };
   return { plugin, optimizeDeps };
 }
