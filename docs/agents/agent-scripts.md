@@ -57,7 +57,9 @@ lists); the slice and fix briefs name `kit unit --affected` only when it is set;
 spaces, with no quoting, `paths` (`docs`, `tests`, `css`, `visible` regular expressions for `kit pr`'s tiers
 and feature-list guard; `kit`, the kit-plumbing files that run `checks.extra`; `unitTests`, the unit test
 files `kit pr` picks its focused run from), `featureList`, `techDebt`, `standards` (one file or a list, such as
-`["AGENTS.md"]` where a project has none, for the review brief), `maps`, `sharedFile`, `preview`
+`["AGENTS.md"]` where a project has none, for the review brief), `maps`, `sharedFile`, `timing` (spec
+files, each by path, file name or name without `.spec.ts`, that `kit pr` runs after the rest of the browser run,
+each alone while no other kit job starts; here the edit-latency and boot-memory specs), `preview`
 (`status` skips the preview row without it), `playwright` (where Playwright comes from for a project
 without its own: a module file or folder, relative or absolute, that `kit doctor` checks and project
 commands read), `servers` (the command `bash-guard` names for starting servers; else
