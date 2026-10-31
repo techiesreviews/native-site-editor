@@ -54,7 +54,8 @@ try {
     console.log(`Fixture: ${group} (${resolve(env.ASE_NATIVE_SAVE_FIXTURE)})\n${grep[group].join(" ")}\n${files.join("\n")}`);
   } else {
     if (!forwarded.includes("--list") && !existsSync(resolve(env.ASE_NATIVE_SAVE_FIXTURE))) throw new Error(`Fixture does not exist: ${resolve(env.ASE_NATIVE_SAVE_FIXTURE)}. --check can inspect the selection without a server.`);
-    // Only the group's files load: a spec may refuse another group's fixture at import.
+    // Only the group's files load. A file in more than one group (plain and tagged tests) loads in each,
+    // so it checks its fixture inside tests or hooks, never at import.
     const paths = files.map(name => `tests/native-save/${name}`);
     const result = spawnSync(process.execPath, [createRequire(import.meta.url).resolve("@playwright/test/cli"), "test", "--project=native-save", ...grep[group], ...paths, ...forwarded], { env, stdio: "inherit" });
     if (result.error) throw result.error;

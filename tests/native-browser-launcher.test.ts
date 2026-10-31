@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { rmSync, writeFileSync } from "node:fs";
 
 const clean = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(ASE_NATIVE_SAVE_FIXTURE|ASE_NATIVE_SAVE_FIXTURE_KIND|STATIC_SECTIONS_FIXTURE|ASE_NATIVE_STARTER_SOURCE|ASE_TEST_PORT)$/.test(key)));
 function launch(args: string[], env: Record<string, string> = {}) {
@@ -13,6 +14,20 @@ test("default excludes native-only hosts and actual-only specs but keeps univers
   assert.match(out, /^Fixture: default /);
   for (const spec of ["native-static-starter-create.spec.ts", "native-editor-json-lifecycle.spec.ts"]) assert.ok(!files.includes(spec), spec);
   assert.ok(files.includes("native-insert.spec.ts"));
+});
+
+test("a file mixing plain and @actual tests is in the default and the actual group", t => {
+  const name = `ke60-mixed-${process.pid}.spec.ts`, path = `tests/native-save/${name}`;
+  writeFileSync(path, 'import { test } from "@playwright/test";\ntest("plain one", async () => {});\ntest("actual", { tag: "@actual" }, async () => {});\ntest("plain two", async () => {});\n');
+  t.after(() => rmSync(path, { force: true }));
+  const plain = launch(["default", "--check", "--spec", name]);
+  assert.equal(plain.status, 0, plain.err);
+  assert.deepEqual(plain.files, [name]);
+  assert.match(plain.out, /^--grep-invert @actual\|@native-static$/m);
+  const actual = launch(["actual", "--check", "--spec", name]);
+  assert.equal(actual.status, 0, actual.err);
+  assert.deepEqual(actual.files, [name]);
+  assert.match(actual.out, /^--grep @actual$/m);
 });
 
 test("actual selection keeps existing section specs", () => {
