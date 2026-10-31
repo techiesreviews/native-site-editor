@@ -25,6 +25,7 @@ Expected (confirm while designing): `src/agent-tools-edit.ts`, `src/live-text.ts
 ## Done when
 
 - A spec: an agent edits one sentence while Lex types in the next; both land and every copy matches.
+- Moved here from slice 24 (am-24, 2026-10-31): the agent's text change joins the shared copy under its own Yjs client id, so Lex undoes it from its caret's name tag (`LiveText.undoAuthor`, src/live-text.ts), on the page and in the code pane, and the spec shows only the agent's words gone.
 
 ## Kit commands and evidence
 
