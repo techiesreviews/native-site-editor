@@ -144,16 +144,18 @@ test("the pointer keeps every heading the old kitchen.md had, each linking to th
   assert.match(read("AGENTS.md"), /`docs\/agents\/kitchen\.md` \(the kitchen rulebook\)/);
 });
 
-test("runner review, landing and waiting follow the kit and the per-CLI waiting guidance", () => {
+test("runner review, landing and waiting follow the kit: long jobs only through kit go, in the foreground", () => {
   const runner = read("docs/agents/runner.md");
   assert.ok(runner.split("\n").length <= 96);
-  assert.match(runner, /Claude runs them with\s+`run_in_background: true`/);
-  assert.match(runner, /Codex runs them in the foreground or its background terminal/);
+  // Agent Kit ticket 84: one way to run and wait for a long job, the same for Claude and Codex.
+  assert.match(runner, /scripts\/agents\/kit go <name> -- <command…>/);
+  assert.match(runner, /run that line again at once, in the foreground \(Claude and Codex alike\)/);
+  assert.doesNotMatch(runner, /run_in_background|kit wait job|` in the background/);
   assert.match(runner, /scripts\/agents\/kit wait pid\|output\|ci/);
   for (const command of ["scripts/agents/kit review --ticket <ticket>", "scripts/agents/kit pr --ticket <ticket>"]) {
     const line = runner.split("\n").find(line => line.includes(command));
     assert.ok(line, command);
-    assert.match(line, /in the background/);
+    assert.match(line, /under `kit go`/);
   }
   assert.doesNotMatch(runner, /\b(?:review|ci-status|land)\.sh/);
 });
