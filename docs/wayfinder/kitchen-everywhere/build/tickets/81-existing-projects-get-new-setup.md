@@ -2,7 +2,7 @@
 title: "New kit setup reaches every project, not only new ones: `kit doctor` names missing pieces, `kit init --all` adds them; line endings first"
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-81
 builder: claude
 blocked_by: []
 ---
