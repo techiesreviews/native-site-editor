@@ -25,6 +25,15 @@ Typing together in the code pane, with others' carets.
 
 Expected (confirm while designing): `src/components/source-editor.ts` (+ CSS), `src/components/monaco.ts`, a new `src/components/live-carets.ts` (+ CSS, shared with 23), the agent icons as small inline SVGs, `kit deps add y-monaco`; a two-context spec.
 
+Notes for the build (am-22, 2026-10-31):
+
+- Boot stays within 355 KB (`kit size`; about 346 KB now). Carets, `y-monaco`, `y-protocols` and the agent icons load only when a live room opens, in the lazy live-text chunk, never at boot.
+- Live sharing stays off by default (`LIVE_SHARING_KEY` in `src/live-text.ts`, slice 21); do not change that. Specs switch it on per context.
+- Slice 21 shares the open file through its draft store entry, and slice 24's per-person Undo lives in the draft-store history with Monaco's stops. Check whether a `y-monaco` text binding would bypass that history; if it would, keep the text path as it is and use awareness (from `y-protocols`) and Monaco decorations for the carets, and record the choice in Done.
+- Slice 24 follow-up: `canUndoAuthor` walks the whole document on each call. Ask it only when `onAuthorUndo` fires, at most once per frame for all carets, never per keystroke per caret.
+- The caret and its name tag: a short fade in and out with no movement under reduced motion (animation), a name tag whose undo icon is a real button with keyboard focus, a visible focus ring, a screen-reader name, and a touch target of at least 24 px (44 px at touch widths). Theme tokens only; no toasts or explainer text; state shows on the caret itself.
+- Where the ticket leaves a choice open and it is easy to undo later, take the safe, cheap way and list it under "Choices left open, taken the safe way (for Lex's Tuesday pack)" in Done.
+
 ## Done when
 
 - A spec: Lex and Anna type in the code pane; each sees the other's caret with circle and letter, the name on hover, and an agent's icon circle.
