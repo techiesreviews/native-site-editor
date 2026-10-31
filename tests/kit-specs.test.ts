@@ -592,6 +592,11 @@ test("a spec file with one @actual test and two plain ones runs all three: the p
   const inside = 'test.describe("d", { tag: "@actual" }, () => {\n  test("x", async () => { if (a) { b(); } });\n});\n';
   assert.deepEqual(specTestGroups(inside), ["actual"]);
   assert.deepEqual(specTestGroups(inside + 'test("after", async () => {});\n'), ["default", "actual"]);
+  // A regex literal with quotes, a tag named in a comment or a string, and a call before the tag read right.
+  assert.deepEqual(specTestGroups('const sizes = /sizes="(?!auto)[^"]+"/;\ntest("plain", async () => {});\ntest("t", { tag: "@actual" }, async () => {});\n'), ["default", "actual"]);
+  assert.deepEqual(specTestGroups('// run under "@actual"\nconst note = "@actual";\ntest("plain", async () => {});\n'), ["default"]);
+  assert.deepEqual(specTestGroups('test("t", { annotation: { type: "x", description: String(1) }, tag: "@actual" }, async () => {});\n'), ["actual"]);
+  assert.deepEqual(specTestGroups('for (const n of [1, 2]) test(`t ${n}`, { tag: "@actual" }, async () => {});\n'), ["actual"]);
 });
 
 test("routing batches defaults and preview, runs tagged specs individually and both tags twice", t => {
