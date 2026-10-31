@@ -64,3 +64,4 @@ Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affe
 - Lead's hand log, style per brief: 2026-10-31 ke-84 brief → `en` (short English).
 - 2026-10-31 security hot-fix brief → `en` (wenyan skipped: a live hot fix is no place for the trial).
 - 2026-10-31 ke-88 brief → `wenyan`.
+- 2026-10-31 ke-90 brief → `en`.
