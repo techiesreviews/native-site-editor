@@ -40,3 +40,4 @@ Lex, 2026-10-30: "I prefer to use the shared kit and skills and factory, so ther
 
 - Lex, 2026-10-30: yes to the plan; nova goes to this repo instead of chat.
 - Lead, 2026-10-30, from ticket 64's Follow-ups: once own skills are linked into `~/.agents/skills`, the skill guard's line check (which reads every local skill as a paid source) would match the own skills against themselves and refuse the skills repo. Fix in this ticket: the line check reads only the paid skills (by the sorted list: a small marker file or a list in the kit's machine settings), never the own-skills checkout.
+- Lex, 2026-10-31 ("Waiting for Lex" thread): "Skills repo has been added." Checked: `techiesreviews/skills` exists, private, empty.
