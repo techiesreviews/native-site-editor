@@ -121,7 +121,7 @@ Review round 3:
 - `RESULT: ok specs 1/1 passed; 189 more run in kit pr` (`kit specs --affected`: `native-live-text.spec.ts`, 5).
 - `npm run check` clean; `npm run lint` clean (`check-exports: 15 unused export(s), 0 failure(s)`).
 
-UX review (2026-10-31, `kit ux`, bundle `.scratch/ux/am-24/20261031-085138-iptFVy/bundle.md` in the main checkout): F-canvas-15 fine, not shown (no shot has two people on one page; carets and name tags come with 22 and 23). F-history-01 and F-publish-06 look off for reasons this slice does not touch (it changes only `src/draft-store.ts`, `src/live-text.ts` and `src/shared-undo.ts`); they are in the follow-ups below. A second `kit ux` run (bundle `.scratch/ux/am-24/20261031-105151-ZSdDq0/bundle.md`) found the same, and that at 390 px the strips cover the page (U5): above the format bar after Undo, and the "Have a project in mind?" heading after Discard.
+UX review (2026-10-31, `kit ux`, bundle `.scratch/ux/am-24/20261031-085138-iptFVy/bundle.md` in the main checkout): F-canvas-15 fine, not shown (no shot has two people on one page; carets and name tags come with 22 and 23). F-history-01 and F-publish-06 look off for reasons this slice does not touch (it changes only `src/draft-store.ts`, `src/live-text.ts` and `src/shared-undo.ts`); they are in the follow-ups below. A second `kit ux` run (bundle `.scratch/ux/am-24/20261031-105151-ZSdDq0/bundle.md`) found the same, and that at 390 px the strips cover the page (U5): above the format bar after Undo, and the "Have a project in mind?" heading after Discard. A third run (bundle `.scratch/ux/am-24/20261031-120547-V9UVAv/bundle.md`) found the same strips again and nothing new.
 
 ### UX follow-ups
 
