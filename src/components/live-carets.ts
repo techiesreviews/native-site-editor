@@ -13,6 +13,7 @@ import type { CaretSelection, CaretShare, LiveCaret } from "../live-text";
 import type { monaco as Monaco } from "./monaco";
 import { caretPanes, watchCaretPanes, type CaretPane } from "./source-editor";
 import { icon, svgElement } from "../icons";
+import { githubScope, same } from "../workspace-session";
 
 /** Caret colours, theme tokens (src/theme.css): the presence colours, picked by author so every tab agrees. */
 const COLOURS = 4;
@@ -144,8 +145,7 @@ export function startCodeCarets(share: CaretShare): () => void {
     readers.set(pane, read);
     share.own(read);
   };
-  const ours = (pane: CaretPane) => pane.path === share.path && pane.scope.account === share.scope.account &&
-    pane.scope.repoId === share.scope.repoId && pane.scope.branch === share.scope.branch;
+  const ours = (pane: CaretPane) => pane.path === share.path && same(githubScope(pane.scope), githubScope(share.scope));
   const sync = () => {
     const panes = caretPanes();
     for (const [pane, detach] of attached) if (!panes.includes(pane)) {
