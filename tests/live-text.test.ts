@@ -489,6 +489,52 @@ test("a reload whose kept copy missed the last shared change does not add that c
   again.stop(); lex.stop();
 });
 
+test("a reload whose kept copy missed what the tab typed alone keeps that typing, and the next one in gets it once", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Warm ");
+  await until(() => lex.text.includes("Warm"), "Anna's edit");
+  await new Promise(resolve => setTimeout(resolve, 400));
+  // Lex leaves; Anna types alone, and her reload keeps the draft's last write but not the copy's.
+  lex.stop();
+  await quiet();
+  const older = anna.keeper.copies.get(draftKey(scope, path))!;
+  assert.ok(older?.draft?.includes("Warm"), "Anna kept her copy with its draft");
+  anna.type(base.indexOf("</h1>") + "Warm ".length, " abc");
+  await until(() => anna.text.includes("bread abc"), "Anna's typing");
+  anna.stop();
+  anna.keeper.copies.set(draftKey(scope, path), older);
+  const again = tab(room, anna.text, { keeper: anna.keeper });
+  await quiet();
+  assert.equal(times(again.text, " abc"), 1, "Anna's draft keeps what she typed alone");
+  // Lex comes back from his own kept copy (without " abc"): Anna starts her part from the older copy, and he catches up from her.
+  const back = tab(room, lex.text, { keeper: lex.keeper });
+  await until(() => again.keptRead && back.text.includes(" abc"), "Lex catching up");
+  await quiet();
+  assert.equal(back.text, again.text);
+  assert.deepEqual([times(again.text, "Warm "), times(again.text, " abc")], [1, 1]);
+  again.stop(); back.stop();
+});
+
+test("a tab alone sends no edits to the room; the next one in is caught up all the same", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  lex.stop();
+  await quiet();
+  const before = room.log.length;
+  anna.type(0, "a"); anna.type(1, "b");
+  await quiet();
+  assert.equal(room.log.length, before, "nothing sent while alone");
+  const back = tab(room, lex.text, { keeper: lex.keeper });
+  await until(() => back.text.startsWith("ab"), "Lex catching up");
+  assert.equal(back.text, anna.text);
+  anna.stop(); back.stop();
+});
+
 function fakeTimers() {
   let now = 0, id = 0;
   const timers = new Map<number, { at: number; run(): void }>();
