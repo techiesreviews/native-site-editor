@@ -140,6 +140,8 @@ Lex (2026-10-30): the project threads stopped their own kit work and handed it h
 | [71 Browser checks on Playwright everywhere: one shared install, `gestures.mjs` for touch and pen, close-ups and suites by name](tickets/71-shared-browser-tester.md) | S | claude | 67 |
 | [72 `kit release-check` before every live deploy: nothing unsaved, exactly the release branch](tickets/72-release-check.md) | S | claude | 68 |
 | [76 One shared slider for every site (the prompter's range field), copied by hand until a second site uses it](tickets/76-shared-range-field.md) | S–M | claude | 67, 71, Lex's answer on its home |
+| [79 A builder can't end its turn while its own kit job runs (Stop hook, with a way out)](tickets/79-builder-keeps-its-turn-while-its-job-runs.md) | S | claude | 78 |
+| [80 The prompter finishes its move onto the shared kit; test builds on localhost, never a file](tickets/80-prompter-finishes-its-move.md) | S | claude | – |
 | [77 Check and define the retro tickets before any is built](tickets/77-check-the-retro-tickets.md) | S | claude | – (closed) |
 | ~~[70 `kit unit --red`](tickets/70-new-tests-must-go-red.md)~~ waits (rule in 67) | – | – | `wontfix` for now |
 | ~~[73 Motion check in `kit ux`](tickets/73-kit-ux-motion-check.md)~~ dropped | – | – | `wontfix` |
@@ -156,7 +158,7 @@ The frontier decides; this is one order that keeps to the rules (at most 5 at on
 5. 30 alone; then 31 (Lex's OK for both given 2026-10-27).
 6. 40 to 46, one after another (Lex's one OK, 2026-10-27), stopping at the first problem; 47 whenever Lex builds in `camframe` again.
 7. 50 last, with Lex's approved wording.
-8. The 2026-10-30 retro slices (order from the [retro check](retro-check-2026-10-30.md)): 66, 68 and 78 now, side by side (`docs/kitchen.md` and `review-brief.mjs`; `hooks/bash-guard.sh`; `kit.d/bg`); 74 any time as a free-model chore (`kit.d/pr`), before 72; 67 after 66 (`docs/kitchen.md`, `review-brief.mjs`); 69 once agent-kit PR #6 (ticket 64's kit part) and 66 are in (`kit.d/doctor`, `review-brief.mjs`); 71 after 67 (station 7); 72 after 68 and 74 (`kit.d/pr`); 76 after 67, 71 and Lex's answer on its home. The 50s and 60s slices still open keep their own places.
+8. The 2026-10-30 retro slices (order from the [retro check](retro-check-2026-10-30.md)): 66, 68 and 78 now, side by side (`docs/kitchen.md` and `review-brief.mjs`; `hooks/bash-guard.sh`; `kit.d/bg`); 74 any time as a free-model chore (`kit.d/pr`), before 72; 67 after 66 (`docs/kitchen.md`, `review-brief.mjs`); 69 once agent-kit PR #6 (ticket 64's kit part) and 66 are in (`kit.d/doctor`, `review-brief.mjs`); 71 after 67 (station 7); 72 after 68 and 74 (`kit.d/pr`); 76 after 67, 71 and Lex's answer on its home. From the prompter ↔ CamFrame retro (2026-10-31, checked by the lead): 79 after 78 (`hooks/`, `docs/runner.md`); 80 any time (prompter repo only); finding 4's doctor warning rides with 69, finding 2 with 47; the get_format finding was already done (`b1745616`). The 50s and 60s slices still open keep their own places.
 
 ## Waiting for Lex
 

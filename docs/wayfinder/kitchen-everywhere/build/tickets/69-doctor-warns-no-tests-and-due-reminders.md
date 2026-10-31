@@ -45,3 +45,7 @@ Verdict on the [retro check](../retro-check-2026-10-30.md): build smaller.
 ## Kit commands and evidence
 
 Agent Kit is required. In `~/Projects/agent-kit`: `scripts/agents/kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA, and doctor's output here and in one project without tests. This ticket's Done lands on `dev` here with `scripts/agents/kit pr` (docs tier).
+
+## Comments
+
+- Lead, 2026-10-31 (prompter ↔ CamFrame retro, finding 4): also here, same file. `kit doctor` reports a main checkout behind its land branch as a ✓ note (`kit.d/doctor` line 98, "8 commits behind origin/main"), so a lead started work 8 commits behind. When the main checkout is behind `origin/<land>` after the fetch, print a warning line (not ✓, still not a failure) naming the count and `git pull --rebase`. A worktree branch behind its base keeps today's note (rebasing before landing is normal there). One test.
