@@ -27,12 +27,13 @@ Ticket 84 (agent-kit #14 and #16) landed with the lead's waiver for P2/P3 review
 
 ## Files
 
-In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`): `hooks/stop-guard.mjs`, `hooks/agent-cap.sh`, `brief-lib.mjs`, `review-brief.mjs`, `skills.mjs`, `skills.json`, `kit.d/brief`, `launcher/hooks-run.sh`, `README.md`, `docs/kitchen.md`, `tests/`.
+In this repo (through `kit init --all`): `.claude/settings.json`, `.codex/hooks.json`, and `tests/agent-port.test.ts` if the hang is the test's. In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`): `hooks/stop-guard.mjs`, `hooks/agent-cap.sh`, `brief-lib.mjs`, `review-brief.mjs`, `skills.mjs`, `skills.json`, `kit.d/brief`, `launcher/hooks-run.sh`, `README.md`, `docs/kitchen.md`, `tests/`.
 
 ## Done when
 
 - Tests, failing first, for each behaviour above.
 - agent-kit's `npm test`, `npm run lint` and `npm run test:kit-clean` pass.
+- `kit init --all` has added brief-guard and stop-guard here (`kit init --check` names nothing missing), and this repo's full `kit pr` suite runs `tests/agent-port.test.ts` to the end under `kit go`.
 
 ## Kit commands and evidence
 
