@@ -982,7 +982,8 @@ function liveJoin(id: string, request: Request, live?: LiveConnect) {
   let identity: { room?: unknown; access?: unknown; rejoin?: unknown } | null = null;
   try { identity = JSON.parse(request.headers.get(LiveRooms.identityHeader) ?? "null"); } catch { /* Refused below. */ }
   const room = identity?.room, access = identity?.access, rejoin = identity?.rejoin;
-  if (!live || typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || access !== "editor" || (rejoin !== undefined && typeof rejoin !== "string"))
+  // Agents come in as the Worker lets them (a bearer connection): the room admits them only while a tab has it open.
+  if (!live || typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || (access !== "editor" && access !== "agent") || (rejoin !== undefined && typeof rejoin !== "string"))
     return new Response(null, { status: 400 });
   const rooms = liveRooms.get(id) ?? liveRooms.set(id, new LiveRooms([], () => Date.now(), livePingedAt)).get(id)!;
   return live(rooms, { room, access, ...(typeof rejoin === "string" ? { rejoin } : {}) });
