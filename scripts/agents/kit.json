@@ -31,6 +31,7 @@
   "standards": "CODING_STANDARDS.md",
   "maps": "docs/wayfinder",
   "sharedFile": "src/main.ts",
+  "timing": ["native-edit-latency", "native-boot-memory"],
   "preview": "https://preview-editor.techies.tools",
   "rulebookExtras": "docs/agents/kitchen-extras.md"
 }
