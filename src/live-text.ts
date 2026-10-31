@@ -305,7 +305,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     /** Catch-up requests that came before this copy could answer: answered once it can. */
     let asked: { kind: number; theirs: boolean; from: number; vector: Uint8Array }[] = [];
     /** This copy's id in frames: a REPLY naming it answers this tab's own request. It is the Yjs client id its own
-     * changes carry, which carets name (slices 22 and 23), so a name tag's Undo finds that author's changes. */
+     * changes carry, which carets name (slices 22 and 23), so a name tag's Undo finds that author's changes. Read once: should
+     * Yjs ever give this doc a new client id (it does on a clash, very rarely), carets must keep naming this one. */
     const me = doc.clientID;
 
     const frame = (kind: number, payload: Uint8Array, id: number) => {

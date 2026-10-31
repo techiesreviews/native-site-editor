@@ -69,7 +69,7 @@ export function rebaseHistory(history: HistoryAccess, input: EditInput): StepRes
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
   if (applied.text === entry.text) return { ok: true };
-  const theirs = applied.changes, was = entry.revision;
+  const theirs = applied.changes;
   const session = history.typing;
   let open: ReturnType<typeof rebaseChanges>, start: string | undefined;
   if (session?.start) {
@@ -77,6 +77,8 @@ export function rebaseHistory(history: HistoryAccess, input: EditInput): StepRes
     try { if (open) start = applyChanges(applied.text, open.mine).text; } catch { open = undefined; }
     if (!open) history.commitTyping(entry.key);
   }
+  // Read after the typing closed: typing that came back to its start gives the file that start's revision again.
+  const was = entry.revision;
   entry.text = applied.text;
   entry.revision = history.revision();
   history.persist(entry);
@@ -119,8 +121,9 @@ function moveStep(history: HistoryAccess, step: EditStep | TypingStep, level: Le
   const mine = step.kind === "edit" ? undo ? step.inverse : step.changes
     : [undo ? diffRange(step.end.text, step.start.text) : diffRange(step.start.text, step.end.text)];
   const moved = rebaseChanges(mine, level.theirs);
+  if (!moved) return undefined;
   let applied: ReturnType<typeof applyChanges>;
-  try { if (!moved) return undefined; applied = applyChanges(level.text, moved.mine); } catch { return undefined; }
+  try { applied = applyChanges(level.text, moved.mine); } catch { return undefined; }
   const revision = history.revision();
   const edit: EditStep = { kind: "edit", id: step.id, label: step.label, key: step.key, group: false, companions: step.companions,
     changes: undo ? applied.inverse : applied.changes, inverse: undo ? applied.changes : applied.inverse,
