@@ -7,7 +7,7 @@ for this build only. The lead's notes live in [lead-log.md](lead-log.md).
 - **Base.** Branch from `origin/<base>`; land into `<base>` with
   `scripts/agents/kit pr --ticket <ticket>` (or say why a slice cannot).
 - **Builder.** Select the model for `kit slice --ticket <ticket> --builder <model>`
-  (default path under `kit bg`, then `kit wait job`); name any exception requiring
+  (default path under `kit go`, run again in the foreground while it prints RUNNING); name any exception requiring
   the manual fallback in runner.md.
 - **Review.** Which slices get a second opinion beyond the Claude review, per the pins in
   [kitchen.md](../../agents/kitchen.md#who-cooks-pins-from-2026-10-22).

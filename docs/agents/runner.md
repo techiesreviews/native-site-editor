@@ -10,7 +10,7 @@ and each `--help`. A build's own `runner-extras.md` (next to its map) wins where
 - **No own subagents** (Agent/Task or T3 delegated tasks); the builder CLI (`agent.sh build`) is allowed.
 - **No preview deploys** (`kit preview`, `deploy-preview.sh`, `npm run deploy:*`, wrangler); the lead deploys.
 - **Never touch `main`** or production. **The merged PR is the finish line** (`kit pr`, see Land).
-- **Report once, at the end.** Finish the whole job in this turn; never end it while a job of yours runs (the Stop hook refuses).
+- **Report once, at the end.** Finish the whole job in this turn; never end it while a job of yours runs (the kit's Stop hook refuses, where `kit init` has added it).
 - **Your PR is your thread's:** link it (T3 `link_pull_request`) once `kit pr` opens it; T3 settles your thread on merge.
 
 ## Sources
