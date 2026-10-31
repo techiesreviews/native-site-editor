@@ -149,6 +149,7 @@ Lex (2026-10-30): the project threads stopped their own kit work and handed it h
 | [85 The factory runs on T3 Code: build, review, second look and fix as T3 threads that wake their runner; PRs watched; headless fallback outside T3](tickets/85-t3-native-factory-check.md) | M–L | claude | 84 |
 | [86 Kit commits never borrow another person's name; a repo without an identity gets the machine's kit identity](tickets/86-kit-commits-never-borrow-a-name.md) | XS | opencode/deepseek-v4.1-flash-free | – |
 | [87 Packages updated monthly in every project; daily security check; critical holes with a fix go live at once](tickets/87-monthly-updates-and-security-hotfixes.md) | M | claude | – |
+| [88 Full browser runs stop failing on a busy machine: one full run at a time, a lone retry for a failed file](tickets/88-busy-machine-browser-runs.md) | S–M | claude | – (next; unblocks 60's #289) |
 | [77 Check and define the retro tickets before any is built](tickets/77-check-the-retro-tickets.md) | S | claude | – (closed) |
 | ~~[70 `kit unit --red`](tickets/70-new-tests-must-go-red.md)~~ waits (rule in 67) | – | – | `wontfix` for now |
 | ~~[73 Motion check in `kit ux`](tickets/73-kit-ux-motion-check.md)~~ dropped | – | – | `wontfix` |
