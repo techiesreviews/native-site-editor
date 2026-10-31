@@ -85,3 +85,4 @@ All three parts merged. The live prompter was not deployed: production waits for
   - On the preview, the `src/mcp.mjs` texts still name the live address.
 - CamFrame: the verification run names the PR's commits before the rebase-merge. On `main` they are `f6a67fd`, `93cbfdf`, `d31ea1e`, `8970806`.
 - The main checkout `~/Projects/techies-prompter` is still on `main` at `a3525a1` (not pulled).
+- Lex, 2026-10-31 ("Waiting for Lex" thread), on the CamFrame v0.6.1 release (Tuesday pack 3 Nov): "Release it for the camframe, release it."

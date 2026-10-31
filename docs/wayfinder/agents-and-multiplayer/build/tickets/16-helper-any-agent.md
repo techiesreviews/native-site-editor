@@ -129,3 +129,6 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation gaps (gap): No test shows that `--agent-command` is told apart from a locked-down agent. Add a case that the helper logs or gates the "its own permissions" warning when started with `--agent-command`.
 - Validation gaps (gap): The lockdown of the pinned `@agentclientprotocol/claude-agent-acp@0.99.1` is asserted only as the `sessionMeta` object. Add a test that loads the pinned adapter with its Claude SDK `query` stubbed, and asserts that the options it builds keep `tools: []`, `settingSources: []`, `allowedTools: ["mcpnative-site-editor"]` and the disallowed `wait_for_requests`.
 
+## Comments
+
+- Lex, 2026-10-31 ("Waiting for Lex" thread), on trying the helper with his own Claude Code (Tuesday pack 3 Nov): "It looks like 0.4 worked. I didn't get the secret chat box kind of thing, but I put it in the chat and we could work together." The first npm publish takes the recommended yes (no objection).
