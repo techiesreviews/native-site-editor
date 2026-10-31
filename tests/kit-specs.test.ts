@@ -7,7 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { BUILDER_SPEC_CAP, builderSpecs, combineOutcomes, importsOf, namedSpecs, planShards, removedStrings, routeSpecs, selectAffected, selectionLine, SHARD_MIN_SPECS, shardCount, specGroups, summarizeRun, ticketSpecs } from "../scripts/agents/specs-affected.mjs";
-import { specTestGroups } from "../scripts/spec-groups.mjs";
+import { fileLevelFixtureChecks, specTestGroups } from "../scripts/spec-groups.mjs";
 import { specsDigest } from "../scripts/agents/specs-digest.mjs";
 import { kitEnv } from "./support/kit-env.ts";
 
@@ -597,6 +597,16 @@ test("a spec file with one @actual test and two plain ones runs all three: the p
   assert.deepEqual(specTestGroups('// run under "@actual"\nconst note = "@actual";\ntest("plain", async () => {});\n'), ["default"]);
   assert.deepEqual(specTestGroups('test("t", { annotation: { type: "x", description: String(1) }, tag: "@actual" }, async () => {});\n'), ["actual"]);
   assert.deepEqual(specTestGroups('for (const n of [1, 2]) test(`t ${n}`, { tag: "@actual" }, async () => {});\n'), ["actual"]);
+  // A title in a variable still declares its test; a step is no test.
+  assert.deepEqual(specTestGroups('const name = "t";\ntest(name, { tag: "@actual" }, async () => { await test.step("s", async () => {}); });\n'), ["actual"]);
+  assert.deepEqual(specTestGroups('test(name, async () => {});\ntest("t", { tag: "@actual" }, async () => {});\n'), ["default", "actual"]);
+});
+
+test("a file with plain and tagged tests keeps its fixture checks inside the tagged tests", () => {
+  const checks = 'requireActualFixture();\ntest.skip(!process.env.X, "why");\ntest("plain", async () => {});\ntest("t", { tag: "@actual" }, async () => { test.skip(!process.env.X, "why"); });\n';
+  assert.deepEqual(fileLevelFixtureChecks(checks), [1, 2]);
+  // In a file of one group a file-level check skips nothing it should not.
+  assert.deepEqual(fileLevelFixtureChecks('requireActualFixture();\ntest("t", { tag: "@actual" }, async () => {});\n'), []);
 });
 
 test("routing batches defaults and preview, runs tagged specs individually and both tags twice", t => {

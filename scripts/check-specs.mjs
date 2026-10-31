@@ -18,6 +18,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fileLevelFixtureChecks } from "./spec-groups.mjs";
 
 const WINDOW = 3;
 const READ = /navigator\.clipboard\.readText\(/;
@@ -150,11 +151,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     return [
       ...unreadyClipboardReads(source).map(line => `${path}:${line}: clipboard read without a preceding expect.poll on the clipboard`),
       ...fixedWaits(source).map(line => `${path}:${line}: fixed wait; wait on observable state or add "// fixed-wait: <reason>"`),
+      ...fileLevelFixtureChecks(source).map(line => `${path}:${line}: file-level fixture check in a file with plain and tagged tests; move it into the tagged tests`),
     ];
   });
   if (findings.length) {
     console.error(findings.join("\n"));
-    console.error(`check-specs: ${findings.length} finding(s). Poll observable state or give a clipboard-ready / fixed-wait reason.`);
+    console.error(`check-specs: ${findings.length} finding(s). Poll observable state, give a clipboard-ready / fixed-wait reason, or keep fixture checks inside tagged tests.`);
     process.exit(1);
   }
 }

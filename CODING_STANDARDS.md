@@ -71,4 +71,5 @@ files), settles every outcome by design.
 - Poll the clipboard for expected content before reading it (enforced by `scripts/check-specs.mjs`). The tests of one worker share the clipboard, so poll for content only this copy has (the Connect to MCP prompt: its token, `tests/native-save/mcp-prompt.ts`).
 - Each test states its fixture group by tag (`@actual`, `@native-static`, its
   own or its describe's; none is default) and runs in that group; a file mixing
-  groups runs in each and keeps fixture checks inside the tagged tests.
+  groups runs in each and keeps fixture checks inside the tagged tests
+  (enforced by `scripts/check-specs.mjs`).
