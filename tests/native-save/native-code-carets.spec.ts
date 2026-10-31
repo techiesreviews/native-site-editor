@@ -235,6 +235,7 @@ test("on a phone the tag opens on a tap with 44 px targets inside the pane, even
     // then the page selects what he typed and his code scrolls back to it. Nothing on screen marks that moment, and the
     // scroll would undo showing Anna's caret below, so the spec lets it pass first.
     const settle = await lex.page.evaluate(async () => (await import("/src/components/code-editor.ts")).TYPING_SETTLE_MS);
+    // fixed-wait: lets Lex's typing settle and his code scroll back first; nothing on screen marks that moment.
     await lex.page.waitForTimeout(settle + 300);
     await typeInCode(anna.page, "<head>", "<!--A-->");
     await expect.poll(() => source(lex.page), { timeout: 20_000 }).toContain("<head><!--A-->");
