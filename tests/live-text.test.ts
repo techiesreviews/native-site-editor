@@ -679,6 +679,12 @@ test("frames past the inbox limit while Yjs loads are dropped, and the catch-up 
   anna.stop(); lex.stop(); sam.stop();
 });
 
+/** The author a caret names: the Yjs client id `who`'s own UPDATE frames carry. */
+function authorOf(room: ReturnType<typeof fakeRoom>, who: { sockets: string[] }) {
+  const update = room.log.find(entry => who.sockets.includes(entry.from) && entry.bytes[0] === 4)!;
+  return new DataView(update.bytes.buffer, update.bytes.byteOffset).getUint32(22);
+}
+
 test("the name-tag Undo (am-24) takes back Anna's latest text change on both tabs, and Lex's own Undo still takes back his", async () => {
   const room = fakeRoom();
   const anna = tab(room), lex = tab(room);
@@ -691,8 +697,7 @@ test("the name-tag Undo (am-24) takes back Anna's latest text change on both tab
   anna.type(4, "Warm ");
   await until(() => lex.text.includes("Warm"), "Anna's edit");
   // The author a caret names: the Yjs client id Anna's UPDATE frames carry.
-  const update = room.log.find(entry => entry.from === anna.socket.me.id && entry.bytes[0] === 4)!;
-  const author = new DataView(update.bytes.buffer).getUint32(22);
+  const author = authorOf(room, anna);
   assert.equal(lex.stop.canUndoAuthor(author), true);
   assert.equal(lex.stop.canUndoAuthor(author + 1), false, "nobody else's");
   assert.ok(told > 0, "the name tags hear it");
@@ -707,4 +712,48 @@ test("the name-tag Undo (am-24) takes back Anna's latest text change on both tab
   unlisten();
   anna.stop(); lex.stop();
   assert.equal(lex.stop.canUndoAuthor(author), false, "stopped, nothing to take back");
+});
+
+test("name tags hear nothing is left to take back when the file changes or sharing stops", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Warm ");
+  await until(() => lex.text.includes("Warm"), "Anna's edit");
+  const author = authorOf(room, anna);
+  assert.equal(lex.stop.canUndoAuthor(author), true);
+  const seen: boolean[] = [];
+  lex.stop.onAuthorUndo(() => seen.push(lex.stop.canUndoAuthor(author)));
+  lex.openFile.value = "about/index.html";
+  assert.ok(seen.length > 0, "the switch is told");
+  assert.deepEqual(seen.filter(Boolean), [], "every answer after the switch is false");
+  assert.equal(lex.stop.undoAuthor(author), false);
+  // Back on the page, then stopped: told again, and still nothing to take back.
+  lex.openFile.value = path;
+  await until(() => lex.sockets.length === 2, "the page shared again");
+  seen.length = 0;
+  lex.stop();
+  assert.deepEqual(seen.filter(Boolean), []);
+  anna.stop();
+});
+
+test("what a late joiner was caught up with is not anyone's name-tag change; what they type after is", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Warm ");
+  lex.type(base.indexOf("seven"), "half past ");
+  await until(() => anna.text === lex.text && anna.text.includes("Warm") && anna.text.includes("half past"), "both edits");
+  const author = authorOf(room, anna);
+  const sam = tab(room);
+  await until(() => sam.text === anna.text, "Sam caught up");
+  assert.equal(sam.stop.canUndoAuthor(author), false, "the catch-up is not Anna's change");
+  anna.type(0, "<!-- hi -->");
+  await until(() => sam.text.startsWith("<!-- hi -->"), "Anna's new words at Sam's");
+  assert.equal(sam.stop.canUndoAuthor(author), true);
+  assert.equal(sam.stop.undoAuthor(author), true);
+  await until(() => [anna, lex, sam].every(one => one.text === "<h1>Warm Fresh bread</h1>\n<p>Open at half past seven.</p>\n"), "only her new words taken back, everywhere");
+  anna.stop(); lex.stop(); sam.stop();
 });

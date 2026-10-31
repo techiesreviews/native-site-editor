@@ -439,7 +439,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     if (!session?.start || !entry) return undefined;
     const start = session.start;
     session.start = undefined;
-    // A start moved past someone else's change has no Monaco version (`rebaseTyping`): its text alone tells.
+    // A start moved past someone else's change has no Monaco version (src/shared-undo.ts `rebaseHistory`): its text alone tells.
     if (entry.text === start.text && (start.version === undefined || session.version === start.version)) {
       // No text or native undo movement: the steps below stay valid.
       entry.revision = start.revision;
