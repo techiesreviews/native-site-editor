@@ -23,7 +23,7 @@ Verdict on the [retro check](../retro-check-2026-10-30.md): build smaller. Once 
 
 ## Files
 
-- In the kit repo (`~/Projects/agent-kit`, public; a PR through its own `kit pr`): `kit.d/release-check`, `kit.d/pr` (`--release`), `tests/kit-release-check.test.ts`, `tests/kit-pr.test.ts`, `docs/kitchen.md` (station 12, Release), `docs/kitchen-extras-template.md`. Added in the build: agent-kit `README.md`, a short section beside ticket 68's push-guard one, as this is the second half of that gate.
+- In the kit repo (`~/Projects/agent-kit`, public; a PR through its own `kit pr`): `kit.d/release-check`, `kit.d/pr` (`--release`), `tests/kit-release-check.test.ts`, `tests/kit-pr.test.ts`, `docs/kitchen.md` (station 12, Release), `docs/kitchen-extras-template.md`. Added in the build: agent-kit `README.md`, a short section beside ticket 68's push-guard one, as this is the second half of that gate. In this editor: `docs/agents/agent-scripts.md` (the `kit release-check` line and the `kit pr --release` step), as a new kit command gets its line there.
 
 ## Done when
 
@@ -50,7 +50,8 @@ Agent Kit is required. In `~/Projects/agent-kit`: `scripts/agents/kit doctor`, `
 
 Waived on kit PR #10:
 
-- The editor's `deploy:techies` and its kitchen-extras line start with `scripts/agents/kit release-check &&` (see Done, left for the lead).
+- P1 (second look on editor PR #291, waived by the lead 2026-10-31 as a follow-up): editor's `npm run deploy:techies` runs `scripts/agents/kit release-check` first, plus its line in docs/agents/kitchen-extras.md: the lead files it as its own slice (it changes how production goes live, so it lands before the next Tuesday ship, listed in the pack).
+- Gap (second look on editor PR #291): with that slice, a unit test that reads `package.json` and asserts `scripts["deploy:techies"]` starts with `scripts/agents/kit release-check &&`, and that the Release to production line in `docs/agents/kitchen-extras.md` includes the check.
 - P2 (second look): station 12 says "nothing that skipped `kit pr` goes live", but a commit a person pushed straight to `main` from their own terminal passes the check; reword to "nothing unsaved and nothing that is not on `origin/<release>`".
 - P2 (second look): when `kit release-check` exits without its own RESULT line, the front door's `RESULT: fail release-check exited N …` comes back as `release-check: release-check exited …`; strip the repeat and test it through the real front door.
 - P3: a 1-second limit prints "no answer within 1 seconds"; use `plural`.
