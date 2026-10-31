@@ -33,6 +33,7 @@ In this repo (through `kit init --all`): `.claude/settings.json`, `.codex/hooks.
 
 - Tests, failing first, for each behaviour above.
 - agent-kit's `npm test`, `npm run lint` and `npm run test:kit-clean` pass.
+- The lead's record, from tickets 84 and 79: the next three children started got their briefs from `kit brief`, and one real delegated child stayed in its turn until its slice's RESULT line.
 - `kit init --all` has added brief-guard and stop-guard here (`kit init --check` names nothing missing), and this repo's full `kit pr` suite runs `tests/agent-port.test.ts` to the end under `kit go`.
 
 ## Kit commands and evidence

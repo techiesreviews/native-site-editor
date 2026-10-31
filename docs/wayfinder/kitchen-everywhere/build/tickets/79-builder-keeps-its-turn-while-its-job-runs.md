@@ -47,4 +47,4 @@ Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affe
 - Tests (`tests/agent-hooks-factory.test.ts`): a running job is refused with its name and wait command; a finished job, no job, another worktree, the time limit, the sixth refusal, `KIT_ALLOW_STOP=1`, a unit in this worktree, a unit in a worktree nested inside it, and a Codex payload. They failed before the change.
 - The runner line: this repo's `docs/agents/runner.md` teaches long jobs only through `kit go`, waited for in the foreground; the kit's rulebook station 6 says the same. The hook entries reach projects through `kit init --all` (see ticket 84's Done and ticket 92).
 - One real delegated child staying in its turn until its slice's RESULT line: the lead's to record.
-
+- **Closed with two items moved on** (the lead's call, 2026-10-31): the kit work is merged and rolled out to every other project; the Native Site Editor's hook entry and the lead's record of one real child staying in its turn are tracked in [ticket 92](92-factory-follow-ups.md).
