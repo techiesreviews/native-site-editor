@@ -2,7 +2,7 @@
 title: "The factory runs on T3 Code: a slice's build, review, second look and fix are T3 threads that wake their runner; PRs are watched, not polled; the kit keeps the rules and gates, and the headless path stays as the fallback outside T3"
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-85
 builder: claude
 blocked_by: [84-factory-brief-and-go]
 ---
