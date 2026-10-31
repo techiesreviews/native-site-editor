@@ -121,6 +121,14 @@ Review round 3:
 - `RESULT: ok specs 1/1 passed; 189 more run in kit pr` (`kit specs --affected`: `native-live-text.spec.ts`, 5).
 - `npm run check` clean; `npm run lint` clean (`check-exports: 15 unused export(s), 0 failure(s)`).
 
+UX review (2026-10-31, `kit ux`, bundle `.scratch/ux/am-24/20261031-085138-iptFVy/bundle.md` in the main checkout): F-canvas-15 fine, not shown (no shot has two people on one page; carets and name tags come with 22 and 23). F-history-01 and F-publish-06 look off for reasons this slice does not touch (it changes only `src/draft-store.ts`, `src/live-text.ts` and `src/shared-undo.ts`); they are in the follow-ups below.
+
+### UX follow-ups
+
+- UX (looks off, before this slice; atomic-catalogue ticket 07 "No toasts" removes it): F-history-01 Undo and Redo bring up a dark strip ("Undid adding the Paragraph.", "Paragraph added. Into Section "Recent work" › after Div" with an Undo button), and the Publish button carries a "1" count (`.scratch/ux/am-24/20261031-085138-iptFVy/editor-F-history-01-390-light-undo-strip.webp`).
+- UX (looks off, before this slice; atomic-catalogue ticket 07): F-publish-06 Discard brings up a strip saying "Discarded the changes to index.html.", with a file name (`.scratch/ux/am-24/20261031-085138-iptFVy/editor-F-publish-06-390-light-discarded-strip.webp`).
+- UX (looks off, before this slice; no ticket yet, also seen by am-21): the path above the canvas reads "section.flow" as code, and at 390 px its fourth button is 19×24 px, under the 44 px touch target (`.scratch/ux/am-24/20261031-085138-iptFVy/editor-F-history-01-390-dark-redo-strip.webp`).
+
 shots: none (no visible change: Undo behaviour only; F-canvas-15 has no steps file, it needs two browsers signed in at once)
 
 Feature list: F-canvas-15 updated (Undo with two people).
