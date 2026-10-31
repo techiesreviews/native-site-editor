@@ -1,48 +1,64 @@
 ---
-title: "Check which factory parts run natively in T3 Code (agents as T3 threads, wake-ups, PR watch, schedules) before ticket 84 is built"
-type: research (AFK)
+title: "The factory runs on T3 Code: a slice's build, review, second look and fix are T3 threads that wake their runner; PRs are watched, not polled; the kit keeps the rules and gates, and the headless path stays as the fallback outside T3"
+type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: []
+blocked_by: [84-factory-brief-and-go]
 ---
 
 ## Goal
 
-Lex (2026-10-31): "I would like to utilize t3 code native way for subagents etc, so check what part of the factory could be run with that tool." This is checked before 84 (the factory) is built, so 84 builds only what T3 doesn't already do.
+Lex (2026-10-31): first "I would like to utilize t3 code native way for subagents etc, so check what part of the factory could be run with that tool", then "Replace the parts of the factory to use t3 code native way".
 
-## What the lead already found (2026-10-31, `orchestrator_capabilities` and the T3 tool list)
+Today `kit slice` runs its builder, reviewers and fixer as hidden headless `claude -p` / CLI processes (`agent-run.mjs`) inside a systemd unit. Its lead child has to wait on that unit, and keeps ending its turn too early (am-21, ke-72, am-24 twice on 2026-10-30/31). T3 can run every one of those agents as a visible thread, on any of its providers. It wakes the parent when a child finishes, watches PRs, and runs schedules. So inside T3 these parts move to T3, and the kit keeps what must also work outside T3 (GitHub CI, Codex CLI, another computer).
 
-- **T3 starts agents itself:** `delegate_task` makes a child thread, in its own worktree if asked. It can use Claude (Opus, Sonnet, Haiku, Fable), Codex, Grok (4.5 to 4.7) and OpenCode's free DeepSeek. Each child is visible in T3, survives an app restart, and settles when its work is merged.
-- **T3 wakes the parent when a child finishes** ("Completion wakes this thread"). So for agent work, nobody has to wait in a loop: the problem behind ticket 79 does not exist there.
-- **Other native pieces:**
-  - `watch_pull_request` wakes a thread on failed or passed checks, comments or conflicts;
-  - `schedule_task` runs a prompt at a set time or interval, or from a webhook;
-  - `request_secret` handles secrets;
-  - pin, settle and snooze make a board;
-  - `html_render` and the preview tools show things to Lex.
-- **Not native:** a long shell job such as a test suite. T3 has `t3_background_wait` (keeps a Claude thread "working") but no tracked shell-job runner that wakes a thread after its turn ended. Today's slices run their build, review and fix agents as headless `claude -p` processes inside `kit slice` (`agent-run.mjs`), which T3 can't see.
-- **The kit must keep working outside T3** (GitHub CI, Codex CLI, another computer). So rules, briefs, checks, guards, `kit pr`'s merge gate, `release-check` and Playwright checks stay in the kit.
+## Split (lead, 2026-10-31, from `orchestrator_capabilities` and the T3 tool list)
 
-## Questions to answer by trying, not guessing
-
-1. **Grandchildren:** can a slice runner child (told to in its brief) start its build, review and fix steps as T3 child threads, be woken when each finishes, and keep within the ~3-slices budget? Compare cost, time and reliability with `kit slice`'s headless runs on one real small ticket.
-2. **Shell jobs:** does a Claude child's `run_in_background` Bash command survive its turn end inside T3 (T3 turns run in their own systemd scope) and wake the child when it exits? If yes, `kit go` can lean on it; if no, `kit go`'s 9-minute loop stays.
-3. **Second look as a T3 thread:** does a Grok or OpenCode child started by `delegate_task` start and finish more reliably than the kit's CLI wrappers (OpenCode "didn't start within 300 s" several times on 2026-10-30/31)? Grok's weekly count still applies.
-4. **Triggering T3 from the kit:** can `kit` (a script) start a T3 run through a `schedule_task` webhook, so `kit slice --runner t3` could hand stages to T3 when it is present and fall back to headless runs when it isn't? Is that safe (the webhook URL is a secret)?
-5. **Cost visibility:** can T3 report a child's token use and cost per thread, for ticket 83's talk-style trial?
+| Factory part | Inside T3 | Outside T3 (fallback, unchanged) |
+|---|---|---|
+| Start an agent (builder, reviewer, fixer, helper) | `delegate_task` child thread, own worktree when it edits; Claude, Codex | headless run in `agent-run.mjs` |
+| Second look | `delegate_task` child on Grok (weekly count still applies) or OpenCode's free DeepSeek, read-only | Grok / OpenCode CLI wrappers |
+| Wait for an agent | none: T3 wakes the runner when the child finishes | `kit wait` |
+| Wait for CI and reviews on a PR | `kit pr --open` then `watch_pull_request`; on the wake, `kit pr --merge` | `kit pr` polls as today |
+| Long shell job (test suites, specs) | `kit go` (ticket 84); T3 has no shell-job runner that wakes a thread | `kit go` |
+| Briefs, rules, skills map, talk style | `kit brief` (84) for every stage, passed to `delegate_task` | the same text, given to the headless run |
+| Gates (tests, review verdict, merge, guards, release-check, UX checks) | kit | kit |
+| Timed lead routines (talk-style verdict, Tuesday pack prep) | `schedule_task` | — (the kit's update timer stays systemd) |
+| Board and status | T3 threads, pin and settle; tickets stay the record | tickets |
+| Secrets, showing Lex results | `request_secret`, `html_render` | — |
 
 ## Decided behaviour
 
-- Each question gets a small real trial with its evidence (thread links, timings, logs) and a verdict: use T3, keep the kit, or both with a fallback.
-- The result is one table in this ticket, "factory part → runs in T3 / stays in the kit / both", plus the changes it makes to ticket 84's plan, written into 84 before 84 is claimed.
-- Nothing in the kit or any project changes in this ticket. Trials use throwaway worktrees and branches, which are deleted afterwards.
+- **`kit slice` gains a T3 mode.** It's picked when the runner is a T3 thread (detect by T3's environment, or `--runner t3`), else headless as today. In T3 mode it doesn't start agents itself. It prints the next stage and that stage's brief: `NEXT: build|review|second-look|fix|pr`, with `kit brief --stage <stage>` output. It also records the state in `.scratch/kit-slice/<ticket>/state.json`.
+  - **The runner** (the lead's delegated child, told so by its `kit brief`) passes the brief to `delegate_task` and ends its turn. When woken, it runs `kit slice --next`, which checks the stage's evidence (commit made, review verdict file, fix round count) and prints the next stage.
+  - **Kit rules stay with the kit:** stage order, fix-round limits, "after three rounds only P0/P1 block", the waiver, and the 25-minute second-look limit (a child past it is cancelled with `task_cancel` and recorded as skipped).
+- **Children can't start more children,** except the runner, whose brief says so. A stage child does its one stage and reports in its last line.
+- **`kit pr --open` / `--merge`:** `--open` runs the checks and the review, opens the PR and prints `WATCH: <url>`. The runner calls `watch_pull_request` and ends its turn. On the wake, `kit pr --merge` checks readiness and merges. Without T3, `kit pr` keeps polling as one command.
+- **Budget:** a slice's children count against the about-3-slices limit (one slice = its runner plus at most one stage child at a time). `kit next` counts T3 children from the state files.
+- **Cost:** if T3 reports token use per thread, `kit slice` records it per stage for ticket 83's trial; if not, Done says so.
+- **First run before switching the default:** one real small ticket runs in T3 mode end to end. Compare it with a headless slice of similar size (time, cost, how often the lead had to step in), and put both in Done. T3 mode becomes the default inside T3 only if it is at least as reliable.
+- **Docs:** `docs/runner.md` and the kitchen's build station describe T3 mode first and the headless fallback second.
+
+## Files
+
+In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`):
+- `kit.d/slice` (T3 mode, `--next`), `kit.d/pr` (`--open` / `--merge`), `kit.d/next` (counting);
+- `agent-run.mjs` (untouched as the fallback, except shared state);
+- `kit.d/brief` (stage briefs, from 84);
+- `docs/runner.md`, `docs/kitchen.md`, `tests/`.
 
 ## Done when
 
-- Five questions answered with evidence; the table is written; ticket 84's Decided behaviour is updated (lead approves the change, since 84 was asked for by Lex).
-- A two-line plain summary for Lex.
+- Tests, failing first:
+  - T3 mode prints the right next stage and brief for each state;
+  - `--next` refuses a stage without its evidence;
+  - the fix-round limit and the second-look time limit hold;
+  - `kit pr --open` stops before merging and `--merge` refuses an unready PR;
+  - headless mode is unchanged.
+- One real ticket ran in T3 mode end to end. Its thread links and the comparison are in Done.
+- agent-kit's `npm test`, `npm run lint` and `npm run test:kit-clean` pass.
 
 ## Kit commands and evidence
 
-Agent Kit is required for any commit: `scripts/agents/kit doctor`; the ticket's Done lands on `dev` with `scripts/agents/kit pr` (docs tier).
+Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA.
