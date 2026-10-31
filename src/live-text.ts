@@ -23,10 +23,14 @@
 //   missing, so frames lost meanwhile are made good.
 // - Discard takes this tab out of the shared copy: the others keep their
 //   changes, and this tab shows GitHub's text until it opens the file again.
+// - Per-person Undo (ticket am-24): someone else's change moves this tab's
+//   Undo and Redo past it (src/shared-undo.ts) instead of clearing them. The
+//   name-tag Undo (`LiveText.undoAuthor`) takes back one author's latest change
+//   for everyone; carets call it from slices 22, 23 and 25.
 //
 // Frames (inside the room's encryption): a kind byte, whether the sender is
-// caught up, the 20-byte starting-text tag, a 4-byte copy id (the sender's;
-// in a REPLY, the copy whose request it answers), then a Yjs state vector or
+// caught up, the 20-byte starting-text tag, a 4-byte copy id (the sender's
+// Yjs client id; in a REPLY, the copy whose request it answers), then a Yjs state vector or
 // update. Copies with another tag (a tab on another version of the file) are
 // ignored, and a tab counts as caught up only by a REPLY to its own request:
 // one to someone else's holds only what they lacked.
@@ -40,6 +44,7 @@ import { applyChanges, diffRange, type DraftEvent, type DraftTextStore, type Tex
 import type { DraftScope } from "./drafts";
 import { openLiveRoom, type LiveClock, type LiveRoom, type LiveRoomOptions } from "./live-room";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
+import { rebaseHistory } from "./shared-undo";
 
 type Yjs = typeof import("yjs");
 type Doc = import("yjs").Doc;
@@ -199,9 +204,16 @@ export function typedSince(kept: string, began: string, own: string): TextChange
   return diffRange(kept, own);
 }
 
-/** Shares one file while it is open; returns its stop. `ended`: this tab left the copy (Discard), or must start it
- * again (GitHub's text changed while it was being made). */
-function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended: (why: "left" | "again") => void) {
+/** The name-tag Undo (ticket am-24): takes back someone else's latest text change in the open file's shared copy. */
+interface AuthorUndo {
+  undo(author: number): boolean;
+  can(author: number): boolean;
+}
+
+/** Shares one file while it is open; returns its stop and its name-tag Undo. `ended`: this tab left the copy (Discard),
+ * or must start it again (GitHub's text changed while it was being made). `authorsChanged`: what the name-tag Undo
+ * can take back changed. */
+function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended: (why: "left" | "again") => void, authorsChanged: () => void) {
   const store = ports.store, clock = ports.clock ?? systemClock, keeper = ports.keeper ?? (pageKeeper ??= browserKeeper());
   const start = store.get(scope, path)!;
   const base = start.base, baseSha = start.baseSha ?? null;
@@ -266,6 +278,21 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     const text = doc.getText("source");
     if (seed) Y.applyUpdate(doc, seed, START);
     let synced = false, starting = false, waiting: unknown, keeping: unknown;
+    // Someone else's own changes (their UPDATE frames), each under its author's origin, for the name-tag Undo. Catch-up
+    // answers carry everyone's text and stay under REMOTE.
+    const authors = new Map<number, { origin: object; undo: import("yjs").UndoManager }>();
+    const theirs = new WeakSet<object>();
+    const authorOrigin = (author: number) => {
+      let found = authors.get(author);
+      if (!found) {
+        const origin = {};
+        theirs.add(origin);
+        const undo = new Y.UndoManager(text, { trackedOrigins: new Set([origin]) });
+        for (const event of ["stack-item-added", "stack-item-popped", "stack-cleared"] as const) undo.on(event, authorsChanged);
+        authors.set(author, found = { origin, undo });
+      }
+      return found.origin;
+    };
     // Its own earlier copy. What the draft took on after that copy was kept goes in when this tab starts its part (`begin`).
     if (resume) Y.applyUpdate(doc, resume.update, START);
     const keptText = text.toString();
@@ -277,8 +304,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     };
     /** Catch-up requests that came before this copy could answer: answered once it can. */
     let asked: { kind: number; theirs: boolean; from: number; vector: Uint8Array }[] = [];
-    /** This copy's id in frames: a REPLY naming it answers this tab's own request. */
-    const me = crypto.getRandomValues(new Uint32Array(1))[0];
+    /** This copy's id in frames: a REPLY naming it answers this tab's own request. It is the Yjs client id its own
+     * changes carry, which carets name (slices 22 and 23), so a name tag's Undo finds that author's changes. */
+    const me = doc.clientID;
 
     const frame = (kind: number, payload: Uint8Array, id: number) => {
       const out = new Uint8Array(HEAD + payload.length);
@@ -297,7 +325,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     const follow = (changes?: TextChange[]) => {
       const now = text.toString(), draft = store.text(scope, path);
       if (draft === undefined || draft === now) return;
-      store.edit({ scope, path, changes: changesBetween(draft, now, changes), record: false, origin: "shared" });
+      store.edit({ scope, path, changes: changesBetween(draft, now, changes), record: false, origin: "shared", rebase: rebaseHistory });
     };
 
     // A reload or a closed tab keeps the newest copy too.
@@ -307,7 +335,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     page?.document.addEventListener("visibilitychange", hidden);
     doc.on("update", (update: Uint8Array, origin: unknown) => {
       // Alone, nothing goes out: whoever joins next is caught up by HELLO and REPLY.
-      if (origin !== REMOTE && editors) void send(UPDATE, update);
+      if (origin !== REMOTE && !theirs.has(origin as object) && editors) void send(UPDATE, update);
       if (synced && keeping === undefined) keeping = clock.setTimeout(keep, KEEP_MS);
     });
     text.observe((event, transaction) => {
@@ -419,7 +447,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           return;
         }
         if (kind !== REPLY && kind !== UPDATE) return;
-        Y.applyUpdate(doc, payload, REMOTE);
+        Y.applyUpdate(doc, payload, kind === UPDATE && id !== me ? authorOrigin(id) : REMOTE);
         // Caught up only by an answer to its own request: one to another tab's holds only what that tab lacked.
         if (kind === REPLY && theirs && id === me && !synced) void begin(true);
       } catch { /* A broken update is dropped; the next catch-up brings what it lacked. */ }
@@ -428,17 +456,33 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       receive, hello,
       /** Alone in the room (first in, or everyone else left before catching this tab up): its own draft starts the copy. */
       startOwn: () => begin(false),
-      destroy() { clock.clearTimeout(waiting); keep(); unsubscribe(); page?.removeEventListener("pagehide", keep); page?.document.removeEventListener("visibilitychange", hidden); doc.destroy(); },
+      /** The name-tag Undo: `author`'s latest change (its UPDATE frames, grouped as Yjs groups typing), taken back in the
+       * copy, which everyone follows. Changes it has taken back are not counted; its words someone removed since stay removed. */
+      authors: {
+        undo: author => synced && !discarded && (authors.get(author)?.undo.undo() ?? null) !== null,
+        can: author => synced && !discarded && Boolean(authors.get(author)?.undo.canUndo()),
+      } satisfies AuthorUndo,
+      destroy() {
+        clock.clearTimeout(waiting); keep(); unsubscribe(); page?.removeEventListener("pagehide", keep); page?.document.removeEventListener("visibilitychange", hidden);
+        for (const { undo } of authors.values()) undo.destroy();
+        doc.destroy();
+        if (authors.size) authorsChanged();
+      },
     };
   }
 
-  return () => {
+  const authors: AuthorUndo = {
+    undo: author => copy?.authors.undo(author) ?? false,
+    can: author => copy?.authors.can(author) ?? false,
+  };
+  const stop = () => {
     stopped = true;
     unwatch();
     room.close();
     copy?.destroy();
     copy = undefined;
   };
+  return { stop, authors };
 }
 
 /** The switch for live sharing: on in this browser when its localStorage holds `native-site-editor:live-sharing` = `on`
@@ -448,10 +492,31 @@ function liveSharingOn() {
   try { return globalThis.localStorage?.getItem(LIVE_SHARING_KEY) === "on"; } catch { return false; }
 }
 
-/** Shares the open file while it is open in the draft store, for as long as this runs; returns its stop. */
-export function startLiveText(ports: LiveTextPorts) {
-  if (!(ports.on ?? liveSharingOn())) return () => undefined;
-  let current: { key: string; stop(): void } | undefined;
+/**
+ * Live sharing as it runs: calling it stops it. Its name-tag Undo (ticket am-24; carets call it from slices 22, 23 and
+ * 25) takes back the latest text change of `author`, the Yjs client id a caret names, in the open file's shared copy.
+ */
+export interface LiveText {
+  (): void;
+  /** Takes back `author`'s latest text change in the open file; false when there is none to take back. */
+  undoAuthor(author: number): boolean;
+  /** Whether `author` has a text change in the open file the name tag can take back. */
+  canUndoAuthor(author: number): boolean;
+  /** Called when what the name tags can take back may have changed; returns its unsubscribe. */
+  onAuthorUndo(listener: () => void): () => void;
+}
+
+/** Shares the open file while it is open in the draft store, for as long as this runs; calling the result stops it. */
+export function startLiveText(ports: LiveTextPorts): LiveText {
+  let current: { key: string; stop(): void; authors?: AuthorUndo } | undefined;
+  const listeners = new Set<() => void>();
+  const changed = () => { for (const listener of [...listeners]) try { listener(); } catch { /* A name tag must not break sharing. */ } };
+  const port = (stop: () => void): LiveText => Object.assign(stop, {
+    undoAuthor: (author: number) => current?.authors?.undo(author) ?? false,
+    canUndoAuthor: (author: number) => current?.authors?.can(author) ?? false,
+    onAuthorUndo(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+  });
+  if (!(ports.on ?? liveSharingOn())) return port(() => undefined);
   /** The file this tab discarded while sharing: it stays out of the copy until another file shows. */
   let left: string | undefined;
   const check = () => {
@@ -463,19 +528,21 @@ export function startLiveText(ports: LiveTextPorts) {
     if (current?.key === key) return;
     current?.stop();
     if (!key) { current = undefined; return; }
-    const share: { key: string; stop(): void } = { key, stop: () => undefined };
+    const share: { key: string; stop(): void; authors?: AuthorUndo } = { key, stop: () => undefined };
     current = share;
-    share.stop = shareFile(ports, file!.scope, file!.path, why => {
+    const shared = shareFile(ports, file!.scope, file!.path, why => {
       if (current !== share) return;
       if (why === "left") left = key;
       share.stop();
       current = undefined;
       check();
-    });
+    }, () => { if (current === share) changed(); });
+    share.stop = shared.stop;
+    share.authors = shared.authors;
   };
   const stopEffect = effect(() => { void ports.openFile.value; untracked(() => { left = undefined; check(); }); });
   const stopStore = ports.store.subscribe(event => { if (event.type === "file") check(); });
   // `clear` (sign-out, another workspace) says nothing per file: any settled change looks again, which is cheap.
   const stopState = ports.store.subscribeState(check);
-  return () => { stopEffect(); stopStore(); stopState(); current?.stop(); current = undefined; };
+  return port(() => { stopEffect(); stopStore(); stopState(); current?.stop(); current = undefined; listeners.clear(); });
 }

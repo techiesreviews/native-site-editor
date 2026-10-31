@@ -113,7 +113,12 @@ test("two tabs editing one file end identical, and a tab alone loads no Yjs and 
   anna.type(0, "<!-- shared -->");
   await until(() => lex.text.startsWith("<!-- shared --><!-- Lex -->") || lex.text.startsWith("<!-- Lex --><!-- shared -->"), "Anna's next edit");
   assert.equal(lex.text, anna.text);
-  assert.equal(lex.store.canUndo(draftHistory()), false, "a change from the shared copy clears the history over the file, as another tab's draft does");
+  // Per-person Undo (am-24): Anna's change keeps Lex's Undo, which takes back only his words, on both tabs.
+  assert.equal(lex.store.canUndo(draftHistory()), true, "Anna's change does not clear Lex's Undo");
+  assert.equal(anna.store.canUndo(draftHistory()), true, "nor Lex's change Anna's");
+  assert.equal((await lex.store.undo(draftHistory())).ok, true);
+  await until(() => anna.text === lex.text && !anna.text.includes("Lex"), "Lex's Undo on both");
+  assert.ok(lex.text.startsWith("<!-- shared --><h1>Warm Fresh bread"), "Anna's words stay");
   anna.stop(); lex.stop();
 });
 const draftHistory = () => draftKey(scope, path);
@@ -672,4 +677,34 @@ test("frames past the inbox limit while Yjs loads are dropped, and the catch-up 
   await until(() => sam.text === anna.text, "Sam caught up");
   assert.equal(times(sam.text, "y".repeat(600)), 1);
   anna.stop(); lex.stop(); sam.stop();
+});
+
+test("the name-tag Undo (am-24) takes back Anna's latest text change on both tabs, and Lex's own Undo still takes back his", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  let told = 0;
+  const unlisten = lex.stop.onAuthorUndo(() => { told++; });
+  lex.type(base.indexOf("seven"), "half past ");
+  await until(() => anna.text === lex.text && anna.text.includes("half past"), "Lex's edit");
+  anna.type(4, "Warm ");
+  await until(() => lex.text.includes("Warm"), "Anna's edit");
+  // The author a caret names: the Yjs client id Anna's UPDATE frames carry.
+  const update = room.log.find(entry => entry.from === anna.socket.me.id && entry.bytes[0] === 4)!;
+  const author = new DataView(update.bytes.buffer).getUint32(22);
+  assert.equal(lex.stop.canUndoAuthor(author), true);
+  assert.equal(lex.stop.canUndoAuthor(author + 1), false, "nobody else's");
+  assert.ok(told > 0, "the name tags hear it");
+  assert.equal(lex.stop.undoAuthor(author), true);
+  await until(() => anna.text === lex.text && !anna.text.includes("Warm"), "Anna's change taken back on both");
+  assert.equal(lex.text, "<h1>Fresh bread</h1>\n<p>Open at half past seven.</p>\n", "Lex's words stay");
+  assert.equal(lex.stop.canUndoAuthor(author), false);
+  assert.equal(lex.stop.undoAuthor(author), false);
+  // Lex's own Undo was kept through both of Anna's changes.
+  assert.equal((await lex.store.undo(draftHistory())).ok, true);
+  await until(() => anna.text === base && lex.text === base, "Lex's Undo on both");
+  unlisten();
+  anna.stop(); lex.stop();
+  assert.equal(lex.stop.canUndoAuthor(author), false, "stopped, nothing to take back");
 });
