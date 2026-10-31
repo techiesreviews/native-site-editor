@@ -48,3 +48,7 @@ Verdict on the [retro check](../retro-check-2026-10-30.md): one docs slice for e
 ## Kit commands and evidence
 
 Agent Kit is required. In `~/Projects/agent-kit`: `scripts/agents/kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA. This ticket's Done lands on `dev` here with `scripts/agents/kit pr` (docs tier).
+
+## Comments
+
+- Lead, 2026-10-31 (prompter ↔ CamFrame retro, finding 3, accepted by Lex): one rule line for every project: "A project with a live site has a preview address; test builds (above all microphone, camera and voice) run there or on localhost, never as a file." And: "A project that ships to Windows runs its tests on Windows on every PR, not only on release tags."
