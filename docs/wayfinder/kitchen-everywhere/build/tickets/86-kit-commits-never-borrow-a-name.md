@@ -38,3 +38,7 @@ In the kit repo: `kit.d/init` (drop the borrowing), `kit-lib.mjs` (identity help
 ## Kit commands and evidence
 
 `kit doctor`, `kit unit --affected`, `kit review`, `kit pr` in `~/Projects/agent-kit`; report the RESULT lines.
+
+## Comments
+
+- Lead, 2026-10-31: also here, same kind of small fix. ke-88 found that `kit pr --waive` let a ticket-level **P1** through on PR #289; the rule is that only P2/P3 may be waived after three rounds. `--waive` must refuse while any P0/P1 is open and name it on the RESULT line. Add a test.

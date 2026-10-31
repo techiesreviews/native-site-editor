@@ -2,7 +2,7 @@
 title: "Skill guard: licence files with a prefix in skill folders count as licences, so a project's own MIT LICENSE can land"
 type: task (AFK)
 status: open
-assignee:
+assignee: ke-91
 builder: claude
 blocked_by: []
 ---

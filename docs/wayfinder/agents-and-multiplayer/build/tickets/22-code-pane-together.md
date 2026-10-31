@@ -2,7 +2,7 @@
 title: "Code pane: typing together and carets"
 type: task (AFK)
 status: open
-assignee:
+assignee: am-22
 builder: claude
 blocked_by: [21-shared-copy-per-file]
 ---
