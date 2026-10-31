@@ -67,3 +67,4 @@ Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affe
 - 2026-10-31 ke-90 brief → `en`.
 - 2026-10-31 am-22 brief → `wenyan`; ke-91 brief → `en`. ke-88's report came back in wenyan; it was clear and complete.
 - 2026-10-31 ke-89 brief → `wenyan`.
+- 2026-10-31 ke-85: the first brief made by `kit brief` (style picked by the kit's counter: `wenyan`). The evidence for ticket 84 ("the next three children get their briefs from `kit brief`") is counted from here.
