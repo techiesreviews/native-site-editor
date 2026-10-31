@@ -706,9 +706,12 @@ test("the name-tag Undo (am-24) takes back Anna's latest text change on both tab
   assert.equal(lex.text, "<h1>Fresh bread</h1>\n<p>Open at half past seven.</p>\n", "Lex's words stay");
   assert.equal(lex.stop.canUndoAuthor(author), false);
   assert.equal(lex.stop.undoAuthor(author), false);
-  // Lex's own Undo was kept through both of Anna's changes.
+  // Lex's own Undo was kept through both of Anna's changes; the name-tag Undo is his newest step.
   assert.equal((await lex.store.undo(draftHistory())).ok, true);
-  await until(() => anna.text === base && lex.text === base, "Lex's Undo on both");
+  await until(() => anna.text.includes("Warm") && lex.text === anna.text, "the name-tag Undo undone");
+  assert.equal((await lex.store.undo(draftHistory())).ok, true);
+  await until(() => !anna.text.includes("half past") && lex.text === anna.text, "Lex's Undo on both");
+  assert.equal(lex.text, "<h1>Warm Fresh bread</h1>\n<p>Open at seven.</p>\n");
   unlisten();
   anna.stop(); lex.stop();
   assert.equal(lex.stop.canUndoAuthor(author), false, "stopped, nothing to take back");
@@ -758,7 +761,7 @@ test("what a late joiner was caught up with is not anyone's name-tag change; wha
   anna.stop(); lex.stop(); sam.stop();
 });
 
-test("a tab never counts its own changes as an author's, and taking back Anna's leaves Lex's Undo and Redo", async () => {
+test("a tab never counts its own changes as an author's, and taking back Anna's leaves Lex's older Undo steps", async () => {
   const room = fakeRoom();
   const anna = tab(room), lex = tab(room);
   await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
@@ -773,9 +776,49 @@ test("a tab never counts its own changes as an author's, and taking back Anna's 
   await until(() => lex.text.includes("Mondays"), "Anna's edit");
   assert.equal(lex.stop.undoAuthor(authorOf(room, anna)), true);
   await until(() => !lex.text.includes("Mondays") && !anna.text.includes("Mondays"), "Anna's change taken back");
-  assert.equal(lex.store.canUndo(draftHistory()), true);
-  assert.equal(lex.store.canRedo(draftHistory()), true);
+  // The name-tag Undo is Lex's newest step (so, as any new step, it ends his Redo); his older step stays under it.
+  assert.equal(lex.store.canRedo(draftHistory()), false);
+  assert.equal((await lex.store.undo(draftHistory())).ok, true);
+  await until(() => anna.text.includes("Mondays") && lex.text === anna.text, "her words back");
+  assert.equal((await lex.store.undo(draftHistory())).ok, true);
+  await until(() => !anna.text.includes("half past") && lex.text === anna.text, "Lex's older step on both");
+  anna.stop(); lex.stop();
+});
+
+test("a name tag whose words someone removed has nothing to take back", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Warm ");
+  await until(() => lex.text.includes("Warm"), "Anna's edit");
+  const author = authorOf(room, anna);
+  let told = 0;
+  lex.stop.onAuthorUndo(() => { told++; });
+  lex.type(4, "", "Warm ".length);
+  await until(() => anna.text === base, "Lex removed her words on both");
+  assert.ok(told > 0, "the name tags look again");
+  assert.equal(lex.stop.canUndoAuthor(author), false);
+  assert.equal(lex.stop.undoAuthor(author), false);
+  await quiet();
+  assert.equal(lex.text, base);
+  assert.equal(anna.text, base);
+  anna.stop(); lex.stop();
+});
+
+test("a name-tag Undo is Lex's own step: his Undo brings Anna's words back on both tabs, his Redo takes them again", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Warm ");
+  await until(() => lex.text.includes("Warm"), "Anna's edit");
+  assert.equal(lex.stop.undoAuthor(authorOf(room, anna), draftHistory()), true);
+  await until(() => anna.text === base && lex.text === base, "her words taken back");
+  assert.equal(lex.store.peek(draftHistory(), "undo"), "Undo their change");
+  assert.equal((await lex.store.undo(draftHistory())).ok, true);
+  await until(() => anna.text.includes("Warm ") && lex.text === anna.text, "her words back on both");
   assert.equal((await lex.store.redo(draftHistory())).ok, true);
-  await until(() => anna.text === "<h1>Warm Fresh bread</h1>\n<p>Open at half past seven.</p>\n", "Lex's Redo on both");
+  await until(() => anna.text === base && lex.text === base, "taken again on both");
   anna.stop(); lex.stop();
 });
