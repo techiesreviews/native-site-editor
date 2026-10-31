@@ -757,3 +757,25 @@ test("what a late joiner was caught up with is not anyone's name-tag change; wha
   await until(() => [anna, lex, sam].every(one => one.text === "<h1>Warm Fresh bread</h1>\n<p>Open at half past seven.</p>\n"), "only her new words taken back, everywhere");
   anna.stop(); lex.stop(); sam.stop();
 });
+
+test("a tab never counts its own changes as an author's, and taking back Anna's leaves Lex's Undo and Redo", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  lex.type(base.indexOf("seven"), "half past ");
+  lex.type(base.indexOf("Fresh"), "Warm ");
+  await until(() => anna.text === lex.text && anna.text.includes("Warm"), "Lex's edits");
+  assert.equal(lex.stop.canUndoAuthor(authorOf(room, lex)), false, "Lex's own changes are not a name tag's");
+  assert.equal((await lex.store.undo(draftHistory())).ok, true);
+  await until(() => !anna.text.includes("Warm"), "Lex's Undo");
+  anna.type(base.length, "<p>Closed Mondays.</p>\n");
+  await until(() => lex.text.includes("Mondays"), "Anna's edit");
+  assert.equal(lex.stop.undoAuthor(authorOf(room, anna)), true);
+  await until(() => !lex.text.includes("Mondays") && !anna.text.includes("Mondays"), "Anna's change taken back");
+  assert.equal(lex.store.canUndo(draftHistory()), true);
+  assert.equal(lex.store.canRedo(draftHistory()), true);
+  assert.equal((await lex.store.redo(draftHistory())).ok, true);
+  await until(() => anna.text === "<h1>Warm Fresh bread</h1>\n<p>Open at half past seven.</p>\n", "Lex's Redo on both");
+  anna.stop(); lex.stop();
+});

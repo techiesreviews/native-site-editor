@@ -4,7 +4,7 @@
 // and Redo take back only this tab's own words.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyChanges, createDraftStore, type DraftEvent, type NativeTyping, type TextChange } from "../src/draft-store.ts";
+import { applyChanges, createDraftStore, type DraftEvent, type HistoryCompanion, type NativeTyping, type TextChange } from "../src/draft-store.ts";
 import { rebaseChanges, rebaseHistory } from "../src/shared-undo.ts";
 
 const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
@@ -55,6 +55,15 @@ test("rebaseChanges: at one place theirs comes first; their typing inside a stre
   // Anna removing some of Lex's words, or typing where his Undo would put words back, cannot move.
   assert.equal(rebaseChanges([{ start: 4, end: 9, text: "" }], [{ start: 6, end: 7, text: "" }]), undefined);
   assert.equal(rebaseChanges([{ start: 4, end: 4, text: "back" }], [{ start: 2, end: 6, text: "" }]), undefined);
+});
+
+test("rebaseChanges: Anna's change between two of Lex's ranges moves the later one, and hers back by the first", () => {
+  const mine = [{ start: 1, end: 2, text: "" }, { start: 5, end: 6, text: "" }], theirs = [{ start: 3, end: 3, text: "X" }];
+  const moved = rebaseChanges(mine, theirs)!;
+  assert.deepEqual(moved.mine, [{ start: 1, end: 2, text: "" }, { start: 6, end: 7, text: "" }]);
+  assert.deepEqual(moved.theirs, [{ start: 2, end: 2, text: "X" }]);
+  assert.equal(applyChanges(applyChanges("abcdefg", theirs).text, moved.mine).text, "acXdeg");
+  assert.equal(applyChanges(applyChanges("abcdefg", mine).text, moved.theirs).text, "acXdeg");
 });
 
 test("Anna's change keeps Lex's Undo and Redo, which take back only his words", async () => {
@@ -220,7 +229,7 @@ test("Anna's change while Lex's Undo waits: that Undo stops, her change is there
     ready: () => { asked++; return asked === 1 ? new Promise<undefined>(resolve => { release = () => resolve(undefined); }) : undefined; },
     undo: () => { undone++; },
     redo: () => {},
-  };
+  } satisfies HistoryCompanion;
   assert.equal(lex.store.edit({ scope, path, history, changes: [{ start: 3, end: 3, text: "Lex " }], companion }).ok, true);
   const waiting = lex.store.undo(history);
   lex.theirs([{ start: 0, end: 0, text: "<h1>Anna</h1>" }]);
@@ -231,4 +240,25 @@ test("Anna's change while Lex's Undo waits: that Undo stops, her change is there
   assert.equal((await lex.store.undo(history)).ok, true);
   assert.equal(lex.now(), "<h1>Anna</h1><p>a</p>");
   assert.equal(undone, 1);
+});
+
+// Typing with no net change sits at the file's end (diffRange of equal texts), so Anna's change never overlaps it and
+// it stays open: this covers the moved start coming back, not the close-on-overlap path, which it cannot reach.
+test("open typing back at its moved start keeps Lex's earlier Undo through Anna's next change", async () => {
+  const lex = setup("<p>a</p><p>b</p>");
+  lex.mine(3, 3, "Lex ");
+  const typing = lex.store.beginTyping(scope, path, history, { version: 1 });
+  const typed = lex.at("b</p>") + 1;
+  typing.input(lex.now().slice(0, typed) + "X" + lex.now().slice(typed), 2);
+  lex.theirs([{ start: 0, end: 0, text: "<h1>A</h1>" }]);
+  // Lex takes his typing away again: the file is back at the typing's (moved) start.
+  const back = lex.now().replace("bX", "b");
+  typing.input(back, 3);
+  // Anna removes the paragraph Lex was typing in, up to the end.
+  lex.theirs([{ start: lex.at("<p>b"), end: lex.now().length, text: "" }]);
+  assert.equal(lex.now(), "<h1>A</h1><p>Lex a</p>");
+  assert.equal(lex.store.canUndo(history), true, "Lex's earlier edit is still his to undo");
+  await lex.store.undo(history);
+  assert.equal(lex.now(), "<h1>A</h1><p>a</p>");
+  typing.dispose();
 });

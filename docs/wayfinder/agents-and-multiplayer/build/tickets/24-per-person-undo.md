@@ -73,6 +73,7 @@ Known limits:
 
 - `canUndoAuthor` is true while the author's change is in its Undo list, even when someone has since removed those words (then the Undo takes back nothing more).
 - A typing step that typed in two places within one settle period is one range: Anna's change between the two places counts as an overlap.
+- A change Anna sent while Lex's tab was still catching up, built on text Lex did not have yet, waits inside Yjs and comes in with the catch-up answer instead, which counts as no one's: her name tag cannot take that one back. Applying her frame again later would not help (Yjs has it already), so this stays; it is only the first moments after joining.
 
 Tests:
 
@@ -95,6 +96,17 @@ Review round 1:
 - New tests: `tests/per-person-undo.test.ts` (+3, 11): a multi-file receipt over the page goes with the steps under it while Lex's later edit undoes and its other file is untouched; a fully undone typing step on the redo side comes back whole after Anna's text without Monaco's stops; Anna's change while Lex's Undo waits on a companion stops that Undo ("The history changed meanwhile."), her change is there once, and the next Undo takes his back. The fake Monaco stacks are typed `satisfies NativeTyping`. `tests/live-text.test.ts` (+2, 31): name tags hear only false after a file switch and a stop (fails without dropping the authors first); a late joiner's catch-up is not Anna's name-tag change, while what she types after is, and taking it back leaves everyone else's words.
 - `RESULT: ok doctor 11/11 checks passed; warning: 4 setup pieces missing (run scripts/agents/kit init)`
 - `RESULT: ok unit 2920/2920 (178 files)` (`kit unit --affected`); `RESULT: ok unit 42/42 (2 files)` (`kit unit tests/per-person-undo.test.ts tests/live-text.test.ts`).
+- `RESULT: ok specs 1/1 passed; 189 more run in kit pr` (`kit specs --affected`: `native-live-text.spec.ts`, 5).
+- `npm run check` clean; `npm run lint` clean (`check-exports: 15 unused export(s), 0 failure(s)`).
+
+Review round 2:
+
+- The revision someone else's change is moved from is read after open typing has closed (`rebaseHistory`), so typing that came back to its start never leaves it out of line. No test goes red for the old order: typing with no change sits at the file's end, which no change of Anna's can overlap, so that close never happens; the new test covers the moved start coming back.
+- F-canvas-15's Good line says what really drops out of Undo (a change of yours someone deleted or rewrote part of, or a whole-page step, with all older ones; typing inside your words drops nothing).
+- Known limits: Anna's change that waited for the catch-up is not her name tag's.
+- New tests: `tests/per-person-undo.test.ts` (+2, 13): two of Lex's ranges with Anna's change between them, both orders the same text and hers moved back by one; open typing back at its moved start keeps Lex's earlier Undo through Anna's next change. The companion fake is typed `satisfies HistoryCompanion`. `tests/live-text.test.ts` (+1, 32): a tab never counts its own changes as an author's, and taking back Anna's change from her name tag leaves Lex's Undo and Redo, whose Redo then puts his words back on both.
+- `RESULT: ok doctor 11/11 checks passed; warning: 4 setup pieces missing (run scripts/agents/kit init)`
+- `RESULT: ok unit 2923/2923 (178 files)` (`kit unit --affected`); `RESULT: ok unit 45/45 (2 files)` (`kit unit tests/per-person-undo.test.ts tests/live-text.test.ts`).
 - `RESULT: ok specs 1/1 passed; 189 more run in kit pr` (`kit specs --affected`: `native-live-text.spec.ts`, 5).
 - `npm run check` clean; `npm run lint` clean (`check-exports: 15 unused export(s), 0 failure(s)`).
 
