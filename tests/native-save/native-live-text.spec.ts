@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { openEditor } from "../support/scenarios";
+import { clickOnText } from "./click-text";
 
 // The open file's shared copy (ticket am-21, ADR 0003): two browsers signed in
 // to the same repository and branch, each with its own drafts, share the page
@@ -138,5 +139,50 @@ test("with live sharing switched off (the default), a page opens no room socket"
     expect(sockets.filter(url => url.includes("/api/live/room"))).toEqual([]);
   } finally {
     await anna.context.close();
+  }
+});
+
+test("Lex's Undo takes back only his words, on the page and in the code pane, and Anna's change no longer clears it", async ({ browser, baseURL }) => {
+  const anna = await browserTab(browser), lex = await browserTab(browser);
+  try {
+    await openEditor(anna.page, baseURL);
+    await openEditor(lex.page, baseURL);
+    // On the page: Lex types into the heading, then Anna changes the lead paragraph.
+    const heading = lex.page.frameLocator(".native-preview-frame").locator(".hero h1");
+    await clickOnText(heading);
+    await expect(heading).toHaveAttribute("contenteditable", /.+/);
+    await lex.page.keyboard.press("Home");
+    await lex.page.keyboard.type("Lex ");
+    await lex.page.keyboard.press("Escape");
+    await expect.poll(() => source(anna.page), { timeout: 20_000 }).toContain(">Lex A native browser preview");
+    await insert(anna.page, "Edit plain HTML", " with Anna");
+    await expect.poll(() => source(lex.page), { timeout: 20_000 }).toContain("Edit plain HTML with Anna");
+    await lex.page.getByRole("banner").getByRole("button", { name: "Undo", exact: true }).click();
+    for (const tab of [lex, anna]) {
+      await expect.poll(() => source(tab.page), { timeout: 20_000 }).not.toContain("Lex A native");
+      expect(await source(tab.page)).toContain("Edit plain HTML with Anna");
+    }
+    await expect(anna.page.frameLocator(".native-preview-frame").locator(".hero h1")).toHaveText("A native browser preview");
+
+    // In the code pane: Lex types at the end, Anna changes the lead again, and Lex's Ctrl+Z takes back only his.
+    await lex.page.getByRole("region", { name: "Source editor" }).first().getByRole("textbox", { name: "File source" }).focus();
+    await lex.page.keyboard.press("ControlOrMeta+End");
+    await lex.page.keyboard.type("<!-- Lex -->");
+    await expect.poll(() => source(anna.page), { timeout: 20_000 }).toContain("<!-- Lex -->");
+    await insert(anna.page, "Edit plain HTML with Anna", " again");
+    await expect.poll(() => source(lex.page), { timeout: 20_000 }).toContain("with Anna again");
+    await lex.page.keyboard.press("ControlOrMeta+z");
+    for (const tab of [lex, anna]) {
+      await expect.poll(() => source(tab.page), { timeout: 20_000 }).not.toContain("<!-- Lex -->");
+      expect(await source(tab.page)).toContain("Edit plain HTML with Anna again");
+    }
+    // Redo puts his words back where they were, on both.
+    await lex.page.keyboard.press("ControlOrMeta+Shift+z");
+    await expect.poll(() => source(anna.page), { timeout: 20_000 }).toContain("<!-- Lex -->");
+    expect(await source(lex.page)).toBe(await source(anna.page));
+    expect(count(await source(anna.page), "with Anna again")).toBe(1);
+  } finally {
+    await anna.context.close();
+    await lex.context.close();
   }
 });
