@@ -52,3 +52,16 @@ test("a real build and the dev pre-bundle ship the installed DOMPurify, not Mona
     assert.ok(!ids.some(id => vendored.test(id)), `${where} still holds Monaco's vendored DOMPurify`);
   }
 });
+
+test("every locked MCP server SDK is past the high advisories", () => {
+  // @modelcontextprotocol/server 2.0.0 - 2.2.0 is high (GHSA-jm63-cq47-j5jp, GHSA-46jr-4wx8-v453, GHSA-rvq5-wwqv-78pq).
+  const lock = JSON.parse(readFileSync(fileURLToPath(new URL("../package-lock.json", import.meta.url)), "utf8")) as
+    { packages: Record<string, { version?: string }> };
+  const servers = Object.entries(lock.packages).filter(([path]) => /(?:^|\/)node_modules\/@modelcontextprotocol\/server$/.test(path));
+  assert.ok(servers.length > 0, "no @modelcontextprotocol/server in package-lock.json");
+  for (const [path, { version = "" }] of servers) {
+    const [major, minor] = version.split(".").map(Number);
+    // A 2.3.0 pre-release sorts before the fix.
+    assert.ok(major > 2 || (major === 2 && (minor > 3 || (minor === 3 && !version.includes("-")))), `${path} is ${version}; it must be 2.3.0 or later`);
+  }
+});
