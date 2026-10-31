@@ -9,7 +9,7 @@ registerHooks({
     : url.endsWith("/components/source-editor.ts") ? { format: "module", source: "export const caretPanes = () => []; export const watchCaretPanes = () => () => {};", shortCircuit: true }
     : next(url, context),
 });
-const { initialOf, programMark } = await import("../src/components/live-carets");
+const { initialOf, programMark, rightToLeft, shownName } = await import("../src/components/live-carets");
 
 test("each agent's program has its own mark, and any other agent the plain one", () => {
   const [claude, codex, openai, gemini, cursor] = ["claude-code", "codex", "openai-mcp", "gemini-cli", "cursor"].map(programMark);
@@ -28,3 +28,22 @@ test("a person's circle holds the first character a reader sees, upper-cased to 
   assert.deepEqual(initialOf("🇳🇱 Lex"), { first: "🇳🇱", letter: "🇳🇱", rest: " Lex" });
   assert.deepEqual(initialOf(""), { first: "", letter: "", rest: "" });
 });
+
+test("a name whose first strong letter is written right to left reads right to left", () => {
+  assert.equal(rightToLeft("שרה"), true, "Hebrew");
+  assert.equal(rightToLeft("سارة"), true, "Arabic");
+  assert.equal(rightToLeft("Anna"), false, "Latin");
+  assert.equal(rightToLeft("2 שרה"), true, "a digit before Hebrew");
+  assert.equal(rightToLeft("«سارة»"), true, "punctuation before Arabic");
+  assert.equal(rightToLeft("🦊 Anna"), false, "an emoji before Latin");
+});
+
+test("a name of nothing visible shows as Someone, or Agent for an agent", () => {
+  for (const blank of ["\u200B", "\u2060", "\u202E", "\u3164", "\u115F\u1160", "\uFFA0", " \u200B "]) {
+    assert.equal(shownName(blank, false), "Someone", JSON.stringify(blank));
+    assert.equal(shownName(blank, true), "Agent", JSON.stringify(blank));
+  }
+  assert.equal(shownName("\u200BAnna\u200B", false), "Anna");
+  assert.equal(shownName("  Claude Code ", true), "Claude Code");
+});
+
