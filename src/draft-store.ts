@@ -169,6 +169,7 @@ export interface EditInput {
 /** What a shared change moves past: the file's entry, the journals and their parts (src/shared-undo.ts). */
 export interface HistoryAccess {
   entry: Entry;
+  /** Read-only as a map; each journal's stacks are edited in place. */
   journals: ReadonlyMap<string, Journal>;
   /** The file's typing session, if any. */
   typing: Typing | undefined;
