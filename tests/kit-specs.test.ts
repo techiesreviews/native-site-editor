@@ -583,6 +583,15 @@ test("a spec file with one @actual test and two plain ones runs all three: the p
   // Every test tagged (a conditional skip is no test): the file stays out of the default run.
   assert.deepEqual(specGroups(mixed, 'test.skip(!process.env.X, "why");\ntest("a", { tag: "@actual" }, async () => {});\ntest(\n  "b",\n  { tag: ["@smoke", "@native-static"] },\n  async () => {});\n'), ["actual", "native-static"]);
   assert.deepEqual(specTestGroups('test.describe("group", () => {\n  test.fixme("plain", async () => {});\n  test("tagged", { tag: "@native-static" }, async () => {});\n});\n'), ["default", "native-static"]);
+  // A plain test with a function callback does not borrow the next test's tag.
+  assert.deepEqual(specTestGroups('test("a", async function ({ page }) {});\ntest("b", { tag: "@actual" }, async () => {});\n'), ["default", "actual"]);
+  // A title holding "=>", or a tag in a comment or a string, changes nothing.
+  assert.deepEqual(specTestGroups('test("x => y", { tag: "@actual" }, async () => {});\n'), ["actual"]);
+  assert.deepEqual(specTestGroups('// test("old", async () => {});\nconst note = "test(\'n\', () => 1)";\ntest("t", { tag: "@actual" }, async () => {});\n'), ["actual"]);
+  // A tagged describe tags the tests inside it; a plain test after it is still plain.
+  const inside = 'test.describe("d", { tag: "@actual" }, () => {\n  test("x", async () => { if (a) { b(); } });\n});\n';
+  assert.deepEqual(specTestGroups(inside), ["actual"]);
+  assert.deepEqual(specTestGroups(inside + 'test("after", async () => {});\n'), ["default", "actual"]);
 });
 
 test("routing batches defaults and preview, runs tagged specs individually and both tags twice", t => {
