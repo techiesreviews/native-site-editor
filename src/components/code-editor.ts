@@ -9,7 +9,7 @@ import type { TypingSession } from "../draft-store";
 import { node } from "../ui/dom";
 import { NATIVE_COMPONENTS_DIR } from "../../shared/native-project";
 import { CODE_POINTER_EVENT, type CodePointer } from "../page-builder/canvas-model";
-import { languageFor, mountSourceEditor, onReset, paneOf, useView, type PaneHost, type PaneRender, type PaneViewFactory, type SourceFile } from "./source-editor";
+import { languageFor, mountSourceEditor, onReset, paneOf, showCaretPane, useView, type PaneHost, type PaneRender, type PaneViewFactory, type SourceFile } from "./source-editor";
 
 // Code to canvas (page builder): an HTML editor reports where its cursor
 // goes by a click or a key and which line the pointer is over, so the
@@ -513,6 +513,8 @@ export const monacoView: PaneViewFactory = (host) => {
       view = editor;
       const unguard = guardHistoryKeys(editor);
       editor.onDidChangeCursorSelection(reportSoon);
+      // Others' carets, while this file is shared (src/components/live-carets.ts).
+      const hideCarets = host.stored && !host.readOnly ? showCaretPane({ scope: host.scope, path: host.path, editor, monaco, history: () => host.session() }) : () => {};
       if (model.getLanguageId() === "html") linkToCanvas(editor, host.path, model);
       if (shared.viewState) editor.restoreViewState(shared.viewState);
       // A component's template opens whole: its root is the component (Edit component shows it beside the page).
@@ -522,6 +524,7 @@ export const monacoView: PaneViewFactory = (host) => {
       }
       destroyView = () => {
         unguard();
+        hideCarets();
         shared.viewState = editor.saveViewState();
         editor.dispose();
         view = undefined;

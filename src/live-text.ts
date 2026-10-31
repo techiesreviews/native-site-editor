@@ -27,6 +27,11 @@
 //   Undo and Redo past it (src/shared-undo.ts) instead of clearing them. The
 //   name-tag Undo (`LiveText.undoAuthor`) takes back one author's latest change
 //   for everyone; carets call it from slices 22, 23 and 25.
+// - Carets (ticket am-22): each tab tells the room where its caret is, through
+//   the room's presence (src/live-room.ts), as Yjs relative positions, so a
+//   caret stays by the same words while others type. Others' carets are read
+//   in this tab's text and drawn in the code pane (src/components/live-carets.ts,
+//   loaded with Yjs, only once someone else is in the room).
 //
 // Frames (inside the room's encryption): a kind byte, whether the sender is
 // caught up, the 20-byte starting-text tag, a 4-byte copy id (the sender's
@@ -42,13 +47,14 @@
 import { effect, untracked, type ReadonlySignal } from "@preact/signals-core";
 import { applyChanges, diffRange, type DraftEvent, type DraftTextStore, type TextChange } from "./draft-store";
 import type { DraftScope } from "./drafts";
-import { openLiveRoom, type LiveClock, type LiveRoom, type LiveRoomOptions } from "./live-room";
+import { openLiveRoom, type LiveClock, type LivePeer, type LiveRoom, type LiveRoomOptions } from "./live-room";
+import type { JsonValue } from "../shared/agent-command";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 import { rebaseHistory } from "./shared-undo";
 
 type Yjs = typeof import("yjs");
 type Doc = import("yjs").Doc;
-type Room = Pick<LiveRoom, "send" | "close">;
+type Room = Pick<LiveRoom, "send" | "close"> & Partial<Pick<LiveRoom, "setPresence">>;
 type Store = Pick<DraftTextStore, "get" | "text" | "edit" | "subscribe" | "subscribeState">;
 
 export interface LiveTextPorts {
@@ -64,6 +70,26 @@ export interface LiveTextPorts {
   clock?: LiveClock;
   /** Live sharing switched on (`liveSharingOn` by default). */
   on?: boolean;
+  /** Draws others' carets once a copy is shared (src/components/live-carets.ts by default, in a browser). */
+  loadCarets?: () => Promise<(share: CaretShare) => () => void>;
+}
+
+/** Someone else's caret in the open file, in this tab's text (ticket am-22). `author`: the Yjs client id their own changes
+ * carry, which the name-tag Undo takes; `agent`: the program an agent works in (`clientInfo.name`), none for a person. */
+export interface LiveCaret { peer: string; author: number; name: string; agent?: string; anchor: number; head: number }
+/** The open file's carets as the code pane draws them (src/components/live-carets.ts). */
+export interface CaretShare {
+  scope: DraftScope;
+  path: string;
+  /** Everyone else here now with a caret in this file. */
+  carets(): LiveCaret[];
+  /** Called when a caret may have moved: someone moved theirs, typed, came or left. Returns its unsubscribe. */
+  onCarets(listener: () => void): () => void;
+  /** This tab's own caret, as offsets in its text; none takes it away. */
+  own(selection: { anchor: number; head: number } | undefined): void;
+  canUndo(author: number): boolean;
+  undo(author: number, history?: string): boolean;
+  onAuthorUndo(listener: () => void): () => void;
 }
 /** A copy this browser shared, kept to start from when the file opens again: its starting-text tag, its Yjs state and
  * the draft's text when it was kept (`draft`; none in copies kept before it was added). The draft and the copy are saved
@@ -80,6 +106,10 @@ const HELLO = 1, ASK = 2, REPLY = 3, UPDATE = 4;
 const HEAD = 2 + 20 + 4;
 /** A tab that found others waits this long, after asking, for one of them to catch it up; then it starts from its own draft. */
 export const LIVE_TEXT_CATCH_UP_MS = 5_000;
+/** A caret that moves tells the room at most this often (typing moves it with every key). */
+const CARET_MS = 50;
+/** A name longer than this is cut: presence is only what others say of themselves. */
+const NAME_LIMIT = 80;
 /** Frames that arrive while Yjs loads wait, up to this many. */
 const INBOX_LIMIT = 500;
 /** The room closes a socket over its limit: a larger copy is not sent (the room's own framing needs a little room). */
@@ -210,16 +240,20 @@ interface AuthorUndo {
   can(author: number): boolean;
 }
 
-/** Shares one file while it is open; returns its stop and its name-tag Undo. `ended`: this tab left the copy (Discard),
- * or must start it again (GitHub's text changed while it was being made). `authorsChanged`: what the name-tag Undo
- * can take back changed. */
-function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended: (why: "left" | "again") => void, authorsChanged: () => void) {
+/** Shares one file while it is open; returns its stop, its name-tag Undo and its carets. `ended`: this tab left the copy
+ * (Discard), or must start it again (GitHub's text changed while it was being made). `authorsChanged`: what the name-tag
+ * Undo can take back changed. `copied`: the copy is made (someone else is here), so carets can be drawn. */
+function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended: (why: "left" | "again") => void, authorsChanged: () => void, copied: () => void) {
   const store = ports.store, clock = ports.clock ?? systemClock, keeper = ports.keeper ?? (pageKeeper ??= browserKeeper());
   const start = store.get(scope, path)!;
   const base = start.base, baseSha = start.baseSha ?? null;
   let stopped = false, aloneOnce = false, editors = 0, discarded = false;
   let copy: ReturnType<typeof makeCopy> | undefined, loading = false;
   const inbox: Uint8Array[] = [];
+  /** Others here, as the room's presence says; this tab's own caret (offsets in its text) and whoever draws carets. */
+  let peers: ReadonlyMap<string, LivePeer> = new Map(), selection: { anchor: number; head: number } | undefined;
+  const caretWatchers = new Set<() => void>();
+  const caretsMoved = () => { for (const watcher of [...caretWatchers]) try { watcher(); } catch { /* A caret must not break sharing. */ } };
   // Discard is this tab's own, from the moment it shares the file (alone, loading Yjs, or with a copy): it leaves the
   // shared copy rather than taking everyone's changes away, and drops its kept copy so nothing brings them back.
   const unwatch = store.subscribe(event => {
@@ -242,6 +276,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       else if (!copy && !loading) void load();
     },
     onKey: () => copy?.hello(),
+    onPeers(next) { peers = next; caretsMoved(); },
   });
 
   async function load() {
@@ -268,6 +303,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         copy = makeCopy(Y, tag, seed, undefined);
       }
       for (const bytes of inbox.splice(0)) copy.receive(bytes);
+      copied();
       if (!editors || aloneOnce) await copy.startOwn(); else copy.hello();
     } catch { /* Yjs did not load, or starting the copy failed: this tab keeps its own draft, as before, until the room changes again. */ }
     finally { loading = false; }
@@ -349,6 +385,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         follow(deltaChanges(event.delta as { retain?: number; insert?: unknown; delete?: number }[]), taking && transaction.origin === taking.undo ? taking : undefined);
       // Any change can make someone's change undoable or not (their words removed since): the name tags look again.
       if (authors.size) authorsChanged();
+      // Others' carets stay by their words: they are read again in the new text.
+      if (synced && peers.size) caretsMoved();
     });
     /** Whether undoing `item` changes the text: some of the words it added are still there, or it removed words
      * (other than its own) that Yjs can put back. Yjs itself skips items that change nothing. */
@@ -406,6 +444,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       keep();
       // Changes others sent while this tab was catching up can be taken back from now on.
       if (authors.size) authorsChanged();
+      // Its caret and theirs are in the shared text from now on.
+      tellCaret();
+      caretsMoved();
       // Caught up, it asks the others for what only it has (a resumed copy, its own changes); starting its own
       // copy, it tells the room, in case another did the same meanwhile.
       hello();
@@ -444,6 +485,34 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       }, START);
     }
 
+    /** This tab's caret as the room hears it: who it is (the Yjs client id its changes carry, its GitHub name) and where,
+     * as relative positions read when it moved, so text others add meanwhile does not shift it. At most every CARET_MS. */
+    let telling: unknown, told: JsonValue | undefined;
+    function tellCaret() {
+      if (!synced || discarded || stopped) return;
+      const at = (index: number) => Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(text, Math.min(index, text.length))) as JsonValue;
+      told = { author: me, name: scope.account.slice(0, NAME_LIMIT), caret: selection ? { anchor: at(selection.anchor), head: at(selection.head) } : null };
+      telling ??= clock.setTimeout(() => { telling = undefined; if (!stopped && told !== undefined) room.setPresence?.(told); }, CARET_MS);
+    }
+    /** Others' carets in this tab's text: whoever says where theirs is in a copy of this file that this one has the words of. */
+    function carets(): LiveCaret[] {
+      if (!synced || discarded) return [];
+      const out: LiveCaret[] = [];
+      for (const [peer, { access, state }] of peers) {
+        const said = state as { author?: unknown; name?: unknown; agent?: unknown; caret?: { anchor?: unknown; head?: unknown } | null } | null;
+        if (!said || typeof said !== "object" || !Number.isSafeInteger(said.author) || typeof said.name !== "string" || !said.caret) continue;
+        const at = (json: unknown) => {
+          if (!json || typeof json !== "object") return undefined;
+          try { return Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(json), doc)?.index; } catch { return undefined; }
+        };
+        const anchor = at(said.caret.anchor), head = at(said.caret.head);
+        if (anchor === undefined || head === undefined) continue;
+        const agent = access === "agent" ? (typeof said.agent === "string" ? said.agent.slice(0, NAME_LIMIT) : "") : undefined;
+        out.push({ peer, author: said.author as number, name: said.name.slice(0, NAME_LIMIT), ...(agent === undefined ? {} : { agent }), anchor, head });
+      }
+      return out;
+    }
+
     function hello() {
       if (stopped) return;
       void send(HELLO, Y.encodeStateVector(doc)).then(sent => {
@@ -475,7 +544,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       } catch { /* A broken update is dropped; the next catch-up brings what it lacked. */ }
     }
     return {
-      receive, hello,
+      receive, hello, tellCaret, carets,
       /** Alone in the room (first in, or everyone else left before catching this tab up): its own draft starts the copy. */
       startOwn: () => begin(false),
       /** The name-tag Undo: `author`'s latest change that still changes the text (its UPDATE frames, grouped as Yjs groups
@@ -491,7 +560,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         can: author => synced && !discarded && Boolean(authors.get(author)?.undo.undoStack.some(undoable)),
       } satisfies AuthorUndo,
       destroy() {
-        clock.clearTimeout(waiting); keep(); unsubscribe(); page?.removeEventListener("pagehide", keep); page?.document.removeEventListener("visibilitychange", hidden);
+        clock.clearTimeout(waiting); clock.clearTimeout(telling); keep(); unsubscribe(); page?.removeEventListener("pagehide", keep); page?.document.removeEventListener("visibilitychange", hidden);
         // Gone before anyone hears it: a name tag asking now finds nothing to take back.
         const had = authors.size > 0;
         for (const { undo } of authors.values()) undo.destroy();
@@ -506,14 +575,21 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     undo: (author, history) => copy?.authors.undo(author, history) ?? false,
     can: author => copy?.authors.can(author) ?? false,
   };
+  const carets = {
+    list: () => copy?.carets() ?? [],
+    on: (watcher: () => void) => { caretWatchers.add(watcher); return () => { caretWatchers.delete(watcher); }; },
+    own: (next: { anchor: number; head: number } | undefined) => { selection = next; copy?.tellCaret(); },
+  };
   const stop = () => {
     stopped = true;
     unwatch();
     room.close();
     copy?.destroy();
     copy = undefined;
+    caretsMoved();
+    caretWatchers.clear();
   };
-  return { stop, authors };
+  return { stop, authors, carets };
 }
 
 /** The switch for live sharing: on in this browser when its localStorage holds `native-site-editor:live-sharing` = `on`
@@ -543,7 +619,8 @@ export interface LiveText {
 
 /** Shares the open file while it is open in the draft store, for as long as this runs; calling the result stops it. */
 export function startLiveText(ports: LiveTextPorts): LiveText {
-  let current: { key: string; stop(): void; authors?: AuthorUndo } | undefined;
+  type Share = { key: string; stop(): void; authors?: AuthorUndo; drawing?: boolean; undraw?: () => void };
+  let current: Share | undefined;
   const listeners = new Set<() => void>();
   const changed = () => { for (const listener of [...listeners]) try { listener(); } catch { /* A name tag must not break sharing. */ } };
   const port = (stop: () => void): LiveText => Object.assign(stop, {
@@ -552,6 +629,8 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
     onAuthorUndo(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
   });
   if (!(ports.on ?? liveSharingOn())) return port(() => { listeners.clear(); });
+  const loadCarets = ports.loadCarets ?? (typeof document === "undefined" ? undefined
+    : () => import("./components/live-carets").then(module => module.startCodeCarets));
   /** The file this tab discarded while sharing: it stays out of the copy until another file shows. */
   let left: string | undefined;
   const check = () => {
@@ -563,16 +642,29 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
     if (current?.key === key) return;
     current?.stop();
     if (!key) { current = undefined; return; }
-    const share: { key: string; stop(): void; authors?: AuthorUndo } = { key, stop: () => undefined };
+    const share: Share = { key, stop: () => undefined };
     current = share;
-    const shared = shareFile(ports, file!.scope, file!.path, why => {
+    const at = { scope: file!.scope, path: file!.path };
+    const shared = shareFile(ports, at.scope, at.path, why => {
       if (current !== share) return;
       if (why === "left") left = key;
       share.stop();
       current = undefined;
       check();
-    }, () => { if (current === share) changed(); });
-    share.stop = shared.stop;
+    }, () => { if (current === share) changed(); }, () => {
+      // Someone else is here: their carets are drawn (loaded once, with Yjs) for as long as this file is shared.
+      if (current !== share || share.drawing || !loadCarets) return;
+      share.drawing = true;
+      void loadCarets().then(start => {
+        if (current !== share) return;
+        share.undraw = start({
+          ...at, carets: shared.carets.list, onCarets: shared.carets.on, own: shared.carets.own,
+          canUndo: author => shared.authors.can(author), undo: (author, history) => shared.authors.undo(author, history),
+          onAuthorUndo: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+        });
+      }).catch(() => { share.drawing = false; });
+    });
+    share.stop = () => { share.undraw?.(); share.undraw = undefined; shared.stop(); };
     share.authors = shared.authors;
   };
   const stopEffect = effect(() => { void ports.openFile.value; untracked(() => { left = undefined; check(); }); });
