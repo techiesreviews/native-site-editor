@@ -38,3 +38,4 @@ Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affe
 ## Comments
 
 - Lead, 2026-10-31: the Stop hook's entry is a piece `kit init` writes into each project, so it reaches the projects already set up through ticket 81 (`kit doctor` names it missing; `kit init --all` adds it). Done includes `kit init --all` after this lands.
+- Lead, 2026-10-31: more evidence. am-24 ended its turn twice in one hour, both times right after a background wait plus `t3_background_wait` returned ("I'm waiting on it"). So the background-wait pattern in every brief is itself the trigger. The working pattern: a foreground loop of `timeout 580 kit wait pid <pid>` calls (each under the 10-minute tool limit) until the unit is inactive. `docs/runner.md` should teach that loop, and the Stop hook backs it up.
