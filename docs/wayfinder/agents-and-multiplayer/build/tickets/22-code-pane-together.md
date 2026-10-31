@@ -88,3 +88,4 @@ Not done (review nits): no native tooltip removed from the name (it shows a cut 
 ### UX follow-ups
 
 - UX (looks off): F-code-01 at 1280 px the code pane shows syntax colours in light and dark and starts with the head and sections folded, but a pop-up "Heading added. Into Section "Recent work" › after Div" notice with Undo appears after the action and sits on top of the code lines, and at 390 px the same notice covers the bottom of the canvas above the edit bar (.scratch/ux/am-22/20261031-190443-smiPdj/editor-F-code-01-1280-light-code-strip.webp)
+- UX (looks off): F-code-01 at 390 px the canvas bar's breadcrumb buttons are 26×24 px and crowd each other (HS18: 44 px on touch). The breadcrumb (`src/components/canvas-bar.ts`) is not changed by this slice (.scratch/ux/am-22/20261031-191614-a87fR8/editor-F-code-01-390-light-code-strip.webp)
