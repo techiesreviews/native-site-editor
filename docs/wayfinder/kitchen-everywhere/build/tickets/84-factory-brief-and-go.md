@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [81-existing-projects-get-new-setup, 85-t3-native-factory-check]
+blocked_by: [81-existing-projects-get-new-setup]
 ---
 
 ## Goal
@@ -81,3 +81,4 @@ Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affe
   - **House rules beat skill advice.** An example is the editor's "no toasts, feedback in place", which wins over any skill that suggests a toast. The brief says this in one line.
   - **Where the skills aren't installed** (CI, another computer), the brief carries a one-line plain fallback, and `kit doctor` notes which skills are missing.
 - Lead, 2026-10-31: Lex wants T3 Code's own way of running agents used where it fits. [Ticket 85](85-t3-native-factory-check.md) checks which factory parts T3 already does (agents as T3 threads that wake their parent, PR watch, schedules) and updates this plan before it is built.
+- Lead, 2026-10-31: Lex, "Replace the parts of the factory to use t3 code native way". Ticket 85 is now the T3 build, after this one. Here `kit brief` also takes `--stage build|review|second-look|fix` (one brief per stage, used by 85's T3 mode and by the headless runs). `kit go` covers only long shell jobs (agents are T3 threads in 85). The Stop hook stays as the backstop.
