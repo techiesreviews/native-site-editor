@@ -180,6 +180,8 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
       preview: () => ports.nativePreview,
       currentPath: () => appStore.openFile.value,
       selection: () => appStore.selection.value,
+      // The open file's shared copy (src/live-text.ts), started with the first component tools, after the first paint.
+      live: { store: editorModule.sourceStore(), openFile: appStore.openFile, scope: draftScope },
       openFile: async (path) => {
         const at = workspaceSession.begin(), scope = draftScope();
         previewSelection.recordIntent(path);
