@@ -29,23 +29,25 @@ function detailTags(details) {
   return values.filter(ts.isStringLiteralLike).map(value => value.text.replace(/^@/, "")).filter(name => GROUP_TAGS.includes(name));
 }
 
-/** Each test's group tags, its own and its describes': one list per test declared (a title first). */
+const parse = text => ts.createSourceFile("spec.ts", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+const isFunction = node => Boolean(node) && (ts.isArrowFunction(node) || ts.isFunctionExpression(node));
+
+/** Each test's group tags, its own and its describes': one list per test declared (its body last). */
 function testTags(text) {
-  const source = ts.createSourceFile("spec.ts", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const tests = [];
   const visit = (node, inherited) => {
     let tags = inherited;
     if (ts.isCallExpression(node)) {
-      const kind = callKind(node.expression), [title, details] = node.arguments;
-      // A bare test.skip(condition, "why") has no title first and is no test.
-      if (kind && title && (ts.isStringLiteralLike(title) || ts.isTemplateExpression(title))) {
-        tags = [...new Set([...inherited, ...detailTags(details)])];
+      const kind = callKind(node.expression), args = node.arguments;
+      // A declaration ends with its body, whatever its title is; a bare test.skip(condition, "why") does not.
+      if (kind && args.length >= 2 && isFunction(args.at(-1))) {
+        tags = [...new Set([...inherited, ...args.length > 2 ? detailTags(args[1]) : []])];
         if (kind === "test") tests.push(tags);
       }
     }
     ts.forEachChild(node, child => visit(child, tags));
   };
-  visit(source, []);
+  visit(parse(text), []);
   return tests;
 }
 
@@ -54,4 +56,23 @@ export function specTestGroups(text) {
   const tests = testTags(text);
   const groups = GROUP_TAGS.filter(group => tests.some(tags => tags.includes(group)));
   return [...!groups.length || tests.some(tags => !tags.length) ? ["default"] : [], ...groups];
+}
+
+// A file-level fixture check: requireActualFixture() or a bare test.skip/fixme(condition, …).
+function fixtureCheck(call) {
+  const callee = call.expression;
+  if (ts.isIdentifier(callee)) return callee.text === "requireActualFixture";
+  return ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && callee.expression.text === "test"
+    && ["skip", "fixme"].includes(callee.name.text) && !isFunction(call.arguments.at(-1));
+}
+
+/**
+ * Lines of file-level fixture checks in a file of more than one group: there they also run before the plain tests,
+ * skipping or breaking them, so a mixed file keeps them inside its tagged tests (scripts/check-specs.mjs).
+ */
+export function fileLevelFixtureChecks(text) {
+  if (specTestGroups(text).length < 2) return [];
+  const source = parse(text);
+  return source.statements.filter(statement => ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression)
+    && fixtureCheck(statement.expression)).map(statement => source.getLineAndCharacterOfPosition(statement.getStart()).line + 1);
 }
