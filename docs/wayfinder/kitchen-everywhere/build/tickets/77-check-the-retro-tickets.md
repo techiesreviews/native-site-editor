@@ -42,3 +42,7 @@ Read-only research; land the docs with `scripts/agents/kit pr` (docs tier) into 
 - Evidence gathered read-only: the kit at `1c217e6`, the WIP branches (ke-66 `053b2ee`, ke-68 `e2b69a3`, `browser-tester` `a8eb190`), prompter `shared-kit` `cf596c7`, and git history and settings across `~/Projects/*`. Two tries on Lex's machine, nothing kept: Playwright's hover and pointer queries on desktop and phone, and `systemd-run --user --scope` leaving the turn's scope with fd, environment and `RuntimeMaxSec`. Also one node:test log check of `expected`/`actual`, in a temporary folder that was removed.
 - Questions for Lex: the [3 Nov Tuesday pack](../../../../work/tuesday/2026-11-03.md#kitchen-retro-tickets-checked-ticket-77).
 - Nothing in the kit was built or changed.
+
+## Comments
+
+- 2026-11-01 — Lex: "Yes" to the remaining checked list, with his individual choices taking precedence, including AI-chosen per-job time limits.
