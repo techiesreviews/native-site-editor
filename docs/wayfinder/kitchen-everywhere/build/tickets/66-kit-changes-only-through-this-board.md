@@ -68,3 +68,7 @@ Agent Kit is required. In `~/Projects/agent-kit`: `scripts/agents/kit doctor`, `
 - Waived (gap): the review-prompt test in `tests/kit-review.test.ts` should check that the plain-English line appears once; the board-rule test should also pin "in the Native Site Editor's repo".
 - `test:kit-clean`: if the `kit-launcher` test fails again, its message now carries the launcher's output; turn that into a fix ticket.
 - Projects set up before this change (script-editor, lexvd.nl) keep their old `docs/agents/kitchen.md` pointer; they see the board rule only through `kit rulebook`.
+
+## Comments
+
+- 2026-11-01 — Lex: "Yes" to urgent shared kit fixes being marked urgent and handled by the coordinating thread, with no exceptions.
