@@ -40,6 +40,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 ## Comments
 
+- 2026-11-01 — Lex: "yes" to keeping change titles in tickets because commit numbers can change when work merges.
+
 - Lead, 2026-10-28: take the default: inside the PR the Done list names commits by title; after the merge `kit pr` prints the landed SHAs for the close-out. Easy to undo; listed in the Tuesday pack.
 
 ## Done (2026-10-28)
