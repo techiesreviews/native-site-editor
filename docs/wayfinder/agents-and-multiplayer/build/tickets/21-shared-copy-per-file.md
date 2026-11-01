@@ -170,6 +170,8 @@ Before the review fixes:
 
 ## Comments
 
+- Lex (2026-10-31): "Yes, switch it on for everyone." The planned final check remains.
+
 - 2026-11-01 — Lex: "Ok" to keeping the current approach: prepare after the page appears and load the heavier part when another person joins.
 
 - 2026-11-01 — Lex: "Yes" to existing participants sending a newcomer the current changes, for now.

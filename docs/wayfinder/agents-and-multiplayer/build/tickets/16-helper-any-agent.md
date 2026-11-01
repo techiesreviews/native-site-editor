@@ -131,6 +131,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 ## Comments
 
+- Lex (2026-10-31): "I'm switching off the key" and suggested it could be active for only one hour after closing the session in future. The npm key was deferred: "Let’s do that later".
+
 - 2026-11-01 — Lex: "yes" to keeping the helper starting Claude Code by default, with another agent selectable at start, and pins going to the first connected agent to take them.
 
 - 2026-11-01 — Lex: "Keep current" for the helper’s editor sign-in. He also said: "Btw for sharping an edit, that can also move to a shared component, just like the colors and brand preferences." Lex clarified 2026-11-01: "Yes and from the script writer" — sharing an edit, including the script writer version.

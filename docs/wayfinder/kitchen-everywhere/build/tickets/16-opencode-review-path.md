@@ -67,3 +67,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation gaps (gap): Nothing tests a non-limit error event together with a non-zero exit. Add a fake mode `error-502-exit1` (error event, then `process.exit(1)`). It should assert that the last stderr `problem:` line is `OpenCode reported an error: Bad gateway`.
 - Validation gaps (gap): Nothing tests the observer for an `adapter.lines` capture when stderr chunks arrive between stdout chunks. Add a `sessionObserver` case with the OpenCode adapter that feeds `[firstHalf, true], ["noise\n", false], [secondHalf+"\n", true]`. It should assert `["ses_1"]`.
 - Validation gaps (gap): There is no end-to-end `kit review` test with `ASE_OPENCODE_EXPORT_TIMEOUT_MS=abc` (already a follow-up). It should assert exit 1, the named problem, and an empty `calls.jsonl`.
+
+## Comments
+
+- Lex (2026-10-31): "I don't want to top it up. We can use the free reviewer when the rocks plan, chatdpd, or another plan needs to wait."
