@@ -149,6 +149,8 @@ Commits: "docs: 24-per-person-undo notes for the build (carets come with 22 and 
 
 ## Comments
 
+- 2026-11-01 — Lex: "Yes" to the name tag Undo counting only changes made while both people were on the page.
+
 - 2026-11-01 — Lex: "Yes" to undoing his typing across another person’s change in the code pane in one go.
 
 - 2026-11-01 — Lex: "Yes" to keeping for now the behavior where a section move or whole-page change can drop out of Undo after someone else changes the page.
