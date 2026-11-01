@@ -32,3 +32,7 @@ Lex (2026-10-30), after seeing a kanban board drawn in chat: "we need to connect
 - Is the Inbox the only place to sort, or can Lex also sort with labels in the GitHub app? ➡️ Both; the board shows the labels either way.
 - Which projects get the Inbox: all projects on the shared kit (kitchen tickets 40–47), as each one joins.
 - Where it sits in the queue: its own map, after the agents-and-multiplayer stage 1 release. Until it lands, TechiesTools' and camframe's existing Issues stay copied once and closed as planned (kitchen 44 and 47), and the copied Issues go through Lex's sorting first.
+
+## Comments
+
+- 2026-11-01 — Lex: "Yes" to agents updating issues on his own projects, a private board behind his GitHub login, sorting on the board or GitHub, and exploring techies.review tools in the design.
