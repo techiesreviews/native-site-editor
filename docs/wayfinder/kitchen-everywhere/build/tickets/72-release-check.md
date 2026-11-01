@@ -58,3 +58,7 @@ Waived on kit PR #10:
 - P3 race: under `--land` the `git cherry` limit is the local `origin/<release>`, which the check does not fetch, so a stale ref could count a commit as landed; fetch it too.
 - Gaps: a cut whose HEAD is a merge commit (`git cherry` lists no merges); `kit pr --release` with no origin; one waiver covering open review findings and the check at once; a staged rename; the deploy form's `--waive` through the front door; a bad `KIT_RELEASE_CHECK_TIMEOUT` in a fast test.
 
+
+## Comments
+
+- 2026-11-01 — Lex: "Yes" to stopping a project release when the working copy is not clean or is not exactly the live branch’s latest version, with a written reason if the lead proceeds anyway.
