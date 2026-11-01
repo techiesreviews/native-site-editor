@@ -37,3 +37,7 @@ Verdict on the [retro check](../retro-check-2026-10-30.md): `wontfix`. `requestA
 ## Kit commands and evidence
 
 Agent Kit is required. In `~/Projects/agent-kit`: `scripts/agents/kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA, and the survey counts. This ticket's Done lands on `dev` here with `scripts/agents/kit pr` (docs tier).
+
+## Comments
+
+- 2026-11-01 — Lex: "Yes, emil suggests this for animations /remove-animations → /improve-animations → /animation-performance maybe we can do our own form" in response to relying on design review and skipping the automatic check. Consider a version of that sequence for our process.
