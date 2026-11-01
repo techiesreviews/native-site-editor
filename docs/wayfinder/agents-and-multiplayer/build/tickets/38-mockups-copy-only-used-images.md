@@ -50,3 +50,7 @@ Slice 37 (PR #246) copies every image in `docs/wayfinder/*/prototypes/` to the p
 - Standards (P3): 56b4bf7bd:vite-mockups.ts:273 — P3 fault: No CODING_STANDARDS.md section covers build plugins, so this is a plain correctness fault. `decodeCharacters` runs on every match, including matches inside `<script>` and `<style>`. Browsers don't decode HTML entities in that raw text. Take `<script>img.src = "a&amp;b.png"</script>`. The browser requests the literal `a&amp;b.png`, but the plugin counts `a&b.png`. If both files exist, it publishes the wrong one and leaves out the one the mock-up loads. The same holds for `url(p&amp;q.png)` inside `<style>`. The impact is tiny, since no real mock-up uses an image today. Fix: decode only matches outside script and style elements. You could reuse the split that comment-stripping already does: tag spans inside script/style and skip `decodeCharacters` for them.
 - Validation gaps (gap): tests/vite-mockups.test.ts: the `referencedFiles` case only tests entities in attribute values. No test covers an entity inside a `<script>` string or a `<style>` `url()`. Add `<script>img.src = "s&amp;t.png"</script><style>i{background:url(u&amp;v.png)}</style>` to the fixture. Assert the set holds `s&amp;t.png` and `u&amp;v.png`, not `s&t.png` and `u&v.png`. This pins the fix for the defect above.
 
+
+## Comments
+
+- 2026-11-01 — Lex: "ok" to keeping unused planning reference images off the public preview while images displayed by mock-ups may appear.
