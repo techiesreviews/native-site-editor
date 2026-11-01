@@ -170,4 +170,6 @@ Before the review fixes:
 
 ## Comments
 
+- 2026-11-01 — Lex: "Ok" to keeping the current approach: prepare after the page appears and load the heavier part when another person joins.
+
 - 2026-11-01 — Lex: "Yes" to existing participants sending a newcomer the current changes, for now.
