@@ -149,4 +149,6 @@ Commits: "docs: 24-per-person-undo notes for the build (carets come with 22 and 
 
 ## Comments
 
+- 2026-11-01 — Lex: "Yes" to keeping for now the behavior where a section move or whole-page change can drop out of Undo after someone else changes the page.
+
 - 2026-11-01 — Lex: "Make it work more like Google docs" when someone else changes your words: undo what remains rather than dropping that step and older ones.
