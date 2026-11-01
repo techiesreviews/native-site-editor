@@ -39,3 +39,7 @@ Dropped: changes to `kit pr`'s and `kit slice`'s step runner. A slice already ru
 ## Kit commands and evidence
 
 In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines.
+
+## Comments
+
+- 2026-11-01 — Lex: "Let the ai decide per job" on the time limit for long-running jobs, rather than a fixed six hours.
