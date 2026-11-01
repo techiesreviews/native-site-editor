@@ -46,6 +46,8 @@ Agent Kit is required. In `~/Projects/agent-kit`: `scripts/agents/kit doctor`, `
 
 ## Comments
 
+- 2026-11-01 — Lex: "Yes" to stopping agents sending project changes straight to a live site without review. He clarified this concerns projects, not websites created and saved with the Native Site Editor.
+
 - ke-68, 2026-10-30, before any code: every routine that pushes a landing or release branch today, read from the kit, `~/Projects/*/scripts`, T3's scheduled tasks, the user `systemd` units and the projects' workflows (the crontab could not be read: permission denied; none known). The guard reads `branches.release`; a live landing branch is guarded by naming it as the release branch too (`land` equal to `release`), so no `branches.live` key.
   - `kit next --start` claim commits: `HEAD:<land>` from Node inside the kit command; the hook never sees it. Still works.
   - `kit pr`: pushes only the PR branch, from Node; merges through `gh pr merge`. The hook never sees either. Still works.
