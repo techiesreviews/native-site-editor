@@ -146,3 +146,7 @@ Commits: "docs: 24-per-person-undo notes for the build (carets come with 22 and 
 - Validation gaps (gap): Open typing in the code pane: the case where Lex is still typing when Anna's change arrives is only tested against a fake Monaco (`tests/per-person-undo.test.ts` "typing in the code pane…"). In the spec, Lex waits until Anna sees his comment (up to 20 s), and his typing has committed long before that (`TYPING_SETTLE_MS` is 700). Add a step to `tests/native-save/native-live-text.spec.ts`: Lex keeps typing one character every 200 ms while Anna inserts into the lead. Wait for her text in Lex's pane, stop, press Ctrl+Z, and check that only Lex's typed run is gone on both tabs and Anna's words appear once.
 - Validation gaps (gap): Two of her insertions in one of his ranges: `rebaseChanges` has no test where she types twice inside one stretch of his, which makes three parts. Add a test: in "Lex hello", mine `{4,9,""}` and theirs `{5,5,"X"}` and `{7,7,"Y"}`. Both orders should give "Lex XY", and `moved.theirs` should be at 4 and 5.
 
+
+## Comments
+
+- 2026-11-01 — Lex: "Make it work more like Google docs" when someone else changes your words: undo what remains rather than dropping that step and older ones.
