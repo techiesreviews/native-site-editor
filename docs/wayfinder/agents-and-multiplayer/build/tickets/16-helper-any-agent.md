@@ -131,4 +131,6 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 ## Comments
 
+- 2026-11-01 — Lex: "Keep current" for the helper’s editor sign-in. He also said: "Btw for sharping an edit, that can also move to a shared component, just like the colors and brand preferences." Clarify which component he means.
+
 - Lex, 2026-10-31 ("Waiting for Lex" thread), on trying the helper with his own Claude Code (Tuesday pack 3 Nov): "It looks like 0.4 worked. I didn't get the secret chat box kind of thing, but I put it in the chat and we could work together." The first npm publish takes the recommended yes (no objection).
