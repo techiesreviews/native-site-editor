@@ -42,3 +42,7 @@ Verdict on the [retro check](../retro-check-2026-10-30.md): build smaller. The s
 ## Kit commands and evidence
 
 Agent Kit is required. In `~/Projects/agent-kit`: `scripts/agents/kit doctor`, `kit unit --affected`, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA, one close-up from the smoke page, and that the `browser-tester` branch and worktree were removed. This ticket's Done lands on `dev` here with `scripts/agents/kit pr` (docs tier).
+
+## Comments
+
+- 2026-11-01 — Lex: "Yes" to using the shared Playwright browser tester across projects and adding the missing actions.
