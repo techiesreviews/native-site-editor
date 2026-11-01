@@ -46,7 +46,7 @@ Agent Kit is required. In `~/Projects/agent-kit`: `kit doctor`, `kit unit --affe
 
 ## Comments
 
-- 2026-11-01 — Lex: "The releases from the main project, is all about the editor, script, idea, idea board, the high leel projects where code matters because people will be using it. It's not for my own website, that go live when I say it is ok from the browser". Remaining exceptions not yet explicitly approved.
+- 2026-11-01 — Lex: "The releases from the main project, is all about the editor, script, idea, idea board, the high leel projects where code matters because people will be using it. It's not for my own website, that go live when I say it is ok from the browser". Lex then answered: "For the rest I agree btw." Chat backups continue, shared tools release after checks, and the team asks before a critical security fix bypasses waiting work.
 
 - Lead, 2026-10-31, from ticket 90's Done. Also in this ticket:
   - **Sync `main` into `dev`.** lexvd-site, prompter, script and techies-reviews (one "Kit setup" commit each, from ke-84's `kit init --all` PRs into `main`) and agent-kit (9 commits) got commits straight onto `main` while ticket 90 ran. Bring each `main` into its `dev` through a branch from `origin/main` and `kit pr` into `dev`.
