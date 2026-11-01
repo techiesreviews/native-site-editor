@@ -38,3 +38,7 @@ Verdict on the [retro check](../retro-check-2026-10-30.md): build smaller. One s
 ## Kit commands and evidence
 
 Agent Kit is required. In `~/Projects/agent-kit`: `scripts/agents/kit doctor`, `kit unit --affected`, Playwright for the checks, `kit review`, the UX review (`kit ux`), `kit pr`; report the RESULT lines, the PR URL and merge SHA, and the close-ups (desktop and phone, light and dark). This ticket's Done lands on `dev` here with `scripts/agents/kit pr` (docs tier).
+
+## Comments
+
+- 2026-11-01 — Lex: "Yes, that also goes for the MCP connection implementation from the editor with the agent indication on the caret" in response to putting the slider in the shared kit. He also wants the editor’s agent connection and caret indication shared across projects.
