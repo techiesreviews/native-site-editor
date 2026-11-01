@@ -40,3 +40,7 @@ Verdict on the [retro check](../retro-check-2026-10-30.md): `wontfix` for now. T
 ## Kit commands and evidence
 
 Agent Kit is required. In `~/Projects/agent-kit`: `scripts/agents/kit doctor`, `kit unit --affected`, `kit unit --red` on its own branch, `kit review`, `kit pr`; report the RESULT lines, the PR URL and merge SHA. This ticket's Done lands on `dev` here with `scripts/agents/kit pr` (docs tier).
+
+## Comments
+
+- 2026-11-01 — Lex: "If that fits the factory/proces yes" to using a reviewer-checked rule now and automating only if the problem recurs. Lead to check the fit with the factory process.
