@@ -167,3 +167,7 @@ Before the review fixes:
 - Validation gaps (gap): Test 3 in `tests/native-save/native-live-text.spec.ts` ("a joiner whose only other tab leaves before answering…") would also pass through the 5 s timeout row. Sam's 20 s poll cannot tell the two apart, so the spec does not prove that Lex starts as soon as Anna leaves. Add: route Lex's socket as well, and after `anna.context.close()` expect Lex's first outgoing binary frame within 3 s (less than `LIVE_TEXT_CATCH_UP_MS`).
 - Validation gaps (gap): There is no test for `resumeDraft` when the room's concurrent text contains the tab's own change as a substring. Add to `tests/live-text.test.ts`: Anna types "e" alone, her reload loses the copy's write, and Lex has meanwhile inserted "hello" at the same offset. Both tabs must end with "hello" and Anna's "e". This fails with today's `includes` check.
 
+
+## Comments
+
+- 2026-11-01 — Lex: "Yes" to existing participants sending a newcomer the current changes, for now.
