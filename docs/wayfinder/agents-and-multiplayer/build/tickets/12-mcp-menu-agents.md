@@ -108,3 +108,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation gaps (gap): No test shows that Disconnect in another tab also clears the `here` set in the tab that made the stop. Add to `tests/agent-stops.test.ts`: `add` with storage refused, then `forget` the grant, then `has` is false.
 - Validation gaps (gap): No component-level unit test for `createAgentMenu` Stop and focus. Everything rests on the Playwright spec. Add a unit test with a fake `agents` port: Stop calls `stop(who)` and `requestTools.notify`, and focus goes to the select.
 
+
+## Comments
+
+- 2026-11-01 — Lex: "yes, we need to think about ux on how to do that, put fine for now" — keep browser-local Stop for now and consider the experience of stopping an agent across devices.
