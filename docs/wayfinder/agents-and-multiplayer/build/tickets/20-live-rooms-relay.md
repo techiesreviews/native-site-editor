@@ -109,3 +109,7 @@ Validation:
 - Validation gaps (gap): No test covers a hidden-tab heartbeat gap. Add a test in which a keyed holder's heartbeats stop for 60 s while its socket stays open and answers a probe or ping. A joiner then asks for the key, and the test asserts the holder is not closed and no new key is made.
 - Validation gaps (gap): Revoke after rebind has no test. Add a Miniflare test that joins an agent on branch A, rebinds its connection to branch B, revokes it, and asserts the socket in A's room closes with 4403. If the Done is changed to "within a minute" instead, assert that bound.
 
+
+## Comments
+
+- 2026-11-01 — Lex: "yes" to keeping the shared page key in participants’ browsers and the server passing scrambled messages without storing them.
