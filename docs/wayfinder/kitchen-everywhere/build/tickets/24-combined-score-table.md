@@ -72,3 +72,7 @@ RESULT: ok score all 1 project 70 pieces
 - Validation gaps (gap): `kit score --all` across several maps in one project is untested; every fixture project has one scoreboard folder. Add a second folder to alpha's `.scratch/scoreboard` (for example `_untracked/x.json` with another builder) and assert alpha's `all builders` pieces and rounds sum both folders.
 - Validation gaps (gap): The HTML page's "not read" corrections cell and the `corrections not read` note have no test. Call `allProjectsPage` with a project whose `total.corrections` is `null` and which has `correctionsProblem: "EACCES"`. Assert the cell reads `not read` and the note `<p class="note">beta: corrections not read (EACCES).</p>` is present.
 
+
+## Comments
+
+- 2026-11-01 — Lex: "it's better to learn from the mistake and understand how to prevent it the niext ime"; confirmed "yes" to project-level counts and focusing on what went wrong, why, and prevention.
