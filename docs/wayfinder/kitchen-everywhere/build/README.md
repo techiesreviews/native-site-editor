@@ -154,6 +154,9 @@ Lex (2026-10-30): the project threads stopped their own kit work and handed it h
 | [89 Every project lands on `dev`; `main` only takes `dev`](tickets/89-main-only-takes-dev.md) | S | claude | 90 |
 | [91 Skill guard: prefixed licence files in skill folders count as licences, so a project's own LICENSE lands (from idea-board)](tickets/91-skill-guard-licence-names.md) | XS | claude | – (next free slot) |
 | [92 Factory follow-ups from 84's reviews and rollout: stop-guard's count, pins in one place, model families, the talk-style lock, task slugs, the launcher's warnings](tickets/92-factory-follow-ups.md) | S | claude | 84 |
+| [93 Review round budget: 3 rounds, 5 only for risky areas, stop when only nits are left, later rounds look at changed code only (tstack review, Lex's OK 2026-11-04)](tickets/93-review-round-budget.md) | S | claude | – |
+| [94 Proof rule: evidence seen in this session, a "How I proved it" line in every pull request, no proof means a question to Lex (tstack review, Lex's OK 2026-11-04)](tickets/94-proof-rule.md) | S | claude | – (beside 93; both change the briefs) |
+| [95 One watcher per pull request: only the owner watches, children never watch, unwatch at hand-off (tstack review, Lex's OK 2026-11-04)](tickets/95-one-watcher-per-pull-request.md) | XS–S | claude | – (after 93 and 94 if they change `brief-lib.mjs`) |
 | [77 Check and define the retro tickets before any is built](tickets/77-check-the-retro-tickets.md) | S | claude | – (closed) |
 | ~~[70 `kit unit --red`](tickets/70-new-tests-must-go-red.md)~~ waits (rule in 67) | – | – | `wontfix` for now |
 | ~~[73 Motion check in `kit ux`](tickets/73-kit-ux-motion-check.md)~~ dropped | – | – | `wontfix` |
