@@ -161,7 +161,7 @@ Lex (2026-10-30): the project threads stopped their own kit work and handed it h
 
 ## 7. From the tstack review (fleet manager's research, Lex's OK 2026-11-04)
 
-Written, not built. Each waits on the one before it.
+Written, not built. 94 waits on 93 and 95 waits on 94. 93 also waits on the open tickets that share its kit files (listed in its row).
 
 | Slice | Size | Builder | Blocked by |
 | --- | --- | --- | --- |
