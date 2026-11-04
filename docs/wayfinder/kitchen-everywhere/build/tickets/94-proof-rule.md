@@ -27,7 +27,7 @@ In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`), checked on 2
 
 ## Done when
 
-- Tests, failing first: a pull request description without a "How I proved it" line is refused by `kit pr`; with the line it passes; a change with no proof makes `kit pr` print one plain question and refuse to land; a change proved in part lands with the unproved part named in the line; a visible change whose only test uses pretend data is treated as no proof; a `kit pr` run whose only green log is from an earlier session prints one plain question and refuses to land.
+- Tests, failing first: a pull request description without a "How I proved it" line is refused by `kit pr`; with the line it passes; a change with no proof makes `kit pr` print one plain question and refuse to land; a change proved in part lands with the unproved part named in the line; a visible change whose only test uses pretend data is treated as no proof; a `kit pr` run whose only green log is from an earlier session prints one plain question and refuses to land; a description that already says "How I proved it: tests passed", on a run with no unit, browser or review evidence from this session, prints one plain question and refuses to land.
 - The briefs and the rulebook carry the rule in plain words.
 - agent-kit's `npm test`, `npm run lint` and `npm run test:kit-clean` pass.
 
