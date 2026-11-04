@@ -11,7 +11,7 @@ blocked_by: [94-proof-rule]
 
 When two agents watch the same pull request, GitHub is asked twice as often and tokens are spent twice for nothing. This ticket makes one rule plain: each pull request has exactly one watcher, the thread that owns it. Helpers started by that thread never watch.
 
-Source: the fleet manager's tstack review (`/home/ubulex/Projects/fleet/tstack-review.md`, idea 4), approved by Lex on 2026-11-04. The review's smallest change, pasted here: a sentence in every worker brief (the review words it "you never watch a pull request you do not own; the parent unwatches at hand-off"; this ticket's wording is "the owner stops watching when it hands over") (`brief-lib.mjs`, `kit brief`), and in `kit wait` a lock file per pull request modelled on tstack's `pr-wait`. **Nothing is built yet.** Lex approved writing the ticket; building follows the board's order (the backlog puts the fleet manager first).
+Source: the fleet manager's tstack review (`/home/ubulex/Projects/fleet/tstack-review.md`, idea 4), approved by Lex on 2026-11-04. The review's smallest change, pasted here: a sentence in every worker brief (the review words it "you never watch a pull request you do not own; the parent unwatches at hand-off"; this ticket's wording is "the owner stops watching when it hands over") (`brief-lib.mjs`, `kit brief`). The review also suggests, as an optional later step, a lock file per pull request in `kit wait` modelled on tstack's `pr-wait`; the sentence is the work of this ticket and the lock stays optional. **Nothing is built yet.** Lex approved writing the ticket; building follows the board's order (the backlog puts the fleet manager first).
 
 ## Decided behaviour
 
@@ -28,7 +28,7 @@ In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`), checked on 2
 
 ## Done when
 
-- Tests, failing first: every stage's brief (`build`, `review`, `second-look`, `fix`) contains the sentence; if the lock is built, a second watcher for the same pull request exits at once and a stale lock (owner gone) is taken over.
+- Tests, failing first: every stage's brief (`build`, `review`, `second-look`, `fix`) contains the sentence; after the owner hands the pull request on, no watcher is left on it; if the lock is built, a second watcher for the same pull request exits at once and a stale lock (owner gone) is taken over.
 - The rulebook says the rule in the pull request station.
 - agent-kit's `npm test`, `npm run lint` and `npm run test:kit-clean` pass.
 

@@ -15,7 +15,7 @@ Source: the fleet manager's tstack review (`/home/ubulex/Projects/fleet/tstack-r
 
 ## Decided behaviour
 
-- **What counts as proof:** evidence the agent saw in this session: it reproduced the problem and watched it go away; it ran the project's own checks; it added a test that fails without the fix; or it ran the app and looked at what users see. A test that only checks against pretend (mocked) data is not proof of the real experience. Something remembered or copied from an earlier session is not proof.
+- **What counts as proof:** evidence the agent saw in this session: it reproduced the problem and watched it go away; it ran the project's own checks; it added a test that fails without the fix; or it ran the app and looked at what users see. A test that only checks against pretend (mocked) data can support the line only as "not proved: the real experience"; a change people see, with nothing else behind it, is the no-proof case below. Something remembered or copied from an earlier session is not proof.
 - **The pull request carries one line:** "How I proved it: …", in plain English. `kit pr` writes the line from the evidence the kit already collects (unit results, browser results, review evidence) and refuses a pull request description without it. Today `review-evidence.mjs` only saves a review's files; checking the line is new work, and this ticket adds it there or in `kit pr`, whichever is smaller.
 - **No proof at all:** the agent does not claim it works. The kit prints one plain question with a recommended answer and refuses to land the change; the lead posts that question in Lex's existing Waiting for Lex chat thread (the kit has no thread of its own and creates none). The work waits; it does not land with a guess.
 - **Proof for only part of the change:** the change may land, and the same "How I proved it" line names the unproved part ("not proved: …"), never hiding it.
@@ -27,7 +27,7 @@ In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`), checked on 2
 
 ## Done when
 
-- Tests, failing first: a pull request description without a "How I proved it" line is refused by `kit pr`; with the line it passes; a change with no proof makes `kit pr` print one plain question and refuse to land; a change proved in part lands with the unproved part named in the line.
+- Tests, failing first: a pull request description without a "How I proved it" line is refused by `kit pr`; with the line it passes; a change with no proof makes `kit pr` print one plain question and refuse to land; a change proved in part lands with the unproved part named in the line; a visible change whose only test uses pretend data is treated as no proof; a `kit pr` run whose only green log is from an earlier session prints one plain question and refuses to land.
 - The briefs and the rulebook carry the rule in plain words.
 - agent-kit's `npm test`, `npm run lint` and `npm run test:kit-clean` pass.
 
