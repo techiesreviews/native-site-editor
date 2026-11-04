@@ -24,12 +24,13 @@ Source: the fleet manager's tstack review (`/home/ubulex/Projects/fleet/tstack-r
 
 ## Files
 
-In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`), checked on 2026-11-04 that they exist: `brief-lib.mjs` (the brief text), `kit.d/brief`, `kit.d/wait` (for the optional lock; the `wait` command is listed in the kit's commands), `docs/kitchen.md` (the rulebook's pull request station), `README.md`, `tests/`.
+In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`), checked on 2026-11-04 that they exist: `brief-lib.mjs` (the brief text), `kit.d/brief`, `kit.d/wait` (for the optional lock; the `wait` command is listed in the kit's commands), `docs/kitchen.md` (station 9, Land, where `kit pr` is described), `README.md`, `tests/`.
 
 ## Done when
 
-- Tests, failing first: every stage's brief (`build`, `review`, `second-look`, `fix`) contains the sentence; after the owner hands the pull request on, no watcher is left on it; if the lock is built, a second watcher for the same pull request exits at once and a stale lock (owner gone) is taken over.
-- The rulebook says the rule in the pull request station.
+- The brief-sentence test is the proof for this ticket; the lock is optional and has its own tests only if built.
+- Tests, failing first: every stage's brief (`build`, `review`, `second-look`, `fix`) contains the sentence; if the lock is built, a second watcher for the same pull request exits at once and a stale lock (owner gone) is taken over.
+- The rulebook says the rule in station 9, Land.
 - agent-kit's `npm test`, `npm run lint` and `npm run test:kit-clean` pass.
 
 ## Kit commands and evidence

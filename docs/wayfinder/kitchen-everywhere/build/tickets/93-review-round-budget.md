@@ -4,7 +4,7 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [67-testing-and-review-rules, 83-agent-talk-style-trial, 92-factory-follow-ups, 74-failure-details-kept, 85-t3-native-factory-check, 89-main-only-takes-dev]
+blocked_by: [67-testing-and-review-rules, 83-agent-talk-style-trial, 92-factory-follow-ups, 74-failure-details-kept, 85-t3-native-factory-check, 89-main-only-takes-dev, 65-one-home-for-skills, 69-doctor-warns-no-tests-and-due-reminders, 71-shared-browser-tester, 76-shared-range-field, 78-kit-bg-outlives-the-session, 87-monthly-updates-and-security-hotfixes]
 ---
 
 ## Goal
@@ -16,20 +16,20 @@ Source: the fleet manager's tstack review (`/home/ubulex/Projects/fleet/tstack-r
 ## Decided behaviour
 
 - **Three rounds is the normal limit.**
-- **Words used:** a *blocker* is a P0 or P1 finding with evidence; a *nit* is only an optional note (the review's optional-nits list) or a comment-, doc- or format-only remark. A P2 is a real minor defect, not a nit, and still earns the next round. The loop stops early only when every finding is a nit in that sense.
-- **Five rounds only for risky areas:** security, permissions, sign-in (auth), data loss, or things that happen at the same time (concurrency). Rounds 2 and 3 always run when the round before left a blocker, so the fix for it is reviewed. The extra rounds (4 and 5) run only while a P0 or P1 is still open on a risky change. The next round is skipped for either of two reasons: the latest review left no P0 or P1, or the change has used its cap (3 rounds, or 5 when it is risky and a P0 or P1 is still open). An open P0 or P1 after the cap still refuses the landing.
-- **Stop early when only nits are left.** If a round returns only nits (as defined above), the review ends and the nits are written down as follow-ups; they never get a new round.
+- **Words used:** a *blocker* is a P0 or P1 finding with evidence; a *nit* is only an optional note (the review's optional-nits list) or a comment-, doc- or format-only remark. A P2 or P3 finding also ends the loop the same way a nit does: only a P0 or P1 earns another round.
+- **Five rounds only for risky areas:** security, permissions, sign-in (auth), data loss, or things that happen at the same time (concurrency). Rounds 2 and 3 always run when the round before left a blocker, so the fix for it is reviewed. The extra rounds (4 and 5) run only while a P0 or P1 is still open on a risky change. The loop stops early when no P0 or P1 is open. It also stops when the change has used its cap (3 rounds, or 5 when it is risky and a P0 or P1 is still open). An open P0 or P1 after the cap still refuses the landing.
+- **Stop early when only nits are left.** If a round returns no P0 or P1 (only nits, P2 or P3 findings), the review ends and those findings are written down as follow-ups; they never get a new round.
 - **Later rounds are smaller.** Round 1 looks at everything. Rounds 2 and later look only at the code that changed since the last round and at the findings still open.
 - **How a change counts as risky:** one small list of paths and words that name those five areas, kept in one place. The existing tier names in `pr-tier.mjs` (docs, css, tests, full) do not say which area a change touches, so they are not the switch; an ordinary code change never gets the extra rounds.
 - Nothing about merging, releases or `main` changes.
 
 ## Files
 
-In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`), checked on 2026-11-04 that they still exist: `review-findings.mjs` (`FIX_ROUNDS = 3` and `afterFixRounds`), `kit.d/slice` and `kit.d/pr` (the round cap and the nits-only stop change in these two, directly), `review-brief.mjs` (the words that tell the reviewer what to look at), `pr-tier.mjs` (read, not used as the switch), `kit.d/slice` loops while `state.rounds < flags.rounds`, and `flags.rounds` defaults to `FIX_ROUNDS`; `kit.d/pr` uses `afterFixRounds`, so after 3 rounds only P0 and P1 block landing; `kit.d/review` and `kit.d/fix` do not hold the cap and change only if the new rule needs them, `docs/kitchen.md` (station for review), `README.md`, `tests/`.
+In the kit repo (`~/Projects/agent-kit`, through its own `kit pr`), checked on 2026-11-04 that they still exist: `review-findings.mjs` (`FIX_ROUNDS = 3` and `afterFixRounds`), `kit.d/slice` and `kit.d/pr` (the round cap and the nits-only stop change in these two, directly), `review-brief.mjs` (the words that tell the reviewer what to look at), `pr-tier.mjs` (read, not used as the switch), `kit.d/slice` loops while `state.rounds < flags.rounds`, and `flags.rounds` defaults to `FIX_ROUNDS`; `kit.d/pr` uses `afterFixRounds`, so after 3 rounds `blockingFindings` drops P2 and P3, and a finding with no severity still blocks landing today (the slice loop also requires findings that still stop it). This ticket keeps that: a finding with no severity keeps blocking, and no change to it is part of the work; `kit.d/review` and `kit.d/fix` do not hold the cap and change only if the new rule needs them, `docs/kitchen.md` (station 8, Review), `README.md`, `tests/`.
 
 ## Done when
 
-- Tests, failing first, for each behaviour above: round 3 ends a normal review; round 4 and 5 run only for a risky change with a blocker (P0 or P1) open, and an ordinary change with a blocker open still stops after round 3; a risky change whose only P0 is fixed in round 1 still gets round 2, which reviews that fix, and round 3 is skipped when round 2 leaves no P0 or P1; rounds 4 and 5 start only while a P0 or P1 is open; an open P0 or P1 after the last allowed round still refuses the landing; a round whose only finding is a P2 bug does not end the loop, while a round of only optional nits or comment-only remarks does; round 2 is given only the changed code and the open findings.
+- Tests, failing first, for each behaviour above: round 3 ends a normal review; round 4 and 5 run only for a risky change with a blocker (P0 or P1) open, and an ordinary change with a blocker open still stops after round 3; a risky change whose only P0 is fixed in round 1 still gets round 2, which reviews that fix, and round 3 does not start when round 2 leaves no P0 or P1; rounds 4 and 5 start only while a P0 or P1 is open; an open P0 or P1 after the last allowed round still refuses the landing; a round whose findings are only P2, P3 or nits ends the loop; round 2 is given only the changed code and the open findings.
 - The review brief says the same in plain words, and the rulebook's review station (`docs/kitchen.md`) matches.
 - agent-kit's `npm test`, `npm run lint` and `npm run test:kit-clean` pass.
 - An ordinary change still stops after 3 rounds, and `kit slice` and `kit pr` keep working.
