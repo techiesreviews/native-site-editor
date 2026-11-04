@@ -166,6 +166,30 @@ export function onReset(hook: () => void) {
   resetHooks.add(hook);
   return () => { resetHooks.delete(hook); };
 }
+/** A code pane's editor while it shows a file to edit, for others' carets (src/components/live-carets.ts, ticket am-22).
+ * Typed only here: the view registers it, the carets load later and never from boot. */
+export interface CaretPane {
+  readonly scope: DraftScope;
+  readonly path: string;
+  readonly editor: import("./monaco").monaco.editor.ICodeEditor;
+  readonly monaco: typeof import("./monaco").monaco;
+  /** The pane's Undo list: a name tag's Undo is this pane's own step there. */
+  history(): string;
+}
+const panesForCarets = new Set<CaretPane>(), caretPaneWatchers = new Set<() => void>();
+const caretPanesMoved = () => { for (const watcher of [...caretPaneWatchers]) watcher(); };
+/** Shows `pane` to the carets until the returned call. */
+export function showCaretPane(pane: CaretPane) {
+  panesForCarets.add(pane);
+  caretPanesMoved();
+  return () => { if (panesForCarets.delete(pane)) caretPanesMoved(); };
+}
+export const caretPanes = (): readonly CaretPane[] => [...panesForCarets];
+/** Called when a pane comes or goes; returns its unsubscribe. */
+export function watchCaretPanes(watcher: () => void) {
+  caretPaneWatchers.add(watcher);
+  return () => { caretPaneWatchers.delete(watcher); };
+}
 
 // --- The store ---------------------------------------------------------------
 let shared: DraftTextStore | undefined;

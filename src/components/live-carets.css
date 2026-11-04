@@ -1,0 +1,164 @@
+/* Others' carets (src/components/live-carets.ts, ticket am-22): a thin line in their colour with a small
+   circle on top, opened into the name on hover or keyboard focus. The presence colours (src/theme.css):
+   the line in the colour, the tag light with a dark ink of its hue (4.5:1 and more in all four). */
+.live-caret {
+  --live-caret: var(--agent-presence);
+  --live-caret-pin: var(--agent-presence-pin);
+  --live-caret-ink: var(--agent-presence-ink);
+  /* The circle (Lex's approved mock-up); its press area comes from the theme's control sizes. */
+  --live-caret-mark: 18px;
+  position: relative;
+  inline-size: 0;
+  block-size: var(--live-caret-line, 19px);
+  /* Monaco gives every content widget a height: the caret itself takes no room and no clicks. */
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 160ms ease-out;
+}
+@starting-style {
+  .live-caret { opacity: 0; }
+}
+.live-caret[data-leaving] { opacity: 0; }
+/* Two carets at one spot: the tag being read sits on top (hover only where hover is real, U6). */
+.live-caret:has(.live-caret__flag:focus-within) { z-index: 1; }
+.live-caret[data-colour="1"] { --live-caret: var(--agent-presence-2); --live-caret-pin: var(--agent-presence-2-pin); --live-caret-ink: var(--agent-presence-2-ink); }
+.live-caret[data-colour="2"] { --live-caret: var(--agent-presence-3); --live-caret-pin: var(--agent-presence-3-pin); --live-caret-ink: var(--agent-presence-3-ink); }
+.live-caret[data-colour="3"] { --live-caret: var(--agent-presence-4); --live-caret-pin: var(--agent-presence-4-pin); --live-caret-ink: var(--agent-presence-4-ink); }
+
+.live-caret__line {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: -1px;
+  inline-size: 2px;
+  border-radius: 1px;
+  background: var(--live-caret);
+}
+
+/* The tag: a circle until opened, then the whole name and, while their change can be taken back, Undo.
+   Only its background (::before) is clipped to the circle, so the press areas below reach past it.
+   Closed, only the circle takes presses; open, the whole tag does. */
+.live-caret__flag {
+  --live-caret-press: max(var(--size-icon), var(--size-tap));
+  --live-caret-closed: inset(-2px calc(100% - var(--live-caret-mark) - 2px) -2px -2px round calc(var(--live-caret-mark) / 2 + 2px));
+  --live-caret-open: inset(-2px round calc(var(--live-caret-mark) / 2 + 2px));
+  position: absolute;
+  inset-block-end: calc(100% - 2px);
+  inset-inline-start: calc(var(--live-caret-mark) / -2);
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  block-size: var(--live-caret-mark);
+  padding-inline-end: 6px;
+  border-radius: calc(var(--live-caret-mark) / 2);
+  color: var(--live-caret-ink);
+  font: 700 var(--type-badge) / 1 system-ui, sans-serif;
+  white-space: nowrap;
+  cursor: default;
+  pointer-events: none;
+}
+.live-caret__flag::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--live-caret-pin);
+  box-shadow: 0 0 0 1.5px var(--live-caret);
+  clip-path: var(--live-caret-closed);
+}
+.live-caret[data-below] .live-caret__flag { inset-block: calc(100% - 2px) auto; }
+/* Near the pane's right edge the tag opens to the left of the caret, the circle staying on it. */
+.live-caret[data-flip] .live-caret__flag {
+  --live-caret-closed: inset(-2px -2px -2px calc(100% - var(--live-caret-mark) - 2px) round calc(var(--live-caret-mark) / 2 + 2px));
+  inset-inline: auto calc(var(--live-caret-mark) / -2);
+  flex-direction: row-reverse;
+  padding-inline: 6px 0;
+}
+.live-caret__mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: var(--live-caret-mark);
+  block-size: 100%;
+  pointer-events: auto;
+}
+/* The press areas: at least 24 px, 44 px on touch. The undo's sits around it; the circle's reaches up from the caret's
+   line (down from it, for a tag below), so a press beside the caret on its own line stays a press in the code. */
+.live-caret__mark::after, .live-caret__undo::after {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  inline-size: var(--live-caret-press);
+  block-size: var(--live-caret-press);
+  translate: -50% -50%;
+}
+.live-caret__mark::after { inset: auto auto 2px 50%; translate: -50% 0; }
+.live-caret[data-below] .live-caret__mark::after { inset: 2px auto auto 50%; }
+.live-caret__mark b { font: inherit; }
+/* Pressed: the circle takes the theme's pressed shade, as the undo does. */
+.live-caret__mark:active { border-radius: 50%; background: var(--selected); }
+.live-caret__program { inline-size: 11px; block-size: 11px; }
+/* A long name ends in an ellipsis, cut to the room the pane leaves beside the caret (live-carets.ts `place`, less the
+   circle, the undo, the padding and the part of the undo's press area past it): the undo and all its press area show. */
+.live-caret__name {
+  max-inline-size: max(1ch, min(16ch, var(--live-caret-room, 100vw) - var(--live-caret-mark) - 26px - (var(--live-caret-press) - 16px) / 2));
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A person's letter reads on into the rest of the name; opened to the left the name shows whole. */
+.live-caret__initial { display: none; }
+.live-caret__flag:not([data-agent]) .live-caret__name { margin-inline-start: -5px; }
+.live-caret__flag[data-agent] .live-caret__name { margin-inline-start: 1px; }
+.live-caret[data-flip] .live-caret__name { margin-inline: 0 2px; }
+.live-caret[data-flip] .live-caret__initial { display: inline; }
+/* A right-to-left name shows whole beside its circle, in its own direction. */
+.live-caret__flag[data-rtl] .live-caret__name { margin-inline: 2px 0; }
+.live-caret__flag[data-rtl] .live-caret__initial { display: inline; }
+
+.live-caret__undo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 16px;
+  block-size: 16px;
+  margin-inline: 4px -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.live-caret[data-flip] .live-caret__undo { margin-inline: -4px 4px; }
+.live-caret__undo[hidden] { display: none; }
+.live-caret__undo:active { background: var(--selected); }
+.live-caret__undo:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.live-caret__flag:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+
+/* Closed, the name and Undo are not there for presses or Tab; open (focus, or hover where hover is real) they are. */
+.live-caret__name, .live-caret__undo {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 160ms ease-out, visibility 0s linear 160ms;
+}
+.live-caret__flag:focus-within { pointer-events: auto; }
+.live-caret__flag:focus-within::before { clip-path: var(--live-caret-open); }
+.live-caret__flag:focus-within :is(.live-caret__name, .live-caret__undo) { opacity: 1; visibility: visible; transition: opacity 160ms ease-out, visibility 0s; }
+@media (hover: hover) and (pointer: fine) {
+  .live-caret:has(.live-caret__flag:hover) { z-index: 1; }
+  .live-caret__flag:hover { pointer-events: auto; }
+  .live-caret__flag:hover::before { clip-path: var(--live-caret-open); }
+  .live-caret__flag:hover :is(.live-caret__name, .live-caret__undo) { opacity: 1; visibility: visible; transition: opacity 160ms ease-out, visibility 0s; }
+  .live-caret__undo:hover { background: var(--hover); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .live-caret__flag::before { transition: clip-path 200ms cubic-bezier(0.23, 1, 0.32, 1); }
+}
+
+/* A selection: a light tint of their colour behind the text. */
+.live-caret-tint { background: color-mix(in oklch, var(--agent-presence) 22%, transparent); }
+.live-caret-tint--1 { background: color-mix(in oklch, var(--agent-presence-2) 22%, transparent); }
+.live-caret-tint--2 { background: color-mix(in oklch, var(--agent-presence-3) 22%, transparent); }
+.live-caret-tint--3 { background: color-mix(in oklch, var(--agent-presence-4) 22%, transparent); }

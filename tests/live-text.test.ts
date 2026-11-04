@@ -10,7 +10,9 @@ import { browserKeeper, LIVE_TEXT_CATCH_UP_MS, startLiveText, typedSince, type C
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 import { forEachAwait, type AwaitRace } from "./support/await-race";
-import type { LiveClock, LiveRoomOptions } from "../src/live-room";
+import type { LiveClock, LivePeer, LiveRoomOptions } from "../src/live-room";
+import type { CaretShare } from "../src/live-text";
+import type { JsonValue } from "../shared/agent-command";
 import type { LiveAccess } from "../shared/live-room";
 
 const scope: DraftScope = { account: "lex", repoId: 501, repo: "lex/starter", branch: "main" };
@@ -27,15 +29,20 @@ const quiet = () => new Promise(resolve => setTimeout(resolve, 40));
 /** One room for the file: frames go to everyone else in it, members hear joins and leaves, a joiner holds the key at once. */
 function fakeRoom() {
   /** `cut`: nothing in or out; `mute`: what it sends is lost, what others send still arrives. */
-  type Member = { id: string; options: LiveRoomOptions; access: LiveAccess; cut: boolean; mute?: boolean };
+  type Member = { id: string; options: LiveRoomOptions; access: LiveAccess; cut: boolean; mute?: boolean; state?: JsonValue };
   const members = new Set<Member>();
   let next = 0;
   const others = (me: Member) => new Map([...members].filter(other => other !== me).map(other => [other.id, other.access]));
-  const tell = (me: Member) => { for (const other of members) if (other !== me) other.options.onMembers?.(others(other)); };
+  /** Presence as the room keeps it: everyone else who said something, with what they said last. */
+  const peers = (me: Member) => new Map<string, LivePeer>([...members].filter(other => other !== me && other.state !== undefined)
+    .map(other => [other.id, { access: other.access, state: other.state! }]));
+  const tell = (me: Member) => { for (const other of members) if (other !== me) { other.options.onMembers?.(others(other)); other.options.onPeers?.(peers(other)); } };
   return {
     frames: 0,
     /** Every frame sent, by sender. */
     log: [] as { from: string; bytes: Uint8Array }[],
+    /** Every presence said, by sender. */
+    said: [] as { from: string; state: JsonValue }[],
     members,
     open(options: LiveRoomOptions, access: LiveAccess = "editor") {
       const me: Member = { id: String(++next), options, access, cut: false };
@@ -57,6 +64,11 @@ function fakeRoom() {
           return true;
         },
         close() { if (members.delete(me)) tell(me); },
+        setPresence(state: JsonValue) {
+          room.said.push({ from: me.id, state });
+          me.state = state;
+          for (const other of members) if (other !== me && !other.cut) other.options.onPeers?.(peers(other));
+        },
       };
     },
   };
@@ -68,7 +80,7 @@ function keeper(): CopyKeeper & { copies: Map<string, KeptCopy | undefined> } {
   return { copies, read: async key => copies.get(key), write: (key, copy) => { copies.set(key, copy); } };
 }
 
-function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?: string; clock?: LiveClock; keeper?: CopyKeeper; race?: AwaitRace; persistence?: DraftPersistence; loadYjs?: () => Promise<typeof import("yjs")> } = {}) {
+function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?: string; clock?: LiveClock; keeper?: CopyKeeper; race?: AwaitRace; persistence?: DraftPersistence; loadYjs?: () => Promise<typeof import("yjs")>; carets?: (share: CaretShare) => () => void } = {}) {
   const store = createDraftStore(options.persistence ? { persistence: options.persistence } : {});
   store.open(scope, path, { text: base, baseSha: options.baseSha ?? sha });
   if (text !== base) store.edit({ scope, path, text, label: "Earlier draft" });
@@ -83,6 +95,7 @@ function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?
     keeper: { read: key => race("kept copy", (key: string) => kept.read(key))(key).finally(() => { keptRead = true; }), write: (key, copy) => kept.write(key, copy) },
     openRoom: roomOptions => { socket = room.open(roomOptions); sockets.push(socket.me.id); return socket; },
     loadYjs: race("Yjs", () => { yjsLoads++; return options.loadYjs ? options.loadYjs() : import("yjs"); }),
+    ...(options.carets ? { loadCarets: race("carets", async () => options.carets!) } : {}),
   });
   return {
     store, openFile, stop, keeper: kept, sockets,
@@ -822,3 +835,152 @@ test("a name-tag Undo is Lex's own step: his Undo brings Anna's words back on bo
   await until(() => anna.text === base && lex.text === base, "taken again on both");
   anna.stop(); lex.stop();
 });
+
+test("carets (am-22): each tab tells the room where its caret is; others read it in their text, it stays by the same words, and it names the author the name-tag Undo takes", async () => {
+  const room = fakeRoom();
+  const shares = new Map<string, CaretShare>();
+  const drawn = (who: string) => (share: CaretShare) => { shares.set(who, share); return () => { shares.delete(who); }; };
+  const anna = tab(room, base, { carets: drawn("anna") });
+  await quiet();
+  assert.equal(shares.size, 0, "alone with the file: no carets are loaded");
+  const lex = tab(room, base, { carets: drawn("lex") });
+  await until(() => shares.size === 2, "carets drawn once someone else is here");
+  await quiet();
+  const bread = base.indexOf("bread");
+  shares.get("anna")!.own(() => ({ anchor: bread, head: bread + "bread".length }));
+  await until(() => shares.get("lex")!.carets().length === 1, "Anna's caret at Lex's");
+  const [caret] = shares.get("lex")!.carets();
+  assert.deepEqual({ name: caret.name, anchor: caret.anchor, head: caret.head, agent: caret.agent }, { name: "lex", anchor: bread, head: bread + 5, agent: undefined });
+  assert.deepEqual(shares.get("anna")!.carets(), [], "Lex has said nowhere yet");
+
+  // Lex types before her selection: it stays on "bread", read again in his new text.
+  let moved = 0;
+  const unwatch = shares.get("lex")!.onCarets(() => { moved++; });
+  lex.type(4, "Warm ");
+  await until(() => anna.text === lex.text, "his edit on both");
+  assert.ok(moved > 0, "the caret is drawn again");
+  assert.deepEqual(shares.get("lex")!.carets().map(({ anchor, head }) => [anchor, head]), [[bread + 5, bread + 10]]);
+  unwatch();
+
+  // The caret names Anna by the Yjs client id her own changes carry: its name tag's Undo takes back her words only.
+  anna.type(0, "<!-- Anna -->");
+  await until(() => lex.text.startsWith("<!-- Anna -->"), "her edit");
+  const author = shares.get("lex")!.carets()[0].author;
+  assert.equal(author, authorOf(room, anna));
+  assert.equal(shares.get("lex")!.canUndo(author), true);
+  assert.equal(shares.get("lex")!.undo(author, draftHistory()), true);
+  await until(() => !anna.text.includes("Anna") && lex.text === anna.text, "her words gone on both");
+  assert.ok(lex.text.includes("Warm "), "Lex's words stay");
+
+  // An agent in the room: its caret says which program it works in; a person's never does, whatever it says.
+  const said = [...room.members].find(member => anna.sockets.includes(member.id))!.state as { caret: JsonValue };
+  const agent = room.open({ repo: scope.repo, branch: scope.branch, file: path, onMessage: () => undefined }, "agent");
+  await quiet();
+  agent.setPresence({ author: 7, name: "Claude Code", agent: "claude-code", caret: said.caret });
+  await until(() => shares.get("lex")!.carets().length === 2, "the agent's caret");
+  assert.deepEqual(shares.get("lex")!.carets().find(item => item.author === 7)?.agent, "claude-code");
+  // Gone from the room: its caret goes.
+  agent.close();
+  await until(() => shares.get("lex")!.carets().length === 1, "the agent left");
+
+  // Leaving the file takes this tab's carets away.
+  anna.stop();
+  assert.equal(shares.has("anna"), false);
+  lex.stop();
+  assert.equal(shares.size, 0);
+});
+
+test("a caret whose author someone else here also claims (or this tab's own) offers no Undo, whatever name it says", async () => {
+  const room = fakeRoom();
+  const shares = new Map<string, CaretShare>();
+  const drawn = (who: string) => (share: CaretShare) => { shares.set(who, share); return () => { shares.delete(who); }; };
+  const anna = tab(room, base, { carets: drawn("anna") }), lex = tab(room, base, { carets: drawn("lex") });
+  await until(() => shares.size === 2, "carets drawn");
+  await quiet();
+  shares.get("anna")!.own(() => ({ anchor: 4, head: 4 }));
+  anna.type(4, "Warm ");
+  await until(() => shares.get("lex")!.carets().length === 1 && lex.text.includes("Warm"), "Anna's caret and words");
+  const author = authorOf(room, anna);
+  assert.equal(shares.get("lex")!.carets()[0].contested, undefined, "hers alone: her tag can take back her words");
+  // Someone else in the room says it is "Lex", with Anna's author id, and its caret where hers is.
+  const said = [...room.members].find(member => anna.sockets.includes(member.id))!.state as { caret: JsonValue };
+  const spoof = room.open({ repo: scope.repo, branch: scope.branch, file: path, onMessage: () => undefined });
+  await quiet();
+  spoof.setPresence({ author, name: "Lex", caret: said.caret });
+  await until(() => shares.get("lex")!.carets().length === 2, "the second claim");
+  assert.deepEqual(shares.get("lex")!.carets().map(caret => [caret.author, caret.contested]), [[author, true], [author, true]]);
+  spoof.close();
+  await until(() => shares.get("lex")!.carets().length === 1, "the claim gone");
+  assert.equal(shares.get("lex")!.carets()[0].contested, undefined);
+  anna.stop(); lex.stop();
+});
+
+test("stopping at any await of loading the carets starts no carets and tells the room no caret", async () => {
+  type Run = { done: Promise<unknown>; room: ReturnType<typeof fakeRoom>; anna?: ReturnType<typeof tab>; lex?: ReturnType<typeof tab>; started: number; at: number };
+  const points = await forEachAwait((race): Run => {
+    const run: Run = { done: Promise.resolve(), room: fakeRoom(), started: 0, at: 0 };
+    run.done = (async () => {
+      run.anna = tab(run.room, base, { race, carets: share => { run.started++; share.own(() => ({ anchor: 1, head: 1 })); return () => undefined; } });
+      await quiet();
+      run.lex = tab(run.room);
+      await until(() => run.anna!.yjsLoads > 0 && run.lex!.yjsLoads > 0, "both loading");
+      await new Promise(resolve => setTimeout(resolve, 120));
+    })();
+    return run;
+  }, run => {
+    run.at = run.room.said.length;
+    run.anna!.stop();
+  }, async run => {
+    await quiet();
+    assert.equal(run.started, 0, "no carets after the stop");
+    assert.deepEqual(run.room.said.slice(run.at).filter(item => run.anna!.sockets.includes(item.from)), [], "no caret told after the stop");
+    run.lex?.stop();
+  });
+  assert.ok(points >= 2, `the carets' load was disturbed (${points})`);
+});
+
+test("a joiner's caret placed before it caught up is told where it is in the shared text", async () => {
+  const room = fakeRoom();
+  const shares = new Map<string, CaretShare>();
+  const drawn = (who: string) => (share: CaretShare) => { shares.set(who, share); return () => { shares.delete(who); }; };
+  // Lex shares a text with more in it; his room is caught up when Anna arrives with GitHub's text as her draft.
+  const lex = tab(room, `<!-- Lex's long note at the top of the page -->\n${base}`, { carets: drawn("lex") });
+  await quiet();
+  // Anna's pane places her caret on "seven" at once, in her own text, before the room's copy reaches her.
+  const anna = tab(room, base, { carets: share => {
+    shares.set("anna", share);
+    share.own(() => ({ anchor: anna.text.indexOf("seven"), head: anna.text.indexOf("seven") + "seven".length }));
+    return () => { shares.delete("anna"); };
+  } });
+  await until(() => anna.text === lex.text, "Anna caught up");
+  await until(() => shares.get("lex")?.carets().length === 1, "her caret at Lex's");
+  const [caret] = shares.get("lex")!.carets();
+  assert.equal(lex.text.slice(caret.anchor, caret.head), "seven", "on the same word in the shared text");
+  anna.stop(); lex.stop();
+});
+
+test("a caret said in another named type is not drawn, and makes no type in this copy", async () => {
+  const room = fakeRoom();
+  const shares = new Map<string, CaretShare>();
+  const drawn = (who: string) => (share: CaretShare) => { shares.set(who, share); return () => { shares.delete(who); }; };
+  // Every Doc Lex's tab makes, to look at their root types.
+  const docs: import("yjs").Doc[] = [];
+  const loadYjs = async () => {
+    const Y = await import("yjs");
+    return { ...Y, Doc: class extends Y.Doc { constructor(...args: ConstructorParameters<typeof Y.Doc>) { super(...args); docs.push(this); } } } as typeof Y;
+  };
+  const anna = tab(room, base, { carets: drawn("anna") }), lex = tab(room, base, { carets: drawn("lex"), loadYjs });
+  await until(() => shares.size === 2 && anna.text === lex.text, "carets drawn");
+  await quiet();
+  const stranger = room.open({ repo: scope.repo, branch: scope.branch, file: path, onMessage: () => undefined });
+  await quiet();
+  const elsewhere = { tname: "x", item: null, type: null, assoc: 0 };
+  stranger.setPresence({ author: 9, name: "Sam", caret: { anchor: elsewhere, head: elsewhere } });
+  await quiet();
+  assert.deepEqual(shares.get("lex")!.carets(), []);
+  assert.ok(docs.some(doc => doc.share.has("source")), "the copy is among them");
+  assert.ok(docs.every(doc => !doc.share.has("x")), "no type \"x\" made");
+  stranger.close();
+  anna.stop(); lex.stop();
+});
+
