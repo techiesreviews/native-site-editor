@@ -343,6 +343,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     const text = doc.getText("source");
     if (seed) Y.applyUpdate(doc, seed, START);
     let synced = false, starting = false, waiting: unknown, keeping: unknown;
+    /** Whether the text changed in the update being applied (`receive`); set by the text's observer. */
+    let textChanged = false;
     /** The Yjs client id this tab's draft changes entered the copy under (`begin`), told to the room so they carry its name. */
     let startClient: number | undefined;
     // Someone else's own changes (their UPDATE frames), each under its author's origin, for the name-tag Undo. Catch-up
@@ -454,6 +456,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (synced && keeping === undefined) keeping = clock.setTimeout(keep, KEEP_MS);
     });
     text.observe((event, transaction) => {
+      textChanged = true;
       if (synced && transaction.origin !== LOCAL)
         follow(deltaChanges(event.delta as { retain?: number; insert?: unknown; delete?: number }[]), taking && transaction.origin === taking.undo ? taking : undefined);
       // Any change can make someone's change undoable or not (their words removed since): the name tags look again.
@@ -642,11 +645,13 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         if (who) { (ports.authors ?? saveAuthors()).note(start.key, baseSha, who); unnamed.delete(id); }
       }
     }
-    /** The clients whose text an update just added to this copy (their clock moved on from `before`): this tab's own, and
-     * the agents it writes for, are not others'. A catch-up repeating text this copy holds already names no one again. */
-    function heardFrom(before: Map<number, number>) {
-      for (const [client, clock] of Y.decodeStateVector(Y.encodeStateVector(doc))) {
-        if (clock <= (before.get(client) ?? 0)) continue;
+    /** The clients whose text an update just added to this copy (their clock moved on from `before`), and `sender`, whose
+     * own change (an UPDATE frame) changed the text: a deletion adds no text of its own, only marks others' as deleted, so
+     * its author shows only as the frame's sender. This tab's own ids, and the agents it writes for, are not others'. A
+     * catch-up repeating text this copy holds already names no one again. */
+    function heardFrom(before: Map<number, number>, sender?: number) {
+      const clients = [...Y.decodeStateVector(Y.encodeStateVector(doc))].filter(([client, clock]) => clock > (before.get(client) ?? 0)).map(([client]) => client);
+      for (const client of sender === undefined ? clients : [...clients, sender]) {
         const local = authors.get(client);
         if (client === me || client === startClient || (local && agentIds.has(local.origin)) || unnamed.size >= UNNAMED_LIMIT) continue;
         unnamed.add(client);
@@ -681,9 +686,10 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         if (kind !== REPLY && kind !== UPDATE) return;
         // A frame naming an agent whose text this tab writes is not that agent's here: only this tab writes under its id.
         const local = authors.get(id), agentHere = local !== undefined && agentIds.has(local.origin);
-        const before = Y.decodeStateVector(Y.encodeStateVector(doc));
-        Y.applyUpdate(doc, payload, kind === UPDATE && id !== me && !agentHere ? authorOrigin(id) : REMOTE);
-        heardFrom(before);
+        const before = Y.decodeStateVector(Y.encodeStateVector(doc)), theirChange = kind === UPDATE && id !== me && !agentHere;
+        textChanged = false;
+        Y.applyUpdate(doc, payload, theirChange ? authorOrigin(id) : REMOTE);
+        heardFrom(before, theirChange && textChanged ? id : undefined);
         // Caught up only by an answer to its own request: one to another tab's holds only what that tab lacked.
         if (kind === REPLY && theirs && id === me && !synced) void begin(true);
       } catch { /* A broken update is dropped; the next catch-up brings what it lacked. */ }
