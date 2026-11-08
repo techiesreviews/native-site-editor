@@ -44,7 +44,8 @@ test("authenticated boot GETs carry matching noncredential session tags and reta
     assert.equal(tag.includes("private-token"), false);
     assert.equal((await read("/api/repositories", tag)).status, 401);
     assert.equal(session.headers.get("cache-control"), "no-store");
-    assert.equal(repos.headers.get("X-Repository-Onboarding"), id === other ? "install" : "none");
+    // "other" reaches lex's installation (GitHub lists it only to a collaborator, slice am-31), so it has a site too.
+    assert.equal(repos.headers.get("X-Repository-Onboarding"), "none");
     const sessionBody = await session.json() as { user: { login: string } };
     assert.equal(sessionBody.user.login, id === other ? "other" : "lex");
     assert.equal("sessionId" in sessionBody, false);

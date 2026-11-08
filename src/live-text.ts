@@ -52,9 +52,10 @@
 // ignored, and a tab counts as caught up only by a REPLY to its own request:
 // one to someone else's holds only what they lacked.
 //
-// Live sharing is off unless switched on (`liveSharingOn`): the ticket's
-// default is no room socket for a tab alone with a file, and no cheaper way to
-// be found exists. Lex decides in the Tuesday pack whether it is on for all.
+// Live sharing is on for every signed-in tab (`liveSharingOn`; Lex, 2026-10-31:
+// "Yes, switch it on for everyone"), so GitHub collaborators on the same
+// repository and branch meet on the page with no link (slice am-31). A tab
+// alone with a file holds one quiet room socket; nothing is stored on the server.
 
 import { effect, untracked, type ReadonlySignal } from "@preact/signals-core";
 import { applyChanges, diffRange, type DraftEvent, type DraftTextStore, type TextChange } from "./draft-store";
@@ -743,11 +744,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   return { stop, authors, carets };
 }
 
-/** The switch for live sharing: on in this browser when its localStorage holds `native-site-editor:live-sharing` = `on`
- * (and in tests that pass `on`). Off by default until Lex decides (Tuesday pack). */
+/** The switch for live sharing: on unless this browser's localStorage holds `native-site-editor:live-sharing` = `off`
+ * (tests pass `on`). On by default since slice am-31 (Lex, 2026-10-31); `off` keeps a browser out of every room. */
 export const LIVE_SHARING_KEY = "native-site-editor:live-sharing";
 function liveSharingOn() {
-  try { return globalThis.localStorage?.getItem(LIVE_SHARING_KEY) === "on"; } catch { return false; }
+  try { return globalThis.localStorage?.getItem(LIVE_SHARING_KEY) !== "off"; } catch { return true; }
 }
 
 /**

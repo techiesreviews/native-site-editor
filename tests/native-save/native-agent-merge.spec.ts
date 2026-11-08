@@ -4,7 +4,7 @@ import { openEditor } from "../support/scenarios";
 import { editorMounted } from "./drafts";
 
 // Agents join the merge (ticket am-25): Lex and Anna, two browsers on the same page with live sharing switched on
-// (it is off by default), and an agent connected over MCP whose commands Lex's tab receives. The agent rewrites the
+// (on by default since slice am-31), and an agent connected over MCP whose commands Lex's tab receives. The agent rewrites the
 // heading while Lex types in the next sentence; both land and every copy matches. The agent's words join the shared
 // copy under its own Yjs client id: its caret shows in the code pane with its name, and its tag's undo takes back only
 // its words, in both tabs. Default fixture group: the real Worker route, relay and live rooms (src/live-text.ts).

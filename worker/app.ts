@@ -1006,7 +1006,8 @@ async function route(
     let next = state.kind === "oauth" ? state.returnTo ?? "/" : "/";
     const fromInstall = Boolean(installCookie) || (state.kind === "oauth" && state.fromInstall === true);
     if (next === "/" && !fromInstall) {
-      const owners = await new GitHub(token.access_token, fetcher).ownerInstallations(user.login).catch(() => undefined);
+      // A collaborator on someone else's site reaches its installation: they go straight in, not to install the App.
+      const owners = await new GitHub(token.access_token, fetcher).reachableInstallations(user.login).catch(() => undefined);
       if (owners && owners.length === 0) next = "/auth/install";
     }
     return redirect(next, [

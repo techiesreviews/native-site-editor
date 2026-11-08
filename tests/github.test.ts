@@ -134,7 +134,7 @@ test("repository discovery can reuse the installation lookup for an empty accoun
     }
     return reply({ repositories: [] });
   });
-  const owners = github.ownerInstallations("lex");
+  const owners = github.reachableInstallations("lex");
   assert.deepEqual(await github.repositories("lex", 0, owners), []);
   assert.equal((await owners).length, 1);
   assert.equal(lookups, 1);
@@ -182,7 +182,7 @@ test("an ordered installation failure rejects without waiting for later stalled 
   }
 });
 
-test("repository discovery paginates and excludes unselected repositories and other personal accounts", async () => {
+test("repository discovery paginates and excludes unselected repositories and ones another installation's account does not own", async () => {
   const calls: string[] = [];
   const github = new GitHub("secret", async (input, init) => {
     assert.equal(new Headers(init?.headers).get("User-Agent"), "native-site-editor");
@@ -206,20 +206,25 @@ test("repository discovery paginates and excludes unselected repositories and ot
       });
     return reply({ repositories: [repo] });
   });
-  assert.equal((await github.repositories("lex")).length, 100);
+  // someone-else's installation is read (a collaboration), but a repository it lists under lex's name is not taken from it.
+  const listed = await github.repositories("lex");
+  assert.equal(listed.length, 100);
+  assert.ok(listed.every((item) => item.installation_id === 1));
   assert.ok(calls.some((call) => call.includes("page=2")));
-  assert.ok(!calls.some((call) => call.includes("/installations/2/")));
+  assert.ok(calls.some((call) => call.includes("/installations/2/")));
   await assert.rejects(
     () => github.authorizeRepository("lex", "lex/not-selected"),
     (error: HttpError) => error.status === 403,
   );
 });
 
-/** A fake GitHub with a personal and an organisation installation, each listing its own repositories. */
+/** A fake GitHub with a personal and an organisation installation, each listing its own repositories, and another
+ * person's personal installation where the user collaborates on one repository (GitHub lists only that one). */
 function withOrganisation() {
   const calls: string[] = [];
   const mine = { ...repo, id: 1, name: "mine", full_name: "lex/mine", size: 500_000 };
   const theirs = { ...repo, id: 2, name: "site", full_name: "company/site", owner: { login: "company", type: "Organization" } };
+  const shared = { ...repo, id: 4, name: "their-site", full_name: "someone-else/their-site", owner: { login: "someone-else", type: "User" } };
   const github = new GitHub("secret", async (input) => {
     const url = new URL(String(input));
     calls.push(url.pathname);
@@ -232,6 +237,7 @@ function withOrganisation() {
         ],
       });
     if (url.pathname === "/user/installations/11/repositories") return reply({ repositories: [mine] });
+    if (url.pathname === "/user/installations/33/repositories") return reply({ repositories: [shared] });
     // GitHub lists only the organisation repositories the user can reach.
     if (url.pathname === "/user/installations/22/repositories")
       return reply({ repositories: [theirs, { ...theirs, id: 3, name: "x", full_name: "other/x", owner: { login: "other", type: "Organization" } }] });
@@ -241,24 +247,31 @@ function withOrganisation() {
   return { github, calls };
 }
 
-test("the listing merges the personal account's and organisations' repositories, each with its installation", async () => {
-  const { github, calls } = withOrganisation();
+test("the listing merges the personal account's, organisations' and collaborations' repositories, each with its installation", async () => {
+  const { github } = withOrganisation();
   const listed = await github.repositories("lex");
   assert.deepEqual(listed.map((item) => [item.full_name, item.owner.type, item.installation_id, item.size]), [
     ["lex/mine", "User", 11, 500_000],
     ["company/site", "Organization", 22, undefined],
+    ["someone-else/their-site", "User", 33, undefined],
   ]);
-  assert.ok(!calls.includes("/user/installations/33/repositories"), "another personal account's installation is not read");
+  assert.deepEqual(await github.reachableInstallations("lex"), [
+    { id: 11, login: "lex", type: "User" },
+    { id: 22, login: "company", type: "Organization" },
+    { id: 33, login: "someone-else", type: "User" },
+  ]);
+  // Creating a repository is offered only on the user's own account and organisations.
   assert.deepEqual(await github.ownerInstallations("lex"), [
     { id: 11, login: "lex", type: "User" },
     { id: 22, login: "company", type: "Organization" },
   ]);
 });
 
-test("a repository outside the listing is refused, an organisation's inside it is authorised", async () => {
+test("a repository outside the listing is refused; an organisation's or a collaboration's inside it is authorised", async () => {
   const { github, calls } = withOrganisation();
   assert.equal((await github.authorizeRepository("lex", "company/site")).installation_id, 22);
-  for (const name of ["other/x", "company/hidden", "someone-else/their-site"])
+  assert.equal((await github.authorizeRepository("lex", "someone-else/their-site")).installation_id, 33);
+  for (const name of ["other/x", "company/hidden", "someone-else/hidden"])
     await assert.rejects(() => github.authorizeRepository("lex", name), (error: HttpError) => error.status === 403, name);
   assert.ok(!calls.some((path) => path.startsWith("/repos/")), "nothing was fetched from a refused repository");
 });
