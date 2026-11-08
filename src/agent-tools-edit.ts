@@ -8,7 +8,7 @@ import { elementsNow, noteOwnChange, readText, rememberText } from "./agent-part
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
 import { agentCommandFiles, agentCommandSignals, createAgentTools, siteCommandPins } from "./agent-tools";
 import { agentFileReader, type AgentReadPorts } from "./agent-tools-read";
-import { changesWork, landWaited, waitedReplacements } from "./agent-site";
+import { changesWork, landWaited, preparedOn, waitedReplacements } from "./agent-site";
 import { workingPart } from "./working-part";
 import { keptChange } from "./agent-changes";
 
@@ -251,6 +251,9 @@ export function createAgentEditTools(options: Options) {
           // must not tell it back); a page command's hash is known only once it lands (below).
           if (command.operation === "write_file")
             noteOwnChange(workspace, request.grantId, ownFiles(request, command, { result: { hash: await textHash(command.content) } }));
+          // The text its change was made on: it lands on what the user typed since, apart from it (ticket am-25).
+          const on = command.operation === "write_file" && typeof command.expectedHash === "string" ? readOnce(command.expectedHash) : undefined;
+          if (on === undefined) preparedOn.delete(command); else preparedOn.set(command, on);
           ran = true;
           try { outcome = await options.run(command); break; }
           catch (error) {

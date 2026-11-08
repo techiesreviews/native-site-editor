@@ -12,11 +12,11 @@ import { expandStyleImports } from "../shared/css-imports";
 import { touchesGithubConfig, GITHUB_CONFIG_REFUSED, touchesMediaRecords, MEDIA_RECORDS_REFUSED } from "../shared/protected-paths";
 import { nativePageRoute } from "../shared/native-routes";
 import { isNewDraft, newDraftPaths } from "../shared/site-overlay";
-import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, minimalTextEdit, rebaseTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import { mediaChanges, type MediaTool } from "../shared/agent-media";
 import { isAtomicOperation } from "../shared/agent-tool-table";
-import { agentName, type AgentWho, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, WORKING_NOTE, outlineId, PICTURE_PHONE_HEIGHT, PICTURE_PHONE_WIDTH, WORKING_HERE_MS, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement, type AgentWorking } from "../shared/agent";
+import { agentName, agentWho, type AgentWho, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, WORKING_NOTE, outlineId, PICTURE_PHONE_HEIGHT, PICTURE_PHONE_WIDTH, WORKING_HERE_MS, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement, type AgentWorking } from "../shared/agent";
 import { lineOf, type WorkingPart } from "./working-part";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./drafts";
@@ -24,6 +24,7 @@ import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-c
 import { changedSinceRead } from "../shared/agent-edit";
 import { findPageRef } from "../shared/agent-read";
 import { discardedMessage, discardPlan, keptChange, noteAgentChange } from "./agent-changes";
+import { writeAs } from "./live-author";
 import { applyReplacements } from "../shared/agent-replacements";
 import { toPageAddress } from "../shared/site-rules";
 import type { AgentTextCommit } from "./editor-workspace";
@@ -472,6 +473,18 @@ function commandSpan(command: AgentCommand, source: string): Span | "file" | und
   return undefined;
 }
 
+/**
+ * A file write's text as the agent's change was made on it (ticket am-25): the text its `expectedHash` names, while this
+ * tab keeps it (src/agent-tools-edit.ts sets it before each run). With it, the change lands on what the user typed since,
+ * apart from it, like typing; a change where they typed is still refused.
+ */
+export const preparedOn = new WeakMap<AgentCommand, string>();
+/** `command`'s change made on `now` instead of the text it was made on; undefined on a clash or without that text. */
+export function agentTextOn(command: AgentCommand, now: string) {
+  const read = preparedOn.get(command);
+  return read === undefined ? undefined : rebaseTextEdit(read, command.content, now);
+}
+
 /** An edit_file that waited for the user (ticket 52): its replacements, made again on the text it lands on. */
 export const waitedReplacements = new WeakMap<AgentCommand, { oldText: string; newText: string; all?: boolean }[]>();
 /**
@@ -677,7 +690,8 @@ export interface AgentSiteActions {
   /** Plans the component loader a page needs once it holds `next` (a section added). */
   loaderPlan?: LoaderPlanner;
   /** Writes `path` as a draft (a new file when `create`), as one operation Undo takes back; an error message, or nothing. */
-  writeDraft(path: string, content: string, create: boolean, expected?: string): Promise<string | undefined>;
+  /** `onto`: the text to write when the file is no longer `expected` (ticket am-25); none refuses then. */
+  writeDraft(path: string, content: string, create: boolean, expected?: string, onto?: (now: string | undefined) => string | undefined): Promise<string | undefined>;
   /** Opens the file (a page shows in the preview); whether it is open now. */
   open(path: string): Promise<boolean>;
   /** The Pages tab's New page; an error message, or the page made. */
@@ -747,8 +761,9 @@ function fitReport(report: InspectionReport) {
   return json;
 }
 
-/** The page or file text now must be what was read (the agent's hash for a page, the tab's own read for a file edit). */
-async function expectHash(actions: AgentSiteActions, path: string, expected: string | null | undefined) {
+/** The page or file text now must be what was read (the agent's hash for a page, the tab's own read for a file edit), or
+ * one `typedInto` takes (a file write landing on what the user typed since, ticket am-25). */
+async function expectHash(actions: AgentSiteActions, path: string, expected: string | null | undefined, typedInto?: (now: string) => boolean) {
   const text = await actions.text(path);
   if (expected === undefined) return text;
   if (expected === null) {
@@ -756,7 +771,7 @@ async function expectHash(actions: AgentSiteActions, path: string, expected: str
     return text;
   }
   if (text === undefined) throw new Conflict(gone(path));
-  if ((await textHash(text)) !== expected) throw new Conflict(changedSinceRead(path));
+  if ((await textHash(text)) !== expected && !typedInto?.(text)) throw new Conflict(changedSinceRead(path));
   return text;
 }
 
@@ -912,14 +927,23 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
   const path = command.path;
   switch (command.operation) {
     case "write_file": {
-      const before = await expectHash(actions, path, command.expectedHash);
+      // Typed into since it was read, apart from the change: the change lands on the text now (ticket am-25).
+      let content = command.content;
+      const before = await expectHash(actions, path, command.expectedHash, now => {
+        const merged = agentTextOn(command, now);
+        if (merged !== undefined) content = merged;
+        return merged !== undefined;
+      });
+      const onto = (now: string | undefined) => now === before ? content : now === undefined ? undefined : agentTextOn(command, now);
       if (before !== undefined && actions.atomicText?.()) {
-        const error = await actions.writeDraft(path, command.content, false, before);
+        const error = await actions.writeDraft(path, content, false, before, onto);
         if (error) throw new Error(error);
       } else if (before !== undefined && actions.isMounted(path)) {
-        const edit = minimalTextEdit(before, command.content);
-        if (edit) await guarded(actions.edits.run(r => r.source(path) !== before ? { refuse: changedSinceRead(path) }
-          : { edits: new Map([[path, [edit]]]), done: `An agent changed ${path}.`, undone: `Undid the agent's change to ${path}.` }));
+        if (minimalTextEdit(before, content)) await guarded(actions.edits.run(r => {
+          const now = r.source(path), text = onto(now), edit = text === undefined ? null : minimalTextEdit(now!, text);
+          return !edit ? { refuse: changedSinceRead(path) }
+            : { edits: new Map([[path, [edit]]]), done: `An agent changed ${path}.`, undone: `Undid the agent's change to ${path}.` };
+        }));
       } else {
         const error = await actions.writeDraft(path, command.content, before === undefined);
         if (error) throw new Error(error);
@@ -1283,6 +1307,13 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
           // The recorded outcome is the reply: a duplicate delivery gets the same files, route and hash.
           outcome = await structuralOutcome(command, after, plan);
           receipt.outcome = JSON.parse(JSON.stringify(outcome)) as JsonValue;
+        } else {
+          // Landed on what the user typed since it was read (ticket am-25): the hash it records is the text it left.
+          const landed = after.get(command.path);
+          if (landed && !landed.deleted && landed.content !== command.content) {
+            outcome = { ...outcome, result: { ...outcome.result, hash: await textHash(landed.content) } };
+            receipt.outcome = JSON.parse(JSON.stringify(outcome)) as JsonValue;
+          }
         }
         signal?.throwIfAborted();
         if (!current() || !valid()) throw new Error("The repository or source changed meanwhile.");
@@ -1299,7 +1330,8 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
         } catch (error) { return refuse(error); }
       },
       publish: (changes, apply) => {
-        const result = store.publishAgent(scope, changes, apply);
+        // Written as the agent: the open file's shared copy takes its text change under the agent's own name (am-25).
+        const result = writeAs(agentWho(command), () => store.publishAgent(scope, changes, apply));
         store.announceAgent(scope, [...changes.keys()]);
         return result;
       },

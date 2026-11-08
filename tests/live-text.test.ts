@@ -14,6 +14,7 @@ import type { LiveClock, LivePeer, LiveRoomOptions } from "../src/live-room";
 import type { CaretShare } from "../src/live-text";
 import type { JsonValue } from "../shared/agent-command";
 import type { LiveAccess } from "../shared/live-room";
+import { writeAs, type LiveAuthor } from "../src/live-author";
 
 const scope: DraftScope = { account: "lex", repoId: 501, repo: "lex/starter", branch: "main" };
 const path = "index.html";
@@ -984,3 +985,114 @@ test("a caret said in another named type is not drawn, and makes no type in this
   anna.stop(); lex.stop();
 });
 
+
+/** An agent's change written into `who`'s drafts as the receiving tab writes it (src/agent-site.ts, the guarded commit's publish). */
+function agentWrites(who: ReturnType<typeof tab>, text: string, agent: LiveAuthor = { grant: "grant-1", name: "Claude Code" }) {
+  writeAs(agent, () => { assert.ok(who.store.write(scope, path, text)); });
+}
+/** The id the UPDATE frames from `who`'s sockets name, other than its own. */
+const otherIds = (room: ReturnType<typeof fakeRoom>, who: { sockets: string[] }, own: number) =>
+  [...new Set(room.log.filter(entry => who.sockets.includes(entry.from) && entry.bytes[0] === 4)
+    .map(entry => new DataView(entry.bytes.buffer, entry.bytes.byteOffset).getUint32(22)))].filter(id => id !== own);
+
+test("agents join the merge (am-25): an agent's sentence lands with Lex's typing in the next on every tab, under its own id, and its name tag takes back only its words", async () => {
+  const room = fakeRoom();
+  const shares = new Map<string, CaretShare>();
+  const drawn = (who: string) => (share: CaretShare) => { shares.set(who, share); return () => { shares.delete(who); }; };
+  const text = "<h1>Fresh bread</h1>\n<p>Open at seven.</p>\n<p>Closed on Sundays.</p>\n";
+  const lex = tab(room, text, { carets: drawn("lex") });
+  await quiet();
+  const anna = tab(room, base, { carets: drawn("anna") });
+  await until(() => shares.size === 2 && anna.text === lex.text, "the copy");
+  await quiet();
+  lex.type(0, "<!-- Lex -->");
+  await until(() => anna.text === lex.text, "Lex's own change first");
+  const lexId = authorOf(room, lex);
+
+  // The agent rewrites one sentence in Lex's tab (it receives the agent's commands) while Lex types in the next.
+  const sentence = lex.text.indexOf("Open at seven.");
+  agentWrites(lex, lex.text.slice(0, sentence) + "Open from seven until two." + lex.text.slice(sentence + "Open at seven.".length));
+  lex.type(lex.text.indexOf("Sundays") + "Sundays".length, " and Mondays");
+  await until(() => anna.text === lex.text && anna.text.includes("until two") && anna.text.includes("and Mondays"), "both on every tab");
+  assert.equal(anna.text, "<!-- Lex --><h1>Fresh bread</h1>\n<p>Open from seven until two.</p>\n<p>Closed on Sundays and Mondays.</p>\n");
+
+  // Its change went out under an id of its own, not Lex's.
+  const [agent, ...more] = otherIds(room, lex, lexId);
+  assert.ok(agent !== undefined && more.length === 0, "one other id: the agent's");
+  assert.notEqual(agent, lexId);
+  assert.equal(anna.stop.canUndoAuthor(lexId), true, "Lex's own words are his");
+  assert.equal(anna.stop.canUndoAuthor(agent), true, "the agent's words are the agent's at Anna's");
+  assert.equal(lex.stop.canUndoAuthor(agent), true, "and at Lex's, who wrote them for it");
+
+  // Its caret: at Lex's (drawn from his own tab) and at Anna's (as his tab says it), named as its commands name it.
+  await until(() => shares.get("anna")!.carets().some(caret => caret.author === agent), "the agent's caret at Anna's");
+  for (const who of ["lex", "anna"]) {
+    const caret = shares.get(who)!.carets().find(item => item.author === agent)!;
+    assert.deepEqual({ name: caret.name, agent: caret.agent, contested: caret.contested }, { name: "Claude Code", agent: "Claude Code", contested: undefined }, who);
+    assert.equal(lex.text.slice(0, caret.head).endsWith("Open from seven until two"), true, `${who}: the caret ends its change`);
+  }
+
+  // Lex takes it back from the agent's name tag: only the agent's words go, on every tab; Lex's stay.
+  assert.equal(shares.get("lex")!.undo(agent, draftHistory()), true);
+  await until(() => anna.text === lex.text && !anna.text.includes("until two"), "the agent's words gone on both");
+  assert.equal(lex.text, "<!-- Lex --><h1>Fresh bread</h1>\n<p>Open at seven.</p>\n<p>Closed on Sundays and Mondays.</p>\n");
+  assert.equal(lex.stop.canUndoAuthor(agent), false);
+  // That Undo is Lex's own step: his Undo brings the agent's words back for everyone.
+  assert.equal((await lex.store.undo(draftHistory())).ok, true);
+  await until(() => anna.text === lex.text && anna.text.includes("until two"), "the agent's words back on both");
+  anna.stop(); lex.stop();
+});
+
+test("an agent's change taken back from Anna's tab goes from every tab; a second agent has an id of its own; a frame naming an agent's id is not its change at the tab that writes for it", async () => {
+  const room = fakeRoom();
+  const lex = tab(room), anna = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  lex.type(0, "<!-- Lex -->");
+  await until(() => anna.text === lex.text, "Lex's change");
+  const lexId = authorOf(room, lex);
+  agentWrites(lex, lex.text.replace("Fresh bread", "Warm bread"));
+  agentWrites(lex, lex.text.replace("seven", "eight"), { grant: "grant-2", name: "Codex" });
+  await until(() => anna.text === lex.text && anna.text.includes("Warm") && anna.text.includes("eight"), "both agents' changes");
+  const ids = otherIds(room, lex, lexId);
+  assert.equal(ids.length, 2, "one id per agent");
+  const [first, second] = ids;
+  // Anna takes back the first agent's change: it goes from both tabs, the second agent's and Lex's stay.
+  assert.equal(anna.stop.undoAuthor(first), true);
+  await until(() => lex.text === anna.text && !lex.text.includes("Warm"), "the first agent's words gone on both");
+  assert.equal(lex.text, "<!-- Lex --><h1>Fresh bread</h1>\n<p>Open at eight.</p>\n");
+  assert.equal(lex.stop.canUndoAuthor(second), true);
+
+  // Someone else in the room sends a change under the second agent's id: at Lex's it is not the agent's to take back.
+  const Y = await import("yjs");
+  const spoof = room.open({ repo: scope.repo, branch: scope.branch, file: path, onMessage: () => undefined });
+  await quiet();
+  const theirs = room.log.find(entry => anna.sockets.includes(entry.from) && entry.bytes[0] === 4)!.bytes;
+  const doc = new Y.Doc();
+  doc.clientID = 4242;
+  doc.getText("source").insert(0, "<!-- spoof -->");
+  const update = Y.encodeStateAsUpdate(doc);
+  const frame = new Uint8Array(26 + update.length);
+  frame.set(theirs.subarray(0, 26));
+  new DataView(frame.buffer).setUint32(22, second);
+  frame.set(update, 26);
+  await spoof.send(frame);
+  await until(() => lex.text.startsWith("<!-- spoof -->") && anna.text === lex.text, "the spoofed change on both");
+  assert.equal(lex.stop.undoAuthor(second), true, "Lex's tab still takes back only the agent's own change");
+  await until(() => anna.text === lex.text && !lex.text.includes("eight"), "the second agent's words gone on both");
+  assert.equal(lex.text, "<!-- spoof --><!-- Lex --><h1>Fresh bread</h1>\n<p>Open at seven.</p>\n");
+  spoof.close();
+  anna.stop(); lex.stop();
+});
+
+test("an agent's change while Lex is alone with the file stays his draft; a tab joining later gets it once", async () => {
+  const room = fakeRoom();
+  const lex = tab(room);
+  await quiet();
+  agentWrites(lex, lex.text.replace("seven", "eight"));
+  assert.equal(lex.yjsLoads, 0, "alone: no copy, no Yjs");
+  const anna = tab(room);
+  await until(() => anna.text === lex.text && anna.text.includes("eight"), "Anna caught up");
+  assert.equal(times(anna.text, "eight"), 1);
+  anna.stop(); lex.stop();
+});

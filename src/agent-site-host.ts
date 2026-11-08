@@ -162,7 +162,7 @@ export function createAgentCommands(ports: AgentCommandPorts) {
       return scope && { scope, draft: path => draftStore().get(scope, path), openFile: appStore.openFile.value };
     },
     loaderPlan: nativeComponentLoaderPlan,
-    writeDraft: async (path, content, create, expected) => {
+    writeDraft: async (path, content, create, expected, onto) => {
       if (!atomic && !runtime.site && !runtime.engaged && create) {
         const scope = draftScope(), repo = appStore.repository.value, snap = appStore.snapshot.value;
         if (!scope || !repo || !snap) return "Open a repository first.";
@@ -205,10 +205,12 @@ export function createAgentCommands(ports: AgentCommandPorts) {
         if (base) runtime.base.sources.set(path, base.text);
       }
       const done = `An agent ${create ? "created" : "changed"} ${path}.`, undone = `Undid the agent's change to ${path}.`;
+      // Typed into since it was read: `onto` gives the agent's change on the text now, apart from what was typed (am-25).
+      const written = (now: string | undefined) => expected === undefined || now === expected ? content : onto?.(now);
       const outcome = await edits.run(r => create ? { creates: [{ path, content }], ...nativePageRoute(path) && !ports.componentTools?.typingTemplate() || atomic && appStore.openFile.value === undefined ? { open: path } : {}, done, undone }
-        : expected !== undefined && r.source(path) !== expected ? { refuse: `${path} changed in the editor since it was read. Read it again.` }
+        : written(r.source(path)) === undefined ? { refuse: `${path} changed in the editor since it was read. Read it again.` }
         : r.source(path) === undefined ? { refuse: `${path} does not exist.` }
-        : { edits: new Map([[path, content]]), ...nativePageRoute(path) && (!atomic || !editorModule.isMounted(path)) && !ports.componentTools?.typingTemplate() ? { open: path } : {},
+        : { edits: new Map([[path, written(r.source(path))!]]), ...nativePageRoute(path) && (!atomic || !editorModule.isMounted(path)) && !ports.componentTools?.typingTemplate() ? { open: path } : {},
           ...atomic ? { select: { historyOnly: true } } : {}, done, undone }, { since });
       // A home page just written switches the site on: the context is whole before the write is answered.
       await pagesAndFiles.nativeResyncDone;

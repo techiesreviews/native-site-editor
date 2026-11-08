@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { agentWorking, applySiteCommand, buildAgentContext, changesWork, linkedStylesheets, type AgentSiteActions } from "../src/agent-site.ts";
+import { agentWorking, applySiteCommand, buildAgentContext, changesWork, linkedStylesheets, preparedOn, type AgentSiteActions } from "../src/agent-site.ts";
 import { createGuardedEdits } from "../src/guarded-edit.ts";
 import { createBlockMoves } from "../src/page-builder/block-move.ts";
 import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
@@ -256,4 +256,34 @@ test("an agent's change waits only when it changes the part the user works in (t
   const site = { routes: { "/": "index.html" }, components: {} };
   assert.deepEqual(agentWorking(heading, site, source), { file: "index.html", route: "/", element: "0.0.0", tag: "h1", lines: { start: 9, end: 9 }, note: WORKING_NOTE });
   assert.deepEqual(agentWorking({ path: "styles/site.css", lines: { start: 2, end: 3 } }, site, "a\nb\nc\n"), { file: "styles/site.css", lines: { start: 2, end: 3 }, note: WORKING_NOTE });
+});
+
+test("a file write whose text the user typed into since it was made lands on the text now, apart from the typing; where they typed it is refused (am-25)", async () => {
+  const read = "<h1>Fresh bread</h1>\n<p>Open at seven.</p>\n";
+  let now = read.replace("seven", "half past seven");
+  const writes: { content: string; expected?: string; onto?: (now: string | undefined) => string | undefined }[] = [];
+  const fake = {
+    text: async () => now, isMounted: () => true, atomicText: () => true,
+    writeDraft: async (_path, content, _create, expected, onto) => {
+      writes.push({ content, expected, onto });
+      return undefined;
+    },
+  } satisfies Pick<AgentSiteActions, "text" | "isMounted" | "atomicText" | "writeDraft">;
+  // Only the ports a file write uses are present; any other call fails.
+  const actions = fake as AgentSiteActions;
+  const command: AgentCommand = { id: "write-1", operation: "write_file", path: "index.html", branch: "dev", commit: "c",
+    content: read.replace("Fresh bread", "Warm bread"), expectedHash: await textHash(read), state: "pending", createdAt: 1 };
+  // Without the text it was made on, a moved text refuses it as before.
+  await assert.rejects(applySiteCommand(actions, command), /changed in the editor since it was read/);
+  assert.equal(writes.length, 0);
+  preparedOn.set(command, read);
+  await applySiteCommand(actions, command);
+  assert.deepEqual({ content: writes[0].content, expected: writes[0].expected }, { content: "<h1>Warm bread</h1>\n<p>Open at half past seven.</p>\n", expected: now });
+  // Typed again before the write itself: the change made on that text; over its words, none (refused there).
+  assert.equal(writes[0].onto!(`${now}<p>More</p>`), "<h1>Warm bread</h1>\n<p>Open at half past seven.</p>\n<p>More</p>");
+  assert.equal(writes[0].onto!(now.replace("Fresh", "Rye")), undefined);
+  // The user typed in its words: refused, nothing written.
+  now = read.replace("Fresh bread", "Rye bread");
+  await assert.rejects(applySiteCommand(actions, command), /changed in the editor since it was read/);
+  assert.equal(writes.length, 1);
 });

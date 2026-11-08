@@ -14,6 +14,7 @@ import {
   nativePageWithUrl,
   nativeSitePaths,
   nativeSiteSettings,
+  rebaseTextEdit,
   resolveNativeProject,
 } from "../shared/native-project.ts";
 
@@ -223,4 +224,25 @@ test("moved page addresses keep the site's sub-folder, including index.html site
     const encoded = page.replaceAll("/my-site/about/", `${folder}/%61bout/`);
     assert.equal(nativePageMovedUrl(encoded, "/about/", "/company/", undefined), encoded.replaceAll("/%61bout/", "/company/"));
   }
+});
+
+test("an agent's change made on a text typed into since lands apart from the typing; overlapping or same-place typing is a clash (am-25)", () => {
+  const read = "<h1>Fresh bread</h1>\n<p>Open at seven.</p>\n";
+  const written = read.replace("Fresh bread", "Warm rye bread");
+  // Nothing typed since: the change as written.
+  assert.equal(rebaseTextEdit(read, written, read), written);
+  // Typed after it, or before it (its place moves by what was typed).
+  assert.equal(rebaseTextEdit(read, written, read.replace("seven", "half past seven")), "<h1>Warm rye bread</h1>\n<p>Open at half past seven.</p>\n");
+  assert.equal(rebaseTextEdit(read, written, `<!-- top -->${read}`), `<!-- top --><h1>Warm rye bread</h1>\n<p>Open at seven.</p>\n`);
+  // Typed right at either end of its words: kept beside them.
+  assert.equal(rebaseTextEdit(read, written, read.replace("bread</h1>", "bread!</h1>")), "<h1>Warm rye bread!</h1>\n<p>Open at seven.</p>\n");
+  assert.equal(rebaseTextEdit(read, written, read.replace("<h1>", "<h1>New: ")), "<h1>New: Warm rye bread</h1>\n<p>Open at seven.</p>\n");
+  // Typed in its words, or over them: a clash.
+  assert.equal(rebaseTextEdit(read, written, read.replace("Fresh", "Crisp")), undefined);
+  assert.equal(rebaseTextEdit(read, written, read.replace("<h1>Fresh bread</h1>\n<p>", "<p>")), undefined);
+  // Two insertions at the same place: a clash (whose words go first is unknown).
+  const insert = read.replace("<p>", "<p>Agent. ");
+  assert.equal(rebaseTextEdit(read, insert, read.replace("<p>", "<p>Lex. ")), undefined);
+  // A change that changes nothing leaves the text now.
+  assert.equal(rebaseTextEdit(read, read, `${read}<p>More</p>`), `${read}<p>More</p>`);
 });
