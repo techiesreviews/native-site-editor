@@ -3,8 +3,8 @@ import { AGENT_PERMISSION_LIFETIME } from "./agent-lifecycle";
 import { cleanupRoute, inventoryRoute } from "./agent-maintenance";
 import { requestJson } from "./http";
 import { ASSET_TYPES } from "../shared/asset-types";
-import { AgentRelay, LiveRooms, liveRoomObjectName, liveRoomTag, relayObjectName, type LiveAgent } from "./agent-relay";
-import { liveRoomFile, type LiveAccess } from "../shared/live-room";
+import { AgentRelay, LiveRooms, liveRoomObjectName, liveRoomTag, liveSessionObjectName, liveSessionRoomTag, relayObjectName, type LiveAgent } from "./agent-relay";
+import { LIVE_SESSION_TOKEN, liveRoomFile, type LiveAccess } from "../shared/live-room";
 import {
   validAgentBranch,
   authenticateAgent,
@@ -408,7 +408,8 @@ const OBSOLETE_AGENT_ROUTES = new Set([
 
 /** The live room access check (ADR 0003): editor sign-in to a repository the GitHub connection
  * lists, or an agent connection pinned to this repository and branch. Encryption keeps strangers
- * from reading edits; this keeps them from joining at all. Synced-session links (slice 30) add their token here.
+ * from reading edits; this keeps them from joining at all. A synced session's guests come in by its own route
+ * (`/api/live/guest`, slice 30) into that session's room only.
  * A plain request (no upgrade) gets the same answer, so a tab can tell "refused" from "network" (426 when allowed). */
 async function liveRoomAccess(request: Request, env: Env, url: URL, fetcher: typeof fetch, fullName: string, branch: string): Promise<{ repoId: number; access: LiveAccess; agent?: LiveAgent }> {
   if (request.headers.has("Authorization")) {
@@ -695,6 +696,39 @@ async function route(
     return env.SESSIONS.get(env.SESSIONS.idFromName(await liveRoomObjectName(repoId, branch))).fetch(
       new Request("https://session.internal/live/join", { headers: { Upgrade: "websocket", [LiveRooms.identityHeader]: JSON.stringify(identity) } }),
     );
+  }
+  // A synced session (slice 30): the sharing tab holds its room open with editor sign-in to the repository; a guest
+  // joins with the link's token alone. Each session has its own relay instance and room, named from the token, so a
+  // link never reaches a site's file rooms. The room key stays after `#` in the link: neither route sees it.
+  if (path === "/api/live/share" || path === "/api/live/guest") {
+    if (request.method !== "GET") throw new HttpError(405, "Use GET.");
+    const token = url.searchParams.get("session"), rejoin = url.searchParams.get("rejoin");
+    const sharing = path === "/api/live/share";
+    if (url.searchParams.getAll("session").length !== 1 || !LIVE_SESSION_TOKEN.test(token ?? "") || url.searchParams.getAll("rejoin").length > 1 ||
+      (rejoin !== null && !/^[a-f\d]{32}$/.test(rejoin)))
+      throw new HttpError(400, "This edit link is not valid.");
+    // Only a socket carries the room's traffic: another site's page learns a status, nothing more.
+    if (request.headers.has("Upgrade") && request.headers.get("Origin") !== url.origin) throw new HttpError(403, "Invalid request origin.");
+    if (sharing) {
+      const branch = url.searchParams.get("branch");
+      if (["repo", "branch"].some(key => url.searchParams.getAll(key).length !== 1) || !validAgentBranch(branch))
+        throw new HttpError(400, "Choose a repository and branch.");
+      const user = await session(request, env);
+      if (!user) throw new SignedOutError(401, "Connect GitHub to share this site.");
+      await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, url.searchParams.get("repo") ?? "");
+    }
+    const access: LiveAccess = sharing ? "editor" : "guest";
+    const identity = { room: await liveSessionRoomTag(), access, ...(rejoin === null ? {} : { rejoin }) };
+    const store = env.SESSIONS.get(env.SESSIONS.idFromName(await liveSessionObjectName(token!)));
+    const headers = { [LiveRooms.identityHeader]: JSON.stringify(identity) };
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      // A guest's plain request learns whether the session is still open: its link refuses once it ended.
+      if (!sharing && (await store.fetch(new Request("https://session.internal/live/admits", { headers }))).status !== 204)
+        throw new HttpError(410, "This edit link has ended.");
+      throw new HttpError(426, "Use a WebSocket upgrade.");
+    }
+    // Fresh headers: no cookie crosses into the room. A guest is refused there (409) once no sharing tab holds it.
+    return store.fetch(new Request("https://session.internal/live/join", { headers: { Upgrade: "websocket", ...headers } }));
   }
   if (path.startsWith("/api/agent/")) {
     const user = await session(request, env);

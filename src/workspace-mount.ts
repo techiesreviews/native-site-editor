@@ -17,7 +17,7 @@ import { mountDropdown } from "./components/dropdown";
 import { createNativePreview, type NativePreview, type NativePreviewHandlers, type NativeStructureItem } from "./components/native-preview";
 import { createPageStructure, type PageStructureHandlers } from "./components/page-structure";
 import { dismissRefusalNote, refuse } from "./components/refusal-note";
-import { createRepositoryMenu } from "./components/repository-menu";
+import { createRepositoryMenu, type ShareMenuPort } from "./components/repository-menu";
 import { createRowMenu } from "./components/row-menu";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { mountSiteActions } from "./components/site-actions";
@@ -155,6 +155,8 @@ export interface WorkspaceMountPorts {
   account: WorkspaceAccountPorts;
   repositoryIndex: Pick<RepositoryIndex, "clear">;
   cleanSources: Pick<CleanSourceCache, "clear">;
+  /** Share to edit in the project menu (slice 30, src/live-session.ts). */
+  share?: ShareMenuPort;
   /** Host state, read (and written) at call time. */
   readonly info: SessionInfo;
   repositories: Repository[];
@@ -343,6 +345,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       onAccessChanged: () => void ports.account.reload(),
       onSwitchAccount: (login) => void ports.account.switchTo(login),
       onSignOut: reported(ports.account.signOut), onNote: (note) => { ports.finishedWork.open(note); handOver(); },
+      ...ports.share ? { share: ports.share } : {},
     });
     ports.element("repository-menu").append(repositoryMenu.root);
     ports.element("site-settings-toggle").addEventListener("click", () => void ports.page.siteSettings());

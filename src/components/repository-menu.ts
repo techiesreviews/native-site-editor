@@ -6,8 +6,20 @@ import { setIcon } from "../icons";
 import { noteCount, noteWords, tileWords, type FinishedNote } from "../finished-elsewhere";
 import { sameBranch, sameRepository } from "../workspace-session";
 import type { Repository, SessionInfo } from "../../shared/types";
+import type { ShareState } from "../live-session";
 
 type Account = NonNullable<SessionInfo["accounts"]>[number];
+/** Share to edit (slice 30, src/live-session.ts): a synced session on the project shown. */
+export interface ShareMenuPort {
+  state(): ShareState;
+  /** Hears each change; returns the way to stop. */
+  watch(listener: (state: ShareState) => void): () => void;
+  /** Starts sharing (or keeps the session open): its link, or undefined when there is nothing to share. */
+  start(): Promise<string | undefined>;
+  stop(): void;
+}
+/** How long "Link copied" stays on the item before it reads "Copy edit link" again. */
+const COPIED_MS = 2500;
 
 // GitHub decides which repositories the editor's GitHub App can reach, and
 // its API only lets classic tokens change that, so adding and removing a
@@ -36,6 +48,7 @@ export function createRepositoryMenu(options: {
   onSiteSettings?: () => void;
   /** A row with finished work clicked: its project and branch open with its changes. */
   onNote?: (note: FinishedNote) => void;
+  share?: ShareMenuPort;
 }) {
   const root = node("div", "repository-menu");
   const trigger = node("button", "repository-menu__trigger");
@@ -134,6 +147,8 @@ export function createRepositoryMenu(options: {
   const actions = node("div", "repository-menu__section repository-menu__actions");
   actions.append(siteSlot);
   if (options.onSiteSettings) actions.append(button("Site settings", options.onSiteSettings, actionClass));
+  const share = options.share ? shareItems(options.share, actionClass) : undefined;
+  if (share) actions.append(share.root);
   const agentSlot = node("div", "repository-menu__agent");
   agentSlot.id = "agent-menu";
 
@@ -162,7 +177,7 @@ export function createRepositoryMenu(options: {
   );
 
   panel.append(sites, actions, agentSlot, accounts, branches);
-  root.append(trigger, panel);
+  root.append(trigger, ...share ? [share.people] : [], panel);
   const dropdown = mountDropdown({
     trigger,
     panel,
@@ -172,7 +187,8 @@ export function createRepositoryMenu(options: {
     if ((event as ToggleEvent).newState === "open") options.onOpen?.();
   });
   panel.addEventListener("click", (event) => {
-    if ((event.target as Element).closest(".repository-menu__action")) {
+    // Share to edit and Copy edit link say "Link copied" on themselves, so the menu stays open for them.
+    if ((event.target as Element).closest(".repository-menu__action:not([data-keep-open])")) {
       dropdown.close();
       trigger.focus();
     }
@@ -380,7 +396,7 @@ export function createRepositoryMenu(options: {
 
   function setRepository(repo?: Repository) {
     currentId = repo?.id;
-    actions.hidden = !repo || (!showSiteActions && !options.onSiteSettings);
+    actions.hidden = !repo || (!showSiteActions && !options.onSiteSettings && !share);
     siteSlot.hidden = !showSiteActions;
     repository.textContent = repo?.owner.login ?? "GitHub connected";
     name.textContent = repo?.name ?? "Choose a project";
@@ -433,11 +449,81 @@ export function createRepositoryMenu(options: {
     /** The tile at the top left that opens the menu: what a spotlight points at. */
     trigger,
     destroy() {
+      share?.destroy();
       controller.abort();
       branchFlyout.destroy();
       dropdown.destroy();
     },
   };
+}
+
+/**
+ * Share to edit (slice 30; mock-up 14): "Share to edit" starts a synced session and copies its link; while it lasts,
+ * "Copy edit link" and "Stop sharing". A copied link says so on the item itself for a moment ("Link copied"); a copy
+ * the browser refuses shows the link to copy by hand. Who joined shows beside the project tile, by initial.
+ */
+function shareItems(port: ShareMenuPort, actionClass: string) {
+  const root = node("div", "repository-menu__share");
+  const main = node("button", `${actionClass} repository-menu__share-item`);
+  main.type = "button";
+  main.dataset.keepOpen = "";
+  const label = node("span", "repository-menu__share-label");
+  const done = node("span", "repository-menu__share-done");
+  setIcon(done, "check", 14);
+  done.setAttribute("aria-hidden", "true");
+  main.append(label, done);
+  const stop = button("Stop sharing", () => port.stop(), actionClass);
+  const field = node("input", "repository-menu__share-link");
+  field.readOnly = true;
+  field.setAttribute("aria-label", "Edit link");
+  field.addEventListener("focus", () => field.select());
+  root.append(main, field, stop);
+  const people = node("ul", "repository-menu__people");
+  people.setAttribute("aria-label", "Editing with you");
+  let copied: "yes" | "failed" | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const draw = () => {
+    const state = port.state();
+    const word = state.sharing
+      ? copied === "yes" ? "Link copied" : copied === "failed" ? "Copy the link below" : "Copy edit link"
+      : state.starting ? "Sharing…" : "Share to edit";
+    label.textContent = word;
+    main.classList.toggle("is-done", copied === "yes");
+    main.disabled = !state.sharing && Boolean(state.starting);
+    done.hidden = copied !== "yes";
+    stop.hidden = !state.sharing;
+    field.hidden = !(state.sharing && copied === "failed");
+    if (state.sharing) field.value = state.link;
+    const guests = state.sharing ? state.guests : [];
+    people.hidden = !guests.length;
+    people.replaceChildren(...guests.map((guest, index) => {
+      const item = node("li", "repository-menu__person", (guest.name.match(/\p{L}|\p{N}/u)?.[0] ?? "·").toUpperCase());
+      item.title = `${guest.name} (guest)`;
+      item.setAttribute("aria-label", `${guest.name}, a guest`);
+      item.dataset.colour = String(index % 4);
+      return item;
+    }));
+  };
+  const copy = async (link: string) => {
+    clearTimeout(timer);
+    try { await navigator.clipboard.writeText(link); copied = "yes"; }
+    catch { copied = "failed"; }
+    draw();
+    if (copied === "failed") { field.focus(); return; }
+    timer = setTimeout(() => { copied = undefined; draw(); }, COPIED_MS);
+  };
+  main.addEventListener("click", () => {
+    const state = port.state();
+    if (state.sharing) { void copy(state.link); return; }
+    port.start().then((link) => { if (link) return copy(link); }, () => {
+      // The room refused (signed out, or no access any more): the item says so for a moment.
+      label.textContent = "Couldn't share";
+      timer = setTimeout(draw, COPIED_MS);
+    });
+  });
+  const unwatch = port.watch((state) => { if (!state.sharing) { copied = undefined; clearTimeout(timer); } draw(); });
+  draw();
+  return { root, people, destroy() { unwatch(); clearTimeout(timer); } };
 }
 
 // The count of finished work on a tile's corner, its words for screen readers.

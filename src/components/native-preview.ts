@@ -1,3 +1,4 @@
+import { runtimeDoc } from "./preview-frame-doc";
 import { validImageSize, validImageStyle } from "./preview-protocol";
 import { imageResult } from "../page-builder/image-sizes";
 import { samePreviewFiles } from "./preview-files";
@@ -52,14 +53,7 @@ import "./native-preview.css";
 // not block it, but loads its runtime from a same-origin external script.
 // Production CSP keeps `script-src` free of `unsafe-inline`.
 //
-// The runtime (native-preview-runtime.js) is bundled with the rules it imports
-// into one classic script (vite-preview-runtime.ts): served readable in dev
-// and the test server, minified with a source map under a content-hashed
-// /assets/ URL in the build, cached as immutable.
-// The URL is absolute so the about:srcdoc frame needs no base URL.
-const RUNTIME_URL = new URL("./native-preview-runtime.js", import.meta.url).href;
-// The page picture (src/agent-picture.ts), bundled the same way; only a picture's measuring frame loads it.
-const PICTURE_URL = new URL("../agent-picture.ts", import.meta.url).href;
+// The frame document and its runtime script: src/components/preview-frame-doc.ts.
 // A tab opened before a deploy asks for the previous hash, which is gone: the
 // sandboxed frame's failed <script> never reaches the parent, so the host
 // waits this long for `ready` once the frame is attached and then treats it
@@ -68,18 +62,6 @@ const RUNTIME_READY_TIMEOUT_MS = 8000;
 // The runtime answers a text patch at once; one not answered by then is let go
 // (its full update comes with the next render anyway).
 const PATCH_ANSWER_MS = 5000;
-const RUNTIME_DOC = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="ase-frame-load" content="__FRAME_LOAD__" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Native preview</title>
-<script src="${RUNTIME_URL}" data-picture="${PICTURE_URL}" defer></script>
-</head>
-<body><div id="root" data-key="root"><div id="page" data-key="page"></div></div></body>
-</html>`;
-const runtimeDoc = (load: number) => RUNTIME_DOC.replace("__FRAME_LOAD__", String(load));
 
 /** Edit component mode as the frame takes it. */
 export interface EditComponentFrameMode {
@@ -354,6 +336,14 @@ export interface AssetChanges { set: Record<string, string>; drop: string[] }
 /** A render the host posts to the frame (`update`). */
 export type UpdatePayload = ReturnType<typeof composePayload> & { viewing: boolean; typedSeq?: number };
 
+/** What a synced session's guests are sent (slice 30): each render of the page on show, or assets that arrived after
+ * it, with every asset their copy lacks. No selection, History or template editing goes with it. */
+export type MirrorMessage =
+  | { kind: "render"; payload: UpdatePayload }
+  | { kind: "assets"; assets: Pick<UpdatePayload, "styles" | "componentStyles"> & { assetChanges: AssetChanges } };
+/** A guest's text change from that copy of the page, as its frame reported it. */
+export interface GuestTextEdit { path: string; node: number[]; before: string; after: string; live: boolean }
+
 function composePayload(
   site: NativeSite,
   sources: Record<string, string>,
@@ -556,19 +546,42 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // message carries only what changed: a page's images are posted once, not
   // with every render.
   const sentAssets = new Map<string, string>();
-  function assetChanges(): AssetChanges {
+  function assetChanges(sent = sentAssets): AssetChanges {
     const set: Record<string, string> = {};
     const drop: string[] = [];
     for (const [path, url] of Object.entries(assets))
-      if (sentAssets.get(path) !== url) { set[path] = url; sentAssets.set(path, url); }
-    for (const path of [...sentAssets.keys()])
-      if (!Object.hasOwn(assets, path)) { drop.push(path); sentAssets.delete(path); }
+      if (sent.get(path) !== url) { set[path] = url; sent.set(path, url); }
+    for (const path of [...sent.keys()])
+      if (!Object.hasOwn(assets, path)) { drop.push(path); sent.delete(path); }
     return { set, drop };
+  }
+  // A synced session's copies of the page (slice 30), each with the assets it was sent. Only the page on show goes,
+  // never while History shows an earlier version; `ended` hears this preview closing.
+  type Mirror = { send(message: MirrorMessage): void; sent: Map<string, string>; ended(): void };
+  const mirrors = new Set<Mirror>();
+  const mirrorable = () => Boolean(site && frameState.active && !viewing);
+  function mirrorRender(mirror: Mirror) {
+    if (!site || !mirrorable()) return;
+    const payload = composePayload(site, sources, componentStyles, assets, assetChanges(mirror.sent), route, alone, "", undefined, undefined, undefined, undefined, unreadable);
+    // Only the page on show goes: guests never hold the site's other pages.
+    const pages = Object.hasOwn(payload.pages, route) ? { [route]: payload.pages[route] } : {};
+    const pagePaths = Object.hasOwn(payload.pagePaths, route) ? { [route]: payload.pagePaths[route] } : {};
+    mirror.send({ kind: "render", payload: { ...payload, pages, pagePaths, viewing: false } });
+  }
+  function mirrorAssets() {
+    if (!site || !mirrorable()) return;
+    for (const mirror of mirrors) {
+      const changes = assetChanges(mirror.sent);
+      if (!Object.keys(changes.set).length && !changes.drop.length) continue;
+      const { styles, componentStyles: styled } = composeStyles(site, sources, componentStyles, assets, route, alone);
+      mirror.send({ kind: "assets", assets: { assetChanges: changes, styles, componentStyles: styled } });
+    }
   }
   // Assets that arrived after the page was drawn: the runtime shows them in
   // place (its images and stylesheets) without drawing the page again, so the
   // Page structure it reported stays current. A render on its way takes them.
   function postAssets() {
+    if (!rafHandle) mirrorAssets();
     if (!site || !frameState.ready || !frameState.active || rafHandle) return;
     const changes = assetChanges();
     if (!Object.keys(changes.set).length && !changes.drop.length) return;
@@ -738,6 +751,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     selectText = undefined;
     scrollHash = undefined;
     link.render({ ...payload, viewing: Boolean(viewing), typedSeq }, sources, alone ? "/" : route);
+    for (const mirror of mirrors) mirrorRender(mirror);
   }
   // The route of each render the frame drew (its `ack`): the host reads that
   // page's images only then, so no image is read before the page is on screen.
@@ -1359,6 +1373,29 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     refresh() {
       schedule();
     },
+    /**
+     * A copy of the page on show for a synced session's guests (slice 30): `send` hears a whole render now, with
+     * every asset, and each render and late asset after it. `ended` hears this preview closing. `render` sends the
+     * page again (only what the copy lacks); `stop` ends the copy.
+     */
+    mirror(send: (message: MirrorMessage) => void, ended: () => void) {
+      const mirror: Mirror = { send, sent: new Map(), ended };
+      mirrors.add(mirror);
+      mirrorRender(mirror);
+      return { render: () => mirrorRender(mirror), stop: () => { mirrors.delete(mirror); } };
+    },
+    /**
+     * A guest's text change from that copy (slice 30), written as this tab's own (an unsaved change here, its Undo
+     * here); `typing` names the guest's typing, whose letters stay one Undo step. Only text of the page on show
+     * counts: false when it is not shown any more, or the change was not written.
+     */
+    async guestTextEdit(edit: GuestTextEdit, typing: string) {
+      if (!site || !mirrorable() || alone || edit.path !== site.routes[route] || !handlers.onTextEdit) return false;
+      try {
+        await handlers.onTextEdit({ path: edit.path, node: [...edit.node], before: edit.before, after: edit.after, ...edit.live ? { live: true } : {}, group: `guest:${typing}` });
+        return true;
+      } catch { return false; }
+    },
     /** The page the preview shows (a component shown alone has its own pseudo-route). */
     route() {
       return route;
@@ -1511,6 +1548,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return frameState.active;
     },
     destroy() {
+      for (const mirror of [...mirrors]) mirror.ended();
+      mirrors.clear();
       hidePageCarets();
       link.close();
       endPress();

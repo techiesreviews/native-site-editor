@@ -1,0 +1,116 @@
+/* A synced session's guest page (src/live-guest.ts, slice 30): the name prompt, then a top bar
+   with the site and who is here over the page being edited. The editor's tokens (src/theme.css),
+   so light and dark follow the editor's. */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { block-size: 100%; }
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--text);
+  font: var(--type-base)/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+h1, p { margin: 0; }
+button, input { font: inherit; color: inherit; }
+
+.live-guest {
+  display: grid;
+  block-size: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: auto;
+}
+/* The prompt and the notes stand alone in the middle of the page. */
+.live-guest:has(> .live-guest__join, > .live-guest__note) { grid-template-rows: 1fr; place-items: center; padding: 16px; }
+
+.live-guest__join {
+  display: grid;
+  gap: 14px;
+  inline-size: min(100%, 20rem);
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-dialog);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.live-guest__title { font-size: var(--type-title); line-height: 1.3; text-wrap: balance; overflow-wrap: anywhere; }
+.live-guest__field { display: grid; gap: 4px; color: var(--muted); font-size: var(--type-small); }
+.live-guest__input {
+  min-block-size: var(--size-control);
+  padding: 6px 10px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: var(--surface-input);
+  /* 16px keeps a phone from zooming into the field. */
+  font-size: max(16px, var(--type-base));
+}
+.live-guest__input:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.live-guest__input:disabled { opacity: 0.6; }
+.live-guest__problem { color: var(--danger-fg); font-size: var(--type-small); text-wrap: pretty; }
+.live-guest__submit {
+  min-block-size: max(var(--size-control), var(--size-tap));
+  border: 0;
+  border-radius: var(--radius);
+  font-weight: 600;
+  cursor: pointer;
+}
+.live-guest__submit:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.live-guest__submit:disabled { cursor: progress; opacity: 0.7; }
+@media (prefers-reduced-motion: no-preference) {
+  .live-guest__submit { transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), background-color 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+  .live-guest__submit:active:not(:disabled) { transform: scale(0.97); }
+}
+
+.live-guest__note { display: grid; gap: 6px; max-inline-size: 28rem; text-align: center; }
+.live-guest__note-title { font-size: var(--type-title); }
+.live-guest__note-detail { color: var(--muted); text-wrap: pretty; }
+
+.live-guest__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-block-size: 44px;
+  padding-inline: 12px;
+  background: var(--surface-toolbar);
+  border-block-end: 1px solid var(--line);
+  min-inline-size: 0;
+}
+.live-guest__mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+  border-radius: var(--radius-small);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: var(--type-small);
+  font-weight: 700;
+}
+.live-guest__site { flex: 1; min-inline-size: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-guest__people { display: flex; flex-direction: row-reverse; margin: 0; padding: 0; list-style: none; }
+.live-guest__person {
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--surface-toolbar);
+  font-size: var(--type-badge);
+  font-weight: 700;
+  cursor: default;
+  --person-pin: var(--agent-presence-pin);
+  --person-ink: var(--agent-presence-ink);
+  background: var(--person-pin);
+  color: var(--person-ink);
+}
+.live-guest__person + .live-guest__person { margin-inline-end: -4px; }
+.live-guest__person[data-colour="host"] { --person-pin: var(--primary); --person-ink: var(--on-primary); }
+.live-guest__person[data-colour="1"] { --person-pin: var(--agent-presence-2-pin); --person-ink: var(--agent-presence-2-ink); }
+.live-guest__person[data-colour="2"] { --person-pin: var(--agent-presence-3-pin); --person-ink: var(--agent-presence-3-ink); }
+.live-guest__person[data-colour="3"] { --person-pin: var(--agent-presence-4-pin); --person-ink: var(--agent-presence-4-ink); }
+
+.live-guest__canvas { display: grid; min-block-size: 0; background: var(--surface-subtle); }
+.live-guest__waiting { place-self: center; padding: 16px; color: var(--muted); }
+.live-guest__frame { inline-size: 100%; block-size: 100%; min-block-size: 0; border: 0; background: var(--surface); }
+.live-guest__frame[hidden], .live-guest__waiting[hidden] { display: none; }

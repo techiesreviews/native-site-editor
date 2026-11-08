@@ -4,8 +4,11 @@
 // below say who is in the room and hand the room key over, wrapped for one
 // joiner, so the relay only ever sees public keys and wrapped keys.
 
-/** How a participant got past the room access check. Synced-session links (slice 30) add their own kind. */
-export type LiveAccess = "editor" | "agent";
+/** How a participant got past the room access check: editor sign-in, an agent connection, or a synced session's
+ * link (slice 30: a guest, in that session's own room only). Only an editor makes a room key or keeps a room open. */
+export type LiveAccess = "editor" | "agent" | "guest";
+/** Every kind of access, for readers of untrusted frames. */
+export const liveAccess = (value: unknown): value is LiveAccess => value === "editor" || value === "agent" || value === "guest";
 
 /** Sent by the relay. `welcome` lists who was already in; its `keyed` says the joiner holds the key: it was first in
  * (so it makes one) or it reconnected in place of its own earlier socket (so it keeps the key it had).
@@ -37,7 +40,8 @@ export const PRESENCE_TIMEOUT_MS = 30_000;
 export const LIVE_PING_MS = 10_000;
 /** The text frame the relay answers with `pong` without waking (`setWebSocketAutoResponse`). */
 export const LIVE_PING = "ping";
-/** The relay closes an agent's socket with this when no tab has the room open (an agent never makes the key). */
+/** The relay closes an agent's or a guest's socket with this when no tab has the room open (neither makes the key):
+ * for a guest, the synced session ended (Stop sharing, or Lex's tab closed). */
 export const LIVE_ROOM_CLOSED = 4404;
 /** The relay closes an agent's socket with this once its connection ends: revoked, rebound, past its 8 hours or agents paused. */
 export const LIVE_ACCESS_ENDED = 4403;
@@ -51,6 +55,12 @@ export function liveRoomFile(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 1024 && !/[\\\x00-\x1f\x7f]/.test(value) &&
     value.split("/").every(part => part !== "" && part !== "." && part !== "..");
 }
+
+/** A synced session's token (slice 30): 128 random bits as hex, made by the sharing tab. The relay instance and its room
+ * are named from it; the room key travels after `#` in the link, so the server never holds it. */
+export const LIVE_SESSION_TOKEN = /^[a-f\d]{32}$/;
+/** The one room inside a synced session's relay instance (no file: the session carries the page Lex shows). */
+export const LIVE_SESSION_ROOM = "synced-session";
 
 /** Reads a participant's text frame; anything else is ignored. */
 export function readLiveClientMessage(text: string): LiveClientMessage | null {
@@ -70,7 +80,7 @@ export function readLiveServerMessage(text: string): LiveServerMessage | null {
   try { value = JSON.parse(text) as Record<string, unknown>; } catch { return null; }
   if (!value || typeof value !== "object") return null;
   const peer = (key: string) => typeof value[key] === "string" && peerPattern.test(value[key]);
-  const access = (item: unknown): item is LiveAccess => item === "editor" || item === "agent";
+  const access = liveAccess;
   const key = (name: string) => typeof value[name] === "string" && keyPattern.test(value[name]);
   switch (value.type) {
     case "welcome":

@@ -269,6 +269,56 @@ test("an agent joins only a room a tab has open, gets the key from it, and leave
   assert.equal(agent.closed, true, "the room ends when its last tab leaves");
 });
 
+/** A synced session's participant (slice 30): the room key comes with the link, so nobody makes or hands one over. */
+function sessionParticipant(h: ReturnType<typeof relayHarness>, clock: LiveClock, key: CryptoKey, access: LiveAccess) {
+  const got: string[] = [];
+  let made: ReturnType<typeof h.pair> | undefined;
+  let closed = false;
+  const live = openLiveRoom({
+    address: access === "guest" ? "/api/live/guest?session=abc" : "/api/live/share?session=abc", key, clock,
+    connect: async url => {
+      assert.match(url, /^\/api\/live\/(?:guest|share)\?session=abc&rejoin=[a-f\d]{32}$/);
+      made = h.pair(access, room);
+      if (!made.link.joined) throw new LiveRoomClosed();
+      return made.client;
+    },
+    onMessage: bytes => got.push(new TextDecoder().decode(bytes)),
+    onClosed: () => { closed = true; },
+  });
+  return { live, got, get link() { return made!.link; }, get closed() { return closed; } };
+}
+
+test("a synced session: a guest joins only while the sharing tab is in, uses the link's key, and is closed when it leaves", async () => {
+  const time = fakeClock();
+  const h = relayHarness();
+  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+  const early = sessionParticipant(h, time.clock, key, "guest");
+  await settle();
+  assert.equal(early.link.joined, false, "no sharing tab, no session");
+  assert.equal(early.closed, true, "and the guest stops at once");
+
+  const lex = sessionParticipant(h, time.clock, key, "editor");
+  await lex.live.ready();
+  const anna = sessionParticipant(h, time.clock, key, "guest");
+  await anna.live.ready();
+  assert.equal(await anna.live.send(new TextEncoder().encode("Fresh bread")), true);
+  assert.equal(await lex.live.send(new TextEncoder().encode("every morning")), true);
+  await until(() => lex.got.length > 0 && anna.got.length > 0, "both messages");
+  assert.deepEqual([lex.got, anna.got], [["Fresh bread"], ["every morning"]]);
+  const raw = b64u(new Uint8Array(await crypto.subtle.exportKey("raw", key)));
+  for (const frame of h.seen) if (typeof frame === "string") {
+    assert.ok(!frame.includes(raw), "the link's key never crosses the relay");
+    assert.match(JSON.parse(frame).type, /^(welcome|joined|left|keyed)$/, "no key is asked for or handed over");
+  }
+  assert.equal(h.relay.admits(room, "guest"), true);
+
+  lex.live.close();
+  await settle();
+  assert.equal(anna.closed, true, "Stop sharing ends the guest's session");
+  assert.equal(h.relay.admits(room, "guest"), false, "and the link refuses");
+  assert.equal(time.pending, 0);
+});
+
 test("the relay forwards only to its room, refuses oversized frames and unknown targets, and survives hibernation", async () => {
   const h = relayHarness();
   const one = h.pair("editor"), two = h.pair("editor");

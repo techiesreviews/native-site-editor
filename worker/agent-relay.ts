@@ -1,5 +1,5 @@
 import { workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
-import { LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, PRESENCE_TIMEOUT_MS, readLiveClientMessage, type LiveAccess, type LiveServerMessage } from "../shared/live-room";
+import { LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, LIVE_SESSION_ROOM, PRESENCE_TIMEOUT_MS, liveAccess, readLiveClientMessage, type LiveAccess, type LiveServerMessage } from "../shared/live-room";
 
 export interface RelayScope {
   workspace: AgentWorkspace;
@@ -477,6 +477,13 @@ export async function liveRoomObjectName(repoId: number, branch: string): Promis
 export async function liveRoomTag(file: string): Promise<string> {
   return sha256(file);
 }
+/** A synced session's own instance (slice 30), named from its token, so a guest's link reaches that session's room and
+ * no other: never a site's file rooms. The token is checked by its shape (shared/live-room.ts) before it gets here. */
+export async function liveSessionObjectName(token: string): Promise<string> {
+  return `live-session:${await sha256(token)}`;
+}
+/** The session's one room inside it. */
+export const liveSessionRoomTag = () => sha256(LIVE_SESSION_ROOM);
 const hex = (bytes: Uint8Array) => Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
 async function sha256(value: string) {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", utf8.encode(value))));
@@ -506,7 +513,7 @@ const LIVE_HEARD_STEP_MS = 5_000;
 const readLive = (value: unknown): LiveAttachment | null => {
   const item = value as Partial<LiveAttachment> | null;
   return item && typeof item === "object" && item.role === "live" && typeof item.room === "string" && /^[a-f\d]{64}$/.test(item.room) &&
-    typeof item.peer === "string" && (item.access === "editor" || item.access === "agent") && typeof item.keyed === "boolean" &&
+    typeof item.peer === "string" && liveAccess(item.access) && typeof item.keyed === "boolean" &&
     Number.isFinite(item.since) && !item.gone ? item as LiveAttachment : null;
 };
 
@@ -546,9 +553,10 @@ export class LiveRooms {
     for (const [other] of this.members(metadata.room, socket)) this.send(other, { type: "keyed", peer: metadata.peer });
   }
 
-  /** An agent joins only a room a tab has open: only a tab makes the room key. */
+  /** An agent or a guest joins only a room a tab has open: only a tab makes the room key. For a guest that tab is the
+   * sharing one (a synced session's room has no other), so a link whose session ended is refused here. */
   admits(room: string, access: LiveAccess) {
-    return access !== "agent" || this.members(room).some(([, metadata]) => metadata.access !== "agent");
+    return access === "editor" || this.members(room).some(([, metadata]) => metadata.access === "editor");
   }
   /** Refuses (false) whom `admits` refuses. The first one into an empty room makes the key. A reconnect
    * naming its `rejoin` secret replaces its earlier socket and keeps whether it held the key. */
@@ -569,7 +577,7 @@ export class LiveRooms {
     const others = this.members(room);
     const since = Math.max(this.now(), ...others.map(([, other]) => other.since + 1));
     // First in, back in place of a socket that held the key, or (a tab) in a room nobody holds a key for any more.
-    const makes = others.length === 0 || inherited || (access !== "agent" && !others.some(([, other]) => other.keyed));
+    const makes = others.length === 0 || inherited || (access === "editor" && !others.some(([, other]) => other.keyed));
     const metadata: LiveAttachment = {
       role: "live", room, peer: hex(crypto.getRandomValues(new Uint8Array(16))), access, keyed: makes, since,
       ...(options.rejoin === undefined ? {} : { rejoin: options.rejoin }),
@@ -664,15 +672,15 @@ export class LiveRooms {
     return true;
   }
 
-  /** A clean leave is announced at once. The room's last tab leaving closes the agents still in it;
-   * its last key holder leaving has the longest-present tab make a new key. */
+  /** A clean leave is announced at once. The room's last tab leaving closes the agents and guests still in it (a
+   * synced session ends with its sharing tab); its last key holder leaving has the longest-present tab make a new key. */
   leave(socket: LiveSocket) {
     const metadata = this.sockets.get(socket);
     if (!metadata) return;
     this.sockets.delete(socket);
     const others = this.members(metadata.room);
     for (const [other] of others) this.send(other, { type: "left", peer: metadata.peer });
-    if (!others.some(([, other]) => other.access !== "agent")) {
+    if (!others.some(([, other]) => other.access === "editor")) {
       for (const [other] of others) {
         this.sockets.delete(other);
         try { other.close(LIVE_ROOM_CLOSED, "No tab has this room open."); } catch { /* Already closed. */ }
@@ -684,7 +692,7 @@ export class LiveRooms {
   /** No member holds the key: the longest-present tab makes a new one. */
   private keyNeeded(members: [LiveSocket, LiveAttachment][]) {
     if (members.some(([, other]) => other.keyed)) return;
-    const maker = members.filter(([, other]) => other.access !== "agent").sort(([, a], [, b]) => a.since - b.since || (a.peer < b.peer ? -1 : 1))[0];
+    const maker = members.filter(([, other]) => other.access === "editor").sort(([, a], [, b]) => a.since - b.since || (a.peer < b.peer ? -1 : 1))[0];
     if (!maker) return;
     this.send(maker[0], { type: "make-key" });
     if (this.sockets.has(maker[0])) this.markKeyed(...maker);

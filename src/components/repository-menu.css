@@ -473,3 +473,75 @@
   text-transform: uppercase;
   opacity: 0.8;
 }
+
+/* Share to edit (slice 30): its items, a copied link said on the item itself, and who joined beside the tile. */
+.repository-menu {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.repository-menu > .repository-menu__trigger {
+  min-width: 0;
+}
+.repository-menu__share {
+  display: grid;
+  gap: 2px;
+}
+.repository-menu__share-label {
+  flex: 1;
+  min-width: 0;
+}
+.repository-menu__share-item.is-done {
+  color: var(--success-fg);
+}
+.repository-menu__share-item:disabled {
+  color: var(--muted);
+  cursor: progress;
+}
+.repository-menu__share-done[hidden],
+.repository-menu__share-link[hidden],
+.repository-menu__people[hidden] {
+  display: none;
+}
+.repository-menu__share-link {
+  min-height: var(--size-control);
+  margin-inline: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: var(--surface-input);
+  color: var(--text);
+  font: var(--type-small) var(--font-mono);
+}
+.repository-menu__share-link:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.repository-menu__people {
+  display: flex;
+  flex-direction: row-reverse;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.repository-menu__person {
+  --person-pin: var(--agent-presence-pin);
+  --person-ink: var(--agent-presence-ink);
+  display: inline-grid;
+  place-items: center;
+  width: var(--size-icon);
+  height: var(--size-icon);
+  border-radius: 50%;
+  background: var(--person-pin);
+  color: var(--person-ink);
+  box-shadow: 0 0 0 2px var(--surface-toolbar);
+  font-size: var(--type-badge);
+  font-weight: 700;
+  cursor: default;
+}
+.repository-menu__person + .repository-menu__person {
+  margin-inline-end: -4px;
+}
+.repository-menu__person[data-colour="1"] { --person-pin: var(--agent-presence-2-pin); --person-ink: var(--agent-presence-2-ink); }
+.repository-menu__person[data-colour="2"] { --person-pin: var(--agent-presence-3-pin); --person-ink: var(--agent-presence-3-ink); }
+.repository-menu__person[data-colour="3"] { --person-pin: var(--agent-presence-4-pin); --person-ink: var(--agent-presence-4-ink); }
