@@ -492,7 +492,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       onFormat: (format) => ports.pageStructureController.nativeFormatActions[format]?.(),
       onImageDrop: (target, files) => void ports.mediaController.chooseImage(target, files),
       onImageEdit: (target) => void ports.mediaController.chooseImage(target),
-      onTextEdit: (edit) => void ports.pageStructureController.applyNativeTextEdit(edit),
+      // The write's promise goes back: the page lets renders redraw the text typed in only once it has landed (am-23).
+      onTextEdit: (edit) => ports.pageStructureController.applyNativeTextEdit(edit),
       onTyping: (at, left) => left ? workingPart.left(at, ports.pageStructureController.textEdits()) : workingPart.typed(at),
       insertChoices: ports.builder.choices,
       insertPointFor: ports.builder.addPoint,

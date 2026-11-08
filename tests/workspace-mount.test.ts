@@ -4,7 +4,7 @@ import { registerHooks } from "node:module";
 import { signal } from "@preact/signals-core";
 import { forEachAwait } from "./support/await-race.ts";
 import type { SourceFile } from "../src/components/source-editor.ts";
-import type { NativePreviewSelection } from "../src/components/native-preview.ts";
+import type { NativePreviewHandlers, NativePreviewSelection } from "../src/components/native-preview.ts";
 import { draftKey, type DraftScope } from "../src/drafts.ts";
 import type { NativeSite } from "../shared/native-project.ts";
 import type { GuardedEdits } from "../src/guarded-edit.ts";
@@ -330,6 +330,23 @@ test("mountWorkspace hands the preview, Page Structure and the component tools t
   assert.equal(calls.filter((call) => call === "mountComponentTools").length, 1);
   await paint(state);
   assert.ok(state.componentTools && state.componentTools !== tools);
+});
+
+test("the preview's text edit hands back the write, so the page waits for it before it redraws the text typed in (am-23)", async () => {
+  const { workspace, ports } = setup();
+  let land!: () => void;
+  const written = new Promise<void>((resolve) => { land = resolve; });
+  ports.pageStructureController.applyNativeTextEdit = () => written;
+  workspace.mountWorkspace();
+  const handlers = last("preview").options as NativePreviewHandlers;
+  let settled = false;
+  void Promise.resolve(handlers.onTextEdit?.({ path: "index.html", node: [0], before: "A", after: "AB", live: true })).then(() => { settled = true; });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(settled, false);
+  land();
+  await written;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(settled, true);
 });
 
 test("a right-click before the component tools land loads them at once and opens the menu when they do, unless dismissed", async () => {

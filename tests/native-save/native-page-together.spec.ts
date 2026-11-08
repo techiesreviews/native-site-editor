@@ -3,6 +3,8 @@ import { expect, test, type Browser, type Locator, type Page } from "@playwright
 import { openEditor } from "../support/scenarios";
 import { clickOnText } from "./click-text";
 import { editorMounted } from "./drafts";
+import { openLiveRoom, type LiveRoomSocket } from "../../src/live-room";
+import type { JsonValue } from "../../shared/agent-command";
 
 // Typing together on the page (ticket am-23): Lex and Anna, two browsers on the same page with live sharing switched on
 // (it is off by default). Typing on the page goes out letter by letter, and each sees the other's caret in the page's text,
@@ -20,8 +22,10 @@ const pageFlag = (page: Page, name: string) => page.locator(`.live-carets-page .
 
 /** A browser signed in to the fixture's one GitHub account; with `name`, the session read names it so (Anna). Lex keeps the
  * account's own name: connecting an agent is for the account the session really names. */
-async function person(browser: Browser, name?: string) {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+async function person(browser: Browser, name?: string, phone = false) {
+  const context = await browser.newContext(phone
+    ? { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, reducedMotion: "reduce" }
+    : { viewport: { width: 1440, height: 1000 } });
   await context.addInitScript(() => { if (window === window.top) localStorage.setItem("native-site-editor:live-sharing", "on"); });
   if (name) await context.route("**/api/session", async route => {
     const response = await route.fetch();
@@ -68,6 +72,43 @@ async function caretInside(flag: Locator, element: Locator) {
   if (!caret || !box) return false;
   const middle = caret.y + caret.height / 2;
   return caret.x >= box.x - 2 && caret.x <= box.x + box.width + 2 && middle >= box.y && middle <= box.y + box.height;
+}
+
+/** An agent in the page's room as the relay lets agents in (a bearer token, from Node; connected from a third tab), saying
+ * it works in Claude Code as `name`, with its caret where `follow`'s is. */
+async function agentAt(browser: Browser, baseURL: string, follow: string, name: string) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const page = await context.newPage();
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await openEditor(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
+  const { token } = await (await made).json() as { token: string };
+  const connect = (url: string) => new Promise<LiveRoomSocket>((resolve, reject) => {
+    // Node's WebSocket takes headers (undici), which the DOM typing of its options does not list.
+    const socket = new WebSocket(new URL(url, baseURL).href.replace(/^http/, "ws"), { headers: { Authorization: `Bearer ${token}` } } as never);
+    socket.binaryType = "arraybuffer";
+    socket.addEventListener("open", () => resolve(socket), { once: true });
+    socket.addEventListener("error", () => reject(new Error("The agent could not join the room.")), { once: true });
+  });
+  let said = false;
+  const room = openLiveRoom({
+    repo: "native-demo-user/native-demo", branch: "main", file, connect, onMessage: () => undefined,
+    onPeers(peers) {
+      const theirs = [...peers.values()].map(peer => peer.state as { name?: string; caret?: JsonValue } | null).find(state => state?.name === follow && state.caret);
+      if (!theirs || said) return;
+      said = true;
+      room.setPresence({ author: 7, name, agent: "claude-code", caret: theirs.caret! });
+    },
+  });
+  return { room, context };
+}
+
+/** Whether `inner`'s box lies inside `outer`'s, across. */
+async function inside(inner: Locator, outer: Locator) {
+  const box = await inner.boundingBox(), room = await outer.boundingBox();
+  return Boolean(box && room && box.x >= room.x - 0.5 && box.x + box.width <= room.x + room.width + 0.5);
 }
 
 /** Connects an agent from Lex's repository menu (his tab receives its commands); an MCP client named "Claude Code". */
@@ -205,3 +246,65 @@ test("an agent's heading change waits while Lex types in the heading and lands a
     await anna.context.close();
   }
 });
+
+test("on a phone a page tag opens on a tap inside the frame with 44 px targets, for a long name by the edge too; its undo takes back her words with focus kept", async ({ browser, baseURL }) => {
+  const longName = `Annabel ${"Featherstonehaugh-".repeat(5)}`.slice(0, 80);
+  const lex = await person(browser, undefined, true), anna = await person(browser, longName);
+  let agent: Awaited<ReturnType<typeof agentAt>> | undefined;
+  try {
+    await shared(lex.page, anna.page, baseURL);
+    // Anna types at the end of the heading on her page; at Lex's (390 px, touch, reduced motion) her caret shows there.
+    const heading = (page: Page) => frame(page).locator(".hero h1");
+    await typeIn(anna.page, heading(anna.page), "End");
+    await anna.page.keyboard.type(" and more words by Anna", { delay: 20 });
+    await expect(heading(lex.page)).toHaveText("A native browser preview and more words by Anna", { timeout: 20_000 });
+    const layer = lex.page.locator(".live-carets-page");
+    const annaAtLex = lex.page.locator(".live-carets-page .live-caret__flag", { has: lex.page.locator("b", { hasText: "A" }) });
+    await expect(annaAtLex).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => caretInside(annaAtLex, heading(lex.page)), { timeout: 10_000 }).toBe(true);
+    // Reduced motion: the tag's reveal does not move.
+    expect(await annaAtLex.evaluate(flag => getComputedStyle(flag, "::before").transitionProperty)).not.toContain("clip-path");
+
+    // First, an agent with a long name at her place (its tag has no undo) opens to the side with room, inside the frame;
+    // when it leaves, its caret goes.
+    agent = await agentAt(browser, baseURL!, longName, `Claude ${"Code-agent-".repeat(8)}`.slice(0, 80));
+    const agentAtLex = lex.page.locator(".live-carets-page .live-caret__flag[data-agent]");
+    await expect(agentAtLex).toBeVisible({ timeout: 20_000 });
+    const agentMark = (await agentAtLex.locator(".live-caret__mark").boundingBox())!;
+    await lex.page.touchscreen.tap(agentMark.x + agentMark.width / 2, agentMark.y + agentMark.height / 2);
+    await expect(agentAtLex).toBeFocused();
+    await expect.poll(() => inside(agentAtLex, layer)).toBe(true);
+    expect(await agentAtLex.locator(".live-caret__name").evaluate(name => name.clientWidth)).toBeGreaterThan(10);
+    agent.room.close();
+    await expect(agentAtLex).toHaveCount(0, { timeout: 45_000 });
+
+    // A tap on her circle opens the tag and keeps focus there; its name is cut to the room and the undo stays in the frame.
+    const mark = (await annaAtLex.locator(".live-caret__mark").boundingBox())!;
+    await lex.page.touchscreen.tap(mark.x + mark.width / 2, mark.y + mark.height / 2);
+    await expect(annaAtLex).toBeFocused();
+    await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("opacity", "1");
+    const undo = annaAtLex.getByRole("button", { name: `Undo ${longName}'s change` });
+    await expect(undo).toBeVisible();
+    await expect.poll(() => inside(annaAtLex, layer)).toBe(true);
+    await expect.poll(() => inside(undo, layer)).toBe(true);
+    expect(await annaAtLex.locator(".live-caret__name").evaluate(name => name.clientWidth)).toBeGreaterThan(10);
+    // Presses 21 px around the undo's centre reach it (44 px on touch).
+    const reached = await undo.evaluate(button => {
+      const rect = button.getBoundingClientRect(), x = rect.x + rect.width / 2, y = rect.y + rect.height / 2;
+      return [[-21, 0], [21, 0], [0, -21], [0, 21]].map(([dx, dy]) => document.elementFromPoint(x + dx, y + dy)?.closest(".live-caret__undo") === button);
+    });
+    expect(reached).toEqual([true, true, true, true]);
+
+    // A real tap on its undo takes back her words in both tabs; focus stays in her tag (her earlier change, the comment
+    // typed in the code pane, can still be taken back).
+    const box = (await undo.boundingBox())!;
+    await lex.page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    for (const tab of [lex, anna]) await expect(heading(tab.page)).toHaveText("A native browser preview", { timeout: 20_000 });
+    await expect.poll(() => annaAtLex.evaluate(flag => flag.contains(document.activeElement))).toBe(true);
+  } finally {
+    await agent?.context.close();
+    await lex.context.close();
+    await anna.context.close();
+  }
+});
+

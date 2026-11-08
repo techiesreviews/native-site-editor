@@ -659,3 +659,63 @@ test("one click on an image selects it; a double-click opens the Image popup", a
   await image.dblclick();
   await expect(page.getByRole("dialog", { name: "Choose image", exact: true })).toBeVisible();
 });
+
+type Seen = typeof window & { seen?: (string | null)[] };
+
+// Typing goes out letter by letter (ticket am-23): letters typed while the page's file is still opening (its code editor
+// held on its way) wait for it in order, and the page keeps showing them meanwhile: no render takes them away before
+// they are written.
+test("letters typed while the page's file opens stay on the page and land in the order typed", async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route(/\/src\/components\/code-editor\.ts/, async (route) => { await held; await route.continue(); });
+  // The stylesheet open, the page's file not: the click opens it.
+  await page.evaluate(() => { location.hash = "repo=501&branch=main&file=styles%2Fsite.css"; });
+  await page.reload();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css", { timeout: 30_000 });
+  const heading = frame(page).locator(".hero h1");
+  await expect(heading).toHaveText("A native browser preview", { timeout: 30_000 });
+  // Every text the heading shows from here on.
+  await heading.evaluate(el => {
+    const seen: (string | null)[] = (window as Seen).seen = [];
+    new MutationObserver(() => seen.push(el.textContent)).observe(el, { characterData: true, childList: true, subtree: true });
+  });
+  const at = await afterWord(page, ".hero h1", "preview");
+  await page.mouse.click(at.x, at.y);
+  await expect(heading).toHaveAttribute("contenteditable", /.+/);
+  await page.keyboard.type("ab", { delay: 60 });
+  // fixed-wait: the letters wait for the held editor; renders asked for meanwhile come and go with no state to watch.
+  await page.waitForTimeout(600);
+  await expect(heading).toHaveText("A native browser previewab");
+  release();
+  await expect.poll(() => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")), { timeout: 20_000 })
+    .toContain(">A native browser previewab</h1>");
+  await expect(heading).toHaveText("A native browser previewab");
+  const seen = await heading.evaluate(() => (window as Seen).seen ?? []);
+  // Once "a" showed, it never went, and "b" never came before it.
+  const first = seen.findIndex(text => text?.includes("previewa"));
+  expect(first).toBeGreaterThanOrEqual(0);
+  expect(seen.slice(first).filter(text => !text?.includes("previewa"))).toEqual([]);
+  expect(seen.filter(text => text?.includes("previewb"))).toEqual([]);
+});
+
+// Someone else's text landing before the caret (here a change in the code, as the room's changes land): the page's caret
+// moves along with its words, so the next letter goes where it was typed.
+test("text landing before the caret moves it along: the next letter goes after the word typed at", async ({ page }) => {
+  const heading = frame(page).locator(".hero h1");
+  const at = await afterWord(page, ".hero h1", "native");
+  await page.mouse.click(at.x, at.y);
+  await expect(heading).toBeFocused();
+  await page.keyboard.type("!");
+  await expect.poll(() => source(page)).toContain(">A native! browser preview</h1>");
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const from = editor.getMountedSource("index.html")!.indexOf(">A native! browser") + 1;
+    editor.replaceActiveRange({ path: "index.html", start: from, end: from, expected: "", text: "Anna: " });
+  });
+  await expect(heading).toHaveText("Anna: A native! browser preview");
+  await expect(heading).toBeFocused();
+  await page.keyboard.type("?");
+  await expect.poll(() => source(page)).toContain(">Anna: A native!? browser preview</h1>");
+  await expect(heading).toHaveText("Anna: A native!? browser preview");
+});
