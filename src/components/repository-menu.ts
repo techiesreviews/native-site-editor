@@ -7,7 +7,7 @@ import { noteCount, noteWords, tileWords, type FinishedNote } from "../finished-
 import { sameBranch, sameRepository } from "../workspace-session";
 import type { Repository, SessionInfo } from "../../shared/types";
 import "./person-chip.css";
-import { guestColour, type ShareState } from "../share-control";
+import { initialOf, type ShareState } from "../share-control";
 
 type Account = NonNullable<SessionInfo["accounts"]>[number];
 /** Share to edit (slice 30, src/live-session.ts): a synced session on the project shown. */
@@ -513,13 +513,13 @@ function shareItems(port: ShareMenuPort, actionClass: string) {
     if (state.sharing) field.value = state.link;
     const guests = state.sharing ? state.guests : [];
     people.hidden = !guests.length;
-    const shown = guests.length > GUESTS_SHOWN + 1 ? guests.slice(0, GUESTS_SHOWN) : guests;
+    const shown = guests.slice(0, GUESTS_SHOWN);
     const rest = guests.slice(shown.length);
     people.replaceChildren(...shown.map((guest) => {
       const item = node("li", "person-chip", initialOf(guest.name));
       item.title = `${guest.name} (guest)`;
       item.setAttribute("aria-label", `${guest.name}, a guest`);
-      item.dataset.colour = guestColour(guest.id);
+      item.dataset.colour = guest.colour;
       return item;
     }), ...rest.length ? [(() => {
       const more = node("li", "person-chip person-chip--more", `+${rest.length}`);
@@ -553,7 +553,6 @@ function shareItems(port: ShareMenuPort, actionClass: string) {
   draw();
   return { root, people, refresh: draw, destroy() { destroyed = true; unwatch(); clearTimeout(timer); } };
 }
-const initialOf = (name: string) => (name.match(/\p{L}|\p{N}/u)?.[0] ?? "·").toUpperCase();
 
 // The count of finished work on a tile's corner, its words for screen readers.
 function tally() {

@@ -88,8 +88,20 @@ test("guests edit a heading through Lex's link; his Undo takes it back, they fol
   // Ben joins too and sees her words, and her next letters as she types them; both in the same colour on each page.
   const ben = await guest(browser, true);
   const benFrame = await joins(ben, link, "Ben", `${heading} together`);
+  // With Lex's tab in the background (no animation frames come), her letters still reach Ben.
+  await lex.evaluate(() => {
+    const scope = window as typeof window & { shownFrame?: typeof requestAnimationFrame };
+    scope.shownFrame = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = () => 1;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+  });
   await anna.page.keyboard.type(" today");
   await expect(benFrame.locator(".hero h1")).toHaveText(`${heading} together today`, { timeout: 20_000 });
+  await lex.evaluate(() => {
+    const scope = window as typeof window & { shownFrame?: typeof requestAnimationFrame };
+    window.requestAnimationFrame = scope.shownFrame!;
+    Reflect.deleteProperty(document, "hidden");
+  });
   await anna.page.keyboard.press("Escape");
   await expect(target).not.toHaveAttribute("contenteditable", /.+/);
   const colour = await lex.locator('.repository-menu__people .person-chip[aria-label="Anna, a guest"]').getAttribute("data-colour");
@@ -147,6 +159,45 @@ test("closing Lex's tab ends the session: the guest's page says so and the link 
   await expect(ended(anna.page)).toBeVisible({ timeout: 15_000 });
   const token = new URL(link).searchParams.get("s")!;
   expect((await anna.page.request.get(`${baseURL}/api/live/guest?session=${token}`)).status()).toBe(410);
+  await anna.context.close();
+  await lexContext.close();
+  expect(pageErrors).toEqual([]);
+});
+
+test("a guest waits while Lex's connection drops and carries on when he is back; past 30 s the link has ended", async ({ browser, baseURL }) => {
+  test.setTimeout(150_000);
+  const lexContext = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ["clipboard-read", "clipboard-write"] });
+  const lex = await lexContext.newPage();
+  lex.on("pageerror", (error) => pageErrors.push(error.message));
+  // Lex's session socket, through a route the test can cut as a network would (no clean close) and keep closed.
+  let refuse = false;
+  const servers: { close(options?: { code?: number }): Promise<void> }[] = [];
+  await lex.routeWebSocket(/\/api\/live\/share/, (socket) => {
+    if (refuse) { void socket.close({ code: 1011 }); return; }
+    servers.push(socket.connectToServer());
+  });
+  await openEditor(lex, baseURL);
+  await editorMounted(lex);
+  const link = await share(lex);
+  const anna = await guest(browser);
+  const frame = await joins(anna, link, "Anna");
+  const status = anna.page.locator(".live-guest__status");
+
+  await servers.at(-1)!.close({ code: 4000 });
+  await expect(status).toHaveText("Waiting for native-demo-user…");
+  await expect(anna.page.locator(".live-guest__canvas")).toHaveAttribute("inert", "");
+  await expect(status).toBeHidden({ timeout: 25_000 });
+  const target = frame.locator(".hero h1");
+  await clickOnText(target);
+  await expect(target).toHaveAttribute("contenteditable", /.+/);
+  await anna.page.keyboard.press("End");
+  await anna.page.keyboard.type(" again");
+  await expect.poll(() => source(lex), { timeout: 20_000 }).toContain(`${heading} again`);
+
+  refuse = true;
+  await servers.at(-1)!.close({ code: 4000 });
+  await expect(status).toBeVisible();
+  await expect(ended(anna.page)).toBeVisible({ timeout: 45_000 });
   await anna.context.close();
   await lexContext.close();
   expect(pageErrors).toEqual([]);

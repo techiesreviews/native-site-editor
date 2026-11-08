@@ -92,6 +92,12 @@ test("while sharing starts the item keeps the keyboard's focus; guests show by i
   });
   const chips = await page.locator(".repository-menu__people .person-chip").evaluateAll(items => items.map(chip => [chip.textContent, chip.getAttribute("aria-label")]));
   assert.deepEqual(chips, [["A", "Anna, a guest"], ["B", "Ben, a guest"], ["C", "Cleo, a guest"], ["+2", "and Dev, Eli, guests"]]);
+  await page.evaluate(() => {
+    const guests = ["Anna", "Ben", "Cleo", "Dev"].map((name, index) => ({ name, id: String(index).repeat(32), colour: String(index), peer: `p${index}` }));
+    (globalThis as never as { share: { set(state: unknown): void } }).share.set({ sharing: true, link: "link", guests });
+  });
+  const four = await page.locator(".repository-menu__people .person-chip").evaluateAll(items => items.map(chip => [chip.textContent, chip.getAttribute("data-colour")]));
+  assert.deepEqual(four, [["A", "0"], ["B", "1"], ["C", "2"], ["+1", null]], "exactly four guests: three and a +1, each in the colour Lex's tab gave them");
 
   await page.evaluate(() => {
     const share = (globalThis as never as { share: { available: boolean; set(state: unknown): void } }).share;

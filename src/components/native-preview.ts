@@ -62,6 +62,9 @@ const RUNTIME_READY_TIMEOUT_MS = 8000;
 // The runtime answers a text patch at once; one not answered by then is let go
 // (its full update comes with the next render anyway).
 const PATCH_ANSWER_MS = 5000;
+// At most this many characters of new assets go to a synced session's guests in one message (the rest follow), so
+// a message stays well under the session's 32 MiB.
+const MIRROR_ASSET_CHARS = 16 * 1024 * 1024;
 // How soon a render waiting in a hidden tab goes to a synced session's guests (no animation frames come there).
 const HIDDEN_RENDER_MS = 100;
 
@@ -340,8 +343,10 @@ export type UpdatePayload = ReturnType<typeof composePayload> & { viewing: boole
 
 /** What a synced session's guests are sent (slice 30): each render of the page on show, or assets that arrived after
  * it, with every asset their copy lacks. No selection, History or template editing goes with it. */
+/** Each render leaves out the components and stylesheets that did not change since that copy's last message. */
+type MirrorShared = "components" | "componentPaths" | "styles" | "componentStyles";
 export type MirrorMessage =
-  | { kind: "render"; payload: UpdatePayload }
+  | { kind: "render"; payload: Omit<UpdatePayload, MirrorShared> & Partial<Pick<UpdatePayload, MirrorShared>> }
   | { kind: "assets"; assets: Pick<UpdatePayload, "styles" | "componentStyles"> & { assetChanges: AssetChanges } };
 /** A guest's text change from that copy of the page, as its frame reported it. */
 export interface GuestTextEdit { path: string; node: number[]; before: string; after: string; live: boolean }
@@ -548,35 +553,60 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // message carries only what changed: a page's images are posted once, not
   // with every render.
   const sentAssets = new Map<string, string>();
-  function assetChanges(sent = sentAssets): AssetChanges {
+  // `budget`: at most this many characters of new assets (at least one asset); the rest stay unsent (`more`).
+  function assetChanges(sent = sentAssets, budget = Infinity): AssetChanges & { more?: true } {
     const set: Record<string, string> = {};
     const drop: string[] = [];
-    for (const [path, url] of Object.entries(assets))
-      if (sent.get(path) !== url) { set[path] = url; sent.set(path, url); }
+    let used = 0, more = false;
+    for (const [path, url] of Object.entries(assets)) {
+      if (sent.get(path) === url) continue;
+      if (used && used + url.length > budget) { more = true; continue; }
+      set[path] = url; sent.set(path, url); used += url.length;
+    }
     for (const path of [...sent.keys()])
       if (!Object.hasOwn(assets, path)) { drop.push(path); sent.delete(path); }
-    return { set, drop };
+    return more ? { set, drop, more } : { set, drop };
   }
   // A synced session's copies of the page (slice 30), each with the assets it was sent. Only the page on show goes,
   // never while History shows an earlier version; `ended` hears this preview closing.
-  type Mirror = { send(message: MirrorMessage): void; sent: Map<string, string>; ended(): void };
+  // `shared`: what the copy last got of the components and stylesheets, so a render sends them only when they changed.
+  type Mirror = { send(message: MirrorMessage): void; sent: Map<string, string>; ended(): void; shared?: Record<"components" | "styles" | "componentStyles", string>; more?: ReturnType<typeof setTimeout> };
   const mirrors = new Set<Mirror>();
   const mirrorable = () => Boolean(site && frameState.active && !viewing);
+  // Assets left over (past MIRROR_ASSET_CHARS) follow in their own messages, one after another.
+  const moreAssets = (mirror: Mirror, more: boolean | undefined) => {
+    if (!more || mirror.more) return;
+    mirror.more = setTimeout(() => { mirror.more = undefined; if (mirrors.has(mirror)) mirrorAssets(mirror); }, 0);
+  };
   function mirrorRender(mirror: Mirror) {
     if (!site || !mirrorable()) return;
-    const payload = composePayload(site, sources, componentStyles, assets, assetChanges(mirror.sent), route, alone, "", undefined, undefined, undefined, undefined, unreadable);
+    const changes = assetChanges(mirror.sent, MIRROR_ASSET_CHARS);
+    const { more, ...assetChangesSent } = changes;
+    const payload = composePayload(site, sources, componentStyles, assets, assetChangesSent, route, alone, "", undefined, undefined, undefined, undefined, unreadable);
     // Only the page on show goes: guests never hold the site's other pages.
     const pages = Object.hasOwn(payload.pages, route) ? { [route]: payload.pages[route] } : {};
     const pagePaths = Object.hasOwn(payload.pagePaths, route) ? { [route]: payload.pagePaths[route] } : {};
-    mirror.send({ kind: "render", payload: { ...payload, pages, pagePaths, viewing: false } });
+    const { components, componentPaths, styles, componentStyles: styled, ...rest } = payload;
+    const shared = { components: JSON.stringify([components, componentPaths]), styles: JSON.stringify(styles), componentStyles: JSON.stringify(styled) };
+    const last = mirror.shared;
+    mirror.shared = shared;
+    mirror.send({ kind: "render", payload: {
+      ...rest, pages, pagePaths, viewing: false,
+      ...last?.components === shared.components ? {} : { components, componentPaths },
+      ...last?.styles === shared.styles ? {} : { styles },
+      ...last?.componentStyles === shared.componentStyles ? {} : { componentStyles: styled },
+    } });
+    moreAssets(mirror, more);
   }
-  function mirrorAssets() {
+  function mirrorAssets(only?: Mirror) {
     if (!site || !mirrorable()) return;
-    for (const mirror of mirrors) {
-      const changes = assetChanges(mirror.sent);
+    for (const mirror of only ? [only] : mirrors) {
+      const { more, ...changes } = assetChanges(mirror.sent, MIRROR_ASSET_CHARS);
       if (!Object.keys(changes.set).length && !changes.drop.length) continue;
       const { styles, componentStyles: styled } = composeStyles(site, sources, componentStyles, assets, route, alone);
+      if (mirror.shared) mirror.shared = { ...mirror.shared, styles: JSON.stringify(styles), componentStyles: JSON.stringify(styled) };
       mirror.send({ kind: "assets", assets: { assetChanges: changes, styles, componentStyles: styled } });
+      moreAssets(mirror, more);
     }
   }
   // Assets that arrived after the page was drawn: the runtime shows them in
@@ -1397,7 +1427,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       const mirror: Mirror = { send, sent: new Map(), ended };
       mirrors.add(mirror);
       mirrorRender(mirror);
-      return { render: () => mirrorRender(mirror), stop: () => { mirrors.delete(mirror); } };
+      return { render: () => mirrorRender(mirror), stop: () => { mirrors.delete(mirror); clearTimeout(mirror.more); } };
     },
     /**
      * A guest's text change from that copy (slice 30), written as this tab's own (an unsaved change here, its Undo
@@ -1564,7 +1594,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     },
     destroy() {
       clearTimeout(hiddenTimer);
-      for (const mirror of [...mirrors]) mirror.ended();
+      for (const mirror of [...mirrors]) { clearTimeout(mirror.more); mirror.ended(); }
       mirrors.clear();
       hidePageCarets();
       link.close();
