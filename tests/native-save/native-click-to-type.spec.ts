@@ -719,3 +719,24 @@ test("text landing before the caret moves it along: the next letter goes after t
   await expect.poll(() => source(page)).toContain(">Anna: A native!? browser preview</h1>");
   await expect(heading).toHaveText("Anna: A native!? browser preview");
 });
+
+// A word an input method composes goes out once it is chosen (ticket am-23): the source never holds the letters being
+// composed, then holds the chosen word, with nothing refused.
+test("a word composed with an input method is written once chosen, never while it is composed", async ({ page }) => {
+  const heading = frame(page).locator(".hero h1");
+  const at = await afterWord(page, ".hero h1", "preview");
+  await page.mouse.click(at.x, at.y);
+  await expect(heading).toBeFocused();
+  const sources: string[] = [];
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.imeSetComposition", { text: "に", selectionStart: 1, selectionEnd: 1 });
+  sources.push((await source(page))!);
+  await cdp.send("Input.imeSetComposition", { text: "にほ", selectionStart: 2, selectionEnd: 2 });
+  await expect(heading).toHaveText("A native browser previewにほ");
+  sources.push((await source(page))!);
+  await cdp.send("Input.insertText", { text: "日本" });
+  await expect.poll(() => source(page)).toContain(">A native browser preview日本</h1>");
+  await expect(heading).toHaveText("A native browser preview日本");
+  expect(sources.filter(text => /preview[にほ]/.test(text))).toEqual([]);
+  await expect(page.getByText("That text change could not be placed in the source.", { exact: false })).toHaveCount(0);
+});

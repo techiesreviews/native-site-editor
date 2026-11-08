@@ -518,7 +518,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // Typing on the page (ticket am-23): the frame's document (a reload starts its text edits' numbers again), the
   // latest text edit written or turned down, this tab's caret as typed, and others' carets: where the frame is asked
   // to find them and where it found them, for the carets drawn over it (src/components/live-carets.ts).
-  let frameLoads = 0, typedSeq = 0;
+  let frameLoads = 0, typedSeq = 0, caretsAwaitReady = false;
   let ownCaret: PageTextCaret | undefined;
   let caretPoints: PageCaretPoint[] = [];
   const caretListeners = new Set<() => void>(), caretRectListeners = new Set<(rects: PageCaretRect[]) => void>();
@@ -630,6 +630,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       frameLoads++;
       typedSeq = 0;
       ownCaret = undefined;
+      // A caret the old document sent after this is not this one's: heard again from its `ready`.
+      caretsAwaitReady = true;
       if (rafHandle) cancelAnimationFrame(rafHandle);
       rafHandle = 0;
       frame.setAttribute("srcdoc", runtimeDoc(link.reload()));
@@ -826,6 +828,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   });
   // Carets on the page (ticket am-23): this tab's as typed, others' as found (page-caret-port.ts).
   link.on("text-caret", (message) => {
+    if (caretsAwaitReady) return;
     ownCaret = message.caret && site && nativeSitePaths(site).includes(message.caret.path) ? message.caret : undefined;
     caretChanged();
   });
@@ -882,6 +885,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // The frame's document loaded (a late `ready` from a replaced one is not heard).
   link.on("ready", () => {
     endPress();
+    caretsAwaitReady = false;
     sentAssets.clear();
     shownRoute = undefined;
     // A parked frame only records it; activate() sends the rest.

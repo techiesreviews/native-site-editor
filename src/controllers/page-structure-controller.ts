@@ -777,10 +777,17 @@ export function createPageStructureController(ports: PageStructurePorts) {
   // then AB→ABC) waits for the earlier one instead of racing it.
   let nativeTextEditQueue: Promise<void> = Promise.resolve();
 
+  // Letters of one typing (its `group`) still queued, and the text before the first of them not yet written (`before`):
+  // letters bound for a page left meanwhile (draftLeftPage) wait for the rest queued behind them and go in as one step,
+  // from the first one's text to the last one's, as a page left after typing always took it (ticket am-23).
+  const typings = new Map<string, { queued: number; before?: string }>();
   function applyNativeTextEdit(edit: NativeTextEdit) {
     const run = prepareNativeTextEdit(edit);
     if (!run) return Promise.resolve();
-    const next = nativeTextEditQueue.then(run, run);
+    const group = edit.group, typing = group === undefined ? undefined : typings.get(group) ?? { queued: 0 };
+    if (typing) { typing.queued++; typings.set(group!, typing); }
+    const done = () => { if (typing && --typing.queued === 0 && typing.before === undefined) typings.delete(group!); };
+    const next = nativeTextEditQueue.then(run, run).finally(done);
     nativeTextEditQueue = next.catch(() => {});
     return next;
   }
@@ -843,11 +850,18 @@ export function createPageStructureController(ports: PageStructurePorts) {
       return undefined;
     }
     // The text change as one guarded edit of `path`'s bytes now; `select`: the element after it.
-    const textPlan = (done: string, undone: string, select: boolean) => (r: Reads): PlanResult => {
+    const textPlan = (done: string, undone: string, select: boolean, from = before) => (r: Reads): PlanResult => {
       const source = r.source(path);
-      const edit = source === undefined ? undefined : nativeTextSourceEdit(source, node, before, after);
+      const edit = source === undefined ? undefined : nativeTextSourceEdit(source, node, from, after);
       if (!edit) return { refuse: TEXT_UNPLACED };
       return { edits: new Map([[path, [edit]]]), ...select ? { select: { after: { path, node } } } : {}, done, undone };
+    };
+    // The text before this typing's letters not yet written (held for a page left meanwhile), else this letter's own.
+    const unwritten = () => {
+      const typing = group === undefined ? undefined : typings.get(group);
+      const from = typing?.before ?? before;
+      if (typing) typing.before = undefined;
+      return from;
     };
     // A page's text committed before its file was mounted, whose page was then
     // left (another page opened): it goes into that page's draft as one
@@ -861,8 +875,14 @@ export function createPageStructureController(ports: PageStructurePorts) {
       // The step is the open file's, as it is mounted now; the left page is not opened again, nor selected.
       const open = ports.appStore.openFile.value;
       if (open === undefined || !ports.editorModule.isMounted(open)) { ports.errorMessage(new Error("Open a page before changing these files.")); return; }
+      // More letters of this typing queued behind this one: they take its text along.
+      const typing = group === undefined ? undefined : typings.get(group);
+      if (typing) {
+        typing.before ??= before;
+        if (typing.queued > 1) return;
+      }
       const label = ports.nativePageLabelOf(path);
-      const outcome = await ports.edits.run(textPlan(`Text changed on ${label}.`, `Undid the text change on ${label}.`, false));
+      const outcome = await ports.edits.run(textPlan(`Text changed on ${label}.`, `Undid the text change on ${label}.`, false, unwritten()));
       if (!outcome.ok) ports.errorMessage(new Error(outcome.message));
     };
     return async () => {
@@ -884,7 +904,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // select nothing: the element stays selected on the page as it is typed in. Only text the page sends when typing
     // ends without having sent it as letters (a word cut short while being composed, or before Ctrl+B/I/K) selects
     // the element again after its render.
-    const outcome = ports.edits.now(textPlan("Text changed", "Undid the text change", !live), { anchor: path, ...group ? { group } : {} });
+    const outcome = ports.edits.now(textPlan("Text changed", "Undid the text change", !live, unwritten()), { anchor: path, ...group ? { group } : {} });
     if (outcome.ok) return;
     preview.refresh();
     ports.errorMessage(new Error(outcome.message));

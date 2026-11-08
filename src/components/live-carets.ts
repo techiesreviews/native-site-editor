@@ -372,6 +372,11 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
     layer.style.height = `${page.frame.clientHeight}px`;
   };
   const place = (widget: Widget) => { if (widget.at) placeTag(widget, widget.at.left, widget.at.top, layer.clientWidth); };
+  // The frame moving or changing size in its pane (a banner above it, the code pane growing) moves no caret in its
+  // viewport, so no new positions come: the layer follows the frame by itself.
+  const resized = new ResizeObserver(() => { fit(); for (const widget of widgets.values()) place(widget); });
+  resized.observe(page.frame);
+  resized.observe(page.layer);
 
   /** Whose changes the name tags can take back: asked once a frame for every caret, only when that may have changed. */
   const askUndo = () => {
@@ -414,6 +419,7 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
 
   const draw = () => {
     frame = 0;
+    fit();
     const source = shows() ? page.source(share.path) : undefined;
     const points: PageCaretPoint[] = [], seen = new Set<string>();
     let added = false;
@@ -482,6 +488,7 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
     stopCarets();
     stopUndo();
     stopPage();
+    resized.disconnect();
     cancelAnimationFrame(frame);
     cancelAnimationFrame(asking);
     page.show([]);

@@ -173,6 +173,21 @@ test("Lex and Anna type in one paragraph on the page and end identical; each see
     const leadBox = await lead(lex.page).boundingBox();
     expect(annaLine!.x).toBeGreaterThan(leadBox!.x + 20);
 
+    // A stylesheet error at Lex's (an import of a sheet the branch lacks) puts its banner above the page, moving the frame down in its pane: Anna's caret stays on
+    // her words (the carets' layer follows the frame), and again once the error is fixed.
+    const styles = (text: string | null) => lex.page.evaluate(async (text) => {
+      const { monaco } = await import("/src/components/monaco.ts");
+      const model = monaco.editor.getModels().find(found => found.uri.path.endsWith("/styles/site.css"))!;
+      if (text) model.pushEditOperations([], [{ range: new monaco.Range(1, 1, 1, 1), text }], () => null);
+      else model.undo();
+    }, text);
+    await styles('@import "missing-sheet.css";\n');
+    await expect(lex.page.locator(".native-preview-error")).toBeVisible({ timeout: 10_000 });
+    await expect.poll(() => caretInside(annaAtLex, lead(lex.page)), { timeout: 10_000 }).toBe(true);
+    await styles(null);
+    await expect(lex.page.locator(".native-preview-error")).toBeHidden({ timeout: 10_000 });
+    await expect.poll(() => caretInside(annaAtLex, lead(lex.page)), { timeout: 10_000 }).toBe(true);
+
     // Lex takes Anna's change back from her tag: her words go in both tabs, his stay.
     await annaAtLex.locator(".live-caret__mark").hover();
     const undo = annaAtLex.getByRole("button", { name: "Undo Anna's change" });
