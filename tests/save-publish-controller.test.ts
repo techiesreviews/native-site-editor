@@ -1,8 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSavePublishController, type SavePublishPorts } from "../src/controllers/save-publish-controller.ts";
-import { draftKey, type DraftScope, type SavedDraft } from "../src/drafts.ts";
-import { authorsOf, forgetAuthors, recordAuthor } from "../src/save-authors.ts";
+import type { DraftScope, SavedDraft } from "../src/drafts.ts";
 import { forEachAwait } from "./support/await-race.ts";
 import { listChanges } from "../src/file-changes.ts";
 import { EMPTY_COMMIT, type PublishResult, type Snapshot } from "../shared/types.ts";
@@ -29,6 +28,7 @@ function fixture() {
   const asked: ReturnType<typeof deferred<boolean>>[] = [];
   const questions: string[] = [];
   const log: string[] = [];
+  const authorsForgotten: string[] = [];
   const refreshed = deferred<void>();
   const hooks: { get?: () => void } = {};
   let wake: (() => void) | undefined, unwoken = 0, loads = 0, resync = false, opened: string | undefined;
@@ -50,6 +50,7 @@ function fixture() {
     reload: async () => { loads++; },
     findEntry: (path) => { const answer = deferred<Entry>(); entries.set(path, answer); return answer.promise; },
     forget: (_s, path) => { log.push(`forget ${path}`); },
+    forgetAuthors: (_s, path) => { authorsForgotten.push(path); },
     redraw: () => { log.push("redraw"); },
     changed: () => { log.push("changed"); },
     release: (paths) => { log.push(`release ${[...paths].join(",")}`); return opened && paths.has(opened) ? opened : undefined; },
@@ -72,7 +73,7 @@ function fixture() {
   } satisfies SavePublishPorts;
   const controller = createSavePublishController(ports);
   return {
-    controller, ports, state, drafts, calls, answers, entries, asked, questions, log, hooks, refreshed: refreshed.promise,
+    controller, ports, state, drafts, calls, answers, entries, asked, questions, log, authorsForgotten, hooks, refreshed: refreshed.promise,
     wake: () => wake?.(), counts: () => ({ loads, unwoken }),
     open: (path?: string) => { opened = path; }, resyncing: (value: boolean) => { resync = value; },
   };
@@ -504,15 +505,14 @@ test("without a user scope, discardFile asks nothing even when the row has a cha
   assert.equal(f.drafts.size, 1);
 });
 
-test("a save or a discard forgets who changed its files, so the next commit names only later authors (am-26)", () => {
+test("a discarded draft, or one found to be GitHub's version, names no one any more (am-26)", async () => {
   const f = fixture();
-  const key = (path: string) => draftKey(scope1, path);
-  for (const path of ["index.html", "about.html", "kept.html"]) recordAuthor(key(path), { name: "anna" });
   f.drafts.set("about.html", draft("about.html"));
-  f.controller.published(f.controller.proof(), scope1, result("f".repeat(40)), [draft("index.html")]);
-  assert.deepEqual(authorsOf([key("index.html")], "lex"), [], "saved: named in that commit");
+  f.drafts.set("kept.html", draft("kept.html"));
+  f.controller.published(f.controller.proof(), scope1, result("f".repeat(40)), [draft("kept.html")]);
+  assert.deepEqual(f.authorsForgotten, [], "a save settles its names in the publish menu, which knows what it sent");
   f.controller.discard(["about.html"]);
-  assert.deepEqual(authorsOf([key("about.html")], "lex"), [], "discarded: their changes are gone");
-  assert.deepEqual(authorsOf([key("kept.html")], "lex"), [{ name: "anna" }], "other files keep theirs");
-  forgetAuthors(key("kept.html"));
+  assert.deepEqual(f.authorsForgotten, ["about.html"]);
+  f.controller.settleDeleted("kept.html", false);
+  assert.deepEqual(f.authorsForgotten, ["about.html", "kept.html"], "Discard draft of a file GitHub deleted");
 });

@@ -1,7 +1,6 @@
 import type { Stamp } from "../guarded-edit";
 import { githubScope, same } from "../workspace-session";
-import { draftKey, type DraftScope, type SavedDraft } from "../drafts";
-import { forgetAuthors } from "../save-authors";
+import type { DraftScope, SavedDraft } from "../drafts";
 import { keepAsNewFile, listChanges, pruneUnchanged, settleDeletedUpstream, type DraftAccess, type FileChange } from "../file-changes";
 import { EMPTY_COMMIT, type PublishResult, type Snapshot, type TreeEntry } from "../../shared/types";
 
@@ -22,6 +21,8 @@ export interface SavePublishPorts {
   reload(): Promise<void>;
   findEntry(path: string): Promise<TreeEntry | undefined>;
   forget(scope: DraftScope, path: string): void;
+  /** The draft of `path` went (discarded, or found to be GitHub's version): no one is named for it (src/save-authors.ts). */
+  forgetAuthors(scope: DraftScope, path: string): void;
   /** The drafts' listings, the file tree and the native preview, drawn again. */
   redraw(): void;
   /** The host's views after files changed (src/main.ts changed). */
@@ -173,7 +174,7 @@ export function createSavePublishController(ports: SavePublishPorts) {
     const dropped = await pruneUnchanged(store, scope, left, (path) => entries.get(path)).catch(() => []);
     // A save's refresh may adopt a snapshot meanwhile; pruned drafts are gone either way.
     if (!live(was, false)) return;
-    for (const path of dropped) ports.forget(scope, path);
+    for (const path of dropped) { ports.forget(scope, path); ports.forgetAuthors(scope, path); }
     if (dropped.length || deletedUpstream.size || missing.size) ports.redraw();
   }
   // Run after the first paint, or at once by a file opened before then that needs it.
@@ -188,7 +189,7 @@ export function createSavePublishController(ports: SavePublishPorts) {
     if (!scope) return;
     const opened = ports.release(new Set([path]));
     if (keep) keepAsNewFile(ports.drafts(), scope, path);
-    else ports.drafts().remove(scope, path);
+    else { ports.drafts().remove(scope, path); ports.forgetAuthors(scope, path); }
     deletedUpstream.delete(path);
     ports.changed();
     if (opened) void ports.openAfter(keep ? path : undefined);
@@ -222,7 +223,7 @@ export function createSavePublishController(ports: SavePublishPorts) {
       if (!store.get(scope, path)) continue;
       // The model kept for the file goes with its draft.
       if (!ports.drop(scope, path)) store.remove(scope, path);
-      forgetAuthors(draftKey(scope, path));
+      ports.forgetAuthors(scope, path);
       deletedUpstream.delete(path);
       count++;
     }
@@ -279,8 +280,6 @@ export function createSavePublishController(ports: SavePublishPorts) {
    * commit loaded meanwhile keeps its own head, snapshot and base.
    */
   function published(was: SaveProof, scope: DraftScope, result: PublishResult, submitted: SavedDraft[]) {
-    // Their authors are named in the commit now: the next save names only who changes the files after it.
-    for (const draft of submitted) forgetAuthors(draftKey(scope, draft.path));
     const shown = live(was, false) || isOpen(scope) && !!was.snapshot && ports.snapshot()?.commit === was.snapshot.commit;
     if (shown) {
       seeHead(result.commit);

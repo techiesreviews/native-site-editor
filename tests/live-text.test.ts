@@ -15,11 +15,10 @@ import type { CaretShare } from "../src/live-text";
 import type { JsonValue } from "../shared/agent-command";
 import type { LiveAccess } from "../shared/live-room";
 import { writeAs, type LiveAuthor } from "../src/live-author";
-import { authorsOf, forgetAuthors } from "../src/save-authors";
+import { createSaveAuthors, type SaveAuthors } from "../src/save-authors";
 import { commitMessage } from "../worker/publish";
 
-const defaultScope: DraftScope = { account: "lex", repoId: 501, repo: "lex/starter", branch: "main" };
-const scope = defaultScope;
+const scope: DraftScope = { account: "lex", repoId: 501, repo: "lex/starter", branch: "main" };
 const path = "index.html";
 const base = "<h1>Fresh bread</h1>\n<p>Open at seven.</p>\n";
 const sha = "a".repeat(40);
@@ -84,11 +83,12 @@ function keeper(): CopyKeeper & { copies: Map<string, KeptCopy | undefined> } {
   return { copies, read: async key => copies.get(key), write: (key, copy) => { copies.set(key, copy); } };
 }
 
-function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?: string; clock?: LiveClock; keeper?: CopyKeeper; race?: AwaitRace; persistence?: DraftPersistence; loadYjs?: () => Promise<typeof import("yjs")>; carets?: (share: CaretShare) => () => void; account?: string } = {}) {
-  const scope: DraftScope = options.account ? { ...defaultScope, account: options.account } : defaultScope;
+function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?: string; clock?: LiveClock; keeper?: CopyKeeper; race?: AwaitRace; persistence?: DraftPersistence; loadYjs?: () => Promise<typeof import("yjs")>; carets?: (share: CaretShare) => () => void; account?: string; authors?: SaveAuthors } = {}) {
+  const own: DraftScope = options.account ? { ...scope, account: options.account } : scope;
+  const authors = options.authors ?? createSaveAuthors();
   const store = createDraftStore(options.persistence ? { persistence: options.persistence } : {});
-  store.open(scope, path, { text: base, baseSha: options.baseSha ?? sha });
-  if (text !== base) store.edit({ scope, path, text, label: "Earlier draft" });
+  store.open(own, path, { text: base, baseSha: options.baseSha ?? sha });
+  if (text !== base) store.edit({ scope: own, path, text, label: "Earlier draft" });
   const openFile = signal<string | undefined>(path);
   let yjsLoads = 0, socket: ReturnType<typeof room.open> | undefined;
   const kept = options.keeper ?? keeper(), sockets: string[] = [];
@@ -96,19 +96,19 @@ function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?
   let keptRead = false;
   const race = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => options.race ? options.race.port(name, work) : work;
   const stop = startLiveText({
-    store, openFile, scope: () => scope, on: true, ...(options.clock ? { clock: options.clock } : {}),
+    store, openFile, scope: () => own, on: true, authors, ...(options.clock ? { clock: options.clock } : {}),
     keeper: { read: key => race("kept copy", (key: string) => kept.read(key))(key).finally(() => { keptRead = true; }), write: (key, copy) => kept.write(key, copy) },
     openRoom: roomOptions => { socket = room.open(roomOptions); sockets.push(socket.me.id); return socket; },
     loadYjs: race("Yjs", () => { yjsLoads++; return options.loadYjs ? options.loadYjs() : import("yjs"); }),
     ...(options.carets ? { loadCarets: race("carets", async () => options.carets!) } : {}),
   });
   return {
-    store, openFile, stop, keeper: kept, sockets, scope,
+    store, openFile, stop, keeper: kept, sockets, scope: own, authors,
     get keptRead() { return keptRead; },
     get yjsLoads() { return yjsLoads; },
     get socket() { return socket!; },
-    get text() { return store.text(scope, path)!; },
-    type(at: number, inserted: string, removed = 0) { assert.equal(store.edit({ scope, path, changes: [{ start: at, end: at + removed, text: inserted }] }).ok, true); },
+    get text() { return store.text(own, path)!; },
+    type(at: number, inserted: string, removed = 0) { assert.equal(store.edit({ scope: own, path, changes: [{ start: at, end: at + removed, text: inserted }] }).ok, true); },
   };
 }
 
@@ -1128,12 +1128,15 @@ test("a tab's presence is read for at most 16 agents' carets, and entries that a
   anna.stop(); lex.stop();
 });
 
+/** Who `tab` would name in a commit saving the file, as `account`. */
+const named = async (who: ReturnType<typeof tab>, account = who.scope.account) =>
+  (await who.authors.collect([{ key: draftKey(who.scope, path), baseSha: sha }], account)).authors;
+const byName = (authors: { name: string }[]) => [...authors].sort((a, b) => a.name.localeCompare(b.name));
+
 test("saving names everyone whose changes the file carries: another person and an agent, in one commit", async () => {
   const room = fakeRoom();
   const anna = tab(room, base, { account: "anna" });
   const lex = tab(room);
-  const lexKey = draftKey(lex.scope, path), annaKey = draftKey(anna.scope, path);
-  forgetAuthors(lexKey); forgetAuthors(annaKey);
   await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
   await quiet();
   anna.type(4, "Warm ");
@@ -1142,30 +1145,64 @@ test("saving names everyone whose changes the file carries: another person and a
   writeAs(agent, () => anna.store.edit({ scope: anna.scope, path, changes: [{ start: base.indexOf("seven"), end: base.indexOf("seven"), text: "half past " }] }));
   lex.type(0, "<!-- Lex -->");
   await until(() => lex.text.includes("Warm") && lex.text.includes("half past") && anna.text === lex.text, "every change on both");
-  await until(() => authorsOf([lexKey], "lex").length === 2, "Lex's tab names Anna and the agent");
-  const named = authorsOf([lexKey], "lex");
-  assert.deepEqual([...named].sort((a, b) => a.name.localeCompare(b.name)), [{ name: "anna" }, { name: "Claude Code", agent: true }]);
+  for (let tries = 0; (await named(lex)).length < 2 && tries < 500; tries++) await new Promise(resolve => setTimeout(resolve, 2));
+  const lexNames = await named(lex);
+  assert.deepEqual(byName(lexNames), [{ name: "anna" }, { name: "Claude Code", agent: true }]);
   // The one saving is the commit's author, not named again.
-  assert.deepEqual(authorsOf([annaKey], "anna").map(author => author.name).sort(), ["Claude Code", "lex"]);
-  const names = named.map(author => `${author.name}${author.agent ? " (agent)" : ""}`);
-  assert.equal(commitMessage("Update index.html with Native Site Editor", named),
+  assert.deepEqual(byName(await named(anna)), [{ name: "Claude Code", agent: true }, { name: "lex" }]);
+  const names = lexNames.map(author => `${author.name}${author.agent ? " (agent)" : ""}`);
+  assert.equal(commitMessage("Update index.html with Native Site Editor", lexNames),
     `Update index.html with Native Site Editor\n\nChanges by ${names[0]} and ${names[1]}.`);
   anna.stop(); lex.stop();
-  forgetAuthors(lexKey); forgetAuthors(annaKey);
 });
 
-test("an agent writing into this tab's drafts is named for the commit even with live sharing off", () => {
+test("a catch-up repeating text this copy holds names no one again: after a save, a joiner brings no old names back", async () => {
+  const room = fakeRoom();
+  const anna = tab(room, base, { account: "anna" });
+  const lex = tab(room);
+  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
+  await quiet();
+  anna.type(4, "Warm ");
+  await until(() => lex.text.includes("Warm"), "Anna's change on Lex's tab");
+  for (let tries = 0; !(await named(lex)).length && tries < 500; tries++) await new Promise(resolve => setTimeout(resolve, 2));
+  assert.deepEqual(await named(lex), [{ name: "anna" }]);
+  // Lex saves: Anna's change is in that commit.
+  const { sent } = await lex.authors.collect([{ key: draftKey(lex.scope, path), baseSha: sha }], "lex");
+  lex.authors.settle(sent, new Map());
+  assert.deepEqual(await named(lex), []);
+  // Sam joins: every tab answers his request, and those answers reach Lex's tab too, with all the copy's text.
+  const sam = tab(room, base, { account: "sam" });
+  await until(() => sam.text === lex.text, "Sam caught up");
+  await quiet();
+  assert.deepEqual(await named(lex), [], "Anna added nothing since");
+  anna.type(0, "<!-- again -->");
+  await until(() => lex.text.startsWith("<!-- again -->"), "Anna's next change");
+  for (let tries = 0; !(await named(lex)).length && tries < 500; tries++) await new Promise(resolve => setTimeout(resolve, 2));
+  assert.deepEqual(await named(lex), [{ name: "anna" }], "her new change names her again");
+  anna.stop(); lex.stop(); sam.stop();
+});
+
+test("an agent writing into this tab's drafts is named for the commit even with live sharing off, a deletion too; a file back to its saved text names no one", async () => {
   const store = createDraftStore();
   store.open(scope, path, { text: base, baseSha: sha });
-  const key = draftKey(scope, path);
-  forgetAuthors(key);
-  const stop = startLiveText({ store, openFile: signal<string | undefined>(path), scope: () => scope, on: false });
+  const key = draftKey(scope, path), authors = createSaveAuthors();
+  const names = async (baseSha: string | null = sha, at = key) => (await authors.collect([{ key: at, baseSha }], "lex")).authors;
+  const stop = startLiveText({ store, openFile: signal<string | undefined>(path), scope: () => scope, on: false, authors });
   store.edit({ scope, path, changes: [{ start: 0, end: 0, text: "<!-- mine -->" }] });
-  assert.deepEqual(authorsOf([key], "lex"), [], "this tab's own change names no one");
+  assert.deepEqual(await names(), [], "this tab's own change names no one");
   writeAs({ grant: "g", name: "Codex" }, () => store.edit({ scope, path, changes: [{ start: 0, end: 0, text: "<!-- agent -->" }] }));
-  assert.deepEqual(authorsOf([key], "lex"), [{ name: "Codex", agent: true }]);
+  assert.deepEqual(await names(), [{ name: "Codex", agent: true }]);
+  // Undo back to GitHub's text: nothing of theirs is left to save.
+  store.edit({ scope, path, text: base });
+  assert.deepEqual(await names(), [], "back to the saved text");
+  // An agent deleting a file (a receipt step) is named for that deletion.
+  const other = "about.html";
+  store.open(scope, other, { text: "<p>About</p>", baseSha: "b".repeat(40) });
+  const deleted = writeAs({ grant: "g", name: "Codex" }, () => store.applyReceipt(draftKey(scope, other), "Delete about.html",
+    [{ scope, path: other, after: { text: "<p>About</p>", base: "<p>About</p>", baseSha: "b".repeat(40), flags: { deleted: true } } }]));
+  assert.equal(deleted.ok, true);
+  assert.deepEqual(await names("b".repeat(40), draftKey(scope, other)), [{ name: "Codex", agent: true }]);
   stop();
   writeAs({ grant: "g", name: "Later" }, () => store.edit({ scope, path, changes: [{ start: 0, end: 0, text: "x" }] }));
-  assert.deepEqual(authorsOf([key], "lex"), [{ name: "Codex", agent: true }], "stopped: nothing more is noted");
-  forgetAuthors(key);
+  assert.deepEqual(await names(), [], "stopped: nothing more is noted");
 });

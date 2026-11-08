@@ -2,12 +2,12 @@ import { button, link, node } from "../ui/dom";
 import { setIcon } from "../icons";
 import { mountDropdown } from "./dropdown";
 import { draftKey, draftStore, type DraftScope, type SavedDraft } from "../drafts";
-import { EMPTY_COMMIT, type PublishFile, type PublishResult } from "../../shared/types";
+import { EMPTY_COMMIT, type PublishFile, type PublishResult, type SaveAuthor } from "../../shared/types";
 import { diffCounts, diffHunks, sideBySideRows, type SideCell } from "../text-diff";
 import { CHANGE_WORDS, listChanges, publishFiles, type FileChange } from "../file-changes";
 import { formatBytes, postUpload, sendUploads, uploadBytes } from "../uploads";
 import { deployStatus, onDeployStatus, setDeployStatus, type DeployStatus } from "../deploy-status";
-import { authorsOf } from "../save-authors";
+import { saveAuthors, type SaveAuthors } from "../save-authors";
 import "./publish-menu.css";
 
 // Paths a save was refused for, by draft key: GitHub changed them (or
@@ -58,6 +58,8 @@ export function createPublishMenu(options: {
   onRefused?: () => void;
   /** The branch's drafts as Save sends them (the editor's draft store); the persisted ones by default. */
   drafts?: () => SavedDraft[];
+  /** Who changed each file, named in the commit (src/save-authors.ts `saveAuthors` by default). */
+  authors?: SaveAuthors;
 }) {
   const drafts = options.drafts ?? (() => draftStore().list(options.scope));
   // Publish commits the selected changes to the branch in one go; hovering it shows them.
@@ -366,10 +368,8 @@ export function createPublishMenu(options: {
     };
     // One commit of `files` on top of `base`; resolves to nothing when the
     // session expired or GitHub changed files (said in the menu).
-    async function post(files: PublishFile[], base: string | undefined): Promise<PublishResult | undefined> {
+    async function post(files: PublishFile[], base: string | undefined, authors: SaveAuthor[]): Promise<PublishResult | undefined> {
       // Gzipped, a commit of many pages stays a small request.
-      // Everyone else whose changes these files carry is named in the commit (ticket am-26).
-      const authors = authorsOf(new Set(submitted.map((draft) => draftKey(options.scope, draft.path))), options.scope.account);
       const body = await gzip(JSON.stringify({ branch: options.scope.branch, ...(base ? { head: base } : {}), files, ...(authors.length ? { authors } : {}) }));
       const response = await fetch(`/api/publish?${new URLSearchParams({ repo: options.scope.repo })}`, {
         method: "POST", credentials: "same-origin",
@@ -392,6 +392,13 @@ export function createPublishMenu(options: {
     }
     try {
       const head = options.head?.();
+      // Everyone else whose changes these files carry is named in the commit (ticket am-26); once saved, those names go.
+      const names = options.authors ?? saveAuthors();
+      const { authors, sent } = await names.collect(submitted.map((draft) => ({ key: draftKey(options.scope, draft.path), baseSha: draft.baseSha })), options.scope.account);
+      const settle = (result: PublishResult, drafts: SavedDraft[]) => {
+        const keys = new Set(drafts.map((draft) => draftKey(options.scope, draft.path)));
+        names.settle(new Map([...sent].filter(([key]) => keys.has(key))), new Map(result.files.map((file) => [draftKey(options.scope, file.path), file.sha])));
+      };
       const files = publishFiles(chosen);
       let data: PublishResult | undefined;
       if (head === EMPTY_COMMIT) {
@@ -402,16 +409,20 @@ export function createPublishMenu(options: {
           files.find((file) => file.path === "index.html" && !file.sha && !file.delete) ??
           files.find((file) => !file.sha && !file.delete && file.baseSha === null);
         if (!first) throw new Error("The first save to an empty repository needs a new text file, such as index.html. Select one too.");
-        const started = await post([first], head);
+        const started = await post([first], head, authors);
         if (!started) return;
         const rest = files.filter((file) => file !== first);
         // When the rest is not saved, the first commit stands: its file is GitHub's now.
-        const keepFirst = () => options.onPublished(started, chosen.filter((change) => change.path === first.path).flatMap((change) => change.drafts));
+        const keepFirst = () => {
+          const saved = chosen.filter((change) => change.path === first.path).flatMap((change) => change.drafts);
+          settle(started, saved);
+          options.onPublished(started, saved);
+        };
         if (!rest.length) data = started;
         else {
           try {
             await sendUploads(uploadBytes(), options.scope, submitted, upload);
-            const after = await post(rest, started.commit);
+            const after = await post(rest, started.commit, authors);
             if (!after) { keepFirst(); return; }
             data = { ...after, files: [...started.files, ...after.files], deleted: after.deleted ?? [] };
           } catch (error) {
@@ -422,10 +433,11 @@ export function createPublishMenu(options: {
       } else {
         // Uploaded files become GitHub blobs first; the commit names them.
         await sendUploads(uploadBytes(), options.scope, submitted, upload);
-        data = await post(files, head);
+        data = await post(files, head, authors);
         if (!data) return;
       }
       // Reconcile even if the user navigated away while the request was in flight.
+      settle(data, submitted);
       options.onPublished(data as PublishResult, submitted);
       if (disposed) return;
       // Following the deploy (site-actions.ts) took over the status; else it is just Saved.

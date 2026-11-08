@@ -101,8 +101,8 @@ export function validatePublish(value: unknown): PublishRequest {
 
 /** Authors one commit names (ticket am-26): a room of a few people and their agents stays well inside it. */
 const MAX_AUTHORS = 50;
-/** A name on one line of the commit message: no line breaks or control characters, at most 80 characters. */
-const validName = (name: unknown) => typeof name === "string" && name.trim().length > 0 && [...name].length <= 80 && !/[\u0000-\u001f\u007f]/.test(name);
+/** A name on one line of the commit message: no line breaks (Unicode ones too) or control characters, at most 80 characters. */
+const validName = (name: unknown) => typeof name === "string" && name.trim().length > 0 && [...name].length <= 80 && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(name);
 const validAuthor = (value: unknown) => {
   const author = value as Partial<SaveAuthor> | null;
   return !!author && typeof author === "object" && validName(author.name)

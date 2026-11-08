@@ -31,7 +31,7 @@ import { createPagesState, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTa
 import type { PreviewSelectionController } from "./controllers/preview-selection-controller";
 import { createSavePublishController } from "./controllers/save-publish-controller";
 import type { createSourcePaneController } from "./controllers/source-pane-controller";
-import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
+import { draftKey, draftStore, type DraftScope, type SavedDraft } from "./drafts";
 import { duplicateFile, listChanges, restoreFile as restoreDraftFile, type FileChange } from "./file-changes";
 import type { createFinishedElsewhere } from "./finished-elsewhere";
 import type { GuardedEdits, Reads } from "./guarded-edit";
@@ -700,6 +700,8 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     openFile: () => ports.appStore.openFile.value,
     secondary: () => ports.linkedStyles.secondaryPath(),
     drop: (scope, path) => Boolean(ports.editorModule?.dropDraft(scope, path)),
+    // Loaded on use: the names are only needed when a draft goes, never for the first paint.
+    forgetAuthors: (scope, path) => void import("./save-authors").then(module => module.saveAuthors().forget(draftKey(scope, path))).catch(() => undefined),
     clearHistory: () => ports.editorModule?.clearHistory(),
     reopen: (opened, back, styled) => {
       if (ports.nativeModeActive()) ports.updateNativePreviewSources();
