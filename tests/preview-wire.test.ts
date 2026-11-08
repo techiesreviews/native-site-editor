@@ -7,7 +7,7 @@ const FRAME_TYPES = FRESHNESS satisfies Record<FrameMessage["type"], unknown>;
 const HOST_TYPES = {
   update: true, "drop-probe": true, "patch-text": true, "image-look": true, "media-play": true, "finish-typing": true,
   inspect: true, picture: true, "measure-image": true, theme: true, "component-focus": true, "edit-component": true,
-  viewing: true, "scroll-by": true, pins: true, "show-pin": true, assets: true,
+  viewing: true, "scroll-by": true, pins: true, carets: true, "show-pin": true, assets: true,
   "canvas-crumb": true, "canvas-avoid": true, "canvas-hint": true, "canvas-code-select": true,
   "clear-selection": true, "select-node": true, "select-parent": true, "item-grid-track": true, "agent-presence": true,
 } satisfies Record<HostMessage["type"], true>;

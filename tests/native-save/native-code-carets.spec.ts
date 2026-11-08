@@ -96,8 +96,8 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
     await expect.poll(() => source(lex.page), { timeout: 20_000 }).toContain("Anna was here: A native browser preview");
 
     // Each sees the other's caret in the code pane: a circle with the first letter, the whole name only on hover.
-    const annaAtLex = lex.page.locator(".live-caret__flag", { has: lex.page.locator("b", { hasText: "A" }) });
-    const lexAtAnna = anna.page.locator(".live-caret__flag", { has: anna.page.locator("b", { hasText: "L" }) });
+    const annaAtLex = lex.page.locator(".monaco-editor .live-caret__flag", { has: lex.page.locator("b", { hasText: "A" }) });
+    const lexAtAnna = anna.page.locator(".monaco-editor .live-caret__flag", { has: anna.page.locator("b", { hasText: "L" }) });
     // Each one's caret in the other's code, unfolded and scrolled to (sections open folded; a caret in a fold is not shown).
     await reveal(lex.page, (await source(lex.page)).indexOf("Anna was here: ") + "Anna was here: ".length);
     await reveal(anna.page, (await source(anna.page)).indexOf(", by Lex,") + ", by Lex,".length);
@@ -113,7 +113,7 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
     await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("opacity", "1");
     // An agent in the room: its circle holds the icon of its program, its name on hover.
     agent = await agentAt(browser, baseURL!, "Lex");
-    const agentAtLex = lex.page.locator('.live-caret__flag[data-agent][aria-label="Claude Code"]');
+    const agentAtLex = lex.page.locator('.monaco-editor .live-caret__flag[data-agent][aria-label="Claude Code"]');
     await expect(agentAtLex).toBeVisible({ timeout: 20_000 });
     await expect(agentAtLex).toHaveAccessibleName("Claude Code");
     await expect(agentAtLex.locator("svg.live-caret__program")).toBeVisible();
@@ -133,7 +133,7 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
     });
     const impostor = await agentAt(browser, baseURL!, "Lex", { name: "Impostor", claim: "Anna" });
     try {
-      const impostorAtLex = lex.page.locator('.live-caret__flag[aria-label="Impostor"]');
+      const impostorAtLex = lex.page.locator('.monaco-editor .live-caret__flag[aria-label="Impostor"]');
       const pane = lex.page.locator(".code-editor .monaco-editor").first();
       await expect.poll(async () => {
         const box = await pane.boundingBox(), mark = await impostorAtLex.locator(".live-caret__mark").boundingBox();
@@ -145,7 +145,7 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
       impostor.room.close();
       await impostor.context.close();
     }
-    await expect(lex.page.locator('.live-caret__flag[aria-label="Impostor"]')).toHaveCount(0, { timeout: 45_000 });
+    await expect(lex.page.locator('.monaco-editor .live-caret__flag[aria-label="Impostor"]')).toHaveCount(0, { timeout: 45_000 });
     await expect(annaAtLex.locator(".live-caret__undo")).not.toHaveAttribute("hidden");
 
     // Anna's tag ends with an undo while her change can be taken back: it takes back her words in both tabs, Lex's stay.
@@ -243,7 +243,7 @@ test("on a phone the tag opens on a tap with 44 px targets inside the pane, even
     // At Lex's (390 px, touch, reduced motion): the code is in the bottom sheet; her caret at the right edge of his pane.
     await lex.page.getByRole("button", { name: "Page structure and code" }).tap();
     await expect(lex.page.locator(".code-editor .monaco-editor").first()).toBeVisible();
-    const annaAtLex = lex.page.locator(".live-caret__flag", { has: lex.page.locator("b", { hasText: "A" }) });
+    const annaAtLex = lex.page.locator(".monaco-editor .live-caret__flag", { has: lex.page.locator("b", { hasText: "A" }) });
     const editorBox = () => annaAtLex.locator("xpath=ancestor::div[contains(concat(' ', @class, ' '), ' monaco-editor ')][1]").boundingBox();
     // The sheet's editor lays out after it opens: her place is shown once it has.
     await expect.poll(async () => {
@@ -255,7 +255,7 @@ test("on a phone the tag opens on a tap with 44 px targets inside the pane, even
     // more than a letter of its name; when it leaves, its caret goes.
     const agent = await agentAt(browser, baseURL!, longName);
     try {
-      const agentAtLex = lex.page.locator('.live-caret__flag[aria-label="Claude Code"]');
+      const agentAtLex = lex.page.locator('.monaco-editor .live-caret__flag[aria-label="Claude Code"]');
       await expect(agentAtLex).toBeVisible({ timeout: 20_000 });
       const mark = (await agentAtLex.locator(".live-caret__mark").boundingBox())!;
       await lex.page.touchscreen.tap(mark.x + mark.width / 2, mark.y + mark.height / 2);
@@ -269,7 +269,7 @@ test("on a phone the tag opens on a tap with 44 px targets inside the pane, even
       agent.room.close();
       await agent.context.close();
     }
-    await expect(lex.page.locator('.live-caret__flag[aria-label="Claude Code"]')).toHaveCount(0, { timeout: 45_000 });
+    await expect(lex.page.locator('.monaco-editor .live-caret__flag[aria-label="Claude Code"]')).toHaveCount(0, { timeout: 45_000 });
     // Reduced motion: the tag's reveal does not move.
     expect(await annaAtLex.evaluate(flag => getComputedStyle(flag, "::before").transitionProperty)).not.toContain("clip-path");
     // A tap on her circle opens the tag and keeps focus there (the code does not take it back).
@@ -298,7 +298,7 @@ test("on a phone the tag opens on a tap with 44 px targets inside the pane, even
 
     // At Anna's, by keyboard: Ctrl+M lets Tab leave the code, Tab reaches Lex's tag, which opens; Enter on its undo takes
     // back his changes, latest first, and focus stays on his tag.
-    const lexAtAnna = anna.page.locator(".live-caret__flag", { has: anna.page.locator("b", { hasText: "L" }) });
+    const lexAtAnna = anna.page.locator(".monaco-editor .live-caret__flag", { has: anna.page.locator("b", { hasText: "L" }) });
     await reveal(anna.page, (await source(anna.page)).indexOf(", by Lex,") + ", by Lex,".length);
     await expect(lexAtAnna).toBeVisible({ timeout: 20_000 });
     await anna.page.getByRole("textbox", { name: "File source" }).first().focus();

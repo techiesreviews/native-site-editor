@@ -293,12 +293,12 @@ test.describe("drags", () => {
     const at = await afterWord(page, ".hero h1", "native");
     await page.mouse.click(at.x, at.y);
     await expect(frame(page).locator(".hero h1")).toBeFocused();
-    await page.keyboard.type("!");
-    // No Escape: the press on filler-2 writes the heading's text; the drag's start waits for the
-    // render that asks for (held here until the pointer has moved), then the drag runs.
     const from = await afterWord(page, filler(2), "Paragraph"), to = await below(page, filler(3));
     await clearOfScrollBands(page, from, to);
+    // No Escape: the letter typed is written as it is typed (ticket am-23); the press on filler-2 ends the typing,
+    // and the drag's start waits for the render the letter asked for (held here until the pointer has moved).
     const release = await holdRenders(page);
+    await page.keyboard.type("!");
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
     await page.mouse.move(from.x, from.y + 10, { steps: 2 });
@@ -351,13 +351,14 @@ test("typing in a text scrolled out of view, a press and drag on another block k
   const at = await afterWord(page, ".hero h1", "native");
   await page.mouse.click(at.x, at.y);
   await expect(frame(page).locator(".hero h1")).toBeFocused();
+  // The letter is written as it is typed (ticket am-23); its render is held until the press below.
+  const release = await holdRenders(page);
   await page.keyboard.type("!");
   await frame(page).locator(filler(2)).evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
   const scrolled = await frameScroll(page);
   expect(scrolled).toBeGreaterThan(0);
   const from = await afterWord(page, filler(2), "Paragraph"), to = await below(page, filler(3));
   await clearOfScrollBands(page, from, to);
-  const release = await holdRenders(page);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   await page.mouse.move(from.x, from.y + 10, { steps: 2 });
@@ -379,12 +380,13 @@ test("typing in a text, scrolling it out of view and leaving the canvas: the ren
   const at = await afterWord(page, ".hero h1", "native");
   await page.mouse.click(at.x, at.y);
   await expect(frame(page).locator(".hero h1")).toBeFocused();
+  // The letter is written as it is typed (ticket am-23); its render is held until focus has left.
+  const release = await holdRenders(page);
   await page.keyboard.type("!");
   await frame(page).locator(filler(2)).evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
   const scrolled = await frameScroll(page);
   expect(scrolled).toBeGreaterThan(0);
-  const release = await holdRenders(page);
-  // Focus leaving the canvas writes the text, with no press in it.
+  // Focus leaving the canvas ends the typing, with no press in it.
   await frame(page).locator(".hero h1").blur();
   await expect.poll(() => source(page)).toContain("A native! browser");
   await expect.poll(() => frame(page).locator("body").evaluate(() => (window as Held).heldRenders?.length ?? 0)).toBeGreaterThan(0);
@@ -447,6 +449,8 @@ test("in Edit component mode, typing in a part scrolled out of view, a press on 
   await page.mouse.click(at.x, at.y);
   await expect(note).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await page.keyboard.press("End");
+  // The letter is written as it is typed (ticket am-23); its render is held until the press below.
+  const release = await holdRenders(page);
   await page.keyboard.type("!");
   // The note's top just below the frame's bottom edge.
   await note.evaluate((el) => window.scrollBy({ top: el.getBoundingClientRect().top - window.innerHeight - 4, behavior: "instant" }));
@@ -456,7 +460,6 @@ test("in Edit component mode, typing in a part scrolled out of view, a press on 
   const r = await title.evaluate((el) => { const b = el.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; });
   const from = { x: box.x + r.x, y: box.y + r.y };
   await clearOfScrollBands(page, from);
-  const release = await holdRenders(page);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   await page.mouse.move(from.x, from.y + 10, { steps: 2 });
@@ -493,8 +496,9 @@ test("after the editor refuses typed text, a click on other text still types the
   let at = await afterWord(page, ".hero h1", "native");
   await page.mouse.click(at.x, at.y);
   await expect(heading).toBeFocused();
-  await page.keyboard.type("!");
-  // Meanwhile the heading's source text changes: the typed text no longer fits and is refused.
+  // The heading's source text changes before the page shows it (its renders held): the letter typed over the old text
+  // no longer fits and is refused.
+  const release = await holdRenders(page);
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
     const text = "A native browser preview";
@@ -502,9 +506,11 @@ test("after the editor refuses typed text, a click on other text still types the
     editor.replaceActiveRange({ path: "index.html", start: from, end: from + text.length, expected: text, text: "Other" });
   });
   await expect.poll(() => source(page)).toContain(`<h1 data-key="hero-title">Other</h1>`);
+  await page.keyboard.type("!");
+  await expect(page.getByText("That text change could not be placed in the source.", { exact: false }).first()).toBeVisible();
   at = await afterWord(page, ".hero p.lead", "place");
   await page.mouse.click(at.x, at.y);
-  await expect(page.getByText("That text change could not be placed in the source.", { exact: false }).first()).toBeVisible();
+  expect(await release()).toBeGreaterThan(0);
   // The refresh render that follows leaves the clicked text selected and typed in.
   await expect(heading).toHaveText("Other");
   await expect(lead).toHaveAttribute("contenteditable", /plaintext-only|true/);
@@ -585,9 +591,10 @@ test("a drag released before the render its typed text asked for is a click: no 
   let at = await afterWord(page, filler(2), "Paragraph");
   await page.mouse.click(at.x, at.y);
   await expect(frame(page).locator(filler(2))).toHaveAttribute("contenteditable", /.+/);
-  await page.keyboard.type(" typed");
+  // The letters are written as they are typed (ticket am-23); their renders are held.
   const release = await holdRenders(page);
-  // Pressed on filler-3 and moved 10 px: the typed text is written, the start waits for the held render; then released.
+  await page.keyboard.type(" typed");
+  // Pressed on filler-3 and moved 10 px: the start waits for the held render; then released.
   at = await afterWord(page, filler(3), "three");
   await page.mouse.move(at.x, at.y);
   await page.mouse.down();

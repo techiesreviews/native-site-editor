@@ -111,7 +111,7 @@ test("an agent rewrites the heading while Lex types in the next sentence: both l
     await expect(anna.page.frameLocator(".native-preview-frame").locator(".hero h1")).toHaveText("A preview the agent wrote");
 
     // The agent's caret shows in the code pane at Lex's and at Anna's, with its program's icon and its name.
-    const flag = (page: Page) => page.locator('.live-caret__flag[data-agent][aria-label="Claude Code"]');
+    const flag = (page: Page) => page.locator('.monaco-editor .live-caret__flag[data-agent][aria-label="Claude Code"]');
     for (const tab of [lex, anna]) {
       await reveal(tab.page, (await source(tab.page)).indexOf("A preview the agent wrote"));
       await expect(flag(tab.page)).toBeVisible({ timeout: 20_000 });

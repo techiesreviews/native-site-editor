@@ -17,6 +17,7 @@ import { readCascade, readSelectedRules, type NativeCascade, type NativeSelected
 import { readCrumbs, type CanvasCrumb } from "../page-builder/canvas-model";
 
 import { FRAME_SOURCE, HOST_SOURCE } from "./preview-wire";
+import type { PageCaretPoint, PageCaretRect, PageTextCaret } from "./page-caret-port";
 import { pictureReplyTypes } from "../../shared/media-kinds";
 export { HOST_SOURCE } from "./preview-wire";
 
@@ -33,7 +34,12 @@ export type FrameMessage =
   | Frame<"image-drop", { path: string; node: number[]; width: number | undefined; files: File[] }>
   | Frame<"image-edit", { path: string; node: number[]; width: number | undefined }>
   | Frame<"patched", { id: number; ok: boolean }>
-  | Frame<"text-edit", { path: string; node: number[]; before: string; after: string }>
+  // `live`: typing goes on (sent letter by letter, ticket am-23); `seq` numbers the frame's text edits, `session` its typing.
+  | Frame<"text-edit", { path: string; node: number[]; before: string; after: string; live: boolean; seq: number; session: number }>
+  // This tab's caret in the text it types in (ticket am-23): its element and text offsets; null once typing ends.
+  | Frame<"text-caret", { caret: PageTextCaret | null }>
+  // Where others' carets (the host's `carets`) are in the frame's viewport, with their selections as boxes.
+  | Frame<"caret-rects", { rects: PageCaretRect[] }>
   // Typing in the element at `node` goes on, or (`left`) it was left.
   | Frame<"typing", { path: string; node: number[]; left: boolean }>
   | Frame<"route", { href: string }>
@@ -103,6 +109,8 @@ export type HostMessage =
   | Host<"viewing", { viewing: boolean }>
   | Host<"scroll-by", { dy: number; smooth?: boolean }>
   | Host<"pins", { pins: PinLocator[] }>
+  // Others' carets on the page (ticket am-23): each at a text offset of an element of the file `path`; `anchor` where its selection began.
+  | Host<"carets", { carets: PageCaretPoint[] }>
   | Host<"show-pin", { id: string }>
   | Host<"assets", Pick<UpdatePayload, "styles" | "componentStyles"> & { assetChanges: AssetChanges }>
   | Host<"canvas-crumb", { action: "select" | "hover"; index: number }>
@@ -132,6 +140,7 @@ type PressPhase = Extract<FrameMessage, { type: "press-drag" }>["phase"];
 // A press drag's start names a block in one render's DOM; its later steps belong to the drag.
 export const FRESHNESS: { [T in FrameMessage["type"]]: T extends "press-drag" ? Record<PressPhase, Freshness> : Freshness } = {
   "typing-finished": "reply", "image-drop": "render", "image-edit": "action", patched: "reply", "text-edit": "action", typing: "action",
+  "text-caret": "whole", "caret-rects": "whole",
   route: "action", format: "action", move: "action", "press-drag": { start: "render", move: "action", end: "action", cancel: "action" },
   "canvas-clear": "action", "pin-rects": "whole", "drop-containers": "reply", "dismiss-context-menu": "action",
   "slot-ghosts": "render", "inspect-result": "reply", "picture-result": "reply", "image-measured": "reply", ack: "reply", ready: "lifecycle", error: "render", "clear-error": "render",
@@ -293,7 +302,30 @@ export function readFrameMessage(data: unknown): FrameMessage | undefined {
       return typeof raw.id === "number" ? { ...base(raw.type), id: raw.id, ok: raw.ok === true } : undefined;
     case "text-edit":
       if (typeof raw.path !== "string" || typeof raw.before !== "string" || typeof raw.after !== "string" || raw.after.length > 100_000) return undefined;
-      return indexes(raw.node) ? { ...base(raw.type), path: raw.path, node: raw.node, before: raw.before, after: raw.after } : undefined;
+      return indexes(raw.node) ? { ...base(raw.type), path: raw.path, node: raw.node, before: raw.before, after: raw.after,
+        live: raw.live === true, seq: index(raw.seq) ? raw.seq : 0, session: index(raw.session) ? raw.session : 0 } : undefined;
+    case "text-caret": {
+      const caret = object(raw.caret);
+      if (!caret) return { ...base(raw.type), caret: null };
+      const { path, node, anchor, head } = caret;
+      return typeof path === "string" && indexes(node) && index(anchor) && index(head) ? { ...base(raw.type), caret: { path, node, anchor, head } } : undefined;
+    }
+    case "caret-rects":
+      if (!Array.isArray(raw.rects)) return undefined;
+      return {
+        ...base(raw.type),
+        rects: raw.rects.slice(0, 64).flatMap((entry) => {
+          const item = object(entry);
+          if (!item || typeof item.id !== "string") return [];
+          const line = object(item.caret);
+          const caret = line && finite(line.left) && finite(line.top) && finite(line.height) && line.height > 0 ? { left: line.left, top: line.top, height: line.height } : null;
+          const tints = (Array.isArray(item.tints) ? item.tints : []).slice(0, 100).flatMap((box) => {
+            const part = object(box);
+            return part && finite(part.left) && finite(part.top) && finite(part.width) && finite(part.height) ? [{ left: part.left, top: part.top, width: part.width, height: part.height }] : [];
+          });
+          return [{ id: item.id, caret, tints }];
+        }),
+      };
     case "typing":
       return typeof raw.path === "string" && indexes(raw.node) ? { ...base(raw.type), path: raw.path, node: raw.node, left: raw.left === true } : undefined;
     case "route":

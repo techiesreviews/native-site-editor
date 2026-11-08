@@ -49,6 +49,10 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   var editingHtml = "";
   // The file that owned the element when typing began.
   var editingOwner = null;
+  // Typing goes out letter by letter (ticket am-23): each change is sent as it is typed (`text-edit`), one undo
+  // step while the typing lasts (its session). `typingSeq` numbers the changes sent; a render whose `typedSeq` is
+  // lower was made before the editor wrote them all, and leaves the text being typed as it is.
+  var typingSession = 0, typingSeq = 0;
   // Shared stylesheets as constructed sheets: one CSSStyleSheet per sheet
   // the page links (and each file those import) for the whole document, adopted by the document and by every
   // component shadow root, so a token declared once at document level is
@@ -288,6 +292,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     return a.nodeType === 1 && a.tagName === b.tagName;
   }
 
+  // Set while a render must leave the text being typed in as it is (apply).
+  var renderKeepsTyping = false;
   function reconcileChildren(target, fragment) {
     var desired = Array.prototype.slice.call(fragment.childNodes);
     // A new node pairs with a rendered node of the same key, else with one
@@ -332,8 +338,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     }
     syncAttrs(existing, desired);
     if (existing.tagName === "SCRIPT") return;
-    // Typing not yet sent to the editor is not overwritten by a render.
-    if (existing === editing && existing.textContent !== editingText) return;
+    // Typing not yet sent to the editor, or sent and not yet in this render's sources, is not overwritten by it.
+    if (existing === editing && (renderKeepsTyping || existing.textContent !== editingText)) return;
     var media = (existing.localName === "audio" || existing.localName === "video") && !(mediaPlay && mediaPlay.el === existing);
     var sources = media && sourceList(existing);
     reconcileChildren(existing, desired);
@@ -614,11 +620,20 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       context: String(payload.context || ""),
     };
     Object.keys(state.components).forEach(defineTag);
-    // Typing not yet sent survives this render (see reconcileNode).
-    var typing = !!editing && editing.textContent !== editingText;
+    // Typing not yet sent survives this render (see reconcileNode), and so does typing sent that this render's
+    // sources do not hold yet (ticket am-23): the render after the editor writes it brings it with everyone's.
+    var typing = !!editing && (editing.textContent !== editingText || (typeof payload.typedSeq === "number" && payload.typedSeq < typingSeq));
+    // The caret in the text being typed in stays by its words when others' typing changes that text.
+    var typedIn = editing && !typing && editing.isConnected ? editing : null;
+    var caretWas = typedIn && caretIn(typedIn);
     syncStyles();
     state.styleErrors.forEach(reportError);
-    renderPage();
+    renderKeepsTyping = typing;
+    try { renderPage(); } finally { renderKeepsTyping = false; }
+    if (caretWas && editing === typedIn && typedIn.isConnected && typedIn.textContent !== caretWas.text) {
+      var nowText = typedIn.textContent;
+      setCaretIn(typedIn, movedOffset(caretWas.anchor, caretWas.text, nowText), movedOffset(caretWas.head, caretWas.text, nowText));
+    }
     viewportScrollbars = !siteStylesScrollbars();
     syncRootStyles(document);
     reportDefaultStyles();
@@ -668,6 +683,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     // Text the host just formatted stays selected, so the next format applies to it too.
     if (selected && payload.selectText && typeof payload.selectText.start === "number") setTextSelection(selected, payload.selectText.start, payload.selectText.end);
     reportTextSelection(true);
+    reportCaret();
     reportStructure();
     startPendingPress();
     requestAnimationFrame(requestComponentStyles);
@@ -755,6 +771,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   }
 
   function updateBoxes(skipSlotGhosts) {
+    scheduleCaretRects();
     ensureBoxes();
     drawBox(hoverBox, hovered);
     drawBox(selectBox, selected);
@@ -2803,6 +2820,114 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     pre.setEnd(container, offset);
     return pre.cloneContents().textContent.length;
   }
+  // ---- Typing together (ticket am-23) ----
+  // The caret (or selection) in `el` as text offsets, with its text then; null when the selection is elsewhere.
+  function caretIn(el) {
+    var range = selectionRangeIn(el, true);
+    if (!range) return null;
+    return { anchor: textOffset(el, range.startContainer, range.startOffset), head: textOffset(el, range.endContainer, range.endOffset), text: el.textContent };
+  }
+  // The DOM point at text offset `at` of `el`: a boundary belongs to the text before it (typing there goes on in it).
+  function pointAt(el, at) {
+    var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    var seen = 0, node, last = null;
+    while ((node = walker.nextNode())) {
+      var length = node.data.length;
+      if (at <= seen + length) return { node: node, offset: Math.max(0, at - seen) };
+      seen += length;
+      last = node;
+    }
+    return last ? { node: last, offset: last.data.length } : { node: el, offset: 0 };
+  }
+  function setCaretIn(el, anchor, head) {
+    var sel = document.getSelection();
+    if (!sel) return;
+    var from = pointAt(el, anchor), to = pointAt(el, head);
+    try { sel.setBaseAndExtent(from.node, from.offset, to.node, to.offset); } catch (_) { /* The text moved under it: the caret stays where the browser put it. */ }
+  }
+  // Where text offset `at` of `from` is in `to`: a change wholly before it moves it by its length, one around it puts
+  // it after the change, and text added right at it goes after it (the typist's own next letter comes first).
+  function movedOffset(at, from, to) {
+    var start = 0;
+    while (start < from.length && start < to.length && from[start] === to[start]) start++;
+    var end = from.length, endTo = to.length;
+    while (end > start && endTo > start && from[end - 1] === to[endTo - 1]) { end--; endTo--; }
+    if (at <= start) return at;
+    if (at >= end) return at + (endTo - end);
+    return endTo;
+  }
+  // This tab's caret in the text it types in, for others to see: its file, element and text offsets, at most once a
+  // frame and only when it moved; null once typing ends.
+  var caretFrame = 0, lastCaret = "null";
+  function reportCaret() {
+    if (!caretFrame) caretFrame = requestAnimationFrame(flushCaret);
+  }
+  function flushCaret() {
+    caretFrame = 0;
+    var caret = null;
+    var at = editing && editing.isConnected ? caretIn(editing) : null;
+    if (at) caret = { path: ownerPath(editing), node: elementIndexPath(editing), anchor: at.anchor, head: at.head };
+    var key = JSON.stringify(caret);
+    if (key === lastCaret) return;
+    lastCaret = key;
+    emit("text-caret", { caret: caret });
+  }
+  // Others' carets in the page's text, as the editor names them (`carets`): each where it is in the frame's viewport, a
+  // line's height, with its selection as boxes. The editor draws them over the frame (src/components/live-carets.ts),
+  // so they are measured again after every render, scroll and resize, at most once a frame, and sent when they moved.
+  var shownCarets = [], caretRectsFrame = 0, lastCaretRects = "[]";
+  function scheduleCaretRects() {
+    if (caretRectsFrame || (!shownCarets.length && lastCaretRects === "[]")) return;
+    caretRectsFrame = requestAnimationFrame(flushCaretRects);
+  }
+  function caretPoint(path, point) {
+    var el = point && Array.isArray(point.node) && typeof point.at === "number" ? resolveNodePath({ path: path, node: point.node }) : null;
+    return el && el.isConnected ? { el: el, point: pointAt(el, point.at) } : null;
+  }
+  function frameBox(r) {
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  }
+  function flushCaretRects() {
+    caretRectsFrame = 0;
+    var rects = shownCarets.map(function (caret) {
+      var head = caretPoint(caret.path, caret.head);
+      if (!head) return { id: caret.id, caret: null, tints: [] };
+      var range = document.createRange();
+      range.setStart(head.point.node, head.point.offset);
+      range.collapse(true);
+      var box = range.getClientRects()[0] || range.getBoundingClientRect();
+      var line;
+      if (box && box.height > 0) line = { left: box.left, top: box.top, height: box.height };
+      else {
+        // No text there (an empty element): its first line's start.
+        var el = head.el.getBoundingClientRect(), style = getComputedStyle(head.el);
+        var height = parseFloat(style.lineHeight);
+        if (!isFinite(height)) height = parseFloat(style.fontSize) * 1.2;
+        line = el.width || el.height ? { left: el.left + (parseFloat(style.paddingLeft) || 0), top: el.top + (parseFloat(style.paddingTop) || 0), height: height } : null;
+      }
+      var tints = [];
+      var anchor = caret.anchor ? caretPoint(caret.path, caret.anchor) : null;
+      if (anchor && anchor.el.getRootNode() === head.el.getRootNode() && (anchor.point.node !== head.point.node || anchor.point.offset !== head.point.offset)) {
+        var selection = document.createRange();
+        selection.setStart(anchor.point.node, anchor.point.offset);
+        // A caret before where the selection began: the range runs from it.
+        if (selection.comparePoint(head.point.node, head.point.offset) < 0) selection.setStart(head.point.node, head.point.offset);
+        else selection.setEnd(head.point.node, head.point.offset);
+        tints = Array.prototype.filter.call(selection.getClientRects(), function (r) { return r.width > 0 && r.height > 0; }).slice(0, 100).map(frameBox);
+      }
+      return { id: caret.id, caret: line, tints: tints };
+    });
+    var key = JSON.stringify(rects);
+    if (key === lastCaretRects) return;
+    lastCaretRects = key;
+    emit("caret-rects", { rects: rects });
+  }
+  function readCarets(list) {
+    return (Array.isArray(list) ? list : []).slice(0, 64).filter(function (caret) {
+      return caret && typeof caret.id === "string" && typeof caret.path === "string" && caret.head && typeof caret.head === "object";
+    });
+  }
+
   function wrappersAround(el, node) {
     var out = [];
     var current = node.nodeType === 1 ? node : node.parentElement;
@@ -2858,7 +2983,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     sel.removeAllRanges();
     sel.addRange(range);
   }
-  document.addEventListener("selectionchange", function () { reportTextSelection(false); });
+  document.addEventListener("selectionchange", function () { reportTextSelection(false); if (editing) reportCaret(); });
 
   // ---- Editor shortcuts (command palette slice, docs/page-builder/palette.md) ----
   // Keys pressed here never reach the editor's document, so the ones it
@@ -2970,6 +3095,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     editingOwner = { path: ownerPath(el) };
     editingText = el.textContent;
     editingHtml = el.innerHTML;
+    typingSession++;
     el.setAttribute("contenteditable", "plaintext-only");
     if (el.contentEditable !== "plaintext-only") el.setAttribute("contenteditable", "true");
     el.setAttribute("spellcheck", "false");
@@ -2977,6 +3103,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     // Typing can wrap the selection before the text edit is committed: its
     // box and the rectangle the edit bar keeps clear of follow.
     el.addEventListener("input", onEditingInput);
+    // A word an input method composes goes out once it is chosen.
+    el.addEventListener("compositionend", onEditingInput);
   }
   function stopEditing(commit) {
     if (!editing) return;
@@ -2985,9 +3113,11 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     leftTyping();
     el.removeEventListener("blur", onEditingBlur);
     el.removeEventListener("input", onEditingInput);
+    el.removeEventListener("compositionend", onEditingInput);
     el.removeAttribute("contenteditable");
     el.removeAttribute("spellcheck");
     editing = null;
+    reportCaret();
   }
   // An element's place: its file and its index path there.
   function placeKey(el) {
@@ -3002,7 +3132,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   function writtenText() {
     return Date.now() < leftTextUntil ? leftText : "";
   }
-  function commitEditing() {
+  // `live`: typing goes on (a letter typed); without, typing ends here and the host selects the text again.
+  function commitEditing(live) {
     if (!editing || !editing.isConnected) return;
     var after = editing.textContent;
     if (after === editingText) return;
@@ -3011,7 +3142,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     editingHtml = editing.innerHTML;
     var path = ownerPath(editing);
     if (!editingOwner || editingOwner.path !== path) return;
-    var edit = { path: path, node: elementIndexPath(editing), before: before, after: after };
+    var edit = { path: path, node: elementIndexPath(editing), before: before, after: after, live: !!live, seq: ++typingSeq, session: typingSession };
+    // A letter typed asks for a render too: a press meanwhile waits for it (writtenText).
     leftText = placeKey(editing);
     leftTextUntil = Date.now() + WRITTEN_MS;
     emit("text-edit", edit);
@@ -3019,8 +3151,11 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   // Where typing happens, for agents (ticket 52): said at most once a second while typing goes on,
   // and once it is left (after its text edit, so the host writes that first).
   var typingAt = null, typingSaid = 0;
-  function onEditingInput() {
+  function onEditingInput(event) {
+    // Each letter goes out as it is typed; a word being composed waits until it is chosen.
+    if (!event || !event.isComposing) commitEditing(true);
     updateBoxes();
+    reportCaret();
     if (!editing || Date.now() - typingSaid < 1000) return;
     typingSaid = Date.now();
     typingAt = { path: ownerPath(editing), node: elementIndexPath(editing) };
@@ -4333,6 +4468,11 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       leaveEditing();
       // Text edits are posted first; the host drains their queue after this answer.
       emit("typing-finished", { id: msg.id });
+      return;
+    }
+    if (msg.type === "carets") {
+      shownCarets = readCarets(msg.carets);
+      scheduleCaretRects();
       return;
     }
     if (msg.type === "canvas-avoid") {

@@ -31,6 +31,7 @@ import type { DragFeed, DragPress } from "../page-builder/insert-drag";
 import { createCanvasBar } from "./canvas-bar";
 import { linkCodeToCanvas } from "../page-builder/code-link";
 import { createPreviewFrameState } from "./preview-frame-state";
+import { showPageCarets, type PageCaretPoint, type PageCaretRect, type PageTextCaret } from "./page-caret-port";
 import "./native-preview.css";
 
 // Browser-native preview: a persistent sandboxed iframe that renders a
@@ -209,6 +210,10 @@ export interface NativeTextEdit {
   node: number[];
   before: string;
   after: string;
+  /** Typing goes on: sent letter by letter (ticket am-23), the element is not selected again after it. */
+  live?: boolean;
+  /** The typing it is part of: its letters stay one undo step. */
+  group?: string;
 }
 
 /**
@@ -242,7 +247,8 @@ export interface NativePreviewHandlers {
   // Alt+Up/Down (a selected section among its siblings) or Alt+Left/Right
   // ("out" of / "in" to a container) pressed inside the preview.
   onMove?: (direction: "up" | "down" | "out" | "in") => void;
-  onTextEdit?: (edit: NativeTextEdit) => void;
+  // Resolves once the edit is written or turned down.
+  onTextEdit?: (edit: NativeTextEdit) => void | Promise<void>;
   // Typing goes on in the element at `at`, or (`left`) it was left.
   onTyping?: (at: { path: string; node: number[] }, left: boolean) => void;
   onImageDrop?: (target: { path: string; node: number[]; width?: number }, files: File[]) => void;
@@ -346,7 +352,7 @@ function composeStyles(
 export interface AssetChanges { set: Record<string, string>; drop: string[] }
 
 /** A render the host posts to the frame (`update`). */
-export type UpdatePayload = ReturnType<typeof composePayload> & { viewing: boolean };
+export type UpdatePayload = ReturnType<typeof composePayload> & { viewing: boolean; typedSeq?: number };
 
 function composePayload(
   site: NativeSite,
@@ -509,6 +515,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       (!slotSelection.exact || (slotSelection.node.length === report.hostNode.length && slotSelection.tag === report.tag))),
   });
   const cardGrids = handlers.cards ? createCardGridControls(pane, frame, handlers.cards, link.send, { inputs: thumbnailInputs, prepare: prepareStyles }) : undefined;
+  // Typing on the page (ticket am-23): the frame's document (a reload starts its text edits' numbers again), the
+  // latest text edit written or turned down, this tab's caret as typed, and others' carets: where the frame is asked
+  // to find them and where it found them, for the carets drawn over it (src/components/live-carets.ts).
+  let frameLoads = 0, typedSeq = 0;
+  let ownCaret: PageTextCaret | undefined;
+  let caretPoints: PageCaretPoint[] = [];
+  const caretListeners = new Set<() => void>(), caretRectListeners = new Set<(rects: PageCaretRect[]) => void>();
+  const caretChanged = () => { for (const listener of [...caretListeners]) listener(); };
   // The runtime finds each pin's element and reports where it is (`pin-rects`).
   let pinRequests: PinRequest[] = [];
   let pins: ReturnType<typeof createAgentPins> | undefined;
@@ -612,6 +626,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     reload: () => {
       sentAssets.clear();
       lastAvoid = "";
+      // A fresh document numbers its text edits from the start; its caret is not typed yet.
+      frameLoads++;
+      typedSeq = 0;
+      ownCaret = undefined;
       if (rafHandle) cancelAnimationFrame(rafHandle);
       rafHandle = 0;
       frame.setAttribute("srcdoc", runtimeDoc(link.reload()));
@@ -626,6 +644,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       postAvoid();
       postFocus();
       postPresence();
+      if (caretPoints.length) link.send({ type: "carets", carets: caretPoints });
+      caretChanged();
     },
   });
   // A structure field's text, set in the page ahead of its render (patchText):
@@ -644,6 +664,23 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if ("drop" in patch) return link.send({ type: "patch-text", drop: true });
     void link.ask({ type: "patch-text", ...patch }, PATCH_ANSWER_MS).then((answer) => { if (answer && !answer.ok) miss?.(); });
   }
+  // The page shown to the carets (page-caret-port.ts): the editing preview's only, never a background page's.
+  const hidePageCarets = handlers.onTextEdit ? showPageCarets({
+    files: () => site && frameState.active && !viewing
+      ? [alone ? undefined : site.routes[route], editableTemplatePath].filter((path): path is string => path !== undefined)
+      : [],
+    source: (path) => sources[path],
+    own: () => ownCaret,
+    onChange(listener) { caretListeners.add(listener); return () => { caretListeners.delete(listener); }; },
+    show(carets) {
+      if (JSON.stringify(carets) === JSON.stringify(caretPoints)) return;
+      caretPoints = carets;
+      if (frameState.ready) link.send({ type: "carets", carets });
+    },
+    onRects(listener) { caretRectListeners.add(listener); return () => { caretRectListeners.delete(listener); }; },
+    layer: pane,
+    frame,
+  }) : () => {};
   const stopTheme = watchEditorTheme(({ colors }) => {
     previewFocus = colors["preview-focus"];
     componentColor = colors.component;
@@ -698,7 +735,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     selectNode = held;
     selectText = undefined;
     scrollHash = undefined;
-    link.render({ ...payload, viewing: Boolean(viewing) }, sources, alone ? "/" : route);
+    link.render({ ...payload, viewing: Boolean(viewing), typedSeq }, sources, alone ? "/" : route);
   }
   // The route of each render the frame drew (its `ack`): the host reads that
   // page's images only then, so no image is read before the page is on screen.
@@ -729,6 +766,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       Object.entries(sources).map(([path, source]) => `${path}:${source.length}:${source.charCodeAt(0) || 0}:${source.charCodeAt(source.length - 1) || 0}`).join("|"),
     ].join("\n"));
     pins?.update(pinRequests, route);
+    caretChanged();
     if (rafHandle) return;
     rafHandle = requestAnimationFrame(post);
   }
@@ -770,11 +808,29 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     handlers.onImageEdit?.({ path: message.path, node: message.node, width: message.width, paintedSource: painted[message.path] });
   });
   // Typed text is checked against the current source, so it counts even
-  // when a render was requested since.
+  // when a render was requested since. Each is numbered (ticket am-23): once it
+  // is written or turned down, renders say so (`typedSeq`), and the frame lets
+  // them redraw the text being typed in.
   link.on("text-edit", (message) => {
-    if (!site || !nativeSitePaths(site).includes(message.path)) return;
-    const edit: NativeTextEdit = { path: message.path, node: message.node, before: message.before, after: message.after };
-    handlers.onTextEdit?.(edit);
+    const load = frameLoads;
+    const handled = () => {
+      if (load !== frameLoads || message.seq <= typedSeq) return;
+      typedSeq = message.seq;
+      // A render already on its way carries it; else one goes now, so the text typed in follows its source again.
+      if (!rafHandle) rafHandle = requestAnimationFrame(post);
+    };
+    if (!site || !nativeSitePaths(site).includes(message.path)) { handled(); return; }
+    const edit: NativeTextEdit = { path: message.path, node: message.node, before: message.before, after: message.after,
+      ...message.live ? { live: true } : {}, group: `page-typing:${load}:${message.session}` };
+    void Promise.resolve(handlers.onTextEdit?.(edit)).catch(() => undefined).then(handled);
+  });
+  // Carets on the page (ticket am-23): this tab's as typed, others' as found (page-caret-port.ts).
+  link.on("text-caret", (message) => {
+    ownCaret = message.caret && site && nativeSitePaths(site).includes(message.caret.path) ? message.caret : undefined;
+    caretChanged();
+  });
+  link.on("caret-rects", (message) => {
+    for (const listener of [...caretRectListeners]) listener(message.rects);
   });
   // Where typing happens (ticket 52), and when it is left: after that element's text edit above.
   // Left is said whatever the site shown: a render of another site is what can leave it.
@@ -1451,6 +1507,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return frameState.active;
     },
     destroy() {
+      hidePageCarets();
       link.close();
       endPress();
       frameState.destroy();

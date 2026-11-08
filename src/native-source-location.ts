@@ -9,7 +9,7 @@
 // parser the preview uses, so implied elements and auto-closed tags line up
 // exactly; walking the indexes then yields the tag's position in the source.
 
-import { MARK, elementEnd, startTags, type ElementRange, type StartTag } from "../shared/html-source";
+import { MARK, elementEnd, sourceText, startTags, type ElementRange, type StartTag } from "../shared/html-source";
 import { nativePageBody } from "../shared/native-project";
 import { tagAttribute, type SourceTree } from "./page-builder/source-tree";
 import { domView } from "./page-builder/rules/tree";
@@ -118,6 +118,47 @@ export function elementPathAt(html: string, start: number): number[] | undefined
   const index = tags.findIndex((tag) => tag.start === start);
   const el = index < 0 ? null : root.querySelector(`[${MARK}="${index}"]`);
   return el ? pathOf(el) : undefined;
+}
+
+/** The text content of the element at `path` (as the preview shows it) with where each unit sits in `html`, or
+ * undefined unless the element and its end tag map to the source exactly. */
+export function elementText(html: string, path: number[]) {
+  const range = locateNativeElementRange(html, path);
+  if (!range?.close) return undefined;
+  const { text, starts, ends } = sourceText(html.slice(range.tag.end, range.close.start));
+  const from = range.tag.end;
+  return { text, starts: starts.map(at => at + from), ends: ends.map(at => at + from), from, to: range.close.start };
+}
+
+/** The offset in `html` of the text offset `at` of the element at `path` (ticket am-23: a caret typed on the page): before
+ * the character at `at`, or after the last one. Undefined when the element has no exact range or `at` is past its text. */
+export function sourceOffsetOfText(html: string, path: number[], at: number) {
+  const found = elementText(html, path);
+  if (!found || !Number.isInteger(at) || at < 0 || at > found.text.length) return undefined;
+  return at < found.text.length ? found.starts[at] : found.ends.at(-1) ?? found.from;
+}
+
+/** The element whose text holds the offset `offset` of `html` (the deepest one, in the page part) and the text offset there:
+ * the inverse of `sourceOffsetOfText`, to show someone's caret on the page. Undefined inside a tag, a comment or an entity. */
+export function textPointAt(html: string, offset: number): { node: number[]; at: number } | undefined {
+  const parsed = parsedSource(html);
+  const { tags, root } = parsed;
+  // The last start tag before the offset, then out through its ancestors to the first whose content holds it.
+  let index = -1;
+  for (let i = 0; i < tags.length && tags[i].end <= offset; i++) index = i;
+  let el: Element | null = index < 0 ? null : root.querySelector(`[${MARK}="${index}"]`);
+  for (; el; el = el.parentElement) {
+    const range = el.hasAttribute(MARK) ? sourceRange(html, parsed, el) : undefined;
+    if (!range?.close || range.tag.end > offset || offset > range.close.start) continue;
+    const { starts, ends } = sourceText(html.slice(range.tag.end, range.close.start));
+    const at = offset - range.tag.end;
+    let k = 0;
+    while (k < starts.length && starts[k] < at) k++;
+    // Before the character at k (where it starts), or just after the one before it (where that one ends).
+    if ((k < starts.length && starts[k] === at) || at === (k > 0 ? ends[k - 1] : 0)) return { node: pathOf(el), at: k };
+    return undefined;
+  }
+  return undefined;
 }
 
 function pathOf(element: Element) {

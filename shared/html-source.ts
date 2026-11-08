@@ -190,6 +190,18 @@ export interface SourceSpan {
 // A caller can supply its text reader's entity decoder; the default remains decodeEntity.
 export function textRangeInSource(inner: string, start: number, end: number, text: string, decoder = decodeEntity): SourceSpan | undefined {
   if (start < 0 || end <= start) return undefined;
+  const { text: decoded, starts, ends } = sourceText(inner, end, decoder);
+  if (starts.length < end) return undefined;
+  if (decoded.slice(start, end) !== text) return undefined;
+  const span = { start: starts[start], end: ends[end - 1] };
+  return balanced(inner.slice(span.start, span.end)) ? span : undefined;
+}
+
+/**
+ * The DOM text content of the inner source `inner` (tags and comments skipped, entities decoded, as
+ * `textRangeInSource` reads it), up to `limit` UTF-16 units, with where each unit's source starts and ends.
+ */
+export function sourceText(inner: string, limit = Infinity, decoder = decodeEntity) {
   const starts: number[] = [];
   const ends: number[] = [];
   let decoded = "";
@@ -198,7 +210,7 @@ export function textRangeInSource(inner: string, start: number, end: number, tex
     for (let k = 0; k < piece.length; k++) { starts.push(from); ends.push(to); }
     decoded += piece;
   };
-  while (i < inner.length && starts.length < end) {
+  while (i < inner.length && starts.length < limit) {
     const char = inner[i];
     if (char === "<") {
       if (inner.startsWith("<!--", i)) {
@@ -232,10 +244,7 @@ export function textRangeInSource(inner: string, start: number, end: number, tex
     unit(char, i, i + 1);
     i++;
   }
-  if (starts.length < end) return undefined;
-  if (decoded.slice(start, end) !== text) return undefined;
-  const span = { start: starts[start], end: ends[end - 1] };
-  return balanced(inner.slice(span.start, span.end)) ? span : undefined;
+  return { text: decoded, starts, ends };
 }
 
 // Whether every element opened in `html` closes in it and vice versa.

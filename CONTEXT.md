@@ -182,7 +182,7 @@ Everyone with one file of one site and branch open at once: the editor's tabs, c
 _Avoid_: channel, session (a Synced session is something else)
 
 **Shared copy**:
-A file as everyone in its Live room holds it while two or more have it open: each tab merges everyone's changes into its own copy of the plain source, and its draft follows that copy. A tab that opens the file later is caught up by someone online; nothing is kept on the server. (ADR 0003; ticket am-21.) Each person's Undo takes back only their own changes to it (ticket am-24). An agent's text change joins it under the agent's own name, written in by the tab that receives the agent's commands (ticket am-25).
+A file as everyone in its Live room holds it while two or more have it open: each tab merges everyone's changes into its own copy of the plain source, and its draft follows that copy. A tab that opens the file later is caught up by someone online; nothing is kept on the server. (ADR 0003; ticket am-21.) Each person's Undo takes back only their own changes to it (ticket am-24). An agent's text change joins it under the agent's own name, written in by the tab that receives the agent's commands (ticket am-25). Typing on the page reaches it letter by letter, and others' carets show in the page's text as in the code pane (ticket am-23).
 _Avoid_: server copy, master copy, shared document
 
 **External agent workflow**:

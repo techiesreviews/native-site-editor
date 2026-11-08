@@ -162,3 +162,22 @@
 .live-caret-tint--1 { background: color-mix(in oklch, var(--agent-presence-2) 22%, transparent); }
 .live-caret-tint--2 { background: color-mix(in oklch, var(--agent-presence-3) 22%, transparent); }
 .live-caret-tint--3 { background: color-mix(in oklch, var(--agent-presence-4) 22%, transparent); }
+
+/* On the page (ticket am-23): a layer over the preview's frame viewport, clipped to it, under the agents' pins. The
+   carets sit where the frame finds them in the page's text (live-carets.ts `attachPage`); no element highlight. */
+.live-carets-page {
+  position: absolute;
+  z-index: 20;
+  overflow: clip;
+  pointer-events: none;
+}
+.live-carets-page .live-caret {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+}
+.live-carets-page :is(.live-caret, .live-caret-tint)[hidden] { display: none; }
+.live-carets-page .live-caret-tint {
+  position: absolute;
+  border-radius: 2px;
+}

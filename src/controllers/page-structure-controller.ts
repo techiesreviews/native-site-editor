@@ -5,7 +5,7 @@ import { type NativePreviewSelection, type NativeTextSelection, type NativeTextE
 import { nativeElementLabel, linkWrapEdit, opensInNewTab, newTabEdit, setAttributeEdit, unwrapEdits, previousHeadingLevel, altFromPath, nativeKindLabel, duplicateEdit, removeEdit } from "../native-structure";
 import { type EditBarControl, type EditBarModel } from "../components/edit-bar";
 import { textSizeScale, currentTextSize, textSizeEdit } from "../native-text-size";
-import { startTagAttribute, textRangeInSource, type StartTag, type ElementRange } from "../../shared/html-source";
+import { sourceText, startTagAttribute, textRangeInSource, type StartTag, type ElementRange } from "../../shared/html-source";
 import { nativeLinkSuggestions } from "../native-pages";
 import { nativeElementFields, locateNativeFieldElement, nativeElementAttributeEdits } from "../page-builder/native-element-fields";
 import { blockLayout, blockLayoutEdit } from "../page-builder/block-fields";
@@ -787,33 +787,48 @@ export function createPageStructureController(ports: PageStructurePorts) {
 
   // The source edit for text typed in the preview: only the changed stretch,
   // placed inside the element's own content. Undefined when it cannot be placed.
+  // Typing together (ticket am-23): someone else's change may have reached the
+  // element's text since `before`; the typed change moves past it (theirs first
+  // where both replace, the typed one first where both only insert at one spot,
+  // where the typist's caret stays), and one that overlaps theirs is not placed.
   function nativeTextSourceEdit(source: string, node: NativeTextEdit["node"], before: string, after: string) {
     const range = ports.locateNativeElementRange(source, node);
-    // Common prefix and suffix; the rest of `before` becomes the rest of `after`.
-    let start = 0;
-    while (start < before.length && start < after.length && before[start] === after[start]) start++;
-    let endBefore = before.length;
-    let endAfter = after.length;
-    while (endBefore > start && endAfter > start && before[endBefore - 1] === after[endAfter - 1]) {
-      endBefore--;
-      endAfter--;
+    const inner = range?.close ? source.slice(range.tag.end, range.close.start) : undefined;
+    if (!range || inner === undefined) return undefined;
+    // Typed spaces arrive as no-break spaces where the browser needs them to stay visible: compared as spaces.
+    const plain = (text: string) => text.replace(/\u00a0/g, " ");
+    const now = sourceText(inner).text;
+    const was = plain(before), typed = plain(after), here = plain(now);
+    let { start, end, text } = textChange(was, typed);
+    if (here !== was) {
+      const theirs = textChange(was, here);
+      if (start >= theirs.end && !(end === start && start === theirs.start)) {
+        const shift = theirs.text.length - (theirs.end - theirs.start);
+        start += shift; end += shift;
+      } else if (end > theirs.start) return undefined;
     }
+    // Already the source's text: nothing to write.
+    if (typed === here) return { start: range.tag.end, end: range.tag.end, text: "" };
     // A pure insertion takes one neighbouring character along, so the source
     // range is never empty and lands beside that character.
-    if (endBefore === start) {
-      if (start > 0) start--;
-      else { endBefore++; endAfter++; }
+    if (end === start) {
+      if (start > 0) { start--; text = here[start] + text; }
+      else { text += here[0] ?? ""; end++; }
     }
-    const inner = range?.close ? source.slice(range.tag.end, range.close.start) : undefined;
-    const span = inner !== undefined ? textRangeInSource(inner, start, endBefore, before.slice(start, endBefore)) : undefined;
-    if (!range || !span) return undefined;
-    // Typed spaces arrive as no-break spaces where the browser needs them to stay visible.
-    const text = after.slice(start, endAfter).replace(/\u00a0/g, " ")
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    return { start: range.tag.end + span.start, end: range.tag.end + span.end, text };
+    const span = textRangeInSource(inner, start, end, now.slice(start, end));
+    if (!span) return undefined;
+    return { start: range.tag.end + span.start, end: range.tag.end + span.end, text: text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") };
+  }
+  /** The one stretch that turns `from` into `to`: common prefix and suffix; the rest of `from` becomes the rest of `to`. */
+  function textChange(from: string, to: string) {
+    let start = 0;
+    while (start < from.length && start < to.length && from[start] === to[start]) start++;
+    let end = from.length, endTo = to.length;
+    while (end > start && endTo > start && from[end - 1] === to[endTo - 1]) { end--; endTo--; }
+    return { start, end, text: to.slice(start, endTo) };
   }
 
-  function prepareNativeTextEdit({ path, node, before, after }: NativeTextEdit) {
+  function prepareNativeTextEdit({ path, node, before, after, live, group }: NativeTextEdit) {
     if (!ports.nativePreview) return undefined;
     // The workspace when the text was committed: the same account, repository, branch and load.
     const opening = loadStamp();
@@ -862,7 +877,9 @@ export function createPageStructureController(ports: PageStructurePorts) {
     function applyInEditor() {
     const preview = ports.nativePreview;
     if (!preview || !allowed() || ports.appStore.openFile.value !== path || !ports.editorModule.isMounted(path)) return;
-    const outcome = ports.edits.now(textPlan("Text changed", "Undid the text change", true), { anchor: path });
+    // Typing on the page goes out letter by letter (ticket am-23), one undo step while it lasts (`group`); only the
+    // last of it selects the element after its render.
+    const outcome = ports.edits.now(textPlan("Text changed", "Undid the text change", !live), { anchor: path, ...group ? { group } : {} });
     if (outcome.ok) return;
     preview.refresh();
     ports.errorMessage(new Error(outcome.message));
