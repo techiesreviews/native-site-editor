@@ -1145,7 +1145,8 @@ test("saving names everyone whose changes the file carries: another person and a
   writeAs(agent, () => anna.store.edit({ scope: anna.scope, path, changes: [{ start: base.indexOf("seven"), end: base.indexOf("seven"), text: "half past " }] }));
   lex.type(0, "<!-- Lex -->");
   await until(() => lex.text.includes("Warm") && lex.text.includes("half past") && anna.text === lex.text, "every change on both");
-  for (let tries = 0; (await named(lex)).length < 2 && tries < 500; tries++) await new Promise(resolve => setTimeout(resolve, 2));
+  // A name is noted once presence says it, which may come after the text: wait on both tabs.
+  for (let tries = 0; ((await named(lex)).length < 2 || (await named(anna)).length < 2) && tries < 500; tries++) await new Promise(resolve => setTimeout(resolve, 2));
   const lexNames = await named(lex);
   assert.deepEqual(byName(lexNames), [{ name: "anna" }, { name: "Claude Code", agent: true }]);
   // The one saving is the commit's author, not named again.
