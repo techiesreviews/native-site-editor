@@ -81,3 +81,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Files beyond the first round's: `src/guarded-edit.ts`, `src/guarded-edit/commit.ts`, `src/editor-workspace.ts` (the commit itself), `tests/agent-text-commit.test.ts`, `docs/wayfinder/agents-and-multiplayer/build/tickets/23-page-typing-together.md`.
 - Still open: an agent's caret is named, and gets its icon, by the name its commands carry, not its MCP client's name; the command does not carry the client's name to the tab.
 
+
+## UX review (2026-11-08)
+
+`kit ux` (bundle `.scratch/ux/fleet-lead/20261108-125614-SAjpi0/bundle.md` in the main checkout): F-canvas-15, F-canvas-16, F-code-08 and the agent features are fine but not shown (no shot has two people and an agent on one page). F-history-01 looks off for reasons this slice does not touch, the same ones slice 24's UX review recorded on 2026-10-31: a dark strip after Undo and Redo ("Undid adding the Paragraph.", from `src/controllers/block-insert-controller.ts`) that covers the page at 390 px, code words in the crumb bar ("section.flow", "p"), the count on Publish, and a 19×24 px crumb. The slice changes no strip, crumb, count or button. They stay with the follow-up that removes them (atomic-catalogue ticket 07 "No toasts").
