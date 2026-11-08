@@ -50,7 +50,7 @@ import { createParkedSteps, parkedTransitions } from "./guarded-edit/parked";
 import { createEditorWorkspace } from "./editor-workspace";
 import { createFinishedElsewhere, openLink } from "./finished-elsewhere";
 import { createAgentPresence } from "./agent-presence";
-import { createShareControl } from "./share-control";
+import { createShareControl, shareWorkspace } from "./share-control";
 import { agentStops, STOPPED_AGENTS_KEY } from "./agent-stops";
 import { createWorkspaceSession, draftScopeOf, holdsDraftScope, sameBranch, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { Repository, SessionInfo, TreeEntry } from "../shared/types";
@@ -89,12 +89,7 @@ const agentPresence = createAgentPresence({
 // An agent stopped in another tab of this browser (ticket am-12) goes from this one's views too.
 window.addEventListener("storage", event => { if (event.key === STOPPED_AGENTS_KEY) { agentStops.reread(); agentPresence.stopsChanged(); } });
 function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.loaded(); workingPart.left(); share.check(); return workspaceSession.begin(); }
-// Share to edit (slice 30, src/live-session.ts): a synced session on the page shown, until another project or branch opens.
-const share = createShareControl({
-  preview: () => nativePreview,
-  workspace: () => { const scope = shownScope(); return scope?.kind === "github" && runtime.site ? { repo: scope.repo, branch: scope.branch, site: scope.repo.split("/").pop() ?? scope.repo, host: info?.user?.login ?? "" } : undefined; },
-  stamp: () => { const since = workspaceSession.begin(); return { holds: () => since.changed() !== "scope" }; },
-});
+const share = createShareControl({ preview: () => nativePreview, ...shareWorkspace({ shown: shownScope, siteOpen: () => Boolean(runtime.site), login: () => info?.user?.login, begin: () => workspaceSession.begin() }) }); // Share to edit (slice 30)
 const cleanSources = new CleanSourceCache(() => info?.user?.login);
 // The open native site's state (src/native-site-runtime.ts); its preview adapter is the site preview below.
 const runtime = createNativeSiteRuntime({

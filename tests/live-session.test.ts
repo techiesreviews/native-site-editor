@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readSessionLink, sessionWire, startSharing, type SharePorts } from "../src/live-session";
-import { createShareControl, guestColour, type ShareState } from "../src/share-control";
+import { createShareControl, guestColour, shareWorkspace, type ShareState } from "../src/share-control";
+import type { SessionChange, WorkspaceScope } from "../src/workspace-session";
 import type { LivePeer, LiveRoom, LiveRoomOptions } from "../src/live-room";
 import type { GuestTextEdit, NativePreview } from "../src/components/native-preview";
 
@@ -141,4 +142,20 @@ test("Lex's tab writes only a listed guest's text on the page on show, and nothi
   await settle();
   assert.equal(refreshed, 0, "a change not written refreshes the page only while the session lasts");
   holds = false;
+});
+
+test("the workspace to share is the GitHub branch shown while a site is open; sharing holds until another scope opens", () => {
+  let shown: WorkspaceScope | undefined = { kind: "github", account: "lex", repoId: 1, repo: "lex/cafe", branch: "main" };
+  let site = true, change: SessionChange | undefined;
+  const ports = shareWorkspace({ shown: () => shown, siteOpen: () => site, login: () => "lex", begin: () => ({ changed: () => change }) as never });
+  assert.deepEqual(ports.workspace(), { repo: "lex/cafe", branch: "main", site: "cafe", host: "lex" });
+  site = false;
+  assert.equal(ports.workspace(), undefined, "no site open");
+  site = true; shown = { kind: "folder", folderId: "f" };
+  assert.equal(ports.workspace(), undefined, "a folder is not shared");
+  const stamp = ports.stamp();
+  change = "generation";
+  assert.equal(stamp.holds(), true, "a new load of the same branch keeps the session");
+  change = "scope";
+  assert.equal(stamp.holds(), false, "another project or branch ends it");
 });

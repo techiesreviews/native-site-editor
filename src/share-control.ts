@@ -4,6 +4,7 @@
 // and its room load with the first share.
 
 import type { SharePorts, SessionGuest, SyncedSession } from "./live-session";
+import type { SessionStamp, WorkspaceScope } from "./workspace-session";
 
 /** What the project menu shows: no session, one starting, or one open with its link and guests. */
 export type ShareState = { sharing: false; starting?: true } | { sharing: true; link: string; guests: SessionGuest[] };
@@ -15,6 +16,21 @@ export function guestColour(id: string) {
   let hash = 0;
   for (const character of id) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
   return String(hash % GUEST_COLOURS);
+}
+
+/**
+ * `createShareControl`'s view of the editor (src/main.ts): the GitHub branch shown while a site is open, with its
+ * repository's name as the site's and Lex's login; and a stamp that holds until another project or branch opens.
+ */
+export function shareWorkspace(editor: { shown(): WorkspaceScope | undefined; siteOpen(): boolean; login(): string | undefined; begin(): SessionStamp }) {
+  return {
+    workspace() {
+      const scope = editor.shown();
+      if (scope?.kind !== "github" || !editor.siteOpen()) return undefined;
+      return { repo: scope.repo, branch: scope.branch, site: scope.repo.split("/").pop() ?? scope.repo, host: editor.login() ?? "" };
+    },
+    stamp() { const since = editor.begin(); return { holds: () => since.changed() !== "scope" }; },
+  };
 }
 
 /**
