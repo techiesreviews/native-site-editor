@@ -2,6 +2,7 @@ import type {
   PublishRequest,
   PublishResult,
   Repository,
+  SaveAuthor,
   TreeEntry,
 } from "../shared/types";
 import { EMPTY_COMMIT } from "../shared/types";
@@ -88,12 +89,37 @@ export function validatePublish(value: unknown): PublishRequest {
   }
   for (const flag of [data.allowGithubConfig, data.allowWorkflows])
     if (flag !== undefined && typeof flag !== "boolean") throw new HttpError(400, "Invalid request.");
+  if (data.authors !== undefined && (!Array.isArray(data.authors) || data.authors.length > MAX_AUTHORS || !data.authors.every(validAuthor)))
+    throw new HttpError(400, "Invalid request.");
   const workflows = [
     ...new Set(data.files.flatMap((file) => [file.path, ...(file.movedFrom ? [file.movedFrom] : [])]).filter(touchesGithubConfig)),
   ];
   if (workflows.length && !confirmedGithubConfig(data))
     throw new HttpError(403, githubConfigMessage(workflows));
   return data as PublishRequest;
+}
+
+/** Authors one commit names (ticket am-26): a room of a few people and their agents stays well inside it. */
+const MAX_AUTHORS = 50;
+/** A name on one line of the commit message: no line breaks or control characters, at most 80 characters. */
+const validName = (name: unknown) => typeof name === "string" && name.trim().length > 0 && [...name].length <= 80 && !/[\u0000-\u001f\u007f]/.test(name);
+const validAuthor = (value: unknown) => {
+  const author = value as Partial<SaveAuthor> | null;
+  return !!author && typeof author === "object" && validName(author.name)
+    && (author.email === undefined || (typeof author.email === "string" && author.email.length <= 254 && /^[^\s<>@]+@[^\s<>@]+$/.test(author.email)))
+    && (author.agent === undefined || author.agent === true);
+};
+
+/**
+ * The commit message (ADR 0003 decision 6): what it does, then everyone else whose changes it carries. Those with an
+ * address go in `Co-authored-by` lines, which GitHub shows as co-authors; the rest are named in the message, agents
+ * marked as such.
+ */
+export function commitMessage(summary: string, authors: readonly SaveAuthor[] = []): string {
+  const named = authors.filter((author) => !author.email).map((author) => `${author.name.trim()}${author.agent ? " (agent)" : ""}`);
+  const trailers = authors.filter((author) => author.email).map((author) => `Co-authored-by: ${author.name.trim()} <${author.email}>`);
+  const list = named.length > 1 ? `${named.slice(0, -1).join(", ")} and ${named.at(-1)}` : named[0];
+  return [summary, ...(list ? [`Changes by ${list}.`] : []), ...(trailers.length ? [trailers.join("\n")] : [])].join("\n\n");
 }
 
 /** The user confirmed a save that changes `.github` (`allowGithubConfig`; `allowWorkflows` is the older name). */
@@ -341,7 +367,7 @@ export async function publish(
       `${base}/git/commits`,
       "POST",
       {
-        message: `${commitSummary(data.files, changes)} with Native Site Editor`,
+        message: commitMessage(`${commitSummary(data.files, changes)} with Native Site Editor`, data.authors),
         tree,
         parents: [head],
       },
@@ -384,7 +410,7 @@ async function startRepository(github: GitHub, repo: Repository, data: PublishRe
     `${github.base(repo)}/contents/${file.path.split("/").map(encodeURIComponent).join("/")}`,
     "PUT",
     {
-      message: `Add ${file.path} with Native Site Editor`,
+      message: commitMessage(`Add ${file.path} with Native Site Editor`, data.authors),
       content: base64Bytes(encoder.encode(file.content)),
       // An empty repository's first commit makes its default branch.
       ...(data.branch !== repo.default_branch ? { branch: data.branch } : {}),

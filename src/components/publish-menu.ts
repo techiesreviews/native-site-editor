@@ -7,6 +7,7 @@ import { diffCounts, diffHunks, sideBySideRows, type SideCell } from "../text-di
 import { CHANGE_WORDS, listChanges, publishFiles, type FileChange } from "../file-changes";
 import { formatBytes, postUpload, sendUploads, uploadBytes } from "../uploads";
 import { deployStatus, onDeployStatus, setDeployStatus, type DeployStatus } from "../deploy-status";
+import { authorsOf } from "../save-authors";
 import "./publish-menu.css";
 
 // Paths a save was refused for, by draft key: GitHub changed them (or
@@ -367,7 +368,9 @@ export function createPublishMenu(options: {
     // session expired or GitHub changed files (said in the menu).
     async function post(files: PublishFile[], base: string | undefined): Promise<PublishResult | undefined> {
       // Gzipped, a commit of many pages stays a small request.
-      const body = await gzip(JSON.stringify({ branch: options.scope.branch, ...(base ? { head: base } : {}), files }));
+      // Everyone else whose changes these files carry is named in the commit (ticket am-26).
+      const authors = authorsOf(new Set(submitted.map((draft) => draftKey(options.scope, draft.path))), options.scope.account);
+      const body = await gzip(JSON.stringify({ branch: options.scope.branch, ...(base ? { head: base } : {}), files, ...(authors.length ? { authors } : {}) }));
       const response = await fetch(`/api/publish?${new URLSearchParams({ repo: options.scope.repo })}`, {
         method: "POST", credentials: "same-origin",
         headers: { "Content-Type": "application/json", "Content-Encoding": "gzip" },
