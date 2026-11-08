@@ -52,3 +52,9 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Budget: the editor's boot code grows by 2,291 bytes of script and 573 bytes of CSS gzipped (index.html's entry and preloads, built before and after this slice); `src/live-session.ts` and the room are their own lazy chunks.
 - Validation: `RESULT: ok unit 3308/3308 (205 files)`; `RESULT: ok specs 9/9 passed` (native-share-live, native-page-together, native-live-text, native-agent-live, native-code-carets, native-components, native-drop-containers, native-elements-compat, native-structure-compact); `npm run check` and `npm run lint` clean; `RESULT: ok doctor 11/11 checks passed` (5 kit setup pieces reported missing, outside this slice).
 - Feature list: F-repo-09 Share to edit. Code map: a Synced sessions row.
+
+### UX follow-ups
+
+- UX (looks off): F-repo-05 at 390 px the Branches flyout sits on top of the repository list and hides the current repository's row and part of the row below it (L5); it opens with only "main", so picking another branch is not shown (.scratch/ux/fleet-lead/20261108-195510-rXd8ww/editor-F-repo-05-390-light-branches-strip.webp)
+- UX (looks off): F-phone-03 while the Files explorer is loading at 390 px it fills the screen below the project name and no Publish button is in view (U5); once it closes, the top bar spreads over several rows with Publish on the second (.scratch/ux/fleet-lead/20261108-195510-rXd8ww/editor-F-repo-06-390-light-refresh-strip.webp)
+- UX (looks off): F-phone-04 at 390 px the project menu's rows, the Branches row and the small refresh buttons are smaller than 44 px touch targets (HS18) (.scratch/ux/fleet-lead/20261108-195510-rXd8ww/editor-F-repo-05-390-light-branches-strip.webp)
