@@ -1206,3 +1206,17 @@ test("an agent writing into this tab's drafts is named for the commit even with 
   writeAs({ grant: "g", name: "Later" }, () => store.edit({ scope, path, changes: [{ start: 0, end: 0, text: "x" }] }));
   assert.deepEqual(await names(), [], "stopped: nothing more is noted");
 });
+
+test("someone whose only change is a deletion is named: a deletion adds no text of its own", async () => {
+  const room = fakeRoom();
+  const anna = tab(room, base, { account: "anna" });
+  const lex = tab(room);
+  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
+  await quiet();
+  const gone = "<p>Open at seven.</p>\n";
+  anna.type(base.indexOf(gone), "", gone.length);
+  await until(() => !lex.text.includes("Open at seven"), "Anna's deletion on Lex's tab");
+  for (let tries = 0; !(await named(lex)).length && tries < 500; tries++) await new Promise(resolve => setTimeout(resolve, 2));
+  assert.deepEqual(await named(lex), [{ name: "anna" }]);
+  anna.stop(); lex.stop();
+});

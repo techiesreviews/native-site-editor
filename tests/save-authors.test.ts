@@ -56,3 +56,23 @@ test("names noted over another version are not the draft's: someone else's save 
   assert.deepEqual(await names(authors, "k", two, "anna"), [{ name: "lex" }], "noted again over the new version");
   assert.deepEqual(await names(authors, "other", one), [], "other files have their own");
 });
+
+test("this browser's tabs share the names: one tab's settle or note is not undone by another's", async () => {
+  const disk = keeper();
+  const a = createSaveAuthors(disk), b = createSaveAuthors(disk);
+  a.note("k", one, { name: "anna" });
+  await names(a);
+  assert.deepEqual(await names(b), [{ name: "anna" }], "b reads what a noted");
+  // B notes an agent connected in B; A, which read the file before, notes someone else: both stay.
+  b.note("k", one, { name: "Codex", agent: true });
+  await names(b);
+  a.note("k", one, { name: "sam" });
+  assert.deepEqual(await names(a), [{ name: "anna" }, { name: "Codex", agent: true }, { name: "sam" }]);
+  // B saves and settles them all; A's next note does not bring them back.
+  const { sent } = await b.collect([{ key: "k", baseSha: one }], "lex");
+  b.settle(sent, new Map([["k", two]]));
+  await names(b, "k", two);
+  a.note("k", two, { name: "bo" });
+  assert.deepEqual(await names(a, "k", two), [{ name: "bo" }]);
+  assert.deepEqual(await names(a, "k", one), []);
+});

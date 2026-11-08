@@ -3,8 +3,8 @@
 // people whose changes reached this tab's shared copy (src/live-text.ts), and agents whose changes this tab wrote into
 // its drafts (src/live-author.ts).
 //
-// - Kept by draft key, as the drafts are: in this browser (memory, then IndexedDB), so a reload or a new sign-in still
-//   names them. Each name is kept with the blob its file's draft began from (`base`): once the draft is over another
+// - Kept by draft key, as the drafts are: in this browser's IndexedDB, so a reload or a new sign-in still names them,
+//   and every change reads them again first, so this browser's tabs (which share the drafts) share them too. Each name is kept with the blob its file's draft began from (`base`): once the draft is over another
 //   version (someone saved it, here or in another tab), names noted over the old one are not this draft's.
 // - Settled after a save (`settle`): only the names the save sent, and not noted again since (typed while it was on
 //   its way), go. A file whose draft goes, or is back to its saved text, has no authors (`forget`).
@@ -79,19 +79,35 @@ export function browserAuthorKeeper(): AuthorKeeper {
   };
 }
 
-/** Noted names over `keeper` (memory only without one). */
-export function createSaveAuthors(keeper?: AuthorKeeper): SaveAuthors {
-  /** Each file's names, read once from the keeper; every change to a file waits for the one before it. */
+/** Names kept in memory only (tests, or no IndexedDB). */
+export function memoryAuthorKeeper(): AuthorKeeper {
+  const kept = new Map<string, NotedAuthor[]>();
+  return {
+    read: async key => kept.get(key)?.map(author => ({ ...author })),
+    write: (key, authors) => { if (authors) kept.set(key, authors.map(author => ({ ...author }))); else kept.delete(key); },
+  };
+}
+
+/** Noted names over `keeper` (memory only by default). */
+export function createSaveAuthors(keeper: AuthorKeeper = memoryAuthorKeeper()): SaveAuthors {
+  /** Each file's latest change: the next one waits for it. */
   const files = new Map<string, Promise<NotedAuthor[]>>();
+  /** What this tab last read or wrote per file (name to base), so noting a name already there reads nothing. */
+  const known = new Map<string, Map<string, string | null>>();
   /** When each name was last noted in this tab, for `settle`. */
   const notes = new Map<string, Map<string, number>>();
   let clock = 0;
+  // Every change reads the file's names again before it writes: another tab of this browser shares the drafts and the
+  // keeper, and may have noted or settled names since.
   const change = (key: string, update: (authors: NotedAuthor[]) => boolean) => {
-    const before = files.get(key) ?? (keeper ? keeper.read(key).catch(() => undefined).then(found => found ?? []) : Promise.resolve([]));
-    const after = before.then(authors => {
-      if (update(authors)) keeper?.write(key, authors.length ? authors.map(author => ({ ...author })) : undefined);
-      return authors;
-    });
+    const after = (files.get(key) ?? Promise.resolve()).catch(() => undefined)
+      .then(() => keeper.read(key).catch(() => undefined))
+      .then(found => {
+        const authors = found ?? [];
+        if (update(authors)) keeper.write(key, authors.length ? authors.map(author => ({ ...author })) : undefined);
+        known.set(key, new Map(authors.map(author => [id(author), author.base])));
+        return authors;
+      });
     files.set(key, after);
     return after;
   };
@@ -104,6 +120,8 @@ export function createSaveAuthors(keeper?: AuthorKeeper): SaveAuthors {
       let times = notes.get(key);
       if (!times) notes.set(key, times = new Map());
       times.set(tag, ++clock);
+      const seen = known.get(key);
+      if (seen?.has(tag) && seen.get(tag) === base) return;
       void change(key, authors => {
         const at = authors.findIndex(known => id(known) === tag);
         if (at >= 0 && authors[at].base === base) return false;
@@ -121,7 +139,7 @@ export function createSaveAuthors(keeper?: AuthorKeeper): SaveAuthors {
     async collect(drafts, account) {
       const self = `person:${account.toLowerCase()}`, out: SaveAuthor[] = [], seen = new Set<string>(), sent: SentAuthors = new Map();
       for (const draft of drafts) {
-        const authors = await (files.get(draft.key) ?? change(draft.key, () => false));
+        const authors = await change(draft.key, () => false);
         const times = new Map<string, number>();
         for (const author of authors) {
           if (author.base !== draft.baseSha) continue;

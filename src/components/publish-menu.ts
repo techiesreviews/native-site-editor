@@ -7,7 +7,7 @@ import { diffCounts, diffHunks, sideBySideRows, type SideCell } from "../text-di
 import { CHANGE_WORDS, listChanges, publishFiles, type FileChange } from "../file-changes";
 import { formatBytes, postUpload, sendUploads, uploadBytes } from "../uploads";
 import { deployStatus, onDeployStatus, setDeployStatus, type DeployStatus } from "../deploy-status";
-import { saveAuthors, type SaveAuthors } from "../save-authors";
+import { saveAuthors, type SaveAuthors, type SentAuthors } from "../save-authors";
 import "./publish-menu.css";
 
 // Paths a save was refused for, by draft key: GitHub changed them (or
@@ -393,12 +393,12 @@ export function createPublishMenu(options: {
     try {
       const head = options.head?.();
       // Everyone else whose changes these files carry is named in the commit (ticket am-26); once saved, those names go.
+      // A commit names only the authors of the files it holds.
       const names = options.authors ?? saveAuthors();
-      const { authors, sent } = await names.collect(submitted.map((draft) => ({ key: draftKey(options.scope, draft.path), baseSha: draft.baseSha })), options.scope.account);
-      const settle = (result: PublishResult, drafts: SavedDraft[]) => {
-        const keys = new Set(drafts.map((draft) => draftKey(options.scope, draft.path)));
-        names.settle(new Map([...sent].filter(([key]) => keys.has(key))), new Map(result.files.map((file) => [draftKey(options.scope, file.path), file.sha])));
-      };
+      const gather = (drafts: SavedDraft[]) =>
+        names.collect(drafts.map((draft) => ({ key: draftKey(options.scope, draft.path), baseSha: draft.baseSha })), options.scope.account);
+      const settle = (result: PublishResult, sent: SentAuthors) =>
+        names.settle(sent, new Map(result.files.map((file) => [draftKey(options.scope, file.path), file.sha])));
       const files = publishFiles(chosen);
       let data: PublishResult | undefined;
       if (head === EMPTY_COMMIT) {
@@ -409,21 +409,25 @@ export function createPublishMenu(options: {
           files.find((file) => file.path === "index.html" && !file.sha && !file.delete) ??
           files.find((file) => !file.sha && !file.delete && file.baseSha === null);
         if (!first) throw new Error("The first save to an empty repository needs a new text file, such as index.html. Select one too.");
-        const started = await post([first], head, authors);
+        const saved = chosen.filter((change) => change.path === first.path).flatMap((change) => change.drafts);
+        const firstNames = await gather(saved);
+        const started = await post([first], head, firstNames.authors);
         if (!started) return;
         const rest = files.filter((file) => file !== first);
         // When the rest is not saved, the first commit stands: its file is GitHub's now.
         const keepFirst = () => {
-          const saved = chosen.filter((change) => change.path === first.path).flatMap((change) => change.drafts);
-          settle(started, saved);
+          settle(started, firstNames.sent);
           options.onPublished(started, saved);
         };
-        if (!rest.length) data = started;
+        if (!rest.length) { settle(started, firstNames.sent); data = started; }
         else {
           try {
             await sendUploads(uploadBytes(), options.scope, submitted, upload);
-            const after = await post(rest, started.commit, authors);
+            const restNames = await gather(submitted.filter((draft) => !saved.includes(draft)));
+            const after = await post(rest, started.commit, restNames.authors);
             if (!after) { keepFirst(); return; }
+            settle(started, firstNames.sent);
+            settle(after, restNames.sent);
             data = { ...after, files: [...started.files, ...after.files], deleted: after.deleted ?? [] };
           } catch (error) {
             keepFirst();
@@ -432,12 +436,13 @@ export function createPublishMenu(options: {
         }
       } else {
         // Uploaded files become GitHub blobs first; the commit names them.
+        const { authors, sent } = await gather(submitted);
         await sendUploads(uploadBytes(), options.scope, submitted, upload);
         data = await post(files, head, authors);
         if (!data) return;
+        settle(data, sent);
       }
       // Reconcile even if the user navigated away while the request was in flight.
-      settle(data, submitted);
       options.onPublished(data as PublishResult, submitted);
       if (disposed) return;
       // Following the deploy (site-actions.ts) took over the status; else it is just Saved.

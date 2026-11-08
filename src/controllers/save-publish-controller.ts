@@ -223,6 +223,7 @@ export function createSavePublishController(ports: SavePublishPorts) {
       if (!store.get(scope, path)) continue;
       // The model kept for the file goes with its draft.
       if (!ports.drop(scope, path)) store.remove(scope, path);
+      // A draft the editor's store held is forgotten again by its `dropped` event (src/live-text.ts); this covers one it never held.
       ports.forgetAuthors(scope, path);
       deletedUpstream.delete(path);
       count++;
