@@ -64,7 +64,7 @@ import type { JsonValue } from "../shared/agent-command";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 import { rebaseHistory } from "./shared-undo";
 import { liveAuthor, type LiveAuthor } from "./live-author";
-import { recordAuthor } from "./save-authors";
+import { saveAuthors, type SaveAuthors } from "./save-authors";
 import type { SaveAuthor } from "../shared/types";
 
 type Yjs = typeof import("yjs");
@@ -87,6 +87,8 @@ export interface LiveTextPorts {
   on?: boolean;
   /** Draws others' carets once a copy is shared (src/components/live-carets.ts by default, in a browser). */
   loadCarets?: () => Promise<(share: CaretShare) => () => void>;
+  /** Who changed each file, for the commit (src/save-authors.ts `saveAuthors` by default). */
+  authors?: SaveAuthors;
 }
 
 /** Someone else's caret in the open file, in this tab's text (ticket am-22). `author`: the Yjs client id their own changes
@@ -637,12 +639,14 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     function nameAuthors() {
       for (const id of unnamed) {
         const who = authorNamed(id);
-        if (who) { recordAuthor(start.key, who); unnamed.delete(id); }
+        if (who) { (ports.authors ?? saveAuthors()).note(start.key, baseSha, who); unnamed.delete(id); }
       }
     }
-    /** The client ids of others' text in `update`: this tab's own, and the agents it writes for, are not others'. */
-    function heardFrom(update: Uint8Array) {
-      for (const client of Y.parseUpdateMeta(update).to.keys()) {
+    /** The clients whose text an update just added to this copy (their clock moved on from `before`): this tab's own, and
+     * the agents it writes for, are not others'. A catch-up repeating text this copy holds already names no one again. */
+    function heardFrom(before: Map<number, number>) {
+      for (const [client, clock] of Y.decodeStateVector(Y.encodeStateVector(doc))) {
+        if (clock <= (before.get(client) ?? 0)) continue;
         const local = authors.get(client);
         if (client === me || client === startClient || (local && agentIds.has(local.origin)) || unnamed.size >= UNNAMED_LIMIT) continue;
         unnamed.add(client);
@@ -677,8 +681,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         if (kind !== REPLY && kind !== UPDATE) return;
         // A frame naming an agent whose text this tab writes is not that agent's here: only this tab writes under its id.
         const local = authors.get(id), agentHere = local !== undefined && agentIds.has(local.origin);
+        const before = Y.decodeStateVector(Y.encodeStateVector(doc));
         Y.applyUpdate(doc, payload, kind === UPDATE && id !== me && !agentHere ? authorOrigin(id) : REMOTE);
-        heardFrom(payload);
+        heardFrom(before);
         // Caught up only by an answer to its own request: one to another tab's holds only what that tab lacked.
         if (kind === REPLY && theirs && id === me && !synced) void begin(true);
       } catch { /* A broken update is dropped; the next catch-up brings what it lacked. */ }
@@ -768,11 +773,18 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
     canUndoAuthor: (author: number) => current?.authors?.can(author) ?? false,
     onAuthorUndo(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
   });
-  // An agent's change written into this tab's drafts names the agent in the commit that saves it (ticket am-26).
+  // Who changed each file, for the commit (ticket am-26): an agent writing into this tab's drafts is named; a file whose
+  // draft went, or is back to its saved text (Undo, Discard, a save here or elsewhere), has no authors.
+  const fileAuthors = ports.authors ?? saveAuthors();
   const stopAgents = ports.store.subscribe(event => {
-    if (event.type !== "text" || event.origin === "shared" || event.origin === "discard" || event.origin === "external") return;
-    const agent = liveAuthor();
-    if (agent) recordAuthor(event.key, { name: cut(agent.name), agent: true });
+    if (event.type === "history") return;
+    if (event.type === "file" && event.change === "dropped") { fileAuthors.forget(event.key); return; }
+    if (event.type === "file" && event.change !== "saved" && event.change !== "base") return;
+    const file = ports.store.get(event.scope, event.path);
+    if (!file || file.baseSha === undefined) return;
+    if (!file.changed) { fileAuthors.forget(event.key); return; }
+    const agent = event.type === "text" && event.origin !== "shared" && event.origin !== "discard" && event.origin !== "external" ? liveAuthor() : undefined;
+    if (agent) fileAuthors.note(event.key, file.baseSha, { name: cut(agent.name), agent: true });
   });
   if (!(ports.on ?? liveSharingOn())) return port(() => { stopAgents(); listeners.clear(); });
   const loadCarets = ports.loadCarets ?? (typeof document === "undefined" ? undefined

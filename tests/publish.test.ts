@@ -581,6 +581,8 @@ test("authors with an address go in Co-authored-by lines; bad authors are refuse
   for (const authors of [
     "anna",
     [{ name: "line\nbreak" }],
+    [{ name: "line\u2028separator" }],
+    [{ name: "next\u0085line" }],
     [{ name: " " }],
     [{ name: "x".repeat(81) }],
     [{ name: "Anna", email: "not an address" }],
@@ -590,4 +592,17 @@ test("authors with an address go in Co-authored-by lines; bad authors are refuse
   ])
     assert.throws(() => validatePublish({ branch: "main", files, authors }), (error: HttpError) => error.status === 400);
   assert.equal(validatePublish({ branch: "main", files, authors: [{ name: "Anna" }] }).authors?.length, 1);
+});
+
+test("the first save to an empty repository names the others too", async () => {
+  const calls: { path: string; method: string; body?: any }[] = [];
+  const github = new GitHub("private-token", async (input, init) => {
+    const path = new URL(String(input)).pathname, method = init?.method ?? "GET";
+    calls.push({ path, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (path.endsWith("/branches")) return Response.json([]);
+    return Response.json({ content: { sha: next }, commit: { sha: head } });
+  });
+  await publish(github, repo, { branch: "main", head: "0".repeat(40), files: [{ path: "index.html", baseSha: null, content: "<h1>Hi</h1>" }], authors: [{ name: "anna" }] });
+  const put = calls.find((call) => call.method === "PUT");
+  assert.equal(put?.body.message, "Add index.html with Native Site Editor\n\nChanges by anna.");
 });
