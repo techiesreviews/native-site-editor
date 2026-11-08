@@ -11,6 +11,7 @@ import arrowRight from "@phosphor-icons/core/regular/arrow-right.svg?raw";
 import arrowUp from "@phosphor-icons/core/regular/arrow-up.svg?raw";
 import arrowUpRight from "@phosphor-icons/core/regular/arrow-up-right.svg?raw";
 import arrowsClockwise from "@phosphor-icons/core/regular/arrows-clockwise.svg?raw";
+import broadcast from "@phosphor-icons/core/regular/broadcast.svg?raw";
 import caretDown from "@phosphor-icons/core/regular/caret-down.svg?raw";
 import caretLeft from "@phosphor-icons/core/regular/caret-left.svg?raw";
 import caretRight from "@phosphor-icons/core/regular/caret-right.svg?raw";
@@ -49,6 +50,7 @@ const icons = {
   "arrow-up": arrowUp,
   "arrow-up-right": arrowUpRight,
   "arrows-clockwise": arrowsClockwise,
+  broadcast,
   "caret-down": caretDown,
   "caret-left": caretLeft,
   "caret-right": caretRight,

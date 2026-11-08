@@ -175,7 +175,7 @@ its number unused.
 - Files: `src/share-control.ts`, `src/live-session.ts`, `src/live-guest.ts`, `src/live-guest.css`, `src/components/person-chip.css`, `src/components/repository-menu.ts`, `src/components/repository-menu.css`, `src/components/native-preview.ts`, `src/components/preview-frame-doc.ts`, `src/live-room.ts`, `shared/live-room.ts`, `worker/app.ts`, `worker/agent-relay.ts`, `worker/index.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-share-live.spec.ts`
-- Steps: none yet (needs a second browser with no sign-in)
+- Steps: `scripts/agents/shots/features/F-repo-09.json`
 
 ## Pages and files
 
