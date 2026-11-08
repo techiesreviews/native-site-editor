@@ -561,3 +561,33 @@ test("a commit touching hundreds of folders reads the tree once, so it stays wit
     (error: HttpError) => error.status === 409 && /agent\.txt\. Its parent is not a directory/.test(error.message),
   );
 });
+
+test("two authors' changes saved by one person become one commit naming both", async () => {
+  const { github, calls } = fixture();
+  const result = await publish(github, repo, { branch: "main", files, authors: [{ name: "anna" }, { name: "Claude Code", agent: true }] });
+  const commits = calls.filter((call) => call.method === "POST" && call.path.endsWith("/git/commits"));
+  assert.equal(commits.length, 1, "one commit");
+  assert.equal(result.commit, next);
+  assert.equal(commits[0].body.message, "Update about/index.html with Native Site Editor\n\nChanges by anna and Claude Code (agent).");
+});
+
+test("authors with an address go in Co-authored-by lines; bad authors are refused", async () => {
+  const { commitMessage } = await import("../worker/publish.ts");
+  assert.equal(commitMessage("Update a"), "Update a");
+  assert.equal(
+    commitMessage("Update a", [{ name: "Anna", email: "anna@example.com" }, { name: "Sam" }, { name: "Bot", agent: true }, { name: "Codex", email: "codex@example.com", agent: true }]),
+    "Update a\n\nChanges by Sam and Bot (agent).\n\nCo-authored-by: Anna <anna@example.com>\nCo-authored-by: Codex <codex@example.com>",
+  );
+  for (const authors of [
+    "anna",
+    [{ name: "line\nbreak" }],
+    [{ name: " " }],
+    [{ name: "x".repeat(81) }],
+    [{ name: "Anna", email: "not an address" }],
+    [{ name: "Anna", email: "a@b>\nCo-authored-by: x <y@z>" }],
+    [{ name: "Anna", agent: false }],
+    Array.from({ length: 51 }, (_, index) => ({ name: `p${index}` })),
+  ])
+    assert.throws(() => validatePublish({ branch: "main", files, authors }), (error: HttpError) => error.status === 400);
+  assert.equal(validatePublish({ branch: "main", files, authors: [{ name: "Anna" }] }).authors?.length, 1);
+});

@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSavePublishController, type SavePublishPorts } from "../src/controllers/save-publish-controller.ts";
-import type { DraftScope, SavedDraft } from "../src/drafts.ts";
+import { draftKey, type DraftScope, type SavedDraft } from "../src/drafts.ts";
+import { authorsOf, forgetAuthors, recordAuthor } from "../src/save-authors.ts";
 import { forEachAwait } from "./support/await-race.ts";
 import { listChanges } from "../src/file-changes.ts";
 import { EMPTY_COMMIT, type PublishResult, type Snapshot } from "../shared/types.ts";
@@ -501,4 +502,17 @@ test("without a user scope, discardFile asks nothing even when the row has a cha
   assert.deepEqual(f.questions, []);
   assert.deepEqual(f.log, []);
   assert.equal(f.drafts.size, 1);
+});
+
+test("a save or a discard forgets who changed its files, so the next commit names only later authors (am-26)", () => {
+  const f = fixture();
+  const key = (path: string) => draftKey(scope1, path);
+  for (const path of ["index.html", "about.html", "kept.html"]) recordAuthor(key(path), { name: "anna" });
+  f.drafts.set("about.html", draft("about.html"));
+  f.controller.published(f.controller.proof(), scope1, result("f".repeat(40)), [draft("index.html")]);
+  assert.deepEqual(authorsOf([key("index.html")], "lex"), [], "saved: named in that commit");
+  f.controller.discard(["about.html"]);
+  assert.deepEqual(authorsOf([key("about.html")], "lex"), [], "discarded: their changes are gone");
+  assert.deepEqual(authorsOf([key("kept.html")], "lex"), [{ name: "anna" }], "other files keep theirs");
+  forgetAuthors(key("kept.html"));
 });

@@ -1059,6 +1059,14 @@ its number unused.
 - Spec: `tests/native-save/native-discard.spec.ts`
 - Steps: `scripts/agents/shots/features/F-publish-06.json`
 
+### F-publish-07 Saving names everyone who changed the files
+- Try: With live sharing switched on in two browsers (see F-canvas-15), change the same page in both, and ask an agent connected from one of them to change it too. Then Publish from one browser and open the commit on GitHub.
+- Good: One commit holds everyone's changes. Its message names, after what it does, everyone else whose changes it carries ("Changes by anna and Claude Code (agent)."); the one who pressed Publish is its author and is not named again. An agent writing into your drafts is named even with live sharing off. After the save, the next commit names only who changed the files since; a discarded file names no one. Nothing new shows in the editor (S4).
+- Files: `src/save-authors.ts`, `src/live-text.ts`, `src/components/publish-menu.ts`, `src/controllers/save-publish-controller.ts`, `worker/publish.ts`
+- Phone: yes
+- Spec: none
+- Steps: none yet (needs two browsers signed in at once)
+
 ## Agents menu and agent connection
 
 ### F-agent-01 Connect to MCP

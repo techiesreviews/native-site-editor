@@ -1,6 +1,7 @@
 import type { Stamp } from "../guarded-edit";
 import { githubScope, same } from "../workspace-session";
-import type { DraftScope, SavedDraft } from "../drafts";
+import { draftKey, type DraftScope, type SavedDraft } from "../drafts";
+import { forgetAuthors } from "../save-authors";
 import { keepAsNewFile, listChanges, pruneUnchanged, settleDeletedUpstream, type DraftAccess, type FileChange } from "../file-changes";
 import { EMPTY_COMMIT, type PublishResult, type Snapshot, type TreeEntry } from "../../shared/types";
 
@@ -221,6 +222,7 @@ export function createSavePublishController(ports: SavePublishPorts) {
       if (!store.get(scope, path)) continue;
       // The model kept for the file goes with its draft.
       if (!ports.drop(scope, path)) store.remove(scope, path);
+      forgetAuthors(draftKey(scope, path));
       deletedUpstream.delete(path);
       count++;
     }
@@ -277,6 +279,8 @@ export function createSavePublishController(ports: SavePublishPorts) {
    * commit loaded meanwhile keeps its own head, snapshot and base.
    */
   function published(was: SaveProof, scope: DraftScope, result: PublishResult, submitted: SavedDraft[]) {
+    // Their authors are named in the commit now: the next save names only who changes the files after it.
+    for (const draft of submitted) forgetAuthors(draftKey(scope, draft.path));
     const shown = live(was, false) || isOpen(scope) && !!was.snapshot && ports.snapshot()?.commit === was.snapshot.commit;
     if (shown) {
       seeHead(result.commit);

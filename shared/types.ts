@@ -108,6 +108,17 @@ export interface PublishRequest {
   allowGithubConfig?: boolean;
   /** The earlier name of `allowGithubConfig`. */
   allowWorkflows?: boolean;
+  /** Others whose changes this save carries (src/save-authors.ts): the commit names each (worker/publish.ts `commitMessage`). */
+  authors?: SaveAuthor[];
+}
+/**
+ * Someone besides the one saving whose changes a save carries: a person or an agent (`agent`). With an `email`
+ * the commit names them in a `Co-authored-by` line, otherwise by name in its message.
+ */
+export interface SaveAuthor {
+  name: string;
+  email?: string;
+  agent?: true;
 }
 /** An account or organisation the editor's GitHub App is installed on, that the user can reach (`GET /api/owners`). */
 export interface OwnerInstallation {
