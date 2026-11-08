@@ -78,6 +78,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Repeated letters right at the caret (others typing "a" before your caret in "aa") can leave your caret on the other side of their letter: the frame sees only the text before and after, not where it was typed.
 - Carets are measured again on every render, scroll and resize of the page; a layout change with none of these (a late font or image) moves the words under a caret until the next one.
 
+### UX follow-ups
+
+- UX (looks off): F-canvas-07 the paragraph goes and the next block is selected, but a "Heading removed / Undo" toast pops up over the code pane at the foot of the screen (S4, HS1) (.scratch/ux/fleet-lead/20261108-160055-iXqKbX/add-panel-F-canvas-07-1280-light-removed-strip.webp)
+- UX (looks off): F-canvas-14 the page and code update in place with the scroll kept, but each edit brings up a "Text changed" toast that covers the code pane at 390 (S4, HS1, U5); the crumb buttons are only 26×24 px on a phone (HS18); the crumbs read "section.flow › h2", which is code (S7, HS4); in the first dark 390 frame the edit bar covers the bottom of the heading being edited (U5) (.scratch/ux/fleet-lead/20261108-160055-iXqKbX/add-panel-F-canvas-14-390-dark-live-strip.webp)
+- UX (looks off): F-bar-01 the bar sits by the heading with its name chip first, docked at the foot on a phone without covering the heading, but a "Heading added. Into Section "Recent work" › after Div / Undo" toast stays above it (S4, HS1), and the crumbs show "body" and "section.flow › h2" as code (S7, HS4) (.scratch/ux/fleet-lead/20261108-160055-iXqKbX/editor-F-bar-01-390-light-bar-strip.webp)
+- UX (looks off): F-bar-02 the level changes to H3 and Italic shows pressed with the heading in italics, but a "Heading level H3 / Undo" toast appears above the bar after each change (S4, HS1) (.scratch/ux/fleet-lead/20261108-160055-iXqKbX/editor-F-bar-02-390-light-level-strip.webp)
+- UX (looks off): F-phone-03 Publish stays in view at 390 px, but the top bar takes two rows (the account, then undo, redo, history and Publish), not the one row the Good line asks for, and Publish carries a "1" count badge (S2) (.scratch/ux/fleet-lead/20261108-160055-iXqKbX/editor-F-bar-01-390-light-bar-strip.webp)
+
 ## Review round 1 fixes (2026-11-08)
 
 - The host's text-edit handler returns the write's promise (`src/workspace-mount.ts`): the frame is told a letter is written only once it is, so a render with old sources no longer redraws the element typed in without its letters while the page's file opens. New unit test in `tests/workspace-mount.test.ts` (it fails with the promise dropped).
