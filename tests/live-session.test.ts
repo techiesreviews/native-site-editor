@@ -2,18 +2,20 @@
 // sent in order), and the project menu's share control ending a session of another project.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createShareControl, readSessionLink, sessionWire, type SharePorts, type ShareState } from "../src/live-session";
-import type { LiveRoom } from "../src/live-room";
+import { readSessionLink, sessionWire, startSharing, type SharePorts } from "../src/live-session";
+import { createShareControl, guestColour, type ShareState } from "../src/share-control";
+import type { LivePeer, LiveRoom, LiveRoomOptions } from "../src/live-room";
+import type { GuestTextEdit, NativePreview } from "../src/components/native-preview";
 
 const settle = async () => { for (let index = 0; index < 20; index++) await new Promise(resolve => setImmediate(resolve)); };
 
 test("an edit link carries a token, and after # the key, the site and who shares it", () => {
   const key = "A".repeat(43);
-  assert.deepEqual(readSessionLink(`https://editor.test/live?s=${"a1".repeat(16)}#k=${key}&site=bakery&by=lex`),
-    { token: "a1".repeat(16), key, site: "bakery", by: "lex" });
+  assert.deepEqual(readSessionLink(`https://editor.test/live?s=${"a1".repeat(32)}#k=${key}&site=bakery&by=lex`),
+    { token: "a1".repeat(32), key, site: "bakery", by: "lex" });
   assert.equal(readSessionLink(`https://editor.test/live?s=0123#k=${key}`), undefined, "a token cut short");
-  assert.equal(readSessionLink(`https://editor.test/live?s=${"a1".repeat(16)}`), undefined, "no key after #");
-  assert.equal(readSessionLink(`https://editor.test/live?s=${"a1".repeat(16)}#k=short`), undefined, "a key cut short");
+  assert.equal(readSessionLink(`https://editor.test/live?s=${"a1".repeat(32)}`), undefined, "no key after #");
+  assert.equal(readSessionLink(`https://editor.test/live?s=${"a1".repeat(32)}#k=short`), undefined, "a key cut short");
 });
 
 test("the session's wire sends a big render in parts, in order, and puts it back together", async () => {
@@ -86,4 +88,57 @@ test("a session that ends by itself (the room refused, the preview closed) leave
   });
   await assert.rejects(refusing.start(), /Sign in again/);
   assert.deepEqual(refusing.state(), { sharing: false });
+});
+
+test("a guest keeps one colour, the same in Lex's menu and on every guest page", () => {
+  const id = "c0ffee".padEnd(32, "0");
+  assert.equal(guestColour(id), guestColour(id));
+  assert.match(guestColour(id), /^[0-3]$/);
+  assert.equal(new Set(Array.from({ length: 40 }, (_, index) => guestColour(index.toString(16).padStart(32, "0")))).size, 4, "all four colours are used");
+});
+
+test("Lex's tab writes only a listed guest's text on the page on show, and nothing after the session stopped", async () => {
+  Object.defineProperty(globalThis, "location", { configurable: true, value: { origin: "https://editor.test" } });
+  const written: GuestTextEdit[] = [];
+  let release: (() => void) | undefined;
+  const preview = {
+    mirror: () => ({ render() {}, stop() {} }),
+    guestTextEdit: async (edit: GuestTextEdit) => { written.push(edit); if (release === undefined) await new Promise<void>(done => { release = done; }); return false; },
+    refresh: () => { refreshed++; },
+  } as Pick<NativePreview, "mirror" | "guestTextEdit" | "refresh">;
+  let refreshed = 0, holds = true;
+  let options: LiveRoomOptions | undefined;
+  const room: LiveRoom = { send: async () => true, ready: async () => undefined, setPresence() {}, close() {}, peers: () => new Map<string, LivePeer>() };
+  const session = await startSharing({
+    repo: "lex/bakery", branch: "main", site: "bakery", host: "lex",
+    preview: () => preview as NativePreview, holds: () => holds, changed: () => undefined,
+    mint: async () => ({ session: "b".repeat(64), host: "c".repeat(64) }),
+    open: (given: LiveRoomOptions) => { options = given; return room; },
+  });
+  assert.match(session.link, /^https:\/\/editor\.test\/live\?s=b{64}#k=[\w-]{43}&site=bakery&by=lex$/);
+  assert.match(options!.address ?? "", /^\/api\/live\/share\?repo=lex%2Fbakery&branch=main&session=b{64}&host=c{64}$/);
+  const anna = "a".repeat(32);
+  options!.onPeers!(new Map([["p1", { access: "guest", state: { name: "Anna", guest: anna } }], ["p2", { access: "editor", state: { name: "Sam", guest: "d".repeat(32) } }]]));
+  // What a guest sends, as the wire carries it.
+  const frames: Uint8Array[] = [];
+  const guest = sessionWire(() => ({ send: async (bytes: Uint8Array) => { frames.push(Uint8Array.from(bytes)); return true; } }), () => undefined, () => undefined);
+  const edit = { path: "index.html", node: [0, 1], before: "Fresh bread", after: "Fresh bread daily", live: true };
+  for (const message of [
+    { t: "edit", from: "e".repeat(32), edit, seq: 1, session: 1 }, // someone not listed as a guest
+    { t: "edit", from: "d".repeat(32), edit, seq: 1, session: 1 }, // an editor claiming a guest id
+    { t: "edit", from: anna, edit: { ...edit, node: [0, -1] }, seq: 1, session: 1 },
+    { t: "edit", from: anna, edit: { ...edit, path: 42 }, seq: 1, session: 1 },
+    { t: "edit", from: anna, edit: { ...edit, after: "x".repeat(100_001) }, seq: 1, session: 1 },
+    { t: "edit", from: anna, edit, seq: 2, session: 1 },
+  ]) guest.send(message);
+  await settle();
+  for (const frame of frames) options!.onMessage(frame);
+  await settle();
+  assert.deepEqual(written, [edit], "only the listed guest's well-formed change reaches the page");
+  // Stopped while that change is being written: nothing more happens for it.
+  session.stop();
+  release!();
+  await settle();
+  assert.equal(refreshed, 0, "a change not written refreshes the page only while the session lasts");
+  holds = false;
 });

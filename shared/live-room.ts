@@ -43,6 +43,11 @@ export const LIVE_PING = "ping";
 /** The relay closes an agent's or a guest's socket with this when no tab has the room open (neither makes the key):
  * for a guest, the synced session ended (Stop sharing, or Lex's tab closed). */
 export const LIVE_ROOM_CLOSED = 4404;
+/** The relay closes a guest's socket with this when the sharing tab's socket dropped (no clean close): the guest tries
+ * again for a while, as that tab may be back in a moment. */
+export const LIVE_HOST_LOST = 4408;
+/** How long a guest keeps trying after LIVE_HOST_LOST before saying the session ended. */
+export const LIVE_HOST_GRACE_MS = 30_000;
 /** The relay closes an agent's socket with this once its connection ends: revoked, rebound, past its 8 hours or agents paused. */
 export const LIVE_ACCESS_ENDED = 4403;
 
@@ -56,9 +61,14 @@ export function liveRoomFile(value: unknown): value is string {
     value.split("/").every(part => part !== "" && part !== "." && part !== "..");
 }
 
-/** A synced session's token (slice 30): 128 random bits as hex, made by the sharing tab. The relay instance and its room
- * are named from it; the room key travels after `#` in the link, so the server never holds it. */
-export const LIVE_SESSION_TOKEN = /^[a-f\d]{32}$/;
+/** A synced session's token (slice 30): 128 random bits and a 128-bit tag the Worker made over them with its own secret,
+ * as hex. Only the signed-in share call mints one, so a made-up token is refused before any relay instance wakes. The
+ * instance and its room are named from it; the room key travels after `#` in the link, so the server never holds it. */
+export const LIVE_SESSION_TOKEN = /^[a-f\d]{64}$/;
+/** The sharing tab's own proof for that token (its sign-in and repository; never in the link). */
+export const LIVE_SESSION_HOST = /^[a-f\d]{64}$/;
+/** A guest's id in a session: the one its messages and presence carry. */
+export const LIVE_GUEST_ID = /^[a-f\d]{32}$/;
 /** The one room inside a synced session's relay instance (no file: the session carries the page Lex shows). */
 export const LIVE_SESSION_ROOM = "synced-session";
 

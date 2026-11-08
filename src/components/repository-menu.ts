@@ -6,12 +6,15 @@ import { setIcon } from "../icons";
 import { noteCount, noteWords, tileWords, type FinishedNote } from "../finished-elsewhere";
 import { sameBranch, sameRepository } from "../workspace-session";
 import type { Repository, SessionInfo } from "../../shared/types";
-import type { ShareState } from "../live-session";
+import "./person-chip.css";
+import { guestColour, type ShareState } from "../share-control";
 
 type Account = NonNullable<SessionInfo["accounts"]>[number];
 /** Share to edit (slice 30, src/live-session.ts): a synced session on the project shown. */
 export interface ShareMenuPort {
   state(): ShareState;
+  /** Whether a site is shown to share: the items show only then. */
+  available(): boolean;
   /** Hears each change; returns the way to stop. */
   watch(listener: (state: ShareState) => void): () => void;
   /** Starts sharing (or keeps the session open): its link, or undefined when there is nothing to share. */
@@ -20,6 +23,8 @@ export interface ShareMenuPort {
 }
 /** How long "Link copied" stays on the item before it reads "Copy edit link" again. */
 const COPIED_MS = 2500;
+/** Guests shown by initial beside the project tile; the rest go in one "+N". */
+const GUESTS_SHOWN = 3;
 
 // GitHub decides which repositories the editor's GitHub App can reach, and
 // its API only lets classic tokens change that, so adding and removing a
@@ -184,7 +189,7 @@ export function createRepositoryMenu(options: {
     anchor: "--repository-menu",
   });
   panel.addEventListener("beforetoggle", (event) => {
-    if ((event as ToggleEvent).newState === "open") options.onOpen?.();
+    if ((event as ToggleEvent).newState === "open") { options.onOpen?.(); share?.refresh(); }
   });
   panel.addEventListener("click", (event) => {
     // Share to edit and Copy edit link say "Link copied" on themselves, so the menu stays open for them.
@@ -459,8 +464,9 @@ export function createRepositoryMenu(options: {
 
 /**
  * Share to edit (slice 30; mock-up 14): "Share to edit" starts a synced session and copies its link; while it lasts,
- * "Copy edit link" and "Stop sharing". A copied link says so on the item itself for a moment ("Link copied"); a copy
- * the browser refuses shows the link to copy by hand. Who joined shows beside the project tile, by initial.
+ * "Copy edit link" and "Stop sharing". A copied link says so on the item itself for a moment ("Link copied"), read out
+ * to screen readers; a copy the browser refuses shows the link to copy by hand. Who joined shows beside the project
+ * tile, by initial, at most three and a "+N". The items show only while a site is shown.
  */
 function shareItems(port: ShareMenuPort, actionClass: string) {
   const root = node("div", "repository-menu__share");
@@ -468,6 +474,7 @@ function shareItems(port: ShareMenuPort, actionClass: string) {
   main.type = "button";
   main.dataset.keepOpen = "";
   const label = node("span", "repository-menu__share-label");
+  label.setAttribute("aria-live", "polite");
   const done = node("span", "repository-menu__share-done");
   setIcon(done, "check", 14);
   done.setAttribute("aria-hidden", "true");
@@ -481,50 +488,67 @@ function shareItems(port: ShareMenuPort, actionClass: string) {
   const people = node("ul", "repository-menu__people");
   people.setAttribute("aria-label", "Editing with you");
   let copied: "yes" | "failed" | undefined;
+  // A refusal said on the item for a moment: signed out, or anything else.
+  let refused: string | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let destroyed = false;
   const draw = () => {
     const state = port.state();
-    const word = state.sharing
+    root.hidden = !port.available();
+    const word = refused ?? (state.sharing
       ? copied === "yes" ? "Link copied" : copied === "failed" ? "Copy the link below" : "Copy edit link"
-      : state.starting ? "Sharing…" : "Share to edit";
-    label.textContent = word;
+      : state.starting ? "Sharing…" : "Share to edit");
+    if (label.textContent !== word) label.textContent = word;
     main.classList.toggle("is-done", copied === "yes");
-    main.disabled = !state.sharing && Boolean(state.starting);
+    // Not `disabled`: a focused button that is disabled drops the keyboard's focus out of the menu.
+    main.setAttribute("aria-disabled", String(!state.sharing && Boolean(state.starting)));
     done.hidden = copied !== "yes";
     stop.hidden = !state.sharing;
     field.hidden = !(state.sharing && copied === "failed");
     if (state.sharing) field.value = state.link;
     const guests = state.sharing ? state.guests : [];
     people.hidden = !guests.length;
-    people.replaceChildren(...guests.map((guest, index) => {
-      const item = node("li", "repository-menu__person", (guest.name.match(/\p{L}|\p{N}/u)?.[0] ?? "·").toUpperCase());
+    const shown = guests.length > GUESTS_SHOWN + 1 ? guests.slice(0, GUESTS_SHOWN) : guests;
+    const rest = guests.slice(shown.length);
+    people.replaceChildren(...shown.map((guest) => {
+      const item = node("li", "person-chip", initialOf(guest.name));
       item.title = `${guest.name} (guest)`;
       item.setAttribute("aria-label", `${guest.name}, a guest`);
-      item.dataset.colour = String(index % 4);
+      item.dataset.colour = guestColour(guest.id);
       return item;
-    }));
+    }), ...rest.length ? [(() => {
+      const more = node("li", "person-chip person-chip--more", `+${rest.length}`);
+      more.title = rest.map((guest) => guest.name).join(", ");
+      more.setAttribute("aria-label", `and ${rest.map((guest) => guest.name).join(", ")}, guests`);
+      return more;
+    })()] : []);
   };
+  const later = (then: () => void) => { clearTimeout(timer); timer = setTimeout(() => { if (!destroyed) then(); }, COPIED_MS); };
   const copy = async (link: string) => {
-    clearTimeout(timer);
     try { await navigator.clipboard.writeText(link); copied = "yes"; }
     catch { copied = "failed"; }
+    if (destroyed) return;
     draw();
-    if (copied === "failed") { field.focus(); return; }
-    timer = setTimeout(() => { copied = undefined; draw(); }, COPIED_MS);
+    if (copied === "failed") { clearTimeout(timer); field.focus(); return; }
+    later(() => { copied = undefined; draw(); });
   };
   main.addEventListener("click", () => {
     const state = port.state();
     if (state.sharing) { void copy(state.link); return; }
-    port.start().then((link) => { if (link) return copy(link); }, () => {
-      // The room refused (signed out, or no access any more): the item says so for a moment.
-      label.textContent = "Couldn't share";
-      timer = setTimeout(draw, COPIED_MS);
+    if (state.starting) return;
+    port.start().then((link) => { if (link && !destroyed) return copy(link); }, (error: unknown) => {
+      if (destroyed) return;
+      // Signed out: signing in again is the way on. Anything else (no access any more, no connection): said as such.
+      refused = (error as { status?: unknown } | null)?.status === 401 ? "Sign in to share" : "Couldn't share";
+      draw();
+      later(() => { refused = undefined; draw(); });
     });
   });
-  const unwatch = port.watch((state) => { if (!state.sharing) { copied = undefined; clearTimeout(timer); } draw(); });
+  const unwatch = port.watch((state) => { if (!state.sharing) { copied = undefined; } draw(); });
   draw();
-  return { root, people, destroy() { unwatch(); clearTimeout(timer); } };
+  return { root, people, refresh: draw, destroy() { destroyed = true; unwatch(); clearTimeout(timer); } };
 }
+const initialOf = (name: string) => (name.match(/\p{L}|\p{N}/u)?.[0] ?? "·").toUpperCase();
 
 // The count of finished work on a tile's corner, its words for screen readers.
 function tally() {

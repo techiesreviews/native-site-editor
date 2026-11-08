@@ -1,0 +1,25 @@
+/* Someone in a synced session by initial (slice 30): beside the project tile in Lex's top bar, and in the guest page's
+   bar. Each guest in their colour (src/share-control.ts `guestColour`), the sharer in the editor's; light chips with a
+   dark ink of their hue (src/theme.css), so they read in both themes. */
+.person-chip {
+  --person-pin: var(--guest-1-pin);
+  --person-ink: var(--guest-1-ink);
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  inline-size: var(--size-icon);
+  block-size: var(--size-icon);
+  border-radius: 50%;
+  background: var(--person-pin);
+  color: var(--person-ink);
+  box-shadow: 0 0 0 2px var(--surface-toolbar);
+  font-size: var(--type-badge);
+  font-weight: 700;
+  cursor: default;
+}
+.person-chip + .person-chip { margin-inline-start: -4px; }
+.person-chip[data-colour="1"] { --person-pin: var(--guest-2-pin); --person-ink: var(--guest-2-ink); }
+.person-chip[data-colour="2"] { --person-pin: var(--guest-3-pin); --person-ink: var(--guest-3-ink); }
+.person-chip[data-colour="3"] { --person-pin: var(--guest-4-pin); --person-ink: var(--guest-4-ink); }
+.person-chip[data-colour="host"] { --person-pin: var(--primary); --person-ink: var(--on-primary); }
+.person-chip--more { --person-pin: var(--surface-raised); --person-ink: var(--text); inline-size: auto; min-inline-size: var(--size-icon); padding-inline: 4px; border-radius: calc(var(--size-icon) / 2); }

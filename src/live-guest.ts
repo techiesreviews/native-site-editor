@@ -9,18 +9,25 @@
 // guests do not move to other pages themselves.
 
 import "./theme.css";
+import "./components/person-chip.css";
 import "./live-guest.css";
 import { runtimeDoc } from "./components/preview-frame-doc";
 import { createPreviewLink, iframeFramePort } from "./components/preview-link";
 import { watchEditorTheme } from "./theme";
 import { importSessionKey, randomId, readSessionLink, sessionWire, type GuestMessage, type HostMessage, type SessionPresence } from "./live-session";
 import type { LivePeer, LiveRoom } from "./live-room";
+import { guestColour } from "./share-control";
+import { LIVE_HOST_GRACE_MS, LIVE_HOST_LOST, LIVE_ROOM_CLOSED } from "../shared/live-room";
 import type { AssetChanges, UpdatePayload } from "./components/native-preview";
 import type { JsonValue } from "../shared/agent-command";
 
 /** The name typed last time, offered again (this browser only). */
 const NAME_KEY = "native-site-editor:guest-name";
 const ENDED = "This edit link has ended.";
+/** A join that has not got in by then gives up, and Join can be pressed again. */
+const JOIN_WAIT_MS = 10_000;
+/** While the sharing tab's connection is lost, a guest tries again this often (within LIVE_HOST_GRACE_MS). */
+const REJOIN_EVERY_MS = 2_000;
 const root = document.getElementById("live")!;
 
 const element = <K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text?: string) => {
@@ -76,53 +83,110 @@ function ask(shared: NonNullable<ReturnType<typeof readSessionLink>>) {
     submit.disabled = input.disabled = true;
     submit.textContent = "Joining…";
     problem.hidden = true;
-    join(shared, name).catch((error: unknown) => {
-      if (error instanceof Error && error.message === ENDED) { note(ENDED, shared.by ? `Ask ${shared.by} for a new link.` : "Ask for a new link."); return; }
+    void join(shared, name).then((outcome) => {
+      if (outcome === "in") return;
+      if (outcome === "ended") { note(ENDED, shared.by ? `Ask ${shared.by} for a new link.` : "Ask for a new link."); return; }
+      if (outcome === "invalid") { note("This edit link is not valid.", "Ask for the link again, and open all of it."); return; }
       submit.disabled = input.disabled = false;
       submit.textContent = "Join";
       problem.textContent = "Couldn't join. Check your connection and try again.";
       problem.hidden = false;
+      input.focus();
     });
   });
 }
 
-/** Joins the session's room with the link's key; resolves once in, or rejects (ENDED when the session is over). */
-async function join(shared: NonNullable<ReturnType<typeof readSessionLink>>, name: string) {
-  const key = await importSessionKey(shared.key);
+type Shared = NonNullable<ReturnType<typeof readSessionLink>>;
+/** How a try to get in went: in, the session is over (410, or closed by its end), the link is broken (400), or not in
+ * time or refused otherwise (worth trying again). */
+type Entry = { room: LiveRoom } | { refused: "ended" | "invalid" | "later" };
+const refusal = (why: number | undefined): "ended" | "invalid" | "later" =>
+  why === 410 || why === LIVE_ROOM_CLOSED ? "ended" : why === 400 ? "invalid" : "later";
+
+/** One try to get into the session's room with the link's key, within JOIN_WAIT_MS. Once in, `closed` hears how it ended. */
+async function enter(shared: Shared, key: CryptoKey, presence: SessionPresence, hooks: {
+  message(bytes: Uint8Array): void; peers(peers: ReadonlyMap<string, LivePeer>): void; closed(why: number | undefined): void;
+}): Promise<Entry> {
   const { openLiveRoom } = await import("./live-room");
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (entry: Entry) => { settled = true; clearTimeout(timer); resolve(entry); };
+    const room = openLiveRoom({
+      address: `/api/live/guest?${new URLSearchParams({ session: shared.token })}`,
+      key,
+      onMessage: (bytes) => hooks.message(bytes),
+      onPeers: (peers) => { if (settled) hooks.peers(peers); },
+      onClosed: (why) => { if (settled) hooks.closed(why); else settle({ refused: refusal(why) }); },
+    });
+    // No answer in time (no connection: the room would go on trying): stop, so the page offers Join again.
+    const timer = setTimeout(() => { if (settled) return; room.close(); settle({ refused: "later" }); }, JOIN_WAIT_MS);
+    room.ready().then(() => {
+      if (settled) return;
+      room.setPresence(presence as JsonValue);
+      settle({ room });
+    }, () => undefined);
+  });
+}
+
+/** Joins the session; once in, the page shows it and keeps it going across a dropped connection of the sharing tab. */
+async function join(shared: Shared, name: string): Promise<"in" | "ended" | "invalid" | "later"> {
+  let key: CryptoKey;
+  try { key = await importSessionKey(shared.key); } catch { return "invalid"; }
   const me = randomId();
+  const presence: SessionPresence = { name, guest: me };
   let room: LiveRoom | undefined;
   let view: ReturnType<typeof showSession> | undefined;
+  let left = false;
   const wire = sessionWire<HostMessage>(() => room, (message) => view?.receive(message), () => undefined);
-  const opened = openLiveRoom({
-    address: `/api/live/guest?${new URLSearchParams({ session: shared.token })}`,
-    key,
-    onMessage: (bytes) => wire.receive(bytes),
-    onPeers: (peers) => view?.people(peers),
-    onClosed: () => {
-      view?.close();
-      if (view) note(ENDED, shared.by ? `${shared.by} stopped sharing. Ask for a new link to edit again.` : "Ask for a new link to edit again.");
+  const ended = () => { left = true; view?.close(); note(ENDED, shared.by ? `${shared.by} stopped sharing. Ask for a new link to edit again.` : "Ask for a new link to edit again."); };
+  const hooks = {
+    message: (bytes: Uint8Array) => wire.receive(bytes),
+    peers: (peers: ReadonlyMap<string, LivePeer>) => view?.people(peers),
+    closed: (why: number | undefined) => {
+      room = undefined;
+      if (left) return;
+      if (why === LIVE_HOST_LOST) void rejoin(Date.now() + LIVE_HOST_GRACE_MS);
+      else ended();
     },
-  });
-  room = opened;
-  try { await opened.ready(); } catch { opened.close(); throw new Error(ENDED); }
+  };
+  // The sharing tab's connection dropped: it may be back in a moment, so try again until the grace runs out.
+  const rejoin = async (until: number) => {
+    view?.reconnecting(true);
+    while (!left && Date.now() < until) {
+      const entry = await enter(shared, key, presence, hooks);
+      if (left) { if ("room" in entry) entry.room.close(); return; }
+      if ("room" in entry) { room = entry.room; view?.reconnecting(false); view?.people(entry.room.peers()); return; }
+      if (entry.refused === "invalid") break;
+      await new Promise((done) => setTimeout(done, REJOIN_EVERY_MS));
+    }
+    if (!left) ended();
+  };
+  let entry: Entry;
+  try { entry = await enter(shared, key, presence, hooks); } catch { return "later"; }
+  if (!("room" in entry)) return entry.refused;
+  room = entry.room;
   remember(name);
-  opened.setPresence({ name, guest: me } satisfies SessionPresence as JsonValue);
   view = showSession(shared, name, (message) => wire.send({ ...message, from: me } satisfies GuestMessage), me);
-  view.people(opened.peers());
-  // Leaving says so at once, so Lex's list of people is right.
-  addEventListener("pagehide", () => opened.close(), { once: true });
+  view.people(entry.room.peers());
+  // Leaving says so at once, so Lex's list of people is right. A page brought back from the browser's cache has no
+  // room any more: it says the session is over for it.
+  addEventListener("pagehide", () => { left = true; room?.close(); }, { once: true });
+  addEventListener("pageshow", (event) => { if (event.persisted) ended(); });
+  return "in";
 }
 
 /** The page being edited: a top bar with the site and who is here, and the frame. */
 function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, name: string, send: (message: Omit<GuestMessage, "from">) => void, me: string) {
   const site = shared.site || "This site";
   const bar = element("header", "live-guest__bar");
-  const mark = element("span", "live-guest__mark", (site.match(/[a-z0-9]/i)?.[0] ?? "·").toUpperCase());
+  const mark = element("span", "live-guest__mark", initialOf(site));
   mark.setAttribute("aria-hidden", "true");
   const people = element("ul", "live-guest__people");
   people.setAttribute("aria-label", "In this session");
-  bar.append(mark, element("span", "live-guest__site", site), people);
+  const status = element("span", "live-guest__status", shared.by ? `Waiting for ${shared.by}…` : "Reconnecting…");
+  status.setAttribute("role", "status");
+  status.hidden = true;
+  bar.append(mark, element("span", "live-guest__site", site), status, people);
   const canvas = element("div", "live-guest__canvas");
   const waiting = element("p", "live-guest__waiting", shared.by ? `Waiting for ${shared.by}'s page…` : "Waiting for the page…");
   waiting.setAttribute("role", "status");
@@ -197,6 +261,11 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
         person(name, me, true),
       );
     },
+    /** The sharing tab's connection dropped: the page waits for it, and takes no typing meanwhile. */
+    reconnecting(on: boolean) {
+      status.hidden = !on;
+      canvas.inert = on;
+    },
     close() {
       stopTheme();
       frameLink.close();
@@ -206,15 +275,12 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
 
 /** One person in the bar: their initial in their colour, their name for hover and screen readers. */
 function person(name: string, guest: string | undefined, you = false) {
-  const item = element("li", "live-guest__person", (name.trim().match(/\p{L}|\p{N}/u)?.[0] ?? "·").toUpperCase());
+  const item = element("li", "person-chip", initialOf(name));
   const label = you ? `${name} (you)` : guest === undefined ? `${name} (sharing)` : name;
   item.title = label;
   item.setAttribute("aria-label", label);
-  // Lex in the editor's colour; each guest in one of the presence colours, the same one in every tab.
-  if (guest !== undefined) {
-    let hash = 0;
-    for (const character of guest) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-    item.dataset.colour = String(hash % 4);
-  } else item.dataset.colour = "host";
+  // Lex in the editor's colour; each guest in theirs, the same as in Lex's menu (src/share-control.ts).
+  item.dataset.colour = guest === undefined ? "host" : guestColour(guest);
   return item;
 }
+const initialOf = (name: string) => (name.trim().match(/\p{L}|\p{N}/u)?.[0] ?? "·").toUpperCase();

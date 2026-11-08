@@ -62,6 +62,8 @@ const RUNTIME_READY_TIMEOUT_MS = 8000;
 // The runtime answers a text patch at once; one not answered by then is let go
 // (its full update comes with the next render anyway).
 const PATCH_ANSWER_MS = 5000;
+// How soon a render waiting in a hidden tab goes to a synced session's guests (no animation frames come there).
+const HIDDEN_RENDER_MS = 100;
 
 /** Edit component mode as the frame takes it. */
 export interface EditComponentFrameMode {
@@ -785,6 +787,19 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     caretChanged();
     if (rafHandle) return;
     rafHandle = requestAnimationFrame(post);
+    renderHidden();
+  }
+  // A hidden tab gets no animation frames, yet a synced session's guests still type into it (slice 30): while one is
+  // copied, a render waiting there goes from a timer instead.
+  let hiddenTimer: ReturnType<typeof setTimeout> | undefined;
+  function renderHidden() {
+    if (!mirrors.size || !document.hidden || hiddenTimer) return;
+    hiddenTimer = setTimeout(() => {
+      hiddenTimer = undefined;
+      if (!rafHandle) return;
+      cancelAnimationFrame(rafHandle);
+      post();
+    }, HIDDEN_RENDER_MS);
   }
 
   // Files a matched rule may come from: pages, components, their stylesheets,
@@ -833,7 +848,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (load !== frameLoads || message.seq <= typedSeq) return;
       typedSeq = message.seq;
       // A render already on its way carries it; else one goes now, so the text typed in follows its source again.
-      if (!rafHandle) rafHandle = requestAnimationFrame(post);
+      if (!rafHandle) { rafHandle = requestAnimationFrame(post); renderHidden(); }
     };
     if (!site || !nativeSitePaths(site).includes(message.path)) { handled(); return; }
     const edit: NativeTextEdit = { path: message.path, node: message.node, before: message.before, after: message.after,
@@ -1548,6 +1563,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return frameState.active;
     },
     destroy() {
+      clearTimeout(hiddenTimer);
       for (const mirror of [...mirrors]) mirror.ended();
       mirrors.clear();
       hidePageCarets();

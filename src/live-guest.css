@@ -7,7 +7,9 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--text);
-  font: var(--type-base)/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: var(--type-base);
+  line-height: 1.45;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
@@ -88,27 +90,11 @@ button, input { font: inherit; color: inherit; }
   font-weight: 700;
 }
 .live-guest__site { flex: 1; min-inline-size: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.live-guest__people { display: flex; flex-direction: row-reverse; margin: 0; padding: 0; list-style: none; }
-.live-guest__person {
-  display: inline-grid;
-  place-items: center;
-  inline-size: var(--size-icon);
-  block-size: var(--size-icon);
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px var(--surface-toolbar);
-  font-size: var(--type-badge);
-  font-weight: 700;
-  cursor: default;
-  --person-pin: var(--agent-presence-pin);
-  --person-ink: var(--agent-presence-ink);
-  background: var(--person-pin);
-  color: var(--person-ink);
-}
-.live-guest__person + .live-guest__person { margin-inline-end: -4px; }
-.live-guest__person[data-colour="host"] { --person-pin: var(--primary); --person-ink: var(--on-primary); }
-.live-guest__person[data-colour="1"] { --person-pin: var(--agent-presence-2-pin); --person-ink: var(--agent-presence-2-ink); }
-.live-guest__person[data-colour="2"] { --person-pin: var(--agent-presence-3-pin); --person-ink: var(--agent-presence-3-ink); }
-.live-guest__person[data-colour="3"] { --person-pin: var(--agent-presence-4-pin); --person-ink: var(--agent-presence-4-ink); }
+.live-guest__people { display: flex; margin: 0; padding: 0; list-style: none; }
+/* While the sharing tab is back in a moment (its connection dropped), the page waits: no typing goes nowhere. */
+.live-guest__status { color: var(--muted); font-size: var(--type-small); white-space: nowrap; }
+.live-guest__status[hidden] { display: none; }
+.live-guest__canvas[inert] .live-guest__frame { opacity: 0.6; }
 
 .live-guest__canvas { display: grid; min-block-size: 0; background: var(--surface-subtle); }
 .live-guest__waiting { place-self: center; padding: 16px; color: var(--muted); }
