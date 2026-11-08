@@ -473,13 +473,17 @@ function shareItems(port: ShareMenuPort, actionClass: string) {
   const main = node("button", `${actionClass} repository-menu__share-item`);
   main.type = "button";
   main.dataset.keepOpen = "";
+  // Each item leads with its icon (mock-up 14): live for Share to edit, copy, a check once copied, stop.
+  const mark = node("span", "repository-menu__share-icon");
+  mark.setAttribute("aria-hidden", "true");
   const label = node("span", "repository-menu__share-label");
   label.setAttribute("aria-live", "polite");
-  const done = node("span", "repository-menu__share-done");
-  setIcon(done, "check", 14);
-  done.setAttribute("aria-hidden", "true");
-  main.append(label, done);
+  main.append(mark, label);
   const stop = button("Stop sharing", () => port.stop(), actionClass);
+  const stopMark = node("span", "repository-menu__share-icon");
+  stopMark.setAttribute("aria-hidden", "true");
+  setIcon(stopMark, "stop", 16);
+  stop.prepend(stopMark);
   const field = node("input", "repository-menu__share-link");
   field.readOnly = true;
   field.setAttribute("aria-label", "Edit link");
@@ -500,9 +504,10 @@ function shareItems(port: ShareMenuPort, actionClass: string) {
       : state.starting ? "Sharing…" : "Share to edit");
     if (label.textContent !== word) label.textContent = word;
     main.classList.toggle("is-done", copied === "yes");
+    const icon = copied === "yes" ? "check" : state.sharing ? "copy" : "broadcast";
+    if (mark.dataset.icon !== icon) { mark.dataset.icon = icon; setIcon(mark, icon, 16); }
     // Not `disabled`: a focused button that is disabled drops the keyboard's focus out of the menu.
     main.setAttribute("aria-disabled", String(!state.sharing && Boolean(state.starting)));
-    done.hidden = copied !== "yes";
     stop.hidden = !state.sharing;
     field.hidden = !(state.sharing && copied === "failed");
     if (state.sharing) field.value = state.link;

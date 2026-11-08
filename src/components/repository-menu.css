@@ -496,8 +496,16 @@
   color: var(--muted);
   cursor: progress;
 }
+.repository-menu__share-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--muted);
+}
+.repository-menu__share-item.is-done .repository-menu__share-icon {
+  color: inherit;
+}
 .repository-menu__share[hidden],
-.repository-menu__share-done[hidden],
 .repository-menu__share-link[hidden],
 .repository-menu__people[hidden] {
   display: none;
