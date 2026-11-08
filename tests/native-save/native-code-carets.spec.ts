@@ -5,7 +5,7 @@ import { openLiveRoom, type LiveRoomSocket } from "../../src/live-room";
 import type { JsonValue } from "../../shared/agent-command";
 
 // Others' carets in the code pane (ticket am-22): Lex and Anna, two browsers on the same page with live
-// sharing switched on (it is off by default), type in the code pane and each sees the other's caret, a circle
+// sharing switched on (on by default since slice am-31), type in the code pane and each sees the other's caret, a circle
 // with a letter that opens into the name on hover; an agent in the room shows the icon of its program. Anna's
 // tag at Lex's ends with an undo while her change can be taken back, and it takes back only hers, in both
 // tabs. Default fixture group: the real Worker route and relay rooms (src/live-text.ts, src/live-room.ts).

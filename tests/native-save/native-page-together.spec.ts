@@ -7,7 +7,7 @@ import { openLiveRoom, type LiveRoomSocket } from "../../src/live-room";
 import type { JsonValue } from "../../shared/agent-command";
 
 // Typing together on the page (ticket am-23): Lex and Anna, two browsers on the same page with live sharing switched on
-// (it is off by default). Typing on the page goes out letter by letter, and each sees the other's caret in the page's text,
+// (on by default since slice am-31). Typing on the page goes out letter by letter, and each sees the other's caret in the page's text,
 // with the caret look of the code pane. Anna's tag ends with an undo that takes back only her words, in both tabs. An
 // agent's change to the heading Lex types in waits until he clicks away; its caret then shows on the page in both tabs
 // with its program's icon, and its tag's undo takes back only its words. Default fixture group: the real Worker route,

@@ -5,8 +5,8 @@ import { clickOnText } from "./click-text";
 // The open file's shared copy (ticket am-21, ADR 0003): two browsers signed in
 // to the same repository and branch, each with its own drafts, share the page
 // they both have open through its live room (the real Worker route and relay
-// rooms, src/live-text.ts over src/live-room.ts). Live sharing is off by default
-// (the Tuesday pack decides); these browsers switch it on. Default fixture group.
+// rooms, src/live-text.ts over src/live-room.ts). Live sharing is on by default
+// (slice am-31; these browsers still say so), and `off` keeps a browser out. Default fixture group.
 const pageErrors: string[] = [];
 const file = "index.html";
 
@@ -24,7 +24,7 @@ async function browserTab(browser: Browser, sharing = true) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   // The dev server loads hundreds of modules: room in the resource list to see the lazy chunks arrive.
   await context.addInitScript(() => { if (window === window.top) performance.setResourceTimingBufferSize(10_000); });
-  if (sharing) await context.addInitScript(() => { if (window === window.top) localStorage.setItem("native-site-editor:live-sharing", "on"); });
+  await context.addInitScript((value) => { if (window === window.top) localStorage.setItem("native-site-editor:live-sharing", value); }, sharing ? "on" : "off");
   const page = await context.newPage();
   page.on("pageerror", (error) => pageErrors.push(error.message));
   return { context, page };
@@ -127,7 +127,7 @@ test("a joiner whose only other tab leaves before answering goes on from its own
   }
 });
 
-test("with live sharing switched off (the default), a page opens no room socket", async ({ browser, baseURL }) => {
+test("with live sharing switched off in this browser, a page opens no room socket", async ({ browser, baseURL }) => {
   const anna = await browserTab(browser, false);
   try {
     const sockets: string[] = [];

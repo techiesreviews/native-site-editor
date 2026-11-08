@@ -225,10 +225,15 @@ export function createRepositoryMenu(options: {
     }
   });
 
-  // The installation's settings page: an organisation's differs from a user's.
+  /** A repository on another person's account that the signed-in user collaborates on (slice am-31): its owner, not
+   * this user, chooses whether the editor may use it. */
+  function othersAccount(repo: Repository) {
+    return repo.owner.type === "User" && current !== undefined && repo.owner.login.toLowerCase() !== current.login.toLowerCase();
+  }
+  // The installation's settings page: an organisation's differs from a user's. Never another person's.
   function accessUrl(repo?: Repository) {
-    const target = repo ?? repositories.find((item) => item.id === currentId) ?? repositories.find((item) => item.installation_id);
-    if (!target?.installation_id) return options.installUrl;
+    const target = repo ?? [repositories.find((item) => item.id === currentId), ...repositories].find((item) => item?.installation_id && !othersAccount(item));
+    if (!target?.installation_id || othersAccount(target)) return options.installUrl;
     return target.owner.type === "Organization"
       ? `https://github.com/organizations/${encodeURIComponent(target.owner.login)}/settings/installations/${target.installation_id}`
       : `https://github.com/settings/installations/${target.installation_id}`;
@@ -303,10 +308,10 @@ export function createRepositoryMenu(options: {
   function render() {
     const query = search.value.trim().toLowerCase();
     const shown = repositories.filter((repo) => !query || repo.full_name.toLowerCase().includes(query));
-    // More than one owner: grouped under the owner's name, the personal account first, then organisations by name.
+    // More than one owner: grouped under the owner's name, the user's own account first, then the others by name.
     if (new Set(repositories.map((repo) => repo.owner.login.toLowerCase())).size < 2) list.replaceChildren(...shown.map(row));
     else {
-      const rank = (repo: Repository) => (repo.owner.type === "Organization" ? 1 : 0);
+      const rank = (repo: Repository) => (repo.owner.type === "Organization" || othersAccount(repo) ? 1 : 0);
       const firsts = new Map<string, Repository>();
       for (const repo of shown) if (!firsts.has(repo.owner.login.toLowerCase())) firsts.set(repo.owner.login.toLowerCase(), repo);
       const ordered = [...firsts.values()].sort((a, b) => rank(a) - rank(b) || a.owner.login.localeCompare(b.owner.login));
@@ -328,7 +333,8 @@ export function createRepositoryMenu(options: {
     const item = node("li", "repository-menu__owner");
     item.dataset.owner = repo.owner.login;
     item.dataset.kind = organisation ? "organization" : "user";
-    item.append(node("span", "repository-menu__owner-name", repo.owner.login), node("span", "repository-menu__owner-kind", organisation ? "Organisation" : "You"));
+    const kind = organisation ? "Organisation" : othersAccount(repo) ? "Shared with you" : "You";
+    item.append(node("span", "repository-menu__owner-name", repo.owner.login), node("span", "repository-menu__owner-kind", kind));
     return item;
   }
   function row(repo: Repository) {
@@ -371,8 +377,10 @@ export function createRepositoryMenu(options: {
       list.querySelector<HTMLElement>(".repository-menu__confirm a")?.focus();
     });
     // Remove comes first and, on hover or focus, covers the repository's
-    // letter tile, apart from its branches' ›.
-    item.append(remove, open);
+    // letter tile, apart from its branches' ›. Another person's repository
+    // has none: only its owner can take the editor's access away.
+    if (othersAccount(repo)) item.append(open);
+    else item.append(remove, open);
     if (confirming === repo.id) {
       const confirm = node("div", "repository-menu__confirm");
       confirm.append(

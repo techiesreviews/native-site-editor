@@ -100,6 +100,9 @@ import { testCsp } from "./test-csp";
 //   ase_demo_signed_out=1   no demo session is minted for it
 //   ase_demo_browser=KEY    names its onboarding state, so the controls above apply before
 //                           and after it signs in (a session id would not exist yet)
+// A browser that carries `ase_demo_login=NAME` before its first load is signed in as another
+// GitHub person, NAME, a collaborator on the demo account's repositories (slice am-31): GitHub
+// lists the demo account's installation to them as well, so both open the same site.
 //
 // A repository created through POST /user/repos is empty, joins the listing
 // (installation 1) and takes the first commit through
@@ -1145,13 +1148,13 @@ function cookieNamed(req: Connect.IncomingMessage, name: string): string | null 
   return match ? match.slice(name.length + 1) : null;
 }
 
-function mintSession(): string {
+function mintSession(login = DEMO_LOGIN): string {
   const id = newSessionId();
   sessions.set(id, {
     value: {
       kind: "user",
       token: "demo-token",
-      login: DEMO_LOGIN,
+      login,
       avatar_url: "",
       expiresAt: Date.now() + 24 * 60 * 60 * 1000,
     },
@@ -1447,7 +1450,8 @@ function workerMiddleware(): Connect.NextHandleFunction {
       const existingSession = sessionCookie(req);
       const slot = existingSession ? sessions.get(existingSession) : undefined;
       if (isDocument && !cookieNamed(req, "ase_demo_signed_out") && (!existingSession || !slot || slot.value.expiresAt <= Date.now())) {
-        const id = mintSession();
+        const collaborator = cookieNamed(req, "ase_demo_login");
+        const id = mintSession(collaborator && /^[a-z\d-]{1,39}$/i.test(collaborator) ? collaborator : undefined);
         const cookieName = sessionCookieName();
         mintedCookie = `${cookieName}=${id}; Path=/; HttpOnly; SameSite=Lax${publicOrigin().startsWith("https://") ? "; Secure" : ""}`;
         // Make the freshly minted cookie visible to same-request worker calls.

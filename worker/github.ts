@@ -95,6 +95,9 @@ export async function boundedJson(
 }
 
 /** A blob's text read by `prefetchTexts`, kept in memory only. */
+/** The installations among `reachable` where `login` may create a repository: their own account's and organisations'. */
+const ownedBy = (login: string, reachable: OwnerInstallation[]) =>
+  reachable.filter((owner) => owner.type === "Organization" || owner.login.toLowerCase() === login.toLowerCase());
 const textKey = (repo: Repository, sha: string) => `${repo.id}/text/${sha}`;
 const blobKey = (repo: Repository, sha: string) => `${repo.id}/blob/${sha}`;
 
@@ -296,7 +299,7 @@ export class GitHub {
     );
   }
 
-  /** With maxAge 0, callers may share a request-local installation lookup for onboarding. */
+  /** With maxAge 0, callers may share a request-local `reachableInstallations` lookup for onboarding. */
   async repositories(login: string, maxAge = 0, installations?: Promise<OwnerInstallation[]>): Promise<Repository[]> {
     await this.loadRepositories();
     const persisted = this.repositoryStore?.value;
@@ -324,14 +327,15 @@ export class GitHub {
       const refresh = (async () => {
         const previousPages = this.repositoryStore!.value?.pages ?? {};
         this.repositoryStore!.value = { fetchedAt: 0, repositories: [], installations: [], pages: { ...previousPages } };
-        const owners = await (installations ?? this.ownerInstallations(login));
-        const repositories = await this.listRepositories(login, Promise.resolve(owners));
+        const reachable = await (installations ?? this.reachableInstallations(login));
+        const repositories = await this.listRepositories(login, Promise.resolve(reachable));
         const pages = this.repositoryStore!.value?.pages ?? {};
         for (const path of Object.keys(pages)) {
           const installation = /^\/user\/installations\/(\d+)\/repositories/.exec(path);
-          if (installation && !owners.some((owner) => owner.id === Number(installation[1]))) delete pages[path];
+          if (installation && !reachable.some((owner) => owner.id === Number(installation[1]))) delete pages[path];
         }
-        const value = { fetchedAt, repositories, installations: owners, pages };
+        // Onboarding's "create" offers only where the user may create a repository: not another person's account.
+        const value = { fetchedAt, repositories, installations: ownedBy(login, reachable), pages };
         checkFreshness(fetchedAt);
         await this.repositoryStore!.save(value);
         checkFreshness(fetchedAt);
@@ -375,27 +379,36 @@ export class GitHub {
   }
 
   /**
-   * The GitHub App's installations the user can reach: on their personal
-   * account `login` and on organisations they belong to (GitHub's
-   * /user/installations lists only installations the user can access).
-   * Installations on another personal account are left out.
+   * The GitHub App's installations the user can reach (GitHub's
+   * /user/installations lists only installations the user can access): on
+   * their personal account `login`, on organisations they belong to, and on
+   * another person's account where they are a collaborator on one of its
+   * repositories (slice am-31: collaborators open the same site). Their own
+   * account first, then the others by name.
    */
-  async ownerInstallations(login: string): Promise<OwnerInstallation[]> {
+  async reachableInstallations(login: string): Promise<OwnerInstallation[]> {
     const installations = await this.pages<{
       id: number;
       account?: { type: string; login: string };
     }>("/user/installations", "installations");
-    const owners: OwnerInstallation[] = [];
+    const reachable: OwnerInstallation[] = [];
     for (const installation of installations) {
       const account = installation.account;
       if (!account || typeof account.login !== "string") continue;
-      const personal = account.type === "User";
-      if (personal && account.login.toLowerCase() !== login.toLowerCase()) continue;
-      if (!personal && account.type !== "Organization") continue;
-      owners.push({ id: installation.id, login: account.login, type: personal ? "User" : "Organization" });
+      if (account.type !== "User" && account.type !== "Organization") continue;
+      reachable.push({ id: installation.id, login: account.login, type: account.type });
     }
-    // The personal account first, then organisations by name.
-    return owners.sort((a, b) => Number(b.type === "User") - Number(a.type === "User") || a.login.localeCompare(b.login));
+    const own = (owner: OwnerInstallation) => owner.type === "User" && owner.login.toLowerCase() === login.toLowerCase();
+    return reachable.sort((a, b) => Number(own(b)) - Number(own(a)) || a.login.localeCompare(b.login));
+  }
+
+  /**
+   * Where the user may create a repository: the App's installations on their
+   * personal account `login` and on organisations they belong to. Another
+   * person's account they only collaborate on is left out.
+   */
+  async ownerInstallations(login: string): Promise<OwnerInstallation[]> {
+    return ownedBy(login, await this.reachableInstallations(login));
   }
 
   /** Forgets the remembered repository listing of `login`, so the next one asks GitHub. */
@@ -466,8 +479,8 @@ export class GitHub {
     };
   }
 
-  private async listRepositories(login: string, owners?: Promise<OwnerInstallation[]>): Promise<Repository[]> {
-    const installations = await (owners ?? this.ownerInstallations(login));
+  private async listRepositories(login: string, reachable?: Promise<OwnerInstallation[]>): Promise<Repository[]> {
+    const installations = await (reachable ?? this.reachableInstallations(login));
     const complete: ((listing: PromiseSettledResult<Repository[]>) => void)[] = [];
     const listings = installations.map(() => new Promise<PromiseSettledResult<Repository[]>>((resolve) => {
       complete.push(resolve);

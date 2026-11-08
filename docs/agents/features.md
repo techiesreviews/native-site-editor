@@ -115,7 +115,7 @@ its number unused.
 
 ### F-repo-02 Find a repository
 - Try: With six or more repositories, type part of a name in Find a repository in the project menu.
-- Good: The list narrows as you type, grouped by owner with the personal account first.
+- Good: The list narrows as you type, grouped by owner with your own account first.
 - Files: `src/components/repository-menu.ts`
 - Phone: yes
 - Spec: none
@@ -176,6 +176,14 @@ its number unused.
 - Phone: yes
 - Spec: `tests/native-save/native-share-live.spec.ts`
 - Steps: `scripts/agents/shots/features/F-repo-09.json`
+
+### F-repo-10 Collaborators join automatically
+- Try: Add someone as a collaborator on a repository the editor is installed on (on GitHub, under the repository's Settings, Collaborators). Have them sign in to the editor with their own GitHub account and open the same site and branch you have open; open the same page in both, and type on the page in each.
+- Good: They see the repository in their own project menu (under your name, marked "Shared with you" when they have repositories of their own) and open it without any link, invite or switch. Each sees the other's caret on the page by GitHub name and each other's letters as they are typed (F-canvas-15, F-canvas-17). Each keeps their own unsaved changes, saves and agents. Their menu has no Remove for your repository: only you choose which repositories the editor may use. Creating a site (Get started) never offers your account as a place for them to create it. No toast (S4).
+- Files: `worker/github.ts`, `worker/app.ts`, `src/components/repository-menu.ts`, `src/live-text.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-collaborators-join.spec.ts`
+- Steps: none yet (needs two GitHub accounts signed in at once)
 
 ## Pages and files
 
@@ -422,7 +430,7 @@ its number unused.
 - Steps: `scripts/agents/shots/features/F-canvas-14.json`
 
 ### F-canvas-15 Two people on one page share one copy
-- Try: Live sharing is off until switched on: in each browser, run `localStorage.setItem("native-site-editor:live-sharing", "on")` in the console and reload. Then open the same page on the same site and branch in two browsers (two sign-ins), change its text in one, then in the other; then open it in a third browser.
+- Try: Open the same page on the same site and branch in two browsers (two sign-ins: yours twice, or a collaborator's, F-repo-10), change its text in one, then in the other; then open it in a third browser. Live sharing is on for everyone; `localStorage.setItem("native-site-editor:live-sharing", "off")` in the console keeps one browser out.
 - Good: Each change shows in the other browser's page and code within a moment, with nothing typed lost, and both end with the very same text; the third browser opens on that shared text, not GitHub's. Opening a page nobody else has open at the same moment as someone else never doubles its text. Each browser keeps the shared text as its own unsaved change. Your Undo and Redo, on the page and in the code pane, take back only your own changes and leave the others' words in place; someone else's change no longer clears them. Someone typing inside your words leaves your Undo whole: it takes back your words around theirs. A change of yours that someone else then deleted or rewrote part of drops out of your Undo, together with all your older changes; so does any page-builder step (a section move, a component made, a media step) in your Undo for that page, with your older changes. Undoing someone's change from their caret's name tag (comes with carets, slices 22 and 23) is your own step: your Undo brings their words back. Going to another page or reloading and coming back adds nothing twice. Discard takes only you out of the shared copy: the others keep their changes, and opening the page again brings you back to them. Carets show in the code pane (F-code-08) and on the page (F-canvas-17), and no toast (S4).
 - Files: `src/live-text.ts`, `src/shared-undo.ts`, `src/live-room.ts`, `shared/live-room.ts`, `worker/agent-relay.ts`
 - Phone: yes
@@ -430,7 +438,7 @@ its number unused.
 - Steps: none yet (needs two browsers signed in at once)
 
 ### F-canvas-16 An agent's change joins the shared copy
-- Try: With live sharing switched on in two browsers (see F-canvas-15), open the same page in both with its code showing, connect an agent from one of them, and ask it to change a sentence while you type in the next one. Then hover the agent's caret in the code pane and click the undo at the end of its name tag.
+- Try: In two browsers (see F-canvas-15), open the same page in both with its code showing, connect an agent from one of them, and ask it to change a sentence while you type in the next one. Then hover the agent's caret in the code pane and click the undo at the end of its name tag.
 - Good: The agent's change and your typing both land, in both browsers, and both end with the very same text; typing elsewhere in the file while the agent works does not make it refuse its change (only a change where you typed is refused, with the words as they are now). In both browsers the agent's caret shows at the end of its change with its program's icon and name. Its name tag's undo takes back only the agent's words, in every browser, and leaves everyone else's; your Undo brings them back. No toast (S4). The agent's caret shows on the page too, in the text it changed (F-canvas-17).
 - Files: `src/live-text.ts`, `src/live-author.ts`, `src/agent-site.ts`, `src/agent-site-host.ts`, `src/agent-tools-edit.ts`, `shared/native-project.ts`
 - Phone: yes
@@ -438,7 +446,7 @@ its number unused.
 - Steps: none yet (needs two browsers signed in at once and a connected agent)
 
 ### F-canvas-17 Typing together on the page, with carets
-- Try: With live sharing switched on in two browsers (see F-canvas-15), open the same page in both and click into the same paragraph on the page in each; type in both at once. Hover the small circle on top of the other person's caret in the page's text, then click the undo at the end of their name tag. Connect an agent from one browser, start typing in the heading, and ask the agent to change that heading; then click away.
+- Try: In two browsers (see F-canvas-15), open the same page in both and click into the same paragraph on the page in each; type in both at once. Hover the small circle on top of the other person's caret in the page's text, then click the undo at the end of their name tag. Connect an agent from one browser, start typing in the heading, and ask the agent to change that heading; then click away.
 - Good: Each letter shows in the other browser's page as it is typed, not only after clicking away, and both end with the very same text; your caret stays by your words while the other person types before it. The other person's caret shows in the page's text with the same look as in the code pane (a thin line in their colour, a circle with their first letter or an agent's program icon, the name on hover, tap or focus, a light tint over a selection) and no outline round the element. While their latest change can be taken back, the open name tag ends with an undo; it takes back only their words, in both browsers. An agent's change to the element you type in waits until you click away, then lands on your words; its caret shows on the page at the end of its change, with its icon, in both browsers. Your typing on the page stays one Undo step until you click away, unless someone else's letter lands between yours (a new step then). No toast (S4). A caret's circle stands over the line above it, so a press there opens the tag rather than typing.
 - Files: `src/components/native-preview-runtime.js`, `src/components/native-preview.ts`, `src/components/preview-protocol.ts`, `src/components/page-caret-port.ts`, `src/components/live-carets.ts`, `src/components/live-carets.css`, `src/native-source-location.ts`, `shared/html-source.ts`, `src/controllers/page-structure-controller.ts`
 - Phone: yes
@@ -960,7 +968,7 @@ its number unused.
 - Steps: none yet (needs typing in the page before the code editor loads)
 
 ### F-code-08 Others' carets in the code pane
-- Try: With live sharing switched on in two browsers (see F-canvas-15), open the same page in both with its code showing, and type in the code pane of each; connect an agent to the same page if you have one. Hover the small circle on top of the other person's caret, then click the undo at the end of their name tag.
+- Try: In two browsers (see F-canvas-15), open the same page in both with its code showing, and type in the code pane of each; connect an agent to the same page if you have one. Hover the small circle on top of the other person's caret, then click the undo at the end of their name tag.
 - Good: Each browser shows the other's caret as a thin line in their colour with a small circle on top: their first letter, or for an agent a tiny icon of its program (Claude, OpenAI, Gemini, or a plain one). Hover, a tap or keyboard focus opens the circle into the full name (cut with an ellipsis where the pane is narrow, the tag opening on the side with room); a selection shows as a light tint of their colour. While their latest change can be taken back, the open name tag ends with an undo button; it takes back only their words, in every browser, and your Undo brings them back. A caret fades in and out and moves with the words around it as others type; with reduced motion nothing slides (U6, U7, U8; S4: no toast).
 - Files: `src/components/live-carets.ts`, `src/components/live-carets.css`, `src/live-text.ts`, `src/components/code-editor.ts`, `src/components/source-editor.ts`
 - Phone: yes
@@ -1068,7 +1076,7 @@ its number unused.
 - Steps: `scripts/agents/shots/features/F-publish-06.json`
 
 ### F-publish-07 Saving names everyone who changed the files
-- Try: With live sharing switched on in two browsers (see F-canvas-15), change the same page in both, and ask an agent connected from one of them to change it too. Reload one browser, then Publish from it and open the commit on GitHub. Then change the page again in that browser only and Publish once more.
+- Try: In two browsers (see F-canvas-15), change the same page in both, and ask an agent connected from one of them to change it too. Reload one browser, then Publish from it and open the commit on GitHub. Then change the page again in that browser only and Publish once more.
 - Good: One commit holds everyone's changes. Its message names, after what it does, everyone else whose changes it carries ("Changes by anna and Claude Code (agent)."), someone who only deleted text too, even after a reload; the one who pressed Publish is its author and is not named again. An agent writing into your drafts is named even with live sharing off. The next commit names only who changed the files since: no one for your own change alone, and not someone who only joined the page or whose text was saved already (in this browser or the other). Someone typing while the save is on its way is named in the next commit. A discarded file, or one back to its saved text, names no one. Nothing new shows in the editor (S4).
 - Files: `src/save-authors.ts`, `src/live-text.ts`, `src/components/publish-menu.ts`, `src/controllers/save-publish-controller.ts`, `worker/publish.ts`
 - Phone: yes
