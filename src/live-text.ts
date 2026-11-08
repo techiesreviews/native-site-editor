@@ -374,7 +374,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (!found) {
         let author: number;
         do author = crypto.getRandomValues(new Uint32Array(1))[0];
-        while (author === me || author === doc.clientID || doc.store.clients.has(author) || authors.has(author));
+        while (author === me || author === doc.clientID || doc.store.clients.has(author) || authors.has(author)
+          || [...peers.values()].some(peer => (peer.state as { author?: unknown } | null)?.author === author));
         found = { author, name: cut(who.name) };
       }
       // Latest writer last: past AGENT_CARETS, the room hears of the agents that wrote most recently.

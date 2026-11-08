@@ -265,8 +265,10 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
             if (!await agent.commit(agentBefore(), after, () => !stale() && committing.isCurrent())) { receipt.dispose(); return undefined; }
             break;
           } catch (error) {
-            // Refused with nothing written as the user typed meanwhile: made again on that text, and committed again.
-            if (attempt < 3 && agent.unwritten?.() && remake()) continue;
+            // Refused with nothing written as the user typed meanwhile: made again on that text, and committed again. Refused
+            // for anything else (ownership, another agent's commit), with its files' text as the step proved it: at once.
+            const typed = [...edits.keys()].some(path => ws.source(path) !== expected.get(path)) || !receipt.isCurrent();
+            if (attempt < 3 && typed && agent.unwritten?.() && remake()) continue;
             receipt.dispose();
             throw error;
           }

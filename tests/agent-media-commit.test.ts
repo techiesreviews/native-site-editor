@@ -13,6 +13,7 @@ import { mediaDraftTransaction, type MediaDraftHost } from "../src/page-builder/
 import { applyMediaWorkspaceBatch, type MediaWorkspaceContext, type MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
 import { indexedDbUploadBytes, uploadKey, gitBlobSha, sweepUploads } from "../src/uploads";
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb";
+import { liveAuthor, type LiveAuthor } from "../src/live-author";
 
 const partial = <T>(value: Partial<T>): T => value as T;
 const storage = () => {
@@ -433,4 +434,18 @@ test("a Media change is kept for its undo (ticket am-15): every file it wrote go
   assert.deepEqual(written.map(path => m.draft(path)), [undefined, undefined, undefined]);
   assert.equal(m.workspace.source("index.html"), '<video src="media/film.mp4"></video>');
   assert.deepEqual(m.steps(), ["operation"]);
+});
+
+test("an agent's Media change to the open page is written as the agent's, so a shared copy takes it under its name (am-25)", async t => {
+  const f = await setup(t);
+  const authors: (LiveAuthor | undefined)[] = [];
+  const prepare = f.host.prepareSources.bind(f.host);
+  f.host.prepareSources = edits => {
+    const sources = prepare(edits);
+    return { ...sources, apply: () => { authors.push(liveAuthor()); return sources.apply(); } };
+  };
+  await f.run();
+  assert.match(f.model(), /track/);
+  assert.deepEqual(authors, [{ grant: "grant", name: "" }]);
+  assert.equal(liveAuthor(), undefined, "only while it is written");
 });

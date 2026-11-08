@@ -25,7 +25,7 @@ Expected (confirm while designing): `src/agent-tools-edit.ts`, `src/live-text.ts
 ## Done when
 
 - A spec: an agent edits one sentence while Lex types in the next; both land and every copy matches.
-- Moved here from slice 24 (am-24, 2026-10-31): the agent's text change joins the shared copy under its own Yjs client id, so Lex undoes it from its caret's name tag (`LiveText.undoAuthor`, src/live-text.ts), on the page and in the code pane, and the spec shows only the agent's words gone.
+- Moved here from slice 24 (am-24, 2026-10-31): the agent's text change joins the shared copy under its own Yjs client id, so Lex undoes it from its caret's name tag (`LiveText.undoAuthor`, src/live-text.ts), on the page and in the code pane, and the spec shows only the agent's words gone. (The page part moved to slice 23 on 2026-11-08, with its own line there; this slice covers the code pane.)
 
 ## Kit commands and evidence
 
@@ -85,3 +85,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ## UX review (2026-11-08)
 
 `kit ux` (bundle `.scratch/ux/fleet-lead/20261108-125614-SAjpi0/bundle.md` in the main checkout): F-canvas-15, F-canvas-16, F-code-08 and the agent features are fine but not shown (no shot has two people and an agent on one page). F-history-01 looks off for reasons this slice does not touch, the same ones slice 24's UX review recorded on 2026-10-31: a dark strip after Undo and Redo ("Undid adding the Paragraph.", from `src/controllers/block-insert-controller.ts`) that covers the page at 390 px, code words in the crumb bar ("section.flow", "p"), the count on Publish, and a 19×24 px crumb. The slice changes no strip, crumb, count or button. They stay with the follow-up that removes them (atomic-catalogue ticket 07 "No toasts").
+
+## Review round 2 (2026-11-08)
+
+- An agent's Media change to the open page (`place_media`, `frame_image`, `replace_media`, subtitles) is now written as the agent's, too: the media agent commit's `publish` in `src/agent-media-actions.ts` runs under `writeAs`. In a shared copy it joins under the agent's own Yjs id like its text changes, so nobody's name tag takes it back as the person's.
+- The commit tries an agent's step again only when the user really typed into its files (their text is not what the step proves, or its receipt no longer matches). A refusal for anything else, such as an ownership change or another agent's commit landing, is final at once, with no extra records transactions.
+- A new agent's Yjs id is also never one a participant here announces as its own.
+- Tests: `tests/agent-media-commit.test.ts`, the Media change reaches the page written as the agent (fails without `writeAs`); the live-text tests already show that a change written as an agent goes out under the agent's id. `tests/agent-text-commit.test.ts`: a commit refused because the user typed as it started lands on the second try; a commit refused because another commit landed is tried once only (fails with the old retry rule, which tried 3 times); a step made again on what was typed after its durable commit reaches the drafts written as the agent (fails without `writeAs` in `late`).
+- Second look: left to the slice, since builders do not run `kit review`.
+- `RESULT: ok doctor 11/11 checks passed; warning: 5 setup pieces missing (run scripts/agents/kit init)`
+

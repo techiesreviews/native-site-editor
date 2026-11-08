@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
 import { applySiteCommand, applyStructural, editorOrElsewhere, finishAgentTextElsewhere, holdWorkspace, preparedOn, retryProof, prepareAgentText, waitedReplacements, type AgentSiteActions } from "../src/agent-site.ts";
+import { liveAuthor, type LiveAuthor } from "../src/live-author.ts";
+import { agentWho } from "../shared/agent.ts";
 import { createWorkspaceSession, githubScope, same, type SessionStamp, type WorkspaceSession } from "../src/workspace-session.ts";
 import { agentCommandFiles, agentCommandSignals, siteCommandPins } from "../src/agent-tools.ts";
 import { backgroundSitePorts } from "./fakes/background-site-ports.ts";
@@ -1008,7 +1010,7 @@ async function typedWrite(t: TestContext, race?: AwaitRace) {
   const command: AgentCommand = { ...f.command, content: "before!" };
   preparedOn.set(command, "before");
   const type = (at: number, text: string) => assert.equal(f.models.edit({ scope: f.scope, path: "index.html", changes: [{ start: at, end: at, text }] }).ok, true);
-  const run = () => f.run(command, undefined, undefined, undefined, { current: () => true, apply: agent => {
+  const run = (afterCommit?: () => void) => f.run(command, undefined, undefined, afterCommit, { current: () => true, apply: agent => {
     const text = async () => f.models.text(f.scope, "index.html");
     // The editor's writeDraft (src/agent-site-host.ts) over this fixture's guarded edits, `onto` handed on to the plan.
     const actions = {
@@ -1071,4 +1073,51 @@ test("a write landing on what the user typed since its read records the hash of 
   const again = await f.run();
   assert.equal(again.result?.hash, await textHash("Xbefore!"), "the duplicate replies with the same hash");
   assert.equal(f.history.length, 1);
+});
+
+/** An await race that only runs `at` once, as the agent's commit starts (the fixture's "staged" port), and counts those starts. */
+function atCommit(at: () => void | Promise<void>) {
+  const state = { commits: 0 };
+  const race: AwaitRace = { port: (name, work) => async (...args) => {
+    if (name === "staged" && ++state.commits === 1) await at();
+    return work(...args);
+  } };
+  return { race, state };
+}
+
+test("an agent's commit refused as the user typed apart from its change is made again on that text and lands on the next try (am-25)", async t => {
+  let fixture: Awaited<ReturnType<typeof typedWrite>> | undefined;
+  // Typed as the commit starts: the drafts it proves moved, the records refuse it with nothing written.
+  const { race, state } = atCommit(() => fixture!.type(0, "X"));
+  const f = fixture = await typedWrite(t, race);
+  await f.run();
+  assert.equal(state.commits, 2, "refused once, committed on the second try");
+  assert.equal(f.models.text(f.scope, "index.html"), "Xbefore!");
+  await f.store.flush();
+  assert.equal((await f.records.snapshot(f.scope)).drafts.find(([key]) => key === draftKey(f.scope, "index.html"))?.[1].content, "Xbefore!");
+});
+
+test("an agent's commit refused for anything but typing (another commit landed meanwhile) is refused at once, not tried again (am-25)", async t => {
+  let fixture: Awaited<ReturnType<typeof typedWrite>> | undefined;
+  const { race, state } = atCommit(async () => {
+    const f = fixture!, workspace = { account: f.scope.account, repoId: f.scope.repoId, branch: f.scope.branch };
+    const now = await f.records.workspace(workspace);
+    await f.records.commit({ workspace, fence: now.generation, expectedRevision: now.revision, expectedDrafts: [], drafts: [],
+      receipt: { operationId: "other", authorizationId: "grant", payloadIdentity: "other", outcome: {}, createdAt: Date.now(), issuedAt: Date.now() } });
+  });
+  const f = fixture = await typedWrite(t, race);
+  await assert.rejects(f.run(), /meanwhile/);
+  assert.equal(state.commits, 1, "one commit, refused");
+  assert.equal(f.models.text(f.scope, "index.html"), "before");
+});
+
+test("a write made again on what was typed after its durable commit is written as the agent's change (am-25)", async t => {
+  const f = await typedWrite(t);
+  const authors: (LiveAuthor | undefined)[] = [];
+  const stop = f.models.subscribe(event => { if (event.type === "text" && event.text.includes("!")) authors.push(liveAuthor()); });
+  t.after(stop);
+  // Typed once the records transaction is done, before the change is shown: the step is made again on that text.
+  await f.run(() => f.type(0, "X"));
+  assert.equal(f.models.text(f.scope, "index.html"), "Xbefore!");
+  assert.deepEqual(authors[0], agentWho(f.command), "the agent's words reach the drafts written as the agent");
 });
