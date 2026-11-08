@@ -1096,3 +1096,30 @@ test("an agent's change while Lex is alone with the file stays his draft; a tab 
   assert.equal(times(anna.text, "eight"), 1);
   anna.stop(); lex.stop();
 });
+
+test("a tab's presence is read for at most 16 agents' carets, and entries that are not carets are left out (am-25)", async () => {
+  const room = fakeRoom();
+  const shares = new Map<string, CaretShare>();
+  const drawn = (who: string) => (share: CaretShare) => { shares.set(who, share); return () => { shares.delete(who); }; };
+  const anna = tab(room, base, { carets: drawn("anna") }), lex = tab(room, base, { carets: drawn("lex") });
+  await until(() => shares.size === 2 && anna.text === lex.text, "carets drawn");
+  await quiet();
+  shares.get("anna")!.own(() => ({ anchor: 4, head: 4 }));
+  await until(() => shares.get("lex")!.carets().length === 1, "Anna's caret");
+  const said = [...room.members].find(member => anna.sockets.includes(member.id))!.state as { caret: JsonValue };
+  const sam = room.open({ repo: scope.repo, branch: scope.branch, file: path, onMessage: () => undefined });
+  await quiet();
+  const many = Array.from({ length: 20 }, (_, index) => ({ author: 100 + index, name: `Agent ${index}`, caret: said.caret }));
+  sam.setPresence({ author: 9, name: "Sam", caret: null, agents: [5, null, "agent", { author: 50, name: 7, caret: said.caret }, ...many] as JsonValue });
+  await quiet();
+  const agents = shares.get("lex")!.carets().filter(caret => caret.agent !== undefined);
+  assert.ok(agents.length <= 16, `${agents.length} agents' carets`);
+  assert.ok(agents.every(caret => caret.author >= 100 && caret.name.startsWith("Agent ")), "only well-formed entries");
+  assert.equal(agents.length, 12, "the first 16 entries, 4 of them not carets");
+  // A list that is not a list says nothing.
+  sam.setPresence({ author: 9, name: "Sam", caret: null, agents: { author: 1 } as JsonValue });
+  await quiet();
+  assert.deepEqual(shares.get("lex")!.carets().map(caret => caret.name), ["lex"]);
+  sam.close();
+  anna.stop(); lex.stop();
+});

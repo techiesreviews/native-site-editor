@@ -28,6 +28,7 @@ Expected (confirm while designing): `src/components/native-preview-runtime.js`, 
 - A spec: both type in one paragraph on the page and end identical; carets show in the page's text.
 - An agent's heading change waits while Lex types in the heading and lands after he clicks away.
 - Moved here from slice 24 (am-24, 2026-10-31): on the page, Anna's caret name tag ends with an undo icon while `LiveText.canUndoAuthor` (src/live-text.ts) says her change can be taken back; clicking it runs `LiveText.undoAuthor`, and the spec shows her words gone in both tabs and Lex's still there.
+- Moved here from slice 25 (am-25, 2026-11-08): on the page, an agent's caret, which the receiving tab draws and tells the room (`CaretShare.carets`, src/live-text.ts), shows with its program's icon at the end of its change, in both tabs; its name tag's undo takes back only the agent's words, in both tabs.
 
 ## Kit commands and evidence
 

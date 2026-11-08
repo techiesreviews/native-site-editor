@@ -287,3 +287,41 @@ test("a file write whose text the user typed into since it was made lands on the
   await assert.rejects(applySiteCommand(actions, command), /changed in the editor since it was read/);
   assert.equal(writes.length, 1);
 });
+
+test("off the atomic path, a write whose file the user typed into since it was made keeps their typing, mounted or not (am-25)", async () => {
+  const read = "<h1>Fresh bread</h1>\n<p>Open at seven.</p>\n";
+  const typed = read.replace("seven", "half past seven"), merged = "<h1>Warm bread</h1>\n<p>Open at half past seven.</p>\n";
+  for (const mounted of [true, false]) {
+    let now = typed;
+    const plans: { refuse?: string; onto?: string }[] = [];
+    const fake = {
+      text: async () => now, isMounted: () => mounted, atomicText: () => false,
+      // Not mounted: the editor's write, proving the text it was given and making the change again on a newer one.
+      writeDraft: async (_path, content, create, expected, onto) => {
+        assert.equal(create, false);
+        const text = expected === undefined || now === expected ? content : onto?.(now);
+        if (text === undefined) return "index.html changed in the editor since it was read. Read it again.";
+        now = text;
+        return undefined;
+      },
+      // Mounted: the guarded edit's plan over the text now, and its `onto` for typing while it is saved.
+      edits: { run: async (plan: Parameters<AgentSiteActions["edits"]["run"]>[0]) => {
+        const result = await plan({ source: () => now } as unknown as Parameters<typeof plan>[0]); // eslint-disable-line no-restricted-syntax -- the plan reads only the file's source.
+        if ("refuse" in result) { plans.push({ refuse: result.refuse }); return { ok: false, status: "refused", message: result.refuse }; }
+        if (!("done" in result)) return { ok: true, status: "stayed" };
+        const [edit] = result.edits!.get("index.html") as { start: number; end: number; text: string }[];
+        now = now.slice(0, edit.start) + edit.text + now.slice(edit.end);
+        plans.push({ onto: result.onto?.("index.html", typed.replace("past", "past exactly")) });
+        return { ok: true, status: "applied" };
+      } },
+    } satisfies Pick<AgentSiteActions, "text" | "isMounted" | "atomicText" | "writeDraft"> & { edits: Pick<AgentSiteActions["edits"], "run"> };
+    // Only the ports a file write uses are present; any other call fails.
+    const actions = fake as unknown as AgentSiteActions; // eslint-disable-line no-restricted-syntax -- the guarded edits fake has only run.
+    const command: AgentCommand = { id: "write-off", operation: "write_file", path: "index.html", branch: "dev", commit: "c",
+      content: read.replace("Fresh bread", "Warm bread"), expectedHash: await textHash(read), state: "pending", createdAt: 1 };
+    preparedOn.set(command, read);
+    await applySiteCommand(actions, command);
+    assert.equal(now, merged, mounted ? "mounted" : "not mounted");
+    if (mounted) assert.deepEqual(plans, [{ onto: merged.replace("past", "past exactly") }], "typed again while saved: made again on that text");
+  }
+});

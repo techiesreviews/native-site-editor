@@ -90,17 +90,22 @@ test("an agent rewrites the heading while Lex types in the next sentence: both l
     agent = await connectAgent(lex.page, baseURL);
     const read = await agent.call("read_file", { path: file });
 
-    // The agent rewrites the heading while Lex types in the sentence after it: he has typed since its read, his typing
-    // is still open in the pane as its change lands, and he goes on typing after. (Keys pressed during the agent's own
-    // commit are left out: see the ticket's Done for that race.)
+    // The agent rewrites the heading while Lex types in the sentence after it, a key every 30 ms from before the agent's
+    // call until after its change has landed: keys land while the change is prepared, saved and shown.
     await caretAfter(lex.page, "Edit plain HTML");
-    await lex.page.keyboard.type(", by", { delay: 30 });
-    expect(await agent.call("edit_file", { path: file, expectedHash: read.hash, requestId: "agent-heading", waitSeconds: 0,
-      edits: [{ oldText: "A native browser preview", newText: "A preview the agent wrote" }] })).toMatchObject({ state: "applied" });
-    await lex.page.keyboard.type(" Lex,", { delay: 30 });
+    const typed = ", by Lex, who keeps on typing while the agent works on the heading above, and on, and on, and still on after it lands,";
+    let typingDone = false;
+    const typing = lex.page.keyboard.type(typed, { delay: 30 }).then(() => { typingDone = true; });
+    // A failure below closes the page under the typing: the failure is what is reported.
+    typing.catch(() => undefined);
+    const landed = await agent.call("edit_file", { path: file, expectedHash: read.hash, requestId: "agent-heading", waitSeconds: 0,
+      edits: [{ oldText: "A native browser preview", newText: "A preview the agent wrote" }] });
+    expect(landed).toMatchObject({ state: "applied" });
+    expect(typingDone, "the change landed while Lex was still typing").toBe(false);
+    await typing;
     for (const tab of [lex, anna]) {
       await expect.poll(() => source(tab.page), { timeout: 20_000 }).toContain(">A preview the agent wrote</h1>");
-      await expect.poll(() => source(tab.page), { timeout: 20_000 }).toContain("Edit plain HTML, by Lex,");
+      await expect.poll(() => source(tab.page), { timeout: 20_000 }).toContain(`Edit plain HTML${typed}`);
     }
     await expect.poll(async () => await source(anna.page) === await source(lex.page), { timeout: 20_000 }).toBe(true);
     await expect(anna.page.frameLocator(".native-preview-frame").locator(".hero h1")).toHaveText("A preview the agent wrote");
@@ -122,7 +127,7 @@ test("an agent rewrites the heading while Lex types in the next sentence: both l
       await expect.poll(() => source(tab.page), { timeout: 20_000 }).toContain(">A native browser preview</h1>");
       const now = await source(tab.page);
       expect(now).not.toContain("A preview the agent wrote");
-      expect(now).toContain("Edit plain HTML, by Lex,");
+      expect(now).toContain(`Edit plain HTML${typed}`);
       expect(now).toContain("<head><!-- Anna -->");
     }
     expect(await source(anna.page)).toBe(await source(lex.page));

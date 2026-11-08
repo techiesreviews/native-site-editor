@@ -375,8 +375,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         let author: number;
         do author = crypto.getRandomValues(new Uint32Array(1))[0];
         while (author === me || author === doc.clientID || doc.store.clients.has(author) || authors.has(author));
-        agents.set(key, found = { author, name: cut(who.name) });
+        found = { author, name: cut(who.name) };
       }
+      // Latest writer last: past AGENT_CARETS, the room hears of the agents that wrote most recently.
+      agents.delete(key);
+      agents.set(key, found);
       return found;
     };
     /** An agent's change, put into the copy under its own client id (its origin, so its frames name it and its name tag

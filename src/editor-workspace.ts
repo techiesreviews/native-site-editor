@@ -21,6 +21,13 @@ export interface AgentTextCommit {
   commit(before: Map<string, SavedDraft | undefined>, after: Map<string, SavedDraft | undefined>, current: () => boolean,
     plan?: { after?: { path: string; node: number[] }; creates?: string[]; added?: string }): Promise<boolean>;
   publish<T>(changes: Map<string, SavedDraft | undefined>, apply: () => T): T;
+  /**
+   * Committed, then made again on what the user typed while it was saved (ticket am-25): `apply` writes `changes` as this
+   * tab's own drafts over the older durable ones, as the agent's change.
+   */
+  late?<T>(changes: Map<string, SavedDraft | undefined>, apply: () => T): T;
+  /** The last `commit` was refused with nothing written because its source or drafts changed under it (ticket am-25). */
+  unwritten?(): boolean;
   /** Committed but not published (the editor changed meanwhile): reads the durable drafts back; newer manual writes win. */
   settle(changes: Map<string, SavedDraft | undefined>): Promise<void>;
 }

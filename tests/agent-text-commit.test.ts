@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
-import { applySiteCommand, applyStructural, editorOrElsewhere, finishAgentTextElsewhere, holdWorkspace, retryProof, prepareAgentText, waitedReplacements, type AgentSiteActions } from "../src/agent-site.ts";
+import { applySiteCommand, applyStructural, editorOrElsewhere, finishAgentTextElsewhere, holdWorkspace, preparedOn, retryProof, prepareAgentText, waitedReplacements, type AgentSiteActions } from "../src/agent-site.ts";
 import { createWorkspaceSession, githubScope, same, type SessionStamp, type WorkspaceSession } from "../src/workspace-session.ts";
 import { agentCommandFiles, agentCommandSignals, siteCommandPins } from "../src/agent-tools.ts";
 import { backgroundSitePorts } from "./fakes/background-site-ports.ts";
@@ -998,4 +998,77 @@ test("move_file of a folder of pages elsewhere waits on the moved page open as i
   assert.match((await f.finish())!.message, /Moved about to team/);
   assert.equal(f.store.get(f.scope, "team/index.html")?.content, STRUCTURAL_ABOUT);
   assert.deepEqual(f.parked.map(step => [step.page, step.home]), [["team/index.html", "about/index.html"]]);
+});
+
+// Ticket am-25: an agent's file write lands like typing. The user types into the file at every await of the write, from
+// its hash check to its durable commit and the read-back: apart from the change, both land, shown and durable; at the very
+// place it adds its words (a clash), the user's typing is never overwritten.
+async function typedWrite(t: TestContext, race?: AwaitRace) {
+  const f = await setup(t, race);
+  const command: AgentCommand = { ...f.command, content: "before!" };
+  preparedOn.set(command, "before");
+  const type = (at: number, text: string) => assert.equal(f.models.edit({ scope: f.scope, path: "index.html", changes: [{ start: at, end: at, text }] }).ok, true);
+  const run = () => f.run(command, undefined, undefined, undefined, { current: () => true, apply: agent => {
+    const text = async () => f.models.text(f.scope, "index.html");
+    // The editor's writeDraft (src/agent-site-host.ts) over this fixture's guarded edits, `onto` handed on to the plan.
+    const actions = {
+      text: race ? race.port("text", text) : text, isMounted: () => true, atomicText: () => true,
+      writeDraft: async (path, content, _create, expected, onto) => {
+        const written = (now: string | undefined) => expected === undefined || now === expected ? content : onto?.(now);
+        const outcome = await agent.run(r => written(r.source(path)) === undefined ? { refuse: `${path} changed in the editor since it was read. Read it again.` }
+          : { edits: new Map([[path, written(r.source(path))!]]), select: { historyOnly: true }, done: "Changed text.", undone: "Undid text.",
+            ...onto ? { onto: (at: string, now: string) => at === path ? written(now) : undefined } : {} });
+        return outcome.ok ? undefined : outcome.message;
+      },
+    } satisfies Pick<AgentSiteActions, "text" | "isMounted" | "atomicText" | "writeDraft">;
+    return applySiteCommand(actions as AgentSiteActions, command);
+  } });
+  return { ...f, command, type, run };
+}
+
+for (const [name, typed, merged] of [["apart from the change", { at: 0, text: "X" }, "Xbefore!"], ["where the change adds its words", { at: 6, text: "?" }, undefined]] as const)
+  test(`an agent's write typed into at every await, ${name}: ${merged ? "both land, shown and durable" : "the typing is never overwritten"} (am-25)`, async t => {
+    let landed = 0, refused = 0;
+    const count = await forEachAwait(race => {
+      const state: { fixture?: Awaited<ReturnType<typeof typedWrite>>; error?: unknown } = {};
+      const done = (async () => {
+        const f = state.fixture = await typedWrite(t, race);
+        raceTransactions(f.fake.factory, race);
+        f.store.fenceAgent = race.port("fenceAgent", f.store.fenceAgent.bind(f.store));
+        f.store.settleAgent = race.port("settleAgent", f.store.settleAgent.bind(f.store));
+        try { await f.run(); } catch (error) { state.error = error; }
+      })();
+      return { state, done };
+    }, ({ state }) => { state.fixture!.type(typed.at, typed.text); }, async ({ state }) => {
+      const f = state.fixture!, text = f.models.text(f.scope, "index.html")!;
+      await f.store.flush();
+      const durable = (await f.records.snapshot(f.scope)).drafts.find(([key]) => key === draftKey(f.scope, "index.html"))?.[1].content;
+      // Shown, saved in this tab and kept durably agree, whatever happened.
+      assert.equal(f.store.get(f.scope, "index.html")?.content, text);
+      assert.equal(durable, text);
+      if (merged) {
+        assert.equal(state.error, undefined, String(state.error));
+        assert.equal(text, merged);
+        landed++;
+      } else {
+        // The typing stays; the change is refused, or it was shown before the key and the key went in by it.
+        assert.ok(["before?", "before!?", "before?!"].includes(text), text);
+        if (state.error) { assert.match(String(state.error), /changed/); refused++; } else landed++;
+      }
+    });
+    assert.ok(count >= 5, `covered ${count} awaits`);
+    t.diagnostic(`Typed at ${count} awaits: ${landed} landed, ${refused} refused.`);
+  });
+
+test("a write landing on what the user typed since its read records the hash of the text it left, and a duplicate replies with it (am-25)", async t => {
+  const f = await typedWrite(t);
+  f.type(0, "X");
+  const outcome = await f.run();
+  assert.equal(f.models.text(f.scope, "index.html"), "Xbefore!");
+  const receipt = await f.records.receipt(f.scope, f.command.id, f.command.grantId!);
+  assert.equal((receipt?.outcome as { result?: { hash?: string } }).result?.hash, await textHash("Xbefore!"));
+  assert.equal(outcome.result?.hash, await textHash("Xbefore!"));
+  const again = await f.run();
+  assert.equal(again.result?.hash, await textHash("Xbefore!"), "the duplicate replies with the same hash");
+  assert.equal(f.history.length, 1);
 });

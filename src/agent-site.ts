@@ -942,10 +942,12 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
         if (minimalTextEdit(before, content)) await guarded(actions.edits.run(r => {
           const now = r.source(path), text = onto(now), edit = text === undefined ? null : minimalTextEdit(now!, text);
           return !edit ? { refuse: changedSinceRead(path) }
-            : { edits: new Map([[path, [edit]]]), done: `An agent changed ${path}.`, undone: `Undid the agent's change to ${path}.` };
+            : { edits: new Map([[path, [edit]]]), onto: (at, now) => at === path ? onto(now) : undefined,
+              done: `An agent changed ${path}.`, undone: `Undid the agent's change to ${path}.` };
         }));
       } else {
-        const error = await actions.writeDraft(path, command.content, before === undefined);
+        // Landing on what the user typed since (ticket am-25) proves that text and makes the change again on it if it moves.
+        const error = before === undefined ? await actions.writeDraft(path, content, true) : await actions.writeDraft(path, content, false, before, onto);
         if (error) throw new Error(error);
       }
       return {
@@ -1277,7 +1279,7 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
       if (!current()) throw new Error("The repository changed meanwhile.");
       return { duplicate: result.receipt.outcome as AgentCommandOutcome };
     }
-    let expectedRevision = 0, committed = false;
+    let expectedRevision = 0, committed = false, unwritten = false;
     let lastAfter = new Map<string, SavedDraft | undefined>();
     const check = async () => {
       signal?.throwIfAborted();
@@ -1310,12 +1312,14 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
         } else {
           // Landed on what the user typed since it was read (ticket am-25): the hash it records is the text it left.
           const landed = after.get(command.path);
-          if (landed && !landed.deleted && landed.content !== command.content) {
-            outcome = { ...outcome, result: { ...outcome.result, hash: await textHash(landed.content) } };
+          if (landed && !landed.deleted) {
+            outcome = { ...outcome, result: { ...outcome.result, hash: landed.content === command.content ? contentHash : await textHash(landed.content) } };
             receipt.outcome = JSON.parse(JSON.stringify(outcome)) as JsonValue;
           }
         }
         signal?.throwIfAborted();
+        unwritten = false;
+        if (current() && !valid()) unwritten = true;
         if (!current() || !valid()) throw new Error("The repository or source changed meanwhile.");
         try {
           const result = await owner.commit({ workspace, fence: owner.fence, expectedRevision,
@@ -1327,11 +1331,21 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
           if (!result.duplicate && command.grantId && command.operation !== "discard_change")
             noteAgentChange({ id: command.id, grant: command.grantId, agent: agentName(command.agent), operation: command.operation, scope, page: command.path, before, after });
           return !result.duplicate;
-        } catch (error) { return refuse(error); }
+        } catch (error) {
+          // The drafts it proves changed under it: the transaction aborted, nothing was written.
+          unwritten = error instanceof Error && error.name === "AgentRecordsError" && (error as Error & { code?: string }).code === "conflict";
+          return refuse(error);
+        }
       },
+      unwritten: () => unwritten,
       publish: (changes, apply) => {
         // Written as the agent: the open file's shared copy takes its text change under the agent's own name (am-25).
         const result = writeAs(agentWho(command), () => store.publishAgent(scope, changes, apply));
+        store.announceAgent(scope, [...changes.keys()]);
+        return result;
+      },
+      late: (changes, apply) => {
+        const result = writeAs(agentWho(command), apply);
         store.announceAgent(scope, [...changes.keys()]);
         return result;
       },
