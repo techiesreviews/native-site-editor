@@ -10,7 +10,7 @@
 // protect against a changed server.
 
 import {
-  LIVE_ACCESS_ENDED, LIVE_PING, LIVE_PING_MS, LIVE_ROOM_CLOSED, PRESENCE_HEARTBEAT_MS, PRESENCE_TIMEOUT_MS, readLiveServerMessage,
+  LIVE_ACCESS_ENDED, LIVE_HOST_LOST, LIVE_PING, LIVE_PING_MS, LIVE_ROOM_CLOSED, PRESENCE_HEARTBEAT_MS, PRESENCE_TIMEOUT_MS, readLiveServerMessage,
   type LiveAccess, type LiveClientMessage, type LiveServerMessage,
 } from "../shared/live-room";
 import type { JsonValue } from "../shared/agent-command";
@@ -25,7 +25,8 @@ export interface LiveRoomSocket {
 /** What `connect` throws when the room refuses this participant for good, so it stops instead of retrying: an agent
  * while no tab has the room open (409), or a tab signed out (401) or without access to the repository (403). */
 export class LiveRoomClosed extends Error {
-  constructor(message = "No tab has this room open.") { super(message); }
+  /** `status`: the refusal's HTTP status, when the room answered one (410: a synced session that ended). */
+  constructor(message = "No tab has this room open.", readonly status?: number) { super(message); }
 }
 export interface LiveClock {
   now(): number;
@@ -53,8 +54,9 @@ export type LiveRoomOptions = LiveRoomPlace & {
   /** This participant holds a room key: the first, a new one, or one taken again after a reconnect. Frames sent
    * meanwhile may not have arrived, so a caller that keeps state in step syncs it again here. */
   onKey?(): void;
-  /** The room ended for this participant and does not reconnect: no tab has it open (agents), its connection ended, or it was refused. */
-  onClosed?(): void;
+  /** The room ended for this participant and does not reconnect: no tab has it open (agents), its connection ended, or it was
+   * refused. `why`: the relay's close code (LIVE_ROOM_CLOSED, LIVE_ACCESS_ENDED, LIVE_HOST_LOST), or the refusal's HTTP status. */
+  onClosed?(why?: number): void;
   clock?: LiveClock;
 };
 
@@ -128,7 +130,7 @@ function browserSocket(url: string): Promise<LiveRoomSocket> {
     socket.binaryType = "arraybuffer";
     const failed = () => {
       fetch(url, { credentials: "same-origin" }).then(
-        response => reject(response.status in refusals ? new LiveRoomClosed(refusals[response.status]) : new Error("The live room could not be joined.")),
+        response => reject(response.status in refusals ? new LiveRoomClosed(refusals[response.status], response.status) : new Error("The live room could not be joined.")),
         () => reject(new Error("The live room could not be joined.")));
     };
     socket.addEventListener("open", () => { socket.removeEventListener("close", failed); resolve(socket); }, { once: true });
@@ -321,7 +323,7 @@ export function openLiveRoom(options: LiveRoomOptions) {
     let next: LiveRoomSocket;
     try { next = await connect(url); }
     catch (error) {
-      if (error instanceof LiveRoomClosed && !closed) { stop(); options.onClosed?.(); return; }
+      if (error instanceof LiveRoomClosed && !closed) { stop(); options.onClosed?.(error.status); return; }
       reconnect();
       return;
     }
@@ -342,7 +344,7 @@ export function openLiveRoom(options: LiveRoomOptions) {
       socket = null;
       members.clear();
       changed();
-      if (event.code === LIVE_ROOM_CLOSED || event.code === LIVE_ACCESS_ENDED) { stop(); options.onClosed?.(); return; }
+      if (event.code === LIVE_ROOM_CLOSED || event.code === LIVE_ACCESS_ENDED || event.code === LIVE_HOST_LOST) { stop(); options.onClosed?.(event.code); return; }
       reconnect();
     });
   };

@@ -1,5 +1,5 @@
 import { workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
-import { LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, LIVE_SESSION_ROOM, PRESENCE_TIMEOUT_MS, liveAccess, readLiveClientMessage, type LiveAccess, type LiveServerMessage } from "../shared/live-room";
+import { LIVE_HOST_LOST, LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, LIVE_SESSION_ROOM, PRESENCE_TIMEOUT_MS, liveAccess, readLiveClientMessage, type LiveAccess, type LiveServerMessage } from "../shared/live-room";
 
 export interface RelayScope {
   workspace: AgentWorkspace;
@@ -673,17 +673,23 @@ export class LiveRooms {
   }
 
   /** A clean leave is announced at once. The room's last tab leaving closes the agents and guests still in it (a
-   * synced session ends with its sharing tab); its last key holder leaving has the longest-present tab make a new key. */
-  leave(socket: LiveSocket) {
+   * synced session ends with its sharing tab); its last key holder leaving has the longest-present tab make a new key.
+   * `code`: how the socket closed. Only a clean close (1000, or 1001 as a tab goes away) ends a synced session for its
+   * guests; a dropped one (any other code, or none) tells them the sharing tab was lost, so they try again for a while. */
+  leave(socket: LiveSocket, code?: number) {
     const metadata = this.sockets.get(socket);
     if (!metadata) return;
     this.sockets.delete(socket);
     const others = this.members(metadata.room);
     for (const [other] of others) this.send(other, { type: "left", peer: metadata.peer });
     if (!others.some(([, other]) => other.access === "editor")) {
-      for (const [other] of others) {
+      const lost = code !== 1000 && code !== 1001;
+      for (const [other, at] of others) {
         this.sockets.delete(other);
-        try { other.close(LIVE_ROOM_CLOSED, "No tab has this room open."); } catch { /* Already closed. */ }
+        try {
+          if (lost && at.access === "guest") other.close(LIVE_HOST_LOST, "The sharing tab was lost.");
+          else other.close(LIVE_ROOM_CLOSED, "No tab has this room open.");
+        } catch { /* Already closed. */ }
       }
       return;
     }

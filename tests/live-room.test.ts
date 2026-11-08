@@ -7,7 +7,7 @@ import { LIVE_AGENT_CHECK_MS, LiveRooms, liveRoomObjectName, type LiveSocket } f
 import { forEachAwait, type AwaitRace } from "./support/await-race";
 import { LiveRoomClosed, openLiveRoom, type LiveClock, type LivePeer, type LiveRoomSocket } from "../src/live-room";
 import { editorTab, origin, repo, signIn, startWorker } from "./mcp-harness";
-import { LIVE_ACCESS_ENDED, LIVE_MESSAGE_LIMIT, LIVE_PING, LIVE_ROOM_CLOSED, liveRoomFile, readLiveClientMessage, type LiveAccess } from "../shared/live-room";
+import { LIVE_ACCESS_ENDED, LIVE_HOST_LOST, LIVE_MESSAGE_LIMIT, LIVE_PING, LIVE_ROOM_CLOSED, liveRoomFile, readLiveClientMessage, type LiveAccess } from "../shared/live-room";
 
 const room = "a".repeat(64);
 const settle = async () => { for (let index = 0; index < 40; index++) await new Promise(resolve => setImmediate(resolve)); };
@@ -94,7 +94,7 @@ function relayHarness(now: () => number = () => Date.now()) {
       close() {
         if (server.readyState !== 1) return;
         server.readyState = 3;
-        relay.leave(server);
+        relay.leave(server, 1000);
       },
       addEventListener(type: "message" | "close", listener: never) { (listeners[type] as unknown[]).push(listener); },
     };
@@ -273,7 +273,7 @@ test("an agent joins only a room a tab has open, gets the key from it, and leave
 function sessionParticipant(h: ReturnType<typeof relayHarness>, clock: LiveClock, key: CryptoKey, access: LiveAccess) {
   const got: string[] = [];
   let made: ReturnType<typeof h.pair> | undefined;
-  let closed = false;
+  let closed: number | undefined | false = false;
   const live = openLiveRoom({
     address: access === "guest" ? "/api/live/guest?session=abc" : "/api/live/share?session=abc", key, clock,
     connect: async url => {
@@ -283,9 +283,9 @@ function sessionParticipant(h: ReturnType<typeof relayHarness>, clock: LiveClock
       return made.client;
     },
     onMessage: bytes => got.push(new TextDecoder().decode(bytes)),
-    onClosed: () => { closed = true; },
+    onClosed: why => { closed = why; },
   });
-  return { live, got, get link() { return made!.link; }, get closed() { return closed; } };
+  return { live, got, get link() { return made!.link; }, get server() { return made!.server; }, get closed() { return closed; } };
 }
 
 test("a synced session: a guest joins only while the sharing tab is in, uses the link's key, and is closed when it leaves", async () => {
@@ -295,7 +295,7 @@ test("a synced session: a guest joins only while the sharing tab is in, uses the
   const early = sessionParticipant(h, time.clock, key, "guest");
   await settle();
   assert.equal(early.link.joined, false, "no sharing tab, no session");
-  assert.equal(early.closed, true, "and the guest stops at once");
+  assert.notEqual(early.closed, false, "and the guest stops at once");
 
   const lex = sessionParticipant(h, time.clock, key, "editor");
   await lex.live.ready();
@@ -314,8 +314,19 @@ test("a synced session: a guest joins only while the sharing tab is in, uses the
 
   lex.live.close();
   await settle();
-  assert.equal(anna.closed, true, "Stop sharing ends the guest's session");
+  assert.equal(anna.closed, LIVE_ROOM_CLOSED, "Stop sharing (a clean close) ends the guest's session");
   assert.equal(h.relay.admits(room, "guest"), false, "and the link refuses");
+
+  // The sharing tab's socket dropping (no clean close) tells guests it was lost, so they try again for a while.
+  const back = sessionParticipant(h, time.clock, key, "editor");
+  await back.live.ready();
+  const sam = sessionParticipant(h, time.clock, key, "guest");
+  await sam.live.ready();
+  h.relay.leave(back.server);
+  await settle();
+  assert.equal(sam.closed, LIVE_HOST_LOST);
+  back.live.close();
+  await settle();
   assert.equal(time.pending, 0);
 });
 
@@ -970,5 +981,49 @@ test("Miniflare: two signed-in tabs share a room over the real Worker; storage s
     assert.equal((await upgrade({ Origin: origin, Cookie: anna.cookie })).status, 403);
 
     first.close(); second.close(); observer.close(1000);
+  } finally { await worker.dispose(); }
+});
+
+test("Miniflare: a synced session's routes mint signed tokens, keep made-up ones out, and refuse the link once it ended", async () => {
+  const { worker, github } = await startWorker();
+  const guestUrl = (session: string, extra = "") => `${origin}/api/live/guest?session=${session}${extra}`;
+  const shareUrl = (session: string, host: string) => `${origin}/api/live/share?${new URLSearchParams({ repo: repo.full_name, branch: "main", session, host })}`;
+  try {
+    const anna = await signIn(worker);
+    const mint = (headers: Record<string, string>) => worker.dispatchFetch(`${origin}/api/live/share`, {
+      method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify({ repo: repo.full_name, branch: "main" }),
+    });
+    assert.equal((await mint({ Origin: origin })).status, 401, "signed out");
+    assert.equal((await mint({ Origin: "https://attacker.example", Cookie: anna.cookie })).status, 403, "another site's page");
+    const minted = await mint({ Origin: origin, Cookie: anna.cookie });
+    assert.equal(minted.status, 200);
+    const { session, host } = await minted.json() as { session: string; host: string };
+    assert.match(session, /^[a-f\d]{64}$/);
+    assert.match(host, /^[a-f\d]{64}$/);
+
+    // A made-up token, a forged tag or a doubled parameter is refused before any relay instance wakes.
+    assert.equal((await worker.dispatchFetch(guestUrl("a".repeat(64)))).status, 400);
+    assert.equal((await worker.dispatchFetch(guestUrl(session.slice(0, 32) + "0".repeat(32)))).status, 400);
+    assert.equal((await worker.dispatchFetch(guestUrl(session, `&session=${session}`))).status, 400);
+    assert.equal((await worker.dispatchFetch(guestUrl(session))).status, 410, "nobody shares it yet");
+
+    // Only the tab that started it holds it: signed in, from this site, with its own proof and repository access.
+    const holdAs = (headers: Record<string, string>, proof = host) => worker.dispatchFetch(shareUrl(session, proof), { headers: { Upgrade: "websocket", ...headers } });
+    assert.equal((await holdAs({ Origin: origin })).status, 401);
+    assert.equal((await holdAs({ Origin: "https://attacker.example", Cookie: anna.cookie })).status, 403);
+    assert.equal((await holdAs({ Origin: origin, Cookie: anna.cookie }, "f".repeat(64))).status, 403, "someone else's proof");
+    const held = await holdAs({ Origin: origin, Cookie: anna.cookie });
+    assert.equal(held.status, 101);
+    held.webSocket!.accept();
+    assert.equal((await worker.dispatchFetch(guestUrl(session))).status, 426, "open to guests while it is held");
+
+    // Stop sharing: the link refuses from then on.
+    held.webSocket!.close(1000, "Stop sharing");
+    for (const started = Date.now(); (await worker.dispatchFetch(guestUrl(session))).status !== 410;) {
+      if (Date.now() - started > 3_000) assert.fail("the link still answers after Stop sharing");
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    github.allowed = false;
+    assert.equal((await holdAs({ Origin: origin, Cookie: anna.cookie })).status, 403, "no repository access any more");
   } finally { await worker.dispose(); }
 });

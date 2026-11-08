@@ -65,6 +65,20 @@
   --agent-presence-3-ink: oklch(from var(--agent-presence-3) 40% calc(c * 0.75) h);
   --agent-presence-4-pin: oklch(from var(--agent-presence-4) 94% calc(c * 0.3) h);
   --agent-presence-4-ink: oklch(from var(--agent-presence-4) 40% calc(c * 0.75) h);
+  /* A synced session's guests (slice 30): four hues apart from the agents' and Lex's blue, the first the mock-up's
+     guest orange; chips light in both themes with a dark ink of their hue, as the agents' pins (4.5:1 and more). */
+  --guest-1: oklch(64% 0.16 60);
+  --guest-2: oklch(60% 0.12 200);
+  --guest-3: oklch(62% 0.17 355);
+  --guest-4: oklch(64% 0.13 115);
+  --guest-1-pin: oklch(from var(--guest-1) 94% calc(c * 0.3) h);
+  --guest-1-ink: oklch(from var(--guest-1) 40% calc(c * 0.75) h);
+  --guest-2-pin: oklch(from var(--guest-2) 94% calc(c * 0.3) h);
+  --guest-2-ink: oklch(from var(--guest-2) 40% calc(c * 0.75) h);
+  --guest-3-pin: oklch(from var(--guest-3) 94% calc(c * 0.3) h);
+  --guest-3-ink: oklch(from var(--guest-3) 40% calc(c * 0.75) h);
+  --guest-4-pin: oklch(from var(--guest-4) 94% calc(c * 0.3) h);
+  --guest-4-ink: oklch(from var(--guest-4) 40% calc(c * 0.75) h);
 
   /* Request pins and cards (agent-pins.css, agent-menu.css, repository-menu.css). */
   /* A question for the user: orange, on pins light in both themes. */

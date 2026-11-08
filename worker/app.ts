@@ -4,7 +4,7 @@ import { cleanupRoute, inventoryRoute } from "./agent-maintenance";
 import { requestJson } from "./http";
 import { ASSET_TYPES } from "../shared/asset-types";
 import { AgentRelay, LiveRooms, liveRoomObjectName, liveRoomTag, liveSessionObjectName, liveSessionRoomTag, relayObjectName, type LiveAgent } from "./agent-relay";
-import { LIVE_SESSION_TOKEN, liveRoomFile, type LiveAccess } from "../shared/live-room";
+import { LIVE_SESSION_HOST, LIVE_SESSION_TOKEN, liveRoomFile, type LiveAccess } from "../shared/live-room";
 import {
   validAgentBranch,
   authenticateAgent,
@@ -429,6 +429,27 @@ async function liveRoomAccess(request: Request, env: Env, url: URL, fetcher: typ
   return { repoId: repo.id, access: "editor" };
 }
 
+const hexOf = (bytes: Uint8Array) => Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+/** Two hex strings compared in time that does not depend on where they differ. */
+function sameHex(a: string, b: string) {
+  let differ = a.length ^ b.length;
+  for (let index = 0; index < Math.min(a.length, b.length); index++) differ |= a.charCodeAt(index) ^ b.charCodeAt(index);
+  return differ === 0;
+}
+/** Synced sessions' tags (slice 30), keyed from the GitHub App's secret, which only this Worker holds: a token's tag over
+ * its 128 random bits, and the sharing tab's proof over them, its login and repository id. None before the App exists. */
+async function liveSessionKeys(env: Env) {
+  const app = await config(env);
+  if (!app) return undefined;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(`native-site-editor live session v1\0${app.clientSecret}`),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const tag = async (text: string) => hexOf(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(text))));
+  return {
+    guest: async (nonce: string) => (await tag(`guest\0${nonce}`)).slice(0, 32),
+    host: (nonce: string, login: string, repoId: number) => tag(`host\0${nonce}\0${login.toLowerCase()}\0${repoId}`),
+  };
+}
+
 /** Whether an agent in a live room may stay: its connection is still listed for this repository and branch, at the
  * same generation, within its 8 hours, with agents not paused. One hub read; undefined when the hub cannot be read. */
 export async function liveAgentAllowed(env: Env, agent: LiveAgent): Promise<boolean | undefined> {
@@ -527,6 +548,7 @@ async function route(
         path === "/api/repositories" ||
         path === "/auth/setup/unlock" ||
         path === "/api/accounts/switch" ||
+        path === "/api/live/share" ||
         path.startsWith("/api/publish/") ||
         path.startsWith("/api/agent/")) &&
       request.method === "POST"
@@ -697,29 +719,45 @@ async function route(
       new Request("https://session.internal/live/join", { headers: { Upgrade: "websocket", [LiveRooms.identityHeader]: JSON.stringify(identity) } }),
     );
   }
-  // A synced session (slice 30): the sharing tab holds its room open with editor sign-in to the repository; a guest
-  // joins with the link's token alone. Each session has its own relay instance and room, named from the token, so a
-  // link never reaches a site's file rooms. The room key stays after `#` in the link: neither route sees it.
+  // A synced session (slice 30). The signed-in share call (POST) mints the session: a token whose tag only this Worker
+  // can make, and the sharing tab's own proof, bound to its sign-in and repository and never in the link. The sharing
+  // tab holds the room open with both; a guest joins with the link's token alone. A made-up token is refused here,
+  // before any relay instance wakes. Each session has its own instance and room, named from the token, so a link never
+  // reaches a site's file rooms. The room key stays after `#` in the link: neither route sees it.
   if (path === "/api/live/share" || path === "/api/live/guest") {
-    if (request.method !== "GET") throw new HttpError(405, "Use GET.");
-    const token = url.searchParams.get("session"), rejoin = url.searchParams.get("rejoin");
     const sharing = path === "/api/live/share";
-    if (url.searchParams.getAll("session").length !== 1 || !LIVE_SESSION_TOKEN.test(token ?? "") || url.searchParams.getAll("rejoin").length > 1 ||
-      (rejoin !== null && !/^[a-f\d]{32}$/.test(rejoin)))
+    const keys = await liveSessionKeys(env);
+    if (sharing && request.method === "POST") {
+      if (request.headers.get("Origin") !== url.origin) throw new HttpError(403, "Invalid request origin.");
+      const user = await session(request, env);
+      if (!user) throw new SignedOutError(401, "Connect GitHub to share this site.");
+      const data = await requestJson(request, 4096);
+      if (!validAgentBranch(data?.branch)) throw new HttpError(400, "Choose a repository and branch.");
+      const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, String(data?.repo ?? ""));
+      if (!keys) throw new HttpError(503, "This editor is not set up yet.");
+      const nonce = hexOf(crypto.getRandomValues(new Uint8Array(16)));
+      return json({ session: nonce + await keys.guest(nonce), host: await keys.host(nonce, user.login, repo.id) });
+    }
+    if (request.method !== "GET") throw new HttpError(405, "Use GET.");
+    const token = url.searchParams.get("session") ?? "", rejoin = url.searchParams.get("rejoin");
+    if (url.searchParams.getAll("session").length !== 1 || !LIVE_SESSION_TOKEN.test(token) || url.searchParams.getAll("rejoin").length > 1 ||
+      (rejoin !== null && !/^[a-f\d]{32}$/.test(rejoin)) || !keys || !sameHex(token.slice(32), await keys.guest(token.slice(0, 32))))
       throw new HttpError(400, "This edit link is not valid.");
     // Only a socket carries the room's traffic: another site's page learns a status, nothing more.
     if (request.headers.has("Upgrade") && request.headers.get("Origin") !== url.origin) throw new HttpError(403, "Invalid request origin.");
     if (sharing) {
-      const branch = url.searchParams.get("branch");
-      if (["repo", "branch"].some(key => url.searchParams.getAll(key).length !== 1) || !validAgentBranch(branch))
+      const branch = url.searchParams.get("branch"), host = url.searchParams.get("host") ?? "";
+      if (["repo", "branch", "host"].some(key => url.searchParams.getAll(key).length !== 1) || !validAgentBranch(branch) || !LIVE_SESSION_HOST.test(host))
         throw new HttpError(400, "Choose a repository and branch.");
       const user = await session(request, env);
       if (!user) throw new SignedOutError(401, "Connect GitHub to share this site.");
-      await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, url.searchParams.get("repo") ?? "");
+      const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, url.searchParams.get("repo") ?? "");
+      // Only the tab that started the session holds it: another sign-in with the link stays a guest at most.
+      if (!sameHex(host, await keys.host(token.slice(0, 32), user.login, repo.id))) throw new HttpError(403, "This session is someone else's.");
     }
     const access: LiveAccess = sharing ? "editor" : "guest";
     const identity = { room: await liveSessionRoomTag(), access, ...(rejoin === null ? {} : { rejoin }) };
-    const store = env.SESSIONS.get(env.SESSIONS.idFromName(await liveSessionObjectName(token!)));
+    const store = env.SESSIONS.get(env.SESSIONS.idFromName(await liveSessionObjectName(token)));
     const headers = { [LiveRooms.identityHeader]: JSON.stringify(identity) };
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       // A guest's plain request learns whether the session is still open: its link refuses once it ended.

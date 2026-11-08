@@ -31,7 +31,8 @@ interface SocketCore {
   limit: number;
   binary: boolean;
   message(socket: NodeSocket, message: string | ArrayBuffer): void;
-  gone(socket: NodeSocket): void;
+  /** `code`: the client's close code, when it sent one (a clean close); none when the socket just dropped. */
+  gone(socket: NodeSocket, code?: number): void;
 }
 /** When SessionStore's auto-response last answered each live socket's ping (getWebSocketAutoResponseTimestamp). */
 const pinged = new WeakMap<object, number>();
@@ -96,7 +97,7 @@ class NodeSocket implements RelaySocket, LiveSocket {
       const payload = Buffer.from(this.buffer.subarray(offset + 4, offset + 4 + length));
       for (let i = 0; i < length; i++) payload[i] ^= mask[i % 4];
       this.buffer = this.buffer.subarray(offset + 4 + length);
-      if (opcode === 8) { this.close(); return; }
+      if (opcode === 8) { this.core.gone(this, payload.length >= 2 ? payload.readUInt16BE(0) : 1005); this.close(); return; }
       if (opcode === 9) { this.socket.write(frame(10, payload)); continue; }
       if (opcode === 10) continue;
       const data = opcode === 1 || opcode === 2 && this.core.binary;
@@ -138,7 +139,7 @@ export function installRelayUpgrade(server: { on(event: "upgrade", listener: (re
       }, (rooms, join) => {
         // As SessionStore does: an agent waits for a tab; the welcome goes out once the socket is accepted.
         if (!rooms.admits(join.room, join.access)) return new Response(null, { status: 409 });
-        const live = adapter = new NodeSocket(socket, { owner: rooms, limit: LIVE_MESSAGE_LIMIT, binary: true, message: (from, message) => rooms.message(from, message), gone: from => rooms.leave(from) });
+        const live = adapter = new NodeSocket(socket, { owner: rooms, limit: LIVE_MESSAGE_LIMIT, binary: true, message: (from, message) => rooms.message(from, message), gone: (from, code) => rooms.leave(from, code) });
         joined = () => rooms.join(live, join.room, join.access, join.rejoin === undefined ? {} : { rejoin: join.rejoin });
         return new Response(null, { status: 204 });
       });

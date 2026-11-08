@@ -111,7 +111,7 @@ export class SessionStore extends DurableObject {
   }
   async webSocketClose(socket: WebSocket, code: number, _reason: string, _wasClean: boolean) {
     if (LiveRooms.owns(socket)) {
-      this.live().leave(socket);
+      this.live().leave(socket, code);
       try { socket.close(code === 1005 || code === 1006 ? 1000 : code); } catch { /* Already closed. */ }
       return;
     }
