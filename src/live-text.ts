@@ -723,7 +723,7 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
   });
   if (!(ports.on ?? liveSharingOn())) return port(() => { listeners.clear(); });
   const loadCarets = ports.loadCarets ?? (typeof document === "undefined" ? undefined
-    : () => import("./components/live-carets").then(module => module.startCodeCarets));
+    : () => import("./components/live-carets").then(module => module.startCarets));
   /** The file this tab discarded while sharing: it stays out of the copy until another file shows. */
   let left: string | undefined;
   const check = () => {

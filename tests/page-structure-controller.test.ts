@@ -235,6 +235,44 @@ test("queued text edits apply in the order typed, each its own guarded step", as
   assert.deepEqual(f.mem.steps(), ["range", "range"]);
 });
 
+test("typing on the page goes out letter by letter as one step, selecting nothing until it ends (am-23)", async () => {
+  const f = fixture();
+  const group = "page-typing:1:1";
+  await f.controller.applyNativeTextEdit({ path: PAGE, node: [0, 0], before: "A", after: "AB", live: true, group });
+  await f.controller.applyNativeTextEdit({ path: PAGE, node: [0, 0], before: "AB", after: "ABC", live: true, group });
+  assert.equal(f.page(), "<main><section>ABC</section><section>B</section></main>");
+  assert.deepEqual(f.mem.steps(), ["range"]);
+  assert.deepEqual(f.mem.selected.filter(Boolean), []);
+  // Its end selects the text again, still the same step.
+  await f.controller.applyNativeTextEdit({ path: PAGE, node: [0, 0], before: "ABC", after: "ABCD", group });
+  assert.deepEqual(f.mem.steps(), ["range"]);
+  assert.deepEqual(f.mem.selected.filter(Boolean), [{ path: PAGE, node: [0, 0] }]);
+  assert.equal(f.mem.undo(), true);
+  assert.equal(f.page(), SOURCE);
+});
+
+test("letters typed on the page move past someone else's change that reached the text first (am-23)", async () => {
+  const f = fixture({ page: "<main><section>Hello world</section><section>B</section></main>" });
+  const type = (before: string, after: string) => f.controller.applyNativeTextEdit({ path: PAGE, node: [0, 0], before, after, live: true, group: "g" });
+  // Anna's word at the start reached the source; Lex typed at the end on the text he had.
+  f.mem.workspace.change(PAGE, [{ path: PAGE, start: 15, end: 15, text: "Anna: ", expected: "" }], false);
+  await type("Hello world", "Hello world!");
+  assert.equal(f.page(), "<main><section>Anna: Hello world!</section><section>B</section></main>");
+  // Both insert at one spot: the typed letter goes first, where the typist's caret is.
+  await type("Hello world!", "Hello, world!");
+  assert.equal(f.page(), "<main><section>Anna: Hello, world!</section><section>B</section></main>");
+  // A change over words someone else changed meanwhile is not placed.
+  f.mem.workspace.change(PAGE, [{ path: PAGE, start: 21, end: 26, text: "Howdy", expected: "Hello" }], false);
+  await type("Anna: Hello, world!", "Anna: Help, world!");
+  assert.equal(f.page(), "<main><section>Anna: Howdy, world!</section><section>B</section></main>");
+  assert.match(f.errors.at(-1) ?? "", /could not be placed/);
+  // Already the source's text (it came from the room first): nothing written, nothing refused.
+  const errors = f.errors.length;
+  await type("Anna: Howdy, world", "Anna: Howdy, world!");
+  assert.equal(f.page(), "<main><section>Anna: Howdy, world!</section><section>B</section></main>");
+  assert.equal(f.errors.length, errors);
+});
+
 // Text edits committed while the page is not open: the first opens it, the second waits its turn.
 function openingFixture() {
   const f = fixture({ open: "styles/site.css" });

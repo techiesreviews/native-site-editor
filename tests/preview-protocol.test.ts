@@ -33,8 +33,16 @@ const cases: Record<FrameMessage["type"], Case> = {
   },
   patched: { valid: { id: 4, ok: true }, malformed: [{ id: "4" }] },
   "text-edit": {
-    valid: { path: "index.html", node: [0, 1], before: "Hi", after: "Hello" },
+    valid: { path: "index.html", node: [0, 1], before: "Hi", after: "Hello", live: true, seq: 3, session: 1 },
     malformed: [{ path: 2 }, { before: undefined }, { after: 5 }, { after: long(100_001) }, { node: steps(501) }, { node: [-1] }],
+  },
+  "text-caret": {
+    valid: { caret: { path: "index.html", node: [0, 1], anchor: 2, head: 4 } },
+    malformed: [{ caret: { path: 1, node: [0], anchor: 0, head: 0 } }, { caret: { path: "a.html", node: [0], anchor: -1, head: 0 } }, { caret: { path: "a.html", node: steps(501), anchor: 0, head: 0 } }],
+  },
+  "caret-rects": {
+    valid: { rects: [{ id: "peer-1", caret: { left: 10, top: 20, height: 18 }, tints: [{ left: 10, top: 20, width: 40, height: 18 }] }, { id: "peer-2", caret: null, tints: [] }] },
+    malformed: [{ rects: undefined }, { rects: "x" }],
   },
   typing: {
     valid: { path: "index.html", node: [1, 0, 0], left: true },

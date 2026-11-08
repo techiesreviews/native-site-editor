@@ -81,7 +81,8 @@ test("an agent's edit of the heading Lex types in waits until he clicks away, th
     await expect(frame(page).locator(".hero .lead")).toContainText("Edit simple HTML");
     const heading = frame(page).locator(".hero h1");
     await expect(heading).toHaveText("A native browser preview to");
-    // He types on, then stops; what he typed is not written until he leaves the heading, so no pause lets it go.
+    // He types on, then stops; his letters are written as he types (ticket am-23), but he is still in the heading,
+    // so no pause lets the agent's change go.
     await page.keyboard.type("day");
     await expect(heading).toHaveText("A native browser preview today");
     // fixed-wait: longer than the code pane's 5 s pause, which the page's typing does not have.
@@ -119,11 +120,10 @@ test("an agent's edit waiting for Lex lands on its own site as an unsaved change
     await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature" } });
     await page.evaluate(() => { location.hash = "repo=501&branch=feature&file=index.html"; });
     await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
-    // Opening feature leaves main's heading: the change lands on main, not here. Main's typing " now" was never
-    // written (the page writes typing when it is left), so it is not kept across the switch, as before ticket 52.
-    await expect.poll(async () => (await drafts(page, "main")).map(draft => [draft.path, draft.content.includes(">Main's agent browser preview</h1>")]), { timeout: 20_000 })
+    // Opening feature leaves main's heading: the change lands on main, not here, on main's typing " now", which was
+    // written letter by letter as it was typed (ticket am-23) and so is kept across the switch.
+    await expect.poll(async () => (await drafts(page, "main")).map(draft => [draft.path, draft.content.includes(">Main's agent browser preview now</h1>")]), { timeout: 20_000 })
       .toEqual([["index.html", true]]);
-    expect((await drafts(page, "main"))[0].content).not.toContain(" now");
     expect(await drafts(page, "feature")).toEqual([]);
     await expect(frame(page).locator(".hero h1")).toHaveText("A native browser preview");
     // Back on main, agents on there again: it was applied.
@@ -131,7 +131,7 @@ test("an agent's edit waiting for Lex lands on its own site as an unsaved change
     await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
     await expect.poll(ready, { timeout: 30_000 }).toBeGreaterThan(before);
     await expect.poll(async () => (await call("get_command_status", { requestId: "wait-switch" })).state, { timeout: 15_000 }).toBe("applied");
-    await expect(frame(page).locator(".hero h1")).toHaveText("Main's agent browser preview");
+    await expect(frame(page).locator(".hero h1")).toHaveText("Main's agent browser preview now");
   } finally { await client.close(); }
 });
 
