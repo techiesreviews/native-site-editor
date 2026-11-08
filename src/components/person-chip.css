@@ -1,5 +1,5 @@
 /* Someone in a synced session by initial (slice 30): beside the project tile in Lex's top bar, and in the guest page's
-   bar. Each guest in their colour (src/share-control.ts `guestColour`), the sharer in the editor's; light chips with a
+   bar. Each guest in their colour (given as they join, src/live-session.ts `startSharing`), the sharer in the editor's; light chips with a
    dark ink of their hue (src/theme.css), so they read in both themes. */
 .person-chip {
   --person-pin: var(--guest-1-pin);
