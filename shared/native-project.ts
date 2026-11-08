@@ -264,7 +264,9 @@ export function minimalTextEdit(before: string, after: string): NativeTextEdit |
 /**
  * The change from `read` to `written`, made on `now` instead (ticket am-25): an agent's change lands like typing on a
  * text someone changed since the agent's read, while what they changed lies apart from it. Each side is taken as its one
- * smallest range; ranges that overlap, or two insertions at the same place, are a clash and give undefined.
+ * smallest range; ranges that overlap, or two insertions at the same place, are a clash and give undefined. Where the
+ * same characters repeat around the change, an insertion just before it can read as just after it: the text is the same,
+ * the agent's words may sit on the other side of what was typed.
  */
 export function rebaseTextEdit(read: string, written: string, now: string): string | undefined {
   if (now === read) return written;

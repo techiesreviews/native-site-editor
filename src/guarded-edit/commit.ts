@@ -62,6 +62,11 @@ export interface CommitRequest {
   selection: { before?: NodeRef; after?: NodeRef };
   /** The step's page is no longer shown, asked once the branch reads are done: its drafts only. */
   elsewhere?: () => boolean;
+  /**
+   * An agent's edits made again on the text its files have now, when only those texts moved since the plan read them
+   * (someone typed in them while the step was saved) and everything else it proved holds; none otherwise (ticket am-25).
+   */
+  again?: () => Map<string, string> | undefined;
 }
 
 /** What a commit whose reads moved under it says (the module turns it into a stale Outcome). */
@@ -108,9 +113,23 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
     for (const path of [...moves.map(move => move.from), ...deletes, ...[...edits.keys()].filter(path => !arriving.has(path)), ...restore.keys()])
       if (!op.reads.has(path)) throw new Error(`Guarded edit: writes ${path}, which the plan never read through r.`);
     const expected = new Map(op.reads);
+    // An agent's edits made again on what was typed into their files since the plan read them (ticket am-25): `expected`
+    // then holds those texts, and everything else the step proved must still hold (`op.again`).
+    let retyped = false;
     const stale = () => epoch !== ws.generation() || scopeKey !== ws.scope() ||
-      [...expected].some(([path, source]) => ws.source(path) !== source) || !op.current();
-    if (stale()) return COMMIT_CHANGED;
+      [...expected].some(([path, source]) => ws.source(path) !== source) || !(op.current() || retyped && op.again?.() !== undefined);
+    /** Typed into since the plan read them: the edits made again on that text, when they can be; whether they were. */
+    const retype = () => {
+      const edited = moves.length || deletes.length || creates.length || restore.size ? undefined : op.again?.();
+      if (!edited || [...edits.keys()].some(path => !edited.has(path))) return false;
+      edits = new Map([...edits.keys()].map(path => [path, edited.get(path)!] as const));
+      for (const path of edits.keys()) expected.set(path, ws.source(path));
+      retyped = true;
+      return true;
+    };
+    /** The step can no longer land as planned, nor be made again on what was typed meanwhile. */
+    const moved = () => stale() && (!retype() || stale());
+    if (moved()) return COMMIT_CHANGED;
 
     // The files moved and deleted, with their blobs and text; the base of each file edited.
     const movable = new Map<string, MovableFile>();
@@ -122,19 +141,19 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
         if (ws.exists(file.path)) return `${file.path} already exists. No files were changed.`;
         // On GitHub already, or a folder of the path a file there (a listing the snapshot has not read yet).
         const problem = await ws.createProblem(file.path);
-        if (stale()) return COMMIT_CHANGED;
+        if (moved()) return COMMIT_CHANGED;
         if (agent) {
           await agent.check?.();
-          if (stale()) return COMMIT_CHANGED;
+          if (moved()) return COMMIT_CHANGED;
         }
         if (problem) return `${problem} No files were changed.`;
       }
       for (const path of vacated) {
         const found = await ws.entry(path);
-        if (stale()) return COMMIT_CHANGED;
+        if (moved()) return COMMIT_CHANGED;
         if (agent) {
           await agent.check?.();
-          if (stale()) return COMMIT_CHANGED;
+          if (moved()) return COMMIT_CHANGED;
         }
         if (!found) return `${path} is not there any more.`;
         movable.set(path, found);
@@ -142,16 +161,16 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
       for (const path of edits.keys()) {
         if (arriving.has(path) || store.get(scope, path)) continue;
         bases.set(path, await ws.branchText(path));
-        if (stale()) return COMMIT_CHANGED;
+        if (moved()) return COMMIT_CHANGED;
         if (agent) {
           await agent.check?.();
-          if (stale()) return COMMIT_CHANGED;
+          if (moved()) return COMMIT_CHANGED;
         }
       }
     } catch (error) {
       return error instanceof Error ? error.message : "The files could not be read.";
     }
-    if (stale()) return COMMIT_CHANGED;
+    if (moved()) return COMMIT_CHANGED;
 
     const touched = new Set<string>([...moves.flatMap(move => [move.from, move.to]), ...deletes, ...creates.map(file => file.path), ...edits.keys(), ...restore.keys()]);
     for (const path of [...touched]) {
@@ -164,7 +183,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
     let unrecorded: (() => void) | undefined;
     if (agent) {
       releaseAgent = await agent.fence(scope, [...new Set([...touched, ...expected.keys()])]);
-      if (stale()) { releaseAgent(); return COMMIT_CHANGED; }
+      if (moved()) { releaseAgent(); return COMMIT_CHANGED; }
     }
     const recover = async () => {
       op.recorded();
@@ -178,46 +197,87 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
     const dependencies = new Map([...expected.keys()].map(path => [path, store.get(scope, path)] as const));
     if (agent && [...dependencies].some(([path, draft]) => draft &&
       (draft.deleted || draft.opaque ? expected.get(path) !== undefined : draft.content !== expected.get(path)))) return COMMIT_CHANGED;
-    const agentBefore = () => new Map([...dependencies, ...before]);
+    // The drafts the agent's commit proves: `before`, or those under what was typed meanwhile (`proved`, ticket am-25).
+    let agentDrafts = before;
+    const agentBefore = () => new Map([...dependencies, ...agentDrafts]);
     const live = () => epoch === ws.generation() && scopeKey === ws.scope() && !ws.versionView();
     const away = op.elsewhere?.() === true;
 
     // ---- Edits only: the open page's history, no refresh. ----
     if (!away && !moves.length && !deletes.length && !creates.length && !restore.size && op.open === undefined) {
       if (anchor === undefined || !ws.mounted(anchor)) return "Open a page before changing these files.";
-      const after = new Map(before);
-      const beforeSources = new Map(expected);
-      for (const path of touched) if (!beforeSources.has(path)) beforeSources.set(path, ws.source(path));
-      if (!beforeSources.has(anchor)) beforeSources.set(anchor, ws.source(anchor));
-      const afterSources = new Map(beforeSources);
-      const now = Date.now();
-      for (const [path, text] of edits) {
-        const draft = before.get(path), base = bases.get(path);
-        afterSources.set(path, text);
-        if (draft && !draft.deleted && draft.baseSha !== null && !draft.movedFrom && text === draft.original) after.set(path, undefined);
-        else if (draft && !draft.deleted) after.set(path, { ...draft, content: text, updatedAt: now });
-        else if (base && text === base.text) continue;
-        else if (draft?.deleted) after.set(path, { ...scope, version: 1, path, baseSha: draft.baseSha, original: draft.original, content: text, updatedAt: now });
-        else if (base) after.set(path, { ...scope, version: 1, path, baseSha: base.sha, original: base.text, content: text, updatedAt: now });
-        else after.set(path, { ...scope, version: 1, path, baseSha: null, original: "", content: text, updatedAt: now });
-      }
-      if ([...afterSources].every(([path, source]) => source === beforeSources.get(path))) return undefined;
-      const receipt = prepareNativeTextHistory({ scope, store, persistentModels: true, isLive: live,
-        source: path => ws.source(path), mounted: path => ws.mounted(path),
-        retainModel: path => ws.retainModel(path), modelState: path => ws.model(path),
-        evictModel: (path, proof) => ws.evictModel(path, proof), prepareSources: changes => ws.prepareSources(changes),
-      }, { before, after, beforeSources, afterSources });
-      if (!receipt) return store.error ?? COMMIT_CHANGED;
+      /** The step's drafts and its text receipt for `edits` over the drafts `drafts` and the texts `sources` read. */
+      const planText = (edits: Map<string, string>, drafts: Map<string, SavedDraft | undefined>, sources: Map<string, string | undefined>) => {
+        const after = new Map(drafts);
+        const beforeSources = new Map(sources);
+        for (const path of touched) if (!beforeSources.has(path)) beforeSources.set(path, ws.source(path));
+        if (!beforeSources.has(anchor)) beforeSources.set(anchor, ws.source(anchor));
+        const afterSources = new Map(beforeSources);
+        const now = Date.now();
+        for (const [path, text] of edits) {
+          const draft = drafts.get(path), base = bases.get(path);
+          afterSources.set(path, text);
+          if (draft && !draft.deleted && draft.baseSha !== null && !draft.movedFrom && text === draft.original) after.set(path, undefined);
+          else if (draft && !draft.deleted) after.set(path, { ...draft, content: text, updatedAt: now });
+          else if (base && text === base.text) continue;
+          else if (draft?.deleted) after.set(path, { ...scope, version: 1, path, baseSha: draft.baseSha, original: draft.original, content: text, updatedAt: now });
+          else if (base) after.set(path, { ...scope, version: 1, path, baseSha: base.sha, original: base.text, content: text, updatedAt: now });
+          else after.set(path, { ...scope, version: 1, path, baseSha: null, original: "", content: text, updatedAt: now });
+        }
+        if ([...afterSources].every(([path, source]) => source === beforeSources.get(path))) return { after };
+        const receipt = prepareNativeTextHistory({ scope, store, persistentModels: true, isLive: live,
+          source: path => ws.source(path), mounted: path => ws.mounted(path),
+          retainModel: path => ws.retainModel(path), modelState: path => ws.model(path),
+          evictModel: (path, proof) => ws.evictModel(path, proof), prepareSources: changes => ws.prepareSources(changes),
+        }, { before: drafts, after, beforeSources, afterSources });
+        return { after, receipt: receipt ?? null };
+      };
+      const planned = planText(edits, before, expected);
+      if (planned.receipt === undefined) return undefined;
+      if (!planned.receipt) return store.error ?? COMMIT_CHANGED;
+      let receipt: NonNullable<typeof planned.receipt> = planned.receipt, after = planned.after, proved = before;
+      /**
+       * An agent's step made again, at once, on what the user typed into its files while it was saved (ticket am-25): its
+       * drafts now under the typed text, its receipt over the text now; none when that cannot be (a clash, or anything else
+       * moved), and the durable drafts are read back as before.
+       */
+      let late = false;
+      const remake = () => {
+        if (!retype()) return false;
+        const drafts = new Map([...touched].map(path => [path, store.get(scope, path)] as const));
+        const again = planText(edits, drafts, expected);
+        if (!again.receipt || !again.receipt.isCurrent()) { again.receipt?.dispose(); return false; }
+        receipt.dispose();
+        receipt = again.receipt;
+        after = again.after;
+        proved = drafts;
+        late = true;
+        return true;
+      };
       if (agent) {
-        if (!receipt.isCurrent()) { receipt?.dispose(); return COMMIT_CHANGED; }
-        try {
-          if (!await agent.commit(agentBefore(), after, () => !stale() && receipt.isCurrent())) { receipt.dispose(); return undefined; }
-        } catch (error) { receipt.dispose(); throw error; }
+        // Typed into while the step was planned: made again on that text before the agent's commit proves it.
+        if ((stale() || !receipt.isCurrent()) && !remake()) { receipt.dispose(); return COMMIT_CHANGED; }
+        for (let attempt = 1; ; attempt++) {
+          late = false;
+          agentDrafts = proved;
+          const committing = receipt;
+          try {
+            if (!await agent.commit(agentBefore(), after, () => !stale() && committing.isCurrent())) { receipt.dispose(); return undefined; }
+            break;
+          } catch (error) {
+            // Refused with nothing written as the user typed meanwhile: made again on that text, and committed again.
+            if (attempt < 3 && agent.unwritten?.() && remake()) continue;
+            receipt.dispose();
+            throw error;
+          }
+        }
         durable = after;
-        // The drafts are durable already: the editor moved on, so this tab's drafts read them back (as another tab's write).
-        if (stale() || !receipt.isCurrent()) { receipt.dispose(); return recover(); }
+        // The drafts are durable already: typed into meanwhile, the step is made again on that text and written as this
+        // tab's drafts over the durable ones; otherwise this tab's drafts read the durable ones back (as another tab's write).
+        if ((stale() || !receipt.isCurrent()) && !remake()) { receipt.dispose(); return recover(); }
       }
-      if (!(agent ? agent.publish(after, () => receipt.apply()) : receipt.apply())) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); return durable ? recover() : error; }
+      const apply = () => receipt.apply();
+      if (!(agent ? late && agent.late ? agent.late(after, apply) : agent.publish(after, apply) : apply())) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); return durable ? recover() : error; }
       // A read-only stylesheet mount over this step's exact bytes belongs to the step.
       const adoptPane = (path: string) => { if (live()) receipt.adoptOwnMount(path, ws.model(path), ws.mountedSource(path)); };
       adopters.add(adoptPane);

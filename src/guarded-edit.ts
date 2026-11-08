@@ -94,6 +94,11 @@ export interface Planned {
   open?: string;
   /** The Pages tab's row to show and focus after. */
   focus?: { file?: string; route?: string };
+  /**
+   * An edited file's new text made again on its text `now`, when someone typed into it while the step was being saved
+   * (an agent's change landing like typing, ticket am-25); none for a clash. Without it such typing makes the step stale.
+   */
+  onto?: (path: string, now: string) => string | undefined;
 }
 
 export type PlanResult = Planned | { refuse: string } | { stayed: string };
@@ -300,7 +305,15 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
         return site;
       },
     };
-    const changed = (bytes?: boolean) => { for (const check of checks.values()) { const key = check(bytes); if (key) return key; } return undefined; };
+    /** The first read that moved; `typed`: files whose bytes are left out (the step is made again on them). */
+    const changed = (bytes?: boolean, typed?: ReadonlySet<string>) => {
+      for (const [name, check] of checks) {
+        if (typed && name.startsWith("source:") && typed.has(name.slice("source:".length))) continue;
+        const key = check(bytes);
+        if (key) return key;
+      }
+      return undefined;
+    };
     return { r, sources, seen, changed, seal: () => { sealed = true; } };
   }
 
@@ -468,12 +481,25 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     const after = result.select?.after, selects = after && !result.select?.historyOnly && !away();
     if (selects) ws.select({ ...after, ...writes!.edits.has(after.path) ? { source: writes!.edits.get(after.path) } : {} }, result.select?.flash);
     let recorded = false;
+    /** The step's edits made again on what was typed into its files meanwhile, while everything else it proved holds and
+     * its page is still open in this pane (`onto`, ticket am-25); none when it cannot be. */
+    const onto = result.onto, again = onto && anchor !== undefined && (() => {
+      const typed = new Set(writes!.edits.keys());
+      if (away() || proved() || reads.changed(retaken, typed) || places.changed() || ws.openFile() !== anchor || !ws.anchor(anchor)) return undefined;
+      const edits = new Map<string, string>();
+      for (const [path, planned] of writes!.edits) {
+        const now = ws.source(path), text = now === undefined ? undefined : now === reads.sources.get(path) ? planned : onto(path, now);
+        if (text === undefined) return undefined;
+        edits.set(path, text);
+      }
+      return edits;
+    });
     const error = await commit({
       reads: reads.sources, edits: writes!.edits, creates: writes!.creates, deletes: writes!.deletes, moves: writes!.moves, anchor,
       ...writes!.restore.size ? { restore: writes!.restore } : {}, ...result.quiet ? { quiet: true as const } : {},
       open: result.open, focus: result.focus, done: result.done, undone: result.undone,
       current: () => !(current() ?? places.changed()), recorded: () => { recorded = true; }, selection: { before: result.select?.before, after },
-      ...options.finish ? { elsewhere: away } : {},
+      ...options.finish ? { elsewhere: away } : {}, ...again ? { again } : {},
     });
     if (error === undefined) return { ok: true, status: "applied" };
     if (recorded) return { ok: true, status: "applied", message: error };

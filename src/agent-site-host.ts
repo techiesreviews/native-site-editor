@@ -211,7 +211,7 @@ export function createAgentCommands(ports: AgentCommandPorts) {
         : written(r.source(path)) === undefined ? { refuse: `${path} changed in the editor since it was read. Read it again.` }
         : r.source(path) === undefined ? { refuse: `${path} does not exist.` }
         : { edits: new Map([[path, written(r.source(path))!]]), ...nativePageRoute(path) && (!atomic || !editorModule.isMounted(path)) && !ports.componentTools?.typingTemplate() ? { open: path } : {},
-          ...atomic ? { select: { historyOnly: true } } : {}, done, undone }, { since });
+          ...atomic ? { select: { historyOnly: true } } : {}, ...onto ? { onto: (at: string, now: string) => at === path ? written(now) : undefined } : {}, done, undone }, { since });
       // A home page just written switches the site on: the context is whole before the write is answered.
       await pagesAndFiles.nativeResyncDone;
       return outcome.message;
