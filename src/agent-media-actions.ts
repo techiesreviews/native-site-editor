@@ -1,6 +1,7 @@
 import { agentCommandSignals, mediaCommandPins } from "./agent-tools";
 import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
-import { agentName, textHash } from "../shared/agent";
+import { agentName, agentWho, textHash } from "../shared/agent";
+import { writeAs } from "./live-author";
 import { noteAgentChange } from "./agent-changes";
 import { draftKey, type DraftStore } from "./drafts";
 import type { AgentRecords } from "./agent-records";
@@ -453,7 +454,8 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
         return !result.duplicate;
       },
       publish(changes, apply) {
-        const result = store.publishAgent(scope, changes, apply);
+        // Written as the agent: a page it changes joins the open file's shared copy under its own name (ticket am-25).
+        const result = writeAs(agentWho(command), () => store.publishAgent(scope, changes, apply));
         store.announceAgent(scope, [...changes.keys()]);
         return result;
       },
