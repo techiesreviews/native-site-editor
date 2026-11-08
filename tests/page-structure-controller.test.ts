@@ -271,6 +271,10 @@ test("letters typed on the page move past someone else's change that reached the
   await type("Anna: Howdy, world", "Anna: Howdy, world!");
   assert.equal(f.page(), "<main><section>Anna: Howdy, world!</section><section>B</section></main>");
   assert.equal(f.errors.length, errors);
+  // So is a replacement the source already holds (the same word typed over the same letters by someone else first).
+  await type("Anna: Howdy, world?", "Anna: Howdy, world!");
+  assert.equal(f.page(), "<main><section>Anna: Howdy, world!</section><section>B</section></main>");
+  assert.equal(f.errors.length, errors);
 });
 
 // Text edits committed while the page is not open: the first opens it, the second waits its turn.

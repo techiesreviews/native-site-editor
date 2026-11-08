@@ -791,6 +791,9 @@ export function createPageStructureController(ports: PageStructurePorts) {
   // element's text since `before`; the typed change moves past it (theirs first
   // where both replace, the typed one first where both only insert at one spot,
   // where the typist's caret stays), and one that overlaps theirs is not placed.
+  // Everything others changed since `before` counts as one stretch (from their
+  // first changed character to their last), so changes on both sides of the
+  // typed one between two of its letters refuse it too (Known limits, am-23).
   function nativeTextSourceEdit(source: string, node: NativeTextEdit["node"], before: string, after: string) {
     const range = ports.locateNativeElementRange(source, node);
     const inner = range?.close ? source.slice(range.tag.end, range.close.start) : undefined;
@@ -799,6 +802,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const plain = (text: string) => text.replace(/\u00a0/g, " ");
     const now = sourceText(inner).text;
     const was = plain(before), typed = plain(after), here = plain(now);
+    // Already the source's text (it came from the room first): nothing to write.
+    if (typed === here) return { start: range.tag.end, end: range.tag.end, text: "" };
     let { start, end, text } = textChange(was, typed);
     if (here !== was) {
       const theirs = textChange(was, here);
@@ -807,8 +812,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
         start += shift; end += shift;
       } else if (end > theirs.start) return undefined;
     }
-    // Already the source's text: nothing to write.
-    if (typed === here) return { start: range.tag.end, end: range.tag.end, text: "" };
     // A pure insertion takes one neighbouring character along, so the source
     // range is never empty and lands beside that character.
     if (end === start) {
@@ -877,8 +880,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
     function applyInEditor() {
     const preview = ports.nativePreview;
     if (!preview || !allowed() || ports.appStore.openFile.value !== path || !ports.editorModule.isMounted(path)) return;
-    // Typing on the page goes out letter by letter (ticket am-23), one undo step while it lasts (`group`); only the
-    // last of it selects the element after its render.
+    // Typing on the page goes out letter by letter (ticket am-23), one undo step while it lasts (`group`). Letters
+    // select nothing: the element stays selected on the page as it is typed in. Only text the page sends when typing
+    // ends without having sent it as letters (a word cut short while being composed, or before Ctrl+B/I/K) selects
+    // the element again after its render.
     const outcome = ports.edits.now(textPlan("Text changed", "Undid the text change", !live), { anchor: path, ...group ? { group } : {} });
     if (outcome.ok) return;
     preview.refresh();

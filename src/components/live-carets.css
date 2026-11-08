@@ -171,10 +171,11 @@
   overflow: clip;
   pointer-events: none;
 }
+/* Physical, as the frame measures its carets (left and top in its viewport, moved by translate). */
 .live-carets-page .live-caret {
   position: absolute;
-  inset-block-start: 0;
-  inset-inline-start: 0;
+  top: 0;
+  left: 0;
 }
 .live-carets-page :is(.live-caret, .live-caret-tint)[hidden] { display: none; }
 .live-carets-page .live-caret-tint {
