@@ -277,6 +277,53 @@ test("letters typed on the page move past someone else's change that reached the
   assert.equal(f.errors.length, errors);
 });
 
+test("someone else's change between letters of one typing starts a new step: Undo takes back the last letter only (am-23)", async () => {
+  const f = fixture();
+  const type = (before: string, after: string) => f.controller.applyNativeTextEdit({ path: PAGE, node: [0, 0], before, after, live: true, group: "g" });
+  await type("A", "AB");
+  await type("AB", "ABC");
+  const at = f.page().lastIndexOf(">B<") + 1;
+  f.mem.workspace.change(PAGE, [{ start: at, end: at + 1, text: "Bee", expected: "B" }], false);
+  assert.equal(f.page(), "<main><section>ABC</section><section>Bee</section></main>");
+  const before = f.mem.steps().length;
+  await type("ABC", "ABCD");
+  assert.equal(f.page(), "<main><section>ABCD</section><section>Bee</section></main>");
+  // Their change is a step of its own here (the fake records it); the letter after it starts a new one.
+  assert.equal(f.mem.steps().length, before + 1);
+  assert.equal(f.mem.undo(), true);
+  assert.equal(f.page(), "<main><section>ABC</section><section>Bee</section></main>");
+});
+
+test("text the source already has adds no step and selects nothing (am-23)", async () => {
+  const f = fixture({ page: "<main><section>AB</section><section>B</section></main>" });
+  const selected = f.mem.selected.length, steps = f.mem.steps().length;
+  await f.controller.applyNativeTextEdit({ path: PAGE, node: [0, 0], before: "A", after: "AB", live: true, group: "g" });
+  await f.controller.applyNativeTextEdit({ path: PAGE, node: [0, 0], before: "A", after: "AB", group: "g" });
+  assert.equal(f.mem.steps().length, steps);
+  assert.deepEqual(f.mem.selected.slice(selected).filter(Boolean), []);
+  assert.deepEqual(f.errors, []);
+});
+
+test("letters typed while the page opens, the page left meanwhile, go into its draft as one step (am-23)", async () => {
+  const f = fixture({ open: "styles/site.css" });
+  let route = "/";
+  let opened!: () => void;
+  const opening = new Promise<void>((resolve) => { opened = resolve; });
+  f.ports.nativeSite = { routes: { "/": PAGE, "/about/": "about.html" }, components: { "x-band": BAND } };
+  f.ports.nativePreview = { ...f.ports.nativePreview!, route: () => route };
+  // Opening the page waits; meanwhile another page shows, so nothing opens.
+  f.ports.restoreFile = async () => { await opening; };
+  const type = (before: string, after: string) => f.controller.applyNativeTextEdit({ path: PAGE, node: [0, 0], before, after, live: true, group: "g" });
+  const steps = f.mem.steps().length;
+  const letters = [type("A", "AB"), type("AB", "ABC"), type("ABC", "ABCD")];
+  route = "/about/";
+  opened();
+  await Promise.all(letters);
+  assert.deepEqual(f.errors, []);
+  assert.equal(f.mem.workspace.source(PAGE), "<main><section>ABCD</section><section>B</section></main>");
+  assert.equal(f.mem.steps().length, steps + 1);
+});
+
 // Text edits committed while the page is not open: the first opens it, the second waits its turn.
 function openingFixture() {
   const f = fixture({ open: "styles/site.css" });

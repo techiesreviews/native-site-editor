@@ -2821,11 +2821,17 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     return pre.cloneContents().textContent.length;
   }
   // ---- Typing together (ticket am-23) ----
-  // The caret (or selection) in `el` as text offsets, with its text then; null when the selection is elsewhere.
+  // The caret (or selection) in `el` as text offsets, with its text then; null when the selection is elsewhere. `anchor`
+  // is where the selection began and `head` where the caret is (before it for a selection made backwards).
   function caretIn(el) {
     var range = selectionRangeIn(el, true);
     if (!range) return null;
-    return { anchor: textOffset(el, range.startContainer, range.startOffset), head: textOffset(el, range.endContainer, range.endOffset), text: el.textContent };
+    var root = el.getRootNode && el.getRootNode();
+    var sel = root instanceof ShadowRoot && typeof root.getSelection === "function" ? root.getSelection() : document.getSelection();
+    var start = textOffset(el, range.startContainer, range.startOffset), end = textOffset(el, range.endContainer, range.endOffset);
+    var backward = !!sel && !!sel.focusNode && el.contains(sel.focusNode) && el.contains(sel.anchorNode) && !sel.isCollapsed &&
+      textOffset(el, sel.focusNode, sel.focusOffset) === start && start !== end;
+    return { anchor: backward ? end : start, head: backward ? start : end, text: el.textContent };
   }
   // The DOM point at text offset `at` of `el`: a boundary belongs to the text before it (typing there goes on in it).
   function pointAt(el, at) {
@@ -2899,11 +2905,16 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       var line;
       if (box && box.height > 0) line = { left: box.left, top: box.top, height: box.height };
       else {
-        // No text there (an empty element): its first line's start.
+        // No text there (an empty element): where its first line's typing starts, by its alignment and direction.
         var el = head.el.getBoundingClientRect(), style = getComputedStyle(head.el);
         var height = parseFloat(style.lineHeight);
         if (!isFinite(height)) height = parseFloat(style.fontSize) * 1.2;
-        line = el.width || el.height ? { left: el.left + (parseFloat(style.paddingLeft) || 0), top: el.top + (parseFloat(style.paddingTop) || 0), height: height } : null;
+        var padLeft = parseFloat(style.paddingLeft) || 0, padRight = parseFloat(style.paddingRight) || 0, align = style.textAlign;
+        var rtl = style.direction === "rtl";
+        // Right: "right", "end" left to right, and right to left anything but "left", "center" and "end".
+        var atRight = align === "right" || (align === "end" && !rtl) || (rtl && align !== "left" && align !== "center" && align !== "end");
+        var x = align === "center" ? el.left + padLeft + (el.width - padLeft - padRight) / 2 : atRight ? el.right - padRight : el.left + padLeft;
+        line = el.width || el.height ? { left: x, top: el.top + (parseFloat(style.paddingTop) || 0), height: height } : null;
       }
       var tints = [];
       var anchor = caret.anchor ? caretPoint(caret.path, caret.anchor) : null;
