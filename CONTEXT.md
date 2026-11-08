@@ -174,7 +174,7 @@ The place in the top bar, behind one icon, that collects what needs the user: si
 _Avoid_: notifications, to-do list, alerts
 
 **Synced session**:
-A live editing session Lex opens from a project with Share live: anyone with its link joins by typing a name, with no account, and edits the pages in it with him. It lasts while his tab is open and ends when he closes the tab or stops sharing. Guests' changes become his unsaved changes; only he saves, publishes and uses agents. (Planned in the agents and multiplayer map.)
+A live editing session Lex opens from a project with Share live: anyone with its link joins by typing a name, with no account, and edits the pages in it with him. It lasts while his tab is open and ends when he closes the tab or stops sharing. Guests' changes become his unsaved changes; only he saves, publishes and uses agents. Started with Share to edit in the project menu; guests edit the text of the page he shows, which their page follows (ticket am-30).
 _Avoid_: guest account, invite
 
 **Live room**:

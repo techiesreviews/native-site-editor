@@ -124,7 +124,7 @@ export type LiveConnect = (rooms: LiveRooms, join: { room: string; access: LiveA
 export function installRelayUpgrade(server: { on(event: "upgrade", listener: (request: IncomingMessage, socket: Duplex, head: Buffer) => void): unknown }, route: (request: IncomingMessage, connect: RelayConnect, live: LiveConnect) => Promise<Response>) {
   server.on("upgrade", (request, socket, head) => {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
-    if (pathname !== "/api/agent/relay" && pathname !== "/api/live/room") return;
+    if (!["/api/agent/relay", "/api/live/room", "/api/live/share", "/api/live/guest"].includes(pathname)) return;
     socket.on("error", () => socket.destroy());
     const run = async () => {
       const key = request.headers["sec-websocket-key"];

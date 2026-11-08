@@ -11,7 +11,7 @@ import type { GitHubAppConfig } from "./owner-setup";
 import { AgentRelay, LiveRooms, readRelayBody, type LiveAgent } from "./agent-relay";
 import { accountMetadata, METADATA_KEY, METADATA_ROUTE, type Ledger, type MetadataAction } from "./agent-metadata";
 import { workspaceKey } from "../shared/agent-command";
-import { LIVE_ACCESS_ENDED } from "../shared/live-room";
+import { LIVE_ACCESS_ENDED, liveAccess } from "../shared/live-room";
 import { AgentLifecycle, AlarmDeadlines } from "./agent-lifecycle";
 
 interface RepositoryCacheChunks { chunks: number }
@@ -136,7 +136,7 @@ export class SessionStore extends DurableObject {
     const url = new URL(request.url);
     if (url.pathname === "/maintenance/cleanup") return this.ctx.blockConcurrencyWhile(() => cleanupObject(request, storage, { sockets: this.ctx.getWebSockets().length }));
     if (url.pathname === "/maintenance/inventory") return inventoryObject(request, storage);
-    if (url.pathname === "/live/join" || url.pathname === "/live/end-agent") {
+    if (url.pathname === "/live/join" || url.pathname === "/live/end-agent" || url.pathname === "/live/admits") {
       // Worker-internal only: app.ts checks room access and names the room; this stores nothing.
       let identity: { room?: unknown; access?: unknown; rejoin?: unknown; agent?: Partial<LiveAgent> } | null = null;
       try { identity = JSON.parse(request.headers.get(LiveRooms.identityHeader) ?? "null"); } catch { /* Refuse malformed trusted metadata. */ }
@@ -148,8 +148,11 @@ export class SessionStore extends DurableObject {
         return new Response(null, { status: 204 });
       }
       const room = identity?.room, access = identity?.access, rejoin = identity?.rejoin, agent = identity?.agent;
+      // Whether a synced session's room is still open to its guests (slice 30), asked without a socket.
+      if (url.pathname === "/live/admits")
+        return new Response(null, { status: typeof room === "string" && /^[a-f\d]{64}$/.test(room) && liveAccess(access) && live.admits(room, access) ? 204 : 409 });
       if (request.method !== "GET" || request.headers.get("Upgrade")?.toLowerCase() !== "websocket" ||
-        typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || (access !== "editor" && access !== "agent") ||
+        typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || !liveAccess(access) ||
         (rejoin !== undefined && (typeof rejoin !== "string" || !/^[a-f\d]{32}$/.test(rejoin))) ||
         (access === "agent") !== (agent !== undefined) ||
         (agent && (typeof agent.id !== "string" || typeof agent.sessionId !== "string" || !Number.isSafeInteger(agent.generation) ||

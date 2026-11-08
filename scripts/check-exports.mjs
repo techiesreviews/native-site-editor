@@ -61,7 +61,7 @@ function reachableFiles(roots, root, sourceFile, resolveModule) {
 export function productionPrograms(root) {
   const cache = new Map();
   return [
-    { config: "tsconfig.json", roots: ["src/main.ts", "src/components/native-preview-runtime.ts", "vite.config.ts"] },
+    { config: "tsconfig.json", roots: ["src/main.ts", "src/live-guest.ts", "src/components/native-preview-runtime.ts", "vite.config.ts"] },
     { config: "worker/tsconfig.json", roots: ["worker/index.ts"] },
   ].map(({ config, roots }) => {
     const configPath = resolve(root, config);

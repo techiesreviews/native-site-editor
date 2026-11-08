@@ -5,7 +5,7 @@ import { build, type BuildOptions } from "esbuild";
 import type { Plugin } from "vite";
 
 /**
- * The classic scripts native-preview.ts loads into frames by URL: the runtime, and the page picture
+ * The classic scripts the preview frame's document (src/components/preview-frame-doc.ts) loads by URL: the runtime, and the page picture
  * (src/agent-picture.ts, as the global `asePicture`), which only a picture's measuring frame loads, so it stays
  * out of the boot bytes.
  */
@@ -141,7 +141,7 @@ export function previewRuntime(): Plugin {
     },
     // Build: each minified bundle under a hashed /assets/ name.
     async transform(code, id) {
-      if (command !== "build" || id !== resolve(root, "src/components/native-preview.ts")) return;
+      if (command !== "build" || id !== resolve(root, "src/components/preview-frame-doc.ts")) return;
       for (const script of frameScripts) {
         if (!code.includes(script.url)) this.error(`Frame script URL expression was not found: ${script.url}`);
         const bundle = await bundlePreviewRuntime({ entry: resolve(root, script.file), minify: true, sourcemap: "external", target, globalName: script.globalName });

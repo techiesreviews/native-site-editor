@@ -6,7 +6,7 @@ and [45](../wayfinder/software-factory/build/tickets/45-feature-tries.md)),
 and every visible slice keeps the entries it touches current (kitchen station 7, [kitchen.md](kitchen.md)).
 Rule ids (S1, B10, U4…) are in the [UX rulebook](ux-rulebook.md); domain words are in [CONTEXT.md](../../CONTEXT.md).
 
-Only what is built is listed; planned work (the project overview, local folders, synced sessions) joins
+Only what is built is listed; planned work (the project overview, local folders) joins
 when it lands. Try features on the real starter with `scripts/agents/kit shots <screen>` (its `--help`
 lists the screens and the steps a scripted try can take).
 
@@ -168,6 +168,14 @@ its number unused.
 - Phone: yes
 - Spec: `tests/native-save/native-switch-mid-work.spec.ts`
 - Steps: none yet (needs work in flight and a second branch)
+
+### F-repo-09 Share to edit
+- Try: Open the project menu and choose Share to edit. Open the copied link in a private window (no sign-in), type a name and press Join, then click the page's heading there and type. Back in the editor, open the project menu and choose Stop sharing; then open the link again.
+- Good: The menu item itself says Link copied for a moment, with the menu still open, and no toast (S4); it then offers Copy edit link and Stop sharing. The guest page asks only for a name ("Edit <site> with <you>"), then shows the page you have on show, with you and the guest by initial in its top bar and nothing else: no Save, files, settings or agents. The guest's initial shows beside your project tile. Each letter the guest types shows on your page within a moment and is your unsaved change: only you save it, and your Undo takes it back. The guest's page follows the page you show. Stop sharing, or closing your tab, turns the guest's page into "This edit link has ended.", and the link refuses from then on; every share makes a new link. Opening another project or branch stops sharing.
+- Files: `src/live-session.ts`, `src/live-guest.ts`, `src/live-guest.css`, `src/components/repository-menu.ts`, `src/components/repository-menu.css`, `src/components/native-preview.ts`, `src/components/preview-frame-doc.ts`, `src/live-room.ts`, `shared/live-room.ts`, `worker/app.ts`, `worker/agent-relay.ts`, `worker/index.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-share-live.spec.ts`
+- Steps: none yet (needs a second browser with no sign-in)
 
 ## Pages and files
 

@@ -165,6 +165,7 @@ import { clearHub, hubView, type HubStorage } from "../../worker/agent-store.ts"
 import { fakeHubRoute, fakeRelayRoute, resetFixtureRelays, restartFixtureRelays, serializeObject, type RelayConnect } from "./fake-hub.ts";
 import { installRelayUpgrade, livePingedAt, type LiveConnect } from "./fake-websocket.ts";
 import { LiveRooms } from "../../worker/agent-relay.ts";
+import { liveAccess } from "../../shared/live-room.ts";
 import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "../../worker/oauth-pending.ts";
 import type { AgentHub } from "../../worker/agent-context.ts";
 import { tarball } from "../tar-helper.ts";
@@ -982,10 +983,13 @@ function liveJoin(id: string, request: Request, live?: LiveConnect) {
   let identity: { room?: unknown; access?: unknown; rejoin?: unknown } | null = null;
   try { identity = JSON.parse(request.headers.get(LiveRooms.identityHeader) ?? "null"); } catch { /* Refused below. */ }
   const room = identity?.room, access = identity?.access, rejoin = identity?.rejoin;
-  // Agents come in as the Worker lets them (a bearer connection): the room admits them only while a tab has it open.
-  if (!live || typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || (access !== "editor" && access !== "agent") || (rejoin !== undefined && typeof rejoin !== "string"))
-    return new Response(null, { status: 400 });
+  // Agents come in as the Worker lets them (a bearer connection), and a synced session's guests by its link (slice 30):
+  // the room admits them only while a tab has it open.
   const rooms = liveRooms.get(id) ?? liveRooms.set(id, new LiveRooms([], () => Date.now(), livePingedAt)).get(id)!;
+  if (new URL(request.url).pathname === "/live/admits")
+    return new Response(null, { status: typeof room === "string" && liveAccess(access) && rooms.admits(room, access) ? 204 : 409 });
+  if (!live || typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || !liveAccess(access) || (rejoin !== undefined && typeof rejoin !== "string"))
+    return new Response(null, { status: 400 });
   return live(rooms, { room, access, ...(typeof rejoin === "string" ? { rejoin } : {}) });
 }
 
@@ -1016,7 +1020,7 @@ function env(connect?: RelayConnect, relaySession = "anonymous", live?: LiveConn
           // Real relay core over Node sockets; absent owners refuse tools immediately.
           // Each demo sign-in has its own clone and browser ownership database, even though
           // all fixture accounts use DEMO_LOGIN. Tabs of that sign-in still share one relay.
-          if (url.pathname === "/live/join") return liveJoin(id, request, live);
+          if (url.pathname === "/live/join" || url.pathname === "/live/admits") return liveJoin(id, request, live);
           const relayResponse = await fakeRelayRoute(`${relaySession}:${id}`, request, connect);
           if (relayResponse) return relayResponse;
           // The agent hub, as worker/index.ts runs it.

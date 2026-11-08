@@ -33,10 +33,13 @@ export interface LiveClock {
   clearTimeout(timer: unknown): void;
 }
 export interface LivePeer { access: LiveAccess; state?: JsonValue }
-export interface LiveRoomOptions {
-  repo: string;
-  branch: string;
-  file: string;
+/** Where a room is: a site file's (by repository, branch and file), or a synced session's (slice 30: the sharing tab's
+ * or a guest's route, `/api/live/share?…` or `/api/live/guest?…`, without `rejoin`). */
+export type LiveRoomPlace = { repo: string; branch: string; file: string; address?: never } | { address: string; repo?: never; branch?: never; file?: never };
+export type LiveRoomOptions = LiveRoomPlace & {
+  /** The room key, already shared (a synced session's, from its link): used from the start, never made, asked for
+   * or handed on by the relay's handover. */
+  key?: CryptoKey;
   /** Opens the room's socket; the default is the browser's WebSocket to this editor. Agents pass one that sends their
    * connection, and throws LiveRoomClosed on a 409. */
   connect?: (url: string) => Promise<LiveRoomSocket>;
@@ -53,7 +56,7 @@ export interface LiveRoomOptions {
   /** The room ended for this participant and does not reconnect: no tab has it open (agents), its connection ended, or it was refused. */
   onClosed?(): void;
   clock?: LiveClock;
-}
+};
 
 const DATA = 0, PRESENCE = 1;
 const RECONNECT_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
@@ -115,6 +118,7 @@ const refusals: Record<number, string> = {
   400: "This live room's address is not valid.",
   401: "Sign in again to join this live room.",
   403: "This live room is not open to you.",
+  410: "This edit link has ended.",
 };
 /** A failed upgrade hides its status, so one plain request (same check, no socket) tells a refusal from a network
  * failure. Only a socket that never opened asks: later drops reconnect without it. */
@@ -142,7 +146,8 @@ export function openLiveRoom(options: LiveRoomOptions) {
   const connect = options.connect ?? browserSocket;
   // Only this participant knows it: a reconnect names it so the relay replaces a socket it has not yet seen drop.
   const rejoin = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
-  const url = `/api/live/room?${new URLSearchParams({ repo: options.repo, branch: options.branch, file: options.file, rejoin })}`;
+  const url = options.address !== undefined ? `${options.address}${options.address.includes("?") ? "&" : "?"}${new URLSearchParams({ rejoin })}`
+    : `/api/live/room?${new URLSearchParams({ repo: options.repo, branch: options.branch, file: options.file, rejoin })}`;
   let socket: LiveRoomSocket | null = null;
   let peer = "";
   let closed = false, attempt = 0;
@@ -255,6 +260,8 @@ export function openLiveRoom(options: LiveRoomOptions) {
         for (const id of presence.keys()) if (!members.has(id)) presence.delete(id);
         changed();
         membersChanged();
+        // A key that came with the room (a synced session's link) is the only one: no handover.
+        if (options.key) { keyReady(options.key); return; }
         // Holding the key (first in, or back in place of its own earlier socket): keep the one it had, or make one. Otherwise take theirs.
         if (message.keyed) { if (roomKey) keyReady(roomKey); else await makeKey(); return; }
         if (roomKey) { roomKey = null; resetKeyed(); }
@@ -273,10 +280,11 @@ export function openLiveRoom(options: LiveRoomOptions) {
         membersChanged();
         return;
       // The last key holder left: the relay chose this tab to make a new one.
-      case "make-key": if (!roomKey) await makeKey(); return;
+      case "make-key": if (!roomKey && !options.key) await makeKey(); return;
       // A member holds the key now: say who is here so it sees this tab at once, or ask it if still waiting.
       case "keyed": if (roomKey) sayHere(); else ask(); return;
-      case "key-request": await answer(message.from, message.publicKey); return;
+      // Everyone in a room whose key came with it has that key already: nobody hands it on.
+      case "key-request": if (!options.key) await answer(message.from, message.publicKey); return;
       case "key": {
         const pending = request;
         if (!pending || roomKey) return;
