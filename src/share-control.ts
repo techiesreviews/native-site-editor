@@ -9,13 +9,12 @@ import type { SessionStamp, WorkspaceScope } from "./workspace-session";
 /** What the project menu shows: no session, one starting, or one open with its link and guests. */
 export type ShareState = { sharing: false; starting?: true } | { sharing: true; link: string; guests: SessionGuest[] };
 
-/** How many guest colours there are (src/components/person-chip.css). */
-const GUEST_COLOURS = 4;
-/** A guest's colour, by its id: the same in Lex's menu and on every guest's page. */
-export function guestColour(id: string) {
-  let hash = 0;
-  for (const character of id) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
-  return String(hash % GUEST_COLOURS);
+/** A person's name as shown, whatever their presence sends: trimmed, at most 40 characters, else "Guest". */
+export const personName = (name: string) => name.trim().slice(0, 40) || "Guest";
+/** The one letter or digit on a person's chip: the first of their name, as a capital (one character, so "ß" stays one). */
+export function initialOf(name: string) {
+  const first = name.trim().match(/\p{L}|\p{N}/u)?.[0];
+  return first ? [...first.toLocaleUpperCase()][0] : "·";
 }
 
 /**

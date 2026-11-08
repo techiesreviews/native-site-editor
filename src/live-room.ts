@@ -44,8 +44,9 @@ export type LiveRoomOptions = LiveRoomPlace & {
   /** Opens the room's socket; the default is the browser's WebSocket to this editor. Agents pass one that sends their
    * connection, and throws LiveRoomClosed on a 409. */
   connect?: (url: string) => Promise<LiveRoomSocket>;
-  /** Another participant's decrypted content frame. */
-  onMessage(bytes: Uint8Array): void;
+  /** Another participant's decrypted content frame, and who sent it: the relay names the sender's socket, so a member
+   * cannot pass for another (a synced session's guests take the page only from the sharing tab, slice 30). */
+  onMessage(bytes: Uint8Array, from: { peer: string; access: LiveAccess }): void;
   /** Who is here now: everyone heard from within the presence timeout, by relay peer id. */
   onPeers?(peers: ReadonlyMap<string, LivePeer>): void;
   /** Who else the relay says is connected (heard from or not), by relay peer id: on joining (each reconnect too)
@@ -61,6 +62,8 @@ export type LiveRoomOptions = LiveRoomPlace & {
 };
 
 const DATA = 0, PRESENCE = 1;
+/** The relay puts the sender's peer id (32 hex digits) before each frame it forwards (worker/agent-relay.ts). */
+const SENDER_BYTES = 16;
 const RECONNECT_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
 /** A key request nobody answered is sent again this often (a backstop: `keyed` and `make-key` normally settle it). */
 const REREQUEST_MS = 5_000;
@@ -298,16 +301,20 @@ export function openLiveRoom(options: LiveRoomOptions) {
       }
     }
   };
+  /** A forwarded frame: the sender's relay peer id (16 bytes, set by the relay), then the sealed content. */
   const frame = async (data: Bytes, from: LiveRoomSocket) => {
-    if (!roomKey) return;
-    const plain = await open(roomKey, data);
+    if (!roomKey || data.length < SENDER_BYTES) return;
+    const sender = Array.from(data.subarray(0, SENDER_BYTES), byte => byte.toString(16).padStart(2, "0")).join("");
+    const access = members.get(sender);
+    if (!access) return;
+    const plain = await open(roomKey, data.subarray(SENDER_BYTES));
     if (closed || socket !== from || !plain?.length) return;
-    if (plain[0] === DATA) { options.onMessage(plain.subarray(1)); return; }
+    if (plain[0] === DATA) { options.onMessage(plain.subarray(1), { peer: sender, access }); return; }
     if (plain[0] !== PRESENCE) return;
-    let value: { peer?: unknown; state?: JsonValue };
+    let value: { state?: JsonValue };
     try { value = JSON.parse(new TextDecoder().decode(plain.subarray(1))) as typeof value; } catch { return; }
-    if (typeof value.peer !== "string" || !members.has(value.peer)) return;
-    presence.set(value.peer, { state: value.state ?? null, seenAt: clock.now() });
+    if (!members.has(sender)) return;
+    presence.set(sender, { state: value.state ?? null, seenAt: clock.now() });
     if (sweep === undefined) expire();
     changed();
   };

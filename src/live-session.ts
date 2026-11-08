@@ -19,8 +19,10 @@
 
 // The room itself (src/live-room.ts) loads with the first share or join, never with the editor.
 import type { LivePeer, LiveRoom, openLiveRoom } from "./live-room";
+import type { LiveAccess } from "../shared/live-room";
 import type { JsonValue } from "../shared/agent-command";
 import { LIVE_GUEST_ID, LIVE_SESSION_TOKEN } from "../shared/live-room";
+import { personName } from "./share-control";
 import type { GuestTextEdit, MirrorMessage, NativePreview } from "./components/native-preview";
 
 /** The guest page's address. */
@@ -30,16 +32,26 @@ const PART_BYTES = 512 * 1024;
 /** A message of more parts than this is dropped (32 MiB). */
 const MAX_PARTS = 64;
 
-/** Lex's tab to guests: the page on show, Lex's name and each guest's typing written so far (its frame's numbering). */
+/** Lex's tab to guests: the page on show (its components and stylesheets only when they changed), each guest's typing
+ * written so far (its frame's numbering) and each guest's colour, by guest id. */
 export type HostMessage =
-  | { t: "render"; payload: Extract<MirrorMessage, { kind: "render" }>["payload"]; typed: Record<string, number> }
+  | { t: "render"; payload: Extract<MirrorMessage, { kind: "render" }>["payload"]; typed: Record<string, number>; colours: Record<string, string> }
   | { t: "assets"; assets: Extract<MirrorMessage, { kind: "assets" }>["assets"] };
-/** A guest to Lex's tab: one text change typed in their copy, numbered as their frame numbered it. */
-export type GuestMessage = { t: "edit"; from: string; edit: GuestTextEdit; seq: number; session: number };
+/** A guest to Lex's tab: one text change typed in their copy, numbered as their frame numbered it. Who sent it is the
+ * relay's word, not the message's. */
+export type GuestMessage = { t: "edit"; edit: GuestTextEdit; seq: number; session: number };
+/** Who sent a frame, as the relay names it. */
+type Sender = { peer: string; access: LiveAccess };
 /** What each participant shows the others: a name, and for a guest the id its messages carry. */
 export type SessionPresence = { name: string; guest?: string };
-/** Someone in the session, as Lex's tab lists them. */
-export interface SessionGuest { id: string; name: string }
+/** Someone in the session, as Lex's tab lists them: their relay peer, and the colour Lex's tab gave them. */
+export interface SessionGuest { id: string; name: string; colour: string; peer: string }
+/** How many guest colours there are (src/components/person-chip.css): given in join order, one not in use first. */
+const GUEST_COLOURS = 4;
+/** How long Lex's tab waits for the session's room before giving up (the guest page waits as long to join). */
+const SHARE_WAIT_MS = 10_000;
+/** A message the socket did not take, or one too big to send, is followed by the whole page again this much later. */
+const RESEND_MS = 2_000;
 
 const hex = (bytes: Uint8Array) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 export const randomId = (bytes = 16) => hex(crypto.getRandomValues(new Uint8Array(bytes)));
@@ -65,20 +77,21 @@ export const importSessionKey = (key: string) =>
  * The session's wire over one live room: JSON messages, each split into parts that fit a frame, sent one at a time in
  * order (sealing is asynchronous, so two sent at once could swap). `lost` hears a message the socket did not take.
  */
-export function sessionWire<In>(room: () => Pick<LiveRoom, "send"> | undefined, receive: (message: In) => void, lost: () => void) {
+export function sessionWire<In>(room: () => Pick<LiveRoom, "send"> | undefined, receive: (message: In, from: Sender) => void, lost: () => void) {
   let queue = Promise.resolve();
-  const parts = new Map<number, { count: number; got: Map<number, Uint8Array> }>();
+  const parts = new Map<string, { count: number; got: Map<number, Uint8Array> }>();
   const decoder = new TextDecoder();
-  const deliver = (bytes: Uint8Array) => {
+  const deliver = (bytes: Uint8Array, from: Sender) => {
     let message: In;
     try { message = JSON.parse(decoder.decode(bytes)) as In; } catch { return; }
-    if (message && typeof message === "object") receive(message);
+    if (message && typeof message === "object") receive(message, from);
   };
   return {
     send(message: unknown) {
       const bytes = new TextEncoder().encode(JSON.stringify(message));
       const count = Math.max(1, Math.ceil(bytes.length / PART_BYTES));
-      if (count > MAX_PARTS) return;
+      // Too big to send (over 32 MiB): the copy is sent whole again, once the assets are spread over smaller messages.
+      if (count > MAX_PARTS) { lost(); return; }
       const id = crypto.getRandomValues(new Uint32Array(1))[0];
       queue = queue.then(async () => {
         for (let index = 0; index < count; index++) {
@@ -95,12 +108,14 @@ export function sessionWire<In>(room: () => Pick<LiveRoom, "send"> | undefined, 
         }
       });
     },
-    receive(frame: Uint8Array) {
+    receive(frame: Uint8Array, from: Sender) {
       if (frame.length < 9) return;
       const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
       const body = frame.subarray(9);
-      if (view.getUint8(0) === 0) { deliver(body); return; }
-      const id = view.getUint32(1), index = view.getUint16(5), count = view.getUint16(7);
+      if (view.getUint8(0) === 0) { deliver(body, from); return; }
+      const index = view.getUint16(5), count = view.getUint16(7);
+      // Parts are put back together per sender: nobody can slip a part into someone else's message.
+      const id = `${from.peer}:${view.getUint32(1)}`;
       if (count < 2 || count > MAX_PARTS || index >= count) return;
       const entry = parts.get(id) ?? { count, got: new Map() };
       if (entry.count !== count) return;
@@ -113,7 +128,7 @@ export function sessionWire<In>(room: () => Pick<LiveRoom, "send"> | undefined, 
       const all = new Uint8Array([...entry.got.values()].reduce((sum, part) => sum + part.length, 0));
       let offset = 0;
       for (let at = 0; at < count; at++) { const part = entry.got.get(at)!; all.set(part, offset); offset += part.length; }
-      deliver(all);
+      deliver(all, from);
     },
   };
 }
@@ -159,12 +174,17 @@ export async function startSharing(ports: SharePorts) {
   let mirror: ReturnType<NativePreview["mirror"]> | undefined;
   // A guest's letters are written in order, one at a time.
   let writing = Promise.resolve();
-  // A render the socket did not take is sent whole again once the room is back (`onKey`).
-  const wire = sessionWire<GuestMessage>(() => room, (message) => { if (message.t === "edit") written(message); }, () => undefined);
+  // Each guest's colour, given as they join: one no one in the session has, else the least used.
+  const colours = new Map<string, string>();
+  // A render the socket did not take, or one too big, is followed by the whole page again (and once the room is back, `onKey`).
+  let resend: ReturnType<typeof setTimeout> | undefined;
+  const lost = () => { if (!resend && !ended) resend = setTimeout(() => { resend = undefined; sendWhole(); }, RESEND_MS); };
+  const wire = sessionWire<GuestMessage>(() => room, (message, from) => { if (message.t === "edit") written(message, from); }, lost);
 
   const end = () => {
     if (ended) return;
     ended = true;
+    clearTimeout(resend);
     mirror?.stop();
     mirror = undefined;
     room.close();
@@ -179,11 +199,13 @@ export async function startSharing(ports: SharePorts) {
     if (!preview || ended || !guests.length) return;
     mirror = preview.mirror((message) => {
       if (!ports.holds()) { end(); return; }
-      wire.send(message.kind === "render" ? { t: "render", payload: message.payload, typed } satisfies HostMessage : { t: "assets", assets: message.assets } satisfies HostMessage);
+      wire.send(message.kind === "render" ? { t: "render", payload: message.payload, typed, colours: Object.fromEntries(colours) } satisfies HostMessage
+        : { t: "assets", assets: message.assets } satisfies HostMessage);
     }, end);
   };
-  const written = (message: GuestMessage) => {
-    const from = guests.find((guest) => guest.id === message.from);
+  // A change counts only from a guest's own socket, as the relay names it: never from someone claiming their id.
+  const written = (message: GuestMessage, sender: Sender) => {
+    const from = sender.access === "guest" ? guests.find((guest) => guest.peer === sender.peer) : undefined;
     if (!from || !message.edit || typeof message.seq !== "number" || typeof message.session !== "number") return;
     const edit = message.edit;
     if (typeof edit.path !== "string" || !Array.isArray(edit.node) || !edit.node.every((step) => Number.isInteger(step) && step >= 0) ||
@@ -199,13 +221,24 @@ export async function startSharing(ports: SharePorts) {
       if (!done) preview?.refresh();
     });
   };
+  const colourFor = (id: string) => {
+    const known = colours.get(id);
+    if (known) return known;
+    const use = Array.from({ length: GUEST_COLOURS }, (_, index) => [...colours.values()].filter((colour) => colour === String(index)).length);
+    const colour = String(use.indexOf(Math.min(...use)));
+    colours.set(id, colour);
+    return colour;
+  };
   const peersChanged = (peers: ReadonlyMap<string, LivePeer>) => {
     const next: SessionGuest[] = [];
-    for (const peer of peers.values()) {
-      const state = peer.state as SessionPresence | null | undefined;
-      if (peer.access !== "guest" || !state || typeof state.guest !== "string" || !LIVE_GUEST_ID.test(state.guest) || typeof state.name !== "string") continue;
-      next.push({ id: state.guest, name: state.name.trim().slice(0, 40) || "Guest" });
+    for (const [peer, at] of peers) {
+      const state = at.state as SessionPresence | null | undefined;
+      if (at.access !== "guest" || !state || typeof state.guest !== "string" || !LIVE_GUEST_ID.test(state.guest) || typeof state.name !== "string") continue;
+      if (next.some((guest) => guest.id === state.guest)) continue;
+      next.push({ id: state.guest, name: personName(state.name), colour: "", peer });
     }
+    for (const id of [...colours.keys()]) if (!next.some((guest) => guest.id === id)) colours.delete(id);
+    for (const guest of next) guest.colour = colourFor(guest.id);
     const joined = next.some((guest) => !guests.some((known) => known.id === guest.id));
     const same = next.length === guests.length && !joined;
     guests = next;
@@ -216,14 +249,21 @@ export async function startSharing(ports: SharePorts) {
   const room: LiveRoom = openRoom({
     address: `/api/live/share?${new URLSearchParams({ repo: ports.repo, branch: ports.branch, session: token, host })}`,
     key,
-    onMessage: (bytes) => wire.receive(bytes),
+    onMessage: (bytes, from) => wire.receive(bytes, from),
     onPeers: peersChanged,
     // Back after a dropped socket: frames meanwhile may be lost, so every guest gets the whole page.
     onKey: () => sendWhole(),
     onClosed: end,
   });
   room.setPresence({ name: ports.host } satisfies SessionPresence as JsonValue);
-  try { await room.ready(); } catch (error) { end(); throw error; }
+  // No room in time (a network that blocks the socket: it would go on trying): give up, so the menu offers Share again.
+  let waited: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([room.ready(), new Promise<never>((_, fail) => {
+      waited = setTimeout(() => fail(new Error("The session's room did not open.")), SHARE_WAIT_MS);
+    })]);
+  } catch (error) { end(); throw error; }
+  finally { clearTimeout(waited); }
   return {
     link,
     /** Ends the session: guests' pages say so, and the link refuses. */

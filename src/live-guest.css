@@ -92,7 +92,7 @@ button, input { font: inherit; color: inherit; }
 .live-guest__site { flex: 1; min-inline-size: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live-guest__people { display: flex; margin: 0; padding: 0; list-style: none; }
 /* While the sharing tab is back in a moment (its connection dropped), the page waits: no typing goes nowhere. */
-.live-guest__status { color: var(--muted); font-size: var(--type-small); white-space: nowrap; }
+.live-guest__status { flex: 0 1000 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: var(--type-small); white-space: nowrap; }
 .live-guest__status[hidden] { display: none; }
 .live-guest__canvas[inert] .live-guest__frame { opacity: 0.6; }
 

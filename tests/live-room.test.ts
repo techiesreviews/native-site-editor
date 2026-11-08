@@ -272,6 +272,7 @@ test("an agent joins only a room a tab has open, gets the key from it, and leave
 /** A synced session's participant (slice 30): the room key comes with the link, so nobody makes or hands one over. */
 function sessionParticipant(h: ReturnType<typeof relayHarness>, clock: LiveClock, key: CryptoKey, access: LiveAccess) {
   const got: string[] = [];
+  const senders: { peer: string; access: LiveAccess }[] = [];
   let made: ReturnType<typeof h.pair> | undefined;
   let closed: number | undefined | false = false;
   const live = openLiveRoom({
@@ -282,10 +283,10 @@ function sessionParticipant(h: ReturnType<typeof relayHarness>, clock: LiveClock
       if (!made.link.joined) throw new LiveRoomClosed();
       return made.client;
     },
-    onMessage: bytes => got.push(new TextDecoder().decode(bytes)),
+    onMessage: (bytes, from) => { got.push(new TextDecoder().decode(bytes)); senders.push(from); },
     onClosed: why => { closed = why; },
   });
-  return { live, got, get link() { return made!.link; }, get server() { return made!.server; }, get closed() { return closed; } };
+  return { live, got, senders, get link() { return made!.link; }, get server() { return made!.server; }, get closed() { return closed; } };
 }
 
 test("a synced session: a guest joins only while the sharing tab is in, uses the link's key, and is closed when it leaves", async () => {
@@ -305,6 +306,9 @@ test("a synced session: a guest joins only while the sharing tab is in, uses the
   assert.equal(await lex.live.send(new TextEncoder().encode("every morning")), true);
   await until(() => lex.got.length > 0 && anna.got.length > 0, "both messages");
   assert.deepEqual([lex.got, anna.got], [["Fresh bread"], ["every morning"]]);
+  // The relay names each frame's sender: a guest cannot pass for the sharing tab.
+  assert.deepEqual(anna.senders, [{ peer: peerOf(lex.server), access: "editor" }]);
+  assert.deepEqual(lex.senders, [{ peer: peerOf(anna.server), access: "guest" }]);
   const raw = b64u(new Uint8Array(await crypto.subtle.exportKey("raw", key)));
   for (const frame of h.seen) if (typeof frame === "string") {
     assert.ok(!frame.includes(raw), "the link's key never crosses the relay");

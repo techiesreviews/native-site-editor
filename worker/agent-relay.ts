@@ -484,6 +484,9 @@ export async function liveSessionObjectName(token: string): Promise<string> {
 }
 /** The session's one room inside it. */
 export const liveSessionRoomTag = () => sha256(LIVE_SESSION_ROOM);
+/** A forwarded frame starts with its sender's peer id: 16 bytes. */
+const LIVE_SENDER_BYTES = 16;
+const peerBytes = (peer: string) => Uint8Array.from(peer.match(/../g) ?? [], pair => parseInt(pair, 16));
 const hex = (bytes: Uint8Array) => Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
 async function sha256(value: string) {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", utf8.encode(value))));
@@ -628,7 +631,12 @@ export class LiveRooms {
     const now = this.now();
     if (now - (metadata.heardAt ?? 0) >= LIVE_HEARD_STEP_MS) { metadata.heardAt = now; socket.serializeAttachment(metadata); }
     if (typeof message !== "string") {
-      for (const [other] of this.members(metadata.room, socket)) this.send(other, message);
+      // Each frame goes on with its sender's peer id in front, which only the relay sets: a member can then not pass
+      // for another (a synced session's guests take the page only from the sharing tab, slice 30).
+      const stamped = new Uint8Array(LIVE_SENDER_BYTES + message.byteLength);
+      stamped.set(peerBytes(metadata.peer));
+      stamped.set(new Uint8Array(message), LIVE_SENDER_BYTES);
+      for (const [other] of this.members(metadata.room, socket)) this.send(other, stamped.buffer);
       return true;
     }
     const value = readLiveClientMessage(message);

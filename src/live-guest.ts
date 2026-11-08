@@ -16,8 +16,8 @@ import { createPreviewLink, iframeFramePort } from "./components/preview-link";
 import { watchEditorTheme } from "./theme";
 import { importSessionKey, randomId, readSessionLink, sessionWire, type GuestMessage, type HostMessage, type SessionPresence } from "./live-session";
 import type { LivePeer, LiveRoom } from "./live-room";
-import { guestColour } from "./share-control";
-import { LIVE_HOST_GRACE_MS, LIVE_HOST_LOST, LIVE_ROOM_CLOSED } from "../shared/live-room";
+import { initialOf, personName } from "./share-control";
+import { LIVE_HOST_GRACE_MS, LIVE_HOST_LOST, LIVE_ROOM_CLOSED, type LiveAccess } from "../shared/live-room";
 import type { AssetChanges, UpdatePayload } from "./components/native-preview";
 import type { JsonValue } from "../shared/agent-command";
 
@@ -105,7 +105,7 @@ const refusal = (why: number | undefined): "ended" | "invalid" | "later" =>
 
 /** One try to get into the session's room with the link's key, within JOIN_WAIT_MS. Once in, `closed` hears how it ended. */
 async function enter(shared: Shared, key: CryptoKey, presence: SessionPresence, hooks: {
-  message(bytes: Uint8Array): void; peers(peers: ReadonlyMap<string, LivePeer>): void; closed(why: number | undefined): void;
+  message(bytes: Uint8Array, from: { peer: string; access: LiveAccess }): void; peers(peers: ReadonlyMap<string, LivePeer>): void; closed(why: number | undefined): void;
 }): Promise<Entry> {
   const { openLiveRoom } = await import("./live-room");
   return new Promise((resolve) => {
@@ -114,7 +114,7 @@ async function enter(shared: Shared, key: CryptoKey, presence: SessionPresence, 
     const room = openLiveRoom({
       address: `/api/live/guest?${new URLSearchParams({ session: shared.token })}`,
       key,
-      onMessage: (bytes) => hooks.message(bytes),
+      onMessage: (bytes, from) => hooks.message(bytes, from),
       onPeers: (peers) => { if (settled) hooks.peers(peers); },
       onClosed: (why) => { if (settled) hooks.closed(why); else settle({ refused: refusal(why) }); },
     });
@@ -137,10 +137,11 @@ async function join(shared: Shared, name: string): Promise<"in" | "ended" | "inv
   let room: LiveRoom | undefined;
   let view: ReturnType<typeof showSession> | undefined;
   let left = false;
-  const wire = sessionWire<HostMessage>(() => room, (message) => view?.receive(message), () => undefined);
+  // The page comes only from the sharing tab, as the relay names the sender: another guest cannot send a page of its own.
+  const wire = sessionWire<HostMessage>(() => room, (message, from) => { if (from.access === "editor") view?.receive(message); }, () => undefined);
   const ended = () => { left = true; view?.close(); note(ENDED, shared.by ? `${shared.by} stopped sharing. Ask for a new link to edit again.` : "Ask for a new link to edit again."); };
   const hooks = {
-    message: (bytes: Uint8Array) => wire.receive(bytes),
+    message: (bytes: Uint8Array, from: { peer: string; access: LiveAccess }) => wire.receive(bytes, from),
     peers: (peers: ReadonlyMap<string, LivePeer>) => view?.people(peers),
     closed: (why: number | undefined) => {
       room = undefined;
@@ -166,7 +167,7 @@ async function join(shared: Shared, name: string): Promise<"in" | "ended" | "inv
   if (!("room" in entry)) return entry.refused;
   room = entry.room;
   remember(name);
-  view = showSession(shared, name, (message) => wire.send({ ...message, from: me } satisfies GuestMessage), me);
+  view = showSession(shared, name, (message) => wire.send(message satisfies GuestMessage), me);
   view.people(entry.room.peers());
   // Leaving says so at once, so Lex's list of people is right. A page brought back from the browser's cache has no
   // room any more: it says the session is over for it.
@@ -207,6 +208,9 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
   const held = new Map<string, string>();
   const inFrame = new Map<string, string>();
   let last: { payload: UpdatePayload; typed: number } | undefined;
+  // Each guest's colour, as the sharing tab gave them; and who is here, drawn again when colours change.
+  let guestColours: Record<string, string> = {};
+  let present: ReadonlyMap<string, LivePeer> = new Map();
   const take = (changes: AssetChanges | undefined) => {
     for (const [path, url] of Object.entries(changes?.set ?? {})) if (typeof url === "string") held.set(path, url);
     for (const path of changes?.drop ?? []) held.delete(path);
@@ -244,21 +248,32 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
       if (message.t === "render" && message.payload && typeof message.payload === "object") {
         take(message.payload.assetChanges);
         const typed = message.typed && typeof message.typed[me] === "number" ? message.typed[me] : 0;
-        last = { payload: message.payload, typed };
+        // A render leaves out the components and stylesheets when they did not change: the last ones hold.
+        const before = last?.payload;
+        const payload = { ...message.payload } as UpdatePayload;
+        if (!("components" in message.payload) && before) { payload.components = before.components; payload.componentPaths = before.componentPaths; }
+        if (!("styles" in message.payload) && before) payload.styles = before.styles;
+        if (!("componentStyles" in message.payload) && before) payload.componentStyles = before.componentStyles;
+        last = { payload, typed };
         draw();
+        const next = message.colours && typeof message.colours === "object" ? message.colours : {};
+        if (JSON.stringify(next) !== JSON.stringify(guestColours)) { guestColours = next; this.people(present); }
       } else if (message.t === "assets" && message.assets && typeof message.assets === "object") {
         take(message.assets.assetChanges);
+        if (last) last = { ...last, payload: { ...last.payload, styles: message.assets.styles, componentStyles: message.assets.componentStyles } };
         if (ready && last) frameLink.send({ type: "assets", styles: message.assets.styles, componentStyles: message.assets.componentStyles, assetChanges: owed() });
       }
     },
     /** Who else is here: Lex first, then the other guests; this guest last, as "you". */
     people(peers: ReadonlyMap<string, LivePeer>) {
+      present = peers;
+      const colourOf = (id: string) => typeof guestColours[id] === "string" && /^[0-3]$/.test(guestColours[id]) ? guestColours[id] : "0";
       const others = [...peers.values()].map((peer) => ({ peer, state: peer.state as SessionPresence | null | undefined }))
         .filter(({ state }) => state && typeof state.name === "string" && state.guest !== me);
       others.sort((a, b) => Number(a.peer.access === "guest") - Number(b.peer.access === "guest"));
       people.replaceChildren(
-        ...others.map(({ peer, state }) => person(state!.name, peer.access === "guest" ? state!.guest ?? state!.name : undefined)),
-        person(name, me, true),
+        ...others.map(({ peer, state }) => person(personName(state!.name), peer.access === "guest" ? colourOf(state!.guest ?? "") : "host")),
+        person(personName(name), colourOf(me), true),
       );
     },
     /** The sharing tab's connection dropped: the page waits for it, and takes no typing meanwhile. */
@@ -274,13 +289,12 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
 }
 
 /** One person in the bar: their initial in their colour, their name for hover and screen readers. */
-function person(name: string, guest: string | undefined, you = false) {
+function person(name: string, colour: string, you = false) {
   const item = element("li", "person-chip", initialOf(name));
-  const label = you ? `${name} (you)` : guest === undefined ? `${name} (sharing)` : name;
+  const label = you ? `${name} (you)` : colour === "host" ? `${name} (sharing)` : name;
   item.title = label;
   item.setAttribute("aria-label", label);
-  // Lex in the editor's colour; each guest in theirs, the same as in Lex's menu (src/share-control.ts).
-  item.dataset.colour = guest === undefined ? "host" : guestColour(guest);
+  // Lex in the editor's colour; each guest in the one the sharing tab gave them, the same as in Lex's menu.
+  item.dataset.colour = colour;
   return item;
 }
-const initialOf = (name: string) => (name.trim().match(/\p{L}|\p{N}/u)?.[0] ?? "·").toUpperCase();
