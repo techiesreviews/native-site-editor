@@ -32,6 +32,13 @@
 //   caret stays by the same words while others type. Others' carets are read
 //   in this tab's text and drawn in the code pane (src/components/live-carets.ts,
 //   loaded with Yjs, only once someone else is in the room).
+// - Agents join the merge (ticket am-25): an agent's change is written into the
+//   drafts of the tab that receives its commands (src/live-author.ts says whose
+//   it is). That tab puts the text change into the copy as the smallest change,
+//   under a Yjs client id of the agent's own, and sends it under that id, so in
+//   every tab its words are the agent's: its name tag's Undo takes back only
+//   them. The receiving tab says where the agent's caret is (at its latest
+//   change) along with its own, and draws it too.
 //
 // Frames (inside the room's encryption): a kind byte, whether the sender is
 // caught up, the 20-byte starting-text tag, a 4-byte copy id (the sender's
@@ -51,6 +58,7 @@ import { openLiveRoom, type LiveClock, type LivePeer, type LiveRoom, type LiveRo
 import type { JsonValue } from "../shared/agent-command";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 import { rebaseHistory } from "./shared-undo";
+import { liveAuthor, type LiveAuthor } from "./live-author";
 
 type Yjs = typeof import("yjs");
 type Doc = import("yjs").Doc;
@@ -75,7 +83,8 @@ export interface LiveTextPorts {
 }
 
 /** Someone else's caret in the open file, in this tab's text (ticket am-22). `author`: the Yjs client id their own changes
- * carry, which the name-tag Undo takes; `agent`: the program an agent works in (`clientInfo.name`), none for a person.
+ * carry, which the name-tag Undo takes; `agent`: the program an agent works in (`clientInfo.name`; for an agent whose text
+ * a tab wrote into the copy, ticket am-25, the name its commands carry), none for a person.
  * Name and author are what each participant says of itself (the relay vouches for neither): `contested` marks an author
  * id another participant here also claims, or this tab's own, whose name tag offers no Undo. */
 export interface LiveCaret { peer: string; author: number; name: string; agent?: string; anchor: number; head: number; contested?: boolean }
@@ -115,6 +124,8 @@ export const LIVE_TEXT_CATCH_UP_MS = 5_000;
 const CARET_MS = 50;
 /** A name longer than this is cut: presence is only what others say of themselves. */
 const NAME_LIMIT = 80;
+/** The most agents' carets one tab's presence is read for (ticket am-25). */
+const AGENT_CARETS = 16;
 /** A name cut to NAME_LIMIT characters, never inside one. */
 const cut = (name: string) => [...name].slice(0, NAME_LIMIT).join("");
 /** Frames that arrive while Yjs loads wait, up to this many. */
@@ -276,7 +287,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (copy) copy.receive(bytes);
       else if (inbox.length < INBOX_LIMIT) inbox.push(Uint8Array.from(bytes));
     },
-    // Agents join the shared copy in a later slice (am-25): only other tabs count here.
+    // Only other tabs count here: an agent's text joins the copy through the tab that receives its commands (am-25).
     onMembers(members) {
       editors = [...members.values()].filter(access => access === "editor").length;
       if (!editors) { aloneOnce = true; void copy?.startOwn(); }
@@ -325,11 +336,14 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     // answers carry everyone's text and stay under REMOTE.
     const authors = new Map<number, { origin: object; undo: import("yjs").UndoManager }>();
     const theirs = new WeakSet<object>();
-    const authorOrigin = (author: number) => {
+    /** The agents whose text this tab wrote into the copy (ticket am-25), by the origin of their changes: the client id
+     * those changes carry and that their frames name. */
+    const agentIds = new WeakMap<object, number>();
+    const authorOrigin = (author: number, agent = false) => {
       let found = authors.get(author);
       if (!found) {
         const origin = {};
-        theirs.add(origin);
+        if (agent) agentIds.set(origin, author); else theirs.add(origin);
         const undo = new Y.UndoManager(text, { trackedOrigins: new Set([origin]) });
         for (const event of ["stack-item-added", "stack-item-popped", "stack-cleared"] as const) undo.on(event, authorsChanged);
         authors.set(author, found = { origin, undo });
@@ -351,6 +365,39 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
      * changes carry, which carets name (slices 22 and 23), so a name tag's Undo finds that author's changes. Read once: should
      * Yjs ever give this doc a new client id (it does on a clash, very rarely), carets must keep naming this one. */
     const me = doc.clientID;
+    /** Agents whose text this tab wrote, by connection and name: the client id their changes carry, a Yjs id of their own
+     * made here (random, as Yjs makes its own, and never one this copy has seen), and where their latest change ended. */
+    const agents = new Map<string, { author: number; name: string; at?: import("yjs").RelativePosition }>();
+    const agentAuthor = (who: LiveAuthor) => {
+      const key = JSON.stringify([who.grant, who.name]);
+      let found = agents.get(key);
+      if (!found) {
+        let author: number;
+        do author = crypto.getRandomValues(new Uint32Array(1))[0];
+        while (author === me || author === doc.clientID || doc.store.clients.has(author) || authors.has(author));
+        agents.set(key, found = { author, name: cut(who.name) });
+      }
+      return found;
+    };
+    /** An agent's change, put into the copy under its own client id (its origin, so its frames name it and its name tag
+     * takes it back), its caret left at the end of its first changed range. */
+    const writeAgent = (who: LiveAuthor, changes: TextChange[]) => {
+      const agent = agentAuthor(who), origin = authorOrigin(agent.author, true), own = doc.clientID;
+      doc.clientID = agent.author;
+      try { doc.transact(() => { applyText(changes); }, origin); }
+      finally { doc.clientID = own; }
+      const first = changes.at(-1);
+      if (first) agent.at = Y.createRelativePositionFromTypeIndex(text, Math.min(first.start + first.text.length, text.length));
+      tellCaret();
+      caretsMoved();
+    };
+    /** `changes`, ordered from the end of the text back, applied to the copy's text. */
+    const applyText = (changes: TextChange[]) => {
+      for (const change of changes) {
+        if (change.end > change.start) text.delete(change.start, change.end - change.start);
+        if (change.text) text.insert(change.start, change.text);
+      }
+    };
 
     const frame = (kind: number, payload: Uint8Array, id: number) => {
       const out = new Uint8Array(HEAD + payload.length);
@@ -384,7 +431,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     page?.document.addEventListener("visibilitychange", hidden);
     doc.on("update", (update: Uint8Array, origin: unknown) => {
       // Alone, nothing goes out: whoever joins next is caught up by HELLO and REPLY.
-      if (origin !== REMOTE && !theirs.has(origin as object) && editors) void send(UPDATE, update);
+      // An agent's change goes out under its own client id (ticket am-25), the tab's own under the tab's.
+      if (origin !== REMOTE && !theirs.has(origin as object) && editors)
+        void send(UPDATE, update, typeof origin === "object" && origin ? agentIds.get(origin) ?? me : me);
       if (synced && keeping === undefined) keeping = clock.setTimeout(keep, KEEP_MS);
     });
     text.observe((event, transaction) => {
@@ -393,7 +442,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       // Any change can make someone's change undoable or not (their words removed since): the name tags look again.
       if (authors.size) authorsChanged();
       // Others' carets stay by their words: they are read again in the new text.
-      if (synced && peers.size) caretsMoved();
+      if (synced && (peers.size || agents.size)) caretsMoved();
     });
     /** Whether undoing `item` changes the text: some of the words it added are still there, or it removed words
      * (other than its own) that Yjs can put back. Yjs itself skips items that change nothing. */
@@ -414,12 +463,10 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       const now = text.toString();
       if (event.text === now) return;
       const changes = changesBetween(now, event.text, event.changes).sort((a, b) => b.start - a.start);
-      doc.transact(() => {
-        for (const change of changes) {
-          if (change.end > change.start) text.delete(change.start, change.end - change.start);
-          if (change.text) text.insert(change.start, change.text);
-        }
-      }, LOCAL);
+      // An agent's change written into this tab's drafts (ticket am-25) joins the copy as the agent's.
+      const agent = liveAuthor();
+      if (agent) writeAgent(agent, changes);
+      else doc.transact(() => { applyText(changes); }, LOCAL);
     });
 
     /**
@@ -500,31 +547,51 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (!synced || discarded || stopped) return;
       const at = (index: number) => Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(text, Math.min(index, text.length))) as JsonValue;
       const now = selection?.();
-      told = { author: me, name: cut(scope.account), caret: now ? { anchor: at(now.anchor), head: at(now.head) } : null };
+      // The agents whose text this tab wrote: each where its latest change ended (ticket am-25).
+      const written = [...agents.values()].filter(agent => agent.at).slice(-AGENT_CARETS).map(agent => {
+        const there = Y.relativePositionToJSON(agent.at!) as JsonValue;
+        return { author: agent.author, name: agent.name, caret: { anchor: there, head: there } };
+      });
+      told = { author: me, name: cut(scope.account), caret: now ? { anchor: at(now.anchor), head: at(now.head) } : null,
+        ...(written.length ? { agents: written } : {}) };
       telling ??= clock.setTimeout(() => { telling = undefined; if (!stopped && told !== undefined) room.setPresence?.(told); }, CARET_MS);
     }
     /** Others' carets in this tab's text: whoever says where theirs is in a copy of this file that this one has the words of. */
     function carets(): LiveCaret[] {
       if (!synced || discarded) return [];
       const out: LiveCaret[] = [];
-      for (const [peer, { access, state }] of peers) {
-        const said = state as { author?: unknown; name?: unknown; agent?: unknown; caret?: { anchor?: unknown; head?: unknown } | null } | null;
-        if (!said || typeof said !== "object" || !Number.isSafeInteger(said.author) || typeof said.name !== "string" || !said.caret) continue;
-        // Someone else's say: only a position in this file's text counts. A named root type is looked up only when it is this
-        // text's, as Yjs would make any other name a new empty type in this copy.
-        const at = (json: unknown) => {
-          if (!json || typeof json !== "object") return undefined;
-          const said = json as { tname?: unknown; type?: unknown };
-          if ((said.tname != null && said.tname !== "source") || said.type != null) return undefined;
-          try {
-            const found = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(json), doc);
-            return found?.type === text ? found.index : undefined;
-          } catch { return undefined; }
-        };
+      // Someone else's say: only a position in this file's text counts. A named root type is looked up only when it is this
+      // text's, as Yjs would make any other name a new empty type in this copy.
+      const at = (json: unknown) => {
+        if (!json || typeof json !== "object") return undefined;
+        const said = json as { tname?: unknown; type?: unknown };
+        if ((said.tname != null && said.tname !== "source") || said.type != null) return undefined;
+        try {
+          const found = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(json), doc);
+          return found?.type === text ? found.index : undefined;
+        } catch { return undefined; }
+      };
+      type Said = { author?: unknown; name?: unknown; agent?: unknown; caret?: { anchor?: unknown; head?: unknown } | null; agents?: unknown };
+      /** One caret said: who, by name and author id, and where; `agent` its program, none for a person. */
+      const read = (peer: string, said: Said | null, agent: (said: Said) => string | undefined) => {
+        if (!said || typeof said !== "object" || !Number.isSafeInteger(said.author) || typeof said.name !== "string" || !said.caret) return;
         const anchor = at(said.caret.anchor), head = at(said.caret.head);
-        if (anchor === undefined || head === undefined) continue;
-        const agent = access === "agent" ? (typeof said.agent === "string" ? cut(said.agent) : "") : undefined;
-        out.push({ peer, author: said.author as number, name: cut(said.name), ...(agent === undefined ? {} : { agent }), anchor, head });
+        if (anchor === undefined || head === undefined) return;
+        const program = agent(said);
+        out.push({ peer, author: said.author as number, name: cut(said.name), ...(program === undefined ? {} : { agent: program }), anchor, head });
+      };
+      for (const [peer, { access, state }] of peers) {
+        const said = state as Said | null;
+        read(peer, said, said => access === "agent" ? (typeof said.agent === "string" ? cut(said.agent) : "") : undefined);
+        // The agents whose text a tab wrote into the copy, where their latest change ended (ticket am-25), named as their commands name them.
+        if (access === "editor" && said && typeof said === "object" && Array.isArray(said.agents))
+          for (const written of (said.agents as unknown[]).slice(0, AGENT_CARETS))
+            if (written && typeof written === "object") read(`${peer}/${(written as Said).author}`, written as Said, said => cut(said.name as string));
+      }
+      // The agents whose text this tab wrote, drawn here too.
+      for (const agent of agents.values()) {
+        const index = agent.at && Y.createAbsolutePositionFromRelativePosition(agent.at, doc)?.index;
+        if (index !== undefined) out.push({ peer: `agent/${agent.author}`, author: agent.author, name: agent.name, agent: agent.name, anchor: index, head: index });
       }
       // Two participants naming the same author (or this tab's own id): one of them is not who it says, so neither tag takes anything back.
       const claims = new Map<number, number>();
@@ -558,7 +625,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           return;
         }
         if (kind !== REPLY && kind !== UPDATE) return;
-        Y.applyUpdate(doc, payload, kind === UPDATE && id !== me ? authorOrigin(id) : REMOTE);
+        // A frame naming an agent whose text this tab writes is not that agent's here: only this tab writes under its id.
+        const local = authors.get(id), agentHere = local !== undefined && agentIds.has(local.origin);
+        Y.applyUpdate(doc, payload, kind === UPDATE && id !== me && !agentHere ? authorOrigin(id) : REMOTE);
         // Caught up only by an answer to its own request: one to another tab's holds only what that tab lacked.
         if (kind === REPLY && theirs && id === me && !synced) void begin(true);
       } catch { /* A broken update is dropped; the next catch-up brings what it lacked. */ }

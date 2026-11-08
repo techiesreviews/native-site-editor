@@ -421,6 +421,14 @@ its number unused.
 - Spec: `tests/native-save/native-live-text.spec.ts`
 - Steps: none yet (needs two browsers signed in at once)
 
+### F-canvas-16 An agent's change joins the shared copy
+- Try: With live sharing switched on in two browsers (see F-canvas-15), open the same page in both with its code showing, connect an agent from one of them, and ask it to change a sentence while you type in the next one. Then hover the agent's caret in the code pane and click the undo at the end of its name tag.
+- Good: The agent's change and your typing both land, in both browsers, and both end with the very same text; typing elsewhere in the file while the agent works does not make it refuse its change (only a change where you typed is refused, with the words as they are now). In both browsers the agent's caret shows at the end of its change with its program's icon and name. Its name tag's undo takes back only the agent's words, in every browser, and leaves everyone else's; your Undo brings them back. No toast (S4). Carets on the page itself come with page typing together (slice 23).
+- Files: `src/live-text.ts`, `src/live-author.ts`, `src/agent-site.ts`, `src/agent-site-host.ts`, `src/agent-tools-edit.ts`, `shared/native-project.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-agent-merge.spec.ts`
+- Steps: none yet (needs two browsers signed in at once and a connected agent)
+
 ## Edit bar
 
 ### F-bar-01 Edit bar on the selection

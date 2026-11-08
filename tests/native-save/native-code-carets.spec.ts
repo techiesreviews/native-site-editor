@@ -47,8 +47,8 @@ async function typeInCode(page: Page, after: string, text: string, phone = false
 
 /** An agent connected over MCP (from a third tab, as the fixture's own account, with live sharing off) joins the page's
  * room as the relay lets agents in (a bearer token, from Node), and says it works in Claude Code (as `name`) with its
- * caret where `follow`'s is; with `claim`, it says it is that person's author id. Agents' own text joins the copy in a
- * later slice (am-25). */
+ * caret where `follow`'s is; with `claim`, it says it is that person's author id. An agent's own text joins the copy
+ * through the tab that receives its commands (am-25, native-agent-merge.spec.ts). */
 async function agentAt(browser: Browser, baseURL: string, follow: string, { name = "Claude Code", claim }: { name?: string; claim?: string } = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();

@@ -18,7 +18,7 @@ import { workingPart } from "../src/working-part";
 import { agentCommandFiles } from "../src/agent-tools";
 import { agentFileReader, type AgentReadPorts } from "../src/agent-tools-read";
 import { AgentRecordsError, indexedDbAgentRecords, type AgentRecords } from "../src/agent-records";
-import { applySiteCommand, atomicAgentCommand, prepareAgentText, type AgentSiteActions } from "../src/agent-site";
+import { applySiteCommand, atomicAgentCommand, prepareAgentText, preparedOn, type AgentSiteActions } from "../src/agent-site";
 import { createGuardedEdits, type EditorWorkspace, type GuardedEdits, type Reads } from "../src/guarded-edit";
 import type { AgentTextCommit } from "../src/editor-workspace";
 import { DraftStore, draftDatabaseName, indexedDbDrafts, draftKey } from "../src/drafts";
@@ -463,6 +463,19 @@ test("a stale edit_file prepared again after a race keeps its read too: an edit 
   assert.equal(ran.length, 2);
   assert.equal(ran[1].expectedHash, await textHash(newer));
   assert.equal(ran[1].content, newer.replace("Welcome", "Hi"));
+});
+
+test("each run of an edit_file carries the text its change was made on, so it can land on what the user typed since (am-25)", async () => {
+  const f = await fixture(), read = files["index.html"], now = read.replace("<main>\n", "<main>\n  <section>Added</section>\n");
+  f.context.drafts = f.context.drafts.filter(item => item.path !== "index.html");
+  f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(now), content: now });
+  const on: (string | undefined)[] = [];
+  const tools = createAgentEditTools({ workspace, records: f.records, ports: f.ports, run: async command => {
+    on.push(preparedOn.get(command));
+    return { message: "Applied.", result: { path: command.path } };
+  } });
+  await tools.run(request("edit_file", { path: "index.html", expectedHash: await textHash(read), edits: [{ oldText: "Welcome", newText: "Hi" }] }, "carries-read"), 0, () => true);
+  assert.deepEqual(on, [now], "the text now it was prepared on, not the agent's older read");
 });
 
 test("duplicate edit_file joins in flight and returns the receipt before re-reading a changed hash", async () => {

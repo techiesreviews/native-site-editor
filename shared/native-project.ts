@@ -261,6 +261,22 @@ export function minimalTextEdit(before: string, after: string): NativeTextEdit |
   return { start, end: before.length - tail, text: after.slice(start, after.length - tail) };
 }
 
+/**
+ * The change from `read` to `written`, made on `now` instead (ticket am-25): an agent's change lands like typing on a
+ * text someone changed since the agent's read, while what they changed lies apart from it. Each side is taken as its one
+ * smallest range; ranges that overlap, or two insertions at the same place, are a clash and give undefined.
+ */
+export function rebaseTextEdit(read: string, written: string, now: string): string | undefined {
+  if (now === read) return written;
+  const theirs = minimalTextEdit(read, written), others = minimalTextEdit(read, now)!;
+  if (!theirs) return now;
+  const apart = theirs.end <= others.start || others.end <= theirs.start;
+  const samePlace = theirs.start === theirs.end && others.start === others.end && theirs.start === others.start;
+  if (!apart || samePlace) return undefined;
+  const shift = others.start >= theirs.end ? 0 : others.text.length - (others.end - others.start);
+  return now.slice(0, theirs.start + shift) + theirs.text + now.slice(theirs.end + shift);
+}
+
 /** `html` with the attribute `name` (`content` of a meta tag) of the start tag `tag` set to `value`. */
 function withContent(html: string, tag: StartTag, value: string, name = "content") {
   const content = startTagAttribute(html, tag, name);
