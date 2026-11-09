@@ -5,7 +5,7 @@
     "reason": "Cloudflare loads the Worker default through wrangler main."
   },
   {
-    "file": "worker/preview-host.ts",
+    "file": "worker/preview-entry.ts",
     "name": "default",
     "reason": "Cloudflare loads the preview Worker's default through wrangler.preview-host.jsonc main."
   },

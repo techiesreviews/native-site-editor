@@ -128,3 +128,44 @@ test("on a phone, Share preview, the link's field, Copy and Turn preview off are
   await phone.close();
   expect(pageErrors).toEqual([]);
 });
+
+// A site in a folder of its address (fixtures/native-subfolder: https://user.github.io/my-site/) writes its addresses
+// with that folder: the preview takes it off to find the file, keeps the link's moves in the folder, and still answers
+// the same address without it (the fixture's `/components/components.js`).
+test("a site in a sub-folder previews with its folder's stylesheet, picture and page links", async ({ page: lex, browser, baseURL, context }) => {
+  test.setTimeout(120_000);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  lex.on("pageerror", (error) => pageErrors.push(error.message));
+  await lex.goto(`${baseURL}/#repo=532&branch=main&file=index.html`);
+  await expect(lex.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await expect(lex.frameLocator(".native-preview-frame").locator("h1")).toHaveText("Found where they are");
+  await lex.locator(".repository-menu__trigger").click();
+  await lex.getByRole("button", { name: "Share preview", exact: true }).click();
+  await expect(lex.getByRole("button", { name: "Turn preview off", exact: true })).toBeVisible();
+  const link = await lex.getByRole("textbox", { name: "Preview link" }).inputValue();
+  await lex.keyboard.press("Escape");
+
+  const customer = await browser.newContext();
+  const visitor = await customer.newPage();
+  visitor.on("pageerror", (error) => pageErrors.push(error.message));
+  await visitor.goto(link);
+  const site = visitor.frameLocator(".preview-visit__frame:not(.is-loading)");
+  await expect(site.locator("h1")).toHaveText("Found where they are", { timeout: 20_000 });
+  const frame = () => visitor.frames().find((each) => each.url().includes("/site/"))!;
+  // The stylesheet and the picture at /my-site/…, and the script without the folder.
+  await expect.poll(() => frame().evaluate(() => [...document.styleSheets].reduce((sum, sheet) => sum + sheet.cssRules.length, 0))).toBeGreaterThan(0);
+  await expect.poll(() => frame().evaluate(() => (document.querySelector("img") as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  expect(await frame().evaluate(async () => (await fetch("/components/components.js")).status)).toBe(200);
+  // A move stays in the folder.
+  expect(await frame().evaluate(async () => { const answer = await fetch("/my-site/notes/first-note", { redirect: "manual" }); return answer.type === "opaqueredirect" || answer.redirected ? "moved" : String(answer.status); })).toBe("moved");
+  // The page link with the folder opens the note.
+  await site.getByRole("link", { name: "First note" }).click();
+  await expect(site.locator("h1")).toHaveText("First note", { timeout: 20_000 });
+  expect(new URL(frame().url()).pathname).toMatch(/\/site\/my-site\/notes\/first-note\/$/);
+
+  await lex.locator(".repository-menu__trigger").click();
+  await lex.getByRole("button", { name: "Turn preview off", exact: true }).click();
+  await expect(lex.getByRole("button", { name: "Share preview", exact: true })).toBeVisible();
+  await customer.close();
+  expect(pageErrors).toEqual([]);
+});

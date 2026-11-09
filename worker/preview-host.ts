@@ -56,6 +56,11 @@ async function notNow(token: string) {
   const cached = await edgeCache()?.match(notNowKey(token)).catch(() => undefined);
   return cached?.status === 409 || cached?.status === 410 ? cached.status : undefined;
 }
+/** The link runs (or a socket got in): its remembered "not running" goes at once. */
+async function forgetNotNow(token: string) {
+  notNowMemo.delete(token);
+  await edgeCache()?.delete(notNowKey(token)).catch(() => undefined);
+}
 async function rememberNotNow(token: string, status: number) {
   notNowMemo.set(token, { status, until: Date.now() + NOT_NOW_MS });
   // Old entries go as new ones come, so the memo stays small.
@@ -95,14 +100,16 @@ async function route(request: Request, env: PreviewHostEnv, url: URL): Promise<R
     if (rejoin !== null) query.set("rejoin", rejoin);
     const upgrade = request.headers.get("Upgrade")?.toLowerCase() === "websocket";
     // A link not running or over answers its pages' looks from memory for a while: a link left open on a closed editor
-    // costs the editor's Worker and its Durable Object nothing then.
-    if (!upgrade) {
+    // costs the editor's Worker and its Durable Object nothing then. A page whose socket just closed asks afresh
+    // (`fresh`): the link may have been turned off, and that answer (410) replaces a remembered "not running".
+    if (!upgrade && !url.searchParams.has("fresh")) {
       const known = await notNow(link.token);
       if (known) return new Response(null, { status: known, headers: { "Cache-Control": "no-store" } });
     }
     // A fresh request: only the upgrade goes on, never the visitor's cookies, origin or address.
     const answer = await env.EDITOR.fetch(new Request(`https://editor.internal/api/live/visit?${query}`, { headers: upgrade ? { Upgrade: "websocket" } : {} }));
     if (!upgrade && (answer.status === 409 || answer.status === 410)) await rememberNotNow(link.token, answer.status);
+    else if (answer.status === 204 || answer.status === 101) await forgetNotNow(link.token);
     return answer;
   }
   // The site's own files come from the service worker; a request that reaches here has none running.
@@ -189,7 +196,3 @@ export function previewServiceWorker(scope: ServiceWorkerScope) {
 
 // The bundler may wrap functions inside it with `__name` (wrangler keeps names): the served file defines it.
 const PREVIEW_SERVICE_WORKER = `"use strict";\nvar __name = (target) => target;\n(${previewServiceWorker.toString()})(self);\n`;
-
-export default {
-  fetch: (request: Request, env: PreviewHostEnv) => previewHost(request, env),
-};

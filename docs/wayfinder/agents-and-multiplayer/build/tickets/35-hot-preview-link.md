@@ -74,3 +74,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - UX (looks off): F-repo-05 at 390 px the Branches flyout opens on top of the repository list and hides the repository row behind it (only "native-demo-user · private" shows), in light and dark; at 1280 it covers part of the page heading behind the menu (.scratch/ux/fleet-lead/20261109-010159-XAaPDd/editor-F-repo-05-390-light-branches-strip.webp)
 - UX (looks off): F-phone-03 at 390 px the top bar takes two rows (the project name on the first, then Undo, Redo, History and Publish on the second), where the mock-up's top bar is one row; Publish stays in view once the page has loaded (.scratch/ux/fleet-lead/20261109-010159-XAaPDd/editor-F-repo-01-390-light-open-strip.webp)
+
+### Second review fixes (2026-11-09)
+
+- A site in a folder of its address (`.editor/config.json` `site.url`, e.g. `https://user.github.io/my-site/`) previews: Lex's tab takes the folder off an asked address before choosing the file, puts it back on a move, and still answers the same address without it (`src/preview-serve.ts`).
+- Turning a link off while the preview Worker remembers "not running" shows "turned off" at once: a visitor's page whose socket closed, or that was just opened, asks afresh (`?fresh=1`), the editor's 410 replaces the remembered 409, and a running answer clears the memory.
+- A live reload scrolls the new frame back after it is shown, and again once its pictures still loading have finished, unless the visitor moved first (`src/preview-visit.ts`).
+- Share preview shows and copies the link once Lex's tab serves it (`servePreview` waits for the room, at most 10 s), so a link opened at once is running.
+- The preview Worker's entry is its own module, `worker/preview-entry.ts` (wrangler `main`): the Workers runtime takes every export of the entry for a handler and refused `worker/preview-host.ts`'s constants. `npx wrangler deploy --dry-run --config wrangler.preview-host.jsonc` binds EDITOR and ASSETS.
+- Tests: `tests/native-save/native-preview-link.spec.ts` shares `fixtures/native-subfolder` (its `/my-site/` stylesheet and picture, the script without the folder, a move kept in the folder, the note link); `tests/preview-host.test.ts` (a fresh look after turning off gets 410 and replaces the remembered 409; running clears it); `tests/preview-share.test.ts` (folder taken off, kept on moves, hidden files and look-alike folders refused); `tests/preview-routes.test.ts` (Miniflare with both Workers: a visitor's socket on `/s/<site>-<token>/live` spliced through the EDITOR binding into Lex's room, one frame each way).
+- Validation: `RESULT: ok unit 4102/4102 (270 files)`; `RESULT: ok specs 2/2 passed` (native-preview-link, native-share-live); `npm run check` and `npm run lint` clean; `RESULT: ok doctor 11/11 checks passed`.
+

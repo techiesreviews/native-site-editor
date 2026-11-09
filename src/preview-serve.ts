@@ -10,6 +10,8 @@ import type { LiveRoom, openLiveRoom } from "./live-room";
 import { randomId, sessionWire } from "./live-wire";
 import type { SiteFiles } from "./site-download";
 import { TEXT_PATH } from "../shared/agent";
+import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../shared/native-project";
+import { sitePathPrefix } from "../shared/site-path-prefix";
 import { PREVIEW_FILE_LIMIT, previewContentType, resolvePreviewPath, type HostMessage, type VisitorMessage } from "../shared/preview-link";
 
 /** How often the files visitors were sent are looked at again while someone is in. */
@@ -46,13 +48,35 @@ async function blobId(bytes: Uint8Array) {
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-1", whole)), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/** What answering `path` sends, and what it is made from (the file and its blob id), to tell later whether it changed. */
+// The site settings' text by blob, read once when the editor does not hold it.
+const settingsRead = new Map<string, Promise<string | undefined>>();
+/** The folder the site lives in on its own address (`.editor/config.json` `site.url`, e.g. `/my-site`), or "". */
+async function folderOf(site: SiteFiles) {
+  let text = site.held(NATIVE_CONFIG_PATH);
+  if (text === undefined) {
+    const sha = await site.blob(NATIVE_CONFIG_PATH);
+    if (sha) {
+      if (!settingsRead.has(sha)) settingsRead.set(sha, site.readTexts([sha]).then((texts) => texts[sha], () => { settingsRead.delete(sha); return undefined; }));
+      text = await settingsRead.get(sha);
+    }
+  }
+  return sitePathPrefix(nativeSiteSettings(text).url);
+}
+
+/** What answering `path` sends, and what it is made from (the file and its blob id), to tell later whether it changed.
+ * A site in a folder (`/my-site/…` on its own address) writes its addresses with that folder: it is taken off before
+ * the file is chosen, and put back on a move; the same address without it is answered too. */
 async function look(site: SiteFiles | undefined, path: string, withBody: boolean): Promise<{ made: string; answer: Omit<Extract<HostMessage, { t: "file" }>, "t" | "version" | "path" | "to"> }> {
   if (!site) return { made: "closed", answer: { status: 503 } };
   const paths = new Set(site.paths);
-  const found = resolvePreviewPath(path, (file) => paths.has(file));
+  const folder = await folderOf(site);
+  const inFolder = Boolean(folder) && (path === folder || path.startsWith(`${folder}/`));
+  const found = resolvePreviewPath(inFolder ? path.slice(folder.length) || "/" : path, (file) => paths.has(file));
   if (found.status === 400) return { made: "400", answer: { status: 400 } };
-  if (found.status === 301) return { made: `301:${found.location}`, answer: { status: 301, location: found.location } };
+  if (found.status === 301) {
+    const location = inFolder ? folder + found.location : found.location;
+    return { made: `301:${location}`, answer: { status: 301, location } };
+  }
   if (!found.file) return { made: "404", answer: { status: 404 } };
   const file = found.file, type = previewContentType(file);
   const held = site.held(file);
@@ -146,5 +170,9 @@ export async function servePreview(ports: ServePorts) {
     },
     onClosed: (why) => { end(); ports.closed(why); },
   });
+  // Back once this tab is in the room (or after 10 s): a link handed out now is running when it is opened.
+  let waited: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([room.ready().catch(() => undefined), new Promise((resolve) => { waited = setTimeout(resolve, 10_000); })]);
+  clearTimeout(waited);
   return { close: end };
 }

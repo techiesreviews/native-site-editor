@@ -3,7 +3,9 @@
 // off refused for good, with every socket in it closed.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { origin, repo, signIn, startWorker } from "./mcp-harness";
+import { build } from "esbuild";
+import { Miniflare, convertV4MiniflareOptions } from "miniflare";
+import { fakeGitHub, githubState, origin, repo, signIn, startWorker } from "./mcp-harness";
 import { LiveRooms, livePreviewObjectName, type LiveSocket } from "../worker/agent-relay";
 import { PREVIEW_TURNED_OFF } from "../shared/preview-link";
 
@@ -120,4 +122,69 @@ test("turning a preview off closes every socket in its instance with its own cod
   rooms.leave(lex, PREVIEW_TURNED_OFF);
   rooms.leave(visitor, PREVIEW_TURNED_OFF);
   assert.deepEqual([lex.closed, visitor.closed], [[PREVIEW_TURNED_OFF], [PREVIEW_TURNED_OFF]]);
+});
+
+// The editor's Worker and the preview Worker together, the preview's room spliced through its EDITOR binding as a fresh
+// request (worker/preview-host.ts): a visitor's socket on `/s/<site>-<token>/live` meets Lex's tab in the link's room.
+test("Miniflare: a visitor's socket on the preview address reaches the editor's room through the binding, frames both ways", async () => {
+  const bundle = async (entry: string) => (await build({
+    entryPoints: [entry], bundle: true, write: false, format: "esm", platform: "browser", conditions: ["workerd"], external: ["cloudflare:workers"], target: "es2022",
+  })).outputFiles[0].text;
+  const github = githubState();
+  const worker = new Miniflare(convertV4MiniflareOptions({
+    workers: [
+      {
+        name: "editor", modules: true, script: await bundle("worker/index.ts"), compatibilityDate: "2026-09-17", compatibilityFlags: ["enable_request_signal"],
+        durableObjects: { SESSIONS: { className: "SessionStore", useSQLite: true } },
+        bindings: { GITHUB_CLIENT_ID: "test", GITHUB_CLIENT_SECRET: "test", GITHUB_APP_SLUG: "test", PREVIEW_ORIGIN: previews },
+        outboundService: (request) => fakeGitHub(request, github),
+      },
+      {
+        name: "previews", modules: true, script: await bundle("worker/preview-entry.ts"), compatibilityDate: "2026-09-17",
+        serviceBindings: { EDITOR: "editor", ASSETS: async () => new Response("<!doctype html><title>Preview</title>") },
+      },
+    ],
+  }));
+  try {
+    const anna = await signIn(worker);
+    const minted = await worker.dispatchFetch(`${origin}/api/live/preview`, {
+      method: "POST", headers: { Origin: origin, Cookie: anna.cookie, "Content-Type": "application/json" }, body: JSON.stringify({ repo: repo.full_name, branch: "main", site: "starter" }),
+    });
+    const { token, host, link } = await minted.json() as { token: string; host: string; link: string };
+    const preview = await worker.getWorker("previews");
+    const path = new URL(link).pathname;
+    // Not running yet: the plain look through the preview Worker says so.
+    assert.equal((await preview.fetch(`${previews}${path}live`)).status, 409);
+
+    /** A socket's text and binary frames, accepted at once. */
+    const open = (response: { status: number; webSocket: WebSocket | null }) => {
+      assert.equal(response.status, 101);
+      const socket = response.webSocket!;
+      const got: (string | Uint8Array)[] = [];
+      socket.addEventListener("message", (event) => got.push(typeof event.data === "string" ? event.data : new Uint8Array(event.data as ArrayBuffer)));
+      socket.accept();
+      return { socket, got };
+    };
+    const lex = open(await worker.dispatchFetch(`${origin}/api/live/preview?${new URLSearchParams({ token, repo: repo.full_name, host })}`, { headers: { Upgrade: "websocket", Origin: origin, Cookie: anna.cookie } }) as never);
+    // Running now, and its socket through the preview Worker carries the visitor's cookie to nobody.
+    assert.equal((await preview.fetch(`${previews}${path}live?fresh=1`)).status, 204);
+    const visitor = open(await preview.fetch(`${previews}${path}live`, { headers: { Upgrade: "websocket", Cookie: "ase_session=secret" } }) as never);
+    const welcomed = (got: (string | Uint8Array)[]) => got.some((frame) => typeof frame === "string" && JSON.parse(frame).type === "welcome");
+    for (const started = Date.now(); !welcomed(visitor.got) || !welcomed(lex.got);) {
+      if (Date.now() - started > 3_000) assert.fail("no welcome on both sockets");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const binary = (got: (string | Uint8Array)[]) => got.filter((frame): frame is Uint8Array => typeof frame !== "string");
+    // The relay forwards frames unread, the sender's peer id (16 bytes) in front.
+    lex.socket.send(Uint8Array.of(1, 2, 3));
+    visitor.socket.send(Uint8Array.of(7, 8, 9));
+    for (const started = Date.now(); !binary(visitor.got).length || !binary(lex.got).length;) {
+      if (Date.now() - started > 3_000) assert.fail("no frame through the splice");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.deepEqual([...binary(visitor.got)[0].subarray(16)], [1, 2, 3]);
+    assert.deepEqual([...binary(lex.got)[0].subarray(16)], [7, 8, 9]);
+    lex.socket.close(1000);
+    visitor.socket.close(1000);
+  } finally { await worker.dispose(); }
 });

@@ -159,6 +159,18 @@ async function run(base: string, token: string, rawKey: string) {
       return { href: view.location.href, x: view.scrollX, y: view.scrollY };
     } catch { return undefined; }
   };
+  /** Calls `restore` once the frame's pictures still loading have finished (at most 3 s), unless the visitor moved first. */
+  function settleScroll(shown: HTMLIFrameElement, restore: () => void) {
+    let doc: Document | undefined;
+    try { doc = shown.contentDocument ?? undefined; } catch { return; }
+    const pending = [...doc?.images ?? []].filter((image) => !image.complete);
+    if (!doc || !pending.length) return;
+    let moved = false;
+    const stop = () => { moved = true; };
+    for (const type of ["wheel", "touchstart", "keydown", "pointerdown"]) doc.addEventListener(type, stop, { once: true, passive: true });
+    const done = pending.map((image) => new Promise((resolve) => { image.addEventListener("load", resolve, { once: true }); image.addEventListener("error", resolve, { once: true }); }));
+    void Promise.race([Promise.all(done), new Promise((resolve) => setTimeout(resolve, 3_000))]).then(() => { if (!moved && frame === shown) restore(); });
+  }
   /** Draws the page again where the visitor was: the new frame loads behind the old one, then takes its place. */
   function redraw() {
     if (!frame) return;
@@ -168,11 +180,17 @@ async function run(base: string, token: string, rawKey: string) {
     next.classList.add("is-loading");
     next.addEventListener("load", () => {
       if (drawing !== next) return;
-      try { next.contentWindow?.scrollTo(at.x, at.y); } catch { /* Not the site's page. */ }
+      // Scrolled while hidden (so it never shows its top), then again once shown, and once more as pictures still
+      // loading finish and move the page, unless the visitor scrolled meanwhile.
+      const restore = () => { try { next.contentWindow?.scrollTo(at.x, at.y); } catch { /* Not the site's page. */ } };
+      restore();
       frame?.remove();
       frame = next;
       drawing = undefined;
       next.classList.remove("is-loading");
+      restore();
+      requestAnimationFrame(restore);
+      settleScroll(next, restore);
       titled(next);
       next.addEventListener("load", () => titled(next));
       if (drawAgain) { drawAgain = false; redraw(); }
@@ -198,16 +216,26 @@ async function run(base: string, token: string, rawKey: string) {
   }
   document.addEventListener("visibilitychange", () => { if (!document.hidden && !room && !ended) { clearTimeout(look); join(); } });
 
-  // A plain look first (no socket): running (204), not now (409), over (410) or broken (400).
+  // A plain look first (no socket): running (204), not now (409), over (410) or broken (400). After a socket closed the
+  // look is fresh: the preview Worker asks the editor rather than answer a remembered "not running", as the link may
+  // just have been turned off.
+  // The page's first look is fresh too: it was just opened, maybe moments after the link was made.
+  let fresh = true;
   const connect = async (url: string): Promise<LiveRoomSocket> => {
-    const status = await fetch(`${base}/live`, { cache: "no-store" }).then((response) => response.status, () => 0);
+    const asked = fresh;
+    fresh = false;
+    const status = await fetch(`${base}/live${asked ? "?fresh=1" : ""}`, { cache: "no-store" }).then((response) => response.status, () => 0);
     if (status === 400 || status === 409 || status === 410) throw new LiveRoomClosed("", status);
     if (status !== 204) throw new Error("The preview could not be reached.");
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(new URL(url, location.href).href.replace(/^http/, "ws"));
       socket.binaryType = "arraybuffer";
       const failed = () => reject(new Error("The preview could not be reached."));
-      socket.addEventListener("open", () => { socket.removeEventListener("close", failed); resolve(socket); }, { once: true });
+      socket.addEventListener("open", () => {
+        socket.removeEventListener("close", failed);
+        socket.addEventListener("close", () => { fresh = true; }, { once: true });
+        resolve(socket);
+      }, { once: true });
       socket.addEventListener("close", failed, { once: true });
     });
   };

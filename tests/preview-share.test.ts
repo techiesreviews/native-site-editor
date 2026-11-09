@@ -144,6 +144,30 @@ test("a file visitors were sent that changed makes a new version; the branch's c
   assert.equal(room.sent.at(-1), changed);
 });
 
+test("a site in a folder of its address is answered with and without the folder, and its moves stay in it", async () => {
+  const site = siteFiles({
+    ".editor/config.json": '{ "site": { "url": "https://user.github.io/my-site/" } }',
+    "index.html": "<h1>Found</h1>", "styles/site.css": "h1 {}", "notes/first-note/index.html": "<h1>First note</h1>",
+  });
+  const room = await serving(() => site);
+  const answers = () => room.sent.filter((message): message is Extract<HostMessage, { t: "file" }> => message.t === "file");
+  const paths = ["/my-site/styles/site.css", "/styles/site.css", "/my-site", "/my-site/notes/first-note", "/my-site/.editor/config.json", "/my-sitex/styles/site.css"];
+  for (const [index, path] of paths.entries()) {
+    await room.get(path);
+    await until(() => answers().length > index, `the answer for ${path}`);
+  }
+  assert.deepEqual(answers().map((file) => [file.path, file.status, file.location ?? null]), [
+    ["/my-site/styles/site.css", 200, null],
+    ["/styles/site.css", 200, null],
+    ["/my-site", 200, null],
+    ["/my-site/notes/first-note", 301, "/my-site/notes/first-note/"],
+    ["/my-site/.editor/config.json", 404, null],
+    ["/my-sitex/styles/site.css", 404, null],
+  ]);
+  assert.equal(Buffer.from(answers()[0].body!, "base64").toString(), "h1 {}");
+  room.served.close();
+});
+
 test("visitors asking for the same file at once get one answer, addressed to them both", async () => {
   let release!: () => void;
   const ready = new Promise<void>((resolve) => { release = resolve; });
