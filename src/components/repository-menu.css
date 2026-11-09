@@ -140,6 +140,11 @@
   margin-top: 6px;
 }
 
+/* Preview link and Edit together: their own group, set apart by space and a title, not a line. */
+.repository-menu__shares {
+  margin-block-start: 12px;
+}
+
 .repository-menu__heading {
   display: flex;
   align-items: center;

@@ -149,3 +149,11 @@ test("Edit together's row that fails to load once loads on the next open of the 
   });
   assert.deepEqual(drawn, { tries: 2, item: "Edit together" });
 }));
+
+test("the share rows sit under their own 'Share' title, as the menu's other groups do, with no line above them", () => inBrowser(async page => {
+  const group = page.locator(".repository-menu__shares");
+  await group.locator(".share-row__main").first().waitFor();
+  assert.equal(await group.locator(".repository-menu__heading").textContent(), "Share");
+  const lines = await group.evaluate((element) => [element, ...element.querySelectorAll(".share-rows")].map((node) => getComputedStyle(node).borderTopWidth));
+  assert.ok(lines.every((width) => width === "0px"), `no line above the rows: ${lines.join(", ")}`);
+}));

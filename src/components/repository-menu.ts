@@ -147,11 +147,16 @@ export function createRepositoryMenu(options: {
   actions.append(siteSlot);
   if (options.onSiteSettings) actions.append(button("Site settings", options.onSiteSettings, actionClass));
   // Preview link and Edit together (ticket 58): one row each, loaded on the menu's first open (src/shares-later.ts),
-  // drawn into these places. A load that fails is tried again on the next open.
+  // drawn into these places, under their own "Share" title as the menu's other groups have (Lex, 2026-11-09: spacing,
+  // no line). A load that fails is tried again on the next open.
+  const shareGroup = node("div", "repository-menu__shares");
+  const shareTitle = node("div", "repository-menu__heading");
+  shareTitle.append(node("span", "", "Share"));
+  shareGroup.append(shareTitle);
   const shares = [options.preview, options.share].filter((port): port is SharesMenuPort => port !== undefined).map((port) => {
     const place = node("div");
     place.hidden = true;
-    actions.append(place);
+    shareGroup.append(place);
     port.tile(trigger);
     let drawn: ReturnType<SharesMenuPort["draw"]> | undefined;
     return {
@@ -159,6 +164,7 @@ export function createRepositoryMenu(options: {
       destroy() { void drawn?.then((row) => row.destroy(), () => undefined); },
     };
   });
+  if (shares.length) actions.append(shareGroup);
   const agentSlot = node("div", "repository-menu__agent");
   agentSlot.id = "agent-menu";
 
