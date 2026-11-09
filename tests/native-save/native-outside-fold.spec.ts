@@ -115,3 +115,18 @@ for (const [name, answer] of [["fails", "abort"], ["never answers", "hold"]] as 
     await stillMarked(page);
   });
 }
+
+test("the author read answering after the fold is done changes nothing: the chip keeps naming Someone", async ({ page, baseURL }) => {
+  let release: (() => Promise<void>) | undefined;
+  await page.route("**/api/commit?*", (route) => { release = () => route.fulfill({ json: { files: [], truncated: false, author: "Sam" } }); });
+  await samPushes(page, baseURL, indexSource.replace(filler, "Sam wrote this on GitHub."));
+  await expect(chip(page)).toContainText("Someone · GitHub");
+  const before = { revision: await page.locator("#revision").textContent(), page: await frame(page).locator("body").innerText() };
+  expect(release).toBeDefined();
+  await release!();
+  // fixed-wait: a late answer would rename the chip or touch the page right after it lands; nothing marks its absence.
+  await page.waitForTimeout(500);
+  await expect(chip(page)).toContainText("Someone · GitHub");
+  expect(await page.locator("#revision").textContent()).toBe(before.revision);
+  expect(await frame(page).locator("body").innerText()).toBe(before.page);
+});

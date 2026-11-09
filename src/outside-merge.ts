@@ -10,7 +10,8 @@
 // - A true clash (the same words changed on both sides: lines both changed are merged again by word) shows the latest
 //   version: GitHub's words replace Lex's there as one Undo step of their own, so one Undo brings Lex's words back. No
 //   question and no message.
-// - In a live room (src/live-text.ts `takeOutside`) the change enters the shared copy as one more participant.
+// - In a live room (src/live-text.ts `takeOutside`) the change enters the shared copy as one more participant when it
+//   merges with no clash; otherwise the draft merges as above and the copy starts again from the new text.
 // - The page shown gets a brief outline and a chip naming the commit's author where its text changed
 //   (src/agent-presence.ts `visit`); another changed page gets the dot on its row.
 //
@@ -278,14 +279,14 @@ export function foldFile(store: DraftTextStore, scope: DraftScope, path: string,
   if (!file && record) file = store.open(scope, path, { text: record.original, baseSha: record.baseSha }).file;
   if (!file) return;
   const merged = mergeText(file.base, file.text, theirs);
-  const shared = takeOutside(store, file.key, { base: file.base, sha, changes: wordChanges(file.base, theirs) });
-  // The non-clashing outside change, as someone else's: Lex's steps over the file move past it. In a live room the
-  // copy brought the change already; on a clash the draft takes Lex's words back here (the copy not: the step below
-  // moves the copy from what it holds straight to the latest), so the step's Undo brings back his words alone.
-  if (!shared || merged.clashed) store.edit({ scope, path, text: merged.mine, record: false, origin: "shared", rebase: rebaseHistory });
+  // In a live room the copy takes the change when it merges with no clash and lands where the merge says.
+  const shared = takeOutside(store, file.key, { base: file.base, sha, changes: wordChanges(file.base, theirs),
+    expect: copy => { const into = mergeText(file!.base, copy, theirs); return into.clashed ? undefined : into.text; } });
+  // The non-clashing outside change, as someone else's: Lex's steps over the file move past it.
+  if (!shared) store.edit({ scope, path, text: merged.mine, record: false, origin: "shared", rebase: rebaseHistory });
   store.acceptBase(scope, path, { text: theirs, baseSha: sha });
   // An open code pane compares with GitHub's new text from now on (src/components/source-editor.ts `sourceMoved`).
   moved?.(file.key, theirs, sha);
   // The clash: the latest version shows, Lex's words one Undo away.
-  if (merged.clashed) store.edit({ scope, path, history: history(), label: `${author.split(" · ")[0]}'s change`, text: merged.text });
+  if (merged.clashed && !shared) store.edit({ scope, path, history: history(), label: `${author.split(" · ")[0]}'s change`, text: merged.text });
 }
