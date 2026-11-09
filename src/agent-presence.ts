@@ -24,7 +24,7 @@ import { readSource, type SourceNode, type SourceTree } from "./page-builder/sou
  * alone), named `name`, in colour `colour` (an index into AGENT_COLOURS), its chip orange while `asking`.
  * `who`: whose latest change to the page its chip's Undo puts back (ticket am-49).
  */
-export interface AgentMark { key: string; who: AgentWho; name: string; colour: number; path: string; node?: number[]; asking: boolean; pinned?: boolean; fade?: boolean }
+export interface AgentMark { key: string; who: AgentWho; name: string; colour: number; path: string; node?: number[]; asking: boolean; pinned?: boolean; fade?: number }
 /** An agent the MCP menu lists as working now (ticket am-12): who, as a mark names it, and when it leaves the list
  * unless it works again (none while it is at work or asking). */
 export interface WorkingAgent { key: string; who: AgentWho; name: string; colour: number; asking: boolean; until?: number }
@@ -166,7 +166,8 @@ export function createAgentPresence(ports: AgentPresencePorts) {
   }
   // A commit made outside the editor (ticket am-33, src/outside-merge.ts): its author on the element it changed, for a
   // moment. Not an agent: never listed, never stopped, its chip offers no Undo.
-  let visits: { mark: AgentMark; at: Hold }[] = [];
+  // `fade`: each visit's own number, so a second push to the same page within its hold fades in again from the start.
+  let visits: { mark: AgentMark; at: Hold }[] = [], visited = 0;
   let painted = "";
   // `again`: a load began, whose views may have dropped what was painted: marks still shown are painted again.
   function refresh(again = false) {
@@ -285,7 +286,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     stopsChanged: () => { name(); refresh(); },
     /** `name` changed page `path` outside the editor, at its element `node`: its outline and chip show for `ms`. */
     visit(path: string, node: number[] | undefined, name: string, ms: number) {
-      const visit = { mark: { key: `outside:${path}`, who: { grant: "outside", name }, name, colour: 3, path, ...(node ? { node } : {}), asking: false, fade: true }, at: ports.begin() };
+      const visit = { mark: { key: `outside:${path}`, who: { grant: "outside", name }, name, colour: 3, path, ...(node ? { node } : {}), asking: false, fade: ++visited }, at: ports.begin() };
       visits = [...visits.filter(old => old.mark.key !== visit.mark.key), visit];
       refresh();
       setTimeout(() => { visits = visits.filter(old => old !== visit); refresh(); }, ms);

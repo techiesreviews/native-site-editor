@@ -25,7 +25,8 @@ import { readSiteTexts } from "./native-boot";
 import { readSource } from "./page-builder/source-tree";
 import { MAX_BATCH_FILES } from "../shared/types";
 
-/** How long the author's outline and chip stay on the page. */
+/** How long the author's outline and chip stay on the page; the frame's fade (src/components/native-preview-runtime.js,
+ * drawPresence) lasts as long: change both together. */
 export const OUTSIDE_MARK_MS = 2_600;
 /** Past this many line differences one side is taken as a single change (Myers' trace grows with its square). */
 const MAX_LINE_EDITS = 2_000;
@@ -192,29 +193,29 @@ export async function foldIn(ports: Ports, host: OutsideHost, commit: string, li
     if (!old || old.mode !== entry.mode) return false;
     if (old.sha !== entry.sha) changed.push(entry);
   }
-  const drafts = new Map(host.drafts().list(scope).map(draft => [draft.path, draft]));
-  if (changed.length > MAX_BATCH_FILES || changed.some(entry => !isNativeTextFile(entry.path) || (drafts.has(entry.path) && unmergeable(drafts.get(entry.path)!))))
-    return false;
+  // The drafts as they are now: read again after the files' read, as Lex may delete or move a page meanwhile.
+  const draftsNow = () => new Map(host.drafts().list(scope).map(draft => [draft.path, draft]));
+  const mergeable = (drafts: Map<string, SavedDraft>) => !changed.some(entry => drafts.has(entry.path) && unmergeable(drafts.get(entry.path)!));
+  if (changed.length > MAX_BATCH_FILES || changed.some(entry => !isNativeTextFile(entry.path)) || !mergeable(draftsNow())) return false;
   const { texts, unreadable } = await readSiteTexts(changed, shas => ports.readFiles(repo.full_name, shas));
   if (!live()) return true;
-  if (unreadable.length || texts.size !== changed.length) return false;
+  const drafts = draftsNow();
+  if (unreadable.length || texts.size !== changed.length || !mergeable(drafts)) return false;
 
   const author = `${made?.author || "Someone"} · GitHub`, store = ports.editorModule.sourceStore();
-  const shown: { path: string; before: string; after: string }[] = [];
-  for (const entry of changed) {
-    const theirs = texts.get(entry.path)!, draft = drafts.get(entry.path);
-    const before = ports.runtime.source(entry.path);
-    foldFile(store, scope, entry.path, draft, theirs, entry.sha, () => ports.nativeHistorySession(scope, entry.path), author, ports.editorModule.sourceMoved);
-    if (before !== undefined) shown.push({ path: entry.path, before, after: ports.runtime.source(entry.path) ?? theirs });
-  }
+  const shown = new Map(changed.flatMap(entry => { const text = ports.runtime.source(entry.path); return text === undefined ? [] : [[entry.path, text] as const]; }));
+  for (const entry of changed)
+    foldFile(store, scope, entry.path, drafts.get(entry.path), texts.get(entry.path)!, entry.sha, () => ports.nativeHistorySession(scope, entry.path), author, ports.editorModule.sourceMoved);
   // GitHub's texts are the base now: the preview, and every file without a draft, show them.
   const result: PublishResult = { commit: next.commit, branch: scope.branch, url: "", files: changed.map(({ path, sha }) => ({ path, sha })), unchanged: false };
   ports.runtime.adoptSaved(scope, result, changed.map(entry => ({ ...scope, version: 1, path: entry.path, baseSha: entry.sha, original: texts.get(entry.path)!, content: texts.get(entry.path)!, updatedAt: 0 })));
   host.adopt(next);
   host.seeHead(next.commit);
   host.showSaved(next.commit);
+  // Each page's text before and after, read once every layer (pane, draft, base) has taken the change.
   const pages = new Set(Object.values(ports.runtime.site?.routes ?? {}));
-  for (const file of shown) if (pages.has(file.path)) ports.agentPresence.visit(file.path, changedNode(file.before, file.after), author, OUTSIDE_MARK_MS);
+  for (const [path, was] of shown) if (pages.has(path))
+    ports.agentPresence.visit(path, changedNode(was, ports.runtime.source(path) ?? texts.get(path)!), author, OUTSIDE_MARK_MS);
   return true;
 }
 
@@ -225,6 +226,7 @@ export async function foldIn(ports: Ports, host: OutsideHost, commit: string, li
 export function foldFile(store: DraftTextStore, scope: DraftScope, path: string, record: SavedDraft | undefined, theirs: string, sha: string,
   history: () => string, author: string, moved?: (key: string, source: string, sha: string) => void) {
   let file = store.get(scope, path);
+  // A draft only on record opens in the store to merge, and stays open there (deliberately): its Undo step needs it.
   if (!file && record) file = store.open(scope, path, { text: record.original, baseSha: record.baseSha }).file;
   if (!file) return;
   const merged = mergeText(file.base, file.text, theirs);

@@ -4387,7 +4387,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       drawBox(pair.box, target);
       if (pair.box.style.display === "none") { pair.chip.style.display = "none"; return; }
       pair.box.style.border = "2px solid " + agent.color;
-      // An outside change's author (ticket am-33): held, then faded out, once per mark; still under reduced motion.
+      // An outside change's author (ticket am-33): held, then faded out, once per visit (`fade`, its number); still under
+      // reduced motion. 2600 ms is OUTSIDE_MARK_MS (src/outside-merge.ts), the editor's hold: change both together.
       if (pair.box.__fade !== agent.fade) {
         pair.box.__fade = agent.fade;
         [pair.box, pair.chip].forEach(function (el) {
@@ -4588,7 +4589,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
           name: typeof agent.name === "string" && agent.name ? agent.name.slice(0, 60) : "Agent", bare: agent.bare === true,
           token: typeof agent.token === "string" ? agent.token : "", change: typeof agent.change === "string" ? agent.change : "",
           undo: typeof agent.token === "string" && typeof agent.change === "string" && (agent.undo === "ready" || agent.undo === "undone" || agent.undo === "busy") ? agent.undo : "",
-          problem: typeof agent.problem === "string" ? agent.problem.slice(0, 300) : "", fade: agent.fade === true };
+          problem: typeof agent.problem === "string" ? agent.problem.slice(0, 300) : "", fade: typeof agent.fade === "number" ? agent.fade : 0 };
       });
       drawPresence();
       return;
