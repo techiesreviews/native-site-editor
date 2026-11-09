@@ -162,9 +162,10 @@ export function createRepositoryMenu(options: {
   actions.append(siteSlot);
   if (options.onSiteSettings) actions.append(button("Site settings", options.onSiteSettings, actionClass));
   // Share to edit's items load on the menu's first open (src/components/share-menu.ts), into these places: the menu,
-  // and beside the tile for the guests' chips.
+  // and beside the tile for the guests' chips. A load that fails is tried again on the next open.
   const shareRoot = options.share && node("div", "repository-menu__share");
   const peopleSlot = options.share && node("span");
+  if (peopleSlot) peopleSlot.hidden = true;
   let share: ReturnType<ShareMenuPort["draw"]> | undefined;
   if (shareRoot) { shareRoot.hidden = true; actions.append(shareRoot); }
   const showShare = () => {
@@ -173,7 +174,7 @@ export function createRepositoryMenu(options: {
       shareRoot.replaceWith(items.root);
       peopleSlot!.replaceWith(items.people);
       return items;
-    })).then((items) => items.refresh());
+    })).then((items) => items.refresh(), () => { share = undefined; });
   };
   // Share preview's items load after the first paint (src/components/preview-menu.ts); drawn on the menu's first open.
   const previewRoot = options.preview && node("div", "repository-menu__preview");

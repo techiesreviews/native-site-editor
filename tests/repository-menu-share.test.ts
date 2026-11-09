@@ -107,3 +107,25 @@ test("while sharing starts the item keeps the keyboard's focus; guests show by i
   });
   assert.equal(await page.locator(".repository-menu__share").isHidden(), true);
 }));
+
+test("Share to edit's items that fail to load once load on the next open of the menu", () => inBrowser(async page => {
+  const drawn = await page.evaluate(async () => {
+    const scope = globalThis as never as { menuFactory: typeof createRepositoryMenu; items: typeof shareItems };
+    const port: Port = { state: () => ({ sharing: false }), available: () => true, start: async () => undefined, stop() {}, watch: () => () => undefined };
+    let tries = 0;
+    const menu = scope.menuFactory({ installUrl: null, accounts: [], onReload() {}, onAccessChanged() {}, onSwitchAccount() {}, onSignOut() {},
+      share: { available: () => true, draw: async (actionClass) => { if (++tries === 1) throw new Error("chunk failed"); return scope.items(port, actionClass); } } });
+    const holder = document.createElement("div");
+    holder.className = "second";
+    holder.append(menu.root);
+    document.body.append(holder);
+    menu.setRepository({ id: 2, name: "cafe", full_name: "lex/cafe", private: false, owner: { login: "lex", type: "User" } } as never);
+    menu.open();
+    for (let wait = 0; wait < 5; wait++) await Promise.resolve();
+    menu.close();
+    menu.open();
+    for (let wait = 0; wait < 5; wait++) await Promise.resolve();
+    return { tries, item: holder.querySelector(".repository-menu__share-item")?.textContent };
+  });
+  assert.deepEqual(drawn, { tries: 2, item: "Share to edit" });
+}));
