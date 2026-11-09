@@ -55,6 +55,8 @@
   font: var(--type-small) var(--font-mono);
   text-overflow: ellipsis;
 }
+/* 16px keeps a phone from zooming in when the field is focused. */
+@media (pointer: coarse) { .repository-menu__preview-field { font-size: max(16px, var(--type-base)); } }
 .repository-menu__preview-field:focus-visible {
   outline: var(--focus-ring);
   outline-offset: 1px;
