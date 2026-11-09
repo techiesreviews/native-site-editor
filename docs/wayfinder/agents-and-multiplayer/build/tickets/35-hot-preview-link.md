@@ -138,3 +138,66 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation gaps (gap): R5-7: asserts in `tests/preview-host.test.ts` that `bytes=0-` on a 0-byte file and `bytes=-0` on a 100-byte file both answer 416 with `Content-Range: bytes */<size>`.
 - Validation gaps (gap): R5-8: a spec where two editor tabs serve one link and the tab the visitor took the site from is closed.
 - UX round 6: Share preview measures at least 44 px tall in a 390 px window with a mouse too, as the screenshots take it (`tests/native-save/native-preview-link.spec.ts`).
+- Validation gaps (gap): R13-54 still open: R2-4, R2-5 and the R5-13 group still have no tests.
+- Validation gaps (gap): R13-53 still open: nothing checks the visitor's `scrollY` after an edit or after a slow picture loads.
+- Validation gaps (gap): R13-52 still open: there is still no fake-timer test where `ready()` never settles.
+- Validation gaps (gap): R13-51 still open: no test resolves the `serve` seam by hand.
+- Validation gaps (gap): R13-50 still open: there are still no 416 asserts for `bytes=0-` on a 0-byte file or for `bytes=-0` on a 100-byte file.
+- Validation gaps (gap): R13-49 still open: there is still no spec with two editor tabs serving one link where the visitor's source tab is then closed.
+- Validation gaps (gap): R13-48 still open: the other order of the `lost` path is still untested (R12-2).
+- Validation gaps (gap): R13-47 still open: there is still no unit test with a fake `openLiveRoom` (R12-1).
+- Validation gaps (gap): R13-46 still open: this is a summary line. Nothing changed since the last round, so every carried-over gap stands.
+- Validation gaps (gap): R13-45 still open: there is still no unit test with a fake `openLiveRoom` checking that the visitor sends no `hi`, then exactly one `hi`, then no second `hi`.
+- Validation gaps (gap): R13-44 still open: the `lost` path is still tested in only one order, and no case holds the old server-side socket open.
+- Validation gaps (gap): R13-43 still open: the spec still has one tab reconnecting, not two serving tabs where the visitor's source tab is closed.
+- Validation gaps (gap): R13-42 still open: there are still no 416 asserts for `bytes=0-` on a 0-byte file or for `bytes=-0` on a 100-byte file.
+- Validation gaps (gap): R13-41 still open: no test resolves the `serve` seam by hand.
+- Validation gaps (gap): R13-40 still open: there is still no fake-timer test where `ready()` never settles.
+- Validation gaps (gap): R13-39 still open: no spec checks the visitor's `scrollY`.
+- Validation gaps (gap): R13-38 still open: R2-4 and R2-5 still have no tests.
+- Validation gaps (gap): R13-37 still open: this is a summary line, and every R8 gap it lists is still open.
+- Validation gaps (gap): R13-36 still open: the handover between two serving tabs is still untested.
+- Validation gaps (gap): R13-35 still open: there are still no 416 asserts for an empty range or for `bytes=-0`.
+- Validation gaps (gap): R13-34 still open: nothing tests Share preview waiting for `startServing`.
+- Validation gaps (gap): R13-33 still open: nothing tests the 10 s limit in `servePreview`.
+- Validation gaps (gap): R13-32 still open: nothing tests `settleScroll` or the scroll restores.
+- Validation gaps (gap): R13-31 still open: R2-4 and R2-5 still have no tests.
+- Validation gaps (gap): R13-30 still open: this is a summary line, and its gaps are still open.
+- Validation gaps (gap): R13-29 still open: none of the R5-13 group of tests was added.
+- Validation gaps (gap): R13-28 still open: R2-4 and R2-5 still have no tests.
+- Previous findings (P3): R13-27 still open: `src/preview-serve.ts` still sends `hello` to the whole room for every `hi`, so visitors still reload once for each visitor that moved.
+- Previous findings (P3): R13-26 still open: `src/preview-serve.ts` is unchanged. If the editor and the preview Worker run different builds, files still fail with no reason given.
+- Previous findings (P3): R13-25 still open: `tests/preview-menu.test.ts` is unchanged, and the three `globalThis as never as` casts still have no comment.
+- Validation gaps (gap): R13-24 still open: there is still no spec with two serving tabs where the visitor's source tab is closed.
+- Validation gaps (gap): R13-23 still open: `tests/preview-host.test.ts` is unchanged.
+- Previous findings (P3): R13-22 still open: `src/preview-control.ts` is unchanged, so a refusal that arrives while `start()` waits is still overwritten.
+- Previous findings (P3): R13-21 still open: `src/preview-serve.ts` is unchanged, so `/my-site` still answers 200 where a static host answers 301. The author has not declined this one.
+- Validation gaps (gap): R13-20 still open: `tests/preview-share.test.ts` is unchanged.
+- Validation gaps (gap): R13-19 still open: there is still no fake-timer test where `ready()` never settles.
+- Validation gaps (gap): R13-18 still open: the spec still never checks `scrollY`.
+- Validation gaps (gap): R13-17 still open: R2-4 and R2-5 still have no tests.
+- Validation gaps (gap): R13-16 still open: this is a summary line, and none of its gaps is closed.
+- Validation gaps (gap): R13-15 still open: R2-4 and R2-5 still have no tests.
+- Validation gaps (gap): R13-14 still open: nothing tests `settleScroll` or the scroll restores.
+- Validation gaps (gap): R13-13 still open: nothing tests the 10 s limit in `servePreview`.
+- Validation gaps (gap): R13-12 still open: nothing tests Share preview waiting for `startServing`.
+- Validation gaps (gap): R13-11 still open: there is still no 416 test.
+- Validation gaps (gap): R13-10 still open: the visitor moving between two serving tabs is still untested.
+- Validation gaps (gap): R13-9 still open: this is a summary line, and none of its R7 gaps has a test.
+- Validation gaps (gap): R13-8 still open: this is a summary line, and every R9 gap it lists is still open.
+- Validation gaps (gap): R13-7 still open: R2-4 and R2-5 still have no tests.
+- Validation gaps (gap): R13-6 still open: no spec checks the visitor's `scrollY`.
+- Validation gaps (gap): R13-5 still open: there is still no fake-timer test where `ready()` never settles.
+- Validation gaps (gap): R13-4 still open: no test resolves the `serve` seam by hand.
+- Validation gaps (gap): R13-3 still open: `tests/preview-host.test.ts` is unchanged, so there are still no 416 asserts.
+- Validation gaps (gap): R13-2 still open: there is still no spec where two editor tabs serve one link and the visitor's source tab is closed.
+- Validation gaps (gap): R13-1 still open: HEAD is still 97e76acd4, so there is no new code. The carried-over R11 gaps have no tests yet.
+- Validation gaps (gap): No new gaps. HEAD (97e76acd4) is the same commit as in the last round. Each carried-over gap above still needs the concrete test named in its original finding:
+- Validation gaps (gap): R12-1: a unit test with a fake `openLiveRoom`.
+- Validation gaps (gap): R12-2: the other order of the `lost` path, made certain by holding the old server-side socket open.
+- Validation gaps (gap): R5-8: two editor tabs serving one link, then closing the tab the visitor took the site from.
+- Validation gaps (gap): R5-7: 416 asserts in `tests/preview-host.test.ts`.
+- Validation gaps (gap): R5-4: resolving the `serve` seam by hand in `tests/preview-share.test.ts`.
+- Validation gaps (gap): R5-3: a fake-timer test where `ready()` never settles.
+- Validation gaps (gap): R5-2: a check on the visitor's `scrollY` in `tests/native-save/native-preview-link.spec.ts`.
+- Validation gaps (gap): R5-1 and R5-12: tests for R2-4 and R2-5, plus the R5-13 group.
