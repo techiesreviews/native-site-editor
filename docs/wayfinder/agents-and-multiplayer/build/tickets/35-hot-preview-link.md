@@ -69,3 +69,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Tests: `tests/preview-host.test.ts` (encoded slashes, ranges, the 20 s memo), `tests/preview-menu.test.ts` (a browser page: nothing drawn or loaded without a preview Worker; refusals and their moments; Copied going back after a refused turn-off), `tests/preview-share.test.ts` (answers addressed and shared by two visitors, two tabs serving one link answering once, turn-off with storage refused), `tests/asset-headers.test.ts` (noindex on assets).
 - Validation: `RESULT: ok unit 4099/4099 (270 files)`; `RESULT: ok specs 2/2 passed` (native-preview-link, native-share-live); `RESULT: ok size boot 355 KB (±0 KB) vs dev@8719999, budget 355 KB` (363,486 of 363,520 bytes); `npm run check` and `npm run lint` clean; `RESULT: ok doctor 11/11 checks passed`.
 - UX fix: on touch, Share preview, the link's field, Copy and Turn preview off are at least 44 px tall (`--size-tap`, `src/components/preview-menu.css`); `tests/native-save/native-preview-link.spec.ts` measures them on a 390 px phone.
+
+### UX follow-ups
+
+- UX (looks off): F-repo-05 at 390 px the Branches flyout opens on top of the repository list and hides the repository row behind it (only "native-demo-user · private" shows), in light and dark; at 1280 it covers part of the page heading behind the menu (.scratch/ux/fleet-lead/20261109-010159-XAaPDd/editor-F-repo-05-390-light-branches-strip.webp)
+- UX (looks off): F-phone-03 at 390 px the top bar takes two rows (the project name on the first, then Undo, Redo, History and Publish on the second), where the mock-up's top bar is one row; Publish stays in view once the page has loaded (.scratch/ux/fleet-lead/20261109-010159-XAaPDd/editor-F-repo-01-390-light-open-strip.webp)
