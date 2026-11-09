@@ -212,3 +212,103 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation gaps (gap, second look): In `tests/preview-share.test.ts`, resolve the `serve` seam by hand: the menu stays "Making a link…" until it resolves; a workspace switch during the wait is kept; and if `serve` calls `closed(410)` before it resolves, the menu stays off and `start()` does not return the link.
 - Validation gaps (gap, second look): A fake-timer test where the room's `ready()` never settles: `servePreview` resolves after 10 seconds, and `close` still ends the room.
 - Validation gaps (gap, second look): In `tests/native-save/native-preview-link.spec.ts`, check the visitor's `scrollY` after an edit, and again after a slow picture loads, and check that a scroll the visitor made themselves is left alone.
+- Validation gaps (gap): R17-83 still open: summary line. All ten distinct carried tests are still missing.
+- Validation gaps (gap): R17-82 still open: there is still no spec where the visitor reconnects with a file still awaited.
+- Previous findings (P2): R17-81 still open: the builder neither declined it nor fixed it. `src/preview-visit.ts:93` still returns before calling `forget()` when a hello brings no new version or start page. That `forget()` call was the only place that asked again for files that were still awaited.
+- Validation gaps (gap): R17-80 still open: same as R5-1, R5-12 and the R5-13 group. No test.
+- Validation gaps (gap): R17-79 still open: same as R5-2. No test.
+- Validation gaps (gap): R17-78 still open: same as R5-3. No test.
+- Validation gaps (gap): R17-77 still open: same as R5-4. No test.
+- Validation gaps (gap): R17-76 still open: same as R5-7. No test.
+- Validation gaps (gap): R17-75 still open: same as R5-8. No test.
+- Validation gaps (gap): R17-74 still open: same as R12-2. No test.
+- Validation gaps (gap): R17-73 still open: same as R12-1. No test.
+- Validation gaps (gap): R17-72 still open: summary line. Every gap it carries still stands.
+- Validation gaps (gap): R17-71 still open: same as R5-1, R5-12 and the R5-13 group. No test.
+- Validation gaps (gap): R17-70 still open: same as R5-2. No test.
+- Validation gaps (gap): R17-69 still open: same as R5-3. No test.
+- Validation gaps (gap): R17-68 still open: same as R5-4. No test.
+- Validation gaps (gap): R17-67 still open: same as R5-7. No test.
+- Validation gaps (gap): R17-66 still open: same as R5-8. No test.
+- Validation gaps (gap): R17-65 still open: same as R12-2. No test.
+- Validation gaps (gap): R17-64 still open: same as R12-1. No test.
+- Validation gaps (gap): R17-63 still open: summary line. Its gaps are unchanged.
+- Validation gaps (gap): R17-62 still open: same as R12-1. No test.
+- Validation gaps (gap): R17-61 still open: same as R12-2. No test.
+- Validation gaps (gap): R17-60 still open: same as R5-8. No test.
+- Validation gaps (gap): R17-59 still open: same as R5-7. No test.
+- Validation gaps (gap): R17-58 still open: same as R5-4. No test.
+- Validation gaps (gap): R17-57 still open: same as R5-3. No test.
+- Validation gaps (gap): R17-56 still open: same as R5-2. No test.
+- Validation gaps (gap): R17-55 still open: same as R5-1 and R5-12. No test.
+- Validation gaps (gap): R17-54 still open: summary line. The R8 gaps are unchanged.
+- Validation gaps (gap): R17-53 still open: same as R5-8. No test.
+- Validation gaps (gap): R17-52 still open: same as R5-7. No test.
+- Validation gaps (gap): R17-51 still open: same as R5-4. No test.
+- Validation gaps (gap): R17-50 still open: same as R5-3. No test.
+- Validation gaps (gap): R17-49 still open: same as R5-2. No test.
+- Validation gaps (gap): R17-48 still open: same as R5-1 and R5-12. No test.
+- Validation gaps (gap): R17-47 still open: summary line. Its gaps are unchanged.
+- Validation gaps (gap): R17-46 still open: the R5-13 group still has no tests.
+- Validation gaps (gap): R17-45 still open: same as R5-1 and R5-12. No test.
+- Previous findings (P3): R17-44 still open: when the editor and the preview Worker run different builds, files still fail without saying why.
+- Previous findings (P3): R17-43 still open: `tests/preview-menu.test.ts` is unchanged. The three `globalThis as never as` casts still have no comment.
+- Validation gaps (gap): R17-42 still open: same as R5-8. No test.
+- Validation gaps (gap): R17-41 still open: same as R5-7. No test.
+- Previous findings (P3): R17-40 still open: `src/preview-control.ts` is unchanged. A refusal that arrives while `startServing` is still pending is overwritten.
+- Previous findings (P3): R17-39 still open: `src/preview-serve.ts` is unchanged, so `/my-site` still answers 200 instead of a 301 to `/my-site/`.
+- Validation gaps (gap): R17-38 still open: same as R5-4. No test.
+- Validation gaps (gap): R17-37 still open: same as R5-3. No test.
+- Validation gaps (gap): R17-36 still open: same as R5-2. No test.
+- Validation gaps (gap): R17-35 still open: same as R5-1 and R5-12. No test.
+- Validation gaps (gap): R17-34 still open: summary line. None of its gaps is closed.
+- Validation gaps (gap): R17-33 still open: same as R5-1 and R5-12. No test.
+- Validation gaps (gap): R17-32 still open: same as R5-2. No test.
+- Validation gaps (gap): R17-31 still open: same as R5-3. No test.
+- Validation gaps (gap): R17-30 still open: same as R5-4. No test.
+- Validation gaps (gap): R17-29 still open: same as R5-7. No test.
+- Validation gaps (gap): R17-28 still open: same as R5-8. No test.
+- Validation gaps (gap): R17-27 still open: summary line. The R7 gaps are unchanged.
+- Validation gaps (gap): R17-26 still open: summary line. The R9 gaps are unchanged.
+- Validation gaps (gap): R17-25 still open: same as R5-1 and R5-12. No test.
+- Validation gaps (gap): R17-24 still open: same as R5-2. No test.
+- Validation gaps (gap): R17-23 still open: same as R5-3. No test.
+- Validation gaps (gap): R17-22 still open: same as R5-4. No test.
+- Validation gaps (gap): R17-21 still open: same as R5-7. No test.
+- Validation gaps (gap): R17-20 still open: same as R5-8. No test.
+- Validation gaps (gap): R17-19 still open: summary line. The R11 gaps (which come down to the same ten tests) are unchanged.
+- Validation gaps (gap): R17-18 still open: summary line. Its gaps are unchanged.
+- Validation gaps (gap): R17-17 still open: same as R12-1. No test.
+- Validation gaps (gap): R17-16 still open: same as R12-2. No test.
+- Validation gaps (gap): R17-15 still open: same as R5-8. No test.
+- Validation gaps (gap): R17-14 still open: same as R5-7. No test.
+- Validation gaps (gap): R17-13 still open: same as R5-4. No test.
+- Validation gaps (gap): R17-12 still open: same as R5-3. No test.
+- Validation gaps (gap): R17-11 still open: same as R5-2. No test.
+- Validation gaps (gap): R17-10 still open: same as R5-1, R5-12 and R5-13. No test.
+- Validation gaps (gap): R17-9 still open: summary line. HEAD is still b48a8cfea and adds no test for any gap it carries.
+- Validation gaps (gap): R17-8 still open: no commit. R5-1, R5-12 and the R5-13 group still have no tests.
+- Validation gaps (gap): R17-7 still open: no commit. R5-2: the spec still never checks the visitor's `scrollY`.
+- Validation gaps (gap): R17-6 still open: no commit. R5-3: no fake-timer test where `ready()` never settles.
+- Validation gaps (gap): R17-5 still open: no commit. R5-4: no test resolves the `serve` seam by hand.
+- Validation gaps (gap): R17-4 still open: no commit. R5-7: `tests/preview-host.test.ts` still has no 416 asserts.
+- Validation gaps (gap): R17-3 still open: no commit. R5-8, two editor tabs with the source tab closed, still has no test.
+- Validation gaps (gap): R17-2 still open: no commit. R12-1, the unit test with a fake `openLiveRoom`, still doesn't exist.
+- Validation gaps (gap): R17-1 still open: no commit since the last round. R12-2, the other order of the `lost` path, still has no test.
+- Standards (P2): b48a8cfea:src/preview-visit.ts:93 — P2 race (CODING_STANDARDS: no new regression on a path that already worked): carried over as R17-81, and checked again against the code. Say the visitor's connection drops and a file request (`get`, line 121) arrives during the gap. The request goes into `waiting`, but `ask` has no live room to send it through, so it is lost. When the visitor rejoins, Lex's tab sends a hello with the same `version` and `start`. Line 93 then returns before `forget()` (line 116), and `forget()` is the only place that asks again for paths still in `waiting`. Before this commit, every hello called `forget()`, so those files were asked for again. Now they wait for `ANSWER_MS` and then answer 504, so the visitor sees a broken picture or page. Fix: keep the early return for the redraw only, and still ask again for what is awaited. For example, before the `return` on line 93, add `for (const path of waiting.keys()) ask(path);`. Or move the check so that only `forget()`'s `cache.clear()` and the redraw are skipped.
+- Standards (P3): 49ed963b3:src/preview-control.ts:156 — P3 race: carried over as R17-40, with no change. A refusal (400, 403 or 410) that arrives while `startServing` is still pending is overwritten when `ready()` resolves, so the menu shows a dead link. Fix: after the await, check that the state is still "starting" for the same workspace before setting it to on.
+- Standards (P3): 49ed963b3:src/preview-serve.ts:153 — P3 fault: carried over as R17-39. `/my-site` answers 200 with `index.html`, where GitHub Pages answers a 301 to `/my-site/`. Fix: redirect a folder's address that lacks its trailing slash.
+- Standards (P3): c36dd58:src/preview-serve.ts:94 — P3 fault: carried over as R17-44. If the editor and the preview Worker run different builds, the message formats don't match and every file fails without saying why. Fix: put a build version in the hello, and show a plain "this preview needs an update" note when the two don't match.
+- Standards (P3): c36dd58:tests/preview-menu.test.ts:49 — P3 style (CODING_STANDARDS "Test fixtures": document deliberate double assertions): carried over as R17-43. Fix: add `menu` to the existing `Scope` type and cast with `globalThis as Scope`.
+- Validation gaps (gap): The 80 carried gap ids come down to these eleven tests:
+- Validation gaps (gap): R17-82, which also covers R17-81: in `tests/native-save/native-preview-link.spec.ts`, the visitor loads the link. Hold back the visitor's live socket with `page.routeWebSocket`, then open a second page whose picture has to be fetched. Let the socket reconnect while Lex's tab sends the same version. Assert that the picture loads, not a 504.
+- Validation gaps (gap): R12-1: a unit test with a fake `openLiveRoom`. A members update with no editor sends no `hi`. A members update with a new editor sends exactly one `hi`. A further members update sends no second `hi`.
+- Validation gaps (gap): R12-2: the other order of the `lost` path. Hold the old server-side socket open until the new socket has joined, then assert that the visitor follows an edit.
+- Validation gaps (gap): R5-8: two editor tabs serve one link, then the tab the visitor took the site from is closed. Assert that the visitor's heading still follows edits.
+- Validation gaps (gap): R5-7: in `tests/preview-host.test.ts`, assert that `bytes=0-` on a 0-byte file and `bytes=-0` on a 100-byte file both answer 416 with `Content-Range: bytes */<size>`.
+- Validation gaps (gap): R5-4: in `tests/preview-share.test.ts`, resolve the `serve` seam by hand. Assert that the state stays "starting" until then, that a workspace switch is respected, and that a refusal is not overwritten.
+- Validation gaps (gap): R5-3: a fake `openRoom` whose `ready()` never settles, run with fake timers. Assert that `servePreview` resolves after 10 s and that `close` still ends the room.
+- Validation gaps (gap): R5-2: in `tests/native-save/native-preview-link.spec.ts`, check the visitor's `scrollY` after an edit and after a slow picture loads.
+- Validation gaps (gap): R5-1: the test for R2-4, as named in its original finding.
+- Validation gaps (gap): R5-12: the test for R2-5, as named in its original finding.
+- Validation gaps (gap): The R5-13 group, as named in its original findings.
