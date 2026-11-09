@@ -34,6 +34,10 @@ Expected (confirm while designing): a new `src/outside-merge.ts`, `src/draft-sto
 - **Boot budget:** the editor's boot is at 362 of its 355 KiB budget's 363,520 bytes (about 1.1 KiB left after slice 32). Keep the merge (`src/outside-merge.ts`) and the author chip's code out of the boot: load them when an outside change first arrives (a dynamic import, as Share to edit and Share preview do, `src/shares-later.ts`). `kit size` must pass.
 - Outside changes come from slice 32's push notice (the tab checks the branch head and reloads) and from the focus check; both end in the same snapshot reload.
 
+## Lead decision (2026-11-09, Option 1)
+
+After five review rounds two P1 races stayed open in the live-room path (words doubled when an outside change met a page typed on together). The slice lands without it: while a page is typed on together in a live room (`src/live-text.ts` `liveShared`), an outside change loads the branch again, as before, and unsaved work stays. The live-room case moves to [ticket 59](59-outside-changes-into-a-live-room.md). The "In a live room" line under Decided behaviour is done there, not here.
+
 ## Kit commands and evidence
 
 Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). `kit bg slice-am-33 -- scripts/agents/kit slice --ticket <this ticket> --builder claude-opus-5-5`; `kit wait job slice-am-33 --timeout 2h`.

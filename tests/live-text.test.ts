@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { signal } from "@preact/signals-core";
 import { createDraftStore, type DraftPersistence } from "../src/draft-store";
 import { draftKey, type DraftScope, type SavedDraft } from "../src/drafts";
-import { browserKeeper, LIVE_TEXT_CATCH_UP_MS, startLiveText, typedSince, type CopyKeeper, type KeptCopy } from "../src/live-text";
+import { browserKeeper, LIVE_TEXT_CATCH_UP_MS, liveShared, startLiveText, typedSince, type CopyKeeper, type KeptCopy } from "../src/live-text";
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 import { forEachAwait, type AwaitRace } from "./support/await-race";
@@ -17,16 +17,15 @@ import type { LiveAccess } from "../shared/live-room";
 import { writeAs, type LiveAuthor } from "../src/live-author";
 import { createSaveAuthors, type SaveAuthors } from "../src/save-authors";
 import { commitMessage } from "../worker/publish";
-import { foldFile } from "../src/outside-merge";
 
 const scope: DraftScope = { account: "lex", repoId: 501, repo: "lex/starter", branch: "main" };
 const path = "index.html";
 const base = "<h1>Fresh bread</h1>\n<p>Open at seven.</p>\n";
 const sha = "a".repeat(40);
 
-async function until(check: () => boolean, what: string, ms = 3_000) {
+async function until(check: () => boolean, what: string) {
   for (const started = Date.now(); !check(); await new Promise(resolve => setTimeout(resolve, 2)))
-    if (Date.now() - started > ms) assert.fail(`timed out waiting: ${what}`);
+    if (Date.now() - started > 3_000) assert.fail(`timed out waiting: ${what}`);
 }
 const quiet = () => new Promise(resolve => setTimeout(resolve, 40));
 
@@ -84,13 +83,12 @@ function keeper(): CopyKeeper & { copies: Map<string, KeptCopy | undefined> } {
   return { copies, read: async key => copies.get(key), write: (key, copy) => { copies.set(key, copy); } };
 }
 
-function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?: string; start?: string; clock?: LiveClock; keeper?: CopyKeeper; race?: AwaitRace; persistence?: DraftPersistence; loadYjs?: () => Promise<typeof import("yjs")>; carets?: (share: CaretShare) => () => void; account?: string; authors?: SaveAuthors } = {}) {
+function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?: string; clock?: LiveClock; keeper?: CopyKeeper; race?: AwaitRace; persistence?: DraftPersistence; loadYjs?: () => Promise<typeof import("yjs")>; carets?: (share: CaretShare) => () => void; account?: string; authors?: SaveAuthors } = {}) {
   const own: DraftScope = options.account ? { ...scope, account: options.account } : scope;
   const authors = options.authors ?? createSaveAuthors();
   const store = createDraftStore(options.persistence ? { persistence: options.persistence } : {});
-  const start = options.start ?? base;
-  store.open(own, path, { text: start, baseSha: options.baseSha ?? sha });
-  if (text !== start) store.edit({ scope: own, path, text, label: "Earlier draft" });
+  store.open(own, path, { text: base, baseSha: options.baseSha ?? sha });
+  if (text !== base) store.edit({ scope: own, path, text, label: "Earlier draft" });
   const openFile = signal<string | undefined>(path);
   let yjsLoads = 0, socket: ReturnType<typeof room.open> | undefined;
   const kept = options.keeper ?? keeper(), sockets: string[] = [];
@@ -407,159 +405,6 @@ test("a save landing at any await of loading the copy starts it from the saved t
     if (run.loading) assert.deepEqual(tags.filter(tag => tag !== saved), [], "no frame under the old version's tag");
     endRace(run);
   });
-});
-
-// Ticket am-33: an outside commit folded into the shared file enters the copy as one more participant: every tab
-// writes the same update (its client id fixed by the file's move to the new blob), so the room keeps it once and stays
-// the same room.
-const pushed = "d".repeat(40);
-const foldInto = (who: ReturnType<typeof tab>, theirs: string) =>
-  foldFile(who.store, scope, path, undefined, theirs, pushed, () => draftHistory(), "Sam · GitHub");
-
-test("an outside change folded in on every tab enters the shared copy once, and the room goes on", async () => {
-  const room = fakeRoom();
-  const draft = base.replace("Fresh bread", "Fresh bread in Leiden");
-  const anna = tab(room, draft), lex = tab(room, draft);
-  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
-  await quiet();
-  // The same blob again (a lost save's answer recognized, Keep my draft over the same version): nothing changes.
-  anna.store.acceptBase(scope, path, { text: base, baseSha: sha });
-  const theirs = base.replace("seven", "eight"), merged = draft.replace("seven", "eight");
-  for (const who of [anna, lex]) foldInto(who, theirs);
-  await until(() => anna.text === merged && lex.text === merged, "both merged");
-  await quiet();
-  assert.deepEqual([anna.sockets.length, lex.sockets.length, anna.yjsLoads, lex.yjsLoads], [1, 1, 1, 1], "the same room and copy");
-  assert.deepEqual([anna.store.get(scope, path)!.baseSha, lex.store.get(scope, path)!.baseSha], [pushed, pushed]);
-  assert.equal(times(anna.text, "eight"), 1);
-  // The copy goes on: a change after it reaches the other tab, and nothing doubled.
-  anna.type(0, "<!-- after -->");
-  await until(() => lex.text.startsWith("<!-- after -->"), "Anna's next change on Lex's tab");
-  assert.equal(lex.text, `<!-- after -->${merged}`);
-  assert.equal(anna.text, lex.text);
-  anna.stop(); lex.stop();
-});
-
-test("a commit the copy holds already (a peer's save) is taken once, and the room stays one", async () => {
-  const room = fakeRoom();
-  const anna = tab(room), lex = tab(room);
-  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
-  await quiet();
-  anna.type(base.indexOf("seven"), "eight", 5);
-  await until(() => lex.text.includes("eight"), "the change on both");
-  const theirs = anna.text;
-  // Anna saves it; Lex's tab hears the push and folds the commit in: his copy holds it already and takes nothing.
-  anna.store.markSaved(scope, path, { baseSha: pushed, original: theirs });
-  foldInto(lex, theirs);
-  await quiet();
-  for (const who of [anna, lex]) { assert.equal(who.text, theirs); assert.equal(times(who.text, "eight"), 1); }
-  assert.deepEqual([anna.sockets.length, lex.sockets.length, anna.yjsLoads, lex.yjsLoads], [1, 1, 1, 1], "the same room and copy");
-  anna.type(0, "<!-- A -->");
-  await until(() => lex.text.startsWith("<!-- A -->"), "Anna's change on Lex's tab");
-  lex.type(lex.text.length, "<!-- L -->");
-  await until(() => anna.text.endsWith("<!-- L -->"), "Lex's change on Anna's tab");
-  assert.equal(anna.text, lex.text);
-  assert.equal(times(anna.text, "eight"), 1);
-  anna.stop(); lex.stop();
-});
-
-test("after an outside change, a tab that opens the page from the new version joins the room's copy (MOVED), both ways", async () => {
-  const room = fakeRoom();
-  const draft = base.replace("Fresh bread", "Fresh bread in Leiden");
-  const anna = tab(room, draft), lex = tab(room, draft);
-  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
-  await quiet();
-  const theirs = base.replace("seven", "eight"), merged = draft.replace("seven", "eight");
-  for (const who of [anna, lex]) foldInto(who, theirs);
-  await until(() => anna.text === merged && lex.text === merged, "both merged");
-  // Sam opens the page now, from GitHub's new version. His browser kept a draft: the room's words and one of his own.
-  const sam = tab(room, `<!-- S0 -->${merged}`, { baseSha: pushed, start: theirs });
-  await until(() => anna.text.startsWith("<!-- S0 -->") && lex.text.startsWith("<!-- S0 -->") && sam.text === anna.text, "Sam caught up, his own word in");
-  sam.type(sam.text.length, "<!-- S -->");
-  await until(() => anna.text.endsWith("<!-- S -->") && lex.text.endsWith("<!-- S -->"), "Sam's change on both");
-  anna.type(0, "<!-- A -->");
-  await until(() => sam.text.startsWith("<!-- A -->") && lex.text.startsWith("<!-- A -->"), "Anna's change on Sam's tab");
-  assert.equal(sam.text, `<!-- A --><!-- S0 -->${merged}<!-- S -->`);
-  assert.deepEqual([anna.text, lex.text], [sam.text, sam.text]);
-  assert.equal(times(sam.text, "in Leiden"), 1);
-  assert.deepEqual([anna.sockets.length, lex.sockets.length], [1, 1], "the room never started again");
-  anna.stop(); lex.stop(); sam.stop();
-});
-
-test("one tab folds, a while later the other types and then folds: one room, the shared words once", async () => {
-  const room = fakeRoom();
-  const draft = base.replace("Fresh bread", "Fresh bread in Leiden");
-  const anna = tab(room, draft), lex = tab(room, draft);
-  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
-  await quiet();
-  const theirs = base.replace("seven", "eight");
-  foldInto(anna, theirs);
-  // fixed-wait: past any quiet wait a moved room might have had.
-  await new Promise(resolve => setTimeout(resolve, 1_600));
-  lex.type(0, "<!-- L -->");
-  foldInto(lex, theirs);
-  await until(() => anna.text === lex.text && anna.text.startsWith("<!-- L -->") && anna.text.includes("eight"), "both the same");
-  await quiet();
-  assert.equal(anna.text, `<!-- L -->${draft.replace("seven", "eight")}`);
-  assert.equal(times(anna.text, "in Leiden"), 1);
-  anna.stop(); lex.stop();
-});
-
-test("typing right after both tabs fold the change in leaves one room and the shared words once", async () => {
-  const room = fakeRoom();
-  const draft = base.replace("Fresh bread", "Fresh bread in Leiden");
-  const anna = tab(room, draft), lex = tab(room, draft);
-  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
-  await quiet();
-  const theirs = base.replace("seven", "eight");
-  for (const who of [anna, lex]) foldInto(who, theirs);
-  anna.type(0, "<!-- A -->");
-  lex.type(lex.text.length, "<!-- L -->");
-  await until(() => anna.text === lex.text && anna.text.startsWith("<!-- A -->") && anna.text.endsWith("<!-- L -->"), "both the same");
-  await quiet();
-  assert.equal(anna.text, `<!-- A -->${draft.replace("seven", "eight")}<!-- L -->`);
-  assert.equal(times(anna.text, "in Leiden"), 1);
-  assert.deepEqual([anna.sockets.length, lex.sockets.length], [1, 1]);
-  anna.stop(); lex.stop();
-});
-
-test("a tab that types before it folds the change in, after another tab did, keeps one heading and the same text", async () => {
-  const room = fakeRoom();
-  const draft = base.replace("Fresh bread", "Fresh bread in Leiden");
-  const anna = tab(room, draft), lex = tab(room, draft);
-  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
-  await quiet();
-  const theirs = base.replace("seven", "eight");
-  foldInto(anna, theirs);
-  lex.type(lex.text.indexOf("</h1>"), " X");
-  await quiet();
-  foldInto(lex, theirs);
-  await until(() => anna.text === lex.text && anna.text.includes(" X") && anna.text.includes("eight"), "both tabs the same");
-  await quiet();
-  assert.equal(anna.text, draft.replace("Leiden", "Leiden X").replace("seven", "eight"));
-  assert.equal(times(anna.text, "in Leiden"), 1, "Lex's heading once");
-  assert.equal(times(anna.text, "eight"), 1);
-  anna.stop(); lex.stop();
-});
-
-test("a clash folded in on both tabs shows Sam's words on both; one Undo on one tab brings Lex's back on both, once", async () => {
-  const room = fakeRoom();
-  const draft = base.replace("Fresh bread", "Fresh rolls");
-  const anna = tab(room, draft), lex = tab(room, draft);
-  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
-  await quiet();
-  const theirs = base.replace("Fresh bread", "Fresh loaves").replace("seven", "eight");
-  for (const who of [anna, lex]) foldInto(who, theirs);
-  await until(() => anna.text === theirs && lex.text === theirs, "Sam's words on both");
-  await quiet();
-  assert.deepEqual([anna.sockets.length, lex.sockets.length], [1, 1], "settled in the room's one copy");
-  assert.equal(lex.store.peek(draftHistory(), "undo"), "Sam's change");
-  assert.equal((await lex.store.undo(draftHistory())).ok, true);
-  const back = draft.replace("seven", "eight");
-  await until(() => anna.text === back && lex.text === back, "Lex's words back on both");
-  await quiet();
-  assert.equal(times(anna.text, "rolls"), 1);
-  assert.equal(anna.text, lex.text);
-  anna.stop(); lex.stop();
 });
 
 test("Discard while a tab is alone with its draft takes it out of the room; a tab joining later with that draft's copy brings nothing back", async () => {
@@ -1393,4 +1238,21 @@ test("the open file's room hands a push notice on with the draft scope", async (
   options!.onPushed?.("d".repeat(40));
   assert.deepEqual(heard, [[scope, "d".repeat(40)]]);
   stop();
+});
+
+test("liveShared: a file is shared in a live room only while another tab is in, or its copy is made, and never after it stops", async () => {
+  const room = fakeRoom();
+  const lex = tab(room);
+  const key = draftKey(scope, path);
+  await quiet();
+  assert.equal(liveShared(lex.store, key), false, "alone, nobody shares it");
+  const anna = tab(room, base, { account: "anna" });
+  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
+  assert.equal(liveShared(lex.store, key), true);
+  anna.stop();
+  await quiet();
+  assert.equal(liveShared(lex.store, key), true, "the copy stays while the file is open");
+  lex.stop();
+  assert.equal(liveShared(lex.store, key), false);
+  assert.equal(liveShared(lex.store, "another"), false);
 });

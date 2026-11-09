@@ -87,6 +87,7 @@ The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slice
 | [32 GitHub pushes reach open tabs](tickets/32-github-push-to-tabs.md) | M | – | – | 23, 24, 25, 26 |
 | [33 Outside changes fold in](tickets/33-outside-changes-fold-in.md) | M | visible | – | 32 |
 | [34 Folder changes merge too](tickets/34-folder-changes-merge.md) | S | – | – | 33 |
+| [59 Outside changes fold into a page being typed on together (follow-up on 33)](tickets/59-outside-changes-into-a-live-room.md) | M | – | – | 33 |
 | [35 Hot preview link](tickets/35-hot-preview-link.md) | L | visible | – | 30 |
 | [37 Mock-ups on the preview site](tickets/37-mockups-on-preview.md) | S | – | – | – |
 | [38 The preview mock-ups copy only images a mock-up uses](tickets/38-mockups-copy-only-used-images.md) | S | – | – | 37 |

@@ -279,3 +279,18 @@ test("foldIn: a draft that is a deletion loads the branch again", async () => {
   assert.equal(await foldIn(f.ports, f.host, f.after.commit, () => true), false);
   assert.deepEqual(f.adopted, []);
 });
+
+test("foldIn: a page typed on together in a live room loads the branch again, and its draft is left as it is", async () => {
+  const mine = oldPage.replace("Hi", "Hello");
+  const f = foldSetup(changedIndex(), { drafts: [{ ...scope, version: 1, path: "index.html", baseSha: oldSha, original: oldPage, content: mine, updatedAt: 1 }] });
+  f.store.open(scope, "index.html", { text: oldPage, baseSha: oldSha });
+  f.store.edit({ scope, path: "index.html", text: mine });
+  const asked: string[] = [];
+  f.host.shared = key => { asked.push(key); return true; };
+  assert.equal(await foldIn(f.ports, f.host, f.after.commit, () => true), false);
+  assert.deepEqual(asked, [f.store.get(scope, "index.html")!.key]);
+  assert.equal(f.store.get(scope, "index.html")!.text, mine);
+  assert.equal(f.store.get(scope, "index.html")!.baseSha, oldSha);
+  assert.deepEqual(f.adopted, []);
+  assert.deepEqual(f.visits, []);
+});
