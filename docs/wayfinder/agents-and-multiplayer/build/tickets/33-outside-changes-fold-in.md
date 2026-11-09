@@ -29,6 +29,11 @@ Expected (confirm while designing): a new `src/outside-merge.ts`, `src/draft-sto
 
 - Specs: a push to an open page with no drafts updates it with the chip; a push touching other lines merges into drafts; a clash shows the latest and one Undo brings back Lex's words.
 
+## Lead notes (2026-11-09)
+
+- **Boot budget:** the editor's boot is at 362 of its 355 KiB budget's 363,520 bytes (about 1.1 KiB left after slice 32). Keep the merge (`src/outside-merge.ts`) and the author chip's code out of the boot: load them when an outside change first arrives (a dynamic import, as Share to edit and Share preview do, `src/shares-later.ts`). `kit size` must pass.
+- Outside changes come from slice 32's push notice (the tab checks the branch head and reloads) and from the focus check; both end in the same snapshot reload.
+
 ## Kit commands and evidence
 
 Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). `kit bg slice-am-33 -- scripts/agents/kit slice --ticket <this ticket> --builder claude-opus-5-5`; `kit wait job slice-am-33 --timeout 2h`.
