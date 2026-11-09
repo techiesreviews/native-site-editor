@@ -55,6 +55,8 @@ export type LiveRoomOptions = LiveRoomPlace & {
   /** This participant holds a room key: the first, a new one, or one taken again after a reconnect. Frames sent
    * meanwhile may not have arrived, so a caller that keeps state in step syncs it again here. */
   onKey?(): void;
+  /** The socket dropped and the room reconnects by itself: `onKey` says when it is back. Not said when the room ends. */
+  onDropped?(): void;
   /** The room ended for this participant and does not reconnect: no tab has it open (agents), its connection ended, or it was
    * refused. `why`: the relay's close code (LIVE_ROOM_CLOSED, LIVE_ACCESS_ENDED, LIVE_HOST_LOST), or the refusal's HTTP status. */
   onClosed?(why?: number): void;
@@ -353,9 +355,12 @@ export function openLiveRoom(options: LiveRoomOptions) {
     next.addEventListener("close", event => {
       if (socket !== next) return;
       socket = null;
+      const ended = event.code === LIVE_ROOM_CLOSED || event.code === LIVE_ACCESS_ENDED || event.code === LIVE_HOST_LOST;
+      // Said before the peers empty, so an owner shows reconnecting rather than alone.
+      if (!ended) options.onDropped?.();
       members.clear();
       changed();
-      if (event.code === LIVE_ROOM_CLOSED || event.code === LIVE_ACCESS_ENDED || event.code === LIVE_HOST_LOST) { stop(); options.onClosed?.(event.code); return; }
+      if (ended) { stop(); options.onClosed?.(event.code); return; }
       reconnect();
     });
   };

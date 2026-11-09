@@ -110,6 +110,24 @@ test("a session that ends by itself (the room refused, the preview closed) leave
   assert.deepEqual(refusing.state(), { sharing: false });
 });
 
+test("an open session says while its room reconnects, and not once it has ended", async () => {
+  let ports!: SharePorts;
+  const control = createShareControl({
+    preview: () => undefined,
+    workspace: () => ({ repo: "lex/bakery", branch: "main", site: "bakery", host: "lex" }),
+    stamp: () => ({ holds: () => true }),
+    start: async (given) => { ports = given; return { link: "link", stop: () => undefined }; },
+  });
+  await control.start();
+  ports.dropped!(true);
+  assert.deepEqual(control.state(), { sharing: true, link: "link", guests: [], reconnecting: true });
+  ports.dropped!(false);
+  assert.equal((control.state() as { reconnecting?: true }).reconnecting, undefined);
+  control.stop();
+  ports.dropped!(true);
+  assert.deepEqual(control.state(), { sharing: false });
+});
+
 test("names and initials show the same everywhere, whatever presence sends", () => {
   assert.equal(personName("  Anna  "), "Anna");
   assert.equal(personName("x".repeat(500)).length, 40);

@@ -247,7 +247,7 @@ test("Share preview: a link made, kept for its sign-in, repository and branch, s
   assert.deepEqual(preview.state(), { on: false });
   const link = await preview.start();
   assert.match(link ?? "", new RegExp(`^https://previews\\.example/s/bakery-${token}/#k=[\\w-]{43}$`));
-  assert.deepEqual(preview.state(), { on: true, link, ends: (preview.state() as { ends: number }).ends });
+  assert.deepEqual(preview.state(), { on: true, link, ends: (preview.state() as { ends: number }).ends, watching: 0 });
   await settle();
   assert.equal(serves.length, 1);
   assert.equal(serves[0].address, `/api/live/preview?token=${token}&repo=lex%2FBakery&host=${"f".repeat(64)}`);
@@ -257,7 +257,7 @@ test("Share preview: a link made, kept for its sign-in, repository and branch, s
   // Another tab (a reload): the kept link is served as soon as the site shows.
   const again = control();
   again.sync();
-  assert.deepEqual(again.state(), { on: true, link, ends: (preview.state() as { ends: number }).ends });
+  assert.deepEqual(again.state(), { on: true, link, ends: (preview.state() as { ends: number }).ends, watching: 0 });
   await settle();
   assert.equal(serves.length, 2);
   // Another project: not served there; back: served again.
@@ -280,6 +280,51 @@ test("Share preview: a link made, kept for its sign-in, repository and branch, s
   await settle();
   await third.stop();
   assert.deepEqual([offs.length, third.state(), serves.at(-1)!.open], [1, { on: false }, false]);
+});
+
+test("the link counts who watches and says while this tab's room reconnects; another serving's word does not count", async () => {
+  storage();
+  const serves: import("../src/preview-serve").ServePorts[] = [];
+  const preview = createPreviewShare({
+    workspace: () => ({ repo: "lex/bakery", branch: "main", site: "bakery", host: "lex" }), enabled: () => true, files: async () => undefined, start: () => "/",
+    mint: async () => ({ token, host: "f".repeat(64), link: `https://previews.example/s/bakery-${token}/`, ends: Date.now() + 86_400_000 }),
+    off: async () => undefined,
+    serve: async (ports) => { serves.push(ports); return { close: () => undefined }; },
+  });
+  await preview.start();
+  const watching = () => { const state = preview.state(); return state.on ? [state.watching, state.reconnecting ?? false] : undefined; };
+  assert.deepEqual(watching(), [0, false]);
+  serves[0].visitors!(1);
+  assert.deepEqual(watching(), [1, false]);
+  serves[0].dropped!(true);
+  assert.deepEqual(watching(), [1, true]);
+  serves[0].dropped!(false);
+  serves[0].visitors!(2);
+  assert.deepEqual(watching(), [2, false]);
+  // Turned off: a late word from the old serving changes nothing.
+  await preview.stop();
+  serves[0].visitors!(3);
+  assert.deepEqual(preview.state(), { on: false });
+});
+
+test("serving tells how many visitors are in, and when its room drops and is back", async () => {
+  const counts: number[] = [], drops: boolean[] = [];
+  let options!: LiveRoomOptions;
+  const served = await servePreview({
+    address: "/api/live/preview?token=x", key: {} as CryptoKey, files: async () => undefined, start: () => "/", closed: () => undefined,
+    visitors: (count) => counts.push(count), dropped: (down) => drops.push(down),
+    open: (given: LiveRoomOptions) => {
+      options = given;
+      return { send: async () => true, close: () => undefined, ready: async () => undefined, setPresence: () => undefined, peers: () => new Map() } satisfies LiveRoom;
+    },
+    every: () => () => undefined,
+  });
+  options.onMembers!(new Map([["a".repeat(32), "editor"], ["c".repeat(32), "guest"], ["d".repeat(32), "guest"]]));
+  options.onDropped!();
+  options.onKey!();
+  options.onMembers!(new Map([["c".repeat(32), "guest"]]));
+  assert.deepEqual([counts, drops], [[2, 1], [true, false]]);
+  served.close();
 });
 
 test("a browser that refuses to keep the link still turns it off on the server", async () => {

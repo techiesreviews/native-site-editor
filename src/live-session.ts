@@ -73,6 +73,8 @@ export interface SharePorts {
   holds(): boolean;
   /** Who is in the session changed, or (`ended`) it ended by itself: the room refused, or the preview closed. */
   changed(state: { guests: SessionGuest[]; ended?: true }): void;
+  /** The room's socket dropped (`true`) and reconnects, or is back (`false`). */
+  dropped?(down: boolean): void;
   /** Seams for tests: the Worker's share call and the room. */
   mint?: (repo: string, branch: string) => Promise<{ session: string; host: string }>;
   open?: typeof openLiveRoom;
@@ -181,7 +183,8 @@ export async function startSharing(ports: SharePorts) {
     onMessage: (bytes, from) => wire.receive(bytes, from),
     onPeers: peersChanged,
     // Back after a dropped socket: frames meanwhile may be lost, so every guest gets the whole page.
-    onKey: () => sendWhole(),
+    onKey: () => { if (!ended) ports.dropped?.(false); sendWhole(); },
+    onDropped: () => ports.dropped?.(true),
     onClosed: end,
   });
   room.setPresence({ name: ports.host } satisfies SessionPresence as JsonValue);

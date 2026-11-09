@@ -5,7 +5,7 @@
 // browser keeps is served from then on. The menu's items talk to the loaded control itself.
 
 import type { PreviewSharePorts } from "./preview-control";
-import type { PreviewMenuPort } from "./components/repository-menu";
+import type { SharesMenuPort } from "./components/repository-menu";
 
 /** How long after the first paint the rest loads. */
 const LATER_MS = 3_000;
@@ -13,10 +13,17 @@ const LATER_MS = 3_000;
 export function createPreviewShare(ports: PreviewSharePorts) {
   let later = false, made: ReturnType<typeof import("./shares-later").createPreviewControl> | undefined;
   let loaded: Promise<typeof import("./shares-later")> | undefined;
-  const load = () => loaded ??= import("./shares-later").then((rest) => { made = rest.createPreviewControl(ports); return rest; });
-  const port: Pick<PreviewMenuPort, "available" | "draw"> & { sync(): void; painted(): void } = {
-    available: () => made ? made.available() : ports.enabled() && Boolean(ports.workspace()?.host),
+  // The project tile, and the way to mark it once the rest has loaded: its dot follows the link, menu open or not.
+  let tile: HTMLElement | undefined, mark: (() => void) | undefined;
+  const load = () => loaded ??= import("./shares-later").then((rest) => {
+    made = rest.createPreviewControl(ports);
+    mark = rest.previewTile(made, () => tile);
+    return rest;
+  });
+  const port: SharesMenuPort & { sync(): void; painted(): void } = {
+    offered: () => ports.enabled(),
     draw: (actionClass, root) => load().then(({ previewItems }) => previewItems(made!, actionClass, root)),
+    tile(trigger) { tile = trigger; mark?.(); },
     /** After a load or a paint: the link of the site shown is served, and another site's is not. */
     sync: () => made?.sync(),
     /** The site's page was drawn: the rest loads a moment later (not on the way to the first paint), so the menu has it. */

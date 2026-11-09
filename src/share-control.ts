@@ -5,8 +5,9 @@
 
 import type { SharePorts, SessionGuest, SyncedSession } from "./live-session";
 
-/** What the project menu shows: no session, one starting, or one open with its link and guests. */
-export type ShareState = { sharing: false; starting?: true } | { sharing: true; link: string; guests: SessionGuest[] };
+/** What the project menu shows: no session, one starting, or one open with its link, its guests and whether this tab's
+ * room is reconnecting. */
+export type ShareState = { sharing: false; starting?: true } | { sharing: true; link: string; guests: SessionGuest[]; reconnecting?: true };
 
 /**
  * Lex's side of Share to edit for the workspace shown: one session at a time. It ends by itself when another project
@@ -55,6 +56,9 @@ export function createShareControl(ports: Pick<SharePorts, "preview"> & {
             if (mine !== run) return;
             if (change.ended) { session = undefined; set({ sharing: false }); return; }
             if (state.sharing) set({ ...state, guests: change.guests });
+          },
+          dropped: (down) => {
+            if (mine === run && state.sharing && Boolean(state.reconnecting) !== down) set({ ...state, reconnecting: down ? true : undefined });
           },
         });
         if (mine !== run || !since.holds()) { started.stop(); return undefined; }
