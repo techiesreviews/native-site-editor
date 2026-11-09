@@ -105,3 +105,26 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   await customer.close();
   expect(pageErrors).toEqual([]);
 });
+
+test("on a phone, Share preview, the link's field, Copy and Turn preview off are full tap targets", async ({ browser, baseURL }) => {
+  test.setTimeout(120_000);
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, reducedMotion: "reduce" });
+  await phone.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const page = await phone.newPage();
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await openEditor(page, baseURL);
+  await editorMounted(page);
+  const height = async (target: ReturnType<Page["locator"]>) => (await target.boundingBox())?.height ?? 0;
+  await page.locator(".repository-menu__trigger").tap();
+  const share = page.getByRole("button", { name: "Share preview", exact: true });
+  await expect(share).toBeVisible({ timeout: 15_000 });
+  expect(await height(share)).toBeGreaterThanOrEqual(44);
+  await share.tap();
+  await expect(page.getByRole("button", { name: "Turn preview off", exact: true })).toBeVisible();
+  for (const target of [page.getByRole("textbox", { name: "Preview link" }), page.locator(".repository-menu__preview-copy"), page.getByRole("button", { name: "Turn preview off", exact: true })])
+    expect(await height(target)).toBeGreaterThanOrEqual(44);
+  await page.getByRole("button", { name: "Turn preview off", exact: true }).tap();
+  await expect(share).toBeVisible();
+  await phone.close();
+  expect(pageErrors).toEqual([]);
+});
