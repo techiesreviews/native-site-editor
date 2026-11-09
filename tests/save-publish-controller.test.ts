@@ -593,9 +593,38 @@ test("a push notice heard during this tab's save waits for it: its own commit lo
 
 // A delayed notice of an older commit after this tab's own newer save: the head check asks about the trusted head, so a
 // GitHub read lagging behind the save never brings the older commit back.
-test("a push notice's head check asks about this tab's trusted head before the notice's commit", () => {
+// Every load trusts the commit it shows (src/workspace-boot.ts), which says nothing newer than the push: right after a
+// load the notice's commit is asked about, so a GitHub branch read still lagging behind the push gives it. Only a trusted
+// head other than the one on show (this tab's own newer save) is asked about instead of an older, delayed notice.
+test("a push notice asks about its commit after a load, and about this tab's newer trusted head over an older notice", () => {
+  const shown = "a".repeat(40), pushed = "b".repeat(40), own = "c".repeat(40);
   const f = fixture();
-  f.controller.seeHead("f".repeat(40));
-  f.controller.pushed(scope1, "d".repeat(40));
-  assert.deepEqual(f.calls, [["head", { repo: "lex/site1", branch: "main", commit: "f".repeat(40) }]]);
+  f.controller.seeHead(shown);
+  f.controller.pushed(scope1, pushed);
+  assert.deepEqual(f.calls, [["head", { repo: "lex/site1", branch: "main", commit: pushed }]], "a fresh load's trusted head is the commit on show");
+
+  const saved = fixture();
+  saved.controller.seeHead(own);
+  saved.controller.pushed(scope1, "d".repeat(40));
+  assert.deepEqual(saved.calls, [["head", { repo: "lex/site1", branch: "main", commit: own }]], "this tab's newer save over an older notice");
+});
+
+// Someone else's push held through this tab's save: it waits for the snapshot after the save too, so its head answer
+// never meets the snapshot before the save and loads the branch a second time.
+test("a notice held through a save waits for the save's refreshed snapshot before its head check", async () => {
+  const saved = "f".repeat(40), other = "d".repeat(40);
+  const f = fixture();
+  const settle = f.controller.beginSave();
+  f.controller.pushed(scope1, other);
+  f.controller.published(f.controller.proof(), scope1, result(saved), []);
+  settle();
+  await flush();
+  assert.deepEqual(f.calls.map(([action]) => action), ["snapshot"], "no head check while the refresh runs");
+  f.answers[0].resolve(snap(saved));
+  await flush();
+  await flush();
+  assert.deepEqual(f.calls[1], ["head", { repo: "lex/site1", branch: "main", commit: other }], "checked on the saved snapshot");
+  f.answers[1].resolve({ commit: other });
+  await flush();
+  assert.equal(f.counts().loads, 1, "one load, of the other push");
 });
