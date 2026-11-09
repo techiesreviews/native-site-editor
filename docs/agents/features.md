@@ -199,7 +199,7 @@ its number unused.
 - Files: `worker/github-webhook.ts`, `worker/app.ts`, `worker/agent-relay.ts`, `worker/index.ts`, `worker/owner-setup.ts`, `shared/live-room.ts`, `src/live-room.ts`, `src/live-text.ts`, `src/controllers/save-publish-controller.ts`, `src/controllers/source-pane-controller.ts`, `src/components/publish-menu.ts`, `src/page-builder-host.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-push-notice.spec.ts`
-- Steps: none yet (needs a commit made outside the editor while it is open)
+- Steps: none yet (a scripted try cannot sign a webhook delivery; the spec does)
 
 ## Pages and files
 

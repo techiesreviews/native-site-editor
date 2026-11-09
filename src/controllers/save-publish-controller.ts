@@ -121,13 +121,16 @@ export function createSavePublishController(ports: SavePublishPorts) {
   // another tab): checked when the tab is shown or focused again, at most
   // every 15 seconds, and after a save was refused. A new head loads as
   // Refresh does, the open file opening again. `pushed`: the commit a push
-  // notice named, asked about (unless this tab trusts a head of its own, which
-  // may be newer) so a GitHub read lagging behind it still gives it.
+  // notice named, asked about so a GitHub read lagging behind it still gives
+  // it. A trusted head other than the one on show (this tab's own newer save)
+  // is asked about instead: a delayed notice may name an older commit. Every
+  // load trusts the commit it shows, which says nothing newer than the push.
   async function checkHead(force = false, pushed?: string) {
     const was = proof(), seen = was.snapshot, scope = ports.scope();
     if (!scope || !seen || !ports.visible() || (!force && Date.now() - headCheckedAt < 15_000)) return;
     headCheckedAt = Date.now();
-    const token = ++headCheck, known = trustedHead() ?? pushed;
+    const token = ++headCheck, trusted = trustedHead();
+    const known = trusted && trusted !== seen.commit ? trusted : pushed ?? trusted;
     try {
       const { commit } = await ports.api<{ commit: string }>("head", {
         repo: scope.repo, branch: seen.branch,
@@ -153,8 +156,12 @@ export function createSavePublishController(ports: SavePublishPorts) {
   //   other is checked as above;
   // - disposed: dropped, nothing read.
   // A hidden tab reads nothing (checkHead) and checks on its next focus.
+  // The snapshot after this tab's save (`refreshAfterPublish`): a notice taken up meanwhile waits for it, so a head
+  // answer never meets the snapshot before the save and loads the branch a second time.
   let saving = 0, heldPush: { scope: DraftScope; commit: string } | undefined, disposed = false;
+  let refreshing: Promise<void> | undefined;
   function takeUpPush(scope: DraftScope, commit: string) {
+    if (refreshing) { const after = refreshing; void after.then(() => takeUpPush(scope, commit)); return; }
     const seen = ports.snapshot();
     if (disposed || !seen || !isOpen(scope) || commit === seen.commit || commit === headSeen?.commit) return;
     void checkHead(true, commit);
@@ -322,7 +329,8 @@ export function createSavePublishController(ports: SavePublishPorts) {
     const shown = live(was, false) || isOpen(scope) && !!was.snapshot && ports.snapshot()?.commit === was.snapshot.commit;
     if (shown) {
       seeHead(result.commit);
-      void refreshAfterPublish(scope, result.commit);
+      const done: Promise<void> = refreshAfterPublish(scope, result.commit).finally(() => { if (refreshing === done) refreshing = undefined; });
+      refreshing = done;
     }
     ports.saved(scope, result, submitted, shown);
   }
