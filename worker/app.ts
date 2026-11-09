@@ -2,6 +2,7 @@ import { AGENTS_PAUSED, agentControls, agentsPaused, type AgentControlEnv } from
 import { AGENT_PERMISSION_LIFETIME } from "./agent-lifecycle";
 import { cleanupRoute, inventoryRoute } from "./agent-maintenance";
 import { requestJson } from "./http";
+import { GITHUB_WEBHOOK_PATH, githubWebhook } from "./github-webhook";
 import { ASSET_TYPES } from "../shared/asset-types";
 import { AgentRelay, LiveRooms, liveRoomObjectName, liveRoomTag, livePreviewObjectName, livePreviewRoomTag, liveSessionObjectName, liveSessionRoomTag, relayObjectName, type LiveAgent } from "./agent-relay";
 import { LIVE_SESSION_HOST, LIVE_SESSION_TOKEN, liveRoomFile, type LiveAccess } from "../shared/live-room";
@@ -96,6 +97,8 @@ export interface Env extends AgentControlEnv {
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   GITHUB_APP_SLUG?: string;
+  /** The GitHub App's webhook secret (ticket am-32): set, it wins over the one owner setup kept; neither refuses every delivery. */
+  GITHUB_WEBHOOK_SECRET?: string;
   OWNER_SETUP_TOKEN?: string;
   OWNER_GITHUB?: string;
   EDITOR_ORIGIN?: string;
@@ -569,6 +572,8 @@ async function route(
       return agentsPaused();
   }
   if (path === "/__maintenance/cleanup") return cleanupRoute(request, env);
+  // GitHub's own deliveries: no sign-in or origin, only the webhook secret's signature (worker/github-webhook.ts).
+  if (path === GITHUB_WEBHOOK_PATH) return githubWebhook(request, env);
   if (path === "/__maintenance/inventory") return inventoryRoute(request, env);
   if (isOAuthPath(path))
     return handleOAuth(request, env, url, {

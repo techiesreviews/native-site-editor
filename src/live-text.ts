@@ -90,6 +90,8 @@ export interface LiveTextPorts {
   loadCarets?: () => Promise<(share: CaretShare) => () => void>;
   /** Who changed each file, for the commit (src/save-authors.ts `saveAuthors` by default). */
   authors?: SaveAuthors;
+  /** A GitHub push moved the shared file's branch to `commit` (ticket am-32): the open file's room heard it from the relay. */
+  onPushed?(scope: DraftScope, commit: string): void;
 }
 
 /** Someone else's caret in the open file, in this tab's text (ticket am-22). `author`: the Yjs client id their own changes
@@ -307,6 +309,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     },
     onKey: () => copy?.hello(),
     onPeers(next) { peers = next; caretsMoved(); copy?.nameAuthors(); },
+    onPushed: commit => ports.onPushed?.(scope, commit),
   });
 
   async function load() {

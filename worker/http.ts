@@ -7,7 +7,7 @@ import { HttpError } from "./github";
  * holds without trusting the Content-Length header; an over-limit body is
  * cancelled before it is read in full.
  */
-async function readBoundedBytes(request: Request, limit: number): Promise<Uint8Array> {
+export async function readBoundedBytes(request: Request, limit: number): Promise<Uint8Array> {
   const encoding = request.headers.get("Content-Encoding");
   if (encoding && encoding !== "gzip" && encoding !== "identity")
     throw new HttpError(415, "Send the request as a plain or gzipped body.");

@@ -58,6 +58,8 @@ export type LiveRoomOptions = LiveRoomPlace & {
   /** The room ended for this participant and does not reconnect: no tab has it open (agents), its connection ended, or it was
    * refused. `why`: the relay's close code (LIVE_ROOM_CLOSED, LIVE_ACCESS_ENDED, LIVE_HOST_LOST), or the refusal's HTTP status. */
   onClosed?(why?: number): void;
+  /** A GitHub push moved this room's branch to `commit` (ticket am-32, worker/github-webhook.ts); tabs alone hear it. */
+  onPushed?(commit: string): void;
   clock?: LiveClock;
 };
 
@@ -288,6 +290,8 @@ export function openLiveRoom(options: LiveRoomOptions) {
       case "make-key": if (!roomKey && !options.key) await makeKey(); return;
       // A member holds the key now: say who is here so it sees this tab at once, or ask it if still waiting.
       case "keyed": if (roomKey) sayHere(); else ask(); return;
+      // A GitHub push moved the branch on (ticket am-32): only the relay sends this text frame, never a member.
+      case "pushed": options.onPushed?.(message.commit); return;
       // Everyone in a room whose key came with it has that key already: nobody hands it on.
       case "key-request": if (!options.key) await answer(message.from, message.publicKey); return;
       case "key": {

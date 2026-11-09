@@ -13,7 +13,8 @@ export const liveAccess = (value: unknown): value is LiveAccess => value === "ed
 /** Sent by the relay. `welcome` lists who was already in; its `keyed` says the joiner holds the key: it was first in
  * (so it makes one) or it reconnected in place of its own earlier socket (so it keeps the key it had).
  * `keyed`: a member now holds the key (members send presence; a joiner still waiting asks again). `make-key`:
- * the last key holder left, so this tab makes a new key. */
+ * the last key holder left, so this tab makes a new key. `pushed`: a GitHub push moved this room's branch to `commit`
+ * (ticket am-32), sent to tabs only; each reads the files again with its own sign-in. */
 export type LiveServerMessage =
   | { type: "welcome"; peer: string; keyed: boolean; peers: { peer: string; access: LiveAccess; keyed: boolean }[] }
   | { type: "joined"; peer: string; access: LiveAccess }
@@ -21,7 +22,8 @@ export type LiveServerMessage =
   | { type: "keyed"; peer: string }
   | { type: "make-key" }
   | { type: "key-request"; from: string; publicKey: string }
-  | { type: "key"; from: string; publicKey: string; wrapped: string };
+  | { type: "key"; from: string; publicKey: string; wrapped: string }
+  | { type: "pushed"; commit: string };
 
 /** Sent by a participant: "I hold the key now", a joiner's one-time ECDH public key, or the room key wrapped for that joiner. */
 export type LiveClientMessage =
@@ -101,6 +103,7 @@ export function readLiveServerMessage(text: string): LiveServerMessage | null {
     case "make-key": return { type: "make-key" };
     case "key-request": return peer("from") && key("publicKey") ? value as LiveServerMessage : null;
     case "key": return peer("from") && key("publicKey") && key("wrapped") ? value as LiveServerMessage : null;
+    case "pushed": return typeof value.commit === "string" && /^[a-f\d]{40}$/.test(value.commit) ? { type: "pushed", commit: value.commit } : null;
     default: return null;
   }
 }

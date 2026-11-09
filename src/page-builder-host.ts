@@ -181,7 +181,9 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
       currentPath: () => appStore.openFile.value,
       selection: () => appStore.selection.value,
       // The open file's shared copy (src/live-text.ts), started with the first component tools, after the first paint.
-      live: { store: editorModule.sourceStore(), openFile: appStore.openFile, scope: draftScope },
+      // A push notice it hears (ticket am-32) has the branch head checked, as on focus.
+      live: { store: editorModule.sourceStore(), openFile: appStore.openFile, scope: draftScope,
+        onPushed: (scope, commit) => ports.pagesAndFiles.savePublish.pushed(scope, commit) },
       openFile: async (path) => {
         const at = workspaceSession.begin(), scope = draftScope();
         previewSelection.recordIntent(path);

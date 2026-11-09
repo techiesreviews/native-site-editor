@@ -24,6 +24,8 @@ export interface GitHubAppConfig {
   clientId: string;
   clientSecret: string;
   slug: string;
+  /** The push webhook's secret GitHub made with the App (ticket am-32); GITHUB_WEBHOOK_SECRET wins over it when set. */
+  webhookSecret?: string;
 }
 
 export interface OwnerSetupState {
@@ -58,7 +60,9 @@ export function githubAppManifest(origin: string, aliases: string[] = [], owner 
     name: owner ? `native-site-editor-${owner}`.slice(0, 34) : "native-site-editor-techies",
     url: origin,
     public: true,
-    hook_attributes: { active: false, url: `${origin}/auth/setup/webhook` },
+    // Pushes reach open tabs (ticket am-32, worker/github-webhook.ts): GitHub makes the secret and hands it back with the App.
+    hook_attributes: { active: true, url: `${origin}/api/github/webhook` },
+    default_events: ["push"],
     redirect_url: `${origin}/auth/setup/callback`,
     callback_urls: [origin, ...aliases].map((value) => `${value}/auth/callback`),
     // One trip to GitHub for a new user: installing the App also signs in
@@ -267,6 +271,7 @@ export async function convertManifest(
   const data = (await boundedJson(response, 1024 * 1024)) as {
     client_id?: string;
     client_secret?: string;
+    webhook_secret?: string | null;
     slug?: string;
     owner?: { login?: string };
   };
@@ -276,6 +281,7 @@ export async function convertManifest(
     clientId: data.client_id,
     clientSecret: data.client_secret,
     slug: data.slug,
+    ...(data.webhook_secret ? { webhookSecret: data.webhook_secret } : {}),
     owner: data.owner?.login ?? "",
   };
 }

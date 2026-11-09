@@ -76,10 +76,12 @@ test("manifest registers the private hosted App with exact permissions and callb
   });
   assert.equal(manifest.request_oauth_on_install, true);
   assert.equal((manifest as { setup_url?: string }).setup_url, undefined);
+  // Pushes reach open tabs (ticket am-32): the webhook is on from the start, for the Push event only.
   assert.deepEqual(manifest.hook_attributes, {
-    active: false,
-    url: `${origin}/auth/setup/webhook`,
+    active: true,
+    url: `${origin}/api/github/webhook`,
   });
+  assert.deepEqual(manifest.default_events, ["push"]);
 });
 
 test("owner setup requires canonical origin, fragment unlock token, and same-origin POST", async () => {
@@ -148,19 +150,23 @@ test("setup callback consumes state once, persists credentials, and redacts secr
         client_secret: "secret-value",
         slug: "native-site-editor-techies",
         pem: "discard",
-        webhook_secret: "discard",
+        webhook_secret: "webhook-value",
       });
     },
   );
   assert.equal(callback.status, 302);
   assert.equal(callback.headers.get("location"), "/auth/setup");
   assert.equal(conversions, 1);
+  // The webhook secret GitHub made with the App is kept, so its push deliveries can be checked (ticket am-32).
   assert.deepEqual(config.get("native-site-editor/config"), {
     clientId: "Iv1.fixture",
     clientSecret: "secret-value",
     slug: "native-site-editor-techies",
+    webhookSecret: "webhook-value",
   });
-  assert.ok(!(await callback.text()).includes("secret-value"));
+  const page = await callback.text();
+  assert.ok(!page.includes("secret-value"));
+  assert.ok(!page.includes("webhook-value"));
   const replay = await handle(
     new Request(`${origin}/auth/setup/callback?code=fixture&state=${state}`, {
       headers: { Cookie: cookie },

@@ -139,10 +139,10 @@ export class SessionStore extends DurableObject {
     const url = new URL(request.url);
     if (url.pathname === "/maintenance/cleanup") return this.ctx.blockConcurrencyWhile(() => cleanupObject(request, storage, { sockets: this.ctx.getWebSockets().length }));
     if (url.pathname === "/maintenance/inventory") return inventoryObject(request, storage);
-    if (url.pathname === "/live/join" || url.pathname === "/live/end-agent" || url.pathname === "/live/admits" || url.pathname === "/live/preview-off") {
+    if (url.pathname === "/live/join" || url.pathname === "/live/end-agent" || url.pathname === "/live/admits" || url.pathname === "/live/preview-off" || url.pathname === "/live/pushed") {
       // Worker-internal only: app.ts checks room access and names the room; this stores nothing but a preview link's
       // "turned off" mark, kept until the link would have ended anyway.
-      let identity: { room?: unknown; access?: unknown; rejoin?: unknown; agent?: Partial<LiveAgent>; preview?: unknown; ends?: unknown } | null = null;
+      let identity: { room?: unknown; access?: unknown; rejoin?: unknown; agent?: Partial<LiveAgent>; preview?: unknown; ends?: unknown; commit?: unknown } | null = null;
       try { identity = JSON.parse(request.headers.get(LiveRooms.identityHeader) ?? "null"); } catch { /* Refuse malformed trusted metadata. */ }
       const live = this.live();
       // Turning a preview link off (slice 35): every socket in it closes, and it refuses from now until it would end.
@@ -157,6 +157,11 @@ export class SessionStore extends DurableObject {
         return new Response(null, { status: 204 });
       }
       if (identity?.preview === true && await storage.get(PREVIEW_OFF_KEY) !== undefined) return new Response(null, { status: 410 });
+      // A signed GitHub push to this instance's branch (worker/github-webhook.ts, ticket am-32): its open tabs hear the new commit.
+      if (url.pathname === "/live/pushed") {
+        if (request.method !== "POST" || typeof identity?.commit !== "string" || !/^[a-f\d]{40}$/.test(identity.commit)) return new Response(null, { status: 400 });
+        return Response.json({ told: live.pushed(identity.commit) });
+      }
       // A revoked connection's agents leave every room here at once (worker/app.ts, /api/agent/revoke).
       if (url.pathname === "/live/end-agent") {
         if (request.method !== "POST" || typeof identity?.agent?.id !== "string") return new Response(null, { status: 400 });
