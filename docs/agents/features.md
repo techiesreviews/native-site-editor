@@ -195,11 +195,19 @@ its number unused.
 
 ### F-repo-12 A push on GitHub shows within seconds
 - Try: On an editor whose GitHub App sends push webhooks (README, "Push notices for an existing App"), open a page of a site and keep the tab in front. Commit a change to that branch elsewhere: on GitHub, or Save to GitHub from another browser.
-- Good: Within a few seconds, without a click or a focus change, the branch loads again as Refresh from GitHub does (F-repo-06), and the open page shows the new commit; unsaved changes stay. A tab in the background picks the push up when it is shown again, as before. Your own save does not load the branch a second time, however slowly its answer comes back. No toast (S4). An editor without the webhook, or with live sharing off, still checks on focus.
+- Good: Within a few seconds, without a click or a focus change, the open page shows the new commit: changed pages and stylesheets fold in where they are (F-repo-13), anything else loads the branch again as Refresh from GitHub does (F-repo-06); unsaved changes stay. A tab in the background picks the push up when it is shown again, as before. Your own save does not load the branch a second time, however slowly its answer comes back. No toast (S4). An editor without the webhook, or with live sharing off, still checks on focus.
 - Files: `worker/github-webhook.ts`, `worker/app.ts`, `worker/agent-relay.ts`, `worker/index.ts`, `worker/owner-setup.ts`, `shared/live-room.ts`, `src/live-room.ts`, `src/live-text.ts`, `src/controllers/save-publish-controller.ts`, `src/controllers/source-pane-controller.ts`, `src/components/publish-menu.ts`, `src/page-builder-host.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-push-notice.spec.ts`
 - Steps: none yet (a scripted try cannot sign a webhook delivery; the spec does)
+
+### F-repo-13 Outside changes fold in
+- Try: Open the home page with no unsaved changes, then commit a change to one of its paragraphs on GitHub (or with a coding tool) and push. Then type a new heading in the editor without saving, and push a change to another line; then push a different heading.
+- Good: No reload and no message. With no unsaved changes the page updates in place: the changed paragraph gets a thin outline and a chip with the commit's author ("Sam · GitHub") that holds, then fades within about 3 seconds (still, with reduced motion, then gone). Unsaved words stay and the other line's change merges in by itself; the code pane shows no "GitHub changed since this draft started" bar. When both changed the same line, GitHub's version shows, and one Undo brings back your words, leaving the rest of the commit in place. Added, removed or renamed files, images and other files load the branch again as before. In a live room every tab takes the change, and the shared copy starts again from it.
+- Files: `src/outside-merge.ts`, `src/controllers/save-publish-controller.ts`, `src/pages-and-files-host.ts`, `src/main.ts`, `src/agent-presence.ts`, `src/components/native-preview.ts`, `src/components/native-preview-runtime.js`, `src/components/preview-protocol.ts`, `src/components/source-editor.ts`, `src/live-text.ts`, `worker/history.ts`, `shared/types.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-outside-fold.spec.ts`
+- Steps: none yet (a scripted try cannot make a commit on GitHub part way through; the spec does)
 
 ## Pages and files
 

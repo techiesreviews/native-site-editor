@@ -4387,6 +4387,15 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       drawBox(pair.box, target);
       if (pair.box.style.display === "none") { pair.chip.style.display = "none"; return; }
       pair.box.style.border = "2px solid " + agent.color;
+      // An outside change's author (ticket am-33): held, then faded out, once per mark; still under reduced motion.
+      if (pair.box.__fade !== agent.fade) {
+        pair.box.__fade = agent.fade;
+        [pair.box, pair.chip].forEach(function (el) {
+          el.getAnimations().forEach(function (animation) { animation.cancel(); });
+          if (agent.fade && !matchMedia("(prefers-reduced-motion: reduce)").matches)
+            el.animate([{ opacity: 1 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }], { duration: 2600, easing: "ease-out", fill: "forwards" });
+        });
+      }
       // Its name is on the pin it works through (ticket am-13): the outline alone here.
       if (agent.bare) { pair.chip.style.display = "none"; return; }
       var parts = pair.parts;
@@ -4579,7 +4588,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
           name: typeof agent.name === "string" && agent.name ? agent.name.slice(0, 60) : "Agent", bare: agent.bare === true,
           token: typeof agent.token === "string" ? agent.token : "", change: typeof agent.change === "string" ? agent.change : "",
           undo: typeof agent.token === "string" && typeof agent.change === "string" && (agent.undo === "ready" || agent.undo === "undone" || agent.undo === "busy") ? agent.undo : "",
-          problem: typeof agent.problem === "string" ? agent.problem.slice(0, 300) : "" };
+          problem: typeof agent.problem === "string" ? agent.problem.slice(0, 300) : "", fade: agent.fade === true };
       });
       drawPresence();
       return;

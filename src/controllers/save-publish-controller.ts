@@ -19,6 +19,8 @@ export interface SavePublishPorts {
   /** Whether the tab is shown; the head is checked only then. */
   visible(): boolean;
   reload(): Promise<void>;
+  /** Folds the branch's new head `commit` in place (ticket am-33, src/outside-merge.ts); false: `reload` instead. */
+  foldIn?(commit: string, live: () => boolean): Promise<boolean>;
   findEntry(path: string): Promise<TreeEntry | undefined>;
   forget(scope: DraftScope, path: string): void;
   /** The draft of `path` went (discarded, or found to be GitHub's version): no one is named for it (src/save-authors.ts). */
@@ -120,7 +122,7 @@ export function createSavePublishController(ports: SavePublishPorts) {
   // Whether GitHub moved the branch on (a pull request merged, a save in
   // another tab): checked when the tab is shown or focused again, at most
   // every 15 seconds, and after a save was refused. A new head loads as
-  // Refresh does, the open file opening again. `pushed`: the commit a push
+  // Refresh does, the open file opening again, unless it folds in (am-33). `pushed`: the commit a push
   // notice named, asked about so a GitHub read lagging behind it still gives
   // it. A trusted head other than the one on show (this tab's own newer save)
   // is asked about instead: a delayed notice may name an older commit. Every
@@ -138,7 +140,8 @@ export function createSavePublishController(ports: SavePublishPorts) {
       });
       if (token !== headCheck || !live(was) || commit === seen.commit) return;
       seeHead(commit);
-      await ports.reload();
+      // Changed pages and stylesheets fold in where they are; anything else loads the branch again.
+      if (!await ports.foldIn?.(commit, () => token === headCheck && live(was))?.catch(() => false)) await ports.reload();
     } catch {
       // Checked again on the next focus.
     }

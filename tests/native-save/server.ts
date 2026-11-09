@@ -227,7 +227,7 @@ interface Git {
   blobs: Map<string, Buffer>;
   trees: Map<string, TreeEntry[]>;
   // A commit's message and date show in the file history (`/commits`).
-  commits: Map<string, { tree: string; parents: string[]; message?: string; date?: string }>;
+  commits: Map<string, { tree: string; parents: string[]; message?: string; date?: string; author?: string }>;
   head: string;
   // GitHub's read lag after a write, as a test sets it (`/__demo/lag`): the
   // next `reads` reads of the branch after each ref update name the commit
@@ -855,7 +855,7 @@ function githubFetch(
           .map(([file]) => ({ filename: file, status: before.has(file) ? "modified" : "added" })),
         ...[...before.keys()].filter((file) => !after.has(file)).map((file) => ({ filename: file, status: "removed" })),
       ];
-      return jsonResponse({ sha: single[1], files });
+      return jsonResponse({ sha: single[1], files, author: { login: commit.author ?? DEMO_LOGIN }, commit: { author: { name: commit.author ?? DEMO_LOGIN } } });
     }
     if (path.startsWith(`${repoBase}/git/commits/`) && method === "GET") {
       const sha = path.slice(`${repoBase}/git/commits/`.length);
@@ -1453,7 +1453,8 @@ function workerMiddleware(): Connect.NextHandleFunction {
         // `delete: true` removes the file instead; `repo` names a fixture
         // repository (such as "native-cards") to commit to instead of the demo's;
         // `base64` gives the file's bytes instead of `content` (bytes that are not UTF-8 text).
-        const { path: filePath, content, base64, delete: remove, repo } = JSON.parse(bodyBuffer.toString() || "{}");
+        // `author` names who made the commit (ticket am-33's chip).
+        const { path: filePath, content, base64, delete: remove, repo, author } = JSON.parse(bodyBuffer.toString() || "{}");
         const slot = sessions.get(id)!;
         const fixture = repo === undefined ? undefined : FIXTURE_REPOS.find((item) => item.repo.name === repo);
         if (repo !== undefined && !fixture) {
@@ -1479,7 +1480,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
               : { segments: String(filePath).split("/"), mode: "100644", content: String(content) },
         ]);
         const commit = commitSha(tree + ":external:" + Date.now());
-        git.commits.set(commit, { tree, parents: [git.head], message: `Edit ${filePath} on GitHub`, date: new Date().toISOString() });
+        git.commits.set(commit, { tree, parents: [git.head], message: `Edit ${filePath} on GitHub`, date: new Date().toISOString(), ...(typeof author === "string" ? { author } : {}) });
         git.head = commit;
         res.statusCode = 204;
         return res.end();

@@ -228,7 +228,7 @@ test("a post-save edit becomes a fresh draft and re-enables saving", async ({ pa
   await expect(page.frameLocator(".native-preview-frame").getByRole("heading", { name: "Second edit after save" })).toBeVisible({ timeout: 30_000 });
 });
 
-test("a conflicting save keeps the draft and the preview", async ({ page, baseURL }) => {
+test("a conflicting save folds GitHub's commit in, the draft's words one Undo away", async ({ page, baseURL }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await expect(frame.getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
 
@@ -244,9 +244,15 @@ test("a conflicting save keeps the draft and the preview", async ({ page, baseUR
   await saveSubmit(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText(/GitHub changed these files|drafts are kept/i, { timeout: 30_000 });
 
-  // The draft is retained: the preview still shows our unsaved text.
+  // The refusal has the branch's head checked, and GitHub's commit folds in (ticket am-33): the same words changed on
+  // both sides, so the latest version shows and the draft's words are one Undo away; saved again, they go through.
+  await expect(frame.getByRole("heading", { name: "Someone else edited" })).toBeVisible({ timeout: 15_000 });
+  await page.locator("#editor-toolbar-host .code-editor__undo").click();
   await expect(frame.getByRole("heading", { name: "My conflicting draft" })).toBeVisible();
   await expect(saveTrigger(page)).toBeEnabled();
+  await openSaveMenu(page);
+  await saveSubmit(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
 });
 
 test("typing while a slow save is in flight keeps the newer draft", async ({ page, baseURL }) => {

@@ -365,7 +365,7 @@ const { openNewDraft, showDeletedFile } = createDraftViews({
 // Pages & files: the trees and explorer tabs, Create, file operations, resync and save/publish (src/pages-and-files-host.ts).
 // By value: consts and hoisted functions declared above; `let` state goes in as getters (tests/main-ts-ceiling.test.ts).
 const pagesAndFiles = createPagesAndFilesHost({
-  app, element, appStore, runtime, workspaceSession, editorModule, guardedEdits, mediaController, cards, linkedStyles, versions,
+  app, element, appStore, runtime, workspaceSession, editorModule, guardedEdits, agentPresence, nativeHistorySession: (scope, path) => nativeHistorySession(scope, path), mediaController, cards, linkedStyles, versions,
   previewSelection, repositoryIndex, finishedWork, lazyModule, loadConfirmDialog, api, status, clearError, errorMessage, announce,
   currentLoad, stampOf, draftScope, entryAt, findEntry, readFile, readFiles, readMediaText, mediaOrigins, ensureNativeTextIndex,
   nativeRouteForPath, nativeRouteInfo, nativeTitles, nativeNavigationTarget, writeNativePageMeta, refreshNativeRoutes, forgetDraftedAssets,

@@ -774,7 +774,7 @@ export interface LiveText {
 
 /** Shares the open file while it is open in the draft store, for as long as this runs; calling the result stops it. */
 export function startLiveText(ports: LiveTextPorts): LiveText {
-  type Share = { key: string; stop(): void; authors?: AuthorUndo; drawing?: boolean; undraw?: () => void };
+  type Share = { key: string; baseSha?: string | null; stop(): void; authors?: AuthorUndo; drawing?: boolean; undraw?: () => void };
   let current: Share | undefined;
   const listeners = new Set<() => void>();
   const changed = () => { for (const listener of [...listeners]) try { listener(); } catch { /* A name tag must not break sharing. */ } };
@@ -810,7 +810,7 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
     if (current?.key === key) return;
     current?.stop();
     if (!key) { current = undefined; return; }
-    const share: Share = { key, stop: () => undefined };
+    const share: Share = { key, baseSha: file!.baseSha, stop: () => undefined };
     current = share;
     const at = { scope: file!.scope, path: file!.path };
     const shared = shareFile(ports, at.scope, at.path, why => {
@@ -836,7 +836,16 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
     share.authors = shared.authors;
   };
   const stopEffect = effect(() => { void ports.openFile.value; untracked(() => { left = undefined; check(); }); });
-  const stopStore = ports.store.subscribe(event => { if (event.type === "file") check(); });
+  const stopStore = ports.store.subscribe(event => {
+    if (event.type !== "file") return;
+    // GitHub's text moved under the shared file (an outside change folded in, ticket am-33): the copy starts again from
+    // it. Every tab of the room folds the same change into the same text, so their drafts meet again in the new copy.
+    if (event.change === "base" && current?.key === event.key && current.baseSha !== ports.store.get(event.scope, event.path)?.baseSha) {
+      current.stop();
+      current = undefined;
+    }
+    check();
+  });
   // `clear` (sign-out, another workspace) says nothing per file: any settled change looks again, which is cheap.
   const stopState = ports.store.subscribeState(check);
   return port(() => { stopAgents(); stopEffect(); stopStore(); stopState(); current?.stop(); current = undefined; listeners.clear(); });

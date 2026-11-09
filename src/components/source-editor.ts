@@ -265,6 +265,8 @@ type MountedEditor = {
   attach(): void;
   onStore(event: DraftEvent): void;
   refused(message: string | undefined): void;
+  /** GitHub's text of the file is `source` at blob `sha` now (an outside change folded in, ticket am-33). */
+  moved(source: string, sha: string): void;
 };
 // Several editors can be mounted at once (page and stylesheet side by side);
 // commands are routed by file path.
@@ -290,6 +292,10 @@ function onStoreEvent(event: DraftEvent) {
   const shown = [...liveMounted].filter(editor => editor.key === event.key);
   for (const editor of shown) editor.onStore(event);
   if (event.type === "text" && !shown.length) for (const hook of [...textHooks]) hook({ scope: event.scope, path: event.path });
+}
+/** An outside change folded into the file of `key` (src/outside-merge.ts): its panes compare with GitHub's new text. */
+export function sourceMoved(key: string, source: string, sha: string) {
+  for (const editor of [...liveMounted]) if (editor.key === key) editor.moved(source, sha);
 }
 /** What a pane of `path` is: for the view's CSS definitions across panes. */
 export function paneOf(path: string) {
@@ -966,6 +972,12 @@ export function mountSourceEditor(
       if (disposed) return;
       refusal = message;
       refreshControls();
+    },
+    moved(source, sha) {
+      file.source = source;
+      file.baseSha = sha;
+      conflict = false;
+      update();
     },
   };
   mounted.set(file.path, registration);
