@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-repo-11","steps":["click \"repository actions\"","click \"Preview link\"","expect visible \"Link copied\"","record copied 600","expect visible \"Waiting for customer\"","record preview-link 600"]}
+{"screen":"editor","name":"F-repo-11","steps":["click \"repository actions\"","click \"Preview link\"","expect visible \"Link copied\"","record copied 600","expect visible \"Waiting for customer\"","record preview-link 600","hover \"Waiting for customer\"","expect visible \"Copy link\"","record copy-icon 600"]}

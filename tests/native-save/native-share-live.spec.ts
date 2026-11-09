@@ -40,6 +40,8 @@ const editDot = (page: Page) => page.locator('[data-share="edit"] .share-row');
 /** Lex shares from the project menu: the row says "Link copied" with the menu still open, then waits for a
  * collaborator; the link from the clipboard. */
 async function share(lex: Page) {
+  // Emptied first, so only this press's link can satisfy the poll below.
+  await lex.evaluate(() => navigator.clipboard.writeText(""));
   await lex.locator(".repository-menu__trigger").click();
   await lex.getByRole("button", { name: "Edit together", exact: true }).click();
   await expect(editLabel(lex)).toHaveText("Link copied");

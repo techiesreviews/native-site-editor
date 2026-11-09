@@ -19,6 +19,8 @@ const previewLabel = (page: Page) => page.locator('[data-share="preview"] .share
 const previewCopy = (page: Page) => page.locator('[data-share="preview"]').getByRole("button", { name: "Copy link" });
 /** Opens the project menu and makes a link: the row says it copied it, then waits for a customer. Returns the link. */
 async function makeLink(page: Page) {
+  // Emptied first, so only this press's link can satisfy the poll below.
+  await page.evaluate(() => navigator.clipboard.writeText(""));
   await page.locator(".repository-menu__trigger").click();
   await page.getByRole("button", { name: "Preview link", exact: true }).click();
   await expect(previewLabel(page)).toHaveText("Link copied");

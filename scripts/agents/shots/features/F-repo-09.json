@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-repo-09","steps":["click \"repository actions\"","click \"Edit together\"","expect visible \"Link copied\"","record copied 600","expect visible \"Waiting for collaborator\"","record waiting 600"]}
+{"screen":"editor","name":"F-repo-09","steps":["click \"repository actions\"","click \"Edit together\"","expect visible \"Link copied\"","record copied 600","expect visible \"Waiting for collaborator\"","record waiting 600","hover \"Waiting for collaborator\"","expect visible \"Copy link\"","record copy-icon 600"]}

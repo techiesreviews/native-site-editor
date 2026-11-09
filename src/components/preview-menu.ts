@@ -49,12 +49,20 @@ export function previewItems(port: PreviewControlPort, actionClass: string, root
   };
   const row = shareRow("Preview link", actionClass, view, () => {
     failed = undefined;
-    if (port.state().on) {
-      port.stop().catch(() => { if (destroyed) return; failed = "Couldn't stop · try again"; row.draw(); });
+    const state = port.state();
+    if (state.on) {
+      // Said only on the link it was for: another project's kept link may show by the time the turn-off fails.
+      port.stop().catch(() => {
+        const now = port.state();
+        if (destroyed || !now.on || now.link !== state.link) return;
+        failed = "Couldn't stop · try again";
+        row.draw();
+      });
       return;
     }
     port.start().then((link) => { if (link && !destroyed) return row.copy(link); }, (error: unknown) => {
-      if (destroyed) return;
+      // Another project's link may be on by now: the refusal was not about it.
+      if (destroyed || port.state().on) return;
       failed = (error as { status?: unknown } | null)?.status === 401 ? "Sign in to share" : "Couldn't make a link · try again";
       row.draw();
     });
