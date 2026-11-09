@@ -160,7 +160,11 @@ test('a branch list GitHub never answers shows the toast after four tries; Try a
   await page.clock.install();
   const reads = { seen: 0, failing: true };
   await page.route(/\/api\/branches\?/, (route) => { reads.seen++; if (!reads.failing) return route.continue(); });
-  await page.goto(`${baseURL}/${HASH}`);
+  // The site remembered from an earlier visit, not named in the address: the open waits for the branch list.
+  // A linked site's snapshot, asked by the page itself (src/boot-early.ts), proves its branch and opens it
+  // without the list, as a remembered boot does.
+  await page.addInitScript(() => localStorage.setItem('astro-site-editor:workspace:v1:native-demo-user', JSON.stringify({ repoId: 501, branch: 'main', path: 'index.html' })));
+  await page.goto(`${baseURL}/`);
   await failFourTries(page, reads);
   await expect(toast(page).locator('.editor-toast__text')).toHaveText(SAID);
   await expect(page.locator('#content')).toContainText('Branches could not be loaded.');

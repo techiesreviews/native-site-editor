@@ -10,6 +10,7 @@ import type { NativeSite } from "../shared/native-project";
 import type { StartingPoint } from "../shared/starting-point";
 import type { AppStore } from "./app-store";
 import type { ApiReceipt } from "./boot-api-response";
+import { takeEarlySnapshot } from "./boot-reads";
 import { forgetBootMemory, memoryMatches, provenFiles, readBootMemory, writeBootMemory, type BootMemory } from "./boot-memory";
 import type { CleanSourceCache } from "./clean-source-cache";
 import type { createSavePublishController } from "./controllers/save-publish-controller";
@@ -58,7 +59,8 @@ export interface WorkspaceBootPorts {
   draftsReady(): Promise<void>;
   nextLoad(scope?: WorkspaceScope): SessionStamp;
   api: Api;
-  apiResponse<T>(path: string, params?: Record<string, string>): Promise<ApiReceipt<T>>;
+  /** `early`: the page's own first try of this read (src/boot-early.ts). */
+  apiResponse<T>(path: string, params?: Record<string, string>, early?: Promise<Response>): Promise<ApiReceipt<T>>;
   readFile(repo: string, sha: string): Promise<string>;
   storage(kind: "local" | "session"): Pick<Storage, "getItem" | "setItem" | "removeItem">;
   element(id: string): { textContent: string | null; title: string };
@@ -289,10 +291,12 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     }
   }
 
-  // Remember last boot (src/boot-memory.ts): the hash's repository, as its last
-  // first paint read it, is asked for before the session is known. Nothing of it
-  // shows until the adopted session, the verified listing and the fresh snapshot
-  // prove it; anything else falls back to the normal reads.
+  // The address's snapshot, asked for before the session is known: by the page
+  // itself (src/boot-early.ts), or here for the remembered last boot
+  // (src/boot-memory.ts), whose files are asked for too. Nothing of it shows
+  // until the adopted session's tag, the verified listing (and the remembered
+  // account, when there is one) prove it; anything else falls back to the
+  // normal reads.
   // A taken guess, until it is abandoned: then its files never enter the cache.
   let takenGuess: { abandoned: boolean } | undefined;
   function dropBootGuess() {
@@ -304,20 +308,27 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     if (takenGuess) takenGuess.abandoned = true;
     takenGuess = undefined;
   }
-  let bootGuess: { memory: BootMemory; source: string; snapshot: Promise<ApiReceipt<Snapshot>>; files?: Promise<ApiReceipt<FilesResult>> } | undefined;
+  let bootGuess: { memory?: BootMemory; source: string; snapshot: Promise<ApiReceipt<Snapshot> & { fullName: string }>; files?: Promise<ApiReceipt<FilesResult>> } | undefined;
   function startBootGuess() {
     const link = readWorkspaceUrl();
-    const memory = link && readBootMemory(ports.storage("local"), link.repoId);
-    if (!memory || memory.branch !== link.branch) return;
+    if (!link) return;
+    const remembered = readBootMemory(ports.storage("local"), link.repoId);
+    const memory = remembered?.branch === link.branch ? remembered : undefined;
+    const early = takeEarlySnapshot(link.repoId, link.branch);
+    if (!memory && !early) return;
     const quiet = <T,>(read: Promise<T>) => { void read.catch(() => {}); return read; };
+    const ask = (fullName: string, response?: Promise<Response>) =>
+      ports.apiResponse<Snapshot>("snapshot", { repo: fullName, branch: link.branch }, response).then((receipt) => ({ ...receipt, fullName }));
     bootGuess = {
       memory,
       source: ports.source(),
-      snapshot: quiet(ports.apiResponse<Snapshot>("snapshot", { repo: memory.fullName, branch: memory.branch })),
-      files: memory.files.length ? quiet(ports.apiResponse<FilesResult>("files", { repo: memory.fullName, shas: memory.files.map((file) => file.sha).join(",") })) : undefined,
+      snapshot: quiet(early
+        ? early.then((found) => found ? ask(found.fullName, found.response) : memory ? ask(memory.fullName) : Promise.reject(new Error("The linked repository is not listed.")))
+        : ask(memory!.fullName)),
+      files: memory?.files.length ? quiet(ports.apiResponse<FilesResult>("files", { repo: memory.fullName, shas: memory.files.map((file) => file.sha).join(",") })) : undefined,
     };
   }
-  /** The guessed snapshot for `repo`/`branch`, once only, when this session and listing prove the memory. */
+  /** The guessed snapshot for `repo`/`branch`, once only, when this session and listing prove it (and the memory, when remembered). */
   function takeBootGuess(repo: Repository, branch: string): { snapshot: Promise<Snapshot>; token: { abandoned: boolean } } | undefined {
     const guess = bootGuess;
     // A new repository choice makes any earlier guess irrelevant.
@@ -325,16 +336,16 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     const tag = ports.sessionTag();
     const link = readWorkspaceUrl();
     if (!guess || !tag || guess.source !== ports.source() || link?.repoId !== repo.id || link.branch !== branch ||
-      !memoryMatches(guess.memory, ports.user?.login, repo, branch)) return undefined;
+      (guess.memory && !memoryMatches(guess.memory, ports.user?.login, repo, branch))) return undefined;
     // loadSnapshot drops the result if navigation supersedes it meanwhile.
     const fresh = () => api<Snapshot>("snapshot", { repo: repo.full_name, branch });
     const token = takenGuess = { abandoned: false };
     const snapshot = guess.snapshot.then((receipt) => {
-      if (receipt.sessionTag !== tag || ports.sessionTag() !== tag || receipt.value.branch !== branch) return fresh();
+      if (receipt.fullName !== repo.full_name || receipt.sessionTag !== tag || ports.sessionTag() !== tag || receipt.value.branch !== branch) return fresh();
       const snapshot = receipt.value;
       // Content is addressed by SHA: a path with the remembered SHA in this
       // fresh snapshot has exactly the remembered read's content.
-      for (const { sha } of guess.files && !token.abandoned ? provenFiles(guess.memory, snapshot.tree ?? snapshot.entries) : []) {
+      for (const { sha } of guess.memory && guess.files && !token.abandoned ? provenFiles(guess.memory, snapshot.tree ?? snapshot.entries) : []) {
         // Readers await this cached promise and handle its rejection. A batch
         // landing after the guess is abandoned is not used: the file is read afresh.
         void ports.cleanSources.load(repo.full_name, sha, () => guess.files!.then((files) => {
@@ -484,7 +495,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     restoreFile,
     loadSnapshot,
     chooseRepository,
-    /** Ask for the hash's remembered snapshot and files before the session is known. */
+    /** Ask for (or take the page's early read of) the hash's snapshot, and its remembered files, before the session is known. */
     startGuess: startBootGuess,
     /** Navigation or sign-out: forget the guess not yet taken and abandon a taken one. */
     dropGuess: dropBootGuess,

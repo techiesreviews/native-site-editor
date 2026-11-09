@@ -112,3 +112,26 @@ test("other errors in an open stay plain: no Try again", () => {
     assert.equal(notice().hidden, false);
   }
 });
+
+test("an early first try (src/boot-early.ts) is read as the answer; no answer or a 502/503 to it reads again as usual", async () => {
+  const savedFetch = globalThis.fetch;
+  const asked: string[] = [];
+  globalThis.fetch = (async (url: string) => { asked.push(url); return Response.json({ from: "fetch" }, { headers: { "X-Editor-Session": "t2" } }); }) as typeof fetch;
+  try {
+    const { reads } = setup();
+    const early = Promise.resolve(Response.json({ from: "early" }, { headers: { "X-Editor-Session": "t1" } }));
+    assert.deepEqual(await reads.apiResponse("session", undefined, early), { value: { from: "early" }, sessionTag: "t1", onboarding: undefined });
+    assert.deepEqual(asked, [], "not asked again");
+    for (const failed of [Promise.reject(new TypeError("offline")), Promise.resolve(new Response("{}", { status: 503 })), Promise.resolve(new Response("{}", { status: 502 }))]) {
+      const receipt = await reads.apiResponse<{ from: string }>("snapshot", { repo: "lex/site", branch: "main" }, failed);
+      assert.equal(receipt.value.from, "fetch");
+      assert.equal(receipt.sessionTag, "t2");
+    }
+    assert.deepEqual(asked, Array(3).fill("/api/snapshot?repo=lex%2Fsite&branch=main"));
+    // Any other answer is the answer, as the boot's own first try's would be.
+    await assert.rejects(reads.apiResponse("session", undefined, Promise.resolve(Response.json({ error: "Sign in" }, { status: 401 }))), { status: 401, message: "Sign in" });
+    assert.equal(asked.length, 3);
+  } finally {
+    globalThis.fetch = savedFetch;
+  }
+});

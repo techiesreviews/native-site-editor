@@ -80,9 +80,11 @@ export function createGitHubReads(ports: GitHubReadsPorts) {
     if (unanswered(error) && retry) ports.say(UNANSWERED, { label: "Try again", run: retry });
     else status("The last request did not complete.");
   }
-  async function apiResponse<T>(path: string, params?: Record<string, string>): Promise<ApiReceipt<T>> {
+  // `early`: the page's own first try of this read (src/boot-reads.ts EarlyReads); the tries after it, if it gets no answer or a 502/503, are this read's own.
+  async function apiResponse<T>(path: string, params?: Record<string, string>, early?: Promise<Response>): Promise<ApiReceipt<T>> {
     return ports.trackRead(async () => {
-      const response = await fetchWithReadRetry(`/api/${path}${params ? `?${new URLSearchParams(params)}` : ""}`, { credentials: "same-origin", cache: "no-store" });
+      // `include`: a same-origin read sends what `same-origin` would, and so takes the page's preload (vite-preview-runtime.ts) when it asks first.
+      const response = await fetchWithReadRetry(`/api/${path}${params ? `?${new URLSearchParams(params)}` : ""}`, { credentials: "include", cache: "no-store" }, { first: early });
       return await readApiReceipt<T>(response, (status, message) => new ApiError(status, message));
     });
   }

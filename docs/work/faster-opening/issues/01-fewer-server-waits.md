@@ -1,7 +1,7 @@
 ---
 title: "Fewer waits on the server before the first screen"
-status: ready-for-agent
-assignee:
+status: closed
+assignee: fleet-lead
 blocked_by: []
 ---
 
@@ -46,3 +46,49 @@ Expected (confirm while designing): `index.html`, `src/controllers/boot-controll
 ## Kit commands and evidence
 
 Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../agents/runner.md)). `kit go slice-fo01 -- scripts/agents/kit slice --ticket <this ticket> --builder claude-opus-5-5`. Measure with `kit bg` for the test server (`ASE_NATIVE_SAVE_DIST=1 ASE_NATIVE_SAVE_PORT=<port> npx tsx tests/native-save/server.ts`) and `ASE_COLD_BASE=… ASE_COLD_NET=… npx tsx tests/perf/cold-start.ts 3`.
+
+## Done (2026-11-10)
+
+### Behaviour
+
+- The page asks for the session and the repository list itself, first in `<head>` and ahead of the editor's own files (`<link rel="preload" as="fetch" crossorigin="use-credentials">`, added by `vite-preview-runtime.ts` to `index.html` only). A small classic script, `src/boot-early.ts` (1 KB gzip, content-hashed under `/assets/`, async, high priority), takes those answers and, when the address names a repository, asks for its snapshot: at once when the browser remembers the repository's name (`rememberedName`, `src/boot-memory.ts`), otherwise as soon as the repository list names it, without waiting for the session. It also asks for the preview runtime then (its URL comes on the script tag as `data-runtime`).
+- The boot takes each early read once (`takeEarlyRead`, `takeEarlySnapshot` in `src/boot-reads.ts`) and checks it as it checks its own reads: the session and the list through `startBootReads` (same session tag), the snapshot through the boot guess in `src/workspace-boot.ts` (the adopted session's tag, the verified listing, the same full name and branch, and the remembered account when there is a memory). A signed-out session, another account, a renamed repository, another repository or branch in the address: the early snapshot is thrown away and the snapshot is read afresh, as before. When the boot starts first (a repeat visit can), it claims the reads and the early script asks for nothing.
+- An early read counts as the first of a read's four tries (`first` in `fetchWithReadRetry`): one that gets no answer, or a 502/503, is followed by the read's own three retries, so a silent GitHub still shows the toast after four tries.
+- The editor's GET reads use `credentials: "include"` (the same as `same-origin` for these same-origin reads) so they match the page's preloads.
+- One failure path changes: on a first visit with a linked site, a branch list GitHub never answers no longer stops the opening; the early snapshot proves the branch and the site opens, as a remembered (repeat) visit already did. `native-github-silent.spec.ts` now covers the branch-list toast with a site remembered by the browser but not named in the address.
+
+### Timing
+
+`tests/perf/cold-start.ts`, built app (`ASE_NATIVE_SAVE_DIST=1`), median ms from navigation start, old (f68a492) and new builds measured in alternating rounds on the same machine on 2026-11-09/10. Normal: 5 runs per round; slow: 3 runs per round; the table shows the first round of each.
+
+| | session | first screen | usable | code pane |
+| --- | --- | --- | --- | --- |
+| Normal, first visit, before | 839 | 1241 | 1242 | 2244 |
+| Normal, first visit, after | 226 | 1022 | 1028 | 2034 |
+| Normal, repeat visit, before | 245 | 341 | 341 | 591 |
+| Normal, repeat visit, after | 227 | 330 | 330 | 565 |
+| Slow, first visit, before | 3206 | 4413 | 4413 | 10687 |
+| Slow, first visit, after | 824 | 3675 | 3675 | 9913 |
+| Slow, repeat visit, before | 916 | 1021 | 1021 | 2131 |
+| Slow, repeat visit, after | 879 | 1005 | 1005 | 2114 |
+
+Second rounds: slow first screen 4415 before, 3712 after; normal first screen 1244 before, 982 after; repeat visits 346/1037 before, 322/991 after. No repeat-visit number is worse.
+
+The slow first visit's first screen comes 0.70 to 0.74 s sooner, short of the expected 0.8 s. What is left is not server waits: the test server speaks HTTP/1.1, so the browser keeps six connections, and the editor's boot is about 25 files (`index.js` and its chunks, the stylesheets) that each hold one for the 400 ms latency. The editor's script cannot run before the last of them, about 3.1 s; the snapshot is already in by then (asked at 0.87 s, it waits in the same queue), and the page's files (about 0.45 s) follow the script. On the real editor (HTTP/2 and HTTP/3) the queue does not apply. Tried and dropped: a higher fetch priority for the early reads (fetch stays at High), the session asked by the early script instead of the page (no change), the runtime asked later (no change).
+
+### Suggestions (not done here)
+
+- Server: the snapshot carrying the first page's texts would save the page's files round trip after the snapshot, about 0.45 s on the slow first visit and 0.1 s on the normal one (measured: `/api/file` and `/api/files` 3165–3611 ms in the slow waterfall).
+- Fewer boot files: with six connections, each file the boot waits for costs a slot for one round trip; the boot's chunk count is now the slow first visit's limit.
+
+### Tests
+
+- `tests/boot-reads.test.ts`: the session, the list and the remembered repository's snapshot are asked at once; with nothing remembered the snapshot is asked as soon as the list names the repository, before the session answers, and the boot can still read the list; a list without the repository (or a 401) asks no snapshot; no address, no snapshot and no runtime; an early try with no answer is given up after the read timeout; each early read is taken once and a snapshot for another repository or branch is thrown away; the boot's claim leaves the early script nothing to ask.
+- `tests/boot-controller.test.ts`: the early session and list stand for the first reads, each used once; a later boot asks afresh.
+- `tests/workspace-boot.test.ts`: the early snapshot opens the linked repository with no second read once the session's tag proves it; taken once; a signed-out session or another account's tag throws it away; another name (renamed) or none (not listed) reads afresh; another repository or branch is never taken; with a memory it stands for the guess's first try and the remembered files are asked as before.
+- `tests/read-retry.test.ts`: an early first try is the first of four. `tests/github-reads.test.ts`: an early answer is the answer; no answer or a 502/503 is followed by the read's own tries. `tests/boot-memory.test.ts`: `rememberedName`. `tests/vite-preview-runtime.test.ts`: the editor's page gets the preloads and the early script first (the other pages do not), the dev server serves it as one classic script, and the built script asks the session, the list, the snapshot and the runtime.
+- `tests/native-save/native-boot-memory.spec.ts`: a guessed read is one asked before the boot asks for the branch list (the session now answers before the editor's script runs).
+- `scripts/agents/kit unit --affected`: RESULT: ok unit 350/350 (23 files). `scripts/agents/kit specs --affected`: RESULT: ok specs 12/12 passed. `scripts/agents/kit size`: RESULT: ok size boot 355 KB (+1 KB) vs dev@428e793, budget 355 KB (363,520-byte budget; about 190 bytes to spare). `npm run check` and `npm run lint` pass.
+
+Feature list: no change (nothing a person sees changes except that the editor opens sooner; the one failure-path change is described under Behaviour).
+

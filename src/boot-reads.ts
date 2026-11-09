@@ -1,3 +1,7 @@
+import { rememberedName } from "./boot-memory";
+import { READ_TIMEOUT_MS } from "./read-retry";
+import { readWorkspaceUrl } from "./workspace-state";
+
 /** Metadata stays alongside its response body until the caller adopts it. */
 export interface BootResponse<T> {
   value: T;
@@ -51,4 +55,76 @@ export function startBootReads<S extends BootSession, R>(options: {
       return response;
     },
   };
+}
+
+/**
+ * The page's own first reads (src/boot-early.ts), asked before the editor's
+ * script has loaded: the session, the repository list and the snapshot of the
+ * repository and branch the address names. Each is a first try only: the boot
+ * takes it once (takeEarlyRead, takeEarlySnapshot) and checks its answer as it
+ * checks its own reads; one the boot does not take is never used.
+ */
+export interface EarlyReads {
+  session?: Promise<Response>;
+  repositories?: Promise<Response>;
+  snapshot?: EarlySnapshot;
+}
+export interface EarlySnapshot {
+  repoId: number;
+  branch: string;
+  /** Undefined when the repository's full name is not known (not remembered, not listed). */
+  read: Promise<{ fullName: string; response: Promise<Response> } | undefined>;
+}
+declare global {
+  // The early script sets it unless the boot already has (an empty object: the boot asks for itself).
+  var aseEarlyReads: EarlyReads | undefined;
+}
+
+type Store = Pick<Storage, "getItem">;
+/**
+ * What the early script asks for; a try with no answer within READ_TIMEOUT_MS is given up, and the boot reads again.
+ * The session and the listing take the page's own preloads (vite-preview-runtime.ts), which start before any script.
+ * `preloadRuntime`: the address names a site, which will show: its preview runtime is asked for now.
+ */
+export function startEarlyReads(ports: { fetcher: typeof fetch; storage?: Store; preloadRuntime?: () => void }): EarlyReads {
+  const get = (path: string, params?: Record<string, string>) => {
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(), READ_TIMEOUT_MS);
+    // The same request as the boot's (src/github-reads.ts apiResponse) and the page's preloads.
+    const read = ports.fetcher(`/api/${path}${params ? `?${new URLSearchParams(params)}` : ""}`, { credentials: "include", cache: "no-store", signal: timeout.signal })
+      .finally(() => clearTimeout(timer));
+    void read.catch(() => {});
+    return read;
+  };
+  const session = get("session");
+  const repositories = get("repositories");
+  const link = readWorkspaceUrl();
+  if (!link) return { session, repositories };
+  ports.preloadRuntime?.();
+  const ask = (fullName: string) => ({ fullName, response: get("snapshot", { repo: fullName, branch: link.branch }) });
+  // The remembered last boot names the repository at once; otherwise the listing does, as soon as it answers.
+  const remembered = ports.storage && rememberedName(ports.storage, link.repoId, link.branch);
+  const read = remembered
+    ? Promise.resolve(ask(remembered))
+    // Cloned as it lands, before the boot reads the body.
+    : repositories.then((response) => response.ok ? response.clone().json() as Promise<unknown> : undefined).then((list) => {
+      const repo = Array.isArray(list) ? list.find((item: { id?: unknown } | null) => item?.id === link.repoId) as { full_name?: unknown } | undefined : undefined;
+      return typeof repo?.full_name === "string" ? ask(repo.full_name) : undefined;
+    }).catch(() => undefined);
+  return { session, repositories, snapshot: { repoId: link.repoId, branch: link.branch, read } };
+}
+
+/** The boot's own claim: from now on the early script asks for nothing. */
+const early = () => (globalThis.aseEarlyReads ??= {});
+/** The early read of `kind`, once; later reads ask afresh. */
+export function takeEarlyRead(kind: "session" | "repositories"): Promise<Response> | undefined {
+  const reads = early(), read = reads[kind];
+  delete reads[kind];
+  return read;
+}
+/** The early snapshot, once, when it was asked for this repository and branch. */
+export function takeEarlySnapshot(repoId: number, branch: string): EarlySnapshot["read"] | undefined {
+  const reads = early(), snapshot = reads.snapshot;
+  delete reads.snapshot;
+  return snapshot?.repoId === repoId && snapshot.branch === branch ? snapshot.read : undefined;
 }
