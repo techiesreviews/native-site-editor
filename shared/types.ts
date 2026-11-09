@@ -178,6 +178,8 @@ export interface CommitFiles {
   files: CommitFile[];
   /** GitHub lists up to 300 files of a commit. */
   truncated: boolean;
+  /** Who made it: the author's GitHub login, else the name in the commit (ticket am-33, an outside change's chip). */
+  author?: string;
 }
 /** A file's text as it was at a commit, for History's view of a version. */
 export interface FileRevision {

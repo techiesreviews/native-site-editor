@@ -4,7 +4,7 @@
 // wiring. The host (src/main.ts) keeps the session, the site runtime, the
 // editor and the preview, and hands them in as live ports.
 
-import type { Directory, Repository, TreeEntry } from "../shared/types";
+import type { Directory, Repository, Snapshot, TreeEntry } from "../shared/types";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, nativePageMovedUrl, nativeSiteSettings, type NativeSite } from "../shared/native-project";
 import { nativePageRoute } from "../shared/native-routes";
 import { isNewDraft, newDraftPaths } from "../shared/site-overlay";
@@ -17,7 +17,7 @@ import type { mountDropdown } from "./components/dropdown";
 import type { createFileRowActions } from "./components/file-row-actions";
 import type { createPagePicker } from "./components/page-picker";
 import type { createPagesTree } from "./components/pages-tree";
-import type { AgentMark } from "./agent-presence";
+import type { AgentMark, createAgentPresence } from "./agent-presence";
 import { refuse } from "./components/refusal-note";
 import type { mountSiteActions } from "./components/site-actions";
 import type * as sourceEditor from "./components/source-editor";
@@ -77,7 +77,10 @@ export interface PagesAndFilesPorts {
   appStore: AppStore;
   runtime: Pick<ReturnType<typeof createNativeSiteRuntime>, "site" | "base" | "state" | "engaged" | "files" | "source" | "newDraftPaths" | "adoptSaved">;
   workspaceSession: Pick<WorkspaceSession, "begin" | "current">;
-  editorModule: Pick<typeof sourceEditor, "isMounted" | "refreshDrafts" | "forgetDraftModel" | "dropDraft" | "clearHistory">;
+  editorModule: Pick<typeof sourceEditor, "isMounted" | "refreshDrafts" | "forgetDraftModel" | "dropDraft" | "clearHistory" | "sourceStore" | "sourceMoved">;
+  /** An outside commit's author on what it changed (ticket am-33). */
+  agentPresence: Pick<ReturnType<typeof createAgentPresence>, "visit">;
+  nativeHistorySession(scope: DraftScope, path: string): string;
   guardedEdits: Pick<GuardedEdits, "run" | "stamp" | "peek">;
   mediaController: Pick<ReturnType<typeof createMediaController>, "requestGalleryRefresh" | "disposeGallery" | "ensureGallery" | "galleryVisible">;
   cards: Pick<Cards, "cardOffer" | "cardsLinkingTo" | "createWithCard">;
@@ -662,6 +665,17 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     else if (savePublish.discard([change.path])) ports.announce(`Discarded the changes to ${change.path}.`);
   }
 
+  function adopt(result: Snapshot) {
+    ports.appStore.snapshot.value = result;
+    ports.repositoryIndex.seed(ports.appStore.repository.value!, result);
+  }
+  function showSaved(commit: string) {
+    ports.updateAgentContext();
+    ports.element("revision").textContent = commit.slice(0, 7);
+    ports.element("revision").title = commit;
+    filesTreeController.render();
+    if (ports.runtime.engaged && ports.runtime.site) ports.startNativeTextIndex(ports.appStore.repository.value!, ports.runtime.site, ports.draftScope(), ports.workspaceSession.begin(), ports.runtime.state.request);
+  }
   const savePublish = createSavePublishController({
     stamp: () => ports.guardedEdits.stamp("repository"),
     snapshot: () => ports.appStore.snapshot.value,
@@ -670,6 +684,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     onWake: (check) => { document.addEventListener("visibilitychange", check); addEventListener("focus", check); return () => { document.removeEventListener("visibilitychange", check); removeEventListener("focus", check); }; },
     visible: () => document.visibilityState === "visible",
     reload: () => ports.loadSnapshot(),
+    foldIn: (commit, live) => import("./outside-merge").then(module => module.foldIn(ports, { adopt, showSaved, seeHead: savePublish.seeHead, drafts: draftStore }, commit, live)),
     forget: (scope, path) => ports.editorModule?.forgetDraftModel(scope, path),
     redraw: () => {
       ports.editorModule?.refreshDrafts();
@@ -685,17 +700,8 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
         ports.siteActions?.track({ repo: scope.repo, commit: result.commit, url: result.url },
           () => holdsDraftScope(ports.workspaceSession.current().scope, scope));
     },
-    adopt: (result) => {
-      ports.appStore.snapshot.value = result;
-      ports.repositoryIndex.seed(ports.appStore.repository.value!, result);
-    },
-    showSaved: (commit) => {
-      ports.updateAgentContext();
-      ports.element("revision").textContent = commit.slice(0, 7);
-      ports.element("revision").title = commit;
-      filesTreeController.render();
-      if (ports.runtime.engaged && ports.runtime.site) ports.startNativeTextIndex(ports.appStore.repository.value!, ports.runtime.site, ports.draftScope(), ports.workspaceSession.begin(), ports.runtime.state.request);
-    },
+    adopt,
+    showSaved,
     change: (path) => treeState().changes.get(path),
     openFile: () => ports.appStore.openFile.value,
     secondary: () => ports.linkedStyles.secondaryPath(),

@@ -174,6 +174,8 @@ export async function commitFiles(
     throw new HttpError(400, "Choose a valid commit.");
   const data = await github.get<{
     files?: { filename: string; status: string; previous_filename?: string }[];
+    author?: { login?: unknown } | null;
+    commit?: { author?: { name?: unknown } };
   }>(`${github.base(repo)}/commits/${input.sha}`, 4 * 1024 * 1024);
   const files = (data.files ?? []).flatMap((file): CommitFile[] => {
     const kind = commitFileKinds[file.status];
@@ -184,7 +186,8 @@ export async function commitFiles(
         : { path: file.filename, kind },
     ];
   });
-  return { files, truncated: (data.files?.length ?? 0) >= 300 };
+  const author = [data.author?.login, data.commit?.author?.name].find((name): name is string => typeof name === "string" && name.trim() !== "");
+  return { files, truncated: (data.files?.length ?? 0) >= 300, ...(author ? { author: author.trim().slice(0, 60) } : {}) };
 }
 
 /** A file's text at a commit of the repository, to show that version. */

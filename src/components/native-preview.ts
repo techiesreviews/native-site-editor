@@ -449,7 +449,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!mark.node || !color || !chip) return [];
       // An earlier version shown (History) offers no Undo: the change is the latest version's.
       const undo = viewing ? undefined : chipUndo.fields(mark);
-      return [{ request: { path: mark.path, node: [...mark.node] }, name: mark.name, color, chip, ...(mark.pinned ? { bare: true as const } : {}), ...undo }];
+      return [{ request: { path: mark.path, node: [...mark.node] }, name: mark.name, color, chip, ...(mark.pinned ? { bare: true as const } : {}), ...(mark.fade ? { fade: true as const } : {}), ...undo }];
     });
     const key = JSON.stringify(agents);
     if (!again && key === presenceSent) return;

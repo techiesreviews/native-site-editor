@@ -154,6 +154,25 @@ test("head trust: a seen head is trusted, an empty repository commits onto the n
   assert.equal(empty.controller.headFor(scope1), EMPTY_COMMIT);
 });
 
+// Ticket am-33: a moved branch folds in where it is when it can (src/outside-merge.ts); the branch loads again only when
+// the fold says it cannot, or fails.
+test("a head check folds a moved branch in place, and loads it again only when the fold cannot", async () => {
+  for (const [name, answer, loads] of [["folded", () => Promise.resolve(true), 0], ["cannot", () => Promise.resolve(false), 1], ["failed", () => Promise.reject(new Error("down")), 1]] as const) {
+    const f = fixture(), folds: string[] = [];
+    let live: (() => boolean) | undefined;
+    f.ports.foldIn = (commit, still) => { folds.push(commit); live = still; return answer(); };
+    void f.controller.checkHead(true);
+    f.answers[0].resolve({ commit: "d".repeat(40) });
+    await flush();
+    assert.deepEqual(folds, ["d".repeat(40)], name);
+    assert.equal(f.counts().loads, loads, name);
+    assert.equal(f.controller.trustedHead(), "d".repeat(40), name);
+    assert.equal(live?.(), true, `${name}: live while the load holds`);
+    f.state.generation++;
+    assert.equal(live?.(), false, `${name}: not once another load began`);
+  }
+});
+
 test("a head check loads a moved branch once, throttled, and drops answers for another scope", async () => {
   const f = fixture();
   f.wake();
