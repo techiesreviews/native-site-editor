@@ -231,6 +231,9 @@ test("one file's changes are discarded from its menu or the Save panel; the refu
     // Both left are refused: GitHub changed them.
     await externalEdit(page, baseURL, "styles/sections.css", "/* theirs */\n");
     await externalEdit(page, baseURL, "components/site-footer/site-footer.css", "/* theirs */\n");
+    // The same push adds a file, so the head check loads the branch again rather than folding the change in (am-33):
+    // the refusal's notice is what this test follows.
+    await externalEdit(page, baseURL, "notes/outside.txt", "added outside\n");
     await publishButton(page).click();
     await expect(message(page)).toContainText("GitHub changed these files: components/site-footer/site-footer.css, styles/sections.css.");
     await expect(revision(page)).toHaveText((await head(page, baseURL)).slice(0, 7), { timeout: 15_000 });

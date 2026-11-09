@@ -129,7 +129,8 @@ for (const [tab, change] of [['Pages', 'branch'], ['Pages', 'resync'], ['Files',
         await expect(page.locator('#status')).toContainText('Up to date with main');
       }
       release();
-      await expect(page.locator('#notice')).toContainText('repository or source changed meanwhile');
+      // Refused either way: by the reload's source check, or (a commit that folds in, am-33) by the head check's.
+      await expect(page.locator('#notice')).toContainText(/repository (or source )?changed meanwhile/);
       await expect(page.getByRole('dialog', { name: /^Delete/ })).toHaveCount(0);
       expect(await storedDrafts(page)).toEqual([]);
     } finally { release(); await page.unrouteAll({ behavior: 'wait' }); }

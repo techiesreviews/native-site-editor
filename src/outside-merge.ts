@@ -10,6 +10,7 @@
 // - A true clash (the same words changed on both sides: lines both changed are merged again by word) shows the latest
 //   version: GitHub's words replace Lex's there as one Undo step of their own, so one Undo brings Lex's words back. No
 //   question and no message.
+// - While a dialog waits for an answer (a delete or a move planned on the old files), the branch loads again, as before.
 // - A page being typed on together in a live room (src/live-text.ts `liveShared`) does not fold: the branch loads again,
 //   as before, and unsaved work stays, so the room's copy never takes the change twice. Folding into a live room is a
 //   ticket of its own (am-59).
@@ -74,6 +75,8 @@ export interface OutsideHost {
   drafts(): { list(scope: DraftScope): SavedDraft[] };
   /** Whether the file under a draft key is typed on together in a live room now (src/live-text.ts `liveShared`). */
   shared?: (key: string) => boolean;
+  /** Whether a dialog waits for an answer now (the page's open `<dialog>`). */
+  asking?: () => boolean;
 }
 type Ports = Pick<PagesAndFilesPorts, "appStore" | "api" | "readFiles" | "draftScope" | "runtime" | "editorModule" | "agentPresence" | "nativeHistorySession">;
 
@@ -117,6 +120,10 @@ export async function foldIn(ports: Ports, host: OutsideHost, commit: string, li
   const drafted = draftsNow();
   if (!mergeable(drafted)) return false;
   const store = ports.editorModule.sourceStore();
+  // A dialog open (a delete or a move waiting for its answer, planned on the old files): the branch loads again, as
+  // before, which closes it, rather than the plan going on over changed files.
+  const asking = host.asking ?? (() => typeof document !== "undefined" && document.querySelector("dialog[open]") !== null);
+  if (asking()) return false;
   // A page typed on together now: the branch loads again, as before (am-59 folds into a live room).
   const together = host.shared ?? ((key: string) => liveShared(store, key));
   if (changed.some(entry => { const key = store.get(scope, entry.path)?.key; return key !== undefined && together(key); })) return false;
