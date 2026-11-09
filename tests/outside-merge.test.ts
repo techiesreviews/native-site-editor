@@ -287,3 +287,11 @@ test("foldIn: a page typed on together in a live room loads the branch again, an
   assert.deepEqual(f.adopted, []);
   assert.deepEqual(f.visits, []);
 });
+
+test("foldIn: while a dialog waits for an answer the branch loads again, and nothing folds", async () => {
+  const f = foldSetup(changedIndex());
+  f.host.asking = () => true;
+  assert.equal(await foldIn(f.ports, f.host, f.after.commit, () => true), false);
+  assert.deepEqual(f.adopted, []);
+  assert.deepEqual(f.visits, []);
+});
