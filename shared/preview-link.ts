@@ -9,8 +9,6 @@
 // opens the room; Lex's tab (src/preview-serve.ts) answers each file the site asks
 // for from the editor's copy, unsaved changes included, and says when one changed.
 
-import { mimeType } from "./media-kinds";
-
 /** The token: nonce (32 hex), end in seconds (8 hex), tag (32 hex). */
 export const PREVIEW_TOKEN = /^[a-f\d]{72}$/;
 /** The sharing tab's own proof for a token (its sign-in and repository; never in the link). */
@@ -36,21 +34,6 @@ export function previewSlug(site: string) {
 export function readPreviewPath(pathname: string): { token: string; base: string; rest: string } | undefined {
   const match = /^\/s\/(?:[a-z0-9-]{1,40}-)?([a-f\d]{72})(?=\/|$)(.*)$/.exec(pathname);
   return match ? { token: match[1], base: pathname.slice(0, pathname.length - match[2].length), rest: match[2] } : undefined;
-}
-
-/** Text types a static server sends; pictures, fonts, sound, video and PDFs take theirs from shared/media-kinds.ts. */
-const TEXT_TYPES: Readonly<Record<string, string>> = {
-  html: "text/html; charset=utf-8", htm: "text/html; charset=utf-8", css: "text/css; charset=utf-8",
-  js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8", json: "application/json; charset=utf-8",
-  webmanifest: "application/manifest+json; charset=utf-8", txt: "text/plain; charset=utf-8", md: "text/markdown; charset=utf-8",
-  xml: "application/xml; charset=utf-8", vtt: "text/vtt; charset=utf-8",
-};
-/** The media type a static server would send for `path`. */
-export function previewContentType(path: string) {
-  const name = path.split("/").pop() ?? "";
-  const dot = name.lastIndexOf(".");
-  const extension = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
-  return Object.hasOwn(TEXT_TYPES, extension) ? TEXT_TYPES[extension] : mimeType(name) ?? "application/octet-stream";
 }
 
 /** How a static server answers a path: a file (200, or 404 with the site's own 404 page), a move to the folder's

@@ -12,7 +12,23 @@ import type { SiteFiles } from "./site-download";
 import { TEXT_PATH } from "../shared/agent";
 import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../shared/native-project";
 import { sitePathPrefix } from "../shared/site-path-prefix";
-import { PREVIEW_FILE_LIMIT, previewContentType, resolvePreviewPath, type HostMessage, type VisitorMessage } from "../shared/preview-link";
+import { PREVIEW_FILE_LIMIT, resolvePreviewPath, type HostMessage, type VisitorMessage } from "../shared/preview-link";
+import { mimeType } from "../shared/media-kinds";
+
+/** Text types a static server sends; pictures, fonts, sound, video and PDFs take theirs from shared/media-kinds.ts. */
+const TEXT_TYPES: Readonly<Record<string, string>> = {
+  html: "text/html; charset=utf-8", htm: "text/html; charset=utf-8", css: "text/css; charset=utf-8",
+  js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8", json: "application/json; charset=utf-8",
+  webmanifest: "application/manifest+json; charset=utf-8", txt: "text/plain; charset=utf-8", md: "text/markdown; charset=utf-8",
+  xml: "application/xml; charset=utf-8", vtt: "text/vtt; charset=utf-8",
+};
+/** The media type a static server would send for `path`. */
+export function previewContentType(path: string) {
+  const name = path.split("/").pop() ?? "";
+  const dot = name.lastIndexOf(".");
+  const extension = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+  return Object.hasOwn(TEXT_TYPES, extension) ? TEXT_TYPES[extension] : mimeType(name) ?? "application/octet-stream";
+}
 
 /** How often the files visitors were sent are looked at again while someone is in. */
 const LOOK_MS = 600;
