@@ -62,8 +62,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - A draft that exists only on record is opened in the editor's store to merge, and stays open there on purpose: its Undo step needs it.
 - `/api/commit` (`worker/history.ts` `commitFiles`) now also returns `author`: the GitHub login, else the commit's author name, at most 60 characters. Without it the chip says "Someone · GitHub".
 - Live room: the change enters the open shared copy as one more participant (`takeOutside`, `src/live-text.ts`). GitHub's word changes from the copy's starting text go in as one Yjs update, under a client id fixed by the file, the copy's starting version and the new blob. So every tab, and every commit that makes the same move, writes the very same items, and the room keeps them once, whichever tab folds first. A tab that has not folded yet receives the change through the room. The room and its copy go on and the drafts follow the copy.
-  - On a clash the folding tab takes Lex's words back in its draft only, then records "<author>'s change", which moves the copy from what it holds straight to the latest. One Undo on that tab brings Lex's words back on every tab.
-  - Only when no copy is caught up, or the copy began from older text (a save during the share), does the fold merge into the draft itself and the share start again from the new text (a `base` event to another blob).
+  - (round 3) It is taken only when it merges with no clash and the tried result matches the merge; otherwise (a clash, a change the copy holds already, no copy caught up, or a copy begun from older text) the fold merges into the draft itself and the share starts again from the new text at once (a `base` event to another blob).
+  - (round 3) A copy that took the change, or whose base this tab saved, starts again from the new base once the room is quiet, so a tab that opens or reloads the page later meets it.
 - `src/controllers/save-publish-controller.ts`: a fold that fails loads the branch again only while the head check's load still holds.
 - Boot: `kit size` stays at 354 KB of 355 KB (±0 KB against dev).
 
@@ -123,6 +123,16 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - `tests/live-text.test.ts`: the three live-room cases above.
   - `tests/native-save/native-outside-fold.spec.ts`: with reduced motion the chip stays at full opacity through its hold, then goes; the author read failing or never answering still folds in, the chip naming "Someone".
   - `tests/native-save/native-outside-fold-live.spec.ts`: two browsers whose fake repositories make two commits with the same move take it once.
+
+**Fix round 3 (review findings).**
+
+- Live room, a change the copy holds already (a peer's save, a fix both made): the participant's update is tried on a throwaway copy of the doc first. It is taken only when the result is what `mergeText(base, copy text, theirs)` says, with no clash; otherwise the fold merges into the draft and the copy starts again from the new text. So "eight" made in the room and then saved stays "eight", not "eighteight". A clash in a room also takes that restart path: both tabs show Sam's words, and one Undo on one tab brings Lex's back on both.
+- Live room, a tab joining after the change: a copy that took an outside change, or whose base this tab saved, starts again from the new base once the room has been quiet for `LIVE_REBASE_QUIET_MS` (1.5 s). Every tab sees the same last change, so their drafts match when they move. A tab opening the page or reloading from the new version then meets the others under its tag. Any change re-arms the wait, and stopping the share drops it.
+- Tests:
+  - `tests/live-text.test.ts`:
+    - a commit the copy holds already (Anna's save, folded on Lex's tab) leaves one "eight" on both tabs, and once quiet both meet under the new version and trade changes;
+    - a tab opening the page from the new version after a fold on two tabs meets them both ways.
+  - `tests/native-save/native-outside-fold.spec.ts`: the author read held past the fold and then released with an author changes nothing; the chip keeps naming "Someone", and the revision and page stay.
 
 **UX review (Opus, contact sheet against the UX rulebook and mock-up 15).**
 

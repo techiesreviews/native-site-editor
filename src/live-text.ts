@@ -241,20 +241,28 @@ function fixedClient(key: string) {
 
 /**
  * A commit made outside the editor, for the shared copy of a file (ticket am-33, src/outside-merge.ts): GitHub's text
- * of the file went from `base` to the blob `sha`, by `changes` (in `base`'s offsets, in order).
+ * of the file went from `base` to the blob `sha`, by `changes` (in `base`'s offsets, in order). `expect` names the
+ * text the copy must hold once it took the change, from the text it holds now (src/outside-merge.ts `mergeText`), or
+ * undefined when the copy cannot take it as a participant (a clash).
  */
-export interface OutsideChange { base: string; sha: string; changes: readonly TextChange[] }
+export interface OutsideChange { base: string; sha: string; changes: readonly TextChange[]; expect(copy: string): string | undefined }
 /** Each draft store's shared copies that can take an outside change, by draft key. */
 const outsideTakers = new WeakMap<object, Map<string, (change: OutsideChange) => boolean>>();
 /**
- * Puts `change` into the shared copy of the file `key` of `store` as one more participant, when one is open and caught
- * up and began from that same text: every tab of the room writes the same update (its client id fixed by the file,
- * the copy's starting version and the new blob), so the room takes it once, whichever tab folds it in first, and the drafts follow the copy. False when
- * there is no such copy: the caller merges into the draft itself (and the copy starts again from the new text).
+ * Puts `change` into the shared copy of the file `key` of `store` as one more participant. That needs a copy that is
+ * open, caught up and began from that same text. Every tab of the room writes the same update: its client id is fixed
+ * by the file, the copy's starting version and the new blob. So the room takes it once, whichever tab folds it in
+ * first, and the drafts follow the copy. The update is tried on a throwaway copy first, and taken only when the result
+ * is what `expect` says: a copy that holds the same change already (a peer's save, a fix both made) would get its words
+ * twice. False when it cannot: the caller merges into the draft itself, and the copy starts again from the new text.
  */
 export function takeOutside(store: object, key: string, change: OutsideChange) {
   return outsideTakers.get(store)?.get(key)?.(change) ?? false;
 }
+/** How long a shared copy that took an outside change, or saw its base saved, waits with no change in it before it
+ * starts again from the new base: a tab opening the page from now on starts from that base (its tag), so the room
+ * meets again under it. Every tab of the room sees the same last change, so their drafts are the same when they move. */
+export const LIVE_REBASE_QUIET_MS = 1_500;
 
 /** A Yjs text event's delta as changes in the text before it. */
 function deltaChanges(delta: { retain?: number; insert?: unknown; delete?: number }[]) {
@@ -728,10 +736,20 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     /** An outside commit (ticket am-33), as one more participant: see `takeOutside`. Its frames carry its own id. */
     function outside(change: OutsideChange) {
       if (!synced || starting || discarded || stopped || change.base !== base) return false;
+      const want = change.expect(text.toString());
+      if (want === undefined) return false;
       // Fixed by the move itself (this copy's starting version to the new blob), not the commit: every tab, and every
       // commit that makes the same move, writes the very same items.
       const client = fixedClient(`outside\n${path}\n${tag.join(",")}\n${change.sha}`);
-      Y.applyUpdate(doc, fixedUpdate(Y, client, seed, change.changes), authorOrigin(client, true));
+      const update = fixedUpdate(Y, client, seed, change.changes);
+      // Tried apart first: anchored to the starting text, a change the copy made already would go in a second time.
+      const trial = new Y.Doc();
+      try {
+        Y.applyUpdate(trial, Y.encodeStateAsUpdate(doc));
+        Y.applyUpdate(trial, update);
+        if (trial.getText("source").toString() !== want) return false;
+      } finally { trial.destroy(); }
+      Y.applyUpdate(doc, update, authorOrigin(client, true));
       return true;
     }
     return {
@@ -810,7 +828,10 @@ export interface LiveText {
 
 /** Shares the open file while it is open in the draft store, for as long as this runs; calling the result stops it. */
 export function startLiveText(ports: LiveTextPorts): LiveText {
-  type Share = { key: string; baseSha?: string | null; stop(): void; authors?: AuthorUndo; drawing?: boolean; undraw?: () => void };
+  // `baseSha`: the version its copy began from; `took`: the version an outside change it took moved the base to;
+  // `rebase`: its wait for a quiet moment to start again from the new base (`LIVE_REBASE_QUIET_MS`).
+  type Share = { key: string; at?: { scope: DraftScope; path: string }; baseSha?: string | null; took?: string; rebase?: unknown; stop(): void; authors?: AuthorUndo; drawing?: boolean; undraw?: () => void };
+  const clock = ports.clock ?? systemClock;
   let current: Share | undefined;
   const listeners = new Set<() => void>();
   const changed = () => { for (const listener of [...listeners]) try { listener(); } catch { /* A name tag must not break sharing. */ } };
@@ -846,7 +867,7 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
     if (current?.key === key) return;
     current?.stop();
     if (!key) { current = undefined; return; }
-    const share: Share = { key, baseSha: file!.baseSha, stop: () => undefined };
+    const share: Share = { key, at: { scope: file!.scope, path: file!.path }, baseSha: file!.baseSha, stop: () => undefined };
     current = share;
     const at = { scope: file!.scope, path: file!.path };
     const shared = shareFile(ports, at.scope, at.path, why => {
@@ -873,24 +894,44 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
     if (!takers) outsideTakers.set(ports.store, takers = new Map());
     const take = (change: OutsideChange) => {
       if (current !== share || !shared.outside(change)) return false;
-      share.baseSha = change.sha;
+      share.took = change.sha;
+      rebaseWhenQuiet(share);
       return true;
     };
     takers.set(key, take);
     share.stop = () => {
+      clock.clearTimeout(share.rebase);
       share.undraw?.(); share.undraw = undefined; shared.stop();
       if (takers.get(key) === take) takers.delete(key);
     };
     share.authors = shared.authors;
   };
   const stopEffect = effect(() => { void ports.openFile.value; untracked(() => { left = undefined; check(); }); });
-  const stopStore = ports.store.subscribe(event => {
-    if (event.type !== "file") return;
-    // GitHub's text moved under the shared file and the copy could not take it as a participant (`takeOutside`: no copy
-    // caught up yet, or one begun from older text, a save meanwhile): the copy starts again from the new text.
-    if (event.change === "base" && current?.key === event.key && current.baseSha !== ports.store.get(event.scope, event.path)?.baseSha) {
-      current.stop();
+  /** Starts `share` again from the store's base once its copy has had no change for LIVE_REBASE_QUIET_MS (am-33). */
+  function rebaseWhenQuiet(share: Share) {
+    clock.clearTimeout(share.rebase);
+    share.rebase = clock.setTimeout(() => {
+      share.rebase = undefined;
+      const file = current === share && share.at ? ports.store.get(share.at.scope, share.at.path) : undefined;
+      if (!file || file.baseSha === share.baseSha) return;
+      share.stop();
       current = undefined;
+      check();
+    }, LIVE_REBASE_QUIET_MS);
+  }
+  const stopStore = ports.store.subscribe(event => {
+    // Any change to the copy's file puts its wait for a quiet moment back to the start.
+    if (event.type === "text" && current?.rebase !== undefined && current.key === event.key) rebaseWhenQuiet(current);
+    if (event.type !== "file") return;
+    const now = current?.key === event.key ? ports.store.get(event.scope, event.path)?.baseSha : undefined;
+    if (current && now !== undefined && now !== current.baseSha) {
+      // GitHub's text moved under the shared file and the copy could not take it as a participant (`takeOutside`: no
+      // copy caught up yet, one begun from older text, or a clash): the draft no longer follows the copy, so the copy
+      // starts again from the new text at once.
+      if (event.change === "base" && now !== current.took) { current.stop(); current = undefined; }
+      // The copy took it, or this tab saved: the copy holds the text already, and starts again from the new base once
+      // the room is quiet, so a tab opening the page later (from that base) meets this one.
+      else if (current.rebase === undefined) rebaseWhenQuiet(current);
     }
     check();
   });
