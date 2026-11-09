@@ -50,14 +50,20 @@ export function shareRow(name: string, actionClass: string, view: () => RowView,
   action.append(copyButton);
   root.append(main, action);
 
-  let copied = false, blocked = false, destroyed = false;
+  // `note`: what the last copy did, said on the label for a moment. `blocked`: the browser refused it, so the copy icon
+  // stays shown until a copy works or the link is off.
+  let note: "copied" | "blocked" | undefined, blocked = false, destroyed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const forget = () => { note = undefined; blocked = false; clearTimeout(timer); };
   const draw = () => {
     const now = view();
     const on = now.link !== undefined;
-    if (!on) { copied = blocked = false; clearTimeout(timer); }
+    if (!on) forget();
     root.dataset.dot = now.dot;
-    const word = copied ? "Link copied" : blocked ? "Link ready · copy it" : now.label;
+    // A note never hides a state that matters more: busy (making, reconnecting, stopping), a problem, or not pressable.
+    const said = note && !now.disabled && (now.dot === "wait" || now.dot === "on") ? note : undefined;
+    const copied = said === "copied";
+    const word = copied ? "Link copied" : said === "blocked" ? "Link ready · copy it" : now.label;
     if (label.textContent !== word) label.textContent = word;
     const context = word === name ? "" : `${name}: `;
     if (which.textContent !== context) which.textContent = context;
@@ -66,7 +72,8 @@ export function shareRow(name: string, actionClass: string, view: () => RowView,
     else main.removeAttribute("aria-description");
     end.replaceChildren(...copied ? [] : now.end ?? []);
     end.hidden = !end.firstChild;
-    action.hidden = !on;
+    // Not while the link is stopping: it would hand out a link that is being turned off.
+    action.hidden = !on || Boolean(now.disabled);
     root.classList.toggle("is-done", copied || blocked);
     copyButton.classList.toggle("is-done", copied);
     const icon = copied ? "check" : "copy";
@@ -76,14 +83,19 @@ export function shareRow(name: string, actionClass: string, view: () => RowView,
     let done = true;
     try { await navigator.clipboard.writeText(link); } catch { done = false; }
     if (destroyed || view().link !== link) return;
-    copied = done;
+    note = done ? "copied" : "blocked";
     blocked = !done;
     clearTimeout(timer);
-    if (done) timer = setTimeout(() => { copied = false; if (!destroyed) draw(); }, COPIED_MS);
+    timer = setTimeout(() => { note = undefined; if (!destroyed) draw(); }, COPIED_MS);
     draw();
     if (!done) copyButton.focus();
   };
-  main.addEventListener("click", () => { if (main.getAttribute("aria-disabled") !== "true") press(); });
+  main.addEventListener("click", () => {
+    if (main.getAttribute("aria-disabled") === "true") return;
+    // A press makes or stops the link: what the last copy did no longer applies.
+    forget();
+    press();
+  });
   copyButton.addEventListener("click", () => { const link = view().link; if (link !== undefined) void copy(link); });
   draw();
   return { root, draw, copy, destroy() { destroyed = true; clearTimeout(timer); } };

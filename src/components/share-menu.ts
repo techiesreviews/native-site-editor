@@ -67,7 +67,7 @@ export function shareItems(port: ShareControlPort, actionClass: string, root: HT
     failed = undefined;
     if (port.state().sharing) { port.stop(); return; }
     port.start().then((link) => { if (link && !destroyed) return row.copy(link); }, (error: unknown) => {
-      if (destroyed) return;
+      if (destroyed || port.state().sharing) return;
       // Signed out: signing in again is the way on. Anything else (no access any more, no connection): try again.
       failed = (error as { status?: unknown } | null)?.status === 401 ? "Sign in to share" : "Couldn't make a link · try again";
       row.draw();

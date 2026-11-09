@@ -123,11 +123,12 @@
 .share-row__copy:active {
   background: color-mix(in oklch, var(--hover), var(--text) 8%);
 }
-/* Shown on keyboard focus anywhere in the row, and while it says it copied (or that the browser refused the copy). */
-.share-row:is(:focus-within, .is-done) > .share-row__action {
+/* Shown on keyboard focus anywhere in the row (not after a mouse click: :focus-visible), and while it says it copied or
+   the browser refused the copy. */
+.share-row:is(:has(:focus-visible), .is-done) > .share-row__action {
   opacity: 1;
 }
-.share-row:is(:focus-within, .is-done) > .share-row__action > .share-row__copy {
+.share-row:is(:has(:focus-visible), .is-done) > .share-row__action > .share-row__copy {
   pointer-events: auto;
 }
 @media (hover: hover) and (pointer: fine) {
@@ -176,12 +177,12 @@
     transform: translateX(40%);
     transition: transform 140ms ease-out;
   }
-  .share-row:is(:hover, :focus-within, .is-done) .share-row__copy {
+  .share-row:is(:hover, :has(:focus-visible), .is-done) .share-row__copy {
     transform: none;
   }
   /* Keyboard access is immediate. */
-  .share-row:focus-within > .share-row__action,
-  .share-row:focus-within .share-row__copy {
+  .share-row:has(:focus-visible) > .share-row__action,
+  .share-row:has(:focus-visible) .share-row__copy {
     transition: none;
   }
 }
