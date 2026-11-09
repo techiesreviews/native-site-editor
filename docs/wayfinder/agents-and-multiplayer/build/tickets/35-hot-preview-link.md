@@ -87,3 +87,49 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Tests: `tests/native-save/native-preview-link.spec.ts` shares `fixtures/native-subfolder` (its `/my-site/` stylesheet and picture, the script without the folder, a move kept in the folder, the note link); `tests/preview-host.test.ts` (a fresh look after turning off gets 410 and replaces the remembered 409; running clears it); `tests/preview-share.test.ts` (folder taken off, kept on moves, hidden files and look-alike folders refused); `tests/preview-routes.test.ts` (Miniflare with both Workers: a visitor's socket on `/s/<site>-<token>/live` spliced through the EDITOR binding into Lex's room, one frame each way).
 - Validation: `RESULT: ok unit 4102/4102 (270 files)`; `RESULT: ok specs 2/2 passed` (native-preview-link, native-share-live); `npm run check` and `npm run lint` clean; `RESULT: ok doctor 11/11 checks passed`.
 - UX round 3: Share preview passed (F-repo-11). The export check's allow list loses its stale `shared/media-kinds.ts` `mimeType` entry, now that preview links take their media types from it.
+
+### Follow-ups
+
+- Validation gaps (gap): R9-35 still open: there is no spec where two tabs serve one link and the visitor's source tab is closed.
+- Validation gaps (gap): R9-34 still open: there are no 416 asserts for `bytes=0-` on a 0-byte file or `bytes=-0` on a 100-byte file.
+- Validation gaps (gap): R9-33 still open: there is no hand-resolved `serve` seam test covering the "starting" state, a workspace switch, and a refusal not being overwritten.
+- Validation gaps (gap): R9-32 still open: there is no fake-timer test where `ready()` never settles.
+- Validation gaps (gap): R9-31 still open: there is no spec that checks the visitor's `scrollY` after an edit and after a slow picture loads.
+- Validation gaps (gap): R9-30 still open: R2-4 and R2-5 still have no tests.
+- Validation gaps (gap): R9-29 still open: summary line; all of the carried-over gaps it lists are still open.
+- Validation gaps (gap): R9-28 still open: no commit since round 9; nothing tests the visitor moving between two serving tabs (R5-8).
+- Validation gaps (gap): R9-27 still open: no commit since round 9; no 416 asserts for an empty range or for `bytes=-0` (R5-7).
+- Validation gaps (gap): R9-26 still open: no commit since round 9; nothing tests Share preview waiting for `startServing` (R5-4).
+- Validation gaps (gap): R9-25 still open: no commit since round 9; nothing tests the 10 s limit in `servePreview` (R5-3).
+- Validation gaps (gap): R9-24 still open: no commit since round 9; nothing tests `settleScroll` or the scroll restores (R5-2).
+- Validation gaps (gap): R9-23 still open: no commit since round 9; R2-4 and R2-5 (R5-1, R5-12) still have no tests.
+- Validation gaps (gap): R9-22 still open: no commit since round 9; summary line, and all of its gaps are still open.
+- Validation gaps (gap): R9-21 still open: no commit since round 9; none of the R5-13 group of tests was added.
+- Validation gaps (gap): R9-20 still open: no commit since round 9; R2-4 and R2-5 still have no tests.
+- Previous findings (P3): R9-19 still open: `src/preview-visit.ts` and `src/preview-serve.ts` are unchanged, so a handover between tabs still makes visitors reload once for each visitor that moved. No answer and not declined.
+- Previous findings (P3): R9-18 still open: `src/preview-serve.ts` is unchanged. If the editor and the preview Worker run different builds, every file still fails with no reason given. No answer and not declined.
+- Previous findings (P3): R9-17 still open: `tests/preview-menu.test.ts` is unchanged. Its three undocumented `globalThis as never as { menu: … }` casts are still there (CODING_STANDARDS "Test fixtures"). No answer and not declined.
+- Validation gaps (gap): R9-16 still open: there is still no spec with two serving editor tabs where the visitor's source tab is closed.
+- Validation gaps (gap): R9-15 still open: `tests/preview-host.test.ts` is unchanged and has no 416 asserts for `bytes=0-` on a 0-byte file or `bytes=-0` on a 100-byte file.
+- Previous findings (P3): R9-14 still open: `src/preview-control.ts` is unchanged, so a 400, 403 or 410 refusal that arrives while `start()` waits is still overwritten by the later "on" state. No answer and not declined.
+- Previous findings (P3): R9-13 still open: `src/preview-serve.ts` is unchanged, so `/my-site` still answers 200 where a static host answers 301. The builder has given no answer, and it is not in the declined list.
+- Validation gaps (gap): R9-12 still open: `tests/preview-share.test.ts` is unchanged and has no case that resolves the `serve` seam by hand.
+- Validation gaps (gap): R9-11 still open: there is still no fake-timer test where the room's `ready()` never settles.
+- Validation gaps (gap): R9-10 still open: `tests/native-save/native-preview-link.spec.ts` is unchanged and still never checks the visitor's `scrollY`.
+- Validation gaps (gap): R9-9 still open: no commit since round 9; R2-4 and R2-5 still have no tests.
+- Validation gaps (gap): R9-8 still open: no commit since round 9; summary line, and none of its gaps is closed.
+- Validation gaps (gap): R9-7 still open: no commit since round 9; R2-4 and R2-5 still have no tests.
+- Validation gaps (gap): R9-6 still open: no commit since round 9; nothing tests `settleScroll` or the scroll restores (R5-2).
+- Validation gaps (gap): R9-5 still open: no commit since round 9; nothing tests the 10 s limit in `servePreview` (R5-3).
+- Validation gaps (gap): R9-4 still open: no commit since round 9; nothing tests Share preview waiting for `startServing` (R5-4).
+- Validation gaps (gap): R9-3 still open: no commit since round 9; there is no 416 test for an empty range or for `bytes=-0` (R5-7).
+- Validation gaps (gap): R9-2 still open: no commit since round 9; nothing tests the visitor moving between two serving tabs (R5-8).
+- Validation gaps (gap): R9-1 still open: no commit since round 9, so none of the carried-over gaps has a test yet.
+- Validation gaps (gap): No new gaps. The carried-over gaps are R9-1 to R9-12, R9-15, R9-16 and R9-20 to R9-35. Each still needs the concrete test named in its original finding:
+- Validation gaps (gap): R5-1 and R5-12: tests for R2-4 and R2-5.
+- Validation gaps (gap): R5-2: a spec in `tests/native-save/native-preview-link.spec.ts` that checks the visitor's `scrollY` after an edit and after a slow picture loads.
+- Validation gaps (gap): R5-3: a fake-timer test where `ready()` never settles. It should check that `servePreview` resolves after 10 s and that `close` still ends the room.
+- Validation gaps (gap): R5-4: a test in `tests/preview-share.test.ts` that resolves the `serve` seam by hand. It should check that the state stays "starting" until then, that a workspace switch is respected, and that a refusal is not overwritten.
+- Validation gaps (gap): R5-7: asserts in `tests/preview-host.test.ts` that `bytes=0-` on a 0-byte file and `bytes=-0` on a 100-byte file both answer 416 with `Content-Range: bytes */<size>`.
+- Validation gaps (gap): R5-8: a spec where two editor tabs serve one link and the tab the visitor took the site from is closed.
+
