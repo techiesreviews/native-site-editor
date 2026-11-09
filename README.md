@@ -18,6 +18,17 @@ Open **https://editor.techies.tools** and click **Continue with GitHub**. A shor
 
 It runs on the free plans of Cloudflare and GitHub, and your copy updates itself every week. Details, custom domains and the terminal route: [setting up your own editor](docs/setup.md).
 
+### Push notices for an existing App
+
+Open tabs learn of a commit made elsewhere within seconds when the GitHub App sends its push webhook to the editor. Owner setup turns this on for new editors. An App made earlier needs these steps once, in the App's settings on GitHub (**Settings → Developer settings → GitHub Apps → your App → General**):
+
+1. Under **Webhook**, tick **Active**.
+2. **Webhook URL**: `https://<editor address>/api/github/webhook`. For the techies editor: `https://editor.techies.tools/api/github/webhook`.
+3. **Webhook secret**: a random value of 40 or more characters (`openssl rand -hex 32` gives 64). Save it in the App, then store the same value on the editor's Worker: `npx wrangler secret put GITHUB_WEBHOOK_SECRET` (for the techies editor, add `--config wrangler.techies.jsonc`).
+4. Under **Permissions & events → Subscribe to events**, tick **Push**, then **Save changes**.
+
+No new permission is asked for, and installations do not have to approve again: Push needs only Contents access, which the App already has (tried on a test App, 2026-11-09). Without the secret the editor refuses every delivery, and tabs keep checking for new commits when they are shown or focused.
+
 ## What it does
 
 - **Visual editing** in a live preview of your real pages: an edit bar for headings, text size, bold, italic and links; insert, move, duplicate and remove sections; page structure in a sidebar.

@@ -620,6 +620,17 @@ export class LiveRooms {
   agentSockets(id: string) {
     return [...this.sockets].filter(([, metadata]) => metadata.agent?.id === id).map(([socket]) => socket);
   }
+  /** A GitHub push moved this instance's branch to `commit` (ticket am-32): every open tab here hears it, once per socket,
+   * and reads the files again with its own sign-in. Agents and guests are not told: they read through a tab. Returns how many were told. */
+  pushed(commit: string) {
+    let told = 0;
+    for (const [socket, metadata] of [...this.sockets]) {
+      if (metadata.access !== "editor" || socket.readyState !== 1) continue;
+      this.send(socket, { type: "pushed", commit });
+      told++;
+    }
+    return told;
+  }
   /** Closes every socket in this instance with `code`: a preview link turned off (slice 35). */
   endAll(code: number, reason: string) {
     for (const socket of [...this.sockets.keys()]) {

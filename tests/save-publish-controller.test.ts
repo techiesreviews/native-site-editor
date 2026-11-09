@@ -516,3 +516,53 @@ test("a discarded draft, or one found to be GitHub's version, names no one any m
   f.controller.settleDeleted("kept.html", false);
   assert.deepEqual(f.authorsForgotten, ["about.html", "kept.html"], "Discard draft of a file GitHub deleted");
 });
+
+// GitHub pushes reach open tabs (ticket am-32): the relay's notice has the head checked at once, asking about the pushed
+// commit so a lagging GitHub read still gives it; a commit this tab shows or saved, another scope, or a hidden tab waits.
+test("a push notice checks the head with the pushed commit and loads it; known commits and other scopes do nothing", async () => {
+  const pushed = "d".repeat(40);
+  const waits: number[] = [];
+  /** The notice's wait runs at once, its length kept. */
+  const noticed = () => {
+    const made = fixture();
+    made.ports.later = (run, ms) => { waits.push(ms); run(); };
+    return made;
+  };
+  const f = noticed();
+  f.wake();
+  f.answers[0].resolve({ commit: "a".repeat(40) });
+  await flush();
+  f.controller.pushed(scope1, pushed);
+  assert.deepEqual(f.calls[1], ["head", { repo: "lex/site1", branch: "main", commit: pushed }], "not held back by the focus check's 15 seconds");
+  assert.equal(waits[0], 2_000, "after a moment, for this tab's own save's answer to land first");
+  f.answers[1].resolve({ commit: pushed });
+  await flush();
+  assert.equal(f.counts().loads, 1, "the pushed commit loads as Refresh does");
+  assert.equal(f.controller.trustedHead(), pushed);
+
+  // This tab's own save: its answer lands while the notice waits, so the notice reads nothing.
+  const own = fixture();
+  let wait: (() => void) | undefined;
+  own.ports.later = run => { wait = run; };
+  own.controller.pushed(scope1, "f".repeat(40));
+  own.controller.published(own.controller.proof(), scope1, result("f".repeat(40)), []);
+  const reads = own.calls.length;
+  wait!();
+  assert.equal(own.calls.length, reads, "no head check for the tab's own save");
+
+  const quiet = noticed();
+  quiet.controller.pushed(scope1, "a".repeat(40));
+  quiet.controller.seeHead("e".repeat(40));
+  quiet.controller.pushed(scope1, "e".repeat(40));
+  quiet.controller.pushed({ ...scope1, branch: "dev" }, pushed);
+  quiet.controller.pushed({ ...scope1, repoId: 2 }, pushed);
+  assert.equal(quiet.calls.length, 0, "the commit on show, this tab's own save, another branch or repository: no read");
+
+  const hidden = noticed();
+  hidden.state.visible = false;
+  hidden.controller.pushed(scope1, pushed);
+  assert.equal(hidden.calls.length, 0, "a hidden tab reads nothing");
+  hidden.state.visible = true;
+  hidden.wake();
+  assert.equal(hidden.calls.length, 1, "it checks on its next focus, unthrottled by the notice");
+});

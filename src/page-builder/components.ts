@@ -126,7 +126,7 @@ export interface ComponentDeps {
   /** The preview's selection, as the editor last heard it. */
   selection: () => NativePreviewSelection | undefined;
   /** The open file's shared copy (src/live-text.ts, ADR 0003): started once, with the first tools made. */
-  live?: Pick<LiveTextPorts, "store" | "openFile" | "scope">;
+  live?: Pick<LiveTextPorts, "store" | "openFile" | "scope" | "onPushed">;
   /** Opens a file in the code pane; resolves once it is mounted (true) or not. */
   openFile: (path: string) => Promise<boolean>;
   /** Said and shown as the toast; mode notes the component bar already shows are "quiet". */

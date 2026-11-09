@@ -1221,3 +1221,21 @@ test("someone whose only change is a deletion is named: a deletion adds no text 
   assert.deepEqual(await named(lex), [{ name: "anna" }]);
   anna.stop(); lex.stop();
 });
+
+// GitHub pushes reach open tabs (ticket am-32): the open file's room hears the relay's notice and hands it on with the
+// file's draft scope, alone in the room or not; once the file is closed its room is gone and hears nothing more.
+test("the open file's room hands a push notice on with the draft scope", async () => {
+  const room = fakeRoom(), heard: [DraftScope, string][] = [];
+  const store = createDraftStore({});
+  store.open(scope, path, { text: base, baseSha: sha });
+  const openFile = signal<string | undefined>(path);
+  let options: LiveRoomOptions | undefined;
+  const stop = startLiveText({
+    store, openFile, scope: () => scope, on: true, keeper: keeper(), onPushed: (at, commit) => heard.push([at, commit]),
+    openRoom: roomOptions => { options = roomOptions; return room.open(roomOptions); },
+  });
+  await until(() => options !== undefined, "the open file's room");
+  options!.onPushed?.("d".repeat(40));
+  assert.deepEqual(heard, [[scope, "d".repeat(40)]]);
+  stop();
+});
