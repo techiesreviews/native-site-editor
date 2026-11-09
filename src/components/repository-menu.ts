@@ -68,7 +68,7 @@ export function createRepositoryMenu(options: {
   /** A row with finished work clicked: its project and branch open with its changes. */
   onNote?: (note: FinishedNote) => void;
   share?: ShareMenuPort;
-  preview?: PreviewMenuPort;
+  preview?: Pick<PreviewMenuPort, "available" | "draw">;
 }) {
   const root = node("div", "repository-menu");
   const trigger = node("button", "repository-menu__trigger");

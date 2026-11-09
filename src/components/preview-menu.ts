@@ -11,7 +11,7 @@ import { COPIED_MS, type PreviewMenuPort } from "./repository-menu";
  * (which says "Copied" on itself for a moment), when it ends, and "Turn preview off". A refusal says so on the item for a
  * moment. Shown only when the editor has a preview Worker and a site is shown.
  */
-export function previewItems(port: PreviewMenuPort, actionClass: string, root: HTMLElement) {
+export function previewItems(port: Omit<PreviewMenuPort, "draw">, actionClass: string, root: HTMLElement) {
   const iconOf = (name: "eye" | "stop") => {
     const mark = node("span", "repository-menu__share-icon");
     mark.setAttribute("aria-hidden", "true");

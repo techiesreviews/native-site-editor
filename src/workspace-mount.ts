@@ -158,7 +158,7 @@ export interface WorkspaceMountPorts {
   /** Share to edit in the project menu (slice 30, src/live-session.ts). */
   share?: ShareMenuPort;
   /** Share preview in the project menu (slice 35, src/preview-share.ts); told after each paint, so the site shown serves its link. */
-  preview?: PreviewMenuPort & { painted(): void };
+  preview?: Pick<PreviewMenuPort, "available" | "draw"> & { painted(): void };
   /** Host state, read (and written) at call time. */
   readonly info: SessionInfo;
   repositories: Repository[];
