@@ -63,3 +63,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Tests also cover both links feeding one tile dot, a refused copy followed by Reconnecting… and Stopping…, a mouse click not revealing the icon, a stale turn-off failure, and a kept link marking the tile before the menu opens (`createPreviewShare`: `tile()` before the chunk loads).
 - Feature list: F-repo-09 (Edit together) and F-repo-11 (Preview link) updated; their screenshot steps record copied, waiting and the hover copy icon.
 
+### UX follow-ups
+
+- UX (looks off): F-repo-05 at 390 the Branches flyout sits on top of the repository list: it hides one repository's name and avatar and cuts off the row under it, though "main" can still be picked (L5) (.scratch/ux/fleet-lead/20261109-162054-xAoRW3/editor-F-repo-05-390-light-branches-strip.webp)
+- UX (looks off): F-repo-06 the branch reads again on the same page in every frame, but at 390 Refresh from GitHub is only a small 24 px icon in the Branches heading, under the 44 px touch size (HS18) (.scratch/ux/fleet-lead/20261109-162054-xAoRW3/editor-F-repo-06-390-dark-refresh-strip.webp)
