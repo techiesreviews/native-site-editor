@@ -91,3 +91,27 @@ test("a clash shows the latest version, and one Undo brings back Lex's words", a
   // Only the clashing words went back: Sam's other line stays.
   await expect(frame(page).getByText("Sam wrote this on GitHub.")).toBeVisible();
 });
+
+test("with reduced motion the chip stays still at full strength through its hold, then goes", async ({ page, baseURL }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await samPushes(page, baseURL, indexSource.replace(filler, "Sam wrote this on GitHub."));
+  await expect(chip(page)).toBeVisible();
+  const opacity = () => chip(page).evaluate((el) => Number(getComputedStyle(el).opacity) * (el.getAnimations().length ? 0 : 1));
+  // fixed-wait: well into the hold, where the fade would have dimmed it.
+  await page.waitForTimeout(1_800);
+  expect(await opacity()).toBe(1);
+  await expect(chip(page)).toBeHidden({ timeout: 4_000 });
+});
+
+// The commit read only names the chip (src/outside-merge.ts settle matrix): failed, or never answering, the fold goes
+// on and the chip says "Someone".
+for (const [name, answer] of [["fails", "abort"], ["never answers", "hold"]] as const) {
+  test(`the author read ${name}: the page still folds in, its chip naming Someone`, async ({ page, baseURL }) => {
+    await page.route("**/api/commit?*", (route) => answer === "abort" ? route.abort() : undefined);
+    await markContent(page);
+    await samPushes(page, baseURL, indexSource.replace(filler, "Sam wrote this on GitHub."));
+    await expect(frame(page).getByText("Sam wrote this on GitHub.")).toBeVisible({ timeout: 15_000 });
+    await expect(chip(page)).toContainText("Someone · GitHub");
+    await stillMarked(page);
+  });
+}

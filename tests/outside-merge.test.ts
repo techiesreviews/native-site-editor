@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createDraftStore } from "../src/draft-store.ts";
-import { changedNode, foldFile, foldIn, mergeText, type OutsideHost } from "../src/outside-merge.ts";
+import { AUTHOR_WAIT_MS, changedNode, foldFile, foldIn, mergeText, wordChanges, type OutsideHost } from "../src/outside-merge.ts";
 import type { SavedDraft } from "../src/drafts.ts";
 import type { Snapshot, TreeEntry } from "../shared/types.ts";
 import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
@@ -32,14 +32,38 @@ test("mergeText: added and removed lines on both sides, and the same change on b
   assert.equal(alike.text, lines("one", "TWO", "three", "four", "five"));
 });
 
-test("mergeText: a true clash keeps GitHub's words in the text and Lex's in mine; the rest merges", () => {
+test("mergeText: a true clash (the same words changed) keeps GitHub's words in the text and Lex's in mine; the rest merges", () => {
   const base = lines("<h1>Fresh bread every morning</h1>", "<p>Sourdough.</p>", "<p>Open daily.</p>");
-  const ours = lines("<h1>Warm bread every morning in Leiden</h1>", "<p>Sourdough.</p>", "<p>Open daily.</p>");
+  const ours = lines("<h1>Fresh rolls every morning in Leiden</h1>", "<p>Sourdough.</p>", "<p>Open daily.</p>");
   const theirs = lines("<h1>Fresh loaves every morning</h1>", "<p>Sourdough.</p>", "<p>Open daily, 7 to 15.</p>");
   const merged = mergeText(base, ours, theirs);
   assert.equal(merged.clashed, true);
-  assert.equal(merged.text, lines("<h1>Fresh loaves every morning</h1>", "<p>Sourdough.</p>", "<p>Open daily, 7 to 15.</p>"));
-  assert.equal(merged.mine, lines("<h1>Warm bread every morning in Leiden</h1>", "<p>Sourdough.</p>", "<p>Open daily, 7 to 15.</p>"));
+  // Lex's " in Leiden" is his alone and merges; only "bread" changed on both sides.
+  assert.equal(merged.text, lines("<h1>Fresh loaves every morning in Leiden</h1>", "<p>Sourdough.</p>", "<p>Open daily, 7 to 15.</p>"));
+  assert.equal(merged.mine, lines("<h1>Fresh rolls every morning in Leiden</h1>", "<p>Sourdough.</p>", "<p>Open daily, 7 to 15.</p>"));
+});
+
+test("mergeText: different words changed on one line are no clash, and both changes stay", () => {
+  const base = "<p>Open Tuesday to Saturday, 9 to 5.</p>\n";
+  const merged = mergeText(base, base.replace("Saturday", "Sunday"), base.replace("9 to 5", "8 to 4"));
+  assert.deepEqual(merged, { text: "<p>Open Tuesday to Sunday, 8 to 4.</p>\n", mine: "<p>Open Tuesday to Sunday, 8 to 4.</p>\n", clashed: false });
+  // One long line holding a whole page (no line breaks at all) merges by word too.
+  const page = "<main><h1>Hi</h1><p>Old words here</p><p>Other line</p></main>";
+  const both = mergeText(page, page.replace("Hi", "Hello"), page.replace("Other", "Another"));
+  assert.equal(both.clashed, false);
+  assert.equal(both.text, "<main><h1>Hello</h1><p>Old words here</p><p>Another line</p></main>");
+  // In a clash on such a line, mine keeps Sam's change to the other words, so Undo takes back only the clash.
+  const clash = mergeText(base, base.replace("Saturday", "Sunday"), base.replace("Saturday", "Friday").replace("9 to 5", "8 to 4"));
+  assert.equal(clash.clashed, true);
+  assert.equal(clash.text, "<p>Open Tuesday to Friday, 8 to 4.</p>\n");
+  assert.equal(clash.mine, "<p>Open Tuesday to Sunday, 8 to 4.</p>\n");
+});
+
+test("wordChanges: the word changes in the first text's offsets turn it into the second", () => {
+  const from = "<p>Open Tuesday to Saturday, 9 to 5.</p>", to = "<p>Open Monday to Saturday, 8 to 5.</p>";
+  const changes = wordChanges(from, to);
+  assert.deepEqual(changes.map(change => [from.slice(change.start, change.end), change.text]), [["Tuesday", "Monday"], ["9", "8"]]);
+  assert.deepEqual(wordChanges(from, from), []);
 });
 
 test("mergeText: no draft change takes GitHub's text; no GitHub change keeps the draft; a last line without a newline merges", () => {
@@ -82,14 +106,15 @@ test("foldFile: a clash shows the latest, and one Undo brings back Lex's words",
   const store = createDraftStore({ now: () => 1 });
   const base = lines("<h1>Fresh bread every morning</h1>", "<p>Open Saturday.</p>");
   store.open(scope, "index.html", { text: base, baseSha: oldSha });
-  const mine = lines("<h1>Warm bread every morning in Leiden</h1>", "<p>Open Saturday.</p>");
+  const mine = lines("<h1>Fresh rolls every morning</h1>", "<p>Open Saturday.</p>");
   store.edit({ scope, path: "index.html", history: "page", text: mine });
-  const theirs = lines("<h1>Fresh loaves every morning</h1>", "<p>Open Saturday.</p>");
+  const theirs = lines("<h1>Fresh loaves every morning</h1>", "<p>Open Sunday.</p>");
   foldFile(store, scope, "index.html", undefined, theirs, newSha, () => "page", "Sam · GitHub");
   assert.equal(store.text(scope, "index.html"), theirs);
   assert.equal(store.peek("page", "undo"), "Sam's change");
   assert.equal((await store.undo("page")).ok, true);
-  assert.equal(store.text(scope, "index.html"), mine);
+  // Lex's word back, Sam's other line kept.
+  assert.equal(store.text(scope, "index.html"), lines("<h1>Fresh rolls every morning</h1>", "<p>Open Sunday.</p>"));
   assert.equal(store.get(scope, "index.html")!.baseSha, newSha);
 });
 
@@ -212,6 +237,37 @@ test("foldIn: added, removed or other kinds of files load the branch again; a wo
   const gone = foldSetup([{ path: "index.html", type: "blob", sha: newSha, mode: "100644" }, { path: "style.css", type: "blob", sha: "c".repeat(40), mode: "100644" }]);
   assert.equal(await foldIn(gone.ports, gone.host, gone.after.commit, () => false), true);
   assert.deepEqual(gone.adopted, []);
+});
+
+test("foldIn: a changed mode, or more text files than one batch read, loads the branch again", async () => {
+  const mode = foldSetup([
+    { path: "index.html", type: "blob", sha: oldSha, mode: "100755" },
+    { path: "style.css", type: "blob", sha: "c".repeat(40), mode: "100644" },
+  ]);
+  assert.equal(await foldIn(mode.ports, mode.host, mode.after.commit, () => true), false);
+  assert.deepEqual(mode.adopted, []);
+  const many = foldSetup(changedIndex());
+  const extra = (sha: string) => Array.from({ length: 20 }, (_, index): TreeEntry => ({ path: `page-${index}.html`, type: "blob", sha: sha.repeat(40), mode: "100644" }));
+  (many.ports.appStore.snapshot.value!.tree as TreeEntry[]).push(...extra("e"));
+  (many.after.tree as TreeEntry[]).push(...extra("f"));
+  assert.equal(await foldIn(many.ports, many.host, many.after.commit, () => true), false);
+  assert.deepEqual(many.adopted, []);
+  assert.deepEqual(many.calls, ["commit", "snapshot"], "no file is read");
+});
+
+test("foldIn: the chip says Someone when the commit read fails, and does not wait for one that never answers", async () => {
+  const failed = foldSetup(changedIndex());
+  const api = failed.ports.api;
+  failed.ports.api = (async (action: string, params?: Record<string, string>) => action === "commit" ? Promise.reject(new Error("down")) : api(action, params)) as typeof api;
+  assert.equal(await foldIn(failed.ports, failed.host, failed.after.commit, () => true), true);
+  assert.equal(failed.visits[0][2], "Someone · GitHub");
+  const never = foldSetup(changedIndex());
+  never.ports.api = (async (action: string, params?: Record<string, string>) => action === "commit" ? new Promise(() => {}) : api(action, params)) as typeof api;
+  const started = Date.now();
+  assert.equal(await foldIn(never.ports, never.host, never.after.commit, () => true), true);
+  assert.ok(Date.now() - started < AUTHOR_WAIT_MS + 1_000, "folded once the wait passed");
+  assert.equal(never.visits[0][2], "Someone · GitHub");
+  assert.deepEqual(never.adopted, [never.after]);
 });
 
 test("foldIn: a draft that is a deletion loads the branch again", async () => {

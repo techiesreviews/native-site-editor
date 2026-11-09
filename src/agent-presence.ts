@@ -33,6 +33,8 @@ export interface PresenceQuestion { id: string; repoId: number; branch?: string;
 
 /** The agents' colours, theme tokens in order of arrival: the MCP green, the components' violet, video pink, data teal (src/theme.css). */
 export const AGENT_COLOURS = ["agent-presence", "agent-presence-2", "agent-presence-3", "agent-presence-4"] as const;
+/** An outside commit's author (ticket am-33): AGENT_COLOURS' data teal, the colour mock-up 15 gave Sam on GitHub. */
+const OUTSIDE_COLOUR = 3;
 /** How long get_site lists an agent after its last change. */
 export const AT_WORK_MS = 10 * 60_000;
 /** An agent with no name of its own or of its MCP client. */
@@ -286,7 +288,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     stopsChanged: () => { name(); refresh(); },
     /** `name` changed page `path` outside the editor, at its element `node`: its outline and chip show for `ms`. */
     visit(path: string, node: number[] | undefined, name: string, ms: number) {
-      const visit = { mark: { key: `outside:${path}`, who: { grant: "outside", name }, name, colour: 3, path, ...(node ? { node } : {}), asking: false, fade: ++visited }, at: ports.begin() };
+      const visit = { mark: { key: `outside:${path}`, who: { grant: "outside", name }, name, colour: OUTSIDE_COLOUR, path, ...(node ? { node } : {}), asking: false, fade: ++visited }, at: ports.begin() };
       visits = [...visits.filter(old => old.mark.key !== visit.mark.key), visit];
       refresh();
       setTimeout(() => { visits = visits.filter(old => old !== visit); refresh(); }, ms);
