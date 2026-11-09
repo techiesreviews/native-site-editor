@@ -153,6 +153,8 @@ export function createRepositoryMenu(options: {
   const shareTitle = node("div", "repository-menu__heading");
   shareTitle.append(node("span", "", "Share"));
   shareGroup.append(shareTitle);
+  // Shown with its first row, so the title never stands over rows still loading.
+  shareGroup.hidden = true;
   const shares = [options.preview, options.share].filter((port): port is SharesMenuPort => port !== undefined).map((port) => {
     const place = node("div");
     place.hidden = true;
@@ -160,7 +162,7 @@ export function createRepositoryMenu(options: {
     port.tile(trigger);
     let drawn: ReturnType<SharesMenuPort["draw"]> | undefined;
     return {
-      show() { if (drawn || port.offered()) void (drawn ??= port.draw(actionClass, place)).then((row) => row.refresh(), () => { drawn = undefined; }); },
+      show() { if (drawn || port.offered()) void (drawn ??= port.draw(actionClass, place)).then((row) => { shareGroup.hidden = false; row.refresh(); }, () => { drawn = undefined; }); },
       destroy() { void drawn?.then((row) => row.destroy(), () => undefined); },
     };
   });
