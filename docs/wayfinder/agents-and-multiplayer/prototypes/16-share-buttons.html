@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 16 Share buttons like Connect to MCP</title>
+<style>
+:root {
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.0139) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.0884) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.2233) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.7349) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.4977) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.2791) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+  --surface: var(--color-primary-lightest);
+  --background: oklch(from var(--color-primary-lighter) 97% c h);
+  --surface-subtle: var(--color-primary-lighter);
+  --surface-raised: var(--color-primary-lightest);
+  --toolbar: oklch(from var(--color-primary-lighter) 92% c h);
+  --text: var(--color-primary-darkest);
+  --muted: oklch(from var(--color-primary-dark) l min(c, 0.045) h);
+  --line: var(--color-primary-light);
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --on-primary: var(--color-primary-lightest);
+  --focus: var(--primary);
+  --danger: oklch(from var(--color-success) l c 25);
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --shadow: 0 12px 32px oklch(from var(--color-primary-darkest) l c h / 0.18);
+  --type-small: 12px; --type-base: 13px; --type-title: 15px;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px;
+  --size-control: 32px;
+  --sketch: oklch(70% 0.12 300);
+  --site-paper: oklch(99% 0.01 80);
+  --site-ink: oklch(28% 0.04 50);
+  --site-accent: oklch(62% 0.14 40);
+  --c1: oklch(62% 0.17 340); --c2: oklch(60% 0.15 190); --c3: oklch(64% 0.15 150);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface: oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h);
+    --background: var(--color-primary-darkest);
+    --surface-subtle: oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h);
+    --surface-raised: oklch(from var(--color-primary-darker) 32% min(c, 0.035) h);
+    --toolbar: oklch(from var(--color-primary-darker) l min(c, 0.025) h);
+    --text: var(--color-primary-lighter);
+    --muted: oklch(from var(--color-primary-light) 80% min(c, 0.035) h);
+    --line: oklch(from var(--color-primary-darker) 36% min(c, 0.04) h);
+    --focus: var(--color-primary-light);
+    --shadow: 0 12px 32px oklch(from var(--color-primary-darkest) 5% c h / 0.35);
+  }
+}
+:root[data-theme="dark"] {
+  --surface: oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h);
+  --background: var(--color-primary-darkest);
+  --surface-subtle: oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h);
+  --surface-raised: oklch(from var(--color-primary-darker) 32% min(c, 0.035) h);
+  --toolbar: oklch(from var(--color-primary-darker) l min(c, 0.025) h);
+  --text: var(--color-primary-lighter);
+  --muted: oklch(from var(--color-primary-light) 80% min(c, 0.035) h);
+  --line: oklch(from var(--color-primary-darker) 36% min(c, 0.04) h);
+  --focus: var(--color-primary-light);
+  --shadow: 0 12px 32px oklch(from var(--color-primary-darkest) 5% c h / 0.35);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  color: var(--text);
+  font: var(--type-base)/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: 0 0 8px;
+}
+button { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+svg { flex: none; }
+
+/* Sketch strip (not part of the design) */
+.strip {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 8px; margin-bottom: 12px;
+  border: 1.5px dashed var(--sketch); border-radius: var(--radius-panel);
+}
+.seg { display: inline-flex; border: 1px solid var(--control-line); border-radius: var(--radius); overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 6px 12px; cursor: pointer; min-height: 32px; }
+.seg button[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.sk {
+  border: 1.5px dashed var(--sketch); background: transparent; border-radius: var(--radius);
+  padding: 5px 10px; cursor: pointer; min-height: 32px;
+}
+.sk[aria-pressed="true"] { background: color-mix(in oklch, var(--sketch) 22%, transparent); }
+.strip .gap { flex: 1; }
+
+.stage { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (width <= 820px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+.frame { border: 1px solid var(--line); border-radius: var(--radius-panel); overflow: hidden; background: var(--surface); box-shadow: 0 2px 6px oklch(from var(--color-primary-darkest) l c h / 0.08); }
+.cap { font-size: var(--type-small); color: var(--muted); margin: 0 0 6px 2px; font-weight: 600; letter-spacing: .02em; }
+
+/* Editor mock */
+.bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--toolbar); border-bottom: 1px solid var(--line); }
+.tile {
+  display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px; min-height: 32px;
+  border: 0; border-radius: var(--radius); background: transparent; cursor: pointer; position: relative;
+}
+.tile:hover { background: var(--hover); }
+.tile .logo { width: 22px; height: 22px; border-radius: 5px; background: var(--site-accent); color: white; display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+.tile .name { font-weight: 600; }
+.tile .tdot { position: absolute; left: 22px; top: 3px; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--toolbar); }
+.bar .spacer { flex: 1; }
+.chips { display: inline-flex; }
+.chip {
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 11px; font-weight: 700; color: white; border: 2px solid var(--toolbar); margin-left: -6px;
+}
+.chip:first-child { margin-left: 0; }
+.chip.more { background: var(--muted); }
+.fakebtn { border: 1px solid var(--control-line); background: var(--surface); border-radius: var(--radius); padding: 4px 10px; min-height: 28px; color: var(--muted); }
+.ed-body { position: relative; min-height: 420px; display: grid; grid-template-columns: 150px 1fr; }
+@media (width <= 520px) { .ed-body { grid-template-columns: 1fr; } .side { display: none; } }
+.side { border-right: 1px solid var(--line); padding: 10px 8px; background: var(--surface-subtle); color: var(--muted); font-size: var(--type-small); }
+.side div { padding: 5px 6px; border-radius: var(--radius-small); }
+.side div.on { background: var(--current); color: var(--text); font-weight: 600; }
+.canvas { padding: 16px; }
+.closed { display: grid; place-items: center; min-height: 460px; color: var(--muted); background: var(--background); }
+
+/* The menu */
+.menu {
+  position: absolute; left: 8px; top: 6px; z-index: 5; width: min(340px, calc(100% - 16px));
+  background: var(--surface-raised); border: 1px solid var(--line); border-radius: var(--radius-panel);
+  box-shadow: var(--shadow); padding: 6px;
+}
+.menu .sep { height: 1px; background: var(--line); margin: 6px 2px; }
+.mrow { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 32px; padding: 4px 8px; border: 0; border-radius: var(--radius); background: transparent; text-align: left; cursor: pointer; }
+.mrow:focus-visible { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .mrow:hover:not([aria-disabled="true"]) { background: var(--hover); } }
+.mrow:focus-visible, .copy:focus-visible, .seg button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.mrow[aria-disabled="true"] { cursor: default; color: var(--muted); }
+.mrow.dim { color: var(--muted); }
+.mrow .lbl { flex: 1; min-width: 0; }
+.mrow .end { color: var(--muted); font-size: var(--type-small); display: inline-flex; align-items: center; gap: 6px; }
+.repo { color: var(--muted); }
+.repo b { color: var(--text); font-weight: 600; }
+
+/* The dot: the only status (as Connect to MCP) */
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); opacity: .5; }
+.dot.wait { background: var(--color-warning); opacity: 1; animation: pulse 1.4s ease-in-out infinite; }
+.dot.on { background: var(--color-success); opacity: 1; }
+.dot.busy { animation: pulse 1.4s ease-in-out infinite; }
+.dot.bad { background: var(--danger); opacity: 1; }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none !important; } }
+
+.linkrow { display: flex; gap: 6px; padding: 2px 8px 4px 26px; }
+.field {
+  flex: 1; min-width: 0; height: 30px; padding: 0 8px; border-radius: var(--radius);
+  border: 1px solid var(--control-line); background: var(--surface); color: var(--muted);
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+}
+.copy {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px;
+  border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface); cursor: pointer;
+}
+.copy.done { color: var(--color-success); border-color: color-mix(in oklch, var(--color-success) 50%, transparent); }
+.small { font-size: var(--type-small); color: var(--muted); padding: 0 8px 4px 26px; display: block; }
+.mhost { display: grid; --row-bg: var(--surface-raised); --row-base: var(--surface-raised); border-radius: var(--radius); overflow: clip; }
+.mhost > * { grid-area: 1 / 1; }
+.mhost > .rowact { place-self: stretch end; display: flex; align-items: center; padding-inline: 20px 4px; border-radius: inherit; background: linear-gradient(to right, transparent, var(--row-bg) 20px), linear-gradient(to right, transparent, var(--row-base) 20px); opacity: 0; pointer-events: none; }
+.mhost:is(.is-done, :focus-within) > .rowact { opacity: 1; pointer-events: auto; }
+.rowcopy { display: inline-grid; place-items: center; inline-size: 24px; block-size: 24px; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); cursor: pointer; }
+.rowcopy:active { transform: scale(0.95); }
+.rowcopy:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.rowcopy.done { color: var(--color-success); }
+@media (hover: hover) and (pointer: fine) {
+  .mhost:hover { --row-bg: var(--hover); }
+  .mhost:hover > .mrow { background: var(--hover); }
+  .mhost:hover > .rowact { opacity: 1; pointer-events: auto; }
+  .rowcopy:hover { background: var(--hover); color: var(--text); }
+}
+@media (hover: none), (pointer: coarse) {
+  .mhost > .rowact { opacity: 1; pointer-events: auto; }
+  .mhost .mrow { padding-inline-end: 36px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mhost > .rowact { transition: opacity 140ms ease-out; }
+  .rowcopy { transform: translateX(40%); transition: transform 140ms ease-out; }
+  .mhost:is(:hover, :focus-within, .is-done) .rowcopy { transform: none; }
+  .mhost:is(:hover, :focus-within, .is-done) .rowcopy:active { transform: scale(0.95); }
+}
+.repo { color: var(--muted); }
+.repo b { color: var(--text); font-weight: 600; }
+
+/* The dot: the only status (as Connect to MCP) */
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); opacity: .5; }
+.dot.wait { background: var(--color-warning); opacity: 1; animation: pulse 1.4s ease-in-out infinite; }
+.dot.on { background: var(--color-success); opacity: 1; }
+.dot.busy { animation: pulse 1.4s ease-in-out infinite; }
+.dot.bad { background: var(--danger); opacity: 1; }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none !important; } }
+
+.linkrow { display: flex; gap: 6px; padding: 2px 8px 4px 26px; }
+.field {
+  flex: 1; min-width: 0; height: 30px; padding: 0 8px; border-radius: var(--radius);
+  border: 1px solid var(--control-line); background: var(--surface); color: var(--muted);
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+}
+.copy {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px;
+  border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface); cursor: pointer;
+}
+.copy.done { color: var(--color-success); border-color: color-mix(in oklch, var(--color-success) 50%, transparent); }
+.small { font-size: var(--type-small); color: var(--muted); padding: 0 8px 4px 26px; display: block; }
+.who { display: inline-flex; align-items: center; gap: 6px; }
+.who .chip { border-color: var(--surface-raised); width: 20px; height: 20px; font-size: 10.5px; }
+.kindx { display: inline-flex; border: 1px solid var(--control-line); border-radius: var(--radius); overflow: hidden; margin: 2px 8px 4px 8px; }
+.kind button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 4px 10px; min-height: 28px; cursor: pointer; font-size: var(--type-small); }
+.kind button[aria-pressed="true"] { background: var(--current); font-weight: 600; }
+.kind .dot { width: 6px; height: 6px; }
+
+/* Fake site */
+.site { background: var(--site-paper); color: var(--site-ink); padding: 22px 20px; border-radius: var(--radius); font-family: Georgia, "Times New Roman", serif; }
+.site nav { display: flex; gap: 14px; font: 12px system-ui, sans-serif; opacity: .7; margin-bottom: 26px; }
+.site nav b { margin-right: auto; opacity: 1; }
+.site h1 { font-size: 28px; line-height: 1.15; margin: 0 0 10px; outline: none; }
+.site h1[contenteditable]:focus { box-shadow: 0 0 0 2px var(--primary); border-radius: 3px; }
+.site p { margin: 0 0 16px; font-size: 14px; opacity: .85; }
+.site .cta { display: inline-block; background: var(--site-accent); color: white; padding: 8px 14px; border-radius: 999px; font: 600 12px system-ui, sans-serif; }
+.site .pics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 20px; }
+.site .pics i { aspect-ratio: 4/3; border-radius: 6px; background: linear-gradient(135deg, oklch(85% 0.06 60), oklch(75% 0.09 40)); }
+.caret { position: relative; }
+.caret::after { content: attr(data-name); position: absolute; top: -16px; left: 0; font: 600 10px system-ui; color: white; background: var(--c1); padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+
+/* Viewer pane */
+.browser { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line); background: var(--toolbar); }
+.browser .lights { display: flex; gap: 4px; }
+.browser .lights i { width: 8px; height: 8px; border-radius: 50%; background: var(--control-line); }
+.addr { flex: 1; min-width: 0; height: 24px; display: flex; align-items: center; padding: 0 8px; border-radius: 999px; background: var(--surface); color: var(--muted); font: 11.5px ui-monospace, Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vbody { padding: 14px; min-height: 320px; background: var(--background); }
+.msg { min-height: 290px; display: grid; place-content: center; text-align: center; gap: 6px; background: var(--site-paper); color: var(--site-ink); border-radius: var(--radius); }
+.msg h2 { margin: 0; font: 600 18px system-ui, sans-serif; }
+.msg p { margin: 0; font-size: 13px; opacity: .7; }
+.blank { min-height: 290px; border: 1.5px dashed var(--line); border-radius: var(--radius); display: grid; place-items: center; }
+.join { min-height: 290px; display: grid; place-content: center; gap: 10px; background: var(--site-paper); color: var(--site-ink); border-radius: var(--radius); padding: 16px; }
+.join h2 { margin: 0; font: 600 16px system-ui, sans-serif; text-align: center; }
+.join label { font-size: 12px; opacity: .75; }
+.join input { height: 34px; border-radius: var(--radius); border: 1px solid oklch(80% 0.02 60); padding: 0 10px; font: inherit; background: white; color: var(--site-ink); }
+.join .go { height: 34px; border: 0; border-radius: var(--radius); background: oklch(45% 0.17 263); color: white; font-weight: 600; cursor: pointer; }
+.gbar { display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin: -14px -14px 12px; background: var(--toolbar); border-bottom: 1px solid var(--line); font-size: var(--type-small); }
+.gbar .spacer { flex: 1; }
+.vtools { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.note { font-size: 12px; color: var(--muted); margin: 14px 2px 0; }
+</style>
+</head>
+<body>
+
+<div class="strip" role="group" aria-label="Sketch controls">
+  <div class="seg" id="variant" role="group" aria-label="Variant">
+    <button data-v="today">Today</button>
+    <button data-v="B">New · Two buttons</button>
+  </div>
+  <span class="gap"></span>
+  <button class="sk" id="sk-tab">Close editor tab</button>
+  <button class="sk" id="sk-net" aria-pressed="false">Network drop</button>
+  <button class="sk" id="sk-fail" aria-pressed="false">Next link fails</button>
+  <button class="sk" id="sk-site" aria-pressed="false">No site open</button>
+  <button class="sk" id="sk-theme">Dark</button>
+</div>
+
+<div class="stage">
+  <section>
+    <p class="cap">Lex's editor</p>
+    <div class="frame" id="editor"></div>
+  </section>
+  <section>
+    <p class="cap">What they see</p>
+    <div class="seg" id="viewer-kind" role="group" aria-label="Viewer" style="margin-bottom:8px">
+      <button data-k="preview">Customer</button>
+      <button data-k="edit">Collaborator</button>
+    </div>
+    <div class="frame" id="viewer"></div>
+  </section>
+</div>
+
+<script>
+const ICON = {
+  eye: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  pen: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>',
+  copy: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
+  check: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  stop: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  live: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/></svg>',
+  folder: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  gear: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
+};
+const COLOURS = ["var(--c1)", "var(--c2)", "var(--c3)"];
+const GUEST_NAMES = ["Ben", "Chloe", "Dev", "Ezra"];
+const rand = () => Math.random().toString(36).slice(2, 7);
+
+const S = {
+  variant: "B", editorOpen: true, net: true, failNext: false, site: true, theme: null,
+  aKind: "preview", viewerKind: "preview",
+  headline: "Fresh sourdough, every morning",
+  links: {
+    preview: { state: "idle", url: "", viewers: 0, copied: false, ended: "" },
+    edit: { state: "idle", url: "", people: [], copied: false, ended: "" },
+  },
+  customer: { opened: false },
+  collab: { joined: false, name: "Anna" },
+};
+const L = S.links;
+
+// The state a link's control shows: idle, making, error, waiting, connected, reconnecting.
+function shown(kind) {
+  const l = L[kind];
+  if (l.state !== "live") return l.state;
+  if (!S.net) return "reconnecting";
+  const n = kind === "preview" ? l.viewers : l.people.length;
+  return n ? "connected" : "waiting";
+}
+function count(kind) { return kind === "preview" ? L.preview.viewers : L.edit.people.length; }
+
+function make(kind) {
+  const l = L[kind];
+  if (l.state === "making" || l.state === "live") return;
+  l.state = "making"; render();
+  setTimeout(() => {
+    if (S.failNext) { S.failNext = false; l.state = "error"; render(); return; }
+    l.state = "live"; l.ended = "";
+    l.url = kind === "preview"
+      ? `preview.techies.tools/s/bloom-bakery-${rand()}${rand()}/#k=${rand()}`
+      : `editor.techies.tools/live/${rand()}${rand()}#k=${rand()}${rand()}`;
+    if (kind === "preview") { l.viewers = 0; S.customer.opened = false; }
+    else { l.people = []; S.collab.joined = false; }
+    copy(kind);
+  }, 700);
+}
+function copy(kind) {
+  const l = L[kind];
+  try { navigator.clipboard?.writeText("https://" + l.url).catch(() => {}); } catch {}
+  l.copied = true; render();
+  clearTimeout(l.t); l.t = setTimeout(() => { l.copied = false; render(); }, 2000);
+}
+function stop(kind) {
+  const l = L[kind];
+  l.ended = kind === "preview" ? "off" : "ended";
+  l.state = "idle"; l.viewers = 0; l.people = []; l.copied = false;
+  render();
+}
+
+/* ---------- Editor menu: the three variants ---------- */
+function dotClass(st) {
+  return st === "waiting" ? "wait" : st === "connected" ? "on" : st === "error" ? "bad" : (st === "making" || st === "reconnecting") ? "busy" : "";
+}
+function whoHtml(kind) {
+  if (kind === "preview") return `<span class="who">${ICON.eye}${L.preview.viewers}</span>`;
+  const p = L.edit.people;
+  return `<span class="who"><span class="chips">${p.slice(0, 3).map(x => `<span class="chip" style="background:${x.colour}" title="${x.name}">${x.name[0]}</span>`).join("")}${p.length > 3 ? `<span class="chip more">+${p.length - 3}</span>` : ""}</span></span>`;
+}
+// One link's control, the Connect to MCP pattern: one button, a dot, three states.
+function control(kind, names) {
+  const st = shown(kind), l = L[kind];
+  const n = count(kind);
+  let label, end = "";
+  if (!S.site || st === "idle") label = names.idle;
+  else if (st === "making") label = "Making a link…";
+  else if (st === "error") label = "Couldn't make a link · try again";
+  else if (l.copied) label = "Link copied";
+  else if (st === "waiting") label = names.waiting;
+  else if (st === "reconnecting") label = "Reconnecting…";
+  else label = kind === "preview" ? `${n} watching` : `Editing with ${L.edit.people.map(p => p.name).join(", ")}`;
+  const running = l.state === "live";
+  if (running && !l.copied && st === "connected") end = whoHtml(kind);
+  const disabled = !S.site || st === "making";
+  const main = `
+    <button class="mrow${disabled ? " dim" : ""}" data-act="main" data-kind="${kind}" aria-disabled="${disabled}">
+      <span class="dot ${S.site ? dotClass(st) : ""}"></span>
+      <span class="lbl" aria-live="polite">${label}</span>
+      <span class="end">${end}</span>
+    </button>`;
+  if (!running) return main;
+  return `<div class="mhost${l.copied ? " is-done" : ""}">${main}
+    <div class="rowact"><button class="rowcopy${l.copied ? " done" : ""}" data-act="rowcopy" data-kind="${kind}" aria-label="Copy link">${l.copied ? ICON.check : ICON.copy}</button></div></div>`;
+}
+function menuToday() {
+  const e = L.edit, p = L.preview;
+  const est = e.state === "live", pst = p.state === "live";
+  const shareWord = e.state === "error" ? "Couldn't share" : est ? (e.copied ? "Link copied" : "Copy edit link") : e.state === "making" ? "Sharing…" : "Share to edit";
+  const prevWord = p.state === "error" ? "Couldn't share preview" : p.state === "making" ? "Making a link…" : "Share preview";
+  const ends = new Date(Date.now() + 30 * 864e5).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  return `
+    <div class="mrow repo">${ICON.folder}<span class="lbl"><b>bloom-bakery</b> · main</span></div>
+    <div class="sep"></div>
+    <div class="mrow repo">${ICON.gear}<span class="lbl">Site settings</span></div>
+    ${S.site ? `
+    <button class="mrow" data-act="today-edit">${est ? (e.copied ? ICON.check : ICON.copy) : ICON.live}<span class="lbl">${shareWord}</span></button>
+    ${est ? `<button class="mrow" data-act="stop" data-kind="edit">${ICON.stop}<span class="lbl">Stop sharing</span></button>` : ""}
+    ${pst ? `
+      <div class="mrow" style="cursor:default">${ICON.eye}<span class="lbl">Preview link</span></div>
+      <div class="linkrow" style="padding-left:8px"><input class="field" readonly value="${p.url}"><button class="copy${p.copied ? " done" : ""}" data-act="copy" data-kind="preview">${p.copied ? ICON.check + "Copied" : "Copy"}</button></div>
+      <small class="small" style="padding-left:8px">Works while your editor is open · ends ${ends}</small>
+      <button class="mrow" data-act="stop" data-kind="preview">${ICON.stop}<span class="lbl">Turn preview off</span></button>`
+    : `<button class="mrow" data-act="main" data-kind="preview">${ICON.eye}<span class="lbl">${prevWord}</span></button>`}` : ""}`;
+}
+
+function menuA() {
+  const k = S.aKind;
+  const seg = (kind, text) => `<button data-act="akind" data-kind="${kind}" aria-pressed="${k === kind}"><span class="dot ${dotClass(shown(kind))}"></span>${text}</button>`;
+  return `
+    <div class="mrow repo">${ICON.folder}<span class="lbl"><b>bloom-bakery</b> · main</span></div>
+    <div class="sep"></div>
+    <div class="mrow repo">${ICON.gear}<span class="lbl">Site settings</span></div>
+    <div class="sep"></div>
+    <div class="kind" role="group" aria-label="What is shared">${seg("preview", "Customer preview")}${seg("edit", "Edit together")}</div>
+    ${control(k, k === "preview"
+      ? { idle: "Share", waiting: "Waiting for customer" }
+      : { idle: "Share", waiting: "Waiting for collaborator" })}`;
+}
+
+function menuB() {
+  return `
+    <div class="mrow repo">${ICON.folder}<span class="lbl"><b>bloom-bakery</b> · main</span></div>
+    <div class="sep"></div>
+    <div class="mrow repo">${ICON.gear}<span class="lbl">Site settings</span></div>
+    <div class="sep"></div>
+    ${control("preview", { idle: "Preview link", waiting: "Preview · waiting for customer" })}
+    <div class="sep"></div>
+    ${control("edit", { idle: "Edit together", waiting: "Edit together · waiting" })}`;
+}
+
+function tileDot() {
+  if (S.variant === "today") return "";
+  const sts = ["preview", "edit"].map(shown);
+  const c = sts.includes("connected") ? "on" : sts.includes("waiting") ? "wait" : sts.includes("reconnecting") ? "busy" : "";
+  return c ? `<span class="tdot dot ${c}"></span>` : "";
+}
+
+function renderEditor() {
+  const el = document.getElementById("editor");
+  if (!S.editorOpen) {
+    el.innerHTML = `<div class="closed"><button class="sk" data-act="reopen">Reopen editor</button></div>`;
+    return;
+  }
+  const guests = S.variant === "today" && L.edit.state === "live" ? whoHtml("edit") : "";
+  const menu = S.variant === "today" ? menuToday() : menuB();
+  el.innerHTML = `
+    <div class="bar">
+      <button class="tile" data-act="menu"><span class="logo">B</span>${tileDot()}<span class="name">bloom-bakery</span></button>
+      ${guests}
+      <span class="spacer"></span>
+      <span class="fakebtn">Save</span>
+    </div>
+    <div class="ed-body">
+      <div class="side"><div class="on">index.html</div><div>about.html</div><div>menu.html</div><div>styles/site.css</div></div>
+      <div class="canvas">${siteHtml(true, S.variant === "today" ? false : L.edit.people.length > 0)}</div>
+      ${S.menuOpen === false ? "" : `<div class="menu" role="menu">${menu}</div>`}
+    </div>`;
+}
+
+function siteHtml(editable, caret) {
+  return `<div class="site">
+    <nav><b>Bloom Bakery</b><span>Menu</span><span>About</span><span>Visit</span></nav>
+    <h1 ${editable ? 'contenteditable="true" data-headline' : "data-mirror"} spellcheck="false">${S.headline}</h1>
+    <p>${caret ? `<span class="caret" data-name="${L.edit.people[0].name}">|</span>` : ""}Small-batch loaves baked before sunrise on Mill Street.</p>
+    <span class="cta">Order for pickup</span>
+    <div class="pics"><i></i><i></i><i></i></div>
+  </div>`;
+}
+
+/* ---------- What the customer / collaborator sees ---------- */
+function renderViewer() {
+  const el = document.getElementById("viewer");
+  const kind = S.viewerKind, l = L[kind];
+  const url = l.url || "";
+  const has = l.state === "live" || l.ended || (!S.editorOpen && url);
+  let body;
+  if (kind === "preview") {
+    if (!url) body = `<div class="blank"></div>`;
+    else if (l.ended === "off") body = `<div class="msg"><h2>This preview link is turned off.</h2></div>`;
+    else if (!S.customer.opened) body = `<div class="blank"><button class="sk" data-act="open-customer">Open link</button></div>`;
+    else if (!S.editorOpen) body = `<div class="msg"><h2>Not running</h2><p>This preview shows edits while the editor is open.</p></div>`;
+    else body = siteHtml(false, false) + `<div class="vtools"><button class="sk" data-act="more-visitor">+1 visitor</button><button class="sk" data-act="leave-customer">Close page</button></div>`;
+  } else {
+    if (!url) body = `<div class="blank"></div>`;
+    else if (l.ended || !S.editorOpen) body = `<div class="msg"><h2>This edit link has ended.</h2><p>Ask for a new link to edit again.</p></div>`;
+    else if (!S.collab.joined) body = `<div class="join"><h2>Synced session</h2><label for="gname">Your name</label><input id="gname" value="${S.collab.name}"><button class="go" data-act="join">Join</button></div>`;
+    else {
+      const me = L.edit.people.find(p => p.name === S.collab.name);
+      body = `<div class="gbar"><b>bloom-bakery</b><span class="spacer"></span><span class="who"><span class="chips"><span class="chip" style="background:oklch(45% 0.17 263)">L</span>${me ? `<span class="chip" style="background:${me.colour}">${me.name[0]}</span>` : ""}</span></span></div>`
+        + siteHtml(true, false).replace("data-headline", "data-headline-guest")
+        + `<div class="vtools"><button class="sk" data-act="more-guest">+ another collaborator</button><button class="sk" data-act="leave-guest">Leave</button></div>`;
+    }
+  }
+  el.innerHTML = `<div class="browser"><span class="lights"><i></i><i></i><i></i></span><span class="addr">${url ? "https://" + url : ""}</span></div><div class="vbody">${body}</div>`;
+}
+
+function render() {
+  document.querySelectorAll("#variant button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === S.variant)));
+  document.querySelectorAll("#viewer-kind button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.k === S.viewerKind)));
+  const tab = document.getElementById("sk-tab");
+  tab.textContent = S.editorOpen ? "Close editor tab" : "Reopen editor";
+  document.getElementById("sk-net").setAttribute("aria-pressed", String(!S.net));
+  document.getElementById("sk-fail").setAttribute("aria-pressed", String(S.failNext));
+  document.getElementById("sk-site").setAttribute("aria-pressed", String(!S.site));
+  const focusId = document.activeElement?.dataset?.act && (document.activeElement.dataset.act + (document.activeElement.dataset.kind || ""));
+  renderEditor(); renderViewer();
+  if (focusId) {
+    const again = [...document.querySelectorAll("[data-act]")].find(x => x.dataset.act + (x.dataset.kind || "") === focusId);
+    again?.focus();
+  }
+}
+
+/* ---------- Events ---------- */
+function closeTab() {
+  S.editorOpen = false;
+  // The edit link dies with the tab; the preview link is kept and resumes on reopen.
+  if (L.edit.state === "live") { L.edit.ended = "ended"; L.edit.state = "idle"; L.edit.people = []; S.collab.joined = false; }
+  if (L.preview.state !== "live") L.preview.state = "idle";
+  if (L.edit.state !== "idle") L.edit.state = "idle";
+  render();
+}
+function reopen() { S.editorOpen = true; S.menuOpen = true; render(); }
+
+document.addEventListener("click", (ev) => {
+  const t = ev.target.closest("[data-act], [data-v], [data-k]");
+  if (!t) return;
+  if (t.dataset.v) { S.variant = t.dataset.v; S.menuOpen = true; return render(); }
+  if (t.dataset.k && !t.dataset.act) { S.viewerKind = t.dataset.k; return render(); }
+  const kind = t.dataset.kind;
+  switch (t.dataset.act) {
+    case "menu": S.menuOpen = S.menuOpen === false; break;
+    case "main": {
+      if (!S.site || t.getAttribute("aria-disabled") === "true") return;
+      const st = L[kind].state;
+      if (st === "live") copy(kind); else make(kind);
+      S.viewerKind = kind; break;
+    }
+    case "today-edit": if (L.edit.state === "live") copy("edit"); else make("edit"); S.viewerKind = "edit"; break;
+    case "copy": case "rowcopy": copy(kind); return;
+    case "stop": stop(kind); return;
+    case "akind": S.aKind = kind; S.viewerKind = kind; break;
+    case "reopen": reopen(); return;
+    case "open-customer": S.customer.opened = true; if (L.preview.state === "live") L.preview.viewers += 1; break;
+    case "more-visitor": L.preview.viewers += 1; break;
+    case "leave-customer": S.customer.opened = false; L.preview.viewers = 0; break;
+    case "join": {
+      const name = (document.getElementById("gname").value || "Guest").trim();
+      S.collab.name = name; S.collab.joined = true;
+      L.edit.people.push({ name, colour: COLOURS[0] }); break;
+    }
+    case "more-guest": {
+      const used = L.edit.people.map(p => p.name);
+      const name = GUEST_NAMES.find(n => !used.includes(n)) || "Guest";
+      L.edit.people.push({ name, colour: COLOURS[L.edit.people.length % 3] }); break;
+    }
+    case "leave-guest": S.collab.joined = false; L.edit.people = []; break;
+  }
+  render();
+});
+document.getElementById("sk-tab").onclick = () => (S.editorOpen ? closeTab() : reopen());
+document.getElementById("sk-net").onclick = () => { S.net = !S.net; render(); };
+document.getElementById("sk-fail").onclick = () => { S.failNext = !S.failNext; render(); };
+document.getElementById("sk-site").onclick = () => { S.site = !S.site; render(); };
+document.getElementById("sk-theme").onclick = (e) => {
+  const dark = document.documentElement.dataset.theme !== "dark";
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  e.target.textContent = dark ? "Light" : "Dark";
+};
+// Typing on the page reaches whoever is looking (live).
+document.addEventListener("input", (ev) => {
+  const h = ev.target.closest("[data-headline], [data-headline-guest]");
+  if (!h) return;
+  S.headline = h.textContent;
+  document.querySelectorAll("[data-headline], [data-headline-guest], [data-mirror]").forEach(x => { if (x !== h) x.textContent = S.headline; });
+});
+render();
+</script>
+</body>
+</html>
