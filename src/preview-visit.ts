@@ -88,8 +88,11 @@ async function run(base: string, token: string, rawKey: string) {
   function heard(message: HostMessage) {
     // Each (re)joining: files may have changed while this page was away, so it starts afresh where the visitor is.
     if (message.t === "hello" && typeof message.version === "string" && typeof message.start === "string") {
+      const from = message.start.startsWith("/") ? message.start : "/";
+      // A hello goes to the whole room: one that brings nothing new (another visitor said hi) leaves the page as it is.
+      if (frame && message.version === version && from === start) return;
       version = message.version;
-      start = message.start.startsWith("/") ? message.start : "/";
+      start = from;
       forget();
       if (!frame) show(lastHref ?? `${base}/site${start}`);
       else redraw();
