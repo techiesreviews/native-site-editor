@@ -1,0 +1,42 @@
+{
+  // Preview links' own Worker (slice 35, worker/preview-host.ts): a customer opens
+  // a site on this address as it is being edited. It is separate from the editor,
+  // so the site's scripts never run on the editor's origin and never get its
+  // sign-in cookie. Its address is https://native-site-editor-previews.<your-subdomain>.workers.dev
+  // (or a domain you add under its Settings → Domains & Routes).
+  //
+  // To turn preview links on for your editor: deploy this Worker once
+  // (`npx wrangler deploy --config wrangler.preview-host.jsonc`), then set the
+  // editor's PREVIEW_ORIGIN (wrangler.jsonc) to this Worker's address. Share
+  // preview shows in the project menu only once PREVIEW_ORIGIN is set.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "native-site-editor-previews",
+  "main": "worker/preview-host.ts",
+  "compatibility_date": "2026-09-17",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  // The link's page is part of the editor's build (preview-visit.html).
+  "build": { "command": "npm run build:ui" },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // Only the link's page, its room and the service worker run the Worker; the hashed build files are served
+    // directly, at no Worker request, and nothing else of the editor's build is reachable here.
+    "run_worker_first": ["/*", "!/assets/*"],
+  },
+  // The editor's Worker, for the link's room (its `name` in wrangler.jsonc).
+  "services": [{ "binding": "EDITOR", "service": "native-site-editor" }],
+  "env": {
+    // The reference deployments (wrangler.techies.jsonc, wrangler.preview.jsonc):
+    // `--config wrangler.preview-host.jsonc --env techies` or `--env preview`.
+    "techies": {
+      "name": "native-site-editor-previews-techies",
+      "services": [{ "binding": "EDITOR", "service": "native-site-editor-sessions" }],
+    },
+    "preview": {
+      "name": "native-site-editor-previews-preview",
+      "services": [{ "binding": "EDITOR", "service": "native-site-editor-preview" }],
+    },
+  },
+}

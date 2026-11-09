@@ -8,6 +8,7 @@ import { sameBranch, sameRepository } from "../workspace-session";
 import type { Repository, SessionInfo } from "../../shared/types";
 import "./person-chip.css";
 import { initialOf, type ShareState } from "../share-control";
+import type { PreviewState } from "../preview-control";
 
 type Account = NonNullable<SessionInfo["accounts"]>[number];
 /** Share to edit (slice 30, src/live-session.ts): a synced session on the project shown. */
@@ -21,8 +22,21 @@ export interface ShareMenuPort {
   start(): Promise<string | undefined>;
   stop(): void;
 }
+/** Share preview (slice 35, src/preview-share.ts): a link that shows the site live while the editor is open. */
+export interface PreviewMenuPort {
+  state(): PreviewState;
+  /** Whether Share preview shows: a preview Worker is set up and a site is shown. */
+  available(): boolean;
+  watch(listener: (state: PreviewState) => void): () => void;
+  /** Makes a link (or keeps the one on) and resolves its address; throws with the refusal's `status`. */
+  start(): Promise<string | undefined>;
+  /** Turns the link off; throws when the editor could not. */
+  stop(): Promise<void>;
+  /** Draws the items into `root` once they have loaded (src/components/preview-menu.ts). */
+  draw(actionClass: string, root: HTMLElement): Promise<{ refresh(): void; destroy(): void }>;
+}
 /** How long "Link copied" stays on the item before it reads "Copy edit link" again. */
-const COPIED_MS = 2500;
+export const COPIED_MS = 2500;
 /** Guests shown by initial beside the project tile; the rest go in one "+N". */
 const GUESTS_SHOWN = 3;
 
@@ -54,6 +68,7 @@ export function createRepositoryMenu(options: {
   /** A row with finished work clicked: its project and branch open with its changes. */
   onNote?: (note: FinishedNote) => void;
   share?: ShareMenuPort;
+  preview?: PreviewMenuPort;
 }) {
   const root = node("div", "repository-menu");
   const trigger = node("button", "repository-menu__trigger");
@@ -154,6 +169,11 @@ export function createRepositoryMenu(options: {
   if (options.onSiteSettings) actions.append(button("Site settings", options.onSiteSettings, actionClass));
   const share = options.share ? shareItems(options.share, actionClass) : undefined;
   if (share) actions.append(share.root);
+  // Share preview's items load after the first paint (src/components/preview-menu.ts); drawn on the menu's first open.
+  const previewRoot = options.preview && node("div", "repository-menu__preview");
+  let preview: ReturnType<PreviewMenuPort["draw"]> | undefined;
+  if (previewRoot) { previewRoot.hidden = true; actions.append(previewRoot); }
+  const showPreview = () => { if (previewRoot) void (preview ??= options.preview!.draw(actionClass, previewRoot)).then((items) => items.refresh()); };
   const agentSlot = node("div", "repository-menu__agent");
   agentSlot.id = "agent-menu";
 
@@ -189,7 +209,7 @@ export function createRepositoryMenu(options: {
     anchor: "--repository-menu",
   });
   panel.addEventListener("beforetoggle", (event) => {
-    if ((event as ToggleEvent).newState === "open") { options.onOpen?.(); share?.refresh(); }
+    if ((event as ToggleEvent).newState === "open") { options.onOpen?.(); share?.refresh(); showPreview(); }
   });
   panel.addEventListener("click", (event) => {
     // Share to edit and Copy edit link say "Link copied" on themselves, so the menu stays open for them.
@@ -409,7 +429,7 @@ export function createRepositoryMenu(options: {
 
   function setRepository(repo?: Repository) {
     currentId = repo?.id;
-    actions.hidden = !repo || (!showSiteActions && !options.onSiteSettings && !share);
+    actions.hidden = !repo || (!showSiteActions && !options.onSiteSettings && !share && !previewRoot);
     siteSlot.hidden = !showSiteActions;
     repository.textContent = repo?.owner.login ?? "GitHub connected";
     name.textContent = repo?.name ?? "Choose a project";
@@ -463,6 +483,7 @@ export function createRepositoryMenu(options: {
     trigger,
     destroy() {
       share?.destroy();
+      void preview?.then((items) => items.destroy());
       controller.abort();
       branchFlyout.destroy();
       dropdown.destroy();

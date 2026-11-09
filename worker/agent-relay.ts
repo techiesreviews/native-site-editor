@@ -1,5 +1,6 @@
 import { workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
 import { LIVE_HOST_LOST, LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, LIVE_SESSION_ROOM, PRESENCE_TIMEOUT_MS, liveAccess, readLiveClientMessage, type LiveAccess, type LiveServerMessage } from "../shared/live-room";
+import { PREVIEW_ROOM } from "../shared/preview-link";
 
 export interface RelayScope {
   workspace: AgentWorkspace;
@@ -484,6 +485,12 @@ export async function liveSessionObjectName(token: string): Promise<string> {
 }
 /** The session's one room inside it. */
 export const liveSessionRoomTag = () => sha256(LIVE_SESSION_ROOM);
+/** A preview link's own instance (slice 35), named from its token's random part, apart from sessions and file rooms. */
+export async function livePreviewObjectName(nonce: string): Promise<string> {
+  return `live-preview:${await sha256(nonce)}`;
+}
+/** The preview's one room inside it. */
+export const livePreviewRoomTag = () => sha256(PREVIEW_ROOM);
 /** A forwarded frame starts with its sender's peer id: 16 bytes. */
 const LIVE_SENDER_BYTES = 16;
 const peerBytes = (peer: string) => Uint8Array.from(peer.match(/../g) ?? [], pair => parseInt(pair, 16));
@@ -612,6 +619,13 @@ export class LiveRooms {
   /** The agent sockets that came in with this connection (it was revoked). */
   agentSockets(id: string) {
     return [...this.sockets].filter(([, metadata]) => metadata.agent?.id === id).map(([socket]) => socket);
+  }
+  /** Closes every socket in this instance with `code`: a preview link turned off (slice 35). */
+  endAll(code: number, reason: string) {
+    for (const socket of [...this.sockets.keys()]) {
+      this.sockets.delete(socket);
+      try { socket.close(code, reason); } catch { /* Already closed. */ }
+    }
   }
   /** Removes a participant whose access ended: its leave is announced, then its socket closed. */
   end(socket: LiveSocket, code: number, reason: string) {

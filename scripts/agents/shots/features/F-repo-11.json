@@ -1,0 +1,1 @@
+{"screen":"editor","name":"F-repo-11","steps":["click \"repository actions\"","click \"Share preview\"","expect visible \"Turn preview off\"","record preview-link 600"]}

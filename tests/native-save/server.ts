@@ -161,7 +161,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { realpathSync } from "node:fs";
-import { createServer, preview, type Connect, type Plugin } from "vite";
+import { createServer, preview, type Connect, type Plugin, type ViteDevServer } from "vite";
 import { handle, type Env } from "../../worker/app.ts";
 import { admitRegistration, isBudgetKey, REGISTRATION_ROUTE } from "../../worker/oauth-registration.ts";
 import { clearHub, hubView, type HubStorage } from "../../worker/agent-store.ts";
@@ -169,6 +169,8 @@ import { fakeHubRoute, fakeRelayRoute, resetFixtureRelays, restartFixtureRelays,
 import { installRelayUpgrade, livePingedAt, type LiveConnect } from "./fake-websocket.ts";
 import { LiveRooms } from "../../worker/agent-relay.ts";
 import { liveAccess } from "../../shared/live-room.ts";
+import { PREVIEW_TURNED_OFF } from "../../shared/preview-link.ts";
+import { previewHost } from "../../worker/preview-host.ts";
 import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "../../worker/oauth-pending.ts";
 import type { AgentHub } from "../../worker/agent-context.ts";
 import { tarball } from "../tar-helper.ts";
@@ -982,13 +984,21 @@ function newSessionId(): string {
 // Live rooms (ADR 0003), one instance per Durable Object name as SessionStore holds them: shared by every
 // sign-in, so two browsers on the same repository and branch meet, whatever their clones.
 const liveRooms = new Map<string, LiveRooms>();
+// Preview links turned off (slice 35), by instance, as SessionStore keeps its "preview-off" mark.
+const previewsOff = new Set<string>();
 function liveJoin(id: string, request: Request, live?: LiveConnect) {
-  let identity: { room?: unknown; access?: unknown; rejoin?: unknown } | null = null;
+  let identity: { room?: unknown; access?: unknown; rejoin?: unknown; preview?: unknown } | null = null;
   try { identity = JSON.parse(request.headers.get(LiveRooms.identityHeader) ?? "null"); } catch { /* Refused below. */ }
   const room = identity?.room, access = identity?.access, rejoin = identity?.rejoin;
   // Agents come in as the Worker lets them (a bearer connection), and a synced session's guests by its link (slice 30):
   // the room admits them only while a tab has it open.
   const rooms = liveRooms.get(id) ?? liveRooms.set(id, new LiveRooms([], () => Date.now(), livePingedAt)).get(id)!;
+  if (new URL(request.url).pathname === "/live/preview-off") {
+    previewsOff.add(id);
+    rooms.endAll(PREVIEW_TURNED_OFF, "This preview link is turned off.");
+    return new Response(null, { status: 204 });
+  }
+  if (identity?.preview === true && previewsOff.has(id)) return new Response(null, { status: 410 });
   if (new URL(request.url).pathname === "/live/admits")
     return new Response(null, { status: typeof room === "string" && liveAccess(access) && rooms.admits(room, access) ? 204 : 409 });
   if (!live || typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || !liveAccess(access) || (rejoin !== undefined && typeof rejoin !== "string"))
@@ -1014,6 +1024,8 @@ function env(connect?: RelayConnect, relaySession = "anonymous", live?: LiveConn
     GITHUB_CLIENT_ID: "demo-client-id",
     GITHUB_CLIENT_SECRET: "demo-client-secret",
     GITHUB_APP_SLUG: "native-site-editor-demo",
+    // Preview links (slice 35): the preview Worker's address, another host than the editor's (below).
+    ...(demoMode ? {} : { PREVIEW_ORIGIN: previewOrigin }),
     SESSIONS: {
       idFromName: (name: string) => name,
       get: (id: string) => ({
@@ -1023,7 +1035,7 @@ function env(connect?: RelayConnect, relaySession = "anonymous", live?: LiveConn
           // Real relay core over Node sockets; absent owners refuse tools immediately.
           // Each demo sign-in has its own clone and browser ownership database, even though
           // all fixture accounts use DEMO_LOGIN. Tabs of that sign-in still share one relay.
-          if (url.pathname === "/live/join" || url.pathname === "/live/admits") return liveJoin(id, request, live);
+          if (url.pathname === "/live/join" || url.pathname === "/live/admits" || url.pathname === "/live/preview-off") return liveJoin(id, request, live);
           const relayResponse = await fakeRelayRoute(`${relaySession}:${id}`, request, connect);
           if (relayResponse) return relayResponse;
           // The agent hub, as worker/index.ts runs it.
@@ -1206,10 +1218,41 @@ async function workerResponse(req: Connect.IncomingMessage, bodyBuffer: Buffer, 
   return handle(request, env(connect, id ?? "anonymous", live), githubFetch(git, fixtureGits, (id && sessionActions.get(id)) || NO_ACTIONS, onboardingKey ? onboardingOf(onboardingKey) : newOnboarding(), id ? hostingOf(id) : newHosting()));
 }
 
+// Preview links (slice 35): the preview Worker (worker/preview-host.ts) answers on `localhost`, the editor on 127.0.0.1:
+// two hosts, so the editor's host-only cookies never go to the preview's, as with two workers.dev addresses. Its room
+// reaches the editor's Worker as the EDITOR service binding does: a fresh request, with no cookie.
+const previewOrigin = `http://localhost:${appPort}`;
+const onPreviewHost = (req: { headers: { host?: string } }) => (req.headers.host ?? "").split(":")[0] === "localhost";
+let devServer: ViteDevServer | undefined;
+async function previewResponse(req: Connect.IncomingMessage, live?: LiveConnect): Promise<Response> {
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) if (typeof value === "string") headers.set(key, value);
+  return previewHost(new Request(`${previewOrigin}${req.url ?? "/"}`, { method: req.method ?? "GET", headers }), {
+    ASSETS: { fetch: async (asset: Request) => {
+      if (new URL(asset.url).pathname !== "/preview-visit.html") return new Response("Not found", { status: 404 });
+      const html = readFileSync(resolve(projectRoot, distMode ? `${distDir}/preview-visit.html` : "preview-visit.html"), "utf8");
+      return new Response(devServer ? await devServer.transformIndexHtml("/preview-visit.html", html) : html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    } },
+    EDITOR: { fetch: (forwarded: Request) => handle(forwarded, env(undefined, "anonymous", live), githubFetch(initialGit, new Map(), NO_ACTIONS, newOnboarding(), newHosting())) },
+  });
+}
+/** The preview host's own answers; the build's files (and, in dev, Vite's modules) pass through. */
+async function previewMiddleware(req: Connect.IncomingMessage, res: Parameters<Connect.NextHandleFunction>[1], next: () => void, path: string) {
+  const own = path === "/" || path.startsWith("/s/") || path === "/robots.txt" || path === "/preview-sw.js";
+  if (distMode ? path.startsWith("/assets/") : !own) return next();
+  const response = await previewResponse(req);
+  // Nothing of the editor's (its CSP from public/_headers) goes with the preview host's answers, as on Cloudflare.
+  for (const name of res.getHeaderNames()) res.removeHeader(name);
+  res.statusCode = response.status;
+  response.headers.forEach((value, key) => res.setHeader(key, value));
+  res.end(Buffer.from(await response.arrayBuffer()));
+}
+
 function workerMiddleware(): Connect.NextHandleFunction {
   const run = async (...[req, res, next]: Parameters<Connect.NextHandleFunction>) => {
     const url = new URL(req.url ?? "/", `http://127.0.0.1:${appPort}`);
     const path = url.pathname;
+    if (!demoMode && onPreviewHost(req)) return previewMiddleware(req, res, next, path);
     // Dist mode already applied public/_headers; do not weaken its worker policy.
     if (!distMode) res.setHeader("Content-Security-Policy", testCsp);
 
@@ -1560,7 +1603,7 @@ async function main() {
       preview: { host: "127.0.0.1", port: appPort, strictPort: true },
     });
     keepIdleConnections(server.httpServer);
-    installRelayUpgrade(server.httpServer, (request, connect, live) => workerResponse(request, Buffer.alloc(0), connect, live));
+    installRelayUpgrade(server.httpServer, (request, connect, live) => onPreviewHost(request) ? previewResponse(request, live) : workerResponse(request, Buffer.alloc(0), connect, live));
     const close = () => void server.close().catch(() => undefined).finally(() => process.exit(0));
     process.once("SIGTERM", close);
     process.once("SIGINT", close);
@@ -1602,8 +1645,9 @@ async function main() {
   await app.listen();
   if (app.httpServer) {
     keepIdleConnections(app.httpServer);
-    installRelayUpgrade(app.httpServer, (request, connect, live) => workerResponse(request, Buffer.alloc(0), connect, live));
+    installRelayUpgrade(app.httpServer, (request, connect, live) => onPreviewHost(request) ? previewResponse(request, live) : workerResponse(request, Buffer.alloc(0), connect, live));
   }
+  devServer = app;
   const cleanup = async () => {
     await app.close().catch(() => undefined);
   };
