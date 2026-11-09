@@ -107,6 +107,7 @@ The `blocked_by` lines hold the stage gates: 20 waits for the last stage-1 slice
 | [42 Boot back under 355 KB, so agent tools fit (tech-debt 12)](tickets/42-boot-back-under-355-kb.md) | M | – | – | 45 |
 | [43 The edit bar on a phone: opens on a new element, and Text size applies](tickets/43-phone-edit-bar-fixes.md) | S–M | visible | – | – |
 | [46 Where the edit bar sits on a phone, so it doesn't cover the element above (follow-up on 43)](tickets/46-phone-edit-bar-placement.md) | S | visible | – | 43 |
+| [58 Preview link and Edit together: one button each, like Connect to MCP (TOOLS-159)](tickets/58-share-buttons-like-mcp.md) | M | visible | – | 30, 35 |
 | [36 Close-out: checklist, docs, delete the proof of concept](tickets/36-close-out.md) | S | – | – | 31, 33, 35, 37 |
 
 ## Suggested waves
