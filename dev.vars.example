@@ -4,4 +4,6 @@ GITHUB_APP_SLUG=""
 # Optional: run owner setup (/auth/setup) locally instead of on the deployed address.
 # EDITOR_ORIGIN="http://127.0.0.1:8787"
 # OWNER_SETUP_TOKEN=""
+
+# The GitHub App's push webhook secret (README, "Push notices for an existing App"); empty refuses every delivery.
 GITHUB_WEBHOOK_SECRET=""

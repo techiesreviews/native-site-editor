@@ -140,8 +140,9 @@ export class SessionStore extends DurableObject {
     if (url.pathname === "/maintenance/cleanup") return this.ctx.blockConcurrencyWhile(() => cleanupObject(request, storage, { sockets: this.ctx.getWebSockets().length }));
     if (url.pathname === "/maintenance/inventory") return inventoryObject(request, storage);
     if (url.pathname === "/live/join" || url.pathname === "/live/end-agent" || url.pathname === "/live/admits" || url.pathname === "/live/preview-off" || url.pathname === "/live/pushed") {
-      // Worker-internal only: app.ts checks room access and names the room; this stores nothing but a preview link's
-      // "turned off" mark, kept until the link would have ended anyway.
+      // Worker-internal only: app.ts checks room access and names the room, or (for /live/pushed) github-webhook.ts checks
+      // the delivery's signature and names the room of its repository and branch. This stores nothing but a preview
+      // link's "turned off" mark, kept until the link would have ended anyway.
       let identity: { room?: unknown; access?: unknown; rejoin?: unknown; agent?: Partial<LiveAgent>; preview?: unknown; ends?: unknown; commit?: unknown } | null = null;
       try { identity = JSON.parse(request.headers.get(LiveRooms.identityHeader) ?? "null"); } catch { /* Refuse malformed trusted metadata. */ }
       const live = this.live();

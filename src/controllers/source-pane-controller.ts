@@ -31,7 +31,7 @@ export interface SourcePanePorts {
   workspaceSession: { begin(): SessionStamp };
   editorModule: Pick<typeof SourceEditor, "isMounted" | "holdHistoryRefresh">;
   linkedStyles: Pick<LinkedStyles, "syncLinkedStyles" | "openSecondary" | "renderLinkedStyle" | "linkedPage" | "unlink" | "openDefaultLinkedStyle" | "openComponentLinkedStyle">;
-  savePublish: Pick<SavePublish, "proof" | "published" | "discardAll" | "headFor" | "checkHead" | "isDeleted" | "settleDeleted">;
+  savePublish: Pick<SavePublish, "proof" | "published" | "discardAll" | "headFor" | "beginSave" | "checkHead" | "isDeleted" | "settleDeleted">;
   versions: { history: { refresh(): void; open(): Promise<void> } };
   previewSelection: { replayPending(path: string): void };
   nativeBaseSources: { has(path: string): boolean; set(path: string, text: string): unknown };
@@ -224,6 +224,8 @@ export function createSourcePaneController(ports: SourcePanePorts) {
       onHistory: () => void ports.versions.history.open().catch(ports.errorMessage),
       onDiscardAll: () => void savePublish.discardAll(),
       publishHead: () => savePublish.headFor(scope),
+      // A push notice waits while this save runs (ticket am-32): its own commit's notice then loads nothing.
+      publishSaving: () => savePublish.beginSave(),
       onRefused: () => void savePublish.checkHead(true),
       onDiscardChange: reported(ports.discardFileChange),
       deletedUpstream: savePublish.isDeleted,

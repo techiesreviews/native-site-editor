@@ -54,15 +54,23 @@ export function hasOwnerSetup(env: Env) {
   return validOwnerToken(env.OWNER_SETUP_TOKEN) || Boolean(ownerLogin(env));
 }
 
+/** Whether GitHub can deliver webhooks to `origin`: https, and not this machine (a local owner setup, dev.vars.example). */
+function reachable(origin: string) {
+  const { protocol, hostname } = new URL(origin);
+  return protocol === "https:" && !/^(localhost|.*\.localhost|127(\.\d{1,3}){3}|0\.0\.0\.0|\[::1?\])$/i.test(hostname);
+}
+
 export function githubAppManifest(origin: string, aliases: string[] = [], owner = "") {
+  const pushes = reachable(origin);
   return {
     // GitHub App names are unique across GitHub and at most 34 characters.
     name: owner ? `native-site-editor-${owner}`.slice(0, 34) : "native-site-editor-techies",
     url: origin,
     public: true,
     // Pushes reach open tabs (ticket am-32, worker/github-webhook.ts): GitHub makes the secret and hands it back with the App.
-    hook_attributes: { active: true, url: `${origin}/api/github/webhook` },
-    default_events: ["push"],
+    // An address GitHub cannot reach (a local setup) keeps the webhook off; its tabs check on focus.
+    hook_attributes: { active: pushes, url: `${origin}/api/github/webhook` },
+    ...(pushes ? { default_events: ["push"] } : {}),
     redirect_url: `${origin}/auth/setup/callback`,
     callback_urls: [origin, ...aliases].map((value) => `${value}/auth/callback`),
     // One trip to GitHub for a new user: installing the App also signs in

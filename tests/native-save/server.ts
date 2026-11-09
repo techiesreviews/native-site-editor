@@ -167,6 +167,7 @@ import { admitRegistration, isBudgetKey, REGISTRATION_ROUTE } from "../../worker
 import { clearHub, hubView, type HubStorage } from "../../worker/agent-store.ts";
 import { fakeHubRoute, fakeRelayRoute, resetFixtureRelays, restartFixtureRelays, serializeObject, type RelayConnect } from "./fake-hub.ts";
 import { installRelayUpgrade, livePingedAt, type LiveConnect } from "./fake-websocket.ts";
+import { DEMO_WEBHOOK_SECRET } from "./fake-webhook.ts";
 import { LiveRooms } from "../../worker/agent-relay.ts";
 import { liveAccess } from "../../shared/live-room.ts";
 import { PREVIEW_TURNED_OFF } from "../../shared/preview-link.ts";
@@ -987,7 +988,7 @@ const liveRooms = new Map<string, LiveRooms>();
 // Preview links turned off (slice 35), by instance, as SessionStore keeps its "preview-off" mark.
 const previewsOff = new Set<string>();
 function liveJoin(id: string, request: Request, live?: LiveConnect) {
-  let identity: { room?: unknown; access?: unknown; rejoin?: unknown; preview?: unknown } | null = null;
+  let identity: { room?: unknown; access?: unknown; rejoin?: unknown; preview?: unknown; commit?: unknown } | null = null;
   try { identity = JSON.parse(request.headers.get(LiveRooms.identityHeader) ?? "null"); } catch { /* Refused below. */ }
   const room = identity?.room, access = identity?.access, rejoin = identity?.rejoin;
   // Agents come in as the Worker lets them (a bearer connection), and a synced session's guests by its link (slice 30):
@@ -999,6 +1000,9 @@ function liveJoin(id: string, request: Request, live?: LiveConnect) {
     return new Response(null, { status: 204 });
   }
   if (identity?.preview === true && previewsOff.has(id)) return new Response(null, { status: 410 });
+  // A signed GitHub push (ticket am-32, worker/github-webhook.ts): the instance's open tabs hear it.
+  if (new URL(request.url).pathname === "/live/pushed")
+    return typeof identity?.commit === "string" ? Response.json({ told: rooms.pushed(identity.commit) }) : new Response(null, { status: 400 });
   if (new URL(request.url).pathname === "/live/admits")
     return new Response(null, { status: typeof room === "string" && liveAccess(access) && rooms.admits(room, access) ? 204 : 409 });
   if (!live || typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || !liveAccess(access) || (rejoin !== undefined && typeof rejoin !== "string"))
@@ -1024,6 +1028,8 @@ function env(connect?: RelayConnect, relaySession = "anonymous", live?: LiveConn
     GITHUB_CLIENT_ID: "demo-client-id",
     GITHUB_CLIENT_SECRET: "demo-client-secret",
     GITHUB_APP_SLUG: "native-site-editor-demo",
+    // The push webhook's secret (ticket am-32): tests sign their fake deliveries with it (fake-webhook.ts, native-push-notice.spec.ts).
+    GITHUB_WEBHOOK_SECRET: DEMO_WEBHOOK_SECRET,
     // Preview links (slice 35): the preview Worker's address, another host than the editor's (below).
     ...(demoMode ? {} : { PREVIEW_ORIGIN: previewOrigin }),
     SESSIONS: {
@@ -1035,7 +1041,7 @@ function env(connect?: RelayConnect, relaySession = "anonymous", live?: LiveConn
           // Real relay core over Node sockets; absent owners refuse tools immediately.
           // Each demo sign-in has its own clone and browser ownership database, even though
           // all fixture accounts use DEMO_LOGIN. Tabs of that sign-in still share one relay.
-          if (url.pathname === "/live/join" || url.pathname === "/live/admits" || url.pathname === "/live/preview-off") return liveJoin(id, request, live);
+          if (url.pathname === "/live/join" || url.pathname === "/live/admits" || url.pathname === "/live/preview-off" || url.pathname === "/live/pushed") return liveJoin(id, request, live);
           const relayResponse = await fakeRelayRoute(`${relaySession}:${id}`, request, connect);
           if (relayResponse) return relayResponse;
           // The agent hub, as worker/index.ts runs it.

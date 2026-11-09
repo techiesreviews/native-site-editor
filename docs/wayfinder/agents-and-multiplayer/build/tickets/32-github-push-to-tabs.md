@@ -56,11 +56,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - Bodies up to GitHub's 25 MB cap are read. JSON and the form content type (`payload=`) are both accepted.
 - The push goes to the live room instance of its repository id and branch (`liveRoomObjectName`). There `LiveRooms.pushed` (`worker/agent-relay.ts`, via `/live/pushed` in `worker/index.ts`) sends `{ type: "pushed", commit }` to every open editor socket. Agents and guests are not told. Nothing is stored and no file content passes through the relay.
 - In the tab, `src/live-room.ts` hands the notice to `onPushed`. `src/live-text.ts` passes it on with the open file's draft scope, and `src/page-builder-host.ts` wires it to `savePublish.pushed` (`src/controllers/save-publish-controller.ts`).
-  - After 2 seconds (so this tab's own save's answer, which names the same commit, lands first) the tab runs the existing head check with its own sign-in. It skips this when it already shows the commit, saved it itself, or the notice is for another scope.
-  - The check asks about the pushed commit, so a GitHub read lagging behind it still gives it. A new head loads as Refresh does.
+  - The tab runs the existing head check at once, with its own sign-in. It skips this when it already shows the commit, its own answered save named it, or the notice is for another scope.
+  - While a save of this tab runs (the Save menu's `saving` port, `src/components/publish-menu.ts` through `src/components/source-editor.ts` and `src/controllers/source-pane-controller.ts`, to `savePublish.beginSave`), a notice is held, and a newer one replaces it. When the last save settles (answered, refused or failed), the held notice is dropped if that save's answer named its commit, else checked. So the tab's own save never loads the branch a second time, however late its answer. A disposed controller drops a held notice. There is no timer.
+  - The check asks about this tab's trusted head when it has one (it may be newer than a delayed notice), else the pushed commit, so a GitHub read lagging behind it still gives it. A new head loads as Refresh does.
   - A hidden tab checks on its next focus. The focus check stays as the safety net, and so does an editor without the webhook or a browser with live sharing off.
 - The fetch on notice is the existing head check in the save controller, so `src/github-reads.ts` did not change.
-- Owner setup (`worker/owner-setup.ts`): the manifest now has the webhook active at `<origin>/api/github/webhook` with `default_events: ["push"]`. The `webhook_secret` GitHub returns with the App is kept in the stored App config (never sent to a browser). `readBoundedBytes` in `worker/http.ts` is now exported for the webhook.
+- Owner setup (`worker/owner-setup.ts`): the manifest now has the webhook active at `<origin>/api/github/webhook` with `default_events: ["push"]`, for an https origin GitHub can reach. A local setup (`http://127.0.0.1:8787`, `localhost`, any http origin) keeps the webhook off with no events, as before, and its tabs check on focus. The `webhook_secret` GitHub returns with the App is kept in the stored App config (never sent to a browser). `readBoundedBytes` in `worker/http.ts` is now exported for the webhook.
 - Lex's checklist for the existing App is in README.md, "Push notices for an existing App". Its values: tick Active; Webhook URL `https://editor.techies.tools/api/github/webhook`; a random secret of 40+ characters (`openssl rand -hex 32`), stored with `npx wrangler secret put GITHUB_WEBHOOK_SECRET --config wrangler.techies.jsonc`; subscribe to Push; no new permissions, no re-approval. `docs/setup.md` (manual App settings) and `dev.vars.example` name the webhook and the secret too.
 
 **Test App run (Lex, 2026-11-09).** App ID 5677762 is a throwaway App on `techiesreviews`, installed only on the private repository `techiesreviews/editor-push-test`. It was created with its webhook off and Contents read and write, then installed. Then the webhook was turned on (pointed at `https://preview-editor.techies.tools/api/github/webhook`) and the Push event subscribed. **No approval banner appeared: adding the Push event did not ask installations to approve again**, because Push needs only Contents, which the App already had.
@@ -73,10 +74,17 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - the relay telling only open editor sockets;
   - the secret's precedence, and refusal with no secret.
 - The Miniflare test in that file runs the real Worker with a signed-in tab in a real live room. A signed push reaches the tab's `onPushed` with the commit (`{ told: 1 }`). Unsigned, wrongly signed and changed-body deliveries get 401 and reach nothing. A form-encoded signed push also arrives. Another branch tells 0 tabs; a tag and a ping get 204; a GET gets 405.
-- `tests/save-publish-controller.test.ts`: the notice's head check (pushed commit asked, the 15-second throttle skipped, the load). No read for the commit on show, the tab's own save (also when its answer lands during the wait), another branch or repository, or a hidden tab; the hidden tab checks on its next focus.
+- `tests/save-publish-controller.test.ts`:
+  - the notice's head check (pushed commit asked, the 15-second throttle skipped, the load);
+  - no read for the commit on show, the tab's own answered save, another branch or repository, a hidden tab (which checks on its next focus) or a disposed controller;
+  - the save rows of the settle matrix: a notice held through a save whose answer lands late is dropped for the save's own commit (one snapshot read, no head read, no load); after a failed save the newest held notice is checked; with two saves it waits for the last, and is dropped once disposed;
+  - the trusted head asked before an older notice's commit.
+- `tests/native-save/native-push-notice.spec.ts` (new; the fake GitHub server takes signed deliveries, `tests/native-save/fake-webhook.ts`):
+  - after a commit made elsewhere, a signed delivery loads it in the open tab, with the new text on the page and no focus or visibility event;
+  - a save whose push is delivered and heard 3 seconds before its answer reads the branch once (the save's own refresh) and the head never. With the hold taken out, this case fails.
 - `tests/live-text.test.ts`: the open file's room hands the notice on with its draft scope.
-- `tests/owner-setup.test.ts`: the manifest's active webhook and Push event, and the kept webhook secret (not shown on the page).
+- `tests/owner-setup.test.ts`: the manifest's active webhook and Push event, the webhook off with no events for `http://127.0.0.1:8787`, `https://localhost:8787` and an http origin, and the kept webhook secret (not shown on the page).
 
-**Checks.** `RESULT: ok unit 1733/1733 (91 files)` (`scripts/agents/kit unit --affected`); `RESULT: ok specs 5/5 passed; 94 more run in kit pr` (`scripts/agents/kit specs --affected`); `npm run check` and `npm run lint` pass.
+**Checks.** `RESULT: ok unit 3543/3543 (223 files)` (`scripts/agents/kit unit --affected`); `RESULT: ok specs 15/15 passed; 182 more run in kit pr` (`scripts/agents/kit specs --affected`, `native-push-notice.spec.ts` included); `npm run check` and `npm run lint` pass.
 
 Feature list: new entry F-repo-12 "A push on GitHub shows within seconds" in `docs/agents/features.md`.

@@ -56,6 +56,8 @@ export function createPublishMenu(options: {
   head?: () => string | undefined;
   /** GitHub refused some files as changed or deleted since their drafts began. */
   onRefused?: () => void;
+  /** A save starts; the returned function runs once it ended, after `onPublished` when it went through (ticket am-32). */
+  saving?: () => () => void;
   /** The branch's drafts as Save sends them (the editor's draft store); the persisted ones by default. */
   drafts?: () => SavedDraft[];
   /** Who changed each file, named in the commit (src/save-authors.ts `saveAuthors` by default). */
@@ -360,6 +362,7 @@ export function createPublishMenu(options: {
     message.textContent = pendingText;
     showingDeploy = false;
     showProgress("Publishing…");
+    const settled = options.saving?.();
     // Uploaded files go up first; the button says so, then goes back to saving.
     const upload = async (blob: Blob, sha: string) => {
       showProgress("Uploading…");
@@ -457,6 +460,7 @@ export function createPublishMenu(options: {
       if (!disposed) message.textContent = error instanceof Error ? error.message : "Publishing failed. Your drafts are kept.";
     } finally {
       pending = false;
+      settled?.();
       if (!disposed) {
         refresh(false);
       }

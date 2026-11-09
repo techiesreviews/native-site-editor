@@ -195,10 +195,10 @@ its number unused.
 
 ### F-repo-12 A push on GitHub shows within seconds
 - Try: On an editor whose GitHub App sends push webhooks (README, "Push notices for an existing App"), open a page of a site and keep the tab in front. Commit a change to that branch elsewhere: on GitHub, or Save to GitHub from another browser.
-- Good: Within a few seconds, without a click or a focus change, the branch loads again as Refresh from GitHub does (F-repo-06), and the open page shows the new commit; unsaved changes stay. A tab in the background picks the push up when it is shown again, as before. Your own save does not load the branch a second time. No toast (S4). An editor without the webhook, or with live sharing off, still checks on focus.
-- Files: `worker/github-webhook.ts`, `worker/app.ts`, `worker/agent-relay.ts`, `worker/index.ts`, `worker/owner-setup.ts`, `shared/live-room.ts`, `src/live-room.ts`, `src/live-text.ts`, `src/controllers/save-publish-controller.ts`, `src/page-builder-host.ts`
+- Good: Within a few seconds, without a click or a focus change, the branch loads again as Refresh from GitHub does (F-repo-06), and the open page shows the new commit; unsaved changes stay. A tab in the background picks the push up when it is shown again, as before. Your own save does not load the branch a second time, however slowly its answer comes back. No toast (S4). An editor without the webhook, or with live sharing off, still checks on focus.
+- Files: `worker/github-webhook.ts`, `worker/app.ts`, `worker/agent-relay.ts`, `worker/index.ts`, `worker/owner-setup.ts`, `shared/live-room.ts`, `src/live-room.ts`, `src/live-text.ts`, `src/controllers/save-publish-controller.ts`, `src/controllers/source-pane-controller.ts`, `src/components/publish-menu.ts`, `src/page-builder-host.ts`
 - Phone: yes
-- Spec: none
+- Spec: `tests/native-save/native-push-notice.spec.ts`
 - Steps: none yet (needs a commit made outside the editor while it is open)
 
 ## Pages and files
