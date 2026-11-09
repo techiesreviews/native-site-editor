@@ -62,8 +62,9 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - A draft that exists only on record is opened in the editor's store to merge, and stays open there on purpose: its Undo step needs it.
 - `/api/commit` (`worker/history.ts` `commitFiles`) now also returns `author`: the GitHub login, else the commit's author name, at most 60 characters. Without it the chip says "Someone · GitHub".
 - Live room: the change enters the open shared copy as one more participant (`takeOutside`, `src/live-text.ts`). GitHub's word changes from the copy's starting text go in as one Yjs update, under a client id fixed by the file, the copy's starting version and the new blob. So every tab, and every commit that makes the same move, writes the very same items, and the room keeps them once, whichever tab folds first. A tab that has not folded yet receives the change through the room. The room and its copy go on and the drafts follow the copy.
-  - (round 3) It is taken only when it merges with no clash and the tried result matches the merge; otherwise (a clash, a change the copy holds already, no copy caught up, or a copy begun from older text) the fold merges into the draft itself and the share starts again from the new text at once (a `base` event to another blob).
-  - (round 3) A copy that took the change, or whose base this tab saved, starts again from the new base once the room is quiet, so a tab that opens or reloads the page later meets it.
+  - (round 4) The room keeps its one copy; nothing restarts it after a change it took or a save. A copy that holds the merged text already takes nothing. Otherwise the participant update is tried on a throwaway copy, and taken when it lands on the merge. On a clash it is taken when the merge is that result with words taken out: those are Lex's clashing words, taken out of the copy at once, and the step that puts them back on Undo is recorded.
+  - (round 4) A tab opening the page at the version the copy moved to asks under that version's tag. The copy answers MOVED with its own tag, and the tab starts an empty copy under it, is caught up whole, and adds only its own changes (a three-way merge with the room's text). The room stays one for late joiners and reloads.
+  - (round 4) Only when the copy cannot take the change (not caught up, begun from older text, or a clash it cannot settle by taking words out) does the fold merge into the draft and the share start again. The new share then joins the room's copy the same way (MOVED) wherever the room moved to that version.
 - `src/controllers/save-publish-controller.ts`: a fold that fails loads the branch again only while the head check's load still holds.
 - Boot: `kit size` stays at 354 KB of 355 KB (±0 KB against dev).
 
@@ -116,7 +117,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 **Fix round 2 (review findings).**
 
 - Clashes are by word: `mergeText` merges lines both sides changed again by word (`splitWords`, the same Myers diff), so only the same words changed on both sides clash, and `mine` keeps Sam's changes to the other words of the line.
-- Live room: the outside change enters the existing copy as a participant instead of restarting it (above).
+- Live room: the outside change enters the existing copy as a participant instead of restarting it (above). Round 3 then sent clashes and copies that hold the change already back to a restart, and added a restart once the room was quiet; round 4 replaced both with the room's one copy (below).
 - The author read no longer holds the fold back (above). A failed fold reloads only while its load holds (above). `OUTSIDE_COLOUR` names the chip's teal.
 - Tests:
   - `tests/outside-merge.test.ts`: different words of one line both stay, including a page on one long line; in a clash, `mine` keeps Sam's other words; `wordChanges`; a changed mode and more than one batch of files load the branch again; the chip says "Someone" when the commit read fails or never answers, the fold not waiting past `AUTHOR_WAIT_MS`.
@@ -127,12 +128,23 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 **Fix round 3 (review findings).**
 
 - Live room, a change the copy holds already (a peer's save, a fix both made): the participant's update is tried on a throwaway copy of the doc first. It is taken only when the result is what `mergeText(base, copy text, theirs)` says, with no clash; otherwise the fold merges into the draft and the copy starts again from the new text. So "eight" made in the room and then saved stays "eight", not "eighteight". A clash in a room also takes that restart path: both tabs show Sam's words, and one Undo on one tab brings Lex's back on both.
-- Live room, a tab joining after the change: a copy that took an outside change, or whose base this tab saved, starts again from the new base once the room has been quiet for `LIVE_REBASE_QUIET_MS` (1.5 s). Every tab sees the same last change, so their drafts match when they move. A tab opening the page or reloading from the new version then meets the others under its tag. Any change re-arms the wait, and stopping the share drops it.
+- Live room, a tab joining after the change: a copy that took an outside change, or whose base this tab saved, started again from the new base once the room was quiet (replaced in round 4).
 - Tests:
   - `tests/live-text.test.ts`:
     - a commit the copy holds already (Anna's save, folded on Lex's tab) leaves one "eight" on both tabs, and once quiet both meet under the new version and trade changes;
     - a tab opening the page from the new version after a fold on two tabs meets them both ways.
   - `tests/native-save/native-outside-fold.spec.ts`: the author read held past the fold and then released with an author changes nothing; the chip keeps naming "Someone", and the revision and page stay.
+
+**Fix round 4 (review findings).**
+
+- The restart once the room is quiet (round 3) is gone: tabs whose drafts differed by a keystroke as they moved wrote the room's shared words twice. The room now keeps its one copy, newcomers at the new version join it (MOVED), and a clash in the room is settled in it (above). The three-way merge moved to `src/text-merge.ts`, used by both `src/outside-merge.ts` and `src/live-text.ts`; `charChanges` there finds the words a clash takes out.
+- Tests (`tests/live-text.test.ts`):
+  - a peer's save folded on the other tab takes nothing and the room stays one;
+  - a tab opening from the new version, with a kept draft holding a word of its own, joins the room's copy, its word going in once, and changes flow both ways;
+  - one tab folds, a while later the other types and folds, and the shared words appear once;
+  - typing right after both tabs fold leaves one room and the shared words once;
+  - the clash case stays in the one room.
+- `tests/native-save/native-outside-fold.spec.ts`: the held author reads are all released.
 
 **UX review (Opus, contact sheet against the UX rulebook and mock-up 15).**
 

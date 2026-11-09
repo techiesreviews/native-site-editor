@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 import { pushDelivery } from "./fake-webhook";
 
 // Outside changes fold in (ticket am-33, F-repo-13): a commit made on GitHub reaches the open tab (the push notice,
@@ -117,13 +117,13 @@ for (const [name, answer] of [["fails", "abort"], ["never answers", "hold"]] as 
 }
 
 test("the author read answering after the fold is done changes nothing: the chip keeps naming Someone", async ({ page, baseURL }) => {
-  let release: (() => Promise<void>) | undefined;
-  await page.route("**/api/commit?*", (route) => { release = () => route.fulfill({ json: { files: [], truncated: false, author: "Sam" } }); });
+  const held: Route[] = [];
+  await page.route("**/api/commit?*", (route) => { held.push(route); });
   await samPushes(page, baseURL, indexSource.replace(filler, "Sam wrote this on GitHub."));
   await expect(chip(page)).toContainText("Someone · GitHub");
   const before = { revision: await page.locator("#revision").textContent(), page: await frame(page).locator("body").innerText() };
-  expect(release).toBeDefined();
-  await release!();
+  expect(held.length).toBeGreaterThan(0);
+  for (const route of held.splice(0)) await route.fulfill({ json: { files: [], truncated: false, author: "Sam" } });
   // fixed-wait: a late answer would rename the chip or touch the page right after it lands; nothing marks its absence.
   await page.waitForTimeout(500);
   await expect(chip(page)).toContainText("Someone · GitHub");

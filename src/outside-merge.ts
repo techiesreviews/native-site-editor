@@ -10,8 +10,9 @@
 // - A true clash (the same words changed on both sides: lines both changed are merged again by word) shows the latest
 //   version: GitHub's words replace Lex's there as one Undo step of their own, so one Undo brings Lex's words back. No
 //   question and no message.
-// - In a live room (src/live-text.ts `takeOutside`) the change enters the shared copy as one more participant when it
-//   merges with no clash; otherwise the draft merges as above and the copy starts again from the new text.
+// - In a live room (src/live-text.ts `takeOutside`) the room's one shared copy takes the change as one more participant
+//   (or holds it already); a clash there is settled the same way. When it cannot, the draft merges as above and the
+//   share starts again, joining the room's copy.
 // - The page shown gets a brief outline and a chip naming the commit's author where its text changed
 //   (src/agent-presence.ts `visit`); another changed page gets the dot on its row.
 //
@@ -19,11 +20,13 @@
 // file, a tree GitHub did not list whole) loads the branch again, as before. Loaded on first use, never at boot.
 
 import type { DraftScope, SavedDraft } from "./drafts";
-import type { DraftTextStore, TextChange } from "./draft-store";
+import type { DraftTextStore } from "./draft-store";
 import type { PagesAndFilesPorts } from "./pages-and-files-host";
 import type { CommitFiles, PublishResult, Snapshot, TreeEntry } from "../shared/types";
 import { rebaseHistory } from "./shared-undo";
 import { takeOutside } from "./live-text";
+import { mergeText } from "./text-merge";
+
 import { isNativeTextFile } from "./site-text-index";
 import { readSiteTexts } from "./native-boot";
 import { readSource } from "./page-builder/source-tree";
@@ -39,144 +42,6 @@ function within<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
   let stop = () => {};
   return Promise.race([promise, new Promise<undefined>(resolve => { const timer = setTimeout(resolve, ms); stop = () => clearTimeout(timer); })]).finally(() => stop());
 }
-/** Past this many line differences one side is taken as a single change (Myers' trace grows with its square). */
-const MAX_LINE_EDITS = 2_000;
-
-/** A side's change to the starting text: lines `[start, end)` of it replaced by `lines`. */
-interface Hunk { start: number; end: number; lines: string[] }
-
-const splitLines = (text: string) => text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
-
-/** Pairs of equal lines `[i, j]` (a's line i is b's line j), in order: Myers' shortest edit script. */
-function matchLines(a: readonly number[], b: readonly number[]): [number, number][] {
-  const n = a.length, m = b.length, max = n + m, off = max + 1;
-  const v = new Int32Array(2 * max + 3);
-  // After each round d, v's band [-(d + 1), d + 1]: what the walk back reads.
-  const trace: Int32Array[] = [];
-  let found = -1;
-  for (let d = 0; d <= Math.min(max, MAX_LINE_EDITS) && found < 0; d++) {
-    for (let k = -d; k <= d; k += 2) {
-      let x = k === -d || (k !== d && v[off + k - 1] < v[off + k + 1]) ? v[off + k + 1] : v[off + k - 1] + 1;
-      let y = x - k;
-      while (x < n && y < m && a[x] === b[y]) { x++; y++; }
-      v[off + k] = x;
-      if (x >= n && y >= m) { found = d; break; }
-    }
-    trace.push(v.slice(off - d - 1, off + d + 2));
-  }
-  if (found < 0) return [];
-  const pairs: [number, number][] = [];
-  let x = n, y = m;
-  for (let d = found; d > 0; d--) {
-    const before = trace[d - 1], at = (k: number) => before[k + d];
-    const k = x - y;
-    const back = k === -d || (k !== d && at(k - 1) < at(k + 1)) ? k + 1 : k - 1;
-    const fromX = at(back), fromY = fromX - back;
-    while (x > fromX && y > fromY) pairs.push([--x, --y]);
-    x = fromX; y = fromY;
-  }
-  while (x > 0 && y > 0) pairs.push([--x, --y]);
-  return pairs.reverse();
-}
-
-/** What `side` changed of `base` (both as line ids), with `lines` the side's own lines. */
-function hunks(base: readonly number[], side: readonly number[], lines: readonly string[]): Hunk[] {
-  const out: Hunk[] = [];
-  let i = 0, j = 0;
-  for (const [bi, si] of [...matchLines(base, side), [base.length, side.length] as [number, number]]) {
-    if (bi > i || si > j) out.push({ start: i, end: bi, lines: lines.slice(j, si) });
-    i = bi + 1; j = si + 1;
-  }
-  return out;
-}
-
-/** Whether two changes touch the same starting lines: overlapping ranges, or insertions at one place. */
-const meets = (a: Hunk, b: Hunk) => (a.start < b.end && b.start < a.end) || (a.start === a.end && b.start === b.end && a.start === b.start)
-  || (a.start === a.end && b.start < a.start && a.start < b.end) || (b.start === b.end && a.start < b.start && b.start < a.end);
-
-/** `base`'s lines `[start, end)` with `side`'s changes in that range made. */
-function rewrite(base: readonly string[], start: number, end: number, side: readonly Hunk[]) {
-  const out: string[] = [];
-  let at = start;
-  for (const hunk of side) { out.push(...base.slice(at, hunk.start), ...hunk.lines); at = hunk.end; }
-  out.push(...base.slice(at, end));
-  return out.join("");
-}
-
-export interface Merged {
-  /** The latest version: both sides' changes, GitHub's (`theirs`) where both changed the same words. */
-  text: string;
-  /** The same with Lex's (`ours`) words where both changed the same words: what one Undo brings back. */
-  mine: string;
-  clashed: boolean;
-}
-
-/** Words, runs of white space and single other characters: where a clashing line is merged again. */
-const splitWords = (text: string) => text.match(/[\p{L}\p{N}_]+|\s+|[^\p{L}\p{N}_\s]/gu) ?? [];
-
-/** Each distinct part as a number, so the diff compares numbers. */
-function numbered(...sides: string[][]) {
-  const ids = new Map<string, number>();
-  return sides.map(parts => parts.map(part => { let found = ids.get(part); if (found === undefined) ids.set(part, found = ids.size); return found; }));
-}
-
-/**
- * The three-way merge of `base` split in parts (lines, or words): `ours` and `theirs` both changed from it. Changes to
- * different parts merge by themselves; parts both sides changed alike are taken once. Parts both changed differently
- * are merged again by `deeper` (lines by word) when given, else they clash.
- */
-function mergeParts(baseParts: string[], ourParts: string[], theirParts: string[], deeper?: (base: string, ours: string, theirs: string) => Merged): Merged {
-  const [b, o, t] = numbered(baseParts, ourParts, theirParts);
-  const tagged = [...hunks(b, o, ourParts).map(hunk => ({ hunk, mine: true })), ...hunks(b, t, theirParts).map(hunk => ({ hunk, mine: false }))]
-    .sort((x, y) => x.hunk.start - y.hunk.start || x.hunk.end - y.hunk.end);
-  let text = "", mine = "", at = 0, clashed = false;
-  for (let index = 0; index < tagged.length;) {
-    // One group: every change that touches another of it.
-    const group = [tagged[index++]];
-    let start = group[0].hunk.start, end = group[0].hunk.end;
-    while (index < tagged.length && group.some(item => meets(item.hunk, tagged[index].hunk) || tagged[index].hunk.start < end)) {
-      const next = tagged[index++];
-      group.push(next);
-      start = Math.min(start, next.hunk.start); end = Math.max(end, next.hunk.end);
-    }
-    const kept = baseParts.slice(at, start).join("");
-    text += kept; mine += kept; at = end;
-    const ourSide = group.filter(item => item.mine).map(item => item.hunk), theirSide = group.filter(item => !item.mine).map(item => item.hunk);
-    const theirText = rewrite(baseParts, start, end, theirSide), ourText = rewrite(baseParts, start, end, ourSide);
-    if (ourSide.length && theirSide.length && ourText !== theirText) {
-      // Both changed these lines: merged again by word, a clash only where the same words changed.
-      const inner = deeper?.(baseParts.slice(start, end).join(""), ourText, theirText);
-      if (inner) { text += inner.text; mine += inner.mine; clashed ||= inner.clashed; continue; }
-      clashed = true;
-    }
-    text += theirSide.length ? theirText : ourText;
-    mine += ourSide.length ? ourText : theirText;
-  }
-  const rest = baseParts.slice(at).join("");
-  return { text: text + rest, mine: mine + rest, clashed };
-}
-
-/**
- * The three-way merge: `ours` (the draft) and `theirs` (GitHub's new text), both changed from `base` (the text the
- * draft started from). By line first; lines both sides changed are merged again by word, so only the same words
- * changed on both sides clash (ticket 09: "the same words changed on both sides").
- */
-export function mergeText(base: string, ours: string, theirs: string): Merged {
-  if (ours === base || ours === theirs) return { text: theirs, mine: theirs, clashed: false };
-  if (theirs === base) return { text: ours, mine: ours, clashed: false };
-  return mergeParts(splitLines(base), splitLines(ours), splitLines(theirs),
-    (b, o, t) => mergeParts(splitWords(b), splitWords(o), splitWords(t)));
-}
-
-/** The changes, word by word, that turn `from` into `to`, in `from`'s offsets (in order, none overlapping). */
-export function wordChanges(from: string, to: string): TextChange[] {
-  if (from === to) return [];
-  const fromParts = splitWords(from), toParts = splitWords(to), [f, t] = numbered(fromParts, toParts);
-  const offsets = [0];
-  for (const part of fromParts) offsets.push(offsets.at(-1)! + part.length);
-  return hunks(f, t, toParts).map(hunk => ({ start: offsets[hunk.start], end: offsets[hunk.end], text: hunk.lines.join("") }));
-}
-
 /** The element of page `after` holding where it differs from `before`, as an outline path; none for the page as a whole. */
 export function changedNode(before: string, after: string): number[] | undefined {
   if (before === after) return undefined;
@@ -279,14 +144,16 @@ export function foldFile(store: DraftTextStore, scope: DraftScope, path: string,
   if (!file && record) file = store.open(scope, path, { text: record.original, baseSha: record.baseSha }).file;
   if (!file) return;
   const merged = mergeText(file.base, file.text, theirs);
-  // In a live room the copy takes the change when it merges with no clash and lands where the merge says.
-  const shared = takeOutside(store, file.key, { base: file.base, sha, changes: wordChanges(file.base, theirs),
-    expect: copy => { const into = mergeText(file!.base, copy, theirs); return into.clashed ? undefined : into.text; } });
-  // The non-clashing outside change, as someone else's: Lex's steps over the file move past it.
-  if (!shared) store.edit({ scope, path, text: merged.mine, record: false, origin: "shared", rebase: rebaseHistory });
+  // In a live room the room's copy takes the change (src/live-text.ts `takeOutside`), merged against the copy's text;
+  // the draft follows the copy.
+  const shared = takeOutside(store, file.key, { base: file.base, theirs, sha });
+  const clash = shared ?? merged;
+  // The outside change, as someone else's: Lex's steps over the file move past it. On a clash in a room the copy holds
+  // the latest already; the draft takes Lex's words back here (the copy not), so the step below is what Undo takes back.
+  if (!shared || shared.clashed) store.edit({ scope, path, text: clash.mine, record: false, origin: "shared", rebase: rebaseHistory });
   store.acceptBase(scope, path, { text: theirs, baseSha: sha });
   // An open code pane compares with GitHub's new text from now on (src/components/source-editor.ts `sourceMoved`).
   moved?.(file.key, theirs, sha);
   // The clash: the latest version shows, Lex's words one Undo away.
-  if (merged.clashed && !shared) store.edit({ scope, path, history: history(), label: `${author.split(" · ")[0]}'s change`, text: merged.text });
+  if (clash.clashed) store.edit({ scope, path, history: history(), label: `${author.split(" · ")[0]}'s change`, text: clash.text });
 }

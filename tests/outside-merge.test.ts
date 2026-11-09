@@ -3,7 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createDraftStore } from "../src/draft-store.ts";
-import { AUTHOR_WAIT_MS, changedNode, foldFile, foldIn, mergeText, wordChanges, type OutsideHost } from "../src/outside-merge.ts";
+import { AUTHOR_WAIT_MS, changedNode, foldFile, foldIn, type OutsideHost } from "../src/outside-merge.ts";
+import { mergeText, wordChanges } from "../src/text-merge.ts";
 import type { SavedDraft } from "../src/drafts.ts";
 import type { Snapshot, TreeEntry } from "../shared/types.ts";
 import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
