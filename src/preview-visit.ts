@@ -72,6 +72,9 @@ async function run(base: string, token: string, rawKey: string) {
   // tab's id from its hello and its relay peer, so its leaving is noticed.
   const me = randomId(8);
   let serving: { host: string; peer: string } | undefined;
+  // The tab it took the site from left with no other of Lex's in: the next of his tabs to join is asked (a reconnect is
+  // told to the room as the old socket leaving, then the new one joining).
+  let lost = false;
 
   // Files come only from Lex's tab, as the relay names the sender: another visitor cannot answer for it.
   const wire = sessionWire<HostMessage>(() => room, (message, from) => {
@@ -247,12 +250,12 @@ async function run(base: string, token: string, rawKey: string) {
       connect,
       onMessage: (bytes, from) => wire.receive(bytes, from),
       // In, or back after a dropped socket: say so, and Lex's tab answers with where to start.
-      onKey: () => { if (room !== joined) return; looks = 0; serving = undefined; send({ t: "hi" }); },
-      // The tab it took the site from left while another of Lex's still serves: it takes the site from that one.
+      onKey: () => { if (room !== joined) return; looks = 0; serving = undefined; lost = false; send({ t: "hi" }); },
+      // The tab it took the site from left: it takes the site from another of Lex's, now or once one joins.
       onMembers: (members) => {
-        if (room !== joined || !serving || members.has(serving.peer)) return;
-        serving = undefined;
-        if ([...members.values()].includes("editor")) send({ t: "hi" });
+        if (room !== joined || (serving && members.has(serving.peer))) return;
+        if (serving) { serving = undefined; lost = true; }
+        if (lost && [...members.values()].includes("editor")) { lost = false; send({ t: "hi" }); }
       },
       onClosed: (why) => {
         if (room === joined) room = undefined;

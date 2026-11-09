@@ -169,3 +169,41 @@ test("a site in a sub-folder previews with its folder's stylesheet, picture and 
   await customer.close();
   expect(pageErrors).toEqual([]);
 });
+
+test("the visitor's page carries on after Lex's connection drops and comes back", async ({ page: lex, browser, baseURL, context }) => {
+  test.setTimeout(120_000);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  lex.on("pageerror", (error) => pageErrors.push(error.message));
+  // Lex's preview socket, through a route whose page side the test cuts while the relay still holds the old socket,
+  // as when a network drops: he joins again before the relay notices.
+  const pages: { close(options?: { code?: number }): Promise<void> }[] = [];
+  await lex.routeWebSocket(/\/api\/live\/preview/, (socket) => { socket.connectToServer(); pages.push(socket); });
+  await openEditor(lex, baseURL);
+  await editorMounted(lex);
+  const lexHeading = lex.frameLocator(".native-preview-frame").locator(".hero h1");
+  await lex.locator(".repository-menu__trigger").click();
+  await lex.getByRole("button", { name: "Share preview", exact: true }).click();
+  await expect(lex.locator(".repository-menu__preview-copy")).toHaveText("Copied");
+  const link = await lex.evaluate(() => navigator.clipboard.readText());
+  await lex.keyboard.press("Escape");
+
+  const customer = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const visitor = await customer.newPage();
+  visitor.on("pageerror", (error) => pageErrors.push(error.message));
+  await visitor.goto(link);
+  await expect(previewHeading(visitor)).toHaveText(heading, { timeout: 20_000 });
+
+  // The relay hears his old socket leave before the new one joins: the visitor takes the site from the new one.
+  const sockets = pages.length;
+  await pages.at(-1)!.close({ code: 4000 });
+  await expect.poll(() => pages.length, { timeout: 20_000 }).toBeGreaterThan(sockets);
+  await clickOnText(lexHeading);
+  await expect(lexHeading).toHaveAttribute("contenteditable", /.+/);
+  await lex.keyboard.press("End");
+  await lex.keyboard.type(" back");
+  await expect(previewHeading(visitor)).toHaveText(`${heading} back`, { timeout: 20_000 });
+  await lex.keyboard.press("Escape");
+
+  await customer.close();
+  expect(pageErrors).toEqual([]);
+});
