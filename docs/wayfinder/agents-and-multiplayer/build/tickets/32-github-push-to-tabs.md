@@ -90,3 +90,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 **Checks.** `RESULT: ok unit 3544/3544 (223 files)` (`scripts/agents/kit unit --affected`); `RESULT: ok specs 15/15 passed; 182 more run in kit pr` (`scripts/agents/kit specs --affected`, `native-push-notice.spec.ts` included); `npm run check` and `npm run lint` pass.
 
 Feature list: new entry F-repo-12 "A push on GitHub shows within seconds" in `docs/agents/features.md`.
+
+### UX follow-ups
+
+- UX (looks off): F-component-08 Detach works and the section stays selected, but a dark "Section hero detached" pop-up rises at the bottom after the action and sits over the code pane in every frame (S4, HS1, U5) (.scratch/ux/fleet-lead/20261109-100337-FUDSee/add-panel-F-component-08-390-light-detach-strip.webp)
+- UX (looks off): F-publish-01 the Publish button in the top bar carries a count badge ("Publish 1"), which S2 forbids on buttons; the menu itself is not shown (.scratch/ux/fleet-lead/20261109-100337-FUDSee/add-panel-F-component-08-390-light-detach-strip.webp)
