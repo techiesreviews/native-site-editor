@@ -55,6 +55,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - On a true clash (the same lines changed on both sides), GitHub's words then replace Lex's as one Undo step of their own, labelled "<author>'s change", in the page's history. One Undo brings Lex's words back and leaves the rest of the commit.
 - After the files: GitHub's texts become the runtime's base (`adoptSaved`), so the preview updates in place. The snapshot is adopted with its head, and the revision, tree and text index follow (the save's `adopt` and `showSaved`, now named functions in the host). No message, no reload.
 - The author's chip: each changed page gets `agentPresence.visit` (`src/agent-presence.ts`) for 2.6 seconds. The changed element (`changedNode`, the deepest element holding the change) gets an outline and a chip "<author> · GitHub" on the page shown, and a dot on its row elsewhere. It is not an agent: it is never listed, never stopped, and offers no Undo. The frame holds the mark, then fades it out (`fade`, through `src/components/native-preview.ts` and `src/components/preview-protocol.ts` to `src/components/native-preview-runtime.js`). With reduced motion it stays still, then goes.
+  - `fade` carries each visit's own number, so a second push to the same page within 2.6 seconds fades in again from the start, rather than staying at the first fade's end.
+  - The fade's 2600 ms and `OUTSIDE_MARK_MS` name each other in comments.
+  - Each page's text after the fold is read once every layer took the change (after `adoptSaved`). So a page with no open pane and no draft (a stylesheet open beside the page, say) still gets its outline and chip.
+- The drafts are read again after the files' read. A page deleted or moved meanwhile loads the branch again rather than merging into a deletion.
+- A draft that exists only on record is opened in the editor's store to merge, and stays open there on purpose: its Undo step needs it.
 - `/api/commit` (`worker/history.ts` `commitFiles`) now also returns `author`: the GitHub login, else the commit's author name, at most 60 characters. Without it the chip says "Someone · GitHub".
 - Live room: when the shared file's base moves to another blob (a `base` event), `src/live-text.ts` ends the share and starts it again from the new text. Every tab of the room folds the same commit into the same draft, so their changes meet again in the new copy (same draft, same client id).
 - Boot: `kit size` stays at 354 KB of 355 KB (±0 KB against dev).
@@ -80,6 +85,39 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Also run: `native-push-notice`, `native-agent-presence`, `native-agent-chip-undo`, `native-several-agents` and `native-deleted-upstream` specs, all passed.
 - `RESULT: ok size boot 354 KB (±0 KB) vs dev@998387d, budget 355 KB`.
 - `npm run check` and `npm run lint` pass.
-- `kit shots` not taken: no scripted try can make a GitHub commit part way through (F-repo-13 Steps); the spec covers the screens.
+- `kit shots --spec` (a raw scenario on the real starter, `.scratch/outside-fold-shots.spec.ts`): 12 shots, all passed, out `.scratch/shots/fleet-lead/20261109-135659/` in the main checkout, contact sheet `contact.webp` there. The three states are:
+  - the chip after a push with no drafts;
+  - Lex's unsaved heading merged with Sam's paragraph;
+  - a clash showing Sam's heading.
+
+  Each state was shot at 390 and 1280, light and dark.
+
+**Fix round (review findings).**
+
+- `tests/outside-merge.test.ts`:
+  - the chip's node on a page with no draft and no open pane;
+  - a `forEachAwait` test: the workspace moving on at each of foldIn's 3 awaits adopts, visits and writes nothing, and a page deleted during the read loads the branch again.
+- `tests/history.test.ts`: `commitFiles`'s author: login first, else the commit's name; blank names dropped; cut to 60 characters.
+- `tests/live-text.test.ts`:
+  - an `acceptBase` with the same blob does not restart the share;
+  - an outside change folded on two tabs restarts both shares under only the new blob's tag;
+  - both tabs end identical, and a later change reaches the other tab once.
+- `tests/agent-presence.test.ts`: a visit shows its author for its hold, is never listed as an agent, a second visit to the page carries a new `fade` number, and a new load drops it.
+- `tests/native-save/native-outside-fold-live.spec.ts` (new): two browsers share the page with the same unsaved heading. Sam's commit to another line folds in on both, both end with the same merged text, and a change after the fold reaches the other tab, nothing doubled.
+- Checks after the fixes:
+  - `RESULT: ok doctor 11/11 checks passed; warning: 5 setup pieces missing (run scripts/agents/kit init)`;
+  - `RESULT: ok specs 2/2 passed` (`native-outside-fold.spec.ts`, `native-outside-fold-live.spec.ts`);
+  - `RESULT: ok shots raw spec`.
+
+**UX review (Opus, contact sheet against the UX rulebook and mock-up 15).**
+
+- F-repo-13 chip, no drafts: fine. A teal outline on the changed paragraph with "Sam · GitHub" on its corner, readable in light and dark at 390 and 1280 (L12). No toast, strip or message (S4); the page is not reloaded.
+- F-repo-13 merged draft: fine. Lex's heading and Sam's paragraph both show, the Page structure row follows the new heading, Publish keeps its own state, and no conflict bar shows.
+- F-repo-13 clash: fine. Sam's heading shows with the chip and Undo is enabled in the top bar. Publish shows no change, as the draft now equals GitHub's text until Undo (B10: one Undo brings Lex's words back, proven by the spec).
+- Looks off (minor): the chip sits on the outline's top-left corner, flush against the line above. Mock-up 15 had it on the top-right with a 4 px outline gap. This is the shared agent-presence drawing that agents' chips already use (L11, an approved look), so it is left as it is and recorded as a follow-up.
 
 Feature list: new entry F-repo-13 "Outside changes fold in"; F-repo-12's Good line now names the fold.
+
+### UX follow-ups
+
+- UX (looks off): F-repo-13 the outside author's chip uses the agents' chip placement: top-left corner, flush against the line above, no outline gap. Mock-up 15 showed it top-right with a 4 px gap. Changing it means changing the agents' approved look too, so it needs Lex's call (main checkout `.scratch/shots/fleet-lead/20261109-135659/contact.webp`).

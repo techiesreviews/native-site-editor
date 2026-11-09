@@ -426,3 +426,15 @@ test("a commit's files come back with git's letters, a rename with its earlier p
   });
   await assert.rejects(commitFiles(github, repo, { sha: "nope" }), (error: unknown) => error instanceof HttpError && error.status === 400);
 });
+
+// Ticket am-33: who made the commit, for an outside change's chip.
+test("a commit's author: the GitHub login first, else the commit's name; blank names dropped, long ones cut to 60", async () => {
+  const authorOf = async (body: Record<string, unknown>) =>
+    (await commitFiles(new GitHub("token", async () => Response.json({ files: [], ...body })), repo, { sha: target })).author;
+  assert.equal(await authorOf({ author: { login: "sam" }, commit: { author: { name: "Sam Smith" } } }), "sam");
+  assert.equal(await authorOf({ author: null, commit: { author: { name: "Sam Smith" } } }), "Sam Smith");
+  assert.equal(await authorOf({ author: { login: "   " }, commit: { author: { name: " Sam " } } }), "Sam");
+  assert.equal(await authorOf({ author: null, commit: { author: { name: "  " } } }), undefined);
+  assert.equal(await authorOf({}), undefined);
+  assert.equal(await authorOf({ author: { login: "x".repeat(80) } }), "x".repeat(60));
+});

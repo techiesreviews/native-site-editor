@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { agentPresenceTarget, applySiteCommand, pinnedMediaActions, type AgentSiteActions } from "../src/agent-site.ts";
-import { AT_WORK_MS, createAgentPresence, type PresenceQuestion } from "../src/agent-presence.ts";
+import { AT_WORK_MS, createAgentPresence, type AgentMark, type PresenceQuestion } from "../src/agent-presence.ts";
 import { createWorkingHere } from "../src/agent-working-here.ts";
 import { mediaCommandPins } from "../src/agent-tools.ts";
 import type { MediaPin } from "../src/controllers/media-controller.ts";
@@ -640,4 +640,29 @@ test("working_here from an agent the user stopped shows nothing, and says so (ti
   { message: "Nothing is shown: the user stopped you. Nothing was changed." });
   assert.deepEqual(painted.at(-1) ?? [], []);
   assert.deepEqual(presence.atWork(), []);
+});
+
+// Ticket am-33: an outside commit's author on what it changed, for a moment; not an agent at work.
+test("an outside change's visit shows its author for its hold, is never listed, and a second push to the page fades in afresh", async () => {
+  const painted: AgentMark[][] = [];
+  let load = 0;
+  const presence = createAgentPresence({
+    pages: () => ["index.html"], source: () => page, begin: () => { const at = load; return { holds: () => at === load }; },
+    sectionTags: () => tags, shows: () => true, workspace: () => ({ repoId: 1, branch: "main" }), paint: marks => painted.push(marks),
+  });
+  presence.visit("index.html", [1, 0], "Sam · GitHub", 20);
+  const first = painted.at(-1)!;
+  assert.deepEqual(first.map(mark => [mark.name, mark.path, mark.node, mark.who.grant]), [["Sam · GitHub", "index.html", [1, 0], "outside"]]);
+  assert.deepEqual(presence.agents(), [], "never listed as an agent at work");
+  presence.visit("index.html", [1, 0], "Ana · GitHub", 20);
+  const second = painted.at(-1)!;
+  assert.equal(second.length, 1, "one mark per page: the newer author");
+  assert.ok(first[0].fade && second[0].fade && second[0].fade !== first[0].fade, "each visit fades in from the start");
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.deepEqual(painted.at(-1), [], "gone once its hold ends");
+  // A load begun meanwhile drops a visit at once.
+  presence.visit("index.html", [1, 0], "Sam · GitHub", 1_000);
+  load++;
+  presence.loaded();
+  assert.deepEqual(painted.at(-1), []);
 });

@@ -103,7 +103,7 @@ export type HostMessage =
   | Host<"theme", { focus: string; component: string }>
   // The agents working on elements (their pages' sections, tickets 33, am-11), each in its colour, its chip's orange while it asks (sRGB); none: no agent at work.
   // `bare`: no chip (its name is on a pin); `token`, `change`, `undo`: its chip's Undo for the agent's latest change to the page (ticket am-49), with `problem` its refusal.
-  | Host<"agent-presence", { agents: ({ request: NativeNodeRequest; name: string; color: string; chip: string; bare?: true; fade?: true } & Partial<ChipUndoFields>)[] }>
+  | Host<"agent-presence", { agents: ({ request: NativeNodeRequest; name: string; color: string; chip: string; bare?: true; fade?: number } & Partial<ChipUndoFields>)[] }>
   | Host<"component-focus", { tag: string }>
   | Host<"edit-component", { mode: EditComponentFrameMode | undefined }>
   | Host<"viewing", { viewing: boolean }>

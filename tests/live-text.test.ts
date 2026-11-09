@@ -17,6 +17,7 @@ import type { LiveAccess } from "../shared/live-room";
 import { writeAs, type LiveAuthor } from "../src/live-author";
 import { createSaveAuthors, type SaveAuthors } from "../src/save-authors";
 import { commitMessage } from "../worker/publish";
+import { foldFile } from "../src/outside-merge";
 
 const scope: DraftScope = { account: "lex", repoId: 501, repo: "lex/starter", branch: "main" };
 const path = "index.html";
@@ -405,6 +406,33 @@ test("a save landing at any await of loading the copy starts it from the saved t
     if (run.loading) assert.deepEqual(tags.filter(tag => tag !== saved), [], "no frame under the old version's tag");
     endRace(run);
   });
+});
+
+// Ticket am-33: an outside commit folded into the shared file moves its base to another blob, and the copy starts again
+// from GitHub's new text. Every tab folds the same commit into the same draft, so they meet again in the new copy.
+test("an outside change folded in on every tab starts the copy again from GitHub's new text, and the tabs end identical", async () => {
+  const room = fakeRoom();
+  const draft = base.replace("Fresh bread", "Fresh bread in Leiden");
+  const anna = tab(room, draft), lex = tab(room, draft);
+  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
+  await quiet();
+  // The same blob again (a lost save's answer recognized, Keep my draft over the same version): the share goes on.
+  anna.store.acceptBase(scope, path, { text: base, baseSha: sha });
+  assert.deepEqual([anna.sockets.length, lex.sockets.length], [1, 1], "no restart for the same blob");
+  const pushed = "d".repeat(40), theirs = base.replace("seven", "eight"), from = room.log.length;
+  for (const who of [anna, lex]) foldFile(who.store, scope, path, undefined, theirs, pushed, () => draftHistory(), "Sam · GitHub");
+  const merged = draft.replace("seven", "eight");
+  assert.deepEqual([anna.text, lex.text], [merged, merged]);
+  assert.deepEqual([anna.sockets.length, lex.sockets.length], [2, 2], "each tab's share started again");
+  await until(() => anna.yjsLoads === 2 && lex.yjsLoads === 2, "the new copies load");
+  await quiet();
+  assert.deepEqual([...new Set(tagsSent(room, [...anna.sockets, ...lex.sockets], from))], [pushed], "only the new blob's tag is heard");
+  // The new copy works: a change after it reaches the other tab, and nothing doubled.
+  anna.type(0, "<!-- after -->");
+  await until(() => lex.text.startsWith("<!-- after -->"), "Anna's next change on Lex's tab");
+  assert.equal(lex.text, `<!-- after -->${merged}`);
+  assert.equal(anna.text, lex.text);
+  anna.stop(); lex.stop();
 });
 
 test("Discard while a tab is alone with its draft takes it out of the room; a tab joining later with that draft's copy brings nothing back", async () => {

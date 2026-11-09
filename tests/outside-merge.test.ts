@@ -6,6 +6,7 @@ import { createDraftStore } from "../src/draft-store.ts";
 import { changedNode, foldFile, foldIn, mergeText, type OutsideHost } from "../src/outside-merge.ts";
 import type { SavedDraft } from "../src/drafts.ts";
 import type { Snapshot, TreeEntry } from "../shared/types.ts";
+import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
 
 const lines = (...words: string[]) => words.map(word => `${word}\n`).join("");
 
@@ -111,7 +112,14 @@ test("foldFile: a clean open file takes GitHub's text as its base, with no draft
   assert.equal(store.get(scope, "style.css"), undefined);
 });
 
-function foldSetup(next: TreeEntry[], options: { texts?: Record<string, string>; author?: string; drafts?: SavedDraft[] } = {}) {
+const oldPage = "<!doctype html><html><body><main><h1>Hi</h1><p>Old</p></main></body></html>\n";
+const newPage = oldPage.replace("<p>Old</p>", "<p>New</p>");
+const changedIndex = (): TreeEntry[] => [
+  { path: "index.html", type: "blob", sha: newSha, mode: "100644" },
+  { path: "style.css", type: "blob", sha: "c".repeat(40), mode: "100644" },
+];
+
+function foldSetup(next: TreeEntry[], options: { texts?: Record<string, string>; author?: string; drafts?: SavedDraft[]; race?: AwaitRace } = {}) {
   const tree: TreeEntry[] = [
     { path: "index.html", type: "blob", sha: oldSha, mode: "100644" },
     { path: "style.css", type: "blob", sha: "c".repeat(40), mode: "100644" },
@@ -119,11 +127,12 @@ function foldSetup(next: TreeEntry[], options: { texts?: Record<string, string>;
   const was: Snapshot = { commit: "1".repeat(40), branch: "main", entries: [], tree };
   const after: Snapshot = { commit: "2".repeat(40), branch: "main", entries: [], tree: next };
   const store = createDraftStore({ now: () => 1 });
-  const calls: string[] = [], visits: unknown[][] = [], adopted: Snapshot[] = [], base = new Map<string, string>([["index.html", "<p>Old</p>\n"]]);
+  const calls: string[] = [], visits: unknown[][] = [], adopted: Snapshot[] = [], base = new Map<string, string>([["index.html", oldPage]]);
+  const port = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => options.race ? options.race.port(name, work) : work;
   const ports = {
     appStore: { snapshot: { value: was }, repository: { value: { full_name: "lex/site" } } },
-    api: async (action: string) => { calls.push(action); return action === "snapshot" ? after : { files: [], truncated: false, author: options.author }; },
-    readFiles: async (_repo: string, shas: string[]) => Object.fromEntries(shas.map(sha => [sha, options.texts?.[sha] ?? "<p>New</p>\n"])),
+    api: port("api", async (action: string) => { calls.push(action); return action === "snapshot" ? after : { files: [], truncated: false, author: options.author }; }),
+    readFiles: port("readFiles", async (_repo: string, shas: string[]) => Object.fromEntries(shas.map(sha => [sha, options.texts?.[sha] ?? newPage]))),
     draftScope: () => scope,
     runtime: {
       source: (path: string) => base.get(path),
@@ -134,9 +143,10 @@ function foldSetup(next: TreeEntry[], options: { texts?: Record<string, string>;
     agentPresence: { visit: (...args: unknown[]) => { visits.push(args); } },
     nativeHistorySession: (_scope: unknown, path: string) => path,
   };
-  const host: OutsideHost = { adopt: snapshot => adopted.push(snapshot), showSaved: () => undefined, seeHead: () => undefined, drafts: () => ({ list: () => options.drafts ?? [] }) };
+  const host: OutsideHost = { adopt: snapshot => adopted.push(snapshot), showSaved: () => undefined, seeHead: () => undefined, drafts: () => ({ list: () => drafts }) };
+  const drafts = options.drafts ?? [];
   // eslint-disable-next-line no-restricted-syntax -- a partial fake of the host's ports: only the fields foldIn reads.
-  return { ports: ports as unknown as Parameters<typeof foldIn>[0], host, calls, visits, adopted, base, after };
+  return { ports: ports as unknown as Parameters<typeof foldIn>[0], host, calls, visits, adopted, base, after, store, drafts };
 }
 
 test("foldIn: a changed page folds in place, with the author's chip on what changed", async () => {
@@ -145,11 +155,43 @@ test("foldIn: a changed page folds in place, with the author's chip on what chan
     { path: "style.css", type: "blob", sha: "c".repeat(40), mode: "100644" },
   ], { author: "sam" });
   assert.equal(await foldIn(f.ports, f.host, f.after.commit, () => true), true);
-  assert.equal(f.base.get("index.html"), "<p>New</p>\n");
+  assert.equal(f.base.get("index.html"), newPage);
   assert.deepEqual(f.adopted, [f.after]);
   assert.equal(f.visits.length, 1);
   assert.equal(f.visits[0][0], "index.html");
   assert.equal(f.visits[0][2], "sam · GitHub");
+  // A page with no draft and no open pane still gets its outline: the node is read once the base took the change.
+  assert.deepEqual(f.visits[0][1], changedNode(oldPage, newPage));
+  assert.ok(Array.isArray(f.visits[0][1]) && f.visits[0][1].length > 0);
+});
+
+test("foldIn: a workspace moved on at either await, or a page deleted during the read, folds nothing in", async () => {
+  type Run = ReturnType<typeof foldSetup> & { done: Promise<boolean>; ended: boolean };
+  const points = await forEachAwait<Run>(race => {
+    const f = foldSetup(changedIndex(), { race, drafts: [{ ...scope, version: 1, path: "index.html", baseSha: oldSha, original: oldPage, content: oldPage.replace("Hi", "Hello"), updatedAt: 1 }] });
+    const run = { ...f, ended: false } as Run;
+    run.done = foldIn(f.ports, f.host, f.after.commit, () => !run.ended);
+    return run;
+  }, run => { run.ended = true; }, async run => {
+    assert.equal(await run.done, true);
+    assert.deepEqual(run.adopted, []);
+    assert.deepEqual(run.visits, []);
+    assert.equal(run.store.get(scope, "index.html"), undefined);
+    assert.equal(run.base.get("index.html"), oldPage);
+  });
+  assert.equal(points, 3);
+  // Deleted during the read: the drafts are read again after it, and the branch loads again instead.
+  const deleted = await forEachAwait<Run>(race => {
+    const f = foldSetup(changedIndex(), { race });
+    const run = { ...f, ended: false } as Run;
+    run.done = foldIn(f.ports, f.host, f.after.commit, () => true);
+    return run;
+  }, run => { run.drafts.push({ ...scope, version: 1, path: "index.html", baseSha: oldSha, original: oldPage, content: "", deleted: true, updatedAt: 1 }); }, async run => {
+    assert.equal(await run.done, false);
+    assert.deepEqual(run.adopted, []);
+    assert.equal(run.store.get(scope, "index.html"), undefined);
+  });
+  assert.equal(deleted, 3);
 });
 
 test("foldIn: added, removed or other kinds of files load the branch again; a workspace moved on does nothing", async () => {
@@ -176,7 +218,7 @@ test("foldIn: a draft that is a deletion loads the branch again", async () => {
   const f = foldSetup([
     { path: "index.html", type: "blob", sha: newSha, mode: "100644" },
     { path: "style.css", type: "blob", sha: "c".repeat(40), mode: "100644" },
-  ], { drafts: [{ ...scope, version: 1, path: "index.html", baseSha: oldSha, original: "<p>Old</p>\n", content: "", deleted: true, updatedAt: 1 }] });
+  ], { drafts: [{ ...scope, version: 1, path: "index.html", baseSha: oldSha, original: oldPage, content: "", deleted: true, updatedAt: 1 }] });
   assert.equal(await foldIn(f.ports, f.host, f.after.commit, () => true), false);
   assert.deepEqual(f.adopted, []);
 });
