@@ -213,6 +213,13 @@ test("the copy icon: hidden at rest, shown on hover and on keyboard focus, a che
   await page.clock.runFor(2600);
   assert.equal(await page.locator(".share-row__copy-icon").getAttribute("data-icon"), "copy");
   assert.equal((await shown(page)).label, "Waiting for customer");
+  // A whole target on a mouse too: the row's full height, a control's width (32 px).
+  const icon = await page.evaluate(() => {
+    const copy = document.querySelector(".share-row__copy")!.getBoundingClientRect(), row = document.querySelector(".share-row__main")!.getBoundingClientRect();
+    return [Math.round(copy.width), Math.round(copy.height), Math.round(row.height)];
+  });
+  assert.deepEqual(icon, [32, icon[2], icon[2]]);
+  assert.ok(icon[2] >= 32);
   // No room is kept for it: the label runs the row's full width.
   const room = await page.evaluate(() => {
     const button = document.querySelector(".share-row__main")!.getBoundingClientRect(), host = document.querySelector(".share-row")!.getBoundingClientRect();
@@ -269,7 +276,9 @@ test("on touch the copy icon always shows and the label stops short of it", () =
   await main(page).waitFor();
   assert.equal(await page.evaluate(() => matchMedia("(hover: none), (pointer: coarse)").matches), true);
   assert.equal(await iconOpacity(page), "1");
-  assert.equal(await main(page).evaluate((element) => getComputedStyle(element).paddingInlineEnd), "36px");
+  assert.equal(await main(page).evaluate((element) => getComputedStyle(element).paddingInlineEnd), "44px");
+  const box = await page.locator(".share-row__copy").boundingBox();
+  assert.ok(box && box.width >= 44 && box.height >= 44, `a 44 px touch target, got ${box?.width}x${box?.height}`);
 }, { hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 } }));
 
 test("the project tile shows a dot while the link is on, menu open or not, and none once it is off", () => inBrowser(async page => {

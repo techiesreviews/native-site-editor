@@ -150,7 +150,7 @@ test("on a phone, the Preview link row and its copy icon are full tap targets, a
   await expect(previewLabel(page)).toHaveText("Waiting for customer", { timeout: 10_000 });
   await expect(previewCopy(page)).toBeVisible();
   expect(await height(previewCopy(page))).toBeGreaterThanOrEqual(44);
-  expect((await previewCopy(page).boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(36);
+  expect((await previewCopy(page).boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(44);
   await previewRow(page).tap();
   await expect(share).toBeVisible();
   await phone.close();
