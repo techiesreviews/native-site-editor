@@ -89,8 +89,9 @@ async function run(base: string, token: string, rawKey: string) {
     // Each (re)joining: files may have changed while this page was away, so it starts afresh where the visitor is.
     if (message.t === "hello" && typeof message.version === "string" && typeof message.start === "string") {
       const from = message.start.startsWith("/") ? message.start : "/";
-      // A hello goes to the whole room: one that brings nothing new (another visitor said hi) leaves the page as it is.
-      if (frame && message.version === version && from === start) return;
+      // A hello goes to the whole room: one that brings nothing new (another visitor said hi, or this page is back after
+      // a dropped socket) leaves the page as it is, and asks again for files still awaited (an ask may have been lost).
+      if (frame && message.version === version && from === start) { for (const path of waiting.keys()) ask(path); return; }
       version = message.version;
       start = from;
       forget();
