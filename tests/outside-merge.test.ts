@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createDraftStore } from "../src/draft-store.ts";
 import { AUTHOR_WAIT_MS, changedNode, foldFile, foldIn, type OutsideHost } from "../src/outside-merge.ts";
-import { mergeText, wordChanges } from "../src/text-merge.ts";
+import { mergeText } from "../src/text-merge.ts";
 import type { SavedDraft } from "../src/drafts.ts";
 import type { Snapshot, TreeEntry } from "../shared/types.ts";
 import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
@@ -58,13 +58,6 @@ test("mergeText: different words changed on one line are no clash, and both chan
   assert.equal(clash.clashed, true);
   assert.equal(clash.text, "<p>Open Tuesday to Friday, 8 to 4.</p>\n");
   assert.equal(clash.mine, "<p>Open Tuesday to Sunday, 8 to 4.</p>\n");
-});
-
-test("wordChanges: the word changes in the first text's offsets turn it into the second", () => {
-  const from = "<p>Open Tuesday to Saturday, 9 to 5.</p>", to = "<p>Open Monday to Saturday, 8 to 5.</p>";
-  const changes = wordChanges(from, to);
-  assert.deepEqual(changes.map(change => [from.slice(change.start, change.end), change.text]), [["Tuesday", "Monday"], ["9", "8"]]);
-  assert.deepEqual(wordChanges(from, from), []);
 });
 
 test("mergeText: no draft change takes GitHub's text; no GitHub change keeps the draft; a last line without a newline merges", () => {

@@ -3,7 +3,6 @@
 // (ticket 09). Used by outside changes folding in (src/outside-merge.ts) and by a shared copy taking a tab that joins
 // it from a newer version (src/live-text.ts). No DOM, no I/O.
 
-import type { TextChange } from "./draft-store";
 
 /** Past this many line differences one side is taken as a single change (Myers' trace grows with its square). */
 const MAX_LINE_EDITS = 2_000;
@@ -132,23 +131,4 @@ export function mergeText(base: string, ours: string, theirs: string): Merged {
   if (theirs === base) return { text: ours, mine: ours, clashed: false };
   return mergeParts(splitLines(base), splitLines(ours), splitLines(theirs),
     (b, o, t) => mergeParts(splitWords(b), splitWords(o), splitWords(t)));
-}
-
-/** The changes, word by word, that turn `from` into `to`, in `from`'s offsets (in order, none overlapping). */
-export function wordChanges(from: string, to: string): TextChange[] {
-  if (from === to) return [];
-  const fromParts = splitWords(from), toParts = splitWords(to), [f, t] = numbered(fromParts, toParts);
-  const offsets = [0];
-  for (const part of fromParts) offsets.push(offsets.at(-1)! + part.length);
-  return hunks(f, t, toParts).map(hunk => ({ start: offsets[hunk.start], end: offsets[hunk.end], text: hunk.lines.join("") }));
-}
-
-/** The changes, character by character, that turn `from` into `to`, in `from`'s offsets; none past the diff's limit
- * (`MAX_LINE_EDITS` differences): one change for the whole span then. */
-export function charChanges(from: string, to: string): TextChange[] {
-  if (from === to) return [];
-  const fromParts = [...from], toParts = [...to], [f, t] = numbered(fromParts, toParts);
-  const offsets = [0];
-  for (const part of fromParts) offsets.push(offsets.at(-1)! + part.length);
-  return hunks(f, t, toParts).map(hunk => ({ start: offsets[hunk.start], end: offsets[hunk.end], text: hunk.lines.join("") }));
 }
