@@ -223,3 +223,37 @@ test("in a 390 px window with a mouse (as the screenshots take it), Share previe
   await narrow.close();
   expect(pageErrors).toEqual([]);
 });
+
+test("a second visitor opening the link leaves the first one's page as it is", async ({ page: lex, browser, baseURL, context }) => {
+  test.setTimeout(120_000);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  lex.on("pageerror", (error) => pageErrors.push(error.message));
+  await openEditor(lex, baseURL);
+  await editorMounted(lex);
+  await lex.locator(".repository-menu__trigger").click();
+  await lex.getByRole("button", { name: "Share preview", exact: true }).click();
+  await expect(lex.locator(".repository-menu__preview-copy")).toHaveText("Copied");
+  const link = await lex.getByRole("textbox", { name: "Preview link" }).inputValue();
+  await lex.keyboard.press("Escape");
+
+  const customers = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const first = await customers.newPage();
+  first.on("pageerror", (error) => pageErrors.push(error.message));
+  await first.goto(link);
+  await expect(previewHeading(first)).toHaveText(heading, { timeout: 20_000 });
+  // A mark in the first visitor's page: a page drawn again would not carry it.
+  const shown = first.locator(".preview-visit__frame:not(.is-loading)");
+  await shown.evaluate((frame: HTMLIFrameElement) => { (frame.contentWindow as Window & { mark?: number }).mark = 1; });
+
+  const second = await customers.newPage();
+  second.on("pageerror", (error) => pageErrors.push(error.message));
+  await second.goto(link);
+  await expect(previewHeading(second)).toHaveText(heading, { timeout: 20_000 });
+  // The second visitor's hello reached the first one's page too by now (it goes to the whole room).
+  await second.waitForTimeout(1_000); // fixed-wait: proving a redraw never comes (a negative)
+  expect(await shown.evaluate((frame: HTMLIFrameElement) => (frame.contentWindow as Window & { mark?: number }).mark)).toBe(1);
+  await expect(first.locator(".preview-visit__frame")).toHaveCount(1);
+
+  await customers.close();
+  expect(pageErrors).toEqual([]);
+});
