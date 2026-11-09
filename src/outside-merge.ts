@@ -148,12 +148,12 @@ export function foldFile(store: DraftTextStore, scope: DraftScope, path: string,
   // A draft only on record opens in the store to merge, and stays open there (deliberately): its Undo step needs it.
   if (!file && record) file = store.open(scope, path, { text: record.original, baseSha: record.baseSha }).file;
   if (!file) return;
-  const clash = mergeText(file.base, file.text, theirs);
+  const merged = mergeText(file.base, file.text, theirs);
   // The outside change, as someone else's: Lex's steps over the file move past it.
-  store.edit({ scope, path, text: clash.mine, record: false, origin: "shared", rebase: rebaseHistory });
+  store.edit({ scope, path, text: merged.mine, record: false, origin: "shared", rebase: rebaseHistory });
   store.acceptBase(scope, path, { text: theirs, baseSha: sha });
   // An open code pane compares with GitHub's new text from now on (src/components/source-editor.ts `sourceMoved`).
   moved?.(file.key, theirs, sha);
   // The clash: the latest version shows, Lex's words one Undo away.
-  if (clash.clashed) store.edit({ scope, path, history: history(), label: `${author.split(" · ")[0]}'s change`, text: clash.text });
+  if (merged.clashed) store.edit({ scope, path, history: history(), label: `${author.split(" · ")[0]}'s change`, text: merged.text });
 }

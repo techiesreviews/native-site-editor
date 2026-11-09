@@ -47,6 +47,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 ## Done (2026-11-09)
 
+**What ships (lead decision, Option 1).** The live-room work the rounds below record (`takeOutside`, the copy taking the change as a participant, `tests/native-save/native-outside-fold-live.spec.ts` and the live-room cases in `tests/live-text.test.ts`) was removed: `src/live-text.ts` is dev's again, with `liveShared`, and a page typed on together loads the branch again. Its tests: `tests/live-text.test.ts` "liveShared: …" and `tests/outside-merge.test.ts` "foldIn: a page typed on together in a live room loads the branch again …". The live-room case is [ticket 59](59-outside-changes-into-a-live-room.md).
+
 **Behaviour.**
 
 - When the branch head check finds a new commit (the push notice of am-32, the focus check, a refused save), `src/controllers/save-publish-controller.ts` `checkHead` first asks its new `foldIn` port to fold the commit in place. Only when the fold says it cannot, or fails, does the branch load again as before.
@@ -65,10 +67,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - The drafts are read again after the files' read. A page deleted or moved meanwhile loads the branch again rather than merging into a deletion.
 - A draft that exists only on record is opened in the editor's store to merge, and stays open there on purpose: its Undo step needs it.
 - `/api/commit` (`worker/history.ts` `commitFiles`) now also returns `author`: the GitHub login, else the commit's author name, at most 60 characters. Without it the chip says "Someone · GitHub".
-- Live room: the change enters the open shared copy as one more participant (`takeOutside`, `src/live-text.ts`). GitHub's word changes from the copy's starting text go in as one Yjs update, under a client id fixed by the file, the copy's starting version and the new blob. So every tab, and every commit that makes the same move, writes the very same items, and the room keeps them once, whichever tab folds first. A tab that has not folded yet receives the change through the room. The room and its copy go on and the drafts follow the copy.
-  - (round 4) The room keeps its one copy; nothing restarts it after a change it took or a save. A copy that holds the merged text already takes nothing. Otherwise the participant update is tried on a throwaway copy, and taken when it lands on the merge. On a clash it is taken when the merge is that result with words taken out: those are Lex's clashing words, taken out of the copy at once, and the step that puts them back on Undo is recorded.
-  - (round 4) A tab opening the page at the version the copy moved to asks under that version's tag. The copy answers MOVED with its own tag, and the tab starts an empty copy under it, is caught up whole, and adds only its own changes (a three-way merge with the room's text). The room stays one for late joiners and reloads.
-  - (round 4) Only when the copy cannot take the change (not caught up, begun from older text, or a clash it cannot settle by taking words out) does the fold merge into the draft and the share start again. The new share then joins the room's copy the same way (MOVED) wherever the room moved to that version.
+- Live room (lead decision, Option 1): a page typed on together in a live room (`src/live-text.ts` `liveShared`: another tab in, its copy loading, or a copy made) does not fold. `foldIn` loads the branch again for it, as before, and unsaved work stays, so the room's copy never takes the change twice. Rounds 3 to 5 tried the change as a participant in the shared copy (`takeOutside`, `moveTo`, MOVED); words doubled in orders the rounds could not close, so that code was removed and the case moved to [ticket 59](59-outside-changes-into-a-live-room.md).
 - `src/controllers/save-publish-controller.ts`: a fold that fails loads the branch again only while the head check's load still holds.
 - Boot: `kit size` stays at 354 KB of 355 KB (±0 KB against dev).
 
