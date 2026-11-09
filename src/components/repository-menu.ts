@@ -6,33 +6,18 @@ import { setIcon } from "../icons";
 import { noteCount, noteWords, tileWords, type FinishedNote } from "../finished-elsewhere";
 import { sameBranch, sameRepository } from "../workspace-session";
 import type { Repository, SessionInfo } from "../../shared/types";
-import "./person-chip.css";
-import type { shareItems } from "./share-menu";
-import type { PreviewState } from "../preview-control";
 
 type Account = NonNullable<SessionInfo["accounts"]>[number];
-/** Share to edit (slice 30, src/workspace-shares.ts): whether it shows, and its items, loaded on the menu's first open. */
-export interface ShareMenuPort {
-  /** Whether a site is shown to share (or a session is open): the items show only then. */
-  available(): boolean;
-  /** The items once they have loaded (src/components/share-menu.ts): what goes in the menu, and the guests' chips. */
-  draw(actionClass: string): Promise<ReturnType<typeof shareItems>>;
-}
-/** Share preview (slice 35, src/preview-share.ts): a link that shows the site live while the editor is open. */
-export interface PreviewMenuPort {
-  state(): PreviewState;
-  /** Whether Share preview shows: a preview Worker is set up and a site is shown. */
-  available(): boolean;
-  watch(listener: (state: PreviewState) => void): () => void;
-  /** Makes a link (or keeps the one on) and resolves its address; throws with the refusal's `status`. */
-  start(): Promise<string | undefined>;
-  /** Turns the link off; throws when the editor could not. */
-  stop(): Promise<void>;
-  /** Draws the items into `root` once they have loaded (src/components/preview-menu.ts). */
+/** Preview link or Edit together (ticket 58; src/workspace-shares.ts, src/preview-share.ts): its row loads on the menu's
+ * first open (src/shares-later.ts). */
+export interface SharesMenuPort {
+  /** Whether the row shows at all (Preview link: this editor has a preview Worker). With no site open it shows dimmed. */
+  offered(): boolean;
+  /** Draws the row into `root` once it has loaded. */
   draw(actionClass: string, root: HTMLElement): Promise<{ refresh(): void; destroy(): void }>;
+  /** The project tile: it shows a dot while a link is on. */
+  tile(trigger: HTMLElement): void;
 }
-/** How long "Link copied" stays on the item before it reads "Copy edit link" again. */
-export const COPIED_MS = 2500;
 
 // GitHub decides which repositories the editor's GitHub App can reach, and
 // its API only lets classic tokens change that, so adding and removing a
@@ -61,8 +46,8 @@ export function createRepositoryMenu(options: {
   onSiteSettings?: () => void;
   /** A row with finished work clicked: its project and branch open with its changes. */
   onNote?: (note: FinishedNote) => void;
-  share?: ShareMenuPort;
-  preview?: Pick<PreviewMenuPort, "available" | "draw">;
+  share?: SharesMenuPort;
+  preview?: SharesMenuPort;
 }) {
   const root = node("div", "repository-menu");
   const trigger = node("button", "repository-menu__trigger");
@@ -161,27 +146,19 @@ export function createRepositoryMenu(options: {
   const actions = node("div", "repository-menu__section repository-menu__actions");
   actions.append(siteSlot);
   if (options.onSiteSettings) actions.append(button("Site settings", options.onSiteSettings, actionClass));
-  // Share to edit's items load on the menu's first open (src/components/share-menu.ts), into these places: the menu,
-  // and beside the tile for the guests' chips. A load that fails is tried again on the next open.
-  const shareRoot = options.share && node("div", "repository-menu__share");
-  const peopleSlot = options.share && node("span");
-  if (peopleSlot) peopleSlot.hidden = true;
-  let share: ReturnType<ShareMenuPort["draw"]> | undefined;
-  if (shareRoot) { shareRoot.hidden = true; actions.append(shareRoot); }
-  const showShare = () => {
-    if (!shareRoot || (!share && !options.share!.available())) return;
-    void (share ??= options.share!.draw(actionClass).then((items) => {
-      shareRoot.replaceWith(items.root);
-      peopleSlot!.replaceWith(items.people);
-      return items;
-    })).then((items) => items.refresh(), () => { share = undefined; });
-  };
-  // Share preview's items load after the first paint (src/components/preview-menu.ts); drawn on the menu's first open.
-  const previewRoot = options.preview && node("div", "repository-menu__preview");
-  let preview: ReturnType<PreviewMenuPort["draw"]> | undefined;
-  if (previewRoot) { previewRoot.hidden = true; actions.append(previewRoot); }
-  // Not on an editor without a preview Worker, or with no site shown: nothing of it loads then.
-  const showPreview = () => { if (previewRoot && (preview || options.preview!.available())) void (preview ??= options.preview!.draw(actionClass, previewRoot)).then((items) => items.refresh()); };
+  // Preview link and Edit together (ticket 58): one row each, loaded on the menu's first open (src/shares-later.ts),
+  // drawn into these places. A load that fails is tried again on the next open.
+  const shares = [options.preview, options.share].filter((port): port is SharesMenuPort => port !== undefined).map((port) => {
+    const place = node("div");
+    place.hidden = true;
+    actions.append(place);
+    port.tile(trigger);
+    let drawn: ReturnType<SharesMenuPort["draw"]> | undefined;
+    return {
+      show() { if (drawn || port.offered()) void (drawn ??= port.draw(actionClass, place)).then((row) => row.refresh(), () => { drawn = undefined; }); },
+      destroy() { void drawn?.then((row) => row.destroy(), () => undefined); },
+    };
+  });
   const agentSlot = node("div", "repository-menu__agent");
   agentSlot.id = "agent-menu";
 
@@ -210,17 +187,17 @@ export function createRepositoryMenu(options: {
   );
 
   panel.append(sites, actions, agentSlot, accounts, branches);
-  root.append(trigger, ...peopleSlot ? [peopleSlot] : [], panel);
+  root.append(trigger, panel);
   const dropdown = mountDropdown({
     trigger,
     panel,
     anchor: "--repository-menu",
   });
   panel.addEventListener("beforetoggle", (event) => {
-    if ((event as ToggleEvent).newState === "open") { options.onOpen?.(); showShare(); showPreview(); }
+    if ((event as ToggleEvent).newState === "open") { options.onOpen?.(); for (const row of shares) row.show(); }
   });
   panel.addEventListener("click", (event) => {
-    // Share to edit and Copy edit link say "Link copied" on themselves, so the menu stays open for them.
+    // Preview link and Edit together say "Link copied" on themselves, so the menu stays open for them.
     if ((event.target as Element).closest(".repository-menu__action:not([data-keep-open])")) {
       dropdown.close();
       trigger.focus();
@@ -437,7 +414,7 @@ export function createRepositoryMenu(options: {
 
   function setRepository(repo?: Repository) {
     currentId = repo?.id;
-    actions.hidden = !repo || (!showSiteActions && !options.onSiteSettings && !shareRoot && !previewRoot);
+    actions.hidden = !repo || (!showSiteActions && !options.onSiteSettings && !shares.length);
     siteSlot.hidden = !showSiteActions;
     repository.textContent = repo?.owner.login ?? "GitHub connected";
     name.textContent = repo?.name ?? "Choose a project";
@@ -490,8 +467,7 @@ export function createRepositoryMenu(options: {
     /** The tile at the top left that opens the menu: what a spotlight points at. */
     trigger,
     destroy() {
-      void share?.then((items) => items.destroy());
-      void preview?.then((items) => items.destroy());
+      for (const row of shares) row.destroy();
       controller.abort();
       branchFlyout.destroy();
       dropdown.destroy();

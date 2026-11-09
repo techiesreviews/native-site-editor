@@ -3,10 +3,11 @@ import { openEditor, openPages } from "../support/scenarios";
 import { clickOnText } from "./click-text";
 import { editorMounted, storedDraft } from "./drafts";
 
-// Share to edit (slice 30; CONTEXT.md "Synced session"): Lex shares the page he shows from the project menu, and
+// Edit together (slice 30, ticket 58; CONTEXT.md "Synced session"): Lex shares the page he shows from the project
+// menu's Edit together row (one row, as Connect to MCP: its dot and label are the state, the row the only control), and
 // Anna opens the link in a browser with no sign-in, types her name and edits the heading. Her typing reaches his
 // tab as his own unsaved change; her page has no Save, files, settings or agents, and calls nothing of the
-// editor's API but the session's own route. Stop sharing ends her session, and the link refuses from then on.
+// editor's API but the session's own route. Pressing the row again ends her session, and the link refuses from then on.
 // Default fixture group: the real Worker routes (worker/app.ts `/api/live/share`, `/api/live/guest`) and relay.
 const pageErrors: string[] = [];
 const heading = "A native browser preview";
@@ -32,17 +33,23 @@ async function guest(browser: Browser, phone = false) {
 
 test.beforeEach(() => { pageErrors.length = 0; });
 
-/** Lex shares from the project menu: the item says "Link copied" with the menu still open; the link from the clipboard. */
+// The project menu's Edit together row: the row (pressed to share or stop), its label, its dot and its copy icon.
+const editRow = (page: Page) => page.locator('[data-share="edit"] .share-row__main');
+const editLabel = (page: Page) => page.locator('[data-share="edit"] .share-row__label');
+const editDot = (page: Page) => page.locator('[data-share="edit"] .share-row');
+/** Lex shares from the project menu: the row says "Link copied" with the menu still open, then waits for a
+ * collaborator; the link from the clipboard. */
 async function share(lex: Page) {
   await lex.locator(".repository-menu__trigger").click();
-  await lex.getByRole("button", { name: "Share to edit", exact: true }).click();
-  const copied = lex.locator(".repository-menu__share-item");
-  await expect(copied).toHaveText("Link copied");
-  await expect(copied).toBeVisible();
+  await lex.getByRole("button", { name: "Edit together", exact: true }).click();
+  await expect(editLabel(lex)).toHaveText("Link copied");
+  await expect(editLabel(lex)).toBeVisible();
   await expect.poll(() => lex.evaluate(() => navigator.clipboard.readText())).toMatch(/\/live\?s=[a-f\d]{64}#k=[\w-]{43}&site=native-demo&by=/);
   const link = await lex.evaluate(() => navigator.clipboard.readText());
-  await expect(copied).toHaveText("Copy edit link", { timeout: 5_000 });
-  await expect(lex.getByRole("button", { name: "Stop sharing", exact: true })).toBeVisible();
+  await expect(editLabel(lex)).toHaveText("Waiting for collaborator", { timeout: 5_000 });
+  await expect(editDot(lex)).toHaveAttribute("data-dot", "wait");
+  await expect(lex.locator("#repository-actions").getByRole("textbox")).toHaveCount(0);
+  await expect(lex.getByRole("button", { name: /Stop sharing|Copy edit link/ })).toHaveCount(0);
   await lex.keyboard.press("Escape");
   return link;
 }
@@ -58,7 +65,7 @@ async function joins(visitor: Awaited<ReturnType<typeof guest>>, link: string, n
 }
 const ended = (page: Page) => page.getByRole("heading", { name: "This edit link has ended." });
 
-test("guests edit a heading through Lex's link; his Undo takes it back, they follow his page, and Stop sharing ends it", async ({ page: lex, browser, baseURL, context }) => {
+test("guests edit a heading through Lex's link; his Undo takes it back, they follow his page, and pressing the row again ends it", async ({ page: lex, browser, baseURL, context }) => {
   test.setTimeout(180_000);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   lex.on("pageerror", (error) => pageErrors.push(error.message));
@@ -70,7 +77,19 @@ test("guests edit a heading through Lex's link; his Undo takes it back, they fol
   // Anna opens it, with no account: a name, then the page.
   const anna = await guest(browser);
   const annaFrame = await joins(anna, link, "Anna");
-  await expect(lex.locator('.repository-menu__people .person-chip[aria-label="Anna, a guest"]')).toBeVisible();
+  // Lex's row names her, with her initial at its end, and its dot and the tile's turn green; the copy icon copies the
+  // link again.
+  await lex.locator(".repository-menu__trigger").click();
+  await expect(editLabel(lex)).toHaveText("Editing with Anna", { timeout: 20_000 });
+  await expect(lex.locator('[data-share="edit"] .share-row__end .person-chip')).toHaveText(["A"]);
+  await expect(editDot(lex)).toHaveAttribute("data-dot", "on");
+  await expect(lex.locator(".repository-menu__trigger")).toHaveAttribute("data-shared", "on");
+  await lex.evaluate(() => navigator.clipboard.writeText(""));
+  await editRow(lex).hover();
+  await lex.locator('[data-share="edit"]').getByRole("button", { name: "Copy link" }).click();
+  await expect(editLabel(lex)).toHaveText("Link copied");
+  await expect.poll(() => lex.evaluate(() => navigator.clipboard.readText())).toBe(link);
+  await lex.keyboard.press("Escape");
   await expect(anna.page.locator(".live-guest__people .person-chip").first()).toHaveAttribute("aria-label", /\(sharing\)$/);
 
   // She types in the heading: Lex sees it on his page, as his own unsaved change.
@@ -104,7 +123,10 @@ test("guests edit a heading through Lex's link; his Undo takes it back, they fol
   });
   await anna.page.keyboard.press("Escape");
   await expect(target).not.toHaveAttribute("contenteditable", /.+/);
-  const colour = await lex.locator('.repository-menu__people .person-chip[aria-label="Anna, a guest"]').getAttribute("data-colour");
+  await lex.locator(".repository-menu__trigger").click();
+  await expect(editLabel(lex)).toHaveText(/^Editing with (Anna, Ben|Ben, Anna)$/, { timeout: 20_000 });
+  const colour = await lex.locator('[data-share="edit"] .share-row__end .person-chip', { hasText: "A" }).getAttribute("data-colour");
+  await lex.keyboard.press("Escape");
   await expect(ben.page.locator('.live-guest__people .person-chip[aria-label="Anna"]')).toHaveAttribute("data-colour", colour!);
 
   // Nothing of the editor is on a guest's page, and they reached nothing of its API but the session's route.
@@ -125,13 +147,12 @@ test("guests edit a heading through Lex's link; his Undo takes it back, they fol
   await expect(lex.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
   for (const frame of [annaFrame, benFrame]) await expect(frame.locator("h1")).toHaveText("About this project", { timeout: 20_000 });
 
-  // Stop sharing: their pages say the session ended, and the link refuses.
+  // Pressing the row stops: their pages say the session ended, and the link refuses.
   await lex.locator(".repository-menu__trigger").click();
-  await lex.getByRole("button", { name: "Stop sharing", exact: true }).click();
+  await editRow(lex).click();
   for (const visitor of [anna, ben]) await expect(ended(visitor.page)).toBeVisible({ timeout: 15_000 });
-  await expect(lex.locator(".repository-menu__people .person-chip")).toHaveCount(0);
-  await lex.locator(".repository-menu__trigger").click();
-  await expect(lex.getByRole("button", { name: "Share to edit", exact: true })).toBeVisible();
+  await expect(lex.getByRole("button", { name: "Edit together", exact: true })).toBeVisible();
+  await expect(lex.locator(".repository-menu__trigger")).not.toHaveAttribute("data-shared");
   await lex.keyboard.press("Escape");
 
   const late = await guest(browser, true);
@@ -183,10 +204,17 @@ test("a guest waits while Lex's connection drops and carries on when he is back;
   const frame = await joins(anna, link, "Anna");
   const status = anna.page.locator(".live-guest__status");
 
+  // Lex's row says it is reconnecting meanwhile, then names Anna again.
+  await lex.locator(".repository-menu__trigger").click();
+  await expect(editLabel(lex)).toHaveText("Editing with Anna", { timeout: 20_000 });
   await servers.at(-1)!.close({ code: 4000 });
+  await expect(editLabel(lex)).toHaveText("Reconnecting…");
+  await expect(editDot(lex)).toHaveAttribute("data-dot", "busy");
   await expect(status).toHaveText("Waiting for native-demo-user…");
   await expect(anna.page.locator(".live-guest__canvas")).toHaveAttribute("inert", "");
   await expect(status).toBeHidden({ timeout: 25_000 });
+  await expect(editLabel(lex)).toHaveText("Editing with Anna", { timeout: 25_000 });
+  await lex.keyboard.press("Escape");
   const target = frame.locator(".hero h1");
   await clickOnText(target);
   await expect(target).toHaveAttribute("contenteditable", /.+/);

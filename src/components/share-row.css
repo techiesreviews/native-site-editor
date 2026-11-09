@@ -1,0 +1,217 @@
+/* The sharing rows in the project menu (ticket 58; mock-up 16, variant B; src/components/share-row.ts): Preview link
+   and Edit together, set apart from Site settings by a thin line. Each is one row as Connect to MCP is
+   (src/components/agent-menu.css): a leading dot, the only status, then the label. While a link is on, a copy icon
+   fades in over the row's end with the page-structure row actions' slide and fade (src/components/row-action-overlay.css);
+   no room is kept for it on a mouse. */
+.share-rows {
+  display: grid;
+  gap: 2px;
+  margin-block-start: 4px;
+  padding-block-start: 4px;
+  border-block-start: 1px solid var(--line);
+}
+.share-rows[hidden],
+.share-row [hidden] {
+  display: none;
+}
+.share-row {
+  /* The row's own tint (hover, focus) over the menu's surface: the fade ends on their mix, hiding the label under it. */
+  --share-row-tint: transparent;
+  display: grid;
+  border-radius: var(--radius);
+}
+.share-row > * {
+  grid-area: 1 / 1;
+}
+.share-row__main {
+  min-block-size: max(var(--size-control), var(--size-tap));
+}
+/* A row, not a link: no underline when pressed or hovered (src/style.css .text-button). */
+.share-row > .share-row__main:is(:hover, :active) {
+  text-decoration: none;
+}
+.share-row__main::before {
+  content: "";
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.5;
+}
+.share-row[data-dot="wait"] .share-row__main::before {
+  background: var(--color-warning);
+  opacity: 1;
+}
+.share-row[data-dot="on"] .share-row__main::before {
+  background: var(--color-success);
+  opacity: 1;
+}
+.share-row[data-dot="bad"] .share-row__main::before {
+  background: var(--danger);
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .share-row:is([data-dot="wait"], [data-dot="busy"]) .share-row__main::before {
+    animation: share-row-pulse 1.4s ease-in-out infinite;
+  }
+}
+@keyframes share-row-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.share-row__main[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: default;
+}
+.share-row[data-dot="busy"] .share-row__main[aria-disabled="true"] {
+  cursor: progress;
+}
+.share-row__main:active:not([aria-disabled="true"]) {
+  background: color-mix(in oklch, var(--hover), var(--text) 8%);
+}
+.share-row__label {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.share-row__end {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+.share-row__end .person-chip {
+  box-shadow: 0 0 0 2px var(--panel-surface);
+}
+.share-row:has(> .share-row__main:focus-visible) {
+  --share-row-tint: var(--hover);
+}
+.share-row__action {
+  place-self: stretch end;
+  display: flex;
+  align-items: center;
+  padding-inline: 20px 4px;
+  border-radius: inherit;
+  background:
+    linear-gradient(to right, transparent, var(--share-row-tint) 20px),
+    linear-gradient(to right, transparent, var(--panel-surface) 20px);
+  opacity: 0;
+  pointer-events: none;
+}
+.share-row__copy {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 28px;
+  block-size: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.share-row__copy.is-done {
+  color: var(--success-fg);
+}
+.share-row__copy:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+.share-row__copy:active {
+  background: color-mix(in oklch, var(--hover), var(--text) 8%);
+}
+/* Shown on keyboard focus anywhere in the row, and while it says it copied (or that the browser refused the copy). */
+.share-row:is(:focus-within, .is-done) > .share-row__action {
+  opacity: 1;
+}
+.share-row:is(:focus-within, .is-done) > .share-row__action > .share-row__copy {
+  pointer-events: auto;
+}
+@media (hover: hover) and (pointer: fine) {
+  .share-row:hover {
+    --share-row-tint: var(--hover);
+  }
+  /* The row keeps its hover while the pointer is on the copy icon over it. */
+  .share-row:hover > .share-row__main:not([aria-disabled="true"]) {
+    background: var(--hover);
+  }
+  .share-row:hover > .share-row__main[aria-disabled="true"] {
+    background: transparent;
+  }
+  .share-row:hover > .share-row__action {
+    opacity: 1;
+  }
+  .share-row:hover > .share-row__action > .share-row__copy {
+    pointer-events: auto;
+  }
+  .share-row__copy:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+}
+/* No hover to reveal it: the icon always shows, and the label stops short of it. */
+@media (hover: none), (pointer: coarse) {
+  .share-row > .share-row__action {
+    padding-inline: 0;
+    background: none;
+    opacity: 1;
+  }
+  .share-row > .share-row__action > .share-row__copy {
+    inline-size: 36px;
+    block-size: 100%;
+    pointer-events: auto;
+  }
+  .share-row:has(> .share-row__action:not([hidden])) > .share-row__main {
+    padding-inline-end: 36px;
+  }
+}
+@media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
+  .share-row__action {
+    transition: opacity 140ms ease-out;
+  }
+  .share-row__copy {
+    transform: translateX(40%);
+    transition: transform 140ms ease-out;
+  }
+  .share-row:is(:hover, :focus-within, .is-done) .share-row__copy {
+    transform: none;
+  }
+  /* Keyboard access is immediate. */
+  .share-row:focus-within > .share-row__action,
+  .share-row:focus-within .share-row__copy {
+    transition: none;
+  }
+}
+
+/* The project tile's dot while a link is on (src/components/share-row.ts `markTile`): at the tile's lower corner, apart
+   from the counts on its upper one. */
+.repository-menu__trigger[data-shared]::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 30px;
+  inset-inline-start: 34px;
+  inline-size: 10px;
+  block-size: 10px;
+  box-sizing: border-box;
+  border: 2px solid var(--surface-toolbar);
+  border-radius: 50%;
+  background: var(--muted);
+  pointer-events: none;
+}
+.repository-menu__trigger[data-shared="wait"]::after {
+  background: var(--color-warning);
+}
+.repository-menu__trigger[data-shared="on"]::after {
+  background: var(--color-success);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .repository-menu__trigger:is([data-shared="wait"], [data-shared="busy"])::after {
+    animation: share-row-pulse 1.4s ease-in-out infinite;
+  }
+}
+.share-row__people {
+  display: flex;
+}

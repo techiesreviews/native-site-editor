@@ -1,125 +1,78 @@
-// Share preview's items in the project menu (slice 35; mock-up 15), loaded after the editor's first paint
+// Preview link in the project menu (slice 35, ticket 58; mock-up 16, variant B), loaded after the editor's first paint
 // (src/preview-share.ts) and drawn when the menu first opens (src/components/repository-menu.ts).
-import "./preview-menu.css";
-import eye from "@phosphor-icons/core/regular/eye.svg?raw";
-import { setIcon, sizedSvg, svgElement } from "../icons";
-import { node } from "../ui/dom";
-import { COPIED_MS, type PreviewMenuPort } from "./repository-menu";
+import type { PreviewState } from "../preview-control";
+import { markTile, shareRow, type RowDot, type RowView } from "./share-row";
+
+/** The preview control the row drives (src/preview-control.ts `createPreviewControl`). */
+export interface PreviewControlPort {
+  state(): PreviewState;
+  /** Whether a site is shown to share (or a link is on): the row is pressable only then. */
+  available(): boolean;
+  watch(listener: (state: PreviewState) => void): () => void;
+  /** Makes a link (or keeps the one on) and resolves its address; throws with the refusal's `status`. */
+  start(): Promise<string | undefined>;
+  /** Turns the link off; throws when the editor could not. */
+  stop(): Promise<void>;
+}
+
+/** The dot of a link that is on: grey while it reconnects or stops, green while someone watches, else orange. */
+function onDot(state: Extract<PreviewState, { on: true }>): RowDot {
+  return state.stopping || state.reconnecting ? "busy" : state.watching ? "on" : "wait";
+}
 
 /**
- * Share preview (slice 35; mock-up 15): "Share preview" makes a link and copies it; while it is on, the link with Copy
- * (which says "Copied" on itself for a moment), when it ends, and "Turn preview off". A refusal says so on the item for a
- * moment. Shown only when the editor has a preview Worker and a site is shown.
+ * Preview link (ticket 58): one row, as Connect to MCP. Pressed with no link, it makes one and copies it ("Link copied");
+ * then it waits for a customer ("Waiting for customer"), or counts them ("1 watching"). Pressed while on, it turns the
+ * link off. A copy icon over the row's end copies the link again. Dimmed while no site is shown.
  */
-export function previewItems(port: Omit<PreviewMenuPort, "draw">, actionClass: string, root: HTMLElement) {
-  const iconOf = (name: "eye" | "stop") => {
-    const mark = node("span", "repository-menu__share-icon");
-    mark.setAttribute("aria-hidden", "true");
-    if (name === "eye") mark.append(svgElement(sizedSvg(eye, 16)));
-    else setIcon(mark, name, 16);
-    return mark;
-  };
-  const share = node("button", `${actionClass} repository-menu__preview-item`);
-  share.type = "button";
-  share.dataset.keepOpen = "";
-  const shareLabel = node("span", "repository-menu__preview-label");
-  shareLabel.setAttribute("aria-live", "polite");
-  share.append(iconOf("eye"), shareLabel);
-  // The link while it is on: its heading, the address with Copy, and when it ends.
-  const box = node("div", "repository-menu__preview-link");
-  const heading = node("span", "repository-menu__preview-heading");
-  heading.id = "repository-menu-preview-heading";
-  heading.append(iconOf("eye"), node("span", "", "Preview link"));
-  const row = node("div", "repository-menu__preview-row");
-  const field = node("input", "repository-menu__preview-field");
-  field.readOnly = true;
-  field.setAttribute("aria-labelledby", heading.id);
-  field.addEventListener("focus", () => field.select());
-  const copyButton = node("button", "button secondary repository-menu__preview-copy");
-  copyButton.type = "button";
-  copyButton.dataset.keepOpen = "";
-  const copyMark = node("span", "repository-menu__share-icon");
-  copyMark.setAttribute("aria-hidden", "true");
-  const copyLabel = node("span", "", "Copy");
-  copyLabel.setAttribute("aria-live", "polite");
-  copyButton.append(copyMark, copyLabel);
-  row.append(field, copyButton);
-  const ends = node("small", "repository-menu__preview-ends");
-  box.append(heading, row, ends);
-  const off = node("button", `${actionClass} repository-menu__preview-item`);
-  off.type = "button";
-  off.dataset.keepOpen = "";
-  const offLabel = node("span", "repository-menu__preview-label");
-  offLabel.setAttribute("aria-live", "polite");
-  off.append(iconOf("stop"), offLabel);
-  root.append(share, box, off);
-
-  let copied = false;
-  // A refusal said on the item for a moment.
-  let refused: string | undefined, offRefused: string | undefined;
-  // Each label's own return to its usual words, so one never cancels another's.
-  const timers: Record<"copied" | "refused" | "offRefused", ReturnType<typeof setTimeout> | undefined> = { copied: undefined, refused: undefined, offRefused: undefined };
+export function previewItems(port: PreviewControlPort, actionClass: string, root: HTMLElement) {
+  root.classList.add("share-rows");
+  root.dataset.share = "preview";
+  root.hidden = false;
+  // A failed make or turn-off, said on the row until the next press or the link changes.
+  let failed: string | undefined;
+  let wasOn = port.state().on;
   let destroyed = false;
-  const draw = () => {
+  const view = (): RowView => {
     const state = port.state();
-    root.hidden = !port.available();
-    share.hidden = state.on;
-    box.hidden = off.hidden = !state.on;
-    const word = refused ?? (!state.on && state.starting ? "Making a link…" : "Share preview");
-    if (shareLabel.textContent !== word) shareLabel.textContent = word;
-    // Not `disabled`: a focused button that is disabled drops the keyboard's focus out of the menu.
-    share.setAttribute("aria-disabled", String(!state.on && Boolean(state.starting)));
-    const copyWord = copied ? "Copied" : "Copy";
-    if (copyLabel.textContent !== copyWord) copyLabel.textContent = copyWord;
-    copyButton.classList.toggle("is-done", copied);
-    copyMark.hidden = !copied;
-    if (copied && !copyMark.firstChild) setIcon(copyMark, "check", 16);
-    if (!state.on) return;
-    field.value = state.link;
-    ends.textContent = `Works while your editor is open · ends ${new Date(state.ends).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`;
-    offLabel.textContent = offRefused ?? (state.stopping ? "Turning off…" : "Turn preview off");
-    off.setAttribute("aria-disabled", String(Boolean(state.stopping)));
+    if (!state.on) {
+      if (!port.available()) return { label: "Preview link", dot: "idle", disabled: true };
+      if (state.starting) return { label: "Making a link…", dot: "busy", disabled: true };
+      return failed ? { label: failed, dot: "bad" } : { label: "Preview link", dot: "idle" };
+    }
+    const link = state.link;
+    if (state.stopping) return { label: "Stopping…", dot: "busy", disabled: true, link };
+    if (failed) return { label: failed, dot: "bad", link };
+    if (state.reconnecting) return { label: "Reconnecting…", dot: "busy", link };
+    if (state.watching) return { label: `${state.watching} watching`, dot: "on", link };
+    return { label: "Waiting for customer", dot: "wait", link };
   };
-  const later = (which: keyof typeof timers, then: () => void) => {
-    clearTimeout(timers[which]);
-    timers[which] = setTimeout(() => { timers[which] = undefined; if (!destroyed) then(); }, COPIED_MS);
-  };
-  const copy = async (link: string) => {
-    try { await navigator.clipboard.writeText(link); copied = true; }
-    catch { copied = false; }
-    if (destroyed) return;
-    draw();
-    // A copy the browser refused: the address is selected in its field, to copy by hand.
-    if (!copied) { clearTimeout(timers.copied); field.focus(); return; }
-    later("copied", () => { copied = false; draw(); });
-  };
-  share.addEventListener("click", () => {
-    const state = port.state();
-    if (state.on || state.starting) return;
-    port.start().then((link) => {
-      if (!link || destroyed) return;
-      // The new link's Copy takes the focus from Share preview, which is gone.
-      if (share.matches(":focus-within") || document.activeElement === share || document.activeElement === document.body) copyButton.focus();
-      return copy(link);
-    }, (error: unknown) => {
+  const row = shareRow("Preview link", actionClass, view, () => {
+    failed = undefined;
+    if (port.state().on) {
+      port.stop().catch(() => { if (destroyed) return; failed = "Couldn't stop · try again"; row.draw(); });
+      return;
+    }
+    port.start().then((link) => { if (link && !destroyed) return row.copy(link); }, (error: unknown) => {
       if (destroyed) return;
-      refused = (error as { status?: unknown } | null)?.status === 401 ? "Sign in to share" : "Couldn't share preview";
-      draw();
-      later("refused", () => { refused = undefined; draw(); });
+      failed = (error as { status?: unknown } | null)?.status === 401 ? "Sign in to share" : "Couldn't make a link · try again";
+      row.draw();
     });
   });
-  copyButton.addEventListener("click", () => { const state = port.state(); if (state.on) void copy(state.link); });
-  off.addEventListener("click", () => {
-    const state = port.state();
-    if (!state.on || state.stopping) return;
-    port.stop().then(() => { if (!destroyed && !port.state().on) share.focus(); }, () => {
-      if (destroyed) return;
-      offRefused = "Couldn't turn off";
-      draw();
-      later("offRefused", () => { offRefused = undefined; draw(); });
-    });
+  root.replaceChildren(row.root);
+  const unwatch = port.watch((state) => {
+    if (state.on !== wasOn) failed = undefined;
+    wasOn = state.on;
+    row.draw();
   });
-  const unwatch = port.watch((state) => { if (!state.on) copied = false; draw(); });
-  draw();
-  return { refresh: draw, destroy() { destroyed = true; unwatch(); for (const timer of Object.values(timers)) clearTimeout(timer); } };
+  return { refresh: row.draw, destroy() { destroyed = true; unwatch(); row.destroy(); } };
+}
+
+/** The project tile's dot follows the preview link, menu open or not (the control serves a kept link by itself).
+ * Returns the way to mark the tile again (a new tile). */
+export function previewTile(port: Pick<PreviewControlPort, "state" | "watch">, tile: () => HTMLElement | undefined) {
+  const mark = () => { const state = port.state(); markTile(tile(), "preview", state.on ? onDot(state) : undefined); };
+  port.watch(mark);
+  mark();
+  return mark;
 }

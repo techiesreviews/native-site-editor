@@ -2,7 +2,7 @@
 // one place, so src/main.ts wires them with one line. Only what the project menu needs before it opens stays in the
 // editor's boot; their control and menu items load on the menu's first open (src/shares-later.ts).
 import type { NativePreview } from "./components/native-preview";
-import type { ShareMenuPort } from "./components/repository-menu";
+import type { SharesMenuPort } from "./components/repository-menu";
 import { createPreviewShare } from "./preview-share";
 import type { SiteFiles } from "./site-download";
 import type { SessionStamp, WorkspaceScope } from "./workspace-session";
@@ -32,10 +32,15 @@ export function createWorkspaceShares(editor: Parameters<typeof shareWorkspace>[
 }) {
   const shown = shareWorkspace(editor);
   let control: ReturnType<typeof import("./shares-later").createShareControl> | undefined;
-  const share: ShareMenuPort & { check(): void } = {
-    available: () => control ? control.available() : shown.workspace() !== undefined,
-    draw: (actionClass) => import("./shares-later").then(({ createShareControl, shareItems }) =>
-      shareItems(control ??= createShareControl({ preview: editor.preview, ...shown }), actionClass)),
+  // The project tile, and the way to mark it once the control has loaded.
+  let tile: HTMLElement | undefined, mark: (() => void) | undefined;
+  const share: SharesMenuPort & { check(): void } = {
+    offered: () => true,
+    draw: (actionClass, root) => import("./shares-later").then(({ createShareControl, shareItems, editTile }) => {
+      if (!control) { control = createShareControl({ preview: editor.preview, ...shown }); mark = editTile(control, () => tile); }
+      return shareItems(control, actionClass, root);
+    }),
+    tile(trigger) { tile = trigger; mark?.(); },
     /** After a load: a session of another project or branch than the one shown ends (none before the menu opened). */
     check: () => control?.check(),
   };

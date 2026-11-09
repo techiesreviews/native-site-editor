@@ -43,6 +43,10 @@ export interface ServePorts {
   start(): string;
   /** The room ended by itself: refused (its HTTP status: 410 turned off or ended, 403 someone else's), or closed. */
   closed(why?: number): void;
+  /** How many visitors are on the link now (each join and leave, and on each reconnect). */
+  visitors?(count: number): void;
+  /** This tab's room socket dropped (`true`) and reconnects, or is back (`false`). */
+  dropped?(down: boolean): void;
   /** Seams for tests. */
   open?: typeof openLiveRoom;
   every?: (run: () => void, ms: number) => () => void;
@@ -183,7 +187,10 @@ export async function servePreview(ports: ServePorts) {
       visitors = [...members.values()].filter((access) => access === "guest").length;
       // Nobody in: the next visitor starts afresh.
       if (!visitors) answered.clear();
+      if (!closed) ports.visitors?.(visitors);
     },
+    onDropped: () => ports.dropped?.(true),
+    onKey: () => { if (!closed) ports.dropped?.(false); },
     onClosed: (why) => { end(); ports.closed(why); },
   });
   // Back once this tab is in the room (or after 10 s): a link handed out now is running when it is opened.

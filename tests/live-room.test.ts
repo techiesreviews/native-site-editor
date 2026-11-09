@@ -183,6 +183,42 @@ test("two participants exchange encrypted messages; the relay sees only cipherte
   });
 });
 
+test("a dropped socket says so (onDropped) before the peers empty, and onKey says it is back; a room that ends says neither", async () => {
+  const time = fakeClock();
+  const h = relayHarness();
+  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+  const said: string[] = [];
+  let server!: ReturnType<typeof h.pair>["server"];
+  const lex = openLiveRoom({
+    address: "/api/live/share?session=abc", key, clock: time.clock,
+    connect: async () => { const made = h.pair("editor", room); server = made.server; return made.client; },
+    onMessage: () => undefined,
+    onPeers: () => said.push("peers"),
+    onKey: () => said.push("key"),
+    onDropped: () => said.push("dropped"),
+  });
+  await lex.ready();
+  const guestSaid: string[] = [];
+  const anna = openLiveRoom({
+    address: "/api/live/guest?session=abc", key, clock: time.clock,
+    connect: async () => h.pair("guest", room).client,
+    onMessage: () => undefined, onDropped: () => guestSaid.push("dropped"), onClosed: () => guestSaid.push("closed"),
+  });
+  await anna.ready();
+  said.length = 0;
+  h.relay.leave(server);
+  server.close(1006);
+  await settle();
+  assert.deepEqual(said.slice(0, 2), ["dropped", "peers"], "dropped is said before the peers empty");
+  await time.advance(1_000);
+  await until(() => said.includes("key"), "back in the room");
+  assert.equal(said.filter((word) => word === "dropped").length, 1);
+  lex.close();
+  await settle();
+  assert.deepEqual(guestSaid, ["closed"], "the session's end is not a drop");
+  anna.close();
+});
+
 test("a third participant gets the key from a member; a reconnect alone keeps its key and hands it on", async () => {
   await capturingRoomKeys(async keys => {
     const time = fakeClock();

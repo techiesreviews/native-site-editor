@@ -12,8 +12,9 @@
 
 import type { SiteFiles } from "./site-download";
 
-/** What the menu shows: no link (or one being made), or the link, when it ends and whether it is being turned off. */
-export type PreviewState = { on: false; starting?: true } | { on: true; link: string; ends: number; stopping?: true };
+/** What the menu shows: no link (or one being made), or the link, when it ends, how many visitors are on it, whether
+ * this tab's room is reconnecting and whether it is being turned off. */
+export type PreviewState = { on: false; starting?: true } | { on: true; link: string; ends: number; watching: number; reconnecting?: true; stopping?: true };
 /** A link as this browser keeps it. `host`: this tab's proof (never in the link). */
 interface KeptLink { token: string; host: string; key: string; ends: number; link: string }
 /** The links this browser serves, by sign-in, repository and branch. */
@@ -105,6 +106,12 @@ export function createPreviewControl(ports: PreviewSharePorts) {
         key, start: () => ports.start(),
         // Only the site this link is for: while another shows (before the next sync), nothing is answered.
         files: async () => { const at = where(); return at && idOf(at) === id ? ports.files() : undefined; },
+        // Who watches, and the room dropping and coming back, for the link shown while this serving is the current one.
+        visitors: (count) => { if (mine === run && shown === id && state.on && state.watching !== count) set({ ...state, watching: count }); },
+        dropped: (down) => {
+          if (mine !== run || shown !== id || !state.on || Boolean(state.reconnecting) === down) return;
+          set({ ...state, reconnecting: down ? true : undefined });
+        },
         closed: (why) => {
           if (mine !== run) return;
           serving = undefined;
@@ -125,7 +132,7 @@ export function createPreviewControl(ports: PreviewSharePorts) {
     stopServing();
     shown = id;
     const link = id ? kept(id) : undefined;
-    if (at && id && link) { held.set(id, link); set({ on: true, link: link.link, ends: link.ends }); void startServing(id, at.repo, link); }
+    if (at && id && link) { held.set(id, link); set({ on: true, link: link.link, ends: link.ends, watching: 0 }); void startServing(id, at.repo, link); }
     else set({ on: false });
   };
 
@@ -156,7 +163,7 @@ export function createPreviewControl(ports: PreviewSharePorts) {
         await startServing(id, at.repo, link);
         // Another project opened meanwhile: its own state stands (the link is kept for when this one shows again).
         if (shown !== id) return undefined;
-        set({ on: true, link: link.link, ends: link.ends });
+        set({ on: true, link: link.link, ends: link.ends, watching: 0 });
         return link.link;
       } catch (error) {
         if (mine === run) set({ on: false });

@@ -17,7 +17,7 @@ import { mountDropdown } from "./components/dropdown";
 import { createNativePreview, type NativePreview, type NativePreviewHandlers, type NativeStructureItem } from "./components/native-preview";
 import { createPageStructure, type PageStructureHandlers } from "./components/page-structure";
 import { dismissRefusalNote, refuse } from "./components/refusal-note";
-import { createRepositoryMenu, type PreviewMenuPort, type ShareMenuPort } from "./components/repository-menu";
+import { createRepositoryMenu, type SharesMenuPort } from "./components/repository-menu";
 import { createRowMenu } from "./components/row-menu";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { mountSiteActions } from "./components/site-actions";
@@ -155,10 +155,10 @@ export interface WorkspaceMountPorts {
   account: WorkspaceAccountPorts;
   repositoryIndex: Pick<RepositoryIndex, "clear">;
   cleanSources: Pick<CleanSourceCache, "clear">;
-  /** Share to edit in the project menu (slice 30, src/live-session.ts). */
-  share?: ShareMenuPort;
-  /** Share preview in the project menu (slice 35, src/preview-share.ts); told after each paint, so the site shown serves its link. */
-  preview?: Pick<PreviewMenuPort, "available" | "draw"> & { painted(): void };
+  /** Edit together in the project menu (slice 30, ticket 58; src/workspace-shares.ts). */
+  share?: SharesMenuPort;
+  /** Preview link in the project menu (slice 35, ticket 58; src/preview-share.ts); told after each paint, so the site shown serves its link. */
+  preview?: SharesMenuPort & { painted(): void };
   /** Host state, read (and written) at call time. */
   readonly info: SessionInfo;
   repositories: Repository[];

@@ -3,7 +3,8 @@ import { openEditor } from "../support/scenarios";
 import { clickOnText } from "./click-text";
 import { editorMounted } from "./drafts";
 
-// Share preview (slice 35; CONTEXT.md "Preview link"): Lex shares a preview from the project menu and a customer opens
+// Preview link (slice 35, ticket 58; CONTEXT.md "Preview link"): Lex shares a preview from the project menu's Preview
+// link row (one row, as Connect to MCP: its dot and label are the state, and the row is the only control) and a customer opens
 // the link in another browser, on the preview Worker's own address (worker/preview-host.ts; `localhost` here, the
 // editor on 127.0.0.1). The real site shows there, its own scripts running, and Lex's typing arrives as he types.
 // Closing his editor shows "Not running"; opening it again brings the site back; turning the preview off refuses the
@@ -12,6 +13,18 @@ const pageErrors: string[] = [];
 const heading = "A native browser preview";
 // The frame on show (a page drawn again loads behind it first).
 const previewHeading = (page: Page) => page.frameLocator(".preview-visit__frame:not(.is-loading)").locator(".hero h1");
+// The project menu's Preview link row: the row (pressed to make a link or turn it off), its label and its copy icon.
+const previewRow = (page: Page) => page.locator('[data-share="preview"] .share-row__main');
+const previewLabel = (page: Page) => page.locator('[data-share="preview"] .share-row__label');
+const previewCopy = (page: Page) => page.locator('[data-share="preview"]').getByRole("button", { name: "Copy link" });
+/** Opens the project menu and makes a link: the row says it copied it, then waits for a customer. Returns the link. */
+async function makeLink(page: Page) {
+  await page.locator(".repository-menu__trigger").click();
+  await page.getByRole("button", { name: "Preview link", exact: true }).click();
+  await expect(previewLabel(page)).toHaveText("Link copied");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toMatch(/^http:\/\/localhost:\d+\/s\/[\w-]+\/#k=[\w-]{43}$/);
+  return page.evaluate(() => navigator.clipboard.readText());
+}
 
 test("a visitor sees Lex's edits live; closing his editor shows not running; turning it off refuses the link", async ({ page: lex, browser, baseURL, context }) => {
   test.setTimeout(180_000);
@@ -28,17 +41,15 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   const lexHeading = lex.frameLocator(".native-preview-frame").locator(".hero h1");
   await expect(lexHeading).toHaveText(heading);
 
-  // Share preview: the link is copied, and the menu shows it, when it ends and Turn preview off.
-  await lex.locator(".repository-menu__trigger").click();
-  await lex.getByRole("button", { name: "Share preview", exact: true }).click();
-  const copy = lex.locator(".repository-menu__preview-copy");
-  await expect(copy).toHaveText("Copied");
-  await expect.poll(() => lex.evaluate(() => navigator.clipboard.readText())).toMatch(/^http:\/\/localhost:\d+\/s\/native-demo-[a-f\d]{72}\/#k=[\w-]{43}$/);
-  const link = await lex.evaluate(() => navigator.clipboard.readText());
-  await expect(lex.getByRole("textbox", { name: "Preview link" })).toHaveValue(link);
-  await expect(lex.locator(".repository-menu__preview-ends")).toHaveText(/^Works while your editor is open · ends /);
-  await expect(copy).toHaveText("Copy", { timeout: 5_000 });
-  await expect(lex.getByRole("button", { name: "Turn preview off", exact: true })).toBeVisible();
+  // Preview link: pressed, the row makes the link and copies it ("Link copied"), then waits for a customer. No link
+  // field, Copy or Turn off button, and no explainer.
+  const link = await makeLink(lex);
+  expect(link).toMatch(/^http:\/\/localhost:\d+\/s\/native-demo-[a-f\d]{72}\/#k=[\w-]{43}$/);
+  await expect(previewLabel(lex)).toHaveText("Waiting for customer", { timeout: 5_000 });
+  await expect(lex.locator('[data-share="preview"] .share-row')).toHaveAttribute("data-dot", "wait");
+  await expect(lex.locator("#repository-actions").getByRole("textbox")).toHaveCount(0);
+  await expect(lex.getByRole("button", { name: /Turn preview off|Copy$/ })).toHaveCount(0);
+  await expect(lex.locator(".repository-menu__trigger")).toHaveAttribute("data-shared", "wait");
   await lex.keyboard.press("Escape");
 
   // A customer opens it in another browser: the real site, told to search engines to stay out.
@@ -58,6 +69,18 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   expect(await site.evaluate(async () => (await fetch("/components/components.js")).text())).toContain("component loader");
   expect(await site.evaluate(async () => (await fetch("/no-such-file.txt")).status)).toBe(404);
   expect((await customer.request.get(new URL("/robots.txt", link).href)).headers()["x-robots-tag"]).toContain("noindex");
+
+  // Lex's row counts the customer, its dot and the tile's green; the copy icon copies the link again.
+  await lex.locator(".repository-menu__trigger").click();
+  await expect(previewLabel(lex)).toHaveText("1 watching", { timeout: 20_000 });
+  await expect(lex.locator('[data-share="preview"] .share-row')).toHaveAttribute("data-dot", "on");
+  await expect(lex.locator(".repository-menu__trigger")).toHaveAttribute("data-shared", "on");
+  await lex.evaluate(() => navigator.clipboard.writeText(""));
+  await previewRow(lex).hover();
+  await previewCopy(lex).click();
+  await expect(previewLabel(lex)).toHaveText("Link copied");
+  await expect.poll(() => lex.evaluate(() => navigator.clipboard.readText())).toBe(link);
+  await lex.keyboard.press("Escape");
 
   // Lex types in his heading: the customer sees each change arrive.
   await clickOnText(lexHeading);
@@ -91,10 +114,12 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   // (The preview Worker answers "not running" from memory for up to 20 s, and the page looks again ever more rarely.)
   await expect(previewHeading(visitor)).toHaveText(`${heading} live`, { timeout: 60_000 });
 
-  // He turns it off: the customer's page says so, and the link refuses from then on.
+  // He presses the row: the link is off, the customer's page says so, and the link refuses from then on.
   await back.locator(".repository-menu__trigger").click();
-  await back.getByRole("button", { name: "Turn preview off", exact: true }).click();
-  await expect(back.getByRole("button", { name: "Share preview", exact: true })).toBeVisible();
+  await expect(previewLabel(back)).toHaveText("1 watching", { timeout: 20_000 });
+  await previewRow(back).click();
+  await expect(back.getByRole("button", { name: "Preview link", exact: true })).toBeVisible();
+  await expect(back.locator(".repository-menu__trigger")).not.toHaveAttribute("data-shared");
   await expect(visitor.getByRole("heading", { name: "This preview link is turned off." })).toBeVisible({ timeout: 20_000 });
   const later = await customer.newPage();
   await later.goto(link);
@@ -106,7 +131,7 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   expect(pageErrors).toEqual([]);
 });
 
-test("on a phone, Share preview, the link's field, Copy and Turn preview off are full tap targets", async ({ browser, baseURL }) => {
+test("on a phone, the Preview link row and its copy icon are full tap targets, and the icon always shows", async ({ browser, baseURL }) => {
   test.setTimeout(120_000);
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, reducedMotion: "reduce" });
   await phone.grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -116,14 +141,15 @@ test("on a phone, Share preview, the link's field, Copy and Turn preview off are
   await editorMounted(page);
   const height = async (target: ReturnType<Page["locator"]>) => (await target.boundingBox())?.height ?? 0;
   await page.locator(".repository-menu__trigger").tap();
-  const share = page.getByRole("button", { name: "Share preview", exact: true });
+  const share = page.getByRole("button", { name: "Preview link", exact: true });
   await expect(share).toBeVisible({ timeout: 15_000 });
   expect(await height(share)).toBeGreaterThanOrEqual(44);
   await share.tap();
-  await expect(page.getByRole("button", { name: "Turn preview off", exact: true })).toBeVisible();
-  for (const target of [page.getByRole("textbox", { name: "Preview link" }), page.locator(".repository-menu__preview-copy"), page.getByRole("button", { name: "Turn preview off", exact: true })])
-    expect(await height(target)).toBeGreaterThanOrEqual(44);
-  await page.getByRole("button", { name: "Turn preview off", exact: true }).tap();
+  await expect(previewLabel(page)).toHaveText("Waiting for customer", { timeout: 10_000 });
+  await expect(previewCopy(page)).toBeVisible();
+  expect(await height(previewCopy(page))).toBeGreaterThanOrEqual(44);
+  expect((await previewCopy(page).boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(36);
+  await previewRow(page).tap();
   await expect(share).toBeVisible();
   await phone.close();
   expect(pageErrors).toEqual([]);
@@ -139,10 +165,7 @@ test("a site in a sub-folder previews with its folder's stylesheet, picture and 
   await lex.goto(`${baseURL}/#repo=532&branch=main&file=index.html`);
   await expect(lex.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await expect(lex.frameLocator(".native-preview-frame").locator("h1")).toHaveText("Found where they are");
-  await lex.locator(".repository-menu__trigger").click();
-  await lex.getByRole("button", { name: "Share preview", exact: true }).click();
-  await expect(lex.getByRole("button", { name: "Turn preview off", exact: true })).toBeVisible();
-  const link = await lex.getByRole("textbox", { name: "Preview link" }).inputValue();
+  const link = await makeLink(lex);
   await lex.keyboard.press("Escape");
 
   const customer = await browser.newContext();
@@ -164,8 +187,8 @@ test("a site in a sub-folder previews with its folder's stylesheet, picture and 
   expect(new URL(frame().url()).pathname).toMatch(/\/site\/my-site\/notes\/first-note\/$/);
 
   await lex.locator(".repository-menu__trigger").click();
-  await lex.getByRole("button", { name: "Turn preview off", exact: true }).click();
-  await expect(lex.getByRole("button", { name: "Share preview", exact: true })).toBeVisible();
+  await previewRow(lex).click();
+  await expect(lex.getByRole("button", { name: "Preview link", exact: true })).toBeVisible();
   await customer.close();
   expect(pageErrors).toEqual([]);
 });
@@ -175,16 +198,13 @@ test("the visitor's page carries on after Lex's connection drops and comes back"
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   lex.on("pageerror", (error) => pageErrors.push(error.message));
   // Lex's preview socket, through a route whose page side the test cuts, as when a network drops. (The copy needs the
-  // clipboard permission to say Copied.)
+  // clipboard permission to say Link copied.)
   const pages: { close(options?: { code?: number }): Promise<void> }[] = [];
   await lex.routeWebSocket(/\/api\/live\/preview/, (socket) => { socket.connectToServer(); pages.push(socket); });
   await openEditor(lex, baseURL);
   await editorMounted(lex);
   const lexHeading = lex.frameLocator(".native-preview-frame").locator(".hero h1");
-  await lex.locator(".repository-menu__trigger").click();
-  await lex.getByRole("button", { name: "Share preview", exact: true }).click();
-  await expect(lex.locator(".repository-menu__preview-copy")).toHaveText("Copied");
-  const link = await lex.getByRole("textbox", { name: "Preview link" }).inputValue();
+  const link = await makeLink(lex);
   await lex.keyboard.press("Escape");
 
   const customer = await browser.newContext({ viewport: { width: 1280, height: 900 } });
@@ -194,10 +214,16 @@ test("the visitor's page carries on after Lex's connection drops and comes back"
   await expect(previewHeading(visitor)).toHaveText(heading, { timeout: 20_000 });
 
   // His tab joins again, and the room hears the old socket leave and the new one join: the visitor takes the site
-  // from the new one and follows its edits.
+  // from the new one and follows its edits. Meanwhile his row says it is reconnecting, then counts the visitor again.
+  await lex.locator(".repository-menu__trigger").click();
+  await expect(previewLabel(lex)).toHaveText("1 watching", { timeout: 20_000 });
   const sockets = pages.length;
   await pages.at(-1)!.close({ code: 4000 });
+  await expect(previewLabel(lex)).toHaveText("Reconnecting…");
+  await expect(lex.locator('[data-share="preview"] .share-row')).toHaveAttribute("data-dot", "busy");
   await expect.poll(() => pages.length, { timeout: 20_000 }).toBeGreaterThan(sockets);
+  await expect(previewLabel(lex)).toHaveText("1 watching", { timeout: 20_000 });
+  await lex.keyboard.press("Escape");
   await clickOnText(lexHeading);
   await expect(lexHeading).toHaveAttribute("contenteditable", /.+/);
   await lex.keyboard.press("End");
@@ -209,7 +235,7 @@ test("the visitor's page carries on after Lex's connection drops and comes back"
   expect(pageErrors).toEqual([]);
 });
 
-test("in a 390 px window with a mouse (as the screenshots take it), Share preview is a full tap target too", async ({ browser, baseURL }) => {
+test("in a 390 px window with a mouse (as the screenshots take it), Preview link is a full tap target too", async ({ browser, baseURL }) => {
   test.setTimeout(120_000);
   const narrow = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: "reduce" });
   const page = await narrow.newPage();
@@ -217,7 +243,7 @@ test("in a 390 px window with a mouse (as the screenshots take it), Share previe
   await openEditor(page, baseURL);
   await editorMounted(page);
   await page.locator(".repository-menu__trigger").click();
-  const share = page.getByRole("button", { name: "Share preview", exact: true });
+  const share = page.getByRole("button", { name: "Preview link", exact: true });
   await expect(share).toBeVisible({ timeout: 15_000 });
   expect((await share.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
   await narrow.close();
@@ -230,10 +256,7 @@ test("a second visitor opening the link leaves the first one's page as it is", a
   lex.on("pageerror", (error) => pageErrors.push(error.message));
   await openEditor(lex, baseURL);
   await editorMounted(lex);
-  await lex.locator(".repository-menu__trigger").click();
-  await lex.getByRole("button", { name: "Share preview", exact: true }).click();
-  await expect(lex.locator(".repository-menu__preview-copy")).toHaveText("Copied");
-  const link = await lex.getByRole("textbox", { name: "Preview link" }).inputValue();
+  const link = await makeLink(lex);
   await lex.keyboard.press("Escape");
 
   const customers = await browser.newContext({ viewport: { width: 1280, height: 900 } });
@@ -264,10 +287,7 @@ test("a file the visitor's page asks for while its connection drops is asked for
   lex.on("pageerror", (error) => pageErrors.push(error.message));
   await openEditor(lex, baseURL);
   await editorMounted(lex);
-  await lex.locator(".repository-menu__trigger").click();
-  await lex.getByRole("button", { name: "Share preview", exact: true }).click();
-  await expect(lex.locator(".repository-menu__preview-copy")).toHaveText("Copied");
-  const link = await lex.getByRole("textbox", { name: "Preview link" }).inputValue();
+  const link = await makeLink(lex);
   await lex.keyboard.press("Escape");
 
   const customer = await browser.newContext({ viewport: { width: 1280, height: 900 } });
