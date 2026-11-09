@@ -95,6 +95,7 @@ Feature list: new entry F-repo-12 "A push on GitHub shows within seconds" in `do
 
 - UX (looks off): F-component-08 Detach works and the section stays selected, but a dark "Section hero detached" pop-up rises at the bottom after the action and sits over the code pane in every frame (S4, HS1, U5) (.scratch/ux/fleet-lead/20261109-100337-FUDSee/add-panel-F-component-08-390-light-detach-strip.webp)
 - UX (looks off): F-publish-01 the Publish button in the top bar carries a count badge ("Publish 1"), which S2 forbids on buttons; the menu itself is not shown (.scratch/ux/fleet-lead/20261109-100337-FUDSee/add-panel-F-component-08-390-light-detach-strip.webp)
+- UX (looks off): F-repo-09 the project menu says "Link copied" on the item itself while the menu stays open, with Stop sharing below it and no toast, but at 390 px the share rows are only 32 px tall, below the 44 px needed for touch (.scratch/ux/fleet-lead/20261109-120814-YXTb38/editor-F-repo-09-390-light-copied-strip.webp)
 
 ### Follow-ups
 
@@ -104,4 +105,3 @@ Feature list: new entry F-repo-12 "A push on GitHub shows within seconds" in `do
 - Previous findings (P3): R3-1 still open: there is no commit after round 3, and R3-1 is not in the author's declined list, so it got no answer. `src/controllers/save-publish-controller.ts:164` is unchanged: `if (refreshing) { const after = refreshing; void after.then(() => takeUpPush(scope, commit)); return; }`. The race case raised in round 3 is still in the code as it was.
 - Validation gaps (gap): R3-3: add to `tests/save-publish-controller.test.ts`: `beginSave()`, `pushed(scope1, other)`, `published(proof(), scope1, result(saved), [])`, `settle()`, then `f.answers[0].reject("down")` and `flush()`. Assert that `ports.fail` was called once, and that exactly one `head` call follows, with `commit: other`. Then resolve that call with `{ commit: other }` and assert exactly one load.
 - Validation gaps (gap): R3-4: add a test to `tests/native-save/native-push-notice.spec.ts`. Start a save in the page and hold the fake server's snapshot answer back. During the save, send a signed push from a different commit with `fake-webhook.ts`. Then let the save answer, then let the snapshot answer. Assert that the page loads the branch exactly once, ending on the other commit, and that no `head` request reaches the fake server before the post-save snapshot request finishes.
-
