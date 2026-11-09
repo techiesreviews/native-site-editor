@@ -1,14 +1,11 @@
 /* The sharing rows in the project menu (ticket 58; mock-up 16, variant B; src/components/share-row.ts): Preview link
-   and Edit together, set apart from Site settings by a thin line. Each is one row as Connect to MCP is
+   and Edit together, under the menu's "Share" title (src/components/repository-menu.css). Each is one row as Connect to MCP is
    (src/components/agent-menu.css): a leading dot, the only status, then the label. While a link is on, a copy icon
    fades in over the row's end with the page-structure row actions' slide and fade (src/components/row-action-overlay.css);
    no room is kept for it on a mouse. */
 .share-rows {
   display: grid;
   gap: 2px;
-  margin-block-start: 4px;
-  padding-block-start: 4px;
-  border-block-start: 1px solid var(--line);
 }
 .share-rows[hidden],
 .share-row [hidden] {

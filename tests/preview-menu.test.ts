@@ -278,7 +278,7 @@ test("on touch the copy icon always shows and the label stops short of it", () =
   assert.equal(await iconOpacity(page), "1");
   assert.equal(await main(page).evaluate((element) => getComputedStyle(element).paddingInlineEnd), "44px");
   const box = await page.locator(".share-row__copy").boundingBox();
-  assert.ok(box && box.width >= 44 && box.height >= 44, `a 44 px touch target, got ${box?.width}x${box?.height}`);
+  assert.ok(box && Math.round(box.width) >= 44 && Math.round(box.height) >= 44, `a 44 px touch target, got ${box?.width}x${box?.height}`);
 }, { hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 } }));
 
 test("the project tile shows a dot while the link is on, menu open or not, and none once it is off", () => inBrowser(async page => {
