@@ -184,7 +184,7 @@ test("the visitor's page carries on after Lex's connection drops and comes back"
   await lex.locator(".repository-menu__trigger").click();
   await lex.getByRole("button", { name: "Share preview", exact: true }).click();
   await expect(lex.locator(".repository-menu__preview-copy")).toHaveText("Copied");
-  const link = await lex.evaluate(() => navigator.clipboard.readText());
+  const link = await lex.getByRole("textbox", { name: "Preview link" }).inputValue();
   await lex.keyboard.press("Escape");
 
   const customer = await browser.newContext({ viewport: { width: 1280, height: 900 } });
@@ -205,5 +205,20 @@ test("the visitor's page carries on after Lex's connection drops and comes back"
   await lex.keyboard.press("Escape");
 
   await customer.close();
+  expect(pageErrors).toEqual([]);
+});
+
+test("in a 390 px window with a mouse (as the screenshots take it), Share preview is a full tap target too", async ({ browser, baseURL }) => {
+  test.setTimeout(120_000);
+  const narrow = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: "reduce" });
+  const page = await narrow.newPage();
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await openEditor(page, baseURL);
+  await editorMounted(page);
+  await page.locator(".repository-menu__trigger").click();
+  const share = page.getByRole("button", { name: "Share preview", exact: true });
+  await expect(share).toBeVisible({ timeout: 15_000 });
+  expect((await share.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await narrow.close();
   expect(pageErrors).toEqual([]);
 });

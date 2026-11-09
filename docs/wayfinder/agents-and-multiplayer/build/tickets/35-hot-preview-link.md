@@ -132,4 +132,5 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation gaps (gap): R5-4: a test in `tests/preview-share.test.ts` that resolves the `serve` seam by hand. It should check that the state stays "starting" until then, that a workspace switch is respected, and that a refusal is not overwritten.
 - Validation gaps (gap): R5-7: asserts in `tests/preview-host.test.ts` that `bytes=0-` on a 0-byte file and `bytes=-0` on a 100-byte file both answer 416 with `Content-Range: bytes */<size>`.
 - Validation gaps (gap): R5-8: a spec where two editor tabs serve one link and the tab the visitor took the site from is closed.
+- UX round 6: Share preview measures at least 44 px tall in a 390 px window with a mouse too, as the screenshots take it (`tests/native-save/native-preview-link.spec.ts`).
 
