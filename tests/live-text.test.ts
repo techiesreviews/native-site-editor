@@ -408,29 +408,71 @@ test("a save landing at any await of loading the copy starts it from the saved t
   });
 });
 
-// Ticket am-33: an outside commit folded into the shared file moves its base to another blob, and the copy starts again
-// from GitHub's new text. Every tab folds the same commit into the same draft, so they meet again in the new copy.
-test("an outside change folded in on every tab starts the copy again from GitHub's new text, and the tabs end identical", async () => {
+// Ticket am-33: an outside commit folded into the shared file enters the copy as one more participant: every tab
+// writes the same update (its client id fixed by the file's move to the new blob), so the room keeps it once and stays
+// the same room.
+const pushed = "d".repeat(40);
+const foldInto = (who: ReturnType<typeof tab>, theirs: string) =>
+  foldFile(who.store, scope, path, undefined, theirs, pushed, () => draftHistory(), "Sam · GitHub");
+
+test("an outside change folded in on every tab enters the shared copy once, and the room goes on", async () => {
   const room = fakeRoom();
   const draft = base.replace("Fresh bread", "Fresh bread in Leiden");
   const anna = tab(room, draft), lex = tab(room, draft);
   await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
   await quiet();
-  // The same blob again (a lost save's answer recognized, Keep my draft over the same version): the share goes on.
+  // The same blob again (a lost save's answer recognized, Keep my draft over the same version): nothing changes.
   anna.store.acceptBase(scope, path, { text: base, baseSha: sha });
-  assert.deepEqual([anna.sockets.length, lex.sockets.length], [1, 1], "no restart for the same blob");
-  const pushed = "d".repeat(40), theirs = base.replace("seven", "eight"), from = room.log.length;
-  for (const who of [anna, lex]) foldFile(who.store, scope, path, undefined, theirs, pushed, () => draftHistory(), "Sam · GitHub");
-  const merged = draft.replace("seven", "eight");
-  assert.deepEqual([anna.text, lex.text], [merged, merged]);
-  assert.deepEqual([anna.sockets.length, lex.sockets.length], [2, 2], "each tab's share started again");
-  await until(() => anna.yjsLoads === 2 && lex.yjsLoads === 2, "the new copies load");
+  const theirs = base.replace("seven", "eight"), merged = draft.replace("seven", "eight");
+  for (const who of [anna, lex]) foldInto(who, theirs);
+  await until(() => anna.text === merged && lex.text === merged, "both merged");
   await quiet();
-  assert.deepEqual([...new Set(tagsSent(room, [...anna.sockets, ...lex.sockets], from))], [pushed], "only the new blob's tag is heard");
-  // The new copy works: a change after it reaches the other tab, and nothing doubled.
+  assert.deepEqual([anna.sockets.length, lex.sockets.length, anna.yjsLoads, lex.yjsLoads], [1, 1, 1, 1], "the same room and copy");
+  assert.deepEqual([anna.store.get(scope, path)!.baseSha, lex.store.get(scope, path)!.baseSha], [pushed, pushed]);
+  assert.equal(times(anna.text, "eight"), 1);
+  // The copy goes on: a change after it reaches the other tab, and nothing doubled.
   anna.type(0, "<!-- after -->");
   await until(() => lex.text.startsWith("<!-- after -->"), "Anna's next change on Lex's tab");
   assert.equal(lex.text, `<!-- after -->${merged}`);
+  assert.equal(anna.text, lex.text);
+  anna.stop(); lex.stop();
+});
+
+test("a tab that types before it folds the change in, after another tab did, keeps one heading and the same text", async () => {
+  const room = fakeRoom();
+  const draft = base.replace("Fresh bread", "Fresh bread in Leiden");
+  const anna = tab(room, draft), lex = tab(room, draft);
+  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
+  await quiet();
+  const theirs = base.replace("seven", "eight");
+  foldInto(anna, theirs);
+  lex.type(lex.text.indexOf("</h1>"), " X");
+  await quiet();
+  foldInto(lex, theirs);
+  await until(() => anna.text === lex.text && anna.text.includes(" X") && anna.text.includes("eight"), "both tabs the same");
+  await quiet();
+  assert.equal(anna.text, draft.replace("Leiden", "Leiden X").replace("seven", "eight"));
+  assert.equal(times(anna.text, "in Leiden"), 1, "Lex's heading once");
+  assert.equal(times(anna.text, "eight"), 1);
+  anna.stop(); lex.stop();
+});
+
+test("a clash folded in on both tabs shows Sam's words on both; one Undo on one tab brings Lex's back on both, once", async () => {
+  const room = fakeRoom();
+  const draft = base.replace("Fresh bread", "Fresh rolls");
+  const anna = tab(room, draft), lex = tab(room, draft);
+  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
+  await quiet();
+  const theirs = base.replace("Fresh bread", "Fresh loaves").replace("seven", "eight");
+  for (const who of [anna, lex]) foldInto(who, theirs);
+  await until(() => anna.text === theirs && lex.text === theirs, "Sam's words on both");
+  await quiet();
+  assert.equal(lex.store.peek(draftHistory(), "undo"), "Sam's change");
+  assert.equal((await lex.store.undo(draftHistory())).ok, true);
+  const back = draft.replace("seven", "eight");
+  await until(() => anna.text === back && lex.text === back, "Lex's words back on both");
+  await quiet();
+  assert.equal(times(anna.text, "rolls"), 1);
   assert.equal(anna.text, lex.text);
   anna.stop(); lex.stop();
 });

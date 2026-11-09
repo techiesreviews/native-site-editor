@@ -141,7 +141,9 @@ export function createSavePublishController(ports: SavePublishPorts) {
       if (token !== headCheck || !live(was) || commit === seen.commit) return;
       seeHead(commit);
       // Changed pages and stylesheets fold in where they are; anything else loads the branch again.
-      if (!await ports.foldIn?.(commit, () => token === headCheck && live(was))?.catch(() => false)) await ports.reload();
+      // A failed fold loads the branch again only while this check's load still holds.
+      const holds = () => token === headCheck && live(was);
+      if (!await ports.foldIn?.(commit, holds)?.catch(() => !holds())) await ports.reload();
     } catch {
       // Checked again on the next focus.
     }

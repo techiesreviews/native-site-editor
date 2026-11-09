@@ -7,8 +7,10 @@
 // - A file with a draft is merged three ways against the text that draft started from (`mergeText`). Lines changed on
 //   one side only merge by themselves. The outside change enters as someone else's (origin "shared", its history
 //   moved past it as src/shared-undo.ts does for a live room), so Lex's own Undo still takes back only his words.
-// - A true clash (the same lines changed on both sides) shows the latest version: GitHub's words replace Lex's there
-//   as one Undo step of their own, so one Undo brings Lex's words back. No question and no message.
+// - A true clash (the same words changed on both sides: lines both changed are merged again by word) shows the latest
+//   version: GitHub's words replace Lex's there as one Undo step of their own, so one Undo brings Lex's words back. No
+//   question and no message.
+// - In a live room (src/live-text.ts `takeOutside`) the change enters the shared copy as one more participant.
 // - The page shown gets a brief outline and a chip naming the commit's author where its text changed
 //   (src/agent-presence.ts `visit`); another changed page gets the dot on its row.
 //
@@ -16,10 +18,11 @@
 // file, a tree GitHub did not list whole) loads the branch again, as before. Loaded on first use, never at boot.
 
 import type { DraftScope, SavedDraft } from "./drafts";
-import type { DraftTextStore } from "./draft-store";
+import type { DraftTextStore, TextChange } from "./draft-store";
 import type { PagesAndFilesPorts } from "./pages-and-files-host";
 import type { CommitFiles, PublishResult, Snapshot, TreeEntry } from "../shared/types";
 import { rebaseHistory } from "./shared-undo";
+import { takeOutside } from "./live-text";
 import { isNativeTextFile } from "./site-text-index";
 import { readSiteTexts } from "./native-boot";
 import { readSource } from "./page-builder/source-tree";
@@ -28,6 +31,13 @@ import { MAX_BATCH_FILES } from "../shared/types";
 /** How long the author's outline and chip stay on the page; the frame's fade (src/components/native-preview-runtime.js,
  * drawPresence) lasts as long: change both together. */
 export const OUTSIDE_MARK_MS = 2_600;
+/** How long the fold waits, from its start, for the commit's author before naming the chip "Someone". */
+export const AUTHOR_WAIT_MS = 1_500;
+/** `promise`'s answer, or undefined once `ms` passed first. */
+function within<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  let stop = () => {};
+  return Promise.race([promise, new Promise<undefined>(resolve => { const timer = setTimeout(resolve, ms); stop = () => clearTimeout(timer); })]).finally(() => stop());
+}
 /** Past this many line differences one side is taken as a single change (Myers' trace grows with its square). */
 const MAX_LINE_EDITS = 2_000;
 
@@ -93,25 +103,30 @@ function rewrite(base: readonly string[], start: number, end: number, side: read
 }
 
 export interface Merged {
-  /** The latest version: both sides' changes, GitHub's (`theirs`) where both changed the same lines. */
+  /** The latest version: both sides' changes, GitHub's (`theirs`) where both changed the same words. */
   text: string;
-  /** The same with Lex's (`ours`) words where both changed the same lines: what one Undo brings back. */
+  /** The same with Lex's (`ours`) words where both changed the same words: what one Undo brings back. */
   mine: string;
   clashed: boolean;
 }
 
+/** Words, runs of white space and single other characters: where a clashing line is merged again. */
+const splitWords = (text: string) => text.match(/[\p{L}\p{N}_]+|\s+|[^\p{L}\p{N}_\s]/gu) ?? [];
+
+/** Each distinct part as a number, so the diff compares numbers. */
+function numbered(...sides: string[][]) {
+  const ids = new Map<string, number>();
+  return sides.map(parts => parts.map(part => { let found = ids.get(part); if (found === undefined) ids.set(part, found = ids.size); return found; }));
+}
+
 /**
- * The three-way merge, by line: `ours` (the draft) and `theirs` (GitHub's new text), both changed from `base` (the
- * text the draft started from). Changes to different lines merge by themselves; lines both sides changed alike are
- * taken once; lines both changed differently clash.
+ * The three-way merge of `base` split in parts (lines, or words): `ours` and `theirs` both changed from it. Changes to
+ * different parts merge by themselves; parts both sides changed alike are taken once. Parts both changed differently
+ * are merged again by `deeper` (lines by word) when given, else they clash.
  */
-export function mergeText(base: string, ours: string, theirs: string): Merged {
-  if (ours === base || ours === theirs) return { text: theirs, mine: theirs, clashed: false };
-  if (theirs === base) return { text: ours, mine: ours, clashed: false };
-  const ids = new Map<string, number>(), id = (line: string) => { let found = ids.get(line); if (found === undefined) ids.set(line, found = ids.size); return found; };
-  const [baseLines, ourLines, theirLines] = [base, ours, theirs].map(splitLines);
-  const [b, o, t] = [baseLines, ourLines, theirLines].map(lines => lines.map(id));
-  const tagged = [...hunks(b, o, ourLines).map(hunk => ({ hunk, mine: true })), ...hunks(b, t, theirLines).map(hunk => ({ hunk, mine: false }))]
+function mergeParts(baseParts: string[], ourParts: string[], theirParts: string[], deeper?: (base: string, ours: string, theirs: string) => Merged): Merged {
+  const [b, o, t] = numbered(baseParts, ourParts, theirParts);
+  const tagged = [...hunks(b, o, ourParts).map(hunk => ({ hunk, mine: true })), ...hunks(b, t, theirParts).map(hunk => ({ hunk, mine: false }))]
     .sort((x, y) => x.hunk.start - y.hunk.start || x.hunk.end - y.hunk.end);
   let text = "", mine = "", at = 0, clashed = false;
   for (let index = 0; index < tagged.length;) {
@@ -123,16 +138,42 @@ export function mergeText(base: string, ours: string, theirs: string): Merged {
       group.push(next);
       start = Math.min(start, next.hunk.start); end = Math.max(end, next.hunk.end);
     }
-    const kept = baseLines.slice(at, start).join("");
+    const kept = baseParts.slice(at, start).join("");
     text += kept; mine += kept; at = end;
     const ourSide = group.filter(item => item.mine).map(item => item.hunk), theirSide = group.filter(item => !item.mine).map(item => item.hunk);
-    const theirText = rewrite(baseLines, start, end, theirSide), ourText = rewrite(baseLines, start, end, ourSide);
-    if (ourSide.length && theirSide.length && ourText !== theirText) clashed = true;
+    const theirText = rewrite(baseParts, start, end, theirSide), ourText = rewrite(baseParts, start, end, ourSide);
+    if (ourSide.length && theirSide.length && ourText !== theirText) {
+      // Both changed these lines: merged again by word, a clash only where the same words changed.
+      const inner = deeper?.(baseParts.slice(start, end).join(""), ourText, theirText);
+      if (inner) { text += inner.text; mine += inner.mine; clashed ||= inner.clashed; continue; }
+      clashed = true;
+    }
     text += theirSide.length ? theirText : ourText;
     mine += ourSide.length ? ourText : theirText;
   }
-  const rest = baseLines.slice(at).join("");
+  const rest = baseParts.slice(at).join("");
   return { text: text + rest, mine: mine + rest, clashed };
+}
+
+/**
+ * The three-way merge: `ours` (the draft) and `theirs` (GitHub's new text), both changed from `base` (the text the
+ * draft started from). By line first; lines both sides changed are merged again by word, so only the same words
+ * changed on both sides clash (ticket 09: "the same words changed on both sides").
+ */
+export function mergeText(base: string, ours: string, theirs: string): Merged {
+  if (ours === base || ours === theirs) return { text: theirs, mine: theirs, clashed: false };
+  if (theirs === base) return { text: ours, mine: ours, clashed: false };
+  return mergeParts(splitLines(base), splitLines(ours), splitLines(theirs),
+    (b, o, t) => mergeParts(splitWords(b), splitWords(o), splitWords(t)));
+}
+
+/** The changes, word by word, that turn `from` into `to`, in `from`'s offsets (in order, none overlapping). */
+export function wordChanges(from: string, to: string): TextChange[] {
+  if (from === to) return [];
+  const fromParts = splitWords(from), toParts = splitWords(to), [f, t] = numbered(fromParts, toParts);
+  const offsets = [0];
+  for (const part of fromParts) offsets.push(offsets.at(-1)! + part.length);
+  return hunks(f, t, toParts).map(hunk => ({ start: offsets[hunk.start], end: offsets[hunk.end], text: hunk.lines.join("") }));
 }
 
 /** The element of page `after` holding where it differs from `before`, as an outline path; none for the page as a whole. */
@@ -178,10 +219,12 @@ const unmergeable = (draft: SavedDraft) => Boolean(draft.deleted || draft.movedT
 export async function foldIn(ports: Ports, host: OutsideHost, commit: string, live: () => boolean): Promise<boolean> {
   const was = ports.appStore.snapshot.value, scope = ports.draftScope(), repo = ports.appStore.repository.value;
   if (!was?.tree || !scope || !repo || was.empty) return false;
-  const [next, made] = await Promise.all([
-    ports.api<Snapshot>("snapshot", { repo: repo.full_name, branch: scope.branch, commit }),
-    ports.api<CommitFiles>("commit", { repo: repo.full_name, sha: commit }).catch(() => undefined),
-  ]);
+  // Two reads. The snapshot decides whether the fold goes on: it answers (the fold goes on), fails (the caller loads the
+  // branch again, while its load holds) or never answers (src/read-retry.ts gives up after its retries: a failure).
+  // The commit read only names the chip: it answers (its author), fails, or answers too late or never ("Someone",
+  // once AUTHOR_WAIT_MS passed since the fold began). It never holds the fold back past that.
+  const author = within(ports.api<CommitFiles>("commit", { repo: repo.full_name, sha: commit }).then(made => made.author, () => undefined), AUTHOR_WAIT_MS);
+  const next = await ports.api<Snapshot>("snapshot", { repo: repo.full_name, branch: scope.branch, commit });
   if (!live()) return true;
   if (!next.tree || next.empty) return false;
   const blobs = (tree: TreeEntry[]) => new Map(tree.filter(entry => entry.type === "blob").map(entry => [entry.path, entry]));
@@ -199,13 +242,16 @@ export async function foldIn(ports: Ports, host: OutsideHost, commit: string, li
   if (changed.length > MAX_BATCH_FILES || changed.some(entry => !isNativeTextFile(entry.path)) || !mergeable(draftsNow())) return false;
   const { texts, unreadable } = await readSiteTexts(changed, shas => ports.readFiles(repo.full_name, shas));
   if (!live()) return true;
-  const drafts = draftsNow();
-  if (unreadable.length || texts.size !== changed.length || !mergeable(drafts)) return false;
+  if (unreadable.length || texts.size !== changed.length || !mergeable(draftsNow())) return false;
 
-  const author = `${made?.author || "Someone"} · GitHub`, store = ports.editorModule.sourceStore();
+  const name = await author;
+  if (!live()) return true;
+  const drafted = draftsNow();
+  if (!mergeable(drafted)) return false;
+  const label = `${name || "Someone"} · GitHub`, store = ports.editorModule.sourceStore();
   const shown = new Map(changed.flatMap(entry => { const text = ports.runtime.source(entry.path); return text === undefined ? [] : [[entry.path, text] as const]; }));
   for (const entry of changed)
-    foldFile(store, scope, entry.path, drafts.get(entry.path), texts.get(entry.path)!, entry.sha, () => ports.nativeHistorySession(scope, entry.path), author, ports.editorModule.sourceMoved);
+    foldFile(store, scope, entry.path, drafted.get(entry.path), texts.get(entry.path)!, entry.sha, () => ports.nativeHistorySession(scope, entry.path), label, ports.editorModule.sourceMoved);
   // GitHub's texts are the base now: the preview, and every file without a draft, show them.
   const result: PublishResult = { commit: next.commit, branch: scope.branch, url: "", files: changed.map(({ path, sha }) => ({ path, sha })), unchanged: false };
   ports.runtime.adoptSaved(scope, result, changed.map(entry => ({ ...scope, version: 1, path: entry.path, baseSha: entry.sha, original: texts.get(entry.path)!, content: texts.get(entry.path)!, updatedAt: 0 })));
@@ -215,13 +261,15 @@ export async function foldIn(ports: Ports, host: OutsideHost, commit: string, li
   // Each page's text before and after, read once every layer (pane, draft, base) has taken the change.
   const pages = new Set(Object.values(ports.runtime.site?.routes ?? {}));
   for (const [path, was] of shown) if (pages.has(path))
-    ports.agentPresence.visit(path, changedNode(was, ports.runtime.source(path) ?? texts.get(path)!), author, OUTSIDE_MARK_MS);
+    ports.agentPresence.visit(path, changedNode(was, ports.runtime.source(path) ?? texts.get(path)!), label, OUTSIDE_MARK_MS);
   return true;
 }
 
 /**
- * One changed file: `theirs` at blob `sha` is GitHub's text now. Its draft (`record`, or the editor store's open
- * entry) is merged against its starting text; without either only the base moves (the caller's `adoptSaved`).
+ * One changed file: `theirs` at blob `sha` is GitHub's text now. Its draft (`record`, or the editor
+ * store's open entry) is merged against its starting text; without either only the base moves (the caller's
+ * `adoptSaved`). In a live room the change enters the shared copy as one more participant (src/live-text.ts
+ * `takeOutside`), and the draft follows the copy.
  */
 export function foldFile(store: DraftTextStore, scope: DraftScope, path: string, record: SavedDraft | undefined, theirs: string, sha: string,
   history: () => string, author: string, moved?: (key: string, source: string, sha: string) => void) {
@@ -230,8 +278,11 @@ export function foldFile(store: DraftTextStore, scope: DraftScope, path: string,
   if (!file && record) file = store.open(scope, path, { text: record.original, baseSha: record.baseSha }).file;
   if (!file) return;
   const merged = mergeText(file.base, file.text, theirs);
-  // The non-clashing outside change, as someone else's: Lex's steps over the file move past it.
-  store.edit({ scope, path, text: merged.mine, record: false, origin: "shared", rebase: rebaseHistory });
+  const shared = takeOutside(store, file.key, { base: file.base, sha, changes: wordChanges(file.base, theirs) });
+  // The non-clashing outside change, as someone else's: Lex's steps over the file move past it. In a live room the
+  // copy brought the change already; on a clash the draft takes Lex's words back here (the copy not: the step below
+  // moves the copy from what it holds straight to the latest), so the step's Undo brings back his words alone.
+  if (!shared || merged.clashed) store.edit({ scope, path, text: merged.mine, record: false, origin: "shared", rebase: rebaseHistory });
   store.acceptBase(scope, path, { text: theirs, baseSha: sha });
   // An open code pane compares with GitHub's new text from now on (src/components/source-editor.ts `sourceMoved`).
   moved?.(file.key, theirs, sha);

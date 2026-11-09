@@ -4,10 +4,10 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { openEditor } from "../support/scenarios";
 
 // Outside changes fold in, in a live room (ticket am-33, F-repo-13): two people share the open page with the same
-// unsaved words. Sam's commit to another line folds in on both tabs; each tab's shared copy starts again from GitHub's
-// new text, and both end with the same merged text, nothing doubled. Each browser of the fake GitHub has its own copy
-// of the repository, so Sam's commit is made in both, with the same text (the same blob, so the same new copy); each
-// tab finds it with the focus check. Default fixture group.
+// unsaved words. Sam's commit to another line enters the shared copy as one more participant on both tabs, and both
+// end with the same merged text, nothing doubled. Each browser of the fake GitHub has its own copy of the repository,
+// so Sam's commit is made in both, with the same text: two commits making the same move of the file (the same blob),
+// which the copy takes once. Each tab finds it with the focus check. Default fixture group.
 const file = "index.html";
 const indexSource = readFileSync(resolve("fixtures/native-starter", file), "utf8");
 const filler = "This section adds enough height that the preview scrolls.";

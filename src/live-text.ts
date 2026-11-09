@@ -214,19 +214,46 @@ async function tagOf(baseSha: string | null, base: string) {
 }
 const sameTag = (a: Uint8Array, b: Uint8Array) => a.every((byte, index) => byte === b[index]);
 
-/** `text` written into a fresh copy of `base` under a fixed client id, so every tab writing the same makes the same items. */
-function fixedUpdate(Y: Yjs, client: number, base: Uint8Array | null, edit: TextChange | null) {
+/** `edit` (or `edits`, in order and not overlapping) written into a fresh copy of `base` under a fixed client id, so
+ * every tab writing the same makes the same items. */
+function fixedUpdate(Y: Yjs, client: number, base: Uint8Array | null, edit: TextChange | readonly TextChange[] | null) {
   const doc = new Y.Doc();
   doc.clientID = client;
   if (base) Y.applyUpdate(doc, base);
   const text = doc.getText("source");
-  if (edit) doc.transact(() => {
-    if (edit.end > edit.start) text.delete(edit.start, edit.end - edit.start);
-    if (edit.text) text.insert(edit.start, edit.text);
+  const edits = edit === null ? [] : "start" in edit ? [edit] : [...edit].reverse();
+  if (edits.length) doc.transact(() => {
+    for (const each of edits) {
+      if (each.end > each.start) text.delete(each.start, each.end - each.start);
+      if (each.text) text.insert(each.start, each.text);
+    }
   });
   const update = Y.encodeStateAsUpdate(doc);
   doc.destroy();
   return update;
+}
+/** A Yjs client id fixed by `key` (FNV-1a), for writes every tab makes the same. */
+function fixedClient(key: string) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < key.length; index++) hash = Math.imul(hash ^ key.charCodeAt(index), 0x01000193) >>> 0;
+  return hash || 1;
+}
+
+/**
+ * A commit made outside the editor, for the shared copy of a file (ticket am-33, src/outside-merge.ts): GitHub's text
+ * of the file went from `base` to the blob `sha`, by `changes` (in `base`'s offsets, in order).
+ */
+export interface OutsideChange { base: string; sha: string; changes: readonly TextChange[] }
+/** Each draft store's shared copies that can take an outside change, by draft key. */
+const outsideTakers = new WeakMap<object, Map<string, (change: OutsideChange) => boolean>>();
+/**
+ * Puts `change` into the shared copy of the file `key` of `store` as one more participant, when one is open and caught
+ * up and began from that same text: every tab of the room writes the same update (its client id fixed by the file,
+ * the copy's starting version and the new blob), so the room takes it once, whichever tab folds it in first, and the drafts follow the copy. False when
+ * there is no such copy: the caller merges into the draft itself (and the copy starts again from the new text).
+ */
+export function takeOutside(store: object, key: string, change: OutsideChange) {
+  return outsideTakers.get(store)?.get(key)?.(change) ?? false;
 }
 
 /** A Yjs text event's delta as changes in the text before it. */
@@ -698,8 +725,17 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         if (kind === REPLY && theirs && id === me && !synced) void begin(true);
       } catch { /* A broken update is dropped; the next catch-up brings what it lacked. */ }
     }
+    /** An outside commit (ticket am-33), as one more participant: see `takeOutside`. Its frames carry its own id. */
+    function outside(change: OutsideChange) {
+      if (!synced || starting || discarded || stopped || change.base !== base) return false;
+      // Fixed by the move itself (this copy's starting version to the new blob), not the commit: every tab, and every
+      // commit that makes the same move, writes the very same items.
+      const client = fixedClient(`outside\n${path}\n${tag.join(",")}\n${change.sha}`);
+      Y.applyUpdate(doc, fixedUpdate(Y, client, seed, change.changes), authorOrigin(client, true));
+      return true;
+    }
     return {
-      receive, hello, tellCaret, carets, nameAuthors,
+      receive, hello, tellCaret, carets, nameAuthors, outside,
       /** Alone in the room (first in, or everyone else left before catching this tab up): its own draft starts the copy. */
       startOwn: () => begin(false),
       /** The name-tag Undo: `author`'s latest change that still changes the text (its UPDATE frames, grouped as Yjs groups
@@ -744,7 +780,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     caretsMoved();
     caretWatchers.clear();
   };
-  return { stop, authors, carets };
+  return { stop, authors, carets, outside: (change: OutsideChange) => copy?.outside(change) ?? false };
 }
 
 /** The switch for live sharing: on unless this browser's localStorage holds `native-site-editor:live-sharing` = `off`
@@ -832,14 +868,26 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
         });
       }).catch(() => { share.drawing = false; });
     });
-    share.stop = () => { share.undraw?.(); share.undraw = undefined; shared.stop(); };
+    // An outside commit enters this copy as a participant (am-33): the base it moves to is then this share's own.
+    let takers = outsideTakers.get(ports.store);
+    if (!takers) outsideTakers.set(ports.store, takers = new Map());
+    const take = (change: OutsideChange) => {
+      if (current !== share || !shared.outside(change)) return false;
+      share.baseSha = change.sha;
+      return true;
+    };
+    takers.set(key, take);
+    share.stop = () => {
+      share.undraw?.(); share.undraw = undefined; shared.stop();
+      if (takers.get(key) === take) takers.delete(key);
+    };
     share.authors = shared.authors;
   };
   const stopEffect = effect(() => { void ports.openFile.value; untracked(() => { left = undefined; check(); }); });
   const stopStore = ports.store.subscribe(event => {
     if (event.type !== "file") return;
-    // GitHub's text moved under the shared file (an outside change folded in, ticket am-33): the copy starts again from
-    // it. Every tab of the room folds the same change into the same text, so their drafts meet again in the new copy.
+    // GitHub's text moved under the shared file and the copy could not take it as a participant (`takeOutside`: no copy
+    // caught up yet, or one begun from older text, a save meanwhile): the copy starts again from the new text.
     if (event.change === "base" && current?.key === event.key && current.baseSha !== ports.store.get(event.scope, event.path)?.baseSha) {
       current.stop();
       current = undefined;

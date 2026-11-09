@@ -47,12 +47,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - When the branch head check finds a new commit (the push notice of am-32, the focus check, a refused save), `src/controllers/save-publish-controller.ts` `checkHead` first asks its new `foldIn` port to fold the commit in place. Only when the fold says it cannot, or fails, does the branch load again as before.
 - `src/outside-merge.ts` (loaded on first use from `src/pages-and-files-host.ts`, never at boot) does the fold:
-  - It reads the new commit's snapshot and the commit's author (`/api/commit`, in parallel) and compares the two full trees.
+  - It reads the new commit's snapshot and compares the two full trees. The commit's author (`/api/commit`) is read alongside but only names the chip. A failed read names it "Someone", and so does one still unanswered `AUTHOR_WAIT_MS` (1.5 s) after the fold began; it never holds the fold back past that (the settle matrix is written in `foldIn`).
   - It folds in place only when blobs changed and none were added, removed or changed mode; every changed file is `.html` or `.css`; there are at most 20 (one batch read); and no changed file's draft is a deletion, a move, a new file or bytes. Anything else, or a tree GitHub did not list whole, loads the branch again.
 - For each changed file (`foldFile`):
   - With no draft and no open entry, only the base moves.
-  - Otherwise the editor's draft store entry (opened from its record when only a record exists) is merged three ways by line (`mergeText`, Myers' diff) against the text the draft started from. The non-clashing outside change goes in as someone else's change (origin `shared`, through `rebaseHistory`), so Lex's Undo still takes back only his own words. Then the base becomes GitHub's text and blob (`acceptBase`), and an open code pane compares against the new text from then on (`sourceMoved` in `src/components/source-editor.ts`), so no "GitHub changed since this draft started" bar shows.
-  - On a true clash (the same lines changed on both sides), GitHub's words then replace Lex's as one Undo step of their own, labelled "<author>'s change", in the page's history. One Undo brings Lex's words back and leaves the rest of the commit.
+  - Otherwise the editor's draft store entry (opened from its record when only a record exists) is merged three ways (`mergeText`, Myers' diff): by line, then by word inside lines both sides changed against the text the draft started from. The non-clashing outside change goes in as someone else's change (origin `shared`, through `rebaseHistory`), so Lex's Undo still takes back only his own words. Then the base becomes GitHub's text and blob (`acceptBase`), and an open code pane compares against the new text from then on (`sourceMoved` in `src/components/source-editor.ts`), so no "GitHub changed since this draft started" bar shows.
+  - On a true clash (the same words changed on both sides; different words of one line both stay), GitHub's words then replace Lex's as one Undo step of their own, labelled "<author>'s change", in the page's history. One Undo brings Lex's words back and leaves the rest of the commit.
 - After the files: GitHub's texts become the runtime's base (`adoptSaved`), so the preview updates in place. The snapshot is adopted with its head, and the revision, tree and text index follow (the save's `adopt` and `showSaved`, now named functions in the host). No message, no reload.
 - The author's chip: each changed page gets `agentPresence.visit` (`src/agent-presence.ts`) for 2.6 seconds. The changed element (`changedNode`, the deepest element holding the change) gets an outline and a chip "<author> · GitHub" on the page shown, and a dot on its row elsewhere. It is not an agent: it is never listed, never stopped, and offers no Undo. The frame holds the mark, then fades it out (`fade`, through `src/components/native-preview.ts` and `src/components/preview-protocol.ts` to `src/components/native-preview-runtime.js`). With reduced motion it stays still, then goes.
   - `fade` carries each visit's own number, so a second push to the same page within 2.6 seconds fades in again from the start, rather than staying at the first fade's end.
@@ -61,7 +61,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - The drafts are read again after the files' read. A page deleted or moved meanwhile loads the branch again rather than merging into a deletion.
 - A draft that exists only on record is opened in the editor's store to merge, and stays open there on purpose: its Undo step needs it.
 - `/api/commit` (`worker/history.ts` `commitFiles`) now also returns `author`: the GitHub login, else the commit's author name, at most 60 characters. Without it the chip says "Someone · GitHub".
-- Live room: when the shared file's base moves to another blob (a `base` event), `src/live-text.ts` ends the share and starts it again from the new text. Every tab of the room folds the same commit into the same draft, so their changes meet again in the new copy (same draft, same client id).
+- Live room: the change enters the open shared copy as one more participant (`takeOutside`, `src/live-text.ts`). GitHub's word changes from the copy's starting text go in as one Yjs update, under a client id fixed by the file, the copy's starting version and the new blob. So every tab, and every commit that makes the same move, writes the very same items, and the room keeps them once, whichever tab folds first. A tab that has not folded yet receives the change through the room. The room and its copy go on and the drafts follow the copy.
+  - On a clash the folding tab takes Lex's words back in its draft only, then records "<author>'s change", which moves the copy from what it holds straight to the latest. One Undo on that tab brings Lex's words back on every tab.
+  - Only when no copy is caught up, or the copy began from older text (a save during the share), does the fold merge into the draft itself and the share start again from the new text (a `base` event to another blob).
+- `src/controllers/save-publish-controller.ts`: a fold that fails loads the branch again only while the head check's load still holds.
 - Boot: `kit size` stays at 354 KB of 355 KB (±0 KB against dev).
 
 **Tests.**
@@ -100,14 +103,26 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `tests/history.test.ts`: `commitFiles`'s author: login first, else the commit's name; blank names dropped; cut to 60 characters.
 - `tests/live-text.test.ts`:
   - an `acceptBase` with the same blob does not restart the share;
-  - an outside change folded on two tabs restarts both shares under only the new blob's tag;
-  - both tabs end identical, and a later change reaches the other tab once.
+  - (rewritten in round 2) an outside change folded on two tabs enters the copy once, in the same room;
+  - a tab that types before folding, after the other tab folded, keeps one heading and the same text;
+  - a clash on both tabs shows Sam's words, and one Undo on one tab brings Lex's back on both, once.
 - `tests/agent-presence.test.ts`: a visit shows its author for its hold, is never listed as an agent, a second visit to the page carries a new `fade` number, and a new load drops it.
 - `tests/native-save/native-outside-fold-live.spec.ts` (new): two browsers share the page with the same unsaved heading. Sam's commit to another line folds in on both, both end with the same merged text, and a change after the fold reaches the other tab, nothing doubled.
 - Checks after the fixes:
   - `RESULT: ok doctor 11/11 checks passed; warning: 5 setup pieces missing (run scripts/agents/kit init)`;
   - `RESULT: ok specs 2/2 passed` (`native-outside-fold.spec.ts`, `native-outside-fold-live.spec.ts`);
   - `RESULT: ok shots raw spec`.
+
+**Fix round 2 (review findings).**
+
+- Clashes are by word: `mergeText` merges lines both sides changed again by word (`splitWords`, the same Myers diff), so only the same words changed on both sides clash, and `mine` keeps Sam's changes to the other words of the line.
+- Live room: the outside change enters the existing copy as a participant instead of restarting it (above).
+- The author read no longer holds the fold back (above). A failed fold reloads only while its load holds (above). `OUTSIDE_COLOUR` names the chip's teal.
+- Tests:
+  - `tests/outside-merge.test.ts`: different words of one line both stay, including a page on one long line; in a clash, `mine` keeps Sam's other words; `wordChanges`; a changed mode and more than one batch of files load the branch again; the chip says "Someone" when the commit read fails or never answers, the fold not waiting past `AUTHOR_WAIT_MS`.
+  - `tests/live-text.test.ts`: the three live-room cases above.
+  - `tests/native-save/native-outside-fold.spec.ts`: with reduced motion the chip stays at full opacity through its hold, then goes; the author read failing or never answering still folds in, the chip naming "Someone".
+  - `tests/native-save/native-outside-fold-live.spec.ts`: two browsers whose fake repositories make two commits with the same move take it once.
 
 **UX review (Opus, contact sheet against the UX rulebook and mock-up 15).**
 
