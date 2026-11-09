@@ -2,7 +2,8 @@
 // (worker/preview-host.ts) and its service worker, run here on a fake scope.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { previewContentType, previewSlug, previewTokenEnds, readPreviewPath, resolvePreviewPath } from "../shared/preview-link";
+import { previewSlug, previewTokenEnds, readPreviewPath, resolvePreviewPath } from "../shared/preview-link";
+import { previewContentType } from "../src/preview-serve";
 import { PREVIEW_HEADERS, previewHost } from "../worker/preview-host";
 
 const token = "a".repeat(32) + "6a000000" + "b".repeat(32);
