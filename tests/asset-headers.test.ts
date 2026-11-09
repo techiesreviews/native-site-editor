@@ -8,6 +8,8 @@ test("hashed assets alone receive immutable caching and common security headers"
     const headers = staticAssetHeaders(source, path);
     assert.equal(headers.get("Cache-Control"), "public, max-age=31536000, immutable");
     assert.equal(headers.get("X-Content-Type-Options"), "nosniff");
+    // The preview Worker serves these too, from the same build (slice 35): search engines stay out there as well.
+    assert.equal(headers.get("X-Robots-Tag"), "noindex");
   }
   for (const path of ["/", "/index.html", "/native-static-starter/index.html", "/assets-other/file.js"]) {
     const headers = staticAssetHeaders(source, path);

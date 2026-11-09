@@ -47,7 +47,7 @@ async function blobId(bytes: Uint8Array) {
 }
 
 /** What answering `path` sends, and what it is made from (the file and its blob id), to tell later whether it changed. */
-async function look(site: SiteFiles | undefined, path: string, withBody: boolean): Promise<{ made: string; answer: Omit<Extract<HostMessage, { t: "file" }>, "t" | "version" | "path"> }> {
+async function look(site: SiteFiles | undefined, path: string, withBody: boolean): Promise<{ made: string; answer: Omit<Extract<HostMessage, { t: "file" }>, "t" | "version" | "path" | "to"> }> {
   if (!site) return { made: "closed", answer: { status: 503 } };
   const paths = new Set(site.paths);
   const found = resolvePreviewPath(path, (file) => paths.has(file));
@@ -82,27 +82,35 @@ export async function servePreview(ports: ServePorts) {
   // The version visitors hold: this tab's own id and a count, so a second tab of Lex's never repeats one.
   const me = randomId(4);
   let count = 0, version = `${me}:0`;
-  // Each path answered at this version, and what its answer was made from; and the answers being made, by version and path.
+  // Each path answered at this version, and what its answer was made from; and the answers being made, by version and
+  // path, with the visitors waiting for each.
   const answered = new Map<string, string>();
-  const working = new Set<string>();
+  const working = new Map<string, Set<string>>();
   let visitors = 0, looking = false, closed = false;
 
   const wire = sessionWire<VisitorMessage>(() => room, (message, from) => {
     if (from.access !== "guest" || closed) return;
-    if (message.t === "hi") wire.send({ t: "hello", version, start: ports.start() } satisfies HostMessage);
-    else if (message.t === "get" && typeof message.path === "string" && message.path.length <= 2048) answer(message.path);
+    if (message.t === "hi") wire.send({ t: "hello", host: me, version, start: ports.start() } satisfies HostMessage);
+    // Only asks for this tab (another tab of Lex's may serve the same link), from a visitor that names itself.
+    else if (message.t === "get" && message.host === me && typeof message.me === "string" && /^[a-f\d]{8,32}$/.test(message.me) &&
+      typeof message.path === "string" && message.path.length <= 2048) answer(message.path, message.me);
   }, () => undefined);
 
-  function answer(path: string) {
+  /** Answers `path` for visitor `to`: one answer for every visitor who asks while it is being made, and only for them
+   * (the room forwards every frame to everyone; the others drop it). */
+  function answer(path: string, to: string) {
     const at = version, id = `${at}\0${path}`;
-    if (working.has(id)) return;
-    working.add(id);
+    const waiting = working.get(id);
+    if (waiting) { waiting.add(to); return; }
+    const askers = new Set([to]);
+    working.set(id, askers);
     void (async () => {
       const { made, answer: sent } = await look(await ports.files(), path, true);
       if (closed) return;
       if (at === version) answered.set(path, made);
-      wire.send({ t: "file", version: at, path, ...sent } satisfies HostMessage);
-    })().catch(() => undefined).finally(() => working.delete(id));
+      working.delete(id);
+      wire.send({ t: "file", version: at, path, to: [...askers], ...sent } satisfies HostMessage);
+    })().catch(() => working.delete(id));
   }
   /** Any file answered changed: a new version, and visitors draw again. */
   async function lookAgain() {

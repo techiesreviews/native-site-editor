@@ -57,7 +57,8 @@ export function previewItems(port: PreviewMenuPort, actionClass: string, root: H
   let copied = false;
   // A refusal said on the item for a moment.
   let refused: string | undefined, offRefused: string | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  // Each label's own return to its usual words, so one never cancels another's.
+  const timers: Record<"copied" | "refused" | "offRefused", ReturnType<typeof setTimeout> | undefined> = { copied: undefined, refused: undefined, offRefused: undefined };
   let destroyed = false;
   const draw = () => {
     const state = port.state();
@@ -79,15 +80,18 @@ export function previewItems(port: PreviewMenuPort, actionClass: string, root: H
     offLabel.textContent = offRefused ?? (state.stopping ? "Turning off…" : "Turn preview off");
     off.setAttribute("aria-disabled", String(Boolean(state.stopping)));
   };
-  const later = (then: () => void) => { clearTimeout(timer); timer = setTimeout(() => { if (!destroyed) then(); }, COPIED_MS); };
+  const later = (which: keyof typeof timers, then: () => void) => {
+    clearTimeout(timers[which]);
+    timers[which] = setTimeout(() => { timers[which] = undefined; if (!destroyed) then(); }, COPIED_MS);
+  };
   const copy = async (link: string) => {
     try { await navigator.clipboard.writeText(link); copied = true; }
     catch { copied = false; }
     if (destroyed) return;
     draw();
     // A copy the browser refused: the address is selected in its field, to copy by hand.
-    if (!copied) { clearTimeout(timer); field.focus(); return; }
-    later(() => { copied = false; draw(); });
+    if (!copied) { clearTimeout(timers.copied); field.focus(); return; }
+    later("copied", () => { copied = false; draw(); });
   };
   share.addEventListener("click", () => {
     const state = port.state();
@@ -101,7 +105,7 @@ export function previewItems(port: PreviewMenuPort, actionClass: string, root: H
       if (destroyed) return;
       refused = (error as { status?: unknown } | null)?.status === 401 ? "Sign in to share" : "Couldn't share preview";
       draw();
-      later(() => { refused = undefined; draw(); });
+      later("refused", () => { refused = undefined; draw(); });
     });
   });
   copyButton.addEventListener("click", () => { const state = port.state(); if (state.on) void copy(state.link); });
@@ -112,10 +116,10 @@ export function previewItems(port: PreviewMenuPort, actionClass: string, root: H
       if (destroyed) return;
       offRefused = "Couldn't turn off";
       draw();
-      later(() => { offRefused = undefined; draw(); });
+      later("offRefused", () => { offRefused = undefined; draw(); });
     });
   });
   const unwatch = port.watch((state) => { if (!state.on) copied = false; draw(); });
   draw();
-  return { refresh: draw, destroy() { destroyed = true; unwatch(); clearTimeout(timer); } };
+  return { refresh: draw, destroy() { destroyed = true; unwatch(); for (const timer of Object.values(timers)) clearTimeout(timer); } };
 }

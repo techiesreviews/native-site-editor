@@ -8,7 +8,9 @@
   // To turn preview links on for your editor: deploy this Worker once
   // (`npx wrangler deploy --config wrangler.preview-host.jsonc`), then set the
   // editor's PREVIEW_ORIGIN (wrangler.jsonc) to this Worker's address. Share
-  // preview shows in the project menu only once PREVIEW_ORIGIN is set.
+  // preview shows in the project menu only once PREVIEW_ORIGIN is set. Deploy it again
+  // whenever you update the editor (the weekly update redeploys the editor only), so
+  // both speak the same room messages.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "native-site-editor-previews",
   "main": "worker/preview-host.ts",

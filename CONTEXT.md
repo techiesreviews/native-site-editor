@@ -178,7 +178,7 @@ A live editing session Lex opens from a project with Share live: anyone with its
 _Avoid_: guest account, invite
 
 **Preview link**:
-A link that shows the real site, its own scripts running, to anyone who has it, on a separate preview address (the preview Worker's), never the editor's. It follows Lex's edits as he makes them, unsaved ones included, while his editor is open on the site; while it is closed the link says "Not running". Nothing is stored on the way: his tab answers each file through the link's Live room. Search engines are told to stay out. Made with Share preview in the project menu; it lasts until Turn preview off or 30 days, and only the browser that made it serves it (ticket am-35).
+A link that shows the real site, its own scripts running, to anyone who has it, on a separate preview address (the preview Worker's), never the editor's. It follows Lex's edits as he makes them, unsaved ones included, while his editor is open on the site; while it is closed the link says "Not running". Nothing is stored on the way: his tab answers each file through the link's Live room. Search engines are told to stay out. Made with Share preview in the project menu; it lasts until Turn preview off or 30 days, and only the browser that made it serves it (ticket am-35). Every link has a path on one preview address, so previewed sites share that origin (their cookies, storage and service worker), other people's sites on a shared editor included; accepted while there is no custom domain.
 _Avoid_: snapshot, staging site, share link (a Synced session's link lets people edit)
 
 **Live room**:

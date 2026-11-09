@@ -50,7 +50,7 @@ import { createParkedSteps, parkedTransitions } from "./guarded-edit/parked";
 import { createEditorWorkspace } from "./editor-workspace";
 import { createFinishedElsewhere, openLink } from "./finished-elsewhere";
 import { createAgentPresence } from "./agent-presence";
-import { createShareControl, shareWorkspace } from "./share-control"; import { createPreviewShare } from "./preview-share";
+import { createWorkspaceShares } from "./workspace-shares";
 import { agentStops, STOPPED_AGENTS_KEY } from "./agent-stops";
 import { createWorkspaceSession, draftScopeOf, holdsDraftScope, sameBranch, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { Repository, SessionInfo, TreeEntry } from "../shared/types";
@@ -89,7 +89,7 @@ const agentPresence = createAgentPresence({
 // An agent stopped in another tab of this browser (ticket am-12) goes from this one's views too.
 window.addEventListener("storage", event => { if (event.key === STOPPED_AGENTS_KEY) { agentStops.reread(); agentPresence.stopsChanged(); } });
 function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.loaded(); workingPart.left(); share.check(); preview.sync(); return workspaceSession.begin(); }
-const shared = shareWorkspace({ shown: shownScope, siteOpen: () => Boolean(runtime.site), login: () => info?.user?.login, begin: () => workspaceSession.begin() }), share = createShareControl({ preview: () => nativePreview, ...shared }), preview = createPreviewShare({ workspace: () => shared.workspace(), enabled: () => Boolean(info?.previewLinks), files: () => nativeSiteFiles(), start: () => nativePreview?.shownRoute() ?? "/" }); // Share to edit (slice 30), Share preview (slice 35)
+const { share, preview } = createWorkspaceShares({ shown: shownScope, siteOpen: () => Boolean(runtime.site), login: () => info?.user?.login, begin: () => workspaceSession.begin(), preview: () => nativePreview, previewLinks: () => Boolean(info?.previewLinks), files: () => nativeSiteFiles() }); // Share to edit (slice 30), Share preview (slice 35)
 const cleanSources = new CleanSourceCache(() => info?.user?.login);
 // The open native site's state (src/native-site-runtime.ts); its preview adapter is the site preview below.
 const runtime = createNativeSiteRuntime({
