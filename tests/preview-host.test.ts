@@ -42,17 +42,21 @@ test("paths are answered as a static host would: folders, moves to the slash, .h
   files.add("404.html");
   assert.deepEqual(resolvePreviewPath("/missing/", has), { status: 404, file: "404.html" });
   for (const path of ["about", "/../secret", "/a//b", "/a/./b", "/%2e%2e/x", "/a%5Cb", "/%zz"]) assert.deepEqual(resolvePreviewPath(path, has), { status: 400 }, path);
+  // An encoded slash never makes one part of two folders, which would slip a hidden file past the check.
+  files.add("docs/.env").add("a/.github/x");
+  for (const path of ["/docs%2F.env", "/a%2F.github%2Fx", "/docs%2f.env"]) assert.deepEqual(resolvePreviewPath(path, has), { status: 400 }, path);
+  assert.deepEqual(resolvePreviewPath("/docs/.env", has), { status: 404, file: "404.html" });
 });
 
 /** The preview Worker with fake bindings: the editor's build and Worker, each request they get on record. */
-function host() {
+function host(status = 204) {
   const editor: Request[] = [], assets: string[] = [];
   const env = {
     ASSETS: { fetch: async (request: Request) => {
       assets.push(new URL(request.url).pathname);
       return new Response("<!doctype html><title>Preview</title>", { headers: { "Content-Type": "text/html", "Set-Cookie": "a=b" } });
     } },
-    EDITOR: { fetch: async (request: Request) => { editor.push(request); return new Response(null, { status: 204, headers: { "Set-Cookie": "session=x" } }); } },
+    EDITOR: { fetch: async (request: Request) => { editor.push(request); return new Response(null, { status, headers: { "Set-Cookie": "session=x" } }); } },
   };
   const get = (path: string, init?: RequestInit) => previewHost(new Request(`${origin}${path}`, init), env);
   return { get, editor, assets };
@@ -116,10 +120,10 @@ async function serviceWorker(windows: { url: string; answer?: (path: string) => 
     addEventListener: (type: string, listener: (event: never) => void) => { listeners[type] = listener; },
   };
   new Function("self", source)(scope);
-  const fetchAs = async (url: string, options: { clientId?: string; mode?: string; referrer?: string; method?: string } = {}) => {
+  const fetchAs = async (url: string, options: { clientId?: string; mode?: string; referrer?: string; method?: string; range?: string } = {}) => {
     let answered: Promise<Response> | undefined;
     // The fields of a fetch event's request the worker reads.
-    const request = { url, method: options.method ?? "GET", mode: options.mode ?? "cors", referrer: options.referrer ?? "" };
+    const request = { url, method: options.method ?? "GET", mode: options.mode ?? "cors", referrer: options.referrer ?? "", headers: new Headers(options.range ? { Range: options.range } : {}) };
     listeners.fetch({ request, clientId: options.clientId ?? "", respondWith: (answer: Promise<Response>) => { answered = answer; } } as never);
     return answered;
   };
@@ -164,3 +168,38 @@ test("the service worker turns the page's answers into responses: moves stay in 
   const { fetchAs: alone } = await serviceWorker([]);
   assert.equal((await alone(`${origin}${base}/site/`))?.status, 503);
 });
+
+test("the service worker answers a range of a file with 206, as Safari needs for video and audio", async () => {
+  const page = `${origin}${base}/`;
+  const bytes = Uint8Array.from({ length: 100 }, (_, index) => index);
+  const { fetchAs } = await serviceWorker([{ url: page, answer: () => ({ status: 200, type: "video/mp4", body: bytes.buffer.slice(0) }) }]);
+  const part = await fetchAs(`${origin}${base}/site/clip.mp4`, { range: "bytes=10-19" });
+  assert.deepEqual([part?.status, part?.headers.get("Content-Range"), part?.headers.get("Accept-Ranges")], [206, "bytes 10-19/100", "bytes"]);
+  assert.deepEqual([...new Uint8Array(await part!.arrayBuffer())], [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
+  const tail = await fetchAs(`${origin}${base}/site/clip.mp4`, { range: "bytes=-5" });
+  assert.deepEqual([tail?.status, tail?.headers.get("Content-Range")], [206, "bytes 95-99/100"]);
+  const open = await fetchAs(`${origin}${base}/site/clip.mp4`, { range: "bytes=98-" });
+  assert.equal((await open!.arrayBuffer()).byteLength, 2);
+  assert.equal((await fetchAs(`${origin}${base}/site/clip.mp4`, { range: "bytes=200-" }))?.status, 416);
+  assert.equal((await fetchAs(`${origin}${base}/site/clip.mp4`))?.status, 200);
+});
+
+test("a link not running or over is answered from memory for a while, costing the editor nothing", async () => {
+  for (const status of [409, 410]) {
+    const link = `/s/bakery-${String(status).repeat(24)}`;
+    const { get, editor } = host(status);
+    assert.equal((await get(`${link}/live`)).status, status);
+    assert.equal((await get(`${link}/live`)).status, status);
+    assert.equal((await get(`${link}/live`)).headers.get("X-Robots-Tag"), "noindex, nofollow");
+    assert.equal(editor.length, 1, "one request to the editor in the moment");
+    // A socket still goes through, and a running link is never remembered.
+    await get(`${link}/live`, { headers: { Upgrade: "websocket" } });
+    assert.equal(editor.length, 2);
+  }
+  const running = `/s/bakery-${"e".repeat(72)}`;
+  const { get, editor } = host(204);
+  await get(`${running}/live`);
+  await get(`${running}/live`);
+  assert.equal(editor.length, 2);
+});
+

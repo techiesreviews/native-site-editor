@@ -68,7 +68,8 @@ export function resolvePreviewPath(path: string, has: (file: string) => boolean)
   let parts: string[];
   try { parts = path.slice(1).split("/").map((part) => decodeURIComponent(part)); } catch { return { status: 400 }; }
   const last = parts.length - 1;
-  if (parts.some((part, index) => (part === "" && index !== last) || part === "." || part === ".." || /[\\\x00-\x1f\x7f]/.test(part)))
+  // An encoded slash (`%2F`) would make one part of two folders and slip past the hidden-file check: refused.
+  if (parts.some((part, index) => (part === "" && index !== last) || part === "." || part === ".." || /[/\\\x00-\x1f\x7f]/.test(part)))
     return { status: 400 };
   const file = parts.join("/");
   if (parts.some((part) => part.startsWith(".") && part !== ".well-known")) return notFound(has);
@@ -83,14 +84,17 @@ export function resolvePreviewPath(path: string, has: (file: string) => boolean)
 }
 const notFound = (has: (file: string) => boolean): PreviewAnswer => has("404.html") ? { status: 404, file: "404.html" } : { status: 404 };
 
-/** A visitor to Lex's tab: "I am here" (answered with `hello`), or the file at `path` (the site's URL path). */
-export type VisitorMessage = { t: "hi" } | { t: "get"; path: string };
 /**
- * Lex's tab to visitors. `hello`: the page to start on and the site's version, for a visitor that said `hi`. `file`: the answer
- * for `path` at `version`, its bytes in base64. `changed`: some file answered before changed (a new version): visitors
- * forget what they hold and draw the page again.
+ * A visitor to Lex's tab: "I am here" (answered with `hello`), or the file at `path` (the site's URL path), asked of
+ * one serving tab (`host`, from its hello) for this visitor (`me`, a random id), so the answer is for it alone.
+ */
+export type VisitorMessage = { t: "hi" } | { t: "get"; path: string; host: string; me: string };
+/**
+ * Lex's tab to visitors. `hello`: this serving tab's id, the page to start on and the site's version, for a visitor that
+ * said `hi`. `file`: the answer for `path` at `version`, its bytes in base64, for the visitors who asked (`to`); others
+ * drop it. `changed`: some file answered before changed (a new version): visitors forget what they hold and draw again.
  */
 export type HostMessage =
-  | { t: "hello"; version: string; start: string }
-  | { t: "file"; version: string; path: string; status: number; type?: string; body?: string; location?: string }
+  | { t: "hello"; host: string; version: string; start: string }
+  | { t: "file"; version: string; path: string; to: string[]; status: number; type?: string; body?: string; location?: string }
   | { t: "changed"; version: string };

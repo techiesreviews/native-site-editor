@@ -88,7 +88,8 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   back.on("pageerror", (error) => pageErrors.push(error.message));
   await openEditor(back, baseURL);
   await editorMounted(back);
-  await expect(previewHeading(visitor)).toHaveText(`${heading} live`, { timeout: 30_000 });
+  // (The preview Worker answers "not running" from memory for up to 20 s, and the page looks again ever more rarely.)
+  await expect(previewHeading(visitor)).toHaveText(`${heading} live`, { timeout: 60_000 });
 
   // He turns it off: the customer's page says so, and the link refuses from then on.
   await back.locator(".repository-menu__trigger").click();

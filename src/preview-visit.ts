@@ -12,15 +12,16 @@
 // not running and looks again now and then, only while it is shown.
 
 import "./preview-visit.css";
-import { importSessionKey, sessionWire } from "./live-wire";
+import { importSessionKey, randomId, sessionWire } from "./live-wire";
 import { LiveRoomClosed, openLiveRoom, type LiveRoom, type LiveRoomSocket } from "./live-room";
 import { previewTokenEnds, readPreviewPath, type HostMessage, type VisitorMessage } from "../shared/preview-link";
 
 type Answer = { status: number; type?: string; body?: ArrayBuffer; location?: string };
 /** A file not answered by then is given up (the service worker waits a little longer). */
 const ANSWER_MS = 15_000;
-/** While the preview is not running, it looks again this often: soon at first, then rarely. */
-const LOOK_AGAIN_MS = [5_000, 10_000, 20_000, 30_000, 60_000];
+/** While the preview is not running, it looks again this often: soon at first, then rarely (a link left open on a
+ * closed editor must not eat its daily allowance). */
+const LOOK_AGAIN_MS = [5_000, 10_000, 20_000, 30_000, 60_000, 120_000, 300_000];
 
 const root = document.getElementById("preview")!;
 const element = <K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text?: string) => {
@@ -67,10 +68,19 @@ async function run(base: string, token: string, rawKey: string) {
   const cache = new Map<string, Answer>();
   const waiting = new Map<string, ((answer: Answer) => void)[]>();
   let looks = 0, look: ReturnType<typeof setTimeout> | undefined, ended = false;
+  // This visitor's id in its asks, and the one tab of Lex's it takes the site from (he may have it open twice): that
+  // tab's id from its hello and its relay peer, so its leaving is noticed.
+  const me = randomId(8);
+  let serving: { host: string; peer: string } | undefined;
 
   // Files come only from Lex's tab, as the relay names the sender: another visitor cannot answer for it.
-  const wire = sessionWire<HostMessage>(() => room, (message, from) => { if (from.access === "editor") heard(message); }, () => undefined);
+  const wire = sessionWire<HostMessage>(() => room, (message, from) => {
+    if (from.access !== "editor") return;
+    if (message.t === "hello" && typeof message.host === "string" && !serving) serving = { host: message.host, peer: from.peer };
+    if (from.peer === serving?.peer) heard(message);
+  }, () => undefined);
   const send = (message: VisitorMessage) => wire.send(message);
+  const ask = (path: string) => { if (serving) send({ t: "get", path, host: serving.host, me }); };
 
   function heard(message: HostMessage) {
     // Each (re)joining: files may have changed while this page was away, so it starts afresh where the visitor is.
@@ -80,7 +90,7 @@ async function run(base: string, token: string, rawKey: string) {
       forget();
       if (!frame) show(lastHref ?? `${base}/site${start}`);
       else redraw();
-    } else if (message.t === "file" && typeof message.path === "string" && message.version === version) {
+    } else if (message.t === "file" && typeof message.path === "string" && message.version === version && Array.isArray(message.to) && message.to.includes(me)) {
       const answer: Answer = {
         status: typeof message.status === "number" ? message.status : 502,
         ...(typeof message.type === "string" ? { type: message.type } : {}),
@@ -99,7 +109,7 @@ async function run(base: string, token: string, rawKey: string) {
   /** A new version: what this page holds goes, and files still awaited are asked for again. */
   function forget() {
     cache.clear();
-    for (const path of waiting.keys()) send({ t: "get", path });
+    for (const path of waiting.keys()) ask(path);
   }
   /** One file for the service worker, from what this page holds or from Lex's tab. */
   function get(path: string): Promise<Answer> {
@@ -115,7 +125,7 @@ async function run(base: string, token: string, rawKey: string) {
         resolve({ status: 504 });
       }, ANSWER_MS);
       if (queue) queue.push(settle);
-      else { waiting.set(path, [settle]); send({ t: "get", path }); }
+      else { waiting.set(path, [settle]); ask(path); }
     });
   }
   navigator.serviceWorker.addEventListener("message", (event) => {
@@ -209,7 +219,13 @@ async function run(base: string, token: string, rawKey: string) {
       connect,
       onMessage: (bytes, from) => wire.receive(bytes, from),
       // In, or back after a dropped socket: say so, and Lex's tab answers with where to start.
-      onKey: () => { if (room !== joined) return; looks = 0; send({ t: "hi" }); },
+      onKey: () => { if (room !== joined) return; looks = 0; serving = undefined; send({ t: "hi" }); },
+      // The tab it took the site from left while another of Lex's still serves: it takes the site from that one.
+      onMembers: (members) => {
+        if (room !== joined || !serving || members.has(serving.peer)) return;
+        serving = undefined;
+        if ([...members.values()].includes("editor")) send({ t: "hi" });
+      },
       onClosed: (why) => {
         if (room === joined) room = undefined;
         if (why === 410) { ended = true; clearTimeout(look); over(); return; }

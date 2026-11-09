@@ -43,6 +43,26 @@ function note(status: number, title: string, detail: string) {
   return new Response(html, { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
+/** How long a link's "not running" (409) or "over" (410) answer is reused. */
+export const NOT_NOW_MS = 20_000;
+// By token, in this isolate; and in the Cache API too where it works (on a custom domain: on workers.dev it does nothing).
+const notNowMemo = new Map<string, { status: number; until: number }>();
+const notNowKey = (token: string) => `https://preview-not-now.internal/${token}`;
+const edgeCache = () => (globalThis as { caches?: { default?: Cache } }).caches?.default;
+async function notNow(token: string) {
+  const held = notNowMemo.get(token);
+  if (held && held.until > Date.now()) return held.status;
+  notNowMemo.delete(token);
+  const cached = await edgeCache()?.match(notNowKey(token)).catch(() => undefined);
+  return cached?.status === 409 || cached?.status === 410 ? cached.status : undefined;
+}
+async function rememberNotNow(token: string, status: number) {
+  notNowMemo.set(token, { status, until: Date.now() + NOT_NOW_MS });
+  // Old entries go as new ones come, so the memo stays small.
+  if (notNowMemo.size > 1000) for (const [key, value] of notNowMemo) if (value.until <= Date.now() || notNowMemo.size > 1000) notNowMemo.delete(key);
+  await edgeCache()?.put(notNowKey(token), new Response(null, { status, headers: { "Cache-Control": `max-age=${NOT_NOW_MS / 1000}` } })).catch(() => undefined);
+}
+
 export async function previewHost(request: Request, env: PreviewHostEnv): Promise<Response> {
   const response = await route(request, env, new URL(request.url));
   // A socket's answer goes back as it is: it carries no page and no cookie.
@@ -74,8 +94,16 @@ async function route(request: Request, env: PreviewHostEnv, url: URL): Promise<R
     const rejoin = url.searchParams.get("rejoin");
     if (rejoin !== null) query.set("rejoin", rejoin);
     const upgrade = request.headers.get("Upgrade")?.toLowerCase() === "websocket";
+    // A link not running or over answers its pages' looks from memory for a while: a link left open on a closed editor
+    // costs the editor's Worker and its Durable Object nothing then.
+    if (!upgrade) {
+      const known = await notNow(link.token);
+      if (known) return new Response(null, { status: known, headers: { "Cache-Control": "no-store" } });
+    }
     // A fresh request: only the upgrade goes on, never the visitor's cookies, origin or address.
-    return env.EDITOR.fetch(new Request(`https://editor.internal/api/live/visit?${query}`, { headers: upgrade ? { Upgrade: "websocket" } : {} }));
+    const answer = await env.EDITOR.fetch(new Request(`https://editor.internal/api/live/visit?${query}`, { headers: upgrade ? { Upgrade: "websocket" } : {} }));
+    if (!upgrade && (answer.status === 409 || answer.status === 410)) await rememberNotNow(link.token, answer.status);
+    return answer;
   }
   // The site's own files come from the service worker; a request that reaches here has none running.
   if (link.rest.startsWith("/site/")) return note(404, "Open the preview link again", "This page shows inside the preview link.");
@@ -122,10 +150,20 @@ export function previewServiceWorker(scope: ServiceWorkerScope) {
     if (!answer) return plain(504, "The editor did not answer in time.");
     if (answer.status === 301 && answer.location) return new Response(null, { status: 301, headers: { Location: `${base}/site${answer.location}` } });
     if (!answer.body && answer.status !== 200) return plain(answer.status, answer.status === 404 ? "Not found." : "This preview could not show that file.");
-    return new Response(request.method === "HEAD" ? null : answer.body ?? null, {
-      status: answer.status,
-      headers: { "Content-Type": answer.type ?? "application/octet-stream", "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" },
-    });
+    const headers: Record<string, string> = { "Content-Type": answer.type ?? "application/octet-stream", "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow", "Accept-Ranges": "bytes" };
+    let body = answer.body ?? new ArrayBuffer(0), status = answer.status;
+    // A part of the file (Safari plays video and audio only this way): one range, as a static host answers it.
+    const range = status === 200 ? /^bytes=(\d*)-(\d*)$/.exec(request.headers?.get("Range") ?? "") : null;
+    if (range && (range[1] || range[2])) {
+      const size = body.byteLength;
+      const first = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+      const last = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+      if (first >= size || first > last) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}`, "Cache-Control": "no-store" } });
+      body = body.slice(first, last + 1);
+      status = 206;
+      headers["Content-Range"] = `bytes ${first}-${last}/${size}`;
+    }
+    return new Response(request.method === "HEAD" ? null : body, { status, headers });
   }
   scope.addEventListener("install", (event) => event.waitUntil(scope.skipWaiting()));
   scope.addEventListener("activate", (event) => event.waitUntil(scope.clients.claim()));

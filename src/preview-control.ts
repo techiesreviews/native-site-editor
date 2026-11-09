@@ -86,8 +86,11 @@ export function createPreviewControl(ports: PreviewSharePorts) {
   let run = 0;
   const where = () => { const at = ports.enabled() ? ports.workspace() : undefined; return at?.host ? at : undefined; };
   const idOf = (at: { repo: string; branch: string; host: string }) => JSON.stringify([at.host.toLowerCase(), at.repo.toLowerCase(), at.branch]);
-  const kept = (id: string) => { const link = readKept()[id]; return link && link.ends > Date.now() ? link : undefined; };
-  const drop = (id: string) => writeKept((links) => { delete links[id]; });
+  // The links this tab made or served, as well: a browser that refuses to keep them (storage full, a strict private
+  // window) still turns its link off on the server.
+  const held = new Map<string, KeptLink>();
+  const kept = (id: string) => { const link = readKept()[id] ?? held.get(id); return link && link.ends > Date.now() ? link : undefined; };
+  const drop = (id: string) => { held.delete(id); writeKept((links) => { delete links[id]; }); };
 
   const stopServing = () => { run++; const open = serving; serving = undefined; open?.close(); };
   /** Serves `link` for workspace `id` until another opens, it is turned off, or the Worker refuses it. */
@@ -122,7 +125,7 @@ export function createPreviewControl(ports: PreviewSharePorts) {
     stopServing();
     shown = id;
     const link = id ? kept(id) : undefined;
-    if (at && id && link) { set({ on: true, link: link.link, ends: link.ends }); startServing(id, at.repo, link); }
+    if (at && id && link) { held.set(id, link); set({ on: true, link: link.link, ends: link.ends }); startServing(id, at.repo, link); }
     else set({ on: false });
   };
 
@@ -147,6 +150,7 @@ export function createPreviewControl(ports: PreviewSharePorts) {
         const key = b64u(crypto.getRandomValues(new Uint8Array(32)));
         const link: KeptLink = { token: made.token, host: made.host, key, ends: made.ends, link: `${made.link}#k=${key}` };
         if (mine !== run || shown !== id) { if (shown === id) set({ on: false }); return undefined; }
+        held.set(id, link);
         writeKept((links) => { links[id] = link; });
         set({ on: true, link: link.link, ends: link.ends });
         startServing(id, at.repo, link);

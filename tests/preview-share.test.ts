@@ -31,8 +31,10 @@ function siteFiles(held: Record<string, string>, blobs: Record<string, { sha: st
   };
 }
 
+/** A visitor's id in its asks. */
+const ME = "d".repeat(16);
 /** Serving over a fake room: what the host sent, decoded, and a way to send as a visitor or another member. */
-async function serving(site: () => SiteFiles | undefined, start = "/") {
+async function serving(site: () => SiteFiles | undefined | Promise<SiteFiles | undefined>, start = "/") {
   let options!: LiveRoomOptions;
   let looking!: () => void;
   const sent: HostMessage[] = [];
@@ -53,8 +55,14 @@ async function serving(site: () => SiteFiles | undefined, start = "/") {
   const as = (access: LiveAccess, peer = "c".repeat(32)) => sessionWire<VisitorMessage>(
     () => ({ send: async (frame: Uint8Array) => { options.onMessage(frame, { peer, access }); return true; } }), () => undefined, () => undefined);
   const visitor = as("guest");
+  // The serving tab's id, from its hello: a visitor's asks name it.
+  visitor.send({ t: "hi" });
+  await until(() => sent.some((message) => message.t === "hello"), "the hello");
+  const host = (sent.find((message) => message.t === "hello") as Extract<HostMessage, { t: "hello" }>).host;
+  sent.length = 0;
   return {
-    sent, served, options, visitor, as,
+    sent, served, options, visitor, as, host,
+    get: (path: string, me = ME, from = visitor) => { from.send({ t: "get", path, host, me }); return settle(); },
     get closed() { return closed; },
     // Anything a member may send, well-formed or not.
     say: async (message: VisitorMessage | Record<string, unknown>, from = visitor) => { from.send(message); await settle(); },
@@ -73,7 +81,7 @@ test("serving answers files as a static host would, from the editor's copy, and 
   assert.equal(hello.start, "/about/");
   const answers = () => room.sent.filter((message): message is Extract<HostMessage, { t: "file" }> => message.t === "file");
   for (const [index, path] of ["/", "/images/loaf.png", "/about", "/missing", "/../x"].entries()) {
-    await room.say({ t: "get", path });
+    await room.get(path);
     await until(() => answers().length > index, `the answer for ${path}`);
   }
   const files = answers();
@@ -84,12 +92,15 @@ test("serving answers files as a static host would, from the editor's copy, and 
     ["/missing", 404, null, null, hello.version],
     ["/../x", 400, null, null, hello.version],
   ]);
+  assert.ok(files.every((file) => file.to.length === 1 && file.to[0] === ME), "each answer is for the visitor who asked");
   assert.equal(Buffer.from(files[0].body!, "base64").toString(), "<h1>Fresh bread</h1>");
   assert.deepEqual([...Buffer.from(files[1].body!, "base64")], [...picture.bytes]);
   // Another tab of Lex's (an editor) or a malformed ask gets nothing.
   const count = room.sent.length;
-  await room.say({ t: "get", path: "/" }, room.as("editor", "d".repeat(32)));
-  await room.say({ t: "get", path: 7 });
+  await room.get("/", ME, room.as("editor", "d".repeat(32)));
+  await room.say({ t: "get", path: 7, host: room.host, me: ME });
+  await room.say({ t: "get", path: "/", host: "someone-else", me: ME });
+  await room.say({ t: "get", path: "/", host: room.host });
   assert.equal(room.sent.length, count);
   room.served.close();
   assert.equal(room.closed, true);
@@ -106,8 +117,8 @@ test("a file visitors were sent that changed makes a new version; the branch's c
   })();
   const blobs = { "styles/site.css": { sha: realSha, bytes: new TextEncoder().encode(css) } };
   const room = await serving(() => siteFiles(held, blobs));
-  await room.say({ t: "get", path: "/" });
-  await room.say({ t: "get", path: "/styles/site.css" });
+  await room.get("/");
+  await room.get("/styles/site.css");
   await until(() => room.sent.length === 2, "both answers");
   const first = (room.sent[0] as Extract<HostMessage, { t: "file" }>).version;
   // Nobody in: nothing is looked at.
@@ -115,7 +126,7 @@ test("a file visitors were sent that changed makes a new version; the branch's c
   await room.look();
   assert.equal(room.sent.some((message) => message.t === "changed"), false);
   room.options.onMembers?.(new Map([["c".repeat(32), "guest"]]));
-  await room.say({ t: "get", path: "/" });
+  await room.get("/");
   await until(() => room.sent.length === 3, "the answer asked again");
   const count = room.sent.length;
   held["styles/site.css"] = css;
@@ -131,6 +142,61 @@ test("a file visitors were sent that changed makes a new version; the branch's c
   held["index.html"] = "<h1>Something else</h1>";
   await room.look();
   assert.equal(room.sent.at(-1), changed);
+});
+
+test("visitors asking for the same file at once get one answer, addressed to them both", async () => {
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => { release = resolve; });
+  const site = siteFiles({ "index.html": "<h1>Fresh bread</h1>" });
+  // The first ask is held while the files are read, so the second comes while it is being made.
+  const slow = await serving(async () => { await ready; return site; });
+  await slow.get("/", "1".repeat(16));
+  await slow.get("/", "2".repeat(16), slow.as("guest", "e".repeat(32)));
+  release();
+  await until(() => slow.sent.length > 0, "the answer");
+  await settle();
+  assert.equal(slow.sent.length, 1);
+  assert.deepEqual((slow.sent[0] as Extract<HostMessage, { t: "file" }>).to, ["1".repeat(16), "2".repeat(16)]);
+  slow.served.close();
+});
+
+test("with two of Lex's tabs serving one link, a visitor's ask is answered once, by the tab it names, at that tab's version", async () => {
+  const site = siteFiles({ "index.html": "<h1>Fresh bread</h1>" });
+  // One room: what a visitor sends reaches both tabs; what each tab sends is recorded with its peer.
+  const tabs: { options: LiveRoomOptions; peer: string }[] = [];
+  const sent: { from: string; message: HostMessage }[] = [];
+  const tabOf = async (peer: string) => servePreview({
+    address: "/api/live/preview?token=x", key: {} as CryptoKey, files: async () => site, start: () => "/", closed: () => undefined,
+    open: (given: LiveRoomOptions) => {
+      tabs.push({ options: given, peer });
+      const reader = sessionWire<HostMessage>(() => undefined, (message) => sent.push({ from: peer, message }), () => undefined);
+      return {
+        send: async (frame: Uint8Array) => { reader.receive(frame, { peer, access: "editor" }); return true; },
+        close: () => undefined, ready: async () => undefined, setPresence: () => undefined, peers: () => new Map(),
+      } satisfies LiveRoom;
+    },
+    every: () => () => undefined,
+  });
+  const first = await tabOf("a".repeat(32)), second = await tabOf("b".repeat(32));
+  const visitor = sessionWire<VisitorMessage>(() => ({ send: async (frame: Uint8Array) => {
+    for (const tab of tabs) tab.options.onMessage(frame, { peer: "c".repeat(32), access: "guest" });
+    return true;
+  } }), () => undefined, () => undefined);
+  visitor.send({ t: "hi" });
+  await until(() => sent.filter(({ message }) => message.t === "hello").length === 2, "both hellos");
+  const hellos = sent.map(({ from, message }) => ({ from, message: message as Extract<HostMessage, { t: "hello" }> }));
+  assert.notEqual(hellos[0].message.host, hellos[1].message.host);
+  // The visitor takes the site from the first tab that said hello.
+  const chosen = hellos[0];
+  visitor.send({ t: "get", path: "/", host: chosen.message.host, me: ME });
+  await until(() => sent.some(({ message }) => message.t === "file"), "the answer");
+  await settle();
+  const answers = sent.filter(({ message }) => message.t === "file");
+  assert.equal(answers.length, 1);
+  assert.equal(answers[0].from, chosen.from);
+  assert.equal((answers[0].message as Extract<HostMessage, { t: "file" }>).version, chosen.message.version);
+  first.close();
+  second.close();
 });
 
 /** localStorage for the control's kept links. */
@@ -190,6 +256,20 @@ test("Share preview: a link made, kept for its sign-in, repository and branch, s
   await settle();
   await third.stop();
   assert.deepEqual([offs.length, third.state(), serves.at(-1)!.open], [1, { on: false }, false]);
+});
+
+test("a browser that refuses to keep the link still turns it off on the server", async () => {
+  Object.assign(globalThis, { localStorage: { getItem: () => null, setItem: () => { throw new Error("QuotaExceededError"); } } });
+  const offs: string[] = [];
+  const preview = createPreviewShare({
+    workspace: () => ({ repo: "lex/bakery", branch: "main", site: "bakery", host: "lex" }), enabled: () => true, files: async () => undefined, start: () => "/",
+    mint: async () => ({ token, host: "f".repeat(64), link: `https://previews.example/s/bakery-${token}/`, ends: Date.now() + 86_400_000 }),
+    off: async (repo, link) => { offs.push(`${repo}:${link.token}`); },
+    serve: async () => ({ close: () => undefined }),
+  });
+  assert.match(await preview.start() ?? "", /#k=/);
+  await preview.stop();
+  assert.deepEqual([offs, preview.state()], [[`lex/bakery:${token}`], { on: false }]);
 });
 
 test("Share preview stays out without a preview Worker or a sign-in, and says why it could not make a link", async () => {

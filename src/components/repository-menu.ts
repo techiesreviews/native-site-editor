@@ -173,7 +173,8 @@ export function createRepositoryMenu(options: {
   const previewRoot = options.preview && node("div", "repository-menu__preview");
   let preview: ReturnType<PreviewMenuPort["draw"]> | undefined;
   if (previewRoot) { previewRoot.hidden = true; actions.append(previewRoot); }
-  const showPreview = () => { if (previewRoot) void (preview ??= options.preview!.draw(actionClass, previewRoot)).then((items) => items.refresh()); };
+  // Not on an editor without a preview Worker, or with no site shown: nothing of it loads then.
+  const showPreview = () => { if (previewRoot && (preview || options.preview!.available())) void (preview ??= options.preview!.draw(actionClass, previewRoot)).then((items) => items.refresh()); };
   const agentSlot = node("div", "repository-menu__agent");
   agentSlot.id = "agent-menu";
 
