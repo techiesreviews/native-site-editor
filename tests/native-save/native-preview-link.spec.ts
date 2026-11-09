@@ -174,8 +174,8 @@ test("the visitor's page carries on after Lex's connection drops and comes back"
   test.setTimeout(120_000);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   lex.on("pageerror", (error) => pageErrors.push(error.message));
-  // Lex's preview socket, through a route whose page side the test cuts while the relay still holds the old socket,
-  // as when a network drops: he joins again before the relay notices.
+  // Lex's preview socket, through a route whose page side the test cuts, as when a network drops. (The copy needs the
+  // clipboard permission to say Copied.)
   const pages: { close(options?: { code?: number }): Promise<void> }[] = [];
   await lex.routeWebSocket(/\/api\/live\/preview/, (socket) => { socket.connectToServer(); pages.push(socket); });
   await openEditor(lex, baseURL);
@@ -193,7 +193,8 @@ test("the visitor's page carries on after Lex's connection drops and comes back"
   await visitor.goto(link);
   await expect(previewHeading(visitor)).toHaveText(heading, { timeout: 20_000 });
 
-  // The relay hears his old socket leave before the new one joins: the visitor takes the site from the new one.
+  // His tab joins again, and the room hears the old socket leave and the new one join: the visitor takes the site
+  // from the new one and follows its edits.
   const sockets = pages.length;
   await pages.at(-1)!.close({ code: 4000 });
   await expect.poll(() => pages.length, { timeout: 20_000 }).toBeGreaterThan(sockets);
