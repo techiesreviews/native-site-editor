@@ -1,36 +1,12 @@
 // Share to edit's state in the editor (slice 30; CONTEXT.md "Synced session"): what
 // the project menu shows, and the one session at a time on the workspace shown.
-// It stays in the editor's boot code; the session itself (src/live-session.ts)
-// and its room load with the first share.
+// It loads when the project menu first opens (src/shares-later.ts); the session
+// itself (src/live-session.ts) and its room load with the first share.
 
 import type { SharePorts, SessionGuest, SyncedSession } from "./live-session";
-import type { SessionStamp, WorkspaceScope } from "./workspace-session";
 
 /** What the project menu shows: no session, one starting, or one open with its link and guests. */
 export type ShareState = { sharing: false; starting?: true } | { sharing: true; link: string; guests: SessionGuest[] };
-
-/** A person's name as shown, whatever their presence sends: trimmed, at most 40 characters, else "Guest". */
-export const personName = (name: string) => name.trim().slice(0, 40) || "Guest";
-/** The one letter or digit on a person's chip: the first of their name, as a capital (one character, so "ß" stays one). */
-export function initialOf(name: string) {
-  const first = name.trim().match(/\p{L}|\p{N}/u)?.[0];
-  return first ? [...first.toLocaleUpperCase()][0] : "·";
-}
-
-/**
- * `createShareControl`'s view of the editor (src/main.ts): the GitHub branch shown while a site is open, with its
- * repository's name as the site's and Lex's login; and a stamp that holds until another project or branch opens.
- */
-export function shareWorkspace(editor: { shown(): WorkspaceScope | undefined; siteOpen(): boolean; login(): string | undefined; begin(): SessionStamp }) {
-  return {
-    workspace() {
-      const scope = editor.shown();
-      if (scope?.kind !== "github" || !editor.siteOpen()) return undefined;
-      return { repo: scope.repo, branch: scope.branch, site: scope.repo.split("/").pop() ?? scope.repo, host: editor.login() ?? "" };
-    },
-    stamp() { const since = editor.begin(); return { holds: () => since.changed() !== "scope" }; },
-  };
-}
 
 /**
  * Lex's side of Share to edit for the workspace shown: one session at a time. It ends by itself when another project

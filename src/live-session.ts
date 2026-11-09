@@ -5,7 +5,7 @@
 // the token for Lex's signed-in tab (worker/app.ts, POST `/api/live/share`); it
 // names the session's own relay instance and room. The room key, the site's name
 // and Lex's travel after `#`, so the server never sees them. Every share makes a
-// new token and key. The editor's menu keeps its state in src/share-control.ts;
+// new token and key. The editor's menu keeps its state in src/share-control.ts (loaded on its first open);
 // this module and the room load with the first share or join.
 //
 // Lex's tab holds the room open (it alone has editor sign-in) and sends each
@@ -22,7 +22,7 @@ import type { LivePeer, LiveRoom, openLiveRoom } from "./live-room";
 import type { LiveAccess } from "../shared/live-room";
 import type { JsonValue } from "../shared/agent-command";
 import { LIVE_GUEST_ID, LIVE_SESSION_TOKEN } from "../shared/live-room";
-import { personName } from "./share-control";
+import { personName } from "./person-name";
 import { b64u, sessionWire } from "./live-wire";
 // The wire and the room key's encoding live in src/live-wire.ts, which preview links' pages share without this module.
 export { importSessionKey, randomId, sessionWire } from "./live-wire";
