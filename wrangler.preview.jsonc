@@ -32,6 +32,8 @@
     "OWNER_GITHUB": "techiesreviews",
     // New sites start from the vendored native static Starter (worker/starter.ts).
     "STARTER_SOURCE": "native-static",
+    // Share preview: the preview editor's own previews Worker (wrangler.preview-host.jsonc --env preview).
+    "PREVIEW_ORIGIN": "https://native-site-editor-previews-preview.lexvd.workers.dev",
   },
   "assets": {
     "directory": "./dist",
