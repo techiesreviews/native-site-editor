@@ -24,7 +24,8 @@ function fixture(href = "https://editor.test/") {
   let info: SessionInfo | undefined, url = new URL(href), menu: BootMenu | undefined = { setRepositories: () => {} };
   const log: string[] = [];
   const sessions: ReturnType<typeof deferred<ApiReceipt<SessionInfo>>>[] = [];
-  const lists: { refresh: boolean; read: ReturnType<typeof deferred<ApiReceipt<Repository[]>>> }[] = [];
+  const lists: { refresh: boolean; early?: Promise<Response>; read: ReturnType<typeof deferred<ApiReceipt<Repository[]>>> }[] = [];
+  const sessionEarly: (Promise<Response> | undefined)[] = [];
   const loads: { prefetched?: Repository[]; started?: number }[] = [];
   const errors: unknown[] = [];
   const drafts = deferred<void>();
@@ -42,8 +43,8 @@ function fixture(href = "https://editor.test/") {
     replaceUrl: next => { url = new URL(next); log.push(`replace ${next.href}`); },
     redirect: target => { log.push(`redirect ${target}`); },
     assign: target => { log.push(`assign ${target}`); },
-    readSession: () => { const read = deferred<ApiReceipt<SessionInfo>>(); sessions.push(read); log.push("read session"); return read.promise; },
-    readRepositories: refresh => { const read = deferred<ApiReceipt<Repository[]>>(); lists.push({ refresh, read }); log.push(`read repositories${refresh ? " refresh" : ""}`); return read.promise; },
+    readSession: early => { const read = deferred<ApiReceipt<SessionInfo>>(); sessions.push(read); sessionEarly.push(early); log.push("read session"); return read.promise; },
+    readRepositories: (refresh, early) => { const read = deferred<ApiReceipt<Repository[]>>(); lists.push({ refresh, early, read }); log.push(`read repositories${refresh ? " refresh" : ""}`); return read.promise; },
     loadDrafts: () => { log.push("drafts"); return drafts.promise; },
     onDraftError: () => { log.push("draft onError"); },
     session: () => info,
@@ -61,7 +62,7 @@ function fixture(href = "https://editor.test/") {
   };
   const controller = createBootController(ports);
   return {
-    controller, log, sessions, lists, loads, errors, drafts,
+    controller, log, sessions, sessionEarly, lists, loads, errors, drafts,
     bump: () => { workspace.next(undefined); },
     begin: () => workspace.begin(),
     setInfo: (value: SessionInfo) => { info = value; },
@@ -262,4 +263,25 @@ test("planRepositoryOpen decides the repository to open", () => {
     ["choose", { list, hashPresent: false }, { kind: "choose" }],
   ];
   for (const [name, input, expected] of cases) assert.deepEqual(planRepositoryOpen(input), expected, name);
+});
+
+test("the page's early session and listing (src/boot-early.ts) stand for the first reads, each used once and not asked again", async () => {
+  const session = Promise.resolve(new Response("{}")), repositories = Promise.resolve(new Response("[]"));
+  globalThis.aseEarlyReads = { session, repositories };
+  try {
+    const f = fixture(), started = f.controller.start();
+    assert.deepEqual(f.log, ["read session", "read repositories"]);
+    assert.equal(f.sessionEarly[0], session);
+    assert.equal(f.lists[0].early, repositories);
+    assert.deepEqual(globalThis.aseEarlyReads, {}, "taken");
+    f.lists[0].read.resolve(receipt([repo(1)]));
+    f.sessions[0].resolve(receipt(signedIn()));
+    await started;
+    void f.controller.start();
+    assert.equal(f.sessions.length, 2);
+    assert.equal(f.sessionEarly[1], undefined, "a later boot asks afresh");
+    assert.equal(f.lists[1].early, undefined);
+  } finally {
+    globalThis.aseEarlyReads = undefined;
+  }
 });

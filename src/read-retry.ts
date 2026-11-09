@@ -15,6 +15,8 @@ export class ReadUnansweredError extends Error {
 
 export interface ReadRetryOptions {
   fetcher?: typeof fetch;
+  /** The first try, already asked (the page's early read, src/boot-reads.ts); the tries after it are this read's own. */
+  first?: Promise<Response>;
   delays?: number[];
   timeoutMs?: number;
 }
@@ -33,7 +35,7 @@ export interface ReadRetryOptions {
 export async function fetchWithReadRetry(
   url: string,
   init: RequestInit = {},
-  { fetcher = fetch, delays = READ_RETRY_DELAYS, timeoutMs = READ_TIMEOUT_MS }: ReadRetryOptions = {},
+  { fetcher = fetch, first, delays = READ_RETRY_DELAYS, timeoutMs = READ_TIMEOUT_MS }: ReadRetryOptions = {},
 ): Promise<Response> {
   if ((init.method ?? "GET").toUpperCase() !== "GET") return fetcher(url, init);
   for (let attempt = 0; ; attempt++) {
@@ -42,7 +44,10 @@ export async function fetchWithReadRetry(
     const timer = setTimeout(() => timeout.abort(), timeoutMs);
     try {
       const signal = init.signal ? AbortSignal.any([init.signal, timeout.signal]) : timeout.signal;
-      const response = await fetcher(url, { ...init, signal });
+      // The try asked already fails, as a fetch would, once `signal` aborts.
+      const response = await (attempt === 0 && first
+        ? Promise.race([first, new Promise<never>((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }))])
+        : fetcher(url, { ...init, signal }));
       if (last || (response.status !== 502 && response.status !== 503)) return response;
     } catch (error) {
       if (init.signal?.aborted) throw error;

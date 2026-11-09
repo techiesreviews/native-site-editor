@@ -77,6 +77,14 @@ export function writeBootMemory(store: Store, memory: BootMemory) {
   } catch { /* storage full or refused */ }
 }
 
+/** The remembered name of `repoId` on `branch`, for the page's early snapshot (src/boot-reads.ts); the boot checks the whole record. */
+export function rememberedName(store: Pick<Storage, "getItem">, repoId: number, branch: string): string | undefined {
+  try {
+    const value = JSON.parse(store.getItem(PREFIX + repoId) ?? "null") as Partial<BootMemory> | null;
+    return value?.repoId === repoId && value.branch === branch && isText(value.fullName, 300) ? value.fullName : undefined;
+  } catch { return undefined; }
+}
+
 export function forgetBootMemory(store: Store, repoId?: number) {
   try {
     for (const key of repoId === undefined ? keys(store) : [PREFIX + repoId]) store.removeItem(key);

@@ -1,6 +1,6 @@
 import type { ApiReceipt } from "../boot-api-response";
 import { repositoryReceipt } from "../boot-api-response";
-import { startBootReads } from "../boot-reads";
+import { startBootReads, takeEarlyRead } from "../boot-reads";
 import { autoSignInPlan, AUTO_SIGNIN_DELAY_MS, markAutoSignInTried, rememberSignedIn } from "../auto-signin";
 import type { Repository, SessionInfo } from "../../shared/types";
 import type { WorkspaceLocation } from "../workspace-state";
@@ -59,8 +59,9 @@ export interface BootPorts {
   replaceUrl(url: URL): void;
   redirect(url: string): void;
   assign(url: string): void;
-  readSession(): Promise<ApiReceipt<SessionInfo>>;
-  readRepositories(refresh: boolean): Promise<ApiReceipt<Repository[]>>;
+  /** `early`: the page's own first try (src/boot-early.ts), taken once by the boot's first reads. */
+  readSession(early?: Promise<Response>): Promise<ApiReceipt<SessionInfo>>;
+  readRepositories(refresh: boolean, early?: Promise<Response>): Promise<ApiReceipt<Repository[]>>;
   loadDrafts(login: string): Promise<void>;
   /** Installed once the drafts have loaded. */
   onDraftError(): void;
@@ -135,8 +136,8 @@ export function createBootController(ports: BootPorts) {
     const source = ports.source();
     const current = () => at.holds() && ports.source() === source;
     const reads = startBootReads({
-      readSession: () => ports.readSession(),
-      readRepositories: async () => repositoryReceipt(await ports.readRepositories(false)),
+      readSession: () => ports.readSession(takeEarlyRead("session")),
+      readRepositories: async () => repositoryReceipt(await ports.readRepositories(false, takeEarlyRead("repositories"))),
       scope: { source, epoch: at.load },
       isCurrent: scope => current() && scope.source === source,
     });

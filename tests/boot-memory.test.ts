@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { forgetBootMemory, memoryMatches, provenFiles, readBootMemory, writeBootMemory, type BootMemory } from "../src/boot-memory.ts";
+import { forgetBootMemory, memoryMatches, provenFiles, readBootMemory, rememberedName, writeBootMemory, type BootMemory } from "../src/boot-memory.ts";
 
 function store() {
   const values = new Map<string, string>();
@@ -79,4 +79,17 @@ test("adoption needs the same account (any case), repository id and name, and br
 test("only files whose path still has the remembered SHA are proven", () => {
   assert.deepEqual(provenFiles(memory(), [{ path: "index.html", sha: sha(1) }, { path: "styles/site.css", sha: sha(3) }]), [{ path: "index.html", sha: sha(1) }]);
   assert.deepEqual(provenFiles(memory(), [{ path: "about.html", sha: sha(1) }]), []);
+});
+
+test("the remembered name for the page's early snapshot: only for the same repository and branch, never from a broken record", () => {
+  const store = new Map<string, string>();
+  const storage = { getItem: (key: string) => store.get(key) ?? null };
+  store.set("ase:boot-memory:v1:501", JSON.stringify({ repoId: 501, branch: "main", fullName: "lex/site" }));
+  assert.equal(rememberedName(storage, 501, "main"), "lex/site");
+  assert.equal(rememberedName(storage, 501, "draft"), undefined);
+  assert.equal(rememberedName(storage, 7, "main"), undefined);
+  store.set("ase:boot-memory:v1:7", "{not json");
+  assert.equal(rememberedName(storage, 7, "main"), undefined);
+  store.set("ase:boot-memory:v1:8", JSON.stringify({ repoId: 8, branch: "main", fullName: 42 }));
+  assert.equal(rememberedName(storage, 8, "main"), undefined);
 });

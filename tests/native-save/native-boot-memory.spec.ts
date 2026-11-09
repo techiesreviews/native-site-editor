@@ -1,8 +1,9 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
 
 // Remember last boot (src/boot-memory.ts): a reload asks for the remembered
-// snapshot and files before the session is known, and shows them only once
-// the session, the listing and the fresh snapshot prove them.
+// snapshot and files before the boot has taken its session (the page asks for
+// the session itself, src/boot-early.ts), and shows them only once the
+// session, the listing and the fresh snapshot prove them.
 
 const HASH = '#repo=501&branch=main&file=index.html';
 const KEY = 'ase:boot-memory:v1:501';
@@ -22,23 +23,25 @@ const editMemory = (page: Page, edit: (memory: Memory) => void, memory: Memory) 
 };
 const sha = (memory: Memory, path: string) => memory.files.find((file) => file.path === path)!.sha;
 
-// Guessed reads go out while the session is held; their file contents are
-// marked (`data-guess` on the page's first h1), so a marked page proves the
-// guess was used.
+// Guessed reads go out before the boot, once it has its session, chooses the
+// repository (its branch list, seen as a request even where a test answers
+// it); `hold` keeps the session's answer until released. Their file contents
+// are marked (`data-guess` on the page's first h1), so a marked page proves
+// the guess was used.
 async function watchGuesses(page: Page, options: { hold?: boolean; snapshotFrom?: string } = {}) {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
-  const state = { sessionDone: false, early: [] as string[], late: [] as string[] };
+  const state = { chosen: false, early: [] as string[], late: [] as string[] };
   await page.route('**/api/session', async (route) => {
     const response = await route.fetch();
     if (options.hold) await gate;
     await route.fulfill({ response });
-    state.sessionDone = true;
   });
+  page.on('request', (request) => { if (/\/api\/branches\?/.test(request.url())) state.chosen = true; });
   const reads = async (route: Route) => {
     const url = new URL(route.request().url());
-    (state.sessionDone ? state.late : state.early).push(url.pathname + url.search);
-    if (state.sessionDone) return route.continue();
+    (state.chosen ? state.late : state.early).push(url.pathname + url.search);
+    if (state.chosen) return route.continue();
     if (url.pathname === '/api/snapshot' && options.snapshotFrom) {
       const real = await route.fetch({ url: url.toString().replace(encodeURIComponent(options.snapshotFrom), encodeURIComponent(REPO)) });
       return route.fulfill({ response: real });
@@ -67,7 +70,7 @@ test('a warm reload reads the remembered snapshot and files with the session and
 
   await expect(preview(page).locator('.hero h1[data-guess]')).toBeVisible();
   await expect(page.locator('#status')).toContainText('Up to date with main');
-  expect(state.late.filter((read) => read.startsWith('/api/snapshot')), 'no second snapshot').toEqual([]);
+  expect([...state.early, ...state.late].filter((read) => read.startsWith('/api/snapshot')), 'no second snapshot').toHaveLength(1);
   expect(state.late.filter((read) => read.includes(sha(memory, 'index.html'))), 'the page is not read again').toEqual([]);
   // The branch list still fills the selector.
   await expect(page.locator('#branch option')).not.toHaveCount(0);
@@ -221,7 +224,7 @@ test('a guess taken before a new listing clears the selection writes nothing whe
   const gate = new Promise<void>((resolve) => { release = resolve; });
   // The guessed snapshot (asked for before the session) is held until the selection is cleared.
   await page.route(/\/api\/snapshot\?/, async (route) => {
-    if (state.sessionDone) return route.fallback();
+    if (state.chosen) return route.fallback();
     const response = await route.fetch();
     await gate;
     await route.fulfill({ response });
@@ -261,7 +264,7 @@ test('a guess that won, abandoned by a new listing before its file batch lands: 
   const branchesGate = new Promise<void>((resolve) => { releaseBranches = resolve; });
   // The guessed file batch (marked, as watchGuesses does) is held until the selection is cleared.
   await page.route(/\/api\/files\?/, async (route) => {
-    if (state.sessionDone) return route.fallback();
+    if (state.chosen) return route.fallback();
     const real = await route.fetch();
     const body = await real.json() as { files: Record<string, string> };
     for (const key of Object.keys(body.files)) body.files[key] = body.files[key].replace('<h1', '<h1 data-guess="1"');

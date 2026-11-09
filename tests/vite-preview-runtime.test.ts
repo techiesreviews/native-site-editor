@@ -154,3 +154,51 @@ test("the Vite dev server answers the picture's URL with its bundle", async () =
     await vite.close();
   }
 });
+
+test("the editor's page loads the early reads (src/boot-early.ts) first, as a classic script the dev server bundles", async () => {
+  const vite = await createServer({ configFile: false, root, logLevel: "silent", plugins: [previewRuntime()], server: { middlewareMode: true, ws: false } });
+  const http = createHttpServer(vite.middlewares);
+  await new Promise<void>((done) => http.listen(0, "127.0.0.1", done));
+  try {
+    const page = await vite.transformIndexHtml("/index.html", readFileSync(join(root, "index.html"), "utf8"));
+    // The page asks for the session and the listing first, ahead of the editor's own files; the early script takes them.
+    assert.match(page, /<head>\s*<link rel="preload" as="fetch" crossorigin="use-credentials" href="\/api\/session">\s*<link rel="preload" as="fetch" crossorigin="use-credentials" href="\/api\/repositories">\s*<script src="\/src\/boot-early\.ts" async fetchpriority="high" data-runtime="\/src\/components\/native-preview-runtime\.js"><\/script>/);
+    for (const other of ["live.html", "preview-visit.html"])
+      assert.doesNotMatch(await vite.transformIndexHtml(`/${other}`, readFileSync(join(root, other), "utf8")), /boot-early/, other);
+    const response = await fetch(`http://127.0.0.1:${(http.address() as AddressInfo).port}/src/boot-early.ts`);
+    assert.equal(response.status, 200);
+    const code = await response.text();
+    assert.doesNotMatch(code, /^\s*import /m, "no module imports: one classic script");
+    // Run where the boot has already claimed the reads: it asks for nothing.
+    const context = { aseEarlyReads: {}, fetch: () => { throw new Error("asked"); } };
+    new Script(code).runInNewContext(context);
+    assert.deepEqual(context.aseEarlyReads, {});
+  } finally {
+    await new Promise((done) => http.close(done));
+    await vite.close();
+  }
+});
+
+test("the build's early reads script asks the session, the listing, the address's snapshot and the preview runtime", async () => {
+  const bundle = await bundlePreviewRuntime({ entry: join(root, "src/boot-early.ts"), minify: true, sourcemap: "external", target });
+  const asked: string[] = [];
+  const context: Record<string, unknown> = {
+    location: { hash: "#repo=501&branch=main" },
+    localStorage: { getItem: () => JSON.stringify({ login: "lex", repoId: 501, fullName: "lex/site", branch: "main", commit: "a".repeat(40), files: [] }), removeItem: () => {} },
+    fetch: (url: string) => { asked.push(url); return new Promise(() => {}); },
+    URLSearchParams, AbortController, Promise, JSON, Array, Number,
+    setTimeout: (run: () => void, ms: number) => setTimeout(run, ms), clearTimeout: (timer: ReturnType<typeof setTimeout>) => clearTimeout(timer),
+  };
+  const head: { rel: string; as: string; href: string }[] = [];
+  context.document = {
+    currentScript: { dataset: { runtime: "/assets/native-preview-runtime-0.js" } },
+    head: { append: (link: { rel: string; as: string; href: string }) => head.push(link) },
+    createElement: () => ({}),
+  };
+  context.Object = Object;
+  context.globalThis = context;
+  new Script(bundle.code).runInNewContext(context);
+  assert.deepEqual(asked, ["/api/session", "/api/repositories", "/api/snapshot?repo=lex%2Fsite&branch=main"]);
+  assert.deepEqual(head.map(({ rel, as, href }) => ({ rel, as, href })), [{ rel: "preload", as: "script", href: "/assets/native-preview-runtime-0.js" }], "the preview runtime its tag names");
+  assert.match(immutableRuntimeAsset(bundle, "boot-early").fileName, /^boot-early-[\da-f]{12}\.js$/);
+});

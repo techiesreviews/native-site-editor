@@ -14,6 +14,14 @@ const frameScripts = [
   { file: "src/agent-picture.ts", name: "agent-picture", url: 'new URL("../agent-picture.ts", import.meta.url)', globalName: "asePicture" },
 ];
 
+/**
+ * The page's first reads (src/boot-early.ts), a classic script of its own that the editor's page
+ * (index.html) loads first in <head>, async: it asks before the editor's far larger script has loaded.
+ * The session and the repository list are asked by the page itself, ahead of the editor's own files
+ * (preloads the early script's reads take); `data-runtime` names the preview runtime it asks for.
+ */
+const earlyScript = { file: "src/boot-early.ts", name: "boot-early" };
+
 export type RuntimeBundle = {
   code: string;
   /** The external source map (empty when the map is inline). */
@@ -112,6 +120,8 @@ export function previewRuntime(): Plugin {
   let assetsDir: string;
   let target: BuildOptions["target"];
   let command: "build" | "serve";
+  let earlyUrl: string;
+  let runtimeUrl: string;
   return {
     name: "preview-runtime",
     enforce: "pre",
@@ -121,11 +131,13 @@ export function previewRuntime(): Plugin {
       command = config.command;
       assetsDir = config.build.assetsDir;
       target = config.build.target === false ? "esnext" : config.build.target;
+      earlyUrl = posix.join(base, earlyScript.file);
+      runtimeUrl = posix.join(base, frameScripts[0].file);
     },
     // Dev: each script's `new URL(…, import.meta.url)` stays its source path; answer it with the readable
     // bundle and an inline map before Vite would serve the file as written (its imports break a classic script).
     configureServer(server) {
-      const served = new Map(frameScripts.map((script) => {
+      const served = new Map([...frameScripts, earlyScript].map((script: { file: string; globalName?: string }) => {
         const entry = resolve(root, script.file);
         return [posix.join(base, relative(root, entry).split("\\").join("/")), devRuntimeBundle(entry, target, script.globalName)];
       }));
@@ -138,6 +150,27 @@ export function previewRuntime(): Plugin {
           res.end(code);
         }, next);
       });
+    },
+    // Build: the early script, minified under a hashed /assets/ name.
+    async buildStart() {
+      if (command !== "build") return;
+      const bundle = await bundlePreviewRuntime({ entry: resolve(root, earlyScript.file), minify: true, sourcemap: "external", target });
+      for (const input of bundle.inputs) this.addWatchFile(input);
+      const asset = immutableRuntimeAsset(bundle, earlyScript.name);
+      this.emitFile({ type: "asset", fileName: `${assetsDir}/${asset.fileName}`, source: asset.code });
+      this.emitFile({ type: "asset", fileName: `${assetsDir}/${asset.fileName}.map`, source: asset.map });
+      earlyUrl = posix.join(base, assetsDir, asset.fileName);
+    },
+    // The editor's page only: a synced session's guest page and a preview link's page read nothing of it.
+    transformIndexHtml: {
+      order: "post",
+      handler(_html, context) {
+        if (posix.basename(context.path) !== "index.html") return;
+        // Credentialed like the reads that take them (src/boot-reads.ts startEarlyReads, src/github-reads.ts).
+        const preload = (path: string) => ({ tag: "link", attrs: { rel: "preload", as: "fetch", crossorigin: "use-credentials", href: posix.join(base, path) }, injectTo: "head-prepend" as const });
+        return [preload("api/session"), preload("api/repositories"),
+          { tag: "script", attrs: { src: earlyUrl, async: true, fetchpriority: "high", "data-runtime": runtimeUrl }, injectTo: "head-prepend" }];
+      },
     },
     // Build: each minified bundle under a hashed /assets/ name.
     async transform(code, id) {
@@ -152,6 +185,7 @@ export function previewRuntime(): Plugin {
         // Vite resolves the emitted reference relative to the importing chunk,
         // including builds with a custom base.
         code = code.replace(script.url, `new URL(import.meta.ROLLUP_FILE_URL_${reference}, import.meta.url)`);
+        if (script === frameScripts[0]) runtimeUrl = posix.join(base, assetsDir, asset.fileName);
       }
       return { code, map: null };
     },

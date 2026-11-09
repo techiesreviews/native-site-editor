@@ -9,6 +9,7 @@ import { createWorkspaceSession } from "../src/workspace-session.ts";
 import type { ApiReceipt } from "../src/boot-api-response.ts";
 import type { FilesResult, Repository, Snapshot } from "../shared/types.ts";
 import { ReadUnansweredError } from "../src/read-retry.ts";
+import type { EarlyReads } from "../src/boot-reads.ts";
 
 // readWorkspaceUrl and rememberWorkspace (src/workspace-state.ts) use the page's location, history and localStorage.
 const saved = ["location", "history", "localStorage"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
@@ -46,19 +47,20 @@ const MEMORY: BootMemory = { login: "lex", repoId: 501, fullName: "lex/site", br
 const SNAPSHOT: Snapshot = { commit: sha(9), branch: "main", entries: [{ path: "index.html", mode: "100644", type: "blob", sha: sha(1) }] };
 const receipt = <T>(value: T, sessionTag: string | null = "t1"): ApiReceipt<T> => ({ value, sessionTag });
 
-type Read = { path: string; params?: Record<string, string>; answer: ReturnType<typeof deferred<unknown>> };
+type Read = { path: string; params?: Record<string, string>; early?: Promise<Response>; answer: ReturnType<typeof deferred<unknown>> };
 
-function fixture() {
+function fixture({ remember = true, early }: { remember?: boolean; early?: EarlyReads } = {}) {
   hash = "#repo=501&branch=main";
+  globalThis.aseEarlyReads = early;
   const session = createWorkspaceSession();
   const local = store();
-  writeBootMemory(local, MEMORY);
+  if (remember) writeBootMemory(local, MEMORY);
   const reads: Read[] = [], seeded: string[] = [], cached = new Map<string, string>(), shown = { content: "", status: "" };
   let fileGeneration = 0, tag: string | null | undefined = "t1";
-  const read = (path: string, params?: Record<string, string>) => {
+  const read = (path: string, params?: Record<string, string>, early?: Promise<Response>) => {
     const answer = deferred<unknown>();
     void answer.promise.catch(() => {});
-    reads.push({ path, params, answer });
+    reads.push({ path, params, early, answer });
     return answer.promise;
   };
   const box = { replaceChildren: (...nodes: (Node | string)[]) => { shown.content = nodes.join(""); } };
@@ -91,7 +93,7 @@ function fixture() {
     draftsReady: async () => {},
     nextLoad: (scope) => { session.next(scope); return session.begin(); },
     api: <T>(path: string, params?: Record<string, string>) => read(path, params) as Promise<T>,
-    apiResponse: <T>(path: string, params?: Record<string, string>) => read(path, params) as Promise<ApiReceipt<T>>,
+    apiResponse: <T>(path: string, params?: Record<string, string>, early?: Promise<Response>) => read(path, params, early) as Promise<ApiReceipt<T>>,
     readFile: async () => "",
     storage: () => local,
     element: () => ({ textContent: "", title: "" }),
@@ -354,4 +356,107 @@ test("a superseded Try again reads nothing: another load started since its open 
   offeredChoice[0]();
   assert.equal(g.pending("branches").length, 1, "no branch read for the old choice");
   assert.equal(g.pending("snapshot").length, 1);
+});
+
+// The page's early snapshot (src/boot-early.ts): asked with the session, before the editor's script loaded.
+const earlySnapshot = (fullName: string | undefined, repoId = 501, branch = "main"): EarlyReads => {
+  const response = Promise.resolve(new Response("{}"));
+  return { snapshot: { repoId, branch, read: Promise.resolve(fullName ? { fullName, response } : undefined) } };
+};
+
+test("nothing remembered: the page's early snapshot opens the linked repository once the session's tag proves it, with no second read", async () => {
+  const early = earlySnapshot("lex/site"), read = early.snapshot!.read;
+  const f = fixture({ remember: false, early });
+  f.boot.startGuess();
+  await flush();
+  assert.deepEqual(f.paths(), ["snapshot"], "no remembered files to ask for");
+  assert.equal(f.pending("snapshot")[0].early, (await read)!.response, "the early answer stands for the first try");
+  assert.deepEqual(f.pending("snapshot")[0].params, { repo: "lex/site", branch: "main" });
+  const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main" });
+  f.pending("snapshot")[0].answer.resolve(receipt(SNAPSHOT));
+  await choosing;
+  assert.equal(f.pending("snapshot").length, 1, "no second snapshot");
+  assert.deepEqual(f.seeded, []);
+  assert.equal(f.ports.appStore.snapshot.value, SNAPSHOT);
+  assert.match(f.shown.status, /^Up to date with main/);
+});
+
+test("the early snapshot is taken once: a second boot guess asks for itself", async () => {
+  const f = fixture({ remember: false, early: earlySnapshot("lex/site") });
+  f.boot.startGuess();
+  f.boot.dropGuess();
+  f.boot.startGuess();
+  await flush();
+  assert.equal(f.pending("snapshot").length, 1, "nothing remembered and the early read gone: no guess");
+  assert.equal(globalThis.aseEarlyReads?.snapshot, undefined);
+});
+
+for (const [name, setup] of [
+  ["a signed-out session (no tag) throws the early snapshot away", (f: ReturnType<typeof fixture>) => f.setTag(undefined)],
+  ["another account's session (another tag) throws the early snapshot away", () => {}],
+] as const) {
+  test(name, async () => {
+    const f = fixture({ remember: false, early: earlySnapshot("lex/site") });
+    setup(f);
+    f.boot.startGuess();
+    await flush();
+    const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main" });
+    f.pending("snapshot")[0].answer.resolve(receipt(SNAPSHOT, "other"));
+    await flush();
+    assert.equal(f.pending("snapshot").length, 2, "the snapshot is read afresh");
+    assert.equal(f.pending("snapshot")[1].early, undefined);
+    f.pending("branches")[0].answer.resolve(["main"]);
+    f.pending("snapshot")[1].answer.resolve(SNAPSHOT);
+    await choosing;
+    assert.equal(f.ports.appStore.snapshot.value, SNAPSHOT);
+    assert.match(f.shown.status, /^Up to date with main/);
+  });
+}
+
+test("an early snapshot of another name (the repository renamed) or none (not listed) is not used: the choice reads afresh", async () => {
+  for (const name of ["lex/old-name", undefined]) {
+    const f = fixture({ remember: false, early: earlySnapshot(name) });
+    f.boot.startGuess();
+    await flush();
+    const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main" });
+    if (name) f.pending("snapshot")[0].answer.resolve(receipt(SNAPSHOT));
+    await flush();
+    const fresh = f.pending("snapshot").at(-1)!;
+    assert.deepEqual(fresh.params, { repo: "lex/site", branch: "main" }, String(name));
+    assert.equal(fresh.early, undefined);
+    f.pending("branches")[0].answer.resolve(["main"]);
+    fresh.answer.resolve(SNAPSHOT);
+    await choosing;
+    assert.equal(f.ports.appStore.snapshot.value, SNAPSHOT);
+  }
+});
+
+test("an early snapshot of another repository or branch than the address names is never taken", async () => {
+  const f = fixture({ remember: false, early: earlySnapshot("lex/site", 501, "draft") });
+  f.boot.startGuess();
+  await flush();
+  assert.deepEqual(f.paths(), []);
+  assert.equal(globalThis.aseEarlyReads?.snapshot, undefined, "thrown away");
+});
+
+test("remembered: the early snapshot stands for the guess's own first try; the remembered files are asked as before", async () => {
+  const early = earlySnapshot("lex/site"), read = early.snapshot!.read;
+  const f = fixture({ early });
+  f.boot.startGuess();
+  await flush();
+  assert.deepEqual(f.paths(), ["files", "snapshot"]);
+  assert.equal(f.pending("snapshot")[0].early, (await read)!.response);
+  const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main" });
+  f.pending("snapshot")[0].answer.resolve(receipt(SNAPSHOT));
+  f.pending("files")[0].answer.resolve(receipt<FilesResult>({ files: { [sha(1)]: "<h1>Guess</h1>" } }));
+  await choosing;
+  assert.equal(f.pending("snapshot").length, 1);
+  assert.deepEqual(f.seeded, [sha(1)]);
+});
+
+test("no address: no guess", () => {
+  const f = fixture({ early: earlySnapshot("lex/site") });
+  hash = "";
+  f.boot.startGuess();
+  assert.deepEqual(f.paths(), []);
 });

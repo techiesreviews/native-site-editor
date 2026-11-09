@@ -120,3 +120,28 @@ test("a POST is never retried or timed out", async () => {
   await assert.rejects(offline.result, /offline/);
   assert.equal(offline.times.length, 1);
 });
+
+test("a first try asked already (the page's early read) is the first of the four: only three more are asked", async () => {
+  const counted = (first: Promise<Response>, script: Step[]) => {
+    const times: number[] = [], start = Date.now();
+    const fetcher: typeof fetch = () => {
+      times.push(Date.now() - start);
+      const next = script[Math.min(times.length - 1, script.length - 1)];
+      return next instanceof Error ? Promise.reject(next) : Promise.resolve((next as Response).clone());
+    };
+    return { result: settle(fetchWithReadRetry("/api/snapshot", {}, { fetcher, first })), times };
+  };
+  const answered = counted(Promise.resolve(reply(200)), [reply(500)]);
+  assert.equal((await answered.result).status, 200);
+  assert.deepEqual(answered.times, [], "its answer stands: nothing asked");
+  const busy = counted(Promise.resolve(reply(503)), [reply(503)]);
+  assert.equal((await busy.result).status, 503);
+  assert.deepEqual(busy.times, [1000, 3000, 7000]);
+  const offline = counted(Promise.reject(new TypeError("network")), [new TypeError("network")]);
+  await assert.rejects(offline.result, ReadUnansweredError);
+  assert.deepEqual(offline.times, [1000, 3000, 7000]);
+  // One that never answers counts as failed after the read's own timeout.
+  const silent = counted(new Promise<Response>(() => {}), [reply(200)]);
+  assert.equal((await silent.result).status, 200);
+  assert.deepEqual(silent.times, [9000]);
+});
