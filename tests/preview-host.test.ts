@@ -23,6 +23,10 @@ test("a link's path, slug, end and media types", () => {
   assert.equal(previewContentType("images/a.SVG"), "image/svg+xml");
   assert.equal(previewContentType("about/index.html"), "text/html; charset=utf-8");
   assert.equal(previewContentType("LICENSE"), "application/octet-stream");
+  assert.equal(previewContentType("fonts/body.woff2"), "font/woff2");
+  assert.equal(previewContentType("photo.JPG"), "image/jpeg");
+  assert.equal(previewContentType("menu.pdf"), "application/pdf");
+  assert.equal(previewContentType("captions.vtt"), "text/vtt; charset=utf-8");
 });
 
 test("paths are answered as a static host would: folders, moves to the slash, .html, the site's 404 page, and refusals", () => {
