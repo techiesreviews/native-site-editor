@@ -23,9 +23,11 @@ const postAllowlist: AllowlistEntry[] = [
   { file: "src/page-builder/audio-prepare.worker.ts", match: "self", reason: AUDIO_SIDE, count: 2 },
   { file: RUNTIME, match: "frame.contentWindow", reason: "The runtime sizes and requests its isolated measuring child; preview-wire.test.ts pins the child request shape." },
   { file: RUNTIME, match: "parent", reason: "The runtime's posts (emit and ready) are the frame side; preview-wire.test.ts pins their types and shapes.", count: 2 },
+  { file: "src/preview-visit.ts", match: "port", reason: "A preview link's visitor page answers its own service worker on the MessageChannel port each file request carries (slice 35), not the preview frame." },
 ];
 const listenerAllowlist: AllowlistEntry[] = [
   { file: "src/agent-transport.ts", match: "source", reason: "Pinned agent relay WebSocket, not a preview frame; transport tests prove socket, workspace, tab and generation checks." },
+  { file: "src/preview-visit.ts", match: "navigator.serviceWorker", reason: "A preview link's visitor page hears file requests from its own service worker (slice 35), each with a reply port; not the preview frame." },
   { file: "src/live-room.ts", match: "next", reason: "Live room WebSocket (ticket am-20), not a preview frame; live-room.test.ts proves it reads only its own socket's frames." },
   { file: "src/components/agent-menu.ts", match: "channel", reason: REQUESTS },
   { file: "src/drafts.ts", match: "channel", reason: DRAFTS },
