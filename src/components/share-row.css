@@ -93,7 +93,7 @@
   place-self: stretch end;
   display: flex;
   align-items: center;
-  padding-inline: 20px 4px;
+  padding-inline: 20px 0;
   border-radius: inherit;
   background:
     linear-gradient(to right, transparent, var(--share-row-tint) 20px),
@@ -104,8 +104,9 @@
 .share-row__copy {
   display: inline-grid;
   place-items: center;
-  inline-size: 28px;
-  block-size: 28px;
+  /* The row's full height and as wide as the row is tall (44 px on touch and narrow windows): a whole target. */
+  inline-size: max(var(--size-control), var(--size-tap));
+  block-size: 100%;
   padding: 0;
   border: 0;
   border-radius: var(--radius);
@@ -161,12 +162,11 @@
     opacity: 1;
   }
   .share-row > .share-row__action > .share-row__copy {
-    inline-size: 36px;
-    block-size: 100%;
+    inline-size: var(--size-touch);
     pointer-events: auto;
   }
   .share-row:has(> .share-row__action:not([hidden])) > .share-row__main {
-    padding-inline-end: 36px;
+    padding-inline-end: var(--size-touch);
   }
 }
 @media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
