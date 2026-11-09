@@ -10,9 +10,9 @@
 // - A true clash (the same words changed on both sides: lines both changed are merged again by word) shows the latest
 //   version: GitHub's words replace Lex's there as one Undo step of their own, so one Undo brings Lex's words back. No
 //   question and no message.
-// - In a live room (src/live-text.ts `takeOutside`) the room's one shared copy takes the change as one more participant
-//   (or holds it already); a clash there is settled the same way. When it cannot, the draft merges as above and the
-//   share starts again, joining the room's copy.
+// - A page being typed on together in a live room (src/live-text.ts `liveShared`) does not fold: the branch loads again,
+//   as before, and unsaved work stays, so the room's copy never takes the change twice. Folding into a live room is a
+//   ticket of its own (am-59).
 // - The page shown gets a brief outline and a chip naming the commit's author where its text changed
 //   (src/agent-presence.ts `visit`); another changed page gets the dot on its row.
 //
@@ -24,7 +24,7 @@ import type { DraftTextStore } from "./draft-store";
 import type { PagesAndFilesPorts } from "./pages-and-files-host";
 import type { CommitFiles, PublishResult, Snapshot, TreeEntry } from "../shared/types";
 import { rebaseHistory } from "./shared-undo";
-import { takeOutside } from "./live-text";
+import { liveShared } from "./live-text";
 import { mergeText } from "./text-merge";
 
 import { isNativeTextFile } from "./site-text-index";
@@ -72,6 +72,8 @@ export interface OutsideHost {
   seeHead(commit: string): void;
   /** The browser's drafts (src/drafts.ts `draftStore`). */
   drafts(): { list(scope: DraftScope): SavedDraft[] };
+  /** Whether the file under a draft key is typed on together in a live room now (src/live-text.ts `liveShared`). */
+  shared?: (key: string) => boolean;
 }
 type Ports = Pick<PagesAndFilesPorts, "appStore" | "api" | "readFiles" | "draftScope" | "runtime" | "editorModule" | "agentPresence" | "nativeHistorySession">;
 
@@ -114,7 +116,11 @@ export async function foldIn(ports: Ports, host: OutsideHost, commit: string, li
   if (!live()) return true;
   const drafted = draftsNow();
   if (!mergeable(drafted)) return false;
-  const label = `${name || "Someone"} · GitHub`, store = ports.editorModule.sourceStore();
+  const store = ports.editorModule.sourceStore();
+  // A page typed on together now: the branch loads again, as before (am-59 folds into a live room).
+  const together = host.shared ?? ((key: string) => liveShared(store, key));
+  if (changed.some(entry => { const key = store.get(scope, entry.path)?.key; return key !== undefined && together(key); })) return false;
+  const label = `${name || "Someone"} · GitHub`;
   const shown = new Map(changed.flatMap(entry => { const text = ports.runtime.source(entry.path); return text === undefined ? [] : [[entry.path, text] as const]; }));
   for (const entry of changed)
     foldFile(store, scope, entry.path, drafted.get(entry.path), texts.get(entry.path)!, entry.sha, () => ports.nativeHistorySession(scope, entry.path), label, ports.editorModule.sourceMoved);
@@ -134,8 +140,7 @@ export async function foldIn(ports: Ports, host: OutsideHost, commit: string, li
 /**
  * One changed file: `theirs` at blob `sha` is GitHub's text now. Its draft (`record`, or the editor
  * store's open entry) is merged against its starting text; without either only the base moves (the caller's
- * `adoptSaved`). In a live room the change enters the shared copy as one more participant (src/live-text.ts
- * `takeOutside`), and the draft follows the copy.
+ * `adoptSaved`). A file typed on together in a live room never comes here (`foldIn` loads the branch again).
  */
 export function foldFile(store: DraftTextStore, scope: DraftScope, path: string, record: SavedDraft | undefined, theirs: string, sha: string,
   history: () => string, author: string, moved?: (key: string, source: string, sha: string) => void) {
@@ -143,14 +148,9 @@ export function foldFile(store: DraftTextStore, scope: DraftScope, path: string,
   // A draft only on record opens in the store to merge, and stays open there (deliberately): its Undo step needs it.
   if (!file && record) file = store.open(scope, path, { text: record.original, baseSha: record.baseSha }).file;
   if (!file) return;
-  const merged = mergeText(file.base, file.text, theirs);
-  // In a live room the room's copy takes the change (src/live-text.ts `takeOutside`), merged against the copy's text;
-  // the draft follows the copy.
-  const shared = takeOutside(store, file.key, { base: file.base, theirs, sha });
-  const clash = shared ?? merged;
-  // The outside change, as someone else's: Lex's steps over the file move past it. On a clash in a room the copy holds
-  // the latest already; the draft takes Lex's words back here (the copy not), so the step below is what Undo takes back.
-  if (!shared || shared.clashed) store.edit({ scope, path, text: clash.mine, record: false, origin: "shared", rebase: rebaseHistory });
+  const clash = mergeText(file.base, file.text, theirs);
+  // The outside change, as someone else's: Lex's steps over the file move past it.
+  store.edit({ scope, path, text: clash.mine, record: false, origin: "shared", rebase: rebaseHistory });
   store.acceptBase(scope, path, { text: theirs, baseSha: sha });
   // An open code pane compares with GitHub's new text from now on (src/components/source-editor.ts `sourceMoved`).
   moved?.(file.key, theirs, sha);
