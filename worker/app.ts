@@ -3,8 +3,9 @@ import { AGENT_PERMISSION_LIFETIME } from "./agent-lifecycle";
 import { cleanupRoute, inventoryRoute } from "./agent-maintenance";
 import { requestJson } from "./http";
 import { ASSET_TYPES } from "../shared/asset-types";
-import { AgentRelay, LiveRooms, liveRoomObjectName, liveRoomTag, liveSessionObjectName, liveSessionRoomTag, relayObjectName, type LiveAgent } from "./agent-relay";
+import { AgentRelay, LiveRooms, liveRoomObjectName, liveRoomTag, livePreviewObjectName, livePreviewRoomTag, liveSessionObjectName, liveSessionRoomTag, relayObjectName, type LiveAgent } from "./agent-relay";
 import { LIVE_SESSION_HOST, LIVE_SESSION_TOKEN, liveRoomFile, type LiveAccess } from "../shared/live-room";
+import { PREVIEW_DAYS, PREVIEW_HOST, PREVIEW_TOKEN, previewSlug, previewTokenEnds } from "../shared/preview-link";
 import {
   validAgentBranch,
   authenticateAgent,
@@ -101,6 +102,16 @@ export interface Env extends AgentControlEnv {
   EDITOR_ALIASES?: string;
   /** Where the Starter site comes from: unset for the template repository, "native-static" for the vendored native starter. */
   STARTER_SOURCE?: string;
+  /** The preview Worker's address (worker/preview-host.ts, slice 35); unset leaves Share preview out of the editor. */
+  PREVIEW_ORIGIN?: string;
+}
+
+/** The preview Worker's origin, when one is set up: an http(s) address. */
+function previewOrigin(env: Env) {
+  try {
+    const url = new URL(env.PREVIEW_ORIGIN ?? "");
+    return url.protocol === "https:" || url.protocol === "http:" ? url.origin : undefined;
+  } catch { return undefined; }
 }
 
 async function config(env: Env) {
@@ -447,7 +458,83 @@ async function liveSessionKeys(env: Env) {
   return {
     guest: async (nonce: string) => (await tag(`guest\0${nonce}`)).slice(0, 32),
     host: (nonce: string, login: string, repoId: number) => tag(`host\0${nonce}\0${login.toLowerCase()}\0${repoId}`),
+    // A preview link's (slice 35): its tag covers when it ends, so a changed end is a made-up link.
+    preview: async (nonce: string, ends: string) => (await tag(`preview\0${nonce}\0${ends}`)).slice(0, 32),
+    previewHost: (nonce: string, login: string, repoId: number) => tag(`preview-host\0${nonce}\0${login.toLowerCase()}\0${repoId}`),
   };
+}
+
+/**
+ * A preview link (slice 35; shared/preview-link.ts). The signed-in share call (POST `/api/live/preview`) mints it: a
+ * token whose tag covers when it ends, and the sharing tab's own proof, never in the link. That tab holds the link's
+ * room open with both (GET `/api/live/preview`, a socket) whenever the editor is open on the site; visitors join with
+ * the token alone (`/api/live/visit`), through the preview Worker's service binding, so their pages never reach this
+ * origin. A plain visit request learns whether the preview runs (204), not now (409), or is over (410). Turning it off
+ * (POST `/api/live/preview/off`, with the proof) closes every socket and refuses the link until it would have ended.
+ */
+async function previewRoute(request: Request, env: Env, url: URL, fetcher: typeof fetch): Promise<Response> {
+  const keys = await liveSessionKeys(env), address = previewOrigin(env);
+  const path = url.pathname;
+  if (path === "/api/live/preview" && request.method === "POST") {
+    if (request.headers.get("Origin") !== url.origin) throw new HttpError(403, "Invalid request origin.");
+    const user = await session(request, env);
+    if (!user) throw new SignedOutError(401, "Connect GitHub to share a preview.");
+    const data = await requestJson(request, 4096);
+    if (!validAgentBranch(data?.branch)) throw new HttpError(400, "Choose a repository and branch.");
+    const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, String(data?.repo ?? ""));
+    if (!keys || !address) throw new HttpError(503, "Preview links are not set up on this editor.");
+    const nonce = hexOf(crypto.getRandomValues(new Uint8Array(16)));
+    const ends = Math.floor(Date.now() / 1000) + PREVIEW_DAYS * 86_400;
+    const endsHex = ends.toString(16).padStart(8, "0");
+    const token = nonce + endsHex + await keys.preview(nonce, endsHex);
+    // The link's address, its key still to come after `#` (the tab makes it): the site's name, then the token.
+    const link = `${address}/s/${previewSlug(typeof data?.site === "string" ? data.site : repo.name)}-${token}/`;
+    return json({ token, host: await keys.previewHost(nonce, user.login, repo.id), link, ends: ends * 1000 });
+  }
+  const token = url.searchParams.get("token") ?? "", rejoin = url.searchParams.get("rejoin");
+  if (url.searchParams.getAll("token").length !== 1 || !PREVIEW_TOKEN.test(token) || url.searchParams.getAll("rejoin").length > 1 ||
+    (rejoin !== null && !/^[a-f\d]{32}$/.test(rejoin)) || !keys || !sameHex(token.slice(40), await keys.preview(token.slice(0, 32), token.slice(32, 40))))
+    throw new HttpError(400, "This preview link is not valid.");
+  if (previewTokenEnds(token) <= Date.now()) throw new HttpError(410, "This preview link has ended.");
+  const nonce = token.slice(0, 32), ends = previewTokenEnds(token);
+  const store = env.SESSIONS.get(env.SESSIONS.idFromName(await livePreviewObjectName(nonce)));
+  // Lex's own calls: signed in, from this editor, with access to the repository and the proof the share call gave his tab.
+  const owner = async (repoName: string, proof: string) => {
+    const user = await session(request, env);
+    if (!user) throw new SignedOutError(401, "Connect GitHub to share a preview.");
+    const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, repoName);
+    if (!PREVIEW_HOST.test(proof) || !sameHex(proof, await keys.previewHost(nonce, user.login, repo.id))) throw new HttpError(403, "This preview link is someone else's.");
+  };
+  if (path === "/api/live/preview/off") {
+    if (request.method !== "POST") throw new HttpError(405, "Use POST.");
+    if (request.headers.get("Origin") !== url.origin) throw new HttpError(403, "Invalid request origin.");
+    const data = await requestJson(request, 4096);
+    await owner(String(data?.repo ?? ""), String(data?.host ?? ""));
+    const done = await store.fetch(new Request("https://session.internal/live/preview-off", { method: "POST", headers: { [LiveRooms.identityHeader]: JSON.stringify({ ends }) } }));
+    if (!done.ok) throw new HttpError(502, "The preview link could not be turned off.");
+    return new Response(null, { status: 204 });
+  }
+  if (request.method !== "GET") throw new HttpError(405, "Use GET.");
+  const hosting = path === "/api/live/preview";
+  // Only a socket carries the room's traffic: a page of another site learns a status, nothing more. Visitors come
+  // through the preview Worker, whose forwarded requests carry no Origin; a browser may come only from that Worker's address.
+  const from = request.headers.get("Origin");
+  if (request.headers.has("Upgrade") && from !== null && from !== (hosting ? url.origin : address)) throw new HttpError(403, "Invalid request origin.");
+  if (hosting) {
+    if (["repo", "host"].some(key => url.searchParams.getAll(key).length !== 1)) throw new HttpError(400, "Choose a repository.");
+    await owner(url.searchParams.get("repo") ?? "", url.searchParams.get("host") ?? "");
+  }
+  const identity = { room: await livePreviewRoomTag(), access: hosting ? "editor" : "guest", preview: true, ...(rejoin === null ? {} : { rejoin }) };
+  const headers = { [LiveRooms.identityHeader]: JSON.stringify(identity) };
+  if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+    const admits = (await store.fetch(new Request("https://session.internal/live/admits", { headers }))).status;
+    if (admits === 410) throw new HttpError(410, "This preview link is turned off.");
+    if (hosting) throw new HttpError(426, "Use a WebSocket upgrade.");
+    if (admits !== 204) throw new HttpError(409, "This preview is not running: the editor is closed.");
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  }
+  // Fresh headers: no cookie crosses into the room. A visitor is refused there (409) while no editor holds it.
+  return store.fetch(new Request("https://session.internal/live/join", { headers: { Upgrade: "websocket", ...headers } }));
 }
 
 /** Whether an agent in a live room may stay: its connection is still listed for this repository and branch, at the
@@ -549,6 +636,8 @@ async function route(
         path === "/auth/setup/unlock" ||
         path === "/api/accounts/switch" ||
         path === "/api/live/share" ||
+        path === "/api/live/preview" ||
+        path === "/api/live/preview/off" ||
         path.startsWith("/api/publish/") ||
         path.startsWith("/api/agent/")) &&
       request.method === "POST"
@@ -724,6 +813,7 @@ async function route(
   // tab holds the room open with both; a guest joins with the link's token alone. A made-up token is refused here,
   // before any relay instance wakes. Each session has its own instance and room, named from the token, so a link never
   // reaches a site's file rooms. The room key stays after `#` in the link: neither route sees it.
+  if (path === "/api/live/preview" || path === "/api/live/preview/off" || path === "/api/live/visit") return previewRoute(request, env, url, fetcher);
   if (path === "/api/live/share" || path === "/api/live/guest") {
     const sharing = path === "/api/live/share";
     const keys = await liveSessionKeys(env);
@@ -1036,6 +1126,8 @@ async function route(
       ownerSetupUrl: !app && hasOwnerSetup(env) ? "/auth/setup" : null,
       // Setup without a private link (OWNER_GITHUB): the UI goes straight there.
       ownerSetupOpen: !app && Boolean(ownerLogin(env)),
+      // Share preview shows only when a preview Worker is set up (slice 35).
+      ...(previewOrigin(env) ? { previewLinks: true } : {}),
       ...(user ? { accounts } : {}),
     }, { headers: request.method === "GET" ? await bootSessionHeaders(user) : undefined });
   }

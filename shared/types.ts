@@ -77,6 +77,8 @@ export interface SessionInfo {
    * opens on Create your site). Null when there is nothing to do or nothing known.
    */
   onboarding?: "install" | "create" | null;
+  /** This editor has a preview Worker (PREVIEW_ORIGIN, slice 35): Share preview shows in the project menu. */
+  previewLinks?: boolean;
 }
 
 /**

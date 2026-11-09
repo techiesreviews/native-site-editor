@@ -185,6 +185,14 @@ its number unused.
 - Spec: `tests/native-save/native-collaborators-join.spec.ts`
 - Steps: none yet (needs two GitHub accounts signed in at once)
 
+### F-repo-11 Share preview
+- Try: Open the project menu and choose Share preview. Open the copied link in another browser (or a private window), then type in a heading in the editor. Close the editor tab and look at the link's page; open the editor on the same site again. Then open the project menu, choose Turn preview off, and open the link again.
+- Good: Share preview shows only while a site is open on an editor with a preview Worker set up (PREVIEW_ORIGIN). Choosing it puts the link in the menu with Copy, which says Copied on itself for a moment (no toast, S4), "Works while your editor is open · ends <date>" (30 days on) and Turn preview off; the menu stays open. The link opens on the preview's own address, not the editor's: the real site, edge to edge, its own stylesheets, scripts and pictures, and its pages linked as on a static host; the repository's hidden files (`.editor/`, `.github/`) are not shown. Your typing shows there within a moment or two, unsaved, the page staying where the visitor had scrolled. With the editor closed the link says "Not running" and comes back by itself when you open the editor on that site again (in this browser). Turned off, its page says "This preview link is turned off." and the link refuses from then on. Signed out, the item says Sign in to share; any other refusal says Couldn't share preview.
+- Files: `src/preview-share.ts`, `src/preview-later.ts`, `src/preview-control.ts`, `src/preview-serve.ts`, `src/live-wire.ts`, `src/preview-visit.ts`, `src/preview-visit.css`, `preview-visit.html`, `src/components/preview-menu.ts`, `src/components/preview-menu.css`, `src/components/repository-menu.ts`, `shared/preview-link.ts`, `worker/preview-host.ts`, `worker/app.ts`, `worker/agent-relay.ts`, `worker/index.ts`, `wrangler.preview-host.jsonc`
+- Phone: yes
+- Spec: `tests/native-save/native-preview-link.spec.ts`
+- Steps: `scripts/agents/shots/features/F-repo-11.json`
+
 ## Pages and files
 
 ### F-pages-01 Pages tab

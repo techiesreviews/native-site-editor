@@ -17,7 +17,7 @@ import { mountDropdown } from "./components/dropdown";
 import { createNativePreview, type NativePreview, type NativePreviewHandlers, type NativeStructureItem } from "./components/native-preview";
 import { createPageStructure, type PageStructureHandlers } from "./components/page-structure";
 import { dismissRefusalNote, refuse } from "./components/refusal-note";
-import { createRepositoryMenu, type ShareMenuPort } from "./components/repository-menu";
+import { createRepositoryMenu, type PreviewMenuPort, type ShareMenuPort } from "./components/repository-menu";
 import { createRowMenu } from "./components/row-menu";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { mountSiteActions } from "./components/site-actions";
@@ -157,6 +157,8 @@ export interface WorkspaceMountPorts {
   cleanSources: Pick<CleanSourceCache, "clear">;
   /** Share to edit in the project menu (slice 30, src/live-session.ts). */
   share?: ShareMenuPort;
+  /** Share preview in the project menu (slice 35, src/preview-share.ts); told after each paint, so the site shown serves its link. */
+  preview?: PreviewMenuPort & { painted(): void };
   /** Host state, read (and written) at call time. */
   readonly info: SessionInfo;
   repositories: Repository[];
@@ -346,6 +348,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       onSwitchAccount: (login) => void ports.account.switchTo(login),
       onSignOut: reported(ports.account.signOut), onNote: (note) => { ports.finishedWork.open(note); handOver(); },
       ...ports.share ? { share: ports.share } : {},
+      preview: ports.preview,
     });
     ports.element("repository-menu").append(repositoryMenu.root);
     ports.element("site-settings-toggle").addEventListener("click", () => void ports.page.siteSettings());
@@ -509,6 +512,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
         toolsAfterPaint();
         codePanes.notePreviewPainted();
         ports.site.painted();
+        ports.preview?.painted();
         const path = structure.path, source = structure.paintedSource, scope = ports.draftScope();
         // A row's move holds the workspace from this paint, and the page's editor model if it is mounted.
         const paint = { since: ports.guardedEdits.stamp(), model: scope && ports.editorModule?.isMounted(path) ? ports.editorModule.captureFileModelState(scope, path) : undefined };

@@ -5,6 +5,11 @@
     "reason": "Cloudflare loads the Worker default through wrangler main."
   },
   {
+    "file": "worker/preview-host.ts",
+    "name": "default",
+    "reason": "Cloudflare loads the preview Worker's default through wrangler.preview-host.jsonc main."
+  },
+  {
     "file": "worker/index.ts",
     "name": "SessionStore",
     "reason": "Cloudflare loads this Durable Object through wrangler durable_objects.bindings[].class_name."

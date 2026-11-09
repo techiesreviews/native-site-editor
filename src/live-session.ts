@@ -23,15 +23,13 @@ import type { LiveAccess } from "../shared/live-room";
 import type { JsonValue } from "../shared/agent-command";
 import { LIVE_GUEST_ID, LIVE_SESSION_TOKEN } from "../shared/live-room";
 import { personName } from "./share-control";
+import { b64u, sessionWire } from "./live-wire";
+// The wire and the room key's encoding live in src/live-wire.ts, which preview links' pages share without this module.
+export { importSessionKey, randomId, sessionWire } from "./live-wire";
 import type { GuestTextEdit, MirrorMessage, NativePreview } from "./components/native-preview";
 
 /** The guest page's address. */
 export const LIVE_SESSION_PATH = "/live";
-/** A frame's share of a message: big renders (a page's images) go in parts that fit a room frame. */
-const PART_BYTES = 512 * 1024;
-/** A message of more parts than this is dropped (32 MiB). */
-const MAX_PARTS = 64;
-
 /** Lex's tab to guests: the page on show (its components and stylesheets only when they changed), each guest's typing
  * written so far (its frame's numbering) and each guest's colour, by guest id. */
 export type HostMessage =
@@ -53,13 +51,6 @@ const SHARE_WAIT_MS = 10_000;
 /** A message the socket did not take, or one too big to send, is followed by the whole page again this much later. */
 const RESEND_MS = 2_000;
 
-const hex = (bytes: Uint8Array) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-export const randomId = (bytes = 16) => hex(crypto.getRandomValues(new Uint8Array(bytes)));
-const b64u = {
-  encode: (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, ""),
-  decode: (text: string) => Uint8Array.from(atob(text.replaceAll("-", "+").replaceAll("_", "/")), (char) => char.charCodeAt(0)),
-};
-
 /** A link's parts, from the guest page's address; undefined when it is not a whole edit link. */
 export function readSessionLink(href: string): { token: string; key: string; site: string; by: string } | undefined {
   let url: URL;
@@ -69,68 +60,6 @@ export function readSessionLink(href: string): { token: string; key: string; sit
   const key = hash.get("k") ?? "";
   if (!LIVE_SESSION_TOKEN.test(token) || !/^[\w-]{43}$/.test(key)) return undefined;
   return { token, key, site: (hash.get("site") ?? "").slice(0, 100), by: (hash.get("by") ?? "").slice(0, 100) };
-}
-export const importSessionKey = (key: string) =>
-  crypto.subtle.importKey("raw", b64u.decode(key), { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
-
-/**
- * The session's wire over one live room: JSON messages, each split into parts that fit a frame, sent one at a time in
- * order (sealing is asynchronous, so two sent at once could swap). `lost` hears a message the socket did not take.
- */
-export function sessionWire<In>(room: () => Pick<LiveRoom, "send"> | undefined, receive: (message: In, from: Sender) => void, lost: () => void) {
-  let queue = Promise.resolve();
-  const parts = new Map<string, { count: number; got: Map<number, Uint8Array> }>();
-  const decoder = new TextDecoder();
-  const deliver = (bytes: Uint8Array, from: Sender) => {
-    let message: In;
-    try { message = JSON.parse(decoder.decode(bytes)) as In; } catch { return; }
-    if (message && typeof message === "object") receive(message, from);
-  };
-  return {
-    send(message: unknown) {
-      const bytes = new TextEncoder().encode(JSON.stringify(message));
-      const count = Math.max(1, Math.ceil(bytes.length / PART_BYTES));
-      // Too big to send (over 32 MiB): the copy is sent whole again, once the assets are spread over smaller messages.
-      if (count > MAX_PARTS) { lost(); return; }
-      const id = crypto.getRandomValues(new Uint32Array(1))[0];
-      queue = queue.then(async () => {
-        for (let index = 0; index < count; index++) {
-          const part = bytes.subarray(index * PART_BYTES, (index + 1) * PART_BYTES);
-          const frame = new Uint8Array(9 + part.length);
-          const view = new DataView(frame.buffer);
-          view.setUint8(0, count === 1 ? 0 : 1);
-          view.setUint32(1, id);
-          view.setUint16(5, index);
-          view.setUint16(7, count);
-          frame.set(part, 9);
-          const sent = await room()?.send(frame).catch(() => false);
-          if (!sent) { lost(); return; }
-        }
-      });
-    },
-    receive(frame: Uint8Array, from: Sender) {
-      if (frame.length < 9) return;
-      const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
-      const body = frame.subarray(9);
-      if (view.getUint8(0) === 0) { deliver(body, from); return; }
-      const index = view.getUint16(5), count = view.getUint16(7);
-      // Parts are put back together per sender: nobody can slip a part into someone else's message.
-      const id = `${from.peer}:${view.getUint32(1)}`;
-      if (count < 2 || count > MAX_PARTS || index >= count) return;
-      const entry = parts.get(id) ?? { count, got: new Map() };
-      if (entry.count !== count) return;
-      entry.got.set(index, Uint8Array.from(body));
-      parts.set(id, entry);
-      // Only the latest few messages wait for their parts: an older one missing a part is let go.
-      for (const old of [...parts.keys()].slice(0, Math.max(0, parts.size - 4))) parts.delete(old);
-      if (entry.got.size < count) return;
-      parts.delete(id);
-      const all = new Uint8Array([...entry.got.values()].reduce((sum, part) => sum + part.length, 0));
-      let offset = 0;
-      for (let at = 0; at < count; at++) { const part = entry.got.get(at)!; all.set(part, offset); offset += part.length; }
-      deliver(all, from);
-    },
-  };
 }
 
 export interface SharePorts {

@@ -177,6 +177,10 @@ _Avoid_: notifications, to-do list, alerts
 A live editing session Lex opens from a project with Share live: anyone with its link joins by typing a name, with no account, and edits the pages in it with him. It lasts while his tab is open and ends when he closes the tab or stops sharing. Guests' changes become his unsaved changes; only he saves, publishes and uses agents. Started with Share to edit in the project menu; guests edit the text of the page he shows, which their page follows (ticket am-30).
 _Avoid_: guest account, invite
 
+**Preview link**:
+A link that shows the real site, its own scripts running, to anyone who has it, on a separate preview address (the preview Worker's), never the editor's. It follows Lex's edits as he makes them, unsaved ones included, while his editor is open on the site; while it is closed the link says "Not running". Nothing is stored on the way: his tab answers each file through the link's Live room. Search engines are told to stay out. Made with Share preview in the project menu; it lasts until Turn preview off or 30 days, and only the browser that made it serves it (ticket am-35).
+_Avoid_: snapshot, staging site, share link (a Synced session's link lets people edit)
+
 **Live room**:
 Everyone with one file of one site and branch open at once: the editor's tabs, collaborators and agents. Their changes travel locked with a room key only the participants hold; the relay passes them on and keeps nothing. Agents join only while a tab has the file open. (ADR 0003; the carrier for typing together, hot preview links and outside-change news.)
 _Avoid_: channel, session (a Synced session is something else)

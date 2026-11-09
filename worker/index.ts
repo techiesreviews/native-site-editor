@@ -12,9 +12,12 @@ import { AgentRelay, LiveRooms, readRelayBody, type LiveAgent } from "./agent-re
 import { accountMetadata, METADATA_KEY, METADATA_ROUTE, type Ledger, type MetadataAction } from "./agent-metadata";
 import { workspaceKey } from "../shared/agent-command";
 import { LIVE_ACCESS_ENDED, liveAccess } from "../shared/live-room";
+import { PREVIEW_TURNED_OFF } from "../shared/preview-link";
 import { AgentLifecycle, AlarmDeadlines } from "./agent-lifecycle";
 
 interface RepositoryCacheChunks { chunks: number }
+/** A preview link's instance (slice 35): turned off, until when it would have ended. */
+const PREVIEW_OFF_KEY = "preview-off";
 const repositoryChunkPrefix = "repositoryCache:";
 const repositoryCacheMaxBytes = 262144;
 async function clearRepositoryCache(storage: DurableObjectStorage | DurableObjectTransaction) {
@@ -136,11 +139,24 @@ export class SessionStore extends DurableObject {
     const url = new URL(request.url);
     if (url.pathname === "/maintenance/cleanup") return this.ctx.blockConcurrencyWhile(() => cleanupObject(request, storage, { sockets: this.ctx.getWebSockets().length }));
     if (url.pathname === "/maintenance/inventory") return inventoryObject(request, storage);
-    if (url.pathname === "/live/join" || url.pathname === "/live/end-agent" || url.pathname === "/live/admits") {
-      // Worker-internal only: app.ts checks room access and names the room; this stores nothing.
-      let identity: { room?: unknown; access?: unknown; rejoin?: unknown; agent?: Partial<LiveAgent> } | null = null;
+    if (url.pathname === "/live/join" || url.pathname === "/live/end-agent" || url.pathname === "/live/admits" || url.pathname === "/live/preview-off") {
+      // Worker-internal only: app.ts checks room access and names the room; this stores nothing but a preview link's
+      // "turned off" mark, kept until the link would have ended anyway.
+      let identity: { room?: unknown; access?: unknown; rejoin?: unknown; agent?: Partial<LiveAgent>; preview?: unknown; ends?: unknown } | null = null;
       try { identity = JSON.parse(request.headers.get(LiveRooms.identityHeader) ?? "null"); } catch { /* Refuse malformed trusted metadata. */ }
       const live = this.live();
+      // Turning a preview link off (slice 35): every socket in it closes, and it refuses from now until it would end.
+      if (url.pathname === "/live/preview-off") {
+        const ends = identity?.ends;
+        if (request.method !== "POST" || typeof ends !== "number" || !Number.isSafeInteger(ends)) return new Response(null, { status: 400 });
+        await this.ctx.blockConcurrencyWhile(async () => {
+          await storage.put(PREVIEW_OFF_KEY, ends);
+          await this.deadlines.set("session", ends);
+        });
+        live.endAll(PREVIEW_TURNED_OFF, "This preview link is turned off.");
+        return new Response(null, { status: 204 });
+      }
+      if (identity?.preview === true && await storage.get(PREVIEW_OFF_KEY) !== undefined) return new Response(null, { status: 410 });
       // A revoked connection's agents leave every room here at once (worker/app.ts, /api/agent/revoke).
       if (url.pathname === "/live/end-agent") {
         if (request.method !== "POST" || typeof identity?.agent?.id !== "string") return new Response(null, { status: 400 });
@@ -384,6 +400,7 @@ export class SessionStore extends DurableObject {
           await clearHub(storage);
           await storage.delete(PENDING_KEY);
           await storage.delete("agent-cleaned-until");
+          await storage.delete(PREVIEW_OFF_KEY);
           await this.deadlines.set("session");
         }
       }

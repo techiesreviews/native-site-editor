@@ -40,6 +40,11 @@
     // Your GitHub username. Opening the editor for the first time then
     // creates its GitHub App on that account; nobody else can.
     "OWNER_GITHUB": "",
+    // Preview links (Share preview in the project menu): the address of your
+    // preview Worker, e.g. https://native-site-editor-previews.<your-subdomain>.workers.dev.
+    // Deploy it with `npx wrangler deploy --config wrangler.preview-host.jsonc`.
+    // Empty leaves preview links off.
+    "PREVIEW_ORIGIN": "",
   },
   "assets": {
     "directory": "./dist",
