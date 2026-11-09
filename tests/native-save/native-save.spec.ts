@@ -242,10 +242,10 @@ test("a conflicting save folds GitHub's commit in, the draft's words one Undo aw
 
   await openSaveMenu(page);
   await saveSubmit(page).click();
-  await expect(page.locator(".publish-menu__message")).toContainText(/GitHub changed these files|drafts are kept/i, { timeout: 30_000 });
 
   // The refusal has the branch's head checked, and GitHub's commit folds in (ticket am-33): the same words changed on
   // both sides, so the latest version shows and the draft's words are one Undo away; saved again, they go through.
+  // (The refusal's message can be gone again by then: the fold that follows it settles the save menu.)
   await expect(frame.getByRole("heading", { name: "Someone else edited" })).toBeVisible({ timeout: 15_000 });
   await page.locator("#editor-toolbar-host .code-editor__undo").click();
   await expect(frame.getByRole("heading", { name: "My conflicting draft" })).toBeVisible();
