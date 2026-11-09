@@ -18,8 +18,6 @@ export interface SavePublishPorts {
   onWake(check: () => void): () => void;
   /** Whether the tab is shown; the head is checked only then. */
   visible(): boolean;
-  /** Runs `run` after `ms` (setTimeout by default; tests run it at once). */
-  later?(run: () => void, ms: number): void;
   reload(): Promise<void>;
   findEntry(path: string): Promise<TreeEntry | undefined>;
   forget(scope: DraftScope, path: string): void;
@@ -78,8 +76,6 @@ export interface SaveProof {
 }
 
 const headTrust = 5 * 60_000;
-/** A push notice waits this long before its check: this tab's own save's answer, which names the same commit, lands first. */
-const PUSH_SETTLE_MS = 2_000;
 
 /**
  * Save and publish orchestration: head trust and checks, reconciliation of
@@ -125,12 +121,13 @@ export function createSavePublishController(ports: SavePublishPorts) {
   // another tab): checked when the tab is shown or focused again, at most
   // every 15 seconds, and after a save was refused. A new head loads as
   // Refresh does, the open file opening again. `pushed`: the commit a push
-  // notice named, asked about so a GitHub read lagging behind it still gives it.
+  // notice named, asked about (unless this tab trusts a head of its own, which
+  // may be newer) so a GitHub read lagging behind it still gives it.
   async function checkHead(force = false, pushed?: string) {
     const was = proof(), seen = was.snapshot, scope = ports.scope();
     if (!scope || !seen || !ports.visible() || (!force && Date.now() - headCheckedAt < 15_000)) return;
     headCheckedAt = Date.now();
-    const token = ++headCheck, known = pushed ?? trustedHead();
+    const token = ++headCheck, known = trustedHead() ?? pushed;
     try {
       const { commit } = await ports.api<{ commit: string }>("head", {
         repo: scope.repo, branch: seen.branch,
@@ -145,16 +142,39 @@ export function createSavePublishController(ports: SavePublishPorts) {
   }
 
   // A GitHub push reached this tab through the live relay (ticket am-32,
-  // src/live-text.ts): `scope`'s branch is now at `commit`. Unless this tab
-  // shows that commit or saved it itself (its save's answer may still be on
-  // its way, so it waits a moment first), the head is checked with this tab's
-  // own sign-in. A hidden tab checks on its next focus instead.
+  // src/live-text.ts): `scope`'s branch is now at `commit`, and the head is
+  // checked with this tab's own sign-in. Every save of this tab sends such a
+  // notice back to it, often before the save's own answer. One outcome each:
+  // - no save of this tab running: checked at once, unless the commit is the
+  //   one on show or this tab's trusted head (its own save, answered already);
+  // - a save running (`beginSave`): held, a newer notice replacing it; when
+  //   the last save settles (answered, refused or failed), a held notice whose
+  //   commit that save's answer named (seeHead in `published`) is dropped, any
+  //   other is checked as above;
+  // - disposed: dropped, nothing read.
+  // A hidden tab reads nothing (checkHead) and checks on its next focus.
+  let saving = 0, heldPush: { scope: DraftScope; commit: string } | undefined, disposed = false;
+  function takeUpPush(scope: DraftScope, commit: string) {
+    const seen = ports.snapshot();
+    if (disposed || !seen || !isOpen(scope) || commit === seen.commit || commit === headSeen?.commit) return;
+    void checkHead(true, commit);
+  }
   function pushed(scope: DraftScope, commit: string) {
-    (ports.later ?? ((run, ms) => { setTimeout(run, ms); }))(() => {
-      const seen = ports.snapshot();
-      if (!seen || !isOpen(scope) || commit === seen.commit || commit === headSeen?.commit) return;
-      void checkHead(true, commit);
-    }, PUSH_SETTLE_MS);
+    if (saving) heldPush = { scope, commit };
+    else takeUpPush(scope, commit);
+  }
+  /** A save of this tab starts. The returned settle runs once it ended, whatever the outcome, after its answer reached `published`; again does nothing. */
+  function beginSave() {
+    saving++;
+    let settled = false;
+    return () => {
+      if (settled) return;
+      settled = true;
+      if (--saving) return;
+      const held = heldPush;
+      heldPush = undefined;
+      if (held) takeUpPush(held.scope, held.commit);
+    };
   }
 
   // Drafts of files GitHub deleted since they began, found when a snapshot
@@ -327,6 +347,8 @@ export function createSavePublishController(ports: SavePublishPorts) {
 
   const unwake = ports.onWake(() => void checkHead());
   function dispose() {
+    disposed = true;
+    heldPush = undefined;
     unwake();
     headCheck++;
     refresh++;
@@ -334,7 +356,7 @@ export function createSavePublishController(ports: SavePublishPorts) {
   }
 
   return {
-    proof, seeHead, trustedHead, headFor, checkHead, pushed, checkDeleted, settleDeleted,
+    proof, seeHead, trustedHead, headFor, checkHead, pushed, beginSave, checkDeleted, settleDeleted,
     discard, discardFile, discardAll, published, dispose,
     isDeleted: (path: string) => deletedUpstream.has(path),
     /** A new snapshot loads: nothing is known deleted until it is checked. */

@@ -82,6 +82,12 @@ test("manifest registers the private hosted App with exact permissions and callb
     url: `${origin}/api/github/webhook`,
   });
   assert.deepEqual(manifest.default_events, ["push"]);
+  // A local owner setup: GitHub cannot reach this machine, so the webhook stays off and no event is asked for.
+  for (const local of ["http://127.0.0.1:8787", "https://localhost:8787", "http://editor.example"]) {
+    const offline = githubAppManifest(local);
+    assert.deepEqual(offline.hook_attributes, { active: false, url: `${local}/api/github/webhook` }, local);
+    assert.equal("default_events" in offline, false, local);
+  }
 });
 
 test("owner setup requires canonical origin, fragment unlock token, and same-origin POST", async () => {

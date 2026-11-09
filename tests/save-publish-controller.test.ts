@@ -519,38 +519,20 @@ test("a discarded draft, or one found to be GitHub's version, names no one any m
 
 // GitHub pushes reach open tabs (ticket am-32): the relay's notice has the head checked at once, asking about the pushed
 // commit so a lagging GitHub read still gives it; a commit this tab shows or saved, another scope, or a hidden tab waits.
-test("a push notice checks the head with the pushed commit and loads it; known commits and other scopes do nothing", async () => {
+test("a push notice checks the head at once with the pushed commit and loads it; known commits and other scopes do nothing", async () => {
   const pushed = "d".repeat(40);
-  const waits: number[] = [];
-  /** The notice's wait runs at once, its length kept. */
-  const noticed = () => {
-    const made = fixture();
-    made.ports.later = (run, ms) => { waits.push(ms); run(); };
-    return made;
-  };
-  const f = noticed();
+  const f = fixture();
   f.wake();
   f.answers[0].resolve({ commit: "a".repeat(40) });
   await flush();
   f.controller.pushed(scope1, pushed);
   assert.deepEqual(f.calls[1], ["head", { repo: "lex/site1", branch: "main", commit: pushed }], "not held back by the focus check's 15 seconds");
-  assert.equal(waits[0], 2_000, "after a moment, for this tab's own save's answer to land first");
   f.answers[1].resolve({ commit: pushed });
   await flush();
   assert.equal(f.counts().loads, 1, "the pushed commit loads as Refresh does");
   assert.equal(f.controller.trustedHead(), pushed);
 
-  // This tab's own save: its answer lands while the notice waits, so the notice reads nothing.
-  const own = fixture();
-  let wait: (() => void) | undefined;
-  own.ports.later = run => { wait = run; };
-  own.controller.pushed(scope1, "f".repeat(40));
-  own.controller.published(own.controller.proof(), scope1, result("f".repeat(40)), []);
-  const reads = own.calls.length;
-  wait!();
-  assert.equal(own.calls.length, reads, "no head check for the tab's own save");
-
-  const quiet = noticed();
+  const quiet = fixture();
   quiet.controller.pushed(scope1, "a".repeat(40));
   quiet.controller.seeHead("e".repeat(40));
   quiet.controller.pushed(scope1, "e".repeat(40));
@@ -558,11 +540,62 @@ test("a push notice checks the head with the pushed commit and loads it; known c
   quiet.controller.pushed({ ...scope1, repoId: 2 }, pushed);
   assert.equal(quiet.calls.length, 0, "the commit on show, this tab's own save, another branch or repository: no read");
 
-  const hidden = noticed();
+  const hidden = fixture();
   hidden.state.visible = false;
   hidden.controller.pushed(scope1, pushed);
   assert.equal(hidden.calls.length, 0, "a hidden tab reads nothing");
   hidden.state.visible = true;
   hidden.wake();
-  assert.equal(hidden.calls.length, 1, "it checks on its next focus, unthrottled by the notice");
+  assert.equal(hidden.calls.length, 1, "it checks on its next focus");
+
+  const gone = fixture();
+  gone.controller.dispose();
+  gone.controller.pushed(scope1, pushed);
+  assert.equal(gone.calls.length, 0, "a disposed controller reads nothing");
+});
+
+// The settle matrix's save rows: a notice heard while this tab's own save runs waits for the save to settle, however
+// late its answer comes, and is dropped when that answer names its commit; any other commit is checked then.
+test("a push notice heard during this tab's save waits for it: its own commit loads nothing, another is checked after", async () => {
+  const saved = "f".repeat(40), other = "d".repeat(40);
+  // The save's answer lands long after the notice: no read and no load meanwhile, none after.
+  const own = fixture();
+  const settle = own.controller.beginSave();
+  own.controller.pushed(scope1, saved);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(own.calls.length, 0, "held while the save runs");
+  own.controller.published(own.controller.proof(), scope1, result(saved), []);
+  settle();
+  settle();
+  assert.deepEqual(own.calls.map(([action]) => action), ["snapshot"], "only the save's own refresh reads; no head check");
+  own.answers[0].resolve(snap(saved));
+  await flush();
+  assert.equal(own.counts().loads, 0, "the branch is not loaded a second time");
+
+  // Someone else's push heard during a save that then fails: checked once the save settles, the newest notice only.
+  const failed = fixture();
+  const done = failed.controller.beginSave();
+  failed.controller.pushed(scope1, "e".repeat(40));
+  failed.controller.pushed(scope1, other);
+  done();
+  assert.deepEqual(failed.calls, [["head", { repo: "lex/site1", branch: "main", commit: other }]]);
+
+  // Two saves at once: the notice waits for the last; disposed meanwhile, it is dropped.
+  const two = fixture();
+  const first = two.controller.beginSave(), second = two.controller.beginSave();
+  two.controller.pushed(scope1, other);
+  first();
+  assert.equal(two.calls.length, 0, "still held while the second save runs");
+  two.controller.dispose();
+  second();
+  assert.equal(two.calls.length, 0, "dropped once disposed");
+});
+
+// A delayed notice of an older commit after this tab's own newer save: the head check asks about the trusted head, so a
+// GitHub read lagging behind the save never brings the older commit back.
+test("a push notice's head check asks about this tab's trusted head before the notice's commit", () => {
+  const f = fixture();
+  f.controller.seeHead("f".repeat(40));
+  f.controller.pushed(scope1, "d".repeat(40));
+  assert.deepEqual(f.calls, [["head", { repo: "lex/site1", branch: "main", commit: "f".repeat(40) }]]);
 });

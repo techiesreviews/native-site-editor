@@ -59,6 +59,8 @@ export interface SourceFile {
   onDiscardAll?: () => void;
   /** The branch's head as the tab last saw it, sent with a save. */
   publishHead?: () => string | undefined;
+  /** A save starts; the returned function runs once it ended (src/components/publish-menu.ts `saving`). */
+  publishSaving?: () => () => void;
   /** A save was refused for files GitHub changed or deleted meanwhile. */
   onRefused?: () => void;
   /** Restores a deletion or moves a renamed file back, from the Save panel. */
@@ -808,6 +810,7 @@ export function mountSourceEditor(
           deletedUpstream: file.deletedUpstream,
           onSettleDeleted: file.onSettleDeleted,
           head: file.publishHead,
+          saving: file.publishSaving,
           onRefused: file.onRefused,
           // Save sends what the draft store holds.
           drafts: () => store.drafts(file.scope!, () => draftStore().list(file.scope!)),

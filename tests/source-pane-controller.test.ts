@@ -75,7 +75,7 @@ function harness(options: { drafts?: Record<string, SavedDraft>; component?: str
     },
     savePublish: {
       proof: () => ({ stamp: session.begin(), snapshot: SNAPSHOT }),
-      published: () => {}, discardAll: async () => {}, headFor: () => "head1234567", checkHead: async () => {},
+      published: () => {}, discardAll: async () => {}, headFor: () => "head1234567", beginSave: () => () => {}, checkHead: async () => {},
       isDeleted: () => false, settleDeleted: () => {},
     },
     versions: { history: { refresh: () => {}, open: async () => {} } },
