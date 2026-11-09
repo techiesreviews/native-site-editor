@@ -257,3 +257,36 @@ test("a second visitor opening the link leaves the first one's page as it is", a
   await customers.close();
   expect(pageErrors).toEqual([]);
 });
+
+test("a file the visitor's page asks for while its connection drops is asked for again once it is back", async ({ page: lex, browser, baseURL, context }) => {
+  test.setTimeout(120_000);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  lex.on("pageerror", (error) => pageErrors.push(error.message));
+  await openEditor(lex, baseURL);
+  await editorMounted(lex);
+  await lex.locator(".repository-menu__trigger").click();
+  await lex.getByRole("button", { name: "Share preview", exact: true }).click();
+  await expect(lex.locator(".repository-menu__preview-copy")).toHaveText("Copied");
+  const link = await lex.getByRole("textbox", { name: "Preview link" }).inputValue();
+  await lex.keyboard.press("Escape");
+
+  const customer = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const visitor = await customer.newPage();
+  visitor.on("pageerror", (error) => pageErrors.push(error.message));
+  // The visitor's room socket, through a route the test cuts as a network would.
+  const sockets: { close(options?: { code?: number }): Promise<void> }[] = [];
+  await visitor.routeWebSocket(/\/live(\?|$)/, (socket) => { socket.connectToServer(); sockets.push(socket); });
+  await visitor.goto(link);
+  await expect(previewHeading(visitor)).toHaveText(heading, { timeout: 20_000 });
+  const site = visitor.frames().find((frame) => frame.url().includes("/site/"))!;
+
+  // The page asks for a file while its socket is gone; Lex's tab answers it once the room is back (a 404 here,
+  // not the 504 of an ask that waited in vain).
+  await sockets.at(-1)!.close({ code: 4000 });
+  const status = site.evaluate(async () => (await fetch("/not-asked-before.txt")).status);
+  expect(await status).toBe(404);
+  await expect(previewHeading(visitor)).toHaveText(heading);
+
+  await customer.close();
+  expect(pageErrors).toEqual([]);
+});
