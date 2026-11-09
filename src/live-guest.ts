@@ -16,7 +16,7 @@ import { createPreviewLink, iframeFramePort } from "./components/preview-link";
 import { watchEditorTheme } from "./theme";
 import { importSessionKey, randomId, readSessionLink, sessionWire, type GuestMessage, type HostMessage, type SessionPresence } from "./live-session";
 import type { LivePeer, LiveRoom } from "./live-room";
-import { initialOf, personName } from "./share-control";
+import { initialOf, personName } from "./person-name";
 import { LIVE_HOST_GRACE_MS, LIVE_HOST_LOST, LIVE_ROOM_CLOSED, type LiveAccess } from "../shared/live-room";
 import type { AssetChanges, UpdatePayload } from "./components/native-preview";
 import type { JsonValue } from "../shared/agent-command";

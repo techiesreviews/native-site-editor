@@ -3,15 +3,16 @@ import { test } from "node:test";
 import { build } from "esbuild";
 import { chromium, type Page } from "@playwright/test";
 import type { createRepositoryMenu } from "../src/components/repository-menu.ts";
+import type { shareItems, ShareControlPort } from "../src/components/share-menu.ts";
 
-// Share to edit in the project menu (slice 30, src/components/repository-menu.ts `shareItems`), in a browser page with a
+// Share to edit in the project menu (slice 30, src/components/share-menu.ts `shareItems`, drawn on the menu's first open), in a browser page with a
 // stub share port: hidden with nothing to share; "Link copied" on the item; a refused copy shows the link to copy by hand;
 // a refused share says so for a moment (signed out: "Sign in to share"); the keyboard's focus stays while it starts;
 // at most three guests by initial and a "+N".
-type Port = NonNullable<Parameters<typeof createRepositoryMenu>[0]["share"]>;
+type Port = ShareControlPort;
 async function inBrowser(run: (page: Page) => Promise<void>) {
   const bundle = await build({
-    stdin: { contents: "import { createRepositoryMenu } from './src/components/repository-menu'; globalThis.menuFactory = createRepositoryMenu;", resolveDir: process.cwd() },
+    stdin: { contents: "import { createRepositoryMenu } from './src/components/repository-menu'; import { shareItems } from './src/components/share-menu'; globalThis.menuFactory = createRepositoryMenu; globalThis.items = shareItems;", resolveDir: process.cwd() },
     bundle: true, write: false, format: "iife", platform: "browser", loader: { ".css": "empty", ".svg": "text" },
   });
   const browser = await chromium.launch({ headless: true });
@@ -23,7 +24,7 @@ async function inBrowser(run: (page: Page) => Promise<void>) {
     // A stub port the test drives from the page: `shareState`, `shareStart` (resolve or reject), `shareAvailable`.
     await page.evaluate(() => {
       type State = ReturnType<Port["state"]>;
-      const scope = globalThis as typeof globalThis & { menuFactory: typeof createRepositoryMenu; share: Record<string, unknown> };
+      const scope = globalThis as typeof globalThis & { menuFactory: typeof createRepositoryMenu; items: typeof shareItems; share: Record<string, unknown> };
       const listeners = new Set<(state: State) => void>();
       const share = scope.share = {
         state: { sharing: false } as State,
@@ -35,7 +36,7 @@ async function inBrowser(run: (page: Page) => Promise<void>) {
         state: () => share.state, available: () => share.available, start: () => share.start(), stop: () => share.set({ sharing: false }),
         watch(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
       };
-      const menu = scope.menuFactory({ installUrl: null, accounts: [], onReload() {}, onAccessChanged() {}, onSwitchAccount() {}, onSignOut() {}, share: port });
+      const menu = scope.menuFactory({ installUrl: null, accounts: [], onReload() {}, onAccessChanged() {}, onSwitchAccount() {}, onSignOut() {}, share: { available: () => port.available(), draw: async (actionClass) => scope.items(port, actionClass) } });
       document.body.append(menu.root);
       menu.setRepository({ id: 1, name: "bakery", full_name: "lex/bakery", private: false, owner: { login: "lex", type: "User" } } as never);
       menu.open();
