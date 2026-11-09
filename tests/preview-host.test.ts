@@ -49,14 +49,14 @@ test("paths are answered as a static host would: folders, moves to the slash, .h
 });
 
 /** The preview Worker with fake bindings: the editor's build and Worker, each request they get on record. */
-function host(status = 204) {
+function host(status: number | (() => number) = 204) {
   const editor: Request[] = [], assets: string[] = [];
   const env = {
     ASSETS: { fetch: async (request: Request) => {
       assets.push(new URL(request.url).pathname);
       return new Response("<!doctype html><title>Preview</title>", { headers: { "Content-Type": "text/html", "Set-Cookie": "a=b" } });
     } },
-    EDITOR: { fetch: async (request: Request) => { editor.push(request); return new Response(null, { status, headers: { "Set-Cookie": "session=x" } }); } },
+    EDITOR: { fetch: async (request: Request) => { editor.push(request); return new Response(null, { status: typeof status === "number" ? status : status(), headers: { "Set-Cookie": "session=x" } }); } },
   };
   const get = (path: string, init?: RequestInit) => previewHost(new Request(`${origin}${path}`, init), env);
   return { get, editor, assets };
@@ -201,5 +201,25 @@ test("a link not running or over is answered from memory for a while, costing th
   await get(`${running}/live`);
   await get(`${running}/live`);
   assert.equal(editor.length, 2);
+});
+
+test("a page whose socket closed asks afresh: turned off replaces a remembered not running, and running clears it", async () => {
+  let now = 409;
+  const link = `/s/bakery-${"f".repeat(72)}`;
+  const { get, editor } = host(() => now);
+  assert.equal((await get(`${link}/live`)).status, 409);
+  // Turned off while "not running" is remembered: a plain look still has the memory, a fresh one asks the editor.
+  now = 410;
+  assert.equal((await get(`${link}/live`)).status, 409);
+  assert.equal((await get(`${link}/live?fresh=1`)).status, 410);
+  assert.equal((await get(`${link}/live`)).status, 410, "the 410 replaced the 409");
+  assert.deepEqual(editor.map((request) => new URL(request.url).search), [`?token=${"f".repeat(72)}`, `?token=${"f".repeat(72)}`]);
+  // Running again (a fresh look gets in): the memory goes at once.
+  const other = `/s/bakery-${"1".repeat(72)}`;
+  now = 409;
+  assert.equal((await get(`${other}/live`)).status, 409);
+  now = 204;
+  assert.equal((await get(`${other}/live?fresh=1`)).status, 204);
+  assert.equal((await get(`${other}/live`)).status, 204);
 });
 

@@ -97,7 +97,7 @@ export function createPreviewControl(ports: PreviewSharePorts) {
   const startServing = (id: string, repo: string, link: KeptLink) => {
     stopServing();
     const mine = run;
-    void (async () => {
+    return (async () => {
       const raw = Uint8Array.from(atob(link.key.replaceAll("-", "+").replaceAll("_", "/")), (char) => char.charCodeAt(0));
       const key = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
       const opened = await serve({
@@ -125,7 +125,7 @@ export function createPreviewControl(ports: PreviewSharePorts) {
     stopServing();
     shown = id;
     const link = id ? kept(id) : undefined;
-    if (at && id && link) { held.set(id, link); set({ on: true, link: link.link, ends: link.ends }); startServing(id, at.repo, link); }
+    if (at && id && link) { held.set(id, link); set({ on: true, link: link.link, ends: link.ends }); void startServing(id, at.repo, link); }
     else set({ on: false });
   };
 
@@ -152,8 +152,11 @@ export function createPreviewControl(ports: PreviewSharePorts) {
         if (mine !== run || shown !== id) { if (shown === id) set({ on: false }); return undefined; }
         held.set(id, link);
         writeKept((links) => { links[id] = link; });
+        // The link shows (and is copied) once this tab serves it, so whoever opens it at once finds it running.
+        await startServing(id, at.repo, link);
+        // Another project opened meanwhile: its own state stands (the link is kept for when this one shows again).
+        if (shown !== id) return undefined;
         set({ on: true, link: link.link, ends: link.ends });
-        startServing(id, at.repo, link);
         return link.link;
       } catch (error) {
         if (mine === run) set({ on: false });
