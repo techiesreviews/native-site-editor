@@ -21,6 +21,11 @@ function walk(directory, files = []) {
   return files;
 }
 
+/** A script or page without its `//` and block comments; a `//` after a colon or a quote stays (a URL). */
+function withoutComments(text) {
+  return text.replace(/\/\*[\s\S]*?(?:\*\/|$)|(^|[^:\\"'`\w])\/\/[^\n]*/g, "$1");
+}
+
 /** Names declared by the stylesheets, and what scripts set: literal names, and the prefix of a
  * template such as `--agent${part}`. `sheets` and `scripts` map a path to its text. */
 export function undefinedProperties(sheets, scripts, hooks = openHooks) {
@@ -30,7 +35,8 @@ export function undefinedProperties(sheets, scripts, hooks = openHooks) {
   }
   const literal = new Set(), prefixes = new Set();
   for (const text of Object.values(scripts)) {
-    for (const found of text.matchAll(/(--[a-zA-Z][\w-]*)(\$\{)?/g)) (found[2] ? prefixes : literal).add(found[1]);
+    // Only a name a script writes counts: not one in a comment, and not one it reads with var().
+    for (const found of withoutComments(text).matchAll(/(?<!var\(\s*)(--[a-zA-Z][\w-]*)(\$\{)?/g)) (found[2] ? prefixes : literal).add(found[1]);
   }
   const problems = [];
   for (const [path, text] of Object.entries(sheets)) {
