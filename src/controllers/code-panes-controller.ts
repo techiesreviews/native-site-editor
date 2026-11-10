@@ -52,8 +52,11 @@ export function createCodePanesController<T>(ports: CodePanesPorts<T>) {
   });
   let codeResize: ReturnType<typeof mountCodeResize> | undefined;
   let codeWidthResize: ReturnType<typeof mountCodeWidthResize> | undefined;
-  // A hidden pane waits until it is opened (its handle's onOpen asks for the code).
-  const paneClosed = () => codeResize?.collapsed() ?? false;
+  // The site the latest pane opened for has no preview (plain files): its
+  // code pane always shows.
+  let plainFiles = false;
+  // A closed pane waits until it is opened (its handle's onOpen asks for the code).
+  const paneClosed = () => !plainFiles && (codeResize?.collapsed() ?? false);
   let bootDeferred = false;
   let previewPainted = false;
   let readsInFlight = 0;
@@ -65,6 +68,8 @@ export function createCodePanesController<T>(ports: CodePanesPorts<T>) {
   // The first preview paint (the runtime has rendered and reported the page's
   // structure): Monaco follows once the reads settle and the browser is idle.
   function notePreviewPainted() {
+    // A closed pane hides once there is a preview beside it.
+    codeResize?.apply();
     if (previewPainted || gateOpen) return;
     previewPainted = true;
     // The runtime reports the structure just before the frame presents it:
@@ -88,8 +93,12 @@ export function createCodePanesController<T>(ports: CodePanesPorts<T>) {
     return gate.then(loadModule);
   }
   // Only a native site's first code pane, shown, waits for the preview; any
-  // later open was asked for and loads the editor at once.
+  // later open was asked for and loads the editor at once, unless the pane is
+  // closed beside a preview.
   function deferPane(native: boolean) {
+    plainFiles = !native;
+    // Plain files have no preview: a closed pane shows again.
+    codeResize?.apply();
     const defer = !gateOpen && !bootDeferred && native && !paneClosed();
     bootDeferred = true;
     return defer;
@@ -107,7 +116,9 @@ export function createCodePanesController<T>(ports: CodePanesPorts<T>) {
     // Opening the pane (its handle, a drag, Show code) fetches the code.
     codeResize = ports.mountCodeResize(main, split, () => void want().catch(() => {}));
     // Reaching for the shown code before Monaco's idle load fetches it now;
-    // pressing or focusing the handle of a hidden pane does not.
+    // pressing or focusing the handle of a closed pane does not. Not `once`:
+    // a press while the pane is closed must not use the listener up, and
+    // `want()` loads the module only once.
     for (const type of ["pointerdown", "focusin"])
       split.addEventListener(type, () => { if (!paneClosed()) void want().catch(() => {}); });
     codeWidthResize = ports.mountCodeWidthResize(split, split.querySelector<HTMLElement>(".code-pane")!, secondary);

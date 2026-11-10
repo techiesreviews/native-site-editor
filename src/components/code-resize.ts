@@ -4,12 +4,13 @@ import { createGrip, isToggleKey, trackPress } from "./resize-handle";
 // Horizontal splitter above code. Click/keyboard toggles full collapse;
 // the edge grip remains available to restore the remembered height.
 // The pane starts closed until the person opens it (faster-opening 02): its
-// shown or hidden choice lives in its own key, so an older open choice in
+// shown or hidden choice lives in its own key (`astro-editor.code-pane`), so an older open choice in
 // `astro-editor.code-height` (which now keeps only the height) is not used.
-// `onOpen` runs each time the pane goes from hidden to shown.
+// It hides only beside a preview: a project that opens as plain files has no
+// preview to give the room to, so its code always shows (the owner calls
+// `apply` when that changes). `onOpen` runs each time the person opens the pane.
 export function mountCodeResize(main: HTMLElement, pane: HTMLElement, onOpen?: () => void) {
   const key = "astro-editor.code-height";
-  const shownKey = "astro-editor.code-pane";
   const handle = document.createElement("div");
   handle.className = "code-resize";
   handle.tabIndex = 0;
@@ -36,7 +37,7 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement, onOpen?: (
   let height = 0.4;
   let collapsed = true;
   try {
-    collapsed = localStorage.getItem(shownKey) !== "open";
+    collapsed = localStorage.getItem("astro-editor.code-pane") !== "open";
     const saved = JSON.parse(localStorage.getItem(key) ?? "{}") as { height?: number };
     if (saved.height && saved.height > 0 && saved.height < 1) height = saved.height;
   } catch {}
@@ -45,14 +46,15 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement, onOpen?: (
   function apply() {
     if (wasCollapsed && !collapsed) onOpen?.();
     wasCollapsed = collapsed;
-    main.classList.toggle("code-collapsed", collapsed);
+    const shut = collapsed && main.classList.contains("has-preview");
+    main.classList.toggle("code-collapsed", shut);
     const { minimum, maximum } = bounds();
-    const px = Math.round(collapsed ? 0 : Math.max(minimum, Math.min(maximum, height * main.clientHeight)));
+    const px = Math.round(shut ? 0 : Math.max(minimum, Math.min(maximum, height * main.clientHeight)));
     const contentHidden = px <= 0;
     if (contentHidden && pane.contains(document.activeElement) && document.activeElement !== handle) handle.focus();
     main.style.setProperty("--code-height", `${px}px`);
-    for (const child of pane.children) {
-      if (!(child instanceof HTMLElement) || child === handle) continue;
+    for (const child of pane.children as HTMLCollectionOf<HTMLElement>) {
+      if (child === handle) continue;
       child.inert = contentHidden;
       if (contentHidden) child.setAttribute("aria-hidden", "true"); else child.removeAttribute("aria-hidden");
     }
@@ -61,14 +63,14 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement, onOpen?: (
     handle.setAttribute("aria-valuenow", String(px));
     // `aria-expanded` is not allowed on a separator, so the value text
     // carries the state.
-    handle.setAttribute("aria-valuetext", collapsed ? "Code hidden" : `Code shown, ${px} pixels`);
-    handle.classList.toggle("is-collapsed", collapsed);
-    handle.title = `Drag to resize, click to ${collapsed ? "restore" : "hide"} the code`;
+    handle.setAttribute("aria-valuetext", shut ? "Code hidden" : `Code shown, ${px} pixels`);
+    handle.classList.toggle("is-collapsed", shut);
+    handle.title = `Drag to resize, click to ${shut ? "restore" : "hide"} the code`;
   }
   const save = () => {
     try {
       localStorage.setItem(key, JSON.stringify({ height }));
-      localStorage.setItem(shownKey, collapsed ? "closed" : "open");
+      localStorage.setItem("astro-editor.code-pane", collapsed ? "closed" : "open");
     } catch {}
   };
   const toggle = () => {
@@ -133,7 +135,9 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement, onOpen?: (
   apply();
   return {
     toggle,
-    /** Whether the pane is hidden. */
+    /** Lays the pane out again: its owner calls it when the preview comes or goes. */
+    apply,
+    /** Whether the person left the pane closed (it hides only beside a preview). */
     collapsed: () => collapsed,
   };
 }
