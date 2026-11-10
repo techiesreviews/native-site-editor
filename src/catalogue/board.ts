@@ -700,21 +700,29 @@ export function startBoard(root: HTMLElement) {
     else if (event.key === "!" || (event.shiftKey && event.code === "Digit1")) fitAll();
   });
   document.addEventListener("keyup", (event) => { if (event.code === "Space") { spaceHeld = false; root.classList.remove("is-space"); } });
-  // A part in a state cell's frame may focus itself as it draws (an open menu its first item), which takes focus into that
-  // inert <iframe> and away from the board: the board's window loses focus, and it is given back to where it was, once
-  // the frame's own focusing is over (a dialog opening focuses after the menu's call), the window first: focusing an
-  // element alone leaves the keys going to the frame.
+  // A part in a state cell's frame may focus itself as it draws (an open menu its first item, a dialog), which takes
+  // focus into that inert <iframe> and away from the board. It is given back to where it was once the frame's own
+  // focusing is over, the window first: focusing an element alone leaves the keys going to the frame. The board's page
+  // sees the <iframe> take focus, and its window lose it (not every browser says both; a page in the background sees
+  // only the first).
   let lastFocus: HTMLElement | undefined;
-  document.addEventListener("focusin", (event) => { if (!(event.target instanceof HTMLIFrameElement)) lastFocus = event.target as HTMLElement; });
-  window.addEventListener("blur", () => {
-    const active = document.activeElement;
-    if (!(active instanceof HTMLIFrameElement) || !active.inert) return;
+  const inPicture = () => document.activeElement instanceof HTMLIFrameElement && document.activeElement.inert;
+  function takeBack() {
+    if (!inPicture()) return;
     setTimeout(() => {
+      // Read again: someone may have moved on meanwhile (into a live frame, say), and their focus stays; another state
+      // cell's frame may have taken it from the first.
+      if (!inPicture()) return;
       window.focus();
-      if (lastFocus?.isConnected) lastFocus.focus({ preventScroll: true });
-      else active.blur();
+      // Nothing on the board had focus yet (frames drawing as it opens): the canvas takes it.
+      (lastFocus?.isConnected ? lastFocus : viewport).focus({ preventScroll: true });
     });
+  }
+  document.addEventListener("focusin", (event) => {
+    if (event.target instanceof HTMLIFrameElement) takeBack();
+    else lastFocus = event.target as HTMLElement;
   });
+  window.addEventListener("blur", takeBack);
 
   // ---------- Wheel: a mouse wheel and a pinch zoom round the pointer, a trackpad's scroll pans ----------
 
@@ -760,6 +768,7 @@ export function startBoard(root: HTMLElement) {
   document.addEventListener("pointerdown", () => { byPointer = true; }, true);
   document.addEventListener("keydown", () => { byPointer = false; }, true);
   world.addEventListener("cat-frame-press", (event) => { byPointer = true; press((event.target as Element).closest<HTMLElement>(".cat-card[data-id]")); });
+  world.addEventListener("cat-frame-key", () => { byPointer = false; });
   world.addEventListener("focusin", (event) => {
     const target = event.target as HTMLElement;
     const article = target.closest('[data-cell="live"]') ? target.closest<HTMLElement>(".cat-card[data-id]") : null;

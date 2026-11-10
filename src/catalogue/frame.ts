@@ -107,8 +107,9 @@ export async function startFrame(shown: NonNullable<ReturnType<typeof frameOf>>)
 }
 
 /**
- * A live frame on the board: its wheel goes on to the board (zoom and pan, as over any other cell), and a press in it
- * tells the board (`cat-frame-press`) so it selects the frame's card.
+ * A live frame on the board: its wheel goes on to the board (zoom and pan, as over any other cell), a press in it
+ * tells the board (`cat-frame-press`) so it selects the frame's card, and a key tells it the keyboard is in use
+ * (`cat-frame-key`), so Tab on into the next card's frame brings that card into view.
  */
 function handOnToBoard(host: HTMLIFrameElement) {
   const board = host.ownerDocument.defaultView as (Window & typeof globalThis) | null;
@@ -123,4 +124,5 @@ function handOnToBoard(host: HTMLIFrameElement) {
     }));
   }, { passive: false });
   addEventListener("pointerdown", () => host.dispatchEvent(new board.CustomEvent("cat-frame-press", { bubbles: true })), true);
+  addEventListener("keydown", () => host.dispatchEvent(new board.CustomEvent("cat-frame-key", { bubbles: true })), true);
 }
