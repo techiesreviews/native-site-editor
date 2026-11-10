@@ -33,6 +33,15 @@ test("a hand edit of the generated block, a changed export or removed markers fa
   assert.throws(() => withBlock("a {}", generatedBlock(exported)), /no generated block/);
 });
 
+test("a generated name declared again outside the block fails the check; mentions in comments and uses do not", () => {
+  const override = theme.replace("  --radius: 6px;", "  --radius: 6px;\n  --space-s: 13px;");
+  assert.notEqual(override, theme);
+  const problems = checkTheme(override, exported);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /--space-s/);
+  assert.deepEqual(checkTheme(theme.replace("--radius: 6px;", "--radius: 6px; /* --space-s: 13px; */ --gap: var(--space-s);"), exported), []);
+});
+
 test("an edit outside the generated block does not fail the check", () => {
   assert.deepEqual(checkTheme(theme.replace("--radius: 6px;", "--radius: 7px;"), exported), []);
 });
@@ -40,9 +49,33 @@ test("an edit outside the generated block does not fail the check", () => {
 test("rem converts from the Framework's 16px to pixels, fixed sizes only", () => {
   assert.equal(toEditorPx("--a", "0.5rem"), "8px");
   assert.equal(toEditorPx("--a", "clamp(0.375rem, calc(0.375rem + 0vw), 0.375rem)"), "6px");
-  assert.equal(toEditorPx("--a", "999rem"), "999px");
+  assert.equal(toEditorPx("--radius-full", "999rem"), "999px");
   assert.throws(() => toEditorPx("--a", "clamp(1rem, calc(0.5rem + 1vw), 2rem)"), /fluid/);
   assert.throws(() => toEditorPx("--a", "12px"), /not in rem/);
+});
+
+test("a spacing step is never rewritten to a pill; only 999rem of --radius-full is", () => {
+  assert.equal(toEditorPx("--space-xl", "99rem"), "1584px");
+  assert.equal(toEditorPx("--radius-full", "999rem"), "999px");
+  assert.equal(toEditorPx("--radius-full", "100rem"), "1600px");
+  assert.equal(toEditorPx("--space-xl", "999rem"), "15984px");
+});
+
+test("the committed export holds exactly the steps of the committed settings", () => {
+  const { snapshot } = JSON.parse(readFileSync(files.settings, "utf8"));
+  const expected = [snapshot.radii, snapshot.spacing].flatMap((system: { name: string; tokens: { token: string; min: number }[] }) =>
+    system.tokens.map(({ token, min }) => [`--${system.name}-${token}`, toEditorPx(`--${system.name}-${token}`, `${min}rem`)]));
+  const exportedPx = parseExport(exported).entries.map(([name, value]: [string, string]) => [name, toEditorPx(name, value)]);
+  assert.deepEqual(exportedPx.sort(), expected.sort());
+});
+
+test("the padding tokens keep their pixels through the generated spacing", () => {
+  const block = generatedBlock(exported);
+  const pixels = (name: string) => new RegExp(`${name}: (\\d+)px;`).exec(block)?.[1];
+  assert.match(theme, /--panel-padding: var\(--space-2xs\);/);
+  assert.match(theme, /--panel-padding-roomy: var\(--space-s\);/);
+  assert.equal(pixels("--space-2xs"), "6");
+  assert.equal(pixels("--space-s"), "12");
 });
 
 test("an export without a hash, a :root block or properties is refused", () => {
@@ -59,6 +92,8 @@ test("the check command passes on the committed files", () => {
 
 // Needs the Framework checkout; CI and self-hosted copies skip it.
 const frameworkDir = process.env.FRAMEWORK_DIR ?? join(homedir(), "Projects/TechiesTools");
-test("the Framework's own export of the committed settings is the committed export", { skip: !existsSync(join(frameworkDir, "src/framework/compiler/index.ts")) }, async () => {
-  assert.equal(await exportTokens(JSON.parse(readFileSync(files.settings, "utf8")), frameworkDir), exported);
+// Only the custom properties are compared: the header's version and comments are the Framework's to change.
+test("the Framework's own export of the committed settings has the committed custom properties", { skip: !existsSync(join(frameworkDir, "src/framework/compiler/index.ts")) }, async () => {
+  const fresh = await exportTokens(JSON.parse(readFileSync(files.settings, "utf8")), frameworkDir);
+  assert.deepEqual(parseExport(fresh).entries, parseExport(exported).entries);
 });
