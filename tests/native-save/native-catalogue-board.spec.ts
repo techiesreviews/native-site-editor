@@ -36,7 +36,7 @@ test("flies to a part from the outline, changes an option, approves it and saves
   await expect(page.locator("#card-button .cat-live__stage button")).toHaveText("Publish");
 
   await options.getByRole("button", { name: "Approve" }).click();
-  await expect(options.getByRole("button", { name: "Approved" })).toHaveAttribute("aria-pressed", "true");
+  await expect(options.getByRole("button", { name: "Approved" })).toHaveAttribute("aria-disabled", "true");
   await expect(outline.getByRole("button", { name: /^Button/ }).getByRole("img", { name: "Approved" })).toBeVisible();
   await expect(page.locator("#card-button .cat-card__title").getByRole("img", { name: "Approved" })).toBeVisible();
 
@@ -121,4 +121,63 @@ test("light and dark sit side by side in WebKit", async ({ baseURL }) => {
   } finally {
     await browser.close();
   }
+});
+
+test("forced states draw: hover changes the button's colour and focus draws its ring", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  // The Primary row of the light half: Normal, Hover, Pressed, Focus, Disabled.
+  const cells = page.locator('#card-button .cat-half[data-theme="light"] .cat-cell button');
+  await expect(cells).toHaveCount(10);
+  const look = (index: number) => cells.nth(index).evaluate((button) => ({ background: getComputedStyle(button).backgroundColor, outline: getComputedStyle(button).outlineStyle }));
+  const [normal, hover, focus] = [await look(0), await look(1), await look(3)];
+  expect(hover.background).not.toBe(normal.background);
+  expect(normal.outline).toBe("none");
+  expect(focus.outline).not.toBe("none");
+});
+
+test("Space presses a focused button on the canvas instead of panning", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  const zoom = page.getByRole("toolbar", { name: "Zoom" });
+  const percent = async () => parseInt(await zoom.locator("output").innerText(), 10);
+  // The first view fits again once every part has drawn: wait until the zoom holds still.
+  let last = -1;
+  await expect.poll(async () => { const now = await percent(); const still = now === last; last = now; return still; }, { intervals: [300] }).toBe(true);
+  const before = await percent();
+  await zoom.getByRole("button", { name: "Zoom in" }).focus();
+  await page.keyboard.press("Space");
+  await expect.poll(percent).toBeGreaterThan(before);
+});
+
+test("an option set while a frame is still loading is the one it draws", async ({ page, baseURL }) => {
+  // The board's own entry script loads; every frame's copy waits until released.
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => { release = resolve; });
+  let first = true;
+  await page.route(/\/(src\/catalogue\/main\.ts|assets\/catalogue-[\w-]+\.js)(\?|$)/, async (route) => {
+    if (first) { first = false; await route.continue(); return; }
+    await released;
+    await route.continue();
+  });
+  await openBoard(page, baseURL);
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Row menu", exact: true }).click();
+  const options = page.getByRole("complementary", { name: "Options" });
+  await options.getByRole("switch", { name: "Remove" }).click();
+  release();
+  const liveMenu = page.frameLocator("#card-row-menu .cat-live iframe").locator(".row-menu");
+  await expect(liveMenu).toContainText("Rename");
+  await expect(liveMenu).not.toContainText("Remove");
+});
+
+test("on a phone, a part chosen in the outline sheet sits above the options sheet", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseURL}${BOARD}`);
+  await expect(page.locator('.cat-outline__item[data-id="row-menu"]')).toBeAttached();
+  await page.getByRole("button", { name: "Outline" }).click();
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Row menu", exact: true }).click();
+  const options = page.getByRole("complementary", { name: "Options" });
+  await expect(options.getByRole("heading", { name: "Row menu" })).toBeVisible();
+  await expect.poll(async () => {
+    const [card, sheet] = await Promise.all([page.locator("#card-row-menu").boundingBox(), options.boundingBox()]);
+    return card && sheet ? card.y + card.height / 2 < sheet.y && card.y + card.height / 2 > 0 : false;
+  }).toBe(true);
 });

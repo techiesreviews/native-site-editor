@@ -17,10 +17,22 @@ const REPLACE: Record<string, string> = {
 /** What a cell forces: the first control in it, else the part itself. */
 export const FORCE_TARGET = "button, a[href], input, textarea, select, [tabindex], [role='button']";
 
+/** Whether `index` lies inside a `:has(…)` of the selector: a :has() inside another one is invalid CSS. */
+function insideHas(selector: string, index: number): boolean {
+  const open: boolean[] = [];
+  for (let i = 0; i < index; i++) {
+    if (selector[i] === "(") open.push(selector.slice(Math.max(0, i - 4), i) === ":has");
+    else if (selector[i] === ")") open.pop();
+  }
+  return open.includes(true);
+}
+
 /** The selector with each state pseudo-class matched by the attribute too, or null when it names none. */
 export function forcedSelector(selector: string): string | null {
   if (/\.cat-/.test(selector) || !selector.match(PATTERN)) return null;
-  return selector.replace(PATTERN, (_, pseudo: string) => REPLACE[pseudo]);
+  // Within a :has() the element itself is enough: the :has() already reaches up to its ancestors.
+  return selector.replace(PATTERN, (_, pseudo: string, offset: number) =>
+    insideHas(selector, offset) ? self(pseudo === "active" ? "pressed" : pseudo === "hover" ? "hover" : "focus") : REPLACE[pseudo]);
 }
 
 /** Marks the element a cell's state applies to. */

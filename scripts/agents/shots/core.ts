@@ -1,4 +1,4 @@
-export const screens = ["editor", "media-gallery", "media-select", "file-details", "image-popup", "picker", "files", "pages", "site-settings", "cleanup", "improve-images", "add-panel", "structure"] as const;
+export const screens = ["editor", "media-gallery", "media-select", "file-details", "image-popup", "picker", "files", "pages", "site-settings", "cleanup", "improve-images", "add-panel", "structure", "catalogue"] as const;
 export type Screen = typeof screens[number];
 export type Theme = "light" | "dark";
 export type Step =
