@@ -55,3 +55,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ### UX follow-ups
 
 - UX (looks off): F-media-01 the Media tab sits between Pages and Files, with square picture-only tiles, the name only on the first tile, and the search, Filter, + and More bar evenly spaced above the grid in light and dark at 390 px and 1280 px; but an explainer line, "Drop files anywhere here", sits under the grid (.scratch/ux/fleet-lead/20261110-073452-jByQeC/F-media-01-contact.webp)
+
+### Follow-ups
+
+- Spec (P3): b865c9342:docs/wayfinder/atomic-catalogue/build/tickets/01-light-dark-theme.md:48 — P3 ticket: the Done notes contradict themselves. Line 48 says the new spec checks "15 tokens". The Follow-up on line 53 says it now checks 31 colour tokens and both shadows, which is what `tests/native-save/native-theme-scheme.spec.ts:422-430` actually does. Fix: change line 48 to say 31 tokens and both shadows, or add "(31 after the follow-up)".
+- Validation gaps (gap): Nothing guards the build setting. If someone removes `css.lightningcss.exclude: Features.LightDark` from `vite.config.ts`, every check that runs by default still passes. Only the spec on the built app (`ASE_NATIVE_SAVE_DIST=1`) would catch it, and the author ran that once by hand. Test to add: a unit test that builds `src/theme.css` through Vite's CSS pipeline, or calls `lightningcss.transform` with the config's `exclude`, then asserts the output contains `light-dark(` and no `--lightningcss-light` or `prefers-color-scheme`.
+- Validation gaps (gap): The token list is typed out by hand. `tests/native-save/native-theme-scheme.spec.ts:422-429` and `tests/theme-scheme.test.ts:505` list tokens by name, so a themed colour added to `theme.css` later is never checked. Test to add: in `tests/theme-scheme.test.ts`, parse every `--name: light-dark(` declaration in `src/theme.css` and assert that each one, or the alias components use for it, appears in the spec's `tokens` or `shadows` list. Moving the list into a shared module both tests import would make this easy.
+
