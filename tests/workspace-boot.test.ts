@@ -485,3 +485,45 @@ test("a record the early script named but the boot rejects (a bad commit): the g
     assert.equal(f.ports.appStore.snapshot.value, SNAPSHOT);
   }
 });
+
+test("a guess opens on the linked branch with the selector disabled until the branch list answers; a list that fails says so once the site is open, and Try again fills it", async () => {
+  const f = fixture({ remember: false, early: earlySnapshot("lex/site") });
+  let retry: (() => void) | undefined;
+  const said: string[] = [];
+  f.ports.errorMessage = (error, again) => { said.push(error instanceof Error ? error.message : String(error)); retry = again; };
+  f.boot.startGuess();
+  await flush();
+  const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main" });
+  f.pending("snapshot")[0].answer.resolve(receipt(SNAPSHOT));
+  await choosing;
+  assert.equal(f.ports.appStore.snapshot.value, SNAPSHOT, "the site is open");
+  assert.equal(f.branchSelect.value, "main");
+  assert.equal(f.branchSelect.disabled, true, "no other branch to offer yet");
+  f.pending("branches")[0].answer.reject(new Error("down"));
+  await flush();
+  assert.deepEqual(said, ["down"], "the plain path's message");
+  assert.equal(f.branchSelect.disabled, true);
+  retry!();
+  assert.equal(f.pending("branches").length, 2, "Try again reads the list again");
+  f.pending("branches")[1].answer.resolve(["main", "draft"]);
+  await flush();
+  assert.equal(f.branchSelect.disabled, false);
+  assert.equal(f.branchSelect.value, "main");
+  assert.equal(f.ports.appStore.snapshot.value, SNAPSHOT, "still the same open site");
+});
+
+test("a branch list that answers enables the selector on the linked branch, with no message", async () => {
+  const f = fixture({ remember: false, early: earlySnapshot("lex/site") });
+  const said: unknown[] = [];
+  f.ports.errorMessage = (error) => { said.push(error); };
+  f.boot.startGuess();
+  await flush();
+  const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main" });
+  f.pending("snapshot")[0].answer.resolve(receipt(SNAPSHOT));
+  f.pending("branches")[0].answer.resolve(["main", "draft"]);
+  await choosing;
+  await flush();
+  assert.equal(f.branchSelect.disabled, false);
+  assert.equal(f.branchSelect.value, "main");
+  assert.deepEqual(said, []);
+});

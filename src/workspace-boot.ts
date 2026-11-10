@@ -323,7 +323,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       memory,
       source: ports.source(),
       snapshot: quiet(early
-        ? early.then((found) => found ? ask(found.fullName, found.response) : memory ? ask(memory.fullName) : Promise.reject(new Error("The linked repository is not listed.")))
+        // Not listed: a bare rejection, which only makes takeBootGuess read afresh.
+        ? early.then((found) => found ? ask(found.fullName, found.response) : memory ? ask(memory.fullName) : Promise.reject())
         : ask(memory!.fullName)),
       files: memory?.files.length ? quiet(ports.apiResponse<FilesResult>("files", { repo: memory.fullName, shas: memory.files.map((file) => file.sha).join(",") })) : undefined,
     };
@@ -426,13 +427,26 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         ports.options(ports.branchSelect, [{ value: branch, label: `⑂ ${branch}` }]);
         appStore.branch.value = branch;
         ports.branchSelect.value = branch;
-        ports.branchSelect.disabled = false;
-        void listing.then((branches) => {
-          if (appStore.repository.value !== opened || appStore.branch.value !== branch) return;
+        ports.branchSelect.disabled = true;
+        const opening = loadSnapshot(resume?.path, Promise.resolve(guessedSnapshot));
+        // The branch list fills and enables the selector when it comes. One that fails says so as the plain
+        // path does, once the site is open: its message, and Try again (one GitHub never answered) reads it again.
+        const current = () => appStore.repository.value === opened && appStore.branch.value === branch;
+        let failed = false;
+        const fill = (read: Promise<string[]>): Promise<void> => read.then((branches) => {
+          if (!current()) return;
           ports.options(ports.branchSelect, [...new Set([branch, ...branches])].map((name) => ({ value: name, label: `⑂ ${name}` })));
           ports.branchSelect.value = branch;
-        }, () => {});
-        await loadSnapshot(resume?.path, Promise.resolve(guessedSnapshot));
+          ports.branchSelect.disabled = false;
+          if (failed) ports.clearError();
+        }, async (error: unknown) => {
+          await opening;
+          if (!current()) return;
+          failed = true;
+          ports.errorMessage(error, () => void fill(api<string[]>("branches", { repo: opened.full_name })));
+        });
+        void fill(listing);
+        await opening;
         return;
       }
       const branches = await listing;

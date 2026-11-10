@@ -43,13 +43,13 @@ export async function fetchWithReadRetry(
     const timeout = new AbortController();
     const timer = setTimeout(() => timeout.abort(), timeoutMs);
     const signal = init.signal ? AbortSignal.any([init.signal, timeout.signal]) : timeout.signal;
-    let stop: (() => void) | undefined;
+    let stop = () => {};
     try {
       // The try asked already fails, as a fetch would, once `signal` aborts.
       const response = await (attempt === 0 && first
         ? Promise.race([first, new Promise<never>((_, reject) => {
           stop = () => reject(signal.reason);
-          signal.addEventListener("abort", stop, { once: true });
+          signal.addEventListener("abort", stop);
         })])
         : fetcher(url, { ...init, signal }));
       if (last || (response.status !== 502 && response.status !== 503)) return response;
@@ -58,7 +58,7 @@ export async function fetchWithReadRetry(
       if (last) throw new ReadUnansweredError(error);
     } finally {
       clearTimeout(timer);
-      if (stop) signal.removeEventListener("abort", stop);
+      signal.removeEventListener("abort", stop);
     }
     await pause(delays[attempt], init.signal);
   }

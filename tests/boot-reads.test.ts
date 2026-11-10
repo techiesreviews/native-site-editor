@@ -118,14 +118,17 @@ function fetcher() {
 const settle = async () => { for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve)); };
 const sha = "1".repeat(40);
 
-test("early: the session, the listing and the address's remembered repository's snapshot are asked at once", () => {
+test("early: the session, the listing and the address's remembered repository's snapshot are asked at once", async () => {
   hash = "#repo=501&branch=main";
   const storage = memoryStore(), f = fetcher();
   writeBootMemory(storage, { login: "lex", repoId: 501, fullName: "lex/site", branch: "main", commit: sha, files: [] });
   let runtime = 0;
   startEarlyReads({ fetcher: f.fetch, storage, preloadRuntime: () => { runtime++; } });
   assert.deepEqual(f.urls(), ["/api/session", "/api/repositories", "/api/snapshot?repo=lex%2Fsite&branch=main"]);
-  assert.equal(runtime, 1, "a site will show: its preview runtime is asked for too");
+  assert.equal(runtime, 0, "not before the session says a site will show");
+  f.asked[0].answer.resolve(Response.json({ user: { login: "lex" } }));
+  await settle();
+  assert.equal(runtime, 1, "signed in, the repository named: its preview runtime is asked for");
   // The same request as the boot's own (src/github-reads.ts apiResponse) and the page's preloads.
   assert.equal(f.asked[0].init?.credentials, "include");
   assert.equal(f.asked[0].init?.cache, "no-store");
@@ -206,4 +209,48 @@ test("the boot first: its claim leaves the early script nothing to ask", async (
   }
   assert.equal(asked, 0);
   assert.equal(globalThis.aseEarlyReads, claimed);
+});
+
+test("early: no preview runtime for a signed-out visit, or for an account whose list does not name the repository", async () => {
+  hash = "#repo=501&branch=main";
+  for (const [session, list] of [
+    [Response.json({ user: null }), Response.json({ error: "Sign in" }, { status: 401 })],
+    [Response.json({ user: { login: "other" } }), Response.json([{ id: 7, full_name: "other/site" }])],
+  ] as const) {
+    const f = fetcher();
+    let runtime = 0;
+    const reads = startEarlyReads({ fetcher: f.fetch, preloadRuntime: () => { runtime++; } });
+    f.asked[0].answer.resolve(session);
+    f.asked[1].answer.resolve(list);
+    assert.equal(await reads.snapshot!.read, undefined);
+    await settle();
+    assert.equal(runtime, 0);
+  }
+});
+
+test("early: a listing with no answer in the read timeout is given up, and no snapshot is asked", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  hash = "#repo=501&branch=main";
+  // A fetch that never answers fails as the browser's does once its signal aborts.
+  const asked: { url: string; signal?: AbortSignal | null }[] = [];
+  const silent = ((url: string, init?: RequestInit) => {
+    asked.push({ url, signal: init?.signal });
+    return new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)));
+  }) as typeof fetch;
+  const reads = startEarlyReads({ fetcher: silent, storage: memoryStore() });
+  t.mock.timers.tick(8000);
+  assert.equal(asked[1].signal?.aborted, true);
+  assert.equal(await reads.snapshot!.read, undefined);
+  assert.deepEqual(asked.map((entry) => entry.url), ["/api/session", "/api/repositories"]);
+});
+
+test("the boot takes only what the early script could have put there: anything else under the name is ignored", () => {
+  hash = "";
+  globalThis.aseEarlyReads = { session: "not a promise", repositories: {}, snapshot: { repoId: 501, branch: "main", read: 42 } } as never;
+  assert.equal(takeEarlyRead("session"), undefined);
+  assert.equal(takeEarlyRead("repositories"), undefined);
+  assert.equal(takeEarlySnapshot(501, "main"), undefined);
+  globalThis.aseEarlyReads = "taken" as never;
+  assert.equal(takeEarlyRead("session"), undefined);
+  globalThis.aseEarlyReads = undefined;
 });

@@ -165,7 +165,7 @@ export function previewRuntime(): Plugin {
     transformIndexHtml: {
       order: "post",
       handler(_html, context) {
-        if (posix.basename(context.path) !== "index.html") return;
+        if (resolve(context.filename) !== resolve(root, "index.html")) return;
         // Credentialed like the reads that take them (src/boot-reads.ts startEarlyReads, src/github-reads.ts).
         const preload = (path: string) => ({ tag: "link", attrs: { rel: "preload", as: "fetch", crossorigin: "use-credentials", href: posix.join(base, path) }, injectTo: "head-prepend" as const });
         return [preload("api/session"), preload("api/repositories"),

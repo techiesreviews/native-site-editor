@@ -18,6 +18,19 @@ function count(page: Page, pattern: RegExp) {
   return seen;
 }
 
+const SAID = "GitHub isn't answering. Try again in a moment.";
+const toast = (page: Page) => page.locator('.editor-toast');
+
+// The clock runs in real time; it jumps past each try's 8 s timeout, and a second at a time through the waits
+// between tries until the next goes out (as native-github-silent.spec.ts).
+async function failFourTries(page: Page, reads: { seen: number }) {
+  for (let tries = 1; tries <= 4; tries++) {
+    await expect.poll(async () => { if (reads.seen < tries) await page.clock.fastForward(1_000); return reads.seen; }, { timeout: 30_000 }).toBe(tries);
+    await expect(toast(page)).toHaveCount(0);
+    await page.clock.fastForward(8_000);
+  }
+}
+
 async function expectShown(page: Page) {
   await expect(preview(page).locator('.hero h1')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('#status')).toContainText('Up to date with main', { timeout: 30_000 });
@@ -100,13 +113,61 @@ test('the boot first (the early script held until the page shows): it asks for i
 
 // Changed by this ticket, open for Lex's OK (ticket Done): before, a first visit waited for the branch list,
 // so one GitHub never answers stopped the opening with the toast. Now the early snapshot proves the branch and
-// the site opens, as a remembered (repeat) visit already did; the branch selector keeps the linked branch.
-test('a first visit whose branch list GitHub never answers still shows the linked site, on the linked branch', async ({ page, baseURL }) => {
-  await page.route(/\/api\/branches\?/, () => { /* never answered */ });
+// the site opens, as a remembered (repeat) visit already did. The selector stays on the linked branch, disabled
+// until the list answers; one GitHub never answers says so with the toast once its four tries are spent.
+test('a first visit whose branch list GitHub never answers shows the linked site, then the toast; Try again fills the selector', async ({ page, baseURL }) => {
+  await page.clock.install();
+  const reads = { seen: 0, failing: true };
+  await page.route(/\/api\/branches\?/, (route) => { reads.seen++; if (!reads.failing) return route.continue(); });
   await page.goto(`${baseURL}/${HASH}`);
   await expectShown(page);
   await expect(page.locator('#branch')).toHaveValue('main');
+  await expect(page.locator('#branch')).toBeDisabled();
+  await expect(page.locator('#branch option')).toHaveCount(1);
+  await failFourTries(page, reads);
+  await expect(toast(page).locator('.editor-toast__text')).toHaveText(SAID);
+  await expect(preview(page).locator('.hero h1')).toBeVisible();
+  await expect(page.locator('#branch')).toBeDisabled();
+
+  reads.failing = false;
+  await toast(page).getByRole('button', { name: 'Try again', exact: true }).click();
   await expect(page.locator('#branch')).toBeEnabled();
+  await expect(page.locator('#branch')).toHaveValue('main');
+  await expect(page.locator('#notice')).toBeHidden();
+  expect(reads.seen).toBe(5);
+});
+
+test('a session GitHub never answers is tried four times in all (the page\'s own try first), then the sign-in card offers Retry', async ({ page, baseURL }) => {
+  await page.clock.install();
+  const reads = { seen: 0 };
+  await page.route('**/api/session', () => { reads.seen++; });
+  await page.goto(`${baseURL}/${HASH}`, { waitUntil: 'commit' });
+  await failFourTries(page, reads);
+  await expect(page.locator('.login-card[data-mode="error"]')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+  await expect(page.locator('#notice')).toHaveText(SAID);
+  expect(reads.seen).toBe(4);
+});
+
+test('a repository list GitHub never answers at first asks no early snapshot; the boot\'s next try lists and opens the site', async ({ page, baseURL }) => {
+  await page.clock.install();
+  const reads = { seen: 0 };
+  await page.route(/\/api\/repositories$/, (route) => { reads.seen++; if (reads.seen > 1) return route.continue(); });
+  const snapshots = count(page, /^\/api\/snapshot$/);
+  await page.goto(`${baseURL}/${HASH}`, { waitUntil: 'commit' });
+  await expect.poll(async () => { if (reads.seen < 2) await page.clock.fastForward(1_000); return reads.seen; }, { timeout: 30_000 }).toBe(2);
+  await expectShown(page);
+  await expect(toast(page)).toHaveCount(0);
+  expect(snapshots).toHaveLength(1);
+});
+
+test('a repository list answered 401 asks no snapshot; the sign-in card offers Continue with GitHub', async ({ page, baseURL }) => {
+  await page.route(/\/api\/repositories$/, (route) => route.fulfill({ status: 401, json: { error: 'Connect GitHub to continue.' } }));
+  const snapshots = count(page, /^\/api\/snapshot$/);
+  await page.goto(`${baseURL}/${HASH}`);
+  await expect(page.locator('.login-card[data-mode="expired"]')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('link', { name: 'Continue with GitHub', exact: true })).toBeVisible();
+  expect(snapshots).toEqual([]);
 });
 
 test('an early snapshot GitHub refuses (403) is read afresh by the boot: the page shows from the second read', async ({ page, baseURL }) => {
