@@ -45,7 +45,7 @@ function chips(guests: Extract<ShareState, { sharing: true }>["guests"]) {
  * copies the link again. Dimmed while no site is shown.
  */
 export function shareItems(port: ShareControlPort, actionClass: string, root: HTMLElement) {
-  root.classList.add("share-rows");
+  root.classList.add("link-rows");
   root.dataset.share = "edit";
   root.hidden = false;
   // A failed start, said on the row until the next press or a session opens.
