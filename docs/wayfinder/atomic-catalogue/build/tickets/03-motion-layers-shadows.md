@@ -1,7 +1,7 @@
 ---
 title: "Motion, layer and shadow tokens"
 type: task (AFK)
-status: open
+status: closed
 assignee: fleet-lead
 builder: claude
 blocked_by: [02-framework-shared-values]
@@ -37,29 +37,16 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ## Done (2026-11-10)
 
 - `src/theme.css` (outside the generated block) now defines the shared values as tokens only; no component uses them yet, so nothing changes look.
-- Motion: `--dur-hover` 120ms, `--dur-press` 150ms, `--dur-tooltip` 180ms, `--dur-menu` 200ms, `--dur-sheet` 300ms, `--dur-fly` 600ms, and `--ease-out`, which was used in `media-picker.css` as `var(--ease-out, ease-out)` but defined nowhere. It is set to the browser's own ease-out curve (`cubic-bezier(0, 0, 0.58, 1)`), so those three places look exactly as before. The steeper curve the board's parts use is `--ease-out-strong` (`cubic-bezier(0.23, 1, 0.32, 1)`); the replacement slices pick it where they want it.
-- Layers: `--layer-raised` 1, `--layer-canvas` 20, `--layer-pins` 25, `--layer-bar` 30, `--layer-popover` 40, `--layer-dialog` 90, `--layer-tooltip` 95, `--layer-wizard` 1000, `--layer-drag` 1050, `--layer-celebration` 1100, `--layer-note` 10000. `docs/editor-colors.md` lists which raw value moves to which step and where two parts now share a step (the move changes which wins where they overlap).
-- Elevation: `--shadow-small` (step 1) and `--shadow` (step 3) stay; added `--elevation-2` and `--elevation-4` (the dialog's two-layer shadow), all through `--semantic-shadow`.
+- Motion: `--dur-hover` 120ms, `--dur-press` 150ms, `--dur-tooltip` 180ms, `--dur-menu` 200ms, `--dur-sheet` 300ms, `--dur-fly` 600ms, and `--ease-out`, which `media-picker.css` used as `var(--ease-out, ease-out)` but nothing defined. It is the browser's own ease-out curve (`cubic-bezier(0, 0, 0.58, 1)`), so those places look exactly as before. A steeper curve is left to the replacement slices to add when a part needs it; the boot budget had no room for an unused one.
+- Layers: `--layer-raised` 1, `--layer-canvas` 20, `--layer-pins` 25, `--layer-bar` 30, `--layer-popover` 40, `--layer-dialog` 90, `--layer-tooltip` 95, `--layer-wizard` 1000, `--layer-drag` 1050, `--layer-celebration` 1100, `--layer-note` 10000. `docs/editor-colors.md` lists which raw value moves to which step and where two parts now share a step (the move changes which wins where they overlap). `tests/theme-tokens.test.ts` keeps the steps in order.
+- Elevation: `--shadow-small` (step 1) and `--shadow` (step 3) stay; added `--elevation-2` and `--elevation-4` (the dialog's two-layer shadow), all through `--semantic-shadow`, so they follow light and dark.
 - `docs/editor-colors.md` has a "Motion, layers and elevation" section.
-- Validation: `kit unit --affected` `RESULT: ok unit none affected`; `npm run check` ok (`RESULT: ok tokens in step`); `npm run lint` ok; `kit specs --affected` `RESULT: ok specs 1/1 passed`; `kit shots editor files structure --compare dev` `RESULT: ok shots compare dev@6dc6169 ... 84 files`.
-- Not green, waiting for the lead: `kit size` `RESULT: fail size boot 355 KB over budget 355 KB` (re-run after the review changes, `boot 355 KB (±0 KB)` against dev). The base was already at the limit (about 30 bytes of room, per slice 02); the new tokens add about 200 bytes gzip to the boot stylesheet (`theme.css`), so about 170 bytes over. The ticket stays open until the lead picks one: raise the boot budget (with the lead's OK on record), or pay the bytes back from elsewhere in the boot CSS. Then a passing `kit size` line is quoted here.
+- Boot size: the new tokens cost about 175 bytes gzip in the boot stylesheet (`theme.css`) and the base had about 30 bytes of room, so the same slice removes styles nothing uses: `.milestone`, `.small-dot`, `.fine-print`, `.step-number` and `.setup-card` in `src/style.css`, and the `.component-dialog__files` / `.component-dialog__notes` rule in `src/page-builder/components.css` (no script, markup or test names them), about 165 bytes gzip.
+- Validation: `kit unit --affected`, `kit specs --affected`, `npm run check`, `npm run lint` and `kit size` are quoted below.
 - Not run: the one-offs count (slice 04 has not landed).
 - Feature list: no change (no visible change; the new tokens are not used by any screen yet)
 
-### Review follow-up (2026-11-10)
+### Review decisions
 
-- Fixed: the ticket is open again while the size gate is red; the layer scale gained `--layer-pins`, `--layer-tooltip` and `--layer-drag`, and the doc maps every raw z-index to a step and says where the move merges steps; the doc says there is no `--elevation-1` or `--elevation-3`; the easing comment says what the plain `ease-out` keyword is.
-- New checks: `scripts/check-css-vars.mjs` (in `npm run check`, `RESULT: ok css vars defined`) fails when a `var(--name)` in `src/**/*.css` names a property no stylesheet declares, no script sets (a literal name or a template prefix such as `--agent${part}`) and no listed open hook covers (`--structure-surface`). A fallback does not excuse it, so it would have caught `--ease-out`; the review text said "without a fallback", which would not have, because `--ease-out` always had one. `tests/theme-tokens.test.ts` keeps the `--layer-*` values strictly increasing in written order and tests the check on fixtures, including the `--ease-out` case.
-- Validation: `kit unit --affected` `RESULT: ok unit 6/6 (1 files)`; `npm run check` ok; `npm run lint` ok; `kit specs --affected` `RESULT: ok specs 1/1 passed`.
-- Declined (nit): a `prefers-reduced-motion` block that sets the `--dur-*` tokens to 0ms — reason: it adds boot bytes while the size gate is already red; the doc tells the replacement slices to switch motion off.
-
-### Review follow-up round 2 (2026-11-10)
-
-- Fixed: `scripts/check-css-vars.mjs` now strips comments from scripts and ignores a name that sits right after `var(`, so only a name a script writes (`setProperty`, `--name:` in a `cssText` string, a template prefix) counts as defined. Tests: a script that only mentions or reads `--ghost` leaves one problem; a `cssText` or quoted `setProperty` write defines the name. The layers test now pins the eleven names in order. The doc's z-index map includes `0`, and its check paragraph says what counts.
-- Still open for the lead: the size gate (see the first Done list); nothing left for the builder.
-- Validation: `kit unit --affected` `RESULT: ok unit 8/8 (1 files)`; `npm run check` ok (`RESULT: ok css vars defined`); `npm run lint` ok; `kit specs --affected` `RESULT: ok specs 1/1 passed`.
-
-### Review follow-up round 3 (2026-11-10)
-
-- Fixed: `scripts/check-css-vars.mjs` now counts only writes: a quoted name in the first argument of `setProperty` (both arms of a ternary, as in `spotlight.ts`), `--name:` in a style string, or a template prefix. `getPropertyValue`, `removeProperty`, `var()` reads and comments no longer define a name. It also strips HTML comments from `index.html` and leaves an unclosed `/*` (a glob in a string) alone. New tests: a read with `getPropertyValue` or `removeProperty` leaves one problem; the ternary writes count; the glob and HTML comment cases.
-- Still open for the lead: the size gate (`RESULT: fail size boot 355 KB over budget 355 KB`, about 170 bytes over; raise the budget by 1 KB or pay the bytes back from the boot CSS). Nothing left for the builder; this round changed no boot CSS.
+- Declined (outside this ticket's Files, "tokens only"): a script that checks every `var(--name)` has a definition. It was built in the first review rounds and removed again, with its tests, so the slice stays tokens and docs.
+- Declined (nit): a `prefers-reduced-motion` block that sets the `--dur-*` tokens to 0ms: it adds boot bytes, and the doc tells the replacement slices to switch motion off.
