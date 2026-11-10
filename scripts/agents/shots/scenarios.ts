@@ -34,7 +34,9 @@ export async function runScenario(page: Page, screen: Screen, step: RunStep) {
     await step("openCatalogue", async () => {
       await page.goto("/catalogue.html");
       await expect(page.locator('.cat-outline__item[data-id="button"]')).toBeAttached();
-      await expect(page.frameLocator("#card-row-menu .cat-live iframe").locator(".row-menu")).toContainText("Rename");
+      // Every frame has drawn: the fixed ones show the menu open, the live one its closed button.
+      await expect(page.frameLocator('#card-row-menu .cat-half[data-theme="light"] iframe').first().locator(".row-menu")).toContainText("Rename");
+      await expect(page.frameLocator('#card-row-menu [data-cell="live"] iframe').getByRole("button", { name: "Actions" })).toBeVisible();
     });
     return;
   }

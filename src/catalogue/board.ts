@@ -1,5 +1,6 @@
 // The catalogue board (atomic catalogue tickets 07, 08 and 05): an endless canvas with areas left to right, each part a
-// frame (options in rows, states in columns, light and dark side by side), an outline that flies to a part and ticks
+// frame (a live cell that works, then options in rows, states in columns, light and dark side by side; each card and
+// live cell named by `data-part`, for preview annotations), an outline that flies to a part and ticks
 // approved ones, and a right panel with live options, where the part lives, what it is made of, and Approve.
 // Plain DOM moved by one CSS transform; `will-change` only while a gesture runs, so text redraws sharp at rest.
 import listSvg from "@phosphor-icons/core/regular/list.svg?raw";
@@ -121,7 +122,7 @@ export function startBoard(root: HTMLElement) {
 
   // ---------- Cards on the canvas ----------
 
-  /** A cell shows a part; it is not a control on the board (a tap selects its card), so it is inert. */
+  /** A state cell shows a picture of a part; it is not a control on the board (a tap selects its card), so it is inert. */
   function cell(className = "cat-cell") {
     const element = el("div", className);
     element.inert = true;
@@ -131,10 +132,10 @@ export function startBoard(root: HTMLElement) {
   const drawing: Promise<unknown>[] = [];
   // Each stage's latest draw: a slower earlier one (a part's module loading the first time) never lands over it.
   const turns = new WeakMap<HTMLElement, number>();
-  async function drawInline(part: Part, values: Values, state: State, into: HTMLElement) {
+  async function drawInline(part: Part, values: Values, state: State, into: HTMLElement, live = false) {
     const turn = (turns.get(into) ?? 0) + 1;
     turns.set(into, turn);
-    const element = await part.render(values, FORCED.has(state) ? "normal" : state);
+    const element = await part.render(values, FORCED.has(state) ? "normal" : state, live);
     if (turns.get(into) !== turn) return;
     if (FORCED.has(state)) force(element, state as Forced);
     into.replaceChildren(element);
@@ -186,6 +187,7 @@ export function startBoard(root: HTMLElement) {
     const article = el("article", "cat-card");
     article.id = `card-${entry.id}`;
     article.dataset.id = entry.id;
+    article.dataset.part = entry.id;
     const title = el("h3", "cat-card__title");
     title.append(el("span", "", entry.name), el("span", "cat-mark"));
     const body = el("div", "cat-card__body");
@@ -205,14 +207,19 @@ export function startBoard(root: HTMLElement) {
         const row = el("div", "cat-halves");
         for (const theme of ["light", "dark"] as const) {
           const side = half(theme, `${width} px · ${theme === "light" ? "Light" : "Dark"}`);
-          side.append(frameElement({ kind: "mockup", id: entry.id, theme, values: entry.defaults, width, height: entry.height }, `${entry.name}, ${width} px, ${theme}`));
+          // Every mock-up frame works: each is a live cell, told apart by its width and theme.
+          Object.assign(side.dataset, { part: entry.id, cell: "live", width: String(width) });
+          side.append(frameElement({ kind: "mockup", id: entry.id, theme, values: entry.defaults, width, height: entry.height, live: true }, `${entry.name}, ${width} px, ${theme}`));
           row.append(side);
         }
         body.append(row);
       }
     } else {
+      // The live cell works like the real part: clicks, hover and the keyboard reach it.
       const liveCell = el("div", "cat-live");
-      liveCell.append(el("span", "cat-label", "Live"), cell("cat-live__stage"));
+      const stage = el("div", "cat-live__stage");
+      Object.assign(stage.dataset, { part: entry.id, cell: "live" });
+      liveCell.append(el("span", "cat-label", "Live"), stage);
       body.append(liveCell);
       const halves = el("div", "cat-halves");
       for (const theme of ["light", "dark"] as const) {
@@ -249,11 +256,11 @@ export function startBoard(root: HTMLElement) {
       const frame = stage.querySelector("iframe");
       if (frame && frame.dataset.theme === now.theme) updateFrame(frame, now.values);
       else {
-        const made = frameElement({ kind: "frame", id: entry.id, theme: now.theme, values: now.values, ...entry.frame }, `${entry.name}, live`);
+        const made = frameElement({ kind: "frame", id: entry.id, theme: now.theme, values: now.values, ...entry.frame, live: true }, `${entry.name}, live`);
         made.dataset.theme = now.theme;
         stage.replaceChildren(made);
       }
-    } else void drawInline(entry, now.values, now.state, stage).then(placeSel);
+    } else void drawInline(entry, now.values, now.state, stage, true).then(placeSel);
   }
 
   const areas = new Map<AreaId, HTMLElement>();
@@ -416,13 +423,14 @@ export function startBoard(root: HTMLElement) {
     if (name) root.dataset.sheet = name; else delete root.dataset.sheet;
     for (const toggle of [outlineToggle, optionsToggle]) toggle.setAttribute("aria-pressed", String(toggle.dataset.sheet === name));
   }
-  function select(id: string | undefined) {
+  /** `sheet`: below wide widths, a selection opens the Options sheet (not when a live cell is being used). */
+  function select(id: string | undefined, sheet = true) {
     selected = id && byId.has(id) ? id : undefined;
     for (const article of world.querySelectorAll<HTMLElement>(".cat-card[data-id]")) article.classList.toggle("is-selected", article.dataset.id === selected);
     for (const item of outline.querySelectorAll<HTMLElement>(".cat-outline__item")) item.setAttribute("aria-current", String(item.dataset.id === selected));
     renderInspector();
     placeSel();
-    if (mode() !== "wide") { if (selected) setSheet("options"); else if (root.dataset.sheet === "options") setSheet(""); }
+    if (mode() !== "wide" && sheet) { if (selected) setSheet("options"); else if (root.dataset.sheet === "options") setSheet(""); }
   }
   function go(id: string) {
     select(id);
@@ -692,7 +700,7 @@ export function startBoard(root: HTMLElement) {
     else if (event.key === "!" || (event.shiftKey && event.code === "Digit1")) fitAll();
   });
   document.addEventListener("keyup", (event) => { if (event.code === "Space") { spaceHeld = false; root.classList.remove("is-space"); } });
-  // A part in a frame may focus itself as it draws (an open menu its first item), which takes focus into the inert
+  // A part in a state cell's frame may focus itself as it draws (an open menu its first item), which takes focus into the inert
   // <iframe> and away from the board: the board's window loses focus, and it is given back to where it was.
   let lastFocus: HTMLElement | undefined;
   document.addEventListener("focusin", (event) => { if (!(event.target instanceof HTMLIFrameElement)) lastFocus = event.target as HTMLElement; });
@@ -736,9 +744,17 @@ export function startBoard(root: HTMLElement) {
     startGesture();
     root.classList.add("is-panning");
   }
+  /** A press in a live cell uses the part: it selects the card, and never pans or opens a sheet. */
+  function press(article: HTMLElement | null) {
+    const id = article?.dataset.id;
+    if (id && selected !== id) select(id, false);
+  }
+  world.addEventListener("cat-frame-press", (event) => press((event.target as Element).closest<HTMLElement>(".cat-card[data-id]")));
   viewport.addEventListener("pointerdown", (event) => {
-    if ((event.target as Element).closest(".cat-zoombar, .cat-search")) return;
+    const target = event.target as Element;
+    if (target.closest(".cat-zoombar, .cat-search")) return;
     if (event.pointerType === "mouse" && event.button !== 0 && event.button !== 1) return;
+    if (!spaceHeld && event.button === 0 && target.closest(".cat-live__stage")) { press(target.closest<HTMLElement>(".cat-card[data-id]")); return; }
     stopFlight();
     points.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (points.size === 1) {

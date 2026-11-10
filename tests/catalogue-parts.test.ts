@@ -4,6 +4,7 @@ import { dirname, join, normalize } from "node:path";
 import test from "node:test";
 import { parseApprovals } from "../src/catalogue/approvals.ts";
 import { forcedSelector, groupPrelude } from "../src/catalogue/force-states.ts";
+import { boardPoint, frameOf, frameQuery } from "../src/catalogue/frame.ts";
 import { MOCKUPS } from "../src/catalogue/mockups.ts";
 import { AREAS, PARTS, STATE_NAMES, isPart, untracedLines, type Part } from "../src/catalogue/parts.ts";
 
@@ -101,6 +102,23 @@ test("untraced: the one-offs count for an entry's stylesheets, in plain words", 
   // The committed count names the board's molecules' stylesheets.
   const committed = JSON.parse(readFileSync(join(repo, "scripts/agents/one-offs.json"), "utf8")).files;
   assert.match(untracedLines(["src/components/row-menu.css"], committed)[0] ?? "", /in row-menu\.css$/);
+});
+
+test("a live frame says so in its query, and a frame page reads it back", () => {
+  const live = frameQuery({ kind: "frame", id: "row-menu", theme: "dark", values: {}, live: true });
+  assert.equal(new URLSearchParams(live).get("live"), "1");
+  assert.equal(frameOf(live)?.live, true);
+  const still = frameQuery({ kind: "frame", id: "row-menu", theme: "light", values: { shortcut: false } });
+  assert.equal(new URLSearchParams(still).get("live"), null);
+  assert.equal(frameOf(still)?.live, false);
+  assert.equal(frameOf("?mockup=sharing-panel&live=1")?.live, true);
+});
+
+test("a wheel turned over a live frame lands on the board at the same place, through the board's zoom", () => {
+  // A 280 px frame drawn at half size from (100, 40) on the board's page.
+  assert.deepEqual(boardPoint({ left: 100, top: 40, width: 140 }, 280, { x: 20, y: 60 }), { x: 110, y: 70 });
+  assert.deepEqual(boardPoint({ left: 0, top: 0, width: 280 }, 280, { x: 20, y: 60 }), { x: 20, y: 60 });
+  assert.deepEqual(boardPoint({ left: 5, top: 5, width: 0 }, 0, { x: 2, y: 3 }), { x: 7, y: 8 }, "an unmeasured frame counts as full size");
 });
 
 test("the committed approvals only name entries on the board", () => {
