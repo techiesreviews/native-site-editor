@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 // @ts-expect-error The script is plain JavaScript without declarations.
-import { baselinePath, compare, oneOffs, readBaseline, scan, tally, total } from "../scripts/agents/one-offs.mjs";
+import { baselinePath, compare, noVars, oneOffs, readBaseline, scan, tally, total } from "../scripts/agents/one-offs.mjs";
 
 const script = new URL("../scripts/agents/one-offs.mjs", import.meta.url).pathname;
 const repo = new URL("..", import.meta.url).pathname;
@@ -45,6 +45,30 @@ test("a var() fallback holding a px value never counts, in any kind; a raw value
     "  font-size: var(--size, 13px); }",
   ].join("\n")), []);
   assert.deepEqual(oneOffs("a { padding: var(--space-s, 4px) 10px; }").map(({ kind }: Found) => kind), ["spacing"]);
+});
+
+test("custom properties with digits, capitals or underscores count; property names are read whole and case-insensitively", () => {
+  const found: Found[] = oneOffs("a { --space-2: 10px; --Pad_Big: 3px; --x2y: 1; padding: var(--space-2); PADDING: 10px; Z-Index: 3; }", { file: "src/a.css" });
+  assert.deepEqual(found.map(({ kind, text }) => [kind, text]), [
+    ["localProperties", "--space-2: 10px"], ["localProperties", "--Pad_Big: 3px"], ["localProperties", "--x2y: 1"],
+    ["spacing", "PADDING: 10px"], ["zIndex", "Z-Index: 3"],
+  ]);
+  assert.deepEqual(oneOffs("a { --space-2: 10px; }", { file: "src/theme.css" }), []);
+});
+
+test("signed times count, a negative delay included; a name that ends in a time does not", () => {
+  assert.deepEqual(oneOffs("a { animation-delay: -120ms; transition-delay: +0.5s; }").map(({ kind }: Found) => kind), ["timings", "timings"]);
+  assert.deepEqual(oneOffs("a { animation-delay: var(--dur-delay); animation-name: fade-2s; animation: fade-2s var(--dur-fly); }"), []);
+  assert.equal(oneOffs("a { animation: fade-2s 1s; }").length, 1);
+});
+
+test("a nested var() fallback is removed whole, so a token inside a token never counts", () => {
+  assert.equal(noVars("var(--pad, var(--small) 10px) 4px"), " 4px");
+  assert.equal(noVars("calc(var(--a, calc(1px + 2px)) + 3px)"), "calc( + 3px)");
+  assert.equal(noVars("VAR(--a, 5px) 1px"), " 1px");
+  assert.equal(noVars("var(--a"), "");
+  assert.deepEqual(oneOffs("a { padding: var(--pad, var(--small) 10px); border-radius: var(--r, var(--s) 6px); transition: opacity var(--d, var(--e) 120ms); }"), []);
+  assert.deepEqual(oneOffs("a { padding: var(--pad, var(--small)) 10px; }").map(({ kind }: Found) => kind), ["spacing"]);
 });
 
 test("comments are ignored but keep line numbers; theme.css may hold its own custom properties", () => {

@@ -66,7 +66,7 @@
     "src/page-builder/media-spot-popup.css": { "spacing": 4, "radii": 1 },
     "src/preview-visit.css": { "spacing": 2, "zIndex": 1 },
     "src/style.css": { "spacing": 75, "radii": 4, "shadows": 1, "timings": 2, "fontSizes": 9 },
-    "src/tokens/framework-editor.css": { "localProperties": 5 },
+    "src/tokens/framework-editor.css": { "localProperties": 8 },
     "src/ui/editor-scrollbars.css": { "radii": 2 },
     "src/ui/inline-field.css": { "shadows": 4, "timings": 1 },
     "src/utilities.css": { "radii": 2 }

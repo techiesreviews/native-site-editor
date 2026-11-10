@@ -25,17 +25,34 @@ const themeFile = "src/theme.css";
 
 const px = /(?<![\w.-])-?\d*\.?\d+px\b/;
 const nonZeroPx = /(?<![\w.-])-?(?:0*[1-9]\d*(?:\.\d+)?|0?\.\d*[1-9]\d*)px\b/;
-const time = /(?<![\w.-])\d*\.?\d+m?s\b/;
-const noVars = value => value.replace(/var\([^)]*\)/g, "");
+// Signed: a negative delay is valid. A name such as fade-2s still never counts, as nothing word-like may precede the sign or digit.
+const time = /(?<![\w.-])[+-]?\d*\.?\d+m?s\b/;
+/** The value without its `var(...)` expressions, nested parentheses and fallbacks included. */
+export function noVars(value) {
+  let out = "";
+  for (let i = 0; i < value.length;) {
+    if (/^var\(/i.test(value.slice(i)) && !/[\w-]/.test(value[i - 1] ?? "")) {
+      let depth = 0, j = i + 3;
+      for (; j < value.length; j++) {
+        if (value[j] === "(") depth++;
+        else if (value[j] === ")" && --depth === 0) break;
+      }
+      i = j + 1;
+    } else out += value[i++];
+  }
+  return out;
+}
 const timingProperty = /^(transition|transition-duration|transition-delay|animation|animation-duration|animation-delay)$/;
 
 /** Every hand-typed value in one CSS file's text, with its 1-based line. Comments are blanked, lines kept. */
 export function oneOffs(text, { file = "" } = {}) {
   const code = text.replace(/\/\*[\s\S]*?\*\//g, comment => comment.replace(/[^\n]/g, " "));
   const found = [];
-  for (const match of code.matchAll(/([-a-z]+)\s*:\s*([^;{}]+)(?=;|\})/g)) {
-    const [, property, value] = match;
-    const add = kind => found.push({ kind, line: code.slice(0, match.index).split("\n").length, text: `${property}: ${value.trim().replace(/\s+/g, " ")}` });
+  // A whole property name: custom properties keep digits, capitals and underscores; others are case-insensitive.
+  for (const match of code.matchAll(/(?<![\w-])(--[\w-]+|-?[a-zA-Z][\w-]*)\s*:\s*([^;{}]+)(?=;|\})/g)) {
+    const [, name, value] = match;
+    const property = name.startsWith("--") ? name : name.toLowerCase();
+    const add = kind => found.push({ kind, line: code.slice(0, match.index).split("\n").length, text: `${name}: ${value.trim().replace(/\s+/g, " ")}` });
     if (property.startsWith("--")) { if (file !== themeFile) add("localProperties"); continue; }
     const own = noVars(value);
     if (/^(margin|padding|gap|row-gap|column-gap)(-|$)/.test(property) && nonZeroPx.test(own)) add("spacing");
