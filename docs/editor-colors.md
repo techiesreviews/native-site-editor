@@ -24,6 +24,14 @@ The six `--color-primary-lightest` through `--color-primary-darkest` shades refe
 
 WCAG sets no minimum text size. It asks for 4.5:1 text contrast and 3:1 for focus indicators. `--text`, `--muted` and `--link` stay above 5:1 on panels and the sidebar under `--hover` and `--current` in both schemes, and the focus ring above 3.5:1.
 
+## Motion, layers and elevation
+
+`src/theme.css` also names the other shared values. They are tokens only for now; components switch to them as the replacement slices land, and nothing looks different yet.
+
+- **Motion.** Durations `--dur-hover` 120ms (a tint), `--dur-press` 150ms, `--dur-tooltip` 180ms, `--dur-menu` 200ms (menus and popovers), `--dur-sheet` 300ms and `--dur-fly` 600ms. `--ease-out` is the browser's own `ease-out` curve (`cubic-bezier(0, 0, 0.58, 1)`), so the three places that already wrote `var(--ease-out, ease-out)` keep their look; `--ease-out-strong` (`cubic-bezier(0.23, 1, 0.32, 1)`) is the steeper curve the board's parts use. Move only `transform`, `opacity` and colours, and switch the motion off under `prefers-reduced-motion`.
+- **Layers.** `--layer-raised` 1 (inside one part), `--layer-canvas` 20 (carets, insert and card controls over the preview), `--layer-bar` 30 (the edit bar), `--layer-popover` 40 (its popovers, menus and pickers), `--layer-dialog` 90, `--layer-wizard` 1000, `--layer-celebration` 1100, `--layer-note` 10000 (the refusal note). A raw `z-index` number in a component moves to one of these when its part is replaced; keep the order, so a popover stays above its bar.
+- **Elevation.** Four steps. One is the existing `--shadow-small` (a pin or round button), two `--elevation-2` (a small card), three the existing `--shadow` (a floating panel) and four `--elevation-4` (a dialog). All use `--semantic-shadow`, so they follow light and dark. The two existing names stay; the new ones are only added where no step existed.
+
 ## Writing a themed colour
 
 `:root` has `color-scheme: light dark`. Write a colour that differs between light and dark once, with both values side by side, in `src/theme.css`:

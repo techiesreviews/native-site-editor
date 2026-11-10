@@ -240,6 +240,39 @@
   --checkerboard: repeating-conic-gradient(oklch(97% 0 none) 0 25%, oklch(90% 0 none) 0 50%) 0 0 / 16px 16px;
   --panel-padding: 6px;
   --panel-padding-roomy: 12px;
+
+  /* Motion. Durations from the board's Shared values proposals: a hover
+     tint, a press, a tooltip, a menu or popover, a sheet, a flying element.
+     Components pair them with an easing and drop the motion under
+     prefers-reduced-motion. */
+  --dur-hover: 120ms;
+  --dur-press: 150ms;
+  --dur-tooltip: 180ms;
+  --dur-menu: 200ms;
+  --dur-sheet: 300ms;
+  --dur-fly: 600ms;
+  /* --ease-out is the browser's own ease-out curve, the one the plain
+     keyword gives and the only one used so far; --ease-out-strong is the
+     steeper curve the board's parts use. */
+  --ease-out: cubic-bezier(0, 0, 0.58, 1);
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+
+  /* Layers: named z-index steps, lowest to highest. Raised is local to one
+     part; the rest order whole parts over the page and the preview. */
+  --layer-raised: 1;
+  --layer-canvas: 20;
+  --layer-bar: 30;
+  --layer-popover: 40;
+  --layer-dialog: 90;
+  --layer-wizard: 1000;
+  --layer-celebration: 1100;
+  --layer-note: 10000;
+
+  /* Elevation: four steps of shadow, theme-aware through --semantic-shadow.
+     One is the existing --shadow-small (a pin or a round button), two a
+     small card, three the existing --shadow (a floating panel), four a dialog. */
+  --elevation-2: 0 4px 16px var(--semantic-shadow);
+  --elevation-4: 0 24px 64px var(--semantic-shadow), 0 2px 8px var(--semantic-shadow);
 }
 
 @media (hover: none), (pointer: coarse), (width <= 768px) {
