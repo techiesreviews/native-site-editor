@@ -21,6 +21,8 @@ export default defineConfig({
   reporter: "line",
   workers: 1,
   retries: 0,
-  projects: [{ name: "kit-shots", timeout: 0, expect: native.expect, use: { ...native.use, baseURL: `http://127.0.0.1:${port}` } }],
+  // Screens show what a new visitor sees: no remembered choices (the browser
+  // suites start with the code pane left open; feature tries open it themselves).
+  projects: [{ name: "kit-shots", timeout: 0, expect: native.expect, use: { ...native.use, storageState: { cookies: [], origins: [] }, baseURL: `http://127.0.0.1:${port}` } }],
   webServer: { ...server("kit-shots", port), cwd: appRoot ?? root },
 });
