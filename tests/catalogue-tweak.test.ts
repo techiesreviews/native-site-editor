@@ -64,11 +64,11 @@ test("tweakCss writes only what changed, scoped to the live cell and each theme,
   const css = tweakCss([primary, padding], edits, scope);
   assert.match(css, /:where\(\.cat-live\[data-theme="dark"\] > \.stage\) \{ --primary: #ff0000; \}/);
   assert.doesNotMatch(css, /data-theme="light"\] > \.stage\) \{ --primary/);
-  assert.match(css, /:where\(\.cat-live\[data-theme="light"\] > \.stage\) \.button \{ padding: 8px 16px; \}/);
-  assert.match(css, /:where\(\.cat-live\[data-theme="dark"\] > \.stage\) \.button \{ padding: 8px 16px; \}/);
+  assert.match(css, /:where\(\.cat-live\[data-theme="light"\] > \.stage\) :is\(\.button\) \{ padding: 8px 16px; \}/);
+  assert.match(css, /:where\(\.cat-live\[data-theme="dark"\] > \.stage\) :is\(\.button\) \{ padding: 8px 16px; \}/);
   // A selector list is scoped item by item, so each keeps its own specificity.
   const list = { ...padding, id: "rule:.a, .b|padding", selector: ".a, .b" };
-  assert.match(tweakCss([list], { [list.id]: { light: "1px", dark: "1px" } }, scope), /:where\([^)]*\) \.a, :where\([^)]*\) \.b \{ padding: 1px; \}/);
+  assert.match(tweakCss([list], { [list.id]: { light: "1px", dark: "1px" } }, scope), /:where\([^)]*\) :is\(\.a\), :where\([^)]*\) :is\(\.b\) \{ padding: 1px; \}/);
 });
 
 test("tweakCss leaves out a value that would break out of its declaration", () => {

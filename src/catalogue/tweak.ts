@@ -86,11 +86,12 @@ export function changedSides(field: TweakField, edit: Record<Side, string> | und
 }
 
 /** A value that stays inside its declaration: no `;`, braces or comment that would end it or start another rule. */
-const safe = (value: string) => value.trim() !== "" && !/[;{}]|\/\*|<\//.test(value);
+export const safe = (value: string) => value.trim() !== "" && !/[;{}]|\/\*|<\//.test(value);
 
 /**
  * The CSS that shows the edits on the live cell only: each changed value under `scope(side)`, the live cell in that
- * theme. `:where()` adds nothing to a rule's own specificity, so its hover and pressed rules still win as in the code.
+ * theme. `:where()` adds nothing to a rule's own specificity and `:is()` keeps it, so its hover and pressed rules
+ * still win as in the code, and a rule anchored above the part (`:root .x`) still matches inside the live cell.
  */
 export function tweakCss(fields: readonly TweakField[], edits: Edits, scope: (side: Side) => string): string {
   const out: string[] = [];
@@ -101,7 +102,7 @@ export function tweakCss(fields: readonly TweakField[], edits: Edits, scope: (si
       if (!safe(value)) continue;
       const where = `:where(${scope(side)})`;
       if (field.token) out.push(`${where} { ${field.token}: ${value}; }`);
-      else out.push(`${splitSelectors(field.selector!).map((selector) => `${where} ${selector}`).join(", ")} { ${field.property}: ${value}; }`);
+      else out.push(`${splitSelectors(field.selector!).map((selector) => `${where} :is(${selector})`).join(", ")} { ${field.property}: ${value}; }`);
     }
   }
   return out.join("\n");
@@ -204,7 +205,11 @@ export function specificity(selector: string): Specificity {
  */
 export function readFields(roots: readonly Element[], probes: Record<Side, HTMLElement>): TweakField[] {
   const byDoc = new Map<Document, Element[]>();
-  for (const root of roots) byDoc.set(root.ownerDocument, [...byDoc.get(root.ownerDocument) ?? [], root, ...root.querySelectorAll("*")]);
+  for (const root of roots) {
+    const list = byDoc.get(root.ownerDocument) ?? [];
+    list.push(root, ...root.querySelectorAll("*"));
+    byDoc.set(root.ownerDocument, list);
+  }
   type Declared = { selector: string; property: string; value: string; at: number };
   type Candidate = { declared: Declared; weight: Specificity };
   const declared: Declared[] = [];
@@ -228,7 +233,11 @@ export function readFields(roots: readonly Element[], probes: Record<Side, HTMLE
         read.push({ selector, property, value, at: declared.length + read.length });
       }
       declared.push(...read);
-      for (const [element, weight] of matched) candidates.set(element, [...candidates.get(element) ?? [], ...read.map((each) => ({ declared: each, weight }))]);
+      for (const [element, weight] of matched) {
+        const list = candidates.get(element) ?? [];
+        list.push(...read.map((each) => ({ declared: each, weight })));
+        candidates.set(element, list);
+      }
     }
     for (const list of candidates.values()) {
       for (const one of list) {
@@ -253,7 +262,7 @@ export function readFields(roots: readonly Element[], probes: Record<Side, HTMLE
       const raw = getComputedStyle(probes.light).getPropertyValue(token).trim();
       const kind: TweakKind = CSS.supports("color", raw) ? "colour" : kindOf(property)!;
       const before = { light: resolve(probes.light, token, kind), dark: resolve(probes.dark, token, kind) };
-      fields.set(id, { id, kind, token, property, usedBy: [use], before, themed: kind === "colour" || before.light !== before.dark });
+      fields.set(id, { id, kind, token, property, usedBy: [use], before, themed: kind === "colour" });
       continue;
     }
     const id = `rule:${selector}|${property}`;
@@ -276,14 +285,24 @@ function resolve(probe: HTMLElement, token: string, kind: TweakKind): string {
   return getComputedStyle(probe).getPropertyValue(token).trim();
 }
 
-/** A colour as #rrggbb for the colour picker (its alpha left out), or undefined when it is not a colour. */
-export function hexOf(value: string): string | undefined {
+/**
+ * A colour as #rrggbb for the colour picker (its alpha left out), worked out on `probe` (the theme on show) first, so
+ * tokens, `color-mix()` and `light-dark()` show their real colour; undefined when it is not one a picker can show.
+ */
+export function hexOf(value: string, probe: HTMLElement): string | undefined {
   // currentcolor takes the text's colour, which a picker cannot show.
   if (!CSS.supports("color", value) || /currentcolor/i.test(value)) return undefined;
+  probe.style.setProperty("color", value);
+  const worked = getComputedStyle(probe).color;
+  probe.style.removeProperty("color");
   const context = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
-  if (!context) return undefined;
+  if (!worked || !context) return undefined;
   context.canvas.width = context.canvas.height = 1;
-  context.fillStyle = value;
+  // A colour the canvas cannot read leaves the test colour in place.
+  const test = "#010203";
+  context.fillStyle = test;
+  context.fillStyle = worked;
+  if (context.fillStyle === test && worked.replace(/\s/g, "") !== "rgb(1,2,3)") return undefined;
   context.fillRect(0, 0, 1, 1);
   const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
   return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;

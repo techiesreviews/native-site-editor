@@ -60,7 +60,8 @@ export function startBoard(root: HTMLElement) {
   for (const entry of ENTRIES) live.set(entry.id, { values: { ...entry.defaults }, state: "normal", theme: "light" });
   const saving = new Map<string, { busy: boolean; note?: "signed-out" | string }>();
   /** Each part's Tweak values (read once, when it is first selected) and its edits, kept until the page closes. */
-  const tweaks = new Map<string, { fields?: TweakField[]; edits: Edits }>();
+  /** `again`: a frame never drew while reading, so the next selection reads once more. */
+  const tweaks = new Map<string, { fields?: TweakField[]; edits: Edits; again?: boolean }>();
 
   root.className = "cat-board";
   root.innerHTML = `
@@ -311,33 +312,33 @@ export function startBoard(root: HTMLElement) {
     });
   }
   /** Reads a part's values from its live cell and its light state cells (rows show its variants; forced states left out). */
-  async function readTweaks(entry: Part, tweak: { fields?: TweakField[] }) {
+  async function readTweaks(entry: Part, tweak: { fields?: TweakField[]; again?: boolean }) {
     const article = world.querySelector<HTMLElement>(`#card-${CSS.escape(entry.id)}`);
     if (!article) return;
     const holders = [
       ...article.querySelectorAll<HTMLElement>(".cat-live__stage"),
       ...article.querySelectorAll<HTMLElement>(`.cat-half[data-theme="light"] .cat-cell:not(${[...FORCED].map((state) => `[data-state="${state}"]`).join(", ")})`),
     ];
-    const roots: Element[] = [];
-    for (const holder of holders) {
+    const stages = await Promise.all(holders.map((holder) => {
       const frame = holder.querySelector("iframe");
-      if (!frame) { roots.push(...holder.children); continue; }
-      const stage = await frameStage(frame);
-      if (stage) roots.push(...stage.children);
-    }
-    tweak.fields = readFields(roots, probes);
+      return frame ? frameStage(frame) : holder;
+    }));
+    tweak.again = stages.includes(null);
+    tweak.fields = readFields(stages.flatMap((stage) => (stage ? [...stage.children] : [])), probes);
     // Read at once (no frame to wait for), the section being made shows them; else it is redrawn with them.
     if (selected === entry.id) refreshTweak();
   }
-  function tweakFor(entry: Part) {
+  /** `select`: the part was just selected, when values read without a frame are read again (nothing edited yet). */
+  function tweakFor(entry: Part, select = false) {
     let tweak = tweaks.get(entry.id);
-    if (!tweak) {
+    if (!tweak || (select && tweak.again && !Object.keys(tweak.edits).length)) {
       tweak = { edits: {} };
       tweaks.set(entry.id, tweak);
       void readTweaks(entry, tweak);
     }
+    const side = live.get(entry.id)!.theme;
     return tweakSection({
-      part: entry, fields: tweak.fields, edits: tweak.edits, side: live.get(entry.id)!.theme,
+      part: entry, fields: tweak.fields, edits: tweak.edits, side, probe: probes[side],
       apply: () => applyTweaks(entry), say,
     });
   }
@@ -653,7 +654,7 @@ export function startBoard(root: HTMLElement) {
       controls.push(segmented("Colours", [["light", "Light"], ["dark", "Dark"]], now.theme, (theme) => { now.theme = theme as Theme; drawLive(entry); refreshTweak(); }));
     }
     if (controls.length) sections.push(section("Options", ...controls));
-    if (isPart(entry)) sections.push(tweakFor(entry));
+    if (isPart(entry)) sections.push(tweakFor(entry, true));
     if (entry.area === "molecules" || entry.area === "organisms" || entry.area === "mockups") sections.push(section("Made of", madeOfList(entry)));
     sections.push(approveSection(entry));
     inspector.replaceChildren(...sections);
