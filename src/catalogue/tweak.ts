@@ -20,7 +20,7 @@ export interface TweakField {
   /** A token's uses in the part's rules, as `<selector> { <property> }`. */
   usedBy: string[];
   before: Record<Side, string>;
-  /** Each theme is edited on its own (colours, and values that differ between light and dark); else one value for both. */
+  /** Colours are edited for each theme on its own; every other value has one value for both. */
   themed: boolean;
 }
 /** The values after editing, both sides, by field id. */
@@ -292,9 +292,19 @@ function resolve(probe: HTMLElement, token: string, kind: TweakKind): string {
 export function hexOf(value: string, probe: HTMLElement): string | undefined {
   // currentcolor takes the text's colour, which a picker cannot show.
   if (!CSS.supports("color", value) || /currentcolor/i.test(value)) return undefined;
-  probe.style.setProperty("color", value);
-  const worked = getComputedStyle(probe).color;
-  probe.style.removeProperty("color");
+  // Worked out under two different inherited colours: a value the probe cannot work out (a custom property only the
+  // part's own rule sets) falls back to the inherited one, which then differs.
+  const parent = probe.parentElement!;
+  const workOut = (inherited: string) => {
+    parent.style.setProperty("color", inherited);
+    probe.style.setProperty("color", value);
+    const result = getComputedStyle(probe).color;
+    probe.style.removeProperty("color");
+    parent.style.removeProperty("color");
+    return result;
+  };
+  const worked = workOut("rgb(1, 2, 3)");
+  if (worked !== workOut("rgb(4, 5, 6)")) return undefined;
   const context = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
   if (!worked || !context) return undefined;
   context.canvas.width = context.canvas.height = 1;
