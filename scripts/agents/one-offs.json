@@ -55,7 +55,7 @@
     "src/page-builder/components.css": { "spacing": 46, "radii": 5, "shadows": 2, "timings": 2, "localProperties": 2, "zIndex": 1 },
     "src/page-builder/edit-component-mode.css": { "spacing": 10, "radii": 1 },
     "src/page-builder/image-large-editor.css": { "spacing": 36, "radii": 2, "shadows": 4, "timings": 4, "localProperties": 4, "zIndex": 1, "fontSizes": 5 },
-    "src/page-builder/image-popup.css": { "spacing": 37, "radii": 15, "shadows": 4, "localProperties": 11, "zIndex": 4 },
+    "src/page-builder/image-popup.css": { "spacing": 36, "radii": 15, "shadows": 4, "localProperties": 11, "zIndex": 4 },
     "src/page-builder/media-adding-settings.css": { "spacing": 10, "radii": 6, "localProperties": 2 },
     "src/page-builder/media-adding-summary.css": { "spacing": 12, "radii": 6, "localProperties": 1, "zIndex": 1 },
     "src/page-builder/media-clean-up-review.css": { "spacing": 11, "radii": 4, "shadows": 2 },

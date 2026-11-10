@@ -335,7 +335,6 @@ function showPicture(image: HTMLImageElement, url: string, path: string) {
   markTransparency(image, path);
 }
 
-
 export interface PreviewDevice { name: "Phone" | "Computer"; viewport: number; width: number; height: number }
 /** The live previews: the spot in a phone's and a computer's screen at the widths the page is measured at; the spot is sized in shares of its screen. */
 export function mountPreviews(devices: readonly PreviewDevice[]) {

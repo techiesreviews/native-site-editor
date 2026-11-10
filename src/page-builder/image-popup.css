@@ -345,18 +345,11 @@
   font-weight: 600;
 }
 .image-popup__item[aria-checked="true"] .icon { visibility: visible; }
-/* The hint (the first time only) and Replace at the end of the line. */
+/* Replace at the end of the line (the hint beside it is read aloud only). */
 .image-popup__under {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-}
-.image-popup__hint {
-  min-width: 0;
-  margin: 0;
-  padding-top: 5px;
-  color: var(--muted);
-  font-size: var(--type-small);
 }
 .image-popup__link {
   display: inline-flex;

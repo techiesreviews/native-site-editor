@@ -73,8 +73,9 @@ const nativeStructurePaints = new WeakMap<NativeStructureItem, { since: Stamp; m
 const STRUCTURE_MOVE_STALE = "The source changed. Wait for the preview before moving this element.";
 const SECTION_OPEN_STALE = "The source changed while its editor opened. Select the section again before moving it.";
 const BLOCK_OPEN_STALE = "The source changed while its editor opened. Select the element again before moving it.";
-// An Add rail pick or drop while the page's typing has not landed yet.
+// A Structure row's action while the preview still draws an older source.
 const STILL_DRAWING = "The source changed. Wait for the preview before using this action.";
+// An Add rail pick or drop while the page's typing has not landed yet.
 const STILL_UPDATING = "The page is still updating. Try again in a moment.";
 
 /** The open site's loading and preview (src/main.ts until slice 87). */
