@@ -479,6 +479,18 @@ test("Tweak edits the live Button's CSS in light and dark, resets it, and Send t
   expect(copied).toMatch(/- --primary \(theme token in src\/theme\.css, used by \.[\w-]+ \{ background \}\), dark: \S.* → rgb\(255, 0, 0\)/);
   expect(copied).not.toMatch(/--primary.*, light:/);
 
+  // A clipboard that refuses: the button says so for a moment, then offers itself again.
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = () => Promise.reject(new Error("refused"));
+    document.execCommand = () => false;
+  });
+  await send.click();
+  const refused = tweak.getByRole("button", { name: "Couldn't copy" });
+  await expect(refused).toHaveAttribute("data-problem", "");
+  await expect(page.locator('p[role="status"]')).toHaveText("Couldn't copy the change request");
+  await expect(send).toHaveText("Send to agent");
+  await expect(send).not.toHaveAttribute("data-problem");
+
   await reset.click();
   await expect.poll(() => css(liveButton, "border-radius")).toBe("6px");
   await expect.poll(() => css(liveButton, "padding")).toBe("6px 14px");
