@@ -286,12 +286,13 @@ test("vite.config.ts adds the mock-ups only with MOCKUPS=1", async () => {
   assert.ok((await pluginNames("1")).includes("ase-mockups"));
 });
 
-test("only the preview Worker builds with the mock-ups", () => {
+test("only the preview Worker builds with the mock-ups and the catalogue board", () => {
   const commands = Object.fromEntries(["wrangler.jsonc", "wrangler.preview.jsonc", "wrangler.techies.jsonc"].map(file => {
     const config = readFileSync(join(repoRoot, file), "utf8");
     return [file, /"build"\s*:\s*\{\s*"command"\s*:\s*"([^"]+)"/.exec(config)?.[1]];
   }));
-  assert.deepEqual(commands, { "wrangler.jsonc": "npm run build:ui", "wrangler.preview.jsonc": "npm run build:preview", "wrangler.techies.jsonc": "npm run build:ui" });
+  // CATALOGUE=1 adds catalogue.html as a build of its own (vite.config.ts, atomic catalogue ticket 05).
+  assert.deepEqual(commands, { "wrangler.jsonc": "npm run build:ui", "wrangler.preview.jsonc": "CATALOGUE=1 npm run build:preview", "wrangler.techies.jsonc": "npm run build:ui" });
   const scripts = (JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts;
   assert.match(scripts["build:preview"], /^MOCKUPS=1 vite build\b/);
   assert.doesNotMatch(scripts["build:ui"], /MOCKUPS/);
