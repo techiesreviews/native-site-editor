@@ -1,0 +1,812 @@
+// The catalogue board (atomic catalogue tickets 07, 08 and 05): an endless canvas with areas left to right, each part a
+// frame (options in rows, states in columns, light and dark side by side), an outline that flies to a part and ticks
+// approved ones, and a right panel with live options, where the part lives, what it is made of, and Approve.
+// Plain DOM moved by one CSS transform; `will-change` only while a gesture runs, so text redraws sharp at rest.
+import listSvg from "@phosphor-icons/core/regular/list.svg?raw";
+import minusSvg from "@phosphor-icons/core/regular/minus.svg?raw";
+import moonSvg from "@phosphor-icons/core/regular/moon.svg?raw";
+import searchSvg from "@phosphor-icons/core/regular/magnifying-glass.svg?raw";
+import slidersSvg from "@phosphor-icons/core/regular/sliders-horizontal.svg?raw";
+import sunSvg from "@phosphor-icons/core/regular/sun.svg?raw";
+import oneOffsText from "../../scripts/agents/one-offs.json?raw";
+import { iconMarkup, sizedSvg, svgElement } from "../icons";
+import approvalsText from "./approvals.json?raw";
+import { approvalTarget, parseApprovals, readApprovals, saveApproval, type Approvals } from "./approvals";
+import { force, forceStates, type Forced } from "./force-states";
+import { frameElement, updateFrame, type Theme } from "./frame";
+import { MOCKUPS, type Mockup } from "./mockups";
+import { AREAS, FORCED, PARTS, STATE_NAMES, isPart, untracedLines, type AreaId, type BoardEntry, type Control, type OneOffCounts, type Part, type State, type Values } from "./parts";
+
+type Entry = BoardEntry | Mockup;
+const ENTRIES: readonly Entry[] = [...PARTS, ...MOCKUPS];
+const byId = new Map(ENTRIES.map((entry) => [entry.id, entry]));
+const areaName = (id: AreaId) => AREAS.find((area) => area.id === id)!.name;
+const svg = (markup: string, size = 16) => svgElement(sizedSvg(markup, size));
+const clamp = (value: number, low: number, high: number) => Math.min(Math.max(value, low), high);
+const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (text) element.textContent = text;
+  return element;
+}
+function iconButton(label: string, glyph: SVGElement, className = "cat-icon-button") {
+  const button = el("button", className);
+  button.type = "button";
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  button.append(glyph);
+  return button;
+}
+
+const untraced = (() => {
+  let counts: OneOffCounts = {};
+  try { counts = (JSON.parse(oneOffsText) as { files?: OneOffCounts }).files ?? {}; } catch { /* No count: nothing listed. */ }
+  return (files: readonly string[]) => untracedLines(files, counts);
+})();
+
+// ---------- The board ----------
+
+export function startBoard(root: HTMLElement) {
+  forceStates();
+  const target = approvalTarget(location.search);
+  let approvals: Approvals = parseApprovals(approvalsText);
+  const live = new Map<string, { values: Values; state: State; theme: Theme }>();
+  for (const entry of ENTRIES) live.set(entry.id, { values: { ...entry.defaults }, state: "normal", theme: "light" });
+  const saving = new Map<string, { busy: boolean; note?: "signed-out" | string }>();
+
+  root.className = "cat-board";
+  root.innerHTML = `
+    <header class="cat-topbar">
+      <span class="cat-brand"><span class="cat-brand__mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><h1 class="cat-brand__name">Catalogue</h1></span>
+      <span class="cat-topbar__actions"></span>
+    </header>
+    <div class="cat-shell">
+      <nav class="cat-panel cat-outline" aria-label="Outline"></nav>
+      <div class="cat-viewport" tabindex="0" role="region" aria-label="Canvas">
+        <div class="cat-dots"></div>
+        <div class="cat-world"></div>
+        <div class="cat-sel" hidden></div>
+        <div class="cat-zoombar" role="toolbar" aria-label="Zoom"></div>
+        <div class="cat-search" hidden>
+          <label class="cat-search__box"><input class="cat-input cat-search__input" placeholder="Jump to a part" aria-label="Jump to a part" autocomplete="off" spellcheck="false"></label>
+          <ul class="cat-search__list" role="listbox" aria-label="Parts"></ul>
+        </div>
+      </div>
+      <aside class="cat-panel cat-inspector" aria-label="Options"></aside>
+    </div>
+    <p class="sr-only" role="status" aria-live="polite"></p>`;
+  const $ = <T extends Element>(selector: string) => root.querySelector<T>(selector)!;
+  const viewport = $<HTMLElement>(".cat-viewport"), world = $<HTMLElement>(".cat-world"), dots = $<HTMLElement>(".cat-dots");
+  const selBox = $<HTMLElement>(".cat-sel"), outline = $<HTMLElement>(".cat-outline"), inspector = $<HTMLElement>(".cat-inspector");
+  const status = $<HTMLElement>("[role='status']");
+  const say = (text: string) => { status.textContent = text; };
+
+  // Top bar: search, the board's own colours, and (medium and phone widths) the two panels as sheets.
+  const actions = $<HTMLElement>(".cat-topbar__actions");
+  const searchButton = iconButton("Search parts", svg(searchSvg));
+  searchButton.setAttribute("aria-keyshortcuts", "/");
+  const chrome = el("div", "cat-segmented");
+  chrome.setAttribute("role", "group");
+  chrome.setAttribute("aria-label", "Board colours");
+  const chromeTheme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  for (const [theme, glyph, label] of [["light", sunSvg, "Light"], ["dark", moonSvg, "Dark"]] as const) {
+    const button = el("button");
+    button.type = "button";
+    button.dataset.chrome = theme;
+    button.setAttribute("aria-pressed", String(theme === chromeTheme));
+    button.append(svg(glyph, 15), el("span", "cat-segmented__text", label));
+    button.setAttribute("aria-label", label);
+    chrome.append(button);
+  }
+  document.documentElement.dataset.theme = chromeTheme;
+  const outlineToggle = iconButton("Outline", svg(listSvg), "cat-icon-button cat-sheet-toggle");
+  outlineToggle.dataset.sheet = "outline";
+  const optionsToggle = iconButton("Options", svg(slidersSvg), "cat-icon-button cat-sheet-toggle");
+  optionsToggle.dataset.sheet = "options";
+  for (const toggle of [outlineToggle, optionsToggle]) toggle.setAttribute("aria-pressed", "false");
+  actions.append(searchButton, chrome, outlineToggle, optionsToggle);
+
+  // Zoom bar.
+  const zoombar = $<HTMLElement>(".cat-zoombar");
+  const zoomOut = iconButton("Zoom out", svg(minusSvg));
+  const zoomPct = el("output", "cat-zoombar__pct", "100%");
+  const zoomIn = iconButton("Zoom in", svgElement(iconMarkup("plus")));
+  const zoomFit = el("button", "cat-text-button", "Fit");
+  const zoom100 = el("button", "cat-text-button", "100%");
+  zoomFit.type = zoom100.type = "button";
+  zoom100.setAttribute("aria-label", "Actual size");
+  zoombar.append(zoomOut, zoomPct, zoomIn, el("span", "cat-zoombar__sep"), zoomFit, zoom100);
+
+  // ---------- Cards on the canvas ----------
+
+  /** A cell shows a part; it is not a control on the board (a tap selects its card), so it is inert. */
+  function cell(className = "cat-cell") {
+    const element = el("div", className);
+    element.inert = true;
+    return element;
+  }
+  /** Parts and values still drawing when the board opens: the first view fits once they have their size. */
+  const drawing: Promise<unknown>[] = [];
+  async function drawInline(part: Part, values: Values, state: State, into: HTMLElement) {
+    const element = await part.render(values, FORCED.has(state) ? "normal" : state);
+    if (FORCED.has(state)) force(element, state as Forced);
+    into.replaceChildren(element);
+  }
+  function half(theme: Theme, label: string) {
+    const element = el("div", "cat-half");
+    element.dataset.theme = theme;
+    element.append(el("span", "cat-label", label));
+    return element;
+  }
+  function partGrid(part: Part, theme: Theme) {
+    const grid = el("div", "cat-grid");
+    grid.style.gridTemplateColumns = `auto repeat(${part.columns.length}, auto)`;
+    grid.append(el("span"), ...part.columns.map((column) => el("span", "cat-grid__head", column.label)));
+    for (const row of part.rows) {
+      grid.append(el("span", "cat-grid__row", row.label));
+      for (const column of part.columns) {
+        const values = { ...part.defaults, ...row.values, ...column.values };
+        const into = cell();
+        if (part.frame) into.append(frameElement({ kind: "frame", id: part.id, theme, values, ...part.frame }, `${part.name}, ${row.label}, ${theme}`));
+        else drawing.push(drawInline(part, values, column.state ?? "normal", into));
+        grid.append(into);
+      }
+    }
+    return grid;
+  }
+  function madeOfList(entry: Entry) {
+    const madeOf = "madeOf" in entry ? entry.madeOf ?? [] : [];
+    const lines = [...("copies" in entry ? entry.copies ?? [] : []), ...untraced(entry.files)];
+    const list = el("ul", "cat-made");
+    list.setAttribute("aria-label", "Made of");
+    for (const id of madeOf) {
+      const part = byId.get(id);
+      const item = el("li");
+      const link = el("button", "cat-made__link", part?.name ?? id);
+      link.type = "button";
+      link.dataset.fly = id;
+      item.append(link);
+      list.append(item);
+    }
+    for (const line of lines) {
+      const item = el("li", "cat-made__untraced");
+      item.append(el("span", "cat-made__tag", "Untraced"), el("span", "", line));
+      list.append(item);
+    }
+    return list;
+  }
+  function card(entry: Entry) {
+    const article = el("article", "cat-card");
+    article.id = `card-${entry.id}`;
+    article.dataset.id = entry.id;
+    const title = el("h3", "cat-card__title");
+    title.append(el("span", "", entry.name), el("span", "cat-mark"));
+    const body = el("div", "cat-card__body");
+    if (entry.area === "values") {
+      const halves = el("div", "cat-halves");
+      for (const theme of entry.themed ? (["light", "dark"] as const) : (["light"] as const)) {
+        const side = half(theme, entry.themed ? (theme === "light" ? "Light" : "Dark") : entry.name);
+        side.dataset.stage = "page";
+        const into = el("div", "cat-value-body");
+        drawing.push(entry.render(entry.defaults).then((element) => into.replaceChildren(element)));
+        side.append(into);
+        halves.append(side);
+      }
+      body.append(halves);
+    } else if (entry.area === "mockups") {
+      for (const width of entry.widths) {
+        const row = el("div", "cat-halves");
+        for (const theme of ["light", "dark"] as const) {
+          const side = half(theme, `${width} px · ${theme === "light" ? "Light" : "Dark"}`);
+          side.append(frameElement({ kind: "mockup", id: entry.id, theme, values: entry.defaults, width, height: entry.height }, `${entry.name}, ${width} px, ${theme}`));
+          row.append(side);
+        }
+        body.append(row);
+      }
+    } else {
+      const liveCell = el("div", "cat-live");
+      liveCell.append(el("span", "cat-label", "Live"), cell("cat-live__stage"));
+      body.append(liveCell);
+      const halves = el("div", "cat-halves");
+      for (const theme of ["light", "dark"] as const) {
+        const side = half(theme, theme === "light" ? "Light" : "Dark");
+        side.append(partGrid(entry, theme));
+        halves.append(side);
+      }
+      body.append(halves);
+    }
+    article.append(title, body);
+    if (entry.area === "molecules" || entry.area === "organisms" || entry.area === "mockups") {
+      const foot = el("footer", "cat-card__foot");
+      foot.append(el("span", "cat-label", "Made of"), madeOfList(entry));
+      article.append(foot);
+    }
+    return article;
+  }
+  function drawLive(entry: Entry) {
+    const now = live.get(entry.id)!;
+    const article = world.querySelector<HTMLElement>(`#card-${CSS.escape(entry.id)}`);
+    if (!article) return;
+    if (entry.area === "values") {
+      for (const into of article.querySelectorAll<HTMLElement>(".cat-value-body")) void entry.render(now.values).then((element) => { into.replaceChildren(element); placeSel(); });
+      return;
+    }
+    if (entry.area === "mockups") {
+      for (const frame of article.querySelectorAll("iframe")) updateFrame(frame, now.values);
+      return;
+    }
+    const liveCell = article.querySelector<HTMLElement>(".cat-live")!;
+    liveCell.dataset.theme = now.theme;
+    const stage = liveCell.querySelector<HTMLElement>(".cat-live__stage")!;
+    if (entry.frame) {
+      const frame = stage.querySelector("iframe");
+      if (frame && frame.dataset.theme === now.theme) updateFrame(frame, now.values);
+      else {
+        const made = frameElement({ kind: "frame", id: entry.id, theme: now.theme, values: now.values, ...entry.frame }, `${entry.name}, live`);
+        made.dataset.theme = now.theme;
+        stage.replaceChildren(made);
+      }
+    } else void drawInline(entry, now.values, now.state, stage).then(placeSel);
+  }
+
+  const areas = new Map<AreaId, HTMLElement>();
+  for (const area of AREAS) {
+    const section = el("section", "cat-area");
+    section.id = `area-${area.id}`;
+    section.dataset.area = area.id;
+    const label = el("h2", "cat-area__label", area.name);
+    label.dataset.area = area.id;
+    const cards = el("div", "cat-area__cards");
+    const inArea = ENTRIES.filter((entry) => entry.area === area.id);
+    cards.append(...inArea.map(card));
+    if (!inArea.length) {
+      const empty = el("div", "cat-card cat-card--empty");
+      empty.append(el("span", "", `No ${area.name.toLowerCase()} yet`));
+      cards.append(empty);
+    }
+    section.append(label, cards);
+    world.append(section);
+    areas.set(area.id, section);
+  }
+  for (const entry of ENTRIES) if (entry.area !== "values") drawLive(entry);
+
+  // ---------- Outline ----------
+
+  for (const area of AREAS) {
+    const head = el("button", "cat-outline__area", area.name);
+    head.type = "button";
+    head.dataset.area = area.id;
+    const list = el("ul", "cat-outline__list");
+    for (const entry of ENTRIES.filter((item) => item.area === area.id)) {
+      const item = el("li");
+      const button = el("button", "cat-outline__item");
+      button.type = "button";
+      button.dataset.id = entry.id;
+      button.setAttribute("aria-current", "false");
+      button.append(el("span", "cat-outline__name", entry.name), el("span", "cat-mark"));
+      item.append(button);
+      list.append(item);
+    }
+    outline.append(head, list);
+  }
+  function paintMarks() {
+    for (const entry of ENTRIES) {
+      const approved = Boolean(approvals.approved[entry.id]);
+      for (const mark of root.querySelectorAll<HTMLElement>(`[data-id="${CSS.escape(entry.id)}"] .cat-mark`)) {
+        mark.toggleAttribute("data-approved", approved);
+        mark.replaceChildren(...approved ? [svgElement(iconMarkup("check", 14))] : []);
+        if (approved) { mark.setAttribute("role", "img"); mark.setAttribute("aria-label", "Approved"); }
+        else { mark.removeAttribute("role"); mark.removeAttribute("aria-label"); }
+      }
+    }
+  }
+
+  // ---------- Camera: screen = world × z + (x, y) ----------
+
+  const cam = { x: 0, y: 0, z: 1 };
+  const MIN_Z = 0.03, MAX_Z = 4;
+  let gestureTimer: ReturnType<typeof setTimeout> | undefined, flight = 0;
+  const titles = () => world.querySelectorAll<HTMLElement>(".cat-card__title");
+  const areaLabels = () => world.querySelectorAll<HTMLElement>(".cat-area__label");
+  function rectOf(element: HTMLElement) {
+    let x = 0, y = 0;
+    for (let node: HTMLElement | null = element; node && node !== world; node = node.offsetParent as HTMLElement | null) { x += node.offsetLeft; y += node.offsetTop; }
+    return { x, y, w: element.offsetWidth, h: element.offsetHeight };
+  }
+  function apply() {
+    world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.z})`;
+    const grid = 20 * cam.z;
+    dots.style.backgroundSize = `${grid}px ${grid}px`;
+    dots.style.backgroundPosition = `${cam.x}px ${cam.y}px`;
+    dots.style.opacity = String(clamp((grid - 6) / 8, 0, 1));
+    zoomPct.textContent = `${Math.round(cam.z * 100)}%`;
+    placeSel();
+    cull();
+  }
+  // Cards wholly off screen are not drawn (as tldraw culls shapes); their place on the canvas stays.
+  // Positions are read each time: offsets ignore the transform, so moving the board lays nothing out again.
+  function cull() {
+    const w = viewport.clientWidth, h = viewport.clientHeight, title = 40;
+    for (const article of world.querySelectorAll<HTMLElement>(".cat-card")) {
+      const box = rectOf(article);
+      const left = box.x * cam.z + cam.x, top = (box.y - title) * cam.z + cam.y;
+      article.classList.toggle("is-culled", left > w || top > h || left + box.w * cam.z < 0 || top + (box.h + title) * cam.z < 0);
+    }
+  }
+  function placeSel() {
+    const article = selected ? world.querySelector<HTMLElement>(`#card-${CSS.escape(selected)}`) : null;
+    if (!article) { selBox.hidden = true; return; }
+    const rect = rectOf(article);
+    selBox.hidden = false;
+    selBox.style.transform = `translate(${rect.x * cam.z + cam.x}px, ${rect.y * cam.z + cam.y}px)`;
+    selBox.style.inlineSize = `${rect.w * cam.z}px`;
+    selBox.style.blockSize = `${rect.h * cam.z}px`;
+  }
+  function startGesture() { world.style.willChange = "transform"; clearTimeout(gestureTimer); }
+  function settle() {
+    clearTimeout(gestureTimer);
+    world.style.willChange = "";
+    cam.x = Math.round(cam.x); cam.y = Math.round(cam.y);
+    apply();
+    const titleScale = String(clamp(1 / cam.z, 1, 6)), labelScale = String(clamp(0.4 / cam.z, 1, 9));
+    for (const title of titles()) title.style.scale = titleScale;
+    for (const label of areaLabels()) label.style.scale = labelScale;
+  }
+  const settleSoon = () => { clearTimeout(gestureTimer); gestureTimer = setTimeout(settle, 160); };
+  function zoomAt(sx: number, sy: number, factor: number) {
+    const next = clamp(cam.z * factor, MIN_Z, MAX_Z), k = next / cam.z;
+    cam.x = sx - (sx - cam.x) * k; cam.y = sy - (sy - cam.y) * k; cam.z = next;
+    apply();
+  }
+  const mode = () => { const width = root.clientWidth; return width < 600 ? "phone" : width < 1040 ? "medium" : "wide"; };
+  function camFor(rect: { x: number; y: number; w: number; h: number }, maxZ: number, pad = 48) {
+    const w = viewport.clientWidth, h = viewport.clientHeight, sheet = root.dataset.sheet, medium = mode() === "medium";
+    const left = medium && sheet === "outline" ? 256 : 0, right = medium && sheet === "options" ? 288 : 0, bottom = 56;
+    const aw = Math.max(w - left - right - pad * 2, 60), ah = Math.max(h - bottom - pad * 2, 60);
+    const z = clamp(Math.min(aw / rect.w, ah / rect.h), MIN_Z, maxZ);
+    return { z, x: left + (w - left - right) / 2 - (rect.x + rect.w / 2) * z, y: (h - bottom) / 2 - (rect.y + rect.h / 2) * z };
+  }
+  const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  function stopFlight() { if (flight) { cancelAnimationFrame(flight); flight = 0; } }
+  function flyTo(to: { x: number; y: number; z: number }, fixed?: number) {
+    stopFlight();
+    if (reduced.matches) { Object.assign(cam, to); settle(); return; }
+    const w = viewport.clientWidth, h = viewport.clientHeight, from = { ...cam };
+    const c0 = { x: (w / 2 - from.x) / from.z, y: (h / 2 - from.y) / from.z };
+    const c1 = { x: (w / 2 - to.x) / to.z, y: (h / 2 - to.y) / to.z };
+    const span = (Math.hypot(c1.x - c0.x, c1.y - c0.y) * Math.min(from.z, to.z)) / w;
+    // A long trip zooms out a little on the way, as Paper and Figma do.
+    const dip = span > 1 ? Math.min(Math.log(span) * 0.7, 2.2) : 0;
+    const duration = fixed ?? clamp(420 + 160 * Math.log2(1 + span), 420, 950);
+    const lz0 = Math.log(from.z), lz1 = Math.log(to.z), t0 = performance.now();
+    startGesture();
+    const step = (now: number) => {
+      const t = clamp((now - t0) / duration, 0, 1), e = ease(t);
+      const z = Math.exp(lz0 + (lz1 - lz0) * e - dip * Math.sin(Math.PI * e));
+      cam.z = z; cam.x = w / 2 - (c0.x + (c1.x - c0.x) * e) * z; cam.y = h / 2 - (c0.y + (c1.y - c0.y) * e) * z;
+      apply();
+      if (t < 1) flight = requestAnimationFrame(step);
+      else { flight = 0; Object.assign(cam, to); settle(); }
+    };
+    flight = requestAnimationFrame(step);
+  }
+  const cardRect = (id: string) => { const r = rectOf(world.querySelector<HTMLElement>(`#card-${CSS.escape(id)}`)!); return { x: r.x, y: r.y - 30, w: r.w, h: r.h + 30 }; };
+  const flyToCard = (id: string, maxZ = 1.25) => flyTo(camFor(cardRect(id), maxZ));
+  const areaRect = (id: AreaId) => { const r = rectOf(areas.get(id)!); return { x: r.x, y: r.y - 100, w: r.w, h: r.h + 100 }; };
+  const flyToArea = (id: AreaId) => flyTo(camFor(areaRect(id), 1, 32));
+  const fitAll = () => flyTo(camFor({ x: 0, y: 0, w: world.offsetWidth, h: world.offsetHeight }, 1, 24));
+  function zoomCentre(factor: number) {
+    const w = viewport.clientWidth, h = viewport.clientHeight, next = clamp(cam.z * factor, MIN_Z, MAX_Z), k = next / cam.z;
+    flyTo({ z: next, x: w / 2 - (w / 2 - cam.x) * k, y: h / 2 - (h / 2 - cam.y) * k }, 200);
+  }
+
+  // ---------- Selection and the right panel ----------
+
+  let selected: string | undefined;
+  function setSheet(name: "" | "outline" | "options") {
+    if (name) root.dataset.sheet = name; else delete root.dataset.sheet;
+    for (const toggle of [outlineToggle, optionsToggle]) toggle.setAttribute("aria-pressed", String(toggle.dataset.sheet === name));
+  }
+  function select(id: string | undefined) {
+    selected = id && byId.has(id) ? id : undefined;
+    for (const article of world.querySelectorAll<HTMLElement>(".cat-card[data-id]")) article.classList.toggle("is-selected", article.dataset.id === selected);
+    for (const item of outline.querySelectorAll<HTMLElement>(".cat-outline__item")) item.setAttribute("aria-current", String(item.dataset.id === selected));
+    renderInspector();
+    placeSel();
+    if (mode() !== "wide") { if (selected) setSheet("options"); else if (root.dataset.sheet === "options") setSheet(""); }
+  }
+  function go(id: string) {
+    select(id);
+    flyToCard(id);
+    say(byId.get(id)?.name ?? id);
+  }
+
+  function controlElement(entry: Entry, control: Control) {
+    const now = live.get(entry.id)!;
+    const value = now.values[control.key];
+    if (control.kind === "switch") {
+      const row = el("div", "cat-control cat-control--row");
+      const label = el("span", "cat-control__label", control.label);
+      label.id = `ctl-${entry.id}-${control.key}`;
+      const toggle = el("button", "cat-switch");
+      toggle.type = "button";
+      toggle.setAttribute("role", "switch");
+      toggle.setAttribute("aria-checked", String(Boolean(value)));
+      toggle.setAttribute("aria-labelledby", label.id);
+      toggle.append(el("span", "cat-switch__thumb"));
+      toggle.addEventListener("click", () => {
+        const on = toggle.getAttribute("aria-checked") !== "true";
+        toggle.setAttribute("aria-checked", String(on));
+        setValue(entry, control.key, on);
+      });
+      row.append(label, toggle);
+      return row;
+    }
+    const label = el("label", "cat-control");
+    label.append(el("span", "cat-control__label", control.label));
+    if (control.kind === "text") {
+      const input = el("input", "cat-input");
+      input.value = String(value ?? "");
+      input.spellcheck = false;
+      input.addEventListener("input", () => setValue(entry, control.key, input.value));
+      label.append(input);
+    } else {
+      const picker = el("select", "cat-input cat-select");
+      for (const [option, text] of control.choices) {
+        const item = el("option", "", text);
+        item.value = option;
+        item.selected = String(value) === option;
+        picker.append(item);
+      }
+      picker.addEventListener("change", () => setValue(entry, control.key, picker.value));
+      label.append(picker);
+    }
+    return label;
+  }
+  function segmented(label: string, choices: readonly (readonly [string, string])[], current: string, pick: (value: string) => void) {
+    const wrap = el("div", "cat-control");
+    wrap.append(el("span", "cat-control__label", label));
+    const group = el("div", "cat-segmented cat-segmented--fill");
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", label);
+    for (const [value, text] of choices) {
+      const button = el("button", "", text);
+      button.type = "button";
+      button.setAttribute("aria-pressed", String(value === current));
+      button.addEventListener("click", () => {
+        for (const other of group.children) other.setAttribute("aria-pressed", String(other === button));
+        pick(value);
+      });
+      group.append(button);
+    }
+    wrap.append(group);
+    return wrap;
+  }
+  function setValue(entry: Entry, key: string, value: string | boolean) {
+    live.get(entry.id)!.values[key] = value;
+    drawLive(entry);
+  }
+  function section(title: string, ...children: Node[]) {
+    const element = el("section", "cat-inspector__section");
+    element.setAttribute("aria-label", title);
+    element.append(el("h3", "cat-inspector__heading", title), ...children);
+    return element;
+  }
+  function approveSection(entry: Entry) {
+    const mark = approvals.approved[entry.id];
+    const save = saving.get(entry.id);
+    const button = el("button", `button ${mark ? "secondary" : "primary"} cat-approve`);
+    button.type = "button";
+    button.dataset.approve = entry.id;
+    if (mark) {
+      button.setAttribute("aria-pressed", "true");
+      button.append(svgElement(iconMarkup("check", 16, "icon--before")), "Approved");
+    } else if (save?.busy) {
+      button.setAttribute("aria-busy", "true");
+      button.disabled = true;
+      button.textContent = "Approving…";
+    } else button.textContent = "Approve";
+    const children: Node[] = [button];
+    if (mark) children.push(el("p", "cat-approve__note", `${mark.by} · ${mark.on}`));
+    else if (save?.note === "signed-out") {
+      const note = el("p", "cat-approve__note cat-approve__note--problem");
+      const link = el("a", "", "Sign in with GitHub");
+      link.href = "/auth/login";
+      note.append(link, " to approve.");
+      children.push(note);
+    } else if (save?.note) children.push(el("p", "cat-approve__note cat-approve__note--problem", `Not saved: ${save.note}`));
+    return section("Review", ...children);
+  }
+  function renderInspector() {
+    const entry = selected ? byId.get(selected) : undefined;
+    if (!entry) {
+      const count = ENTRIES.filter((item) => approvals.approved[item.id]).length;
+      const empty = el("div", "cat-inspector__empty");
+      empty.append(el("span", "", `Approved ${count} of ${ENTRIES.length}`));
+      inspector.replaceChildren(empty);
+      return;
+    }
+    const now = live.get(entry.id)!;
+    const head = el("div", "cat-inspector__head");
+    const heads = el("div", "cat-inspector__heads");
+    heads.append(el("h2", "cat-inspector__title", entry.name), el("span", "cat-inspector__area", areaName(entry.area)));
+    const close = iconButton("Close", svgElement(iconMarkup("x")));
+    close.addEventListener("click", () => { select(undefined); setSheet(""); });
+    head.append(heads, close);
+    const files = el("p", "cat-inspector__files", entry.files.join(" · "));
+    const sections: Node[] = [head, files];
+    const controls: Node[] = entry.controls.map((control) => controlElement(entry, control));
+    if (isPart(entry)) {
+      const stateChoices = entry.columns.flatMap((column) => column.state ? [[column.state, STATE_NAMES[column.state]] as const] : []);
+      if (stateChoices.length > 1) controls.push(stateControl(entry, stateChoices));
+      controls.push(segmented("Colours", [["light", "Light"], ["dark", "Dark"]], now.theme, (theme) => { now.theme = theme as Theme; drawLive(entry); }));
+    }
+    if (controls.length) sections.push(section("Options", ...controls));
+    if (entry.area === "molecules" || entry.area === "organisms" || entry.area === "mockups") sections.push(section("Made of", madeOfList(entry)));
+    sections.push(approveSection(entry));
+    inspector.replaceChildren(...sections);
+  }
+  function stateControl(entry: Part, choices: readonly (readonly [State, string])[]) {
+    const now = live.get(entry.id)!;
+    const label = el("label", "cat-control");
+    label.append(el("span", "cat-control__label", "State"));
+    const picker = el("select", "cat-input cat-select");
+    for (const [state, text] of choices) {
+      const option = el("option", "", text);
+      option.value = state;
+      option.selected = state === now.state;
+      picker.append(option);
+    }
+    picker.addEventListener("change", () => { now.state = picker.value as State; drawLive(entry); });
+    label.append(picker);
+    return label;
+  }
+
+  async function approve(id: string) {
+    const entry = byId.get(id);
+    if (!entry || approvals.approved[id] || saving.get(id)?.busy) return;
+    saving.set(id, { busy: true });
+    if (selected === id) renderInspector();
+    const outcome = await saveApproval(id, target);
+    if (outcome.kind === "saved") {
+      approvals = outcome.approvals;
+      saving.delete(id);
+      paintMarks();
+      say(`${entry.name} approved`);
+    } else {
+      saving.set(id, { busy: false, note: outcome.kind === "signed-out" ? "signed-out" : outcome.message });
+      say(outcome.kind === "signed-out" ? "Sign in to approve" : `${entry.name} not saved`);
+    }
+    if (selected === id) {
+      renderInspector();
+      inspector.querySelector<HTMLElement>("[data-approve]")?.focus();
+    }
+  }
+  inspector.addEventListener("click", (event) => {
+    const target = event.target as Element;
+    const approveButton = target.closest<HTMLElement>("[data-approve]");
+    if (approveButton) { void approve(approveButton.dataset.approve!); return; }
+    const fly = target.closest<HTMLElement>("[data-fly]");
+    if (fly) go(fly.dataset.fly!);
+  });
+
+  // ---------- Outline, top bar ----------
+
+  outline.addEventListener("click", (event) => {
+    const target = event.target as Element;
+    const item = target.closest<HTMLElement>(".cat-outline__item"), area = target.closest<HTMLElement>(".cat-outline__area");
+    if (item) go(item.dataset.id!);
+    else if (area) { if (mode() !== "wide") setSheet(""); flyToArea(area.dataset.area as AreaId); }
+  });
+  for (const toggle of [outlineToggle, optionsToggle])
+    toggle.addEventListener("click", () => setSheet(root.dataset.sheet === toggle.dataset.sheet ? "" : toggle.dataset.sheet as "outline" | "options"));
+  chrome.addEventListener("click", (event) => {
+    const button = (event.target as Element).closest<HTMLElement>("[data-chrome]");
+    if (!button) return;
+    document.documentElement.dataset.theme = button.dataset.chrome!;
+    for (const other of chrome.children) other.setAttribute("aria-pressed", String(other === button));
+  });
+  zoomIn.addEventListener("click", () => zoomCentre(1.25));
+  zoomOut.addEventListener("click", () => zoomCentre(0.8));
+  zoomFit.addEventListener("click", () => (selected ? flyToCard(selected, 2) : fitAll()));
+  zoom100.addEventListener("click", () => {
+    if (!selected) { zoomCentre(1 / cam.z); return; }
+    const fit = camFor(cardRect(selected), 1), w = viewport.clientWidth, h = viewport.clientHeight;
+    flyTo({ z: 1, x: w / 2 - (w / 2 - fit.x) / fit.z, y: h / 2 - (h / 2 - fit.y) / fit.z }, 260);
+  });
+
+  // ---------- Search ("/") ----------
+
+  const search = $<HTMLElement>(".cat-search"), searchInput = $<HTMLInputElement>(".cat-search__input"), searchList = $<HTMLElement>(".cat-search__list");
+  searchList.id = "cat-search-list";
+  searchInput.setAttribute("role", "combobox");
+  searchInput.setAttribute("aria-controls", searchList.id);
+  searchInput.setAttribute("aria-expanded", "true");
+  let active = 0, results: Entry[] = [];
+  function renderResults() {
+    const query = searchInput.value.trim().toLowerCase();
+    results = ENTRIES.filter((entry) => !query || entry.name.toLowerCase().includes(query) || areaName(entry.area).toLowerCase().includes(query)).slice(0, 8);
+    active = clamp(active, 0, Math.max(results.length - 1, 0));
+    searchList.replaceChildren(...results.map((entry, index) => {
+      const item = el("li", "cat-search__item");
+      item.id = `cat-result-${entry.id}`;
+      item.setAttribute("role", "option");
+      item.setAttribute("aria-selected", String(index === active));
+      item.dataset.id = entry.id;
+      item.append(el("span", "cat-search__name", entry.name), el("span", "cat-search__area", areaName(entry.area)));
+      return item;
+    }));
+    if (results[active]) searchInput.setAttribute("aria-activedescendant", `cat-result-${results[active].id}`);
+    else searchInput.removeAttribute("aria-activedescendant");
+  }
+  function openSearch() { search.hidden = false; searchInput.value = ""; active = 0; renderResults(); searchInput.focus(); }
+  function closeSearch() { if (search.hidden) return; search.hidden = true; viewport.focus({ preventScroll: true }); }
+  function pick(id: string | undefined) { if (!id) return; closeSearch(); go(id); }
+  searchInput.addEventListener("input", () => { active = 0; renderResults(); });
+  searchInput.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); active = clamp(active + (event.key === "ArrowDown" ? 1 : -1), 0, results.length - 1); renderResults(); }
+    else if (event.key === "Enter") { event.preventDefault(); pick(results[active]?.id); }
+    else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeSearch(); }
+  });
+  searchList.addEventListener("click", (event) => pick((event.target as Element).closest<HTMLElement>("[data-id]")?.dataset.id));
+  searchButton.addEventListener("click", openSearch);
+  document.addEventListener("pointerdown", (event) => {
+    if (!search.hidden && !(event.target as Element).closest(".cat-search, .cat-topbar")) closeSearch();
+  }, true);
+
+  // ---------- Keys ----------
+
+  let spaceHeld = false;
+  const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
+  document.addEventListener("keydown", (event) => {
+    if (typing(event.target)) { if (event.key === "Escape" && event.target !== searchInput) (event.target as HTMLElement).blur(); return; }
+    if (event.key === "/" && !event.metaKey && !event.ctrlKey) { event.preventDefault(); openSearch(); return; }
+    if (event.key === "Escape") { if (root.dataset.sheet) setSheet(""); else select(undefined); return; }
+    if (event.code === "Space" && (event.target === document.body || viewport.contains(event.target as Node))) {
+      event.preventDefault();
+      if (!spaceHeld) { spaceHeld = true; root.classList.add("is-space"); }
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === "+" || event.key === "=") zoomCentre(1.25);
+    else if (event.key === "-") zoomCentre(0.8);
+    else if (event.key === "!" || (event.shiftKey && event.code === "Digit1")) fitAll();
+  });
+  document.addEventListener("keyup", (event) => { if (event.code === "Space") { spaceHeld = false; root.classList.remove("is-space"); } });
+
+  // ---------- Wheel: a mouse wheel and a pinch zoom round the pointer, a trackpad's scroll pans ----------
+
+  viewport.addEventListener("wheel", (event) => {
+    if ((event.target as Element).closest(".cat-search")) return;
+    event.preventDefault();
+    stopFlight(); startGesture();
+    const box = viewport.getBoundingClientRect(), sx = event.clientX - box.left, sy = event.clientY - box.top;
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
+    const dx = event.deltaX * unit, dy = event.deltaY * unit;
+    const mouseWheel = event.deltaMode !== 0 || (dx === 0 && Number.isInteger(dy) && Math.abs(dy) >= 50);
+    if (event.ctrlKey || event.metaKey) zoomAt(sx, sy, Math.exp(-dy * 0.01));
+    else if (mouseWheel && !event.shiftKey) zoomAt(sx, sy, Math.exp(-dy * 0.0016));
+    else { cam.x -= event.shiftKey && dx === 0 ? dy : dx; cam.y -= event.shiftKey && dx === 0 ? 0 : dy; apply(); }
+    settleSoon();
+  }, { passive: false });
+  for (const type of ["gesturestart", "gesturechange"]) viewport.addEventListener(type, (event) => event.preventDefault());
+
+  // ---------- Pointers: drag to pan, two fingers to pinch, a tap selects, a double tap fits ----------
+
+  const points = new Map<number, { x: number; y: number }>();
+  let drag: { id: number; sx: number; sy: number; lx: number; ly: number; moved: boolean; target: Element } | undefined;
+  let pinch: { mx: number; my: number; d: number } | undefined;
+  let lastTap = { t: 0, id: "" };
+  const pinchNow = () => {
+    const [a, b] = [...points.values()];
+    return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+  };
+  function beginPan(id: number) {
+    drag!.moved = true;
+    try { viewport.setPointerCapture(id); } catch { /* The pointer is gone already. */ }
+    startGesture();
+    root.classList.add("is-panning");
+  }
+  viewport.addEventListener("pointerdown", (event) => {
+    if ((event.target as Element).closest(".cat-zoombar, .cat-search")) return;
+    if (event.pointerType === "mouse" && event.button !== 0 && event.button !== 1) return;
+    stopFlight();
+    points.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (points.size === 1) {
+      drag = { id: event.pointerId, sx: event.clientX, sy: event.clientY, lx: event.clientX, ly: event.clientY, moved: false, target: event.target as Element };
+      if (spaceHeld || event.button === 1) { event.preventDefault(); beginPan(event.pointerId); }
+    } else if (points.size === 2) {
+      if (drag) drag.moved = true;
+      pinch = pinchNow();
+      startGesture();
+      for (const id of points.keys()) { try { viewport.setPointerCapture(id); } catch { /* The pointer is gone already. */ } }
+    }
+  });
+  viewport.addEventListener("pointermove", (event) => {
+    if (!points.has(event.pointerId)) return;
+    points.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pinch && points.size >= 2) {
+      const now = pinchNow(), box = viewport.getBoundingClientRect();
+      cam.x += now.mx - pinch.mx; cam.y += now.my - pinch.my;
+      zoomAt(now.mx - box.left, now.my - box.top, now.d / pinch.d);
+      pinch = now;
+      return;
+    }
+    if (!drag || drag.id !== event.pointerId) return;
+    if (!drag.moved && Math.hypot(event.clientX - drag.sx, event.clientY - drag.sy) > 4) beginPan(event.pointerId);
+    if (drag.moved) { cam.x += event.clientX - drag.lx; cam.y += event.clientY - drag.ly; apply(); }
+    drag.lx = event.clientX; drag.ly = event.clientY;
+  });
+  function endPointer(event: PointerEvent) {
+    if (!points.has(event.pointerId)) return;
+    points.delete(event.pointerId);
+    if (pinch && points.size < 2) {
+      pinch = undefined;
+      const rest = [...points.entries()][0];
+      drag = rest ? { id: rest[0], sx: rest[1].x, sy: rest[1].y, lx: rest[1].x, ly: rest[1].y, moved: true, target: viewport } : undefined;
+      if (!rest) { root.classList.remove("is-panning"); settleSoon(); }
+      return;
+    }
+    if (drag && drag.id === event.pointerId) {
+      if (!drag.moved && event.type === "pointerup") tap(drag.target);
+      drag = undefined;
+      root.classList.remove("is-panning");
+      settleSoon();
+    }
+  }
+  viewport.addEventListener("pointerup", endPointer);
+  // A made-of link pressed from the keyboard (a pointer's press is a tap, above).
+  world.addEventListener("click", (event) => {
+    const fly = (event.target as Element).closest<HTMLElement>("[data-fly]");
+    if (fly && event.detail === 0) go(fly.dataset.fly!);
+  });
+  viewport.addEventListener("pointercancel", endPointer);
+  function tap(target: Element) {
+    const now = performance.now();
+    const fly = target.closest<HTMLElement>("[data-fly]");
+    if (fly) { go(fly.dataset.fly!); return; }
+    const article = target.closest<HTMLElement>(".cat-card[data-id]"), label = target.closest<HTMLElement>(".cat-area__label");
+    if (mode() !== "wide" && root.dataset.sheet === "outline") setSheet("");
+    if (article) {
+      const id = article.dataset.id!;
+      const twice = lastTap.id === id && now - lastTap.t < 340 && !target.closest("button, input, select");
+      if (twice) { lastTap = { t: 0, id: "" }; flyToCard(id, 2); return; }
+      lastTap = { t: now, id };
+      if (selected !== id) select(id);
+      return;
+    }
+    lastTap = { t: 0, id: "" };
+    if (label) { flyToArea(label.dataset.area as AreaId); return; }
+    if (mode() !== "wide") setSheet("");
+    select(undefined);
+  }
+
+  // ---------- Start ----------
+
+  paintMarks();
+  renderInspector();
+  let last: { w: number; h: number } | undefined, moved = false;
+  // The shared values area opens in view; on a phone its first card, as the whole area would be too small to read.
+  const firstView = () => { Object.assign(cam, mode() === "phone" ? camFor(cardRect(ENTRIES[0].id), 1, 16) : camFor(areaRect("values"), 1, 24)); settle(); };
+  for (const type of ["pointerdown", "wheel", "keydown"]) root.addEventListener(type, () => { moved = true; }, { once: true, capture: true });
+  new ResizeObserver(() => {
+    const w = viewport.clientWidth, h = viewport.clientHeight;
+    if (!w || !h) return;
+    if (!last) firstView();
+    else { cam.x += (w - last.w) / 2; cam.y += (h - last.h) / 2; apply(); }
+    last = { w, h };
+  }).observe(viewport);
+  // Once the parts have drawn, the shared values fit again, unless someone has moved the board already.
+  void Promise.allSettled(drawing).then(() => requestAnimationFrame(() => { if (last && !moved && !selected) firstView(); }));
+  // Frames and lazy parts change their cards' size as they arrive: keep the selection outline on its card.
+  new ResizeObserver(() => { placeSel(); cull(); }).observe(world);
+  void readApprovals(target).then((fresh) => {
+    if (!fresh) return;
+    // Approvals are only ever added: the branch's and this page's together.
+    approvals = { approved: { ...fresh.approved, ...approvals.approved } };
+    paintMarks();
+    renderInspector();
+  });
+}
