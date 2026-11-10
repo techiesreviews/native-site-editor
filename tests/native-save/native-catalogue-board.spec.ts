@@ -439,7 +439,17 @@ test("Tweak edits the live Button's CSS in light and dark, resets it, and Send t
   const radius = tweak.getByRole("textbox", { name: "--radius", exact: true });
   await expect(padding).toHaveValue("6px 14px");
   await expect(radius).toHaveValue("6px");
+  // A value that would break out of its declaration is marked and changes nothing.
+  await padding.fill("1px; } body { display: none");
+  await expect(padding).toHaveAttribute("aria-invalid", "true");
+  expect(await css(liveButton, "padding")).toBe("6px 14px");
+  await expect(send).toBeDisabled();
+  // A slider beside a single length moves the value from the keyboard.
+  await tweak.getByRole("slider", { name: "--radius", exact: true }).press("ArrowRight");
+  await expect(radius).toHaveValue("7px");
+  await expect.poll(() => css(liveButton, "border-radius")).toBe("7px");
   await padding.fill("10px 20px");
+  await expect(padding).toHaveAttribute("aria-invalid", "false");
   await radius.fill("16px");
   await expect.poll(() => css(liveButton, "padding")).toBe("10px 20px");
   await expect.poll(() => css(liveButton, "border-radius")).toBe("16px");
@@ -461,7 +471,7 @@ test("Tweak edits the live Button's CSS in light and dark, resets it, and Send t
   await expect(send).toBeEnabled();
   await send.click();
   await expect(send).toHaveText("Copied");
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Design board change request");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("6px 14px → 10px 20px");
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toContain("Part: Button (data-part=\"button\")");
   expect(copied).toContain("- .button { padding }, light and dark: 6px 14px → 10px 20px");
@@ -490,4 +500,9 @@ test("Tweak reaches a part drawn in a live frame, and leaves its state frames as
   await expect.poll(() => live.locator(".row-menu").evaluate((menu) => getComputedStyle(menu).borderRadius)).toBe("20px");
   const fixed = page.frameLocator('#card-row-menu .cat-half[data-theme="light"] iframe').first().locator(".row-menu");
   expect(await fixed.evaluate((menu) => getComputedStyle(menu).borderRadius)).toBe("8px");
+  // Dark makes the live frame anew: the edit is still there.
+  await page.getByRole("complementary", { name: "Options" }).getByRole("group", { name: "Colours" }).getByRole("button", { name: "Dark" }).click();
+  await expect(page.locator('#card-row-menu [data-cell="live"] iframe')).toHaveAttribute("data-theme", "dark");
+  await live.getByRole("button", { name: "Actions" }).click();
+  await expect.poll(() => live.locator(".row-menu").evaluate((menu) => getComputedStyle(menu).borderRadius)).toBe("20px");
 });

@@ -729,7 +729,8 @@ label.cat-control--row {
   min-block-size: var(--size-tap);
   cursor: pointer;
 }
-.cat-approve {
+.cat-approve,
+.cat-tweak__actions .button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -855,17 +856,15 @@ label.cat-control--row {
   margin-block-start: var(--space-2xs);
 }
 .cat-tweak__actions .button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-block-size: max(var(--size-control), var(--size-tap));
+  inline-size: auto;
   border: 1px solid var(--control-line);
 }
 .cat-tweak__send {
   flex: 1;
 }
 .cat-tweak__actions .button[aria-disabled="true"] {
-  opacity: 0.5;
+  background: var(--surface-subtle);
+  color: var(--muted);
   cursor: default;
 }
 .cat-tweak__send[data-problem] {

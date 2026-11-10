@@ -1,7 +1,7 @@
 // The Tweak section's controls (tweak.ts reads the values and writes the CSS): one field per value, a colour picker
 // or a slider beside its text where one fits, Reset, and "Send to agent", which says Copied on itself.
 import { iconMarkup, svgElement } from "../icons";
-import { KIND_NAMES, changeRequest, changedSides, hexOf, type Edits, type Side, type TweakField, type TweakKind } from "./tweak";
+import { KIND_NAMES, changeRequest, changedSides, hexOf, safe, type Edits, type Side, type TweakField, type TweakKind } from "./tweak";
 
 export interface TweakPanel {
   part: { id: string; name: string };
@@ -10,6 +10,8 @@ export interface TweakPanel {
   edits: Edits;
   /** The theme the live cell shows: colours are edited for it alone. */
   side: Side;
+  /** A hidden element in that theme, where a colour is worked out for the picker. */
+  probe: HTMLElement;
   /** Shows the edits on the live cell. */
   apply(): void;
   say(text: string): void;
@@ -27,7 +29,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text 
 }
 const label = (field: TweakField) => field.token ?? `${field.selector} { ${field.property} }`;
 const valid = (field: TweakField, value: string) =>
-  value.trim() !== "" && !/[;{}]/.test(value) && CSS.supports(field.token && field.kind === "colour" ? "color" : field.property, value);
+  safe(value) && CSS.supports(field.token && field.kind === "colour" ? "color" : field.property, value);
 
 /** Writes `text` to the clipboard; false when the browser refuses. */
 async function copy(text: string): Promise<boolean> {
@@ -64,7 +66,8 @@ export function tweakSection(panel: TweakPanel): HTMLElement {
     section.append(el("p", "cat-tweak__note", "No colours, spacing, corners, shadows or font sizes in its own styles."));
     return section;
   }
-  const { fields, edits, side } = panel;
+  const { fields, edits, side, probe } = panel;
+  const hex = (value: string) => hexOf(value, probe);
   const syncs: (() => void)[] = [];
   const reset = el("button", "button secondary cat-tweak__reset", "Reset");
   const send = el("button", "button secondary cat-tweak__send");
@@ -118,7 +121,7 @@ export function tweakSection(panel: TweakPanel): HTMLElement {
       panel.apply();
     };
     let picker: HTMLInputElement | undefined, slider: HTMLInputElement | undefined;
-    if (field.kind === "colour" && hexOf(current())) {
+    if (field.kind === "colour" && hex(current())) {
       picker = el("input", "cat-tweak__swatch");
       picker.type = "color";
       picker.setAttribute("aria-label", `${label(field)} colour`);
@@ -143,7 +146,7 @@ export function tweakSection(panel: TweakPanel): HTMLElement {
     text.addEventListener("input", () => {
       set(text.value);
       const now = current();
-      if (picker) picker.value = hexOf(now) ?? picker.value;
+      if (picker) picker.value = hex(now) ?? picker.value;
       if (slider && LENGTH.test(now)) slider.value = LENGTH.exec(now)![1];
     });
     const sync = () => {
@@ -151,7 +154,7 @@ export function tweakSection(panel: TweakPanel): HTMLElement {
       text.value = now;
       text.removeAttribute("aria-invalid");
       row.toggleAttribute("data-changed", field.id in edits);
-      if (picker) picker.value = hexOf(now) ?? "#000000";
+      if (picker) picker.value = hex(now) ?? "#000000";
       if (slider) slider.value = LENGTH.exec(now)?.[1] ?? slider.value;
     };
     sync();
