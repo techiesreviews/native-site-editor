@@ -53,3 +53,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - **Port types:** `node` in `src/workspace-boot.ts` now returns an `HTMLElement` and `errorMessage` takes `panel?: HTMLElement`, the same contract `src/github-reads.ts` relies on; the boot test's fake element is typed to match.
 - **Not run here:** `kit shots --compare dev`, the Opus UX review and the one-offs count (slice 04 has not landed, so no command exists); the slice runs them.
 - Feature list: updated F-repo-06 and F-media-08.
+
+### UX follow-ups
+
+- UX (looks off): F-bar-01 the bar sits by the new heading with its name as a label and the phone bar is docked at the foot, but adding the heading shows a toast ("Heading added. Into Section "Recent work" › after Div" with Undo); the mock-up has Undo with no message. On the phone this toast covers the heading under it ("Have a project in"). Publish carries a "1" count, which the mock-up removes. The path above the canvas and the toast show code words ("section.flow", "Div") (.scratch/ux/fleet-lead/20261110-074723-RGR9T6/editor-F-bar-01-390-light-bar-strip.webp)
+- UX (looks off): F-phone-03 at 390 px the top bar takes two rows: the project name on one, then Undo, Redo, History and Publish below it. Publish stays in view once the site is open, but while the Files explorer is open during loading the Publish row is gone. Opening the explorer from the top bar was not tried (.scratch/ux/fleet-lead/20261110-074723-RGR9T6/editor-F-repo-01-390-light-open-strip.webp)
