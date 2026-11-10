@@ -22,7 +22,7 @@ async function openHeld(page: Page, baseURL: string | undefined, codeHidden: boo
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
   await page.route(/\/src\/components\/code-editor\.ts(\?|$)/, async (route) => { await held; await route.continue(); });
-  if (codeHidden) await page.addInitScript(() => { try { localStorage.setItem("astro-editor.code-height", JSON.stringify({ height: 0.4, collapsed: true })); } catch { /* storage off */ } });
+  if (codeHidden) await page.addInitScript(() => { try { localStorage.setItem("astro-editor.code-pane", "closed"); } catch { /* storage off */ } });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator('[aria-label="Page structure"] [role=treeitem]').first()).toBeVisible({ timeout: 30_000 });
   // The component fields arrive with the first paint's bytes, while Monaco is still held.
@@ -33,7 +33,8 @@ async function openHeld(page: Page, baseURL: string | undefined, codeHidden: boo
   const before = await counts(page);
   expect(before.monaco).toBe(0);
   release();
-  await expect(page.locator("#content [role='textbox']").first()).toBeAttached({ timeout: 30_000 });
+  // A hidden code pane loads no code editor until it is opened.
+  if (!codeHidden) await expect(page.locator("#content [role='textbox']").first()).toBeAttached({ timeout: 30_000 });
   return before;
 }
 

@@ -74,10 +74,11 @@ for (const width of [1440, 390]) {
 }
 
 
-test("legacy collapsed preferences fully hide code and restores remembered size", async ({ page, baseURL }) => {
+test("a closed pane fully hides code and restores the remembered size", async ({ page, baseURL }) => {
   await page.addInitScript(() => {
     if (sessionStorage.getItem("collapse-prefs-installed")) return;
-    localStorage.setItem("astro-editor.code-height", JSON.stringify({ height: 0.55, collapsed: true }));
+    localStorage.setItem("astro-editor.code-height", JSON.stringify({ height: 0.55 }));
+    localStorage.setItem("astro-editor.code-pane", "closed");
     sessionStorage.setItem("collapse-prefs-installed", "true");
   });
   await load(page, baseURL);

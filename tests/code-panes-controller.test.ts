@@ -2,21 +2,50 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCodePanesController, type CodePanesPorts } from "../src/controllers/code-panes-controller.ts";
 
-function harness(load: () => Promise<string>) {
+// A stand-in height handle: `pane.open()` is the person opening the code pane.
+function fakePane(collapsed: boolean) {
+  let onOpen: (() => void) | undefined;
+  const listeners = new Map<string, (event: Event) => void>();
+  const pane = {
+    collapsed,
+    open() { pane.collapsed = false; onOpen?.(); },
+    mountCodeResize: ((_main: unknown, _split: unknown, open?: () => void) => {
+      onOpen = open;
+      return { toggle() {}, collapsed: () => pane.collapsed };
+    }) as never,
+    mountCodeWidthResize: (() => ({ apply() {} })) as never,
+    // eslint-disable-next-line no-restricted-syntax -- node has no DOM: the controller only adds listeners to the split and finds its first pane.
+    split: {
+      addEventListener: (type: string, listener: (event: Event) => void) => listeners.set(type, listener),
+      querySelector: () => ({}),
+    } as unknown as HTMLElement,
+    /** A pointerdown or focusin in the code panes; `onHandle` puts it on the height handle. */
+    dispatch(type: string, onHandle = false) {
+      const target = { closest: (selector: string) => onHandle && selector === ".code-resize" ? {} : null };
+      // eslint-disable-next-line no-restricted-syntax -- node has no DOM events: the listener reads only the target's closest().
+      listeners.get(type)?.({ target } as unknown as Event);
+    },
+  };
+  return pane;
+}
+
+function harness(load: () => Promise<string>, pane?: ReturnType<typeof fakePane>) {
   const frames: Array<() => void> = [], idles: Array<() => void> = [], delays: Array<() => void> = [];
   const failures: unknown[] = [];
   let loads = 0;
   const ports: CodePanesPorts<string> = {
     load: () => { loads++; return load(); },
     onChunkFailure: (error) => failures.push(error),
-    mountCodeResize: (() => { throw new Error("unused"); }) as never,
-    mountCodeWidthResize: (() => { throw new Error("unused"); }) as never,
+    mountCodeResize: pane?.mountCodeResize ?? (() => { throw new Error("unused"); }) as never,
+    mountCodeWidthResize: pane?.mountCodeWidthResize ?? (() => { throw new Error("unused"); }) as never,
     frame: (callback) => frames.push(callback),
     idle: (callback) => idles.push(callback),
     wait: () => Promise.resolve(),
     delay: (callback) => delays.push(callback),
   };
-  return { controller: createCodePanesController(ports), frames, idles, delays, failures, loads: () => loads };
+  const controller = createCodePanesController(ports);
+  if (pane) controller.mountResize({} as HTMLElement, pane.split, {} as HTMLElement);
+  return { controller, frames, idles, delays, failures, loads: () => loads };
 }
 const settle = () => new Promise((done) => setTimeout(done, 0));
 
@@ -65,4 +94,81 @@ test("a failed chunk import reports once and can be retried", async () => {
   assert.equal(await h.controller.want(), "monaco");
   assert.equal(await h.controller.want(), "monaco");
   assert.equal(h.loads(), 2);
+});
+
+// Runs a first paint through to its idle callback.
+async function paint(h: ReturnType<typeof harness>) {
+  h.controller.notePreviewPainted();
+  h.frames.shift()?.();
+  h.frames.shift()?.();
+  await settle();
+  h.idles.shift()?.();
+  await settle();
+}
+
+test("a pane closed at boot never loads Monaco on its own: not after paint, idle or the fallback", async () => {
+  const pane = fakePane(true);
+  const h = harness(() => Promise.resolve("monaco"), pane);
+  let resolved = false;
+  void h.controller.whenDue(h.controller.deferPane(true)).then(() => { resolved = true; });
+  await paint(h);
+  for (const fallback of h.delays.splice(0)) fallback();
+  await settle();
+  assert.equal(h.loads(), 0);
+  assert.equal(resolved, false);
+  // Pressing or focusing the handle itself does not count as reaching for the code.
+  pane.dispatch("pointerdown", true);
+  pane.dispatch("focusin", true);
+  await settle();
+  assert.equal(h.loads(), 0);
+});
+
+test("a closed pane that is not a native site's first pane also waits until it is opened", async () => {
+  const pane = fakePane(true);
+  const h = harness(() => Promise.resolve("monaco"), pane);
+  let resolved = false;
+  void h.controller.whenDue(false).then(() => { resolved = true; });
+  await settle();
+  assert.equal(h.loads(), 0);
+  assert.equal(h.delays.length, 0);
+  pane.open();
+  await settle();
+  assert.equal(resolved, true);
+  assert.equal(h.loads(), 1);
+});
+
+test("opening a closed pane loads Monaco once, and its waiting panes get it", async () => {
+  const pane = fakePane(true);
+  const h = harness(() => Promise.resolve("monaco"), pane);
+  const due = h.controller.whenDue(h.controller.deferPane(true));
+  await paint(h);
+  pane.open();
+  assert.equal(await due, "monaco");
+  // Reaching into the code afterwards and a later paint load nothing more.
+  pane.dispatch("pointerdown");
+  await paint(h);
+  assert.equal(await h.controller.whenDue(false), "monaco");
+  assert.equal(h.loads(), 1);
+});
+
+test("a pane left open loads Monaco after the first paint as before", async () => {
+  const pane = fakePane(false);
+  const h = harness(() => Promise.resolve("monaco"), pane);
+  const due = h.controller.whenDue(h.controller.deferPane(true));
+  await settle();
+  assert.equal(h.loads(), 0);
+  await paint(h);
+  assert.equal(await due, "monaco");
+  assert.equal(h.loads(), 1);
+});
+
+test("a pane closed after boot but before the paint does not load Monaco", async () => {
+  const pane = fakePane(false);
+  const h = harness(() => Promise.resolve("monaco"), pane);
+  void h.controller.whenDue(h.controller.deferPane(true));
+  pane.collapsed = true;
+  await paint(h);
+  for (const fallback of h.delays.splice(0)) fallback();
+  await settle();
+  assert.equal(h.loads(), 0);
 });

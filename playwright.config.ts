@@ -57,6 +57,14 @@ const app: Use = {
   permissions: ["clipboard-read", "clipboard-write"],
 };
 
+// A new visitor's code pane starts closed and loads no code (faster-opening 02).
+// Most suites read or edit the code, so their browsers start as someone who
+// left the pane open. A suite about the closed pane starts empty with
+// test.use({ storageState: { cookies: [], origins: [] } }).
+function codePaneOpen(baseURL: string): Use {
+  return { baseURL, storageState: { cookies: [], origins: [{ origin: new URL(baseURL).origin, localStorage: [{ name: "astro-editor.code-pane", value: "open" }] }] } };
+}
+
 export default defineConfig({
   testDir: "./tests",
   workers: 1,
@@ -73,7 +81,7 @@ export default defineConfig({
       timeout: 120_000,
       expect: { timeout: 15_000 },
       outputDir: ".scratch/native-save/results",
-      use: { ...app, baseURL: external ?? `http://127.0.0.1:${savePort}` },
+      use: { ...app, ...codePaneOpen(external ?? `http://127.0.0.1:${savePort}`) },
     },
     {
       name: "native-preview",
@@ -81,7 +89,7 @@ export default defineConfig({
       timeout: 180_000,
       expect: { timeout: 15_000 },
       outputDir: ".scratch/native-preview/results",
-      use: { ...app, baseURL: external ?? `http://127.0.0.1:${previewPort}` },
+      use: { ...app, ...codePaneOpen(external ?? `http://127.0.0.1:${previewPort}`) },
     },
   ],
   webServer: external ? [] : [

@@ -157,6 +157,35 @@ test('a file rename asked for before Monaco arrives never lands on the branch op
   expect((await storedDrafts(page)).filter((draft) => draft.branch === 'feature')).toEqual([]);
 });
 
+// Faster opening 02: a new visitor's code pane starts closed, and its code
+// (Monaco) loads only when the pane is opened.
+test.describe('a new visitor', () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('the code pane starts closed, no Monaco is requested, and opening it shows the code', async ({ page, baseURL }) => {
+    const requests: string[] = [];
+    page.on('request', (request) => { if (monaco.test(new URL(request.url()).pathname)) requests.push(request.url()); });
+    await page.goto(`${baseURL}/${hash}`);
+    const heading = page.frameLocator('.native-preview-frame').locator('.hero h1');
+    await expect(heading).toBeVisible();
+    await expect(page.locator('[role=tree][aria-label="Page structure"] [role=treeitem]').first()).toBeVisible();
+    const grip = page.getByRole('separator', { name: 'Resize code pane', exact: true });
+    await expect(grip).toHaveAttribute('aria-valuetext', 'Code hidden');
+    // fixed-wait: Outlasts the idle load and the 8 s fallback a shown pane would use, to prove a closed pane fetches nothing.
+    await page.waitForTimeout(9000);
+    expect(requests, 'Monaco requests while the pane is closed').toEqual([]);
+    await expect(page.locator('.monaco-editor')).toHaveCount(0);
+    // Editing on the page still drafts with the code closed.
+    await typeHeading(page, 'Edited with the code closed');
+    await expect.poll(async () => (await storedDraft(page, 'index.html'))?.content).toContain('<h1 data-key="hero-title">Edited with the code closed</h1>');
+    expect(requests).toEqual([]);
+    await grip.click();
+    await expect(page.locator('#content .monaco-editor .view-lines')).toContainText('Edited with the code closed', { timeout: 20_000 });
+    expect(requests.length).toBeGreaterThan(0);
+    expect(await page.evaluate(() => localStorage.getItem('astro-editor.code-pane'))).toBe('open');
+  });
+});
+
 // Drafts, Undo and Save work from the draft store (lean-fast-editor ticket 03,
 // point 4): none of them waits for Monaco.
 const homeText = '<h1 data-key="hero-title">A native browser preview</h1>';

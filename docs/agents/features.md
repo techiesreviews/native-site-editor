@@ -968,8 +968,8 @@ its number unused.
 - Steps: none yet (needs typing inside the code editor)
 
 ### F-code-05 Hide and resize code
-- Try: Drag the code edge down to hide it, press its grip to restore; use Hide code from the palette.
-- Good: Code hides completely and comes back at its old height with the cursor and Undo kept.
+- Try: In a fresh browser open a site: the code pane starts closed. Press its grip (or use Show code from the palette) to open it, reload, then drag the code edge down to hide it and reload again.
+- Good: The code pane starts closed until you open it, and then remembers whether you left it open or closed. Code hides completely and comes back at its old height with the cursor and Undo kept.
 - Files: `src/components/code-resize.ts`, `src/components/resize-handle.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-code-visible.spec.ts`
@@ -984,9 +984,9 @@ its number unused.
 - Steps: none yet (needs a drop inside the code editor)
 
 ### F-code-07 Fast first paint before code loads
-- Try: Open a site and type in the page before the code editor has loaded.
-- Good: The page paints first; edits are drafts at once, in order, and Save works.
-- Files: `src/lazy-loaders.ts`, `src/lazy-module.ts`
+- Try: Open a site and type in the page before the code editor has loaded; then open the code pane.
+- Good: The page paints first; edits are drafts at once, in order, and Save works. With the code pane closed the code editor is not downloaded at all; opening the pane loads it then. A pane left open loads it after the page is on screen.
+- Files: `src/lazy-loaders.ts`, `src/lazy-module.ts`, `src/controllers/code-panes-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-monaco-deferred.spec.ts`
 - Steps: none yet (needs typing in the page before the code editor loads)
