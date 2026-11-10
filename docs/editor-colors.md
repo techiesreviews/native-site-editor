@@ -28,9 +28,21 @@ WCAG sets no minimum text size. It asks for 4.5:1 text contrast and 3:1 for focu
 
 `src/theme.css` also names the other shared values. They are tokens only for now; components switch to them as the replacement slices land, and nothing looks different yet.
 
-- **Motion.** Durations `--dur-hover` 120ms (a tint), `--dur-press` 150ms, `--dur-tooltip` 180ms, `--dur-menu` 200ms (menus and popovers), `--dur-sheet` 300ms and `--dur-fly` 600ms. `--ease-out` is the browser's own `ease-out` curve (`cubic-bezier(0, 0, 0.58, 1)`), so the three places that already wrote `var(--ease-out, ease-out)` keep their look; `--ease-out-strong` (`cubic-bezier(0.23, 1, 0.32, 1)`) is the steeper curve the board's parts use. Move only `transform`, `opacity` and colours, and switch the motion off under `prefers-reduced-motion`.
-- **Layers.** `--layer-raised` 1 (inside one part), `--layer-canvas` 20 (carets, insert and card controls over the preview), `--layer-bar` 30 (the edit bar), `--layer-popover` 40 (its popovers, menus and pickers), `--layer-dialog` 90, `--layer-wizard` 1000, `--layer-celebration` 1100, `--layer-note` 10000 (the refusal note). A raw `z-index` number in a component moves to one of these when its part is replaced; keep the order, so a popover stays above its bar.
-- **Elevation.** Four steps. One is the existing `--shadow-small` (a pin or round button), two `--elevation-2` (a small card), three the existing `--shadow` (a floating panel) and four `--elevation-4` (a dialog). All use `--semantic-shadow`, so they follow light and dark. The two existing names stay; the new ones are only added where no step existed.
+- **Motion.** Durations `--dur-hover` 120ms (a tint), `--dur-press` 150ms, `--dur-tooltip` 180ms, `--dur-menu` 200ms (menus and popovers), `--dur-sheet` 300ms and `--dur-fly` 600ms. `--ease-out` is the browser's own `ease-out` curve (`cubic-bezier(0, 0, 0.58, 1)`), so the three places that already wrote `var(--ease-out, ease-out)` keep their look (the plain `ease-out` keyword is what every transition uses today); `--ease-out-strong` (`cubic-bezier(0.23, 1, 0.32, 1)`) is the steeper curve the board's parts use. Move only `transform`, `opacity` and colours, and switch the motion off under `prefers-reduced-motion`.
+- **Layers.** `--layer-raised` 1 (inside one part), `--layer-canvas` 20, `--layer-pins` 25, `--layer-bar` 30, `--layer-popover` 40, `--layer-dialog` 90, `--layer-tooltip` 95, `--layer-wizard` 1000, `--layer-drag` 1050, `--layer-celebration` 1100 and `--layer-note` 10000 (the refusal note). `tests/theme-tokens.test.ts` keeps the steps in this order. Where a raw `z-index` moves when its part is replaced:
+  - 1 to 6, -1 and -2: stay local numbers inside their part, or `--layer-raised`.
+  - 19, 20 and 21 (the page builder's canvas layer, carets, the insert layer, the card-grid controls) to `--layer-canvas`; they now share a step, so the DOM order decides between them.
+  - 25 and 26 (the agent pins and their tray) to `--layer-pins`; the tray now shares the step.
+  - 29 (the flashing canvas layer) to `--layer-pins`: it moves below the bar, as before, and now shares a step with the pins.
+  - 30 (the edit bar, the collapsed code split) to `--layer-bar`.
+  - 31 and 32 (the bar's popovers and note, the pin card, the card-link picker and card looks, the insert layer with an occluded focus) and 40 (the row menu, the add panel) to `--layer-popover`; they now share a step, all still above the bar and below dialogs.
+  - 90 (the image popup) to `--layer-dialog`; 95 (the block rail's tooltip) to `--layer-tooltip`, still above the dialog.
+  - 1000 (the setup wizard) to `--layer-wizard` and 1000 (the add panel's drag ghost) to `--layer-drag`; the ghost now sits above the wizard, so a drag is never hidden. 1100 to `--layer-celebration` and 10000 to `--layer-note`.
+  - The preview runtime's 2147483646 and 2147483647 live inside the page being edited and stay as they are.
+  Moves that merge steps change which of two parts wins where they overlap; check the screen when a part moves.
+- **Elevation.** Four steps. Step 1 is the existing `--shadow-small` (a pin or round button), step 2 `--elevation-2` (a small card), step 3 the existing `--shadow` (a floating panel) and step 4 `--elevation-4` (a dialog). There is no `--elevation-1` or `--elevation-3`; the two existing names keep working. All use `--semantic-shadow`, so they follow light and dark.
+
+`npm run check` also runs `scripts/check-css-vars.mjs`: every `var(--name)` in `src/**/*.css` must name a property that some stylesheet declares, that a script sets (`style.setProperty("--name", …)`, or a template such as `--agent${part}`), or that is listed in the script's open hooks with a reason. A fallback does not excuse a name defined nowhere, which is how `--ease-out` went unnoticed.
 
 ## Writing a themed colour
 
