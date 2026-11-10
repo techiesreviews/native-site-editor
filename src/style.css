@@ -494,14 +494,12 @@ h1 {
   padding: 40px;
   font-size: var(--type-base);
 }
-/* Try again on a failed panel or in the notice: busy with a spinner while the open repeats; on the panel its own line under the words. */
+/* Try again on a failed panel (its own line under the words) or in the notice. */
 .empty-message .button, .notice .button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   min-block-size: max(var(--size-control), var(--size-tap));
 }
 .empty-message .button {
+  display: block;
   margin-block-start: 12px;
 }
 .directory-summary {
