@@ -415,3 +415,79 @@ test("after a click in a live frame, a key there and then Tab into the next card
   await expect.poll(() => percent(page)).toBeGreaterThan(50);
   await expectInView(page, "row-menu");
 });
+
+// The Tweak section (Orbit TOOLS-204): the selected part's real CSS values as fields, which change its live cell
+// only (never the state cells or the editor's own styles), per theme for colours; Reset; and "Send to agent", which
+// copies a plain-text change request and says Copied on the button.
+test("Tweak edits the live Button's CSS in light and dark, resets it, and Send to agent copies the change request", async ({ page, baseURL }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openBoard(page, baseURL);
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true }).click();
+  const options = page.getByRole("complementary", { name: "Options" });
+  const tweak = options.getByRole("region", { name: "Tweak" });
+  const send = tweak.getByRole("button", { name: /^(Send to agent|Copied)$/ });
+  const reset = tweak.getByRole("button", { name: "Reset" });
+  await expect(send).toBeDisabled();
+  await expect(reset).toBeDisabled();
+
+  const liveButton = page.locator('#card-button [data-cell="live"] button');
+  const stateButton = page.locator('#card-button .cat-half[data-theme="light"] .cat-cell button').first();
+  const css = (button: typeof liveButton, property: string) => button.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property);
+
+  // The real values: the button's own padding and the theme tokens its rules use.
+  const padding = tweak.getByRole("textbox", { name: ".button { padding }", exact: true });
+  const radius = tweak.getByRole("textbox", { name: "--radius", exact: true });
+  await expect(padding).toHaveValue("6px 14px");
+  await expect(radius).toHaveValue("6px");
+  await padding.fill("10px 20px");
+  await radius.fill("16px");
+  await expect.poll(() => css(liveButton, "padding")).toBe("10px 20px");
+  await expect.poll(() => css(liveButton, "border-radius")).toBe("16px");
+  expect(await css(stateButton, "border-radius")).toBe("6px");
+  expect(await css(stateButton, "padding")).toBe("6px 14px");
+  await expect(padding.locator("xpath=ancestor::*[@data-changed][1]")).toBeVisible();
+
+  // A colour changes only the theme on show: dark here, and light keeps its own.
+  const lightBackground = await css(liveButton, "background-color");
+  await options.getByRole("group", { name: "Colours" }).getByRole("button", { name: "Dark" }).click();
+  const primary = tweak.getByRole("textbox", { name: "--primary", exact: true });
+  await primary.fill("rgb(255, 0, 0)");
+  await expect.poll(() => css(liveButton, "background-color")).toBe("rgb(255, 0, 0)");
+  await options.getByRole("group", { name: "Colours" }).getByRole("button", { name: "Light" }).click();
+  await expect.poll(() => css(liveButton, "background-color")).toBe(lightBackground);
+  await expect(primary).not.toHaveValue("rgb(255, 0, 0)");
+  await expect(padding).toHaveValue("10px 20px");
+
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect(send).toHaveText("Copied");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Design board change request");
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain("Part: Button (data-part=\"button\")");
+  expect(copied).toContain("- .button { padding }, light and dark: 6px 14px → 10px 20px");
+  expect(copied).toContain("- --radius (theme token in src/theme.css, used by .button { border-radius }), light and dark: 6px → 16px");
+  expect(copied).toMatch(/- --primary \(theme token in src\/theme\.css, used by \.[\w-]+ \{ background \}\), dark: \S.* → rgb\(255, 0, 0\)/);
+  expect(copied).not.toMatch(/--primary.*, light:/);
+
+  await reset.click();
+  await expect.poll(() => css(liveButton, "border-radius")).toBe("6px");
+  await expect.poll(() => css(liveButton, "padding")).toBe("6px 14px");
+  await expect(padding).toHaveValue("6px 14px");
+  await expect(send).toBeDisabled();
+  await expect(reset).toBeDisabled();
+});
+
+test("Tweak reaches a part drawn in a live frame, and leaves its state frames as they are", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Row menu", exact: true }).click();
+  await settled(page);
+  const tweak = page.getByRole("complementary", { name: "Options" }).getByRole("region", { name: "Tweak" });
+  const corner = tweak.getByRole("textbox", { name: "--radius-panel", exact: true });
+  await expect(corner).toHaveValue("8px");
+  await corner.fill("20px");
+  const live = page.frameLocator('#card-row-menu [data-cell="live"] iframe');
+  await live.getByRole("button", { name: "Actions" }).click();
+  await expect.poll(() => live.locator(".row-menu").evaluate((menu) => getComputedStyle(menu).borderRadius)).toBe("20px");
+  const fixed = page.frameLocator('#card-row-menu .cat-half[data-theme="light"] iframe').first().locator(".row-menu");
+  expect(await fixed.evaluate((menu) => getComputedStyle(menu).borderRadius)).toBe("8px");
+});
