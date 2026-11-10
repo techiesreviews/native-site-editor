@@ -184,6 +184,37 @@ test.describe('a new visitor', () => {
     expect(requests.length).toBeGreaterThan(0);
     expect(await page.evaluate(() => localStorage.getItem('astro-editor.code-pane'))).toBe('open');
   });
+
+  test("the palette's Show code opens the closed pane and loads the code", async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/${hash}`);
+    await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toBeVisible();
+    await expect(page.getByRole('separator', { name: 'Resize code pane', exact: true })).toHaveAttribute('aria-valuetext', 'Code hidden');
+    const palette = page.getByRole('dialog', { name: 'Command palette' });
+    await page.keyboard.press('ControlOrMeta+K');
+    await palette.getByRole('combobox', { name: 'Search commands' }).fill('Show code');
+    await expect(palette.getByRole('option', { name: /Show code/ })).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#content .monaco-editor .view-lines')).toContainText('A native browser preview', { timeout: 20_000 });
+  });
+
+  test('a repository with no home page opens its files with the code showing and loaded', async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/`);
+    const onboarding = (data: unknown) => page.request.post(`${baseURL}/__demo/onboarding`, { data });
+    await onboarding({ reset: true });
+    await onboarding({ add: [{ name: 'notes', kind: 'no-site' }] });
+    try {
+      const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
+      const notes = repos.find((repo) => repo.name === 'notes')!;
+      await page.goto(`${baseURL}/#repo=${notes.id}&branch=main&file=README.md`);
+      await page.reload();
+      // Plain files have no preview to give the room to: the pane shows, and so does its code.
+      await expect(page.locator('#content .monaco-editor .view-lines')).toContainText('no website yet', { timeout: 30_000 });
+      expect(await page.locator('#code-split > .code-pane').evaluateAll((panes) => panes.map((pane) => (pane as HTMLElement).inert))).not.toContain(true);
+      await expect(page.locator('#main')).not.toHaveClass(/code-collapsed/);
+    } finally {
+      await onboarding({ reset: true });
+    }
+  });
 });
 
 // Drafts, Undo and Save work from the draft store (lean-fast-editor ticket 03,

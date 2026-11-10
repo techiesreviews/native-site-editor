@@ -969,7 +969,7 @@ its number unused.
 
 ### F-code-05 Hide and resize code
 - Try: In a fresh browser open a site: the code pane starts closed. Press its grip (or use Show code from the palette) to open it, reload, then drag the code edge down to hide it and reload again.
-- Good: The code pane starts closed until you open it, and then remembers whether you left it open or closed. Code hides completely and comes back at its old height with the cursor and Undo kept.
+- Good: The code pane starts closed until you open it, and then remembers whether you left it open or closed. A repository with no home page (plain files, no preview) always shows its code. Code hides completely and comes back at its old height with the cursor and Undo kept.
 - Files: `src/components/code-resize.ts`, `src/components/resize-handle.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-code-visible.spec.ts`

@@ -11,7 +11,7 @@ function fakePane(collapsed: boolean) {
     open() { pane.collapsed = false; onOpen?.(); },
     mountCodeResize: ((_main: unknown, _split: unknown, open?: () => void) => {
       onOpen = open;
-      return { toggle() {}, collapsed: () => pane.collapsed };
+      return { toggle() {}, apply() {}, collapsed: () => pane.collapsed };
     }) as never,
     mountCodeWidthResize: (() => ({ apply() {} })) as never,
     // eslint-disable-next-line no-restricted-syntax -- node has no DOM: the controller only adds listeners to the split and finds its first pane.
@@ -19,11 +19,10 @@ function fakePane(collapsed: boolean) {
       addEventListener: (type: string, listener: (event: Event) => void) => listeners.set(type, listener),
       querySelector: () => ({}),
     } as unknown as HTMLElement,
-    /** A pointerdown or focusin in the code panes; `onHandle` puts it on the height handle. */
-    dispatch(type: string, onHandle = false) {
-      const target = { closest: (selector: string) => onHandle && selector === ".code-resize" ? {} : null };
-      // eslint-disable-next-line no-restricted-syntax -- node has no DOM events: the listener reads only the target's closest().
-      listeners.get(type)?.({ target } as unknown as Event);
+    /** A pointerdown or focusin in the code panes (the handle's or the code's). */
+    dispatch(type: string) {
+      // eslint-disable-next-line no-restricted-syntax -- node has no DOM events: the listener reads nothing from the event.
+      listeners.get(type)?.({} as unknown as Event);
     },
   };
   return pane;
@@ -116,18 +115,19 @@ test("a pane closed at boot never loads Monaco on its own: not after paint, idle
   await settle();
   assert.equal(h.loads(), 0);
   assert.equal(resolved, false);
-  // Pressing or focusing the handle itself does not count as reaching for the code.
-  pane.dispatch("pointerdown", true);
-  pane.dispatch("focusin", true);
+  // Pressing or focusing the closed pane's handle does not count as reaching for the code.
+  pane.dispatch("pointerdown");
+  pane.dispatch("focusin");
   await settle();
   assert.equal(h.loads(), 0);
 });
 
-test("a closed pane that is not a native site's first pane also waits until it is opened", async () => {
+test("a later closed pane of a native site also waits until it is opened", async () => {
   const pane = fakePane(true);
   const h = harness(() => Promise.resolve("monaco"), pane);
+  assert.equal(h.controller.deferPane(true), false);
   let resolved = false;
-  void h.controller.whenDue(false).then(() => { resolved = true; });
+  void h.controller.whenDue(h.controller.deferPane(true)).then(() => { resolved = true; });
   await settle();
   assert.equal(h.loads(), 0);
   assert.equal(h.delays.length, 0);
@@ -171,4 +171,11 @@ test("a pane closed after boot but before the paint does not load Monaco", async
   for (const fallback of h.delays.splice(0)) fallback();
   await settle();
   assert.equal(h.loads(), 0);
+});
+
+test("a site without a preview (plain files) loads the code at once, though the pane was left closed", async () => {
+  const pane = fakePane(true);
+  const h = harness(() => Promise.resolve("monaco"), pane);
+  assert.equal(await h.controller.whenDue(h.controller.deferPane(false)), "monaco");
+  assert.equal(h.loads(), 1);
 });

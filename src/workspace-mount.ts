@@ -267,7 +267,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     const historyScope = file.scope ? nativeHistorySession(file.scope, file.path) : undefined;
     disposeEditor = ports.editorModule.mountSourceEditor(
       content,
-      { ...(file.scope ? { ...file, historyScope } : file), loadingMessage: defer ? "The code loads once the page is on screen." : "Opening editor…" },
+      { ...file, historyScope },
       ports.element("editor-toolbar-host"),
     );
     const historyHost = ports.editorModule.captureHistoryHost(file.path), liveScope = ports.draftScope();

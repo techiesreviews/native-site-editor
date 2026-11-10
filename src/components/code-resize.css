@@ -53,10 +53,6 @@ main:not(.has-preview) .code-resize {
 .code-split > .code-pane {
   isolation: isolate;
 }
-/* Minimized panes retain their source surface and width handle. */
-.code-width-resize[hidden] {
-  display: none;
-}
 .code-width-resize::before {
   content: "";
   position: absolute;
@@ -72,12 +68,13 @@ main:not(.has-preview) .code-resize {
   user-select: none;
 }
 
-main.has-preview.code-collapsed .code-resize { top: -10px; left: 50%; right: auto; width: 64px; transform: translateX(-50%); }
-main.has-preview.code-collapsed .code-resize:is(:hover, :focus-visible),
-main.has-preview.code-collapsed.code-resizing .code-resize { top: -18px; }
+/* `code-collapsed` is set only beside a preview (code-resize.ts). */
+.code-collapsed .code-resize { top: -10px; left: 50%; right: auto; width: 64px; transform: translateX(-50%); }
+.code-collapsed .code-resize:is(:hover, :focus-visible),
+.code-collapsed.code-resizing .code-resize { top: -18px; }
 
 @media (pointer: coarse) {
-  main.has-preview.code-collapsed .code-resize,
-  main.has-preview.code-collapsed .code-resize:is(:hover, :focus-visible),
-  main.has-preview.code-collapsed.code-resizing .code-resize { top: -44px; height: 44px; }
+  .code-collapsed .code-resize,
+  .code-collapsed .code-resize:is(:hover, :focus-visible),
+  .code-collapsed.code-resizing .code-resize { top: -44px; height: 44px; }
 }
