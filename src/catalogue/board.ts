@@ -1,7 +1,8 @@
 // The catalogue board (atomic catalogue tickets 07, 08 and 05): an endless canvas with areas left to right, each part a
 // frame (a live cell that works, then options in rows, states in columns, light and dark side by side; each card and
 // live cell named by `data-part`, for preview annotations), an outline that flies to a part and ticks
-// approved ones, and a right panel with live options, where the part lives, what it is made of, and Approve.
+// approved ones, and a right panel with live options, a Tweak section for the part's CSS on its live cell
+// (tweak.ts), where the part lives, what it is made of, and Approve.
 // Plain DOM moved by one CSS transform; `will-change` only while a gesture runs, so text redraws sharp at rest.
 import listSvg from "@phosphor-icons/core/regular/list.svg?raw";
 import minusSvg from "@phosphor-icons/core/regular/minus.svg?raw";
@@ -17,6 +18,8 @@ import { force, forceStates, type Forced } from "./force-states";
 import { frameElement, updateFrame, type Theme } from "./frame";
 import { MOCKUPS, type Mockup } from "./mockups";
 import { AREAS, FORCED, PARTS, STATE_NAMES, isPart, untracedLines, type AreaId, type BoardEntry, type Control, type OneOffCounts, type Part, type State, type Values } from "./parts";
+import { readFields, tweakCss, type Edits, type Side, type TweakField } from "./tweak";
+import { tweakSection } from "./tweak-panel";
 
 type Entry = BoardEntry | Mockup;
 const ENTRIES: readonly Entry[] = [...PARTS, ...MOCKUPS];
@@ -56,6 +59,8 @@ export function startBoard(root: HTMLElement) {
   const live = new Map<string, { values: Values; state: State; theme: Theme }>();
   for (const entry of ENTRIES) live.set(entry.id, { values: { ...entry.defaults }, state: "normal", theme: "light" });
   const saving = new Map<string, { busy: boolean; note?: "signed-out" | string }>();
+  /** Each part's Tweak values (read once, when it is first selected) and its edits, kept until the page closes. */
+  const tweaks = new Map<string, { fields?: TweakField[]; edits: Edits }>();
 
   root.className = "cat-board";
   root.innerHTML = `
@@ -77,12 +82,14 @@ export function startBoard(root: HTMLElement) {
       </div>
       <aside class="cat-panel cat-inspector" aria-label="Options"></aside>
     </div>
-    <p class="sr-only" role="status" aria-live="polite"></p>`;
+    <p class="sr-only" role="status" aria-live="polite"></p>
+    <div class="cat-probes" hidden><div data-theme="light"></div><div data-theme="dark"></div></div>`;
   const $ = <T extends Element>(selector: string) => root.querySelector<T>(selector)!;
   const viewport = $<HTMLElement>(".cat-viewport"), world = $<HTMLElement>(".cat-world"), dots = $<HTMLElement>(".cat-dots");
   const selBox = $<HTMLElement>(".cat-sel"), outline = $<HTMLElement>(".cat-outline"), inspector = $<HTMLElement>(".cat-inspector");
   const status = $<HTMLElement>("[role='status']");
   const say = (text: string) => { status.textContent = text; };
+  const probes = { light: $<HTMLElement>('.cat-probes [data-theme="light"]'), dark: $<HTMLElement>('.cat-probes [data-theme="dark"]') };
 
   // Top bar: search, the board's own colours, and (medium and phone widths) the two panels as sheets.
   const actions = $<HTMLElement>(".cat-topbar__actions");
@@ -155,6 +162,7 @@ export function startBoard(root: HTMLElement) {
       for (const column of part.columns) {
         const values = { ...part.defaults, ...row.values, ...column.values };
         const into = cell();
+        into.dataset.state = column.state ?? "normal";
         if (part.frame) into.append(frameElement({ kind: "frame", id: part.id, theme, values, ...part.frame }, `${part.name}, ${row.label}, ${theme}`));
         else drawing.push(drawInline(part, values, column.state ?? "normal", into));
         grid.append(into);
@@ -258,9 +266,86 @@ export function startBoard(root: HTMLElement) {
       else {
         const made = frameElement({ kind: "frame", id: entry.id, theme: now.theme, values: now.values, ...entry.frame, live: true }, `${entry.name}, live`);
         made.dataset.theme = now.theme;
+        const css = frameTweaks(entry);
+        if (css) made.dataset.tweaks = css;
         stage.replaceChildren(made);
       }
     } else void drawInline(entry, now.values, now.state, stage, true).then(placeSel);
+  }
+
+  // ---------- Tweak: the part's CSS, edited on its live cell only ----------
+
+  /** Where a part's edits show: its live cell in that theme, never a state cell or the editor's own styles. */
+  const inlineScope = (id: string) => (side: Side) => `.cat-live[data-theme="${side}"] > .cat-live__stage[data-part="${CSS.escape(id)}"]`;
+  const frameScope = (side: Side) => `:root[data-theme="${side}"] .cat-frame-stage`;
+  const frameTweaks = (entry: Part) => { const tweak = tweaks.get(entry.id); return tweak?.fields ? tweakCss(tweak.fields, tweak.edits, frameScope) : ""; };
+  function applyTweaks(entry: Part) {
+    const tweak = tweaks.get(entry.id);
+    if (!tweak?.fields) return;
+    const stage = world.querySelector<HTMLElement>(`#card-${CSS.escape(entry.id)} .cat-live__stage`);
+    if (entry.frame) {
+      // The frame's own page writes them into its document (frame.ts), also after it is made again for another theme.
+      const frame = stage?.querySelector("iframe");
+      if (frame) frame.dataset.tweaks = frameTweaks(entry);
+      return;
+    }
+    const css = tweakCss(tweak.fields, tweak.edits, inlineScope(entry.id));
+    let style = document.head.querySelector<HTMLStyleElement>(`style[data-tweaks="${CSS.escape(entry.id)}"]`);
+    if (!css) { style?.remove(); return; }
+    if (!style) { style = el("style"); style.dataset.tweaks = entry.id; }
+    style.textContent = css;
+    // Last in the page, so an edit wins over the rule it changes (same specificity), as a later stylesheet would.
+    document.head.append(style);
+  }
+  /** A frame's part once it has drawn (a state cell's menu or dialog opens a frame later); null when it never does. */
+  function frameStage(frame: HTMLIFrameElement): Promise<Element | null> {
+    const start = performance.now();
+    return new Promise((done) => {
+      const look = () => {
+        const stage = frame.contentDocument?.querySelector(".cat-frame-stage");
+        if (stage?.firstElementChild) setTimeout(() => done(stage), 50);
+        else if (performance.now() - start > 5000) done(null);
+        else setTimeout(look, 50);
+      };
+      look();
+    });
+  }
+  /** Reads a part's values from its live cell and its light state cells (rows show its variants; forced states left out). */
+  async function readTweaks(entry: Part, tweak: { fields?: TweakField[] }) {
+    const article = world.querySelector<HTMLElement>(`#card-${CSS.escape(entry.id)}`);
+    if (!article) return;
+    const holders = [
+      ...article.querySelectorAll<HTMLElement>(".cat-live__stage"),
+      ...article.querySelectorAll<HTMLElement>(`.cat-half[data-theme="light"] .cat-cell:not(${[...FORCED].map((state) => `[data-state="${state}"]`).join(", ")})`),
+    ];
+    const roots: Element[] = [];
+    for (const holder of holders) {
+      const frame = holder.querySelector("iframe");
+      if (!frame) { roots.push(...holder.children); continue; }
+      const stage = await frameStage(frame);
+      if (stage) roots.push(...stage.children);
+    }
+    tweak.fields = readFields(roots, probes);
+    // Read at once (no frame to wait for), the section being made shows them; else it is redrawn with them.
+    if (selected === entry.id) refreshTweak();
+  }
+  function tweakFor(entry: Part) {
+    let tweak = tweaks.get(entry.id);
+    if (!tweak) {
+      tweak = { edits: {} };
+      tweaks.set(entry.id, tweak);
+      void readTweaks(entry, tweak);
+    }
+    return tweakSection({
+      part: entry, fields: tweak.fields, edits: tweak.edits, side: live.get(entry.id)!.theme,
+      apply: () => applyTweaks(entry), say,
+    });
+  }
+  /** Redraws only the Tweak section (its values read, or the other theme on show). */
+  function refreshTweak() {
+    const entry = selected ? byId.get(selected) : undefined;
+    const section = inspector.querySelector("[data-tweak]");
+    if (entry && isPart(entry) && section) section.replaceWith(tweakFor(entry));
   }
 
   const areas = new Map<AreaId, HTMLElement>();
@@ -565,9 +650,10 @@ export function startBoard(root: HTMLElement) {
     if (isPart(entry)) {
       const stateChoices = entry.columns.flatMap((column) => column.state ? [[column.state, STATE_NAMES[column.state]] as const] : []);
       if (stateChoices.length > 1) controls.push(stateControl(entry, stateChoices));
-      controls.push(segmented("Colours", [["light", "Light"], ["dark", "Dark"]], now.theme, (theme) => { now.theme = theme as Theme; drawLive(entry); }));
+      controls.push(segmented("Colours", [["light", "Light"], ["dark", "Dark"]], now.theme, (theme) => { now.theme = theme as Theme; drawLive(entry); refreshTweak(); }));
     }
     if (controls.length) sections.push(section("Options", ...controls));
+    if (isPart(entry)) sections.push(tweakFor(entry));
     if (entry.area === "molecules" || entry.area === "organisms" || entry.area === "mockups") sections.push(section("Made of", madeOfList(entry)));
     sections.push(approveSection(entry));
     inspector.replaceChildren(...sections);

@@ -4,7 +4,8 @@
 // one works, its wheel handed on to the board so it still zooms and pans there. The editor's pages refuse to be
 // framed (`frame-ancestors 'none'`, public/_headers), and an inline document has no response for that rule to apply
 // to. It loads this page's own stylesheets and entry script, reads what to show from its <iframe>'s `data-frame`, and
-// redraws when the board sets new options on `data-values`. The same page opened at
+// redraws when the board sets new options on `data-values`; a live frame shows the board's Tweak edits from
+// `data-tweaks` (CSS for this page alone). The same page opened at
 // catalogue.html?frame=<part> or ?mockup=<id> (&theme=dark&v=<options>&live=1) shows one frame on its own, as a link.
 import { MOCKUPS, type Mockup } from "./mockups";
 import { PARTS, isPart, type Part, type Values } from "./parts";
@@ -85,6 +86,10 @@ export async function startFrame(shown: NonNullable<ReturnType<typeof frameOf>>)
   stage.className = "cat-frame-stage";
   stage.dataset.part = shown.entry.id;
   document.body.replaceChildren(stage);
+  // The board's Tweak edits, last in the page so they win over the rules they change, also over a part's stylesheet
+  // that loads as it first draws.
+  const tweaks = document.createElement("style");
+  const placeTweaks = () => { if (tweaks.textContent) document.head.append(tweaks); else tweaks.remove(); };
   let drawing = 0;
   const draw = async (values: Values) => {
     const turn = ++drawing;
@@ -92,6 +97,7 @@ export async function startFrame(shown: NonNullable<ReturnType<typeof frameOf>>)
     if (turn !== drawing) return;
     stage.firstElementChild?.dispatchEvent(new CustomEvent("cat-redraw"));
     stage.replaceChildren(element);
+    placeTweaks();
   };
   // Options the board set while this page was still loading are on `data-values` already: they win over the first ones.
   const host = hostFrame();
@@ -102,7 +108,14 @@ export async function startFrame(shown: NonNullable<ReturnType<typeof frameOf>>)
   const set = (): Values | undefined => {
     try { return host?.dataset.values ? { ...shown.values, ...JSON.parse(host.dataset.values) as Values } : undefined; } catch { return undefined; }
   };
-  if (host) new MutationObserver(() => { const values = set(); if (values) void draw(values); }).observe(host, { attributes: true, attributeFilter: ["data-values"] });
+  const setTweaks = () => { tweaks.textContent = host?.dataset.tweaks ?? ""; placeTweaks(); };
+  if (host) {
+    setTweaks();
+    new MutationObserver((changes) => {
+      if (changes.some((change) => change.attributeName === "data-tweaks")) setTweaks();
+      if (changes.some((change) => change.attributeName === "data-values")) { const values = set(); if (values) void draw(values); }
+    }).observe(host, { attributes: true, attributeFilter: ["data-values", "data-tweaks"] });
+  }
   await draw(set() ?? shown.values);
 }
 
