@@ -43,7 +43,7 @@ worktree; here `.scratch/native-static-preview`, the native-static fixture), `sh
 `kit pr` skips `kit deps check`), `branches.release` and `branches.ci` (else `land`; a `release`
 equal to `land` takes ordinary PRs), `checks` (`check`, `test`, `lint`: any command, for example
 `python3 .checks/site.py`, run by `kit pr` and named by the review, slice and fix briefs, a missing one is
-skipped; `css`, the css check `kit pr`'s css tier runs (one command, split on spaces and run without a shell, so `&&` chains do not work; here `node scripts/agents/one-offs.mjs check --then scripts/check-colours.mjs`); `extra`, one command or a list of kit-plumbing
+skipped; `css`, the css check `kit pr`'s css tier runs (one command, split on spaces and run without a shell, so `&&` chains do not work; here `node scripts/agents/one-offs.mjs check --no-write --then scripts/check-colours.mjs`); `extra`, one command or a list of kit-plumbing
 checks run only when a `paths.kit` file changes (anything else fails `kit pr` with
 `checks.extra must be a list of commands`); `doctor`, one command or a
 list, each an extra `kit doctor` line that passes on exit 0), `unit` (`run`, a Node test-runner
@@ -149,7 +149,7 @@ as a `systemMessage` on every guarded call.
 The kit's own helpers that this editor has no forwarder for run from the kit's folder: `"$(scripts/agents/kit --home)"/<script>`.
 `tickets.mjs`, `agent.sh`, `unit.sh`, `worktree.sh` and `worktrees.sh` keep their `scripts/agents/` paths here as forwarders.
 
-- `scripts/agents/one-offs.mjs check [--then <script>] | update [--waive "<reason>"] | report [--json]` counts the seven kinds of hand-typed CSS values per file against `scripts/agents/one-offs.json`. `check` fails on a rise (`RESULT: fail one-offs rose by N in M files`, one `file:line:` line per file and kind) and rewrites the file on a fall; `--then` runs another node script after it so one `checks.css` command can do both; paths after it (what `kit ux` appends) are ignored. `update` rewrites the count and needs `--waive` and a `*-lead` owner for a rise; `report` lists the values. Rules: [guardrails](guardrails.md).
+- `scripts/agents/one-offs.mjs check [--no-write] [--then <script> [paths…]] | update [--waive "<reason>"] | report [--json]`, with `--root <dir>` to read another project, counts the seven kinds of hand-typed CSS values per file against `scripts/agents/one-offs.json`. `check` fails on a rise (`RESULT: fail one-offs rose by N in M files`, one `file:line:` line per file and kind); on a fall it rewrites the file, or with `--no-write` (what `kit.json` runs) fails until `update` is committed. `--then` runs another node script after it, with the paths after it (what `kit ux` appends), so one `checks.css` command can do both. `update` rewrites the count and needs `--waive` and a `*-lead` owner for a rise; `report` lists the values. Rules: [guardrails](guardrails.md).
 - `scripts/agents/port.sh <cmd...>` waits for resources, locks a free slot, and sets `ASE_TEST_PORT`. Port rules below.
 - `scripts/agents/timing.sh <cmd...>` holds all eight focused slot locks, then `5216`, for an exclusive timing run.
 - `scripts/agents/cold.sh <worktree> <outprefix>` serves existing `dist` on `5216`, records the served index asset, measures five cold/warm runs with `ASE_COLD_NET=100/20`, waterfall and JSON; run through `timing.sh`.
