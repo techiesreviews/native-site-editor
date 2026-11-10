@@ -148,7 +148,7 @@ test("untick a picture, Cancel mid-run, then Undo all", async ({ page, baseURL }
   const cancel = pane(page).getByRole("button", { name: "Cancel", exact: true });
   await expect(pane(page).locator(".media-improve__progress")).toContainText(/Improving 1 of \d/);
   await cancel.click();
-  await expect(page.locator(".editor-toast__text")).toContainText("Stopped. The rest are still listed.");
+  await expect(page.locator("#status")).toContainText("Stopped. The rest are still listed.");
   await expect(pane(page).locator(".media-improve__progress")).toHaveCount(0);
   // Rows not reached are still listed; finished ones stay done.
   const left = await pane(page).locator(".media-improve__row").count();
@@ -158,7 +158,7 @@ test("untick a picture, Cancel mid-run, then Undo all", async ({ page, baseURL }
   // Fix the rest, then Undo all puts every page back in one change.
   await pane(page).getByRole("button", { name: "Fix all", exact: true }).click();
   // The second run's message replaces the first one's "Stopped".
-  await expect(page.locator(".editor-toast__text")).toHaveText(/^Changed \d pages?\.$/);
+  await expect(page.locator("#status")).toHaveText(/^Changed \d pages?\.$/);
   await expect(pane(page).locator(".media-improve__progress")).toHaveCount(0);
   for (const name of ["beta", "gamma", "delta"]) expect((await storedDraft(page, `${name}/index.html`))?.content).toContain(`${name}.webp`);
   await pane(page).getByRole("button", { name: "Undo all", exact: true }).click();

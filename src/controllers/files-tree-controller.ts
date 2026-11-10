@@ -33,21 +33,9 @@ export interface FilesTreePorts {
   create(path: string, opener: HTMLElement): void;
   actions(): ReturnType<typeof createFileRowActions> | undefined;
   visible(): boolean;
-  /** The header's count: the files on the branch with the drafts applied, when the whole tree is known. */
-  count?(files: number | undefined): void;
 }
 
 type FileTypeIcons = typeof import("../components/file-type-icons");
-
-/** The files the branch has with the drafts applied: its files less deleted ones, plus new and renamed ones. */
-export function fileCount(tree: TreeEntry[] | undefined, state: Pick<TreeState, "deleted" | "drafted">): number | undefined {
-  if (!tree) return undefined;
-  const branch = new Set(tree.filter((entry) => entry.type === "blob").map((entry) => entry.path));
-  let count = 0;
-  for (const path of branch) if (!state.deleted.has(path)) count++;
-  for (const path of new Set(state.drafted)) if (!branch.has(path)) count++;
-  return count;
-}
 
 export function createFilesTreeController(ports: FilesTreePorts) {
   const { node, button, setIcon } = ports.ui;
@@ -153,7 +141,6 @@ export function createFilesTreeController(ports: FilesTreePorts) {
     const state = ports.state();
     drawnNewFiles = treeSignature(state);
     if (ports.visible()) warm();
-    ports.count?.(fileCount(snapshot.tree, state));
     const focused = document.activeElement instanceof HTMLElement && ports.root().contains(document.activeElement)
       ? document.activeElement.closest<HTMLElement>(".file-row")?.dataset.path
       : undefined;

@@ -36,11 +36,8 @@ export function showMediaOptimise(
   const update = input("Update existing references", "checkbox"); update.checked = true;
   const destination = input("Upload folder", "text"); destination.value = folder && folder !== "/" ? folder : "media/images";
   element.append(field("Max width (px)", width), field("Format", format), field("Quality", quality),
-    check("Responsive sizes · 480 / 960 / 1600 px", responsive), check("Keep original bytes and metadata", original),
-    node("p", "media-library__hint",
-      "Re-encoding strips EXIF and GPS metadata for privacy. WebP keeps transparency; a smaller transparent PNG is kept instead. SVG/GIF stay untouched."));
-  if (existing) element.append(check("Update references to the new files", update), node("p", "media-library__hint",
-    "Optimised copies are new files. Originals stay available. Existing alt text and classes stay intact."));
+    check("Responsive sizes · 480 / 960 / 1600 px", responsive), check("Keep original bytes and metadata", original));
+  if (existing) element.append(check("Update references to the new files", update));
   else element.append(field("Destination folder", destination));
   const results = node("div", "media-library__results");
   let prepared: { file: File; result: MediaOptimiseResult; original?: MediaImportRequest["original"] }[] = [];

@@ -1,8 +1,8 @@
 ---
 title: "No toasts: the one switch and feedback in place"
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: fleet-lead
 builder: claude
 blocked_by: [06-recovery-before-toasts]
 ---
@@ -42,3 +42,19 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit shots --compare dev` of the touched screens, light and dark, 390 and 1280 wide (Lex sees the contact sheet); Opus UX review against the [UX rulebook](../../../../agents/ux-rulebook.md).
 - The one-offs count (slice 04, once landed) does not rise; quote its `RESULT:` line.
 - Big, delicate slice: one second opinion on the final version (`ASE_REVIEW_MODEL=grok-4.7` or `gpt-6.1-sol` `kit review --ticket <this ticket>`), within the weekly budget.
+
+## Done (2026-11-10)
+
+- **One switch:** `announce()` and the Media screens' `done()` now write only the screen-reader line (`#status`, a polite live region). `showToast()`, `say()`, the toast module, its CSS, its pure rules and the toast-aware geometry in the edit bar and the Files adding summary are deleted; nothing draws a toast, and `grep` finds no `showToast(` caller. The "quiet" and "undo" arguments of `announce()` and the `quiet` flag on steps went with it. The top bar's Undo is the only Undo for page and file steps, with no "Undid …" message drawn; the Undo beside a replaced picture in File details (ticket 06) stays.
+- **The 12 rows, on the control:**
+  - State, 4: Files ⋯ Copy path and Media File details ⋯ Copy path turn that ⋯ button into a check for a moment (`src/ui/done-mark.ts`; a menu item now receives the button its menu opened from); Download site reads "Preparing…" and is busy on its own button; Keep as new file leaves the draft's Files row reading "added, not saved to GitHub yet" with the bar gone.
+  - Error, 8: GitHub not answering (ticket 06: Try again on the failed panel); Page Structure row action while the preview is drawing, Make component and the slot menu on bytes that moved on, and Edit component mode too late all say why in the refusal note by the button the menu opened from (by the edit bar for the late mode); the command palette's stale selection keeps its refusal note; a slot row refused keeps only its note (the toast copy is gone, as for the 47 doubled refusals); an image place that changed shows its reason on the picker's own message line.
+  - Not-added files when the picker closes now say so in the refusal note.
+- **Explainers and counts removed:** the Publish button's count (the title and the menu still carry it), the Files heading's count and its version tooltip, the folder view's badge, the unused edit-bar badge; the upload "or drop a file here", "Esc leaves the card blank", the slot "Content: select…" line, the home page's fixed-URL note, the palette's second lines and "Native HTML", "(no page)" beside a folder, the image popup's picture hint (now only read aloud, with the "seen hints" storage gone), the video spot popup's three lines, the video details' two lines, Description, Always keep, rename and Replace forwarding, Optimise, Clean up and New collection lines, the settings dialogs' field hints, preview and navigation notes and "Drafts until you publish", "Click to enlarge", and the wizard's agent line. A greyed menu item says nothing (no title, no note). "By agent" keeps its mark only. The drag keyboard tip and the slot keystroke toast are gone with the chokepoint.
+- **Tests:**
+  - `tests/native-save/native-feedback-in-place.spec.ts` (was the toast spec): the live region says a whole step with no toast element and Undo takes it back; a Media result is said in the live region only; Files and Media Copy path show the check on their button; Download site's busy label and its failure note. The other specs' toast texts now read `#status`, and the toast-only layout specs are gone. Added or updated cases show `.editor-toast` absent in the agent, cards, palette, structure, Media and save families.
+  - Unit: `tests/announce.test.ts` (status only, Undo live and refusing), `tests/component-menu-refusals.test.ts` (Make component and the slot menu refuse by their button), `tests/media-page-markup-stale.test.ts`, `tests/workspace-mount.test.ts` (row action refusal by anchor), `tests/command-palette-controller.test.ts` (refusal note too); `tests/toast-rules.test.ts` and the Files count test are removed with their code.
+  - `RESULT: ok unit 3028/3028 (190 files)`; `RESULT: ok specs 1/1 passed` for each of the 30 touched and related spec files (one run of 30: 1 failed, the Publish count assertion, fixed and passed); `npm run check` and `npm run lint` clean.
+- **Size and one-offs:** `RESULT: ok size boot 354 KB (-1 KB) vs dev@f8c13b9, budget 355 KB`; `RESULT: ok one-offs 1579 hand-typed values in 68 files, none above scripts/agents/one-offs.json` (fell by 16; `scripts/agents/one-offs.json` rewritten).
+- Feature list: added F-pages-17 (results show where they happened) and updated F-bar-01.
+- **Left for a decision:** Edit component mode's note, info mark and count stay (they are the only place Make component's notes show); the "Adds noindex … does not make a page private" line stays (research asked to check with Lex); the card "its text could not be reset" tail and the Media Remove pointer to Recently removed are now status-line only; a right-click on a Files row has no ⋯ button to turn into a check, so Copy path says it in the status line only. `kit shots --compare dev` runs in the slice.

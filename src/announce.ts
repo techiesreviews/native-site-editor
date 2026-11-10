@@ -1,10 +1,11 @@
-// What the editor says: #status, and the toast beside it (loaded on first
-// use) with the Undo that takes back the step it names.
+// What the editor says: the #status live region, for screen readers (it shows
+// nothing on screen), and the Undo that takes back the step a control names.
 
 import { refuse } from "./components/refusal-note";
-import type { AnnounceAs } from "./components/toast-rules";
-import type { ToastAction } from "./components/toast";
 import type * as sourceEditor from "./components/source-editor";
+
+/** `live`: false once the step the action takes back is no longer the newest (an action with none is always live). */
+export interface UndoAction { label: string; run(): void; live?(): boolean }
 
 export interface AnnouncePorts {
   element: <T extends HTMLElement>(id: string) => T;
@@ -13,25 +14,12 @@ export interface AnnouncePorts {
 
 export function createAnnounce(ports: AnnouncePorts) {
   const { element, editorModule } = ports;
-  type Toast = typeof import("./components/toast");
-  let toast: Toast | undefined, toastLoad: Promise<Toast> | undefined;
-  // Said in #status and shown as the toast (slice 105, loaded on first use).
-  function announce(text: string, as?: AnnounceAs) {
+  // Said in #status only: the change shows where it happened, and the top bar's Undo takes it back.
+  function announce(text: string) {
     element("status").textContent = text;
-    if (as === "quiet") return;
-    showToast(text, as?.undo === undefined ? undefined : undoAction(as.undo));
   }
-  // Shows `text` (already said in #status) as the toast with `action`.
-  function showToast(text: string, action?: ToastAction) {
-    if (toast) toast.showToast(text, action);
-    else void (toastLoad ??= import("./components/toast")).then(loaded => {
-      toast = loaded;
-      // Said over meanwhile (a refusal, a newer announcement): not shown.
-      if (element("status").textContent === text) loaded.showToast(text, action);
-    });
-  }
-  // The toast's Undo takes back the step it names, the newest one: once another is newer, it refuses.
-  function undoAction(path: string) {
+  // The Undo of the newest step in `path`'s history, bound to that step now: once another is newer, it refuses.
+  function undoAction(path: string): UndoAction | undefined {
     const step = editorModule.latestUndo(path);
     const live = () => editorModule.latestUndo(path) === step;
     return step === undefined ? undefined : { label: "Undo", live, run() {

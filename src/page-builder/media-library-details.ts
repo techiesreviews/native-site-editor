@@ -14,9 +14,10 @@ import { mediaDetailParts } from "./media-library-video";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
 import type { MenuItem } from "../components/row-menu";
 import type { MediaBytes } from "./media-byte-cache";
-import type { ToastAction } from "../components/toast";
+import type { UndoAction } from "../announce";
 import type { MediaMetadata } from "./media-metadata";
 import { markTransparency } from "./media-transparency";
+import { markDone } from "../ui/done-mark";
 
 /** The view around File details, and the screens File details can open. */
 export interface DetailHost extends LibrarySheetContext {
@@ -50,7 +51,7 @@ function backToGrid(sheet: LibrarySheet, h: DetailHost, path: string) {
 /** Open File details of `path` (media-manager ticket 06, tiles.html): its own screen with Back,
  * a large preview beside grouped information on wide screens, stacked on phones.
  * A `background` open (a refresh) keeps focus where it is. */
-export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: string, background = false, undo?: ToastAction) {
+export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: string, background = false, undo?: UndoAction) {
   const { element } = sheet, { dialog, grid, cache, tell } = h;
   if (!h.alive()) return;
   const initiatingFocus = document.activeElement;
@@ -197,8 +198,8 @@ function fileActions(h: DetailHost, path: string, data: MediaBytes, replace?: ()
     [new File([data.blob], path, { type: data.blob.type || uploadImageType(path) })], true, new Map([[path, data.version]]),
   )));
   actions.append(moreButton(h, () => mediaFileMenu({
-    copy: () => void task(async () => {
-      await navigator.clipboard.writeText(siteAddress(path, h.library().prefix ?? "")); done("Path copied.");
+    copy: opener => void task(async () => {
+      await navigator.clipboard.writeText(siteAddress(path, h.library().prefix ?? "")); done("Path copied."); markDone(opener);
     }),
     download: () => { const link = node("a"); link.href = data.url; link.download = basename(path); link.click(); },
     remove: () => remove([path]),
@@ -264,7 +265,7 @@ function renderInformation(
   const summary = node("div", "media-detail__summary");
   summary.append(name, naming.element, facts, ...notes);
   // The Always keep mark (slice 49): on for this file, or for a copy or original in its family.
-  if (library.keep?.includes(path)) summary.append(node("p", "media-library__keep-note", "Always keep: Clean up never suggests this file."));
+  if (library.keep?.includes(path)) summary.append(node("p", "media-library__keep-note", "Always keep"));
   form.append(summary, actions);
   const description = node("textarea"); description.name = "description"; description.setAttribute("aria-label", "Description");
   description.value = meta.alt; description.rows = 3;
@@ -282,9 +283,9 @@ function renderInformation(
     sync();
     // One short help line (WordPress); Decorative sits with the words it empties.
     const words = detailSection("Description", !meta.alt && !meta.decorative ? node("span", "media-library__hint", "Not described yet") : undefined,
-      description, node("p", "media-library__hint", "Read aloud to people who can't see the picture."));
+      description);
     // By agent (ticket 13) until Looks right in To check, or Lex's own words saved here.
-    if (meta.byAgent) words.append(node("span", "media-library__by-agent", "By agent: press Looks right in To check, or change the words here."));
+    if (meta.byAgent) words.append(node("span", "media-library__by-agent", "By agent"));
     words.append(switchRow("Decorative", decorative, "No description: screen readers skip it."));
     form.append(words);
   }
@@ -348,7 +349,7 @@ function renderInformation(
   const memberKept = Boolean(library.keep?.includes(path)) && !meta.alwaysKeep;
   naming.follow(() => keep.checked || memberKept);
   keep.addEventListener("change", () => naming.follow(() => keep.checked || memberKept));
-  form.append(detailSection("Settings", undefined, switchRow("Always keep", keep, "Never suggested for clean-up. For files used outside the site.")));
+  form.append(detailSection("Settings", undefined, switchRow("Always keep", keep)));
   // Save bar ★ (slice 123, Shopify): there only while something differs from what is saved;
   // Discard draws the saved details again. Saving is still one step and one Undo.
   const footer = node("footer", "media-detail__foot");
@@ -420,7 +421,7 @@ function renameField(name: HTMLInputElement, path: string, paths: string[], gith
   const forward = input("Keep the old address working", "checkbox");
   const choice = node("div", "media-detail__forward");
   choice.append(check("Keep the old address working", forward,
-    githubPages ? GITHUB_PAGES_REDIRECT_NOTE : "Links from other sites to the old name forward to the new one, on hosts that read the site's _redirects file."));
+    githubPages ? GITHUB_PAGES_REDIRECT_NOTE : undefined));
   let touched = false;
   forward.addEventListener("change", () => { touched = true; });
   const taken = (file: string, suggestion: string) => {

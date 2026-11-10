@@ -102,7 +102,6 @@ export function showCollectionName(sheet: LibrarySheet, h: CollectionScreensHost
   };
   name.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); submit(); } });
   element.append(field("Name", name), problem);
-  if (paths.length) element.append(node("p", "media-library__muted", `The ${filesLabel(paths.length)} you selected go into it.`));
   const actions = node("div", "media-library__sheet-actions");
   actions.append(button("Cancel", () => done()), button(renaming ? "Rename" : "Create", submit, "button primary"));
   element.append(actions);

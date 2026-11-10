@@ -10,8 +10,6 @@
 .trip__zoom { position: relative; display: block; width: 100%; padding: 0; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface); overflow: hidden; cursor: zoom-in; line-height: 0; }
 .trip__zoom:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .trip__image { display: block; width: 100%; height: auto; max-height: 270px; object-fit: contain; object-position: top center; }
-.trip__zoom-hint { position: absolute; right: 8px; bottom: 8px; padding: 3px 8px; border-radius: 999px; background: color-mix(in oklch, var(--text) 78%, transparent); color: var(--surface); font-size: var(--type-badge); line-height: 1.4; opacity: 0; }
-.trip__zoom:hover .trip__zoom-hint, .trip__zoom:focus-visible .trip__zoom-hint { opacity: 1; }
 .trip__note { margin: 0; font-size: var(--type-base); line-height: 1.6; }
 .trip__recording { position: relative; width: 100%; }
 .trip__video { display: block; width: 100%; border-radius: var(--radius); background: var(--surface); aspect-ratio: 16 / 10; object-fit: cover; }

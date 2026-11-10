@@ -113,8 +113,8 @@ export interface MediaWorkspaceContext {
   openPage(path: string): Promise<void>;
   /** Whether this context's workspace is the one shown (ticket 23); false once work on it finishes elsewhere. */
   here?(): boolean;
-  /** The toast's Undo for the step just made, bound to it now (slice 113). */
-  undoReceipt?(): import("../components/toast").ToastAction | undefined;
+  /** The Undo for the step just made, bound to it now (slice 113). */
+  undoReceipt?(): import("../announce").UndoAction | undefined;
 }
 
 // The site's prefix as `prepare` captured it through the batch's reader (media-prefix.ts).
@@ -133,8 +133,8 @@ export interface MediaReplaceRequest {
   original?: { blob: Blob; extension: string };
   keepOldAddress?: boolean;
   notice?: (text: string) => void;
-  /** Receives the toast's Undo for this step as it commits, before any later await (slice 113). */
-  undo?: (action: import("../components/toast").ToastAction | undefined) => void;
+  /** Receives the Undo for this step as it commits, before any later await (slice 113). */
+  undo?: (action: import("../announce").UndoAction | undefined) => void;
   live?: () => boolean;
 }
 

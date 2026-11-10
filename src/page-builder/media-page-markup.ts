@@ -116,12 +116,12 @@ export async function placeMediaPath(
   if (placement) {
     if (!stamp.holds() || ports.source(placement.path) !== placement.source) {
       const message = placement.stale ?? "The image place changed.";
-      ports.announce(message); throw new Error(message);
+      throw new Error(message);
     }
     transform = await prepareMediaPath(ports, placement, image, prefix);
     if (!stamp.holds() || ports.source(placement.path) !== placement.source) {
       const message = placement.stale ?? "The image place changed.";
-      ports.announce(message); throw new Error(message);
+      throw new Error(message);
     }
     if (cancelled()) { resolve(undefined); return; }
   }

@@ -55,10 +55,13 @@ interface TemplateRows {
   open?: (at: readonly number[]) => void;
 }
 
+/** A user opening a row's menu: the button or row it opens from, and the pointer's place for a right-click. */
+export interface MenuOpening { anchor: HTMLElement; at?: { x: number; y: number } }
+
 export interface PageStructureHandlers {
   templateRows?: (path: string, at: readonly number[]) => TemplateRows | undefined;
   /** `opening` checks a user action; painting the affordance stays silent on stale source. */
-  menuItems?: (path: string, item: NativeStructureItem, opening?: boolean, template?: { source: string | undefined; node: number[] | undefined; chip: () => HTMLElement | undefined }) => MenuItem[];
+  menuItems?: (path: string, item: NativeStructureItem, opening?: MenuOpening, template?: { source: string | undefined; node: number[] | undefined; chip: () => HTMLElement | undefined }) => MenuItem[];
   /** Source-guarded instance fields; synthetic slot rows never identify DOM nodes. */
   /** Include source/template/revision/model changes; enables unchanged-update caching. */
   componentFieldsRevision?: () => string;
@@ -190,9 +193,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   });
   url.root.classList.add("page-structure__url");
   url.root.hidden = true;
-  const urlNote = node("p", "page-structure__url-note");
-  urlNote.hidden = true;
-  meta.append(url.root, urlNote);
+  meta.append(url.root);
   const metaNotice = node("p", "page-structure__meta-notice");
   metaNotice.setAttribute("role", "status");
   metaNotice.hidden = true;
@@ -226,9 +227,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (address) {
       url.reset(address.route);
       url.input.readOnly = Boolean(address.fixed);
-      urlNote.textContent = address.fixed ?? "";
-      urlNote.hidden = !address.fixed || Boolean(handlers.onPageSettings);
-    } else urlNote.hidden = true;
+    }
   }
 
   let structure: NativeStructure | undefined;
@@ -664,7 +663,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const menuPath = own?.path ?? structure!.path;
     // A template row's menu acts on its one badge; a row with none (or several) has no slot actions.
     const menuTemplate = own ? { source: own.paintedSource, node: own.chips.length === 1 ? own.chips[0] : undefined, chip: () => el.querySelector<HTMLElement>(":scope > .slot-chip") ?? undefined } : undefined;
-    const entries = (opening = false) => handlers.menuItems?.(menuPath, item, opening, menuTemplate) ?? [];
+    const entries = (opening?: MenuOpening) => handlers.menuItems?.(menuPath, item, opening, menuTemplate) ?? [];
     const hasMenu = entries().length > 0;
     if (slotModel || template || modeRows || hasMenu) {
       // The row is named by its kind and preview only; its action buttons keep their own names.
@@ -710,7 +709,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       }
     }
     const openMenu = (anchor: HTMLElement, at?: { x: number; y: number }) => {
-      const items = entries(true);
+      const items = entries({ anchor, ...at ? { at } : {} });
       if (!items.length) return false;
       menu.open(anchor, items, at, `Actions for ${kind}${text ? ` ${text}` : ""}`);
       return true;

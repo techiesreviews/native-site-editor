@@ -160,8 +160,6 @@ export function discardPlan(list: readonly AgentChange[], r: Reads, drafts: Draf
   const now = Date.now();
   return {
     restore: new Map([...merged].map(([path, { before }]) => [path, before && { ...before, updatedAt: now }])),
-    // Said in the status line only, no toast: the pin's card shows Undone, and an agent's discard needs none (S4).
-    quiet: true,
     done: `Undid ${names}'s change${list.length === 1 ? "" : "s"}.`,
     undone: `Brought back ${names}'s change${list.length === 1 ? "" : "s"}.`,
     ...(open ? { open } : {}),

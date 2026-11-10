@@ -177,7 +177,6 @@ export function createSetupWizard(options: SetupWizardOptions) {
     const row = node("div", "onboard-agent__row");
     row.append(label, copy);
     panel.append(
-      node("p", "wizard-hint", "A coding agent can create the repository and build the site through the editor; you review its changes here and save them."),
       row,
       copied,
     );

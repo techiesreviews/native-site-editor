@@ -105,6 +105,14 @@ test("opened in the code editor, a draft of a deleted file offers Discard draft 
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", notesPath);
   await expect(page.locator("#content .code-editor__conflict")).toBeHidden();
   await expect(page.locator("#content .view-lines")).toContainText("Kept from an old draft.");
+  // The state is on the file itself: its Files row reads as a new file, and nothing pops up.
+  await page.locator("#explorer-toggle").click();
+  await page.locator("#explorer").getByRole("tab", { name: "Files", exact: true }).click();
+  const notes = page.locator(`#explorer .file-row[data-path="${notesPath}"]`);
+  if (!(await notes.isVisible())) await page.locator('#explorer .file-row[data-path="docs"]').click();
+  await expect(notes).toHaveAttribute("aria-description", "added, not saved to GitHub yet");
+  await expect(page.locator(".editor-toast")).toHaveCount(0);
+  await page.keyboard.press("Escape");
 
   // The stylesheet's draft, opened from its path, is discarded; the home page opens.
   await open(page, baseURL, stalePath);

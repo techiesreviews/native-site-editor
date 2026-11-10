@@ -154,7 +154,6 @@ export function siteCommands(deps: EditorPaletteDeps): Command[] {
       out.push({
         id: `component.add:${component.tag}`,
         title: `Add ${component.label}`,
-        hint: selection?.path === pagePath && selection.node ? `<${component.tag}> after the selected section` : `<${component.tag}> at the end of the page`,
         group: "Components",
         icon: "insert",
         accent: "component",
@@ -234,7 +233,7 @@ export function nativePaletteCommands(deps: EditorPaletteDeps): Command[] {
   const identity = selectionIdentity(selection);
   return (deps.nativeElements?.() ?? []).filter((choice) => choice.kind === "native" && Boolean(nativeChoiceMarkup(choice.tag, undefined, ""))).map((choice) => ({
     id: `native.add:${choice.tag}`, title: `Add ${choice.label}`, group: "Elements", icon: "insert",
-    hint: "Native HTML", keywords: ["insert", "native", choice.tag, choice.group ?? ""],
+    keywords: ["insert", "native", choice.tag, choice.group ?? ""],
     run: async () => {
       if (deps.currentPath() !== path || deps.source(path) !== source || !(held?.holds() ?? true) || selectionIdentity(deps.selection()) !== identity || !(deps.nativeElements?.() ?? []).some((current) => current.kind === "native" && current.tag === choice.tag)) {
         announceRefusal(deps, "The page changed. Reopen the command palette and try again."); return;

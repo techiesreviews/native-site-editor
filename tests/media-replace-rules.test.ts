@@ -45,8 +45,7 @@ test("a new format changes the address and offers Keep the old address working, 
   const notice = replaceNotice({ path: "images/tram.jpg", next: { extension: "webp" }, pages: 1, trims: 0, kept: true });
   assert.equal(notice.address, "images/tram.webp");
   assert.equal(notice.lines[0], "It's a WebP, so its address becomes /images/tram.webp. Every mention is updated.");
-  assert.deepEqual(notice.forward, { label: "Keep the old address working", checked: true,
-    hint: "Links from other sites to /images/tram.jpg forward to the new address, on hosts that read the site's _redirects file." });
+  assert.deepEqual(notice.forward, { label: "Keep the old address working", checked: true });
   assert.equal(replaceNotice({ path: "a.JPG", next: { extension: "jpg" }, pages: 0, trims: 0, kept: false }).forward, undefined);
   // As the engine decides, .jpeg for a .jpg is a new address.
   assert.equal(replaceNotice({ path: "a.jpg", next: { extension: "jpeg" }, pages: 0, trims: 0, kept: false }).forward?.checked, false);

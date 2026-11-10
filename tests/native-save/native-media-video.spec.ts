@@ -334,7 +334,7 @@ test("video details: a moment becomes the still, an .srt adds a track, a picture
   await openMedia(page);
   const library = page.getByRole("region", { name: "Media", exact: true });
   await library.getByRole("button", { name: "Details for media/clip.mp4", exact: true }).click();
-  const status = page.locator(".editor-toast__text");
+  const status = page.locator("#status");
   // A moment: the details player paused one second in.
   const player = library.locator(".media-detail__preview video");
   await player.evaluate(video => new Promise(resolve => {
@@ -488,7 +488,7 @@ test("an online Vimeo video's details switch Vimeo's own bar on everywhere; Remo
   const bar = library.getByRole("checkbox", { name: "Show Vimeo's own bar", exact: true });
   await expect(bar).not.toBeChecked();
   await bar.check();
-  await expect(page.locator(".editor-toast__text")).toHaveText("Vimeo's own bar shows everywhere the video is used.");
+  await expect(page.locator("#status")).toHaveText("Vimeo's own bar shows everywhere the video is used.");
   await expect.poll(() => mounted(page)).toContain('<a class="online-video" href="https://vimeo.com/76979871" data-controls="service">');
   await expect(bar).toBeChecked();
   const before = await mounted(page);
@@ -499,7 +499,7 @@ test("an online Vimeo video's details switch Vimeo's own bar on everywhere; Remo
   await remove.click();
   await expect(library.getByText("Pages that show it keep it (1 page). Vimeo is not contacted, and the video stays there.")).toBeVisible();
   await library.getByRole("button", { name: "Remove", exact: true }).click();
-  await expect(page.locator(".editor-toast__text")).toHaveText("Talk was removed from Media.");
+  await expect(page.locator("#status")).toHaveText("Talk was removed from Media.");
   await expect(library.locator(".media-library__card.is-online")).toHaveCount(0);
   expect(await mounted(page)).toBe(before);
   expect(calls).toEqual([]);

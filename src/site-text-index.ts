@@ -153,7 +153,7 @@ export function createSiteTextIndex(ports: SiteTextIndexPorts) {
 
   function pagesBusy(explorer: HTMLElement) {
     return nativePageTitlePointer !== undefined || Boolean(ports.pagesAndFiles.pagesTree?.busy()) || explorer.matches(":popover-open") &&
-      Boolean(explorer.querySelector("[role=menu]:not([hidden]), input:focus, [popover]:popover-open:not(.editor-toast)"));
+      Boolean(explorer.querySelector("[role=menu]:not([hidden]), input:focus, [popover]:popover-open"));
   }
   function flushPendingNativePageTitles() {
     const pending = pendingNativePageTitles;

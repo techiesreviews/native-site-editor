@@ -108,7 +108,8 @@ test("the Pages tab labels pages by their titles, and a new page is a folder of 
 
   // Notes is a folder with no page of its own.
   await expect(item(page, "Notes")).toHaveAttribute("aria-description", "/notes/, no page, 1 subpage");
-  await expect(item(page, "Notes").locator(".pages-note").first()).toHaveText("(no page)");
+  // The folder icon says it; no "(no page)" is written beside it.
+  await expect(item(page, "Notes").locator(".pages-note")).toHaveCount(0);
 
   // A page added to Notes is notes/<slug>/index.html, titled in its head.
   await item(page, "Notes").hover();

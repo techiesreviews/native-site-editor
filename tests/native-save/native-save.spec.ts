@@ -179,7 +179,8 @@ test("multi-file save keeps every committed file's content (no revert to stale b
   const panel = page.locator("#publish-files");
   await expect(panel).toContainText(indexPath);
   await expect(panel).toContainText(cssPath);
-  await expect(saveTrigger(page).locator(".publish-menu__count")).toHaveText("2");
+  // The count lives in the menu (S2), never on the button.
+  await expect(saveTrigger(page).locator(".publish-menu__count")).toHaveCount(0);
   await expect(saveTrigger(page)).toHaveAttribute("title", "Publish 2 changes to main");
   for (const box of await panel.locator("input[type=checkbox]").all()) await expect(box).toBeChecked();
   const summary = panel.locator(".publish-menu__total-summary");
@@ -274,7 +275,8 @@ test("typing while a slow save is in flight keeps the newer draft", async ({ pag
   await pasteSource(page, "", indexSource.replace("A native browser preview", "Typed during save"));
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   // The edit typed meanwhile waits: the button offers to publish it.
-  await expect(page.locator(".publish-menu__trigger")).toContainText("Publish1");
+  await expect(page.locator(".publish-menu__trigger")).toHaveAttribute("title", "Publish 1 change to main");
+  await expect(page.locator(".publish-menu__trigger")).toHaveText("Publish");
 
   // The in-flight edit survives as a new draft on top of the committed content.
   await expect(frame.getByRole("heading", { name: "Typed during save" })).toBeVisible();

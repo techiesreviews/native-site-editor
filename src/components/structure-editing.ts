@@ -290,7 +290,6 @@ export function createStructureEditing(host: StructureEditingHost) {
       }, "text-button");
       group.append(image.wrap, choose, labelled("alt", "Alt text", slot.value.alt ?? "", true).wrap);
     } else {
-      if (!slot.value.editable) group.append(node("span", "page-structure__slot-summary", "Content: select the page element to edit its text"));
       const link = labelled("href", "Link / URL", slot.value.href ?? "", false);
       suggest(link.field as HTMLInputElement, model.links, "Pages of this site");
       group.append(link.wrap);

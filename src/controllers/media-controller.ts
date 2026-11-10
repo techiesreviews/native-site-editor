@@ -99,8 +99,8 @@ export interface MediaControllerPorts {
   /** The canvas and selection the edit bar's Play uses. */
   mediaPlay?: import("../page-builder/media-play").MediaPlayHost;
   announce(message: string): void;
-  /** The toast's Undo for the newest step in `path`'s history, bound to that step now (slice 113). */
-  undoAction?(path: string): import("../components/toast").ToastAction | undefined;
+  /** The Undo for the newest step in `path`'s history, bound to that step now (slice 113). */
+  undoAction?(path: string): import("../announce").UndoAction | undefined;
   error(error: unknown): void;
 }
 

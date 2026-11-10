@@ -65,18 +65,10 @@ export function popupMessage(state: { newPicture: boolean; recrop?: boolean }) {
   return { tone: "info" as const, text: "Only changes this spot", tip: "The shape and the square only change how the picture fits this spot. Nothing new is saved." };
 }
 
-/** The hints already shown in this browser (stored as a JSON list): each shows under the picture only the first time it applies (slice 109). */
-export function seenHints(stored: string | null) {
-  try {
-    const list: unknown = JSON.parse(stored ?? "[]");
-    return new Set(Array.isArray(list) ? list.filter((item): item is string => typeof item === "string") : []);
-  } catch { return new Set<string>(); }
-}
-
 /** The focus square's hint: its description for screen readers, never shown under the picture. */
 export const SQUARE_HINT = "Drag the square to what matters most.";
 
-/** The hint under the picture. */
+/** The hint read aloud for the picture: the square's or the trim's description, never drawn. */
 export function pictureHint(shape: PopupShape, zoomed = false) {
   if (shape === "free") return "Drag the corners to trim.";
   return focusApplies(shape) || zoomed ? SQUARE_HINT : "The whole picture shows.";

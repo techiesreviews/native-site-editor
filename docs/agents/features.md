@@ -339,6 +339,14 @@ its number unused.
 - Spec: `tests/native-save/native-resize-toggle.spec.ts`
 - Steps: none yet (needs a drag or a click on the resize handle, which steps cannot grab)
 
+### F-pages-17 Results show where they happened
+- Try: In Files, open a file's ⋯ and press Copy path; open the project menu and press Download site; in Media open File details, ⋯, Copy path; open a Page structure row's ⋯ right after the page changed.
+- Good: There are no toasts (S4). The ⋯ button that copied a path turns into a check for a moment, then is the dots again; Download site reads "Preparing…" on its own button until the files are ready; a menu item that cannot run says why in a note by the button it was opened from. Everything is still said in the hidden status line, so screen readers hear it; Undo is the top bar's (and the one beside a replaced picture in File details).
+- Files: `src/announce.ts`, `src/ui/done-mark.ts`, `src/components/row-menu.ts`, `src/components/site-actions.ts`, `src/components/refusal-note.ts`, `src/pages-and-files-explorer.ts`, `src/page-builder/media-library-details.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-feedback-in-place.spec.ts`
+- Steps: none yet (the check and the busy label last a moment; steps cannot catch them)
+
 ## Page editing on the canvas
 
 ### F-canvas-01 Click to type
@@ -481,8 +489,8 @@ its number unused.
 
 ### F-bar-01 Edit bar on the selection
 - Try: Select a heading, a section and a component part.
-- Good: The bar sits by the element with its name as a label and never covers the text being edited; groups wrap whole on narrow frames (L4, U5). On a phone it is docked at the foot of the canvas instead, one row that scrolls sideways with the name chip first: no page content sits under it, it rides on top of the on-screen keyboard, and a selection it (or the keyboard, or a toast on it) would hide scrolls into view above it.
-- Files: `src/components/edit-bar.ts`, `src/components/edit-bar.css`, `src/components/edit-bar-placement.ts`, `src/controllers/page-structure-controller.ts`, `src/components/toast.ts`
+- Good: The bar sits by the element with its name as a label and never covers the text being edited; groups wrap whole on narrow frames (L4, U5). On a phone it is docked at the foot of the canvas instead, one row that scrolls sideways with the name chip first: no page content sits under it, it rides on top of the on-screen keyboard, and a selection it (or the keyboard) would hide scrolls into view above it. Nothing pops up over it after an action: a heading just added, a section moved or a field changed shows on the page, and the top bar's Undo takes it back.
+- Files: `src/components/edit-bar.ts`, `src/components/edit-bar.css`, `src/components/edit-bar-placement.ts`, `src/controllers/page-structure-controller.ts`, `src/announce.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-edit-bar.spec.ts`
 - Steps: `scripts/agents/shots/features/F-bar-01.json`

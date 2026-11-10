@@ -377,7 +377,7 @@ test("a description saved in File details shows on the placed image, and usage n
   await expect(library.getByText("Not described yet", { exact: true })).toBeVisible();
   await library.getByLabel("Description", { exact: true }).fill("A quiet green placeholder");
   await library.getByRole("button", { name: "Save details", exact: true }).click();
-  await expect(page.locator(".editor-toast__text")).toContainText("Details saved as a draft");
+  await expect(page.locator("#status")).toContainText("Details saved as a draft");
   await expect(page.frameLocator(".native-preview-frame").locator(".hero-image")).toHaveAttribute("alt", "A quiet green placeholder");
   await expect.poll(() => records(page)).toContain("A quiet green placeholder");
   await expect(library.getByLabel("Description", { exact: true })).toHaveValue("A quiet green placeholder");
@@ -436,7 +436,7 @@ test("a save that changes nothing on disk tidies the name and closes the Save ba
   await name.fill("studio-desk.svg ");
   await expect(library.getByText("Unsaved changes", { exact: true })).toBeVisible();
   await library.getByRole("button", { name: "Save details", exact: true }).click();
-  await expect(page.locator(".editor-toast__text")).toContainText("Details saved as a draft");
+  await expect(page.locator("#status")).toContainText("Details saved as a draft");
   await expect(name).toHaveValue("studio-desk.svg");
   await expect(library.getByRole("button", { name: "Save details", exact: true })).toBeHidden();
   await expect(library.getByRole("button", { name: "Back", exact: true })).toBeFocused();
@@ -468,13 +468,12 @@ test("on a phone, File details is its own screen with Back, the preview first an
   await expect(menu.getByRole("menuitem", { name: "Remove…", exact: true })).toHaveClass(/row-menu__danger/);
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
-  await expect(library.getByRole("checkbox", { name: "Always keep", exact: true })).toHaveAccessibleDescription("Never suggested for clean-up. For files used outside the site.");
   // After a change, Save stays pinned in view (slices 104, 123); scrolled to the end, the buttons follow the fields and cover none of them.
   await library.getByRole("checkbox", { name: "Always keep", exact: true }).check();
   const save = library.getByRole("button", { name: "Save details", exact: true });
   await expect(save).toBeInViewport({ ratio: 1 });
   await library.evaluate(element => { element.scrollTop = element.scrollHeight; });
-  const [saveBox, keepBox] = await Promise.all([save.boundingBox(), library.getByText("Never suggested for clean-up", { exact: false }).boundingBox()]);
+  const [saveBox, keepBox] = await Promise.all([save.boundingBox(), library.getByRole("checkbox", { name: "Always keep", exact: true }).boundingBox()]);
   expect(saveBox!.y).toBeGreaterThanOrEqual(keepBox!.y + keepBox!.height);
   expect(saveBox!.height).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -556,7 +555,7 @@ test("To check lists an agent's description; OK clears the mark, and it stays cl
   await expect(agentMark(page, "images/placeholder.svg")).toBeVisible();
   await expect(agentMark(page, "images/studio-desk.svg")).toHaveCount(0);
   await details(page, "images/placeholder.svg");
-  await expect(library.getByText("By agent: press Looks right in To check, or change the words here.", { exact: true })).toBeVisible();
+  await expect(library.locator(".media-library__by-agent")).toBeVisible();
   await library.getByRole("button", { name: "Back", exact: true }).click();
 
   await toCheck(page, "To check (1)");

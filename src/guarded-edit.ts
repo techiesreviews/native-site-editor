@@ -22,7 +22,6 @@
 // workspace port below is the editor's primitives; the commit's rules (branch
 // reads, drafts each side, history, the page reopened) live in this module.
 
-import type { AnnounceAs } from "./components/toast-rules";
 import type { NativeSite } from "../shared/native-project";
 import type { DraftScope, SavedDraft } from "./drafts";
 import type { DraftAccess, MovableFile } from "./file-changes";
@@ -80,8 +79,6 @@ export interface Planned {
    * agent change undone (ticket am-15). Written as given, beside no other writes; the page is opened after (`open`).
    */
   restore?: Map<string, SavedDraft | undefined>;
-  /** The step is said in the status line only, no toast: the control that asked for it shows its result (ticket am-15). */
-  quiet?: true;
   /**
    * Selected once the preview renders the new bytes (`after`, flashed with `flash`); Undo selects `before`, Redo `after`.
    * `historyOnly`: the step itself leaves the selection where the user has it by then (the caller decides), and
@@ -214,8 +211,8 @@ export interface EditorWorkspace {
   status(): string;
   /** Selects `request` once the preview renders it (flashed with `flash`, revealed centred with `reveal`); undefined cancels. */
   select(request: (NodeRef & { source?: string }) | undefined, flash?: string, reveal?: boolean): void;
-  /** Said and shown as the toast; `undo` adds Undo for the step just recorded in that file's history, "quiet" is said only. */
-  announce(message: string, as?: AnnounceAs): void;
+  /** Said in the status line only: the change shows where it happened. */
+  announce(message: string): void;
   /** A refusal said on screen (`history`: an Undo or Redo refused). */
   refuse(message: string, history?: "undo" | "redo"): void;
   error(error: unknown): void;
@@ -423,7 +420,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     }
     group = key === undefined ? undefined : { key, path };
     // A typing group says each keystroke's step; only a whole step shows, with its Undo.
-    ws.announce(planned.done, key === undefined ? { undo: path } : "quiet");
+    ws.announce(planned.done);
     return { ok: true, status: "applied" };
   }
 
@@ -496,7 +493,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     });
     const error = await commit({
       reads: reads.sources, edits: writes!.edits, creates: writes!.creates, deletes: writes!.deletes, moves: writes!.moves, anchor,
-      ...writes!.restore.size ? { restore: writes!.restore } : {}, ...result.quiet ? { quiet: true as const } : {},
+      ...writes!.restore.size ? { restore: writes!.restore } : {},
       open: result.open, focus: result.focus, done: result.done, undone: result.undone,
       current: () => !(current() ?? places.changed()), recorded: () => { recorded = true; }, selection: { before: result.select?.before, after },
       ...options.finish ? { elsewhere: away } : {}, ...again ? { again } : {},

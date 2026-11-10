@@ -34,8 +34,8 @@ test("rename updates references and metadata in one Undo", async ({ page, baseUR
   await panel.getByRole("button", { name: "Save details", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("Studio portrait");
   await panel.getByLabel("File name", { exact: true }).fill("garden-desk.svg");
-  // Not on GitHub Pages: the forwarding hint, not the GitHub Pages note (slice 81).
-  await expect(panel.getByText("Links from other sites to the old name forward to the new one, on hosts that read the site's _redirects file.", { exact: true })).toBeVisible();
+  // Not on GitHub Pages: no forwarding explainer and no GitHub Pages note (slice 81).
+  await expect(panel.getByText("Links from other sites to the old name forward to the new one, on hosts that read the site's _redirects file.", { exact: true })).toHaveCount(0);
   await expect(panel.getByText("GitHub Pages doesn't forward old addresses, so links to the old one will stop working.", { exact: true })).toHaveCount(0);
   await panel.getByRole("button", { name: "Save details", exact: true }).click();
   // File details reopens on the renamed file; Back shows its tile.

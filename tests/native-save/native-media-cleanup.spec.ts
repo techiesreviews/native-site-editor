@@ -57,7 +57,7 @@ test("Clean up in More counts unused files; neither the Media tab nor the page b
   await expect(kept.getByRole("img", { name: "Always keep", exact: true })).toBeVisible();
   await expect(pane(page).locator('.media-library__card[data-path="images/spare.svg"] .media-library__keep')).toHaveCount(0);
   await kept.getByRole("button", { name: "Details for images/kept.svg", exact: true }).click();
-  await expect(pane(page).getByText("Always keep: Clean up never suggests this file.", { exact: true })).toBeVisible();
+  await expect(pane(page).locator(".media-library__keep-note")).toHaveText("Always keep");
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
 
   // Clean up in More shows the same count and opens the review; the Always keep file is not suggested.
@@ -148,7 +148,7 @@ test("removing a used file warns with its page, then allows; after publishing, R
   await pane(page).getByRole("button", { name: "More for this file", exact: true }).click();
   await page.getByRole("menuitem", { name: "Remove…", exact: true }).click();
   await pane(page).getByRole("button", { name: "Remove file", exact: true }).click();
-  await expect(page.locator(".editor-toast__text")).toContainText("Removed placeholder.svg. Restore it from More → Recently removed.");
+  await expect(page.locator("#status")).toContainText("Removed placeholder.svg. Restore it from More → Recently removed.");
   await expect(pane(page).locator('.media-library__card[data-path="images/placeholder.svg"]')).toHaveCount(0);
 
   await publishButton(page).click();
@@ -166,7 +166,7 @@ test("removing a used file warns with its page, then allows; after publishing, R
   await expect(row).toContainText("Removed today · 30 days left");
   await expect.poll(() => row.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   await row.getByRole("button", { name: "Restore placeholder.svg", exact: true }).click();
-  await expect(page.locator(".editor-toast__text")).toContainText("Restored placeholder.svg to images/placeholder.svg.");
+  await expect(page.locator("#status")).toContainText("Restored placeholder.svg to images/placeholder.svg.");
   await expect(row).toHaveCount(0);
   await expect(pane(page).getByText(/^Nothing removed in the last 30 days\./)).toBeVisible();
   await expect.poll(shown).toBeGreaterThan(0);
@@ -216,7 +216,7 @@ test("unused images appear in Clean up; removing them puts them in Recently remo
   await pane(page).getByRole("button", { name: "Remove 2 files", exact: true }).click();
   await expect(pane(page).getByRole("heading", { name: /^Clean up( · .+)?$/ })).toBeFocused();
   await expect(pane(page).locator(".media-cleanup__notice")).toHaveText("Removed 2 files.Undo");
-  await expect(page.locator(".editor-toast__text")).toContainText("Removed 2 files. They stay in Recently removed for 30 days.");
+  await expect(page.locator("#status")).toContainText("Removed 2 files. They stay in Recently removed for 30 days.");
   await expect(pane(page).locator('.media-library__card[data-path="images/spare.svg"]')).toHaveCount(0);
 
   // It waits in Recently removed.
@@ -230,7 +230,7 @@ test("unused images appear in Clean up; removing them puts them in Recently remo
   // More's item has no note, but the screen still says why it is empty.
   await expect(pane(page).getByText("Nothing to clean up: every file is used or marked Always keep.", { exact: true })).toBeVisible();
   await pane(page).getByRole("button", { name: "Undo", exact: true }).click();
-  await expect(page.locator(".editor-toast__text")).toContainText("Brought back 2 files to their addresses.");
+  await expect(page.locator("#status")).toContainText("Brought back 2 files to their addresses.");
   await expect(pane(page).getByRole("button", { name: "Undo", exact: true })).toHaveCount(0);
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
   await expectCount(page, 2);

@@ -79,16 +79,14 @@ test("an agent asks in an orange pin, the user answers in the pin, the agent goe
     await expect(undo).toBeEnabled();
     await expect(undo).toBeFocused();
     await expect(heading).toHaveText("Native preview");
-    const toasts = page.locator(".editor-toast");
-    await expect(toasts.filter({ hasText: "changed since" })).toBeHidden();
+    await expect(page.locator(".editor-toast")).toHaveCount(0);
     await page.keyboard.press("Escape");
     // The agent takes that one back: said in the status line only, no toast. Now the pin's Undo puts the heading
     // back, and the button says so, again with no toast.
     expect((await call("discard_change", { change: "on-top" })).state).toBe("applied");
     await expect(lead).toContainText("Edit plain HTML");
     await expect(page.locator("#status")).toHaveText("Undid Copy editor's change.");
-    const undid = toasts.filter({ hasText: "Undid" });
-    await expect(undid).toBeHidden();
+    await expect(page.locator(".editor-toast")).toHaveCount(0);
     await pin.click();
     await undo.click();
     await expect(heading).toHaveText(HEADING);
@@ -96,7 +94,6 @@ test("an agent asks in an orange pin, the user answers in the pin, the agent goe
     // The focus stays in the card: on Clear, as Undone cannot take it.
     await expect(done.getByRole("button", { name: "Clear" })).toBeFocused();
     await expect(page.locator("#status")).toHaveText("Undid Copy editor's change.");
-    await expect(undid).toBeHidden();
     expect((await call("read_file", { path: "index.html" })).content).toContain(HEADING);
     // With the card still open, the editor's Undo takes that undo back: the agent's heading again, and the same
     // card offers Undo again without being opened anew. (Ctrl+Z inside a dialog is the dialog's: the focus leaves

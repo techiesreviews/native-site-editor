@@ -1,3 +1,4 @@
+import { refuse } from "../components/refusal-note";
 import { mediaStorageName } from "./media-storage";
 import { WARN_IMAGE_BYTES, uploadImageType } from "../uploads";
 import { createBusyLock } from "./media-busy-lock";
@@ -26,7 +27,6 @@ import {
 } from "./media-library-refresh";
 import "./media-picker.css";
 import "./media-detail.css";
-import { say, type ToastAction } from "../components/toast";
 import type { MediaCleanUpMount, MediaHeldFiles, MediaImportRequest, MediaLibrary, MediaPickerHost, MediaPickerOptions } from "./media-picker";
 const CANCELLED = "This file was cancelled. Choose another image.";
 /** How long a just-added tile wears its ring (the CSS animation's length). */
@@ -229,9 +229,10 @@ export function createMediaLibraryView(
     if (!alive) return;
     const rest = modal && saveHeld ? adding.take() : [], unfinished = modal && saveHeld ? adding.cancelPending() : 0;
     const notAdded = unfinished ? ` ${filesLabel(unfinished)} still being prepared ${unfinished === 1 ? "was" : "were"} not added.` : "";
+    // The picker closes with the files still being prepared: the note stays by the editor's refusal note, not in a screen that is gone.
     if (rest.length) void adapter.import(rest.map(entry => entry.request)).then(
-      paths => options.report?.announce(`Added ${paths.join(", ")}.${notAdded}`), error => options.report?.error(error));
-    else if (notAdded) options.report?.announce(notAdded.trim());
+      paths => { options.report?.announce(`Added ${paths.join(", ")}.`); if (notAdded) refuse(notAdded.trim()); }, error => options.report?.error(error));
+    else if (notAdded) refuse(notAdded.trim());
     alive = false; sheet.version++; closeSheetWork(sheet, Boolean(modal)); listeners.abort(); stopUsage?.(); stopCleanUp?.(); usageDialog?.close(); adding.dispose();
     observers.forEach((observer) => observer.disconnect()); observers.clear(); tiles.clear(); cache.dispose();
     more.close(false); more.element.remove();
@@ -241,8 +242,12 @@ export function createMediaLibraryView(
   modal?.addEventListener("close", closed, { once: true });
   /** A warning or refusal, inline under the screen it is about. */
   function tell(text: string) { if (alive) message.textContent = text; }
-  /** A result: said and shown as the editor's toast, which outlasts the screen. */
-  function done(text: string, undo?: ToastAction) { message.textContent = ""; say(text, undo); }
+  /** A result: said in #status only; the screen shows the change itself, and the line clears. */
+  function done(text: string) {
+    message.textContent = "";
+    const status = document.getElementById("status");
+    if (status) status.textContent = text;
+  }
   function task(work: () => Promise<void>, lock = true, canCancel = false) {
     return busyLock.task(work, lock, canCancel);
   }

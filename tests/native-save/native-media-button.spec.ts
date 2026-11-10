@@ -74,7 +74,6 @@ test("Media on a picture opens the Image popup; on an empty picture spot it adds
 test("a looping video in a picture spot: Replace with another video, then with a picture, keeps the spot", async ({ page }) => {
   const popup = await media(page, /^Video/, "Video", 2);
   await expect(popup.getByRole("switch", { name: "Loop silently", exact: true })).toBeDisabled();
-  await expect(popup.getByText("A video in a picture spot always loops silently.")).toBeVisible();
   await popup.getByRole("button", { name: "Replace", exact: true }).click();
   await expect(popup).toHaveCount(0);
   await choose(page, "Choose image or video", "media/other.mp4", "Use video");

@@ -4,10 +4,11 @@ import "./row-menu.css";
 
 export interface MenuItem {
   label: string;
-  run: () => void;
+  /** `opener`: the button the menu was opened from, if any (a copied path shows its check there). */
+  run: (opener?: HTMLElement) => void;
   /** Shown beside the label, as a hint (a key such as F2). */
   shortcut?: string;
-  /** Why the action is unavailable: the item shows it and does nothing (`true`: no reason shown). */
+  /** The action is unavailable: the item is greyed out and does nothing. The text is the reason, for a screen that has its own place for it (Clean up's empty state); the menu never shows it. */
   disabled?: string | true;
   /** A choice among its section's items: shown checked or not (`menuitemradio`). */
   checked?: boolean;
@@ -23,8 +24,6 @@ export interface MenuItem {
  * Tab close it and return focus to where it opened from. Positioned fixed in
  * the viewport, so it works inside the explorer popover (the top layer).
  */
-let noteIds = 0;
-
 export function createRowMenu(host: HTMLElement, onClose?: () => void) {
   const element = node("div", "pages-menu row-menu");
   element.setAttribute("role", "menu");
@@ -65,21 +64,13 @@ export function createRowMenu(host: HTMLElement, onClose?: () => void) {
       for (const entry of entries) {
         const item = button("", () => {
           if (entry.disabled) return;
+          const from = opener;
           close(false);
-          entry.run();
+          entry.run(from);
         }, entry.danger ? "pages-menu__item row-menu__danger" : "pages-menu__item");
         item.append(node("span", "", entry.label));
-        if (entry.disabled) {
-          // Still focusable, as a disabled menu item should be, with its reason.
-          item.setAttribute("aria-disabled", "true");
-          if (entry.disabled !== true) {
-            item.title = entry.disabled;
-            const note = node("span", "row-menu__note", entry.disabled);
-            note.id = `row-menu-note-${++noteIds}`;
-            item.setAttribute("aria-describedby", note.id);
-            item.append(note);
-          }
-        }
+        // Still focusable, as a disabled menu item should be; it says nothing about why (S3).
+        if (entry.disabled) item.setAttribute("aria-disabled", "true");
         if (entry.shortcut) {
           const hint = node("span", "row-menu__shortcut", entry.shortcut);
           hint.setAttribute("aria-hidden", "true");

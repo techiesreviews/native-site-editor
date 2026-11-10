@@ -126,7 +126,7 @@ export function mediaDetailFormState(controls: { checkbox: boolean; checked: boo
 }
 
 /** The ⋯ menu of a file in File details (slices 108, 123): Copy path, Download, then Remove… last, in red. */
-export function mediaFileMenu(run: { copy: () => void; download: () => void; remove: () => void }) {
+export function mediaFileMenu(run: { copy: (opener?: HTMLElement) => void; download: () => void; remove: () => void }) {
   return [
     { label: "Copy path", run: run.copy },
     { label: "Download", run: run.download },

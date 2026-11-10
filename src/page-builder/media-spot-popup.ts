@@ -23,7 +23,7 @@ import type { ImagePopupHost } from "./image-popup";
 import type { MediaWorkspaceContext } from "./media-workspace";
 import { actionButton, mountMediaPopupFrame, popupRow } from "./media-popup-frame";
 import { inPictureSpot, provedWorkspace, mediaSpotAddress, mediaSpotFile, mediaSpotKind, mediaSpotTitle, mediaSpotTitleEdit, type MediaSpotKind } from "./media-spot-rules";
-import { PICTURE_SPOT_MESSAGE, readLooping } from "./looping-video";
+import { readLooping } from "./looping-video";
 import { mediaResolvePath } from "./media-references";
 import { decodeHtmlEntities } from "./html-entities";
 import { mediaAttribute } from "./media-attributes";
@@ -127,8 +127,7 @@ export async function openMediaSpotPopup(options: MediaSpotPopupOptions) {
   const replaceButton = actionButton("image-popup__link", () => void replace());
   replaceButton.append(svg(imageIcon), "Replace");
   replaceButton.title = spot ? "Choose a picture or another video for this spot" : `Choose other media for this place`;
-  const hint = node("p", "image-popup__hint", kind === "video" ? spot ? "Replace takes a picture or another video." : "Pause at a moment for its still picture." : "");
-  const under = node("div", "image-popup__under"); under.append(hint, replaceButton);
+  const under = node("div", "image-popup__under"); under.append(replaceButton);
   const fileCell = node("div"); fileCell.append(well, under);
   const fileRow = popupRow(TITLES[kind] === "Online video" ? "Video" : kind === "download" ? "File" : TITLES[kind], fileCell, "image-popup__row--picture");
 
@@ -173,8 +172,7 @@ export async function openMediaSpotPopup(options: MediaSpotPopupOptions) {
     await createVideoPlaces(ports, options.workspaceContext, options.load).toggleLooping(target.path, target.node, at.source, on);
     return on ? "Loops silently, over and over." : "Plays with sound when pressed.";
   }));
-  const loopNote = node("span", "media-spot__note");
-  const loopLine = node("label", "media-spot__line"); loopLine.append(loop, loopNote);
+  const loopLine = node("label", "media-spot__line"); loopLine.append(loop);
 
   // Subtitles: the file's own, everywhere it is used (File details' rule, slice 66).
   const chooser = node("input"); chooser.type = "file"; chooser.accept = ".vtt,.srt"; chooser.hidden = true;
@@ -210,7 +208,7 @@ export async function openMediaSpotPopup(options: MediaSpotPopupOptions) {
     await (await workspace()).onlineVideoServiceBar(online, serviceBar.checked);
     return serviceBar.checked ? "Vimeo's own bar shows on every page with this video." : "The site's own bar shows on every page with this video.";
   }));
-  const serviceLine = node("label", "media-spot__line"); serviceLine.append(serviceBar, node("span", "media-spot__note", "Instead of the site's bar"));
+  const serviceLine = node("label", "media-spot__line"); serviceLine.append(serviceBar);
 
   const done = actionButton("image-popup__button image-popup__button--primary", () => close());
   done.textContent = "Done";
@@ -236,7 +234,6 @@ export async function openMediaSpotPopup(options: MediaSpotPopupOptions) {
       list.push(popupRow("Still picture", stillLine));
       loop.checked = readLooping(tag);
       loop.disabled = spot;
-      loopNote.textContent = spot ? PICTURE_SPOT_MESSAGE : "Plays by itself, without sound";
       list.push(popupRow("Loop silently", loopLine));
     }
     if (kind === "video" && file) {
