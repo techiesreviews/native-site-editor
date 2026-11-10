@@ -340,9 +340,9 @@ its number unused.
 - Steps: none yet (needs a drag or a click on the resize handle, which steps cannot grab)
 
 ### F-pages-17 Results show where they happened
-- Try: In Files, open a file's ⋯ and press Copy path; open the project menu and press Download site; in Media open File details, ⋯, Copy path; open a Page structure row's ⋯ right after the page changed.
-- Good: There are no toasts (S4). The ⋯ button that copied a path turns into a check for a moment, then is the dots again; Download site reads "Preparing…" on its own button until the files are ready; a menu item that cannot run says why in a note by the button it was opened from. Everything is still said in the hidden status line, so screen readers hear it; Undo is the top bar's (and the one beside a replaced picture in File details).
-- Files: `src/announce.ts`, `src/ui/done-mark.ts`, `src/components/row-menu.ts`, `src/components/site-actions.ts`, `src/components/refusal-note.ts`, `src/pages-and-files-explorer.ts`, `src/page-builder/media-library-details.ts`
+- Try: In Files, open a file's ⋯ and press Copy path; in Media open File details, ⋯, Copy path; open a Page structure row's ⋯ right after the page changed.
+- Good: There are no toasts (S4). The ⋯ button that copied a path turns into a check for a moment, then is the dots again; a menu item that cannot run says why in a note by the button it was opened from. Everything is still said in the hidden status line, so screen readers hear it; Undo is the top bar's (and the one beside a replaced picture in File details).
+- Files: `src/announce.ts`, `src/ui/done-mark.ts`, `src/components/row-menu.ts`, `src/components/refusal-note.ts`, `src/pages-and-files-explorer.ts`, `src/page-builder/media-library-details.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-feedback-in-place.spec.ts`
 - Steps: none yet (the check and the busy label last a moment; steps cannot catch them)
