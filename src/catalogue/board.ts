@@ -521,8 +521,8 @@ export function startBoard(root: HTMLElement) {
       note.append(link, " to approve.");
       children.push(note);
     } else if (save?.note) children.push(el("p", "cat-approve__note cat-approve__note--problem", `Not saved: ${save.note}`));
-    // A link that names another repository says where Approve saves.
-    if (target.repo !== DEFAULT_TARGET.repo || target.branch !== DEFAULT_TARGET.branch)
+    // A link that names a repository says where Approve saves (approvalTarget returns DEFAULT_TARGET itself otherwise).
+    if (target !== DEFAULT_TARGET)
       children.push(el("p", "cat-approve__note", `Saves to ${target.repo} · ${target.branch}`));
     const review = section("Review", ...children);
     review.dataset.review = "";
