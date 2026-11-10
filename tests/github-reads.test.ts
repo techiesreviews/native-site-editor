@@ -96,7 +96,8 @@ test("Try again sits on the failed panel the caller drew, shows busy once presse
   again.click();
   assert.equal(retried, 1);
   assert.equal(again.disabled, true);
-  assert.equal(again.textContent, "Trying again");
+  assert.equal(again.className, "button primary");
+  assert.equal(again.children.map(child => child.className + child.textContent).join("|"), "login-spinner|Trying again");
   again.click();
   assert.equal(retried, 1);
 });
@@ -110,13 +111,9 @@ test("with the explorer open, which covers the failed panel, the notice placed i
   assert.equal(notice().children.at(-1)!.textContent, "Try again");
 });
 
-test("a failure whose caller drew no failed panel (a loading line may be showing) puts Try again in the notice", () => {
+test("a failure with no panel passed puts Try again in the notice", () => {
   const { reads } = setup();
-  // "Opening your repository…" is on show, not drawn by this failure: nothing is added to it.
-  const loading = new FakeElement("p");
-  loading.textContent = "Opening your repository…";
   reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => {});
-  assert.equal(loading.children.length, 0);
   assert.equal(notice().children.at(-1)!.textContent, "Try again");
 });
 

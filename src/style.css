@@ -494,9 +494,11 @@ h1 {
   padding: 40px;
   font-size: var(--type-base);
 }
-/* Try again on a failed panel: its own line under the words. */
+/* Try again on a failed panel: its own line under the words, busy with a spinner while the open repeats. */
 .empty-message .button {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-block-start: 12px;
 }
 .directory-summary {

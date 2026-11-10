@@ -63,7 +63,7 @@ function fixture({ remember = true, early }: { remember?: boolean; early?: Early
     reads.push({ path, params, early, answer });
     return answer.promise;
   };
-  const box = { replaceChildren: (...nodes: (Node | string)[]) => { shown.content = nodes.join(""); } };
+  const box = { replaceChildren: (...nodes: Pick<HTMLElement, "textContent">[]) => { shown.content = nodes.map(node => node.textContent).join(""); } };
   const branchSelect = { disabled: false, value: "" }, refreshButton = { disabled: false };
   const ports = {
     appStore: createAppStore(createDraftStore()),
@@ -97,7 +97,9 @@ function fixture({ remember = true, early }: { remember?: boolean; early?: Early
     readFile: async () => "",
     storage: () => local,
     element: () => ({ textContent: "", title: "" }),
-    node: (_tag, _className, text) => text ?? "",
+    // A partial element: only the words are read back.
+    // eslint-disable-next-line no-restricted-syntax -- a partial DOM fake
+    node: (_tag, _className, text) => ({ textContent: text ?? "" }) as HTMLElement,
     options: (select, values) => { select.value = values[0]?.value ?? ""; },
     status: (message) => { shown.status = message; },
     settleStatus: (message) => { shown.status = message; },
