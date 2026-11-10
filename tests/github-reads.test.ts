@@ -121,6 +121,16 @@ test("with the explorer open, which covers the failed panel, the notice placed i
   assert.equal(retried, 2, "the panel's own button runs the same retry");
 });
 
+test("with the explorer open and no panel drawn, the notice holds exactly one Try again, which runs the retry once", () => {
+  const { reads } = setup();
+  explorerOpen.current = true;
+  let retried = 0;
+  reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => { retried++; });
+  assert.equal(notice().children.filter(child => child.textContent === "Try again").length, 1);
+  notice().children.at(-1)!.click();
+  assert.equal(retried, 1);
+});
+
 test("the keyboard keeps its place: a press keeps focus on the button, and the button a failed retry draws takes it", () => {
   const { reads } = setup();
   const failed = new FakeElement("p");
