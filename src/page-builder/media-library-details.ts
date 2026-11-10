@@ -104,10 +104,12 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
     // Pressed after a newer change, the action itself says why it takes nothing back. The button leaves the page, so the
     // keyboard's place moves to the picture first.
     view.tabIndex = -1;
-    const take = button("Undo", () => {
+    const take = button("", () => {
       sheet.undo = undefined; view.focus(); take.remove(); held.run();
     }, "button secondary media-detail__undo");
-    take.prepend(icon("undo", 16));
+    // As the top bar's Undo: the icon alone, named for the tooltip and the screen reader.
+    take.append(icon("undo", 16));
+    take.title = "Undo"; take.setAttribute("aria-label", "Undo");
     view.append(take);
   }
   layout.append(view, info);

@@ -39,5 +39,5 @@ export function createAnnounce(ports: AnnouncePorts) {
       else refuse("Newer changes came after this one. Use Undo at the top to take them back first.");
     } };
   }
-  return { announce, showToast, undoAction };
+  return { announce, undoAction };
 }

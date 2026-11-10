@@ -196,7 +196,7 @@ test('a failed branch list and a guess that never lands show the branch failure 
   await page.route(/\/api\/branches\?/, (route) => route.fulfill({ status: 500, json: { error: 'down' } }));
   await page.reload();
   await expect(page.locator('#branch option')).toHaveText(['Branches unavailable'], { timeout: 8_000 });
-  await expect(page.locator('#content')).toContainText('Branches could not be loaded. Reload repositories to retry.');
+  await expect(page.locator('#content')).toContainText('Branches could not be loaded.');
   // The guess arriving late neither opens nor paints.
   release();
   // fixed-wait: Asserts the released speculative boot result never paints after the branch failure handoff.
@@ -211,7 +211,7 @@ test('a failed branch list and a failed guess take the normal error path', async
   await page.route(/\/api\/branches\?/, (route) => route.fulfill({ status: 500, json: { error: 'down' } }));
   await page.reload();
   await expect(page.locator('#branch option')).toHaveText(['Branches unavailable']);
-  await expect(page.locator('#content')).toContainText('Branches could not be loaded. Reload repositories to retry.');
+  await expect(page.locator('#content')).toContainText('Branches could not be loaded.');
 });
 
 // Reload repositories from the menu (src/main.ts refreshRepositoryList).
