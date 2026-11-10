@@ -46,7 +46,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Tests: `tests/tokens-from-framework.test.ts` (block reproduced byte for byte, hand edit, changed export and a re-declared generated name fail, rem conversion and the pill rule, bad exports refused, the export matching the settings' steps with no Framework checkout, the padding tokens still 6 px and 12 px, the CLI check, and a re-run of the Framework export that compares only the custom properties and skips when TechiesTools is absent). `docs/editor-colors.md` explains the set and how to change a step.
 - Validation: `kit unit --affected` `RESULT: ok unit 12/12 (1 files)`, with `✔ the Framework's own export of the committed settings has the committed custom properties` passing (`skipped 0`) and `git -C ~/Projects/TechiesTools status --porcelain` empty afterwards; `npm run check` ok (`RESULT: ok tokens in step`); `npm run lint` ok (0 failures); `kit size` `RESULT: ok size boot 355 KB (±0 KB) vs dev@81104b7, budget 355 KB`; `kit shots editor files structure --compare dev` at 390 and 1280, light and dark: `RESULT: ok shots compare dev@81104b7 … 58 files` (the two layout notes it lists are tap-target notes on screens this change does not touch).
 - `kit specs --affected` `RESULT: ok specs 1/1 passed`. Not run: the one-offs count (slice 04 has not landed).
-- Feature list: no change (no visible change; the new tokens are not used by any screen yet, and the two padding tokens keep their values).
+- Feature list: no change (no visible change; the new tokens are not used by any screen yet, and the two padding tokens keep their values)
 
 ### Review follow-up (2026-11-10)
 
