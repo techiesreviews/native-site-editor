@@ -217,7 +217,10 @@ test("Close saves every ready file once, cancels unfinished preparation, and pla
   await expect(picker.locator('.media-library__pending[data-state="preparing"]')).toHaveCount(1);
   await picker.getByRole("button", { name: "Close", exact: true }).click();
   await expect(picker).toBeHidden();
-  await expect(page.locator("#status")).toContainText("1 file still being prepared was not added");
+  // Screen readers hear both in one sentence (the live region ends with it), and the note stays on screen.
+  await expect(page.locator("#status")).toHaveText(/^Added media\/images\/added\.svg\. 1 file still being prepared was not added\.$/);
+  await expect(page.locator(".refusal-note")).toHaveText("1 file still being prepared was not added.");
+  await expect(page.locator(".editor-toast")).toHaveCount(0);
   expect(await effectiveSource(page, baseURL, "index.html")).toBe(before);
   expect(await storedDraft(page, "media/images/unfinished.webp")).toBeUndefined();
   await expect.poll(() => storedDraft(page, "media/images/added.svg")).toBeDefined();

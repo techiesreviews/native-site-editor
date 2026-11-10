@@ -12,11 +12,16 @@ export interface AnnouncePorts {
   editorModule: Pick<typeof sourceEditor, "latestUndo" | "runVisualHistory">;
 }
 
+/** The one writer of the #status live region: `status` is the element (found in the page when not given). */
+export function say(text: string, status: { textContent: string | null } | null = document.getElementById("status")) {
+  if (status) status.textContent = text;
+}
+
 export function createAnnounce(ports: AnnouncePorts) {
   const { element, editorModule } = ports;
   // Said in #status only: the change shows where it happened, and the top bar's Undo takes it back.
   function announce(text: string) {
-    element("status").textContent = text;
+    say(text, element("status"));
   }
   // The Undo of the newest step in `path`'s history, bound to that step now: once another is newer, it refuses.
   function undoAction(path: string): UndoAction | undefined {

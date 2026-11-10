@@ -47,8 +47,8 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
   list.setAttribute("role", "listbox");
   list.setAttribute("aria-label", "Pages");
   const foot = node("div", "card-link__foot");
-  foot.append(...(options.look ? [options.look] : []));
-  box.append(input, list, ...(options.note ? [node("p", "card-look-note", options.note)] : []), foot);
+  if (options.look) foot.append(options.look);
+  box.append(input, list, ...(options.note ? [node("p", "card-look-note", options.note)] : []), ...(options.look ? [foot] : []));
   box.hidden = true;
   pane.append(box);
 

@@ -1,6 +1,6 @@
 import { icon } from "../icons";
 
-/** Shows a finished action on the button that ran it: its icon turns into a check for a moment. Anything else is left as it is. */
+/** Shows a finished action on the menu button that ran it (`aria-haspopup`): its icon turns into a check for a moment. Anything else, such as a row a right-click opened the menu from, is left as it is on purpose: it has no icon to turn. */
 export function markDone(control: HTMLElement | undefined, ms = 1600) {
   if (!control?.isConnected || !control.getAttribute("aria-haspopup") || control.dataset.done !== undefined) return;
   const size = Number(control.querySelector("svg")?.getAttribute("width")) || 16;

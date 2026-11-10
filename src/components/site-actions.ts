@@ -66,6 +66,8 @@ export function mountSiteActions(options: SiteActionsOptions) {
   liveSite.hidden = true;
   const download = button("Download site", () => void downloadSite(), "text-button repository-menu__action site-actions__download");
   download.hidden = true;
+  // Busy on its own button, so the menu stays open while it is (as Edit together's Copy link does).
+  download.dataset.keepOpen = "";
   download.title = "Download the site's files as they are in the editor, unsaved changes included, as a .zip";
   options.menuHost.replaceChildren(liveSite, download);
 

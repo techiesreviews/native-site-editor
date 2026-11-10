@@ -98,6 +98,10 @@ test("Files, ⋯, Copy path: the check shows on that ⋯ button, and the live re
   expect(await page.evaluate(() => (window as Window & { copied?: string }).copied)).toBe("index.html");
   await expect(more).toHaveAttribute("data-done", "");
   expect(await more.innerHTML()).not.toBe(dots);
+  // The pointer has left the row (it was over the menu item): the check is still seen, not faded out with the overlay.
+  await page.mouse.move(5, 5);
+  await expect(more).toBeVisible();
+  await expect(more).toHaveCSS("opacity", "1");
   await expect(page.locator("#status")).toHaveText("Copied index.html");
   await expect(toast(page)).toHaveCount(0);
   // It goes back to the dots by itself.
@@ -164,4 +168,51 @@ test("Download site: the button itself reads Preparing… and is busy until the 
   await expect(download).toBeEnabled();
   await expect(download).not.toHaveAttribute("aria-busy");
   await expect(page.locator(".refusal-note")).toHaveText("The site could not be downloaded: stopped for the test");
+});
+
+test("Files, ⋯, Copy path from the keyboard: the check is seen on the ⋯ button too", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await stubClipboard(page);
+  const explorer = page.locator("#explorer");
+  await page.locator("#explorer-toggle").click();
+  await explorer.getByRole("tab", { name: "Files", exact: true }).click();
+  const more = explorer.getByRole("button", { name: "Actions for index.html", exact: true });
+  await more.focus();
+  await page.keyboard.press("Enter");
+  const menu = page.getByRole("menu", { name: "Actions for index.html" });
+  await expect(menu).toBeVisible();
+  const items = menu.getByRole("menuitem");
+  // Arrow down to Copy path, the last item of a file's menu.
+  for (let step = 0; step < (await items.count()) - 1; step++) await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem", { name: "Copy path", exact: true })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(more).toHaveAttribute("data-done", "");
+  await page.mouse.move(5, 5);
+  await expect(more).toBeVisible();
+  await expect(more).toHaveCSS("opacity", "1");
+  await expect(page.locator("#status")).toHaveText("Copied index.html");
+});
+
+test("Download site pressed in the real project menu: the menu stays open and the button reads Preparing… until the files are ready", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  // The zip code loads when the button is pressed: held, the files are not ready.
+  let release: (() => void) | undefined;
+  const held = new Promise<void>(done => { release = done; });
+  await page.route(/\/src\/zip\.ts|\/zip-[\w-]+\.js/, async route => { await held; await route.continue().catch(() => undefined); });
+  await page.locator(".repository-menu__trigger").click();
+  const menu = page.locator("#repository-actions");
+  await expect(menu).toBeVisible();
+  const download = menu.locator(".site-actions__download");
+  const saved = page.waitForEvent("download");
+  // The project menu hides its site actions for now (repository-menu.ts `showSiteActions`), so the press is made on the DOM:
+  // what is checked is that the menu's own click handler leaves the menu open around the busy button.
+  await download.evaluate(button => (button as HTMLElement).click());
+  await expect(download).toHaveText("Preparing…");
+  await expect(menu).toBeVisible();
+  await expect(download).toHaveAttribute("aria-busy", "true");
+  release!();
+  await saved;
+  await expect(download).toHaveText("Download site");
+  await expect(download).not.toHaveAttribute("aria-busy");
+  await expect(toast(page)).toHaveCount(0);
 });

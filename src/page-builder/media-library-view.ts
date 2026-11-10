@@ -1,4 +1,5 @@
 import { refuse } from "../components/refusal-note";
+import { say } from "../announce";
 import { mediaStorageName } from "./media-storage";
 import { WARN_IMAGE_BYTES, uploadImageType } from "../uploads";
 import { createBusyLock } from "./media-busy-lock";
@@ -231,7 +232,7 @@ export function createMediaLibraryView(
     const notAdded = unfinished ? ` ${filesLabel(unfinished)} still being prepared ${unfinished === 1 ? "was" : "were"} not added.` : "";
     // The picker closes with the files still being prepared: the note stays by the editor's refusal note, not in a screen that is gone.
     if (rest.length) void adapter.import(rest.map(entry => entry.request)).then(
-      paths => { options.report?.announce(`Added ${paths.join(", ")}.`); if (notAdded) refuse(notAdded.trim()); }, error => options.report?.error(error));
+      paths => { if (notAdded) refuse(notAdded.trim()); options.report?.announce(`Added ${paths.join(", ")}.${notAdded}`); }, error => options.report?.error(error));
     else if (notAdded) refuse(notAdded.trim());
     alive = false; sheet.version++; closeSheetWork(sheet, Boolean(modal)); listeners.abort(); stopUsage?.(); stopCleanUp?.(); usageDialog?.close(); adding.dispose();
     observers.forEach((observer) => observer.disconnect()); observers.clear(); tiles.clear(); cache.dispose();
@@ -243,11 +244,7 @@ export function createMediaLibraryView(
   /** A warning or refusal, inline under the screen it is about. */
   function tell(text: string) { if (alive) message.textContent = text; }
   /** A result: said in #status only; the screen shows the change itself, and the line clears. */
-  function done(text: string) {
-    message.textContent = "";
-    const status = document.getElementById("status");
-    if (status) status.textContent = text;
-  }
+  function done(text: string) { message.textContent = ""; say(text); }
   function task(work: () => Promise<void>, lock = true, canCancel = false) {
     return busyLock.task(work, lock, canCancel);
   }
