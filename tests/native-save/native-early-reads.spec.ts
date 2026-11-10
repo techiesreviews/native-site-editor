@@ -108,3 +108,53 @@ test('a first visit whose branch list GitHub never answers still shows the linke
   await expect(page.locator('#branch')).toHaveValue('main');
   await expect(page.locator('#branch')).toBeEnabled();
 });
+
+test('an early snapshot GitHub refuses (403) is read afresh by the boot: the page shows from the second read', async ({ page, baseURL }) => {
+  let refused = false;
+  await page.route(/\/api\/snapshot\?/, async (route) => {
+    if (refused) return route.continue();
+    refused = true;
+    await route.fulfill({ status: 403, json: { error: 'This repository is not selected for this GitHub connection.' } });
+  });
+  const snapshots = count(page, /^\/api\/snapshot$/);
+  await page.goto(`${baseURL}/${HASH}`);
+  await expectShown(page);
+  expect(snapshots).toHaveLength(2);
+  await expect(page.locator('#notice')).toBeHidden();
+  await expect(page.locator('#branch')).toBeEnabled();
+});
+
+test('an early snapshot GitHub never answers is given up after the read timeout, and the next try opens the site', async ({ page, baseURL }) => {
+  let held = false;
+  await page.route(/\/api\/snapshot\?/, (route) => {
+    if (held) return route.continue();
+    held = true;
+    return new Promise<void>(() => { /* never answered */ });
+  });
+  const snapshots = count(page, /^\/api\/snapshot$/);
+  await page.goto(`${baseURL}/${HASH}`);
+  // The first try counts as failed after 8 s; the next follows 1 s later (src/read-retry.ts).
+  await expect.poll(() => snapshots.length, { timeout: 20_000 }).toBe(2);
+  await expectShown(page);
+  await expect(page.locator('.editor-toast')).toHaveCount(0);
+  expect(snapshots).toHaveLength(2);
+});
+
+test('the address changed before the boot: the early snapshot of the first address is thrown away and the new address opens', async ({ page, baseURL }) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  // The editor's script is held; the early script asks for the first address's snapshot meanwhile.
+  await page.route(/\/src\/main\.ts(\?|$)/, async (route) => { const response = await route.fetch(); await gate; await route.fulfill({ response }); });
+  const snapshots = count(page, /^\/api\/snapshot$/);
+  // The held module script holds DOMContentLoaded as well as load.
+  await page.goto(`${baseURL}/${HASH}`, { waitUntil: 'commit' });
+  try {
+    await expect.poll(() => snapshots, { timeout: 30_000 }).toEqual([expect.stringContaining('native-demo&branch=main')]);
+    await page.evaluate(() => history.replaceState(null, '', '#repo=530&branch=main'));
+  } finally { release(); }
+  await expect(preview(page).locator('h1')).toContainText('Routed by folders', { timeout: 30_000 });
+  await expect(page.locator('#status')).toContainText('Up to date with main', { timeout: 30_000 });
+  await expect(page.locator('#branch')).toHaveValue('main');
+  expect(snapshots.filter((read) => read.includes('native-routing'))).toHaveLength(1);
+  expect(snapshots.filter((read) => read.includes('native-demo&'))).toHaveLength(1);
+});
