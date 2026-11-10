@@ -26,7 +26,7 @@ function onDot(state: Extract<PreviewState, { on: true }>): RowDot {
  * link off. A copy icon over the row's end copies the link again. Dimmed while no site is shown.
  */
 export function previewItems(port: PreviewControlPort, actionClass: string, root: HTMLElement) {
-  root.classList.add("share-rows");
+  root.classList.add("link-rows");
   root.dataset.share = "preview";
   root.hidden = false;
   // A failed make or turn-off, said on the row until the next press or the link changes.

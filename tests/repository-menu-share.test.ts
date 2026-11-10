@@ -154,7 +154,7 @@ test("the share rows sit under their own 'Share' title, as the menu's other grou
   const group = page.locator(".repository-menu__shares");
   await group.locator(".link-row__main").first().waitFor();
   assert.equal(await group.locator(".repository-menu__heading").textContent(), "Share");
-  const lines = await group.evaluate((element) => [element, ...element.querySelectorAll(".share-rows")].map((node) => getComputedStyle(node).borderTopWidth));
+  const lines = await group.evaluate((element) => [element, ...element.querySelectorAll(".link-rows")].map((node) => getComputedStyle(node).borderTopWidth));
   assert.ok(lines.every((width) => width === "0px"), `no line above the rows: ${lines.join(", ")}`);
 }));
 
