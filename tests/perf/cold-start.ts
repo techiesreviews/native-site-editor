@@ -122,7 +122,9 @@ async function measure(page: Page, resources: Res[], load: () => Promise<unknown
       // Selectable once the structure is in and the page is on screen.
       usable = top.usable && paint !== null ? Math.max(top.usable - origin, paint) : null;
       monaco = top.monaco ? top.monaco - origin : null;
-      if (paint !== null && usable !== null && monaco !== null) break;
+      // A closed code pane loads no code until it is opened (faster opening 02): nothing more to wait for.
+      const codeClosed = await page.evaluate(() => document.querySelector(".code-collapsed") !== null);
+      if (paint !== null && usable !== null && (monaco !== null || codeClosed)) break;
       await page.waitForTimeout(100);
     }
     await page.waitForTimeout(1000); // let in-flight responses report
