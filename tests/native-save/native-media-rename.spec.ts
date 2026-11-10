@@ -217,6 +217,21 @@ test("after Replace everywhere the new picture's details carry Undo, which resto
   await expect.poll(() => shownWidth(page)).toBe(40);
 });
 
+test("the details Undo is gone once the top bar's Undo took the step back: no second undo, no refusal", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await replaceWithNext(page);
+  await expect.poll(() => shownWidth(page)).toBe(600);
+  const undo = pane(page).locator(".media-detail__view").getByRole("button", { name: "Undo", exact: true });
+  await expect(undo).toBeVisible();
+  // File details stays open while the top bar's Undo takes the step back; the details draw again without the button.
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => shownWidth(page)).toBe(40);
+  await expect(undo).toHaveCount(0);
+  await expect.poll(() => pageText(page, "index.html")).toContain('src="/images/tram.webp"');
+  expect((await pageText(page, "index.html"))!.match(/images\/tram\.webp/g)).toHaveLength(1);
+  await expect(page.locator(".refusal-note")).toHaveCount(0);
+});
+
 test("after Replace everywhere the canvas shows the new picture, and Publish puts its bytes at the old path on GitHub", async ({ page, baseURL }) => {
   await seed(page, baseURL);
   await expect.poll(() => shownWidth(page)).toBe(40);

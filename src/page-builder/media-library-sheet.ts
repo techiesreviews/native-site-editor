@@ -13,6 +13,8 @@ export interface LibrarySheet {
   path?: string;
   /** Focus to move into a detail sheet that is still loading. */
   focus?: { path: string; active: Element | null };
+  /** The Undo of a step just made on `path` (Replace everywhere), shown beside that picture in File details while the step is the newest. */
+  undo?: { path: string; action: ToastAction };
   /** The running optimisation preview. */
   work?: AbortController;
   /** `work` that finishes when the pane closes on a switch (an Improve images row, ticket 23). */

@@ -11,21 +11,33 @@ class FakeElement {
   href = "";
   className = "";
   type = "";
+  innerHTML = "";
+  // A <template>'s parsed content (src/icons.ts draws icons through one): one svg stands in.
+  get content() { return { firstElementChild: new FakeElement("svg") }; }
+  disabled = false;
+  attributes = new Map<string, string>();
+  setAttribute(name: string, value: string) { this.attributes.set(name, value); }
   private handlers: (() => void)[] = [];
   addEventListener(_type: string, handler: () => void) { this.handlers.push(handler); }
-  click() { for (const handler of this.handlers) handler(); }
+  // A disabled button takes no click, as in a browser.
+  click() { if (!this.disabled) for (const handler of this.handlers) handler(); }
   constructor(public localName: string, public id = "") {}
   classList = { contains: () => false };
-  replaceChildren(...children: FakeElement[]) { this.children = children; }
+  replaceChildren(...children: (FakeElement | string)[]) {
+    this.children = children.map(child => { if (typeof child !== "string") return child; const text = new FakeElement("#text"); text.textContent = child; return text; });
+  }
   append(...children: FakeElement[]) { this.children.push(...children); }
   prepend(...children: FakeElement[]) { this.children.unshift(...children); }
   insertBefore(child: FakeElement) { this.children.unshift(child); }
 }
+// The failed panel an open drew (#content's empty message), when a test has one.
+const explorerOpen = { current: false };
+const panel: { current: FakeElement | null } = { current: null };
 const byId = new Map(["status", "notice"].map((id) => [id, new FakeElement("div", id)]));
 const fakeGlobals = globalThis as Record<string, unknown>;
 fakeGlobals.document = {
   getElementById: (id: string) => byId.get(id) ?? null,
-  querySelector: () => null,
+  querySelector: (selector: string) => selector === "#content .empty-message" ? panel.current : null,
   createElement: (name: string) => new FakeElement(name),
 };
 
@@ -45,13 +57,14 @@ function setup() {
   const ports = {
     app: asElement(new FakeElement("div")),
     element: (id: string) => asElement(byId.get(id)!),
-    explorer: () => undefined,
+    explorer: () => explorerOpen.current ? { isOpen: () => true } : undefined,
     trackRead: (read) => read(),
     handleChunkLoadFailure: () => false,
     expired: () => { expired++; },
   } satisfies GitHubReadsPorts;
   byId.get("status")!.textContent = "";
   byId.get("notice")!.hidden = true;
+  panel.current = null; explorerOpen.current = false;
   return { reads: createGitHubReads(ports), expired: () => expired };
 }
 const notice = () => byId.get("notice")!;
@@ -64,13 +77,47 @@ test("a read GitHub never answered in an open says so in the notice, which carri
   assert.equal(status(), "GitHub isn't answering. Try again in a moment.");
   assert.equal(notice().hidden, false);
   assert.equal(notice().children[0].textContent, "GitHub isn't answering. Try again in a moment.");
-  const again = notice().children[1];
+  // With no failed panel shown, the notice carries the button.
+  const again = notice().children.at(-1)!;
   assert.equal(again.textContent, "Try again");
   assert.equal(retried, 0);
   again.click();
   assert.equal(retried, 1);
   // The notice goes while the open repeats; a failure of that open shows it again.
   assert.equal(notice().hidden, true);
+});
+
+test("Try again sits on the failed panel, shows busy once pressed, and a second press starts no second retry", () => {
+  const { reads } = setup();
+  panel.current = new FakeElement("p");
+  let retried = 0;
+  reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => { retried++; });
+  assert.equal(notice().children.length, 1, "the notice keeps the words only");
+  const again = panel.current.children.at(-1)!;
+  assert.equal(again.disabled, false);
+  again.click();
+  assert.equal(retried, 1);
+  assert.equal(again.disabled, true);
+  assert.equal(again.children.at(-1)!.textContent, "Trying again");
+  again.click();
+  assert.equal(retried, 1);
+});
+
+test("with the explorer open, which covers the failed panel, the notice placed in it carries Try again", () => {
+  const { reads } = setup();
+  panel.current = new FakeElement("p");
+  explorerOpen.current = true;
+  reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => {});
+  assert.equal(panel.current.children.length, 0);
+  assert.equal(notice().children.at(-1)!.textContent, "Try again");
+});
+
+test("the unanswered line in #status is no load progress: a later settleStatus leaves it", () => {
+  const { reads } = setup();
+  reads.status("Viewing index.html…");
+  reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => {});
+  reads.settleStatus("Up to date with main");
+  assert.equal(status(), "GitHub isn't answering. Try again in a moment.");
 });
 
 test("a read GitHub never answered outside an open shows the plain notice, no toast", () => {

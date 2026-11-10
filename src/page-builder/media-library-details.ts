@@ -41,7 +41,7 @@ export function moreButton(h: Pick<DetailHost, "menu">, items: () => MenuItem[])
 
 /** Leave File details for the grid, focusing the file's tile. */
 function backToGrid(sheet: LibrarySheet, h: DetailHost, path: string) {
-  sheet.version++; sheet.path = undefined; sheet.focus = undefined; sheet.repaint = undefined;
+  sheet.version++; sheet.path = undefined; sheet.focus = undefined; sheet.repaint = undefined; sheet.undo = undefined;
   sheet.element.hidden = true; delete sheet.element.dataset.mode;
   h.grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"] button`)?.focus();
   if (!h.modal) h.dialog.scrollTop = 0;
@@ -56,6 +56,7 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
   const initiatingFocus = document.activeElement;
   const initiatingInsideDetail = initiatingFocus instanceof Element && element.contains(initiatingFocus);
   if (!background) sheet.focus = { path, active: initiatingFocus };
+  if (undo) sheet.undo = { path, action: undo };
   const focusRequest = sheet.focus;
   element.dataset.mode = "details";
   sheet.work?.abort(); sheet.repaint = undefined; sheet.redraw = undefined;
@@ -95,9 +96,15 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
     }) : undefined;
   const still = mediaTileStills(library.items.map(item => item.path), library.metadata).get(path);
   const view = renderPreview(h, path, data, meta, still);
-  // A step just made on this picture (Replace everywhere) is taken back from the picture itself, as the top bar's Undo does.
-  if (undo) {
-    const take = button("Undo", () => { take.remove(); undo.run(); }, "button secondary media-detail__undo");
+  // A step just made on this picture (Replace everywhere) is taken back from the picture itself, as the top bar's Undo does:
+  // drawn again by every refresh while the step is the newest, gone once it is taken back or newer changes came after it.
+  const held = sheet.undo?.path === path ? sheet.undo.action : undefined;
+  if (held?.live?.() === false) sheet.undo = undefined;
+  else if (held) {
+    const take = button("Undo", () => {
+      sheet.undo = undefined; take.remove();
+      if (held.live?.() !== false) held.run();
+    }, "button secondary media-detail__undo");
     take.prepend(icon("undo", 16));
     view.append(take);
   }
