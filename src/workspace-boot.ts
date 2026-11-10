@@ -64,14 +64,14 @@ export interface WorkspaceBootPorts {
   readFile(repo: string, sha: string): Promise<string>;
   storage(kind: "local" | "session"): Pick<Storage, "getItem" | "setItem" | "removeItem">;
   element(id: string): { textContent: string | null; title: string };
-  node: (tag: "p", className?: string, text?: string) => Node | string;
+  node: (tag: "p", className?: string, text?: string) => HTMLElement;
   options(select: Picker, values: { value: string; label: string }[]): void;
   status(message: string): void;
   settleStatus(message: string): void;
   clearError(): void;
   /** `retry` repeats the open that failed: a read GitHub never answered in it offers Try again. */
   /** `panel`: the failed panel the caller drew (what `node` made), which carries Try again. */
-  errorMessage(error: unknown, retry?: () => void, panel?: Node | string): void;
+  errorMessage(error: unknown, retry?: () => void, panel?: HTMLElement): void;
   draftScope(): DraftScope | undefined;
   entryAt(path: string): TreeEntry | undefined;
   setCurrentPage(path?: string): void;

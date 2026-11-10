@@ -216,8 +216,11 @@ test('the file a reopen shows, never answered, offers Try again, which reopens i
   const reads = await holdFileReads(page, 'robots.txt');
   await page.goto(`${baseURL}/#repo=501&branch=main&file=robots.txt`);
   await failFourTries(page, reads);
+  // The file-read failure panel (the source pane's own message) carries the button; the notice keeps the words only.
+  await expect(page.locator('#content .empty-message')).toContainText(SAID);
   await expect(notice(page)).toContainText(SAID);
-  await expect(page.locator('#content')).toContainText(SAID);
+  await expect(tryAgain(page)).toBeVisible();
+  await expect(tryAgain(page, true)).toHaveCount(0);
 
   reads.failing = false;
   await tryAgain(page).click();

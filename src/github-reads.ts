@@ -78,10 +78,10 @@ export function createGitHubReads(ports: GitHubReadsPorts) {
       // The open it repeats replaces the panel; a failure draws both again.
       const again = button("Try again", () => {
         again.disabled = true;
-        again.textContent = "Trying again";
+        again.replaceChildren(node("span", "login-spinner"), "Trying again");
         clearError();
         retry();
-      });
+      }, "button primary");
       (panel && !ports.explorer()?.isOpen() ? panel : notice).append(again);
       // Said as the user's own announcement, not a load progress line: a later settleStatus must not replace it.
       element("status").textContent = UNANSWERED;
