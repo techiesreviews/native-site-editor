@@ -112,19 +112,6 @@ select {
   top: 4px;
   font-size: 10px;
 }
-.milestone {
-  border: 0;
-  border-radius: var(--radius);
-  padding: 5px 10px;
-  font-size: var(--type-small);
-  color: var(--muted);
-  letter-spacing: 0.03em;
-  white-space: nowrap;
-}
-.milestone span {
-  padding-left: 9px;
-  margin-left: 7px;
-}
 .muted {
   color: var(--muted);
 }
@@ -294,12 +281,6 @@ select {
 .code-pane > .workspace-content {
   flex: 1;
 }
-.small-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--line);
-}
 select {
   width: 100%;
   background: var(--surface);
@@ -442,11 +423,6 @@ h1 {
     background: linear-gradient(var(--hover) 0 0), var(--surface);
   }
 }
-.fine-print {
-  font-size: var(--type-small);
-  color: var(--muted);
-  margin-top: 13px;
-}
 .steps {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -460,12 +436,6 @@ h1 {
   flex-direction: column;
   gap: 5px;
 }
-.step-number {
-  font-size: var(--type-small);
-  color: var(--muted);
-  font-family: var(--font-mono);
-  margin-bottom: 7px;
-}
 .step strong {
   font-size: var(--type-base);
   font-weight: 600;
@@ -473,29 +443,6 @@ h1 {
 .step > span:last-child {
   font-size: var(--type-small);
   color: var(--muted);
-}
-.setup-card {
-  border: 0;
-  background: var(--surface-subtle);
-  padding: 20px 23px;
-  border-radius: var(--radius-panel);
-  max-width: 495px;
-}
-.setup-card strong {
-  font-size: var(--type-base);
-  font-weight: 600;
-}
-.setup-card p {
-  font-size: var(--type-small);
-  color: var(--muted);
-  line-height: 1.7;
-  margin: 8px 0;
-}
-.setup-card summary {
-  font-size: var(--type-small);
-  cursor: pointer;
-  color: var(--link);
-  margin-top: 14px;
 }
 .command {
   display: block;
@@ -606,9 +553,6 @@ dd {
   }
 }
 @media (max-width: 1050px) {
-  .milestone {
-    display: none;
-  }
   .workspace {
     grid-template-columns: var(--sidebar-width, 240px) minmax(0, 1fr);
   }
