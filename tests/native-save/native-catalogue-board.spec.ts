@@ -139,11 +139,18 @@ test("Space presses a focused button on the canvas instead of panning", async ({
   await openBoard(page, baseURL);
   const zoom = page.getByRole("toolbar", { name: "Zoom" });
   const percent = async () => parseInt(await zoom.locator("output").innerText(), 10);
-  // The first view fits again once every part has drawn: wait until the zoom holds still.
+  // The first view fits again once every part has drawn, and a menu drawing in a frame focuses itself (the board then
+  // takes focus back, which drops a key press half made): wait until every frame has drawn and the zoom holds still.
+  await expect.poll(async () => {
+    const frames = page.frames().filter((frame) => frame !== page.mainFrame());
+    const drawn = await Promise.all(frames.map((frame) => frame.evaluate(() => (document.querySelector(".cat-frame-stage")?.childElementCount ?? 0) > 0).catch(() => false)));
+    return frames.length > 0 && drawn.every(Boolean);
+  }).toBe(true);
   let last = -1;
   await expect.poll(async () => { const now = await percent(); const still = now === last; last = now; return still; }, { intervals: [300] }).toBe(true);
   const before = await percent();
   await zoom.getByRole("button", { name: "Zoom in" }).focus();
+  await expect(zoom.getByRole("button", { name: "Zoom in" })).toBeFocused();
   await page.keyboard.press("Space");
   await expect.poll(percent).toBeGreaterThan(before);
 });
@@ -166,6 +173,25 @@ test("an option set while a frame is still loading is the one it draws", async (
   const liveMenu = page.frameLocator("#card-row-menu .cat-live iframe").locator(".row-menu");
   await expect(liveMenu).toContainText("Rename");
   await expect(liveMenu).not.toContainText("Remove");
+});
+
+test("a menu drawing in its frame leaves the board's focus where it was", async ({ page, baseURL }) => {
+  // The open Row menu focuses its first item as it draws; every frame's copy of the entry script waits until released.
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => { release = resolve; });
+  let first = true;
+  await page.route(/\/(src\/catalogue\/main\.ts|assets\/catalogue-[\w-]+\.js)(\?|$)/, async (route) => {
+    if (first) { first = false; await route.continue(); return; }
+    await released;
+    await route.continue();
+  });
+  await openBoard(page, baseURL);
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Row menu", exact: true }).click();
+  const zoomIn = page.getByRole("toolbar", { name: "Zoom" }).getByRole("button", { name: "Zoom in" });
+  await zoomIn.focus();
+  release();
+  await expect(page.frameLocator("#card-row-menu .cat-live iframe").locator(".row-menu")).toContainText("Rename");
+  await expect(zoomIn).toBeFocused();
 });
 
 test("on a phone, a part chosen in the outline sheet sits above the options sheet", async ({ page, baseURL }) => {
