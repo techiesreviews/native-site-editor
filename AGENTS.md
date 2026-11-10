@@ -29,3 +29,14 @@ The repo's review and model-routing rules in docs/agents/ take priority over glo
 Running a review: `scripts/agents/kit review` (see `docs/agents/agent-scripts.md#kit`).
 Reviewing a diff: apply `CODING_STANDARDS.md`.
 UX: `docs/agents/ux-rulebook.md`.
+
+Review loop: `scripts/agents/kit rulebook`, section "Review loop" (3 fix rounds, 5 only for risk; stop when only nits are left; one reviewer; a findings ledger in the PR).
+
+## Messages to Lex
+<!-- messages-to-lex:start v1 -->
+- Only what matters to him. Start with the question, or what he must do (test, do or answer).
+- Add a recommendation when it fits.
+- Caveman style, short bullets, plain words (he is not technical). He asks if he wants more context.
+- Leave out internal process (review rounds, waivers, SHAs, file paths) unless he must act on it.
+- Example: "Keep the old export button or remove it?" / "Both do the same." / "Recommend: remove it."
+<!-- messages-to-lex:end -->
