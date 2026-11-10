@@ -70,18 +70,18 @@ async function inBrowser(run: (page: Page) => Promise<void>, context: BrowserCon
 }
 const open = (page: Page) => page.evaluate(() => (globalThis as Scope).menu.open());
 const set = (page: Page, state: PreviewState) => page.evaluate((state) => (globalThis as Scope).preview.set(state), state);
-const row = (page: Page) => page.locator(".share-row");
-const main = (page: Page) => page.locator(".share-row__main");
+const row = (page: Page) => page.locator(".link-row");
+const main = (page: Page) => page.locator(".link-row__main");
 /** What the row shows: its label, its dot, whether it is pressable, and whether the copy icon is there. */
 const shown = (page: Page) => page.evaluate(() => {
-  const host = document.querySelector<HTMLElement>(".share-row")!;
-  const button = host.querySelector(".share-row__main")!;
+  const host = document.querySelector<HTMLElement>(".link-row")!;
+  const button = host.querySelector(".link-row__main")!;
   return {
-    label: button.querySelector(".share-row__label")!.textContent, dot: host.dataset.dot,
-    disabled: button.getAttribute("aria-disabled") === "true", copy: !host.querySelector<HTMLElement>(".share-row__action")!.hidden,
+    label: button.querySelector(".link-row__label")!.textContent, dot: host.dataset.dot,
+    disabled: button.getAttribute("aria-disabled") === "true", copy: !host.querySelector<HTMLElement>(".link-row__action")!.hidden,
   };
 });
-const iconOpacity = (page: Page) => page.locator(".share-row__action").evaluate((element) => getComputedStyle(element).opacity);
+const iconOpacity = (page: Page) => page.locator(".link-row__action").evaluate((element) => getComputedStyle(element).opacity);
 
 test("Preview link: press makes and copies a link, then waits, counts who watches, reconnects, and a press turns it off", () => inBrowser(async page => {
   await open(page);
@@ -102,11 +102,11 @@ test("Preview link: press makes and copies a link, then waits, counts who watche
   assert.deepEqual(await shown(page), { label: "Making a link…", dot: "busy", disabled: true, copy: false });
   // Not pressable while making: a second press does nothing, and the keyboard's focus stays on the row.
   await main(page).click({ force: true });
-  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("share-row__main")), true);
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("link-row__main")), true);
 
   await set(page, on());
   made(LINK);
-  await page.waitForFunction(() => document.querySelector(".share-row__label")?.textContent === "Link copied");
+  await page.waitForFunction(() => document.querySelector(".link-row__label")?.textContent === "Link copied");
   assert.deepEqual(await page.evaluate(() => (globalThis as Scope).preview.copies), [LINK]);
   await page.clock.runFor(2600);
   assert.deepEqual(await shown(page), { label: "Waiting for customer", dot: "wait", disabled: false, copy: true });
@@ -137,27 +137,27 @@ test("a link that could not be made turns the dot red and a press tries again; a
   await main(page).waitFor();
   await page.evaluate(() => { (globalThis as Scope).preview.start = () => Promise.reject(new Error("offline")); });
   await main(page).click();
-  await page.waitForFunction(() => document.querySelector<HTMLElement>(".share-row")?.dataset.dot === "bad");
+  await page.waitForFunction(() => document.querySelector<HTMLElement>(".link-row")?.dataset.dot === "bad");
   assert.deepEqual(await shown(page), { label: "Couldn't make a link · try again", dot: "bad", disabled: false, copy: false });
   // It stays until the next press, which tries again.
   await page.clock.runFor(5000);
   assert.equal((await shown(page)).label, "Couldn't make a link · try again");
   await page.evaluate(() => { const preview = (globalThis as Scope).preview; preview.start = async () => { preview.set({ on: true, link: "https://previews.example/s/b/#k=z", ends: 0, watching: 0 }); return "https://previews.example/s/b/#k=z"; }; });
   await main(page).click();
-  await page.waitForFunction(() => document.querySelector(".share-row__label")?.textContent === "Link copied");
+  await page.waitForFunction(() => document.querySelector(".link-row__label")?.textContent === "Link copied");
   assert.equal((await shown(page)).dot, "wait");
   await page.clock.runFor(2600);
 
   await page.evaluate(() => { (globalThis as Scope).preview.stop = () => Promise.reject(new Error("offline")); });
   await main(page).click();
-  await page.waitForFunction(() => document.querySelector(".share-row__label")?.textContent === "Couldn't stop · try again");
+  await page.waitForFunction(() => document.querySelector(".link-row__label")?.textContent === "Couldn't stop · try again");
   assert.equal((await shown(page)).dot, "bad");
 
   await page.evaluate(() => { const preview = (globalThis as Scope).preview; preview.available = false; preview.set({ on: false }); });
   assert.deepEqual(await shown(page), { label: "Preview link", dot: "idle", disabled: true, copy: false });
   await main(page).click({ force: true });
   assert.equal(await page.evaluate(() => (globalThis as Scope).preview.copies.length), 1, "a dimmed row does nothing");
-  assert.equal(await page.locator(".share-row__main:not([disabled])").count(), 1, "aria-disabled, not disabled: the keyboard's focus is kept");
+  assert.equal(await page.locator(".link-row__main:not([disabled])").count(), 1, "aria-disabled, not disabled: the keyboard's focus is kept");
 }));
 
 test("without a preview Worker the menu draws nothing of Preview link and loads nothing for it", () => inBrowser(async page => {
@@ -181,7 +181,7 @@ test("a mouse click on the row leaves the copy icon hidden once the pointer leav
   // A press the stub ignores (the link stays on): the row has the focus, given by the mouse.
   await page.evaluate(() => { (globalThis as Scope).preview.stop = async () => undefined; });
   await main(page).click();
-  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("share-row__main")), true);
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("link-row__main")), true);
   await page.mouse.move(1000, 700);
   assert.equal(await iconOpacity(page), "0");
 }));
@@ -201,28 +201,28 @@ test("the copy icon: hidden at rest, shown on hover and on keyboard focus, a che
   await main(page).focus();
   await page.keyboard.press("Shift+Tab");
   await page.keyboard.press("Tab");
-  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("share-row__main")), true);
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("link-row__main")), true);
   assert.equal(await iconOpacity(page), "1");
   await page.keyboard.press("Tab");
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Copy link");
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => document.querySelector(".share-row__copy")?.classList.contains("is-done"));
-  assert.equal(await page.locator(".share-row__copy-icon").getAttribute("data-icon"), "check");
+  await page.waitForFunction(() => document.querySelector(".link-row__copy")?.classList.contains("is-done"));
+  assert.equal(await page.locator(".link-row__copy-icon").getAttribute("data-icon"), "check");
   assert.equal((await shown(page)).label, "Link copied");
   assert.deepEqual(await page.evaluate(() => (globalThis as Scope).preview.copies), [LINK]);
   await page.clock.runFor(2600);
-  assert.equal(await page.locator(".share-row__copy-icon").getAttribute("data-icon"), "copy");
+  assert.equal(await page.locator(".link-row__copy-icon").getAttribute("data-icon"), "copy");
   assert.equal((await shown(page)).label, "Waiting for customer");
   // A whole target on a mouse too: the row's full height, a control's width (32 px).
   const icon = await page.evaluate(() => {
-    const copy = document.querySelector(".share-row__copy")!.getBoundingClientRect(), row = document.querySelector(".share-row__main")!.getBoundingClientRect();
+    const copy = document.querySelector(".link-row__copy")!.getBoundingClientRect(), row = document.querySelector(".link-row__main")!.getBoundingClientRect();
     return [Math.round(copy.width), Math.round(copy.height), Math.round(row.height)];
   });
   assert.deepEqual(icon, [32, icon[2], icon[2]]);
   assert.ok(icon[2] >= 32);
   // No room is kept for it: the label runs the row's full width.
   const room = await page.evaluate(() => {
-    const button = document.querySelector(".share-row__main")!.getBoundingClientRect(), host = document.querySelector(".share-row")!.getBoundingClientRect();
+    const button = document.querySelector(".link-row__main")!.getBoundingClientRect(), host = document.querySelector(".link-row")!.getBoundingClientRect();
     return Math.round(host.right - button.right);
   });
   assert.equal(room, 0);
@@ -277,7 +277,7 @@ test("on touch the copy icon always shows and the label stops short of it", () =
   assert.equal(await page.evaluate(() => matchMedia("(hover: none), (pointer: coarse)").matches), true);
   assert.equal(await iconOpacity(page), "1");
   assert.equal(await main(page).evaluate((element) => getComputedStyle(element).paddingInlineEnd), "44px");
-  const box = await page.locator(".share-row__copy").boundingBox();
+  const box = await page.locator(".link-row__copy").boundingBox();
   assert.ok(box && Math.round(box.width) >= 44 && Math.round(box.height) >= 44, `a 44 px touch target, got ${box?.width}x${box?.height}`);
 }, { hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 } }));
 

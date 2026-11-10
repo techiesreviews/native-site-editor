@@ -34,9 +34,9 @@ async function guest(browser: Browser, phone = false) {
 test.beforeEach(() => { pageErrors.length = 0; });
 
 // The project menu's Edit together row: the row (pressed to share or stop), its label, its dot and its copy icon.
-const editRow = (page: Page) => page.locator('[data-share="edit"] .share-row__main');
-const editLabel = (page: Page) => page.locator('[data-share="edit"] .share-row__label');
-const editDot = (page: Page) => page.locator('[data-share="edit"] .share-row');
+const editRow = (page: Page) => page.locator('[data-share="edit"] .link-row__main');
+const editLabel = (page: Page) => page.locator('[data-share="edit"] .link-row__label');
+const editDot = (page: Page) => page.locator('[data-share="edit"] .link-row');
 /** Lex shares from the project menu: the row says "Link copied" with the menu still open, then waits for a
  * collaborator; the link from the clipboard. */
 async function share(lex: Page) {
@@ -83,7 +83,7 @@ test("guests edit a heading through Lex's link; his Undo takes it back, they fol
   // link again.
   await lex.locator(".repository-menu__trigger").click();
   await expect(editLabel(lex)).toHaveText("Editing with Anna", { timeout: 20_000 });
-  await expect(lex.locator('[data-share="edit"] .share-row__end .person-chip')).toHaveText(["A"]);
+  await expect(lex.locator('[data-share="edit"] .link-row__end .person-chip')).toHaveText(["A"]);
   await expect(editDot(lex)).toHaveAttribute("data-dot", "on");
   await expect(lex.locator(".repository-menu__trigger")).toHaveAttribute("data-shared", "on");
   await lex.evaluate(() => navigator.clipboard.writeText(""));
@@ -127,7 +127,7 @@ test("guests edit a heading through Lex's link; his Undo takes it back, they fol
   await expect(target).not.toHaveAttribute("contenteditable", /.+/);
   await lex.locator(".repository-menu__trigger").click();
   await expect(editLabel(lex)).toHaveText(/^Editing with (Anna, Ben|Ben, Anna)$/, { timeout: 20_000 });
-  const colour = await lex.locator('[data-share="edit"] .share-row__end .person-chip', { hasText: "A" }).getAttribute("data-colour");
+  const colour = await lex.locator('[data-share="edit"] .link-row__end .person-chip', { hasText: "A" }).getAttribute("data-colour");
   await lex.keyboard.press("Escape");
   await expect(ben.page.locator('.live-guest__people .person-chip[aria-label="Anna"]')).toHaveAttribute("data-colour", colour!);
 
