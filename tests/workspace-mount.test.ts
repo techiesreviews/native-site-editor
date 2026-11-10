@@ -83,7 +83,8 @@ const stubs: Record<string, string> = {
   "components/site-actions.ts": stub("mountSiteActions", "siteActions"),
   "components/sidebar-resize.ts": stub("mountSidebarResize", "sidebar"),
   "components/row-menu.ts": stub("createRowMenu", "rowMenu"),
-  "components/code-resize.ts": `${stub("mountCodeResize", "resize")}\n${stub("mountCodeWidthResize", "resize")}`,
+  // The code pane as a person left it open: its code loads as before.
+  "components/code-resize.ts": `export const mountCodeResize = (...args) => Object.assign(globalThis.workspaceMountStubs.resize(...args), { collapsed: () => false });\n${stub("mountCodeWidthResize", "resize")}`,
   "components/code-editor.ts": "export const monacoView = 'Monaco view';",
   "components/refusal-note.ts": "export const dismissRefusalNote = () => {}; export const refuse = (text) => { globalThis.workspaceMountStubs.refused.push(text); };",
 };

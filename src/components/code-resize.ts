@@ -3,8 +3,13 @@ import { createGrip, isToggleKey, trackPress } from "./resize-handle";
 
 // Horizontal splitter above code. Click/keyboard toggles full collapse;
 // the edge grip remains available to restore the remembered height.
-export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
+// The pane starts closed until the person opens it (faster-opening 02): its
+// shown or hidden choice lives in its own key, so an older open choice in
+// `astro-editor.code-height` (which now keeps only the height) is not used.
+// `onOpen` runs each time the pane goes from hidden to shown.
+export function mountCodeResize(main: HTMLElement, pane: HTMLElement, onOpen?: () => void) {
   const key = "astro-editor.code-height";
+  const shownKey = "astro-editor.code-pane";
   const handle = document.createElement("div");
   handle.className = "code-resize";
   handle.tabIndex = 0;
@@ -29,14 +34,17 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
     return { minimum, maximum };
   };
   let height = 0.4;
-  let collapsed = false;
+  let collapsed = true;
   try {
-    const saved = JSON.parse(localStorage.getItem(key) ?? "{}") as { height?: number; collapsed?: boolean };
+    collapsed = localStorage.getItem(shownKey) !== "open";
+    const saved = JSON.parse(localStorage.getItem(key) ?? "{}") as { height?: number };
     if (saved.height && saved.height > 0 && saved.height < 1) height = saved.height;
-    collapsed = saved.collapsed === true;
   } catch {}
 
+  let wasCollapsed = collapsed;
   function apply() {
+    if (wasCollapsed && !collapsed) onOpen?.();
+    wasCollapsed = collapsed;
     main.classList.toggle("code-collapsed", collapsed);
     const { minimum, maximum } = bounds();
     const px = Math.round(collapsed ? 0 : Math.max(minimum, Math.min(maximum, height * main.clientHeight)));
@@ -59,7 +67,8 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
   }
   const save = () => {
     try {
-      localStorage.setItem(key, JSON.stringify({ height, collapsed }));
+      localStorage.setItem(key, JSON.stringify({ height }));
+      localStorage.setItem(shownKey, collapsed ? "closed" : "open");
     } catch {}
   };
   const toggle = () => {
@@ -120,23 +129,12 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement) {
     apply();
     save();
   });
-  const observer = new ResizeObserver(apply);
-  observer.observe(main);
+  new ResizeObserver(apply).observe(main);
   apply();
   return {
     toggle,
-    /** The pane's own state as the person left it (a copy): hidden or not, and its height as a share of the workspace. */
-    state: () => ({ collapsed, height }),
-    destroy() {
-      observer.disconnect();
-      handle.remove();
-      main.classList.remove("code-collapsed", "code-resizing");
-      main.style.removeProperty("--code-height");
-      for (const child of pane.children) {
-        if (!(child instanceof HTMLElement)) continue;
-        child.inert = false; child.removeAttribute("aria-hidden");
-      }
-    },
+    /** Whether the pane is hidden. */
+    collapsed: () => collapsed,
   };
 }
 
@@ -255,16 +253,7 @@ export function mountCodeWidthResize(split: HTMLElement, primary: HTMLElement, s
     save();
   });
   split.insertBefore(handle, secondary);
-  const observer = new ResizeObserver(apply);
-  observer.observe(split);
+  new ResizeObserver(apply).observe(split);
   apply();
-  return {
-    apply,
-    destroy() {
-      observer.disconnect();
-      handle.remove();
-      primary.style.flex = "";
-      split.classList.remove("code-width-resizing", "code-split--secondary-collapsed");
-    },
-  };
+  return { apply };
 }

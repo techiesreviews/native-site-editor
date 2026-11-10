@@ -6,7 +6,7 @@ const grip = (page: Page) => page.getByRole('separator', { name: 'Resize code pa
 async function load(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/${hash}`);
   await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toBeVisible();
-  // Monaco mounts even when persisted collapse keeps its surface hidden.
+  // These browsers start with the pane left open (playwright.config.ts), so Monaco mounts.
   await expect(page.locator('#content .monaco-editor')).toBeAttached();
   await expect(grip(page)).toBeVisible();
 }
@@ -40,17 +40,25 @@ async function moveGrip(page: Page, dy: number) {
   await page.mouse.up();
 }
 
-test('old collapsed persistence hides source completely and remembers the prior height', async ({ page, baseURL }) => {
-  await page.addInitScript(() => { localStorage.setItem('astro-editor.code-height', JSON.stringify({ height: 0.35, collapsed: true })); });
-  await load(page, baseURL);
-  await hiddenSource(page);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('astro-editor.code-height')!))).toEqual({ height: 0.35, collapsed: true });
+test('a closed pane hides the source completely, loads no code, and opens at the remembered height', async ({ page, baseURL }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('astro-editor.code-height', JSON.stringify({ height: 0.35 }));
+    localStorage.setItem('astro-editor.code-pane', 'closed');
+  });
+  await page.goto(`${baseURL}/${hash}`);
+  await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toBeVisible();
+  await expect(grip(page)).toHaveAttribute('aria-valuetext', 'Code hidden');
+  await expect(grip(page)).toHaveAttribute('aria-valuenow', '0');
+  await paneState(page, true);
+  expect((await page.locator('#code-split').boundingBox())!.height).toBe(0);
+  // A closed pane never fetches the code editor on its own.
+  await expect(page.locator('#content .monaco-editor')).toHaveCount(0);
   const mainHeight = await page.locator('#main').evaluate(el => el.clientHeight);
   const maximum = Number(await grip(page).getAttribute('aria-valuemax'));
   await grip(page).click();
   await expect(grip(page)).toHaveAttribute('aria-valuenow', String(Math.round(Math.min(maximum, Math.max(Math.min(96, mainHeight), mainHeight * 0.35)))));
   await sourceViewport(page);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('astro-editor.code-height')!))).toEqual({ height: 0.35, collapsed: false });
+  expect(await page.evaluate(() => [JSON.parse(localStorage.getItem('astro-editor.code-height')!), localStorage.getItem('astro-editor.code-pane')])).toEqual([{ height: 0.35 }, 'open']);
 });
 
 test('drag below minimum and Home hide source; Enter and Space restore the remembered height', async ({ page, baseURL }) => {

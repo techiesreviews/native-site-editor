@@ -1,7 +1,7 @@
 ---
 title: "The code pane is closed by default, and its code loads only when it is opened"
-status: ready-for-agent
-assignee:
+status: closed
+assignee: fleet-lead
 blocked_by: []
 ---
 
@@ -43,3 +43,34 @@ Expected: `src/components/code-resize.ts`, `src/controllers/code-panes-controlle
 ## Kit commands and evidence
 
 Agent Kit is required. `kit go slice-fo02 -- scripts/agents/kit slice --ticket <this ticket> --builder claude-opus-5-5`.
+
+## Done (2026-11-10)
+
+Behaviour:
+- The code pane starts closed for everyone. Its shown or hidden choice lives in a new key, `astro-editor.code-pane` ("open" or "closed"); `astro-editor.code-height` now keeps only the height, so an older open choice there no longer opens the pane. From the first time someone opens or closes it, the pane remembers that choice (`src/components/code-resize.ts`).
+- A closed pane never loads Monaco on its own: not after the first paint and idle time, not after the 8 s fallback, and not when its handle is pressed or focused without opening it. Opening the pane by any route (the handle's click or keys, dragging it up, the palette's Show code) loads Monaco then, once; Review and focusing the code still ask for it at once (`src/controllers/code-panes-controller.ts`).
+- A pane left open loads its code as before: after the first paint, the page's reads and idle time, with the 8 s fallback. A pane closed again before that point loads nothing.
+- A closed pane's editor says "Opening editor…" (the code loads the moment the pane opens), not "The code loads once the page is on screen".
+- Boot bytes: two unused `destroy()` methods of the code pane handles were removed to pay for the new code, so the boot chunk is smaller than before (213,655 to 213,644 bytes at gzip level 9).
+
+Tests:
+- `tests/code-panes-controller.test.ts`: a closed pane at boot never loads Monaco (paint, idle, 8 s fallback, pressing or focusing its handle); a closed pane that is not a native site's first pane also waits until opened; opening loads Monaco once and the waiting panes get it; a pane left open loads after the first paint; a pane closed before the paint loads nothing.
+- `tests/code-resize.test.ts` (new, in a browser): no saved choice means closed; the old key's open state is not used but its height is; the new key's "open" and "closed" are honoured; opening tells the controller once per opening and saves the choice in the new key and only the height in the old one.
+- `tests/native-save/native-monaco-deferred.spec.ts`: a fresh browser opens a site, the code pane is closed, no Monaco request goes out for 9 s, an edit on the page is still a draft, and opening the pane shows the code with that edit.
+- Browser suites start as someone who left the pane open (`playwright.config.ts` sets the new key through `storageState`); specs about a closed pane set "closed" (`native-code-visible`, `native-panel-collapse`, `native-structure-readiness`). The screenshot steps for F-code-01, F-code-02 and F-code-05 open the pane first with Show code.
+
+Cold start (`tests/perf/cold-start.ts`, production builds of dev and of this change served side by side on the test server, two alternating rounds of 3 runs, cold medians of 6):
+
+| Profile | Build | First screen | Usable | Bytes before first screen | Total bytes, first visit |
+| --- | --- | --- | --- | --- | --- |
+| 100/20 | before | 925 ms | 926 ms | 363,456 | 1,517,774 |
+| 100/20 | after | 920 ms | 920 ms | 363,431 | 445,226 |
+| 400/1.6 | before | 3,623 ms | 3,623 ms | 363,456 | 1,383,489 |
+| 400/1.6 | after | 3,614 ms | 3,614 ms | 363,431 | 445,226 |
+
+First screen and usable are unchanged (within run-to-run noise, slightly lower); a first visit downloads about 1 MB less because Monaco stays away until the pane is opened.
+
+Validation: `kit size` passes (boot 355 KB, ±0 KB against dev, budget 355 KB); `kit unit --affected` 65/65; `kit specs --affected` (4 specs) and five further code pane specs pass; `npm run check` and `npm run lint` pass.
+
+Feature list: F-code-05 and F-code-07 updated (the pane starts closed; its code loads only when opened).
+
