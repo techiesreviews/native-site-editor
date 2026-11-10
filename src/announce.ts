@@ -12,7 +12,7 @@ export interface AnnouncePorts {
   editorModule: Pick<typeof sourceEditor, "latestUndo" | "runVisualHistory">;
 }
 
-/** The one writer of the #status live region: `status` is the element (found in the page when not given). */
+/** What `announce()` and the Media screens write to the #status live region: `status` is the element (found in the page when not given). */
 export function say(text: string, status: { textContent: string | null } | null = document.getElementById("status")) {
   if (status) status.textContent = text;
 }
