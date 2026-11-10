@@ -54,12 +54,12 @@ async function inBrowser(run: (page: Page) => Promise<void>) {
     await run(page);
   } finally { await browser.close(); }
 }
-const main = (page: Page) => page.locator(".share-row__main");
+const main = (page: Page) => page.locator(".link-row__main");
 const set = (page: Page, state: ShareState) => page.evaluate((state) => (globalThis as Scope).share.set(state), state);
 const shown = (page: Page) => page.evaluate(() => {
-  const host = document.querySelector<HTMLElement>(".share-row")!;
-  const button = host.querySelector(".share-row__main")!;
-  return { label: button.querySelector(".share-row__label")!.textContent, dot: host.dataset.dot, disabled: button.getAttribute("aria-disabled") === "true" };
+  const host = document.querySelector<HTMLElement>(".link-row")!;
+  const button = host.querySelector(".link-row__main")!;
+  return { label: button.querySelector(".link-row__label")!.textContent, dot: host.dataset.dot, disabled: button.getAttribute("aria-disabled") === "true" };
 });
 const LINK = "https://editor.test/live?s=1#k=2";
 
@@ -73,30 +73,30 @@ test("Edit together: press starts and copies a link, waits for a collaborator, n
   await main(page).focus();
   await page.keyboard.press("Space");
   assert.deepEqual(await shown(page), { label: "Making a link…", dot: "busy", disabled: true });
-  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("share-row__main")), true, "the keyboard's focus stays");
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("link-row__main")), true, "the keyboard's focus stays");
   await page.evaluate(() => (globalThis as never as { open(): void }).open());
-  await page.waitForFunction(() => document.querySelector(".share-row__label")?.textContent === "Link copied");
+  await page.waitForFunction(() => document.querySelector(".link-row__label")?.textContent === "Link copied");
   assert.deepEqual(await page.evaluate(() => (globalThis as Scope).share.copies), [LINK]);
   await page.clock.runFor(2600);
   assert.deepEqual(await shown(page), { label: "Waiting for collaborator", dot: "wait", disabled: false });
 
   await set(page, { sharing: true, link: LINK, guests: guests("Anna") });
   assert.deepEqual(await shown(page), { label: "Editing with Anna", dot: "on", disabled: false });
-  assert.deepEqual(await page.locator(".share-row__end .person-chip").allTextContents(), ["A"]);
+  assert.deepEqual(await page.locator(".link-row__end .person-chip").allTextContents(), ["A"]);
   await set(page, { sharing: true, link: LINK, guests: guests("Anna", "Ben", "Cleo", "Dev", "Eli") });
   assert.equal((await shown(page)).label, "Editing with Anna, Ben, Cleo, Dev, Eli");
-  const chips = await page.locator(".share-row__end .person-chip").evaluateAll(items => items.map(chip => [chip.textContent, chip.getAttribute("data-colour")]));
+  const chips = await page.locator(".link-row__end .person-chip").evaluateAll(items => items.map(chip => [chip.textContent, chip.getAttribute("data-colour")]));
   assert.deepEqual(chips, [["A", "0"], ["B", "1"], ["C", "2"], ["+2", null]]);
   await set(page, { sharing: true, link: LINK, guests: guests("Anna", "Ben", "Cleo", "Dev") });
-  assert.deepEqual(await page.locator(".share-row__end .person-chip").allTextContents(), ["A", "B", "C", "+1"], "exactly four guests: three and a +1");
+  assert.deepEqual(await page.locator(".link-row__end .person-chip").allTextContents(), ["A", "B", "C", "+1"], "exactly four guests: three and a +1");
   await set(page, { sharing: true, link: LINK, guests: [], reconnecting: true });
   assert.deepEqual(await shown(page), { label: "Reconnecting…", dot: "busy", disabled: false });
-  assert.equal(await page.locator(".share-row__end").isHidden(), true);
+  assert.equal(await page.locator(".link-row__end").isHidden(), true);
 
   // The copy icon copies the link again; pressing the row stops (it does not copy).
   await set(page, { sharing: true, link: LINK, guests: guests("Anna") });
   await page.getByRole("button", { name: "Copy link" }).click({ force: true });
-  await page.waitForFunction(() => document.querySelector(".share-row__label")?.textContent === "Link copied");
+  await page.waitForFunction(() => document.querySelector(".link-row__label")?.textContent === "Link copied");
   assert.equal(await page.evaluate(() => (globalThis as Scope).share.copies.length), 2);
   await main(page).click();
   assert.deepEqual(await shown(page), { label: "Edit together", dot: "idle", disabled: false });
@@ -107,11 +107,11 @@ test("a start that fails turns the dot red until the next press (signed out: Sig
   await main(page).waitFor();
   await page.evaluate(() => { (globalThis as Scope).share.start = () => Promise.reject(Object.assign(new Error("Sign in again."), { status: 401 })); });
   await main(page).click();
-  await page.waitForFunction(() => document.querySelector(".share-row__label")?.textContent === "Sign in to share");
+  await page.waitForFunction(() => document.querySelector(".link-row__label")?.textContent === "Sign in to share");
   assert.equal((await shown(page)).dot, "bad");
   await page.evaluate(() => { (globalThis as Scope).share.start = () => Promise.reject(new Error("offline")); });
   await main(page).click();
-  await page.waitForFunction(() => document.querySelector(".share-row__label")?.textContent === "Couldn't make a link · try again");
+  await page.waitForFunction(() => document.querySelector(".link-row__label")?.textContent === "Couldn't make a link · try again");
   await page.clock.runFor(5000);
   assert.deepEqual(await shown(page), { label: "Couldn't make a link · try again", dot: "bad", disabled: false });
   await page.evaluate(() => { const share = (globalThis as Scope).share; share.available = false; share.set({ sharing: false }); });
@@ -145,15 +145,24 @@ test("Edit together's row that fails to load once loads on the next open of the 
     menu.close();
     menu.open();
     for (let wait = 0; wait < 5; wait++) await Promise.resolve();
-    return { tries, item: holder.querySelector(".share-row__label")?.textContent };
+    return { tries, item: holder.querySelector(".link-row__label")?.textContent };
   });
   assert.deepEqual(drawn, { tries: 2, item: "Edit together" });
 }));
 
 test("the share rows sit under their own 'Share' title, as the menu's other groups do, with no line above them", () => inBrowser(async page => {
   const group = page.locator(".repository-menu__shares");
-  await group.locator(".share-row__main").first().waitFor();
+  await group.locator(".link-row__main").first().waitFor();
   assert.equal(await group.locator(".repository-menu__heading").textContent(), "Share");
   const lines = await group.evaluate((element) => [element, ...element.querySelectorAll(".share-rows")].map((node) => getComputedStyle(node).borderTopWidth));
   assert.ok(lines.every((width) => width === "0px"), `no line above the rows: ${lines.join(", ")}`);
+}));
+
+test("an ad blocker's annoyances list leaves the share rows alone (it hides any `.share-row`)", () => inBrowser(async page => {
+  // Fanboy's Social and Annoyance lists (uBlock Origin's Annoyances, Brave and others) carry `##.share-row`: an element
+  // with that class is hidden. Lex's menu showed the Share title with no rows under it (2026-11-10).
+  await page.addStyleTag({ content: ".share-row { display: none !important; }" });
+  const row = page.getByRole("button", { name: "Edit together", exact: true });
+  await row.waitFor({ state: "attached" });
+  assert.equal(await row.isVisible(), true, "Edit together shows under an ad blocker's rule");
 }));

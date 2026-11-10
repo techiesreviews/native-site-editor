@@ -2,32 +2,34 @@
    and Edit together, under the menu's "Share" title (src/components/repository-menu.css). Each is one row as Connect to MCP is
    (src/components/agent-menu.css): a leading dot, the only status, then the label. While a link is on, a copy icon
    fades in over the row's end with the page-structure row actions' slide and fade (src/components/row-action-overlay.css);
-   no room is kept for it on a mouse. */
+   no room is kept for it on a mouse. 
+   The class is link-row, never share-row: ad blockers' annoyances lists (Fanboy Social and Annoyance) hide any
+   `.share-row`, which left the menu's Share title with no rows under it (Lex, 2026-11-10). */
 .share-rows {
   display: grid;
   gap: 2px;
 }
 .share-rows[hidden],
-.share-row [hidden] {
+.link-row [hidden] {
   display: none;
 }
-.share-row {
+.link-row {
   /* The row's own tint (hover, focus) over the menu's surface: the fade ends on their mix, hiding the label under it. */
-  --share-row-tint: transparent;
+  --link-row-tint: transparent;
   display: grid;
   border-radius: var(--radius);
 }
-.share-row > * {
+.link-row > * {
   grid-area: 1 / 1;
 }
-.share-row__main {
+.link-row__main {
   min-block-size: max(var(--size-control), var(--size-tap));
 }
 /* A row, not a link: no underline when pressed or hovered (src/style.css .text-button). */
-.share-row > .share-row__main:is(:hover, :active) {
+.link-row > .link-row__main:is(:hover, :active) {
   text-decoration: none;
 }
-.share-row__main::before {
+.link-row__main::before {
   content: "";
   flex: none;
   inline-size: 8px;
@@ -36,69 +38,69 @@
   background: var(--muted);
   opacity: 0.5;
 }
-.share-row[data-dot="wait"] .share-row__main::before {
+.link-row[data-dot="wait"] .link-row__main::before {
   background: var(--color-warning);
   opacity: 1;
 }
-.share-row[data-dot="on"] .share-row__main::before {
+.link-row[data-dot="on"] .link-row__main::before {
   background: var(--color-success);
   opacity: 1;
 }
-.share-row[data-dot="bad"] .share-row__main::before {
+.link-row[data-dot="bad"] .link-row__main::before {
   background: var(--danger);
   opacity: 1;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .share-row:is([data-dot="wait"], [data-dot="busy"]) .share-row__main::before {
-    animation: share-row-pulse 1.4s ease-in-out infinite;
+  .link-row:is([data-dot="wait"], [data-dot="busy"]) .link-row__main::before {
+    animation: link-row-pulse 1.4s ease-in-out infinite;
   }
 }
-@keyframes share-row-pulse {
+@keyframes link-row-pulse {
   50% {
     opacity: 0.35;
   }
 }
-.share-row__main[aria-disabled="true"] {
+.link-row__main[aria-disabled="true"] {
   color: var(--muted);
   cursor: default;
 }
-.share-row[data-dot="busy"] .share-row__main[aria-disabled="true"] {
+.link-row[data-dot="busy"] .link-row__main[aria-disabled="true"] {
   cursor: progress;
 }
-.share-row__main:active:not([aria-disabled="true"]) {
+.link-row__main:active:not([aria-disabled="true"]) {
   background: color-mix(in oklch, var(--hover), var(--text) 8%);
 }
-.share-row__label {
+.link-row__label {
   flex: 1;
   min-inline-size: 0;
   overflow: clip;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.share-row__end {
+.link-row__end {
   display: inline-flex;
   flex: none;
   align-items: center;
 }
-.share-row__end .person-chip {
+.link-row__end .person-chip {
   box-shadow: 0 0 0 2px var(--panel-surface);
 }
-.share-row:has(> .share-row__main:focus-visible) {
-  --share-row-tint: var(--hover);
+.link-row:has(> .link-row__main:focus-visible) {
+  --link-row-tint: var(--hover);
 }
-.share-row__action {
+.link-row__action {
   place-self: stretch end;
   display: flex;
   align-items: center;
   padding-inline: 20px 0;
   border-radius: inherit;
   background:
-    linear-gradient(to right, transparent, var(--share-row-tint) 20px),
+    linear-gradient(to right, transparent, var(--link-row-tint) 20px),
     linear-gradient(to right, transparent, var(--panel-surface) 20px);
   opacity: 0;
   pointer-events: none;
 }
-.share-row__copy {
+.link-row__copy {
   display: inline-grid;
   place-items: center;
   /* The row's full height and as wide as the row is tall (44 px on touch and narrow windows): a whole target. */
@@ -111,75 +113,75 @@
   color: var(--muted);
   cursor: pointer;
 }
-.share-row__copy.is-done {
+.link-row__copy.is-done {
   color: var(--success-fg);
 }
-.share-row__copy:focus-visible {
+.link-row__copy:focus-visible {
   outline: var(--focus-ring);
   outline-offset: -2px;
 }
-.share-row__copy:active {
+.link-row__copy:active {
   background: color-mix(in oklch, var(--hover), var(--text) 8%);
 }
 /* Shown on keyboard focus anywhere in the row (not after a mouse click: :focus-visible), and while it says it copied or
    the browser refused the copy. */
-.share-row:is(:has(:focus-visible), .is-done) > .share-row__action {
+.link-row:is(:has(:focus-visible), .is-done) > .link-row__action {
   opacity: 1;
 }
-.share-row:is(:has(:focus-visible), .is-done) > .share-row__action > .share-row__copy {
+.link-row:is(:has(:focus-visible), .is-done) > .link-row__action > .link-row__copy {
   pointer-events: auto;
 }
 @media (hover: hover) and (pointer: fine) {
-  .share-row:hover {
-    --share-row-tint: var(--hover);
+  .link-row:hover {
+    --link-row-tint: var(--hover);
   }
   /* The row keeps its hover while the pointer is on the copy icon over it. */
-  .share-row:hover > .share-row__main:not([aria-disabled="true"]) {
+  .link-row:hover > .link-row__main:not([aria-disabled="true"]) {
     background: var(--hover);
   }
-  .share-row:hover > .share-row__main[aria-disabled="true"] {
+  .link-row:hover > .link-row__main[aria-disabled="true"] {
     background: transparent;
   }
-  .share-row:hover > .share-row__action {
+  .link-row:hover > .link-row__action {
     opacity: 1;
   }
-  .share-row:hover > .share-row__action > .share-row__copy {
+  .link-row:hover > .link-row__action > .link-row__copy {
     pointer-events: auto;
   }
-  .share-row__copy:hover {
+  .link-row__copy:hover {
     background: var(--hover);
     color: var(--text);
   }
 }
 /* No hover to reveal it: the icon always shows, and the label stops short of it. */
 @media (hover: none), (pointer: coarse) {
-  .share-row > .share-row__action {
+  .link-row > .link-row__action {
     padding-inline: 0;
     background: none;
     opacity: 1;
   }
-  .share-row > .share-row__action > .share-row__copy {
+  .link-row > .link-row__action > .link-row__copy {
     inline-size: var(--size-touch);
     pointer-events: auto;
   }
-  .share-row:has(> .share-row__action:not([hidden])) > .share-row__main {
+  .link-row:has(> .link-row__action:not([hidden])) > .link-row__main {
     padding-inline-end: var(--size-touch);
   }
 }
 @media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
-  .share-row__action {
+  .link-row__action {
     transition: opacity 140ms ease-out;
   }
-  .share-row__copy {
+  .link-row__copy {
     transform: translateX(40%);
     transition: transform 140ms ease-out;
   }
-  .share-row:is(:hover, :has(:focus-visible), .is-done) .share-row__copy {
+  .link-row:is(:hover, :has(:focus-visible), .is-done) .link-row__copy {
     transform: none;
   }
   /* Keyboard access is immediate. */
-  .share-row:has(:focus-visible) > .share-row__action,
-  .share-row:has(:focus-visible) .share-row__copy {
+  .link-row:has(:focus-visible) > .link-row__action,
+  .link-row:has(:focus-visible) .link-row__copy {
     transition: none;
   }
 }
@@ -207,9 +209,9 @@
 }
 @media (prefers-reduced-motion: no-preference) {
   .repository-menu__trigger:is([data-shared="wait"], [data-shared="busy"])::after {
-    animation: share-row-pulse 1.4s ease-in-out infinite;
+    animation: link-row-pulse 1.4s ease-in-out infinite;
   }
 }
-.share-row__people {
+.link-row__people {
   display: flex;
 }

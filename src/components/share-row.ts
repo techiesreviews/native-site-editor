@@ -28,23 +28,23 @@ export interface RowView {
  * showing, focused, to press again (a fresh press the browser allows).
  */
 export function shareRow(name: string, actionClass: string, view: () => RowView, press: () => void) {
-  const root = node("div", "share-row");
-  const main = node("button", `${actionClass} share-row__main`);
+  const root = node("div", "link-row");
+  const main = node("button", `${actionClass} link-row__main`);
   main.type = "button";
   main.dataset.keepOpen = "";
   // Read before the label when it does not name the row itself ("Waiting for customer" says nothing of which link).
   const which = node("span", "sr-only");
-  const label = node("span", "share-row__label");
+  const label = node("span", "link-row__label");
   label.setAttribute("aria-live", "polite");
-  const end = node("span", "share-row__end");
+  const end = node("span", "link-row__end");
   main.append(which, label, end);
   // Layered over the row's end (no room kept for it): the faded background, then the button.
-  const action = node("span", "share-row__action");
-  const copyButton = node("button", "share-row__copy");
+  const action = node("span", "link-row__action");
+  const copyButton = node("button", "link-row__copy");
   copyButton.type = "button";
   copyButton.dataset.keepOpen = "";
   copyButton.setAttribute("aria-label", "Copy link");
-  const mark = node("span", "share-row__copy-icon");
+  const mark = node("span", "link-row__copy-icon");
   mark.setAttribute("aria-hidden", "true");
   copyButton.append(mark);
   action.append(copyButton);

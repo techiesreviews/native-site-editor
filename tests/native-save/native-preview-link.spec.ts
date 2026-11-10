@@ -14,8 +14,8 @@ const heading = "A native browser preview";
 // The frame on show (a page drawn again loads behind it first).
 const previewHeading = (page: Page) => page.frameLocator(".preview-visit__frame:not(.is-loading)").locator(".hero h1");
 // The project menu's Preview link row: the row (pressed to make a link or turn it off), its label and its copy icon.
-const previewRow = (page: Page) => page.locator('[data-share="preview"] .share-row__main');
-const previewLabel = (page: Page) => page.locator('[data-share="preview"] .share-row__label');
+const previewRow = (page: Page) => page.locator('[data-share="preview"] .link-row__main');
+const previewLabel = (page: Page) => page.locator('[data-share="preview"] .link-row__label');
 const previewCopy = (page: Page) => page.locator('[data-share="preview"]').getByRole("button", { name: "Copy link" });
 /** Opens the project menu and makes a link: the row says it copied it, then waits for a customer. Returns the link. */
 async function makeLink(page: Page) {
@@ -48,7 +48,7 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   const link = await makeLink(lex);
   expect(link).toMatch(/^http:\/\/localhost:\d+\/s\/native-demo-[a-f\d]{72}\/#k=[\w-]{43}$/);
   await expect(previewLabel(lex)).toHaveText("Waiting for customer", { timeout: 5_000 });
-  await expect(lex.locator('[data-share="preview"] .share-row')).toHaveAttribute("data-dot", "wait");
+  await expect(lex.locator('[data-share="preview"] .link-row')).toHaveAttribute("data-dot", "wait");
   await expect(lex.locator("#repository-actions").getByRole("textbox")).toHaveCount(0);
   await expect(lex.getByRole("button", { name: /Turn preview off|Copy$/ })).toHaveCount(0);
   await expect(lex.locator(".repository-menu__trigger")).toHaveAttribute("data-shared", "wait");
@@ -75,7 +75,7 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   // Lex's row counts the customer, its dot and the tile's green; the copy icon copies the link again.
   await lex.locator(".repository-menu__trigger").click();
   await expect(previewLabel(lex)).toHaveText("1 watching", { timeout: 20_000 });
-  await expect(lex.locator('[data-share="preview"] .share-row')).toHaveAttribute("data-dot", "on");
+  await expect(lex.locator('[data-share="preview"] .link-row')).toHaveAttribute("data-dot", "on");
   await expect(lex.locator(".repository-menu__trigger")).toHaveAttribute("data-shared", "on");
   await lex.evaluate(() => navigator.clipboard.writeText(""));
   await previewRow(lex).hover();
@@ -222,7 +222,7 @@ test("the visitor's page carries on after Lex's connection drops and comes back"
   const sockets = pages.length;
   await pages.at(-1)!.close({ code: 4000 });
   await expect(previewLabel(lex)).toHaveText("Reconnecting…");
-  await expect(lex.locator('[data-share="preview"] .share-row')).toHaveAttribute("data-dot", "busy");
+  await expect(lex.locator('[data-share="preview"] .link-row')).toHaveAttribute("data-dot", "busy");
   await expect.poll(() => pages.length, { timeout: 20_000 }).toBeGreaterThan(sockets);
   await expect(previewLabel(lex)).toHaveText("1 watching", { timeout: 20_000 });
   await lex.keyboard.press("Escape");

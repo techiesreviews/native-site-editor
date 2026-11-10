@@ -27,7 +27,7 @@ function onDot(state: Extract<ShareState, { sharing: true }>): RowDot {
 
 /** The guests by initial, at most three and a "+N", each in the colour Lex's tab gave them. */
 function chips(guests: Extract<ShareState, { sharing: true }>["guests"]) {
-  const list = node("span", "share-row__people");
+  const list = node("span", "link-row__people");
   list.setAttribute("aria-hidden", "true");
   const shown = guests.slice(0, GUESTS_SHOWN), rest = guests.slice(shown.length);
   list.append(...shown.map((guest) => {
