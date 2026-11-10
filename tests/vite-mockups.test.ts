@@ -214,8 +214,8 @@ test("the index shows each label with the tickets it came from, and a legend say
     ["building", "Being built</span></dt><dd>"], ["planned", "Planned</span></dt><dd>"], ["idea", "Idea only</span></dt><dd>No build ticket"]]) {
     assert.ok(html.includes(`<dt><span class="shipping shipping--${label}">${meaning}`), label);
   }
-  // The editor's own tokens, light and dark, colour the labels.
-  assert.match(html, /--success-bg: var\(--semantic-success-surface\);[\s\S]*@media \(prefers-color-scheme: dark\)[\s\S]*\.shipping--live \{ background: var\(--success-bg\)/);
+  // The editor's own tokens, each light and dark in one light-dark() value, colour the labels.
+  assert.match(html, /--semantic-success-surface: light-dark\([\s\S]*--success-bg: var\(--semantic-success-surface\);[\s\S]*\.shipping--live \{ background: var\(--success-bg\)/);
 });
 
 test("a build with the plugin writes the mock-ups and the index under mockups/", async () => {
