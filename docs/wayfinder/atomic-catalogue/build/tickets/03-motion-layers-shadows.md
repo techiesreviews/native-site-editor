@@ -41,8 +41,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Layers: `--layer-raised` 1, `--layer-canvas` 20, `--layer-pins` 25, `--layer-bar` 30, `--layer-popover` 40, `--layer-dialog` 90, `--layer-tooltip` 95, `--layer-wizard` 1000, `--layer-drag` 1050, `--layer-celebration` 1100, `--layer-note` 10000. `docs/editor-colors.md` lists which raw value moves to which step and where two parts now share a step (the move changes which wins where they overlap). `tests/theme-tokens.test.ts` keeps the steps in order.
 - Elevation: `--shadow-small` (step 1) and `--shadow` (step 3) stay; added `--elevation-2` and `--elevation-4` (the dialog's two-layer shadow), all through `--semantic-shadow`, so they follow light and dark.
 - `docs/editor-colors.md` has a "Motion, layers and elevation" section.
-- Boot size: the new tokens cost about 175 bytes gzip in the boot stylesheet (`theme.css`) and the base had about 30 bytes of room, so the same slice removes styles nothing uses: `.milestone`, `.small-dot`, `.fine-print`, `.step-number` and `.setup-card` in `src/style.css`, and the `.component-dialog__files` / `.component-dialog__notes` rule in `src/page-builder/components.css` (no script, markup or test names them), about 165 bytes gzip.
-- Validation: `kit unit --affected`, `kit specs --affected`, `npm run check`, `npm run lint` and `kit size` are quoted below.
+- Boot size: the new tokens cost about 175 bytes gzip in the boot stylesheet (`theme.css`) and the base had about 30 bytes of room, so the same slice removes styles nothing uses: `.milestone`, `.small-dot`, `.fine-print`, `.step-number` and `.setup-card` in `src/style.css`, and the `.component-dialog__files` / `.component-dialog__notes` rule in `src/page-builder/components.css` and the unused `.layout-grid` and `.layout-flex` in `src/utilities.css` (no script, markup or test names them). Boot stylesheets together are 37 bytes gzip smaller than dev (21,920 against 21,957).
+- Validation, on the final commit:
+  - `RESULT: ok unit 2/2 (1 files)`
+  - `RESULT: ok specs 28/28 passed`
+  - `npm run check`: `RESULT: ok tokens in step`; `npm run lint` ok
+  - `RESULT: ok size boot 355 KB (±0 KB) vs dev@6dc6169, budget 355 KB`
+  - `RESULT: ok shots compare dev@6dc6169: base 18 cached, 0 shot; after ok; 84 files` (editor, files, structure, light and dark; the removed rules are unused, so nothing moved)
 - Not run: the one-offs count (slice 04 has not landed).
 - Feature list: no change (no visible change; the new tokens are not used by any screen yet)
 
