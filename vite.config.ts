@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { Features } from "lightningcss";
 import { defineConfig } from "vite";
 import { monacoDompurify } from "./vite-monaco-dompurify.ts";
 import { monacoTrim } from "./vite-monaco-trim.ts";
@@ -23,6 +24,10 @@ export default defineConfig({
     index: fileURLToPath(new URL("./index.html", import.meta.url)), live: fileURLToPath(new URL("./live.html", import.meta.url)),
     preview: fileURLToPath(new URL("./preview-visit.html", import.meta.url)),
   } } },
+  // Keep light-dark() as written (src/theme.css). The CSS minifier otherwise rewrites it into a
+  // prefers-color-scheme toggle, which ignores a part's inline color-scheme and adds bytes to the boot.
+  // Every browser the editor supports has light-dark(); its relative colours already need newer ones.
+  css: { lightningcss: { exclude: Features.LightDark } },
   worker: { format: "es" },
   // SVGO and oxipng are reached only from the optimise worker; prebundle them so the dev server never reloads
   // mid-session. jSquash WebP/AVIF resolve their WASM next to their own files, so they stay unbundled.

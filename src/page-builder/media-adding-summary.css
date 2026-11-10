@@ -39,5 +39,4 @@
 :is(.media-library, .media-files-adding) .media-library__adding-row-cancel:focus-visible { outline: var(--focus-ring); }
 .media-library__adding-row-cancel[hidden] { display: none; }
 /* Files: the summary stays in view at the foot of the Files panel while its tree scrolls. */
-.media-files-adding { position: sticky; bottom: 0; z-index: 2; margin: 8px; box-shadow: var(--shadow); font-size: var(--type-base); }
-@media (prefers-color-scheme: dark) { .media-files-adding { box-shadow: none; } }
+.media-files-adding { position: sticky; bottom: 0; z-index: 2; margin: 8px; box-shadow: var(--shadow-light-only); font-size: var(--type-base); }
