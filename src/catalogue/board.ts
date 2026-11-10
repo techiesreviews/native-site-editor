@@ -692,6 +692,16 @@ export function startBoard(root: HTMLElement) {
     else if (event.key === "!" || (event.shiftKey && event.code === "Digit1")) fitAll();
   });
   document.addEventListener("keyup", (event) => { if (event.code === "Space") { spaceHeld = false; root.classList.remove("is-space"); } });
+  // A part in a frame may focus itself as it draws (an open menu its first item), which takes focus into the inert
+  // <iframe> and away from the board: the board's window loses focus, and it is given back to where it was.
+  let lastFocus: HTMLElement | undefined;
+  document.addEventListener("focusin", (event) => { if (!(event.target instanceof HTMLIFrameElement)) lastFocus = event.target as HTMLElement; });
+  window.addEventListener("blur", () => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLIFrameElement) || !active.inert) return;
+    if (lastFocus?.isConnected) lastFocus.focus({ preventScroll: true });
+    else active.blur();
+  });
 
   // ---------- Wheel: a mouse wheel and a pinch zoom round the pointer, a trackpad's scroll pans ----------
 
