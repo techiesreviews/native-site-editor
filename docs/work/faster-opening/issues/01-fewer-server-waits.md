@@ -113,3 +113,7 @@ Each early read is a first try only: whatever happens to it, the boot ends where
 
 Feature list: no change (nothing a person sees changes except that the editor opens sooner; the one failure-path change is described under Behaviour).
 
+### UX follow-ups
+
+- UX (looks off): F-setup-09 The project menu shows "Sign out of native-demo-user" at the bottom, and the try passed. But at 390 px the refresh button is 24 px and the menu rows are 32 px tall, which is under the 44 px a touch target needs. The Share rows also have grey dots on them. No image shows the sign-in screen after signing out. (.scratch/ux/fleet-lead/20261110-003118-Q98Brn/F-setup-09-contact.webp)
+- UX (looks off): F-repo-01 The repository ends on the preview of its home page ("Routed by folders"). Before that, on a phone, the first three frames show "Select a page" and a Files panel saying "Loading files…" that fills the screen. Then frame 4 shows an empty preview. So the site does not open straight into the preview, and the first thing shown is something nobody asked for. (.scratch/ux/fleet-lead/20261110-003118-Q98Brn/editor-F-repo-01-390-light-open-strip.webp)
