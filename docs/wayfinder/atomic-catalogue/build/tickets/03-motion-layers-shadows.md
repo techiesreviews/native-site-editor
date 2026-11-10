@@ -58,3 +58,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Fixed: `scripts/check-css-vars.mjs` now strips comments from scripts and ignores a name that sits right after `var(`, so only a name a script writes (`setProperty`, `--name:` in a `cssText` string, a template prefix) counts as defined. Tests: a script that only mentions or reads `--ghost` leaves one problem; a `cssText` or quoted `setProperty` write defines the name. The layers test now pins the eleven names in order. The doc's z-index map includes `0`, and its check paragraph says what counts.
 - Still open for the lead: the size gate (see the first Done list); nothing left for the builder.
 - Validation: `kit unit --affected` `RESULT: ok unit 8/8 (1 files)`; `npm run check` ok (`RESULT: ok css vars defined`); `npm run lint` ok; `kit specs --affected` `RESULT: ok specs 1/1 passed`.
+
+### Review follow-up round 3 (2026-11-10)
+
+- Fixed: `scripts/check-css-vars.mjs` now counts only writes: a quoted name in the first argument of `setProperty` (both arms of a ternary, as in `spotlight.ts`), `--name:` in a style string, or a template prefix. `getPropertyValue`, `removeProperty`, `var()` reads and comments no longer define a name. It also strips HTML comments from `index.html` and leaves an unclosed `/*` (a glob in a string) alone. New tests: a read with `getPropertyValue` or `removeProperty` leaves one problem; the ternary writes count; the glob and HTML comment cases.
+- Still open for the lead: the size gate (`RESULT: fail size boot 355 KB over budget 355 KB`, about 170 bytes over; raise the budget by 1 KB or pay the bytes back from the boot CSS). Nothing left for the builder; this round changed no boot CSS.

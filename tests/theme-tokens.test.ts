@@ -50,3 +50,20 @@ test("a script that writes a name in cssText or a quoted setProperty does define
   const scripts = { "a.ts": "el.style.cssText = 'top: 1px; --nub: 2px'; box.style.setProperty('--ghost', c); // https://example.com" };
   assert.deepEqual(undefinedProperties({ "a.css": ".x{top:var(--nub) var(--ghost)}" }, scripts, {}), []);
 });
+
+test("a script that only reads or removes a name does not define it", () => {
+  const sheets = { "a.css": ".x{top:var(--ghost)}" };
+  for (const code of ["getComputedStyle(el).getPropertyValue('--ghost')", "el.style.removeProperty('--ghost')"]) {
+    assert.equal(undefinedProperties(sheets, { "a.ts": code }, {}).length, 1, code);
+  }
+});
+
+test("both arms of a ternary name in setProperty count as written", () => {
+  const scripts = { "a.ts": "arrow.style.setProperty(vertical ? \"--arrow-top\" : \"--arrow-left\", `${n}px`);" };
+  assert.deepEqual(undefinedProperties({ "a.css": ".x{top:var(--arrow-top);left:var(--arrow-left)}" }, scripts, {}), []);
+});
+
+test("a glob with an unclosed comment opener and an HTML comment do not hide or add writes", () => {
+  const scripts = { "a.ts": "const glob = \"**/*.ts\"; el.style.setProperty('--real', '1');", "index.html": "<!-- --ghost: 1; -->" };
+  assert.deepEqual(undefinedProperties({ "a.css": ".x{top:var(--real) var(--ghost)}" }, scripts, {}).map(problem => problem.match(/--[a-z]+/)![0]), ["--ghost"]);
+});
