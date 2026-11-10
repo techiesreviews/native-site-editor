@@ -19,7 +19,7 @@ export type ReplaceContext = LibrarySheetContext & {
   /** The Media pane; the picker opens inside the popover holding it, so the pane stays open. */
   dialog: HTMLElement;
   /** File details of `path`: Cancel and Back return there; after replacing it opens on the new picture. */
-  details(path: string): Promise<void>;
+  details(path: string, undo?: ToastAction): Promise<void>;
   /** Closes the explorer (a page named in the confirm opens). */
   close(): void;
 };
@@ -127,7 +127,8 @@ function confirmReplace(sheet: LibrarySheet, c: ReplaceContext, path: string, ne
     // The toast names the pages and carries Undo, bound to this step as it committed (slice 113).
     c.done([replacedMessage(to, next.name, used.map(label)), ...notices].join(" "), undo);
     next.release(); c.cache.clear(); await c.refresh();
-    if (c.alive() && c.library().items.some(item => item.path === to)) await c.details(to);
+    // The new picture's details carry the step's Undo beside the picture, so it is reachable once the toast is gone.
+    if (c.alive() && c.library().items.some(item => item.path === to)) await c.details(to, undo);
     else if (c.alive() && version === sheet.version) { sheet.version++; element.hidden = true; delete element.dataset.mode; element.replaceChildren(); }
   }), "button primary"));
   element.append(actions);

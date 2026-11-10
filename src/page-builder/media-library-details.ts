@@ -14,6 +14,7 @@ import { mediaDetailParts } from "./media-library-video";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
 import type { MenuItem } from "../components/row-menu";
 import type { MediaBytes } from "./media-byte-cache";
+import type { ToastAction } from "../components/toast";
 import type { MediaMetadata } from "./media-metadata";
 import { markTransparency } from "./media-transparency";
 
@@ -49,7 +50,7 @@ function backToGrid(sheet: LibrarySheet, h: DetailHost, path: string) {
 /** Open File details of `path` (media-manager ticket 06, tiles.html): its own screen with Back,
  * a large preview beside grouped information on wide screens, stacked on phones.
  * A `background` open (a refresh) keeps focus where it is. */
-export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: string, background = false) {
+export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: string, background = false, undo?: ToastAction) {
   const { element } = sheet, { dialog, grid, cache, tell } = h;
   if (!h.alive()) return;
   const initiatingFocus = document.activeElement;
@@ -90,10 +91,16 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
   const replace = !h.modal && h.adapter.replace && canReplaceEverywhere(path, library.items.map(item => item.path), library.metadata)
     ? () => void h.task(async () => {
       const { replaceEverywhere } = await import("./media-library-replace");
-      if (current()) await replaceEverywhere(sheet, { ...h, details: to => showMediaDetail(sheet, h, to) }, path);
+      if (current()) await replaceEverywhere(sheet, { ...h, details: (to, undo) => showMediaDetail(sheet, h, to, false, undo) }, path);
     }) : undefined;
   const still = mediaTileStills(library.items.map(item => item.path), library.metadata).get(path);
   const view = renderPreview(h, path, data, meta, still);
+  // A step just made on this picture (Replace everywhere) is taken back from the picture itself, as the top bar's Undo does.
+  if (undo) {
+    const take = button("Undo", () => { take.remove(); undo.run(); }, "button secondary media-detail__undo");
+    take.prepend(icon("undo", 16));
+    view.append(take);
+  }
   layout.append(view, info);
   element.replaceChildren(head, layout);
   const player = view.querySelector<HTMLVideoElement | HTMLAudioElement>("video, audio") ?? undefined;

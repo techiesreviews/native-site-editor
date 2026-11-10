@@ -21,6 +21,9 @@
 .media-detail__preview .media-library__format { position: static; font-weight: 600; color: var(--text); }
 .media-detail__preview .media-library__type-picture { inline-size: 40px; block-size: 40px; }
 
+/* Undo of a step just made on this picture (Replace everywhere), under the stage. */
+.media-detail__undo { display: flex; align-items: center; gap: 6px; inline-size: fit-content; margin: 8px auto 0; }
+
 /* Wide: the stage fills the left and stays put while the inspector scrolls; the file sits whole in
    its middle, never enlarged, on the stage colour (never black). */
 @container media-detail (min-width: 720px) {

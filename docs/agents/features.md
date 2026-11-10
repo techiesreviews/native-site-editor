@@ -147,7 +147,7 @@ its number unused.
 
 ### F-repo-06 Refresh from GitHub
 - Try: In Branches press Refresh from GitHub after a commit made on GitHub.
-- Good: The branch is read again on the same page; a GitHub that never answers offers Try again rather than a blank screen.
+- Good: The branch is read again on the same page; a GitHub that never answers shows a notice on the failed screen with a Try again button, which repeats the open, rather than a blank screen.
 - Files: `src/components/repository-menu.ts`, `src/github-reads.ts`, `src/read-retry.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-github-silent.spec.ts`
@@ -775,8 +775,8 @@ its number unused.
 
 ### F-media-08 Replace everywhere
 - Try: In File details choose Replace everywhere and pick another picture.
-- Good: Every page shows the new picture under the old address, in one Undo; the old one goes to Recently removed.
-- Files: `src/page-builder/media-library-replace.ts`, `src/page-builder/media-replace-rules.ts`, `src/page-builder/replace-everywhere.ts`
+- Good: Every page shows the new picture under the old address, in one Undo (the top bar's, or the Undo beside the new picture in File details, which stays after the dialog closes and reopens on that file); the old one goes to Recently removed.
+- Files: `src/page-builder/media-library-replace.ts`, `src/page-builder/media-library-details.ts`, `src/page-builder/media-replace-rules.ts`, `src/page-builder/replace-everywhere.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-rename.spec.ts`
 - Steps: none yet (the starter has one PNG, so Replace everywhere offers nothing else to choose)

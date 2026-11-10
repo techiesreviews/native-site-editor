@@ -1,12 +1,11 @@
 // The #status live region, the notice bar and the editor's GitHub reads
 // (`/api/…` through fetchWithReadRetry) and writes. A read GitHub never
 // answers, or answers 502/503 to every try (src/read-retry.ts), while a site
-// opens is also said as the toast with Try again, which repeats that open.
+// opens is said in the notice bar itself, which carries Try again to repeat that open.
 
 import { readApiReceipt, type ApiReceipt } from "./boot-api-response";
-import type { ToastAction } from "./components/toast";
 import { fetchWithReadRetry, ReadUnansweredError, UNANSWERED } from "./read-retry";
-import { link, node } from "./ui/dom";
+import { button, link, node } from "./ui/dom";
 
 export class ApiError extends Error {
   constructor(
@@ -30,8 +29,6 @@ export interface GitHubReadsPorts {
   handleChunkLoadFailure(error: unknown): unknown;
   /** The GitHub session expired: the sign-in page says so. */
   expired(): void;
-  /** Says `text` in #status (as the user's own announcement) and shows it as the toast with `action`. */
-  say(text: string, action: ToastAction): void;
 }
 
 export function createGitHubReads(ports: GitHubReadsPorts) {
@@ -57,7 +54,8 @@ export function createGitHubReads(ports: GitHubReadsPorts) {
     else if (!app.classList.contains("login-page"))
       app.insertBefore(notice, document.querySelector(".workspace"));
   }
-  // `retry` repeats the open that failed: a read whose tries all failed (no answer, or 502/503) is offered again with Try again.
+  // `retry` repeats the open that failed: a read whose tries all failed (no answer, or 502/503) is offered again with Try again,
+  // a button in the notice, so it stays where the failure is shown until it is used or the open is made again.
   function errorMessage(error: unknown, retry?: () => void) {
     if (ports.handleChunkLoadFailure(error)) return;
     if (error instanceof ApiError && error.status === 401) {
@@ -76,9 +74,12 @@ export function createGitHubReads(ports: GitHubReadsPorts) {
     );
     if (error instanceof ApiError && error.status === 401)
       notice.append(link("Reconnect GitHub", "/auth/login", "text-link"));
+    if (unanswered(error) && retry) {
+      // Pressing it hides this notice; the open it repeats shows its own loading state, and a failure shows the notice again.
+      notice.append(button("Try again", () => { clearError(); retry(); }, "button primary"));
+      status(UNANSWERED);
+    } else status("The last request did not complete.");
     notice.hidden = false;
-    if (unanswered(error) && retry) ports.say(UNANSWERED, { label: "Try again", run: retry });
-    else status("The last request did not complete.");
   }
   // `early`: the page's own first try of this read (src/boot-reads.ts EarlyReads); the tries after it, if it gets no answer or a 502/503, are this read's own.
   async function apiResponse<T>(path: string, params?: Record<string, string>, early?: Promise<Response>): Promise<ApiReceipt<T>> {

@@ -190,6 +190,33 @@ test("Replace everywhere with a picture in Media changes it on two pages with th
   await expect.poll(() => shownWidth(page)).toBe(40);
 });
 
+test("Replace everywhere, close the Media dialog: the top bar's Undo restores the old picture", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await expect.poll(() => shownWidth(page)).toBe(40);
+  await replaceWithNext(page);
+  await expect.poll(() => shownWidth(page)).toBe(600);
+  // Closed with no toast to reach: the one Undo is the top bar's.
+  await page.getByRole("tab", { name: "Pages", exact: true }).click(); await page.keyboard.press("Escape");
+  await expect(pane(page)).toBeHidden();
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => pageText(page, "index.html")).toContain('src="/images/tram.webp"');
+  await expect.poll(() => shownWidth(page)).toBe(40);
+});
+
+test("after Replace everywhere the new picture's details carry Undo, which restores the old picture", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await expect.poll(() => shownWidth(page)).toBe(40);
+  await replaceWithNext(page);
+  await expect.poll(() => shownWidth(page)).toBe(600);
+  // The toast goes on its own clock; the Undo beside the picture stays until it is used.
+  const undo = pane(page).locator(".media-detail__view").getByRole("button", { name: "Undo", exact: true });
+  await expect(undo).toBeVisible();
+  await undo.click();
+  await expect(undo).toHaveCount(0);
+  await expect.poll(() => pageText(page, "index.html")).toContain('src="/images/tram.webp"');
+  await expect.poll(() => shownWidth(page)).toBe(40);
+});
+
 test("after Replace everywhere the canvas shows the new picture, and Publish puts its bytes at the old path on GitHub", async ({ page, baseURL }) => {
   await seed(page, baseURL);
   await expect.poll(() => shownWidth(page)).toBe(40);

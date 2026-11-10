@@ -59,13 +59,11 @@ const app = document.querySelector<HTMLDivElement>("#app")!;
 const element = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T;
 // #status and the toast with its Undo (src/announce.ts).
-const { announce, showToast, undoAction } = createAnnounce({ element, editorModule: sourceEditor });
+const { announce, undoAction } = createAnnounce({ element, editorModule: sourceEditor });
 // #status, the notice bar and the GitHub reads.
 const { status, settleStatus, clearError, placeNotice, errorMessage, api, apiResponse, postApi } = createGitHubReads({
   app, element, explorer: () => workspace.explorerDropdown, trackRead: (read) => codePanes.trackRead(read), handleChunkLoadFailure,
   expired: () => renderLogin("expired"),
-  // As say() in src/components/toast.ts, which loads on first use.
-  say: (text, action) => { element("status").textContent = text; showToast(text, action); },
 });
 setErrorReporter(errorMessage);
 // The source editor without Monaco (src/components/source-editor.ts): drafts,
