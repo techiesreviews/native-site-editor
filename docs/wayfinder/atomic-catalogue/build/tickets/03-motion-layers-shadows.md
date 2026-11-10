@@ -1,7 +1,7 @@
 ---
 title: "Motion, layer and shadow tokens"
 type: task (AFK)
-status: closed
+status: open
 assignee: fleet-lead
 builder: claude
 blocked_by: [02-framework-shared-values]
@@ -38,10 +38,17 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `src/theme.css` (outside the generated block) now defines the shared values as tokens only; no component uses them yet, so nothing changes look.
 - Motion: `--dur-hover` 120ms, `--dur-press` 150ms, `--dur-tooltip` 180ms, `--dur-menu` 200ms, `--dur-sheet` 300ms, `--dur-fly` 600ms, and `--ease-out`, which was used in `media-picker.css` as `var(--ease-out, ease-out)` but defined nowhere. It is set to the browser's own ease-out curve (`cubic-bezier(0, 0, 0.58, 1)`), so those three places look exactly as before. The steeper curve the board's parts use is `--ease-out-strong` (`cubic-bezier(0.23, 1, 0.32, 1)`); the replacement slices pick it where they want it.
-- Layers: `--layer-raised` 1, `--layer-canvas` 20, `--layer-bar` 30, `--layer-popover` 40, `--layer-dialog` 90, `--layer-wizard` 1000, `--layer-celebration` 1100, `--layer-note` 10000, in the order the raw values stack today.
+- Layers: `--layer-raised` 1, `--layer-canvas` 20, `--layer-pins` 25, `--layer-bar` 30, `--layer-popover` 40, `--layer-dialog` 90, `--layer-tooltip` 95, `--layer-wizard` 1000, `--layer-drag` 1050, `--layer-celebration` 1100, `--layer-note` 10000. `docs/editor-colors.md` lists which raw value moves to which step and where two parts now share a step (the move changes which wins where they overlap).
 - Elevation: `--shadow-small` (step 1) and `--shadow` (step 3) stay; added `--elevation-2` and `--elevation-4` (the dialog's two-layer shadow), all through `--semantic-shadow`.
 - `docs/editor-colors.md` has a "Motion, layers and elevation" section.
 - Validation: `kit unit --affected` `RESULT: ok unit none affected`; `npm run check` ok (`RESULT: ok tokens in step`); `npm run lint` ok; `kit specs --affected` `RESULT: ok specs 1/1 passed`; `kit shots editor files structure --compare dev` `RESULT: ok shots compare dev@6dc6169 ... 84 files`.
-- Not green: `kit size` `RESULT: fail size boot 355 KB over budget 355 KB`. The base was already at the limit (about 30 bytes of room, per slice 02); the 14 new tokens add about 170 bytes gzip to the boot stylesheet (`theme.css`), so the boot is about 140 bytes over. Dropping `--elevation-1` and `--elevation-3` aliases saved a little but not enough. Options for the lead: raise the budget by 1 KB, or pay the bytes back from elsewhere in the boot CSS.
+- Not green, waiting for the lead: `kit size` `RESULT: fail size boot 355 KB over budget 355 KB` (re-run after the review changes, `boot 355 KB (±0 KB)` against dev). The base was already at the limit (about 30 bytes of room, per slice 02); the new tokens add about 200 bytes gzip to the boot stylesheet (`theme.css`). The ticket stays open until the lead picks one: raise the boot budget (with the lead's OK on record), or pay the bytes back from elsewhere in the boot CSS. Then a passing `kit size` line is quoted here.
 - Not run: the one-offs count (slice 04 has not landed).
 - Feature list: no change (no visible change; the new tokens are not used by any screen yet)
+
+### Review follow-up (2026-11-10)
+
+- Fixed: the ticket is open again while the size gate is red; the layer scale gained `--layer-pins`, `--layer-tooltip` and `--layer-drag`, and the doc maps every raw z-index to a step and says where the move merges steps; the doc says there is no `--elevation-1` or `--elevation-3`; the easing comment says what the plain `ease-out` keyword is.
+- New checks: `scripts/check-css-vars.mjs` (in `npm run check`, `RESULT: ok css vars defined`) fails when a `var(--name)` in `src/**/*.css` names a property no stylesheet declares, no script sets (a literal name or a template prefix such as `--agent${part}`) and no listed open hook covers (`--structure-surface`). A fallback does not excuse it, so it would have caught `--ease-out`; the review text said "without a fallback", which would not have, because `--ease-out` always had one. `tests/theme-tokens.test.ts` keeps the `--layer-*` values strictly increasing in written order and tests the check on fixtures, including the `--ease-out` case.
+- Validation: `kit unit --affected` `RESULT: ok unit 6/6 (1 files)`; `npm run check` ok; `npm run lint` ok; `kit specs --affected` `RESULT: ok specs 1/1 passed`.
+- Declined (nit): a `prefers-reduced-motion` block that sets the `--dur-*` tokens to 0ms — reason: it adds boot bytes while the size gate is already red; the doc tells the replacement slices to switch motion off.

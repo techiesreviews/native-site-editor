@@ -251,20 +251,25 @@
   --dur-menu: 200ms;
   --dur-sheet: 300ms;
   --dur-fly: 600ms;
-  /* --ease-out is the browser's own ease-out curve, the one the plain
-     keyword gives and the only one used so far; --ease-out-strong is the
-     steeper curve the board's parts use. */
+  /* --ease-out is the curve the plain ease-out keyword gives, which every
+     transition uses today; --ease-out-strong is the steeper curve the
+     board's parts use. */
   --ease-out: cubic-bezier(0, 0, 0.58, 1);
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
 
-  /* Layers: named z-index steps, lowest to highest. Raised is local to one
-     part; the rest order whole parts over the page and the preview. */
+  /* Layers: named z-index steps, lowest to highest (a test keeps them in
+     this order). Raised is local to one part; the rest order whole parts
+     over the page and the preview. docs/editor-colors.md says which raw
+     value moves to which step. */
   --layer-raised: 1;
   --layer-canvas: 20;
+  --layer-pins: 25;
   --layer-bar: 30;
   --layer-popover: 40;
   --layer-dialog: 90;
+  --layer-tooltip: 95;
   --layer-wizard: 1000;
+  --layer-drag: 1050;
   --layer-celebration: 1100;
   --layer-note: 10000;
 
