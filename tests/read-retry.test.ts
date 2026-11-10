@@ -145,3 +145,14 @@ test("a first try asked already (the page's early read) is the first of the four
   assert.equal((await silent.result).status, 200);
   assert.deepEqual(silent.times, [9000]);
 });
+
+test("a first try that answers leaves no abort listener behind on its try's signal", async (t) => {
+  const add = t.mock.method(AbortSignal.prototype, "addEventListener");
+  const remove = t.mock.method(AbortSignal.prototype, "removeEventListener");
+  const response = await settle(fetchWithReadRetry("/api/session", {}, { fetcher: () => Promise.reject(new Error("not asked")), first: Promise.resolve(reply(200)) }));
+  assert.equal(response.status, 200);
+  const added = add.mock.calls.filter((call) => call.arguments[0] === "abort");
+  const removed = remove.mock.calls.filter((call) => call.arguments[0] === "abort");
+  assert.equal(added.length, 1);
+  assert.deepEqual(removed.map((call) => [call.this, call.arguments[1]]), added.map((call) => [call.this, call.arguments[1]]));
+});
