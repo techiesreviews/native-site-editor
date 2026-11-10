@@ -66,3 +66,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - UX (looks off): F-bar-01 the bar sits by the new heading with its name as a label and the phone bar is docked at the foot, but adding the heading shows a toast ("Heading added. Into Section "Recent work" › after Div" with Undo); the mock-up has Undo with no message. On the phone this toast covers the heading under it ("Have a project in"). Publish carries a "1" count, which the mock-up removes. The path above the canvas and the toast show code words ("section.flow", "Div") (.scratch/ux/fleet-lead/20261110-074723-RGR9T6/editor-F-bar-01-390-light-bar-strip.webp)
 - UX (looks off): F-phone-03 at 390 px the top bar takes two rows: the project name on one, then Undo, Redo, History and Publish below it. Publish stays in view once the site is open, but while the Files explorer is open during loading the Publish row is gone. Opening the explorer from the top bar was not tried (.scratch/ux/fleet-lead/20261110-074723-RGR9T6/editor-F-repo-01-390-light-open-strip.webp)
+
+### Follow-ups
+
+- Validation gaps (gap): R2-10 still open: this is the same point as R2-1. The github-silent spec was not changed.
+- Validation gaps (gap): R2-9 still open: this is the same point as R2-2. The media-rename spec was not changed.
+- Validation gaps (gap): R2-2 still open: `tests/native-save/native-media-rename.spec.ts` did not change. No spec leaves File details another way than Back and then opens them again while the step is still the newest.
+- Validation gaps (gap): R2-1 still open: `tests/native-save/native-github-silent.spec.ts` did not change in this round. No end-to-end spec presses Try again, lets the repeated open fail, and then checks that the new panel has one button and that it has focus.
+- Validation gaps (gap): R1-8 / R2-1 / R2-10, still open: in `tests/native-save/native-github-silent.spec.ts`, keep GitHub silent and press Try again on `#content .empty-message`. Let the repeated open fail. Then check three things: exactly one Try again exists on the new panel (`#content .empty-message button` has a count of 1); `#notice` holds no Try again; that button is `document.activeElement`. Today only the fake-element unit test at `tests/github-reads.test.ts:134` covers focus.
+- Validation gaps (gap): R1-7 / R2-2 / R2-9, still open: in `tests/native-save/native-media-rename.spec.ts`, after Replace everywhere, close the dialog. Then close the Media pane, open it again, and open the new picture's File details without making any newer change. Assert whichever behaviour is intended: Undo is shown again, and pressing it restores the old picture; or Undo is not shown. `sheet.undo` is only cleared on Back, so today this path is not pinned down.
+
