@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -185,7 +185,12 @@ test("the build's early reads script asks the session, the listing, the address'
   const context: Record<string, unknown> = {
     location: { hash: "#repo=501&branch=main" },
     localStorage: { getItem: () => JSON.stringify({ login: "lex", repoId: 501, fullName: "lex/site", branch: "main", commit: "a".repeat(40), files: [] }), removeItem: () => {} },
-    fetch: (url: string) => { asked.push(url); return new Promise(() => {}); },
+    // The session answers signed in; the rest never answer.
+    fetch: (url: string) => {
+      asked.push(url);
+      const body = { user: { login: "lex" } };
+      return url === "/api/session" ? Promise.resolve({ ok: true, clone: () => ({ json: async () => body }) }) : new Promise(() => {});
+    },
     URLSearchParams, AbortController, Promise, JSON, Array, Number,
     setTimeout: (run: () => void, ms: number) => setTimeout(run, ms), clearTimeout: (timer: ReturnType<typeof setTimeout>) => clearTimeout(timer),
   };
@@ -199,6 +204,21 @@ test("the build's early reads script asks the session, the listing, the address'
   context.globalThis = context;
   new Script(bundle.code).runInNewContext(context);
   assert.deepEqual(asked, ["/api/session", "/api/repositories", "/api/snapshot?repo=lex%2Fsite&branch=main"]);
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(head.map(({ rel, as, href }) => ({ rel, as, href })), [{ rel: "preload", as: "script", href: "/assets/native-preview-runtime-0.js" }], "the preview runtime its tag names");
   assert.match(immutableRuntimeAsset(bundle, "boot-early").fileName, /^boot-early-[\da-f]{12}\.js$/);
+});
+
+test("the built editor page asks for the session and the list first and names the emitted runtime and early script", async () => {
+  const { build } = await import("vite");
+  const outDir = join(scratch, "build");
+  await build({ configFile: join(root, "vite.config.ts"), root, logLevel: "silent", build: { outDir, emptyOutDir: true } });
+  const page = readFileSync(join(outDir, "index.html"), "utf8");
+  const assets = readdirSync(join(outDir, "assets"));
+  const runtime = assets.find((name) => /^native-preview-runtime-[\da-f]{12}\.js$/.test(name));
+  const early = assets.find((name) => /^boot-early-[\da-f]{12}\.js$/.test(name));
+  assert.ok(runtime && early);
+  assert.match(page, /<head>\s*<link rel="preload" as="fetch" crossorigin="use-credentials" href="\/api\/session">\s*<link rel="preload" as="fetch" crossorigin="use-credentials" href="\/api\/repositories">/);
+  assert.ok(page.includes(`<script src="/assets/${early}" async fetchpriority="high" data-runtime="/assets/${runtime}"></script>`));
+  for (const other of ["live.html", "preview-visit.html"]) assert.doesNotMatch(readFileSync(join(outDir, other), "utf8"), /boot-early|api\/session/, other);
 });

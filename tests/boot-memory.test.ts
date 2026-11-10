@@ -93,3 +93,8 @@ test("the remembered name for the page's early snapshot: only for the same repos
   store.set("ase:boot-memory:v1:8", JSON.stringify({ repoId: 8, branch: "main", fullName: 42 }));
   assert.equal(rememberedName(storage, 8, "main"), undefined);
 });
+
+test("an oversized record is not parsed for the early snapshot's name", () => {
+  const storage = { getItem: () => JSON.stringify({ repoId: 501, branch: "main", fullName: "lex/site", pad: "x".repeat(5000) }) };
+  assert.equal(rememberedName(storage, 501, "main"), undefined);
+});

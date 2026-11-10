@@ -141,14 +141,17 @@ test('a deleted remembered branch takes the normal path: its message, and anothe
   await expect(preview(page).locator('.hero h1')).toBeVisible();
 });
 
-test('a failed branch list on the remembered path still paints, on the remembered branch', async ({ page, baseURL }) => {
+// A failed list says so as the plain path does, beside the open site: the selector keeps the remembered
+// branch, disabled, as it has no other branch to offer.
+test('a failed branch list on the remembered path still paints, on the remembered branch, and says the list failed', async ({ page, baseURL }) => {
   await firstBoot(page, baseURL);
   await watchGuesses(page);
   await page.route(/\/api\/branches\?/, (route) => route.fulfill({ status: 500, json: { error: 'down' } }));
   await page.reload();
   await expect(preview(page).locator('.hero h1[data-guess]')).toBeVisible();
   await expect(page.locator('#branch')).toHaveValue('main');
-  await expect(page.locator('#branch')).toBeEnabled();
+  await expect(page.locator('#branch')).toBeDisabled();
+  await expect(page.locator('#notice')).toHaveText('down');
 });
 
 test('a stalled guessed snapshot does not hold the branch picker once the branch list is in', async ({ page, baseURL }) => {
@@ -180,8 +183,9 @@ test('a branch list that fails before the guessed snapshot lands does not drop t
   await expect(page.locator('#branch')).toBeDisabled();
   release();
   await expect(preview(page).locator('.hero h1[data-guess]')).toBeVisible();
-  await expect(page.locator('#branch')).toBeEnabled();
   await expect(page.locator('#branch')).toHaveValue('main');
+  await expect(page.locator('#branch')).toBeDisabled();
+  await expect(page.locator('#notice')).toHaveText('down');
 });
 
 test('a failed branch list and a guess that never lands show the branch failure within the bound', async ({ page, baseURL }) => {
@@ -287,9 +291,9 @@ test('a guess that won, abandoned by a new listing before its file batch lands: 
     await route.fulfill({ response, json: [9001, 9002].map((id) => ({ ...base, id, name: `other-${id}`, full_name: `native-demo-user/other-${id}` })) });
   });
   await page.reload();
-  // The guess won (its branch is picked before the branch list); the page waits on the held batch.
+  // The guess won (its branch is picked before the branch list, which it waits for, disabled); the page waits on the held batch.
   await expect(page.locator('#branch')).toHaveValue('main');
-  await expect(page.locator('#branch')).toBeEnabled();
+  await expect(page.locator('#branch')).toBeDisabled();
   await expect(page.locator('#content')).toContainText('Opening your repository…');
 
   listed.without = true;

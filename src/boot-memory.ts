@@ -84,7 +84,9 @@ export function writeBootMemory(store: Store, memory: BootMemory) {
  */
 export function rememberedName(store: Pick<Storage, "getItem">, repoId: number, branch: string): string | undefined {
   try {
-    const value = JSON.parse(store.getItem(PREFIX + repoId) ?? "null") as Partial<BootMemory> | null;
+    const raw = store.getItem(PREFIX + repoId);
+    // An oversized record is not parsed: this runs before the editor's first screen.
+    const value = raw !== null && raw.length <= MAX_BYTES ? JSON.parse(raw) as Partial<BootMemory> : undefined;
     return value?.repoId === repoId && value.branch === branch && isText(value.fullName, 300) ? value.fullName : undefined;
   } catch { return undefined; }
 }
