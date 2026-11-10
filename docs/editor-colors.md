@@ -30,7 +30,7 @@ WCAG sets no minimum text size. It asks for 4.5:1 text contrast and 3:1 for focu
 
 - **Motion.** Durations `--dur-hover` 120ms (a tint), `--dur-press` 150ms, `--dur-tooltip` 180ms, `--dur-menu` 200ms (menus and popovers), `--dur-sheet` 300ms and `--dur-fly` 600ms. `--ease-out` is the browser's own `ease-out` curve (`cubic-bezier(0, 0, 0.58, 1)`), so the three places that already wrote `var(--ease-out, ease-out)` keep their look (the plain `ease-out` keyword is what every transition uses today); `--ease-out-strong` (`cubic-bezier(0.23, 1, 0.32, 1)`) is the steeper curve the board's parts use. Move only `transform`, `opacity` and colours, and switch the motion off under `prefers-reduced-motion`.
 - **Layers.** `--layer-raised` 1 (inside one part), `--layer-canvas` 20, `--layer-pins` 25, `--layer-bar` 30, `--layer-popover` 40, `--layer-dialog` 90, `--layer-tooltip` 95, `--layer-wizard` 1000, `--layer-drag` 1050, `--layer-celebration` 1100 and `--layer-note` 10000 (the refusal note). `tests/theme-tokens.test.ts` keeps the steps in this order. Where a raw `z-index` moves when its part is replaced:
-  - 1 to 6, -1 and -2: stay local numbers inside their part, or `--layer-raised`.
+  - 0 to 6, -1 and -2: stay local numbers inside their part, or `--layer-raised`.
   - 19, 20 and 21 (the page builder's canvas layer, carets, the insert layer, the card-grid controls) to `--layer-canvas`; they now share a step, so the DOM order decides between them.
   - 25 and 26 (the agent pins and their tray) to `--layer-pins`; the tray now shares the step.
   - 29 (the flashing canvas layer) to `--layer-pins`: it moves below the bar, as before, and now shares a step with the pins.
@@ -42,7 +42,7 @@ WCAG sets no minimum text size. It asks for 4.5:1 text contrast and 3:1 for focu
   Moves that merge steps change which of two parts wins where they overlap; check the screen when a part moves.
 - **Elevation.** Four steps. Step 1 is the existing `--shadow-small` (a pin or round button), step 2 `--elevation-2` (a small card), step 3 the existing `--shadow` (a floating panel) and step 4 `--elevation-4` (a dialog). There is no `--elevation-1` or `--elevation-3`; the two existing names keep working. All use `--semantic-shadow`, so they follow light and dark.
 
-`npm run check` also runs `scripts/check-css-vars.mjs`: every `var(--name)` in `src/**/*.css` must name a property that some stylesheet declares, that a script sets (`style.setProperty("--name", …)`, or a template such as `--agent${part}`), or that is listed in the script's open hooks with a reason. A fallback does not excuse a name defined nowhere, which is how `--ease-out` went unnoticed.
+`npm run check` also runs `scripts/check-css-vars.mjs`: every `var(--name)` in `src/**/*.css` must name a property that some stylesheet declares, that a script writes (`style.setProperty("--name", …)`, `--name:` in a `cssText` string, or a template such as `--agent${part}`), or that is listed in the script's open hooks with a reason. A name a script only mentions in a comment or reads with `var()` does not count, and neither does a fallback: that is how `--ease-out` went unnoticed.
 
 ## Writing a themed colour
 

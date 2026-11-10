@@ -8,7 +8,7 @@ const theme = readFileSync(new URL("../src/theme.css", import.meta.url), "utf8")
 
 test("the --layer-* steps are strictly increasing in the order they are written", () => {
   const layers = [...theme.matchAll(/^\s*(--layer-[\w-]+):\s*(\d+);/gm)].map(([, name, value]) => ({ name, value: Number(value) }));
-  assert.ok(layers.length >= 8, "the layer block is found");
+  assert.deepEqual(layers.map(layer => layer.name), ["raised", "canvas", "pins", "bar", "popover", "dialog", "tooltip", "wizard", "drag", "celebration", "note"].map(step => `--layer-${step}`));
   layers.slice(1).forEach((layer, index) => {
     assert.ok(layer.value > layers[index].value, `${layer.name} (${layer.value}) is above ${layers[index].name} (${layers[index].value})`);
   });
@@ -38,4 +38,15 @@ test("a declaration, a literal script name, a script template prefix and an open
 
 test("a declaration inside a comment does not define a name", () => {
   assert.equal(undefinedProperties({ "a.css": "/* --ghost: 1; */ .x { top: var(--ghost); }" }, {}, {}).length, 1);
+});
+
+test("a script that only mentions or reads a name does not define it", () => {
+  const problems = undefinedProperties({ "a.css": ".x{top:var(--ghost)}" }, { "a.ts": "// --ghost\nel.style.cssText = 'top: var(--ghost)';" }, {});
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /var\(--ghost\)/);
+});
+
+test("a script that writes a name in cssText or a quoted setProperty does define it", () => {
+  const scripts = { "a.ts": "el.style.cssText = 'top: 1px; --nub: 2px'; box.style.setProperty('--ghost', c); // https://example.com" };
+  assert.deepEqual(undefinedProperties({ "a.css": ".x{top:var(--nub) var(--ghost)}" }, scripts, {}), []);
 });
