@@ -61,7 +61,7 @@ async function findFile(fetcher: Fetcher, target: Target, snapshot: Snapshot): P
   let entries = snapshot.entries;
   const parts = APPROVALS_PATH.split("/");
   for (const [index, name] of parts.entries()) {
-    const entry = entries.find((item) => item.path === name || item.path.endsWith(`/${name}`));
+    const entry = entries.find((item) => item.path === name || item.path.endsWith("/" + name));
     if (!entry || index === parts.length - 1) return entry?.type === "blob" ? entry : undefined;
     entries = (await getJson<{ entries: TreeEntry[] }>(fetcher, "tree", { repo: target.repo, sha: entry.sha })).data.entries ?? [];
   }
