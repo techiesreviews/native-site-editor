@@ -12,6 +12,7 @@ import type { Checked } from "./native-create";
 import { isRenamableMedia, mediaFileName } from "./page-builder/media-names";
 import type { ExplorerHost, PagesAndFilesPorts } from "./pages-and-files-host";
 import { pickFiles } from "./uploads";
+import { markDone } from "./ui/done-mark";
 
 // What a creation in the Files tab writes: new files (drafts with no base
 // blob), and what to show after. Planned as the name is typed, so the dialog says the result
@@ -135,7 +136,7 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
     if (change && !target.folder) items.push({ label: "Discard changes", run: () => void host.savePublish.discardFile(target.path) });
     items.push(
       { label: "Delete", shortcut: "Delete", run: () => void host.fileOps!.deleteFileTarget(target) },
-      { label: "Copy path", run: () => void copyFilePath(target.path) },
+      { label: "Copy path", run: opener => void copyFilePath(target.path, opener) },
     );
     return items;
   }
@@ -147,10 +148,11 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
     host.createDialog?.open({ in: folder, kinds: ["file", "folder"], first: kind, opener });
   }
 
-  async function copyFilePath(path: string) {
+  async function copyFilePath(path: string, opener?: HTMLElement) {
     try {
       await navigator.clipboard.writeText(path);
       ports.announce(`Copied ${path}`);
+      markDone(opener);
     } catch {
       refuse(`The path could not be copied: ${path}`);
     }

@@ -232,7 +232,7 @@ test("a component is added after the selected section, as one undo step", async 
   await page.keyboard.press("ControlOrMeta+K");
   await expect(search(page)).toBeFocused();
   await page.keyboard.type("feature");
-  await expect(active(page)).toHaveAttribute("aria-label", /^Add Feature block, <feature-block> after the selected section/);
+  await expect(active(page)).toHaveAttribute("aria-label", /^Add Feature block/);
   await expect(option(page, /^Open Feature block component, components\/feature-block\/feature-block\.html/)).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(frame.locator("section.hero + feature-block + section.cards")).toHaveCount(1);
@@ -367,6 +367,9 @@ test("a source edit while the palette is open rejects a stale Duplicate", async 
   });
   await page.keyboard.press("Enter");
   await expect(page.locator("#status")).toHaveText("The selection changed. Reopen the command palette and try again.");
+  // Said by the editor's refusal note too (the palette is gone), never as a toast.
+  await expect(page.locator(".refusal-note")).toHaveText("The selection changed. Reopen the command palette and try again.");
+  await expect(page.locator(".editor-toast")).toHaveCount(0);
   await expect.poll(() => editorText(page)).toBe(changed);
   await expect(frame.locator("section.filler")).toHaveCount(1);
 });
@@ -442,6 +445,9 @@ test("searching again after a source edit cannot bless old edit bar closures", a
     return source;
   });
   await expect(page.locator("#status")).toHaveText("The selection changed. Reopen the command palette and try again.");
+  // Said by the editor's refusal note too (the palette is gone), never as a toast.
+  await expect(page.locator(".refusal-note")).toHaveText("The selection changed. Reopen the command palette and try again.");
+  await expect(page.locator(".editor-toast")).toHaveCount(0);
   await expect.poll(() => editorText(page)).toBe(changed);
   await expect(frame.locator("section.filler")).toHaveCount(1);
 });

@@ -3,7 +3,6 @@
 // in main.ts from its closures. The commit's rules live in the module
 // (src/guarded-edit/commit.ts); this adapter only reaches the editor.
 
-import type { AnnounceAs } from "./components/toast-rules";
 import type { DraftScope, SavedDraft } from "./drafts";
 import type { DraftAccess, MovableFile } from "./file-changes";
 import type { NativeSite } from "../shared/native-project";
@@ -85,7 +84,7 @@ export interface WorkspaceHost {
   status(): string;
   select(request: (NodeRef & { source?: string }) | undefined, reveal?: boolean): void;
   flash(request: NodeRef): void;
-  announce(message: string, as?: AnnounceAs): void;
+  announce(message: string): void;
   refuse(message: string, history?: "undo" | "redo"): void;
   error(error: unknown): void;
   /** A step written away from its page, waiting for that page (src/guarded-edit/parked.ts). */
@@ -161,7 +160,7 @@ export function createEditorWorkspace(host: WorkspaceHost): EditorWorkspace {
       host.select(request, reveal);
       if (request && flash) host.flash(request);
     },
-    announce: (message, as) => host.announce(message, as),
+    announce: message => host.announce(message),
     refuse: (message, history) => host.refuse(message, history),
     error: error => host.error(error),
     park: step => host.park?.(step),

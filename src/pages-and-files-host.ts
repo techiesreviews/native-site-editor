@@ -21,7 +21,6 @@ import type { AgentMark, createAgentPresence } from "./agent-presence";
 import { refuse } from "./components/refusal-note";
 import type { mountSiteActions } from "./components/site-actions";
 import type * as sourceEditor from "./components/source-editor";
-import type { AnnounceAs } from "./components/toast-rules";
 import type { createLazyFileOperationsController } from "./controllers/file-operation-checks";
 import type { createFilesTreeController } from "./controllers/files-tree-controller";
 import type { createLinkedStylesController } from "./controllers/linked-styles-controller";
@@ -96,7 +95,7 @@ export interface PagesAndFilesPorts {
   status: (message: string) => void;
   clearError: () => void;
   errorMessage: (error: unknown) => void;
-  announce: (text: string, as?: AnnounceAs) => void;
+  announce: (text: string) => void;
   currentLoad: () => number;
   stampOf: (epoch: number) => SessionStamp;
   draftScope: () => DraftScope | undefined;
@@ -230,13 +229,6 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
         openDraft: ports.openNewDraft, openEntry: (entry, path, epoch) => ports.openEntry(entry, path, ports.stampOf(epoch)), restore: target => fileOps!.restoreFileTarget(target),
         create: openCreate, actions: () => fileActions,
         visible: filesShown,
-        count: (total) => {
-          // The commit the tree shows, in full (set on the hidden #revision before each draw).
-          const count = ports.element("files-count"), commit = ports.element("revision").title;
-          // A number beside the heading, as Pages shows its page count; the tooltip says it in words.
-          count.textContent = total === undefined ? "" : String(total);
-          count.title = [total === undefined ? "" : `${total} ${total === 1 ? "file" : "files"}`, /^[0-9a-f]{40}$/.test(commit) ? `Version ${commit}` : ""].filter(Boolean).join("\n");
-        },
       });
       filesTreeController.render();
       if (filesTreeController.visible()) filesTreeController.shown();

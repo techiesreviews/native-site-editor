@@ -124,7 +124,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
         selected = items.every(item => selected.has(item.main)) ? new Set() : new Set(items.map(item => item.main)); draw("select-all");
       }, "button secondary media-cleanup__select-all");
       toggle.dataset.focusKey = "select-all";
-      element.append(node("p", "media-library__muted", "Choose the files to remove; their copies go with them."), toggle);
+      element.append(toggle);
       // The media grid's tiles: 3 across on phones, the size on each, an inset ring when ticked.
       const grid = node("ul", "media-library__grid media-cleanup__photos");
       for (const item of items) {

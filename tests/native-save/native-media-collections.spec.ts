@@ -58,7 +58,7 @@ test("create a collection, add two files, view it, take one out (it stays under 
   await expect(bar.getByRole("button", { name: "Remove file", exact: true })).toBeVisible();
   await bar.getByRole("button", { name: "Take out of Studio picks", exact: true }).click();
   await expect.poll(() => tileNames(page)).toEqual(["images/studio-desk.svg"]);
-  await expect(page.locator(".editor-toast__text")).toHaveText("Took 1 file out of \"Studio picks\". It stays in Media under All.");
+  await expect(page.locator("#status")).toHaveText("Took 1 file out of \"Studio picks\". It stays in Media under All.");
   await filterTo(library, "All collections");
   await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
   expect((await storedDraft(page, "images/placeholder.svg"))?.deleted).toBeUndefined();
@@ -272,7 +272,8 @@ test("New collection from the selection bar holds both files in one Undo step; R
   await select(page, "images/placeholder.svg"); await select(page, "images/studio-desk.svg");
   await library.getByRole("button", { name: "Add to collection", exact: true }).click();
   await page.getByRole("menu", { name: "Add to collection", exact: true }).getByRole("menuitem", { name: "New collection…", exact: true }).click();
-  await expect(library.locator(".media-library__sheet")).toContainText("The 2 files you selected go into it.");
+  // No explainer under the name: the files go in when Create is pressed, and the list then shows them.
+  await expect(library.locator(".media-library__sheet")).not.toContainText("you selected go into it");
   await library.getByLabel("Collection name", { exact: true }).fill("Pair");
   await library.getByRole("button", { name: "Create", exact: true }).click();
   await expect.poll(() => members(page, "Pair")).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);

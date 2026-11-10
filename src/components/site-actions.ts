@@ -94,6 +94,9 @@ export function mountSiteActions(options: SiteActionsOptions) {
     if (downloading) return;
     downloading = true;
     download.disabled = true;
+    // The busy state is on the button itself; #status says it to screen readers.
+    download.textContent = "Preparing…";
+    download.setAttribute("aria-busy", "true");
     options.announce("Preparing the download…");
     try {
       const site = await options.siteFiles();
@@ -107,6 +110,8 @@ export function mountSiteActions(options: SiteActionsOptions) {
     } finally {
       downloading = false;
       download.disabled = false;
+      download.textContent = "Download site";
+      download.removeAttribute("aria-busy");
     }
   }
 

@@ -229,8 +229,6 @@
     margin: 0;
   }
 }
-.page-structure__url-note { margin: -4px 0 0; font-size: var(--type-small); line-height: 1.4; color: var(--muted); }
-.page-structure__url-note[hidden] { display: none; }
 
 /* ---- Component instances: compact row actions, slot badges and the one
    inline editor a pencil, F2 or a badge opens. ---- */

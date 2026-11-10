@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { POPUP_SHAPES, keepsPopupChanges, focusApplies, frameBadge, frameChange, nudgeFocus, placePopup, popupMessage, pictureHint, placeShapeOf, seenHints, shapeLabel, shapeRatio, sheetScroll, squareFocus } from "../src/page-builder/image-popup-rules";
+import { POPUP_SHAPES, keepsPopupChanges, focusApplies, frameBadge, frameChange, nudgeFocus, placePopup, popupMessage, pictureHint, placeShapeOf, shapeLabel, shapeRatio, sheetScroll, squareFocus } from "../src/page-builder/image-popup-rules";
 import { readPlaceFrame, writePlaceFrame } from "../src/page-builder/place-frame";
 import type { MediaRecords } from "../shared/media-records";
 
@@ -133,13 +133,6 @@ test("component shape opens first, crops at its ratio, names the badge and notes
   // An inline cover alone repeats the component's own fit: the component's shape still shows.
   assert.deepEqual(componentFrame('<img style="object-fit: cover">', undefined, "index.html", component).shape, entry.id);
   assert.notDeepEqual(componentFrame('<img style="object-fit: contain">', undefined, "index.html", component).shape, entry.id);
-});
-
-test("each hint under the picture shows only the first time: the stored list is read safely", () => {
-  assert.deepEqual([...seenHints(null)], []);
-  assert.deepEqual([...seenHints(JSON.stringify(["Drag the square to what matters most.", 3, null]))], ["Drag the square to what matters most."]);
-  assert.deepEqual([...seenHints("{not json")], []);
-  assert.deepEqual([...seenHints(JSON.stringify({ hint: "x" }))], []);
 });
 
 // Ticket 27: the popup's changes are kept on its page across a switch, away or away and back.

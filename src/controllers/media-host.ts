@@ -13,8 +13,7 @@ import type { AppStore } from "../app-store";
 import type { CleanSourceCache } from "../clean-source-cache";
 import type * as sourceEditor from "../components/source-editor";
 import { createNativePreview } from "../components/native-preview";
-import type { AnnounceAs } from "../components/toast-rules";
-import type { ToastAction } from "../components/toast";
+import type { UndoAction } from "../announce";
 import { draftKey, draftStore, type DraftScope } from "../drafts";
 import type { createFinishedElsewhere } from "../finished-elsewhere";
 import type { GuardedEdits, Stamp } from "../guarded-edit";
@@ -70,8 +69,8 @@ export interface MediaHostPorts {
   openAfter: (path: string | undefined, keepExplorer?: boolean, quietStatus?: boolean) => Promise<void>;
   restoreFile: (path: string, at: SessionStamp, options?: { linkDefaultStyle?: boolean }) => Promise<unknown>;
   imagesSignature: () => string;
-  announce: (text: string, as?: AnnounceAs) => void;
-  undoAction: (path: string) => ToastAction | undefined;
+  announce: (text: string) => void;
+  undoAction: (path: string) => UndoAction | undefined;
   errorMessage: (error: unknown) => void;
 }
 

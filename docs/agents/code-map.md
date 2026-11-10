@@ -38,7 +38,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Editor colours and surfaces | `src/style.css`; `src/theme.css`; `src/utilities.css` |
 | The open site's state and effective sources | `src/native-site-runtime.ts` — `createNativeSiteRuntime` (the site, GitHub's layer, its source, text source, files, new drafts, shown paths, a save adopted and reset), `textNow` (a file's text now: the preview's source, and the text source of media text, guarded edits and agent reads), `nativeFiles`; `src/main.ts` — `runtime` |
 | Routes and preview updates | `src/site-preview.ts` — `createSitePreview`, `SitePreviewPorts` (a file's route and component, a page's head, the stylesheets pages link, the preview's sources and updates, the page shown after one is gone); `src/page-builder-host.ts` — `refreshNativeRoutes`; `src/main.ts` — `sitePreview`, `updateNativePreviewSources` |
-| Status line and toast | `src/announce.ts` — `createAnnounce` (said in #status, the toast loaded on first use, its Undo); `src/main.ts` — `announce` |
+| Status line and Undo | `src/announce.ts` — `createAnnounce` (said in #status only: no toast; `undoAction` for an Undo button in place); `src/ui/done-mark.ts` — a menu button's check after Copy path; `src/main.ts` — `announce` |
 | New, uploaded and deleted drafts, opened | `src/draft-views.ts` — `createDraftViews`, `DraftViewsPorts`; `src/main.ts` — `openNewDraft` |
 | Browser storage and select options | `src/browser-storage.ts` — `storage`; `src/ui/select-options.ts` — `options` |
 | Preview host, selection and edit bar | `src/components/native-preview.ts` — `createNativePreview`; `src/controllers/preview-selection-controller.ts` — `createPreviewSelectionController` |
@@ -250,7 +250,7 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 
 | Section, in source order | Approximate lines | Key functions / wiring |
 | --- | --- | --- |
-| Imports, host handles, the status line and toast (src/announce.ts), GitHub reads, session, the native site runtime's ports | 1–100 | announce, api, workspaceSession, nextLoad, runtime |
+| Imports, host handles, the status line (src/announce.ts), GitHub reads, session, the native site runtime's ports | 1–100 | announce, api, workspaceSession, nextLoad, runtime |
 | Site preview ports (src/site-preview.ts), site loading and text index ports (src/site-loading.ts, src/site-text-index.ts), chunk recovery | 101–146 | sitePreview, updateNativePreviewSources, createSiteLoading, createSiteTextIndex, stampOf |
 | Lazy loader ports (src/lazy-loaders.ts) | 147–168 | lazyLoaders, loadSiteSettings, loadMedia, loadSetupActions |
 | Component tools handle, guarded edit adapter and parked steps | 169–220 | componentTools, nativeMountListener, editorWorkspace, guardedEdits, parkedSteps |
@@ -293,7 +293,7 @@ Frequently used names in src/main.ts (28): its own top-level functions and const
 | `api` | Reads a typed API response through the receipt helper. |
 | `status` | Updates the status line and remembers its last message. |
 | `errorMessage` | Converts failures into visible editor notices. |
-| `announce` | Says it in #status and the toast (announce.ts). |
+| `announce` | Says it in #status only (announce.ts). |
 | `openNewDraft` | Opens a new, uploaded or moved draft (draft-views.ts). |
 | `afterFileChanges` | Refreshes trees, routes, preview, agent (pages-and-files-host.ts). |
 | `updateAgentContext` | Tells the agent controller that shared context changed. |

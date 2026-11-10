@@ -308,19 +308,6 @@
   display: block;
   flex: none;
 }
-/* The Image button's state ("Square", "Trimmed"). */
-.edit-bar__badge {
-  margin-left: 2px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: var(--hover);
-  font-size: var(--type-badge);
-  font-weight: 600;
-  line-height: 1.2;
-}
-.edit-bar__media[aria-expanded="true"] .edit-bar__badge {
-  background: color-mix(in oklch, var(--pressed), var(--text) 20%);
-}
 .edit-bar__media[aria-expanded="true"],
 .edit-bar__address[aria-expanded="true"] {
   background: var(--pressed);
@@ -480,10 +467,6 @@
   align-items: center;
   gap: 8px;
   margin-top: 6px;
-}
-.edit-bar__upload-hint {
-  color: var(--muted);
-  font-size: var(--type-small);
 }
 .edit-bar__popover.is-drop-target {
   outline: 2px dashed var(--focus);

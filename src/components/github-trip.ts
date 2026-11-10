@@ -73,7 +73,7 @@ function screenshotCard(shot: (typeof GITHUB_SCREENSHOTS)[number], number: numbe
   } else {
     const zoom = button("", () => openLightbox(shot), "trip__zoom");
     zoom.setAttribute("aria-label", `Enlarge: ${shot.caption}`);
-    zoom.append(picture(shot, "trip__image"), node("span", "trip__zoom-hint", "Click to enlarge"));
+    zoom.append(picture(shot, "trip__image"));
     figure.append(zoom);
   }
   card.append(head, figure);

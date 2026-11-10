@@ -18,14 +18,13 @@ async function openFiles(page: Page, baseURL: string | undefined) {
 }
 const left = (page: Page, selector: string) => explorer(page).locator(selector).evaluate(element => element.getBoundingClientRect().left);
 
-test("the header names the tab and counts the files; rows are one height with names lined up and typed icons", async ({ page, baseURL }) => {
+test("the header names the tab, with no count; rows are one height with names lined up and typed icons", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openFiles(page, baseURL);
   const heading = explorer(page).locator("#explorer-files > .files-heading");
   await expect(heading.getByRole("heading", { name: "Files", exact: true })).toHaveCSS("text-transform", "none");
-  // "Files 46", as Pages shows "Pages 11"; the tooltip says it in words, with the version.
-  await expect(page.locator("#files-count")).toHaveText(/^\d+$/);
-  await expect(page.locator("#files-count")).toHaveAttribute("title", /^\d+ files\nVersion [0-9a-f]{40}$/);
+  // No count beside the heading (S2).
+  await expect(page.locator("#files-count")).toHaveCount(0);
   await expect(heading.getByRole("button", { name: "New file or folder", exact: true })).toHaveText("+ New");
   await expect(page.locator("#revision")).toBeHidden();
 

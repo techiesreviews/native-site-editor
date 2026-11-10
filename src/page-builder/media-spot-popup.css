@@ -69,8 +69,7 @@ label.media-spot__line { cursor: pointer; }
   margin: 0;
   accent-color: var(--primary);
 }
-.media-spot__switch:disabled,
-.media-spot__switch:disabled + .media-spot__note { cursor: default; }
+.media-spot__switch:disabled { cursor: default; }
 .media-spot__field {
   box-sizing: border-box;
   inline-size: 100%;

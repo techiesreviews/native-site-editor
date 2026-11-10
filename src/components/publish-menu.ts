@@ -82,12 +82,7 @@ export function createPublishMenu(options: {
   trigger.append(label);
   function showProgress(text: string) {
     label.textContent = text;
-    count.hidden = text !== "Publish";
   }
-  // How many changes wait; the button keeps its name, the count is seen.
-  const count = node("span", "publish-menu__count");
-  count.setAttribute("aria-hidden", "true");
-  trigger.append(count);
   // The grand total of the selected changes, unfolding to the changes themselves.
   const total = node("details", "publish-menu__total");
   const totalSummary = node("summary", "publish-menu__total-summary");
@@ -119,7 +114,6 @@ export function createPublishMenu(options: {
   function refresh(resetMessage = true) {
     if (pending) return;
     records = listChanges(drafts());
-    count.textContent = records.length ? String(records.length) : "";
     list.replaceChildren();
     for (const change of records) {
       const label = node("label", "publish-menu__file");

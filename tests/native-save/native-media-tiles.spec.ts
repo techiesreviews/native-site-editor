@@ -200,7 +200,7 @@ test("phones: inside a collection, ⋯ offers Take out before Remove, and Take o
   const items = page.getByRole("menu", { name: "More for selected files", exact: true }).getByRole("menuitem");
   await expect(items).toHaveText(["Select all shown", "Optimise heavy images", "Take out of Picks", "Remove file…"]);
   await items.filter({ hasText: "Take out of Picks" }).click();
-  await expect(page.locator(".editor-toast__text")).toHaveText("Took 1 file out of \"Picks\". It stays in Media under All.");
+  await expect(page.locator("#status")).toHaveText("Took 1 file out of \"Picks\". It stays in Media under All.");
   await filterTo(library, "All collections");
   await expect(tile(page, "images/studio-desk.svg")).toBeVisible();
 });

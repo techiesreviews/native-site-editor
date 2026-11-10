@@ -74,6 +74,7 @@ const STRUCTURE_MOVE_STALE = "The source changed. Wait for the preview before mo
 const SECTION_OPEN_STALE = "The source changed while its editor opened. Select the section again before moving it.";
 const BLOCK_OPEN_STALE = "The source changed while its editor opened. Select the element again before moving it.";
 // An Add rail pick or drop while the page's typing has not landed yet.
+const STILL_DRAWING = "The source changed. Wait for the preview before using this action.";
 const STILL_UPDATING = "The page is still updating. Try again in a moment.";
 
 /** The open site's loading and preview (src/main.ts until slice 87). */
@@ -320,7 +321,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden><p class="muted sidebar-hint">Loading pages…</p></div>
       <div id="explorer-media" class="explorer-panel" aria-labelledby="explorer-tab-media" hidden><p class="muted sidebar-hint">Loading media…</p></div>
       <div id="explorer-files" class="explorer-panel" aria-labelledby="explorer-tab-files">
-        <div class="files-heading explorer-heading"><span class="explorer-heading__start"><h2 class="explorer-heading__title">Files</h2><span id="files-count" class="explorer-heading__count"></span></span><span id="revision" hidden>—</span><button type="button" id="new-at-root" class="explorer-new" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">+ New</button></div>
+        <div class="files-heading explorer-heading"><span class="explorer-heading__start"><h2 class="explorer-heading__title">Files</h2></span><span id="revision" hidden>—</span><button type="button" id="new-at-root" class="explorer-new" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">+ New</button></div>
         <nav id="files" aria-label="Repository files"></nav>
       </div>
     </div>
@@ -553,12 +554,12 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
         const painted = template ? template.source : nativeStructurePaintedSources.get(item);
         const fresh = () => painted !== undefined && ports.runtime.source(path) === painted && !ports.versions.view;
         if (!fresh()) {
-          if (opening) ports.announce("The source changed. Wait for the preview before using this action.");
+          if (opening) refuse(STILL_DRAWING, { anchor: opening.anchor, ...opening.at ? { pointer: opening.at } : {} });
           return [];
         }
-        return ports.builder.menuItems({ path, node: template ? template.node : item.node, tag: item.tag, paintedSource: painted, renameChip: template?.chip }).map(entry => ({ ...entry, run: () => {
-          if (!fresh()) { ports.announce("The source changed. Wait for the preview before using this action."); return; }
-          entry.run();
+        return ports.builder.menuItems({ path, node: template ? template.node : item.node, tag: item.tag, paintedSource: painted, renameChip: template?.chip }).map(entry => ({ ...entry, run: opener => {
+          if (!fresh()) { refuse(STILL_DRAWING, { anchor: opener }); return; }
+          entry.run(opener);
         } }));
       },
       pageSource: (path) => ports.runtime.source(path),
@@ -706,7 +707,6 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     }
     const panel = node("section", "directory-summary");
     panel.append(
-      node("span", "badge", ports.runtime.engaged ? "✦ Native site" : "Explore this folder"),
       node(
         "h1",
         "",

@@ -42,9 +42,8 @@ export type EditBarControl =
       disabled?: boolean;
       // A toggle, reflected as aria-pressed.
       pressed?: boolean;
-      // Drawn before the label (the Media button), with a small state badge after it.
+      // Drawn before the label (the Media button).
       leading?: IconName;
-      badge?: string;
       // Opens a popup of its own (the Media button's): aria-haspopup, and whether it is open.
       expanded?: boolean;
       // Stands for the selection itself (a media spot's Media button): as first button, its plain name is not repeated above.
@@ -460,11 +459,9 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   // neither fits, pinned to the canvas edge that covers less of the visible selection.
   function float(at: SelectionRect, frameRect: DOMRect, frameLeft: number, frameTop: number, visible: boolean) {
     docked = undefined;
-    delete bar.dataset.toastAvoid;
     delete bar.dataset.lifted;
     bar.style.marginBlockEnd = bar.style.translate = "";
     applied = 0;
-    undock();
     const frameRight = frameRect.right - frameRect.left + frameLeft;
     bar.style.maxWidth = `${Math.max(180, frameRect.width - 16)}px`;
     fitPanel();
@@ -486,11 +483,9 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   }
   // Phones: in its own row under the frame (edit-bar.css), so no page sits
   // under it, raised onto the keyboard with the frame ending above it, so the
-  // page's end still scrolls clear of both (or onto a zoomed view's foot). A toast
-  // keeps above it (data-toast-avoid; toast.ts re-places on edit-bar-dock).
+  // page's end still scrolls clear of both (or onto a zoomed view's foot).
   function dockBar(at: SelectionRect, frameRect: DOMRect, frameLeft: number, frameTop: number) {
     bar.dataset.side = "docked";
-    bar.dataset.toastAvoid = "";
     bar.style.left = bar.style.top = bar.style.maxWidth = "";
     const panel = bar.querySelector<HTMLElement>(":scope > .edit-bar__controls");
     if (panel) panel.style.width = "";
@@ -507,25 +502,13 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       bar.toggleAttribute("data-lifted", Boolean(lift));
       ({ barTop, lift } = measure());
     }
-    // A toast where it rests: it rises 8 px into place as it opens (toast.css).
-    const shown = document.querySelector<HTMLElement>(".editor-toast:popover-open");
-    const toast = shown?.getBoundingClientRect();
-    const rising = shown ? parseFloat(getComputedStyle(shown).translate.split(" ")[1] ?? "") || 0 : 0;
     // A keyboard's lift shortens the frame; a pinch-zoomed view's (panned all the time) only moves the bar.
     const zoomed = Boolean(view && Math.abs(view.scale - 1) > 0.01);
     bar.style.marginBlockEnd = lift && !zoomed ? `${lift}px` : "";
     bar.style.translate = lift && zoomed ? `0 ${-lift}px` : "";
     applied = lift;
-    // Toasts re-place over it only when it moved (toast.ts), not on every page scroll.
-    const place = `${Math.round(barTop - lift)} ${bar.offsetHeight}`;
-    if (place !== dockedPlace) {
-      dockedPlace = place;
-      pane.dispatchEvent(new Event("edit-bar-dock"));
-    }
-    // The page shows down to the bar, or to a toast standing on it.
-    const toastTop = toast ? toast.top - rising : 0;
-    const foot = toast && toastTop < barTop - lift && toastTop + toast.height > barTop - lift - 24 ? toastTop : barTop - lift;
-    const visibleBottom = Math.min(frameRect.height, foot - frameRect.top);
+    // The page shows down to the bar.
+    const visibleBottom = Math.min(frameRect.height, barTop - lift - frameRect.top);
     // A visual viewport panned down (a zoomed view, iOS keeping a caret in sight) starts below the frame's top.
     const visibleTop = view ? Math.max(0, view.offsetTop - frameRect.top) : 0;
     // Ask agent's note stays by the selection, above the bar.
@@ -540,13 +523,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   }
   // The lift last applied to the docked bar (a margin, or a translate in a zoomed view).
   let applied = 0;
-  // Where the docked bar last stood, for toasts; empty while it is not docked.
-  let dockedPlace = "";
-  function undock() {
-    if (!dockedPlace) return;
-    dockedPlace = "";
-    pane.dispatchEvent(new Event("edit-bar-dock"));
-  }
   // A wrapped flex box keeps the width of the line it wrapped from, so a
   // panel that wraps would end in empty space: fit it to its widest row.
   function fitPanel() {
@@ -562,18 +538,17 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const end = parseFloat(style.paddingRight) + parseFloat(style.borderRightWidth);
     panel.style.width = `${Math.ceil(Math.max(...rects.map((r) => r.right)) - panel.getBoundingClientRect().left + end)}px`;
   }
-  // On a phone-wide window a selection hidden behind the docked bar, the keyboard or a
-  // toast is scrolled into view above it (dockScroll), measured once things settled: when
+  // On a phone-wide window a selection hidden behind the docked bar or the keyboard
+  // is scrolled into view above it (dockScroll), measured once things settled: when
   // it is chosen, after a double-click's second press could land; and when the canvas,
-  // the bar or the keyboard changes height or a toast shows (`follow`, the geometry
+  // the bar or the keyboard changes height (`follow`, the geometry
   // before), only if it was in view then, so one the user scrolled away stays put; and
-  // only if it has not moved since, so a scroll of the user's meanwhile wins. A toast
-  // checks at once (`wait` 0): it covers what it covers from its first frame.
-  function room(key: string, follow?: { was: DockScrollOptions | undefined }, wait = 400) {
+  // only if it has not moved since, so a scroll of the user's meanwhile wins.
+  function room(key: string, follow?: { was: DockScrollOptions | undefined }) {
     if (!scroll || !phoneWide()) return;
     if (follow && !roomDue && !(follow.was && !dockScroll(follow.was))) return;
-    // A new selection's check, still to come, measures this change too; only a toast hurries it.
-    if (follow && roomDue && wait >= 400) return;
+    // A new selection's check, still to come, measures this change too.
+    if (follow && roomDue) return;
     if (!follow) roomDue = true;
     const seen = roomDue ? undefined : docked?.selectionTop;
     clearTimeout(roomTimer);
@@ -583,7 +558,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       if (!docked || shownKey !== key || seen !== undefined && Math.abs(docked.selectionTop - seen) > 1) return;
       const dy = dockScroll(docked);
       if (dy) scroll(dy);
-    }, wait);
+    }, 400);
   }
   let frameHeight = 0;
   let barHeight = 0;
@@ -614,15 +589,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   }
   view?.addEventListener("resize", onViewResize);
   view?.addEventListener("scroll", position);
-  // A toast shown or gone: the docked bar keeps out from under it, and the
-  // selection out from under a toast that came.
-  function onToggle(event: Event) {
-    if (!(event.target as Element).classList?.contains("editor-toast")) return;
-    const was = docked;
-    position();
-    if ((event as ToggleEvent).newState === "open" && shownKey) room(shownKey, { was }, 0);
-  }
-  document.addEventListener("toggle", onToggle, true);
 
   // The note after the selection's pins, where the next pin will stand,
   // and that row's extent in frame coordinates.
@@ -801,7 +767,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       input.value = "";
       void uploadInto(address, files);
     });
-    row.append(pick, node("span", "edit-bar__upload-hint", "or drop a file here"), input);
+    row.append(pick, input);
     return row;
   }
   async function uploadInto(address: NonNullable<typeof openAddress>, files: File[]) {
@@ -1128,7 +1094,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       if (control.kind === "button") {
         const item = button(control.icon ? "" : control.label, control.onPress, `edit-bar__button ${control.icon || control.leading ? "edit-bar__button--icon " : ""}${control.className ?? ""}`.trim());
         if (control.leading) item.prepend(icon(control.leading));
-        if (control.badge) item.append(node("span", "edit-bar__badge", control.badge));
         if (control.expanded !== undefined) {
           item.setAttribute("aria-haspopup", "dialog");
           item.setAttribute("aria-expanded", String(control.expanded));
@@ -1276,7 +1241,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       delete bar.dataset.model;
       bar.hidden = true;
       bar.replaceChildren();
-      undock();
     },
     destroy() {
       clearTimeout(roomTimer);
@@ -1285,7 +1249,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       resize.disconnect();
       view?.removeEventListener("resize", onViewResize);
       view?.removeEventListener("scroll", position);
-      document.removeEventListener("toggle", onToggle, true);
       document.removeEventListener("pointerdown", onPointerDown, true);
       closeNote(false);
       leaving?.remove();

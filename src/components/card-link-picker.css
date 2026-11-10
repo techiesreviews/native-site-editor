@@ -111,8 +111,7 @@
   font-weight: 600;
   white-space: nowrap;
 }
-.card-link__empty,
-.card-link__hint {
+.card-link__empty {
   margin: 0;
   color: var(--muted);
   font-size: var(--type-small);

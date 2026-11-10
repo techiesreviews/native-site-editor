@@ -1,6 +1,6 @@
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
-import type { ToastAction } from "../components/toast";
+import type { UndoAction } from "../announce";
 import type { MediaBytes } from "./media-byte-cache";
 import type { MediaLibrary, MediaPickerHost } from "./media-picker";
 
@@ -14,7 +14,7 @@ export interface LibrarySheet {
   /** Focus to move into a detail sheet that is still loading. */
   focus?: { path: string; active: Element | null };
   /** The Undo of a step just made on `path` (Replace everywhere), shown beside that picture in File details while the step is the newest. */
-  undo?: { path: string; action: ToastAction };
+  undo?: { path: string; action: UndoAction };
   /** The running optimisation preview. */
   work?: AbortController;
   /** `work` that finishes when the pane closes on a switch (an Improve images row, ticket 23). */
@@ -32,8 +32,8 @@ export interface LibrarySheetContext {
   loading: () => boolean;
   /** A warning or refusal, inline under the screen. */
   tell: (text: string) => void;
-  /** A result: the editor's toast, with `undo` as its action (slice 113). */
-  done: (text: string, undo?: ToastAction) => void;
+  /** A result, said to screen readers; the screen shows the change itself. */
+  done: (text: string) => void;
   task: (work: () => Promise<void>, lock?: boolean, canCancel?: boolean) => Promise<void>;
   refresh: () => Promise<void>;
   adapter: MediaPickerHost;

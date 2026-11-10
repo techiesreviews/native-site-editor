@@ -66,7 +66,6 @@ async function refusalClear(page: Page, preview: FrameLocator, chips: Locator, o
 
 test("an agent changes a section without a pin, and the Undo on its chip puts the page back; refused once the user typed there", async ({ page, baseURL }) => {
   const { client, call, chips, heading, undo, undone, preview } = await agentOnHero(page, baseURL);
-  const toasts = page.locator(".editor-toast");
   try {
     // At work on the hero, no pin: its chip names it, with nothing to undo yet.
     await expect(chips.first()).toHaveText("Copy editor");
@@ -107,7 +106,7 @@ test("an agent changes a section without a pin, and the Undo on its chip puts th
     await expect(undone).toBeDisabled();
     await expect(undone).toHaveText("Undone");
     await expect(page.locator("#status")).toHaveText("Undid Copy editor's change.");
-    await expect(toasts.filter({ hasText: "Undid" })).toBeHidden();
+    await expect(page.locator(".editor-toast")).toHaveCount(0);
     expect((await call("read_file", { path: "index.html" })).content).toContain(HEADING);
     // The press selected nothing on the page.
     await expect(page.locator(".edit-bar")).toBeHidden();
@@ -149,7 +148,7 @@ test("an agent changes a section without a pin, and the Undo on its chip puts th
     await expect(undo).toBeEnabled();
     await expect(undo).toBeFocused();
     await expect(heading).toHaveText("Native preview now");
-    await expect(toasts.filter({ hasText: "changed since" })).toBeHidden();
+    await expect(page.locator(".editor-toast")).toHaveCount(0);
     expect((await call("read_file", { path: "index.html" })).content).toContain("Native preview now");
     await refusalClear(page, preview, chips, true);
     // Pressed by a click, refused the same.

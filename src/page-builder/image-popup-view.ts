@@ -1,7 +1,7 @@
 // The image popup (crop-popup.html, made shorter like Brizy's in slice 109) in the media popup
 // frame (media-popup-frame.ts): beside the picture on wide screens, a bottom sheet with 44 px
 // targets on phones, a centred layer above Settings. The picture with the shape menu on it (a dark
-// pill, its menu anchored to it) and the frame, dragged as the focus square; a one-time hint and
+// pill, its menu anchored to it) and the frame, dragged as the focus square; a read-aloud hint and
 // Replace under it; Zoom with the two Turn buttons at its end; small previews; one quiet message
 // line and Done. Escape closes the shape menu first, then the popup. A picture that can be trimmed gets Free (four
 // corners), Zoom and Turn (slice 41), and Open large editor in the head (slice 42). Fixed to one
@@ -23,7 +23,7 @@ import type { MediaBox } from "./media-markup";
 import type { PlaceFocus } from "./place-frame";
 import type { ImagePopupHost } from "./image-popup";
 import { componentShapeNotice, type ComponentPicture } from "./component-shapes";
-import { SQUARE_HINT, nudgeFocus, pictureHint, popupMessage, seenHints, shapeRatio, sheetScroll, squareFocus, type PopupShape } from "./image-popup-rules";
+import { nudgeFocus, pictureHint, popupMessage, shapeRatio, sheetScroll, squareFocus, type PopupShape } from "./image-popup-rules";
 import { MAX_ZOOM, cutArea, makesNewPicture, moveFree, placeShape, nudgeFree, resizeFree, shownTrim, squareApplies, turnText, turnedSize, zoomPercent, type PictureSize, type PopupCut, type TrimRect } from "./image-popup-trim";
 import { trimGeometry } from "./trim-geometry";
 import { markTransparency, mediaMayBeTransparent } from "./media-transparency";
@@ -75,7 +75,6 @@ const svg = (raw: string, size = 16) => {
 };
 // The small previews: a phone and a computer screen at the widths the page is measured at, at most 72 px tall.
 const DEVICES: readonly PreviewDevice[] = [{ name: "Phone", viewport: 390, width: 40, height: 72 }, { name: "Computer", viewport: 1280, width: 128, height: 72 }];
-const HINTS_KEY = "ase.image-popup.hints";
 
 export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost, events: ImagePopupEvents, fixed?: ImagePopupFixed) {
   const frameView = mountMediaPopupFrame(host, {
@@ -111,10 +110,9 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   // A fixed shape is named where the menu would be.
   const shapeHead = fixed ? node("span", "image-popup__shape image-popup__shape--fixed", fixed.label) : shapeButton;
   const well = node("div", "image-popup__well"); well.append(shapeHead, ...fixed ? [] : [menu], picbox);
-  // The hint shows the first time it applies (in this browser), then stays as the square's and the trim's description.
-  const hint = node("p", "image-popup__hint"); hint.id = "image-popup-hint";
+  // The hint is never drawn: it is read aloud as the square's and the trim's description.
+  const hint = node("p", "image-popup__hint sr-only"); hint.id = "image-popup-hint";
   shapeButton.setAttribute("aria-describedby", hint.id);
-  const seen = seenHints(readHints()), shown = new Set<string>();
   const replace = actionButton("image-popup__link", () => events.replace());
   replace.append(svg(imageIcon, 14), "Replace"); replace.title = "Choose another picture for this spot";
   const under = node("div", "image-popup__under"); under.append(hint, replace);
@@ -218,11 +216,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     const turnNow = turnText(state.cut);
     turnCell.setAttribute("aria-label", `Turn, now ${turnNow}`);
     turnLeft.title = `Turn left (now ${turnNow})`; turnRight.title = `Turn right (now ${turnNow})`;
-    const said = pictureHint(state.shape, state.cut.zoom > 1.001);
-    hint.textContent = said;
-    // The square's hint is never shown, only read out as the square's description.
-    if (!seen.has(said) && said !== SQUARE_HINT) shown.add(said);
-    hint.classList.toggle("sr-only", !shown.has(said));
+    hint.textContent = pictureHint(state.shape, state.cut.zoom > 1.001);
     const line = fixed?.message ?? popupMessage({ newPicture: state.trimmable && makesNewPicture(state.shape, state.cut), recrop: state.recrop });
     message.className = `image-popup__message image-popup__message--${line.tone}`;
     message.title = line.tip;
@@ -321,7 +315,6 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     /** Back from the large editor: its button has the focus again. */
     focusLarge: () => largeButton.focus({ preventScroll: true }),
     remove() {
-      if (shown.size) writeHints([...seen, ...shown]);
       frameView.remove();
     },
   };
@@ -342,8 +335,6 @@ function showPicture(image: HTMLImageElement, url: string, path: string) {
   markTransparency(image, path);
 }
 
-function readHints() { try { return localStorage.getItem(HINTS_KEY); } catch { return null; } }
-function writeHints(hints: string[]) { try { localStorage.setItem(HINTS_KEY, JSON.stringify(hints)); } catch { /* private mode: hints show again */ } }
 
 export interface PreviewDevice { name: "Phone" | "Computer"; viewport: number; width: number; height: number }
 /** The live previews: the spot in a phone's and a computer's screen at the widths the page is measured at; the spot is sized in shares of its screen. */

@@ -71,8 +71,9 @@ fakeGlobals.workspaceMountStubs = {
   codeEditorFails: false,
   // What the refusal note said.
   refused: [],
+  refusedNear: [],
 };
-const stubGlobals = fakeGlobals.workspaceMountStubs as { codeEditorFails: boolean; refused: string[] };
+const stubGlobals = fakeGlobals.workspaceMountStubs as { codeEditorFails: boolean; refused: string[]; refusedNear: unknown[] };
 const stub = (name: string, kind: string) => `export const ${name} = (...args) => globalThis.workspaceMountStubs.${kind}(...args);`;
 const stubs: Record<string, string> = {
   "components/native-preview.ts": stub("createNativePreview", "preview"),
@@ -86,7 +87,7 @@ const stubs: Record<string, string> = {
   // The code pane as a person left it open: its code loads as before.
   "components/code-resize.ts": `export const mountCodeResize = (...args) => Object.assign(globalThis.workspaceMountStubs.resize(...args), { collapsed: () => false });\n${stub("mountCodeWidthResize", "resize")}`,
   "components/code-editor.ts": "export const monacoView = 'Monaco view';",
-  "components/refusal-note.ts": "export const dismissRefusalNote = () => {}; export const refuse = (text) => { globalThis.workspaceMountStubs.refused.push(text); };",
+  "components/refusal-note.ts": "export const dismissRefusalNote = () => {}; export const refuse = (text, near) => { globalThis.workspaceMountStubs.refused.push(text); globalThis.workspaceMountStubs.refusedNear.push(near); };",
 };
 registerHooks({
   // A failing load is its own URL, so the next import of the chunk can succeed.
@@ -568,7 +569,7 @@ test("showDirectory shows a folder's summary in the content pane and moves fileG
   assert.equal(state.fileGeneration, 1);
   assert.ok(calls.includes("setCurrentPage"));
   const text = byId("content").text();
-  assert.match(text, /✦ Native site/);
+  assert.doesNotMatch(text, /Native site|Explore this folder/);
   assert.match(text, /guides/);
   assert.match(text, /2 entries\. Pages, components and styles render live/);
   assert.match(text, /lex\/site/);
@@ -702,15 +703,29 @@ test("a Structure row keeps the bytes it was painted from: stale rows offer no a
   const item = { node: [0], tag: "section", className: "hero", children: [] };
   const preview = last("preview").options as { onStructure(structure: unknown): void };
   const structure = last("structure").options as {
-    menuItems(path: string, item: unknown, opening?: boolean): { label: string }[];
+    menuItems(path: string, item: unknown, opening?: { anchor: unknown; at?: { x: number; y: number } }): { label: string; run(opener?: unknown): void }[];
     onMove(path: string, item: unknown, direction: string): unknown;
   };
   state.sources["index.html"] = "A";
   preview.onStructure({ path: "index.html", paintedSource: "A", items: [item] });
-  assert.deepEqual(structure.menuItems("index.html", item, true).map((entry) => entry.label), ["Remove"]);
+  const opener = { name: "the row's ⋯ button" };
+  const painted = structure.menuItems("index.html", item, { anchor: opener });
+  assert.deepEqual(painted.map((entry) => entry.label), ["Remove"]);
   state.sources["index.html"] = "B";
-  assert.deepEqual(structure.menuItems("index.html", item, true), []);
-  assert.ok(calls.includes("announce The source changed. Wait for the preview before using this action."));
+  stubGlobals.refused.length = stubGlobals.refusedNear.length = 0;
+  // Opened on stale bytes: no menu, and the reason is shown by the button it was opened from (or the pointer's place).
+  assert.deepEqual(structure.menuItems("index.html", item, { anchor: opener, at: { x: 4, y: 5 } }), []);
+  assert.deepEqual(stubGlobals.refused, ["The source changed. Wait for the preview before using this action."]);
+  assert.deepEqual(stubGlobals.refusedNear, [{ anchor: opener, pointer: { x: 4, y: 5 } }]);
+  // A menu already open when the source changed: pressing its item says it by the same button.
+  stubGlobals.refused.length = stubGlobals.refusedNear.length = 0;
+  painted[0].run(opener);
+  assert.deepEqual(stubGlobals.refused, ["The source changed. Wait for the preview before using this action."]);
+  assert.deepEqual(stubGlobals.refusedNear, [{ anchor: opener }]);
+  // Painting the rows stays silent on stale source.
+  stubGlobals.refused.length = 0;
+  structure.menuItems("index.html", item);
+  assert.deepEqual(stubGlobals.refused, []);
   // The page open and mounted: its row moves now, or waits for the preview.
   state.mountedPaths.add("index.html");
   appStore.openFile.value = "index.html";

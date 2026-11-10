@@ -9,7 +9,7 @@ import { REPLACE_ACCEPT, replaceChoiceProblem, replaceNotice, replacedMessage, r
 import { askToAddUnchanged } from "./media-prepare";
 import { prepareMediaReplacement } from "./media-replace-prepare";
 import type { MediaReplaceRequest } from "./media-workspace";
-import type { ToastAction } from "../components/toast";
+import type { UndoAction } from "../announce";
 
 /** Replace everywhere from File details (media build slice 54; ticket 15): the picker chooses the new
  * picture (one in Media, or one added there and prepared as at adding), then a screen says what will
@@ -19,7 +19,7 @@ export type ReplaceContext = LibrarySheetContext & {
   /** The Media pane; the picker opens inside the popover holding it, so the pane stays open. */
   dialog: HTMLElement;
   /** File details of `path`: Cancel and Back return there; after replacing it opens on the new picture. */
-  details(path: string, undo?: ToastAction): Promise<void>;
+  details(path: string, undo?: UndoAction): Promise<void>;
   /** Closes the explorer (a page named in the confirm opens). */
   close(): void;
 };
@@ -114,20 +114,20 @@ function confirmReplace(sheet: LibrarySheet, c: ReplaceContext, path: string, ne
   let keep: HTMLInputElement | undefined;
   if (notice.forward) {
     keep = input(notice.forward.label, "checkbox"); keep.checked = notice.forward.checked;
-    element.append(check(notice.forward.label, keep), node("p", "media-library__hint", notice.forward.hint));
+    element.append(check(notice.forward.label, keep));
   }
   const actions = node("div", "media-remove__actions");
   actions.append(cancellation("Cancel", leave), button("Replace everywhere", () => void c.task(async () => {
     if (version !== sheet.version || element.dataset.mode !== "replace") { c.tell("This confirmation has expired. Open Replace everywhere again."); return; }
     // Slice 34: a replaced art-directed <picture> says so ("The new picture is now used on all screens.").
     const notices: string[] = [];
-    let undo: ToastAction | undefined;
+    let undo: UndoAction | undefined;
     const to = await c.adapter.replace!({ path, result: next.result, ...next.original ? { original: next.original } : {},
       ...keep ? { keepOldAddress: keep.checked } : {}, notice: text => notices.push(text), undo: action => { undo = action; } });
-    // The toast names the pages and carries Undo, bound to this step as it committed (slice 113).
-    c.done([replacedMessage(to, next.name, used.map(label)), ...notices].join(" "), undo);
+    // Said to screen readers; the step's Undo is bound to it as it committed (slice 113).
+    c.done([replacedMessage(to, next.name, used.map(label)), ...notices].join(" "));
     next.release(); c.cache.clear(); await c.refresh();
-    // The new picture's details carry the step's Undo beside the picture, so it is reachable once the toast is gone.
+    // The new picture's details carry the step's Undo beside the picture, so it is reachable inside the dialog.
     if (c.alive() && c.library().items.some(item => item.path === to)) await c.details(to, undo);
     else if (c.alive() && version === sheet.version) { sheet.version++; element.hidden = true; delete element.dataset.mode; element.replaceChildren(); }
   }), "button primary"));

@@ -89,7 +89,7 @@ test("rename a used image in File details: the page still shows it, and the old 
   await forward.check();
   await media.getByRole("button", { name: "Save details", exact: true }).click();
   await expect(name).toHaveValue("lisbon-tram.webp");
-  await expect(page.locator(".editor-toast__text")).toContainText("Its old address forwards to the new one.");
+  await expect(page.locator("#status")).toContainText("Its old address forwards to the new one.");
   await expect.poll(() => text(page, "_redirects")).toBe("/images/tram.webp /images/lisbon-tram.webp 301\n");
   await expect.poll(async () => (await text(page, "about/index.html")) ?? "").toContain('src="/images/lisbon-tram.webp"');
   await expect.poll(() => pageText(page, "index.html")).toContain('src="/images/lisbon-tram.webp"');
@@ -173,8 +173,10 @@ test("Replace everywhere with a picture in Media changes it on two pages with th
   expect(await storedDraft(page, "index.html")).toBeUndefined();
   await media.getByRole("button", { name: "Back", exact: true }).click();
   await replaceWithNext(page);
-  await expect(page.locator(".editor-toast__text")).toHaveText("tram.webp now shows the next picture on Home and About this project.");
-  await expect(page.locator(".editor-toast").getByRole("button", { name: "Undo", exact: true })).toBeVisible();
+  await expect(page.locator("#status")).toHaveText("tram.webp now shows the next picture on Home and About this project.");
+  // Nothing pops up: the Undo is the one beside the new picture, and no toast stands anywhere.
+  await expect(pane(page).locator(".media-detail__view").getByRole("button", { name: "Undo", exact: true })).toBeVisible();
+  await expect(page.locator(".editor-toast")).toHaveCount(0);
   // The same mark on both pages; the prepared picture brought its own 480 px copy.
   await expect.poll(async () => marked.exec((await text(page, "index.html")) ?? "")?.[1]).toBeTruthy();
   const version = marked.exec((await text(page, "index.html"))!)![1];
@@ -195,7 +197,7 @@ test("Replace everywhere, close the Media dialog: the top bar's Undo restores th
   await expect.poll(() => shownWidth(page)).toBe(40);
   await replaceWithNext(page);
   await expect.poll(() => shownWidth(page)).toBe(600);
-  // Closed with no toast to reach: the one Undo is the top bar's.
+  // Closed, the one Undo is the top bar's.
   await page.getByRole("tab", { name: "Pages", exact: true }).click(); await page.keyboard.press("Escape");
   await expect(pane(page)).toBeHidden();
   await page.locator(".code-editor__undo").first().click();
@@ -208,7 +210,7 @@ test("after Replace everywhere the new picture's details carry Undo, which resto
   await expect.poll(() => shownWidth(page)).toBe(40);
   await replaceWithNext(page);
   await expect.poll(() => shownWidth(page)).toBe(600);
-  // The toast goes on its own clock; the Undo beside the picture stays until it is used.
+  // The Undo beside the picture stays until it is used.
   const undo = pane(page).locator(".media-detail__view").getByRole("button", { name: "Undo", exact: true });
   await expect(undo).toBeVisible();
   await undo.click();
@@ -311,7 +313,7 @@ test("replacing a picture an art-directed <picture> shows says it is now used on
   await seed(page, baseURL, { "about/index.html": { content: about.replace('<section class="prose"',
     '<picture><source media="(max-width: 600px)" srcset="/images/lisbon.webp"><img src="/images/tram.webp" alt="Tram"></picture>\n  <section class="prose"') } });
   await replaceWithNext(page);
-  await expect(page.locator(".editor-toast__text")).toContainText("The new picture is now used on all screens.");
+  await expect(page.locator("#status")).toContainText("The new picture is now used on all screens.");
   await expect.poll(async () => (await text(page, "about/index.html")) ?? "").not.toContain("<picture");
 });
 
@@ -339,12 +341,12 @@ test("Replace everywhere with a picture added in the picker: prepared, a new for
   await expect(media.locator('.media-library__card[data-path="images/old.png"]')).toHaveCount(0);
 });
 
-test("the toast's Undo takes Replace everywhere back, and a page named in the confirm opens it", async ({ page, baseURL }) => {
+test("the Undo beside the new picture takes Replace everywhere back, and a page named in the confirm opens it", async ({ page, baseURL }) => {
   await seed(page, baseURL);
   const media = pane(page);
   await replaceWithNext(page);
   await expect.poll(async () => (await text(page, "index.html")) ?? "").toMatch(/src="\/images\/tram\.webp\?v=/);
-  await page.locator(".editor-toast").getByRole("button", { name: "Undo", exact: true }).click();
+  await media.locator(".media-detail__view").getByRole("button", { name: "Undo", exact: true }).click();
   await expect.poll(() => pageText(page, "index.html")).toContain('src="/images/tram.webp"');
   await expect.poll(async () => marked.test((await text(page, "about/index.html")) ?? "")).toBe(false);
   // The confirm's page names are links: About this project opens that page and closes the explorer.
@@ -375,7 +377,7 @@ test("a new format with Keep the old address working off writes no forwarding, a
   expect(await storedDraft(page, "_redirects")).toBeUndefined();
 });
 
-test("a page that shows only a Trimmed copy is named in the confirm and the toast, with the focus line", async ({ page, baseURL }) => {
+test("a page that shows only a Trimmed copy is named in the confirm and in the status line, with the focus line", async ({ page, baseURL }) => {
   const record = { version: 2, collections: [], files: { "images/tram-crop.png": { trimmedFrom: { source: "images/tram.webp", trim: { x: 0, y: 0, width: 1, height: 1 } } } } };
   await seed(page, baseURL, {
     "images/tram-crop.png": { base64: png(20, 15, [200, 40, 40]).toString("base64") },
@@ -391,5 +393,5 @@ test("a page that shows only a Trimmed copy is named in the confirm and the toas
   await expect(media.getByText("Focus points go back to the middle.", { exact: true })).toBeVisible();
   await expect(media.getByText("1 trimmed copy of it is replaced by the new picture in the same shape.", { exact: true })).toBeVisible();
   await media.getByRole("button", { name: "Replace everywhere", exact: true }).click();
-  await expect(page.locator(".editor-toast__text")).toHaveText("tram.webp now shows the next picture on Home and About this project.", { timeout: 30_000 });
+  await expect(page.locator("#status")).toHaveText("tram.webp now shows the next picture on Home and About this project.", { timeout: 30_000 });
 });

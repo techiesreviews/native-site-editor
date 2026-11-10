@@ -1,3 +1,4 @@
+import { refusalsSaid } from "../src/components/refusal-note.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCommandPaletteController, type CommandPalettePorts } from "../src/controllers/command-palette-controller.ts";
@@ -119,6 +120,7 @@ test("palette actions after a switch do nothing and say why", async t => {
       const listed = editorPaletteCommands(deps);
       assert.equal(listed.length, 3);
       f[switchWorkspace]();
+      const refused = refusalsSaid();
       for (const command of listed) await command.run();
       t.mock.timers.tick(0);
       await Promise.resolve();
@@ -127,6 +129,8 @@ test("palette actions after a switch do nothing and say why", async t => {
       assert.equal(f.counters().began, 0);
       assert.equal(f.counters().started, 0);
       assert.deepEqual(f.announced, Array(3).fill("The repository changed. Reopen the command palette and try again."));
+      // Each is also a refusal note, since nothing else shows it once the palette has closed.
+      assert.equal(refusalsSaid(), refused + 3);
     } finally {
       remove.forEach(dispose => dispose());
       f.controller.dispose(); f.appStore.dispose();

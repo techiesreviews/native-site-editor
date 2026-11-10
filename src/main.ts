@@ -58,7 +58,7 @@ import type { Repository, SessionInfo, TreeEntry } from "../shared/types";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const element = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T;
-// #status and the toast with its Undo (src/announce.ts).
+// #status and the Undo of a step (src/announce.ts).
 const { announce, undoAction } = createAnnounce({ element, editorModule: sourceEditor });
 // #status, the notice bar and the GitHub reads.
 const { status, settleStatus, clearError, placeNotice, errorMessage, api, apiResponse, postApi } = createGitHubReads({

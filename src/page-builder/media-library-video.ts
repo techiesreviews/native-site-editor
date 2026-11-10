@@ -55,7 +55,7 @@ export function mediaDetailParts(h: DetailHost, path: string, meta: MediaMetadat
     }));
     const buttons = node("div", "media-detail__part-actions"); buttons.append(moment, choose);
     const line = node("div", "media-detail__part-row"); line.append(picture, buttons);
-    parts.push(row("Still picture", line, node("p", "media-library__hint", "Shown before the video plays, everywhere it is used. Pause at a moment, or choose a picture.")));
+    parts.push(row("Still picture", line));
   }
   if (adapter.subtitles) {
     const file = currentSubtitles(path, meta, library.items.map(item => item.path));
@@ -80,10 +80,9 @@ export function mediaDetailParts(h: DetailHost, path: string, meta: MediaMetadat
     })));
     const line = node("div", "media-detail__part-row");
     line.append(node("span", file ? "" : "media-library__muted", file ? basename(file) : "None yet"), buttons, chooser);
-    const hint = node("p", "media-library__hint", video ? "A .vtt or .srt file. Visitors get a CC button." : "A .vtt or .srt file. Visitors get a Transcript button.");
-    const part = row("Subtitles", line, hint);
+    const part = row("Subtitles", line);
     // Written by an agent (ticket 13) until Looks right in To check.
-    if (file && meta.subtitlesByAgent && meta.subtitles === file) part.append(node("p", "media-library__by-agent", "By agent: press Looks right in To check, or replace them here."));
+    if (file && meta.subtitlesByAgent && meta.subtitles === file) part.append(node("p", "media-library__by-agent", "By agent"));
     parts.push(part);
   }
   return parts;

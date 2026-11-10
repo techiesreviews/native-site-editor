@@ -70,7 +70,7 @@ function settingsDialog(title: string, scope: string) {
   status.setAttribute("role", "status");
   const actions = node("div", "site-settings__actions");
   const footer = node("div", "site-settings__footer");
-  footer.append(node("p", "site-settings__draft-note", "Drafts until you publish"), status, actions);
+  footer.append(status, actions);
   root.append(top, body, footer);
   const tabs: { label: string; tab: HTMLButtonElement; panel: HTMLElement }[] = [];
   const select = (label: string, focus = false) => {
@@ -321,9 +321,9 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const searchPanel = dialog.category("Search", "list-checks");
       const socialPanel = dialog.category("Social", "link");
       const details = section(generalPanel, "Page details");
-      const title = textField(details, "Title", values.title, "Shown in browser tabs and search results.");
+      const title = textField(details, "Title", values.title);
       title.placeholder = new DOMParser().parseFromString(options.source, "text/html").querySelector("h1")?.textContent?.trim() ?? "";
-      const description = textField(details, "Description", values.description, "A short summary for search results.");
+      const description = textField(details, "Description", values.description);
       const url = createUrlChange({
         label: "URL", ariaLabel: "URL", initial: options.route, buttons: true,
         plan: (value) => handlers.planUrl(options.path, value),
@@ -341,13 +341,13 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
           return undefined;
         }, cancel: () => {},
       });
-      if (options.route === "/") { url.input.readOnly = true; details.append(node("p", "site-settings__hint", "The home page's URL is always /.")); }
+      if (options.route === "/") { url.input.readOnly = true; }
       details.append(url.root);
       const search = section(searchPanel, "Search visibility");
-      const canonical = textField(search, "Canonical URL", values.canonical, "The preferred full address when this content appears at multiple URLs.");
+      const canonical = textField(search, "Canonical URL", values.canonical);
       const hidden = checkbox(search, "Hide from search engines", /\b(noindex|none)\b/i.test(values.robots));
       search.append(node("p", "site-settings__hint", "Adds noindex for search engines. This does not make a page private."));
-      const theme = textField(search, "Theme colour", values["theme-color"], "A CSS colour for supported browser chrome, for example #2f6d3a.");
+      const theme = textField(search, "Theme colour", values["theme-color"]);
       const social = section(socialPanel, "Share card");
       const note = handlers.socialNote?.();
       if (note) social.append(node("p", "site-settings__hint", note));
@@ -365,7 +365,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const descriptionLink = checkbox(social, "Use page description", descriptionMatches && (preference?.description ?? true));
       if (!ownDescription) social.append(node("p", "site-settings__hint", "Not set, uses page description."));
       const socialDescription = textField(social, "Social description", ownDescription ? values["og:description"] : values.description);
-      const image = textField(social, "Social image", values["og:image"], "Choose a site image or paste a full image URL. Sharing services favour a 1200 × 630 image.");
+      const image = textField(social, "Social image", values["og:image"]);
       addImageChoices(image, options.images, handlers.prefix());
       social.append(socialImageButton(image, "Social image", dialog, handlers,
         { page: options.path, title: () => socialTitle.value || title.value || "Your page title", refresh }));
@@ -381,7 +381,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const cardDescription = node("p");
       cardBody.append(cardUrl, cardTitle, cardDescription);
       card.append(photo, placeholder, cardBody);
-      social.append(card, node("p", "site-settings__hint", "Preview only. Twitter and LinkedIn may crop images or cache older details."));
+      social.append(card);
       let imageRequest = 0;
       function refresh() {
         socialTitle.readOnly = titleLink.checked;
@@ -452,7 +452,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const socialPanel = dialog.category("Social", "link");
       const pagesPanel = dialog.category("Pages", "file");
       const general = section(generalPanel, "Site identity");
-      const name = textField(general, "Site name", options.values.name, "Used for new page details and the site's social identity.");
+      const name = textField(general, "Site name", options.values.name);
       // One line that grows to show a long address whole (slice 113); Enter and pasted line breaks add nothing.
       const address = textField(general, "Site address", options.values.url, "Like https://name.github.io/my-site/", true);
       Object.assign(address, { rows: 1, inputMode: "url", autocomplete: "off", spellcheck: false, autocapitalize: "off" });
@@ -464,16 +464,14 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const social = section(socialPanel, "Default share image");
       const note = handlers.socialNote?.();
       if (note) social.append(node("p", "site-settings__hint", note));
-      const image = textField(social, "Default social image", options.values.socialImage, "Used on new pages and pages using the current default. Custom page images stay independent.");
+      const image = textField(social, "Default social image", options.values.socialImage);
       addImageChoices(image, options.images, handlers.prefix());
       social.append(socialImageButton(image, "Default social image", dialog, handlers, { title: () => name.value.trim() || "Your site" }));
       const affected = section(pagesPanel, `Affected pages (${options.pages.length})`);
-      affected.append(node("p", "site-settings__hint", "Favicon and social site name apply to these pages. Their title and description stay their own."));
       const list = node("ul", "site-settings__affected");
       for (const page of options.pages) list.append(node("li", "", `${page.label} · ${page.route}`));
       affected.append(list);
       const missing = section(pagesPanel, "404 page");
-      missing.append(node("p", "site-settings__hint", "The page visitors see at a missing address. Your static host decides when to serve it."));
       missing.append(button(options.has404 ? "Open 404 page" : "Create and open 404 page", async () => {
         const error = await handlers.open404();
         if (error) dialog.status.textContent = error; else dialog.root.close();
@@ -495,7 +493,6 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const dialog = settingsDialog("Navigation", `${options.shared ? "Shared component" : "This page's header"} · ${options.path}`);
       const linksPanel = dialog.category("Links", "link");
       const addPanel = dialog.category("Add link", "plus");
-      linksPanel.append(node("p", "site-settings__hint", "Drag links to reorder, or use Move up and Move down. Applying writes clean links to this source file."));
       const list = node("ol", "site-settings__nav");
       linksPanel.append(list);
       const links = options.links.map((link) => ({ ...link }));
@@ -571,8 +568,7 @@ function faviconField(parent: HTMLElement, value: string, dialog: ReturnType<typ
   input.addEventListener("input", refresh);
   row.append(preview, input);
   wrap.append(node("span", "site-settings__label", "Favicon"), row,
-    button("Choose favicon…", () => chooseInto(input, "Favicon", dialog, handlers, refresh), "button secondary site-settings__choose"),
-    node("span", "site-settings__hint", "Choose an image or paste its URL. Applied to every page's head."));
+    button("Choose favicon…", () => chooseInto(input, "Favicon", dialog, handlers, refresh), "button secondary site-settings__choose"));
   parent.append(wrap);
   refresh();
   return input;

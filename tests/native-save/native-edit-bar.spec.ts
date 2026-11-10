@@ -335,8 +335,6 @@ async function footParagraph(page: Page, key = "filler-3") {
   await page.waitForTimeout(600); // fixed-wait: that scroll has finished
   return paragraph;
 }
-// The editor's own toast module (the one the app loaded), as a background job would show one.
-const showToast = (page: Page, text: string) => page.evaluate(async (words) => (await import("/src/components/toast.ts")).showToast(words), text);
 
 test.describe("on a desktop window with the 390 px device frame", () => {
   test.use({ viewport: { width: 1280, height: 900 } });
@@ -355,29 +353,21 @@ test.describe("on a desktop window with the 390 px device frame", () => {
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("a Heading just added from the Blocks rail is selected with its bar docked under the page and its toast above the bar", async ({ page }) => {
-    // The "Heading added … Undo" toast shows before the bar does.
+  test("a Heading just added from the Blocks rail is selected with its bar docked under the page, and no toast covers it", async ({ page }) => {
     await page.getByRole("navigation", { name: "Blocks" }).getByRole("button", { name: "Heading", exact: true }).click();
     await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
     await expect(bar(page).getByRole("button", { name: "Bold" })).toBeVisible();
-    const strip = page.locator(".editor-toast");
-    await expect(strip).toContainText("Heading added");
-    // The toast moves above the bar; the bar never rises over the page.
-    await expect.poll(async () => {
-      const barBox = await box(bar(page));
-      const stripBox = await box(strip);
-      return stripBox.y + stripBox.height <= barBox.y + 0.5;
-    }).toBe(true);
-    // The new heading is scrolled clear above the toast as soon as it shows (U5), not after the double-click wait.
+    // Said in the status line only: nothing stands over the new heading or the bar.
+    await expect(page.locator("#status")).toContainText("Heading added");
+    await expect(page.locator(".editor-toast")).toHaveCount(0);
+    // The new heading is scrolled clear above the bar as soon as it shows, not after the double-click wait.
     const heading = page.frameLocator(".native-preview-frame").locator("h2").last();
-    await expect.poll(async () => { const shown = await box(heading); return shown.y + shown.height <= (await box(strip)).y + 0.5; }, { timeout: 1_000 }).toBe(true);
+    await expect.poll(async () => { const shown = await box(heading); return shown.y + shown.height <= (await box(bar(page))).y + 0.5; }, { timeout: 1_000 }).toBe(true);
     const frameBox = await box(page.locator(".native-preview-frame"));
     for (let check = 0; check < 3; check++) {
       const barBox = await box(bar(page));
       expect(barBox.y).toBeGreaterThanOrEqual(frameBox.y + frameBox.height - 1);
-      const stripBox = await box(strip);
-      expect(stripBox.y + stripBox.height).toBeLessThanOrEqual(barBox.y + 0.5);
-      await page.waitForTimeout(200); // fixed-wait: samples across the toast's entrance and the scroll into view
+      await page.waitForTimeout(200); // fixed-wait: samples across the scroll into view
     }
     const barBox = await box(bar(page));
     expect(barBox.x).toBeGreaterThanOrEqual(frameBox.x - 1);
@@ -523,13 +513,11 @@ test.describe("on a phone", () => {
     await expect(paragraph).toBeVisible({ timeout: 30_000 });
     await paragraph.click();
     await expect(bar(page)).toHaveAttribute("data-side", "docked");
-    await expect(bar(page)).toHaveAttribute("data-toast-avoid", "");
     await setView(page, { height: 500 });
     await expect.poll(() => bar(page).evaluate((el) => el.style.marginBlockEnd)).not.toBe("");
     await page.setViewportSize({ width: 1280, height: 900 });
     await expect(bar(page)).toHaveAttribute("data-side", /^(above|below|pinned)$/);
     expect(await bar(page).evaluate((el) => el.style.marginBlockEnd)).toBe("");
-    await expect(bar(page)).not.toHaveAttribute("data-toast-avoid");
   });
 
   test("Ask agent's note on a selection at the foot of the frame over the keyboard stays above the lifted bar", async ({ page, baseURL }) => {
@@ -561,38 +549,6 @@ test.describe("on a phone", () => {
     } finally {
       await client.close();
     }
-  });
-
-  test("a toast shown after the bar stands above it", async ({ page }) => {
-    const paragraph = page.frameLocator(".native-preview-frame").locator('[data-key="hero-lead"]');
-    await expect(paragraph).toBeVisible({ timeout: 30_000 });
-    await paragraph.click();
-    await expect(bar(page)).toHaveAttribute("data-side", "docked");
-    await showToast(page, "Saved a draft");
-    const strip = page.locator(".editor-toast");
-    await expect(strip).toContainText("Saved a draft");
-    await expect.poll(async () => { const stripBox = await box(strip); return stripBox.y + stripBox.height <= (await box(bar(page))).y + 0.5; }).toBe(true);
-  });
-
-  test("a selection the user scrolled under the bar stays put when a toast shows", async ({ page }) => {
-    const paragraph = page.frameLocator(".native-preview-frame").locator('[data-key="hero-lead"]');
-    await expect(paragraph).toBeVisible({ timeout: 30_000 });
-    await paragraph.click();
-    await expect(bar(page)).toHaveAttribute("data-side", "docked");
-    await page.waitForTimeout(600); // fixed-wait: the new selection's own check (400 ms after the click) has run and found it in view
-    // Scroll back to the top of the page, then far enough that the paragraph is below the bar.
-    await paragraph.evaluate((el) => {
-      window.scrollTo(0, 0);
-      el.closest("section")!.style.marginBlockStart = `${innerHeight}px`;
-    });
-    const frameBox = await box(page.locator(".native-preview-frame"));
-    await expect.poll(async () => (await box(paragraph)).y).toBeGreaterThan(frameBox.y + frameBox.height);
-    const scrolled = () => paragraph.evaluate(() => window.scrollY);
-    const before = await scrolled();
-    await showToast(page, "Saved a draft");
-    await expect(page.locator(".editor-toast")).toContainText("Saved a draft");
-    await page.waitForTimeout(900); // fixed-wait: past the 400 ms settle and a smooth scroll, nothing may have moved
-    expect(await scrolled()).toBe(before);
   });
 
   test("a menu or field from the docked bar opens upward, inside the room above it", async ({ page }) => {

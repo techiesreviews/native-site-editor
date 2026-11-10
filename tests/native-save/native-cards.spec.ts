@@ -761,7 +761,9 @@ test("a Make component whose mode is slower than its deadline opens the code onl
     const template = "components/section-made-to-be/section-made-to-be.html";
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", template);
     await expect.poll(() => requested).toBe(true);
-    // The deadline passes: the notes go to the status line, once; the code pane keeps the template.
+    // The deadline passes: the late word is by the edit bar as a note (no toast), and with the notes in the status line, once; the code pane keeps the template.
+    await expect(page.locator(".refusal-note")).toContainText("Edit component mode did not load in time. The template's code is open.", { timeout: 20_000 });
+    await expect(page.locator(".editor-toast")).toHaveCount(0);
     const note = "1 rule can't follow the parts into the component: .intro .lead em.";
     await expect(status(page)).toContainText("Made the component <section-made-to-be>", { timeout: 20_000 });
     await expect(status(page)).toContainText(note);

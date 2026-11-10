@@ -1148,7 +1148,6 @@ test("closing at 100 % gives the image back its own srcset and sizes after trims
 });
 
 const large = (page: Page) => page.getByRole("dialog", { name: "Edit image", exact: true });
-// The large editor's own Undo (the editor toast, slice 105, can stand in the dialog with its Undo).
 // The large editor's Shape: the popup's shape menu on a button naming the current shape (slice 110).
 const largeShape = (page: Page) => large(page).getByRole("button", { name: /^Shape:/ });
 async function chooseLargeShape(page: Page, label: string) {
@@ -1156,7 +1155,8 @@ async function chooseLargeShape(page: Page, label: string) {
   await large(page).getByRole("menuitemradio", { name: label, exact: true }).click();
   await expect(largeShape(page)).toHaveAccessibleName(`Shape: ${label}`);
 }
-const largeUndo = (page: Page) => large(page).getByRole("button", { name: "Undo", exact: true }).and(page.locator(":not(.editor-toast *)"));
+// The large editor's own Undo.
+const largeUndo = (page: Page) => large(page).getByRole("button", { name: "Undo", exact: true });
 
 test("the large editor carries the popup's state; Cancel returns to the popup unchanged; straighten and flip save a trimmed copy", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });

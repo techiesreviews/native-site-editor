@@ -167,11 +167,8 @@ for (const order of ["oldest first", "newest first"] as const)
     const ids = [`two-a-${order}`, `two-b-${order}`];
     if (order === "newest first") ids.reverse();
     assert.deepEqual(keptChanges(m.scope, ids).map(change => change.id), [`two-b-${order}`, `two-a-${order}`]);
-    const steps = m.steps().length, said: unknown[] = [], workspace = m.workspace, announce = workspace.announce.bind(workspace);
-    workspace.announce = (message, as) => { said.push(as); announce(message, as); };
+    const steps = m.steps().length;
     await undoAgentChanges(ids, "grant-a", undoPorts(m, edits));
-    // Said only, no toast: the card's Undone shows it.
-    assert.deepEqual(said, ["quiet"]);
     assert.equal(m.workspace.source("index.html"), PAGE);
     assert.equal(m.draft("index.html"), undefined);
     assert.equal(m.steps().length, steps + 1, "one step");

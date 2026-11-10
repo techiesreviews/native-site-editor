@@ -1,5 +1,4 @@
 import { componentImageChoices } from "./component-model";
-import type { AnnounceAs } from "../components/toast-rules";
 import type { MediaPathPlacement } from "./media-picker";
 import { componentRenameStep, madeFiles, madeMessage, makeComponentStep, newComponentStep, slotChipPlan, templateRemovalPlan, type LoaderPlanner, type MadePlanned, type NewPlanned, type RenamePlanned, type SlotChipPlanned } from "./component-plans";
 import { STALE_MESSAGE, type GuardedEdits, type Outcome, type RunOptions, type Stamp } from "../guarded-edit";
@@ -129,8 +128,8 @@ export interface ComponentDeps {
   live?: Pick<LiveTextPorts, "store" | "openFile" | "scope" | "onPushed">;
   /** Opens a file in the code pane; resolves once it is mounted (true) or not. */
   openFile: (path: string) => Promise<boolean>;
-  /** Said and shown as the toast; mode notes the component bar already shows are "quiet". */
-  announce: (text: string, as?: AnnounceAs) => void;
+  /** Said in the status line only. */
+  announce: (text: string) => void;
   error: (error: unknown) => void;
   /** Images of the repository, as root paths' suggestions. */
   images: () => string[];
@@ -269,7 +268,8 @@ function startLiveText(live: NonNullable<ComponentDeps["live"]>) {
 
 export function createComponentTools(deps: ComponentDeps) {
   if (deps.live) startLiveText(deps.live);
-  const refuse = (reason: string) => { deps.announce(reason); showRefusal(reason); };
+  // A refusal: said in #status and shown by `anchor` (the menu button it came from), else by the edit bar.
+  const refuse = (reason: string, anchor?: HTMLElement) => { deps.announce(reason); showRefusal(reason, { anchor }); };
   const panel = node("section", "component-panel");
   panel.setAttribute("aria-label", "Component properties");
   panel.hidden = true;
@@ -556,11 +556,11 @@ export function createComponentTools(deps: ComponentDeps) {
   function menuItems(target: ElementMenuTarget): MenuItem[] {
     if (!makeComponentOfferedFor(target)) return [];
     // From Structure the page may not be the open file (a stylesheet is); it opens first, as a selection would.
-    return [{ label: "Make component", run: () => void (async () => {
+    return [{ label: "Make component", run: opener => void (async () => {
       const source = deps.sources()[target.path];
       if (deps.currentPath() !== target.path && !(await deps.openFile(target.path))) return;
       // The node path was read against these bytes.
-      if (deps.sources()[target.path] !== source) { deps.announce("The page changed meanwhile; select the element again."); return; }
+      if (deps.sources()[target.path] !== source) { refuse("The page changed meanwhile; select the element again.", opener); return; }
       await openMakeComponent(target);
     })() }];
   }
@@ -573,10 +573,10 @@ export function createComponentTools(deps: ComponentDeps) {
     // The node path must have been read against the template's current bytes.
     if (!target.node?.length || source === undefined || target.paintedSource !== source) return [];
     const state = templateChip(target.node);
-    return slotMenuItems(state).map(label => ({ label, run: () => {
+    return slotMenuItems(state).map(label => ({ label, run: opener => {
       // The mode's opening, the repository and the page shown are the menu's (the stamp), and so are the template's bytes.
       if (mode.now()?.template !== moded.template || !stamp.holds() || deps.sources()[target.path] !== source) {
-        deps.announce("The template changed meanwhile; select the part again.");
+        refuse("The template changed meanwhile; select the part again.", opener);
         return;
       }
       if (label === "Rename slot") {
@@ -695,7 +695,7 @@ export function createComponentTools(deps: ComponentDeps) {
       deps.editor()?.focusEditor?.(level.template);
       // Back selects the instance we opened from, ready to offer Open again.
       deps.preview()?.selectNode({ path: level.template, node: index === undefined ? [0] : [...(before.chain[index + 1]?.node ?? [0])] });
-      deps.announce(`Editing the ${componentLabel(level.tag)} component: changes apply to ${usageSummary(usage(level.tag))}.`, "quiet");
+      deps.announce(`Editing the ${componentLabel(level.tag)} component: changes apply to ${usageSummary(usage(level.tag))}.`);
     }
     barKey = "";
     renderBar();
@@ -751,7 +751,7 @@ export function createComponentTools(deps: ComponentDeps) {
         deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);
         return;
       }
-      deps.announce(`Editing the ${componentLabel(tag)} component: changes apply to ${usageSummary(usage(tag))}.`, "quiet");
+      deps.announce(`Editing the ${componentLabel(tag)} component: changes apply to ${usageSummary(usage(tag))}.`);
       if (!target) return;
       // Once the preview has selected the part (and marked its tag), the slot's own tag is selected.
       reveal = (async () => {
@@ -769,7 +769,7 @@ export function createComponentTools(deps: ComponentDeps) {
     } else if (outcome.status === "failed" && mode.opened() === template.path && deps.sources()[template.path] === template.source
       && (!framed || deps.previewPage() === framed.path && deps.sources()[framed.path] === pageSource)) {
       // Told only while this entry's opening stands over the page and template it read: the template's code is open without the frame.
-      if (outcome.error instanceof EnterTimeout) { deps.announce(LATE_MODE); await reveal; return "late"; }
+      if (outcome.error instanceof EnterTimeout) { refuse(LATE_MODE); await reveal; return "late"; }
       deps.error(outcome.error);
     }
     await reveal;
@@ -1054,7 +1054,7 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!target) return;
     deps.preview()?.selectNode(target.request);
     // Shown through another component: its instance on the page holds this one.
-    if (target.holder !== tag) deps.announce(`${componentLabel(tag)} is inside ${componentLabel(target.holder)} on this page: ${componentLabel(target.holder)} selected.`, "quiet");
+    if (target.holder !== tag) deps.announce(`${componentLabel(tag)} is inside ${componentLabel(target.holder)} on this page: ${componentLabel(target.holder)} selected.`);
   }
 
   /** The tag on a page that shows `tag`: itself, else the first component whose template does (through others too). */

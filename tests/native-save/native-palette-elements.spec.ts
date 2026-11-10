@@ -91,7 +91,7 @@ test('actual commands filter catalogue kinds, place blocks after lists and in ma
   state.source='<main><p>unclosed</main>';state.selection=undefined;await nativePaletteCommands(deps).find(c=>c.id==='native.add:native:button')!.run();
   deps.nativeInsertPoint=()=>({path:'other.html',parent:[0],index:0});state.source='<main></main>';state.selection=undefined;await nativePaletteCommands(deps)[0].run();
   return{commands,validCalls,rejectedCalls:state.calls};
- });expect(result.commands).toHaveLength(6);expect(result.commands.every((c:any)=>c.group==='Elements'&&c.hint==='Native HTML'&&!c.navigation)).toBe(true);
+ });expect(result.commands).toHaveLength(6);expect(result.commands.every((c:any)=>c.group==='Elements'&&c.hint===undefined&&!c.navigation)).toBe(true);
  expect(result.validCalls.map((c:any)=>c.point)).toEqual([{path:'index.html',parent:[0],index:1},{path:'index.html',parent:[0],index:0},{path:'index.html',parent:[0],index:0}]);
  expect(result.validCalls.map((c:any)=>c.choice.tag)).toEqual(['native:heading','native:section','native:div']);expect(result.rejectedCalls).toEqual([]);
 });

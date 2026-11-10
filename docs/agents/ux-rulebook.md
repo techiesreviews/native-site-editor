@@ -43,7 +43,7 @@ machine (searched 2026-10-25); the parts carried over live in the build tickets 
   Check: `script: text`.
 - **S4** No toasts, info strips or banners after an action.
   The result shows where the action happened (the item, the button, the field); the screen-reader
-  status line still announces it. New work adds none; today's toasts go in the atomic catalogue build.
+  status line still announces it. The editor has no toast: `announce()` writes only that line.
   Why: Lex, 2026-10-23, "the interface should show what is happening" ([factory map](../wayfinder/software-factory/map.md),
   Decisions); the "Filled from …" strip went while the status line kept announcing the fill
   ([components 101](../wayfinder/components-and-builder/build/tickets/101-remove-fill-strip.md)).

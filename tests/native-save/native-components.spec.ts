@@ -486,7 +486,9 @@ for (const action of ["delete", "reorder"] as const) {
     await expect.poll(draftText).toContain(action === "delete" ? second : `${second}${first}`);
     const beforeUse = await draftText();
     await picker.getByRole("button", { name: "Use image", exact: true }).click();
-    await expect(status(page)).toHaveText("The instance changed while the image was chosen; it was not replaced.");
+    // The picker stays open and says why on its own message line, where the press was (no toast).
+    await expect(picker.locator(".media-library__message")).toHaveText("The instance changed while the image was chosen; it was not replaced.");
+    await expect(page.locator(".editor-toast")).toHaveCount(0);
     await expect.poll(draftText).toBe(beforeUse);
   });
 }

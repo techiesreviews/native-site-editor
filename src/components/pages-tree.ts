@@ -601,7 +601,6 @@ export function createPagesTree(options: {
     const name = label(withoutTitleEnding(page.label, ending));
     row.append(twisty, pageIcon(icon), name);
     if (page.file) { item.dataset.file = page.file; markAgents(item, name, page.file); }
-    if (!page.file) row.append(node("span", "pages-note", "(no page)"));
     if (page.isNew && page.file) row.append(node("span", "file-new", "New"));
     if (page.file && page.special !== "home" && options.changeUrl) {
       const url = node("button", "pages-url pages-url--button", page.route);

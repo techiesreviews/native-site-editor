@@ -63,7 +63,6 @@
 .page-structure__slot-field :is(input, textarea)[aria-invalid=true] { border-color: var(--danger); }
 /* A link's or image's fields: a labelled group, always open. */
 .page-structure__slot-fields { display: flex; flex-direction: column; gap: 6px; }
-.page-structure__slot-summary { font-size: var(--type-small); color: var(--muted); }
 .page-structure__attributes { font-size: var(--type-small); }
 .page-structure__attribute { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; margin-top: 6px; }
 .page-structure__attribute:first-child { margin-top: 0; }

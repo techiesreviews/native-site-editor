@@ -380,6 +380,9 @@ test("an agent's change to the template typed in ends the edit; the template sta
     const { note, field } = await typeInFooterTemplate(page, agent);
     await agent.edit(FOOTER, '<footer class="site-footer" data-key="site-footer">', '<footer class="site-footer" data-key="site-footer" data-agent="yes">');
     await expect(page.getByRole("status").filter({ hasText: "Editing Paragraph ended: the page changed meanwhile." })).toHaveCount(1);
+    // Shown once, by the row's own note: no second copy as a toast.
+    await expect(page.locator(".refusal-note")).toHaveText("Editing Paragraph ended: the page changed meanwhile.");
+    await expect(page.locator(".editor-toast")).toHaveCount(0);
     await expect(field).toHaveCount(0);
     const written = (await agent.read(FOOTER)).content;
     expect(written).toContain('data-agent="yes"');

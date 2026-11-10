@@ -39,7 +39,7 @@ export interface ReplaceNotice {
   /** The address after replacing: the same, or the same name in the new format. */
   address: string;
   /** Present when the format changes: the old address can forward ("Keep the old address working"). */
-  forward?: { label: string; hint: string; checked: boolean };
+  forward?: { label: string; checked: boolean };
 }
 
 /** What Replace everywhere will do, in plain words, before it is confirmed. */
@@ -57,7 +57,6 @@ export function replaceNotice({ path, next, pages, trims, kept }: ReplaceNoticeI
     title: `Replace ${basename(path)} everywhere?`, lines, address,
     ...same ? {} : { forward: {
       label: "Keep the old address working",
-      hint: `Links from other sites to /${path} forward to the new address, on hosts that read the site's _redirects file.`,
       checked: kept,
     } },
   };
@@ -74,7 +73,7 @@ export function pageList(names: string[]): string {
   return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0] ?? "";
 }
 
-/** After replacing, the toast (slice 113): "red-acer.webp now shows the bluebells picture on Home and About." */
+/** After replacing, what #status says (slice 113): "red-acer.webp now shows the bluebells picture on Home and About." */
 export function replacedMessage(path: string, newName: string, pages: string[]): string {
   const picture = basename(newName).replace(/\.[^.]+$/, "");
   return `${basename(path)} now shows the ${picture} picture${pages.length ? ` on ${pageList(pages)}` : ""}.`;

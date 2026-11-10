@@ -51,7 +51,6 @@ import type { createWorkspaceBoot } from "./workspace-boot";
 import type { createWorkspaceMount } from "./workspace-mount";
 import type { GuardedEdits, Reads, PlanResult } from "./guarded-edit";
 import type { SessionStamp, WorkspaceSession } from "./workspace-session";
-import type { AnnounceAs } from "./components/toast-rules";
 
 type PagesAndFiles = ReturnType<typeof createPagesAndFilesHost>;
 type TextIndex = ReturnType<typeof createSiteTextIndex>;
@@ -67,7 +66,7 @@ export interface PageBuilderHostPorts {
   lazyModule: <T>(load: () => Promise<T>) => () => Promise<T>;
   loadSiteSettings: () => Promise<ReturnType<typeof import("./native-settings").createNativeSettings>>;
   errorMessage: (error: unknown) => void;
-  announce: (text: string, as?: AnnounceAs) => void;
+  announce: (text: string) => void;
   currentLoad: () => number;
   setupScope: () => string;
   draftScope: () => DraftScope | undefined;
