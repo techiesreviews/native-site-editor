@@ -42,7 +42,7 @@ WCAG sets no minimum text size. It asks for 4.5:1 text contrast and 3:1 for focu
   Moves that merge steps change which of two parts wins where they overlap; check the screen when a part moves.
 - **Elevation.** Four steps. Step 1 is the existing `--shadow-small` (a pin or round button), step 2 `--elevation-2` (a small card), step 3 the existing `--shadow` (a floating panel) and step 4 `--elevation-4` (a dialog). There is no `--elevation-1` or `--elevation-3`; the two existing names keep working. All use `--semantic-shadow`, so they follow light and dark.
 
-`npm run check` also runs `scripts/check-css-vars.mjs`: every `var(--name)` in `src/**/*.css` must name a property that some stylesheet declares, that a script writes (`style.setProperty("--name", …)`, `--name:` in a `cssText` string, or a template such as `--agent${part}`), or that is listed in the script's open hooks with a reason. A name a script only mentions in a comment or reads with `var()` does not count, and neither does a fallback: that is how `--ease-out` went unnoticed.
+`npm run check` also runs `scripts/check-css-vars.mjs`: every `var(--name)` in `src/**/*.css` must name a property that some stylesheet declares, that a script writes (a quoted name in `style.setProperty`, `--name:` in a `cssText` string, or a template such as `--agent${part}`), or that is listed in the script's open hooks with a reason. A name a script only mentions in a comment or reads (`var()`, `getPropertyValue`, `removeProperty`) does not count, and neither does a fallback: that is how `--ease-out` went unnoticed.
 
 ## Writing a themed colour
 

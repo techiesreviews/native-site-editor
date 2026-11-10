@@ -21,13 +21,18 @@ function walk(directory, files = []) {
   return files;
 }
 
-/** A script or page without its `//` and block comments; a `//` after a colon or a quote stays (a URL). */
+/** A script or page without its `//`, block and HTML comments; a `//` after a colon or a quote stays (a URL).
+ * A `/*` with no closing `*` + `/` is left alone (a glob in a string). */
 function withoutComments(text) {
-  return text.replace(/\/\*[\s\S]*?(?:\*\/|$)|(^|[^:\\"'`\w])\/\/[^\n]*/g, "$1");
+  return text.replace(/\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|(^|[^:\\"'`\w])\/\/[^\n]*/g, "$1");
 }
 
-/** Names declared by the stylesheets, and what scripts set: literal names, and the prefix of a
- * template such as `--agent${part}`. `sheets` and `scripts` map a path to its text. */
+/** How a script writes a custom property: a quoted name in the first argument of `setProperty` (both
+ * arms of a ternary count), `--x:` in a style string, or the prefix of a template such as `--agent${part}`.
+ * Reading it (`getPropertyValue`, `removeProperty`, `var()`) is not a write. */
+const writes = /setProperty\(([^,)]*)|(?<![\w-])(--[a-zA-Z][\w-]*)\s*:|(?<![\w-])(--[a-zA-Z][\w-]*)\$\{/g;
+
+/** Names declared by the stylesheets, and the names scripts write (see `writes`). `sheets` and `scripts` map a path to its text. */
 export function undefinedProperties(sheets, scripts, hooks = openHooks) {
   const declared = new Set(Object.keys(hooks));
   for (const text of Object.values(sheets)) {
@@ -35,8 +40,12 @@ export function undefinedProperties(sheets, scripts, hooks = openHooks) {
   }
   const literal = new Set(), prefixes = new Set();
   for (const text of Object.values(scripts)) {
-    // Only a name a script writes counts: not one in a comment, and not one it reads with var().
-    for (const found of withoutComments(text).matchAll(/(?<!var\(\s*)(--[a-zA-Z][\w-]*)(\$\{)?/g)) (found[2] ? prefixes : literal).add(found[1]);
+    // Only a name a script writes counts: not one in a comment, and not one it only reads.
+    for (const found of withoutComments(text).matchAll(writes)) {
+      if (found[1] !== undefined) for (const quoted of found[1].matchAll(/["'`](--[a-zA-Z][\w-]*)(\$\{)?/g)) (quoted[2] ? prefixes : literal).add(quoted[1]);
+      else if (found[2]) literal.add(found[2]);
+      else prefixes.add(found[3]);
+    }
   }
   const problems = [];
   for (const [path, text] of Object.entries(sheets)) {
