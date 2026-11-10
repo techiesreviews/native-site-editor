@@ -123,7 +123,7 @@ main.has-preview .code-editor {
   color: var(--muted);
   text-overflow: ellipsis;
 }
-.native-preview-pane.is-viewing :is(.edit-bar, .edit-bar__popover, .edit-bar__note, .insert-layer, .insert-picker, .agent-pins, .agent-pins__tray, .agent-pin-card) {
+.native-preview-pane.is-viewing :is(.edit-bar, .edit-bar__popover, .edit-bar__note, .insert-layer, .agent-pins, .agent-pins__tray, .agent-pin-card) {
   display: none !important;
 }
 
