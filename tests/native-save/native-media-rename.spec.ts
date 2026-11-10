@@ -213,8 +213,34 @@ test("after Replace everywhere the new picture's details carry Undo, which resto
   await expect(undo).toBeVisible();
   await undo.click();
   await expect(undo).toHaveCount(0);
+  // The button left the page: the keyboard's place is in File details, not lost to the body.
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
   await expect.poll(() => pageText(page, "index.html")).toContain('src="/images/tram.webp"');
   await expect.poll(() => shownWidth(page)).toBe(40);
+});
+
+test("the details Undo is at least 44 px tall on a phone", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await seed(page, baseURL);
+  await replaceWithNext(page);
+  const undo = pane(page).locator(".media-detail__view").getByRole("button", { name: "Undo", exact: true });
+  await expect(undo).toBeVisible();
+  expect((await undo.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+});
+
+test("the details Undo pressed after a newer change takes nothing back and says why", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await replaceWithNext(page);
+  await expect.poll(() => shownWidth(page)).toBe(600);
+  const undo = pane(page).locator(".media-detail__view").getByRole("button", { name: "Undo", exact: true });
+  await expect(undo).toBeVisible();
+  // File details stays open while the page is edited: the step is no longer the newest.
+  await page.evaluate(async () => (await import("/src/components/code-editor.ts")).replaceActiveRange({ path: "index.html", start: 0, end: 0, text: "<!-- newer -->\n", expected: "" }));
+  await expect(undo).toBeVisible();
+  await undo.click();
+  await expect(page.locator(".refusal-note")).toContainText("Newer changes came after this one");
+  await expect.poll(() => shownWidth(page)).toBe(600);
+  expect(await pageText(page, "index.html")).toMatch(/src="\/images\/tram\.webp\?v=/);
 });
 
 test("the details Undo is gone once the top bar's Undo took the step back: no second undo, no refusal", async ({ page, baseURL }) => {

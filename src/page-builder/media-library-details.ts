@@ -101,9 +101,11 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
   const held = sheet.undo?.path === path ? sheet.undo.action : undefined;
   if (held?.live?.() === false) sheet.undo = undefined;
   else if (held) {
+    // Pressed after a newer change, the action itself says why it takes nothing back. The button leaves the page, so the
+    // keyboard's place moves to the picture first.
+    view.tabIndex = -1;
     const take = button("Undo", () => {
-      sheet.undo = undefined; take.remove();
-      if (held.live?.() !== false) held.run();
+      sheet.undo = undefined; view.focus(); take.remove(); held.run();
     }, "button secondary media-detail__undo");
     take.prepend(icon("undo", 16));
     view.append(take);

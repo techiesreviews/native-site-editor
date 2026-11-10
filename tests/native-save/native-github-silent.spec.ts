@@ -37,8 +37,10 @@ async function failFourTries(page: Page, reads: { seen: number }, from = 0) {
 async function expectFailedOpen(page: Page, covered = false) {
   await expect(notice(page)).toContainText(SAID);
   await expect(tryAgain(page, covered)).toBeVisible();
-  // The one button is where the failure shows: never also in the other place.
-  await expect(tryAgain(page, !covered)).toHaveCount(0);
+  // Where the failure shows carries the button. The failed panel always has its own, so it is still there once the
+  // explorer that covers it is closed (the notice, placed in the explorer, goes with it); the notice has one only while covered.
+  await expect(tryAgain(page)).toHaveCount(1);
+  await expect(tryAgain(page, true)).toHaveCount(covered ? 1 : 0);
   await expect(page.locator('#status')).toHaveText(SAID);
   await expect(page.locator('.editor-toast')).toHaveCount(0);
   await expect(page.locator('#content')).toContainText('Your repository could not be opened.');
@@ -109,9 +111,12 @@ test('Refresh of a shown site GitHub never answers offers Try again, which reloa
   await failFourTries(page, reads, opened);
   // The explorer is open here (Refresh sits in its menu) and covers the failed panel: the notice in it carries the button.
   await expectFailedOpen(page, true);
+  // Closing the explorer takes the notice with it: the failed page underneath still has Try again.
+  await page.keyboard.press('Escape');
+  await expect(tryAgain(page)).toBeVisible();
 
   reads.failing = false;
-  await tryAgain(page, true).click();
+  await tryAgain(page).click();
   await expectOpened(page);
   expect(reads.seen).toBe(opened + 5);
 });
@@ -242,6 +247,7 @@ test('at 390 px a long Worker message and Try again both fit without clipping', 
   const box = await button.boundingBox();
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  expect(box!.height).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   const noticeBox = await notice(page).boundingBox();
   expect(noticeBox!.x + noticeBox!.width).toBeLessThanOrEqual(390);
