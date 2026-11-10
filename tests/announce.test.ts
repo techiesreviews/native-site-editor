@@ -73,6 +73,15 @@ test("the toast is imported once per announcer, however often it is asked for be
   assert.equal(stubs.shown.length, 3);
 });
 
+test("the Undo action is live while its step is the newest and not once another is newer", () => {
+  const { undoAction, steps } = setup();
+  steps.set("index.html", 1);
+  const action = undoAction("index.html");
+  assert.equal(action?.live?.(), true);
+  steps.set("index.html", 2);
+  assert.equal(action?.live?.(), false);
+});
+
 test("the toast's Undo takes back the step it names while it is the newest, else refuses", async () => {
   const { announce, undoAction, steps, undone } = setup();
   assert.equal(undoAction("index.html"), undefined);

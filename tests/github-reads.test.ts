@@ -17,6 +17,8 @@ class FakeElement {
   disabled = false;
   attributes = new Map<string, string>();
   setAttribute(name: string, value: string) { this.attributes.set(name, value); }
+  getAttribute(name: string) { return this.attributes.get(name) ?? null; }
+  focus() { focused.current = this; }
   private handlers: (() => void)[] = [];
   addEventListener(_type: string, handler: () => void) { this.handlers.push(handler); }
   // A disabled button takes no click, as in a browser.
@@ -27,14 +29,20 @@ class FakeElement {
     this.children = children.map(child => { if (typeof child !== "string") return child; const text = new FakeElement("#text"); text.textContent = child; return text; });
   }
   append(...children: FakeElement[]) { this.children.push(...children); }
+  appendChild(child: FakeElement) { this.children.push(child); return child; }
   prepend(...children: FakeElement[]) { this.children.unshift(...children); }
   insertBefore(child: FakeElement) { this.children.unshift(child); }
 }
 const explorerOpen = { current: false };
+const focused: { current: FakeElement | undefined } = { current: undefined };
+const body = new FakeElement("body");
 const byId = new Map(["status", "notice"].map((id) => [id, new FakeElement("div", id)]));
 const fakeGlobals = globalThis as Record<string, unknown>;
 fakeGlobals.document = {
   getElementById: (id: string) => byId.get(id) ?? null,
+  body,
+  // With nothing focused it is the body, as in a browser.
+  get activeElement() { return focused.current ?? body; },
   querySelector: () => null,
   createElement: (name: string) => new FakeElement(name),
 };
@@ -63,6 +71,7 @@ function setup() {
   byId.get("status")!.textContent = "";
   byId.get("notice")!.hidden = true;
   explorerOpen.current = false;
+  focused.current = undefined;
   return { reads: createGitHubReads(ports), expired: () => expired };
 }
 const notice = () => byId.get("notice")!;
@@ -92,29 +101,57 @@ test("Try again sits on the failed panel the caller drew, shows busy once presse
   reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => { retried++; }, asElement(failed));
   assert.equal(notice().children.length, 1, "the notice keeps the words only");
   const again = failed.children.at(-1)!;
-  assert.equal(again.disabled, false);
+  assert.equal(again.getAttribute("aria-disabled"), null);
   again.click();
   assert.equal(retried, 1);
-  assert.equal(again.disabled, true);
+  // Busy, not disabled: a disabled button would drop the keyboard's focus.
+  assert.equal(again.disabled, false);
+  assert.equal(again.getAttribute("aria-disabled"), "true");
   assert.equal(again.className, "button primary");
   assert.equal(again.children.map(child => child.className + child.textContent).join("|"), "login-spinner|Trying again");
   again.click();
   assert.equal(retried, 1);
 });
 
-test("with the explorer open, which covers the failed panel, the notice placed in it carries Try again", () => {
+test("with the explorer open, which covers the failed panel, the notice placed in it carries Try again too, and the panel keeps its own for when the explorer closes", () => {
   const { reads } = setup();
   const failed = new FakeElement("p");
   explorerOpen.current = true;
-  reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => {}, asElement(failed));
-  assert.equal(failed.children.length, 0);
-  assert.equal(notice().children.at(-1)!.textContent, "Try again");
+  let retried = 0;
+  reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => { retried++; }, asElement(failed));
+  assert.equal(failed.children.at(-1)!.textContent, "Try again");
+  const covered = notice().children.at(-1)!;
+  assert.equal(covered.textContent, "Try again");
+  covered.click();
+  assert.equal(retried, 1);
+  assert.equal(failed.children.at(-1)!.getAttribute("aria-disabled"), "true", "both show busy once either is pressed");
+  failed.children.at(-1)!.click();
+  assert.equal(retried, 1, "the other one starts nothing either");
 });
 
-test("a failure with no panel passed puts Try again in the notice", () => {
+test("the keyboard keeps its place: a press keeps focus on the button, and the button a failed retry draws takes it", () => {
   const { reads } = setup();
-  reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => {});
-  assert.equal(notice().children.at(-1)!.textContent, "Try again");
+  const failed = new FakeElement("p");
+  const error = new ReadUnansweredError(new TypeError("offline"));
+  reads.errorMessage(error, () => {}, asElement(failed));
+  const first = failed.children.at(-1)!;
+  first.focus();
+  first.click();
+  assert.equal(focused.current, first, "busy, not disabled: focus stays");
+  // The open repeated replaces the panel (the old button leaves the page, and focus falls to the body); it fails again.
+  focused.current = undefined;
+  const again = new FakeElement("p");
+  reads.errorMessage(error, () => {}, asElement(again));
+  assert.equal(focused.current, again.children.at(-1), "the new Try again is focused");
+});
+
+test("a failure while focus is on a control leaves it there", () => {
+  const { reads } = setup();
+  const failed = new FakeElement("p");
+  const field = new FakeElement("input");
+  field.focus();
+  reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => {}, asElement(failed));
+  assert.equal(focused.current, field);
 });
 
 test("the unanswered line in #status is no load progress: a later settleStatus leaves it", () => {
