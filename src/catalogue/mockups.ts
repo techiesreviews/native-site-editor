@@ -1,6 +1,6 @@
 // Mock-ups of future features on the catalogue board (kitchen station 3): screens built from the parts in parts.ts,
 // with sample data, drawn in frames at each width and in light and dark, and approved the same way as a part.
-// A mock-up's own link is catalogue.html?mockup=<id>&width=<px>&theme=light|dark.
+// A mock-up's own link is catalogue.html?mockup=<id>&theme=light|dark.
 import type { Control, Values } from "./parts";
 
 export interface Mockup {

@@ -79,10 +79,11 @@ export async function startFrame(shown: NonNullable<ReturnType<typeof frameOf>>)
     const element = shown.entry.area === "mockups" ? await shown.entry.render(values) : await shown.entry.render(values, "normal");
     if (turn === drawing) stage.replaceChildren(element);
   };
+  // Options the board set while this page was still loading are on `data-values` already: they win over the first ones.
   const host = hostFrame();
-  if (host)
-    new MutationObserver(() => {
-      try { void draw({ ...shown.entry.defaults, ...JSON.parse(host.dataset.values ?? "{}") as Values }); } catch { /* Not options. */ }
-    }).observe(host, { attributes: true, attributeFilter: ["data-values"] });
-  await draw(shown.values);
+  const set = (): Values | undefined => {
+    try { return host?.dataset.values ? { ...shown.values, ...JSON.parse(host.dataset.values) as Values } : undefined; } catch { return undefined; }
+  };
+  if (host) new MutationObserver(() => { const values = set(); if (values) void draw(values); }).observe(host, { attributes: true, attributeFilter: ["data-values"] });
+  await draw(set() ?? shown.values);
 }

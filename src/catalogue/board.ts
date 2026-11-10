@@ -11,7 +11,7 @@ import sunSvg from "@phosphor-icons/core/regular/sun.svg?raw";
 import oneOffsText from "../../scripts/agents/one-offs.json?raw";
 import { iconMarkup, sizedSvg, svgElement } from "../icons";
 import approvalsText from "./approvals.json?raw";
-import { approvalTarget, parseApprovals, readApprovals, saveApproval, type Approvals } from "./approvals";
+import { DEFAULT_TARGET, approvalTarget, parseApprovals, readApprovals, saveApproval, signedInAs, type Approvals } from "./approvals";
 import { force, forceStates, type Forced } from "./force-states";
 import { frameElement, updateFrame, type Theme } from "./frame";
 import { MOCKUPS, type Mockup } from "./mockups";
@@ -59,7 +59,7 @@ export function startBoard(root: HTMLElement) {
   root.className = "cat-board";
   root.innerHTML = `
     <header class="cat-topbar">
-      <span class="cat-brand"><span class="cat-brand__mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><h1 class="cat-brand__name">Catalogue</h1></span>
+      <h1 class="cat-brand">Catalogue</h1>
       <span class="cat-topbar__actions"></span>
     </header>
     <div class="cat-shell">
@@ -129,8 +129,13 @@ export function startBoard(root: HTMLElement) {
   }
   /** Parts and values still drawing when the board opens: the first view fits once they have their size. */
   const drawing: Promise<unknown>[] = [];
+  // Each stage's latest draw: a slower earlier one (a part's module loading the first time) never lands over it.
+  const turns = new WeakMap<HTMLElement, number>();
   async function drawInline(part: Part, values: Values, state: State, into: HTMLElement) {
+    const turn = (turns.get(into) ?? 0) + 1;
+    turns.set(into, turn);
     const element = await part.render(values, FORCED.has(state) ? "normal" : state);
+    if (turns.get(into) !== turn) return;
     if (FORCED.has(state)) force(element, state as Forced);
     into.replaceChildren(element);
   }
@@ -363,7 +368,9 @@ export function startBoard(root: HTMLElement) {
   const mode = () => { const width = root.clientWidth; return width < 600 ? "phone" : width < 1040 ? "medium" : "wide"; };
   function camFor(rect: { x: number; y: number; w: number; h: number }, maxZ: number, pad = 48) {
     const w = viewport.clientWidth, h = viewport.clientHeight, sheet = root.dataset.sheet, medium = mode() === "medium";
-    const left = medium && sheet === "outline" ? 256 : 0, right = medium && sheet === "options" ? 288 : 0, bottom = 56;
+    // On a phone the open sheet covers the bottom of the canvas: the card is centred in the space above it.
+    const phoneSheet = mode() === "phone" && sheet ? (sheet === "outline" ? outline : inspector).offsetHeight : 0;
+    const left = medium && sheet === "outline" ? 256 : 0, right = medium && sheet === "options" ? 288 : 0, bottom = Math.max(56, phoneSheet);
     const aw = Math.max(w - left - right - pad * 2, 60), ah = Math.max(h - bottom - pad * 2, 60);
     const z = clamp(Math.min(aw / rect.w, ah / rect.h), MIN_Z, maxZ);
     return { z, x: left + (w - left - right) / 2 - (rect.x + rect.w / 2) * z, y: (h - bottom) / 2 - (rect.y + rect.h / 2) * z };
@@ -427,21 +434,14 @@ export function startBoard(root: HTMLElement) {
     const now = live.get(entry.id)!;
     const value = now.values[control.key];
     if (control.kind === "switch") {
-      const row = el("div", "cat-control cat-control--row");
-      const label = el("span", "cat-control__label", control.label);
-      label.id = `ctl-${entry.id}-${control.key}`;
-      const toggle = el("button", "cat-switch");
-      toggle.type = "button";
+      // The editor's own switch: a checkbox with role="switch" (src/page-builder/media-spot-popup.ts), the row its label.
+      const row = el("label", "cat-control cat-control--row");
+      const toggle = el("input", "cat-check");
+      toggle.type = "checkbox";
       toggle.setAttribute("role", "switch");
-      toggle.setAttribute("aria-checked", String(Boolean(value)));
-      toggle.setAttribute("aria-labelledby", label.id);
-      toggle.append(el("span", "cat-switch__thumb"));
-      toggle.addEventListener("click", () => {
-        const on = toggle.getAttribute("aria-checked") !== "true";
-        toggle.setAttribute("aria-checked", String(on));
-        setValue(entry, control.key, on);
-      });
-      row.append(label, toggle);
+      toggle.checked = Boolean(value);
+      toggle.addEventListener("change", () => setValue(entry, control.key, toggle.checked));
+      row.append(el("span", "cat-control__label", control.label), toggle);
       return row;
     }
     const label = el("label", "cat-control");
@@ -501,7 +501,8 @@ export function startBoard(root: HTMLElement) {
     button.type = "button";
     button.dataset.approve = entry.id;
     if (mark) {
-      button.setAttribute("aria-pressed", "true");
+      // Done, not a toggle: it says so and does nothing more.
+      button.setAttribute("aria-disabled", "true");
       button.append(svgElement(iconMarkup("check", 16, "icon--before")), "Approved");
     } else if (save?.busy) {
       button.setAttribute("aria-busy", "true");
@@ -512,12 +513,27 @@ export function startBoard(root: HTMLElement) {
     if (mark) children.push(el("p", "cat-approve__note", `${mark.by} · ${mark.on}`));
     else if (save?.note === "signed-out") {
       const note = el("p", "cat-approve__note cat-approve__note--problem");
+      // Sign-in returns to the editor, not here: it opens in a new tab, and this one checks again when it is back in front.
       const link = el("a", "", "Sign in with GitHub");
       link.href = "/auth/login";
+      link.target = "_blank";
+      link.rel = "noopener";
       note.append(link, " to approve.");
       children.push(note);
     } else if (save?.note) children.push(el("p", "cat-approve__note cat-approve__note--problem", `Not saved: ${save.note}`));
-    return section("Review", ...children);
+    // A link that names another repository says where Approve saves.
+    if (target.repo !== DEFAULT_TARGET.repo || target.branch !== DEFAULT_TARGET.branch)
+      children.push(el("p", "cat-approve__note", `Saves to ${target.repo} · ${target.branch}`));
+    const review = section("Review", ...children);
+    review.dataset.review = "";
+    return review;
+  }
+  /** Redraws only the Review section, so a field being typed in keeps its focus. */
+  function refreshReview() {
+    const entry = selected ? byId.get(selected) : undefined;
+    const review = inspector.querySelector("[data-review]");
+    if (entry && review) review.replaceWith(approveSection(entry));
+    else if (!entry) renderInspector();
   }
   function renderInspector() {
     const entry = selected ? byId.get(selected) : undefined;
@@ -623,7 +639,7 @@ export function startBoard(root: HTMLElement) {
   searchList.id = "cat-search-list";
   searchInput.setAttribute("role", "combobox");
   searchInput.setAttribute("aria-controls", searchList.id);
-  searchInput.setAttribute("aria-expanded", "true");
+  searchInput.setAttribute("aria-expanded", "false");
   let active = 0, results: Entry[] = [];
   function renderResults() {
     const query = searchInput.value.trim().toLowerCase();
@@ -641,8 +657,8 @@ export function startBoard(root: HTMLElement) {
     if (results[active]) searchInput.setAttribute("aria-activedescendant", `cat-result-${results[active].id}`);
     else searchInput.removeAttribute("aria-activedescendant");
   }
-  function openSearch() { search.hidden = false; searchInput.value = ""; active = 0; renderResults(); searchInput.focus(); }
-  function closeSearch() { if (search.hidden) return; search.hidden = true; viewport.focus({ preventScroll: true }); }
+  function openSearch() { search.hidden = false; searchInput.setAttribute("aria-expanded", "true"); searchInput.value = ""; active = 0; renderResults(); searchInput.focus(); }
+  function closeSearch() { if (search.hidden) return; search.hidden = true; searchInput.setAttribute("aria-expanded", "false"); viewport.focus({ preventScroll: true }); }
   function pick(id: string | undefined) { if (!id) return; closeSearch(); go(id); }
   searchInput.addEventListener("input", () => { active = 0; renderResults(); });
   searchInput.addEventListener("keydown", (event) => {
@@ -664,7 +680,8 @@ export function startBoard(root: HTMLElement) {
     if (typing(event.target)) { if (event.key === "Escape" && event.target !== searchInput) (event.target as HTMLElement).blur(); return; }
     if (event.key === "/" && !event.metaKey && !event.ctrlKey) { event.preventDefault(); openSearch(); return; }
     if (event.key === "Escape") { if (root.dataset.sheet) setSheet(""); else select(undefined); return; }
-    if (event.code === "Space" && (event.target === document.body || viewport.contains(event.target as Node))) {
+    // Space pans only from the canvas itself or the page: on a focused button it presses the button.
+    if (event.code === "Space" && (event.target === document.body || event.target === viewport)) {
       event.preventDefault();
       if (!spaceHeld) { spaceHeld = true; root.classList.add("is-space"); }
       return;
@@ -807,6 +824,22 @@ export function startBoard(root: HTMLElement) {
     // Approvals are only ever added: the branch's and this page's together.
     approvals = { approved: { ...fresh.approved, ...approvals.approved } };
     paintMarks();
-    renderInspector();
+    refreshReview();
+  });
+  // Back from signing in in another tab: the parts that asked for it read the session again.
+  addEventListener("focus", () => {
+    const waiting = [...saving].filter(([, save]) => save.note === "signed-out").map(([id]) => id);
+    if (!waiting.length) return;
+    void signedInAs().then((login) => {
+      if (!login) return;
+      for (const id of waiting) saving.delete(id);
+      refreshReview();
+      void readApprovals(target).then((fresh) => {
+        if (!fresh) return;
+        approvals = { approved: { ...fresh.approved, ...approvals.approved } };
+        paintMarks();
+        refreshReview();
+      });
+    });
   });
 }

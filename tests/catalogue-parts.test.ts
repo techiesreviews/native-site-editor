@@ -114,6 +114,9 @@ test("forced states: a state pseudo-class also matches the attribute, as the bro
   assert.equal(forcedSelector("button:focus-visible, a:focus"), 'button[data-force~="focus"], a[data-force~="focus"]');
   assert.equal(forcedSelector(".link-row:focus-within .copy"), '.link-row:is([data-force~="focus"], :has([data-force~="focus"])) .copy');
   assert.equal(forcedSelector(".field:not(:focus)"), '.field:not([data-force~="focus"])');
+  // Inside a :has() the element alone: a :has() within another is invalid, and the outer one reaches the ancestors.
+  assert.equal(forcedSelector(".a:has(b:hover)"), '.a:has(b[data-force~="hover"])');
+  assert.equal(forcedSelector(".row:has(.x:is(:active, :focus-visible)) .y:hover"), '.row:has(.x:is([data-force~="pressed"], [data-force~="focus"])) .y:is([data-force~="hover"], :has([data-force~="hover"]))');
   assert.equal(forcedSelector(".button"), null);
   assert.equal(forcedSelector(".hover-card"), null, "a class named hover is not the pseudo-class");
   assert.equal(forcedSelector(".cat-card:hover .cat-card__title"), null, "the board's own rules are never forced");

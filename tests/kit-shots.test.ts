@@ -40,7 +40,8 @@ test("JSON and documented YAML subset yield the same validated scenario", () => 
 
 test("screen flags and default matrix expand predictably", () => {
   const options = parseArgs(["editor", "media-gallery"]);
-  assert.equal(screens.length, 13);
+  assert.equal(screens.length, 14);
+  assert.equal(screens.at(-1), "catalogue");
   assert.deepEqual(expandMatrix(options.widths, options.themes), [
     { width: 390, theme: "light" }, { width: 390, theme: "dark" },
     { width: 768, theme: "light" }, { width: 768, theme: "dark" },
@@ -136,9 +137,12 @@ test("kit shots help and invalid arguments finish without starting a server", ()
 });
 
 
+// The geometry cases use 13 screens, whichever the kit lists.
+const thirteen = screens.slice(0, 13);
+
 test("contact geometry preserves readable tiles and splits 1, 13 and 39 shots only by whole rows", () => {
   for (const count of [1, 13, 39]) {
-    const shots = count === 1 ? [shot()] : screens.flatMap(screen => (count === 13 ? [390] : [390, 768, 1280]).map(width => ({ ...shot(), screen, width })));
+    const shots = count === 1 ? [shot()] : thirteen.flatMap(screen => (count === 13 ? [390] : [390, 768, 1280]).map(width => ({ ...shot(), screen, width })));
     const sheets = contactSheets(shots);
     assert.equal(sheets.length, count === 1 ? 1 : 7);
     assert.deepEqual(sheets.map(sheet => sheet.path), count === 1 ? ["contact.webp"] : Array.from({ length: 7 }, (_, i) => `contact-${i + 1}.webp`));
@@ -165,12 +169,12 @@ test("contact geometry preserves readable tiles and splits 1, 13 and 39 shots on
 });
 
 test("wide screen matrices wrap whole rows, preserve pairs and prefer source PNGs", () => {
-  const shots = screens.flatMap(screen => [390, 768, 1280].flatMap(width => ["light", "dark"].map(theme => ({ ...shot(), screen, width, theme } satisfies Shot))));
+  const shots = thirteen.flatMap(screen => [390, 768, 1280].flatMap(width => ["light", "dark"].map(theme => ({ ...shot(), screen, width, theme } satisfies Shot))));
   const sheets = contactSheets(shots);
   assert.equal(sheets.length, 13, "six tiles need two rows per sheet");
   assert.ok(sheets.every(sheet => sheet.rows.length === 2 && sheet.width <= 1600 && sheet.height <= 2400));
   assert.equal(sheets.flatMap(sheet => sheet.rows.flatMap(row => row.tiles)).length, 78);
-  const pairs = contactSheets(screens.flatMap(screen => [390, 768, 1280].flatMap(width => ["after", "before"].map(name => ({ ...shot(name), screen, width })))));
+  const pairs = contactSheets(thirteen.flatMap(screen => [390, 768, 1280].flatMap(width => ["after", "before"].map(name => ({ ...shot(name), screen, width })))));
   for (const sheet of pairs) for (const row of sheet.rows) {
     assert.equal(row.paired, true);
     assert.deepEqual(row.tiles.map(tile => tile.shot.name), ["before", "after"]);

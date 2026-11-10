@@ -29,6 +29,15 @@ async function prepareScreen(page: Page, screen: Screen) {
 
 export async function runScenario(page: Page, screen: Screen, step: RunStep) {
   await step("prepare fake GitHub screen data", () => prepareScreen(page, screen));
+  if (screen === "catalogue") {
+    // The catalogue board (catalogue.html, atomic catalogue ticket 05): its own page, not the editor.
+    await step("openCatalogue", async () => {
+      await page.goto("/catalogue.html");
+      await expect(page.locator('.cat-outline__item[data-id="button"]')).toBeAttached();
+      await expect(page.frameLocator("#card-row-menu .cat-live iframe").locator(".row-menu")).toContainText("Rename");
+    });
+    return;
+  }
   await step("openEditor", () => openEditor(page));
   switch (screen) {
     case "editor": return;

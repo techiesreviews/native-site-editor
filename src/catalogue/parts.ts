@@ -353,7 +353,7 @@ const KIND_WORDS: Record<string, readonly [string, string]> = {
 /** What does not trace to a shared value in an entry's stylesheets, from the one-offs count: one line per file. */
 export function untracedLines(files: readonly string[], counts: OneOffCounts): string[] {
   return files.filter((file) => file.endsWith(".css") && counts[file]).map((file) => {
-    const kinds = Object.entries(counts[file]).map(([kind, n]) => `${n} ${KIND_WORDS[kind]?.[n === 1 ? 0 : 1] ?? kind}`);
+    const kinds = Object.entries(counts[file]).map(([kind, n]) => `${n} ${KIND_WORDS[kind]?.[n === 1 ? 0 : 1] ?? "hand-typed values"}`);
     return `${kinds.join(", ")} in ${file.split("/").pop()}`;
   });
 }
