@@ -22,7 +22,7 @@
 .media-detail__preview .media-library__type-picture { inline-size: 40px; block-size: 40px; }
 
 /* Undo of a step just made on this picture (Replace everywhere), under the stage. */
-.media-detail__view .media-detail__undo { display: flex; align-items: center; gap: 6px; inline-size: fit-content; min-block-size: max(var(--size-control), var(--size-tap)); min-inline-size: max(var(--size-control), var(--size-tap)); justify-content: center; margin: 8px auto 0; }
+.media-detail__view .media-detail__undo { display: flex; align-items: center; inline-size: fit-content; min-block-size: max(var(--size-control), var(--size-tap)); min-inline-size: max(var(--size-control), var(--size-tap)); justify-content: center; margin: 8px auto 0; }
 
 /* Wide: the stage fills the left and stays put while the inspector scrolls; the file sits whole in
    its middle, never enlarged, on the stage colour (never black). */
@@ -132,7 +132,7 @@
    invisible over its pill, so keyboards and screen readers work as before. */
 .media-detail__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .media-detail__chip {
-  position: relative; display: inline-flex; align-items: center; gap: 6px; min-block-size: 32px; max-inline-size: 100%;
+  position: relative; display: inline-flex; align-items: center; min-block-size: 32px; max-inline-size: 100%;
   padding-inline: 12px; border: 1px solid var(--control-line); border-radius: 999px; background: var(--surface-card);
   cursor: pointer; overflow-wrap: anywhere;
 }

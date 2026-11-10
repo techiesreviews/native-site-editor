@@ -147,7 +147,7 @@ its number unused.
 
 ### F-repo-06 Refresh from GitHub
 - Try: In Branches press Refresh from GitHub after a commit made on GitHub.
-- Good: The branch is read again on the same page; a GitHub that never answers shows the failed panel with a Try again button (busy while it works), which repeats the open, rather than a blank screen.
+- Good: The branch is read again on the same page; a GitHub that never answers shows the failed panel with a Try again button, which repeats the open, rather than a blank screen.
 - Files: `src/components/repository-menu.ts`, `src/github-reads.ts`, `src/read-retry.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-github-silent.spec.ts`

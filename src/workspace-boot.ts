@@ -279,7 +279,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
           node(
             "p",
             "muted sidebar-hint",
-            "Files could not be loaded. Try refreshing.",
+            "Files could not be loaded.",
           ),
         );
         const failed = node("p", "empty-message", "Your repository could not be opened.");

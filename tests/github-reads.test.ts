@@ -90,25 +90,17 @@ test("a read GitHub never answered in an open says so in the notice, which carri
   assert.equal(retried, 0);
   again.click();
   assert.equal(retried, 1);
-  // The open it repeats clears the notice itself (src/workspace-boot.ts), so the busy button is not hidden under the keyboard's focus
-  // before that open starts; a failure of that open shows it again.
+  // The open it repeats clears the notice and replaces the failed panel itself (src/workspace-boot.ts); a failure of that open shows it again.
 });
 
-test("Try again sits on the failed panel the caller drew, shows busy once pressed, and a second press starts no second retry", () => {
+test("Try again sits on the failed panel the caller drew and runs the open's retry", () => {
   const { reads } = setup();
   const failed = new FakeElement("p");
   let retried = 0;
   reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => { retried++; }, asElement(failed));
   assert.equal(notice().children.length, 1, "the notice keeps the words only");
   const again = failed.children.at(-1)!;
-  assert.equal(again.getAttribute("aria-disabled"), null);
-  again.click();
-  assert.equal(retried, 1);
-  // Busy, not disabled: a disabled button would drop the keyboard's focus.
-  assert.equal(again.disabled, false);
-  assert.equal(again.getAttribute("aria-disabled"), "true");
   assert.equal(again.className, "button primary");
-  assert.equal(again.children.map(child => child.className + child.textContent).join("|"), "login-spinner|Trying again");
   again.click();
   assert.equal(retried, 1);
 });
@@ -124,9 +116,8 @@ test("with the explorer open, which covers the failed panel, the notice placed i
   assert.equal(covered.textContent, "Try again");
   covered.click();
   assert.equal(retried, 1);
-  assert.equal(failed.children.at(-1)!.getAttribute("aria-disabled"), "true", "both show busy once either is pressed");
   failed.children.at(-1)!.click();
-  assert.equal(retried, 1, "the other one starts nothing either");
+  assert.equal(retried, 2, "the panel's own button runs the same retry");
 });
 
 test("the keyboard keeps its place: a press keeps focus on the button, and the button a failed retry draws takes it", () => {
@@ -137,7 +128,7 @@ test("the keyboard keeps its place: a press keeps focus on the button, and the b
   const first = failed.children.at(-1)!;
   first.focus();
   first.click();
-  assert.equal(focused.current, first, "busy, not disabled: focus stays");
+  assert.equal(focused.current, first, "a press leaves the focus where it is");
   // The open repeated replaces the panel (the old button leaves the page, and focus falls to the body); it fails again.
   focused.current = undefined;
   const again = new FakeElement("p");
