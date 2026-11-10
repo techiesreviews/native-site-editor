@@ -45,3 +45,13 @@ Monaco requires sRGB hex values. `src/theme.ts` resolves CSS colors through the 
 Browser tests verify light/dark surface distinction, a part's own `color-scheme` choosing its palette (`tests/native-save/native-theme-scheme.spec.ts`), text and focus contrast, live primary changes, draft preservation, and preview isolation. Custom semantic overrides still need their own contrast check. Relative colors use the [CSS Color 5 relative OKLCH syntax](https://www.w3.org/TR/css-color-5/#relative-OKLCH).
 
 The app imports this palette after `src/style.css`, which no longer carries colours of its own. The frozen A prototype continues to load its recorded styles independently; its reference files and screenshots are not rewritten to accept the new app palette.
+
+## Shared spacing and the pill corner
+
+The editor's spacing steps and `--radius-full` come from a separate "editor" set of the techies.tools Framework (manual mode, fixed sizes), not from hand-written values. The top of `src/theme.css` holds a generated block between two `/* ---- generated ... ---- */` markers: `--space-4xs` to `--space-l` (2, 4, 6, 8, 12, 16 and 24px) and `--radius-full` (999px). Do not edit it by hand. The 6px `--radius`, the 11/12/13/15/20px type sizes and all colours stay editor-owned steps in the hand-written part.
+
+- `src/tokens/framework-editor.settings.json` holds the set's settings (names and sizes in rem at the Framework's 16px).
+- `src/tokens/framework-editor.css` is the Framework's own `tokens.css` export of those settings.
+- `scripts/tokens-from-framework.mjs` has three commands. `export` runs the Framework's compiler from `~/Projects/TechiesTools` (or `FRAMEWORK_DIR`; read only) on the settings and writes the export. `build` rewrites the generated block from the export, converting the Framework's 16px rem to pixels for the editor's 14px root, and fails on a fluid or non-rem value. `check` (the default) fails when the block and the export disagree.
+- To change a step: edit the settings, then run `export` and `build`, and commit all three files. `check` runs in `npm run check` and in `kit pr`'s css tier (`checks.css` in `scripts/agents/kit.json`), so a hand edit of the block fails. It reads only files in this repo, so CI and self-hosted copies can run it.
+- The export's header records the Framework version and content hash. The hash is in the block's first comment line, so a re-export shows in review.

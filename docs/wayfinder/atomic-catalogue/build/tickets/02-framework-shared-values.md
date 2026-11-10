@@ -1,8 +1,8 @@
 ---
 title: "Shared values from the editor Framework set"
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: fleet-lead
 builder: claude
 blocked_by: [01-light-dark-theme]
 ---
@@ -37,3 +37,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit size` against dev: boot bytes unchanged or lower.
 - `kit shots --compare dev` of the touched screens, light and dark, 390 and 1280 wide (Lex sees the contact sheet); Opus UX review against the [UX rulebook](../../../../agents/ux-rulebook.md).
 - The one-offs count (slice 04, once landed) does not rise; quote its `RESULT:` line.
+
+## Done (2026-11-10)
+
+- The editor now has an "editor" set of the Framework: `src/tokens/framework-editor.settings.json` (manual mode, fixed sizes: spacing 2, 4, 6, 8, 12, 16, 24 px as `--space-4xs` to `--space-l`, and the pill corner) and `src/tokens/framework-editor.css`, the Framework's own `tokens.css` export of it. `scripts/tokens-from-framework.mjs export` produces that file by importing the compiler from `~/Projects/TechiesTools` (read only, `git status` there stays clean); `build` writes the marked generated block at the top of `src/theme.css`, converting the Framework's 16 px rem to pixels for the editor's 14 px root (fluid or non-rem values are refused; the 999rem pill is written `999px`); `check` fails when the block and the export disagree.
+- New tokens: `--space-4xs` 2px, `--space-3xs` 4px, `--space-2xs` 6px, `--space-xs` 8px, `--space-s` 12px, `--space-m` 16px, `--space-l` 24px and `--radius-full` 999px. `--panel-padding` and `--panel-padding-roomy` now point at `--space-2xs` and `--space-s` (same 6 px and 12 px). Colours, the 6 px radius and the type sizes are untouched.
+- The check runs in `npm run check` and in `kit pr`'s css tier (`checks.css` in `scripts/agents/kit.json`; this repo has no `scripts/agents/pr-tier.mjs`, the kit owns it). A hand edit of a value in the block makes `node scripts/tokens-from-framework.mjs check` exit 1.
+- Tests: `tests/tokens-from-framework.test.ts` (block reproduced byte for byte, hand edit and changed export fail, rem conversion, bad exports refused, CLI check, and a re-run of the Framework export that skips when TechiesTools is absent). `docs/editor-colors.md` explains the set and how to change a step.
+- Validation: `kit unit --affected` `RESULT: ok unit 8/8 (1 files)`; `npm run check` ok (`RESULT: ok tokens in step`); `npm run lint` ok (0 failures); `kit size` `RESULT: ok size boot 355 KB (±0 KB) vs dev@81104b7, budget 355 KB`; `kit shots editor files structure --compare dev` at 390 and 1280, light and dark: `RESULT: ok shots compare dev@81104b7 … 58 files` (the two layout notes it lists are tap-target notes on screens this change does not touch).
+- `kit specs --affected` `RESULT: ok specs 1/1 passed`. Not run: the one-offs count (slice 04 has not landed).
+- Feature list: no change (no visible change; the new tokens are not used by any screen yet, and the two padding tokens keep their values).
