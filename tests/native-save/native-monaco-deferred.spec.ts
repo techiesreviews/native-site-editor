@@ -185,6 +185,29 @@ test.describe('a new visitor', () => {
     expect(await page.evaluate(() => localStorage.getItem('astro-editor.code-pane'))).toBe('open');
   });
 
+  test('the closed pane is already shut in the frame its preview appears', async ({ page, baseURL }) => {
+    // At the first frame after the preview arrives (before it is painted), the pane is hidden and its code is inert.
+    await page.addInitScript(() => {
+      const seen: { collapsed: boolean; inert: boolean[] }[] = [];
+      Reflect.set(window, '__shut', seen);
+      let had = false;
+      new MutationObserver(() => {
+        const main = document.getElementById('main');
+        const has = Boolean(main?.classList.contains('has-preview'));
+        if (has && !had) requestAnimationFrame(() => seen.push({
+          collapsed: main!.classList.contains('code-collapsed'),
+          inert: [...document.querySelectorAll<HTMLElement>('#code-split > .code-pane')].map((pane) => pane.inert),
+        }));
+        had = has;
+      }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    });
+    await page.goto(`${baseURL}/${hash}`);
+    await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toBeVisible();
+    const seen = await page.evaluate(() => Reflect.get(window, '__shut') as { collapsed: boolean; inert: boolean[] }[]);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen[0]).toEqual({ collapsed: true, inert: [true, true] });
+  });
+
   test("the palette's Show code opens the closed pane and loads the code", async ({ page, baseURL }) => {
     await page.goto(`${baseURL}/${hash}`);
     await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toBeVisible();
@@ -205,12 +228,20 @@ test.describe('a new visitor', () => {
     try {
       const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
       const notes = repos.find((repo) => repo.name === 'notes')!;
+      // Only the hash changes from the page already open, so the reload is what boots the editor on it.
       await page.goto(`${baseURL}/#repo=${notes.id}&branch=main&file=README.md`);
       await page.reload();
       // Plain files have no preview to give the room to: the pane shows, and so does its code.
       await expect(page.locator('#content .monaco-editor .view-lines')).toContainText('no website yet', { timeout: 30_000 });
       expect(await page.locator('#code-split > .code-pane').evaluateAll((panes) => panes.map((pane) => (pane as HTMLElement).inert))).not.toContain(true);
       await expect(page.locator('#main')).not.toHaveClass(/code-collapsed/);
+      // Hide code has nothing to give the room to, so the palette does not offer it.
+      const palette = page.getByRole('dialog', { name: 'Command palette' });
+      await page.keyboard.press('ControlOrMeta+K');
+      await palette.getByRole('combobox', { name: 'Search commands' }).fill('Hide code');
+      await expect(palette.getByRole('option', { name: /Hide code/ })).toHaveCount(0);
+      await page.keyboard.press('Escape');
+      expect(await page.evaluate(() => localStorage.getItem('astro-editor.code-pane'))).toBeNull();
     } finally {
       await onboarding({ reset: true });
     }

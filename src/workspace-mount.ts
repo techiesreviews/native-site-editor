@@ -214,6 +214,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   const codePanes = createCodePanesController({
     load: () => import("./components/code-editor"),
     onChunkFailure: (error) => void handleChunkLoadFailure(error),
+    preview: () => ports.runtime.engaged,
     mountCodeResize,
     mountCodeWidthResize,
   });

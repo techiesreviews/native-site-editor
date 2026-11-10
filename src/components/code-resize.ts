@@ -4,11 +4,11 @@ import { createGrip, isToggleKey, trackPress } from "./resize-handle";
 // Horizontal splitter above code. Click/keyboard toggles full collapse;
 // the edge grip remains available to restore the remembered height.
 // The pane starts closed until the person opens it (faster-opening 02): its
-// shown or hidden choice lives in its own key (`astro-editor.code-pane`), so an older open choice in
-// `astro-editor.code-height` (which now keeps only the height) is not used.
-// It hides only beside a preview: a project that opens as plain files has no
-// preview to give the room to, so its code always shows (the owner calls
-// `apply` when that changes). `onOpen` runs each time the person opens the pane.
+// shown or hidden choice lives in its own key (`astro-editor.code-pane`), so
+// an older open choice in `astro-editor.code-height` (which now keeps only
+// the height) is not used. It hides only beside a preview: a project that
+// opens as plain files has no preview to give the room to, so its code always
+// shows. `onOpen` runs each time the person opens the pane.
 export function mountCodeResize(main: HTMLElement, pane: HTMLElement, onOpen?: () => void) {
   const key = "astro-editor.code-height";
   const handle = document.createElement("div");
@@ -132,11 +132,15 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement, onOpen?: (
     save();
   });
   new ResizeObserver(apply).observe(main);
+  // The preview coming or going hides or shows a closed pane (other class
+  // changes, its own among them, are left alone).
+  let preview = main.classList.contains("has-preview");
+  new MutationObserver(() => {
+    if (preview !== (preview = main.classList.contains("has-preview"))) apply();
+  }).observe(main, { attributeFilter: ["class"] });
   apply();
   return {
     toggle,
-    /** Lays the pane out again: its owner calls it when the preview comes or goes. */
-    apply,
     /** Whether the person left the pane closed (it hides only beside a preview). */
     collapsed: () => collapsed,
   };

@@ -11,7 +11,7 @@ function fakePane(collapsed: boolean) {
     open() { pane.collapsed = false; onOpen?.(); },
     mountCodeResize: ((_main: unknown, _split: unknown, open?: () => void) => {
       onOpen = open;
-      return { toggle() {}, apply() {}, collapsed: () => pane.collapsed };
+      return { toggle() {}, collapsed: () => pane.collapsed };
     }) as never,
     mountCodeWidthResize: (() => ({ apply() {} })) as never,
     // eslint-disable-next-line no-restricted-syntax -- node has no DOM: the controller only adds listeners to the split and finds its first pane.
@@ -28,13 +28,14 @@ function fakePane(collapsed: boolean) {
   return pane;
 }
 
-function harness(load: () => Promise<string>, pane?: ReturnType<typeof fakePane>) {
+function harness(load: () => Promise<string>, pane?: ReturnType<typeof fakePane>, preview = true) {
   const frames: Array<() => void> = [], idles: Array<() => void> = [], delays: Array<() => void> = [];
   const failures: unknown[] = [];
   let loads = 0;
   const ports: CodePanesPorts<string> = {
     load: () => { loads++; return load(); },
     onChunkFailure: (error) => failures.push(error),
+    preview: () => preview,
     mountCodeResize: pane?.mountCodeResize ?? (() => { throw new Error("unused"); }) as never,
     mountCodeWidthResize: pane?.mountCodeWidthResize ?? (() => { throw new Error("unused"); }) as never,
     frame: (callback) => frames.push(callback),
@@ -173,9 +174,19 @@ test("a pane closed after boot but before the paint does not load Monaco", async
   assert.equal(h.loads(), 0);
 });
 
-test("a site without a preview (plain files) loads the code at once, though the pane was left closed", async () => {
+test("a project without a preview (plain files) loads the code at once, though the pane was left closed", async () => {
   const pane = fakePane(true);
-  const h = harness(() => Promise.resolve("monaco"), pane);
+  const h = harness(() => Promise.resolve("monaco"), pane, false);
   assert.equal(await h.controller.whenDue(h.controller.deferPane(false)), "monaco");
   assert.equal(h.loads(), 1);
+});
+
+test("a native site whose preview has not loaded (or failed) keeps a closed pane waiting", async () => {
+  const pane = fakePane(true);
+  const h = harness(() => Promise.resolve("monaco"), pane);
+  // The site is not active yet (or its load failed), but its preview is on screen.
+  void h.controller.whenDue(h.controller.deferPane(false));
+  for (const fallback of h.delays.splice(0)) fallback();
+  await settle();
+  assert.equal(h.loads(), 0);
 });
