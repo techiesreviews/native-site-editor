@@ -132,7 +132,7 @@
    invisible over its pill, so keyboards and screen readers work as before. */
 .media-detail__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .media-detail__chip {
-  position: relative; display: inline-flex; align-items: center; min-block-size: 32px; max-inline-size: 100%;
+  position: relative; display: inline-flex; align-items: center; gap: 6px; min-block-size: 32px; max-inline-size: 100%;
   padding-inline: 12px; border: 1px solid var(--control-line); border-radius: 999px; background: var(--surface-card);
   cursor: pointer; overflow-wrap: anywhere;
 }

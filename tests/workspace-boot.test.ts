@@ -55,7 +55,7 @@ function fixture({ remember = true, early }: { remember?: boolean; early?: Early
   const session = createWorkspaceSession();
   const local = store();
   if (remember) writeBootMemory(local, MEMORY);
-  const reads: Read[] = [], seeded: string[] = [], cached = new Map<string, string>(), shown = { content: "", status: "" };
+  const reads: Read[] = [], seeded: string[] = [], cached = new Map<string, string>(), shown = { content: "", status: "", nodes: [] as unknown[] };
   let fileGeneration = 0, tag: string | null | undefined = "t1";
   const read = (path: string, params?: Record<string, string>, early?: Promise<Response>) => {
     const answer = deferred<unknown>();
@@ -63,7 +63,7 @@ function fixture({ remember = true, early }: { remember?: boolean; early?: Early
     reads.push({ path, params, early, answer });
     return answer.promise;
   };
-  const box = { replaceChildren: (...nodes: Pick<HTMLElement, "textContent">[]) => { shown.content = nodes.map(node => node.textContent).join(""); } };
+  const box = { replaceChildren: (...nodes: Pick<HTMLElement, "textContent">[]) => { shown.nodes = nodes; shown.content = nodes.map(node => node.textContent).join(""); } };
   const branchSelect = { disabled: false, value: "" }, refreshButton = { disabled: false };
   const ports = {
     appStore: createAppStore(createDraftStore()),
@@ -320,11 +320,12 @@ function failedSnapshotLoad(f: ReturnType<typeof fixture>) {
 
 test("the failed panel handed to errorMessage is the one drawn in the content area", async () => {
   const f = fixture();
-  const panels: (string | null | undefined)[] = [];
-  f.ports.errorMessage = (_error: unknown, _retry?: () => void, panel?: HTMLElement) => { panels.push(panel?.textContent); };
+  const panels: (HTMLElement | undefined)[] = [];
+  f.ports.errorMessage = (_error: unknown, _retry?: () => void, panel?: HTMLElement) => { panels.push(panel); };
   await failedSnapshotLoad(f);
-  assert.deepEqual(panels, ["Your repository could not be opened."]);
   assert.equal(f.shown.content, "Your repository could not be opened.");
+  assert.equal(panels.length, 1);
+  assert.equal(panels[0], f.shown.nodes[0], "the node handed to the content area is the one that carries Try again");
 });
 
 test("Try again repeats the failed open with fresh reads: a snapshot load, a repository choice", async () => {

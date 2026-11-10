@@ -90,7 +90,8 @@ test("a read GitHub never answered in an open says so in the notice, which carri
   assert.equal(retried, 0);
   again.click();
   assert.equal(retried, 1);
-  // The open it repeats clears the notice and replaces the failed panel itself (src/workspace-boot.ts); a failure of that open shows it again.
+  // The notice goes while the open repeats (the feedback with no busy state); a failure of that open shows it again.
+  assert.equal(notice().hidden, true);
 });
 
 test("Try again sits on the failed panel the caller drew and runs the open's retry", () => {
