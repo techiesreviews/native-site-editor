@@ -30,14 +30,12 @@ class FakeElement {
   prepend(...children: FakeElement[]) { this.children.unshift(...children); }
   insertBefore(child: FakeElement) { this.children.unshift(child); }
 }
-// The failed panel an open drew (#content's empty message), when a test has one.
 const explorerOpen = { current: false };
-const panel: { current: FakeElement | null } = { current: null };
 const byId = new Map(["status", "notice"].map((id) => [id, new FakeElement("div", id)]));
 const fakeGlobals = globalThis as Record<string, unknown>;
 fakeGlobals.document = {
   getElementById: (id: string) => byId.get(id) ?? null,
-  querySelector: (selector: string) => selector === "#content .empty-message" ? panel.current : null,
+  querySelector: () => null,
   createElement: (name: string) => new FakeElement(name),
 };
 
@@ -64,7 +62,7 @@ function setup() {
   } satisfies GitHubReadsPorts;
   byId.get("status")!.textContent = "";
   byId.get("notice")!.hidden = true;
-  panel.current = null; explorerOpen.current = false;
+  explorerOpen.current = false;
   return { reads: createGitHubReads(ports), expired: () => expired };
 }
 const notice = () => byId.get("notice")!;
@@ -87,28 +85,38 @@ test("a read GitHub never answered in an open says so in the notice, which carri
   assert.equal(notice().hidden, true);
 });
 
-test("Try again sits on the failed panel, shows busy once pressed, and a second press starts no second retry", () => {
+test("Try again sits on the failed panel the caller drew, shows busy once pressed, and a second press starts no second retry", () => {
   const { reads } = setup();
-  panel.current = new FakeElement("p");
+  const failed = new FakeElement("p");
   let retried = 0;
-  reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => { retried++; });
+  reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => { retried++; }, asElement(failed));
   assert.equal(notice().children.length, 1, "the notice keeps the words only");
-  const again = panel.current.children.at(-1)!;
+  const again = failed.children.at(-1)!;
   assert.equal(again.disabled, false);
   again.click();
   assert.equal(retried, 1);
   assert.equal(again.disabled, true);
-  assert.equal(again.children.at(-1)!.textContent, "Trying again");
+  assert.equal(again.textContent, "Trying again");
   again.click();
   assert.equal(retried, 1);
 });
 
 test("with the explorer open, which covers the failed panel, the notice placed in it carries Try again", () => {
   const { reads } = setup();
-  panel.current = new FakeElement("p");
+  const failed = new FakeElement("p");
   explorerOpen.current = true;
+  reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => {}, asElement(failed));
+  assert.equal(failed.children.length, 0);
+  assert.equal(notice().children.at(-1)!.textContent, "Try again");
+});
+
+test("a failure whose caller drew no failed panel (a loading line may be showing) puts Try again in the notice", () => {
+  const { reads } = setup();
+  // "Opening your repository…" is on show, not drawn by this failure: nothing is added to it.
+  const loading = new FakeElement("p");
+  loading.textContent = "Opening your repository…";
   reads.errorMessage(new ReadUnansweredError(new TypeError("offline")), () => {});
-  assert.equal(panel.current.children.length, 0);
+  assert.equal(loading.children.length, 0);
   assert.equal(notice().children.at(-1)!.textContent, "Try again");
 });
 

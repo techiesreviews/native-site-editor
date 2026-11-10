@@ -52,7 +52,7 @@ export interface SourcePanePorts {
   element(id: string): Pick<HTMLElement, "textContent">;
   status(message: string): void;
   settleStatus(message: string): void;
-  errorMessage: (error: unknown, retry?: () => void) => void;
+  errorMessage: (error: unknown, retry?: () => void, panel?: HTMLElement) => void;
   readFile(repo: string, sha: string): Promise<string>;
   entryAt(path: string): TreeEntry | undefined;
   draftScope(): DraftScope | undefined;
@@ -148,16 +148,11 @@ export function createSourcePaneController(ports: SourcePanePorts) {
       if (!options.quietStatus && selection === ports.fileGeneration()) ports.settleStatus(`Viewing ${path} at ${appStore.snapshot.value?.commit.slice(0, 7)}.`);
     } catch (error) {
       if (at.holds() && selection === ports.fileGeneration()) {
-        ports.content.replaceChildren(
-          node(
-            "p",
-            "empty-message",
-            error instanceof Error ? error.message : "Could not read this file.",
-          ),
-        );
+        const failed = node("p", "empty-message", error instanceof Error ? error.message : "Could not read this file.");
+        ports.content.replaceChildren(failed);
         // A file that is not text (or too big) is said here, where it was asked for, not as a failed request.
         if (unreadableAsText(error)) ports.status(`${path}: ${error instanceof Error ? error.message : "This file cannot be read as text."}`);
-        else ports.errorMessage(error, options.retry);
+        else ports.errorMessage(error, options.retry, failed);
       }
     }
   }

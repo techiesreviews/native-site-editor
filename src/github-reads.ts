@@ -55,12 +55,11 @@ export function createGitHubReads(ports: GitHubReadsPorts) {
       app.insertBefore(notice, document.querySelector(".workspace"));
   }
   // `retry` repeats the open that failed: a read whose tries all failed (no answer, or 502/503) is offered again with Try again,
-  // a button where the failure is shown, there until it is used or the open is made again.
-  function errorMessage(error: unknown, retry?: () => void) {
+  // a button on `panel` (the failed panel the caller drew), there until it is used or the open is made again.
+  function errorMessage(error: unknown, retry?: () => void, panel?: HTMLElement) {
     if (ports.handleChunkLoadFailure(error)) return;
-    if (error instanceof ApiError && error.status === 401) {
-      ports.expired();
-    }
+    const signedOut = error instanceof ApiError && error.status === 401;
+    if (signedOut) ports.expired();
     const notice = element("notice");
     placeNotice(notice);
     notice.replaceChildren(
@@ -72,19 +71,18 @@ export function createGitHubReads(ports: GitHubReadsPorts) {
           : "The request failed. Please try again.",
       ),
     );
-    if (error instanceof ApiError && error.status === 401)
-      notice.append(link("Reconnect GitHub", "/auth/login", "text-link"));
+    if (signedOut) notice.append(link("Reconnect GitHub", "/auth/login", "text-link"));
     if (unanswered(error) && retry) {
-      // The failed panel the open drew (#content's empty message) carries the button. The notice does when the explorer is
-      // open (it covers that panel, and the notice is placed in it) or when there is no panel (a branch list refilling beside
-      // a page that is shown). The open it repeats replaces the panel; a failure draws both again.
+      // The failed panel the caller drew carries the button. The notice does when the explorer is open (it covers that
+      // panel, and the notice is placed in it) or when the caller drew none (a branch list refilling beside a shown page).
+      // The open it repeats replaces the panel; a failure draws both again.
       const again = button("Try again", () => {
         again.disabled = true;
-        again.replaceChildren(node("span", "login-spinner"), "Trying again");
+        again.textContent = "Trying again";
         clearError();
         retry();
-      }, "button primary empty-message__retry");
-      (ports.explorer()?.isOpen() ? notice : document.querySelector("#content .empty-message") ?? notice).append(again);
+      });
+      (panel && !ports.explorer()?.isOpen() ? panel : notice).append(again);
       // Said as the user's own announcement, not a load progress line: a later settleStatus must not replace it.
       element("status").textContent = UNANSWERED;
     } else status("The last request did not complete.");

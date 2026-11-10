@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import { test, expect, type Locator, type Page, type Route } from '@playwright/test';
 
 // TD 06 limit 1 (ticket 26): a read GitHub never answers counts as failed
 // after 8 s and is tried three more times, 1, 2 and 4 s apart; then the page
@@ -10,8 +10,9 @@ import { test, expect, type Page, type Route } from '@playwright/test';
 const HASH = '#repo=501&branch=main&file=index.html';
 const SAID = "GitHub isn't answering. Try again in a moment.";
 const notice = (page: Page) => page.locator('#notice');
-// On the failed panel (#content), or in the notice when the explorer covers that panel: one button, where the failure shows.
-const tryAgain = (page: Page) => page.locator('#content, #notice').getByRole('button', { name: 'Try again', exact: true });
+// Try again is on the failed panel (#content's message); with the explorer open, which covers that panel, it is in the notice instead.
+const again = (where: Locator) => where.getByRole('button', { name: 'Try again', exact: true });
+const tryAgain = (page: Page, covered = false) => again(covered ? notice(page) : page.locator('#content .empty-message'));
 
 // Every snapshot read is counted; while `failing`, `fail` handles it, else it goes to the fake GitHub.
 async function snapshotRoute(page: Page, fail: (route: Route) => unknown) {
@@ -33,10 +34,11 @@ async function failFourTries(page: Page, reads: { seen: number }, from = 0) {
   }
 }
 
-async function expectFailedOpen(page: Page) {
+async function expectFailedOpen(page: Page, covered = false) {
   await expect(notice(page)).toContainText(SAID);
-  await expect(tryAgain(page)).toBeVisible();
-  await expect(tryAgain(page)).toHaveCount(1);
+  await expect(tryAgain(page, covered)).toBeVisible();
+  // The one button is where the failure shows: never also in the other place.
+  await expect(tryAgain(page, !covered)).toHaveCount(0);
   await expect(page.locator('#status')).toHaveText(SAID);
   await expect(page.locator('.editor-toast')).toHaveCount(0);
   await expect(page.locator('#content')).toContainText('Your repository could not be opened.');
@@ -105,10 +107,11 @@ test('Refresh of a shown site GitHub never answers offers Try again, which reloa
   // Refresh from GitHub sits in the repository menu's branch flyout (native-branch-menu.spec.ts opens it).
   await page.locator('#refresh').evaluate((button) => (button as HTMLButtonElement).click());
   await failFourTries(page, reads, opened);
-  await expectFailedOpen(page);
+  // The explorer is open here (Refresh sits in its menu) and covers the failed panel: the notice in it carries the button.
+  await expectFailedOpen(page, true);
 
   reads.failing = false;
-  await tryAgain(page).click();
+  await tryAgain(page, true).click();
   await expectOpened(page);
   expect(reads.seen).toBe(opened + 5);
 });

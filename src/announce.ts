@@ -33,8 +33,9 @@ export function createAnnounce(ports: AnnouncePorts) {
   // The toast's Undo takes back the step it names, the newest one: once another is newer, it refuses.
   function undoAction(path: string) {
     const step = editorModule.latestUndo(path);
-    return step === undefined ? undefined : { label: "Undo", live: () => editorModule.latestUndo(path) === step, run() {
-      if (editorModule.latestUndo(path) === step) void editorModule.runVisualHistory("undo", path);
+    const live = () => editorModule.latestUndo(path) === step;
+    return step === undefined ? undefined : { label: "Undo", live, run() {
+      if (live()) void editorModule.runVisualHistory("undo", path);
       else refuse("Newer changes came after this one. Use Undo at the top to take them back first.");
     } };
   }
