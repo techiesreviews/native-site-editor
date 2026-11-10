@@ -1,6 +1,6 @@
 ---
 title: "Fewer waits on the server before the first screen"
-status: closed
+status: needs-info
 assignee: fleet-lead
 blocked_by: []
 ---
@@ -49,6 +49,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../agents/runner.
 
 ## Done (2026-11-10)
 
+### Open for Lex
+
+- The slow first visit's first screen comes 0.70 to 0.74 s sooner, not the 0.8 s this ticket asked for (Timing says why: the test server's six connections, not server waits). Accept 0.7 s, or keep the ticket open for more?
+- One failure case changes what a person sees (Behaviour, last point): on a first visit to a site link, a branch list GitHub never answers no longer stops the opening; the site opens on the linked branch, as a repeat visit already does. Keep it, or bring back the old error for first visits?
+
 ### Behaviour
 
 - The page asks for the session and the repository list itself, first in `<head>` and ahead of the editor's own files (`<link rel="preload" as="fetch" crossorigin="use-credentials">`, added by `vite-preview-runtime.ts` to `index.html` only). A small classic script, `src/boot-early.ts` (1 KB gzip, content-hashed under `/assets/`, async, high priority), takes those answers and, when the address names a repository, asks for its snapshot: at once when the browser remembers the repository's name (`rememberedName`, `src/boot-memory.ts`), otherwise as soon as the repository list names it, without waiting for the session. It also asks for the preview runtime then (its URL comes on the script tag as `data-runtime`).
@@ -76,6 +81,20 @@ Second rounds: slow first screen 4415 before, 3712 after; normal first screen 12
 
 The slow first visit's first screen comes 0.70 to 0.74 s sooner, short of the expected 0.8 s. What is left is not server waits: the test server speaks HTTP/1.1, so the browser keeps six connections, and the editor's boot is about 25 files (`index.js` and its chunks, the stylesheets) that each hold one for the 400 ms latency. The editor's script cannot run before the last of them, about 3.1 s; the snapshot is already in by then (asked at 0.87 s, it waits in the same queue), and the page's files (about 0.45 s) follow the script. On the real editor (HTTP/2 and HTTP/3) the queue does not apply. Tried and dropped: a higher fetch priority for the early reads (fetch stays at High), the session asked by the early script instead of the page (no change), the runtime asked later (no change).
 
+The preview runtime asked by the early script is used: the preview frame's own request for it comes from the disk cache (Chrome DevTools protocol: `fromDiskCache`, 0 bytes on the wire), and no "unused preload" message shows. The same build with and without it (alternating rounds, slow profile, first screen): 3681 and 3704 with, 3866 and 3867 without, so it is worth about 0.17 s.
+
+### Settle matrix
+
+Each early read is a first try only: whatever happens to it, the boot ends where it ended before, sooner or after its own tries.
+
+| Read | Answers | Fails (401, 403, 503, network) | Never answers |
+| --- | --- | --- | --- |
+| Session (page preload, early script) | The boot adopts it as its first session read, once; a later boot asks afresh. | The boot's read: a 401 or signed-out answer shows the sign-in page as before; a 502/503 or no answer is followed by the read's own three tries. | Given up after 8 s; three more tries, then the error as before. |
+| Repository list (page preload, early script) | Taken by `startBootReads` only with the adopted session's tag; otherwise the session's own listing, as before. | No early snapshot is asked (a 401 is the signed-out page); the boot's listing as before. | No early snapshot; given up after 8 s, the boot's listing as before. |
+| Early snapshot (asked once the list or the memory names the repository) | Used only with the adopted session's tag, the listed full name, the linked branch, and the remembered account when there is a memory; otherwise read afresh. | A 403/404 (a moved branch or lost access) or 401: read afresh, the normal path's message. A 502/503: three more tries. | Given up after 8 s, three more tries, then the toast with Try again (four tries in all). |
+| Order: the boot first | The boot claims the reads; the early script asks for nothing and the boot asks for each itself, once. | | |
+| Order: the address changes before the boot | The early snapshot names another repository or branch and is thrown away. | | |
+
 ### Suggestions (not done here)
 
 - Server: the snapshot carrying the first page's texts would save the page's files round trip after the snapshot, about 0.45 s on the slow first visit and 0.1 s on the normal one (measured: `/api/file` and `/api/files` 3165–3611 ms in the slow waterfall).
@@ -88,6 +107,8 @@ The slow first visit's first screen comes 0.70 to 0.74 s sooner, short of the ex
 - `tests/workspace-boot.test.ts`: the early snapshot opens the linked repository with no second read once the session's tag proves it; taken once; a signed-out session or another account's tag throws it away; another name (renamed) or none (not listed) reads afresh; another repository or branch is never taken; with a memory it stands for the guess's first try and the remembered files are asked as before.
 - `tests/read-retry.test.ts`: an early first try is the first of four. `tests/github-reads.test.ts`: an early answer is the answer; no answer or a 502/503 is followed by the read's own tries. `tests/boot-memory.test.ts`: `rememberedName`. `tests/vite-preview-runtime.test.ts`: the editor's page gets the preloads and the early script first (the other pages do not), the dev server serves it as one classic script, and the built script asks the session, the list, the snapshot and the runtime.
 - `tests/native-save/native-boot-memory.spec.ts`: a guessed read is one asked before the boot asks for the branch list (the session now answers before the editor's script runs).
+- `tests/native-save/native-early-reads.spec.ts` (first visit, no memory, `#repo=501&branch=main`), one test per matrix row: the session and the list are asked once each and no "preload" console message shows; with the session held, the snapshot is asked before its release and the page shows from that one read; an early snapshot under another session tag is thrown away and the page shows from a second read; a list without 501 asks no snapshot and shows the plain message; with the early script held until the page shows, the boot asks for the session and the snapshot once each and the released script asks nothing; a branch list GitHub never answers still shows the linked site on the linked branch (open for Lex).
+- `tests/workspace-boot.test.ts`: a record the early script names but the boot rejects (a bad commit) runs the guess on the early snapshot alone, taken only with the same name and tag, seeding nothing. `tests/read-retry.test.ts`: a first try that answers leaves no abort listener behind.
 - `scripts/agents/kit unit --affected`: RESULT: ok unit 350/350 (23 files). `scripts/agents/kit specs --affected`: RESULT: ok specs 12/12 passed. `scripts/agents/kit size`: RESULT: ok size boot 355 KB (+1 KB) vs dev@428e793, budget 355 KB (363,520-byte budget; about 190 bytes to spare). `npm run check` and `npm run lint` pass.
 
 Feature list: no change (nothing a person sees changes except that the editor opens sooner; the one failure-path change is described under Behaviour).

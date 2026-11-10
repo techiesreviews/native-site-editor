@@ -460,3 +460,28 @@ test("no address: no guess", () => {
   f.boot.startGuess();
   assert.deepEqual(f.paths(), []);
 });
+
+test("a record the early script named but the boot rejects (a bad commit): the guess runs on the early snapshot alone, taken only with the same name and tag, and seeds nothing", async () => {
+  for (const tag of ["t1", "other"]) {
+    const early = earlySnapshot("lex/site");
+    const f = fixture({ remember: false, early });
+    // rememberedName (src/boot-memory.ts) accepts this record; readBootMemory removes it.
+    f.ports.storage().setItem("ase:boot-memory:v1:501", JSON.stringify({ ...MEMORY, commit: "not a sha!".repeat(10) }));
+    f.boot.startGuess();
+    await flush();
+    assert.equal(f.ports.storage().getItem("ase:boot-memory:v1:501"), null, "the boot drops the bad record");
+    assert.deepEqual(f.paths(), ["snapshot"], "no remembered files asked");
+    const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main" });
+    f.pending("snapshot")[0].answer.resolve(receipt(SNAPSHOT, tag));
+    await flush();
+    if (tag === "other") {
+      assert.equal(f.pending("snapshot").length, 2, "another session's answer: read afresh");
+      f.pending("branches")[0].answer.resolve(["main"]);
+      f.pending("snapshot")[1].answer.resolve(SNAPSHOT);
+    }
+    await choosing;
+    if (tag === "t1") assert.equal(f.pending("snapshot").length, 1, "taken: no second read");
+    assert.deepEqual(f.seeded, []);
+    assert.equal(f.ports.appStore.snapshot.value, SNAPSHOT);
+  }
+});

@@ -77,7 +77,11 @@ export function writeBootMemory(store: Store, memory: BootMemory) {
   } catch { /* storage full or refused */ }
 }
 
-/** The remembered name of `repoId` on `branch`, for the page's early snapshot (src/boot-reads.ts); the boot checks the whole record. */
+/**
+ * The remembered name of `repoId` on `branch`, for the page's early snapshot (src/boot-reads.ts). Looser than
+ * readBootMemory on purpose (login, commit and files unchecked, and nothing removed): the name only picks what to ask
+ * for, and the boot takes the answer only when the full name and the session tag match (src/workspace-boot.ts).
+ */
 export function rememberedName(store: Pick<Storage, "getItem">, repoId: number, branch: string): string | undefined {
   try {
     const value = JSON.parse(store.getItem(PREFIX + repoId) ?? "null") as Partial<BootMemory> | null;

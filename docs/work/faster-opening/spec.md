@@ -2,7 +2,7 @@
 
 Lex chose (2026-11-09) two of the faster-opening options: (b) fewer waits on the server before the first screen, and (c) the code pane loads after the page is usable. Not (a), showing the last page from the browser's memory. The boot keeps its 355 KB budget (`kit size`).
 
-How it is measured: `tests/perf/cold-start.ts` against the test server with the built app (`ASE_NATIVE_SAVE_DIST=1`), 3 runs, median ms from navigation start, with `ASE_COLD_NET=100/20` (normal: 100 ms latency, 20 Mbps) and `ASE_COLD_NET=400/1.6` (slow mobile). "paint" is the first screen (the page in the preview), "usable" the page structure listing it, "warm" a repeat visit. The test server answers at once, so these numbers show the round trips' latency, not GitHub's own time on the real editor.
+How it is measured: `tests/perf/cold-start.ts` against the test server with the built app (`ASE_NATIVE_SAVE_DIST=1`), 3 runs, median ms from navigation start, with `ASE_COLD_NET=100/20` (normal: 100 ms latency, 20 Mbps) and `ASE_COLD_NET=400/1.6` (slow mobile). "paint" is the first screen (the page in the preview), "usable" the page structure listing it, "warm" a repeat visit. A before-and-after comparison runs the old and new builds in alternating rounds on the same machine, as machine load moves the numbers by up to 0.15 s between sessions (ticket 01 used 5 runs a round for the normal profile). The test server answers at once, so these numbers show the round trips' latency, not GitHub's own time on the real editor.
 
 ## Before (dev at 428e793, 2026-11-09)
 
