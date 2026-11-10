@@ -1,7 +1,12 @@
 /* App palette. Imported after the shared, frozen prototype stylesheet.
    Change this primary to recolor the editor, including Monaco.
-   The connected website keeps its own framework and colors. */
+   The connected website keeps its own framework and colors.
+   Light and dark: each themed colour is written once as
+   light-dark(<light>, <dark>), so it follows the color-scheme of the element
+   that uses it. A part set to `color-scheme: dark` inside a light page shows
+   the dark palette (docs/editor-colors.md). */
 :root {
+  color-scheme: light dark;
   --color-primary: oklch(54.6% 0.215 262.9);
   /* Lex's shade curve: fixed lightness, proportional chroma, relative hue.
      The default base reproduces the supplied light/dark palette. */
@@ -17,35 +22,36 @@
   --semantic-action: oklch(from var(--semantic-primary) min(l, 0.5) min(c, 0.18) h);
   --semantic-action-hover: oklch(from var(--semantic-action) calc(l * 0.85) c h);
   --semantic-on-action: var(--color-primary-lightest);
-  --semantic-surface: var(--color-primary-lightest);
-  --semantic-background: oklch(from var(--color-primary-lighter) 97% c h);
-  --semantic-surface-subtle: var(--color-primary-lighter);
-  --semantic-surface-raised: var(--color-primary-light);
-  --semantic-surface-input: var(--color-primary-lightest);
-  --semantic-surface-toolbar: oklch(from var(--color-primary-lighter) 92% c h);
-  --semantic-selected: var(--color-primary-light);
-  --semantic-text: var(--color-primary-darkest);
-  --semantic-text-muted: oklch(from var(--color-primary-dark) l min(c, 0.045) h);
-  --semantic-link: var(--color-primary-dark);
-  --semantic-border: var(--color-primary-light);
-  --semantic-focus: var(--semantic-action);
+  --semantic-surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --semantic-background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --semantic-surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --semantic-surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --semantic-surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --semantic-surface-toolbar: light-dark(oklch(from var(--color-primary-lighter) 92% c h), oklch(from var(--color-primary-darker) l min(c, 0.025) h));
+  --semantic-selected: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 35% min(c, 0.05) h));
+  --semantic-text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --semantic-text-muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  /* Dark: a clear blue, not near-white text, 4.5:1 or more on the panel and its cards. */
+  --semantic-link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --semantic-border: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --semantic-focus: light-dark(var(--semantic-action), var(--color-primary-light));
   --semantic-preview-focus: var(--semantic-action);
-  --semantic-shadow: oklch(from var(--color-primary-darkest) l c h / 0.18);
+  --semantic-shadow: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
 
   /* Status hues retain their meaning when the brand changes. */
   --color-warning: oklch(75% 0.14 75);
   --color-success: oklch(60% 0.13 145);
-  --semantic-warning-surface: oklch(from var(--color-warning) 96% 0.03 h);
-  --semantic-warning-text: oklch(from var(--color-warning) 38% 0.07 h);
-  --semantic-success-surface: oklch(from var(--color-success) 96% 0.03 h);
-  --semantic-success-text: oklch(from var(--color-success) 38% 0.07 h);
+  --semantic-warning-surface: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --semantic-warning-text: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --semantic-success-surface: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --semantic-success-text: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
 
   /* Components (instances, chips, structure icons) share one violet accent,
      like Figma's and Framer's, apart from the brand blue of selection. */
   --color-component: oklch(55% 0.2 300);
-  --component: var(--color-component);
-  --component-surface: oklch(from var(--color-component) 96% 0.03 h);
-  --component-text: oklch(from var(--color-component) 42% 0.17 h);
+  --component: light-dark(var(--color-component), oklch(from var(--color-component) 72% 0.16 h));
+  --component-surface: light-dark(oklch(from var(--color-component) 96% 0.03 h), oklch(from var(--color-component) 28% 0.05 h));
+  --component-text: light-dark(oklch(from var(--color-component) 42% 0.17 h), oklch(from var(--color-component) 85% 0.1 h));
 
   /* An agent working on a section (ticket 33): its outline, name chip and Page Structure dot,
      in the colour of the connected MCP dot (agent-menu.css). */
@@ -92,11 +98,11 @@
   /* A request's first line, on the always-light pin. */
   --agent-pin-text: oklch(from var(--color-primary) 25% 0.01 h);
   /* The card's: theme-aware. */
-  --agent-question-surface: oklch(96% 0.04 62);
-  --agent-question-text: oklch(42% 0.13 45);
-  --agent-done-surface: oklch(from var(--color-primary) 92.5% 0.005 h);
-  --agent-done-bubble: oklch(from var(--color-primary) 84% 0.008 h);
-  --agent-done-bubble-ink: oklch(from var(--color-primary) 27% 0.015 h);
+  --agent-question-surface: light-dark(oklch(96% 0.04 62), oklch(31% 0.06 50));
+  --agent-question-text: light-dark(oklch(42% 0.13 45), oklch(88% 0.08 62));
+  --agent-done-surface: light-dark(oklch(from var(--color-primary) 92.5% 0.005 h), oklch(from var(--color-primary) 29% 0.006 h));
+  --agent-done-bubble: light-dark(oklch(from var(--color-primary) 84% 0.008 h), oklch(from var(--color-primary) 40% 0.01 h));
+  --agent-done-bubble-ink: light-dark(oklch(from var(--color-primary) 27% 0.015 h), oklch(from var(--color-primary) 92% 0.008 h));
 
   /* Fixed colours over pictures and saturated badges, identical in both themes. */
   --on-media: oklch(100% 0 none);
@@ -115,9 +121,15 @@
   /* Slot chip fills, retained across themes over the editing preview. */
   --slot-surface: oklch(from var(--color-component) 47% 0.21 h);
   --items-slot-surface: oklch(50% 0.19 355);
-  /* The structure editor's inner highlight and lift. */
-  --structure-edit-highlight: oklch(from var(--shadow-ink) l c h / 0.05);
-  --structure-edit-drop: 0 6px 18px -8px oklch(from var(--shadow-ink) l c h / 0.28), 0 1px 3px oklch(from var(--shadow-ink) l c h / 0.12);
+  /* The structure editor's inner highlight and lift. The lift keeps each
+     theme's own offsets (light-dark() takes colours only): the light layers
+     go transparent in dark and the dark layers in light. */
+  --structure-edit-highlight: light-dark(oklch(from var(--shadow-ink) l c h / 0.05), oklch(from var(--on-media) l c h / 0.06));
+  --structure-edit-drop:
+    0 6px 18px -8px light-dark(oklch(from var(--shadow-ink) l c h / 0.28), transparent),
+    0 1px 3px light-dark(oklch(from var(--shadow-ink) l c h / 0.12), transparent),
+    0 8px 24px -8px light-dark(transparent, oklch(from var(--shadow-ink) l c h / 0.6)),
+    0 2px 6px light-dark(transparent, oklch(from var(--shadow-ink) l c h / 0.35));
 
   /* File type accents mix with theme-aware text in files-tree.css. */
   --file-page: oklch(66% 0.17 45);
@@ -151,6 +163,8 @@
   --success-bg: var(--semantic-success-surface);
   --success-fg: var(--semantic-success-text);
   --shadow: 0 12px 32px var(--semantic-shadow);
+  /* A large sheet that sits flat on dark surfaces (the media library and the Files adding summary). */
+  --shadow-light-only: 0 12px 32px light-dark(var(--semantic-shadow), transparent);
   /* A pin, a note or a round button over the preview. */
   --shadow-small: 0 2px 6px var(--semantic-shadow);
   --link: var(--semantic-link);
@@ -165,8 +179,9 @@
      highlights. Keyboard focus is the hover with the ring. */
   --hover: color-mix(in oklch, var(--text) 9%, transparent);
   --current: color-mix(in oklch, var(--primary) 16%, transparent);
-  --pressed: var(--primary);
-  --on-pressed: var(--on-primary);
+  /* The action colour is too dark for a pressed toggle on dark panels. */
+  --pressed: light-dark(var(--primary), var(--color-primary-light));
+  --on-pressed: light-dark(var(--on-primary), var(--color-primary-darkest));
   /* An input's or a bordered button's edge, visible on every surface. */
   --control-line: color-mix(in oklch, var(--text) 16%, transparent);
   --focus-ring: 2px solid var(--focus);
@@ -205,7 +220,7 @@
      panels with a title or text 12px. */
   --panel-surface: var(--surface-raised);
   /* A card, tray or bar on a panel: one step lighter than the panel in both themes. */
-  --surface-card: var(--surface);
+  --surface-card: light-dark(var(--surface), color-mix(in oklch, var(--panel-surface), white 6%));
   /* Behind a see-through picture, in both themes (dark surfaces would hide dark lettering):
      8 px squares, as Squarespace and Figma show transparent assets (slice 106). */
   --checkerboard: repeating-conic-gradient(oklch(97% 0 none) 0 25%, oklch(90% 0 none) 0 50%) 0 0 / 16px 16px;
@@ -229,44 +244,4 @@
 }
 .changes-window {
   box-shadow: var(--shadow);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --semantic-surface: oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h);
-    --semantic-background: var(--color-primary-darkest);
-    --semantic-surface-subtle: oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h);
-    --semantic-surface-raised: oklch(from var(--color-primary-darker) 32% min(c, 0.035) h);
-    --semantic-surface-input: oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h);
-    --semantic-surface-toolbar: oklch(from var(--color-primary-darker) l min(c, 0.025) h);
-    --semantic-selected: oklch(from var(--color-primary-darker) 35% min(c, 0.05) h);
-    --semantic-text: var(--color-primary-lighter);
-    --semantic-text-muted: oklch(from var(--color-primary-light) 80% min(c, 0.035) h);
-    /* A clear blue, not near-white text: 4.5:1 or more on the panel and its cards. */
-    --semantic-link: oklch(from var(--color-primary) 80% min(c, 0.12) h);
-    --semantic-border: oklch(from var(--color-primary-darker) 36% min(c, 0.04) h);
-    --semantic-focus: var(--color-primary-light);
-    --semantic-shadow: oklch(from var(--color-primary-darkest) 5% c h / 0.35);
-    --semantic-warning-surface: oklch(from var(--color-warning) 28% 0.03 h);
-    --semantic-warning-text: oklch(from var(--color-warning) 87% 0.08 h);
-    --semantic-success-surface: oklch(from var(--color-success) 28% 0.03 h);
-    --semantic-success-text: oklch(from var(--color-success) 87% 0.08 h);
-    --component: oklch(from var(--color-component) 72% 0.16 h);
-    --component-surface: oklch(from var(--color-component) 28% 0.05 h);
-    --component-text: oklch(from var(--color-component) 85% 0.1 h);
-
-    --agent-question-surface: oklch(31% 0.06 50);
-    --agent-question-text: oklch(88% 0.08 62);
-    --agent-done-surface: oklch(from var(--color-primary) 29% 0.006 h);
-    --agent-done-bubble: oklch(from var(--color-primary) 40% 0.01 h);
-    --agent-done-bubble-ink: oklch(from var(--color-primary) 92% 0.008 h);
-    --structure-edit-highlight: oklch(from var(--on-media) l c h / 0.06);
-    --structure-edit-drop: 0 8px 24px -8px oklch(from var(--shadow-ink) l c h / 0.6), 0 2px 6px oklch(from var(--shadow-ink) l c h / 0.35);
-  }
-  /* The action colour is too dark for a pressed toggle on dark panels. */
-  :root {
-    --pressed: var(--color-primary-light);
-    --on-pressed: var(--color-primary-darkest);
-    --surface-card: color-mix(in oklch, var(--panel-surface), white 6%);
-  }
 }

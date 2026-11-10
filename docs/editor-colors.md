@@ -24,10 +24,24 @@ The six `--color-primary-lightest` through `--color-primary-darkest` shades refe
 
 WCAG sets no minimum text size. It asks for 4.5:1 text contrast and 3:1 for focus indicators. `--text`, `--muted` and `--link` stay above 5:1 on panels and the sidebar under `--hover` and `--current` in both schemes, and the focus ring above 3.5:1.
 
+## Writing a themed colour
+
+`:root` has `color-scheme: light dark`. Write a colour that differs between light and dark once, with both values side by side, in `src/theme.css`:
+
+```css
+:root {
+  --semantic-text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+}
+```
+
+Do not add a `@media (prefers-color-scheme: dark)` block. `light-dark()` picks its value from the `color-scheme` of the element that uses the colour, so a part set to `color-scheme: dark` (a board tile, a preview of the dark theme) shows the dark palette inside a light page, and `color-scheme: light` the light palette inside a dark one. A component adds no colour rules for dark mode; it uses the tokens.
+
+`light-dark()` takes colours only. A shadow whose offsets differ by theme lists each theme's layers and makes the other theme's layers transparent (`--structure-edit-drop`); a shadow only one theme shows makes its colour transparent in the other (`--shadow-light-only`, the media library's sheets). Other values that must change by theme have no tool yet; ask before adding one.
+
 Dark mode changes semantic roles, retaining the same base palette. Warning and success have separate central base tokens (`--color-warning` and `--color-success`) so changing the brand does not change their meanings. Syntax highlighting and code diagnostics retain Monaco's language/status colors.
 
-Monaco requires sRGB hex values. `src/theme.ts` resolves CSS colors through the browser and updates Monaco when root overrides, stylesheets or system light/dark preferences change. The preview receives only the editor's selection-outline color; the connected website's own framework, source and page colors are unchanged. Rebuild the connected project's preview integration to receive the themed outline.
+Monaco requires sRGB hex values. `src/theme.ts` resolves CSS colors through the browser and updates Monaco when root overrides, stylesheets or system light/dark preferences change. Monaco follows the system setting (`matchMedia` in `src/theme.ts`), not a part's own `color-scheme`. The preview receives only the editor's selection-outline color; the connected website's own framework, source and page colors are unchanged. Rebuild the connected project's preview integration to receive the themed outline.
 
-Browser tests verify light/dark surface distinction, text and focus contrast, live primary changes, draft preservation, and preview isolation. Custom semantic overrides still need their own contrast check. Relative colors use the [CSS Color 5 relative OKLCH syntax](https://www.w3.org/TR/css-color-5/#relative-OKLCH).
+Browser tests verify light/dark surface distinction, a part's own `color-scheme` choosing its palette (`tests/native-save/native-theme-scheme.spec.ts`), text and focus contrast, live primary changes, draft preservation, and preview isolation. Custom semantic overrides still need their own contrast check. Relative colors use the [CSS Color 5 relative OKLCH syntax](https://www.w3.org/TR/css-color-5/#relative-OKLCH).
 
 The app imports this palette after `src/style.css`, which no longer carries colours of its own. The frozen A prototype continues to load its recorded styles independently; its reference files and screenshots are not rewritten to accept the new app palette.
