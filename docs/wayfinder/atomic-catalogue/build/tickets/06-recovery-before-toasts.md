@@ -43,6 +43,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - **Tests:**
   - `tests/github-reads.test.ts`: the button on the panel passed in, on the notice (explorer open, or no panel drawn while a loading line shows), busy after a press with a second press starting no second retry, none for 401, other errors or no retry, and `#status` kept against `settleStatus`.
   - `tests/native-save/native-github-silent.spec.ts`: the button is on `#content .empty-message` and not in `#notice` for every failed open; the Refresh case (explorer open) asserts the reverse; a 390 px case with a long 503 message fits and then opens; the file-read failure panel (a reopen of a file) is checked to hold the words and the button with none in the notice.
+  - `tests/native-save/native-early-reads.spec.ts`: a first visit whose branch list GitHub never answers opens the site on the early snapshot, then shows Try again in the notice (no toast); pressing it fills the selector. This changes today's first-visit behaviour and is open for Lex's OK. `RESULT: ok specs 1/1 passed` (12 tests).
   - `tests/native-save/native-media-rename.spec.ts`: close the dialog, the top bar's Undo restores the old picture; the details Undo restores it; the details Undo is gone after the top bar's Undo, with no second undo and no refusal note.
 - **Validation:**
   - `RESULT: ok unit 1836/1836 (103 files)` (`kit unit --affected`)
