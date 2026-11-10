@@ -18,4 +18,4 @@ On the real preview editor (preview-editor.techies.tools, a repeat visit, code f
 ## Tickets
 
 - [01 Fewer waits on the server before the first screen](issues/01-fewer-server-waits.md)
-- [02 The code pane loads after the page is usable](issues/02-code-pane-after-usable.md)
+- [02 The code pane is closed by default, and its code loads only when it is opened](issues/02-code-pane-after-usable.md)
