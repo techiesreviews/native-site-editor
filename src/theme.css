@@ -238,8 +238,8 @@
   /* Behind a see-through picture, in both themes (dark surfaces would hide dark lettering):
      8 px squares, as Squarespace and Figma show transparent assets (slice 106). */
   --checkerboard: repeating-conic-gradient(oklch(97% 0 none) 0 25%, oklch(90% 0 none) 0 50%) 0 0 / 16px 16px;
-  --panel-padding: var(--space-2xs);
-  --panel-padding-roomy: var(--space-s);
+  --panel-padding: 6px;
+  --panel-padding-roomy: 12px;
 }
 
 @media (hover: none), (pointer: coarse), (width <= 768px) {

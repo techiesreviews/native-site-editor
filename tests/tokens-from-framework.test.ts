@@ -69,13 +69,11 @@ test("the committed export holds exactly the steps of the committed settings", (
   assert.deepEqual(exportedPx.sort(), expected.sort());
 });
 
-test("the padding tokens keep their pixels through the generated spacing", () => {
+test("the generated block has the editor's spacing steps in pixels and the pill radius", () => {
   const block = generatedBlock(exported);
   const pixels = (name: string) => new RegExp(`${name}: (\\d+)px;`).exec(block)?.[1];
-  assert.match(theme, /--panel-padding: var\(--space-2xs\);/);
-  assert.match(theme, /--panel-padding-roomy: var\(--space-s\);/);
-  assert.equal(pixels("--space-2xs"), "6");
-  assert.equal(pixels("--space-s"), "12");
+  const steps = { "--space-4xs": "2", "--space-3xs": "4", "--space-2xs": "6", "--space-xs": "8", "--space-s": "12", "--space-m": "16", "--space-l": "24", "--radius-full": "999" };
+  for (const [name, px] of Object.entries(steps)) assert.equal(pixels(name), px, name);
 });
 
 test("an export without a hash, a :root block or properties is refused", () => {
