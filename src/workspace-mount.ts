@@ -264,6 +264,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       content.replaceChildren(node("p", "empty-message", "The source changed while its editor opened. Select it again."));
       return Promise.resolve();
     }
+    // A stylesheet or script picked beside the page: show its code.
+    if (ports.site.active() && !ports.site.route(file.path)) codePanes.reveal();
     const defer = codePanes.deferPane(ports.site.active());
     const historyScope = file.scope ? nativeHistorySession(file.scope, file.path) : undefined;
     disposeEditor = ports.editorModule.mountSourceEditor(

@@ -126,6 +126,8 @@ export function createCodePanesController<T>(ports: CodePanesPorts<T>) {
     notePreviewPainted,
     trackRead,
     mountResize,
+    /** Opens a closed pane (a file the page does not show was picked: its code is what was asked for). */
+    reveal() { if (codeResize?.collapsed()) codeResize.toggle(); },
     /** The height handle once mounted (toggle and state). */
     heightResize: () => codeResize,
     applyWidth: () => codeWidthResize?.apply(),

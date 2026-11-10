@@ -11,7 +11,7 @@ function fakePane(collapsed: boolean) {
     open() { pane.collapsed = false; onOpen?.(); },
     mountCodeResize: ((_main: unknown, _split: unknown, open?: () => void) => {
       onOpen = open;
-      return { toggle() {}, collapsed: () => pane.collapsed };
+      return { toggle() { if (pane.collapsed) pane.open(); else pane.collapsed = true; }, collapsed: () => pane.collapsed };
     }) as never,
     mountCodeWidthResize: (() => ({ apply() {} })) as never,
     // eslint-disable-next-line no-restricted-syntax -- node has no DOM: the controller only adds listeners to the split and finds its first pane.
@@ -189,4 +189,18 @@ test("a native site whose preview has not loaded (or failed) keeps a closed pane
   for (const fallback of h.delays.splice(0)) fallback();
   await settle();
   assert.equal(h.loads(), 0);
+});
+
+test("a file the page does not show, picked while the pane is closed, opens the pane and loads its code", async () => {
+  const pane = fakePane(true);
+  const h = harness(() => Promise.resolve("monaco"), pane);
+  h.controller.reveal();
+  await settle();
+  assert.equal(pane.collapsed, false);
+  assert.equal(h.loads(), 1);
+  // Already open: nothing changes.
+  h.controller.reveal();
+  await settle();
+  assert.equal(pane.collapsed, false);
+  assert.equal(h.loads(), 1);
 });
