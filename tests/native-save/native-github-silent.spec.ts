@@ -2,7 +2,7 @@ import { test, expect, type Page, type Route } from '@playwright/test';
 
 // TD 06 limit 1 (ticket 26): a read GitHub never answers counts as failed
 // after 8 s and is tried three more times, 1, 2 and 4 s apart; then the page
-// leaves its loading state, and the notice on the failed screen says so with a
+// leaves its loading state, and the failed panel says so with a
 // Try again button, which repeats the open once GitHub answers. One test per settle-matrix row of the
 // snapshot read: never answers, fails, answers after failing.
 // Default fixture group: native-starter (501).
@@ -10,7 +10,8 @@ import { test, expect, type Page, type Route } from '@playwright/test';
 const HASH = '#repo=501&branch=main&file=index.html';
 const SAID = "GitHub isn't answering. Try again in a moment.";
 const notice = (page: Page) => page.locator('#notice');
-const tryAgain = (page: Page) => notice(page).getByRole('button', { name: 'Try again', exact: true });
+// On the failed panel (#content), or in the notice when the explorer covers that panel: one button, where the failure shows.
+const tryAgain = (page: Page) => page.locator('#content, #notice').getByRole('button', { name: 'Try again', exact: true });
 
 // Every snapshot read is counted; while `failing`, `fail` handles it, else it goes to the fake GitHub.
 async function snapshotRoute(page: Page, fail: (route: Route) => unknown) {
@@ -35,6 +36,7 @@ async function failFourTries(page: Page, reads: { seen: number }, from = 0) {
 async function expectFailedOpen(page: Page) {
   await expect(notice(page)).toContainText(SAID);
   await expect(tryAgain(page)).toBeVisible();
+  await expect(tryAgain(page)).toHaveCount(1);
   await expect(page.locator('#status')).toHaveText(SAID);
   await expect(page.locator('.editor-toast')).toHaveCount(0);
   await expect(page.locator('#content')).toContainText('Your repository could not be opened.');
@@ -47,14 +49,14 @@ async function expectOpened(page: Page) {
   await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toBeVisible();
 }
 
-test('a snapshot GitHub never answers is tried four times, then the notice offers Try again, which opens the site', async ({ page, baseURL }) => {
+test('a snapshot GitHub never answers is tried four times, then the failed panel offers Try again, which opens the site', async ({ page, baseURL }) => {
   await page.clock.install();
   // Held reads are never answered: the editor's timeout aborts them.
   const reads = await snapshotRoute(page, () => {});
   await page.goto(`${baseURL}/${HASH}`);
   await failFourTries(page, reads);
   await expectFailedOpen(page);
-  // The notice stays while the clock runs on, and no fifth try goes out.
+  // The panel stays while the clock runs on, and no fifth try goes out.
   await page.clock.fastForward(10_000);
 
   reads.failing = false;
@@ -64,7 +66,7 @@ test('a snapshot GitHub never answers is tried four times, then the notice offer
   expect(reads.seen).toBe(5);
 });
 
-test('a snapshot whose every try fails on the network shows the same notice; Try again opens the site', async ({ page, baseURL }) => {
+test('a snapshot whose every try fails on the network shows the same panel; Try again opens the site', async ({ page, baseURL }) => {
   await page.clock.install();
   const reads = await snapshotRoute(page, (route) => route.abort('failed'));
   await page.goto(`${baseURL}/${HASH}`);
@@ -111,7 +113,7 @@ test('Refresh of a shown site GitHub never answers offers Try again, which reloa
   expect(reads.seen).toBe(opened + 5);
 });
 
-test('a remembered boot whose guessed snapshot GitHub never answers shows the notice after four tries, not eight', async ({ page, baseURL }) => {
+test('a remembered boot whose guessed snapshot GitHub never answers shows the panel after four tries, not eight', async ({ page, baseURL }) => {
   await page.clock.install();
   const reads = await snapshotRoute(page, () => {});
   reads.failing = false;
@@ -156,7 +158,7 @@ test('a file GitHub never answers, opened outside an open, shows the plain notic
   expect(reads.seen).toBe(4);
 });
 
-test('a branch list GitHub never answers shows the notice after four tries; Try again chooses the repository again and opens the site', async ({ page, baseURL }) => {
+test('a branch list GitHub never answers shows the panel after four tries; Try again chooses the repository again and opens the site', async ({ page, baseURL }) => {
   await page.clock.install();
   const reads = { seen: 0, failing: true };
   await page.route(/\/api\/branches\?/, (route) => { reads.seen++; if (!reads.failing) return route.continue(); });
@@ -219,4 +221,25 @@ test('the file a reopen shows, never answered, offers Try again, which reopens i
   await expect(page.locator('#current-page')).toHaveAttribute('data-path', 'robots.txt', { timeout: 30_000 });
   await expect(page.locator('#status')).toContainText('Up to date with main', { timeout: 30_000 });
   await expect(page.locator('#content')).not.toContainText(SAID);
+});
+
+test('at 390 px a long Worker message and Try again both fit without clipping', async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.clock.install();
+  const reads = await snapshotRoute(page, (route) => route.fulfill({ status: 503, json: { error: 'GitHub is unavailable. '.repeat(8).trim() } }));
+  await page.goto(`${baseURL}/${HASH}`);
+  // Every try answers 503; the waits are jumped until the failure shows.
+  await expect.poll(async () => { await page.clock.fastForward(1_000); return notice(page).isVisible(); }, { timeout: 30_000 }).toBe(true);
+  await expect(notice(page)).toContainText('GitHub is unavailable.');
+  const button = tryAgain(page);
+  await expect(button).toBeVisible();
+  const box = await button.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const noticeBox = await notice(page).boundingBox();
+  expect(noticeBox!.x + noticeBox!.width).toBeLessThanOrEqual(390);
+  reads.failing = false;
+  await button.click();
+  await expectOpened(page);
 });

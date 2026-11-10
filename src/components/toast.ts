@@ -12,7 +12,8 @@ import { TOAST_MS, toastLift, toastResume } from "./toast-rules";
 // lives inside the topmost open modal dialog or popover: outside it, a modal
 // would make it inert and a click on it would close the explorer.
 
-export interface ToastAction { label: string; run(): void }
+/** `live`: false once the step the action takes back is no longer the newest (an action with none is always live). */
+export interface ToastAction { label: string; run(): void; live?(): boolean }
 
 let toast: HTMLElement | undefined, words: HTMLElement, button: HTMLButtonElement;
 let shown = "", action: ToastAction | undefined, timer: number | undefined, ends = 0, held = 0;
