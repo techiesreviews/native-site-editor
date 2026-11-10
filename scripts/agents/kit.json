@@ -11,7 +11,7 @@
     "check": "npm run check",
     "test": "npm test",
     "lint": "npm run lint",
-    "css": "node scripts/agents/one-offs.mjs check --then scripts/check-colours.mjs"
+    "css": "node scripts/agents/one-offs.mjs check --no-write --then scripts/check-colours.mjs"
   },
   "unit": {
     "run": "./node_modules/.bin/tsx --test --test-reporter=spec",

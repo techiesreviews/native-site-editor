@@ -1,7 +1,8 @@
 // The one-way count of one-offs: hand-typed values per CSS file that may only go down (atomic catalogue, ticket 04).
 //
-//   node scripts/agents/one-offs.mjs check [--then <script>] [--no-write]
-//       fail when a file has more of a kind than the committed count; a fall rewrites scripts/agents/one-offs.json
+//   node scripts/agents/one-offs.mjs check [--no-write] [--then <script> [paths…]]
+//       fail when a file has more of a kind than the committed count; a fall rewrites scripts/agents/one-offs.json.
+//       --no-write (what the kit runs) never writes: a fall then fails until update is committed
 //   node scripts/agents/one-offs.mjs update [--waive "<reason>"]
 //       rewrite the committed count from the tree; a rise needs a written reason and a *-lead owner, and is recorded
 //   node scripts/agents/one-offs.mjs report [--json]
@@ -37,7 +38,7 @@ export function oneOffs(text, { file = "" } = {}) {
     const add = kind => found.push({ kind, line: code.slice(0, match.index).split("\n").length, text: `${property}: ${value.trim().replace(/\s+/g, " ")}` });
     if (property.startsWith("--")) { if (file !== themeFile) add("localProperties"); continue; }
     const own = noVars(value);
-    if (/^(margin|padding|gap|row-gap|column-gap)(-|$)/.test(property) && nonZeroPx.test(value)) add("spacing");
+    if (/^(margin|padding|gap|row-gap|column-gap)(-|$)/.test(property) && nonZeroPx.test(own)) add("spacing");
     if (/radius$/.test(property) && /\d/.test(own) && !/^\s*(0|inherit)\s*$/.test(value)) add("radii");
     if (property === "box-shadow" && !/^\s*(none|var\(--[\w-]+\))\s*$/.test(value) && /\d/.test(own)) add("shadows");
     if (property === "z-index" && /\d/.test(own)) add("zIndex");
@@ -131,9 +132,18 @@ function check(root, flags, log) {
   }
   if (falls.length) {
     const by = falls.reduce((sum, { now, was }) => sum + was - now, 0);
-    if (!flags["--no-write"]) writeBaseline(root, current, waivers);
-    log.log(`RESULT: ok one-offs fell by ${by} in ${plural(new Set(falls.map(entry => entry.file)).size, "file")}, ${total(current)} left${flags["--no-write"] ? "" : `; ${baselinePath} rewritten, commit it`}`);
-    return 0;
+    const files = plural(new Set(falls.map(entry => entry.file)).size, "file");
+    if (!flags["--no-write"]) {
+      writeBaseline(root, current, waivers);
+      log.log(`RESULT: ok one-offs fell by ${by} in ${files}, ${total(current)} left; ${baselinePath} rewritten, commit it`);
+      return 0;
+    }
+    // The kit runs this mid-slice and must not leave the tree dirty, so a fall is never written here. A count
+    // above the tree would let a later change add values back up to it, so it fails until update is committed.
+    for (const { file, kind, was, now } of falls) log.error(`${file}: ${kind} fell from ${was} to ${now}`);
+    log.error(`${baselinePath} is above the tree: run node scripts/agents/one-offs.mjs update and commit it`);
+    log.log(`RESULT: fail one-offs fell by ${by} in ${files} and ${baselinePath} was not updated`);
+    return 1;
   }
   log.log(`RESULT: ok one-offs ${total(current)} hand-typed values in ${plural(Object.keys(current).length, "file")}, none above ${baselinePath}`);
   return 0;
@@ -180,25 +190,26 @@ function report(root, flags, log) {
 const withValue = new Set(["--root", "--then", "--waive"]), switches = new Set(["--no-write", "--json"]);
 
 function parse(argv) {
-  const flags = {};
+  const flags = {}, paths = [];
   let command = "check", named = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (withValue.has(arg)) flags[arg] = argv[++i] ?? "";
     else if (switches.has(arg)) flags[arg] = true;
     else if (!named && ["check", "update", "report"].includes(arg)) { command = arg; named = true; }
-    // Anything else is a path the kit hands to a css check; the count always reads the whole tree.
+    // Anything else is a path the kit appends for a css check: the count reads the whole tree and hands them to --then.
+    else paths.push(arg);
   }
-  return { command, flags };
+  return { command, flags, paths };
 }
 
 export function run(argv, { log = console, root: defaultRoot = fileURLToPath(new URL("../..", import.meta.url)) } = {}) {
-  const { command, flags } = parse(argv);
+  const { command, flags, paths } = parse(argv);
   const root = flags["--root"] || defaultRoot;
   let status = { check, update, report }[command](root, flags, log);
   // The kit runs one css command; --then lets that one command also run the colour check beside the count.
   if (command === "check" && flags["--then"]) {
-    try { execFileSync(process.execPath, [join(root, flags["--then"])], { cwd: root, stdio: "inherit" }); } catch { status = 1; }
+    try { execFileSync(process.execPath, [join(root, flags["--then"]), ...paths], { cwd: root, stdio: "inherit" }); } catch { status = 1; }
   }
   return status;
 }

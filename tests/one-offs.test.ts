@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -36,6 +36,15 @@ test("a token never counts, in any kind", () => {
     "  box-shadow: var(--shadow); box-shadow: none; transition: opacity var(--dur-hover) var(--ease-out); animation-duration: var(--dur-fly);",
     "  z-index: var(--layer-2); font-size: var(--font-size-s); font-size: 1rem; }",
   ].join("\n")), []);
+});
+
+test("a var() fallback holding a px value never counts, in any kind; a raw value beside it still does", () => {
+  assert.deepEqual(oneOffs([
+    "a { padding: var(--space-s, 4px); margin-inline: var(--gap, 6px) var(--gap, 6px); border-radius: var(--radius, 6px);",
+    "  box-shadow: var(--shadow, 0 2px 6px black); transition: opacity var(--dur-hover, 120ms); z-index: var(--layer, 5);",
+    "  font-size: var(--size, 13px); }",
+  ].join("\n")), []);
+  assert.deepEqual(oneOffs("a { padding: var(--space-s, 4px) 10px; }").map(({ kind }: Found) => kind), ["spacing"]);
 });
 
 test("comments are ignored but keep line numbers; theme.css may hold its own custom properties", () => {
@@ -111,18 +120,85 @@ test("update raises a count only with a written reason from a lead, and records 
   } finally { rmSync(p.root, { recursive: true, force: true }); }
 });
 
-test("paths the kit appends are ignored, and --then runs the colour check beside the count", () => {
+test("paths the kit appends go to the --then script, and it runs the colour check beside the count", () => {
   const p = project(".x { padding: 8px; }\n");
   try {
     p.run("update");
-    writeFileSync(join(p.root, "scripts/ok.mjs"), "console.log('colours ok');\n");
+    writeFileSync(join(p.root, "scripts/ok.mjs"), "console.log('colours ok', process.argv.slice(2).join(' '));\n");
     writeFileSync(join(p.root, "scripts/bad.mjs"), "console.error('colours bad'); process.exitCode = 1;\n");
     const ok = p.run("check", "--then", "scripts/ok.mjs", "src/a.css");
     assert.equal(ok.status, 0);
-    assert.match(ok.stdout, /colours ok/);
+    assert.match(ok.stdout, /colours ok src\/a\.css/);
     const bad = p.run("check", "--then", "scripts/bad.mjs", "src/a.css");
     assert.equal(bad.status, 1);
     assert.match(bad.stdout, /RESULT: ok one-offs/);
+  } finally { rmSync(p.root, { recursive: true, force: true }); }
+});
+
+test("update takes the owner from .scratch/owner when ASE_OWNER is not set", () => {
+  const p = project(".x { padding: 8px; }\n");
+  try {
+    p.run("update");
+    p.write(".x { padding: 8px; }\n.y { padding: 10px; }\n");
+    mkdirSync(join(p.root, ".scratch"));
+    const env = { ...process.env, ASE_OWNER: "" };
+    const waive = () => spawnSync(process.execPath, [script, "--root", p.root, "update", "--waive", "x"], { encoding: "utf8", env });
+    writeFileSync(join(p.root, ".scratch/owner"), "2026-11-10T10:00:00Z builder-one ignored\n");
+    assert.equal(waive().status, 1);
+    assert.equal(p.baseline().files["src/a.css"].spacing, 1);
+    writeFileSync(join(p.root, ".scratch/owner"), "2026-11-10T10:00:00Z fleet-lead ignored\n");
+    assert.equal(waive().status, 0);
+    assert.equal(p.baseline().files["src/a.css"].spacing, 2);
+  } finally { rmSync(p.root, { recursive: true, force: true }); }
+});
+
+test("the kit's own checks.css value runs as the kit runs it and never leaves the tree dirty", () => {
+  const settings = JSON.parse(readFileSync(join(repo, "scripts/agents/kit.json"), "utf8"));
+  const [name, ...argv] = String(settings.checks.css).trim().split(/\s+/);
+  assert.equal(name, "node");
+  const p = project(".x { padding: 8px; }\n");
+  try {
+    copyFileSync(script, join(p.root, "scripts/agents/one-offs.mjs"));
+    copyFileSync(join(repo, "scripts/check-colours.mjs"), join(p.root, "scripts/check-colours.mjs"));
+    writeFileSync(join(p.root, "scripts/check-colours.allow.json"), "[]\n");
+    p.run("update");
+    const before = readFileSync(join(p.root, baselinePath), "utf8");
+    const kit = () => spawnSync(process.execPath, [...argv, "src/a.css"], { cwd: p.root, encoding: "utf8" });
+    const same = () => assert.equal(readFileSync(join(p.root, baselinePath), "utf8"), before, "the kit's command must not write the count");
+
+    assert.equal(kit().status, 0);
+    same();
+
+    p.write(".x { padding: var(--space-xs); }\n");
+    const fall = kit();
+    assert.equal(fall.status, 1);
+    assert.match(fall.stderr, /run node scripts\/agents\/one-offs\.mjs update and commit it/);
+    assert.match(fall.stdout, /RESULT: fail one-offs fell by 1 in 1 file and scripts\/agents\/one-offs\.json was not updated/);
+    same();
+
+    p.write(".x { padding: 8px; }\n.y { padding: 10px; }\n");
+    assert.equal(kit().status, 1);
+    same();
+
+    p.write(".x { padding: 8px; color: red; }\n");
+    const colour = kit();
+    assert.equal(colour.status, 1, "the colour check still runs beside the count");
+    assert.match(colour.stderr, /src\/a\.css:1:/);
+    same();
+  } finally { rmSync(p.root, { recursive: true, force: true }); }
+});
+
+test("without --no-write a fall rewrites the count, and --no-write leaves it alone", () => {
+  const p = project(".x { padding: 8px; }\n");
+  try {
+    p.run("update");
+    p.write(".x { padding: var(--space-xs); }\n");
+    const before = readFileSync(join(p.root, baselinePath), "utf8");
+    assert.equal(p.run("check", "--no-write").status, 1);
+    assert.equal(readFileSync(join(p.root, baselinePath), "utf8"), before);
+    assert.equal(p.run("update").status, 0, "a fall needs no waiver");
+    assert.deepEqual(p.baseline().files, {});
+    assert.equal(p.run("check", "--no-write").status, 0);
   } finally { rmSync(p.root, { recursive: true, force: true }); }
 });
 
@@ -138,9 +214,10 @@ test("report lists every counted value with file and line, as JSON for the board
   } finally { rmSync(p.root, { recursive: true, force: true }); }
 });
 
-test("the editor's CSS holds no more hand-typed values than the committed count", () => {
+test("the committed count equals the editor's CSS: a rise is waived and a fall is committed", () => {
   const found: Record<string, Found[]> = scan(repo);
   const current = Object.fromEntries(Object.entries(found).map(([file, list]) => [file, tally(list)]));
-  const { rises } = compare(readBaseline(repo).files, current);
-  assert.deepEqual(rises, [], "a CSS file gained hand-typed values: use a token, or have a lead run `node scripts/agents/one-offs.mjs update --waive \"<reason>\"`");
+  const { rises, falls } = compare(readBaseline(repo).files, current);
+  assert.deepEqual(rises, [], "a CSS file gained hand-typed values: use a token, or have a lead run `node scripts/agents/one-offs.mjs update --waive \"<reason>\"` and commit the file");
+  assert.deepEqual(falls, [], "a CSS file lost hand-typed values: run `node scripts/agents/one-offs.mjs update` and commit scripts/agents/one-offs.json");
 });
