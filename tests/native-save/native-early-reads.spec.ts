@@ -114,8 +114,8 @@ test('the boot first (the early script held until the page shows): it asks for i
 // Changed by this ticket, open for Lex's OK (ticket Done): before, a first visit waited for the branch list,
 // so one GitHub never answers stopped the opening with the toast. Now the early snapshot proves the branch and
 // the site opens, as a remembered (repeat) visit already did. The selector stays on the linked branch, disabled
-// until the list answers; one GitHub never answers says so with the toast once its four tries are spent.
-test('a first visit whose branch list GitHub never answers shows the linked site, then the toast; Try again fills the selector', async ({ page, baseURL }) => {
+// until the list answers; one GitHub never answers says so in the notice bar, with Try again, once its four tries are spent.
+test('a first visit whose branch list GitHub never answers shows the linked site, then the notice with Try again; Try again fills the selector', async ({ page, baseURL }) => {
   await page.clock.install();
   const reads = { seen: 0, failing: true };
   await page.route(/\/api\/branches\?/, (route) => { reads.seen++; if (!reads.failing) return route.continue(); });
@@ -125,12 +125,13 @@ test('a first visit whose branch list GitHub never answers shows the linked site
   await expect(page.locator('#branch')).toBeDisabled();
   await expect(page.locator('#branch option')).toHaveCount(1);
   await failFourTries(page, reads);
-  await expect(toast(page).locator('.editor-toast__text')).toHaveText(SAID);
+  await expect(page.locator('#notice')).toContainText(SAID);
+  await expect(toast(page)).toHaveCount(0);
   await expect(preview(page).locator('.hero h1')).toBeVisible();
   await expect(page.locator('#branch')).toBeDisabled();
 
   reads.failing = false;
-  await toast(page).getByRole('button', { name: 'Try again', exact: true }).click();
+  await page.locator('#notice').getByRole('button', { name: 'Try again', exact: true }).click();
   await expect(page.locator('#branch')).toBeEnabled();
   await expect(page.locator('#branch')).toHaveValue('main');
   await expect(page.locator('#notice')).toBeHidden();
