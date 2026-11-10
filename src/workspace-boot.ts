@@ -70,7 +70,8 @@ export interface WorkspaceBootPorts {
   settleStatus(message: string): void;
   clearError(): void;
   /** `retry` repeats the open that failed: a read GitHub never answered in it offers Try again. */
-  errorMessage(error: unknown, retry?: () => void): void;
+  /** `panel`: the failed panel the caller drew (what `node` made), which carries Try again. */
+  errorMessage(error: unknown, retry?: () => void, panel?: Node | string): void;
   draftScope(): DraftScope | undefined;
   entryAt(path: string): TreeEntry | undefined;
   setCurrentPage(path?: string): void;
@@ -281,10 +282,9 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
             "Files could not be loaded. Try refreshing.",
           ),
         );
-        ports.content.replaceChildren(
-          node("p", "empty-message", "Your repository could not be opened."),
-        );
-        ports.errorMessage(error, retry);
+        const failed = node("p", "empty-message", "Your repository could not be opened.");
+        ports.content.replaceChildren(failed);
+        ports.errorMessage(error, retry, failed);
       }
     } finally {
       if (at.holds()) ports.refreshButton.disabled = false;
@@ -493,14 +493,9 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     } catch (error) {
       if (at.holds()) {
         ports.options(ports.branchSelect, [{ value: "", label: "Branches unavailable" }]);
-        ports.content.replaceChildren(
-          node(
-            "p",
-            "empty-message",
-            "Branches could not be loaded. Reload repositories to retry.",
-          ),
-        );
-        ports.errorMessage(error, retry);
+        const failed = node("p", "empty-message", "Branches could not be loaded. Reload repositories to retry.");
+        ports.content.replaceChildren(failed);
+        ports.errorMessage(error, retry, failed);
       }
     }
   }

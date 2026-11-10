@@ -1,7 +1,7 @@
 ---
 title: "Try again and Replace Undo get their own homes"
 type: task (AFK)
-status: closed
+status: open
 assignee: fleet-lead
 builder: claude
 blocked_by: []
@@ -38,16 +38,17 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 ## Done (2026-11-10)
 
-- **Try again on the failed screen:** when a read GitHub never answers (or answers 502/503 to every try) fails an open, the failed panel itself (the "Your repository could not be opened." / "Branches could not be loaded." / file-read message in the page area) carries a **Try again** button. With the explorer open, which covers that panel, the notice placed in the explorer carries it instead (the Files panel case); with no panel (a branch list refilling beside a shown page) the notice does. Pressed, the button turns busy (spinner, "Trying again", disabled so a second press starts nothing), the notice hides and the open repeats; a failure draws the panel and button again. The toast with Try again and the `say` port are gone. The `#status` line "GitHub isn't answering. Try again in a moment." is written as the user's own announcement (not via `status()`), so a later load-progress line does not replace it. No new toast or explainer text.
-- **Replace Undo:** after Replace everywhere, the new picture's File details shows an **Undo** button under the picture. It belongs to the step: it is kept on the sheet, drawn again by every refresh while that step is still the newest (`ToastAction.live`, set by `undoAction` in `src/announce.ts`), gone once the top bar's Undo or any newer change has taken its place, and removed on Back. Pressed, it takes the step back only if the step is still the newest. The top bar's Undo also takes the replacement back once the dialog is closed. It does not outlive the Media pane's own view; the top bar's Undo is the one that does. The replace toast itself is left for ticket 07.
+- **Try again on the failed screen:** when a read GitHub never answers (or answers 502/503 to every try) fails an open, the failed panel the caller drew ("Your repository could not be opened.", "Branches could not be loaded…", or the file-read message) carries a **Try again** button. The callers pass that panel to `errorMessage(error, retry, panel)`; there is no document-wide lookup, so a loading line or an unrelated note is never given the button. The notice carries it instead when the explorer is open (it covers the panel, and the notice is placed in it: the Files panel case) or when the caller drew no panel (a branch list refilling beside a shown page). Pressed, the button is disabled and says "Trying again", the notice hides and the open repeats; a failure draws the panel and button again, and a second press starts nothing. The toast with Try again and the `say` port are gone. The `#status` line "GitHub isn't answering. Try again in a moment." is written as the user's own announcement, so a later load-progress line does not replace it. No new toast or explainer text.
+- **Replace Undo:** after Replace everywhere, the new picture's File details shows an **Undo** button under the picture. It belongs to the step: it is kept on the sheet, drawn again by every refresh while that step is still the newest (`ToastAction.live`, set by `undoAction` in `src/announce.ts`), gone once the top bar's Undo or any newer change has taken its place, and removed on Back. Pressed, it takes the step back only if the step is still the newest. The top bar's Undo also takes the replacement back once the dialog is closed. The replace toast itself is left for ticket 07.
 - **Tests:**
-  - `tests/github-reads.test.ts`: the button on the panel, on the notice (explorer open, no panel), busy after a press with a second press starting no second retry, none for 401, other errors or no retry, and `#status` kept against `settleStatus`.
-  - `tests/native-save/native-github-silent.spec.ts`: moved from the toast to the panel, plus a 390 px case with a long 503 message where the notice and Try again fit and the open then succeeds.
+  - `tests/github-reads.test.ts`: the button on the panel passed in, on the notice (explorer open, or no panel drawn while a loading line shows), busy after a press with a second press starting no second retry, none for 401, other errors or no retry, and `#status` kept against `settleStatus`.
+  - `tests/native-save/native-github-silent.spec.ts`: the button is on `#content .empty-message` and not in `#notice` for every failed open; the Refresh case (explorer open) asserts the reverse; a 390 px case with a long 503 message fits and then opens.
   - `tests/native-save/native-media-rename.spec.ts`: close the dialog, the top bar's Undo restores the old picture; the details Undo restores it; the details Undo is gone after the top bar's Undo, with no second undo and no refusal note.
 - **Validation:**
-  - `RESULT: ok unit 1812/1812 (102 files)` (`kit unit --affected`)
+  - `RESULT: ok unit 1836/1836 (103 files)` (`kit unit --affected`)
   - `RESULT: ok specs 2/2 passed` (native-github-silent 10, native-media-rename 14)
   - `npm run check` and `npm run lint` pass.
-  - `RESULT: fail size boot 355 KB over budget 355 KB`: boot shows 355 KB, ±0 KB against dev (dev's own run is 355 KB and within by a hair, 363520 bytes). The button's code in `src/github-reads.ts` is boot code and tips it over the byte budget by a margin the report does not print; the slice or the lead decides where to trim.
+  - `RESULT: fail size boot 355 KB over budget 355 KB`. Exact delta against dev (`origin/dev` built beside this branch, `gzip -9` of the files that changed): the boot chunk `index-*.js` 213661 → 213720 bytes (+59) and `index-*.css` 19862 → 19879 bytes (+17), so about +76 bytes gzip in all. Dev sits at 363520 bytes, the budget, so any added byte is over.
+- **Open for the lead:** the boot budget. I trimmed the new code (no icon, no spinner, one shared check in `undoAction`) and the panel plumbing costs more than it saves, so the +76 bytes cannot be removed without dropping the panel placement or Try again's busy label. Choices: raise the budget a little, or take the bytes from the toast code in boot that ticket 07 deletes (then land this after 07's removal, or in the same step). The ticket is back to open for that decision.
 - **Not run here:** `kit shots --compare dev`, the Opus UX review and the one-offs count (slice 04 has not landed, so no command exists); the slice runs them.
 - Feature list: updated F-repo-06 and F-media-08.
