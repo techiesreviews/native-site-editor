@@ -1,21 +1,30 @@
 // Frames: a part or mock-up drawn in its own page, so a menu, a dialog or a phone width has its own top layer, ids,
-// fixed positions and window width. On the board a frame is an inert <iframe> (pointer and wheel go to the board)
-// whose document is written inline (`srcdoc`), as the editor's preview frame is: the editor's pages refuse to be
+// fixed positions and window width. On the board a frame is an <iframe> whose document is written inline (`srcdoc`),
+// as the editor's preview frame is. A fixed state cell's frame is inert (pointer and wheel go to the board); a live
+// one works, its wheel handed on to the board so it still zooms and pans there. The editor's pages refuse to be
 // framed (`frame-ancestors 'none'`, public/_headers), and an inline document has no response for that rule to apply
 // to. It loads this page's own stylesheets and entry script, reads what to show from its <iframe>'s `data-frame`, and
 // redraws when the board sets new options on `data-values`. The same page opened at
-// catalogue.html?frame=<part> or ?mockup=<id> (&theme=dark&v=<options>) shows one frame on its own, as a link.
+// catalogue.html?frame=<part> or ?mockup=<id> (&theme=dark&v=<options>&live=1) shows one frame on its own, as a link.
 import { MOCKUPS, type Mockup } from "./mockups";
 import { PARTS, isPart, type Part, type Values } from "./parts";
 
 export type Theme = "light" | "dark";
-export interface FrameRequest { kind: "frame" | "mockup"; id: string; theme: Theme; values: Values; width: number; height: number }
+/** `live`: the part works (clicks, hover, keyboard) and starts as the editor shows it; otherwise an inert picture. */
+export interface FrameRequest { kind: "frame" | "mockup"; id: string; theme: Theme; values: Values; width: number; height: number; live?: boolean }
 
 /** The query a frame reads: the same as a frame's own link. */
 export function frameQuery(request: Omit<FrameRequest, "height" | "width">): string {
   const params = new URLSearchParams({ [request.kind]: request.id, theme: request.theme });
   if (Object.keys(request.values).length) params.set("v", JSON.stringify(request.values));
+  if (request.live) params.set("live", "1");
   return params.toString();
+}
+
+/** Where a point in a frame's page lies on the board's page: the frame's place there, scaled by the board's zoom. */
+export function boardPoint(box: { left: number; top: number; width: number }, frameWidth: number, point: { x: number; y: number }) {
+  const scale = frameWidth && box.width ? box.width / frameWidth : 1;
+  return { x: box.left + point.x * scale, y: box.top + point.y * scale };
 }
 
 const escapeAttribute = (text: string) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -27,13 +36,15 @@ function frameDocument(doc: Document): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">${links.join("")}${entry ? `<script type="module" src="${escapeAttribute(entry.src)}"></script>` : ""}</head><body></body></html>`;
 }
 
-/** The frame a board cell shows: sized and inert. */
+/** The frame a board cell shows: sized, and inert unless it is live. */
 export function frameElement(request: FrameRequest, label: string): HTMLIFrameElement {
   const frame = document.createElement("iframe");
-  frame.className = "cat-iframe";
+  frame.className = request.live ? "cat-iframe cat-iframe--live" : "cat-iframe";
   frame.title = label;
-  frame.inert = true;
-  frame.tabIndex = -1;
+  if (!request.live) {
+    frame.inert = true;
+    frame.tabIndex = -1;
+  }
   frame.width = String(request.width);
   frame.height = String(request.height);
   frame.dataset.frame = frameQuery(request);
@@ -55,7 +66,7 @@ export function ownQuery(): string {
 }
 
 /** What a frame page shows, from its query; undefined when it names no frame. */
-export function frameOf(query: string): { entry: Part | Mockup; theme: Theme; values: Values } | undefined {
+export function frameOf(query: string): { entry: Part | Mockup; theme: Theme; values: Values; live: boolean } | undefined {
   const params = new URLSearchParams(query);
   const partId = params.get("frame"), mockupId = params.get("mockup");
   const part = partId ? PARTS.find((item) => item.id === partId) : undefined;
@@ -63,7 +74,7 @@ export function frameOf(query: string): { entry: Part | Mockup; theme: Theme; va
   if (!entry) return undefined;
   let values: Values = {};
   try { values = JSON.parse(params.get("v") ?? "{}") as Values; } catch { /* A hand-edited address: the defaults. */ }
-  return { entry, theme: params.get("theme") === "dark" ? "dark" : "light", values: { ...entry.defaults, ...values } };
+  return { entry, theme: params.get("theme") === "dark" ? "dark" : "light", values: { ...entry.defaults, ...values }, live: params.get("live") === "1" };
 }
 
 /** Runs a frame page: the one part or mock-up, in its theme, redrawn when the board sets new options. */
@@ -72,18 +83,39 @@ export async function startFrame(shown: NonNullable<ReturnType<typeof frameOf>>)
   document.body.className = `cat-frame-page${shown.entry.area === "mockups" ? " cat-frame-page--screen" : ""}`;
   const stage = document.createElement("div");
   stage.className = "cat-frame-stage";
+  stage.dataset.part = shown.entry.id;
   document.body.replaceChildren(stage);
   let drawing = 0;
   const draw = async (values: Values) => {
     const turn = ++drawing;
-    const element = shown.entry.area === "mockups" ? await shown.entry.render(values) : await shown.entry.render(values, "normal");
+    const element = shown.entry.area === "mockups" ? await shown.entry.render(values) : await shown.entry.render(values, "normal", shown.live);
     if (turn === drawing) stage.replaceChildren(element);
   };
   // Options the board set while this page was still loading are on `data-values` already: they win over the first ones.
   const host = hostFrame();
+  if (host && shown.live) handOnToBoard(host);
   const set = (): Values | undefined => {
     try { return host?.dataset.values ? { ...shown.values, ...JSON.parse(host.dataset.values) as Values } : undefined; } catch { return undefined; }
   };
   if (host) new MutationObserver(() => { const values = set(); if (values) void draw(values); }).observe(host, { attributes: true, attributeFilter: ["data-values"] });
   await draw(set() ?? shown.values);
+}
+
+/**
+ * A live frame on the board: its wheel goes on to the board (zoom and pan, as over any other cell), and a press in it
+ * tells the board (`cat-frame-press`) so it selects the frame's card.
+ */
+function handOnToBoard(host: HTMLIFrameElement) {
+  const board = host.ownerDocument.defaultView as (Window & typeof globalThis) | null;
+  if (!board) return;
+  addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const at = boardPoint(host.getBoundingClientRect(), host.offsetWidth, { x: event.clientX, y: event.clientY });
+    host.dispatchEvent(new board.WheelEvent("wheel", {
+      bubbles: true, cancelable: true, clientX: at.x, clientY: at.y,
+      deltaX: event.deltaX, deltaY: event.deltaY, deltaMode: event.deltaMode,
+      ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey, altKey: event.altKey,
+    }));
+  }, { passive: false });
+  addEventListener("pointerdown", () => host.dispatchEvent(new board.CustomEvent("cat-frame-press", { bubbles: true })), true);
 }

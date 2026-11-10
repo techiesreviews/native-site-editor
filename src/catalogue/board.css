@@ -314,6 +314,10 @@ body:has(> .cat-board) {
 .cat-iframe {
   display: block;
   border: 0;
+}
+/* A state cell's frame is a picture: the pointer goes to the board. A live cell works, except while the board pans. */
+.cat-iframe:not(.cat-iframe--live),
+.cat-board:is(.is-space, .is-panning) :is(.cat-iframe--live, .cat-live__stage > *) {
   pointer-events: none;
 }
 .cat-card__foot {

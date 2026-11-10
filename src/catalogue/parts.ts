@@ -51,7 +51,11 @@ export interface Part extends Entry {
   columns: readonly Example[];
   /** Drawn in a same-origin frame of this size (menus, dialogs: anything that needs its own page). */
   frame?: { width: number; height: number };
-  render(values: Values, state: State): Promise<Element>;
+  /**
+   * Draws the part. `live`: the board's working cell, where it starts as the editor shows it (a menu or a dialog
+   * closed, its button opening it); otherwise a state cell's picture (a menu or a dialog drawn open).
+   */
+  render(values: Values, state: State, live?: boolean): Promise<Element>;
 }
 export type BoardEntry = ValuePart | Part;
 
@@ -253,7 +257,6 @@ const ATOMS: Part[] = [
       input.placeholder = str(values.placeholder);
       input.setAttribute("aria-label", str(values.placeholder) || "Field");
       input.disabled = state === "disabled";
-      input.tabIndex = -1;
       return input;
     },
   },
@@ -296,7 +299,7 @@ const MOLECULES: Part[] = [
     controls: [toggle("sections", "Sections"), toggle("shortcut", "Shortcut"), toggle("disabled", "Unavailable item"), toggle("danger", "Remove")],
     rows: [{ label: "Plain", values: { shortcut: false } }, { label: "Sections", values: { sections: true } }],
     columns: [{ label: "Open" }],
-    async render(values) {
+    async render(values, _state, live) {
       const [{ createRowMenu }, { node }] = await Promise.all([import("../components/row-menu"), import("../ui/dom")]);
       const host = node("div", "cat-menu-host");
       const anchor = node("button", "button secondary", "Actions");
@@ -311,8 +314,9 @@ const MOLECULES: Part[] = [
         { label: "Move to folder", run: () => undefined, section, ...(values.disabled ? { disabled: "No other folders" } : {}) },
         ...(values.danger ? [{ label: "Remove", run: () => undefined, danger: true, section: values.sections ? "Danger" : undefined }] : []),
       ];
-      // Opens once the frame shows it: the menu measures itself against its anchor.
-      requestAnimationFrame(() => menu.open(anchor, entries));
+      anchor.addEventListener("click", () => { if (menu.isOpen()) menu.close(true); else menu.open(anchor, entries); });
+      // A state cell shows it open, once the frame shows it: the menu measures itself against its anchor.
+      if (!live) requestAnimationFrame(() => menu.open(anchor, entries));
       return host;
     },
   },
@@ -323,16 +327,19 @@ const MOLECULES: Part[] = [
     controls: [text("title", "Title"), text("action", "Action"), toggle("option", "Checkbox")],
     rows: [{ label: "Ask" }, { label: "With a checkbox", values: { option: true } }],
     columns: [{ label: "Open" }],
-    async render(values) {
-      const [{ createConfirmDialog }, { node }] = await Promise.all([import("../components/confirm-dialog"), import("../ui/dom")]);
+    async render(values, _state, live) {
+      const [{ createConfirmDialog }, { node, button }] = await Promise.all([import("../components/confirm-dialog"), import("../ui/dom")]);
       const host = node("div", "cat-dialog-host");
       const dialog = createConfirmDialog(`confirm-${Math.random().toString(36).slice(2, 8)}`);
-      host.append(dialog.root);
-      requestAnimationFrame(() => void dialog.choose({
+      const ask = () => void dialog.choose({
         title: str(values.title), notes: ["The page and its address go. Undo brings them back."],
         actions: [{ label: str(values.action), value: "confirm" }],
         ...(values.option ? { option: { label: "Also delete its pictures", checked: false } } : {}),
-      }));
+      });
+      // The live cell asks from a button, as the editor does; a state cell shows the dialog open.
+      if (live) host.append(button(`${str(values.action) || "Open"}…`, ask, "button secondary"));
+      host.append(dialog.root);
+      if (!live) requestAnimationFrame(ask);
       return host;
     },
   },
