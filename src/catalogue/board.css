@@ -320,6 +320,12 @@ body:has(> .cat-board) {
 .cat-board:is(.is-space, .is-panning) :is(.cat-iframe--live, .cat-live__stage > *) {
   pointer-events: none;
 }
+/* A finger on a live frame never reaches the board, so on a touch screen a frame works once its card is selected. */
+@media (pointer: coarse) {
+  .cat-card:not(.is-selected) .cat-iframe--live {
+    pointer-events: none;
+  }
+}
 .cat-card__foot {
   display: flex;
   flex-wrap: wrap;
@@ -878,6 +884,16 @@ label.cat-control--row {
 .cat-menu-host {
   display: flex;
   justify-content: flex-start;
+}
+.cat-dialog-host {
+  display: flex;
+  min-inline-size: 0;
+}
+.cat-dialog-host > .button {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- Mock-ups ---------- */

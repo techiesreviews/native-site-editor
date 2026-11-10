@@ -251,7 +251,7 @@ test("the live Button reacts to a real hover, press and keyboard, and the board 
   // A press, and a drag that starts on the button, press it and never pan the board.
   const box = (await button.boundingBox())!;
   await page.mouse.down();
-  expect((await look()).pressed).toBe(true);
+  await expect.poll(async () => (await look()).pressed).toBe(true);
   await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 + 60, { steps: 6 });
   await page.mouse.up();
   expect(await camera()).toBe(before);
@@ -262,6 +262,58 @@ test("the live Button reacts to a real hover, press and keyboard, and the board 
   await page.keyboard.press("Tab");
   await expect(button).toBeFocused();
   expect((await look()).outline).not.toBe("none");
+  // Space and Enter press it, and the board stays put.
+  await button.evaluate((element: HTMLElement) => element.addEventListener("click", () => { element.dataset.presses = String(Number(element.dataset.presses ?? 0) + 1); }));
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Enter");
+  await expect(button).toHaveAttribute("data-presses", "2");
+  expect(await camera()).toBe(before);
+});
+
+test("the keyboard reaching a live cell too small to see selects its card and brings it into view", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  // The whole board in view: every card drawn, each too small to use.
+  await page.getByRole("toolbar", { name: "Zoom" }).getByRole("button", { name: "Fit" }).click();
+  await settled(page);
+  await expect.poll(() => percent(page)).toBeLessThan(50);
+  await page.keyboard.press("Shift");
+  await page.locator('#card-button [data-cell="live"] button').focus();
+  await expect(page.locator("#card-button")).toHaveClass(/is-selected/);
+  await expectInView(page, "button");
+});
+
+test("a press on a live frame selects its card and leaves the board where it is", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Row menu", exact: true }).click();
+  await expectInView(page, "row-menu");
+  await settled(page);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#card-row-menu")).not.toHaveClass(/is-selected/);
+  const camera = () => page.locator(".cat-world").evaluate((world) => world.style.transform);
+  const before = await camera();
+  await page.frameLocator('#card-row-menu [data-cell="live"] iframe').getByRole("button", { name: "Actions" }).click();
+  await expect(page.locator("#card-row-menu")).toHaveClass(/is-selected/);
+  expect(await camera()).toBe(before);
+});
+
+test("a mock-up frame works: real hover, and the keyboard reaching it selects its card", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Sharing, one panel", exact: true }).click();
+  await expectInView(page, "sharing-panel");
+  await settled(page);
+  const frame = page.frameLocator('#card-sharing-panel [data-cell="live"][data-width="1280"][data-theme="light"] iframe');
+  const done = frame.getByRole("button", { name: "Done" });
+  const background = () => done.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const normal = await background();
+  await done.hover();
+  await expect.poll(background).not.toBe(normal);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#card-sharing-panel")).not.toHaveClass(/is-selected/);
+  // Tab reaching the frame focuses it on the board's page, then the part inside it.
+  await page.locator('#card-sharing-panel [data-cell="live"][data-width="1280"][data-theme="light"] iframe').focus();
+  await expect(page.locator("#card-sharing-panel")).toHaveClass(/is-selected/);
+  await page.keyboard.press("Tab");
+  await expect(frame.getByRole("button", { name: "Close" })).toBeFocused();
 });
 
 test("the live Row menu and Confirm dialog open and close in their frames, by pointer and keyboard", async ({ page, baseURL }) => {
@@ -275,6 +327,24 @@ test("the live Row menu and Confirm dialog open and close in their frames, by po
   const menu = menuFrame.getByRole("menu");
   await expect(actions).toBeVisible();
   await expect(menu).toBeHidden();
+  // The menu's button opens and closes it; so does a press outside it in the frame.
+  await actions.click();
+  await expect(menu).toBeVisible();
+  await actions.click();
+  await expect(menu).toBeHidden();
+  await actions.click();
+  await expect(menu).toBeVisible();
+  const box = (await page.locator('#card-row-menu [data-cell="live"] iframe').boundingBox())!;
+  await page.mouse.click(box.x + 8, box.y + box.height - 8);
+  await expect(menu).toBeHidden();
+  // A drag that starts in the live frame uses the part and never pans the board.
+  const camera = () => page.locator(".cat-world").evaluate((world) => world.style.transform);
+  const before = await camera();
+  await page.mouse.move(box.x + 20, box.y + box.height - 20);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 100, box.y + box.height - 80, { steps: 6 });
+  await page.mouse.up();
+  expect(await camera()).toBe(before);
   await actions.click();
   await expect(menu).toBeVisible();
   await expect(menuFrame.getByRole("menuitem", { name: "Rename" })).toBeFocused();

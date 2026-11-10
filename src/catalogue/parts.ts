@@ -314,7 +314,16 @@ const MOLECULES: Part[] = [
         { label: "Move to folder", run: () => undefined, section, ...(values.disabled ? { disabled: "No other folders" } : {}) },
         ...(values.danger ? [{ label: "Remove", run: () => undefined, danger: true, section: values.sections ? "Danger" : undefined }] : []),
       ];
-      anchor.addEventListener("click", () => { if (menu.isOpen()) menu.close(true); else menu.open(anchor, entries); });
+      // Pressing the button moves focus out of the menu, which closes it before the click: whether it was open is read
+      // on the press. A click from the keyboard comes with the menu's focus already back on the button.
+      let wasOpen = false;
+      anchor.addEventListener("pointerdown", () => { wasOpen = menu.isOpen(); });
+      anchor.addEventListener("click", (event) => {
+        if (event.detail ? wasOpen : menu.isOpen()) menu.close(true);
+        else menu.open(anchor, entries);
+      });
+      // Redrawn with new options while open: the old menu closes, taking its listener on the page with it.
+      host.addEventListener("cat-redraw", () => menu.close(false));
       // A state cell shows it open, once the frame shows it: the menu measures itself against its anchor.
       if (!live) requestAnimationFrame(() => menu.open(anchor, entries));
       return host;

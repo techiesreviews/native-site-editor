@@ -700,15 +700,20 @@ export function startBoard(root: HTMLElement) {
     else if (event.key === "!" || (event.shiftKey && event.code === "Digit1")) fitAll();
   });
   document.addEventListener("keyup", (event) => { if (event.code === "Space") { spaceHeld = false; root.classList.remove("is-space"); } });
-  // A part in a state cell's frame may focus itself as it draws (an open menu its first item), which takes focus into the inert
-  // <iframe> and away from the board: the board's window loses focus, and it is given back to where it was.
+  // A part in a state cell's frame may focus itself as it draws (an open menu its first item), which takes focus into that
+  // inert <iframe> and away from the board: the board's window loses focus, and it is given back to where it was, once
+  // the frame's own focusing is over (a dialog opening focuses after the menu's call), the window first: focusing an
+  // element alone leaves the keys going to the frame.
   let lastFocus: HTMLElement | undefined;
   document.addEventListener("focusin", (event) => { if (!(event.target instanceof HTMLIFrameElement)) lastFocus = event.target as HTMLElement; });
   window.addEventListener("blur", () => {
     const active = document.activeElement;
     if (!(active instanceof HTMLIFrameElement) || !active.inert) return;
-    if (lastFocus?.isConnected) lastFocus.focus({ preventScroll: true });
-    else active.blur();
+    setTimeout(() => {
+      window.focus();
+      if (lastFocus?.isConnected) lastFocus.focus({ preventScroll: true });
+      else active.blur();
+    });
   });
 
   // ---------- Wheel: a mouse wheel and a pinch zoom round the pointer, a trackpad's scroll pans ----------
@@ -749,12 +754,26 @@ export function startBoard(root: HTMLElement) {
     const id = article?.dataset.id;
     if (id && selected !== id) select(id, false);
   }
-  world.addEventListener("cat-frame-press", (event) => press((event.target as Element).closest<HTMLElement>(".cat-card[data-id]")));
+  // The keyboard reaching a live cell selects its card too, and brings the card into view when the focus is off screen
+  // or too small to see; a pointer's press leaves the board where it is.
+  let byPointer = false;
+  document.addEventListener("pointerdown", () => { byPointer = true; }, true);
+  document.addEventListener("keydown", () => { byPointer = false; }, true);
+  world.addEventListener("cat-frame-press", (event) => { byPointer = true; press((event.target as Element).closest<HTMLElement>(".cat-card[data-id]")); });
+  world.addEventListener("focusin", (event) => {
+    const target = event.target as HTMLElement;
+    const article = target.closest('[data-cell="live"]') ? target.closest<HTMLElement>(".cat-card[data-id]") : null;
+    if (!article) return;
+    press(article);
+    if (byPointer) return;
+    const box = target.getBoundingClientRect(), view = viewport.getBoundingClientRect();
+    if (cam.z < 0.5 || box.left < view.left || box.top < view.top || box.right > view.right || box.bottom > view.bottom) flyToCard(article.dataset.id!);
+  });
   viewport.addEventListener("pointerdown", (event) => {
     const target = event.target as Element;
     if (target.closest(".cat-zoombar, .cat-search")) return;
     if (event.pointerType === "mouse" && event.button !== 0 && event.button !== 1) return;
-    if (!spaceHeld && event.button === 0 && target.closest(".cat-live__stage")) { press(target.closest<HTMLElement>(".cat-card[data-id]")); return; }
+    if (!spaceHeld && event.button === 0 && target.closest(".cat-live__stage > *")) { press(target.closest<HTMLElement>(".cat-card[data-id]")); return; }
     stopFlight();
     points.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (points.size === 1) {
