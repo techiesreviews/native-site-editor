@@ -500,7 +500,7 @@ h1 {
 }
 .empty-message .button {
   display: block;
-  margin-block-start: 12px;
+  margin-block-start: var(--space-s);
 }
 .directory-summary {
   padding: 64px;
