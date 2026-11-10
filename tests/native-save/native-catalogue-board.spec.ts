@@ -140,7 +140,7 @@ test("forced states draw: hover changes the button's colour and focus draws its 
 });
 
 const percent = async (page: Page) => parseInt(await page.getByRole("toolbar", { name: "Zoom" }).locator("output").innerText(), 10);
-/** Every frame has drawn and the camera holds still (the first view fits again once every part has drawn). */
+/** Every frame has drawn, the camera holds still (the first view fits again once every part has drawn) and keys reach the board. */
 async function settled(page: Page) {
   await expect.poll(async () => {
     const frames = page.frames().filter((frame) => frame !== page.mainFrame());
@@ -150,6 +150,8 @@ async function settled(page: Page) {
   let last = "";
   const camera = () => page.locator(".cat-world").evaluate((world) => world.style.transform);
   await expect.poll(async () => { const now = await camera(); const still = now === last; last = now; return still; }, { intervals: [300] }).toBe(true);
+  // A state cell's menu or dialog that focused itself as it came into view has given the keyboard back to the board.
+  await expect.poll(() => page.evaluate(() => { const a = document.activeElement as HTMLIFrameElement; return a?.tagName === "IFRAME" ? `iframe inert=${a.inert} ${a.dataset.frame?.slice(0, 50)}` : "ok"; })).toBe("ok");
 }
 
 test("Space presses a focused button on the canvas instead of panning", async ({ page, baseURL }) => {
@@ -314,6 +316,13 @@ test("a mock-up frame works: real hover, and the keyboard reaching it selects it
   await expect(page.locator("#card-sharing-panel")).toHaveClass(/is-selected/);
   await page.keyboard.press("Tab");
   await expect(frame.getByRole("button", { name: "Close" })).toBeFocused();
+  // A click reaches the part (its buttons do nothing yet), and the board stays put.
+  const camera = () => page.locator(".cat-world").evaluate((world) => world.style.transform);
+  const before = await camera();
+  await done.evaluate((element: HTMLElement) => element.addEventListener("click", () => { element.dataset.presses = String(Number(element.dataset.presses ?? 0) + 1); }));
+  await done.click();
+  await expect(done).toHaveAttribute("data-presses", "1");
+  expect(await camera()).toBe(before);
 });
 
 test("the live Row menu and Confirm dialog open and close in their frames, by pointer and keyboard", async ({ page, baseURL }) => {
@@ -389,4 +398,20 @@ test("a mouse wheel over a live frame still zooms the board", async ({ page, bas
   const before = await percent(page);
   await page.mouse.wheel(0, -100);
   await expect.poll(() => percent(page)).toBeGreaterThan(before);
+});
+
+test("after a click in a live frame, a key there and then Tab into the next card's frame brings that card into view", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  // The whole board in view, every card too small to use.
+  await page.getByRole("toolbar", { name: "Zoom" }).getByRole("button", { name: "Fit" }).click();
+  await settled(page);
+  await expect.poll(() => percent(page)).toBeLessThan(50);
+  // A click in a mock-up frame, then a key pressed in it: the keyboard is in use again, though the board's page saw no key.
+  await page.frameLocator('#card-sharing-panel [data-cell="live"][data-width="390"][data-theme="light"] iframe').getByRole("button", { name: "Done" }).click();
+  await page.keyboard.press("Shift");
+  // Focus reaching the Row menu's live frame, as Tab out of the mock-up would, flies there.
+  await page.locator('#card-row-menu [data-cell="live"] iframe').focus();
+  await expect(page.locator("#card-row-menu")).toHaveClass(/is-selected/);
+  await expect.poll(() => percent(page)).toBeGreaterThan(50);
+  await expectInView(page, "row-menu");
 });
