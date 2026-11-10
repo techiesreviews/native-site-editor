@@ -107,16 +107,15 @@ test("ArrowUp and a drag upward open a closed pane once; Home on an open pane op
 }));
 
 test("without a preview (plain files) a closed pane still shows its code, and hides once a preview comes", () => inBrowser(async (page) => {
-  const seen = await page.evaluate(() => {
+  const seen = await page.evaluate(async () => {
     localStorage.clear();
     const main = document.getElementById("main")!, split = document.getElementById("split")!, code = split.querySelector<HTMLElement>(".code-pane")!;
     main.classList.remove("has-preview");
     let opened = 0;
     const pane = (globalThis as WithResize).mountCodeResize(main, split, () => { opened++; });
     const plain = { collapsed: pane.collapsed(), inert: code.inert, hiddenClass: main.classList.contains("code-collapsed") };
-    // The owner lays the pane out again when the preview comes.
     main.classList.add("has-preview");
-    pane.apply();
+    await new Promise((done) => setTimeout(done, 0));
     const beside = { inert: code.inert, hiddenClass: main.classList.contains("code-collapsed") };
     return { plain, beside, opened };
   });

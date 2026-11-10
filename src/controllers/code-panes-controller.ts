@@ -5,6 +5,8 @@ export interface CodePanesPorts<T> {
   load(): Promise<T>;
   /** Chunk recovery owns the reload policy for a failed import. */
   onChunkFailure(error: unknown): void;
+  /** Whether the open project shows a preview (a native site, while it loads or after it failed too); plain files do not. */
+  preview(): boolean;
   mountCodeResize: typeof mountCodeResize;
   mountCodeWidthResize: typeof mountCodeWidthResize;
   /** Scheduling seams; production uses the browser's. Free functions: callers pass them without a receiver. */
@@ -52,11 +54,9 @@ export function createCodePanesController<T>(ports: CodePanesPorts<T>) {
   });
   let codeResize: ReturnType<typeof mountCodeResize> | undefined;
   let codeWidthResize: ReturnType<typeof mountCodeWidthResize> | undefined;
-  // The site the latest pane opened for has no preview (plain files): its
-  // code pane always shows.
-  let plainFiles = false;
-  // A closed pane waits until it is opened (its handle's onOpen asks for the code).
-  const paneClosed = () => !plainFiles && (codeResize?.collapsed() ?? false);
+  // A closed pane waits until it is opened (its handle's onOpen asks for the
+  // code). Plain files have no preview, so their pane always shows.
+  const paneClosed = () => ports.preview() && (codeResize?.collapsed() ?? false);
   let bootDeferred = false;
   let previewPainted = false;
   let readsInFlight = 0;
@@ -68,8 +68,6 @@ export function createCodePanesController<T>(ports: CodePanesPorts<T>) {
   // The first preview paint (the runtime has rendered and reported the page's
   // structure): Monaco follows once the reads settle and the browser is idle.
   function notePreviewPainted() {
-    // A closed pane hides once there is a preview beside it.
-    codeResize?.apply();
     if (previewPainted || gateOpen) return;
     previewPainted = true;
     // The runtime reports the structure just before the frame presents it:
@@ -96,9 +94,6 @@ export function createCodePanesController<T>(ports: CodePanesPorts<T>) {
   // later open was asked for and loads the editor at once, unless the pane is
   // closed beside a preview.
   function deferPane(native: boolean) {
-    plainFiles = !native;
-    // Plain files have no preview: a closed pane shows again.
-    codeResize?.apply();
     const defer = !gateOpen && !bootDeferred && native && !paneClosed();
     bootDeferred = true;
     return defer;

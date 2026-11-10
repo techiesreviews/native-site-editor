@@ -76,7 +76,8 @@ export function actionCommands(deps: EditorPaletteDeps): Command[] {
     {
       id: "editor.toggle-code", title: "Hide code", group: "Actions", icon: "split",
       keywords: ["toggle", "code pane", "source", "minimize", "preview"],
-      when: () => !deps.codeHidden() && Boolean(document.querySelector(".code-resize")),
+      // Only beside a preview: plain files have no room to give back, so their code always shows.
+      when: () => !deps.codeHidden() && Boolean(document.querySelector("main.has-preview .code-resize")),
       run: deps.toggleCode,
     },
     {
