@@ -219,6 +219,29 @@ test("after Replace everywhere the new picture's details carry Undo, which resto
   await expect.poll(() => shownWidth(page)).toBe(40);
 });
 
+test("the details Undo pressed from the keyboard leaves the focus visible in File details", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await replaceWithNext(page);
+  const undo = pane(page).locator(".media-detail__view").getByRole("button", { name: "Undo", exact: true });
+  await undo.focus();
+  await page.keyboard.press("Enter");
+  await expect(undo).toHaveCount(0);
+  const ring = await page.evaluate(() => { const on = document.activeElement!; return { body: on === document.body, outline: getComputedStyle(on).outlineStyle }; });
+  expect(ring.body).toBe(false);
+  expect(ring.outline).not.toBe("none");
+});
+
+test("Back from File details drops the Undo: reopening the picture shows none", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await replaceWithNext(page);
+  const view = pane(page).locator(".media-detail__view");
+  await expect(view.getByRole("button", { name: "Undo", exact: true })).toBeVisible();
+  await pane(page).getByRole("button", { name: "Back", exact: true }).click();
+  await pane(page).getByRole("button", { name: "Details for images/tram.webp", exact: true }).click();
+  await expect(pane(page).getByLabel("File name", { exact: true })).toHaveValue("tram.webp");
+  await expect(view.getByRole("button", { name: "Undo", exact: true })).toHaveCount(0);
+});
+
 test("the details Undo is at least 44 px tall on a phone", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await seed(page, baseURL);

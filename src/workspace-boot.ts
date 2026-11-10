@@ -493,7 +493,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     } catch (error) {
       if (at.holds()) {
         ports.options(ports.branchSelect, [{ value: "", label: "Branches unavailable" }]);
-        const failed = node("p", "empty-message", "Branches could not be loaded. Reload repositories to retry.");
+        const failed = node("p", "empty-message", "Branches could not be loaded.");
         ports.content.replaceChildren(failed);
         ports.errorMessage(error, retry, failed);
       }

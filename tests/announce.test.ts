@@ -50,25 +50,25 @@ test("an announcement is said in #status and shown as the toast once it loads; a
 });
 
 test("a toast said over before its module loads is not shown", async () => {
-  const { showToast, status } = setup();
+  const { announce, status } = setup();
   status.textContent = "First.";
-  showToast("First.");
+  announce("First.");
   status.textContent = "Refused meanwhile.";
   await settle();
   assert.deepEqual(stubs.shown, []);
 });
 
 test("the toast is imported once per announcer, however often it is asked for before it arrives", async () => {
-  const { showToast, status } = setup();
+  const { announce, status } = setup();
   const before = stubs.loads;
   status.textContent = "A.";
-  showToast("A.");
-  showToast("A.");
+  announce("A.");
+  announce("A.");
   await settle();
   assert.equal(stubs.loads, before + 1);
   assert.deepEqual(stubs.shown, [["A.", undefined], ["A.", undefined]]);
   // Once loaded, it is shown at once, with no import.
-  showToast("A.");
+  announce("A.");
   assert.equal(stubs.loads, before + 1);
   assert.equal(stubs.shown.length, 3);
 });

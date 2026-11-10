@@ -82,7 +82,6 @@ export function createGitHubReads(ports: GitHubReadsPorts) {
         // Busy, not disabled: a disabled button would drop the keyboard's focus.
         if (buttons[0].getAttribute("aria-disabled")) return;
         for (const one of buttons) { one.setAttribute("aria-disabled", "true"); one.replaceChildren(node("span", "login-spinner"), "Trying again"); }
-        clearError();
         retry();
       }, "button primary")));
       // The keyboard's place: where the button it pressed went, the one drawn now takes it.

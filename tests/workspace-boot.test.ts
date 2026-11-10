@@ -291,7 +291,7 @@ test("a failed branch list and a guess that never lands show the failure at the 
   assert.equal(f.shown.content, "Loading branches…");
   t.mock.timers.tick(GUESS_AFTER_FAILED_LIST_MS);
   await choosing;
-  assert.equal(f.shown.content, "Branches could not be loaded. Reload repositories to retry.");
+  assert.equal(f.shown.content, "Branches could not be loaded.");
   assert.equal(f.branchSelect.value, "");
   f.pending("snapshot")[0].answer.resolve(receipt(SNAPSHOT));
   f.pending("files")[0].answer.resolve(receipt<FilesResult>({ files: { [sha(1)]: "<h1>Guess</h1>" } }));
@@ -318,6 +318,15 @@ function failedSnapshotLoad(f: ReturnType<typeof fixture>) {
   return loading;
 }
 
+test("the failed panel handed to errorMessage is the one drawn in the content area", async () => {
+  const f = fixture();
+  const panels: (string | null | undefined)[] = [];
+  f.ports.errorMessage = (_error: unknown, _retry?: () => void, panel?: HTMLElement) => { panels.push(panel?.textContent); };
+  await failedSnapshotLoad(f);
+  assert.deepEqual(panels, ["Your repository could not be opened."]);
+  assert.equal(f.shown.content, "Your repository could not be opened.");
+});
+
 test("Try again repeats the failed open with fresh reads: a snapshot load, a repository choice", async () => {
   const f = fixture(), offered = retries(f);
   await failedSnapshotLoad(f);
@@ -333,7 +342,7 @@ test("Try again repeats the failed open with fresh reads: a snapshot load, a rep
   const choosing = g.boot.chooseRepository({ repoId: 501, branch: "main" });
   g.pending("branches")[0].answer.reject(silent());
   await choosing;
-  assert.equal(g.shown.content, "Branches could not be loaded. Reload repositories to retry.");
+  assert.equal(g.shown.content, "Branches could not be loaded.");
   assert.equal(offeredChoice.length, 1);
   offeredChoice[0]();
   assert.equal(g.pending("branches").length, 2, "the branch list is read again");

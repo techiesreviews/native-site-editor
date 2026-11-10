@@ -90,8 +90,8 @@ test("a read GitHub never answered in an open says so in the notice, which carri
   assert.equal(retried, 0);
   again.click();
   assert.equal(retried, 1);
-  // The notice goes while the open repeats; a failure of that open shows it again.
-  assert.equal(notice().hidden, true);
+  // The open it repeats clears the notice itself (src/workspace-boot.ts), so the busy button is not hidden under the keyboard's focus
+  // before that open starts; a failure of that open shows it again.
 });
 
 test("Try again sits on the failed panel the caller drew, shows busy once pressed, and a second press starts no second retry", () => {
