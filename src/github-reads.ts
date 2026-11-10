@@ -78,7 +78,7 @@ export function createGitHubReads(ports: GitHubReadsPorts) {
       // that panel, and the notice is placed in it) or when the caller drew none (a branch list refilling beside a shown page).
       // The open it repeats replaces the panel; a failure draws both again.
       const at = panel ? (ports.explorer()?.isOpen() ? [panel, notice] : [panel]) : [notice];
-      const buttons = at.map(where => where.appendChild(button("Try again", retry, "button primary")));
+      const buttons = at.map(where => where.appendChild(button("Try again", () => { clearError(); retry(); }, "button primary")));
       // The keyboard's place: where the button it pressed went, the one drawn now takes it.
       if (document.activeElement === document.body) buttons.at(-1)!.focus();
       // Said as the user's own announcement, not a load progress line: a later settleStatus must not replace it.
