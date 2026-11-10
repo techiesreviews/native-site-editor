@@ -89,11 +89,16 @@ export async function startFrame(shown: NonNullable<ReturnType<typeof frameOf>>)
   const draw = async (values: Values) => {
     const turn = ++drawing;
     const element = shown.entry.area === "mockups" ? await shown.entry.render(values) : await shown.entry.render(values, "normal", shown.live);
-    if (turn === drawing) stage.replaceChildren(element);
+    if (turn !== drawing) return;
+    stage.firstElementChild?.dispatchEvent(new CustomEvent("cat-redraw"));
+    stage.replaceChildren(element);
   };
   // Options the board set while this page was still loading are on `data-values` already: they win over the first ones.
   const host = hostFrame();
   if (host && shown.live) handOnToBoard(host);
+  // A state cell's frame on the board is a picture, inert inside too: a part focusing itself as it draws (an open menu
+  // its first item, a dialog) would take the keyboard away from the board, and the board cannot fully take it back.
+  else if (host) stage.inert = true;
   const set = (): Values | undefined => {
     try { return host?.dataset.values ? { ...shown.values, ...JSON.parse(host.dataset.values) as Values } : undefined; } catch { return undefined; }
   };
