@@ -26,6 +26,8 @@ Checked before building (2026-11-10, preview at c61f48e): not so today. The pane
 - **Closed by default** for everyone, once: the remembered choice moves to a new storage key (the old `astro-editor.code-height` keeps only its height), so a pane someone left open before still starts closed after this change. From then on the pane remembers what the person chose.
 - **The code loads only when the pane opens:** opening it (the handle's click or keys, dragging it up, the command palette's show-code command, or anything that asks for the code: Review, focusing the code) loads Monaco then. A closed pane never loads Monaco on its own: not after the first paint, not after the 8 s fallback.
 - A pane the person left open still loads its code as today: after the first paint, the page's reads and idle time.
+- Picking a file the page does not show (a stylesheet, a script) while the pane is closed opens the pane: its code is what was asked for (review round 4, R2-9).
+- The open pane's waiting line "The code loads once the page is on screen." goes; the pane says "Opening editor…" until the code is in. Its bytes pay for the file-pick rule above (boot 363,514 of 363,520 bytes after the rebase; dev 363,517).
 - Nothing else changes: the handle stays where it is, the canvas takes the room, Undo, Redo, drafts and Save work with the pane closed (they never needed Monaco).
 - **Boot budget:** the boot bytes before the first preview paint stay the same or go down (`kit size`, and the exact bytes from `tests/perf/byte-budget.ts`; no waiver).
 
