@@ -1,7 +1,7 @@
 ---
 title: "Design board: live, working frames (clicks, real hover, keyboard) and named parts"
 type: task (AFK)
-status: open
+status: closed
 assignee: fleet-lead
 builder: claude
 blocked_by: [05-catalogue-board]
