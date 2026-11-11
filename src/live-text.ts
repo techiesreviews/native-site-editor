@@ -550,6 +550,19 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (!edges(Y, doc).some(edge => !edge.from)) throw new Error("A kept copy without its versions");
       copyId = resume.tag;
     }
+    /** The characters this tab took out of the copy by typing (its own, or the agents it wrote for): GitHub's
+     * words the clash rule may put back. Only this tab's, never kept. */
+    let took = Y.createDeleteSet();
+    /** The clash rule is putting GitHub's words back (`settle`): the draft takes them with the rule's own step. */
+    let quiet = false;
+    doc.on("afterTransaction", (transaction: import("yjs").Transaction) => {
+      const origin = transaction.origin;
+      if (!transaction.deleteSet.clients.size || !(origin === LOCAL || agentIds.has(origin as object))) return;
+      // Copied: merging joins ranges in place, and the transaction's own are Yjs' to keep.
+      const copy = Y.createDeleteSet();
+      for (const [client, ranges] of transaction.deleteSet.clients) copy.clients.set(client, ranges.map(({ clock, len }) => ({ clock, len }) as typeof ranges[number]));
+      took = Y.mergeDeleteSets([took, copy]);
+    });
     const keptText = text.toString();
     /** The edges whose clash this tab weighed (or that came before it took part): each is weighed once, as it comes in. */
     const weighed = new Set(edges(Y, doc).map(edge => edge.id)), weighedVersions = new Set(edges(Y, doc).map(edge => edge.to));
@@ -651,7 +664,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     });
     text.observe((event, transaction) => {
       textChanged = true;
-      if (synced && transaction.origin !== LOCAL)
+      if (synced && transaction.origin !== LOCAL && !quiet)
         follow(deltaChanges(event.delta as { retain?: number; insert?: unknown; delete?: number }[]), taking && transaction.origin === taking.undo ? taking : undefined);
       // Any change can make someone's change undoable or not (their words removed since): the name tags look again.
       if (authors.size) authorsChanged();
@@ -705,8 +718,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         if (weighedVersions.has(edge.to)) continue;
         weighedVersions.add(edge.to);
         if (edge.client === undefined || gone.has(edge)) continue;
-        const out = clashes(Y, doc, all, edge, client => ownClients.has(client));
+        const { out, back } = clashes(Y, doc, all, edge, client => ownClients.has(client), (client, clock) => Y.isDeleted(took, Y.createID(client, clock)));
         if (!out.length) continue;
+        // GitHub's words coming back go into the copy first, as every tab writes them (the draft does not follow them:
+        // they are part of this tab's step below, whose change then writes only what the copy still lacks).
+        if (back) { quiet = true; try { Y.applyUpdate(doc, back, OUTSIDE); } finally { quiet = false; } }
         const author = meta.get(`n:${edge.to}`), who = typeof author === "string" && author ? author.split(" · ")[0] : "Someone";
         store.edit({ scope, path, history: ports.history?.(scope, path), label: `${who}'s change`, changes: out });
       }

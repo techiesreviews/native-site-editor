@@ -16,14 +16,15 @@
 //   else, from the same version, the lowest client id.
 // - Every version enters on top of the one right before it on GitHub (src/live-text.ts `enter`, from GitHub's history of
 //   the file), so the copy holds GitHub's versions in GitHub's order whichever tab heard which commit first.
-// - The clash rule (ticket 09, as src/outside-merge.ts): the latest version shows. A tab takes its own words out where
-//   GitHub's change replaced the words around them (`clashes`, matched against src/text-merge.ts `mergeText`), as one
-//   Undo step of its own.
+// - The clash rule (ticket 09, as src/outside-merge.ts): the latest version shows. Where GitHub's change replaced the
+//   words around a tab's own change, that change is undone whole (`clashes`, matched against src/text-merge.ts
+//   `mergeText`): the tab's own words go, as one Undo step of its own, and GitHub's words it took out come back, written
+//   the same way by every tab. Taking out without putting back glued words together or lost one (lead, 2026-11-11).
 //
 // Loaded with src/live-text.ts, never at boot.
 
 import { diffRange, type TextChange } from "./draft-store";
-import { mergeText, runChanges, wordChanges } from "./text-merge";
+import { mergeText, runChanges, splitWords, wordChanges } from "./text-merge";
 
 type Yjs = typeof import("yjs");
 type Doc = import("yjs").Doc;
@@ -76,11 +77,16 @@ export function wordRuns(text: string, change: TextChange): TextChange[] {
   return out.reverse();
 }
 
-/** `changes`, ordered from the end of the text back, made on `text`. */
+/** `changes`, ordered from the end of the text back, made on `text`. What replaces a word goes in inside it, after its
+ * first character, and the rest of it goes: words someone else puts in right before or right after that word keep
+ * their side of it, as in src/text-merge.ts `mergeText`. Put in where the word was, Yjs would order the two by its own
+ * rule, and they would glue ("Saturdaydaily"). */
 function apply(text: import("yjs").Text, changes: readonly TextChange[]) {
-  for (const change of changes) {
-    if (change.end > change.start) text.delete(change.start, change.end - change.start);
-    if (change.text) text.insert(change.start, change.text);
+  for (const { start, end, text: put } of changes) {
+    if (end === start) { if (put) text.insert(start, put); continue; }
+    if (put) text.insert(start + 1, put);
+    if (end > start + 1) text.delete(start + 1 + put.length, end - start - 1);
+    text.delete(start, 1);
   }
 }
 
@@ -277,43 +283,148 @@ export function wordsOf(doc: Doc, client: number): TextChange[] {
   return out.reverse();
 }
 
+
+/** What the clash rule does in this tab once an edge came in (`clashes`). */
+export interface Clash {
+  /** This tab's change: its own words that go, GitHub's words it took out that come back, in the copy's text now, from
+   * the end back. One Undo step of its own. */
+  out: TextChange[];
+  /** GitHub's words coming back as the outside participant writes them, which every tab putting back the same word
+   * writes the very same (Yjs takes it once); `out` then finds them in the copy. */
+  back?: Uint8Array;
+}
+
+/** A 32-bit FNV-1a hash of `text`: the client id a word put back is written under, the same in every tab. */
+function hashClient(text: string) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index++) hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193);
+  return hash >>> 0;
+}
+
+/** Past this many cells (the clash's characters in the copy times those of the merged text) the clash is left as it is. */
+const MATCH_LIMIT = 1_000_000;
+/** The cost of a character the copy cannot show or hide as the merged text has it: matched only when nothing else can be. */
+const MISS = 1024;
+/** How far a clash is looked at beside the first and last characters that differ, at most. */
+const WIDEN = 400;
+
 /**
- * The clash rule for this tab's own words (`mine`: whether a client id is this tab's) once `edge` came in: the copy's
- * text merged as src/text-merge.ts merges a draft with GitHub's change (`mergeText`, from `edge`'s older version), and
- * where the latest version shows GitHub's words, this tab's own words there go. Returned as deletions in the copy's text
- * now, from the end back; none when nothing clashed. Words merely put in another order are left.
+ * The clash rule for this tab once `edge` came in (ticket 09, as src/outside-merge.ts): the copy's text becomes the
+ * one src/text-merge.ts `mergeText` gives a draft (from `edge`'s older version: the typists' words, GitHub's), as far as
+ * this tab's own part allows. Where the latest version shows GitHub's words, this tab's change there is undone whole:
+ * its own words (`mine`: whether a client id is this tab's) go, and GitHub's words it took out (`took`: whether this tab
+ * took out the character with that id) come back, as one change of this tab's own (one Undo brings its words back).
+ * Half of it, words taken out but none put back, glued the words on both sides ("Saturdayrye") or lost one. The words
+ * coming back are written first as the outside participant's (`back`: each word of the older version again whole, in
+ * its place, under a client id derived from it and the edge), so two tabs putting back the same word show it once.
+ * None when the copy shows the merged text, or this tab's part cannot make it (words merely put in another order stay).
  */
-export function clashes(Y: Yjs, doc: Doc, all: readonly Edge[], edge: Edge, mine: (client: number) => boolean): TextChange[] {
-  if (edge.client === undefined || !edge.from) return [];
+export function clashes(Y: Yjs, doc: Doc, all: readonly Edge[], edge: Edge, mine: (client: number) => boolean, took: (client: number, clock: number) => boolean): Clash {
+  const none: Clash = { out: [] };
+  if (edge.client === undefined || !edge.from) return none;
   const from = edgeTo(all, edge.from);
-  if (!from) return [];
-  const old = copyAt(Y, doc, from.snapshot), now = copyAt(Y, doc, edge.snapshot);
-  let base: string, theirs: string;
-  try { base = old.getText("source").toString(); theirs = now.getText("source").toString(); } finally { old.destroy(); now.destroy(); }
-  const was = Y.decodeSnapshot(from.snapshot).ds, after = Y.decodeSnapshot(edge.snapshot).ds;
-  // The copy as the typists made it, without the edge: its words left out and the words it took out kept.
-  const list = items(doc);
-  let ours = "", current = "";
-  const owners: boolean[] = [];
-  for (const item of list) {
-    const id = Y.createID(item.client, item.clock);
-    const takenByEdge = item.deleted && Y.isDeleted(after, id) && !Y.isDeleted(was, id);
-    if (item.client !== edge.client && (!item.deleted || takenByEdge)) ours += item.text;
-    if (!item.deleted) { current += item.text; for (let index = 0; index < item.text.length; index++) owners.push(mine(item.client)); }
+  if (!from) return none;
+  const was = Y.decodeSnapshot(from.snapshot), now = Y.decodeSnapshot(edge.snapshot);
+  const versions = all.map(other => Y.decodeSnapshot(other.snapshot).ds);
+  const shows = (at: import("yjs").Snapshot, client: number, clock: number) => clock < (at.sv.get(client) ?? 0) && !Y.isDeleted(at.ds, Y.createID(client, clock));
+  // Each character of the copy: the older version's text, GitHub's, the copy as the typists made it (without the edge:
+  // its words left out and the words it took out kept), and the copy now. `kind`: shown and stays (0), this tab's own
+  // shown (1), GitHub's taken out by this tab (2), else (3).
+  const list: { ch: string; kind: number; client: number; clock: number; old: number; new: number }[] = [];
+  let base = "", ours = "", theirs = "", current = "";
+  for (const item of items(doc)) for (let index = 0; index < item.text.length; index++) {
+    const ch = item.text[index], client = item.client, clock = item.clock + index, id = Y.createID(client, clock);
+    const old = shows(was, client, clock) ? base.length : -1, made = shows(now, client, clock) ? theirs.length : -1;
+    if (old >= 0) base += ch;
+    if (made >= 0) theirs += ch;
+    if (client !== edge.client && (!item.deleted || (Y.isDeleted(now.ds, id) && !Y.isDeleted(was.ds, id) && !took(client, clock)))) ours += ch;
+    if (!item.deleted) current += ch;
+    const kind = !item.deleted ? (mine(client) ? 1 : 0) : old >= 0 && made >= 0 && took(client, clock) && !versions.some(ds => Y.isDeleted(ds, id)) ? 2 : 3;
+    list.push({ ch, kind, client, clock, old, new: made });
   }
-  const merged = mergeText(base, ours, theirs);
-  if (!merged.clashed || merged.text === current) return [];
-  const changes = runChanges(current, merged.text);
-  const added = changes.map(change => change.text).join("");
-  const out: TextChange[] = [];
-  for (const change of changes) {
-    // A word moved (taken out here, put in elsewhere) is not a clash: only words the latest version no longer has go.
-    if (change.end <= change.start || added.includes(current.slice(change.start, change.end).trim())) continue;
-    for (let index = change.start; index < change.end; index++) {
-      if (!owners[index]) continue;
-      const last = out.at(-1);
-      if (last && last.end === index) last.end++; else out.push({ start: index, end: index + 1, text: "" });
+  const merged = mergeText(base, ours, theirs), target = merged.text;
+  if (target === current) return none;
+  // This tab's part cannot make the merged text (its words and others' put in another order, say): where GitHub's words
+  // show, its own whole words that the latest version no longer has go, and nothing comes back.
+  const ownWords = (): Clash => {
+    if (!merged.clashed) return none;
+    const owners = list.filter(char => char.kind < 2).map(char => char.kind === 1), changes = runChanges(current, target);
+    const added = changes.map(change => change.text).join(""), out: TextChange[] = [];
+    for (const change of changes) {
+      // A word moved (taken out here, put in elsewhere) is not a clash.
+      if (change.end <= change.start || added.includes(current.slice(change.start, change.end).trim())) continue;
+      for (let index = change.start; index < change.end; index++) {
+        if (!owners[index]) continue;
+        const last = out.at(-1);
+        if (last && last.end === index) last.end++; else out.push({ start: index, end: index + 1, text: "" });
+      }
     }
+    return { out: out.reverse() };
+  };
+  // Only where the copy and the merged text differ.
+  let head = 0, tail = 0;
+  while (head < current.length && head < target.length && current[head] === target[head]) head++;
+  while (tail < current.length - head && tail < target.length - head && current[current.length - 1 - tail] === target[target.length - 1 - tail]) tail++;
+  const shown: number[] = [];
+  list.forEach((char, index) => { if (char.kind < 2) shown.push(index); });
+  // Widened to the whole line (within WIDEN characters): the same text can be taken out in several places, and the
+  // cheapest way (this tab's own words) may lie beside the first difference.
+  if (head) head = Math.max(current.lastIndexOf("\n", head - 1) + 1, head - WIDEN);
+  const end = current.indexOf("\n", current.length - tail);
+  tail = Math.max(Math.min(tail, end < 0 ? 0 : current.length - end), tail - WIDEN, 0);
+  const lo = head ? shown[head - 1] + 1 : 0, hi = current.length - tail < shown.length ? shown[current.length - tail] : list.length;
+  const want = target.slice(head, target.length - tail), n = hi - lo, m = want.length;
+  if ((n + 1) * (m + 1) > MATCH_LIMIT) return ownWords();
+  // The cheapest way to show the merged text: cost[i][j], the copy's characters from i on showing `want` from j on. A
+  // shown character stays (or, this tab's own, goes for 1); one taken out stays out (or, GitHub's taken by this tab,
+  // comes back for 1); what cannot match costs MISS.
+  const cost = new Int32Array((n + 1) * (m + 1)), at = (i: number, j: number) => i * (m + 1) + j;
+  for (let j = m - 1; j >= 0; j--) cost[at(n, j)] = cost[at(n, j + 1)] + MISS;
+  const steps = (i: number, j: number) => {
+    const { ch, kind } = list[lo + i], match = j < m && want[j] === ch;
+    return {
+      skip: cost[at(i + 1, j)] + (kind === 0 ? MISS : kind === 1 ? 1 : 0),
+      take: match && kind !== 3 ? cost[at(i + 1, j + 1)] + (kind === 2 ? 1 : 0) : Infinity,
+      miss: j < m ? cost[at(i, j + 1)] + MISS : Infinity,
+    };
+  };
+  for (let i = n - 1; i >= 0; i--) for (let j = m; j >= 0; j--) { const step = steps(i, j); cost[at(i, j)] = Math.min(step.skip, step.take, step.miss); }
+  if (cost[0] >= MISS) return ownWords();
+  const out: TextChange[] = [], back: number[] = [];
+  const change = (index: number, gone: number, put: string) => {
+    const last = out.at(-1);
+    if (last && last.end === index) { last.end += gone; last.text += put; } else out.push({ start: index, end: index + gone, text: put });
+  };
+  for (let i = 0, j = 0, index = head; i < n;) {
+    const step = steps(i, j), { ch, kind } = list[lo + i], best = cost[at(i, j)];
+    if (step.take === best) {
+      if (kind === 2) { change(index, 0, ch); back.push(lo + i); }
+      else index++;
+      i++; j++;
+    } else if (step.skip === best) {
+      if (kind === 1) change(index, 1, "");
+      if (kind < 2) index++;
+      i++;
+    } else j++;
   }
-  return out.reverse();
+  out.reverse();
+  // The merged text is read from the copy, the typists' part guessed where others took out what GitHub took out too: a
+  // change making a word neither the copy, GitHub nor the older version has (a word cut apart, two glued) is not made.
+  const runs = new Set(`${current} ${theirs} ${base}`.split(/\s+/));
+  if (out.reduce((text, change) => text.slice(0, change.start) + change.text + text.slice(change.end), current).split(/\s+/).some(run => !runs.has(run))) return ownWords();
+  if (!back.length) return { out };
+  // Each word of the older version with a character coming back, written again whole as GitHub's version has it, in its
+  // own place (as `apply` replaces a word), its own characters taken out: one way per word, the same in every tab.
+  const starts: number[] = [];
+  let offset = 0;
+  for (const part of splitWords(base)) { starts.push(offset); offset += part.length; }
+  const wordOf = (old: number) => { let low = 0, high = starts.length - 1; while (low < high) { const mid = (low + high + 1) >> 1; if (starts[mid] <= old) low = mid; else high = mid - 1; } return low; };
+  const words = new Set(back.map(index => wordOf(list[index].old))), updates: Uint8Array[] = [];
+  for (const word of words) {
+    const chars = list.filter(char => char.old >= 0 && char.new >= 0 && wordOf(char.old) === word), start = chars[0].new;
+    if (chars.at(-1)!.new - start + 1 !== chars.length) continue;
+    const client = hashClient(`back\n${edge.id}\n${chars[0].client}:${chars[0].clock}`);
+    updates.push(writeOn(Y, doc, edge.snapshot, client, source => apply(source, [{ start, end: start + chars.length, text: chars.map(char => char.ch).join("") }])).update);
+  }
+  return updates.length ? { out, back: Y.mergeUpdates(updates) } : { out };
 }

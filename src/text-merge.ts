@@ -78,7 +78,7 @@ export interface Merged {
 }
 
 /** Words, runs of white space and single other characters: where a clashing line is merged again. */
-const splitWords = (text: string) => text.match(/[\p{L}\p{N}_]+|\s+|[^\p{L}\p{N}_\s]/gu) ?? [];
+export const splitWords = (text: string) => text.match(/[\p{L}\p{N}_]+|\s+|[^\p{L}\p{N}_\s]/gu) ?? [];
 
 /** Each distinct part as a number, so the diff compares numbers. */
 function numbered(...sides: string[][]) {
@@ -180,9 +180,10 @@ export function wordChanges(from: string, to: string): TextChange[] {
   return slide(from, out);
 }
 
-/** How well a change's end sits between characters `left` and `right`: the edge of the text, a line, white space. */
+/** How well a change's end sits between characters `left` and `right`: a line, white space or a tag's edge. The text's
+ * own edges count as white space: src/live-versions.ts `wordRuns` diffs a run of the text cut at white space. */
 const fit = (left: string | undefined, right: string | undefined) =>
-  left === undefined || right === undefined ? 3 : left === "\n" || right === "\n" ? 2 : /\s/.test(left) || /\s/.test(right) ? 1 : 0;
+  left === "\n" || right === "\n" ? 2 : left === undefined || right === undefined || /\s/.test(left) || /\s/.test(right) || left === ">" || right === "<" ? 1 : 0;
 
 /**
  * `changes` (on `text`, in order) with each one that only takes out or only puts in moved sideways, as far as it makes
@@ -195,8 +196,11 @@ function slide(text: string, changes: TextChange[]) {
     if (change.start === change.end && change.text) {
       // Put in at `at`: moving one left takes the character before it to the front, when the text ends with it.
       let at = change.start, put = change.text;
+      const score = (where: number, text2: string) => fit(text[where - 1], text2[0]) + fit(text2[text2.length - 1], text[where]);
+      // Where it was found wins a tie: the diff's own choice among repeated words, as src/text-merge.ts merges them.
+      let best = { at, put, score: score(at, put) };
       while (at > low && text[at - 1] === put[put.length - 1]) { put = text[at - 1] + put.slice(0, -1); at--; }
-      let best = { at, put, score: fit(text[at - 1], put[0]) + fit(put[put.length - 1], text[at]) };
+      if (score(at, put) > best.score) best = { at, put, score: score(at, put) };
       while (at < high && text[at] === put[0]) {
         put = put.slice(1) + text[at]; at++;
         const score = fit(text[at - 1], put[0]) + fit(put[put.length - 1], text[at]);
@@ -206,8 +210,10 @@ function slide(text: string, changes: TextChange[]) {
     }
     if (change.start < change.end && !change.text) {
       let start = change.start, end = change.end;
+      const score = (from: number, to: number) => fit(text[from - 1], text[from]) + fit(text[to - 1], text[to]);
+      let best = { start, end, score: score(start, end) };
       while (start > low && text[start - 1] === text[end - 1]) { start--; end--; }
-      let best = { start, end, score: fit(text[start - 1], text[start]) + fit(text[end - 1], text[end]) };
+      if (score(start, end) > best.score) best = { start, end, score: score(start, end) };
       while (end < high && text[start] === text[end]) {
         start++; end++;
         const score = fit(text[start - 1], text[start]) + fit(text[end - 1], text[end]);

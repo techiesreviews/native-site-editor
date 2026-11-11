@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import * as Y from "yjs";
 import { birthUpdate, clashes, draftUpdate, edgeClient, edgeTo, edgeUpdate, edges, textAt } from "../src/live-versions.ts";
 import { mergeText } from "../src/text-merge.ts";
+import { diffRange } from "../src/draft-store.ts";
 import type { TextChange } from "../src/draft-store.ts";
 
 const V0 = "a".repeat(40), V1 = "b".repeat(40);
@@ -29,8 +30,25 @@ async function outside(doc: Y.Doc, text: string) {
   return edgeUpdate(Y, doc, from, V1, text, await edgeClient(V0, V1, from.snapshot))!;
 }
 const text = (doc: Y.Doc) => doc.getText("source").toString();
-const without = (from: string, changes: readonly TextChange[]) =>
-  changes.reduce((out, change) => out.slice(0, change.start) + change.text + out.slice(change.end), from);
+/** The clash rule for the tab typing under `own` (its typing: `typed`) once V1 came in, made under its client id: its
+ * own words that go taken out, GitHub's words it took out put back. */
+function settle(doc: Y.Doc, own: number, typed: Uint8Array) {
+  const all = edges(Y, doc), gone = Y.decodeUpdate(typed).ds;
+  const { out, back } = clashes(Y, doc, all, edgeTo(all, V1)!, client => client === own, (client, clock) => Y.isDeleted(gone, Y.createID(client, clock)));
+  // As src/live-text.ts: the words coming back first, then this tab's change, made as the difference still left.
+  const draft = out.reduce((from, change) => from.slice(0, change.start) + change.text + from.slice(change.end), text(doc));
+  if (back) Y.applyUpdate(doc, back);
+  const was = doc.clientID, source = doc.getText("source"), left = diffRange(text(doc), draft);
+  doc.clientID = own;
+  doc.transact(() => { source.delete(left.start, left.end - left.start); source.insert(left.start, left.text); });
+  doc.clientID = was;
+  return { out, back, settled: text(doc) };
+}
+/** Words in `text` that none of `from` has: two words glued together, or one cut apart. */
+const strange = (text: string, ...from: string[]) => {
+  const known = new Set(from.join(" ").match(/[\p{L}\p{N}_]+/gu));
+  return (text.match(/[\p{L}\p{N}_]+/gu) ?? []).filter(word => !known.has(word));
+};
 
 test("two tabs folding the same commit write the same bytes, whatever each typed meanwhile, and the words enter once", async () => {
   const base = "<h1>Fresh bread</h1>\n<p>Open Tuesday to Saturday.</p>\n";
@@ -67,16 +85,52 @@ test("the clash in the copy is mergeText's: GitHub's words show where both chang
   ];
   for (const { base, mine, theirs, clashed } of cases) {
     const doc = await copyOf(base), own = 7;
-    type(doc, base, mine, own);
+    const typed = type(doc, base, mine, own);
     Y.applyUpdate(doc, await outside(doc, theirs));
-    const all = edges(Y, doc), edge = edgeTo(all, V1)!;
     const merged = mergeText(base, mine, theirs);
     assert.equal(merged.clashed, clashed, base);
-    const out = clashes(Y, doc, all, edge, client => client === own);
+    const { out, settled } = settle(doc, own, typed);
     assert.equal(out.length > 0, clashed, base);
     // Taking out this tab's words the clash names leaves mergeText's text: the latest version, the rest merged.
-    assert.equal(without(text(doc), out), merged.text, base);
+    assert.equal(settled, merged.text, base);
   }
+});
+
+test("where both changed words right next to each other, no word is glued to another or lost (lead, 2026-11-11)", async () => {
+  const cases = [
+    // This tab took out the last word, GitHub put one in before it: "Saturdayrye" before.
+    { base: "<p>Open Tuesday to Saturday to</p>\n", mine: "<p>Open Tuesday to Saturday</p>\n", theirs: "<p>Open Tuesday to Saturday rye to</p>\n" },
+    // Each took out a word next to the other's: one of them lost before.
+    { base: "<p>rye to Saturday</p>\n", mine: "<p>rye to</p>\n", theirs: "<p>rye Saturday</p>\n" },
+    // GitHub replaced the word this tab took out, with the white space after it: "toto5" before.
+    { base: "<p>Saturday1 bread3 to5 daily</p>\n", mine: "<p>Saturday1 to5 daily</p>\n", theirs: "<p>Saturday1 to to5 daily</p>\n" },
+    // GitHub replaced a word this tab put another right after: "Saturdaydaily" before.
+    { base: "<p>to5 bread</p>\n", mine: "<p>to5 bread Saturday</p>\n", theirs: "<p>to5 daily</p>\n" },
+  ];
+  for (const { base, mine, theirs } of cases) {
+    const doc = await copyOf(base), own = 7;
+    const typed = type(doc, base, mine, own);
+    Y.applyUpdate(doc, await outside(doc, theirs));
+    const { settled } = settle(doc, own, typed);
+    assert.deepEqual(strange(settled, base, mine, theirs), [], settled);
+    assert.equal(settled, mergeText(base, mine, theirs).text);
+  }
+});
+
+test("two tabs putting back the same word write the same bytes, and it shows once", async () => {
+  const base = "<p>rye to Saturday</p>\n", mine = "<p>rye to</p>\n", theirs = "<p>rye Saturday</p>\n";
+  const anna = await copyOf(base), lex = await copyOf(base);
+  // Both tabs of one browser went in with the same draft: the same update, the same client id, both took the word out.
+  const typed = type(anna, base, mine, 7);
+  Y.applyUpdate(lex, typed);
+  for (const doc of [anna, lex]) Y.applyUpdate(doc, await outside(doc, theirs));
+  const gone = Y.decodeUpdate(typed).ds, took = (client: number, clock: number) => Y.isDeleted(gone, Y.createID(client, clock));
+  const [fromAnna, fromLex] = [anna, lex].map(doc => clashes(Y, doc, edges(Y, doc), edgeTo(edges(Y, doc), V1)!, client => client === 7, took).back!);
+  assert.ok(fromAnna.length > 0);
+  assert.deepEqual(fromAnna, fromLex);
+  for (const doc of [anna, lex]) { Y.applyUpdate(doc, fromAnna); Y.applyUpdate(doc, fromLex); }
+  assert.equal(text(anna), text(lex));
+  assert.equal(text(anna), theirs);
 });
 
 /** Seeded one-word changes (replaced, put in or taken out) on both sides of a short paragraph: each case's base, this
@@ -99,27 +153,36 @@ async function seeded(runs: number) {
     const base = `<p>${list.join(" ")}</p>\n`, mine = `<p>${change(list).join(" ")}</p>\n`, theirs = `<p>${change(list).join(" ")}</p>\n`;
     if (mine === base || theirs === base) continue;
     const doc = await copyOf(base), own = 7;
-    type(doc, base, mine, own);
+    const typed = type(doc, base, mine, own);
     Y.applyUpdate(doc, await outside(doc, theirs));
-    const all = edges(Y, doc), out = clashes(Y, doc, all, edgeTo(all, V1)!, client => client === own);
-    cases.push({ base, mine, theirs, out, settled: without(text(doc), out), merged: mergeText(base, mine, theirs) });
+    const { out, settled } = settle(doc, own, typed);
+    cases.push({ base, mine, theirs, out, settled, merged: mergeText(base, mine, theirs) });
   }
   return cases;
 }
 
-test("seeded: where mergeText sees no clash, the copy takes none of the typist's words out; where it does, mostly the same", async () => {
+test("seeded: where mergeText sees no clash, every word the typist put in stays", async () => {
   const cases = await seeded(300);
-  for (const { base, mine, theirs, out, merged } of cases) if (!merged.clashed) assert.deepEqual(out, [], JSON.stringify({ base, mine, theirs }));
-  const clashed = cases.filter(item => item.merged.clashed);
-  assert.ok(clashed.length > 20, `clashes seen: ${clashed.length}`);
-  assert.ok(clashed.filter(item => item.settled === item.merged.text).length >= 25);
+  assert.ok(cases.filter(item => item.merged.clashed).length > 20);
+  for (const { base, mine, theirs, settled, merged } of cases) {
+    if (merged.clashed) continue;
+    // Each word this tab put in still shows.
+    for (const word of strange(mine, base)) assert.ok(settled.includes(word), JSON.stringify({ base, mine, theirs, settled }));
+  }
 });
 
-// Open for the lead (am-59, 2026-11-11): in 35 of these 300 cases the copy's text differs from mergeText's, all where
-// both sides changed words right next to each other: the white space between them taken by one side ("Saturdayrye"),
-// a word both sides took out next to each other (mergeText shows GitHub's text, the copy loses the word), a repeated
-// word matched to another copy of it, or two words added at the same place kept both. Measured, not yet fixed.
-test("seeded: the copy's text once the clash rule ran is mergeText's in every case", { todo: "35 of 300 adjacent-word cases differ (see above)" }, async () => {
-  const differ = (await seeded(300)).filter(item => item.settled !== item.merged.text);
-  assert.deepEqual(differ.map(({ base, mine, theirs, settled, merged }) => ({ base, mine, theirs, settled, merged: merged.text })), []);
+/** Seeded cases whose copy, once the clash rule ran, is not mergeText's text, each with any glued or cut word. */
+async function differing(runs: number) {
+  return (await seeded(runs)).filter(item => item.settled !== item.merged.text)
+    .map(({ base, mine, theirs, settled, merged }) => ({ base, mine, theirs, settled, merged: merged.text, strange: strange(settled, base, mine, theirs) }));
+}
+
+// Lead, 2026-11-11: glued words ("Saturdayrye") and a lost word are data loss. Every case, both sides changing words
+// right next to each other included, ends as mergeText's text: every word whole, no one's words lost.
+test("seeded: the copy's text once the clash rule ran is mergeText's in every case", async () => {
+  assert.deepEqual(await differing(300), []);
+});
+
+test("seeded spot check: 1000 cases", { skip: !process.env.LIVE_FOLD_SPOT && "set LIVE_FOLD_SPOT=1" }, async () => {
+  assert.deepEqual(await differing(1000), []);
 });
