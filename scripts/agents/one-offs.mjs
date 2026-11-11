@@ -58,19 +58,29 @@ function hookProperty(rest) {
 const handTypedUnit = /\d(?:px|rem|em|ch|ex|vw|vh|vi|vb|vmin|vmax|cqi|cqb|ms|s)\b|\d%/i;
 
 /**
- * Every hand-typed value in one CSS file's text, with its 1-based line. Comments are blanked, lines kept. In a file on
- * the components layer (docs/wayfinder/atomic-catalogue/css-layers-plan.md), a component's own hook such as
+ * Every hand-typed value in one CSS file's text, with its 1-based line. Comments are blanked, lines kept. Inside a
+ * block on the components layer (docs/wayfinder/atomic-catalogue/css-layers-plan.md), a component's own hook such as
  * `--btn-padding-block` counts as the counted property its name ends in (`padding-block`); a hook that ends in none
  * (`--btn-font-weight`) counts as a local custom property only when it holds a hand-typed length, time or percentage.
  */
 export function oneOffs(text, { file = "" } = {}) {
   const code = text.replace(/\/\*[\s\S]*?\*\//g, comment => comment.replace(/[^\n]/g, " "));
-  const component = /@layer\s+components\s*\{/.test(code);
+  // The spans of `@layer components { … }` blocks: only a custom property inside one is a component's hook.
+  const blocks = [];
+  for (const start of code.matchAll(/@layer\s+components\s*\{/g)) {
+    let depth = 0, end = start.index + start[0].length - 1;
+    for (; end < code.length; end++) {
+      if (code[end] === "{") depth++;
+      else if (code[end] === "}" && --depth === 0) break;
+    }
+    blocks.push([start.index, end]);
+  }
+  const inComponent = at => blocks.some(([from, to]) => at > from && at < to);
   const found = [];
   // A whole property name: custom properties keep digits, capitals and underscores; others are case-insensitive.
   for (const match of code.matchAll(/(?<![\w-])(--[\w-]+|-?[a-zA-Z][\w-]*)\s*:\s*([^;{}]+)(?=;|\})/g)) {
     const [, name, value] = match;
-    const hook = component ? /^--[a-z][a-z0-9]*-([a-z][a-z-]*)$/.exec(name)?.[1] : undefined;
+    const hook = inComponent(match.index) ? /^--[a-z][a-z0-9]*-([a-z][a-z-]*)$/.exec(name)?.[1] : undefined;
     const counted = hook === undefined ? undefined : hookProperty(hook);
     const property = counted ?? (name.startsWith("--") ? name : name.toLowerCase());
     const add = kind => found.push({ kind, line: code.slice(0, match.index).split("\n").length, text: `${name}: ${value.trim().replace(/\s+/g, " ")}` });

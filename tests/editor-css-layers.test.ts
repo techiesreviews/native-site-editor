@@ -46,6 +46,11 @@ test("the Button's look comes from its --btn-* defaults, each one used", () => {
     assert.match(button, new RegExp(`--btn-${name}:`), `--btn-${name} has a default on .button`);
     assert.match(css, new RegExp(`var\\(--btn-${name}\\)`), `--btn-${name} is used`);
   }
+  // Disabled has hooks of its own: a screen that sets --btn-background never takes the plain disabled look away.
+  const disabled = block(button, button.indexOf("&:disabled {"));
+  assert.doesNotMatch(disabled, /--btn-[\w-]+\s*:/, "the disabled state sets no hook");
+  assert.match(disabled, /background: var\(--btn-disabled-background, var\(--surface-subtle\)\);/);
+  assert.match(disabled, /color: var\(--btn-disabled-text-color, var\(--muted\)\);/);
   // A tone changes only the custom properties, as the Framework's variants do.
   const secondary = block(css, css.indexOf(".secondary {"));
   assert.deepEqual([...secondary.matchAll(/([\w-]+)\s*:/g)].map((match) => match[1]).filter((name) => !name.startsWith("--btn-")), []);

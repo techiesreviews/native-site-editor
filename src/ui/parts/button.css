@@ -38,10 +38,12 @@
         background: var(--btn-hover-background);
       }
     }
-    /* Disabled is plain (the neutral surface, muted words), not a pale version of its tone. */
+    /* Disabled is plain (the neutral surface, muted words), not a pale version of its tone. It has hooks of its own,
+       so a screen that sets --btn-background never takes the plain look away (defaults given in place, as the
+       Framework's .btn does). */
     &:disabled {
-      --btn-background: var(--surface-subtle);
-      --btn-text-color: var(--muted);
+      background: var(--btn-disabled-background, var(--surface-subtle));
+      color: var(--btn-disabled-text-color, var(--muted));
       cursor: default;
     }
   }

@@ -4,13 +4,17 @@
 // agent to make in the code.
 import { diffHunks } from "../text-diff";
 
+const CLOSER: Record<string, string> = { "{": "}", "(": ")", "[": "]" };
+
 /**
- * What is wrong with the edited text, or "" when nothing is: a brace that does not pair up, a quote, comment or
- * `url(` never closed, each of which drops the rules after it. The live cell keeps the last text with none. Braces
- * are read as the browser reads them: one escaped, quoted, in a comment or in an unquoted `url(…)` is text.
+ * What is wrong with the edited text, or "" when nothing is: a brace that does not pair up, a bracket, quote, comment
+ * or `url(` never closed, each of which drops the rules after it. The live cell keeps the last text with none. Read
+ * as the browser reads it: an escaped, quoted or commented character, or one in an unquoted `url(…)`, is text, and an
+ * open `(` or `[` takes in the braces after it.
  */
 export function cssProblem(css: string): string {
-  let depth = 0, quote = "";
+  const open: string[] = [];
+  let quote = "";
   for (let i = 0; i < css.length; i++) {
     const char = css[i];
     if (quote) {
@@ -30,11 +34,13 @@ export function cssProblem(css: string): string {
       if (end < 0) return "A comment is never closed";
       i = end + 1;
     } else if (char === "\"" || char === "'") quote = char;
-    else if (char === "{") depth++;
-    else if (char === "}" && --depth < 0) return "A } closes a rule that was never opened";
+    else if (char in CLOSER) open.push(char);
+    else if (char === "}" && !open.length) return "A } closes a rule that was never opened";
+    // A closer pairs with its own opener; any other is text inside the bracket still open.
+    else if ((char === "}" || char === ")" || char === "]") && CLOSER[open.at(-1) ?? ""] === char) open.pop();
   }
   if (quote) return "A quote is never closed";
-  return depth > 0 ? "A { is never closed" : "";
+  return open.length ? `A ${open[0]} is never closed` : "";
 }
 
 /** The plain-text change request "Send to agent" copies; "" when the file is unchanged. */

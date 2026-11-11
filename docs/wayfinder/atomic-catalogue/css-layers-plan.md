@@ -30,8 +30,9 @@ Rules that matter for every slice:
   leave it out.
 - **One component, one file, one block.** `src/ui/parts/<name>.css` holds the order line, then one
   `@layer components { … }` with native nesting: the root rule sets the `--<name>-*` defaults and uses them; a tone or
-  size changes only those properties; hover sits behind `@media (hover: hover) and (pointer: fine)`, touch gets
-  `:active`. The Framework's `.btn` is the shape to follow.
+  size changes only those properties; a state's look (disabled) has hooks of its own, so a screen that sets a hook
+  never takes it away; hover sits behind `@media (hover: hover) and (pointer: fine)`, touch gets `:active`. The
+  Framework's `.btn` is the shape to follow.
 - **The look stays the same.** Each slice moves rules without changing what anyone sees: `kit shots --compare dev`
   must come back pixel-identical, and the boot budget (355 KB, Lex's decision B) holds by removing at least as much
   as the slice adds.
@@ -53,7 +54,7 @@ Rules that matter for every slice:
 | `src/style.css`: `button`, `select`, `a` base | `elements`: done in the pilot |
 | `src/style.css`: `select` box, focus rings | `elements` (slice 5) |
 | `src/utilities.css`: the reset (`*` box sizing, `body`, headings) | `elements` (slice 5) |
-| `src/utilities.css`: the old site foundation (`.section`, `.container`, `.image`, `.content`) | removed where unused, else editor (slice 5) |
+| `src/utilities.css`: the old site foundation (`.section`, `.container`, `.image`, `.content`) and its examples | removed in the pilot: nothing in the editor or on the board used them |
 | `src/style.css` and `src/theme.css`: `.button`, `.primary`, `.secondary`; `src/utilities.css` `.button` | `src/ui/parts/button.css`: done in the pilot |
 | `src/style.css`: `.icon-button`, `.text-button`, `.text-link` | `src/ui/parts/icon-button.css`, `text-button.css` (slice 2) |
 | `src/ui/parts/badge.css`, `key.css`, `spinner.css`, `progress.css`, `section-heading.css`; `src/ui/inline-field.css` | the same files on `components`, each with `--<name>-*` defaults (slice 3) |
@@ -70,12 +71,14 @@ Rules that matter for every slice:
    `--btn-padding-block`, `--btn-padding-inline`, `--btn-background`, `--btn-hover-background`, `--btn-text-color`,
    `--btn-font-size` and `--btn-font-weight`; the board's CSS section for it; the one-off count reading hooks.
 2. **Icon button and text button.** `.icon-button`, `.text-button` and `.text-link` out of `src/style.css` into
-   their own files, as board parts with their CSS shown.
+   their own files, as board parts with their CSS shown. The Button learns `aria-disabled="true"` (today only
+   `:disabled`), and the two screen copies of its plain look go: `src/page-builder/media-picker.css` and the board's
+   `.cat-tweak__actions .button[aria-disabled="true"]`.
 3. **The atoms that already have a file.** Badge, Keyboard key, Spinner, Progress bar, Section heading and Inline
    field onto `components`, their fixed values turned into `--<name>-*` defaults; the board shows each file.
 4. **Tokens.** `src/theme.css` (and the generator's output) on `@layer tokens`.
-5. **Elements and the old foundation.** The rest of the bare element rules onto `elements`; `src/utilities.css`
-   folded in or removed.
+5. **Elements.** The rest of the bare element rules onto `elements`; what is left of `src/utilities.css` (the
+   reset) folded in.
 6. **Molecules.** Row menu, dropdown, flyout, sharing row and confirm dialog as component files.
 7. **Screen layout.** `src/style.css` split by screen into unlayered editor files; it keeps only the order line
    and its imports. Waits for the top bar work (ticket 66 and the phone layout) to land.
