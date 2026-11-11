@@ -1273,12 +1273,16 @@ test("a joiner's unsaved changes in two places go in word by word: what someone 
 test("a page whose room never answers counts as shared only for the catch-up wait, so outside changes fold in again", () => {
   const time = fakeTimers(), store = createDraftStore();
   store.open(scope, path, { text: base, baseSha: sha });
+  let room: LiveRoomOptions | undefined;
   const stop = startLiveText({ store, openFile: signal<string | undefined>(path), scope: () => scope, on: true, clock: time.clock, keeper: keeper(),
-    openRoom: () => ({ send: async () => false, close: () => undefined }), loadYjs: () => import("yjs") });
+    openRoom: options => { room = options; return { send: async () => false, close: () => undefined }; }, loadYjs: () => import("yjs") });
   const key = draftKey(scope, path);
   assert.equal(liveShared(store, key), true, "the room has not said who is here yet");
   time.advance(LIVE_TEXT_CATCH_UP_MS);
   assert.equal(liveShared(store, key), false, "no answer: not shared");
+  // A slow room that answers later, with someone else in it: shared again.
+  room!.onMembers?.(new Map([["2", "editor"]]));
+  assert.equal(liveShared(store, key), true, "someone else is here after all");
   stop();
 });
 

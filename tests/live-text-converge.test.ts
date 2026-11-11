@@ -1,7 +1,11 @@
 // Typing together, played at random (sweep 2026-11-10 item 1): several tabs and agents share one file
 // (src/live-text.ts) and join, type, leave, reload, save, drop their connection and fold in outside changes in an
-// order a seed picks. Every run must end with every open tab on one text, where no word is doubled and none
-// that was typed (and not deleted since) is lost. A failing run names its seed:
+// order a seed picks. Every run must end with the open tabs of each file version on one text, where no word is doubled
+// and none that was typed (and not deleted since) is lost: not on any tab, nor from the GitHub text a tab started from.
+// Copies of two file versions never mix (src/live-text.ts, frames): a tab that loads the branch again after a save keeps
+// its draft over the older version, and a tab opening the page later starts from the newer one, so they stay apart until
+// the draft is kept over the newer version. Bringing them together is a ticket of its own (am-59, folding into a live
+// room); here tabs are compared per version. A failing run names its seed:
 // `LIVE_SEED=<seed> npx tsx --test tests/live-text-converge.test.ts` plays only that one, step by step in the message;
 // `LIVE_SEEDS` and `LIVE_STEPS` play more or longer runs, `LIVE_SKIP=save,outside` leaves steps out.
 //
@@ -234,14 +238,19 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
   const away = (tab: Tab) => { tab.openFile.value = "about.html"; say(`${tab.name} opens another page`); };
   const back = (tab: Tab) => { tab.openFile.value = path; say(`${tab.name} comes back to the page`); };
   /** A commit on the branch (this tab's save, or one made outside): every other open tab hears of it. A tab sharing the
-   * page live loads the branch again, keeping its draft (src/outside-merge.ts `foldIn` refuses the fold); a tab that is
-   * not folds it into its draft. */
+   * page live loads the branch again (src/outside-merge.ts `foldIn` refuses the fold): the open file opens again, its draft
+   * kept over the version it started from (src/workspace-boot.ts `loadSnapshot`). A tab that is not folds it into its draft. */
   const commit = (next: Github, by?: Tab) => {
     const was = github;
     github = next;
     for (const tab of open()) {
       if (tab === by || tab.openFile.peek() !== path) continue;
-      if (liveShared(tab.store, tab.file.key)) continue;
+      if (liveShared(tab.store, tab.file.key)) {
+        tab.openFile.value = undefined;
+        tab.openFile.value = path;
+        say(`  ${tab.name} loads the branch again`);
+        continue;
+      }
       if (tab.file.baseSha !== was.sha) continue;
       // A fold may drop a word on a clash (the latest version shows): no word typed is expected to survive one.
       const before = new Set(tab.text.match(WORD) ?? []);
@@ -316,7 +325,7 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
     // The file version each tab's copy is on: a copy keeps the version it started from, even once its tab saved (a known
     // limit, src/live-text.ts `load`), and copies of two versions never mix by design. Tabs are compared per version.
     const version = (tab: Tab) => room.members.find(member => member === tab.socket?.me)?.tag ?? tab.file.baseSha!;
-    return { log, tabs: open().map(tab => ({ name: tab.name, text: tab.text, version: version(tab) })), typed, gone, github };
+    return { log, tabs: open().map(tab => ({ name: tab.name, text: tab.text, base: tab.file.base, version: version(tab) })), typed, gone, github };
   } finally {
     for (const tab of open()) tab.stop();
     Reflect.deleteProperty(subtle, "digest");
@@ -337,10 +346,14 @@ function fault(end: Awaited<ReturnType<typeof play>>) {
     if (doubled.length) return `doubled at ${name}: ${doubled.join(" ")} in ${JSON.stringify(text)}`;
     if ((text.match(/[«»]/g) ?? []).length !== 2 * [...counts.values()].reduce((sum, count) => sum + count, 0)) return `a word cut apart at ${name}: ${JSON.stringify(text)}`;
   }
-  // Words typed (by a tab or an agent) and never deleted: each is on some tab. An outside commit's word may wait for a
-  // tab that shares the page live, which loads the branch again rather than folding it in.
+  // Words typed (by a tab or an agent) and never deleted: each is on some tab. An outside commit's word is on every tab whose
+  // GitHub text holds it (one that loaded the branch again keeps its draft over the older version, without it).
   const lost = [...end.typed.keys()].filter(made => !end.gone.has(made) && !seen.has(made) && end.typed.get(made) !== "github");
   if (lost.length) return `lost: ${lost.map(made => `${made} (${end.typed.get(made)})`).join(" ")} in ${JSON.stringify(end.tabs.map(tab => tab.text))}`;
+  for (const { name, text, base } of end.tabs) {
+    const dropped = (base.match(WORD) ?? []).filter(made => !end.gone.has(made) && !text.includes(made));
+    if (dropped.length) return `lost at ${name}: ${dropped.join(" ")} of its GitHub text, in ${JSON.stringify(text)}`;
+  }
   return undefined;
 }
 
@@ -350,7 +363,7 @@ const FOUND = [819, 1370, 1722];
 /** Steps left out of every run (`LIVE_SKIP=save,outside`), to narrow down what a failing seed needs. */
 const SKIP = new Set((process.env.LIVE_SKIP ?? "").split(",").filter(Boolean));
 
-test("typing together, in seeded random order: every run ends with all tabs on one text, nothing doubled or lost", async () => {
+test("typing together, in seeded random order: every run ends with the tabs of each file version on one text, nothing doubled or lost", async () => {
   const only = process.env.LIVE_SEED === undefined ? undefined : Number(process.env.LIVE_SEED);
   const seeds = only === undefined ? [...Array.from({ length: SEEDS }, (_, index) => index + 1), ...FOUND.filter(seed => seed > SEEDS)] : [only];
   const failed: string[] = [];
