@@ -125,8 +125,102 @@ function mergeParts(baseParts: string[], ourParts: string[], theirParts: string[
 /** The changes that turn `from` into `to` by runs of white space and runs of anything else, in order: the runs both
  * have stay out of every change, so a word is changed whole or not at all. */
 export function runChanges(from: string, to: string): TextChange[] {
-  const runs = (text: string) => text.match(/\s+|\S+/g) ?? [];
-  const a = runs(from), b = runs(to), [x, y] = numbered(a, b);
+  return partChanges(from, to, text => text.match(/\s+|\S+/g) ?? []);
+}
+
+/**
+ * The changes that turn `from` into `to` by words, runs of white space and single other characters, in order. Parts
+ * found once in each text are kept first, as a patience diff keeps them (the longest run of them in the same order),
+ * and the parts between are compared again the same way, then by Myers' shortest script; so a word both texts have
+ * once stays out of every change rather than being taken out in one place and put in again in another, which spaces
+ * and brackets, found everywhere, would otherwise make look as short.
+ */
+export function wordChanges(from: string, to: string): TextChange[] {
+  const a = splitWords(from), b = splitWords(to), [x, y] = numbered(a, b), pairs: [number, number][] = [];
+  const walk = (aLo: number, aHi: number, bLo: number, bHi: number) => {
+    while (aLo < aHi && bLo < bHi && x[aLo] === y[bLo]) pairs.push([aLo++, bLo++]);
+    const tail: [number, number][] = [];
+    while (aLo < aHi && bLo < bHi && x[aHi - 1] === y[bHi - 1]) tail.unshift([--aHi, --bHi]);
+    const count = (ids: readonly number[], lo: number, hi: number) => {
+      const seen = new Map<number, number>();
+      for (let at = lo; at < hi; at++) seen.set(ids[at], seen.has(ids[at]) ? -1 : at);
+      return seen;
+    };
+    const inA = count(x, aLo, aHi), inB = count(y, bLo, bHi), common: [number, number][] = [];
+    for (const [id, at] of inA) { const there = inB.get(id); if (at >= 0 && there !== undefined && there >= 0) common.push([at, there]); }
+    common.sort((p, q) => p[0] - q[0]);
+    // The longest run of them in the same order in both (patience sorting).
+    const piles: number[] = [], back: number[] = [];
+    common.forEach(([, j], index) => {
+      let lo = 0, hi = piles.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (common[piles[mid]][1] < j) lo = mid + 1; else hi = mid; }
+      back[index] = lo ? piles[lo - 1] : -1;
+      piles[lo] = index;
+    });
+    const anchors: [number, number][] = [];
+    for (let index = piles.length ? piles[piles.length - 1] : -1; index >= 0; index = back[index]) anchors.unshift(common[index]);
+    if (!anchors.length) {
+      for (const [i, j] of matchLines(x.slice(aLo, aHi), y.slice(bLo, bHi))) pairs.push([aLo + i, bLo + j]);
+    } else {
+      let i = aLo, j = bLo;
+      for (const [ai, bj] of anchors) { walk(i, ai, j, bj); pairs.push([ai, bj]); i = ai + 1; j = bj + 1; }
+      walk(i, aHi, j, bHi);
+    }
+    pairs.push(...tail);
+  };
+  walk(0, a.length, 0, b.length);
+  const offsets = [0];
+  for (const part of a) offsets.push(offsets.at(-1)! + part.length);
+  const out: TextChange[] = [];
+  let i = 0, j = 0;
+  for (const [ai, bj] of [...pairs, [a.length, b.length] as [number, number]]) {
+    if (ai > i || bj > j) out.push({ start: offsets[i], end: offsets[ai], text: b.slice(j, bj).join("") });
+    i = ai + 1; j = bj + 1;
+  }
+  return slide(from, out);
+}
+
+/** How well a change's end sits between characters `left` and `right`: the edge of the text, a line, white space. */
+const fit = (left: string | undefined, right: string | undefined) =>
+  left === undefined || right === undefined ? 3 : left === "\n" || right === "\n" ? 2 : /\s/.test(left) || /\s/.test(right) ? 1 : 0;
+
+/**
+ * `changes` (on `text`, in order) with each one that only takes out or only puts in moved sideways, as far as it makes
+ * the same text, to where its ends sit best (`fit`): taking out "«12» " rather than "12» «", so the parts a change
+ * leaves are whole words, as a person would have typed them (as diff-match-patch's lossless clean-up moves its edits).
+ */
+function slide(text: string, changes: TextChange[]) {
+  return changes.map((change, index) => {
+    const low = index ? changes[index - 1].end : 0, high = index + 1 < changes.length ? changes[index + 1].start : text.length;
+    if (change.start === change.end && change.text) {
+      // Put in at `at`: moving one left takes the character before it to the front, when the text ends with it.
+      let at = change.start, put = change.text;
+      while (at > low && text[at - 1] === put[put.length - 1]) { put = text[at - 1] + put.slice(0, -1); at--; }
+      let best = { at, put, score: fit(text[at - 1], put[0]) + fit(put[put.length - 1], text[at]) };
+      while (at < high && text[at] === put[0]) {
+        put = put.slice(1) + text[at]; at++;
+        const score = fit(text[at - 1], put[0]) + fit(put[put.length - 1], text[at]);
+        if (score > best.score) best = { at, put, score };
+      }
+      return { start: best.at, end: best.at, text: best.put };
+    }
+    if (change.start < change.end && !change.text) {
+      let start = change.start, end = change.end;
+      while (start > low && text[start - 1] === text[end - 1]) { start--; end--; }
+      let best = { start, end, score: fit(text[start - 1], text[start]) + fit(text[end - 1], text[end]) };
+      while (end < high && text[start] === text[end]) {
+        start++; end++;
+        const score = fit(text[start - 1], text[start]) + fit(text[end - 1], text[end]);
+        if (score > best.score) best = { start, end, score };
+      }
+      return { start: best.start, end: best.end, text: "" };
+    }
+    return change;
+  });
+}
+
+function partChanges(from: string, to: string, split: (text: string) => string[]): TextChange[] {
+  const a = split(from), b = split(to), [x, y] = numbered(a, b);
   const offsets = [0];
   for (const part of a) offsets.push(offsets.at(-1)! + part.length);
   return hunks(x, y, b).map(hunk => ({ start: offsets[hunk.start], end: offsets[hunk.end], text: hunk.lines.join("") }));
