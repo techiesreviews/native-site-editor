@@ -95,11 +95,13 @@ test.describe("phone", () => {
     await sheet(page).getByRole("button", { name: "Mobile", exact: true }).tap();
     await expect(page.locator('.canvas-device[data-device="mobile"]')).toHaveAttribute("aria-pressed", "true");
 
-    // Add a block shows the blocks; Back returns to the list.
+    // Add a block shows the blocks; Back (here by keyboard) returns to the list with focus on Add a block.
     await row(page, "Add a block").tap();
     await expect(sheet(page).getByRole("button", { name: "Heading", exact: true })).toBeVisible();
-    await sheet(page).getByRole("button", { name: "Back", exact: true }).tap();
+    await expect(sheet(page).getByRole("button", { name: "Back", exact: true })).toBeFocused();
+    await page.keyboard.press("Enter");
     await expect(row(page, "Pages")).toBeVisible();
+    await expect(row(page, "Add a block")).toBeFocused();
 
     // Pages: the sheet goes and the Pages panel opens under the bar.
     await row(page, "Pages").tap();

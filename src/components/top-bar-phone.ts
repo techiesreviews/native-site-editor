@@ -193,7 +193,11 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
       button.type = "button";
       button.setAttribute("aria-label", "Back");
       button.append(icon("arrow-left", 20));
-      button.addEventListener("click", () => draw("root"));
+      button.addEventListener("click", () => {
+        draw("root");
+        // Back where the keyboard came from, not lost with the redrawn list.
+        body.querySelector<HTMLElement>('[data-row="blocks"]')?.focus();
+      });
       head.append(button);
     }
     head.append(node("span", "", text));
@@ -228,7 +232,9 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
     const list = node("div", "top-bar-menu__rows");
     for (const row of shown) {
       if (row === "settings") list.append(node("hr", "top-bar-menu__separator"));
-      list.append(rows[row]());
+      const drawn = rows[row]();
+      drawn.dataset.row = row;
+      list.append(drawn);
     }
     const page = find("#current-page")?.textContent ?? "";
     const head = title(siteName() ?? "Menu", false);
