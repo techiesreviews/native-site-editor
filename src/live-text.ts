@@ -387,6 +387,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   live.set(start.key, share);
   const foldsReady = () => { for (const attempt of waitingFolds.splice(0)) if (!attempt()) waitingFolds.push(attempt); };
   const stopSaves = onLiveSave(store, start.key, text => copy?.noteSave(text));
+  /** This tab's saves made while its copy was not taking part, by blob sha: their text is the draft's, not GitHub's change. */
+  const ownSaves = new Map<string, string>();
   /** Others here, as the room's presence says; this tab's own caret (offsets in its text) and whoever draws carets. */
   let peers: ReadonlyMap<string, LivePeer> = new Map(), selection: (() => CaretSelection | undefined) | undefined;
   const caretWatchers = new Set<() => void>();
@@ -394,7 +396,13 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   // Discard is this tab's own, from the moment it shares the file (alone, loading Yjs, or with a copy): it leaves the
   // shared copy rather than taking everyone's changes away, and drops its kept copy so nothing brings them back.
   const unwatch = store.subscribe(event => {
-    if (event.type === "file" && event.key === start.key && event.change === "saved") { copy?.saved(); return; }
+    if (event.type === "file" && event.key === start.key && event.change === "saved") {
+      // Saved before the copy took part (it is starting): the copy notes it once it does.
+      const file = store.get(scope, path);
+      if (!copy?.ready() && file?.baseSha) ownSaves.set(file.baseSha, file.base);
+      copy?.saved();
+      return;
+    }
     if (event.type !== "text" || event.key !== start.key || event.origin !== "discard" || discarded) return;
     discarded = true;
     keeper.write(start.key, undefined);
@@ -412,7 +420,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       heard = true;
       clock.clearTimeout(unheard);
       editors = [...members.values()].filter(access => access === "editor").length;
-      if (!editors) { aloneOnce = true; void copy?.startOwn(); }
+      // Alone with a copy kept from before, it runs that copy still, so a save or a commit is noted in it as with others.
+      if (!editors) { aloneOnce = true; if (copy) void copy.startOwn(); else if (!loading) void load(true); }
       else if (!copy && !loading) void load();
       foldsReady();
     },
@@ -421,17 +430,20 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     onPushed: commit => ports.onPushed?.(scope, commit),
   });
 
-  async function load() {
+  /** Loads Yjs and makes the copy; `keptOnly`: only to resume a copy kept from before (alone in the room). */
+  async function load(keptOnly = false) {
     loading = true;
     try {
-      const Y = await (ports.loadYjs ?? (() => import("yjs")))();
       const kept = await keeper.read(start.key);
+      if (stopped || discarded || (keptOnly && (!kept || kept.base === undefined || editors))) return;
+      const Y = await (ports.loadYjs ?? (() => import("yjs")))();
       if (stopped || discarded) return;
       // A copy this tab shared before: kept unless the draft went back to GitHub's text since (discarded, or saved over),
       // or the room agreed on another copy meanwhile.
       const now = store.get(scope, path), own = now?.text, wanted = preferred.get(start.key);
       const resume = kept && kept.base !== undefined && now && (!wanted || sameTag(wanted, kept.tag)) ? kept : undefined;
-      if (kept && !resume) keeper.write(start.key, undefined);
+      if (kept && !resume) { (globalThis as any).__LT_DEBUG?.log(`KEPTDROP@${(store as any).__name}`); keeper.write(start.key, undefined); }
+      if (resume) (globalThis as any).__LT_DEBUG?.log(`RESUME@${(store as any).__name}`);
       try { copy = makeCopy(Y, resume); }
       catch (error) {
         // A kept state Yjs cannot apply (damaged, from another Yjs version, or from before copies held their versions):
@@ -445,7 +457,12 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       // With others here, it asks first: a copy of the room catches it up, or (none having one yet) one tab starts it (`receive`).
       if (!editors) await copy.startOwn(); else copy.hello();
     } catch { /* Yjs did not load, or starting the copy failed: this tab keeps its own draft, as before, until the room changes again. */ }
-    finally { loading = false; }
+    finally {
+      loading = false;
+      // Others came meanwhile: they are joined now. Commits that waited for this copy fold now (or into the draft).
+      if (!copy && editors && !stopped) void load();
+      foldsReady();
+    }
   }
 
   function makeCopy(Y: Yjs, resume: KeptCopy | undefined) {
@@ -454,7 +471,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     const text = doc.getText("source"), meta = metaOf(doc);
     /** The room copy this one is: from a kept copy, the first answer to this tab's request, or its own birth. */
     let copyId: Uint8Array | undefined;
-    let synced = false, starting = false, waiting: unknown, keeping: unknown;
+    let synced = false, starting = false, waiting: unknown, keeping: unknown, resumed = false;
     /** After a new room key or a reconnect: frames may have been lost, so a commit waits until a catch-up answer came. */
     let catching = false, caught: unknown;
     /** Whether the text changed in the update being applied (`receive`); set by the text's observer. */
@@ -509,6 +526,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
      * Yjs ever give this doc a new client id (it does on a clash, very rarely), carets must keep naming this one. */
     const me = doc.clientID;
     ownClients.add(me);
+    const DBG = (globalThis as any).__LT_DEBUG as undefined | { label(c: number, l: string): void; docs: Map<object, Doc> };
+    DBG?.docs.set(store, doc); DBG?.label(me, `me@${(store as any).__name ?? "?"}`);
     /** Agents whose text this tab wrote, by connection and name: the client id their changes carry, a Yjs id of their own
      * made here (random, as Yjs makes its own, and never one this copy has seen), and where their latest change ended. */
     const agents = new Map<string, { author: number; name: string; who: LiveAuthor; at?: import("yjs").RelativePosition }>();
@@ -671,6 +690,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         if (stopped) return;
         const update = edgeUpdate(Y, doc, join.from, join.to, join.text, client);
         if (!update) return;
+        (globalThis as any).__LT_DEBUG?.log(`join@${(store as any).__name} ${join.from.to.slice(0,7)}->${join.to.slice(0,7)} client=${client}`);
         Y.applyUpdate(doc, update, OUTSIDE);
         settle();
       }
@@ -699,6 +719,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       // The snapshot its client id was derived from: another tab deriving the same id writes the very same items.
       const update = edgeUpdate(Y, doc, at, to, toText, client);
       if (!update) return false;
+      (globalThis as any).__LT_DEBUG?.log(`edge@${(store as any).__name} ${from.slice(0,7)}->${to.slice(0,7)} client=${client} on ${at.id}`);
       Y.applyUpdate(doc, update, OUTSIDE);
       return true;
     }
@@ -722,7 +743,14 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         const all = versions(), held = versionsOf(all), head = headOf(all);
         if (!head) return undefined;
         // This tab's version is the copy's text exactly (its own save, noted before it could take part): the copy holds it.
-        if (!held.has(base) && file.baseSha && text.toString() === file.base) { noteCopy(head, base); continue; }
+        // Only when it is still the branch's newest: noted now, it comes after every version the copy holds.
+        if (!held.has(base) && file.baseSha && text.toString() === file.base && !checked.has(base)) {
+          checked.add(base);
+          const latest = await shown?.newest?.().catch(() => undefined);
+          if (stopped) return undefined;
+          if (!latest || latest.sha === base) noteCopy(head, base);
+          continue;
+        }
         if (shown && !held.has(shown.sha) && !checked.has(shown.sha)) {
           checked.add(shown.sha);
           const asked = heardCount;
@@ -786,14 +814,26 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           doc.transact(() => { meta.set(`born:${me}`, clock.now()); }, OUTSIDE);
         }
         // The text the draft is over before its base moves to the copy's: a resumed draft's typing since is read against it.
-        const draftOver = store.get(scope, path)?.base;
+        let draftOver = store.get(scope, path)?.base;
+        // Resumed, and saved while the copy was starting: the typing since goes in first (the saved text is the draft's own),
+        // then the copy, holding that text, is noted as the save, so its words do not come in again as GitHub's change.
+        const savedNow = store.get(scope, path);
+        if (resume && resume.base && savedNow?.baseSha && ownSaves.get(savedNow.baseSha) === savedNow.base && !versionsOf(versions()).has(savedNow.baseSha)) {
+          const keptOver = textAt(Y, doc, versions(), resume.base);
+          if (keptOver !== undefined && versionsOf(versions()).has(resume.base)) {
+            resumeDraft(resume, keptOver);
+            resumed = true;
+            draftOver = savedNow.base;
+            if (text.toString() === savedNow.base) noteCopy(resume.base, savedNow.baseSha);
+          }
+        }
         // A save or a commit can move the draft's version while it goes in: the versions are brought together again.
         versions: for (let round = 0; round < 5; round++) {
           const at = await bringBase();
           if (!at || stopped) return;
           keptBase = at.base;
           // Resumed from its own kept copy: what the draft took on after the copy was kept goes in, unless the copy has it now.
-          if (resume) { resumeDraft(resume, draftOver ?? at.text); synced = true; break; }
+          if (resume) { if (!resumed) resumeDraft(resume, draftOver ?? at.text); synced = true; break; }
           for (;;) {
             const own = store.text(scope, path), base = store.get(scope, path)?.base;
             const adds = (now: string | undefined) => now !== undefined && now !== base && (!caught || now !== text.toString());
@@ -805,7 +845,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
             // Typed meanwhile, or the room's copy caught up with it: decide again on the text as it is now.
             if (store.text(scope, path) !== own || adds(own) !== (client !== undefined)) continue;
             if (store.get(scope, path)?.base !== at.text) continue versions;
-            if (client !== undefined) { Y.applyUpdate(doc, draftUpdate(Y, doc, edge, at.text, own!, client), START); startClient = client; ownClients.add(client); }
+            if (client !== undefined) { Y.applyUpdate(doc, draftUpdate(Y, doc, edge, at.text, own!, client), START); startClient = client; ownClients.add(client); DBG?.label(client, `runs@${(store as any).__name ?? "?"} caught=${caught} base=${at.base.slice(0,7)}`); }
             synced = true;
             break versions;
           }
@@ -874,7 +914,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       merged.getText("source").observe(event => { lands = deltaChanges(event.delta as { retain?: number; insert?: unknown; delete?: number }[]); });
       Y.applyUpdate(merged, typed);
       merged.destroy();
-      if (lands.length) doc.transact(() => { applyText(lands.reverse()); }, START);
+      if (lands.length) { (globalThis as any).__LT_DEBUG?.log(`resume lands@${(store as any).__name}: ${JSON.stringify(lands)}`); doc.transact(() => { applyText(lands.reverse()); }, START); }
     }
 
     /**
@@ -893,11 +933,18 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       folding = run.catch(() => undefined);
       return run;
     }
-    async function foldOne(next: LiveCommit, heardAt: number) {
-      const file = store.get(scope, path);
-      if (!file || !copyId) return false;
+    async function foldOne(heard: LiveCommit, heardAt: number) {
+      if (!copyId) return false;
       // Heard before this tab found its own version to be the newest: that version came after it.
       if (heardAt <= newestAfter) return true;
+      // Only the branch's newest version, read now, enters the copy as an outside change: every version the copy holds
+      // was the newest when it entered, so each comes after those before it, as on GitHub, whichever order tabs heard
+      // them in. A commit heard before a newer one landed is passed over for the newer one.
+      const latest = await ports.github?.(scope, path)?.newest?.().catch(() => undefined);
+      if (stopped) return false;
+      const next: LiveCommit = latest && latest.sha !== heard.sha ? latest : heard;
+      const file = store.get(scope, path);
+      if (!file) return false;
       const base = await versionOf(file.baseSha, file.base), noted = savedKey(next.text);
       if (stopped) return false;
       if (next.author) doc.transact(() => { if (meta.get(`n:${next.sha}`) !== next.author) meta.set(`n:${next.sha}`, next.author!); }, META);
@@ -1099,8 +1146,10 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     function meet(other: Uint8Array, born: number) {
       if (!copyId) return;
       const mine = bornAt(), lower = [...other].findIndex((byte, index) => byte !== copyId![index]);
-      const theirsWin = born < mine || (born === mine && lower >= 0 && other[lower] < copyId[lower]);
+      void born; void mine;
+      const theirsWin = lower >= 0 && other[lower] < copyId[lower];
       if (theirsWin) {
+        (globalThis as any).__LT_DEBUG?.log(`MEETLOSS@${(store as any).__name} synced=${synced}`);
         preferred.set(start.key, Uint8Array.from(other));
         leaving = true;
         keeper.write(start.key, undefined);

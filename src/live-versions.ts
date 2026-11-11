@@ -22,7 +22,7 @@
 // Loaded with src/live-text.ts, never at boot.
 
 import { diffRange, type TextChange } from "./draft-store";
-import { mergeText, runChanges } from "./text-merge";
+import { mergeText, runChanges, wordChanges } from "./text-merge";
 
 type Yjs = typeof import("yjs");
 type Doc = import("yjs").Doc;
@@ -54,24 +54,23 @@ const clientKey = (client: number) => client.toString(16).padStart(8, "0");
 
 /**
  * `change` on `text` as whole words, from the end of the text back: widened to the white space around it, then split
- * where it keeps runs of the text, so the words it kept are not written again. A word kept with text put right
- * against it stays as it is too (only what was put against it is written), so a word of GitHub's that someone typed up
- * against is not written again by every tab that has it so. Written into a shared copy, a single
- * range would take others' words in it away and type its own again (sweep 2026-11-10 item 1).
+ * where it keeps runs of the text (words between white space), so the words it kept are not written again. Inside a run
+ * it changes, only the parts (words, white space, single other characters) it changes are written, as long as nothing
+ * goes in strictly inside a word: white space taken out between two words, or a word taken out of `<p>…</p>`, writes
+ * nothing again, and a word put right against another leaves that one as it is. Written into a shared copy, a part
+ * taken out and put in again by two tabs at once would show twice, and a single range would take others' words in it
+ * away and type its own again (sweep 2026-11-10 item 1).
  */
 export function wordRuns(text: string, change: TextChange): TextChange[] {
   let begin = change.start, end = change.end;
   while (begin > 0 && !/\s/.test(text[begin - 1])) begin--;
   while (end < text.length && !/\s/.test(text[end])) end++;
+  const kept = text.slice(begin, end), parts = wordChanges(kept, text.slice(begin, change.start) + change.text + text.slice(change.end, end));
+  // Text put in strictly inside a word (between two characters of it that stay): the runs it touches are written whole.
+  const edge = (at: number) => at === 0 || at === kept.length || /\s/.test(kept[at - 1]) || /\s/.test(kept[at]);
+  if (parts.every(part => !part.text || edge(part.start) || edge(part.end))) return parts.map(part => ({ start: begin + part.start, end: begin + part.end, text: part.text })).reverse();
   const out: TextChange[] = [];
-  for (const run of runChanges(text.slice(begin, end), text.slice(begin, change.start) + change.text + text.slice(change.end, end))) {
-    const start = begin + run.start, stop = begin + run.end, kept = text.slice(start, stop), at = kept ? run.text.indexOf(kept) : -1;
-    // A word kept with text put right against it: the word stays as it is, and only what was put against it is written.
-    if (at >= 0) {
-      if (at) out.push({ start, end: start, text: run.text.slice(0, at) });
-      if (at + kept.length < run.text.length) out.push({ start: stop, end: stop, text: run.text.slice(at + kept.length) });
-    } else out.push({ start, end: stop, text: run.text });
-  }
+  for (const run of runChanges(kept, text.slice(begin, change.start) + change.text + text.slice(change.end, end))) out.push({ start: begin + run.start, end: begin + run.end, text: run.text });
   return out.reverse();
 }
 
