@@ -54,7 +54,7 @@ test("the Button's look comes from its --btn-* defaults, each one used", () => {
 test("no other editor stylesheet holds the Button's own rules", () => {
   // A selector that is only a Button class and its states, alone or in a list. A screen's own rule that places a
   // Button (`.empty-message .button`) is the editor's unlayered CSS and stays where it is.
-  const own = /^(?:\.button|\.primary|\.secondary|:is\((?:\.(?:primary|secondary|button)(?:,\s*)?)+\))(?::[\w-]+(?:\([^()]*\))?)*$/;
+  const own = /^(?:(?:button)?(?:\.(?:button|primary|secondary))+|:is\((?:\.(?:primary|secondary|button)(?:,\s*)?)+\))(?::[\w-]+(?:\([^()]*\))?)*$/;
   for (const file of cssFiles("src")) {
     if (file === BUTTON) continue;
     for (const match of withoutComments(read(file)).matchAll(/(?:^|[{};])\s*([^{};@]+?)\s*\{/g)) {

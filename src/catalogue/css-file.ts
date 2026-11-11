@@ -41,8 +41,9 @@ export function cssProblem(css: string): string {
     const url = /^url\(\s*(?!["'\s])/i.exec(css.slice(i, i + 64));
     if (char === "\\") i++;
     else if (url && !/[\w-]/.test(css[i - 1] ?? "")) {
-      const end = css.indexOf(")", i + url[0].length);
-      if (end < 0) return "A url( is never closed";
+      let end = i + url[0].length;
+      while (end < css.length && css[end] !== ")") end += css[end] === "\\" ? 2 : 1;
+      if (end >= css.length) return "A url( is never closed";
       i = end;
     } else if (char === "/" && css[i + 1] === "*") {
       const end = css.indexOf("*/", i + 2);

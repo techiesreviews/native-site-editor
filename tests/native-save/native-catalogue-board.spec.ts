@@ -541,6 +541,12 @@ test("the Button's own CSS file edits its live cell only, resets, and Send to ag
   await expect(section.getByText("A } closes a rule that was never opened")).toBeVisible();
   await expect(send).toBeDisabled();
   expect(await css(liveButton, "border-radius")).toBe("16px");
+  // As the browser reads it: an escaped ")" keeps the url open, so its brace is text and the next "}" is a stray.
+  await file.fill(`${edited}\n.button { background: url(a\\){) } } body { display: none }`);
+  await expect(file).toHaveAttribute("aria-invalid", "true");
+  await expect(send).toBeDisabled();
+  await expect(page.locator("body")).toBeVisible();
+  expect(await css(liveButton, "border-radius")).toBe("16px");
   await file.fill(edited);
   await expect(file).toHaveAttribute("aria-invalid", "false");
   await expect(section.getByText("A } closes a rule that was never opened")).toBeHidden();
