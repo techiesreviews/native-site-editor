@@ -99,8 +99,9 @@ export interface LiveTextPorts {
  * carry, which the name-tag Undo takes; `agent`: the program an agent works in (`clientInfo.name`; for an agent whose text
  * a tab wrote into the copy, ticket am-25, the name its commands carry), none for a person.
  * Name and author are what each participant says of itself (the relay vouches for neither): `contested` marks an author
- * id another participant here also claims, or this tab's own, whose name tag offers no Undo. */
-export interface LiveCaret { peer: string; author: number; name: string; agent?: string; anchor: number; head: number; contested?: boolean }
+ * id another participant here also claims, or this tab's own, whose name tag offers no Undo. `who`: an agent this tab
+ * writes for, by its connection, so its caret is drawn as its outline and pin are (src/participant.ts); never sent. */
+export interface LiveCaret { peer: string; author: number; name: string; agent?: string; who?: LiveAuthor; anchor: number; head: number; contested?: boolean }
 /** A caret as offsets in this tab's text: where the selection began and where the caret is. */
 export interface CaretSelection { anchor: number; head: number }
 /** The open file's carets as the code pane draws them (src/components/live-carets.ts). */
@@ -423,7 +424,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     const me = doc.clientID;
     /** Agents whose text this tab wrote, by connection and name: the client id their changes carry, a Yjs id of their own
      * made here (random, as Yjs makes its own, and never one this copy has seen), and where their latest change ended. */
-    const agents = new Map<string, { author: number; name: string; at?: import("yjs").RelativePosition }>();
+    const agents = new Map<string, { author: number; name: string; who: LiveAuthor; at?: import("yjs").RelativePosition }>();
     const agentAuthor = (who: LiveAuthor) => {
       const key = JSON.stringify([who.grant, who.name]);
       let found = agents.get(key);
@@ -432,7 +433,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         do author = crypto.getRandomValues(new Uint32Array(1))[0];
         while (author === me || author === doc.clientID || doc.store.clients.has(author) || authors.has(author)
           || [...peers.values()].some(peer => (peer.state as { author?: unknown } | null)?.author === author));
-        found = { author, name: cut(who.name) };
+        found = { author, name: cut(who.name), who: { grant: who.grant, name: who.name } };
       }
       // Latest writer last: past AGENT_CARETS, the room hears of the agents that wrote most recently.
       agents.delete(key);
@@ -664,7 +665,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       // The agents whose text this tab wrote, drawn here too.
       for (const agent of agents.values()) {
         const index = agent.at && Y.createAbsolutePositionFromRelativePosition(agent.at, doc)?.index;
-        if (index !== undefined) out.push({ peer: `agent/${agent.author}`, author: agent.author, name: agent.name, agent: agent.name, anchor: index, head: index });
+        if (index !== undefined) out.push({ peer: `agent/${agent.author}`, author: agent.author, name: agent.name, agent: agent.name, who: agent.who, anchor: index, head: index });
       }
       // Two participants naming the same author (or this tab's own id): one of them is not who it says, so neither tag takes anything back.
       const claims = new Map<number, number>();

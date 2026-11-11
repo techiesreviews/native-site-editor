@@ -3,7 +3,8 @@
 // lands or stops: on the page shown, an outline and name chip on its section and a dot on that section's
 // Page Structure row; on another page, a dot on that page's row in Pages and files. An agent's question
 // waiting for the user shows the same way on the request's element, its chip orange. Each agent (a
-// connection and the name it works under) keeps one colour, the next of AGENT_COLOURS in order of
+// connection and the name it works under) keeps one colour and name, the tab's participants'
+// (src/participant.ts), the same as on its pin and caret: the next of AGENT_COLOURS in order of
 // arrival. Changes that overlap each keep their own entry: an agent's latest one still running shows.
 // A workspace switch (`refresh`, at each load) clears what no longer holds, so nothing is drawn on a
 // same-named page of another workspace. An agent the user stopped (ticket am-12) shows nowhere again.
@@ -18,10 +19,11 @@
 import { outlineId, parseOutlineId, type AgentWho } from "../shared/agent";
 import type { AgentAtWork } from "../shared/agent-read";
 import { readSource, type SourceNode, type SourceTree } from "./page-builder/source-tree";
+import { agentKey, createParticipants, shownName, type Participants } from "./participant";
 
 /**
  * One agent as the views draw it: at work on the page `path`, on its element `node` (none: the page
- * alone), named `name`, in colour `colour` (an index into AGENT_COLOURS), its chip orange while `asking`.
+ * alone), named `name`, in colour `colour` (an index into AGENT_COLOURS, src/participant.ts), its chip orange while `asking`.
  * `who`: whose latest change to the page its chip's Undo puts back (ticket am-49).
  */
 export interface AgentMark { key: string; who: AgentWho; name: string; colour: number; path: string; node?: number[]; asking: boolean; pinned?: boolean; fade?: number }
@@ -31,14 +33,10 @@ export interface WorkingAgent { key: string; who: AgentWho; name: string; colour
 /** A request as its question shows: its site and branch, the element it is about, and who asked when it waits for the user's answer. */
 export interface PresenceQuestion { id: string; repoId: number; branch?: string; state: string; element: { file: string; id: string }; reply?: { by?: AgentWho }; agent?: AgentWho; agentTook?: boolean }
 
-/** The agents' colours, theme tokens in order of arrival: the MCP green, the components' violet, video pink, data teal (src/theme.css). */
-export const AGENT_COLOURS = ["agent-presence", "agent-presence-2", "agent-presence-3", "agent-presence-4"] as const;
 /** An outside commit's author (ticket am-33): AGENT_COLOURS' data teal, the colour mock-up 15 gave Sam on GitHub. */
 const OUTSIDE_COLOUR = 3;
 /** How long get_site lists an agent after its last change. */
 export const AT_WORK_MS = 10 * 60_000;
-/** An agent with no name of its own or of its MCP client. */
-export const UNNAMED_AGENT = "Agent";
 
 export interface AgentPresencePorts {
   /** The site's pages (the files its routes show). */
@@ -57,6 +55,8 @@ export interface AgentPresencePorts {
   paint(marks: AgentMark[]): void;
   /** Whether the user stopped `who`, and recording that they did (src/agent-stops.ts); none: no one is. */
   stops?: { has(who: AgentWho): boolean; add(who: AgentWho): void };
+  /** Whom the tab draws, and how (src/participant.ts): its carets draw agents from the same. None: a set of its own. */
+  participants?: Participants;
   now?(): number;
 }
 
@@ -90,21 +90,19 @@ export function createAgentPresence(ports: AgentPresencePorts) {
   // agent it was named after: kept while that take holds, so another agent heard since does not rename it.
   let onPins = new Map<string, AgentWho>();
   const named = new Map<string, { took: string; who: AgentWho }>();
-  // Each agent's place in the order of arrival, for the session (a few names each, never cleared): its colour.
-  const arrivals = new Map<string, number>();
+  // Each agent's place in the order of arrival, for the session (a few names each, never cleared), and so its colour.
+  const participants = ports.participants ?? createParticipants();
+  const order = participants.order;
   // Each agent's latest change, as get_site tells it: held to its site and branch (a reload keeps it), as questions are.
   const latest = new Map<string, { who: AgentWho; path: string; node?: number[]; time: number; at: Hold; held?: true }>();
   const now = () => ports.now?.() ?? Date.now();
-  const keyOf = (who: AgentWho) => JSON.stringify([who.grant, who.name]);
+  const keyOf = agentKey;
   const stopped = (who: AgentWho) => ports.stops?.has(who) ?? false;
   // The MCP menu's list, told each time it may have changed.
   const listeners = new Set<() => void>();
   const tell = () => { for (const listener of listeners) listener(); };
-  const arrive = (who: AgentWho) => {
-    const key = keyOf(who);
-    if (!arrivals.has(key)) arrivals.set(key, arrivals.size);
-    return key;
-  };
+  // An agent met: it takes its colour now if new.
+  const arrive = (who: AgentWho) => participants.agent(who).key;
   /** Whom the pin of request `id`, taken by `taker`'s wait, names (ticket am-45): the taker when it acts (a worker's
    * own wait); for a watchdog (heard only waiting), the agent this take was named after before, else its connection's
    * one agent that acted this session, else (none) the taker itself until one acts. Never a stopped agent (am-12); else no one (until one reads or replies). */
@@ -153,8 +151,8 @@ export function createAgentPresence(ports: AgentPresencePorts) {
   function marks(): AgentMark[] {
     const shown = new Map<string, AgentMark>();
     const mark = (who: AgentWho, path: string, node: number[] | undefined, asking: boolean): AgentMark => {
-      const key = keyOf(who), onPin = !asking && pinned.some(pin => pin.key === key && pin.path === path && pin.at.holds());
-      return { key, who: { grant: who.grant, name: who.name }, name: who.name || UNNAMED_AGENT, colour: arrivals.get(key)! % AGENT_COLOURS.length, path, ...(node ? { node: [...node] } : {}), asking, ...(onPin ? { pinned: true } : {}) };
+      const { key, name, colour } = participants.agent(who), onPin = !asking && pinned.some(pin => pin.key === key && pin.path === path && pin.at.holds());
+      return { key, who: { grant: who.grant, name: who.name }, name, colour, path, ...(node ? { node: [...node] } : {}), asking, ...(onPin ? { pinned: true } : {}) };
     };
     for (const entry of byHolds()) if (entry.at.holds() && !stopped(entry.who)) shown.set(keyOf(entry.who), mark(entry.who, entry.path, entry.node, false));
     for (const question of asked) {
@@ -164,7 +162,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
       if (!isPage(question.path)) continue;
       shown.set(key, mark(question.who, question.path, questionAt(question), true));
     }
-    return [...[...shown.values()].sort((a, b) => arrivals.get(a.key)! - arrivals.get(b.key)!), ...visits.filter(visit => visit.at.holds()).map(visit => visit.mark)];
+    return [...[...shown.values()].sort((a, b) => order(a.key) - order(b.key)), ...visits.filter(visit => visit.at.holds()).map(visit => visit.mark)];
   }
   // A commit made outside the editor (ticket am-33, src/outside-merge.ts): its author on the element it changed, for a
   // moment. Not an agent: never listed, never stopped, its chip offers no Undo.
@@ -201,7 +199,7 @@ export function createAgentPresence(ports: AgentPresencePorts) {
       told.set(key, { who: question.who, file: question.path, ...(node ? { node } : {}), asking: true });
       if (isPage(question.path)) placed.add(key);
     }
-    return [...told.entries()].sort(([a], [b]) => (arrivals.get(a) ?? 0) - (arrivals.get(b) ?? 0));
+    return [...told.entries()].sort(([a], [b]) => order(a) - order(b));
   }
   /**
    * The agent `who` at work on the file `path`: when it is a page, `find` names its element in the page's
@@ -260,16 +258,18 @@ export function createAgentPresence(ports: AgentPresencePorts) {
     heard: (who: AgentWho, acts = true) => hear(who, acts),
     /** The agent the pin of request `id` shows at work on it, as the last `questions` told (none: its spinner, or not being worked on). */
     onPin: (id: string): AgentWho | undefined => onPins.get(id),
-    /** `who`'s colour (an index into AGENT_COLOURS), the same on its pins as on its outline: it arrives now if new. */
-    colour: (who: AgentWho) => arrivals.get(arrive(who))! % AGENT_COLOURS.length,
+    /** `who`'s colour (an index into AGENT_COLOURS, src/participant.ts), the same on its pins as on its outline: it arrives now if new. */
+    colour: (who: AgentWho) => participants.agent(who).colour,
     /** Who works on what in the workspace shown (get_site): every agent at work, asking, or with a change in the last AT_WORK_MS. */
     atWork(): AgentAtWork[] {
-      return working().map(([, agent]) => ({ name: agent.who.name || UNNAMED_AGENT, file: agent.file, ...(agent.node ? { section: outlineId(agent.node) } : {}), ...(agent.asking ? { asking: true } : {}) }));
+      return working().map(([, agent]) => ({ name: shownName(agent.who.name, "agent"), file: agent.file, ...(agent.node ? { section: outlineId(agent.node) } : {}), ...(agent.asking ? { asking: true } : {}) }));
     },
     /** The same agents as the MCP menu lists them (ticket am-12), each in its colour. */
     agents(): WorkingAgent[] {
-      return working().map(([key, agent]) => ({ key, who: agent.who, name: agent.who.name || UNNAMED_AGENT, colour: arrivals.get(key)! % AGENT_COLOURS.length,
-        asking: Boolean(agent.asking), ...(agent.until !== undefined ? { until: agent.until } : {}) }));
+      return working().map(([key, agent]) => {
+        const { name, colour } = participants.agent(agent.who);
+        return { key, who: agent.who, name, colour, asking: Boolean(agent.asking), ...(agent.until !== undefined ? { until: agent.until } : {}) };
+      });
     },
     /** Stops `who` (the MCP menu's Stop): its outline, chip and dots go at once, here and, through the record, in this browser's other tabs. */
     stop(who: AgentWho) {

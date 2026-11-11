@@ -1,7 +1,7 @@
 // Edit together in the project menu (slice 30, ticket 58; mock-up 16, variant B), loaded on the menu's first open
 // (src/workspace-shares.ts, src/shares-later.ts) and drawn into it (src/components/repository-menu.ts).
 import "./person-chip.css";
-import { initialOf } from "../person-name";
+import { initialOf } from "../participant";
 import type { ShareState } from "../share-control";
 import { node } from "../ui/dom";
 import { markTile, shareRow, type RowDot, type RowView } from "./share-row";
@@ -31,7 +31,7 @@ function chips(guests: Extract<ShareState, { sharing: true }>["guests"]) {
   list.setAttribute("aria-hidden", "true");
   const shown = guests.slice(0, GUESTS_SHOWN), rest = guests.slice(shown.length);
   list.append(...shown.map((guest) => {
-    const chip = node("span", "person-chip", initialOf(guest.name));
+    const chip = node("span", "person-chip", initialOf(guest.name).letter);
     chip.dataset.colour = guest.colour;
     return chip;
   }), ...rest.length ? [node("span", "person-chip person-chip--more", `+${rest.length}`)] : []);

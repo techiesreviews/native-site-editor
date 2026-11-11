@@ -1034,6 +1034,9 @@ test("agents join the merge (am-25): an agent's sentence lands with Lex's typing
     const caret = shares.get(who)!.carets().find(item => item.author === agent)!;
     assert.deepEqual({ name: caret.name, agent: caret.agent, contested: caret.contested }, { name: "Claude Code", agent: "Claude Code", contested: undefined }, who);
     assert.equal(lex.text.slice(0, caret.head).endsWith("Open from seven until two"), true, `${who}: the caret ends its change`);
+    // Lex's tab knows the agent by its connection, so its caret is drawn as its outline is (src/participant.ts); the
+    // connection never leaves his tab.
+    assert.deepEqual(caret.who, who === "lex" ? { grant: "grant-1", name: "Claude Code" } : undefined, who);
   }
 
   // Lex takes it back from the agent's name tag: only the agent's words go, on every tab; Lex's stay.

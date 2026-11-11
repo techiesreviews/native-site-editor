@@ -22,7 +22,7 @@ import type { LivePeer, LiveRoom, openLiveRoom } from "./live-room";
 import type { LiveAccess } from "../shared/live-room";
 import type { JsonValue } from "../shared/agent-command";
 import { LIVE_GUEST_ID, LIVE_SESSION_TOKEN } from "../shared/live-room";
-import { personName } from "./person-name";
+import { createColourBook, shownName } from "./participant";
 import { b64u, sessionWire } from "./live-wire";
 // The wire and the room key's encoding live in src/live-wire.ts, which preview links' pages share without this module.
 export { importSessionKey, randomId, sessionWire } from "./live-wire";
@@ -44,8 +44,6 @@ type Sender = { peer: string; access: LiveAccess };
 export type SessionPresence = { name: string; guest?: string };
 /** Someone in the session, as Lex's tab lists them: their relay peer, and the colour Lex's tab gave them. */
 export interface SessionGuest { id: string; name: string; colour: string; peer: string }
-/** How many guest colours there are (src/components/person-chip.css): given in join order, one not in use first. */
-const GUEST_COLOURS = 4;
 /** How long Lex's tab waits for the session's room before giving up (the guest page waits as long to join). */
 const SHARE_WAIT_MS = 10_000;
 /** A message the socket did not take, or one too big to send, is followed by the whole page again this much later. */
@@ -105,8 +103,9 @@ export async function startSharing(ports: SharePorts) {
   let mirror: ReturnType<NativePreview["mirror"]> | undefined;
   // A guest's letters are written in order, one at a time.
   let writing = Promise.resolve();
-  // Each guest's colour, given as they join: one no one in the session has, else the least used.
-  const colours = new Map<string, string>();
+  // Each guest's colour (src/participant.ts, its index into src/components/person-chip.css), given as they join: one no
+  // one in the session has, else the least used.
+  const colours = new Map<string, string>(), book = createColourBook();
   // A render the socket did not take, or one too big, is followed by the whole page again (and once the room is back, `onKey`).
   let resend: ReturnType<typeof setTimeout> | undefined;
   const lost = () => { if (!resend && !ended) resend = setTimeout(() => { resend = undefined; sendWhole(); }, RESEND_MS); };
@@ -153,10 +152,7 @@ export async function startSharing(ports: SharePorts) {
     });
   };
   const colourFor = (id: string) => {
-    const known = colours.get(id);
-    if (known) return known;
-    const use = Array.from({ length: GUEST_COLOURS }, (_, index) => [...colours.values()].filter((colour) => colour === String(index)).length);
-    const colour = String(use.indexOf(Math.min(...use)));
+    const colour = String(book.colour(id));
     colours.set(id, colour);
     return colour;
   };
@@ -166,9 +162,9 @@ export async function startSharing(ports: SharePorts) {
       const state = at.state as SessionPresence | null | undefined;
       if (at.access !== "guest" || !state || typeof state.guest !== "string" || !LIVE_GUEST_ID.test(state.guest) || typeof state.name !== "string") continue;
       if (next.some((guest) => guest.id === state.guest)) continue;
-      next.push({ id: state.guest, name: personName(state.name), colour: "", peer });
+      next.push({ id: state.guest, name: shownName(state.name, "guest"), colour: "", peer });
     }
-    for (const id of [...colours.keys()]) if (!next.some((guest) => guest.id === id)) colours.delete(id);
+    for (const id of [...colours.keys()]) if (!next.some((guest) => guest.id === id)) { colours.delete(id); book.forget(id); }
     for (const guest of next) guest.colour = colourFor(guest.id);
     const joined = next.some((guest) => !guests.some((known) => known.id === guest.id));
     const same = next.length === guests.length && !joined;

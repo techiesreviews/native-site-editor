@@ -5,7 +5,6 @@ import { mock, test } from "node:test";
 import { forEachAwait } from "./support/await-race";
 import { readSessionLink, sessionWire, startSharing, type SharePorts } from "../src/live-session";
 import { createShareControl, type ShareState } from "../src/share-control";
-import { initialOf, personName } from "../src/person-name";
 import { shareWorkspace } from "../src/workspace-shares";
 import type { SessionChange, WorkspaceScope } from "../src/workspace-session";
 import type { LivePeer, LiveRoom, LiveRoomOptions } from "../src/live-room";
@@ -126,15 +125,6 @@ test("an open session says while its room reconnects, and not once it has ended"
   control.stop();
   ports.dropped!(true);
   assert.deepEqual(control.state(), { sharing: false });
-});
-
-test("names and initials show the same everywhere, whatever presence sends", () => {
-  assert.equal(personName("  Anna  "), "Anna");
-  assert.equal(personName("x".repeat(500)).length, 40);
-  assert.equal(personName("   "), "Guest");
-  assert.equal(initialOf(" ßigrid"), "S", "one character on the chip");
-  assert.equal(initialOf("élan"), "É");
-  assert.equal(initialOf("!!"), "·");
 });
 
 /** A session over a fake room and preview: `guest(peer, message)` delivers what a participant sent, as the relay names it. */

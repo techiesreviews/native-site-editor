@@ -16,7 +16,7 @@ import { createPreviewLink, iframeFramePort } from "./components/preview-link";
 import { watchEditorTheme } from "./theme";
 import { importSessionKey, randomId, readSessionLink, sessionWire, type GuestMessage, type HostMessage, type SessionPresence } from "./live-session";
 import type { LivePeer, LiveRoom } from "./live-room";
-import { initialOf, personName } from "./person-name";
+import { initialOf, shownName } from "./participant";
 import { LIVE_HOST_GRACE_MS, LIVE_HOST_LOST, LIVE_ROOM_CLOSED, type LiveAccess } from "../shared/live-room";
 import type { AssetChanges, UpdatePayload } from "./components/native-preview";
 import type { JsonValue } from "../shared/agent-command";
@@ -180,7 +180,7 @@ async function join(shared: Shared, name: string): Promise<"in" | "ended" | "inv
 function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, name: string, send: (message: Omit<GuestMessage, "from">) => void, me: string) {
   const site = shared.site || "This site";
   const bar = element("header", "live-guest__bar");
-  const mark = element("span", "live-guest__mark", initialOf(site));
+  const mark = element("span", "live-guest__mark", initialOf(site).letter);
   mark.setAttribute("aria-hidden", "true");
   const people = element("ul", "live-guest__people");
   people.setAttribute("aria-label", "In this session");
@@ -272,8 +272,8 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
         .filter(({ state }) => state && typeof state.name === "string" && state.guest !== me);
       others.sort((a, b) => Number(a.peer.access === "guest") - Number(b.peer.access === "guest"));
       people.replaceChildren(
-        ...others.map(({ peer, state }) => person(personName(state!.name), peer.access === "guest" ? colourOf(state!.guest ?? "") : "host")),
-        person(personName(name), colourOf(me), true),
+        ...others.map(({ peer, state }) => person(shownName(state!.name, "guest"), peer.access === "guest" ? colourOf(state!.guest ?? "") : "host")),
+        person(shownName(name, "guest"), colourOf(me), true),
       );
     },
     /** The sharing tab's connection dropped: the page waits for it, and takes no typing meanwhile. */
@@ -290,7 +290,7 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
 
 /** One person in the bar: their initial in their colour, their name for hover and screen readers. */
 function person(name: string, colour: string, you = false) {
-  const item = element("li", "person-chip", initialOf(name));
+  const item = element("li", "person-chip", initialOf(name).letter);
   const label = you ? `${name} (you)` : colour === "host" ? `${name} (sharing)` : name;
   item.title = label;
   item.setAttribute("aria-label", label);

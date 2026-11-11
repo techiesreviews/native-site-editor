@@ -21,10 +21,12 @@ import { pageCarets, watchPageCarets, type PageCaretPoint, type PageCaretRect, t
 import { sourceOffsetOfText, textPointAt } from "../native-source-location";
 import { icon, svgElement } from "../icons";
 import { githubScope, same } from "../workspace-session";
+import { initialOf, participants } from "../participant";
 
-/** Caret colours, theme tokens (src/theme.css): the presence colours, picked by author so every tab agrees. */
-const COLOURS = 4;
-export const caretColour = (author: number) => Math.abs(author) % COLOURS;
+/** Who a caret is: its colour (the presence colours, src/theme.css) and its name come from the tab's participants
+ * (src/participant.ts), so an agent's caret matches its outline and pin. */
+type CaretWho = Pick<LiveCaret, "author" | "name" | "agent" | "who">;
+const colourOf = (caret: CaretWho) => participants.caret(caret).colour;
 
 /** Tiny marks of the programs agents work in, by their MCP client's name; any other agent gets the plain one. */
 const PROGRAMS: [RegExp, string][] = [
@@ -41,28 +43,12 @@ function programIcon(agent: string) {
   return svgElement(`<svg class="live-caret__program" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${programMark(agent)}</svg>`);
 }
 
-const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-/** The first character a reader sees (a letter with its accents, a whole emoji), and the rest of `name`. */
-export function initialOf(name: string) {
-  const first = graphemes.segment(name)[Symbol.iterator]().next().value?.segment ?? "";
-  // Upper case can make two letters of one ("ß" is "SS"): the circle keeps the first.
-  const upper = graphemes.segment(first.toLocaleUpperCase())[Symbol.iterator]().next().value?.segment ?? "";
-  return { first, letter: upper, rest: name.slice(first.length) };
-}
-
 /** Whether `name`'s first strong letter is written right to left (Hebrew, Arabic, Syriac, Thaana, N'Ko, …). */
 export const rightToLeft = (name: string) =>
   /^[^\p{L}]*[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u.test(name);
 
-/** Characters that show nothing: format controls (zero-width spaces, joiners, direction marks) and the Hangul fillers. */
-const INVISIBLE = /[\p{Cf}\u115F\u1160\u3164\uFFA0]/gu;
-/** The name a tag shows: what the participant says of itself with nothing invisible, or "Someone" / "Agent" for none. */
-export function shownName(name: string, agent: boolean) {
-  return name.replace(INVISIBLE, "").trim() || (agent ? "Agent" : "Someone");
-}
-
 /** A caret's name tag: the circle, the rest of the name and the undo button (shown while `undoable`). */
-export function caretFlag(caret: Pick<LiveCaret, "name" | "agent">, onUndo: () => void) {
+export function caretFlag(caret: CaretWho, onUndo: () => void) {
   const flag = document.createElement("span");
   flag.className = "live-caret__flag";
   flag.tabIndex = 0;
@@ -96,8 +82,8 @@ export function caretFlag(caret: Pick<LiveCaret, "name" | "agent">, onUndo: () =
     ((event.target as Element).closest("button") ?? flag).focus({ preventScroll: true });
   });
   flag.append(mark, rest, undo);
-  const name = (next: Pick<LiveCaret, "name" | "agent">) => {
-    const full = shownName(next.name, next.agent !== undefined);
+  const name = (next: CaretWho) => {
+    const full = participants.caret(next).name;
     if (flag.dataset.name === full && flag.dataset.agent === next.agent) return;
     flag.dataset.name = full;
     if (next.agent === undefined) {
@@ -290,7 +276,7 @@ function attach(share: CaretShare, pane: CaretPane, told: (read: () => CaretSele
       if (found.caret.author !== caret.author || found.caret.contested !== caret.contested) added = true;
       found.caret = caret;
       found.flag.name(caret);
-      found.root.dataset.colour = String(caretColour(caret.author));
+      found.root.dataset.colour = String(colourOf(caret));
       editor.layoutContentWidget(found);
     }
     for (const [peer, gone] of widgets) {
@@ -307,7 +293,7 @@ function attach(share: CaretShare, pane: CaretPane, told: (read: () => CaretSele
     tints.set(carets.filter(caret => caret.anchor !== caret.head).map(caret => {
       const start = Math.min(caret.anchor, caret.head), end = Math.max(caret.anchor, caret.head);
       return { range: monaco.Range.fromPositions(position(start), position(end)),
-        options: { className: `live-caret-tint live-caret-tint--${caretColour(caret.author)}`, stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges } };
+        options: { className: `live-caret-tint live-caret-tint--${colourOf(caret)}`, stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges } };
     }));
     if (added) askUndo();
   };
@@ -436,7 +422,7 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
       if (found.caret.author !== caret.author || found.caret.contested !== caret.contested) added = true;
       found.caret = caret;
       found.flag.name(caret);
-      found.root.dataset.colour = String(caretColour(caret.author));
+      found.root.dataset.colour = String(colourOf(caret));
     }
     for (const [peer, gone] of widgets) {
       if (seen.has(peer) || gone.leaving) continue;
@@ -471,7 +457,7 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
       found.tints.forEach((tint, index) => {
         const box = tints[index];
         tint.hidden = !box;
-        tint.className = `live-caret-tint live-caret-tint--${caretColour(found.caret.author)}`;
+        tint.className = `live-caret-tint live-caret-tint--${colourOf(found.caret)}`;
         if (box) Object.assign(tint.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` });
       });
     }
