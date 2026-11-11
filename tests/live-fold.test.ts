@@ -50,6 +50,17 @@ const strange = (text: string, ...from: string[]) => {
   return (text.match(/[\p{L}\p{N}_]+/gu) ?? []).filter(word => !known.has(word));
 };
 
+test("a word typed here and saved, coming in again as GitHub's: the second goes, as no clash (no Undo step of its own) (am-59)", async () => {
+  const base = "<h1>Fresh bread</h1>\n<p>Open at seven.</p>\n", github = base.replace("<p>Open", "Sunday <p>Open");
+  const doc = await copyOf(base), typed = type(doc, base, github, 7);
+  Y.applyUpdate(doc, await outside(doc, github));
+  assert.equal(text(doc), base.replace("<p>Open", "Sunday Sunday <p>Open"), "the copy holds it twice before the clash rule");
+  const all = edges(Y, doc), gone = Y.decodeUpdate(typed).ds;
+  const found = clashes(Y, doc, all, edgeTo(all, V1)!, client => client === 7, (client, clock) => Y.isDeleted(gone, Y.createID(client, clock)));
+  assert.equal(found.clashed, false);
+  assert.equal(settle(doc, 7, typed).settled, github);
+});
+
 test("two tabs folding the same commit write the same bytes, whatever each typed meanwhile, and the words enter once", async () => {
   const base = "<h1>Fresh bread</h1>\n<p>Open Tuesday to Saturday.</p>\n";
   const github = base.replace("Saturday", "Sunday").replace("Fresh bread", "Fresh bread daily");

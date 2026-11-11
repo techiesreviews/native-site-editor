@@ -142,6 +142,19 @@ test("two tabs editing one file end identical, and a tab alone loads no Yjs and 
 });
 const draftHistory = () => draftKey(scope, path);
 
+test("one change putting two words in at one place reaches the room's copy in the draft's order, on every tab (am-59)", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
+  await quiet();
+  // As an Undo moved past someone's words can bring back: two pieces at one place, the first given first.
+  assert.equal(lex.store.edit({ scope, path, changes: [{ start: 0, end: 0, text: "«26» «18» " }, { start: 0, end: 0, text: "«4» " }] }).ok, true);
+  assert.equal(lex.text, `«26» «18» «4» ${base}`);
+  await until(() => anna.text.includes("«4»"), "Lex's words at Anna's");
+  assert.equal(anna.text, lex.text, "the copy has them in Lex's order, not «4» first");
+  anna.stop(); lex.stop();
+});
+
 test("a late joiner catches up from a tab that is online", async () => {
   const room = fakeRoom();
   const anna = tab(room), lex = tab(room);

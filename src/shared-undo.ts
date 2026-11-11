@@ -18,6 +18,7 @@
 //   not cut Lex's typing into pieces; it then undoes whole. An open inline
 //   group closes: its next keystroke starts a new step.
 
+import { wordDiff } from "./live-versions";
 import { applyChanges, diffRange, type EditInput, type EditStep, type HistoryAccess, type Step, type StepResult, type TextChange, type TypingStep } from "./draft-store";
 
 /**
@@ -64,7 +65,7 @@ export function rebaseHistory(history: HistoryAccess, input: EditInput): StepRes
   const entry = history.entry;
   let applied: ReturnType<typeof applyChanges>;
   try {
-    applied = applyChanges(entry.text, input.changes ?? [diffRange(entry.text, input.text ?? entry.text)]);
+    applied = applyChanges(entry.text, input.changes ?? wordDiff(entry.text, input.text ?? entry.text));
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }

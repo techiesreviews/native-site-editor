@@ -89,6 +89,15 @@ test("Anna's change keeps Lex's Undo and Redo, which take back only his words", 
   assert.equal(lex.store.canRedo(history), false);
 });
 
+test("Anna's change given as a whole text (a draft moved onto a newer version) moves Lex's steps by whole words (am-59)", async () => {
+  const lex = setup("sun now");
+  lex.mine(0, 3, "sea");
+  // Anna's word put in before Lex's: by characters, "alt s" inside "sea" ("s" is the same), which would cut his step.
+  assert.equal(lex.store.edit({ scope, path, text: "salt sea now", record: false, origin: "shared", rebase: rebaseHistory }).ok, true);
+  assert.equal((await lex.store.undo(history)).ok, true);
+  assert.equal(lex.now(), "salt sun now");
+});
+
 test("Anna typing inside Lex's words: his Undo leaves hers", async () => {
   const lex = setup("<p></p>");
   lex.mine(3, 3, "Hello world");

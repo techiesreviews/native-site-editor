@@ -71,7 +71,7 @@ import type { SaveAuthor } from "../shared/types";
 import { mergeText, runChanges } from "./text-merge";
 import { liveSaves } from "./live-saves";
 import { birthUpdate, clashes, clientOf, copyAt, draftUpdate, edgeClient, edgeTo as edgeFor, edgeUpdate, edges, headOf, metaOf, reaches, superseded, type Edge,
-  textAt, textWith, tipOf, versionsOf, wordRuns, wordsOf } from "./live-versions";
+  textAt, textWith, tipOf, versionsOf, wordDiff, wordRuns, wordsOf } from "./live-versions";
 
 type Yjs = typeof import("yjs");
 type Doc = import("yjs").Doc;
@@ -283,9 +283,7 @@ function changesBetween(from: string, to: string, changes?: readonly TextChange[
   if (changes?.length) {
     try { if (applyChanges(from, changes).text === to) return [...changes]; } catch { /* Not in these offsets. */ }
   }
-  const range = diffRange(from, to), words = wordRuns(from, range);
-  try { if (applyChanges(from, words).text === to) return words; } catch { /* The one range, then. */ }
-  return [range];
+  return wordDiff(from, to);
 }
 
 /**
@@ -689,7 +687,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (event.origin === "external") { follow(); return; }
       const now = text.toString();
       if (event.text === now) return;
-      const changes = changesBetween(now, event.text, event.changes).sort((a, b) => b.start - a.start);
+      // From the end back; two put in at one place go in the later one first, so they stay in the draft's order
+      // (src/draft-store.ts `applyChanges` keeps the given order at one place).
+      const changes = changesBetween(now, event.text, event.changes).sort((a, b) => a.start - b.start).reverse();
       // An agent's change written into this tab's drafts (ticket am-25) joins the copy as the agent's.
       const agent = liveAuthor();
       if (agent) writeAgent(agent, changes);
@@ -718,8 +718,10 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         if (weighedVersions.has(edge.to)) continue;
         weighedVersions.add(edge.to);
         if (edge.client === undefined || gone.has(edge)) continue;
-        const { out, back } = clashes(Y, doc, all, edge, client => ownClients.has(client), (client, clock) => Y.isDeleted(took, Y.createID(client, clock)));
+        const { out, back, clashed } = clashes(Y, doc, all, edge, client => ownClients.has(client), (client, clock) => Y.isDeleted(took, Y.createID(client, clock)));
         if (!out.length) continue;
+        // No clash: what this tab holds twice goes as no one's change (the draft follows it outside history).
+        if (!clashed) { doc.transact(() => { if (back) Y.applyUpdate(doc, back); applyText(out); }, OUTSIDE); continue; }
         // GitHub's words coming back go into the copy first, as every tab writes them (the draft does not follow them:
         // they are part of this tab's step below, whose change then writes only what the copy still lacks).
         if (back) { quiet = true; try { Y.applyUpdate(doc, back, OUTSIDE); } finally { quiet = false; } }
