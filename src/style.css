@@ -572,7 +572,7 @@ dd {
     width: var(--size-touch);
     height: var(--size-touch);
   }
-  .explorer-toggle {
+  .topbar .explorer-toggle {
     flex: 1;
     max-width: none;
     min-height: var(--size-touch);

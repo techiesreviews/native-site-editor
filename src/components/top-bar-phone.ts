@@ -58,7 +58,10 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
     if (!trigger.isConnected) upright.removeEventListener("change", sheetHandle);
     if (!upright.matches || !workspace) return;
     upright.removeEventListener("change", sheetHandle);
-    void import("./phone-sheet").then((module) => module.mountPhoneSheet(workspace, app.querySelector<HTMLButtonElement>("#sheet-handle")!)).catch((error: unknown) => ports.errorMessage(error));
+    void import("./phone-sheet").then((module) => {
+      // The workspace may have gone while the sheet's code loaded (a sign-out, another project).
+      if (workspace.isConnected) module.mountPhoneSheet(workspace, app.querySelector<HTMLButtonElement>("#sheet-handle")!);
+    }).catch((error: unknown) => ports.errorMessage(error));
   };
   upright.addEventListener("change", sheetHandle);
   sheetHandle();
@@ -77,13 +80,16 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
   pageName.replaceWith(words);
   words.append(site, pageName);
   pageButton.prepend(tile);
+  // Stops once this top bar has been shown and is gone (a workspace drawn afresh has its own copy); the
+  // catalogue board draws it before attaching it.
+  let attached = false;
   const stopSite = effect(() => {
     const name = siteName();
-    // A workspace drawn afresh has its own top bar and its own copy of this.
-    if (!trigger.isConnected) {
+    if (attached && !trigger.isConnected) {
       queueMicrotask(() => stopSite());
       return;
     }
+    attached ||= trigger.isConnected;
     site.textContent = name ?? "";
     tile.replaceChildren(...name ? [initial(name)] : []);
   });
@@ -249,6 +255,13 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
   sheet.addEventListener("click", (event) => {
     if (event.target === sheet && event.clientY < sheet.getBoundingClientRect().top) sheet.close();
   });
+  // Widened past a phone, the sheet and its button go: close it rather than leave a modal over the wide editor.
+  const phone = matchMedia("(max-width: 650px)");
+  const widened = () => {
+    if (!trigger.isConnected) phone.removeEventListener("change", widened);
+    else if (!phone.matches && sheet.open) sheet.close();
+  };
+  phone.addEventListener("change", widened);
   sheet.addEventListener("close", () => {
     trigger.setAttribute("aria-expanded", "false");
     if (document.activeElement === document.body || !document.activeElement) trigger.focus();

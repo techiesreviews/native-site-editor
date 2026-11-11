@@ -60,6 +60,11 @@ test.describe("phone", () => {
     for (const control of [name, undo, publish, menuButton(page)]) await expect(control).toBeVisible();
     await expect(name).toContainText("native-demo");
     await expect(name).toContainText("Home");
+    // A finger-sized target, and a long project name shortens instead of pushing the bar wider.
+    expect((await box(name)).height).toBeGreaterThanOrEqual(44);
+    await page.locator(".explorer-toggle__site").evaluate((el) => { el.textContent = "NorthwindIndustriesInternationalCustomerSupportKnowledgeBase"; });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await expect(menuButton(page)).toBeInViewport({ ratio: 1 });
     const row = await middle(bar);
     for (const control of [name, undo, publish, menuButton(page)]) expect(Math.abs((await middle(control)) - row)).toBeLessThanOrEqual(2);
     // The rest moved behind the Menu: no stack of bars over the page.
@@ -151,11 +156,16 @@ test.describe("phone", () => {
     await expect(page.getByRole("complementary", { name: "Page structure" })).toBeVisible();
   });
 
-  test("a window widened past a phone shows the wide bar again", async ({ page, baseURL }) => {
+  test("a window widened past a phone shows the wide bar again, and closes a Menu left open", async ({ page, baseURL }) => {
     await open(page, baseURL);
     await menuButton(page).tap();
-    await page.keyboard.press("Escape");
+    await expect(sheet(page)).toBeVisible();
     await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(sheet(page)).toBeHidden();
+    // The wide editor takes clicks again.
+    await page.locator("#explorer-toggle").click();
+    await expect.poll(() => popoverOpen(page, "#explorer")).toBe(true);
+    await page.keyboard.press("Escape");
     await expect(menuButton(page)).toBeHidden();
     await expect(page.locator(".repository-menu__trigger")).toBeVisible();
     await expect(page.locator(".explorer-toggle__site")).toBeHidden();
