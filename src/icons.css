@@ -6,14 +6,17 @@
   margin-inline: auto;
 }
 .icon--after,
-.icon--before {
+.icon--before,
+.icon[data-place] {
   display: inline-block;
   vertical-align: -0.125em;
 }
-.icon--after {
+.icon--after,
+.icon[data-place="after"] {
   margin-inline: 0.3em 0;
 }
-.icon--before {
+.icon--before,
+.icon[data-place="before"] {
   margin-inline: 0 0.3em;
 }
 

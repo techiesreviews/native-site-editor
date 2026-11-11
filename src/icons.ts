@@ -83,6 +83,11 @@ const icons = {
 
 export type IconName = keyof typeof icons;
 
+/** A bundled icon's SVG markup as it is, for the Icon part (src/ui/parts/icon.ts) to size and mark. */
+export function iconSource(name: IconName) {
+  return icons[name];
+}
+
 /** An icon's markup, sized in px and hidden from assistive technology (the control around it carries the name). */
 export function iconMarkup(name: IconName, size = 16, className = "") {
   return sizedSvg(icons[name], size, className);
