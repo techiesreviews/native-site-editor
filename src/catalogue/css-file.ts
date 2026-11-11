@@ -1,35 +1,15 @@
 // The CSS section of the design board's right panel (docs/wayfinder/atomic-catalogue/css-layers-plan.md): a part's
-// own component CSS file, edited by hand and shown on its live cell only. Edits never leave the page: "Send to agent"
-// copies them as a plain-text change request for an agent to make in the code.
+// own component CSS file, edited by hand and shown on its live cell only (in a shadow root of its own,
+// component-css.ts). Edits never leave the page: "Send to agent" copies them as a plain-text change request for an
+// agent to make in the code.
 import { diffHunks } from "../text-diff";
 
-/** The text with its comments taken out, strings kept as written. */
-function withoutComments(css: string): string {
-  let out = "", quote = "";
-  for (let i = 0; i < css.length; i++) {
-    const char = css[i];
-    if (quote) {
-      out += char;
-      if (char === "\\") out += css[++i] ?? "";
-      else if (char === quote) quote = "";
-    } else if (char === "/" && css[i + 1] === "*") {
-      const end = css.indexOf("*/", i + 2);
-      i = end < 0 ? css.length : end + 1;
-    } else {
-      if (char === "\"" || char === "'") quote = char;
-      out += char;
-    }
-  }
-  return out;
-}
-
 /**
- * Why the edited text cannot be shown safely, or "" when it can: a brace that does not pair up would end the live
- * cell's scope and reach the whole board, and a closing tag has no place in a stylesheet. Braces are read as the
- * browser reads them: one escaped, quoted, in a comment or in an unquoted `url(…)` is text.
+ * What is wrong with the edited text, or "" when nothing is: a brace that does not pair up, a quote, comment or
+ * `url(` never closed, each of which drops the rules after it. The live cell keeps the last text with none. Braces
+ * are read as the browser reads them: one escaped, quoted, in a comment or in an unquoted `url(…)` is text.
  */
 export function cssProblem(css: string): string {
-  if (/<\//.test(css)) return "A closing tag cannot be in a stylesheet";
   let depth = 0, quote = "";
   for (let i = 0; i < css.length; i++) {
     const char = css[i];
@@ -55,75 +35,6 @@ export function cssProblem(css: string): string {
   }
   if (quote) return "A quote is never closed";
   return depth > 0 ? "A { is never closed" : "";
-}
-
-interface Block { prelude: string; items: Item[] }
-type Item = { declaration: string } | Block;
-
-/** The rules of a comment-free stylesheet as blocks and declarations; statements (`@layer a, b;`) are left out. */
-function parse(css: string): Item[] {
-  const root: Block = { prelude: "", items: [] };
-  const stack: Block[] = [root];
-  let start = 0, depth = 0, quote = "";
-  const piece = (end: number) => css.slice(start, end).replace(/\s+/g, " ").trim();
-  const settle = (end: number) => {
-    const text = piece(end);
-    if (text && !text.startsWith("@") && /^[\w-]+\s*:/.test(text)) stack.at(-1)!.items.push({ declaration: text.slice(0, text.indexOf(":")).trim() });
-  };
-  for (let i = 0; i < css.length; i++) {
-    const char = css[i];
-    if (quote) { if (char === "\\") i++; else if (char === quote) quote = ""; continue; }
-    if (char === "\"" || char === "'") quote = char;
-    else if (char === "(" || char === "[") depth++;
-    else if (char === ")" || char === "]") depth--;
-    else if (depth > 0) continue;
-    else if (char === "{") {
-      const block: Block = { prelude: piece(i), items: [] };
-      stack.at(-1)!.items.push(block);
-      stack.push(block);
-      start = i + 1;
-    } else if (char === ";") { settle(i); start = i + 1; }
-    else if (char === "}") { settle(i); if (stack.length > 1) stack.pop(); start = i + 1; }
-  }
-  return root.items;
-}
-
-const write = (items: Item[]): string[] => items.map((item) =>
-  "declaration" in item ? `${item.declaration}: revert-layer;` : `${item.prelude} { ${write(item.items).join(" ")} }`);
-
-/**
- * The file with every declaration set to `revert-layer`: on its own layer, it takes each value back to what the
- * layers before it give, as if the file's rules were not there. Selectors and at-rules stay as written.
- */
-export function revertCopy(css: string): string {
-  return write(parse(withoutComments(css))).join("\n");
-}
-
-/** Layer order statements: they cannot sit inside a rule, and the page's own order already holds. */
-const withoutOrder = (css: string) => css.replace(/@layer\s+[\w.-]+(?:\s*,\s*[\w.-]+)*\s*;/g, "");
-
-/**
- * The CSS that shows an edited file on the live cell only: nested in `scope`, the file's own rules are first taken
- * back (a declaration deleted in the edit is gone there too), then the edited file applies. Nesting keeps each rule
- * on its layer and adds nothing to its specificity, and later in the page it wins over the file's own rule.
- */
-export function liveCss(original: string, edited: string, scope: string): string {
-  return `:where(${scope}) { ${revertCopy(original)} }\n:where(${scope}) {\n${withoutOrder(edited)}\n}`;
-}
-
-/** What the browser's stylesheet parser needs to read a file: `CSSStyleSheet` on the board. */
-export interface SheetReader { new(): { replaceSync(text: string): void; readonly cssRules: { readonly length: number } } }
-
-/**
- * Why the edited file cannot be shown on the live cell, or "": the text check first, then the browser's own reading,
- * where the edit nested in the cell's scope must stay the two rules it is written as, nothing reaching past them.
- */
-export function editProblem(edited: string, original: string, Sheet: SheetReader): string {
-  const wrong = cssProblem(edited);
-  if (wrong) return wrong;
-  const sheet = new Sheet();
-  try { sheet.replaceSync(liveCss(original, edited, ".cat-live__stage")); } catch { return "The browser cannot read this file"; }
-  return sheet.cssRules.length === 2 ? "" : "A rule closes past the end of the file";
 }
 
 /** The plain-text change request "Send to agent" copies; "" when the file is unchanged. */

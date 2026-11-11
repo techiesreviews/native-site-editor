@@ -8,6 +8,8 @@ import { handleChunkLoadFailure, hasEditableRecoveryState, installChunkRecovery 
 import "./utilities.css";
 import "./style.css";
 import "./theme.css";
+// Components on the components layer, one file each (the catalogue board loads them as styles of their own).
+import "./ui/parts/button.css";
 import { node } from "./ui/dom";
 import { options } from "./ui/select-options";
 import { setErrorReporter } from "./ui/report-failure";

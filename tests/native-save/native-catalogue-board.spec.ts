@@ -551,6 +551,24 @@ test("the Button's own CSS file edits its live cell only, resets, and Send to ag
   await expect(file).toHaveAttribute("aria-invalid", "false");
   await expect(section.getByText("A } closes a rule that was never opened")).toBeHidden();
 
+  // The live cell shows the file as edited, alone: a deleted hover rule leaves the hover on the normal fill.
+  const fill = await css(liveButton, "background-color");
+  await liveButton.hover();
+  await expect.poll(() => css(liveButton, "background-color")).not.toBe(fill);
+  await page.mouse.move(0, 0);
+  await file.fill(edited.replace(/\n\s*@media \(hover: hover\) and \(pointer: fine\) \{[^{}]*\{[^{}]*\}\s*\}/, ""));
+  await liveButton.hover();
+  await expect.poll(() => css(liveButton, "background-color")).toBe(fill);
+  await page.mouse.move(0, 0);
+  // A selector that names other buttons still reaches only the live cell: never a state cell or the panel's buttons.
+  const secondaryCell = page.locator('#card-button .cat-half[data-theme="light"] .cat-cell button.secondary').first();
+  const [cellFill, resetFill] = await Promise.all([css(secondaryCell, "background-color"), css(reset, "background-color")]);
+  await file.fill(edited.replace("&:active:not(:disabled) {", ":is(&, .secondary) { background: rgb(255, 0, 0); }\n    &:active:not(:disabled) {"));
+  await expect.poll(() => css(liveButton, "background-color")).toBe("rgb(255, 0, 0)");
+  expect(await css(secondaryCell, "background-color")).toBe(cellFill);
+  expect(await css(reset, "background-color")).toBe(resetFill);
+  await file.fill(edited);
+
   // The file holds both themes: the edit stays in dark, and the selection keeps it on the way back.
   await options.getByRole("group", { name: "Colours" }).getByRole("button", { name: "Dark" }).click();
   await expect.poll(() => css(liveButton, "border-radius")).toBe("16px");

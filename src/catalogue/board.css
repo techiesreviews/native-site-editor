@@ -294,6 +294,10 @@ body:has(> .cat-board) {
 .cat-live__stage:not(:has(iframe)) {
   zoom: 1.6;
 }
+/* A live cell drawn in a shadow root (component-css.ts): the part lays out as the stage's own child. */
+.cat-live__host {
+  display: contents;
+}
 .cat-grid {
   display: grid;
   align-items: center;
