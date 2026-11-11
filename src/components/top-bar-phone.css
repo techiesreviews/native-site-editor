@@ -99,7 +99,6 @@
   display: grid;
   place-items: center;
   block-size: var(--size-touch);
-  margin-block-end: calc(var(--space-m) * -1);
   border: 0;
   background: transparent;
   cursor: pointer;
@@ -114,7 +113,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-3xs);
-  min-block-size: var(--size-touch);
+  min-block-size: var(--size-control);
   padding-inline: var(--space-xs);
   font-size: var(--type-title);
   font-weight: 600;
