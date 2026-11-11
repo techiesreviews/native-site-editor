@@ -1,0 +1,55 @@
+/* The Button component: its whole look in one file on the components layer, after the Techies Framework's .btn
+   (docs/wayfinder/atomic-catalogue/css-layers-plan.md). The --btn-* properties are its defaults; a tone changes only
+   them. A screen that needs a Button to differ sets a --btn-* property, or a rule, in its own unlayered CSS, which
+   wins over this layer. Classes: `button` (the primary tone), `button primary`, `button secondary`. */
+@layer tokens, elements, components;
+
+@layer components {
+  .button {
+    --btn-min-block-size: var(--size-control);
+    --btn-radius: var(--radius);
+    --btn-padding-block: var(--space-2xs);
+    --btn-padding-inline: calc(var(--space-s) + var(--space-4xs));
+    --btn-background: var(--primary);
+    --btn-hover-background: var(--primary-hover);
+    --btn-text-color: var(--on-primary);
+    --btn-font-size: var(--type-base);
+    --btn-font-weight: 600;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-block-size: var(--btn-min-block-size);
+    padding: var(--btn-padding-block) var(--btn-padding-inline);
+    border: 0;
+    border-radius: var(--btn-radius);
+    background: var(--btn-background);
+    color: var(--btn-text-color);
+    font-size: var(--btn-font-size);
+    font-weight: var(--btn-font-weight);
+    text-decoration: none;
+
+    /* Touch gets the press; hover waits for a mouse, as a touch screen keeps :hover on the last tap. */
+    &:active:not(:disabled) {
+      background: var(--btn-hover-background);
+    }
+    @media (hover: hover) and (pointer: fine) {
+      &:hover:not(:disabled) {
+        background: var(--btn-hover-background);
+      }
+    }
+    /* Disabled is plain (the neutral surface, muted words), not a pale version of its tone. */
+    &:disabled {
+      --btn-background: var(--surface-subtle);
+      --btn-text-color: var(--muted);
+      cursor: default;
+    }
+  }
+
+  /* The quiet tone: the surface colour, the words around it, and the hover laid over its own surface. */
+  .secondary {
+    --btn-background: var(--surface);
+    --btn-hover-background: linear-gradient(var(--hover) 0 0), var(--surface);
+    --btn-text-color: currentcolor;
+  }
+}

@@ -54,6 +54,11 @@ export interface Part extends Entry {
   madeOf?: readonly string[];
   /** Home-made copies it uses instead of a part: shown as untraced beside the raw values the one-offs count lists. */
   copies?: readonly string[];
+  /**
+   * Its own component CSS file on the components layer (docs/wayfinder/atomic-catalogue/css-layers-plan.md): the
+   * right panel shows that file to edit on the live cell, in place of the Tweak fields.
+   */
+  css?: string;
   rows: readonly Example[];
   columns: readonly Example[];
   /** Drawn in a same-origin frame of this size (menus, dialogs: anything that needs its own page). */
@@ -254,7 +259,7 @@ const HEADING_ENDS: readonly Choice[] = [["none", "Nothing"], ["count", "A count
 
 const ATOMS: Part[] = [
   {
-    id: "button", area: "atoms", name: "Button", files: ["src/ui/dom.ts", "src/style.css"],
+    id: "button", area: "atoms", name: "Button", files: ["src/ui/parts/button.css", "src/ui/dom.ts"], css: "src/ui/parts/button.css",
     defaults: { tone: "primary", label: "Save" },
     controls: [choice("tone", "Tone", [["primary", "Primary"], ["secondary", "Secondary"]]), text("label", "Label")],
     rows: [{ label: "Primary", values: { tone: "primary" } }, { label: "Secondary", values: { tone: "secondary" } }],
