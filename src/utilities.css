@@ -7,7 +7,6 @@
 
 body {
   margin: 0;
-  font-family: sans-serif;
 }
 
 h1,
@@ -56,37 +55,4 @@ h6 {
   gap: 1rem;
   width: 100%;
   min-width: 0;
-}
-
-/* Example typography defaults */
-.heading-style-h1 {
-  font-size: clamp(2.5rem, 6vw, 4rem);
-  line-height: 1.1;
-}
-
-.heading-style-h2 {
-  font-size: clamp(2rem, 4vw, 3rem);
-  line-height: 1.15;
-}
-
-.heading-style-h4 {
-  font-size: 1.5rem;
-  line-height: 1.2;
-}
-
-.text-style-small {
-  margin-block: 0;
-  font-size: 0.875rem;
-  line-height: 1.5;
-}
-
-.button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.75rem 1.25rem;
-  border-radius: 0.5rem;
-  background: var(--foundation-action);
-  color: var(--on-accent);
-  text-decoration: none;
 }

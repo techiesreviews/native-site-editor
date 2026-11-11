@@ -56,6 +56,27 @@ test("custom properties with digits, capitals or underscores count; property nam
   assert.deepEqual(oneOffs("a { --space-2: 10px; }", { file: "src/theme.css" }), []);
 });
 
+test("a component's own hooks on the components layer count as the property they stand for", () => {
+  const component = [
+    "@layer components {",
+    "  .btn {",
+    "    --btn-padding-block: 6px;",
+    "    --btn-padding-inline: var(--space-s);",
+    "    --btn-radius: 8px;",
+    "    --btn-font-size: 13px;",
+    "    --btn-font-weight: 600;",
+    "    --btn-background: var(--primary);",
+    "    --btn-hover-background: linear-gradient(var(--hover) 0 0), var(--surface);",
+    "  }",
+    "}",
+  ].join("\n");
+  assert.deepEqual(oneOffs(component, { file: "src/ui/parts/button.css" }).map(({ kind, line }: Found) => [kind, line]), [
+    ["spacing", 3], ["radii", 5], ["fontSizes", 6],
+  ]);
+  // Off the components layer, a custom property is still a local one, whatever it is named.
+  assert.deepEqual(oneOffs(".btn { --btn-background: var(--primary); }", { file: "src/a.css" }).map(({ kind }: Found) => kind), ["localProperties"]);
+});
+
 test("signed times count, a negative delay included; a name that ends in a time does not", () => {
   assert.deepEqual(oneOffs("a { animation-delay: -120ms; transition-delay: +0.5s; }").map(({ kind }: Found) => kind), ["timings", "timings"]);
   assert.deepEqual(oneOffs("a { animation-delay: var(--dur-delay); animation-name: fade-2s; animation: fade-2s var(--dur-fly); }"), []);

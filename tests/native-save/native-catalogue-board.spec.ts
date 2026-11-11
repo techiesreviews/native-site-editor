@@ -418,13 +418,14 @@ test("after a click in a live frame, a key there and then Tab into the next card
 
 // The Tweak section (Orbit TOOLS-204): the selected part's real CSS values as fields, which change its live cell
 // only (never the state cells or the editor's own styles), per theme for colours; Reset; and "Send to agent", which
-// copies a plain-text change request and says Copied on the button.
-test("Tweak edits the live Button's CSS in light and dark, resets it, and Send to agent copies the change request", async ({ page, baseURL }) => {
+// copies a plain-text change request and says Copied on the button. A part with its own component CSS file shows
+// that file instead (the CSS section, below).
+test("Tweak edits the live Badge's CSS in light and dark, resets it, and Send to agent copies the change request", async ({ page, baseURL }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await openBoard(page, baseURL);
   // A menu or dialog drawing in a state frame takes focus for a moment, which would take a field's typing with it.
   await settled(page);
-  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true }).click();
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Badge", exact: true }).click();
   const options = page.getByRole("complementary", { name: "Options" });
   const tweak = options.getByRole("region", { name: "Tweak" });
   const send = tweak.getByRole("button", { name: /^(Send to agent|Copied)$/ });
@@ -432,54 +433,51 @@ test("Tweak edits the live Button's CSS in light and dark, resets it, and Send t
   await expect(send).toBeDisabled();
   await expect(reset).toBeDisabled();
 
-  const liveButton = page.locator('#card-button [data-cell="live"] button');
-  const stateButton = page.locator('#card-button .cat-half[data-theme="light"] .cat-cell button').first();
-  const css = (button: typeof liveButton, property: string) => button.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property);
+  const liveBadge = page.locator('#card-badge [data-cell="live"] .ui-badge');
+  const stateBadge = page.locator('#card-badge .cat-half[data-theme="light"] .cat-cell .ui-badge[data-kind="tag"]').first();
+  const css = (badge: typeof liveBadge, property: string) => badge.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property);
 
-  // The real values: the button's own padding and the theme tokens its rules use.
-  const padding = tweak.getByRole("textbox", { name: ".button { padding }", exact: true });
-  const radius = tweak.getByRole("textbox", { name: "--radius", exact: true });
-  await expect(padding).toHaveValue("6px 14px");
-  await expect(radius).toHaveValue("6px");
+  // The real values: a rule of the badge's own and the theme tokens its rules use.
+  const dotPadding = tweak.getByRole("textbox", { name: '.ui-badge[data-kind="dot"] { padding }', exact: true });
+  const space = tweak.getByRole("textbox", { name: "--space-xs", exact: true });
+  await expect(dotPadding).toHaveValue("0px");
+  await expect(space).toHaveValue("8px");
   // A value that would break out of its declaration is marked and changes nothing.
-  await padding.fill("1px; } body { display: none");
-  await expect(padding).toHaveAttribute("aria-invalid", "true");
-  expect(await css(liveButton, "padding")).toBe("6px 14px");
+  await dotPadding.fill("1px; } body { display: none");
+  await expect(dotPadding).toHaveAttribute("aria-invalid", "true");
   await expect(send).toBeDisabled();
   // A slider beside a single length moves the value from the keyboard.
-  await tweak.getByRole("slider", { name: "--radius", exact: true }).press("ArrowRight");
-  await expect(radius).toHaveValue("7px");
-  await expect.poll(() => css(liveButton, "border-radius")).toBe("7px");
-  await padding.fill("10px 20px");
-  await expect(padding).toHaveAttribute("aria-invalid", "false");
-  await radius.fill("16px");
-  await expect.poll(() => css(liveButton, "padding")).toBe("10px 20px");
-  await expect.poll(() => css(liveButton, "border-radius")).toBe("16px");
-  expect(await css(stateButton, "border-radius")).toBe("6px");
-  expect(await css(stateButton, "padding")).toBe("6px 14px");
-  await expect(padding.locator("xpath=ancestor::*[@data-changed][1]")).toBeVisible();
+  await tweak.getByRole("slider", { name: "--space-xs", exact: true }).press("ArrowRight");
+  await expect(space).toHaveValue("9px");
+  await expect.poll(() => css(liveBadge, "padding-inline-start")).toBe("9px");
+  await dotPadding.fill("2px");
+  await expect(dotPadding).toHaveAttribute("aria-invalid", "false");
+  await space.fill("12px");
+  await expect.poll(() => css(liveBadge, "padding-inline-start")).toBe("12px");
+  expect(await css(stateBadge, "padding-inline-start")).toBe("8px");
+  await expect(space.locator("xpath=ancestor::*[@data-changed][1]")).toBeVisible();
 
   // A colour changes only the theme on show: dark here, and light keeps its own.
-  const lightBackground = await css(liveButton, "background-color");
+  const lightBackground = await css(liveBadge, "background-color");
   await options.getByRole("group", { name: "Colours" }).getByRole("button", { name: "Dark" }).click();
-  const primary = tweak.getByRole("textbox", { name: "--primary", exact: true });
-  await primary.fill("rgb(255, 0, 0)");
-  await expect.poll(() => css(liveButton, "background-color")).toBe("rgb(255, 0, 0)");
+  const surface = tweak.getByRole("textbox", { name: "--surface-subtle", exact: true });
+  await surface.fill("rgb(255, 0, 0)");
+  await expect.poll(() => css(liveBadge, "background-color")).toBe("rgb(255, 0, 0)");
   await options.getByRole("group", { name: "Colours" }).getByRole("button", { name: "Light" }).click();
-  await expect.poll(() => css(liveButton, "background-color")).toBe(lightBackground);
-  await expect(primary).not.toHaveValue("rgb(255, 0, 0)");
-  await expect(padding).toHaveValue("10px 20px");
+  await expect.poll(() => css(liveBadge, "background-color")).toBe(lightBackground);
+  await expect(surface).not.toHaveValue("rgb(255, 0, 0)");
+  await expect(space).toHaveValue("12px");
 
   await expect(send).toBeEnabled();
   await send.click();
   await expect(send).toHaveText("Copied");
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("6px 14px → 10px 20px");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("8px → 12px");
   const copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toContain("Part: Button (data-part=\"button\")");
-  expect(copied).toContain("- .button { padding }, light and dark: 6px 14px → 10px 20px");
-  expect(copied).toContain("- --radius (theme token in src/theme.css, used by .button { border-radius }), light and dark: 6px → 16px");
-  expect(copied).toMatch(/- --primary \(theme token in src\/theme\.css, used by \.[\w-]+ \{ background \}\), dark: \S.* → rgb\(255, 0, 0\)/);
-  expect(copied).not.toMatch(/--primary.*, light:/);
+  expect(copied).toContain("Part: Badge (data-part=\"badge\")");
+  expect(copied).toContain('- .ui-badge[data-kind="dot"] { padding }, light and dark: 0px → 2px');
+  expect(copied).toMatch(/- --space-xs \(theme token in src\/theme\.css, used by [^)]*\{ padding-inline \}[^)]*\), light and dark: 8px → 12px/);
+  expect(copied).toMatch(/- --surface-subtle \(theme token in src\/theme\.css, used by [^)]*\), dark: \S.* → rgb\(255, 0, 0\)/);
+  expect(copied).not.toMatch(/--surface-subtle.*, light:/);
 
   // A clipboard that refuses: the button says so for a moment, then offers itself again.
   await page.evaluate(() => {
@@ -494,11 +492,82 @@ test("Tweak edits the live Button's CSS in light and dark, resets it, and Send t
   await expect(send).not.toHaveAttribute("data-problem");
 
   await reset.click();
-  await expect.poll(() => css(liveButton, "border-radius")).toBe("6px");
-  await expect.poll(() => css(liveButton, "padding")).toBe("6px 14px");
-  await expect(padding).toHaveValue("6px 14px");
+  await expect.poll(() => css(liveBadge, "padding-inline-start")).toBe("8px");
+  await expect(space).toHaveValue("8px");
   await expect(send).toBeDisabled();
   await expect(reset).toBeDisabled();
+});
+
+// The CSS section (Orbit TOOLS-207): a part with its own component CSS file shows that file in the right panel, in
+// place of the Tweak fields. Edits show on its live cell only, in both themes; a deleted declaration is gone there
+// too; a file that would reach past the cell is refused beside the field; Reset; "Send to agent" copies the change.
+test("the Button's own CSS file edits its live cell only, resets, and Send to agent copies the changed CSS", async ({ page, baseURL }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openBoard(page, baseURL);
+  await settled(page);
+  const outline = page.getByRole("navigation", { name: "Outline" });
+  await outline.getByRole("button", { name: "Button", exact: true }).click();
+  const options = page.getByRole("complementary", { name: "Options" });
+  const section = options.getByRole("region", { name: "CSS" });
+  await expect(options.getByRole("region", { name: "Tweak" })).toHaveCount(0);
+  const file = section.getByRole("textbox", { name: "src/ui/parts/button.css", exact: true });
+  const send = section.getByRole("button", { name: /^(Send to agent|Copied)$/ });
+  const reset = section.getByRole("button", { name: "Reset" });
+  await expect(file).toHaveValue(/@layer components \{/);
+  await expect(file).toHaveValue(/--btn-radius: var\(--radius\);/);
+  const original = await file.inputValue();
+  await expect(send).toBeDisabled();
+  await expect(reset).toBeDisabled();
+
+  const liveButton = page.locator('#card-button [data-cell="live"] button');
+  const stateButton = page.locator('#card-button .cat-half[data-theme="light"] .cat-cell button').first();
+  const css = (button: typeof liveButton, property: string) => button.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property);
+  expect(await css(liveButton, "border-radius")).toBe("6px");
+
+  // A changed default and a deleted declaration: both on the live cell, neither on a state cell or the panel's buttons.
+  const edited = original.replace("--btn-radius: var(--radius);", "--btn-radius: 16px;").replace(/\n\s*font-weight: var\(--btn-font-weight\);/, "");
+  await file.fill(edited);
+  await expect.poll(() => css(liveButton, "border-radius")).toBe("16px");
+  await expect.poll(() => css(liveButton, "font-weight")).toBe("400");
+  expect(await css(stateButton, "border-radius")).toBe("6px");
+  expect(await css(stateButton, "font-weight")).toBe("600");
+  expect(await reset.evaluate((element) => getComputedStyle(element).fontWeight)).toBe("600");
+  await expect(section).toHaveAttribute("data-changed", "");
+
+  // A stray brace would reach the whole board: refused beside the field, the cell keeps the last good file.
+  await file.fill(`${edited}\n}`);
+  await expect(file).toHaveAttribute("aria-invalid", "true");
+  await expect(section.getByText("A } closes a rule that was never opened")).toBeVisible();
+  await expect(send).toBeDisabled();
+  expect(await css(liveButton, "border-radius")).toBe("16px");
+  await file.fill(edited);
+  await expect(file).toHaveAttribute("aria-invalid", "false");
+  await expect(section.getByText("A } closes a rule that was never opened")).toBeHidden();
+
+  // The file holds both themes: the edit stays in dark, and the selection keeps it on the way back.
+  await options.getByRole("group", { name: "Colours" }).getByRole("button", { name: "Dark" }).click();
+  await expect.poll(() => css(liveButton, "border-radius")).toBe("16px");
+  await outline.getByRole("button", { name: "Badge", exact: true }).click();
+  await outline.getByRole("button", { name: "Button", exact: true }).click();
+  await expect(file).toHaveValue(edited);
+
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect(send).toHaveText("Copied");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("File: src/ui/parts/button.css");
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain("Part: Button (data-part=\"button\")");
+  expect(copied).toContain("\n-    --btn-radius: var(--radius);\n+    --btn-radius: 16px;\n");
+  expect(copied).toContain("\n-    font-weight: var(--btn-font-weight);\n");
+  expect(copied).toContain(`\`\`\`css\n${edited.trimEnd()}\n\`\`\``);
+
+  await reset.click();
+  await expect(file).toHaveValue(original);
+  await expect.poll(() => css(liveButton, "border-radius")).toBe("6px");
+  await expect.poll(() => css(liveButton, "font-weight")).toBe("600");
+  await expect(send).toBeDisabled();
+  await expect(reset).toBeDisabled();
+  await expect(page.locator('p[role="status"]')).toHaveText("Button reset");
 });
 
 test("Tweak reaches a part drawn in a live frame, and leaves its state frames as they are", async ({ page, baseURL }) => {

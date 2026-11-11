@@ -44,14 +44,20 @@ export function noVars(value) {
 }
 const timingProperty = /^(transition|transition-duration|transition-delay|animation|animation-duration|animation-delay)$/;
 
-/** Every hand-typed value in one CSS file's text, with its 1-based line. Comments are blanked, lines kept. */
+/**
+ * Every hand-typed value in one CSS file's text, with its 1-based line. Comments are blanked, lines kept. In a file on
+ * the components layer (docs/wayfinder/atomic-catalogue/css-layers-plan.md), a component's own hook such as
+ * `--btn-padding-block` counts as the property it stands for (`padding-block`), not as a local custom property.
+ */
 export function oneOffs(text, { file = "" } = {}) {
   const code = text.replace(/\/\*[\s\S]*?\*\//g, comment => comment.replace(/[^\n]/g, " "));
+  const component = /@layer\s+components\s*\{/.test(code);
   const found = [];
   // A whole property name: custom properties keep digits, capitals and underscores; others are case-insensitive.
   for (const match of code.matchAll(/(?<![\w-])(--[\w-]+|-?[a-zA-Z][\w-]*)\s*:\s*([^;{}]+)(?=;|\})/g)) {
     const [, name, value] = match;
-    const property = name.startsWith("--") ? name : name.toLowerCase();
+    const hook = component ? /^--[a-z][a-z0-9]*-([a-z][a-z-]*)$/.exec(name)?.[1] : undefined;
+    const property = hook ?? (name.startsWith("--") ? name : name.toLowerCase());
     const add = kind => found.push({ kind, line: code.slice(0, match.index).split("\n").length, text: `${name}: ${value.trim().replace(/\s+/g, " ")}` });
     if (property.startsWith("--")) { if (file !== themeFile) add("localProperties"); continue; }
     const own = noVars(value);

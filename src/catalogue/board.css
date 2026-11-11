@@ -786,8 +786,9 @@ label.cat-control--row {
 .cat-tweak__use {
   color: var(--muted);
 }
-/* An edited value: a dot after its name, and its field drawn in the action colour. */
-.cat-tweak__field[data-changed] .cat-tweak__name::before {
+/* An edited value or file: a dot before its name, and its field drawn in the action colour. */
+.cat-tweak__field[data-changed] .cat-tweak__name::before,
+.cat-css[data-changed] .cat-css__file::before {
   content: "";
   display: inline-block;
   inline-size: var(--space-2xs);
@@ -797,10 +798,12 @@ label.cat-control--row {
   background: var(--primary);
   vertical-align: middle;
 }
-.cat-tweak__field[data-changed] .cat-tweak__text {
+.cat-tweak__field[data-changed] .cat-tweak__text,
+.cat-css[data-changed] .cat-css__text {
   border-color: var(--primary);
 }
-.cat-tweak__text[aria-invalid="true"] {
+.cat-tweak__text[aria-invalid="true"],
+.cat-css__text[aria-invalid="true"] {
   border-color: var(--danger-fg);
 }
 .cat-tweak__inputs {
@@ -868,6 +871,35 @@ label.cat-control--row {
   cursor: default;
 }
 .cat-tweak__send[data-problem] {
+  color: var(--danger-fg);
+}
+
+/* CSS: a part's own component CSS file, edited on its live cell (css-file.ts, css-panel.ts). One row per line, so
+   the file reads whole and the panel scrolls; long lines scroll sideways inside the field. */
+.cat-css__file {
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.cat-css__text {
+  padding-block: var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+  resize: vertical;
+}
+@media (pointer: coarse) {
+  .cat-css__text {
+    font-size: calc(var(--type-heading) * 0.8);
+  }
+}
+.cat-css__problem {
+  margin: 0;
+  font-size: var(--type-small);
   color: var(--danger-fg);
 }
 

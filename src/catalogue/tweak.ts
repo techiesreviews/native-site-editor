@@ -130,13 +130,17 @@ export function changeRequest(part: { id: string; name: string }, fields: readon
 
 const WIDE_KEYWORDS = /^(inherit|initial|unset|revert|revert-layer)$/i;
 
-/** The style rules of a document that apply now: inside @media and @supports only when they hold. */
+/**
+ * The style rules of a document that apply now: inside @media and @supports only when they hold. The components
+ * layer is left out: each file on it is edited whole in its own part's CSS section (a Button inside a heading, say).
+ */
 function styleRules(doc: Document): CSSStyleRule[] {
   const view = doc.defaultView!;
   const out: CSSStyleRule[] = [];
   const walk = (rules: CSSRuleList) => {
     for (const rule of Array.from(rules)) {
       if (rule instanceof view.CSSStyleRule) out.push(rule);
+      else if (rule instanceof view.CSSLayerBlockRule && rule.name === "components") continue;
       else if (rule instanceof view.CSSMediaRule) { if (view.matchMedia(rule.media.mediaText).matches) walk(rule.cssRules); }
       else if (rule instanceof view.CSSSupportsRule) { if (view.CSS.supports(rule.conditionText)) walk(rule.cssRules); }
       else if (rule instanceof view.CSSGroupingRule) walk(rule.cssRules);

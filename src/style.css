@@ -1,5 +1,10 @@
+/* The editor's CSS on the Techies Framework layers (docs/wayfinder/atomic-catalogue/css-layers-plan.md): theme
+   tokens, bare elements, then components each in a file of its own. The editor's screen CSS stays unlayered, so it
+   wins over all three. */
+@layer tokens, elements, components;
 @import "./ui/inline-field.css";
 @import "./ui/editor-scrollbars.css";
+@import "./ui/parts/button.css";
 
 :root {
   font-family:
@@ -20,34 +25,26 @@ body {
   font-family: inherit;
   font-size: var(--type-base);
 }
-button,
-select {
-  font: inherit;
+/* Bare elements, below every component: a Button's own font and colours win over these. */
+@layer elements {
+  button,
+  a,
+  select {
+    font: inherit;
+    color: inherit;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button {
+    cursor: pointer;
+  }
 }
-button,
-a,
-select {
-  -webkit-tap-highlight-color: transparent;
-}
-button {
-  cursor: pointer;
-}
-button:disabled,
+/* Bare icon and text buttons have no fill and fade; a Button is plain instead (src/ui/parts/button.css).
+   Hover rules below sit behind (hover: hover) and (pointer: fine), as a touch
+   screen keeps :hover on the last tap; touch gets the :active press instead. */
+button:disabled:where(:not(.button)),
 select:disabled {
   cursor: default;
   opacity: 0.5;
-}
-/* A disabled filled button is plain (the neutral surface, muted words), not a
-   pale version of its colour. Bare icon and text buttons have no fill and fade.
-   Hover rules below sit behind (hover: hover) and (pointer: fine), as a touch
-   screen keeps :hover on the last tap; touch gets the :active press instead. */
-:is(.primary, .secondary, .button):disabled {
-  background: var(--surface-subtle);
-  color: var(--muted);
-  opacity: 1;
-}
-a {
-  color: inherit;
 }
 button:focus-visible,
 a:focus-visible,
@@ -56,10 +53,6 @@ summary:focus-visible,
 pre:focus-visible {
   outline: var(--focus-ring);
   outline-offset: 2px;
-}
-button,
-select {
-  color: inherit;
 }
 #app {
   height: 100dvh;
@@ -371,39 +364,6 @@ h1 {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
-}
-.button {
-  min-height: var(--size-control);
-  border: 0;
-  padding: 6px 14px;
-  border-radius: var(--radius);
-  font-size: var(--type-base);
-  font-weight: 600;
-}
-.primary {
-  background: var(--primary);
-  color: var(--on-primary);
-}
-.primary:active:not(:disabled) {
-  background: var(--primary-hover);
-}
-@media (hover: hover) and (pointer: fine) {
-  .primary:hover:not(:disabled) {
-    background: var(--primary-hover);
-  }
-}
-.secondary {
-  background: var(--surface);
-  color: inherit;
-}
-/* The hover and press over the button's own surface, as it is not transparent. */
-.secondary:active:not(:disabled) {
-  background: linear-gradient(var(--hover) 0 0), var(--surface);
-}
-@media (hover: hover) and (pointer: fine) {
-  .secondary:hover:not(:disabled) {
-    background: linear-gradient(var(--hover) 0 0), var(--surface);
-  }
 }
 .steps {
   display: grid;
@@ -838,9 +798,6 @@ dd {
   min-width: 0;
 }
 
-.login-signin {
-  text-decoration: none;
-}
 
 .explorer-head { display: flex; align-items: stretch; gap: 4px; margin-block-end: 4px; border-block-end: 1px solid var(--control-line); }
 .explorer-head:has(> .explorer-tabs[hidden]) { display: none; }

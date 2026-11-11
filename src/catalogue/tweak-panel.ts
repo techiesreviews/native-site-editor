@@ -32,7 +32,7 @@ const valid = (field: TweakField, value: string) =>
   safe(value) && CSS.supports(field.token && field.kind === "colour" ? "color" : field.property, value);
 
 /** Writes `text` to the clipboard; false when the browser refuses. */
-async function copy(text: string): Promise<boolean> {
+export async function copy(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
     return true;

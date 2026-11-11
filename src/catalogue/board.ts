@@ -1,8 +1,9 @@
 // The catalogue board (atomic catalogue tickets 07, 08 and 05): an endless canvas with areas left to right, each part a
 // frame (a live cell that works, then options in rows, states in columns, light and dark side by side; each card and
 // live cell named by `data-part`, for preview annotations), an outline that flies to a part and ticks
-// approved ones, and a right panel with live options, a Tweak section for the part's CSS on its live cell
-// (tweak.ts), where the part lives, what it is made of, and Approve.
+// approved ones, and a right panel with live options, a part's own component CSS file to edit on its live cell
+// (css-file.ts) or else a Tweak section for its CSS values there (tweak.ts), where the part lives, what it is made
+// of, and Approve.
 // Plain DOM moved by one CSS transform; `will-change` only while a gesture runs, so text redraws sharp at rest.
 import listSvg from "@phosphor-icons/core/regular/list.svg?raw";
 import minusSvg from "@phosphor-icons/core/regular/minus.svg?raw";
@@ -14,6 +15,8 @@ import oneOffsText from "../../scripts/agents/one-offs.json?raw";
 import { iconMarkup, sizedSvg, svgElement } from "../icons";
 import approvalsText from "./approvals.json?raw";
 import { DEFAULT_TARGET, approvalTarget, parseApprovals, readApprovals, saveApproval, signedInAs, type Approvals } from "./approvals";
+import { liveCss } from "./css-file";
+import { cssSection, type CssFile } from "./css-panel";
 import { force, forceStates, type Forced } from "./force-states";
 import { frameElement, updateFrame, type Theme } from "./frame";
 import { MOCKUPS, type Mockup } from "./mockups";
@@ -28,6 +31,9 @@ const areaName = (id: AreaId) => AREAS.find((area) => area.id === id)!.name;
 const svg = (markup: string, size = 16) => svgElement(sizedSvg(markup, size));
 const clamp = (value: number, low: number, high: number) => Math.min(Math.max(value, low), high);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+/** The component CSS files a part can name (`Part.css`), read as text only when the part is first selected. */
+const CSS_FILES = import.meta.glob<string>("../ui/parts/*.css", { query: "?raw", import: "default" });
+const cssFileLoader = (path: string) => CSS_FILES[path.replace(/^src\//, "../")];
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
   const element = document.createElement(tag);
@@ -62,6 +68,8 @@ export function startBoard(root: HTMLElement) {
   /** Each part's Tweak values (read once, when it is first selected) and its edits, kept until the page closes. */
   /** `again`: a frame never drew while reading, so the next selection reads once more. */
   const tweaks = new Map<string, { fields?: TweakField[]; edits: Edits; again?: boolean }>();
+  /** Each part's own CSS file (`Part.css`), read when it is first selected, and its edits, kept until the page closes. */
+  const cssFiles = new Map<string, CssFile>();
 
   root.className = "cat-board";
   root.innerHTML = `
@@ -279,10 +287,19 @@ export function startBoard(root: HTMLElement) {
   /** Where a part's edits show: its live cell in that theme, never a state cell or the editor's own styles. */
   const inlineScope = (id: string) => (side: Side) => `.cat-live[data-theme="${side}"] > .cat-live__stage[data-part="${CSS.escape(id)}"]`;
   const frameScope = (side: Side) => `:root[data-theme="${side}"] .cat-frame-stage`;
-  const frameTweaks = (entry: Part) => { const tweak = tweaks.get(entry.id); return tweak?.fields ? tweakCss(tweak.fields, tweak.edits, frameScope) : ""; };
+  /** An edited CSS file on the live cell (both themes: the file holds both); "" when it is as the code has it. */
+  const fileCss = (entry: Part, scope: string) => {
+    const file = cssFiles.get(entry.id);
+    return file?.before !== undefined && file.shown !== undefined ? liveCss(file.before, file.shown, scope) : "";
+  };
+  const frameTweaks = (entry: Part) => {
+    if (entry.css) return fileCss(entry, ".cat-frame-stage");
+    const tweak = tweaks.get(entry.id);
+    return tweak?.fields ? tweakCss(tweak.fields, tweak.edits, frameScope) : "";
+  };
   function applyTweaks(entry: Part) {
     const tweak = tweaks.get(entry.id);
-    if (!tweak?.fields) return;
+    if (!entry.css && !tweak?.fields) return;
     const stage = world.querySelector<HTMLElement>(`#card-${CSS.escape(entry.id)} .cat-live__stage`);
     if (entry.frame) {
       // The frame's own page writes them into its document (frame.ts), also after it is made again for another theme.
@@ -290,7 +307,7 @@ export function startBoard(root: HTMLElement) {
       if (frame) frame.dataset.tweaks = frameTweaks(entry);
       return;
     }
-    const css = tweakCss(tweak.fields, tweak.edits, inlineScope(entry.id));
+    const css = entry.css ? fileCss(entry, `.cat-live__stage[data-part="${CSS.escape(entry.id)}"]`) : tweakCss(tweak!.fields!, tweak!.edits, inlineScope(entry.id));
     let style = document.head.querySelector<HTMLStyleElement>(`style[data-tweaks="${CSS.escape(entry.id)}"]`);
     if (!css) { style?.remove(); return; }
     if (!style) { style = el("style"); style.dataset.tweaks = entry.id; }
@@ -347,6 +364,27 @@ export function startBoard(root: HTMLElement) {
     const entry = selected ? byId.get(selected) : undefined;
     const section = inspector.querySelector("[data-tweak]");
     if (entry && isPart(entry) && section) section.replaceWith(tweakFor(entry));
+  }
+  /** The CSS section of a part with its own CSS file, its text read on first selection. */
+  function cssFor(entry: Part, path: string) {
+    let file = cssFiles.get(entry.id);
+    if (!file) {
+      const loaded: CssFile = file = {};
+      cssFiles.set(entry.id, file);
+      const load = cssFileLoader(path);
+      void (load ? load() : Promise.reject(new Error(`${path} is not a component CSS file`))).then((text) => {
+        loaded.before = text;
+        const section = selected === entry.id ? inspector.querySelector("[data-css]") : null;
+        section?.replaceWith(cssFor(entry, path));
+      }, () => {
+        // Unreadable: the section says so in place of the field; the next selection tries again.
+        cssFiles.delete(entry.id);
+        const section = selected === entry.id ? inspector.querySelector("[data-css]") : null;
+        section?.querySelector(".cat-tweak__note")?.replaceChildren("Couldn't read its file");
+        section?.removeAttribute("aria-busy");
+      });
+    }
+    return cssSection({ part: entry, path, file, apply: () => applyTweaks(entry), say });
   }
 
   const areas = new Map<AreaId, HTMLElement>();
@@ -654,7 +692,7 @@ export function startBoard(root: HTMLElement) {
       controls.push(segmented("Colours", [["light", "Light"], ["dark", "Dark"]], now.theme, (theme) => { now.theme = theme as Theme; drawLive(entry); refreshTweak(); }));
     }
     if (controls.length) sections.push(section("Options", ...controls));
-    if (isPart(entry)) sections.push(tweakFor(entry, true));
+    if (isPart(entry)) sections.push(entry.css ? cssFor(entry, entry.css) : tweakFor(entry, true));
     if (entry.area === "molecules" || entry.area === "organisms" || entry.area === "mockups") sections.push(section("Made of", madeOfList(entry)));
     sections.push(approveSection(entry));
     inspector.replaceChildren(...sections);

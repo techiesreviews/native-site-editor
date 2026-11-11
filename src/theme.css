@@ -129,8 +129,6 @@
   --image-control-scrim: oklch(15.28% 0.0611 262.26);
   --shadow-ink: oklch(0% 0 none);
   --media-player-surface: var(--shadow-ink);
-  /* Frozen utility foundation; theme.css overrides its editor buttons. */
-  --foundation-action: oklch(17.76% 0 none);
 
   /* Slot chip fills, retained across themes over the editing preview. */
   --slot-surface: oklch(from var(--color-component) 47% 0.21 h);
@@ -280,15 +278,4 @@
 
 @media (hover: none), (pointer: coarse), (width <= 768px) {
   :root { --size-tap: var(--size-touch); }
-}
-
-/* App overrides for the legacy utility foundation, without changing the
-   frozen prototype that imports that foundation independently. */
-.button {
-  background: var(--primary);
-  color: var(--on-primary);
-}
-.secondary {
-  background: var(--surface);
-  color: inherit;
 }
