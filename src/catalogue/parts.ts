@@ -3,6 +3,8 @@
 // a part. A new part is one more entry here; the board, its outline, search and approvals pick it up by themselves.
 // Shared values read the tokens in src/theme.css. Mock-ups for future features live in mockups.ts.
 
+import type { IconName } from "../icons";
+
 export type AreaId = "values" | "atoms" | "molecules" | "organisms" | "mockups";
 export const AREAS: readonly { id: AreaId; name: string }[] = [
   { id: "values", name: "Shared values" },
@@ -217,7 +219,17 @@ const VALUES: ValuePart[] = [
 
 // ---------- Atoms ----------
 
-const ICON_NAMES: readonly Choice[] = [["check", "Check"], ["plus", "Plus"], ["trash", "Delete"], ["copy", "Copy"], ["gear", "Settings"], ["sparkle", "Agent"]];
+/** Icons the options panel offers (every name is checked against the bundled set by its type); the editor has more. */
+const iconChoice = (name: IconName, label: string): Choice => [name, label];
+const ICON_NAMES: readonly Choice[] = [
+  iconChoice("check", "Check"), iconChoice("plus", "Plus"), iconChoice("x", "Close"), iconChoice("trash", "Delete"), iconChoice("copy", "Copy"),
+  iconChoice("gear", "Settings"), iconChoice("sparkle", "Agent"), iconChoice("link", "Link"), iconChoice("folder", "Folder"), iconChoice("file", "File"),
+  iconChoice("house", "Home"), iconChoice("play", "Play"), iconChoice("arrow-right", "Arrow right"), iconChoice("caret-down", "Caret down"),
+  iconChoice("dots-three", "More"), iconChoice("undo", "Undo"), iconChoice("redo", "Redo"),
+];
+const ICON_ROWS = ICON_NAMES.filter(([name]) => ["check", "plus", "trash", "copy"].includes(name));
+const ICON_SIZES: readonly Choice[] = [["12", "12"], ["16", "16"], ["20", "20"], ["24", "24"]];
+const ICON_PLACES: readonly Choice[] = [["alone", "Alone"], ["before", "Before words"], ["after", "After words"]];
 
 const ATOMS: Part[] = [
   {
@@ -234,14 +246,24 @@ const ATOMS: Part[] = [
     },
   },
   {
-    id: "icon", area: "atoms", name: "Icon", files: ["src/icons.ts", "src/icons.css"],
-    defaults: { name: "check", size: "16" },
-    controls: [choice("name", "Icon", ICON_NAMES), choice("size", "Size", [["16", "16"], ["20", "20"], ["24", "24"]])],
-    rows: ICON_NAMES.slice(0, 4).map(([name, label]) => ({ label, values: { name } })),
-    columns: [{ label: "16", values: { size: "16" } }, { label: "20", values: { size: "20" } }, { label: "24", values: { size: "24" } }],
+    id: "icon", area: "atoms", name: "Icon", files: ["src/ui/parts/icon.ts", "src/ui/parts/icon-options.ts", "src/icons.ts", "src/icons.css"],
+    defaults: { name: "check", size: "16", place: "alone", words: "Save" },
+    controls: [
+      choice("name", "Icon", ICON_NAMES), choice("size", "Size", ICON_SIZES), choice("place", "Place", ICON_PLACES), text("words", "Words"),
+    ],
+    rows: [
+      ...ICON_ROWS.map(([name, label]) => ({ label, values: { name } })),
+      { label: "Before words", values: { name: "plus", place: "before", words: "New page" } },
+      { label: "After words", values: { name: "arrow-right", place: "after", words: "Next" } },
+    ],
+    columns: ICON_SIZES.map(([size, label]) => ({ label, values: { size } })),
     async render(values) {
-      const { icon } = await import("../icons");
-      return icon(str(values.name) as Parameters<typeof icon>[0], Number(values.size) || 16);
+      const [{ iconPart }, { node }] = await Promise.all([import("../ui/parts/icon"), import("../ui/dom")]);
+      const picture = iconPart(str(values.name) as IconName, { size: str(values.size), place: str(values.place) });
+      if (values.place === "alone") return picture;
+      const line = node("span", "cat-icon-line");
+      line.append(...(values.place === "before" ? [picture, str(values.words)] : [str(values.words), picture]));
+      return line;
     },
   },
   {
