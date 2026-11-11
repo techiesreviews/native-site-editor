@@ -1240,6 +1240,48 @@ test("the open file's room hands a push notice on with the draft scope", async (
   stop();
 });
 
+test("a tab back on a page with what it typed while away puts back only its own words, wherever others changed the text between them", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.openFile.value = "about.html";
+  await quiet();
+  // Anna's draft changes at the top and at the end while she is on another page (an agent writing into it, say).
+  anna.type(0, "<!-- top -->\n");
+  anna.type(anna.text.length, "<!-- end -->\n");
+  // Meanwhile Lex removes a word in between and types one.
+  lex.type(lex.text.indexOf("seven"), "", "seven".length);
+  lex.type(lex.text.indexOf("Fresh"), "Warm ");
+  anna.openFile.value = path;
+  await until(() => anna.text === lex.text && lex.text.includes("top") && lex.text.includes("end"), "Anna back, both on one text");
+  assert.equal(lex.text, "<!-- top -->\n<h1>Warm Fresh bread</h1>\n<p>Open at .</p>\n<!-- end -->\n");
+  anna.stop(); lex.stop();
+});
+
+test("a joiner's unsaved changes in two places go in word by word: what someone typed between them stays, once", async () => {
+  const room = fakeRoom();
+  const anna = tab(room);
+  await quiet();
+  anna.type(base.indexOf("seven"), "half past ");
+  const lex = tab(room, `<!-- Lex -->\n${base}<p>Closed Mondays.</p>\n`);
+  await until(() => anna.text === lex.text && lex.text.includes("Mondays") && lex.text.includes("half past"), "both on one text");
+  assert.equal(lex.text, "<!-- Lex -->\n<h1>Fresh bread</h1>\n<p>Open at half past seven.</p>\n<p>Closed Mondays.</p>\n");
+  anna.stop(); lex.stop();
+});
+
+test("a page whose room never answers counts as shared only for the catch-up wait, so outside changes fold in again", () => {
+  const time = fakeTimers(), store = createDraftStore();
+  store.open(scope, path, { text: base, baseSha: sha });
+  const stop = startLiveText({ store, openFile: signal<string | undefined>(path), scope: () => scope, on: true, clock: time.clock, keeper: keeper(),
+    openRoom: () => ({ send: async () => false, close: () => undefined }), loadYjs: () => import("yjs") });
+  const key = draftKey(scope, path);
+  assert.equal(liveShared(store, key), true, "the room has not said who is here yet");
+  time.advance(LIVE_TEXT_CATCH_UP_MS);
+  assert.equal(liveShared(store, key), false, "no answer: not shared");
+  stop();
+});
+
 test("liveShared: a file is shared in a live room only while another tab is in, or its copy is made, and never after it stops", async () => {
   const room = fakeRoom();
   const lex = tab(room);
