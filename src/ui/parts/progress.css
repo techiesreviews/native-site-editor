@@ -1,0 +1,41 @@
+/* The Progress bar part (atomic catalogue ticket 14): one element, the fill drawn on its ::before. Known: the fill is as
+   wide as the --progress the part sets. Unknown: a short bar slides along the track. Only shared tokens; the slide is
+   the fly timing twice over (slower still, never off, with reduced motion). */
+.progress {
+  display: block;
+  box-sizing: border-box;
+  inline-size: 100%;
+  block-size: var(--space-2xs);
+  overflow: clip;
+  border-radius: var(--radius-full);
+  background: var(--control-line);
+}
+.progress::before {
+  content: "";
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}
+.progress[data-mode="known"]::before {
+  inline-size: var(--progress, 0%);
+  transition: inline-size var(--dur-menu) var(--ease-out);
+}
+.progress[data-mode="unknown"]::before {
+  inline-size: 40%;
+  animation: progress-slide calc(var(--dur-fly) * 2) ease-in-out infinite;
+}
+@keyframes progress-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+/* Right to left: the track starts on the right, so the slide runs the other way. */
+.progress[data-mode="unknown"]:dir(rtl)::before { animation-name: progress-slide-rtl; }
+@keyframes progress-slide-rtl {
+  from { transform: translateX(100%); }
+  to { transform: translateX(-250%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress[data-mode="known"]::before { transition: none; }
+  .progress[data-mode="unknown"]::before { animation-duration: calc(var(--dur-fly) * 5); }
+}

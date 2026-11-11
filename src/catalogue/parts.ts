@@ -5,6 +5,8 @@
 
 import type { IconName } from "../icons";
 import { ICON_PLACES, ICON_SIZES, type IconPlace } from "../ui/parts/icon-options";
+import { PROGRESS_STEPS } from "../ui/parts/progress-options";
+import { SPINNER_PLACES, SPINNER_SIZES } from "../ui/parts/spinner-options";
 
 export type AreaId = "values" | "atoms" | "molecules" | "organisms" | "mockups";
 export const AREAS: readonly { id: AreaId; name: string }[] = [
@@ -233,6 +235,12 @@ const ICON_SIZE_CHOICES: readonly Choice[] = ICON_SIZES.map((size) => [String(si
 const ICON_PLACE_LABELS: Record<IconPlace, string> = { alone: "Alone", before: "Before words", after: "After words" };
 const ICON_PLACE_CHOICES: readonly Choice[] = ICON_PLACES.map((place) => [place, ICON_PLACE_LABELS[place]]);
 
+const capital = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+const SPINNER_SIZE_CHOICES: readonly Choice[] = SPINNER_SIZES.map((size) => [size, capital(size)]);
+const SPINNER_PLACE_CHOICES: readonly Choice[] = SPINNER_PLACES.map((place) => [place, capital(place)]);
+/** The amounts the board offers: not known, then a few places along the bar ("unknown" is the part's own word). */
+const PROGRESS_AMOUNTS: readonly Choice[] = [["unknown", "Unknown"], ...PROGRESS_STEPS.map((step): Choice => [String(step), step === 0 ? "Not started" : step === 100 ? "Done" : `${step}%`])];
+
 const ATOMS: Part[] = [
   {
     id: "button", area: "atoms", name: "Button", files: ["src/ui/dom.ts", "src/style.css"],
@@ -262,6 +270,35 @@ const ATOMS: Part[] = [
     async render(values) {
       const { iconPart } = await import("../ui/parts/icon");
       return iconPart(str(values.name) as IconName, { size: str(values.size), place: str(values.place), words: str(values.words) });
+    },
+  },
+  {
+    id: "spinner", area: "atoms", name: "Spinner", files: ["src/ui/parts/spinner.ts", "src/ui/parts/spinner-options.ts", "src/ui/parts/spinner.css"],
+    defaults: { size: "medium", place: "inline", label: "Loading" },
+    controls: [choice("size", "Size", SPINNER_SIZE_CHOICES), choice("place", "Place", SPINNER_PLACE_CHOICES), text("label", "Label")],
+    rows: SPINNER_PLACE_CHOICES.map(([place, label]) => ({ label, values: { place } })),
+    columns: SPINNER_SIZE_CHOICES.map(([size, label]) => ({ label, values: { size } })),
+    async render(values) {
+      const [{ spinner }, node] = await Promise.all([import("../ui/parts/spinner"), dom()]);
+      const ring = spinner({ size: str(values.size), place: str(values.place), label: str(values.label) });
+      if (values.place !== "overlay") return ring;
+      // An overlay covers what is loading: a stand-in block of words for it to sit over.
+      const host = node("div", "cat-overlay-host");
+      host.append(node("p", "", "Pages are on their way."), ring);
+      return host;
+    },
+  },
+  {
+    id: "progress", area: "atoms", name: "Progress bar", files: ["src/ui/parts/progress.ts", "src/ui/parts/progress-options.ts", "src/ui/parts/progress.css"],
+    defaults: { amount: "60", label: "Adding pictures" },
+    controls: [choice("amount", "Amount", PROGRESS_AMOUNTS), text("label", "Label")],
+    rows: PROGRESS_AMOUNTS.map(([amount, label]) => ({ label, values: { amount } })),
+    columns: states("normal"),
+    async render(values) {
+      const [{ progress }, node] = await Promise.all([import("../ui/parts/progress"), dom()]);
+      const stage = node("div", "cat-progress-stage");
+      stage.append(progress({ value: values.amount === "unknown" ? null : str(values.amount), label: str(values.label) }));
+      return stage;
     },
   },
   {

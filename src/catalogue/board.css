@@ -972,6 +972,23 @@ label.cat-control--row {
 .cat-field {
   inline-size: 180px;
 }
+.cat-progress-stage {
+  inline-size: 180px;
+}
+/* A stand-in for what an overlay spinner covers: its own corners, so the veil follows them. */
+.cat-overlay-host {
+  position: relative;
+  min-inline-size: 140px;
+  min-block-size: 72px;
+  padding: var(--space-s);
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius-panel);
+  color: var(--text);
+  font-size: var(--type-small);
+}
+.cat-overlay-host > p {
+  margin: 0;
+}
 .cat-menu-surface {
   inline-size: 280px;
   padding: var(--panel-padding);
