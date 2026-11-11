@@ -5,8 +5,11 @@ import "../utilities.css";
 import "../style.css";
 import "../theme.css";
 import "./board.css";
+import { loadComponentStyles } from "./component-css";
 import { frameOf, ownQuery, startFrame } from "./frame";
 
+// Component files load as styles of their own (component-css.ts), so a live cell can leave its part's file out.
+loadComponentStyles();
 const shown = frameOf(ownQuery());
 if (shown) void startFrame(shown);
 else void import("./board").then(({ startBoard }) => startBoard(document.getElementById("catalogue")!));

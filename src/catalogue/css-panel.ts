@@ -1,11 +1,11 @@
-// The CSS section's controls (css-file.ts writes the live CSS and the change request): the part's own component CSS
+// The CSS section's controls (css-file.ts checks the text and writes the change request): the part's own component CSS
 // file in a code field, shown on its live cell as it is typed, Reset, and "Send to agent", which says Copied on itself.
 import { iconMarkup, svgElement } from "../icons";
-import { cssChangeRequest, editProblem } from "./css-file";
+import { cssChangeRequest, cssProblem } from "./css-file";
 import { copy } from "./tweak-panel";
 
 /**
- * A part's file on the board, kept until the page closes: the code's text once read, the text as edited, and the
+ * A part's file on the board, kept until the page closes: the code's text, the text as edited, and the
  * edited text the live cell shows (the last one with no problem); `text` and `shown` are unset while unchanged.
  */
 export interface CssFile { before?: string; text?: string; shown?: string }
@@ -20,7 +20,6 @@ export interface CssPanel {
 }
 
 let fieldIds = 0;
-const problemOf = (text: string, before: string) => editProblem(text, before, CSSStyleSheet);
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
   const element = document.createElement(tag);
@@ -37,8 +36,7 @@ export function cssSection(panel: CssPanel): HTMLElement {
   section.append(el("h3", "cat-inspector__heading", "CSS"));
   const { file } = panel;
   if (file.before === undefined) {
-    section.setAttribute("aria-busy", "true");
-    section.append(el("p", "cat-tweak__note", "Reading its file…"));
+    section.append(el("p", "cat-tweak__note", "Couldn't read its file"));
     return section;
   }
   const before = file.before;
@@ -64,7 +62,7 @@ export function cssSection(panel: CssPanel): HTMLElement {
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Shows the text's state: its problem beside the field, the changed mark, and whether the actions do anything. */
-  const paint = (wrong = problemOf(file.text ?? before, before)) => {
+  const paint = (wrong = cssProblem(file.text ?? before)) => {
     const now = file.text ?? before;
     text.setAttribute("aria-invalid", String(!!wrong));
     problem.textContent = wrong;
@@ -81,9 +79,9 @@ export function cssSection(panel: CssPanel): HTMLElement {
     file.text = text.value === before ? undefined : text.value;
     clearTimeout(copiedTimer);
     sendLabel();
-    const wrong = problemOf(text.value, before);
+    const wrong = cssProblem(text.value);
     paint(wrong);
-    // A file with a problem would reach past the live cell: the cell keeps the last text that had none.
+    // A file with a problem would drop rules after it: the cell keeps the last text that had none.
     if (wrong) return;
     file.shown = file.text;
     panel.apply();

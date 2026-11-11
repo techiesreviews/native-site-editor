@@ -25,6 +25,9 @@ Rules that matter for every slice:
   selector to win over an element rule.
 - **The order statement comes first.** `src/style.css` starts with `@layer tokens, elements, components;`, and every
   component file starts with the same line, so the order holds wherever a file loads (a lazy panel's CSS included).
+- **The editor's entry loads each component file.** `src/main.ts` imports it, never `src/style.css` or the part's own
+  module: the board loads the same file as a style of its own (`src/catalogue/component-css.ts`), so a live cell can
+  leave it out.
 - **One component, one file, one block.** `src/ui/parts/<name>.css` holds the order line, then one
   `@layer components { … }` with native nesting: the root rule sets the `--<name>-*` defaults and uses them; a tone or
   size changes only those properties; hover sits behind `@media (hover: hover) and (pointer: fine)`, touch gets
@@ -34,7 +37,9 @@ Rules that matter for every slice:
   as the slice adds.
 - **The design board follows.** A part whose component file is done names it (`css` in `src/catalogue/parts.ts`):
   selecting it shows that file in the right panel, editable on the live cell only, with Reset and Send to agent, in
-  place of the generic Tweak fields. Component files are left out of other parts' Tweak fields.
+  place of the generic Tweak fields. The live cell draws in a shadow root holding the board's other styles and the
+  file as edited, so a deleted rule or a selector naming other parts stays in that cell. Component files are left out
+  of other parts' Tweak fields.
 - **The one-off count reads hooks as what they stand for.** In a file on the components layer, a hook counts as the
   counted property its name ends in (`scripts/agents/one-offs.mjs`): `--btn-padding-block` as `padding-block`,
   `--btn-icon-gap` as `gap`. A hook that ends in none (`--btn-font-weight`) counts as a local custom property only when

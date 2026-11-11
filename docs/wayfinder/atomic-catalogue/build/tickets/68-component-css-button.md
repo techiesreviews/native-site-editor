@@ -20,7 +20,7 @@ Lex (2026-11-11, Orbit card TOOLS-207): "I rather have direct access to all rele
 
 ## Files
 
-`src/ui/parts/button.css` (new), `src/style.css`, `src/theme.css`, `src/utilities.css`, `src/live-guest.css`; `src/catalogue/css-file.ts` (new), `src/catalogue/css-panel.ts` (new), `src/catalogue/board.ts`, `src/catalogue/board.css`, `src/catalogue/parts.ts`, `src/catalogue/tweak.ts`, `src/catalogue/tweak-panel.ts`; `scripts/agents/one-offs.mjs`, `scripts/agents/one-offs.json`; `tests/editor-css-layers.test.ts` (new), `tests/catalogue-css-file.test.ts` (new), `tests/one-offs.test.ts`, `tests/native-save/native-catalogue-board.spec.ts`; `docs/wayfinder/atomic-catalogue/css-layers-plan.md` (new), `docs/agents/code-map.md`.
+`src/ui/parts/button.css` (new), `src/style.css`, `src/theme.css`, `src/utilities.css`, `src/live-guest.css`; `src/catalogue/css-file.ts` (new), `src/catalogue/css-panel.ts` (new), `src/catalogue/component-css.ts` (new), `src/catalogue/main.ts`, `src/main.ts`, `src/catalogue/board.ts`, `src/catalogue/board.css`, `src/catalogue/parts.ts`, `src/catalogue/tweak.ts`, `src/catalogue/tweak-panel.ts`; `scripts/agents/one-offs.mjs`, `scripts/agents/one-offs.json`; `tests/editor-css-layers.test.ts` (new), `tests/catalogue-css-file.test.ts` (new), `tests/one-offs.test.ts`, `tests/native-save/native-catalogue-board.spec.ts`; `docs/wayfinder/atomic-catalogue/css-layers-plan.md` (new), `docs/agents/code-map.md`.
 
 ## Done when
 

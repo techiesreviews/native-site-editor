@@ -77,7 +77,6 @@ test("the live-share guest page colours its Join button itself, as it does not l
 test("the editor's bare element rules sit on the elements layer, below every component", () => {
   const css = withoutComments(read("src/style.css"));
   assert.ok(css.trimStart().startsWith(ORDER), "src/style.css sets the layers' order before anything else");
-  assert.match(css, /@import "\.\/ui\/parts\/button\.css";/);
   const at = css.indexOf("@layer elements {");
   assert.ok(at >= 0, "an elements layer");
   const elements = block(css, at);
@@ -86,11 +85,24 @@ test("the editor's bare element rules sit on the elements layer, below every com
   assert.doesNotMatch(outside, /(?:^|})\s*(?:button|a)(?:,\s*(?:a|select))*\s*\{[^}]*(?:font|color): inherit/m, "no unlayered copy left");
 });
 
+test("the editor loads the Button's file; the board loads it as a style of its own", () => {
+  assert.match(read("src/main.ts"), /^import "\.\/ui\/parts\/button\.css";$/m);
+  // Not through style.css, which the board loads too: the board adds it itself, so a live cell can leave it out.
+  assert.doesNotMatch(withoutComments(read("src/style.css")), /button\.css/);
+  assert.match(read("src/catalogue/main.ts"), /^loadComponentStyles\(\);$/m);
+});
+
 test("the design board shows the Button's own CSS file", () => {
   const button = PARTS.find((part) => part.id === "button");
   assert.ok(button && isPart(button));
   assert.equal(button.css, BUTTON);
   assert.ok(button.files.includes(BUTTON));
   assert.ok(!button.files.includes("src/style.css"));
-  for (const part of PARTS) if (isPart(part) && part.css) assert.ok(part.files.includes(part.css), `${part.id} lists its CSS file`);
+  for (const part of PARTS) {
+    if (!isPart(part) || !part.css) continue;
+    assert.ok(part.files.includes(part.css), `${part.id} lists its CSS file`);
+    // The board reads these files as text (component-css.ts) and draws their live cell inline, in a shadow root.
+    assert.match(part.css, /^src\/ui\/parts\/[\w-]+\.css$/, `${part.id}: its CSS file is a component file`);
+    assert.equal(part.frame, undefined, `${part.id}: a part with its own CSS file draws its live cell inline`);
+  }
 });
