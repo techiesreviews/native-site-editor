@@ -44,10 +44,24 @@ export function noVars(value) {
 }
 const timingProperty = /^(transition|transition-duration|transition-delay|animation|animation-duration|animation-delay)$/;
 
+/** The counted property a component hook's name ends in (`icon-gap` → `gap`, `hover-shadow` → `box-shadow`), if any. */
+function hookProperty(rest) {
+  const parts = rest.split("-");
+  for (let i = 0; i < parts.length; i++) {
+    const tail = parts.slice(i).join("-");
+    if (tail === "shadow") return "box-shadow";
+    if (/^(margin|padding|gap|row-gap|column-gap)(-|$)|radius$|^(box-shadow|z-index|font-size)$/.test(tail) || timingProperty.test(tail)) return tail;
+    if (/^(duration|delay)$/.test(tail)) return `transition-${tail}`;
+  }
+  return undefined;
+}
+const handTypedUnit = /\d(?:px|rem|em|ch|ex|vw|vh|vi|vb|vmin|vmax|cqi|cqb|ms|s)\b|\d%/i;
+
 /**
  * Every hand-typed value in one CSS file's text, with its 1-based line. Comments are blanked, lines kept. In a file on
  * the components layer (docs/wayfinder/atomic-catalogue/css-layers-plan.md), a component's own hook such as
- * `--btn-padding-block` counts as the property it stands for (`padding-block`), not as a local custom property.
+ * `--btn-padding-block` counts as the counted property its name ends in (`padding-block`); a hook that ends in none
+ * (`--btn-font-weight`) counts as a local custom property only when it holds a hand-typed length or time.
  */
 export function oneOffs(text, { file = "" } = {}) {
   const code = text.replace(/\/\*[\s\S]*?\*\//g, comment => comment.replace(/[^\n]/g, " "));
@@ -57,8 +71,10 @@ export function oneOffs(text, { file = "" } = {}) {
   for (const match of code.matchAll(/(?<![\w-])(--[\w-]+|-?[a-zA-Z][\w-]*)\s*:\s*([^;{}]+)(?=;|\})/g)) {
     const [, name, value] = match;
     const hook = component ? /^--[a-z][a-z0-9]*-([a-z][a-z-]*)$/.exec(name)?.[1] : undefined;
-    const property = hook ?? (name.startsWith("--") ? name : name.toLowerCase());
+    const counted = hook === undefined ? undefined : hookProperty(hook);
+    const property = counted ?? (name.startsWith("--") ? name : name.toLowerCase());
     const add = kind => found.push({ kind, line: code.slice(0, match.index).split("\n").length, text: `${name}: ${value.trim().replace(/\s+/g, " ")}` });
+    if (hook !== undefined && counted === undefined) { if (handTypedUnit.test(noVars(value))) add("localProperties"); continue; }
     if (property.startsWith("--")) { if (file !== themeFile) add("localProperties"); continue; }
     const own = noVars(value);
     if (/^(margin|padding|gap|row-gap|column-gap)(-|$)/.test(property) && nonZeroPx.test(own)) add("spacing");

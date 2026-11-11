@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import test from "node:test";
 import { PARTS, isPart } from "../src/catalogue/parts.ts";
+import { splitSelectors } from "../src/catalogue/tweak.ts";
 
 // The editor's CSS on the Techies Framework layers (docs/wayfinder/atomic-catalogue/css-layers-plan.md): tokens,
 // elements, components, then the editor's own unlayered screen CSS. The Button is the first component in a file of
@@ -51,11 +52,26 @@ test("the Button's look comes from its --btn-* defaults, each one used", () => {
 });
 
 test("no other editor stylesheet holds the Button's own rules", () => {
-  const own = /(?:^|[{};])\s*(?:\.button|\.primary|\.secondary|:is\(\.primary, \.secondary, \.button\):disabled)\s*\{/m;
+  // A selector that is only a Button class and its states, alone or in a list. A screen's own rule that places a
+  // Button (`.empty-message .button`) is the editor's unlayered CSS and stays where it is.
+  const own = /^(?:\.button|\.primary|\.secondary|:is\((?:\.(?:primary|secondary|button)(?:,\s*)?)+\))(?::[\w-]+(?:\([^()]*\))?)*$/;
   for (const file of cssFiles("src")) {
     if (file === BUTTON) continue;
-    assert.doesNotMatch(withoutComments(read(file)), own, `${file} has a rule of the Button's own`);
+    for (const match of withoutComments(read(file)).matchAll(/(?:^|[{};])\s*([^{};@]+?)\s*\{/g)) {
+      for (const selector of splitSelectors(match[1])) {
+        assert.doesNotMatch(selector, own, `${file}: ${selector} is a rule of the Button's own`);
+      }
+    }
   }
+});
+
+test("the live-share guest page colours its Join button itself, as it does not load the Button", () => {
+  const guest = read("src/live-guest.ts");
+  assert.doesNotMatch(guest, /style\.css|button\.css/);
+  const css = withoutComments(read("src/live-guest.css"));
+  const submit = block(css, css.indexOf(".live-guest__submit {"));
+  assert.match(submit, /background: var\(--primary\);/);
+  assert.match(submit, /color: var\(--on-primary\);/);
 });
 
 test("the editor's bare element rules sit on the elements layer, below every component", () => {

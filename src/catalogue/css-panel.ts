@@ -1,7 +1,7 @@
 // The CSS section's controls (css-file.ts writes the live CSS and the change request): the part's own component CSS
 // file in a code field, shown on its live cell as it is typed, Reset, and "Send to agent", which says Copied on itself.
 import { iconMarkup, svgElement } from "../icons";
-import { cssChangeRequest, cssProblem } from "./css-file";
+import { cssChangeRequest, cssProblem, liveCss } from "./css-file";
 import { copy } from "./tweak-panel";
 
 /**
@@ -20,6 +20,18 @@ export interface CssPanel {
 }
 
 let fieldIds = 0;
+
+/**
+ * Why the text cannot be shown on the live cell, or "": the text check first, then the browser's own reading, where
+ * the edit nested in the cell's scope must stay the two rules it is written as, nothing reaching past them.
+ */
+function problemOf(text: string, before: string): string {
+  const wrong = cssProblem(text);
+  if (wrong) return wrong;
+  const sheet = new CSSStyleSheet();
+  try { sheet.replaceSync(liveCss(before, text, ".cat-live__stage")); } catch { return "The browser cannot read this file"; }
+  return sheet.cssRules.length === 2 ? "" : "A rule closes past the end of the file";
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
   const element = document.createElement(tag);
@@ -65,7 +77,7 @@ export function cssSection(panel: CssPanel): HTMLElement {
   /** Shows the text's state: its problem beside the field, the changed mark, and whether the actions do anything. */
   const paint = () => {
     const now = file.text ?? before;
-    const wrong = cssProblem(now);
+    const wrong = problemOf(now, before);
     text.setAttribute("aria-invalid", String(!!wrong));
     problem.textContent = wrong;
     problem.hidden = !wrong;
@@ -83,7 +95,7 @@ export function cssSection(panel: CssPanel): HTMLElement {
     sendLabel();
     paint();
     // A file with a problem would reach past the live cell: the cell keeps the last text that had none.
-    if (cssProblem(text.value)) return;
+    if (problemOf(text.value, before)) return;
     file.shown = file.text;
     panel.apply();
   });
@@ -101,9 +113,12 @@ export function cssSection(panel: CssPanel): HTMLElement {
   });
   send.addEventListener("click", () => void sendRequest());
   async function sendRequest() {
-    const request = cssChangeRequest(panel.part, panel.path, before, file.text ?? before);
+    const sent = file.text;
+    const request = cssChangeRequest(panel.part, panel.path, before, sent ?? before);
     if (send.getAttribute("aria-disabled") === "true" || !request) return;
     const copied = await copy(request);
+    // Typed on while the clipboard answered: what is in the field now was not copied, and the button already says so.
+    if (file.text !== sent) return;
     send.replaceChildren(...copied ? [svgElement(iconMarkup("check", 16, "icon--before")), "Copied"] : ["Couldn't copy"]);
     send.toggleAttribute("data-problem", !copied);
     panel.say(copied ? "Change request copied" : "Couldn't copy the change request");

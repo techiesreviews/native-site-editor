@@ -49,10 +49,13 @@ button, input { font: inherit; color: inherit; }
 .live-guest__input:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
 .live-guest__input:disabled { opacity: 0.6; }
 .live-guest__problem { color: var(--danger-fg); font-size: var(--type-small); text-wrap: pretty; }
+/* This page loads no Button component (src/ui/parts/button.css): Join takes the action colours itself. */
 .live-guest__submit {
   min-block-size: max(var(--size-control), var(--size-tap));
   border: 0;
   border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
   font-weight: 600;
   cursor: pointer;
 }
