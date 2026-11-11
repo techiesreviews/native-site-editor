@@ -258,11 +258,14 @@ const ATOMS: Part[] = [
     ],
     columns: ICON_SIZES.map(([size, label]) => ({ label, values: { size } })),
     async render(values) {
-      const [{ iconPart }, { node }] = await Promise.all([import("../ui/parts/icon"), import("../ui/dom")]);
-      const picture = iconPart(str(values.name) as IconName, { size: str(values.size), place: str(values.place) });
-      if (values.place === "alone") return picture;
+      const [{ iconPart }, { iconPlace }, { node }] = await Promise.all([import("../ui/parts/icon"), import("../ui/parts/icon-options"), import("../ui/dom")]);
+      const words = str(values.words);
+      // With no words there is nothing to stand beside: the icon is drawn alone.
+      const place = words ? iconPlace(str(values.place)) : "alone";
+      const picture = iconPart(str(values.name) as IconName, { size: str(values.size), place });
+      if (place === "alone") return picture;
       const line = node("span", "cat-icon-line");
-      line.append(...(values.place === "before" ? [picture, str(values.words)] : [str(values.words), picture]));
+      line.append(...(place === "before" ? [picture, words] : [words, picture]));
       return line;
     },
   },

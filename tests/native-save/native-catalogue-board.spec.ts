@@ -520,3 +520,39 @@ test("Tweak reaches a part drawn in a live frame, and leaves its state frames as
   await live.getByRole("button", { name: "Actions" }).click();
   await expect.poll(() => live.locator(".row-menu").evaluate((menu) => getComputedStyle(menu).borderRadius)).toBe("20px");
 });
+
+test("the Icon's live cell puts its words on the side Place says, and draws a bare icon alone", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Icon", exact: true }).click();
+  const options = page.getByRole("complementary", { name: "Options" });
+  const stage = page.locator("#card-icon .cat-live__stage");
+  await expect(stage.locator("> svg.icon")).toHaveCount(1);
+
+  await options.getByRole("combobox", { name: /^Size/ }).selectOption("24");
+  const alone = stage.locator("> svg.icon");
+  await expect(alone).toHaveAttribute("data-size", "24");
+  await expect(alone).not.toHaveAttribute("data-place", /.*/);
+  await expect(alone).toHaveAttribute("aria-hidden", "true");
+  // The board's zoom may leave a fraction of a pixel.
+  expect(await alone.evaluate((svg) => parseFloat(getComputedStyle(svg).width))).toBeCloseTo(24, 0);
+  expect(await alone.evaluate((svg) => parseFloat(getComputedStyle(svg).height))).toBeCloseTo(24, 0);
+
+  await options.getByRole("textbox", { name: "Words" }).fill("Save");
+  await options.getByRole("combobox", { name: /^Place/ }).selectOption("before");
+  const line = stage.locator(".cat-icon-line");
+  await expect(line).toHaveText("Save");
+  await expect(line.locator("> :first-child")).toHaveJSProperty("localName", "svg");
+  await expect(line.locator("> svg")).toHaveAttribute("data-place", "before");
+  // A text node (nodeType 3) after the icon.
+  expect(await line.evaluate((element) => element.lastChild?.nodeType)).toBe(3);
+
+  await options.getByRole("combobox", { name: /^Place/ }).selectOption("after");
+  await expect(line.locator("> svg")).toHaveAttribute("data-place", "after");
+  await expect(line.locator("> :last-child")).toHaveJSProperty("localName", "svg");
+  expect(await line.evaluate((element) => element.firstChild?.nodeType)).toBe(3);
+
+  // Nothing to stand beside: the icon is drawn alone, with no wrapper.
+  await options.getByRole("textbox", { name: "Words" }).fill("");
+  await expect(stage.locator("> svg.icon")).toHaveCount(1);
+  await expect(stage.locator("> svg.icon")).not.toHaveAttribute("data-place", /.*/);
+});
