@@ -183,7 +183,7 @@ function openTab(room: Room, time: ReturnType<typeof fakeClock>, name: string, b
     store, openFile, scope: () => scope, on: true, clock: time.clock, keeper: browser, authors: createSaveAuthors(),
     openRoom: options => (socket = room.open(options)),
     loadYjs: async () => yjs,
-    github: () => ({ sha: tab.seen, text: versions.get(tab.seen)!, current: async () => tab.seen === newest() }),
+    github: () => ({ sha: tab.seen, text: versions.get(tab.seen)!, current: async () => tab.seen === newest(), newest: async () => ({ sha: newest(), text: versions.get(newest())! }) }),
     onPushed: () => heard(tab),
   });
   return tab;
