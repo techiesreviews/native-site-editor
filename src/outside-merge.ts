@@ -26,7 +26,7 @@ import type { PagesAndFilesPorts } from "./pages-and-files-host";
 import type { CommitFiles, PublishResult, Snapshot, TreeEntry } from "../shared/types";
 import { rebaseHistory } from "./shared-undo";
 import { liveShared } from "./live-text";
-import { mergeText } from "./text-merge";
+import { mergeText, runChanges } from "./text-merge";
 
 import { isNativeTextFile } from "./site-text-index";
 import { readSiteTexts } from "./native-boot";
@@ -161,6 +161,7 @@ export function foldFile(store: DraftTextStore, scope: DraftScope, path: string,
   store.acceptBase(scope, path, { text: theirs, baseSha: sha });
   // An open code pane compares with GitHub's new text from now on (src/components/source-editor.ts `sourceMoved`).
   moved?.(file.key, theirs, sha);
-  // The clash: the latest version shows, Lex's words one Undo away.
-  if (merged.clashed) store.edit({ scope, path, history: history(), label: `${author.split(" · ")[0]}'s change`, text: merged.text });
+  // The clash: the latest version shows, Lex's words one Undo away. By whole words, so an Undo in a live room later puts
+  // whole words back into the shared copy (src/live-text.ts).
+  if (merged.clashed) store.edit({ scope, path, history: history(), label: `${author.split(" · ")[0]}'s change`, changes: runChanges(merged.mine, merged.text) });
 }
