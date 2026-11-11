@@ -787,6 +787,14 @@ test("a long badge is cut inside its stage, a mark with no icon draws the check,
   expect(widths.badge).toBeLessThanOrEqual(widths.stage + 0.5);
   expect(widths.cut).toBe(true);
 
+  // Only the inline axis is cut: accents and descenders keep their room (the span is as tall as its words).
+  await stage.evaluate((element) => { element.style.inlineSize = ""; });
+  await options.getByRole("textbox", { name: "Words" }).fill("Égypte jumpy");
+  await expect(badge.locator("> span")).toHaveText("Égypte jumpy");
+  const tall = await badge.locator("> span").evaluate((element) => ({ scroll: element.scrollHeight, client: element.clientHeight, clip: getComputedStyle(element).overflowY }));
+  expect(tall.scroll).toBeLessThanOrEqual(tall.client);
+  expect(tall.clip).toBe("visible");
+
   // A mark called with no icon draws the check, at the mark's size.
   const mark = await page.evaluate(async () => {
     const { badgePart } = await import("/src/ui/parts/badge.ts");
@@ -803,4 +811,10 @@ test("a long badge is cut inside its stage, a mark with no icon draws the check,
   await keyStage.evaluate((element) => { element.style.color = "rgb(200, 0, 0)"; });
   await expect.poll(() => keyStage.locator("kbd.ui-key").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(200, 0, 0)");
   await expect.poll(() => keyStage.locator("kbd.ui-key > kbd").first().evaluate((element) => getComputedStyle(element).color)).toBe("rgb(200, 0, 0)");
+  // A single cap takes it too (it has its own border and fill, from the same colour).
+  await options.getByRole("textbox", { name: /^Keys/ }).fill("K");
+  const single = keyStage.locator("kbd.ui-key:not([data-combo])");
+  await expect(single).toHaveText("K");
+  await expect.poll(() => single.evaluate((element) => getComputedStyle(element).color)).toBe("rgb(200, 0, 0)");
+  await expect.poll(() => single.evaluate((element) => getComputedStyle(element).borderTopColor)).toMatch(/ 29\.\d+ \/ 0\.28\)$/); // the red's hue, at the 28% the cap mixes in
 });

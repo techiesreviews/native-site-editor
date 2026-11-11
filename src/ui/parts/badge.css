@@ -16,10 +16,12 @@
   background: var(--surface-subtle);
   color: var(--link);
 }
-/* Long words are cut with an ellipsis inside the badge's width, never pushed past the row it sits in. */
+/* Long words are cut with an ellipsis inside the badge's width, never pushed past the row it sits in. Only the
+   inline axis clips: the words keep their own line height, so descenders and accents are never cut. */
 .ui-badge > span {
   min-inline-size: 0;
-  overflow: hidden;
+  overflow: clip visible;
+  line-height: normal;
   text-overflow: ellipsis;
 }
 .ui-badge[data-tone="action"] { background: var(--primary); color: var(--on-primary); }

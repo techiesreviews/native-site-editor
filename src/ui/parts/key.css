@@ -1,6 +1,6 @@
-/* The Keyboard key part (atomic catalogue ticket 13): a cap that borrows the text colour of where it stands, so it reads
-   in a menu row and on a tooltip alike. Only shared tokens. */
-/* The colour is the caller's: a menu row's shortcut slot sets it to muted, a tooltip leaves its own. */
+/* The Keyboard key part (atomic catalogue ticket 13): a cap with no colour of its own. It borrows the text colour of
+   where it stands, so it reads in a menu row (whose shortcut slot sets it to muted) and on a tooltip alike. Only shared
+   tokens. */
 .ui-key {
   font: inherit;
 }
