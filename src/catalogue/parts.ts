@@ -6,7 +6,7 @@
 import type { IconName } from "../icons";
 import { ICON_PLACES, ICON_SIZES, type IconPlace } from "../ui/parts/icon-options";
 import { PROGRESS_STEPS } from "../ui/parts/progress-options";
-import { SPINNER_PLACES, SPINNER_SIZES } from "../ui/parts/spinner-options";
+import { SPINNER_PLACES, SPINNER_SIZES, type SpinnerPlace, type SpinnerSize } from "../ui/parts/spinner-options";
 
 export type AreaId = "values" | "atoms" | "molecules" | "organisms" | "mockups";
 export const AREAS: readonly { id: AreaId; name: string }[] = [
@@ -235,9 +235,10 @@ const ICON_SIZE_CHOICES: readonly Choice[] = ICON_SIZES.map((size) => [String(si
 const ICON_PLACE_LABELS: Record<IconPlace, string> = { alone: "Alone", before: "Before words", after: "After words" };
 const ICON_PLACE_CHOICES: readonly Choice[] = ICON_PLACES.map((place) => [place, ICON_PLACE_LABELS[place]]);
 
-const capital = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
-const SPINNER_SIZE_CHOICES: readonly Choice[] = SPINNER_SIZES.map((size) => [size, capital(size)]);
-const SPINNER_PLACE_CHOICES: readonly Choice[] = SPINNER_PLACES.map((place) => [place, capital(place)]);
+const SPINNER_SIZE_LABELS: Record<SpinnerSize, string> = { small: "Small", medium: "Medium", large: "Large" };
+const SPINNER_PLACE_LABELS: Record<SpinnerPlace, string> = { inline: "Inline", overlay: "Overlay" };
+const SPINNER_SIZE_CHOICES: readonly Choice[] = SPINNER_SIZES.map((size) => [size, SPINNER_SIZE_LABELS[size]]);
+const SPINNER_PLACE_CHOICES: readonly Choice[] = SPINNER_PLACES.map((place) => [place, SPINNER_PLACE_LABELS[place]]);
 /** The amounts the board offers: not known, then a few places along the bar ("unknown" is the part's own word). */
 const PROGRESS_AMOUNTS: readonly Choice[] = [["unknown", "Unknown"], ...PROGRESS_STEPS.map((step): Choice => [String(step), step === 0 ? "Not started" : step === 100 ? "Done" : `${step}%`])];
 

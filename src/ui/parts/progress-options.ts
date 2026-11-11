@@ -30,15 +30,21 @@ export function progressValue(value: ProgressOptions["value"], max: ProgressOpti
   return Math.min(Math.max(wanted, 0), progressMax(max));
 }
 
-/** The attributes of the one element: one class, the mode as a data attribute, the fill as a percentage the style reads. */
+/** How far along the bar fills, in percent (one decimal), or null when the progress is not known. */
+export function progressPercent(options: ProgressOptions = {}): number | null {
+  const max = progressMax(options.max);
+  const value = progressValue(options.value, max);
+  return value === null ? null : Math.round((value / max) * 1000) / 10;
+}
+
+/** The attributes of the one element: one class, the mode as a data attribute, the value for assistive technology when known. */
 export function progressAttributes(options: ProgressOptions = {}): Record<string, string> {
   const max = progressMax(options.max);
   const value = progressValue(options.value, max);
   const label = options.label?.trim() || DEFAULT_PROGRESS_LABEL;
   if (value === null) return { class: "progress", "data-mode": "unknown", role: "progressbar", "aria-label": label };
-  const percent = Math.round((value / max) * 1000) / 10;
   return {
     class: "progress", "data-mode": "known", role: "progressbar", "aria-label": label,
-    "aria-valuemin": "0", "aria-valuemax": String(max), "aria-valuenow": String(value), "data-percent": String(percent),
+    "aria-valuemin": "0", "aria-valuemax": String(max), "aria-valuenow": String(value),
   };
 }

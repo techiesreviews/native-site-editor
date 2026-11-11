@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_SPINNER_LABEL, DEFAULT_SPINNER_SIZE, SPINNER_PLACES, SPINNER_SIZES, spinnerAttributes, spinnerPlace, spinnerSize } from "../src/ui/parts/spinner-options.ts";
-import { DEFAULT_PROGRESS_LABEL, PROGRESS_STEPS, progressAttributes, progressMax, progressValue } from "../src/ui/parts/progress-options.ts";
+import { DEFAULT_PROGRESS_LABEL, PROGRESS_STEPS, progressAttributes, progressMax, progressPercent, progressValue } from "../src/ui/parts/progress-options.ts";
 import { PARTS } from "../src/catalogue/parts.ts";
 
 // The Spinner and Progress bar parts' options become markup (atomic catalogue ticket 14): one class each, the variants
@@ -54,17 +54,24 @@ test("progress mode: known with a value (0 included), unknown without", () => {
   assert.equal(progressAttributes({ value: null })["data-mode"], "unknown");
 });
 
-test("progress markup, known: the value out of max for assistive technology, the percentage for the style", () => {
+test("progress markup, known: the value out of max for assistive technology", () => {
   assert.deepEqual(progressAttributes({ value: 60, label: "Adding" }), {
     class: "progress", "data-mode": "known", role: "progressbar", "aria-label": "Adding",
-    "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "60", "data-percent": "60",
+    "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "60",
   });
   const out = progressAttributes({ value: 3, max: 8 });
   assert.equal(out["aria-valuemax"], "8");
   assert.equal(out["aria-valuenow"], "3");
-  assert.equal(out["data-percent"], "37.5");
-  assert.equal(progressAttributes({ value: 900 })["data-percent"], "100", "past the end is the end");
-  assert.equal(progressAttributes({ value: 0 })["data-percent"], "0");
+  assert.ok(!("data-percent" in out), "the fill is the style's, not markup");
+});
+
+test("progress percent: how far the bar fills, or null when not known", () => {
+  assert.equal(progressPercent({ value: 60 }), 60);
+  assert.equal(progressPercent({ value: 3, max: 8 }), 37.5);
+  assert.equal(progressPercent({ value: 900 }), 100, "past the end is the end");
+  assert.equal(progressPercent({ value: 0 }), 0);
+  assert.equal(progressPercent({}), null);
+  assert.equal(progressPercent({ value: "soon" }), null);
 });
 
 test("progress markup, unknown: no value anywhere, so assistive technology says it is busy without a number", () => {
