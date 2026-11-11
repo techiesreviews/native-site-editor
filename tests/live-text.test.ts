@@ -2,16 +2,17 @@
 // draft store, sharing one file through a fake room that forwards frames as the
 // relay does (tests/live-room.test.ts proves the real room), with real Yjs.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { signal } from "@preact/signals-core";
 import { createDraftStore, type DraftPersistence } from "../src/draft-store";
 import { draftKey, type DraftScope, type SavedDraft } from "../src/drafts";
-import { browserKeeper, LIVE_TEXT_CATCH_UP_MS, liveShared, startLiveText, typedSince, type CopyKeeper, type KeptCopy } from "../src/live-text";
+import { browserKeeper, LIVE_TEXT_CATCH_UP_MS, liveShared, liveVersions, startLiveText, typedSince, type CopyKeeper, type KeptCopy } from "../src/live-text";
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 import { forEachAwait, type AwaitRace } from "./support/await-race";
 import type { LiveClock, LivePeer, LiveRoomOptions } from "../src/live-room";
-import type { CaretShare } from "../src/live-text";
+import type { CaretShare, LiveTextPorts } from "../src/live-text";
 import type { JsonValue } from "../shared/agent-command";
 import type { LiveAccess } from "../shared/live-room";
 import { writeAs, type LiveAuthor } from "../src/live-author";
@@ -83,12 +84,12 @@ function keeper(): CopyKeeper & { copies: Map<string, KeptCopy | undefined> } {
   return { copies, read: async key => copies.get(key), write: (key, copy) => { copies.set(key, copy); } };
 }
 
-function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?: string; clock?: LiveClock; keeper?: CopyKeeper; race?: AwaitRace; persistence?: DraftPersistence; loadYjs?: () => Promise<typeof import("yjs")>; carets?: (share: CaretShare) => () => void; account?: string; authors?: SaveAuthors } = {}) {
+function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?: string; clock?: LiveClock; keeper?: CopyKeeper; race?: AwaitRace; persistence?: DraftPersistence; loadYjs?: () => Promise<typeof import("yjs")>; carets?: (share: CaretShare) => () => void; account?: string; authors?: SaveAuthors; base?: string; github?: LiveTextPorts["github"] } = {}) {
   const own: DraftScope = options.account ? { ...scope, account: options.account } : scope;
   const authors = options.authors ?? createSaveAuthors();
   const store = createDraftStore(options.persistence ? { persistence: options.persistence } : {});
-  store.open(own, path, { text: base, baseSha: options.baseSha ?? sha });
-  if (text !== base) store.edit({ scope: own, path, text, label: "Earlier draft" });
+  store.open(own, path, { text: options.base ?? base, baseSha: options.baseSha ?? sha });
+  if (text !== (options.base ?? base)) store.edit({ scope: own, path, text, label: "Earlier draft" });
   const openFile = signal<string | undefined>(path);
   let yjsLoads = 0, socket: ReturnType<typeof room.open> | undefined;
   const kept = options.keeper ?? keeper(), sockets: string[] = [];
@@ -96,7 +97,7 @@ function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?
   let keptRead = false;
   const race = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => options.race ? options.race.port(name, work) : work;
   const stop = startLiveText({
-    store, openFile, scope: () => own, on: true, authors, ...(options.clock ? { clock: options.clock } : {}),
+    store, openFile, scope: () => own, on: true, authors, ...(options.clock ? { clock: options.clock } : {}), ...(options.github ? { github: options.github } : {}),
     keeper: { read: key => race("kept copy", (key: string) => kept.read(key))(key).finally(() => { keptRead = true; }), write: (key, copy) => kept.write(key, copy) },
     openRoom: roomOptions => { socket = room.open(roomOptions); sockets.push(socket.me.id); return socket; },
     loadYjs: race("Yjs", () => { yjsLoads++; return options.loadYjs ? options.loadYjs() : import("yjs"); }),
@@ -225,29 +226,20 @@ test("after frames are lost (a reconnect or a new key), the tabs ask again and n
   anna.stop(); lex.stop();
 });
 
-test("a tab on another version of the file keeps its own text; a joiner nobody catches up starts from its own draft", async () => {
-  let now = 0;
-  const timers = new Map<number, { at: number; run(): void }>();
-  let id = 0;
-  const clock: LiveClock = { now: () => now, setTimeout(run, delay) { timers.set(++id, { at: now + delay, run }); return id; }, clearTimeout(timer) { timers.delete(timer as number); } };
-  const room = fakeRoom();
-  const anna = tab(room);
+test("a tab on another version of the file joins the room's copy: its own words move onto the branch's newest version (am-59)", async () => {
+  const room = fakeRoom(), newer = sha, older = "b".repeat(40);
+  const olderText = "<h1>Fresh bread</h1>\n<p>Open at six.</p>\n";
+  // Each tab's workspace says which version it read, and GitHub says which is the branch's newest.
+  const github = (version: string, text: string): LiveTextPorts["github"] => () => ({ sha: version, text, current: async () => version === newer });
+  const anna = tab(room, base, { github: github(newer, base) });
   await quiet();
-  const other = tab(room, "<h1>Older page</h1>\n", { baseSha: "b".repeat(40), clock });
-  await until(() => other.yjsLoads === 1, "the copy");
-  await quiet();
-  assert.equal(anna.text, base, "copies of another version never mix");
-  assert.equal(other.text, "<h1>Older page</h1>\n");
-  // Nobody with its version answers: after the wait it goes on from its own draft.
-  assert.equal(timers.size, 1);
-  now += LIVE_TEXT_CATCH_UP_MS;
-  for (const [key, timer] of [...timers]) if (timer.at <= now) { timers.delete(key); timer.run(); }
-  await quiet();
-  other.type(0, "!");
-  await quiet();
-  assert.equal(other.text, "!<h1>Older page</h1>\n");
-  assert.equal(anna.text, base);
-  anna.stop(); other.stop();
+  const lex = tab(room, `${olderText}<p>Lex's line.</p>\n`, { base: olderText, baseSha: older, github: github(older, olderText) });
+  await until(() => lex.text === anna.text && anna.text.includes("Lex's line"), "one text");
+  assert.equal(anna.text, `${base}<p>Lex's line.</p>\n`, "the newest version, with Lex's own words once");
+  assert.equal(lex.store.get(scope, path)?.baseSha, newer, "Lex's draft is over the newest version now");
+  lex.type(0, "!");
+  await until(() => anna.text.startsWith("!"), "typing after");
+  anna.stop(); lex.stop();
 });
 
 test("the copy follows the open file: another file closes the room, and agents alone do not load Yjs", async () => {
@@ -359,7 +351,9 @@ function startingRace(race: AwaitRace): RaceRun {
   Object.defineProperty(subtle, "digest", { configurable: true, value: race.port("digest", (...args: Parameters<typeof digest>) => digest(...args)) });
   const run: RaceRun = { done: Promise.resolve(), room: fakeRoom(), at: 0, loading: true };
   run.done = (async () => {
-    run.anna = tab(run.room, `${base}<p>Anna's unsaved line.</p>\n`, { race });
+    // Her workspace's version of GitHub's text (a save moves it), the branch's newest.
+    const github: LiveTextPorts["github"] = (at, file) => { const now = run.anna?.store.get(at, file); return now?.baseSha ? { sha: now.baseSha, text: now.base, current: async () => true } : undefined; };
+    run.anna = tab(run.room, `${base}<p>Anna's unsaved line.</p>\n`, { race, github });
     await quiet();
     run.lex = tab(run.room);
     await until(() => run.anna!.yjsLoads > 0 && run.lex!.yjsLoads > 0, "both loading");
@@ -392,17 +386,18 @@ test("typing at any await of starting the copy lands once, on both tabs", async 
   });
 });
 
-test("a save landing at any await of loading the copy starts it from the saved text, under its new tag", async () => {
+test("a save landing at any await of loading the copy: the room's one copy takes the saved version, and her words stay once (am-59)", async () => {
   const saved = "c".repeat(40);
   await forEachAwait(startingRace, run => {
     run.at = run.room.log.length;
-    // Still loading (her copy not made yet): from now on it is the saved version's. Once made, a copy keeps its version (a known limit).
     run.loading = !run.anna!.keptRead;
     run.anna!.store.markSaved(scope, path, { baseSha: saved, original: run.anna!.text });
   }, async run => {
-    await quiet();
-    const tags = tagsSent(run.room, run.anna!.sockets, run.at);
-    if (run.loading) assert.deepEqual(tags.filter(tag => tag !== saved), [], "no frame under the old version's tag");
+    await until(() => run.lex!.text === run.anna!.text && liveVersions(run.anna!.store, draftKey(scope, path)).some(edge => edge.to === saved), "the saved version in the room's copy");
+    assert.equal(times(run.anna!.text, "Anna's unsaved line"), 1, "her saved words once");
+    // One room copy: whichever tab started it, every frame she sends after the save names that one (or none yet).
+    const tags = new Set(tagsSent(run.room, run.anna!.sockets, run.at).filter(tag => tag !== "0".repeat(40)));
+    assert.ok(tags.size <= 1, "one copy");
     endRace(run);
   });
 });
@@ -435,7 +430,9 @@ test("Discard at any await of loading the copy leaves the draft on GitHub's text
   await forEachAwait(race => {
     const run: RaceRun = { done: Promise.resolve(), room: fakeRoom(), at: 0, loading: true };
     run.done = (async () => {
-      run.anna = tab(run.room, `${base}<p>Anna's unsaved line.</p>\n`, { race });
+      // Her workspace's version of GitHub's text (a save moves it), the branch's newest.
+    const github: LiveTextPorts["github"] = (at, file) => { const now = run.anna?.store.get(at, file); return now?.baseSha ? { sha: now.baseSha, text: now.base, current: async () => true } : undefined; };
+    run.anna = tab(run.room, `${base}<p>Anna's unsaved line.</p>\n`, { race, github });
       await quiet();
       run.lex = tab(run.room);
       await until(() => run.anna!.yjsLoads > 0 && run.lex!.yjsLoads > 0, "both loading");
@@ -1079,10 +1076,11 @@ test("an agent's change taken back from Anna's tab goes from every tab; a second
   doc.clientID = 4242;
   doc.getText("source").insert(0, "<!-- spoof -->");
   const update = Y.encodeStateAsUpdate(doc);
-  const frame = new Uint8Array(26 + update.length);
-  frame.set(theirs.subarray(0, 26));
+  // The frame head (src/live-text.ts): kind, caught up, the copy's id, the sender's id, the copy's birth time.
+  const head = 34, frame = new Uint8Array(head + update.length);
+  frame.set(theirs.subarray(0, head));
   new DataView(frame.buffer).setUint32(22, second);
-  frame.set(update, 26);
+  frame.set(update, head);
   await spoof.send(frame);
   await until(() => lex.text.startsWith("<!-- spoof -->") && anna.text === lex.text, "the spoofed change on both");
   assert.equal(lex.stop.undoAuthor(second), true, "Lex's tab still takes back only the agent's own change");
