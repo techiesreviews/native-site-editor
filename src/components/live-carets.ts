@@ -95,10 +95,11 @@ export function caretFlag(caret: CaretWho, onUndo: () => void) {
       initial.textContent = parts.first;
       after.textContent = parts.rest;
       rest.replaceChildren(initial, after);
-      // A right-to-left name cannot read on from a circle on its left: it shows whole, in its own direction.
-      flag.toggleAttribute("data-rtl", rightToLeft(full));
+      // A name that cannot read on from a circle on its left shows whole: a right-to-left one, in its own direction, and
+      // one whose initial (src/participant.ts `initialOf`: a letter, digit or symbol) is not its first character, "@ben".
+      flag.toggleAttribute("data-whole", rightToLeft(full) || !/^[\p{L}\p{N}\p{So}]/u.test(full));
     } else {
-      flag.removeAttribute("data-rtl");
+      flag.removeAttribute("data-whole");
       flag.dataset.agent = next.agent;
       mark.replaceChildren(programIcon(next.agent));
       rest.textContent = full;
