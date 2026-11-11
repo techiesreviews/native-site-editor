@@ -105,7 +105,7 @@ export async function startSharing(ports: SharePorts) {
   let writing = Promise.resolve();
   // Each guest's colour (src/participant.ts, its index into src/components/person-chip.css), given as they join: one no
   // one in the session has, else the least used.
-  const colours = new Map<string, string>(), book = createColourBook();
+  const colours = createColourBook();
   // A render the socket did not take, or one too big, is followed by the whole page again (and once the room is back, `onKey`).
   let resend: ReturnType<typeof setTimeout> | undefined;
   const lost = () => { if (!resend && !ended) resend = setTimeout(() => { resend = undefined; sendWhole(); }, RESEND_MS); };
@@ -129,7 +129,7 @@ export async function startSharing(ports: SharePorts) {
     if (!preview || ended || !guests.length) return;
     mirror = preview.mirror((message) => {
       if (!ports.holds()) { end(); return; }
-      wire.send(message.kind === "render" ? { t: "render", payload: message.payload, typed, colours: Object.fromEntries(colours) } satisfies HostMessage
+      wire.send(message.kind === "render" ? { t: "render", payload: message.payload, typed, colours: Object.fromEntries(guests.map((guest) => [guest.id, guest.colour])) } satisfies HostMessage
         : { t: "assets", assets: message.assets } satisfies HostMessage);
     }, end);
   };
@@ -151,11 +151,6 @@ export async function startSharing(ports: SharePorts) {
       if (!done) preview?.refresh();
     });
   };
-  const colourFor = (id: string) => {
-    const colour = String(book.colour(id));
-    colours.set(id, colour);
-    return colour;
-  };
   const peersChanged = (peers: ReadonlyMap<string, LivePeer>) => {
     const next: SessionGuest[] = [];
     for (const [peer, at] of peers) {
@@ -164,8 +159,8 @@ export async function startSharing(ports: SharePorts) {
       if (next.some((guest) => guest.id === state.guest)) continue;
       next.push({ id: state.guest, name: shownName(state.name, "guest"), colour: "", peer });
     }
-    for (const id of [...colours.keys()]) if (!next.some((guest) => guest.id === id)) { colours.delete(id); book.forget(id); }
-    for (const guest of next) guest.colour = colourFor(guest.id);
+    for (const guest of guests) if (!next.some((known) => known.id === guest.id)) colours.forget(guest.id);
+    for (const guest of next) guest.colour = String(colours.colour(guest.id));
     const joined = next.some((guest) => !guests.some((known) => known.id === guest.id));
     const same = next.length === guests.length && !joined;
     guests = next;

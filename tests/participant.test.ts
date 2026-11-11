@@ -78,11 +78,19 @@ test("shown names follow one rule: one line, nothing invisible, at most 40 chara
   }
   assert.equal(shownName("\u200BAnna\u200B", "person"), "Anna");
   assert.equal(shownName("Claude\nCode\t ", "agent"), "Claude Code");
-  // Never cut inside a character.
+  // Never cut inside a character, a joined emoji included.
   assert.equal(shownName("😀".repeat(41), "guest"), "😀".repeat(40));
+  assert.equal(shownName("\u{1F469}\u200D\u{1F4BB}".repeat(41), "agent"), "\u{1F469}\u200D\u{1F4BB}".repeat(40));
+  // The joiners a word or an emoji needs stay: an agent is listed under the name it sent.
+  assert.equal(shownName("\u{1F469}\u200D\u{1F4BB} Coder", "agent"), "\u{1F469}\u200D\u{1F4BB} Coder");
+  assert.equal(shownName("\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645", "guest"), "\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645");
+  assert.equal(shownName("\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} Fan", "guest"), "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} Fan");
+  // A joiner with nothing to join, or a name of joiners only, shows nothing.
+  assert.equal(shownName("\u200DAnna\u200C", "person"), "Anna");
+  assert.equal(shownName("\u200D\u200C", "agent"), "Agent");
 });
 
-test("an initial is the first character a reader sees, upper-cased to one", () => {
+test("an initial is the first letter, digit or emoji a reader sees, upper-cased to one", () => {
   assert.deepEqual(initialOf("anna"), { first: "a", letter: "A", rest: "nna" });
   // A decomposed É stays one letter with its accent.
   assert.deepEqual(initialOf("Émile"), { first: "É", letter: "É", rest: "mile" });
@@ -91,5 +99,14 @@ test("an initial is the first character a reader sees, upper-cased to one", () =
   assert.equal(initialOf("élan").letter, "É");
   // A flag emoji is never cut in half.
   assert.deepEqual(initialOf("🇳🇱 Lex"), { first: "🇳🇱", letter: "🇳🇱", rest: " Lex" });
+  // A joined emoji is one.
+  assert.equal(initialOf("\u{1F469}\u200D\u{1F4BB} Coder").letter, "\u{1F469}\u200D\u{1F4BB}");
+  // Punctuation before the name is passed over: the circle shows the first letter, digit or emoji.
+  assert.deepEqual(initialOf("@ben"), { first: "@b", letter: "B", rest: "en" });
+  assert.equal(initialOf("(Anna)").letter, "A");
+  assert.equal(initialOf(".github").letter, "G");
+  assert.equal(initialOf("_2site").letter, "2");
+  // None at all: a dot, the name whole after it.
+  assert.deepEqual(initialOf("!!"), { first: "", letter: "·", rest: "!!" });
   assert.deepEqual(initialOf(""), { first: "", letter: "·", rest: "" });
 });

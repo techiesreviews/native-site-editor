@@ -65,6 +65,7 @@ import type { JsonValue } from "../shared/agent-command";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 import { rebaseHistory } from "./shared-undo";
 import { liveAuthor, type LiveAuthor } from "./live-author";
+import { agentKey } from "./participant";
 import { saveAuthors, type SaveAuthors } from "./save-authors";
 import type { SaveAuthor } from "../shared/types";
 import { runChanges } from "./text-merge";
@@ -426,7 +427,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
      * made here (random, as Yjs makes its own, and never one this copy has seen), and where their latest change ended. */
     const agents = new Map<string, { author: number; name: string; who: LiveAuthor; at?: import("yjs").RelativePosition }>();
     const agentAuthor = (who: LiveAuthor) => {
-      const key = JSON.stringify([who.grant, who.name]);
+      const key = agentKey(who);
       let found = agents.get(key);
       if (!found) {
         let author: number;
