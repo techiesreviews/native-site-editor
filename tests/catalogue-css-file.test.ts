@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cssChangeRequest, cssProblem, liveCss, revertCopy } from "../src/catalogue/css-file.ts";
+import { cssChangeRequest, cssProblem, editProblem, liveCss, revertCopy, type SheetReader } from "../src/catalogue/css-file.ts";
 
 // The design board's CSS section (src/catalogue/css-file.ts): a part's own component CSS file, edited by hand and
 // shown on its live cell only, and the change request "Send to agent" copies.
@@ -64,6 +64,21 @@ test("a problem: unbalanced braces or a closing tag would leave the live cell's 
   assert.equal(cssProblem(".a { background: url({) } } body { display: none }"), "A } closes a rule that was never opened");
   assert.equal(cssProblem(".a { background: url( \"x{\" ) }"), "");
   assert.equal(cssProblem(".a { background: url(a\\){) } } body { display: none }"), "A } closes a rule that was never opened");
+});
+
+test("an edit the text check passes still needs the browser to read it as the two scoped rules", () => {
+  const reader = (read: (text: string) => number): SheetReader => class {
+    cssRules = { length: 0 };
+    replaceSync(text: string) { this.cssRules = { length: read(text) }; }
+  };
+  const edited = BUTTON.replace("var(--radius)", "20px");
+  let seen = "";
+  assert.equal(editProblem(edited, BUTTON, reader((text) => { seen = text; return 2; })), "");
+  assert.equal(seen, liveCss(BUTTON, edited, ".cat-live__stage"));
+  assert.equal(editProblem(edited, BUTTON, reader(() => 3)), "A rule closes past the end of the file");
+  assert.equal(editProblem(edited, BUTTON, reader(() => { throw new Error("unreadable"); })), "The browser cannot read this file");
+  // The text check answers first, without the browser.
+  assert.equal(editProblem(`${edited}}`, BUTTON, reader(() => { throw new Error("not reached"); })), "A } closes a rule that was never opened");
 });
 
 test("Send to agent copies the changed lines and the whole file as edited; nothing when the file is unchanged", () => {
