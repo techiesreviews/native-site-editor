@@ -49,7 +49,8 @@ async function press(page: Page, handle: Locator, dx = 0, dy = 0) {
 // The handle and its grip are bigger while the pointer is over it, and back
 // to their resting size once it leaves; focus grows them too.
 async function expectHoverGrowth(page: Page, handle: Locator, axis: "width" | "height") {
-  const away = async () => page.mouse.move(page.viewportSize()!.width / 2, 3);
+  // Parked at the window's foot: the top edge is the page button on a narrow window, and resting there opens Pages.
+  const away = async () => page.mouse.move(page.viewportSize()!.width / 2, page.viewportSize()!.height - 3);
   await away();
   // A press focuses the handle, and focus grows it too.
   await handle.evaluate((el) => (el as HTMLElement).blur());
