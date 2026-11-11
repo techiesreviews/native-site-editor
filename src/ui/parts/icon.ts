@@ -9,7 +9,8 @@ import { iconPlace, iconSvg, type IconOptions } from "./icon-options";
 /** The icon as an element, drawn in the text colour of where it stands; beside words, the line that holds both. */
 export function iconPart(name: IconName, options: IconOptions = {}): SVGSVGElement | HTMLSpanElement {
   const place = iconPlace(options.place);
-  const words = options.words === "" ? undefined : options.words;
+  const blank = typeof options.words === "string" && !options.words.trim();
+  const words = blank ? undefined : options.words;
   const picture = svgElement(iconSvg(iconSource(name), { size: options.size, place: words === undefined ? "alone" : place }));
   if (words === undefined || place === "alone") return picture;
   const line = document.createElement("span");
