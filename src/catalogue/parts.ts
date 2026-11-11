@@ -4,6 +4,7 @@
 // Shared values read the tokens in src/theme.css. Mock-ups for future features live in mockups.ts.
 
 import type { IconName } from "../icons";
+import { ICON_PLACES, ICON_SIZES, type IconPlace } from "../ui/parts/icon-options";
 
 export type AreaId = "values" | "atoms" | "molecules" | "organisms" | "mockups";
 export const AREAS: readonly { id: AreaId; name: string }[] = [
@@ -228,8 +229,9 @@ const ICON_NAMES: readonly Choice[] = [
   iconChoice("dots-three", "More"), iconChoice("undo", "Undo"), iconChoice("redo", "Redo"),
 ];
 const ICON_ROWS = ICON_NAMES.filter(([name]) => ["check", "plus", "trash", "copy"].includes(name));
-const ICON_SIZES: readonly Choice[] = [["12", "12"], ["16", "16"], ["20", "20"], ["24", "24"]];
-const ICON_PLACES: readonly Choice[] = [["alone", "Alone"], ["before", "Before words"], ["after", "After words"]];
+const ICON_SIZE_CHOICES: readonly Choice[] = ICON_SIZES.map((size) => [String(size), String(size)]);
+const ICON_PLACE_LABELS: Record<IconPlace, string> = { alone: "Alone", before: "Before words", after: "After words" };
+const ICON_PLACE_CHOICES: readonly Choice[] = ICON_PLACES.map((place) => [place, ICON_PLACE_LABELS[place]]);
 
 const ATOMS: Part[] = [
   {
@@ -249,24 +251,17 @@ const ATOMS: Part[] = [
     id: "icon", area: "atoms", name: "Icon", files: ["src/ui/parts/icon.ts", "src/ui/parts/icon-options.ts", "src/icons.ts", "src/icons.css"],
     defaults: { name: "check", size: "16", place: "alone", words: "Save" },
     controls: [
-      choice("name", "Icon", ICON_NAMES), choice("size", "Size", ICON_SIZES), choice("place", "Place", ICON_PLACES), text("words", "Words"),
+      choice("name", "Icon", ICON_NAMES), choice("size", "Size", ICON_SIZE_CHOICES), choice("place", "Place", ICON_PLACE_CHOICES), text("words", "Words"),
     ],
     rows: [
       ...ICON_ROWS.map(([name, label]) => ({ label, values: { name } })),
       { label: "Before words", values: { name: "plus", place: "before", words: "New page" } },
       { label: "After words", values: { name: "arrow-right", place: "after", words: "Next" } },
     ],
-    columns: ICON_SIZES.map(([size, label]) => ({ label, values: { size } })),
+    columns: ICON_SIZE_CHOICES.map(([size, label]) => ({ label, values: { size } })),
     async render(values) {
-      const [{ iconPart }, { iconPlace }, { node }] = await Promise.all([import("../ui/parts/icon"), import("../ui/parts/icon-options"), import("../ui/dom")]);
-      const words = str(values.words);
-      // With no words there is nothing to stand beside: the icon is drawn alone.
-      const place = words ? iconPlace(str(values.place)) : "alone";
-      const picture = iconPart(str(values.name) as IconName, { size: str(values.size), place });
-      if (place === "alone") return picture;
-      const line = node("span", "cat-icon-line");
-      line.append(...(place === "before" ? [picture, words] : [words, picture]));
-      return line;
+      const { iconPart } = await import("../ui/parts/icon");
+      return iconPart(str(values.name) as IconName, { size: str(values.size), place: str(values.place), words: str(values.words) });
     },
   },
   {

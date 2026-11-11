@@ -20,6 +20,13 @@
   margin-inline: 0 0.3em;
 }
 
+/* The Icon part beside words (iconPart): one line, the words kept on it like a control's label. */
+.icon-line {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
 /* Icons a stylesheet draws as a ::before: the rule sets `mask-image` to one
    of these and uses the shape below. */
 :root {

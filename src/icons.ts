@@ -4,6 +4,7 @@
 // (icons.css).
 
 import "./icons.css";
+import { drawSvg } from "./ui/parts/icon-options";
 
 import arrowDown from "@phosphor-icons/core/regular/arrow-down.svg?raw";
 import arrowLeft from "@phosphor-icons/core/regular/arrow-left.svg?raw";
@@ -95,7 +96,7 @@ export function iconMarkup(name: IconName, size = 16, className = "") {
 
 /** Phosphor SVG markup (bundled here or in a lazy chunk), sized and hidden like iconMarkup. */
 export function sizedSvg(svg: string, size = 16, className = "") {
-  return svg.replace("<svg ", `<svg class="${`icon ${className}`.trim()}" width="${size}" height="${size}" aria-hidden="true" focusable="false" `);
+  return drawSvg(svg, `icon ${className}`.trim(), size);
 }
 
 /** SVG markup as an element. */

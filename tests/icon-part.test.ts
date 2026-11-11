@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_ICON_SIZE, ICON_PLACES, ICON_SIZES, iconPlace, iconSize, iconSvg } from "../src/ui/parts/icon-options.ts";
+import { DEFAULT_ICON_SIZE, ICON_PLACES, ICON_SIZES, drawSvg, iconPlace, iconSize, iconSvg } from "../src/ui/parts/icon-options.ts";
 import { PARTS } from "../src/catalogue/parts.ts";
 
 // The Icon part's options become markup (atomic catalogue ticket 10): a size from a small set, a place beside words,
@@ -42,6 +42,13 @@ test("markup: every size and place is data on the same class", () => {
   assert.ok(iconSvg(check, { size: 24, place: "after" }).includes('data-size="24" data-place="after"'));
   assert.equal(iconSvg(check, { size: 13, place: "sideways" }), iconSvg(check), "unknown options fall back to the defaults");
   assert.equal([...iconSvg(check, { place: "after" }).matchAll(/class="/g)].length, 1, "one class and no modifier classes");
+});
+
+test("one way to draw: the editor's markup and the part's differ only in the data attributes", () => {
+  const editor = drawSvg(check, "icon", 20);
+  assert.match(editor, /^<svg class="icon" width="20" height="20" aria-hidden="true" focusable="false" /);
+  assert.ok(drawSvg(check, "icon wide", 12).startsWith('<svg class="icon wide" width="12" height="12" '));
+  assert.equal(iconSvg(check, { size: 20 }), editor.replace(' aria-hidden', ' data-size="20" aria-hidden'));
 });
 
 test("the board's Icon shows every size and each place, and its options reach the part", () => {
