@@ -720,3 +720,48 @@ test("the Progress bar slides and fills from the right when the page runs right 
   await expect(bar).toHaveAttribute("data-mode", "unknown");
   await expect.poll(() => bar.evaluate((el) => getComputedStyle(el, "::before").animationName)).toBe("progress-slide-rtl");
 });
+
+test("the Badge, Section heading and Keyboard key draw their options in the live cell", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  const outline = page.getByRole("navigation", { name: "Outline" });
+  const options = page.getByRole("complementary", { name: "Options" });
+
+  // Badge: a count over 99 reads 99+, a dot has a name and no text, the tone is data on the one class.
+  await outline.getByRole("button", { name: "Badge", exact: true }).click();
+  const badge = page.locator("#card-badge .cat-live__stage > .ui-badge");
+  await expect(badge).toHaveAttribute("data-kind", "tag");
+  await expect(badge).toHaveText("Draft");
+  await options.getByRole("combobox", { name: /^Kind/ }).selectOption("count");
+  await options.getByRole("textbox", { name: "Words" }).fill("120");
+  await options.getByRole("combobox", { name: /^Tone/ }).selectOption("question");
+  await expect(badge).toHaveText("99+");
+  await expect(badge).toHaveAttribute("data-tone", "question");
+  await options.getByRole("combobox", { name: /^Kind/ }).selectOption("dot");
+  await options.getByRole("textbox", { name: "Words" }).fill("Waiting");
+  await expect(badge).toHaveText("");
+  await expect(badge).toHaveAttribute("aria-label", "Waiting");
+  await options.getByRole("combobox", { name: /^Kind/ }).selectOption("mark");
+  await expect(badge.locator("svg.icon")).toHaveAttribute("data-size", "12");
+
+  // Section heading: the words are a heading of the chosen level, the end slot follows them.
+  await outline.getByRole("button", { name: "Section heading", exact: true }).click();
+  const heading = page.locator("#card-section-heading .cat-live__stage > .ui-section-heading");
+  await expect(heading.getByRole("heading", { level: 3, name: "Pages" })).toBeVisible();
+  await expect(heading.locator("[data-slot='end']")).toHaveCount(0);
+  await options.getByRole("combobox", { name: /^Level/ }).selectOption("2");
+  await options.getByRole("combobox", { name: /^End slot/ }).selectOption("count");
+  await expect(heading.getByRole("heading", { level: 2, name: "Pages" })).toBeVisible();
+  await expect(heading.locator("[data-slot='end'] > .ui-badge")).toHaveText("12");
+  await options.getByRole("combobox", { name: /^End slot/ }).selectOption("button");
+  await expect(heading.locator("[data-slot='end']").getByRole("button", { name: "Add" })).toBeVisible();
+
+  // Keyboard key: one key is one cap, several are a group of caps.
+  await outline.getByRole("button", { name: "Keyboard key", exact: true }).click();
+  const stage = page.locator("#card-key .cat-live__stage");
+  await expect(stage.locator("kbd.ui-key[data-combo] > kbd")).toHaveText(["Ctrl", "K"]);
+  await options.getByRole("textbox", { name: /^Keys/ }).fill("Esc");
+  await expect(stage.locator("kbd.ui-key:not([data-combo])")).toHaveText("Esc");
+  await options.getByRole("textbox", { name: /^Keys/ }).fill("");
+  await expect(stage.locator("kbd")).toHaveCount(0);
+  await expect(stage).toContainText("Type a key");
+});

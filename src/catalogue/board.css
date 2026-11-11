@@ -989,6 +989,15 @@ label.cat-control--row {
 .cat-overlay-host > p {
   margin: 0;
 }
+/* The Section heading's stage: a panel's width, so the end slot has its far end and long words wrap. */
+.cat-heading-stage {
+  inline-size: 220px;
+}
+/* A part with nothing to show says so. */
+.cat-hint {
+  color: var(--muted);
+  font-size: var(--type-small);
+}
 .cat-menu-surface {
   inline-size: 280px;
   padding: var(--panel-padding);
