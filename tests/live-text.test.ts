@@ -229,8 +229,9 @@ test("after frames are lost (a reconnect or a new key), the tabs ask again and n
 test("a tab on another version of the file joins the room's copy: its own words move onto the branch's newest version (am-59)", async () => {
   const room = fakeRoom(), newer = sha, older = "b".repeat(40);
   const olderText = "<h1>Fresh bread</h1>\n<p>Open at six.</p>\n";
-  // Each tab's workspace says which version it read, and GitHub says which is the branch's newest.
-  const github = (version: string, text: string): LiveTextPorts["github"] => () => ({ sha: version, text, current: async () => version === newer });
+  // Each tab's workspace says which version it read; GitHub says which is the branch's newest, and that the older came before it.
+  const github = (version: string, text: string): LiveTextPorts["github"] => () => ({ sha: version, text, newest: async () => ({ sha: newer, text: base }),
+    before: async function* (of) { if (of === newer) yield { sha: older, text: olderText }; } });
   const anna = tab(room, base, { github: github(newer, base) });
   await quiet();
   const lex = tab(room, `${olderText}<p>Lex's line.</p>\n`, { base: olderText, baseSha: older, github: github(older, olderText) });
@@ -352,11 +353,12 @@ function startingRace(race: AwaitRace): RaceRun {
   const run: RaceRun = { done: Promise.resolve(), room: fakeRoom(), at: 0, loading: true };
   run.done = (async () => {
     // Her workspace's version of GitHub's text (a save moves it), the branch's newest.
-    const github: LiveTextPorts["github"] = (at, file) => { const now = run.anna?.store.get(at, file); return now?.baseSha ? { sha: now.baseSha, text: now.base, current: async () => true } : undefined; };
+    const github: LiveTextPorts["github"] = (at, file) => { const now = run.anna?.store.get(at, file); return now?.baseSha ? { sha: now.baseSha, text: now.base } : undefined; };
     run.anna = tab(run.room, `${base}<p>Anna's unsaved line.</p>\n`, { race, github });
     await quiet();
     run.lex = tab(run.room);
-    await until(() => run.anna!.yjsLoads > 0 && run.lex!.yjsLoads > 0, "both loading");
+    // Stopped, discarded or saved while still alone (at her kept copy's read), Anna may load no Yjs and Lex then none.
+    await until(() => run.lex!.yjsLoads > 0 || (run.anna!.keptRead && run.anna!.yjsLoads === 0 && run.room.log.length === 0), "both loading, or Anna out early");
     await new Promise(resolve => setTimeout(resolve, 120));
   })().finally(() => { Reflect.deleteProperty(subtle, "digest"); });
   return run;
@@ -431,11 +433,12 @@ test("Discard at any await of loading the copy leaves the draft on GitHub's text
     const run: RaceRun = { done: Promise.resolve(), room: fakeRoom(), at: 0, loading: true };
     run.done = (async () => {
       // Her workspace's version of GitHub's text (a save moves it), the branch's newest.
-    const github: LiveTextPorts["github"] = (at, file) => { const now = run.anna?.store.get(at, file); return now?.baseSha ? { sha: now.baseSha, text: now.base, current: async () => true } : undefined; };
+    const github: LiveTextPorts["github"] = (at, file) => { const now = run.anna?.store.get(at, file); return now?.baseSha ? { sha: now.baseSha, text: now.base } : undefined; };
     run.anna = tab(run.room, `${base}<p>Anna's unsaved line.</p>\n`, { race, github });
       await quiet();
       run.lex = tab(run.room);
-      await until(() => run.anna!.yjsLoads > 0 && run.lex!.yjsLoads > 0, "both loading");
+      // Stopped, discarded or saved while still alone (at her kept copy's read), Anna may load no Yjs and Lex then none.
+      await until(() => run.lex!.yjsLoads > 0 || (run.anna!.keptRead && run.anna!.yjsLoads === 0 && run.room.log.length === 0), "both loading, or Anna out early");
       await new Promise(resolve => setTimeout(resolve, 120));
     })();
     return run;
@@ -925,7 +928,8 @@ test("stopping at any await of loading the carets starts no carets and tells the
       run.anna = tab(run.room, base, { race, carets: share => { run.started++; share.own(() => ({ anchor: 1, head: 1 })); return () => undefined; } });
       await quiet();
       run.lex = tab(run.room);
-      await until(() => run.anna!.yjsLoads > 0 && run.lex!.yjsLoads > 0, "both loading");
+      // Stopped, discarded or saved while still alone (at her kept copy's read), Anna may load no Yjs and Lex then none.
+      await until(() => run.lex!.yjsLoads > 0 || (run.anna!.keptRead && run.anna!.yjsLoads === 0 && run.room.log.length === 0), "both loading, or Anna out early");
       await new Promise(resolve => setTimeout(resolve, 120));
     })();
     return run;
@@ -1076,11 +1080,10 @@ test("an agent's change taken back from Anna's tab goes from every tab; a second
   doc.clientID = 4242;
   doc.getText("source").insert(0, "<!-- spoof -->");
   const update = Y.encodeStateAsUpdate(doc);
-  // The frame head (src/live-text.ts): kind, caught up, the copy's id, the sender's id, the copy's birth time.
-  const head = 34, frame = new Uint8Array(head + update.length);
-  frame.set(theirs.subarray(0, head));
+  const frame = new Uint8Array(26 + update.length);
+  frame.set(theirs.subarray(0, 26));
   new DataView(frame.buffer).setUint32(22, second);
-  frame.set(update, head);
+  frame.set(update, 26);
   await spoof.send(frame);
   await until(() => lex.text.startsWith("<!-- spoof -->") && anna.text === lex.text, "the spoofed change on both");
   assert.equal(lex.stop.undoAuthor(second), true, "Lex's tab still takes back only the agent's own change");
