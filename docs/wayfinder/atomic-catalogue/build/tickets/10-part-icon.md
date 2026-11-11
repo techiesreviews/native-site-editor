@@ -67,3 +67,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - **Shared token for the gap (P2, fixed):** the gap beside words is `gap: var(--space-3xs)` on `.icon-line` (as in the approved mock-up); the part's own `data-place` margin rules are gone. `.icon--before` and `.icon--after` stay as they were for the editor's screens. The icon's own `data-place` stays as data for the board and tests.
 - **Ticket text (P3, fixed):** the first Done section now names `words` and `icon-line`.
 - **Validation gaps (fixed):** words of only spaces draw the bare icon; the board spec calls `iconPart` itself with an element as words and with Alone plus words. Declined nits: a long-words row on the board and a single list for `ICON_ROWS` (both small, no behaviour changes).
+
+### Follow-ups
+
+- Spec (P3): e1dc90b86:docs/wayfinder/atomic-catalogue/build/tickets/10-part-icon.md:10 — P3 ticket: the line rewritten in this round still says "`src/icons.css` styles `data-place` like the old `icon--before` and `icon--after` classes". This round removed those `data-place` rules (`src/icons.css:8-18` now styles only the two old classes), and the round-2 note at line 30 says so. The Done line now disagrees with the code. Fix: change the end of the sentence to say `data-place` is data only, the gap comes from `.icon-line`, and `.icon--before` and `.icon--after` stay unchanged for the editor's screens.
+
