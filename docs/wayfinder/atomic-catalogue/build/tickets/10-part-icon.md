@@ -53,3 +53,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - **Comment:** `src/ui/parts/icon.ts` now says the words are the caller's to put before or after the icon to match `place`, and the part only sets the spacing; `icon-options.ts` says the one way is complete once the editor's own copies move over (ticket 30).
 - **Board draws what the part normalises:** it reads the place through `iconPlace`, and draws the icon alone when Words is empty, so no spare margin sits beside nothing.
 - **Validation:** `kit unit --affected` RESULT: ok unit 3105/3105 (199 files); `npm run lint` check-exports: 15 unused export(s), 0 failure(s); `npm run check` RESULT: ok tokens in step.
+
+### Review fixes, PR round (2026-11-11)
+
+- **Words are an argument (P2, fixed):** `iconPart(name, { size, place, words })` returns the icon and the words as one `icon-line` span in the order `place` says, or the bare icon when there are no words or the place is alone. The `.icon-line` rules (no wrapping, like a control's label) moved from the board into `src/icons.css`; the board's cell just calls the part.
+- **One way to draw (P3, fixed):** `drawSvg` in `icon-options.ts` is the one body; `iconSvg` (the part) and `sizedSvg` (the editor's, unchanged output) both call it.
+- **Validation gaps (fixed):** the board spec checks the computed gap (0.3 of the font size on the words' side, none on the other) and right to left (Before words puts the icon on the right). Long words: decided on purpose that they stay on one line, like a control's label.
+- **Nit, board choices:** the sizes and places on the board come from `icon-options.ts`. Declined: an unknown icon name guard on the board (the options panel only offers bundled names; unchanged from before).
+- **Evidence:** `kit unit --affected` RESULT: ok unit 3106/3106 (199 files); `npm run check` RESULT: ok tokens in step; `npm run lint` check-exports: 15 unused export(s), 0 failure(s); `kit specs tests/native-save/native-catalogue-board.spec.ts` RESULT: ok specs 1/1 passed; `kit size` RESULT: ok size boot 354 KB (±0 KB) vs dev@6212872, budget 355 KB.
