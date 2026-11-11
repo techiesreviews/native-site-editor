@@ -2,7 +2,7 @@ import { PIN_HEIGHT, noteAnchor, noteTop } from "./agent-pin-geometry";
 import { guardChunkReload } from "../chunk-recovery";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
-import { AGENT_COLOURS, UNNAMED_AGENT } from "../agent-presence";
+import { AGENT_COLOURS, shownName } from "../participant";
 import { REQUEST_TEXT_LIMIT, requestThread, type AgentRequest } from "../../shared/agent";
 import type { SelectionRect } from "./edit-bar";
 import "./agent-pins.css";
@@ -103,11 +103,16 @@ const marks: Record<string, string> = { done: "✓", answered: "…", question: 
 const replied = (state: string) => state === "done" || state === "answered" || state === "question";
 // The question an agent asks the user, shown in its pin ("" when none).
 const asking = (request: PinRequest) => request.state === "question" ? request.reply?.message.trim() ?? "" : "";
-// The agent working on it, named on its pin in its colour ("" when none). For one a wait only took, the agent
-// presence names (src/agent-presence.ts `onPin`); none named, the pin keeps its spinner until an agent reads it.
-const workingAgent = (request: PinRequest) => request.state === "seen" && request.agent && !request.agentTook ? request.agent.name || UNNAMED_AGENT : "";
+/** The agent working on a request, as its pin names it in its colour (src/participant.ts, as on its outline and caret):
+ * none when no one is. For one a wait only took, the agent presence names (src/agent-presence.ts `onPin`); none named,
+ * the pin keeps its spinner until an agent reads it. */
+export function pinAgent(request: Pick<PinRequest, "state" | "agent" | "agentTook" | "colour">) {
+  return request.state === "seen" && request.agent && !request.agentTook
+    ? { name: shownName(request.agent.name, "agent"), colour: (request.colour ?? 0) % AGENT_COLOURS.length } : undefined;
+}
+const workingAgent = (request: PinRequest) => pinAgent(request)?.name ?? "";
 // Its theme token: the agent's colour itself, and (`-pin`, `-ink`) its pin's tint and ink.
-const agentToken = (request: PinRequest, part = "") => `var(--${AGENT_COLOURS[(request.colour ?? 0) % AGENT_COLOURS.length]}${part})`;
+const agentToken = (request: PinRequest, part = "") => `var(--${AGENT_COLOURS[pinAgent(request)?.colour ?? 0]}${part})`;
 
 // Between two pins of one element.
 const STACK_GAP = 3;
@@ -487,7 +492,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       row.dataset.from = message.from;
       // The question the user is to answer is the last message.
       if (request.state === "question" && index === messages.length - 1 && message.from === "agent") row.classList.add("is-question");
-      row.append(node("span", "agent-pin-card__from", message.from === "user" ? "You" : message.name || UNNAMED_AGENT), node("p", "agent-pin-card__bubble", message.text));
+      row.append(node("span", "agent-pin-card__from", message.from === "user" ? "You" : shownName(message.name ?? "", "agent")), node("p", "agent-pin-card__bubble", message.text));
       thread.append(row);
     });
     body.append(head, thread);

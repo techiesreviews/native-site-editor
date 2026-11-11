@@ -22,7 +22,8 @@ import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../../sha
 import { withSlottedRules } from "../../shared/slotted-css";
 import type { NativeCascade, NativeSelectedRule } from "../style-cascade";
 import { watchEditorTheme } from "../theme";
-import { AGENT_COLOURS, createChipUndo, type AgentMark, type ChipUndoOffer } from "../agent-presence";
+import { createChipUndo, type AgentMark, type ChipUndoOffer } from "../agent-presence";
+import { AGENT_COLOURS } from "../participant";
 import type { AddPanelHandlers } from "../page-builder/add-panel";
 import { createPageBuilder } from "../page-builder/page-builder";
 import type { DraggedBlock, DropTarget } from "../page-builder/drop-target";
