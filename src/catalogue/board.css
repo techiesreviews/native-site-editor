@@ -972,11 +972,6 @@ label.cat-control--row {
 .cat-field {
   inline-size: 180px;
 }
-.cat-icon-line {
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
-}
 .cat-menu-surface {
   inline-size: 280px;
   padding: var(--panel-padding);
