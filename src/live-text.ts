@@ -97,8 +97,9 @@ export interface LiveTextPorts {
   authors?: SaveAuthors;
   /** GitHub's version of the file (its blob sha and text) as the workspace read it (ticket am-59): a draft kept over an
    * older version moves onto it when the room's copy holds it, and a copy that does not hold it takes it when `current`
-   * says it is still the branch's newest (a version read before a commit the room took must not undo that commit). */
-  github?: (scope: DraftScope, path: string) => { sha: string; text: string; current?: () => Promise<boolean> } | undefined;
+   * says it is still the branch's newest (a version read before a commit the room took must not undo that commit); when
+   * it is not, `newest` (the branch's newest version, read now) enters instead, and the draft moves onto it. */
+  github?: (scope: DraftScope, path: string) => { sha: string; text: string; current?: () => Promise<boolean>; newest?: () => Promise<{ sha: string; text: string } | undefined> } | undefined;
   /** The Undo list a clash's step goes in (the file's own by default): the latest version shows, this tab's words one Undo away. */
   history?: (scope: DraftScope, path: string) => string;
   /** A GitHub push moved the shared file's branch to `commit` (ticket am-32): the open file's room heard it from the relay. */
@@ -728,6 +729,14 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           if (await shown.current?.().catch(() => false) && !stopped) {
             if (!await edgeTo(head, shown.sha, shown.text)) return undefined;
             newestAfter = Math.max(newestAfter, asked);
+          } else if (!stopped) {
+            // Not the newest any more, and maybe newer than the copy's newest: the branch's newest enters instead (it came
+            // after every version the copy holds), so the draft moves on to it rather than back to an older one.
+            const latest = await shown.newest?.().catch(() => undefined), now = headOf(versions());
+            if (latest && now && !stopped && !versionsOf(versions()).has(latest.sha)) {
+              if (!await edgeTo(now, latest.sha, latest.text)) return undefined;
+              newestAfter = Math.max(newestAfter, asked);
+            }
           }
           continue;
         }

@@ -295,11 +295,11 @@ test("two tabs with the same draft that each start their own copy (a catch-up re
   const timers = new Map<number, { at: number; run(): void }>();
   const clock: LiveClock = { now: () => now, setTimeout(run, delay) { timers.set(++id, { at: now + delay, run }); return id; }, clearTimeout(timer) { timers.delete(timer as number); } };
   const room = fakeRoom(), draft = `${base}<p>Same unsaved line.</p>\n`;
-  const anna = tab(room, draft);
+  const anna = tab(room, draft, { clock });
   await quiet();
   const lex = tab(room, draft, { clock });
   await until(() => lex.sockets.length === 1, "Lex in the room");
-  // Lex's socket is cut: his request never arrives, and after the wait he starts from his own draft too.
+  // Lex's socket is cut: neither request arrives, and after the wait each starts from its own draft.
   lex.socket.me.cut = true;
   await until(() => lex.yjsLoads === 1 && anna.yjsLoads === 1, "both copies");
   await quiet();
