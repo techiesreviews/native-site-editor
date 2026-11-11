@@ -294,6 +294,35 @@ export interface Clash {
   back?: Uint8Array;
 }
 
+/** How well a change's end sits between characters `left` and `right`: a line, white space, a tag's or the text's edge. */
+const edgeFit = (left: string | undefined, right: string | undefined) =>
+  left === undefined || right === undefined || left === "\n" || right === "\n" || /\s/.test(left) || /\s/.test(right) || left === ">" || right === "<" ? 1 : 0;
+
+/**
+ * Each change of `changes` (on `text`, in order) that only takes out characters of this tab's own (`own`, by index in
+ * `text`) moved sideways along the same characters, as far as only its own go, to where its ends sit at word edges:
+ * the text it makes is the same. Its Undo step is moved past others' changes by offsets (src/shared-undo.ts), so a
+ * step from inside one word to inside the next ("16» «" for "«16» ") is undone a character off, cutting a word apart.
+ */
+function alignWords(text: string, changes: TextChange[], own: (index: number) => boolean) {
+  changes.forEach((change, at) => {
+    if (change.text || change.end <= change.start) return;
+    const low = at ? changes[at - 1].end : 0, high = at + 1 < changes.length ? changes[at + 1].start : text.length;
+    const fit = (start: number, end: number) => edgeFit(text[start - 1], text[start]) + edgeFit(text[end - 1], text[end]);
+    let start = change.start, end = change.end, best = { start, end, score: fit(start, end) };
+    while (start > low && text[start - 1] === text[end - 1] && own(start - 1)) {
+      start--; end--;
+      if (fit(start, end) > best.score) best = { start, end, score: fit(start, end) };
+    }
+    start = change.start; end = change.end;
+    while (end < high && text[start] === text[end] && own(end)) {
+      start++; end++;
+      if (fit(start, end) > best.score) best = { start, end, score: fit(start, end) };
+    }
+    change.start = best.start; change.end = best.end;
+  });
+}
+
 /** A 32-bit FNV-1a hash of `text`: the client id a word put back is written under, the same in every tab. */
 function hashClient(text: string) {
   let hash = 0x811c9dc5;
@@ -407,6 +436,7 @@ export function clashes(Y: Yjs, doc: Doc, all: readonly Edge[], edge: Edge, mine
       i++;
     } else j++;
   }
+  alignWords(current, out, index => list[shown[index]].kind === 1);
   out.reverse();
   // The merged text is read from the copy, the typists' part guessed where others took out what GitHub took out too: a
   // change making a word neither the copy, GitHub nor the older version has (a word cut apart, two glued) is not made.

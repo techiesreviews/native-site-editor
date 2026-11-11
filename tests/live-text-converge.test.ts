@@ -10,8 +10,8 @@
 // `LIVE_SEEDS` and `LIVE_STEPS` play more or longer runs, `LIVE_SKIP=save,outside` leaves steps out.
 //
 // Everything runs on one deterministic schedule: the relay is a queue per receiver (one socket each, so frames
-// and member notices reach a tab in the order the relay took them), the clock is fake, Yjs is loaded once and the
-// starting-text digest answers without the thread pool, so a seed always plays the same way.
+// and member notices reach a tab in the order the relay took them), the clock is fake, Yjs is loaded once (each share gets ids of its own) and the
+// starting-text digest answers without the thread pool and random bytes come from the seed, so a seed always plays the same way.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
@@ -44,6 +44,13 @@ function random(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
   return { next, int: (n: number) => Math.floor(next() * n), pick: <T>(items: readonly T[]) => items[Math.floor(next() * items.length)]! };
+}
+
+/** A 32-bit FNV-1a hash of `text`. */
+function fnv(text: string) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index++) hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193);
+  return hash >>> 0;
 }
 
 /** The fake clock: timers run only when the run moves time on. */
@@ -165,7 +172,7 @@ type Github = { text: string; sha: string; copies?: string[] };
  * version of the file in the tab's workspace (what its last load or head check read; src/live-text.ts `github`, which
  * also reads GitHub's newest version and the version before each one); `heard` runs when a push notice reaches it. */
 function openTab(room: Room, time: ReturnType<typeof fakeClock>, name: string, browser: ReturnType<typeof keeper>, from: { base: string; sha: string; text: string; seen: string },
-  heard: (tab: Tab) => void, versions: ReadonlyMap<string, string>, newest: () => Github, before: (sha: string) => Github[], yjs: typeof Y) {
+  heard: (tab: Tab) => void, versions: ReadonlyMap<string, string>, newest: () => Github, before: (sha: string) => Github[], yjs: () => typeof Y) {
   const store = createDraftStore();
   store.open(scope, path, { text: from.base, baseSha: from.sha });
   if (from.text !== from.base) store.edit({ scope, path, text: from.text, label: "Earlier draft" });
@@ -182,7 +189,7 @@ function openTab(room: Room, time: ReturnType<typeof fakeClock>, name: string, b
   tab.stop = startLiveText({
     store, openFile, scope: () => scope, on: true, clock: time.clock, keeper: browser, authors: createSaveAuthors(),
     openRoom: options => (socket = room.open(options)),
-    loadYjs: async () => yjs,
+    loadYjs: async () => yjs(),
     github: () => ({ sha: tab.seen, text: versions.get(tab.seen)!, newest: async () => newest(), before: async function* (sha) { yield* before(sha); } }),
     onPushed: () => heard(tab),
   });
@@ -210,10 +217,18 @@ function gaps(text: string) {
  */
 async function play(seed: number, length: number, skip: ReadonlySet<string> = new Set()) {
   const pick = random(seed), time = fakeClock(), room = relay();
-  // Yjs client ids from the seed too (Yjs picks them at random), so a seed always plays the same way.
-  const ids = random(seed ^ 0x5bd1e995);
-  class SeededDoc extends Y.Doc { constructor(options?: ConstructorParameters<typeof Y.Doc>[0]) { super(options); this.clientID = Math.floor(ids.next() * 2 ** 32) >>> 0; } }
-  const yjs = { ...Y, Doc: SeededDoc } as typeof Y;
+  // Yjs client ids from the seed too (Yjs picks them at random), so a seed always plays the same way: each share of a
+  // page (one Yjs load) draws from a stream of its own, named by its tab and how often that tab shared. One stream for
+  // the whole run moved every later tab's id whenever the code made one scratch copy more or less (a version's text read
+  // apart), and the same seed played another run.
+  const shares = new Map<string, number>();
+  const yjsFor = (name: string) => {
+    const count = (shares.get(name) ?? 0) + 1;
+    shares.set(name, count);
+    const ids = random(seed ^ 0x5bd1e995 ^ fnv(`${name}/${count}`));
+    class SeededDoc extends Y.Doc { constructor(options?: ConstructorParameters<typeof Y.Doc>[0]) { super(options); this.clientID = Math.floor(ids.next() * 2 ** 32) >>> 0; } }
+    return { ...Y, Doc: SeededDoc } as typeof Y;
+  };
   const log: string[] = [];
   const say = (line: string) => { log.push(line); };
   let github: Github = { text: START, sha: shaOf(START) };
@@ -280,7 +295,7 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
   /** Each tab's words before its latest change, for `watch`. */
   const watched = new Map<Tab, Set<string>>();
   const make = (name: string, browser: ReturnType<typeof keeper>, from: Parameters<typeof openTab>[4]) => {
-    const tab = openTab(room, time, name, browser, from, pushed => hear(pushed, "push notice"), versions, () => github, older, yjs);
+    const tab = openTab(room, time, name, browser, from, pushed => hear(pushed, "push notice"), versions, () => github, older, () => yjsFor(name));
     const unwatch = watch(tab);
     const before = tab.store.subscribe(event => { if (event.type === "text") watched.set(tab, new Set(event.text.match(WORD) ?? [])); });
     const stop = tab.stop;
@@ -385,6 +400,13 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
   const subtle = crypto.subtle;
   Object.defineProperty(subtle, "digest", { configurable: true, value: async (_: AlgorithmIdentifier, data: BufferSource) =>
     new Uint8Array(createHash("sha256").update(data as Uint8Array).digest()).buffer });
+  // Random bytes from the seed too: an agent's Yjs client id is drawn from them (src/live-text.ts `agentAuthor`), and Yjs
+  // orders two words put in at one place by client id, so a random one played the same seed differently now and then.
+  const bytes = random(seed ^ 0x2545f491), randomValues = Object.getOwnPropertyDescriptor(crypto, "getRandomValues");
+  Object.defineProperty(crypto, "getRandomValues", { configurable: true, writable: true, value: <T extends ArrayBufferView | null>(array: T) => {
+    if (array) { const view = new Uint8Array(array.buffer, array.byteOffset, array.byteLength); for (let index = 0; index < view.length; index++) view[index] = bytes.int(256); }
+    return array;
+  } });
   /** Every queue delivered, every timer run, every connection back. */
   const quiet = async () => {
     for (let round = 0; round < 400; round++) {
@@ -443,6 +465,7 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
   } finally {
     for (const tab of open()) tab.stop();
     Reflect.deleteProperty(subtle, "digest");
+    if (randomValues) Object.defineProperty(crypto, "getRandomValues", randomValues); else Reflect.deleteProperty(crypto, "getRandomValues");
   }
 }
 
