@@ -112,9 +112,9 @@
 .live-caret__flag[data-agent] .live-caret__name { margin-inline-start: 1px; }
 .live-caret[data-flip] .live-caret__name { margin-inline: 0 2px; }
 .live-caret[data-flip] .live-caret__initial { display: inline; }
-/* A right-to-left name shows whole beside its circle, in its own direction. */
-.live-caret__flag[data-rtl] .live-caret__name { margin-inline: 2px 0; }
-.live-caret__flag[data-rtl] .live-caret__initial { display: inline; }
+/* A right-to-left name, or one whose initial is not its first character ("@ben"), shows whole beside its circle. */
+.live-caret__flag[data-whole] .live-caret__name { margin-inline: 2px 0; }
+.live-caret__flag[data-whole] .live-caret__initial { display: inline; }
 
 .live-caret__undo {
   position: relative;
