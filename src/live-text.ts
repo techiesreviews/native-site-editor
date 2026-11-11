@@ -434,9 +434,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   async function load(keptOnly = false) {
     loading = true;
     try {
-      const kept = await keeper.read(start.key);
-      if (stopped || discarded || (keptOnly && (!kept || kept.base === undefined || editors))) return;
+      // Alone, the kept copy is read first: without one, Yjs is not loaded.
+      const first = keptOnly ? await keeper.read(start.key) : undefined;
+      if (stopped || discarded || (keptOnly && (!first || first.base === undefined || editors))) return;
       const Y = await (ports.loadYjs ?? (() => import("yjs")))();
+      const kept = keptOnly ? first : await keeper.read(start.key);
       if (stopped || discarded) return;
       // A copy this tab shared before: kept unless the draft went back to GitHub's text since (discarded, or saved over),
       // or the room agreed on another copy meanwhile.
