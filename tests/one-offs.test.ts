@@ -79,6 +79,12 @@ test("a component's own hooks on the components layer count as the property they
   assert.deepEqual(oneOffs(component, { file: "src/ui/parts/button.css" }).map(({ kind, line }: Found) => [kind, line]), [
     ["spacing", 3], ["radii", 5], ["fontSizes", 6], ["spacing", 10], ["shadows", 11], ["localProperties", 12], ["timings", 13],
   ]);
+  // Any length unit counts, the newer viewport, line-height and container units too; a hex colour or a weight does not.
+  const units = ["@layer components {", "  .btn {", "    --btn-min-block-size: 2lh;", "    --btn-max: 100dvh;", "    --btn-wide: 10cqw;",
+    "    --btn-tint: #1a2b3c;", "    --btn-weight: 600;", "  }", "}"].join("\n");
+  assert.deepEqual(oneOffs(units, { file: "src/ui/parts/x.css" }).map(({ kind, line }: Found) => [kind, line]), [
+    ["localProperties", 3], ["localProperties", 4], ["localProperties", 5],
+  ]);
   // Only inside the components block: a custom property elsewhere in the same file is still a local one.
   const outside = [":root { --panel-gap: 10px; --panel-colour: red; }", "@layer components {", "  .btn { --btn-gap: 12px; }", "}"].join("\n");
   assert.deepEqual(oneOffs(outside, { file: "src/ui/parts/x.css" }).map(({ kind, line }: Found) => [kind, line]), [

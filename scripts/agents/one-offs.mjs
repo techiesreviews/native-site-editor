@@ -55,7 +55,8 @@ function hookProperty(rest) {
   }
   return undefined;
 }
-const handTypedUnit = /\d(?:px|rem|em|ch|ex|vw|vh|vi|vb|vmin|vmax|cqi|cqb|ms|s)\b|\d%/i;
+// A number with a length, time or angle unit, or a percentage (never the digits of a hex colour).
+const handTypedUnit = /(?<![#\w.])\d*\.?\d+(?:px|r?em|r?ex|r?ch|r?cap|r?ic|r?lh|[dsl]?v(?:w|h|i|b|min|max)|cq(?:w|h|i|b|min|max)|cm|mm|q|in|pt|pc|fr|m?s|deg|rad|grad|turn)\b|\d%/i;
 
 /**
  * Every hand-typed value in one CSS file's text, with its 1-based line. Comments are blanked, lines kept. Inside a
