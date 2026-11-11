@@ -517,7 +517,7 @@ async function topBar(values: Values, phone: boolean, open: boolean) {
       app: host, appStore: { repository: signal(repository as Parameters<typeof menu.setRepository>[0]) },
       page: { siteSettings: () => Promise.resolve() }, errorMessage: () => undefined,
     });
-    // A state cell shows the Menu open, once the frame shows the bar.
+    // Open as the cell asks (the frame is its own page, so its modal never holds the board), once the frame shows the bar.
     if (open) requestAnimationFrame(() => host.querySelector<HTMLButtonElement>("#topbar-menu")?.click());
   }
   return host;
@@ -538,9 +538,9 @@ const ORGANISMS: Part[] = [
     files: ["src/components/top-bar-phone.ts", "src/components/top-bar-phone.css", "src/components/top-bar-menu-rules.ts", "src/style.css"],
     defaults: { project: "techies-site", page: "Home", menu: false },
     controls: [text("project", "Project"), text("page", "Page"), toggle("menu", "Menu open")],
-    rows: [{ label: "The bar" }, { label: "Menu open", values: { menu: true } }],
+    rows: [{ label: "The bar", values: { menu: false } }, { label: "Menu open", values: { menu: true } }],
     columns: [{ label: "390 wide" }],
-    render: (values, _state, live) => topBar(values, true, Boolean(values.menu) && !live),
+    render: (values) => topBar(values, true, Boolean(values.menu)),
   },
 ];
 
