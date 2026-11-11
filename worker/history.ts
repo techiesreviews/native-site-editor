@@ -10,6 +10,7 @@ import type {
 } from "../shared/types";
 import { GitHub, HttpError } from "./github";
 import { touchesGithubConfig } from "../shared/protected-paths";
+import { liveCopiesOf } from "../shared/live-copy";
 
 const pageSize = 20;
 const maxPage = 50;
@@ -105,20 +106,24 @@ export async function history(
     throw new HttpError(502, "GitHub returned an unexpected history.");
   return {
     head,
-    commits: rows.slice(0, pageSize).map((row) => ({
-      sha: row.sha,
-      message: row.commit.message.split("\n", 1)[0],
-      author:
-        row.author?.login ??
-        row.commit.author?.name ??
-        row.commit.committer?.name ??
-        "Unknown",
-      ...(row.author?.avatar_url?.startsWith("https://")
-        ? { avatar: row.author.avatar_url }
-        : {}),
-      date: row.commit.author?.date ?? row.commit.committer?.date ?? "",
-      url: row.html_url,
-    })),
+    commits: rows.slice(0, pageSize).map((row) => {
+      const copies = liveCopiesOf(row.commit.message);
+      return {
+        sha: row.sha,
+        message: row.commit.message.split("\n", 1)[0],
+        author:
+          row.author?.login ??
+          row.commit.author?.name ??
+          row.commit.committer?.name ??
+          "Unknown",
+        ...(row.author?.avatar_url?.startsWith("https://")
+          ? { avatar: row.author.avatar_url }
+          : {}),
+        date: row.commit.author?.date ?? row.commit.committer?.date ?? "",
+        url: row.html_url,
+        ...(copies.length ? { copies } : {}),
+      };
+    }),
     nextPage: rows.length === pageSize && page < maxPage ? page + 1 : null,
   };
 }

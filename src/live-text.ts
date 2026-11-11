@@ -337,9 +337,7 @@ const liveFiles = new WeakMap<object, Map<string, Share>>();
 /** Whether `store`'s file under `key` is shared in a live room now: another tab is in, its copy is loading, a copy is
  * made (it stays while the file is open, also after the others left), or the room has not said who is here yet (for at
  * most LIVE_TEXT_CATCH_UP_MS after the file opened). An outside change to it folds into the room's copy (`liveFold`). */
-export function liveShared(store: object, key: string) {
-  return liveFiles.get(store)?.get(key)?.shared() ?? false;
-}
+const liveShared = (store: object, key: string) => liveFiles.get(store)?.get(key)?.shared() ?? false;
 /**
  * A commit GitHub has now (`next`) for `store`'s file under `key`, shared in a live room (ticket am-59): it enters the
  * room's one copy as one more participant, once, whichever tab takes it first; this tab's draft follows the copy, and
@@ -350,13 +348,11 @@ export function liveShared(store: object, key: string) {
 export function liveFold(store: object, key: string, next: LiveCommit): Promise<boolean | undefined> {
   return liveFiles.get(store)?.get(key)?.fold(next) ?? Promise.resolve(undefined);
 }
-/** The versions of GitHub's text `store`'s file under `key` holds in its copy, as edges (src/live-versions.ts). */
-export function liveVersions(store: object, key: string) {
-  return liveFiles.get(store)?.get(key)?.versions() ?? [];
-}
-/** The room copy `store`'s file under `key` is on, as hex; none before it has one. */
-export function liveCopy(store: object, key: string) {
-  return liveFiles.get(store)?.get(key)?.copy();
+/** Tests: `store`'s file under `key` in its live room: whether it is shared now (`liveShared`), the room copy it is on
+ * (as hex; none before it has one), and the versions of GitHub's text its copy holds, as edges (src/live-versions.ts). */
+export function liveState(store: object, key: string) {
+  const share = liveFiles.get(store)?.get(key);
+  return { shared: liveShared(store, key), copy: share?.copy(), versions: share?.versions() ?? [] };
 }
 /** This tab's saves made while its copy was not taking part, per draft store and key, by blob sha (their text): kept while
  * the page is open, so the copy notes them when the file opens again (`begin`). */
@@ -1005,7 +1001,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (!copyId) return false;
       const latest = await ports.github?.(scope, path)?.newest?.().catch(() => undefined);
       if (stopped) return false;
-      const next: LiveCommit = latest && latest.sha !== heard.sha ? latest : heard;
+      // The notice names no live copies; GitHub's history does (the commit's `Live-Copy` lines).
+      const next: LiveCommit = latest && latest.sha !== heard.sha ? latest : { ...heard, copies: heard.copies ?? latest?.copies };
       const file = store.get(scope, path);
       if (!file) return false;
       const base = await versionOf(file.baseSha, file.base);

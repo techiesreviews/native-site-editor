@@ -71,7 +71,7 @@ test("history freezes pagination at the first page head and maps commit metadata
         sha: String(index).padStart(40, "0"),
         html_url: `https://github.com/lex/starter/commit/${index}`,
         commit: {
-          message: index === 0 ? "First line\n\nDetails" : `Commit ${index}`,
+          message: index === 0 ? "First line\n\nDetails" : index === 1 ? `Save\n\nLive-Copy: ${"cd".repeat(20)}` : `Commit ${index}`,
           author: { name: "Lex", date: "2026-09-21T10:00:00Z" },
         },
         author: index === 0 ? { login: "lex" } : null,
@@ -95,6 +95,9 @@ test("history freezes pagination at the first page head and maps commit metadata
     date: "2026-09-21T10:00:00Z",
     url: "https://github.com/lex/starter/commit/0",
   });
+  // A save from a live room: the copy its commit names (ticket am-59).
+  assert.deepEqual(result.commits[1].copies, ["cd".repeat(20)]);
+  assert.equal(result.commits[1].message, "Save");
   assert.ok(calls[0].endsWith("/branches/feature%2Fhistory"));
   assert.ok(calls[1].includes(`sha=${head}`));
   assert.ok(calls[1].includes("path=about%2Findex.html"));

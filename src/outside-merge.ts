@@ -11,9 +11,10 @@
 //   version: GitHub's words replace Lex's there as one Undo step of their own, so one Undo brings Lex's words back. No
 //   question and no message.
 // - While a dialog waits for an answer (a delete or a move planned on the old files), the branch loads again, as before.
-// - A page being typed on together in a live room (src/live-text.ts `liveShared`) does not fold: the branch loads again,
-//   as before, and unsaved work stays, so the room's copy never takes the change twice. Folding into a live room is a
-//   ticket of its own (am-59).
+// - A page being typed on together in a live room folds into the room's one copy instead (src/live-text.ts `liveFold`,
+//   ticket am-59): the commit enters the copy once, whichever tab takes it first, and each tab's draft follows the copy.
+//   When the copy cannot take it (GitHub's history unread, a save's note that never came) the branch loads again, as
+//   before, and unsaved work stays.
 // - The page shown gets a brief outline and a chip naming the commit's author where its text changed
 //   (src/agent-presence.ts `visit`); another changed page gets the dot on its row.
 //
@@ -25,7 +26,7 @@ import type { DraftTextStore } from "./draft-store";
 import type { PagesAndFilesPorts } from "./pages-and-files-host";
 import type { CommitFiles, PublishResult, Snapshot, TreeEntry } from "../shared/types";
 import { rebaseHistory } from "./shared-undo";
-import { liveShared } from "./live-text";
+import { liveFold, type LiveCommit } from "./live-text";
 import { mergeText, runChanges } from "./text-merge";
 
 import { isNativeTextFile } from "./site-text-index";
@@ -73,8 +74,9 @@ export interface OutsideHost {
   seeHead(commit: string): void;
   /** The browser's drafts (src/drafts.ts `draftStore`). */
   drafts(): { list(scope: DraftScope): SavedDraft[] };
-  /** Whether the file under a draft key is typed on together in a live room now (src/live-text.ts `liveShared`). */
-  shared?: (key: string) => boolean;
+  /** Folds a commit into the live room of the file under a draft key (src/live-text.ts `liveFold`): true once its copy
+   * took it, undefined when the file is not typed on together, false when the branch must load again. */
+  liveFold?: (key: string, commit: LiveCommit) => Promise<boolean | undefined>;
   /** Whether a dialog waits for an answer now (the page's open `<dialog>`). */
   asking?: () => boolean;
 }
@@ -124,13 +126,25 @@ export async function foldIn(ports: Ports, host: OutsideHost, commit: string, li
   // before, which closes it, rather than the plan going on over changed files.
   const asking = host.asking ?? (() => typeof document !== "undefined" && document.querySelector("dialog[open]") !== null);
   if (asking()) return false;
-  // A page typed on together now: the branch loads again, as before (am-59 folds into a live room).
-  const together = host.shared ?? ((key: string) => liveShared(store, key));
-  if (changed.some(entry => { const key = store.get(scope, entry.path)?.key; return key !== undefined && together(key); })) return false;
   const label = `${name || "Someone"} · GitHub`;
   const shown = new Map(changed.flatMap(entry => { const text = ports.runtime.source(entry.path); return text === undefined ? [] : [[entry.path, text] as const]; }));
-  for (const entry of changed)
-    foldFile(store, scope, entry.path, drafted.get(entry.path), texts.get(entry.path)!, entry.sha, () => ports.nativeHistorySession(scope, entry.path), label, ports.editorModule.sourceMoved);
+  // A page typed on together now folds into its live room's copy first (ticket am-59); one its copy cannot take loads
+  // the branch again. The rest fold into their drafts.
+  const fold = host.liveFold ?? ((key: string, commit: LiveCommit) => liveFold(store, key, commit));
+  const folded = new Set<string>();
+  for (const entry of changed) {
+    const key = store.get(scope, entry.path)?.key;
+    if (key === undefined) continue;
+    const took = await fold(key, { sha: entry.sha, text: texts.get(entry.path)!, author: label });
+    if (took === false) return false;
+    if (took) folded.add(entry.path);
+  }
+  if (!live()) return true;
+  // The drafts as they are after the room's folds.
+  const draftsAfter = folded.size ? draftsNow() : drafted;
+  if (!mergeable(draftsAfter)) return false;
+  for (const entry of changed) if (!folded.has(entry.path))
+    foldFile(store, scope, entry.path, draftsAfter.get(entry.path), texts.get(entry.path)!, entry.sha, () => ports.nativeHistorySession(scope, entry.path), label, ports.editorModule.sourceMoved);
   // GitHub's texts are the base now: the preview, and every file without a draft, show them.
   const result: PublishResult = { commit: next.commit, branch: scope.branch, url: "", files: changed.map(({ path, sha }) => ({ path, sha })), unchanged: false };
   ports.runtime.adoptSaved(scope, result, changed.map(entry => ({ ...scope, version: 1, path: entry.path, baseSha: entry.sha, original: texts.get(entry.path)!, content: texts.get(entry.path)!, updatedAt: 0 })));
@@ -147,7 +161,8 @@ export async function foldIn(ports: Ports, host: OutsideHost, commit: string, li
 /**
  * One changed file: `theirs` at blob `sha` is GitHub's text now. Its draft (`record`, or the editor
  * store's open entry) is merged against its starting text; without either only the base moves (the caller's
- * `adoptSaved`). A file typed on together in a live room never comes here (`foldIn` loads the branch again).
+ * `adoptSaved`). A file typed on together in a live room comes here only when it turned out not to be shared after all
+ * (`liveFold` undefined): its room's copy took the commit otherwise.
  */
 export function foldFile(store: DraftTextStore, scope: DraftScope, path: string, record: SavedDraft | undefined, theirs: string, sha: string,
   history: () => string, author: string, moved?: (key: string, source: string, sha: string) => void) {

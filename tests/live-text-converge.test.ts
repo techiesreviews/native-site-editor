@@ -19,7 +19,7 @@ import { signal } from "@preact/signals-core";
 import * as Y from "yjs";
 import { createDraftStore } from "../src/draft-store";
 import { draftKey, type DraftScope } from "../src/drafts";
-import { liveCopy, liveFold, liveShared, liveVersions, startLiveText, type CopyKeeper, type KeptCopy, type LiveTextPorts } from "../src/live-text";
+import { liveFold, liveState, startLiveText, type CopyKeeper, type KeptCopy, type LiveTextPorts } from "../src/live-text";
 import { noteLiveSave } from "../src/live-saves";
 import { writeAs } from "../src/live-author";
 import { foldFile } from "../src/outside-merge";
@@ -253,7 +253,7 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
       for (const made of out) settled.set(made, tab.name);
       if (out.length) latest.set(tab.name, out);
     };
-    if (liveShared(tab.store, tab.file.key)) {
+    if (liveState(tab.store, tab.file.key).shared) {
       say(`  ${tab.name} hears ${next.sha.slice(0, 7)} (${why}) and folds it into the room's copy`);
       void liveFold(tab.store, tab.file.key, { ...next, author: "Sam · GitHub" }).then(took => {
         say(`    ${tab.name}'s fold of ${next.sha.slice(0, 7)}: ${took === undefined ? "not shared" : took ? `taken, base ${tab.file.baseSha?.slice(0, 7)}` : "refused"}`);
@@ -417,9 +417,9 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
     for (const tab of open()) hear(tab, "focus");
     await settle();
     await quiet();
-    const end = () => open().map(tab => ({ name: tab.name, text: tab.text, base: tab.file.baseSha!, copy: liveCopy(tab.store, tab.file.key) }));
+    const end = () => open().map(tab => ({ name: tab.name, text: tab.text, base: tab.file.baseSha!, copy: liveState(tab.store, tab.file.key).copy }));
     const before = end();
-    for (const tab of open()) say(`${tab.name} on ${tab.file.baseSha?.slice(0, 7)}, copy ${liveCopy(tab.store, tab.file.key)?.slice(0, 7)}: ${liveVersions(tab.store, tab.file.key)
+    for (const tab of open()) say(`${tab.name} on ${tab.file.baseSha?.slice(0, 7)}, copy ${liveState(tab.store, tab.file.key).copy?.slice(0, 7)}: ${liveState(tab.store, tab.file.key).versions
       .map(edge => `${edge.from.slice(0, 7) || "birth"}→${edge.to.slice(0, 7)}${edge.client === undefined ? " (save)" : ""}`).join(", ")}`);
     const settledBefore = new Set(settled.keys());
     // The Undo check: a tab whose latest step took words out in a clash takes it back, and its words are back everywhere.

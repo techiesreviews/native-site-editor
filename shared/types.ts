@@ -112,6 +112,9 @@ export interface PublishRequest {
   allowWorkflows?: boolean;
   /** Others whose changes this save carries (src/save-authors.ts): the commit names each (worker/publish.ts `commitMessage`). */
   authors?: SaveAuthor[];
+  /** The live rooms' copies (hex) whose pages this save carries (ticket am-59): the commit names each in a `Live-Copy`
+   * line (shared/live-copy.ts), so the others in those rooms take the commit as the room's own save. */
+  liveCopies?: string[];
 }
 /**
  * Someone besides the one saving whose changes a save carries: a person or an agent (`agent`). With an `email`
@@ -161,6 +164,8 @@ export interface HistoryCommit {
   avatar?: string;
   date: string;
   url: string;
+  /** The live copies the commit's message names (its `Live-Copy` lines, shared/live-copy.ts), when it names any. */
+  copies?: string[];
 }
 export interface HistoryPage {
   head: string;
