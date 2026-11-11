@@ -67,6 +67,7 @@ import { rebaseHistory } from "./shared-undo";
 import { liveAuthor, type LiveAuthor } from "./live-author";
 import { saveAuthors, type SaveAuthors } from "./save-authors";
 import type { SaveAuthor } from "../shared/types";
+import { runChanges } from "./text-merge";
 
 type Yjs = typeof import("yjs");
 type Doc = import("yjs").Doc;
@@ -214,19 +215,35 @@ async function tagOf(baseSha: string | null, base: string) {
 }
 const sameTag = (a: Uint8Array, b: Uint8Array) => a.every((byte, index) => byte === b[index]);
 
-/** `text` written into a fresh copy of `base` under a fixed client id, so every tab writing the same makes the same items. */
-function fixedUpdate(Y: Yjs, client: number, base: Uint8Array | null, edit: TextChange | null) {
+/** `edits` (from the end of the text back) written into a fresh copy of `base` under a fixed client id, so every tab
+ * writing the same makes the same items. */
+function fixedUpdate(Y: Yjs, client: number, base: Uint8Array | null, edits: readonly TextChange[]) {
   const doc = new Y.Doc();
   doc.clientID = client;
   if (base) Y.applyUpdate(doc, base);
   const text = doc.getText("source");
-  if (edit) doc.transact(() => {
-    if (edit.end > edit.start) text.delete(edit.start, edit.end - edit.start);
-    if (edit.text) text.insert(edit.start, edit.text);
+  doc.transact(() => {
+    for (const edit of edits) {
+      if (edit.end > edit.start) text.delete(edit.start, edit.end - edit.start);
+      if (edit.text) text.insert(edit.start, edit.text);
+    }
   });
   const update = Y.encodeStateAsUpdate(doc);
   doc.destroy();
   return update;
+}
+
+/**
+ * `change` on `text` as whole words, from the end of the text back: widened to the white space around it, then split
+ * where it keeps runs of the text, so the words it kept are not written again. Written into a shared copy, a single
+ * range would take others' words in it away and type its own again (sweep 2026-11-10 item 1).
+ */
+function wordRuns(text: string, change: TextChange): TextChange[] {
+  let begin = change.start, end = change.end;
+  while (begin > 0 && !/\s/.test(text[begin - 1])) begin--;
+  while (end < text.length && !/\s/.test(text[end])) end++;
+  return runChanges(text.slice(begin, end), text.slice(begin, change.start) + change.text + text.slice(change.end, end))
+    .map(run => ({ start: begin + run.start, end: begin + run.end, text: run.text })).reverse();
 }
 
 /** A Yjs text event's delta as changes in the text before it. */
@@ -288,10 +305,12 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   const store = ports.store, clock = ports.clock ?? systemClock, keeper = ports.keeper ?? (pageKeeper ??= browserKeeper());
   const start = store.get(scope, path)!;
   const base = start.base, baseSha = start.baseSha ?? null;
-  let stopped = false, aloneOnce = false, editors = 0, discarded = false;
+  let stopped = false, aloneOnce = false, editors = 0, discarded = false, heard = false;
   let copy: ReturnType<typeof makeCopy> | undefined, loading = false;
   const inbox: Uint8Array[] = [];
-  const shared = () => !stopped && (editors > 0 || loading || copy !== undefined);
+  // Until the room says who is here, the file may be shared: a tab coming back to a page it typed on with others would
+  // otherwise fold an outside change into a draft that holds the room's words, and the room's copy would take them twice.
+  const shared = () => !stopped && (!heard || editors > 0 || loading || copy !== undefined);
   let live = liveFiles.get(store);
   if (!live) liveFiles.set(store, live = new Map());
   live.set(start.key, shared);
@@ -316,6 +335,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     },
     // Only other tabs count here: an agent's text joins the copy through the tab that receives its commands (am-25).
     onMembers(members) {
+      heard = true;
       editors = [...members.values()].filter(access => access === "editor").length;
       if (!editors) { aloneOnce = true; void copy?.startOwn(); }
       else if (!copy && !loading) void load();
@@ -336,7 +356,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       const now = store.get(scope, path);
       if (!now || now.base !== base || (now.baseSha ?? null) !== baseSha) { ended("again"); return; }
       // The one starting text everyone shares, made before anything else so it is never sent.
-      const seed = base ? fixedUpdate(Y, uint32(tag), null, { start: 0, end: 0, text: base }) : null;
+      const seed = base ? fixedUpdate(Y, uint32(tag), null, [{ start: 0, end: 0, text: base }]) : null;
       // A copy this tab shared before: kept unless the draft went back to GitHub's text since (discarded, or saved over).
       const own = store.text(scope, path);
       const resume = kept && sameTag(kept.tag, tag) && own !== undefined && own !== base ? kept : undefined;
@@ -525,7 +545,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         if (stopped) return;
         // Typed meanwhile, or the room's copy caught up with it: decide again on the text as it is now.
         if (store.text(scope, path) !== own || adds(own) !== (client !== undefined)) continue;
-        if (client !== undefined) { Y.applyUpdate(doc, fixedUpdate(Y, client, seed, diffRange(base, own!)), START); startClient = client; }
+        if (client !== undefined) { Y.applyUpdate(doc, fixedUpdate(Y, client, seed, wordRuns(base, diffRange(base, own!))), START); startClient = client; }
         break;
       }
       synced = true;
@@ -545,35 +565,44 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
 
     /**
      * The draft's changes after the kept copy's last write (`typedSince` from the draft as it was kept; from the share's
-     * start for copies kept without it), placed on the copy as it is now. The room may have caught this copy up with
-     * them already (they were shared before a reload lost the copy's write): what lies between the change's two ends is
-     * read again here. Already there: nothing goes in. As kept: the change goes in. Changed by others too: its text goes
-     * in after theirs, so nobody's words are lost.
+     * start for copies kept without it), made word by word on the kept copy and merged as Yjs merges typing, as if typed
+     * then: the words it removes are those items, wherever others' changes moved them, so text others changed in that
+     * range meanwhile is neither typed again nor lost. Where that lands in the copy as it is now goes in as this tab's own
+     * change. The room may have caught this copy up with them already (they were shared before a reload lost the copy's
+     * write): if what lies between the change's two ends holds its text, nothing goes in.
      */
     function resumeDraft(resume: KeptCopy) {
       const own = store.text(scope, path);
       const change = own === undefined ? undefined : typedSince(keptText, resume.draft ?? start.text, own);
       if (!change) return;
-      // The kept copy again, apart, to name the change's ends by Yjs item (the same items as in this copy).
+      // The kept copy again, apart: its change names the kept copy's items.
       const kept = new Y.Doc();
       if (seed) Y.applyUpdate(kept, seed);
       Y.applyUpdate(kept, resume.update);
       const keptType = kept.getText("source");
       const from = Y.createRelativePositionFromTypeIndex(keptType, change.start, -1), to = Y.createRelativePositionFromTypeIndex(keptType, change.end);
-      kept.destroy();
       const at = Y.createAbsolutePositionFromRelativePosition(from, doc)?.index, till = Y.createAbsolutePositionFromRelativePosition(to, doc)?.index;
-      const now = text.toString(), was = keptText.slice(change.start, change.end);
-      doc.transact(() => {
-        if (at === undefined || till === undefined || till < at) {
-          if (change.text) text.insert(Math.min(change.start, now.length), change.text);
-          return;
+      const was = keptText.slice(change.start, change.end);
+      const between = at === undefined || till === undefined || till < at ? undefined : text.toString().slice(at, till);
+      if (between !== undefined && between !== was && change.text && between.includes(change.text)) { kept.destroy(); return; }
+      const before = Y.encodeStateVector(kept);
+      kept.transact(() => {
+        for (const run of wordRuns(keptText, change)) {
+          if (run.end > run.start) keptType.delete(run.start, run.end - run.start);
+          if (run.text) keptType.insert(run.start, run.text);
         }
-        const between = now.slice(at, till);
-        if (between === was) {
-          if (till > at) text.delete(at, till - at);
-          if (change.text) text.insert(at, change.text);
-        } else if (change.text && !between.includes(change.text)) text.insert(till, change.text);
-      }, START);
+      });
+      const typed = Y.encodeStateAsUpdate(kept, before);
+      kept.destroy();
+      // Merged into a copy of this one, to read where it lands; made here under this tab's own client id (an update
+      // carrying that id would make Yjs give this doc a new one).
+      const merged = new Y.Doc();
+      Y.applyUpdate(merged, Y.encodeStateAsUpdate(doc));
+      let lands: TextChange[] = [];
+      merged.getText("source").observe(event => { lands = deltaChanges(event.delta as { retain?: number; insert?: unknown; delete?: number }[]); });
+      Y.applyUpdate(merged, typed);
+      merged.destroy();
+      if (lands.length) doc.transact(() => { applyText(lands.reverse()); }, START);
     }
 
     /** This tab's caret as the room hears it: who it is (the Yjs client id its changes carry, its GitHub name) and where,

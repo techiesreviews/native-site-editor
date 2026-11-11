@@ -4,12 +4,19 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createDraftStore } from "../src/draft-store.ts";
 import { AUTHOR_WAIT_MS, changedNode, foldFile, foldIn, type OutsideHost } from "../src/outside-merge.ts";
-import { mergeText } from "../src/text-merge.ts";
+import { mergeText, runChanges } from "../src/text-merge.ts";
 import type { SavedDraft } from "../src/drafts.ts";
 import type { Snapshot, TreeEntry } from "../shared/types.ts";
 import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
 
 const lines = (...words: string[]) => words.map(word => `${word}\n`).join("");
+
+test("runChanges: a word is changed whole or not at all, and the words both texts have stay out of every change", () => {
+  // Typing one word at the front and removing another at the end: two changes, never three words swapped one by one.
+  assert.deepEqual(runChanges("«1» «3» «4» <p>", "«6» «1» «3» <p>"), [{ start: 0, end: 0, text: "«6» " }, { start: 8, end: 12, text: "" }]);
+  assert.deepEqual(runChanges("Open at seven.", "Open at half past seven."), [{ start: 8, end: 8, text: "half past " }]);
+  assert.deepEqual(runChanges("same", "same"), []);
+});
 
 test("mergeText: different lines merge by themselves, from either side", () => {
   const base = lines("<h1>Fresh bread</h1>", "<p>Sourdough and rye.</p>", "<p>Open Tuesday to Saturday.</p>");
