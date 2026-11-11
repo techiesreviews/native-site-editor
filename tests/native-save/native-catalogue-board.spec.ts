@@ -616,7 +616,9 @@ test("the Spinner's live cell follows Size and Place, and the Progress bar's fol
   await expect(overlay).toHaveAttribute("data-place", "overlay");
   // It covers the block it is over, corner to corner.
   const [host, over] = await Promise.all([overlay.locator("xpath=..").boundingBox(), overlay.boundingBox()]);
-  expect(host && over && Math.abs(host.width - over.width) < 2 && Math.abs(host.height - over.height) < 2).toBe(true);
+  expect(host && over).toBeTruthy();
+  expect(Math.abs(host!.width - over!.width)).toBeLessThan(2);
+  expect(Math.abs(host!.height - over!.height)).toBeLessThan(2);
 
   await outline.getByRole("button", { name: "Progress bar", exact: true }).click();
   const bar = page.locator("#card-progress .cat-live__stage .progress");
@@ -629,4 +631,92 @@ test("the Spinner's live cell follows Size and Place, and the Progress bar's fol
   await expect(bar).toHaveAttribute("data-mode", "unknown");
   await expect(bar).not.toHaveAttribute("aria-valuenow", /.*/);
   expect(await bar.evaluate((el) => getComputedStyle(el, "::before").animationName)).toBe("progress-slide");
+});
+
+test("the Progress bar's fill grows from where it was when moved, and its value follows 30, 60, unknown", async ({ page, baseURL }) => {
+  // The suite runs with reduced motion on; the growing is the motion version.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await openBoard(page, baseURL);
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Progress bar", exact: true }).click();
+  const drawn = await page.evaluate(async () => {
+    const { progress, setProgress } = await import("/src/ui/parts/progress.ts");
+    const bar = progress({ value: 30, label: "Adding" });
+    bar.style.inlineSize = "200px";
+    document.body.append(bar);
+    const read = () => ({
+      mode: bar.dataset.mode, now: bar.getAttribute("aria-valuenow"), min: bar.getAttribute("aria-valuemin"), max: bar.getAttribute("aria-valuemax"),
+      fill: bar.style.getPropertyValue("--progress"), label: bar.getAttribute("aria-label"),
+    });
+    const first = read();
+    // The bar has been drawn at 30 before it moves: a style the page has never computed has nothing to grow from.
+    const start = parseFloat(getComputedStyle(bar, "::before").width);
+    setProgress(bar, { value: 60, label: "Adding" });
+    // The width the fill has one frame after the move: between the two, so it is growing, not jumping.
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const growing = parseFloat(getComputedStyle(bar, "::before").width);
+    const second = read();
+    setProgress(bar, { label: "Adding" });
+    const third = read();
+    bar.remove();
+    return { first, second, third, start, growing };
+  });
+  expect(drawn.first).toEqual({ mode: "known", now: "30", min: "0", max: "100", fill: "30%", label: "Adding" });
+  expect(drawn.second).toEqual({ mode: "known", now: "60", min: "0", max: "100", fill: "60%", label: "Adding" });
+  expect(drawn.third).toEqual({ mode: "unknown", now: null, min: null, max: null, fill: "", label: "Adding" });
+  expect(drawn.start).toBeCloseTo(60, 0);
+  expect(drawn.growing).toBeGreaterThan(60);
+  expect(drawn.growing).toBeLessThan(120);
+});
+
+test("with reduced motion the Spinner and the unknown Progress bar slow down, and the known fill stops growing", async ({ page, baseURL }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await openBoard(page, baseURL);
+  const outline = page.getByRole("navigation", { name: "Outline" });
+  const options = page.getByRole("complementary", { name: "Options" });
+  const before = (selector: string, property: "animationDuration" | "animationName" | "transitionDuration") =>
+    page.locator(selector).evaluate((el, name) => getComputedStyle(el, "::before")[name as "animationDuration"], property);
+
+  await outline.getByRole("button", { name: "Spinner", exact: true }).click();
+  const ring = "#card-spinner .cat-live__stage .spinner";
+  await expect(page.locator(ring)).toBeVisible();
+  expect(await before(ring, "animationDuration")).toBe("2.4s");
+  expect(await before(ring, "animationName")).toBe("spinner-turn");
+
+  await outline.getByRole("button", { name: "Progress bar", exact: true }).click();
+  const bar = "#card-progress .cat-live__stage .progress";
+  await expect(page.locator(bar)).toHaveAttribute("data-mode", "known");
+  expect(await before(bar, "transitionDuration")).toBe("0s");
+  await options.getByRole("combobox", { name: /^Amount/ }).selectOption("unknown");
+  await expect(page.locator(bar)).toHaveAttribute("data-mode", "unknown");
+  expect(await before(bar, "animationDuration")).toBe("3s");
+  expect(await before(bar, "animationName")).toBe("progress-slide");
+});
+
+test("the Progress bar slides and fills from the right when the page runs right to left", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Progress bar", exact: true }).click();
+  const options = page.getByRole("complementary", { name: "Options" });
+  const stage = page.locator("#card-progress .cat-live__stage");
+  const bar = stage.locator(".progress");
+  const amount = options.getByRole("combobox", { name: /^Amount/ });
+  await expect(bar).toHaveAttribute("data-mode", "known");
+  await stage.evaluate((el) => el.setAttribute("dir", "rtl"));
+  // A two pixel sample of the bar's picture, a little in from its rounded end.
+  const end = async (side: "left" | "right") => {
+    const box = (await bar.boundingBox())!;
+    const x = side === "left" ? box.x + 5 : box.x + box.width - 7;
+    return page.screenshot({ clip: { x, y: box.y + box.height / 2 - 1, width: 2, height: 2 } });
+  };
+  await amount.selectOption("100");
+  await expect(bar).toHaveAttribute("aria-valuenow", "100");
+  const filled = await end("right");
+  await amount.selectOption("30");
+  await expect(bar).toHaveAttribute("aria-valuenow", "30");
+  expect(await bar.evaluate((el) => getComputedStyle(el).direction)).toBe("rtl");
+  // The fill is on the right: its right end looks like a full bar's, its left end is the empty track.
+  expect((await end("right")).equals(filled)).toBe(true);
+  expect((await end("left")).equals(filled)).toBe(false);
+  await amount.selectOption("unknown");
+  await expect(bar).toHaveAttribute("data-mode", "unknown");
+  await expect.poll(() => bar.evaluate((el) => getComputedStyle(el, "::before").animationName)).toBe("progress-slide-rtl");
 });

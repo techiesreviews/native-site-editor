@@ -29,6 +29,7 @@
 .spinner[data-place="overlay"] {
   position: absolute;
   inset: 0;
+  z-index: var(--layer-raised);
   display: grid;
   background: color-mix(in oklch, var(--surface) 80%, transparent);
   border-radius: inherit;
