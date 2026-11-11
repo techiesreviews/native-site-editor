@@ -292,8 +292,9 @@ interface AuthorUndo {
 /** The files each draft store shares with someone else right now, by key: an outside change (ticket am-33,
  * src/outside-merge.ts) leaves these to load the branch again, as before, so a room's copy never takes it twice. */
 const liveFiles = new WeakMap<object, Map<string, () => boolean>>();
-/** Whether `store`'s file under `key` is shared in a live room now: another tab is in, its copy is loading, or a copy is
- * made (it stays while the file is open, also after the others left). */
+/** Whether `store`'s file under `key` is shared in a live room now: another tab is in, its copy is loading, a copy is
+ * made (it stays while the file is open, also after the others left), or the room has not said who is here yet (for at
+ * most LIVE_TEXT_CATCH_UP_MS after the file opened). */
 export function liveShared(store: object, key: string) {
   return liveFiles.get(store)?.get(key)?.() ?? false;
 }
@@ -310,6 +311,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   const inbox: Uint8Array[] = [];
   // Until the room says who is here, the file may be shared: a tab coming back to a page it typed on with others would
   // otherwise fold an outside change into a draft that holds the room's words, and the room's copy would take them twice.
+  // A room that never answers (the relay out of reach) stops counting after the catch-up wait, so outside changes fold again.
+  const unheard = clock.setTimeout(() => { heard = true; }, LIVE_TEXT_CATCH_UP_MS);
   const shared = () => !stopped && (!heard || editors > 0 || loading || copy !== undefined);
   let live = liveFiles.get(store);
   if (!live) liveFiles.set(store, live = new Map());
@@ -336,6 +339,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     // Only other tabs count here: an agent's text joins the copy through the tab that receives its commands (am-25).
     onMembers(members) {
       heard = true;
+      clock.clearTimeout(unheard);
       editors = [...members.values()].filter(access => access === "editor").length;
       if (!editors) { aloneOnce = true; void copy?.startOwn(); }
       else if (!copy && !loading) void load();
@@ -541,7 +545,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       for (; !resume;) {
         const own = store.text(scope, path);
         const adds = (now: string | undefined) => now !== undefined && now !== base && (!caught || now !== text.toString());
-        const client = adds(own) ? uint32(await digest(`${baseSha ?? ""}\n${own}`)) : undefined;
+        // `runs`: the draft goes in word by word (`wordRuns`), so a tab still on the bundle that wrote it as one range never
+        // takes the same client id for other items.
+        const client = adds(own) ? uint32(await digest(`runs\n${baseSha ?? ""}\n${own}`)) : undefined;
         if (stopped) return;
         // Typed meanwhile, or the room's copy caught up with it: decide again on the text as it is now.
         if (store.text(scope, path) !== own || adds(own) !== (client !== undefined)) continue;
@@ -594,8 +600,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       });
       const typed = Y.encodeStateAsUpdate(kept, before);
       kept.destroy();
-      // Merged into a copy of this one, to read where it lands; made here under this tab's own client id (an update
-      // carrying that id would make Yjs give this doc a new one).
+      // `typed` carries the kept copy's own random client id. Merged into a copy of this one, it shows where it lands in the
+      // text as it is now; that change is made here again under this tab's own id, so carets and the name-tag Undo name this
+      // tab (applying an update made under this tab's id would make Yjs give this doc a new one).
       const merged = new Y.Doc();
       Y.applyUpdate(merged, Y.encodeStateAsUpdate(doc));
       let lands: TextChange[] = [];
@@ -779,6 +786,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   };
   const stop = () => {
     stopped = true;
+    clock.clearTimeout(unheard);
     if (live.get(start.key) === shared) live.delete(start.key);
     unwatch();
     room.close();

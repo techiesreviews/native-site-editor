@@ -15,7 +15,7 @@ import { signal } from "@preact/signals-core";
 import * as Y from "yjs";
 import { createDraftStore } from "../src/draft-store";
 import { draftKey, type DraftScope } from "../src/drafts";
-import { liveShared, startLiveText, type CopyKeeper, type KeptCopy } from "../src/live-text";
+import { liveShared, startLiveText, type CopyKeeper, type KeptCopy, type LiveTextPorts } from "../src/live-text";
 import { writeAs } from "../src/live-author";
 import { foldFile } from "../src/outside-merge";
 import { createSaveAuthors } from "../src/save-authors";
@@ -119,7 +119,7 @@ function relay() {
           me.state = state;
           tellPeers(me);
         },
-      };
+      } satisfies ReturnType<NonNullable<LiveTextPorts["openRoom"]>> & { me: Member };
     },
     /** The socket drops: what was on its way to it is lost; `noticed`: the relay tells the others it left. */
     drop(member: Member, noticed: boolean) {
