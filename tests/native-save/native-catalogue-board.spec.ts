@@ -282,13 +282,15 @@ test("the keyboard reaching a live Button already in view leaves the board where
   await page.mouse.move(canvas.x + 20, canvas.y + canvas.height - 20);
   await page.mouse.wheel(30, 30);
   const camera = () => page.locator(".cat-world").evaluate((world) => world.style.transform);
-  await expect.poll(async () => { const one = await camera(); await page.waitForTimeout(200); return one === await camera(); }).toBe(true);
+  let last = "";
+  await expect.poll(async () => { const now = await camera(); const still = now === last; last = now; return still; }, { intervals: [300] }).toBe(true);
   const before = await camera();
   await expectInView(page, "button");
   await page.keyboard.press("Shift");
   const button = page.locator('#card-button [data-cell="live"] button');
   await button.focus();
   await expect(button).toBeFocused();
+  // fixed-wait: a flight to the card starts on focus; its absence has no state to poll, so the camera is read after it would have moved.
   await page.waitForTimeout(400);
   expect(await camera()).toBe(before);
 });
