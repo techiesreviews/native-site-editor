@@ -356,6 +356,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       preview: ports.preview,
     });
     ports.element("repository-menu").append(repositoryMenu.root);
+    const topBar = ports.app.querySelector(".topbar")!;
     ports.element("site-settings-toggle").addEventListener("click", () => void ports.page.siteSettings());
     ports.mediaController.disposeGallery();
     siteActions = mountSiteActions({ statusHost: ports.element("change-status"), menuHost: ports.element("site-actions"), siteFiles: () => ports.site.files(), announce: ports.announce });
@@ -409,8 +410,10 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     // sheet that folds Page structure and the code under the page (phone-sheet.css).
     const phone = matchMedia("(max-width: 650px)");
     const onPhone = () => {
-      if (!phone.matches) return;
+      // A workspace drawn afresh has its own listener; this one goes with its top bar.
+      if (!phone.matches && topBar.isConnected) return;
       phone.removeEventListener("change", onPhone);
+      if (!topBar.isConnected) return;
       void import("./components/top-bar-phone").then((module) => module.mountTopBarPhone(ports)).catch(ports.errorMessage);
     };
     phone.addEventListener("change", onPhone);

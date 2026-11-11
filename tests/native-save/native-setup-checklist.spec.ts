@@ -115,7 +115,12 @@ test("dismissing setup keeps it hidden after reload and the repository menu offe
 test("the checklist is keyboard operable and fits a narrow window", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await startBlankSite(page, baseURL);
-  await pill(page).focus();
+  // On a phone the pill leaves the one-row top bar for its Menu (atomic catalogue ticket 66).
+  await expect(pill(page)).toBeHidden();
+  const menu = page.getByRole("banner").getByRole("button", { name: "Menu", exact: true });
+  await menu.focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("dialog", { name: "Menu", exact: true }).getByRole("button", { name: "Set up your site", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(panel(page)).toBeVisible();
   const box = (await panel(page).boundingBox())!;
@@ -123,7 +128,7 @@ test("the checklist is keyboard operable and fits a narrow window", async ({ pag
   expect(box.x + box.width).toBeLessThanOrEqual(390);
   await page.keyboard.press("Escape");
   await expect(panel(page)).toBeHidden();
-  await expect(pill(page)).toBeFocused();
+  await expect(menu).toBeFocused();
 });
 
 test("an ordinary repository keeps setup hidden and omits the removed menu entry", async ({ page, baseURL }) => {

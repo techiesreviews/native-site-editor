@@ -329,17 +329,6 @@
   }
 }
 
-/* The top bar's "+ Add": at the end of the first column, beside the page
-   picker, sharing that cell with the project menu (so every item is placed). */
-.topbar > #repository-menu {
-  grid-area: 1 / 1;
-}
-.topbar > .explorer-toggle {
-  grid-area: 1 / 2;
-}
-.topbar > .topbar-actions {
-  grid-area: 1 / 3;
-}
 .structure-add {
   grid-area: 1 / 1;
   justify-self: end;
