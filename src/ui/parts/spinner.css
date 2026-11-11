@@ -1,0 +1,41 @@
+/* The Spinner part (atomic catalogue ticket 14): one element, the ring drawn on its ::before. Sizes and place are data
+   attributes. Only shared tokens: sizes are spacing, the ring's line is the control line, the turn is the fly timing
+   one and a half times (slower still, never off, with reduced motion). */
+.spinner {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  vertical-align: middle;
+}
+.spinner::before {
+  content: "";
+  box-sizing: border-box;
+  inline-size: var(--space-m);
+  block-size: var(--space-m);
+  border: var(--space-4xs) solid var(--control-line);
+  border-block-start-color: var(--primary);
+  border-radius: var(--radius-full);
+  animation: spinner-turn calc(var(--dur-fly) * 1.5) linear infinite;
+}
+.spinner[data-size="small"]::before {
+  inline-size: var(--space-s);
+  block-size: var(--space-s);
+}
+.spinner[data-size="large"]::before {
+  inline-size: var(--space-l);
+  block-size: var(--space-l);
+}
+/* Over what is loading: fills the nearest positioned parent, a veil in the surface colour, the ring in the middle. */
+.spinner[data-place="overlay"] {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  background: color-mix(in oklch, var(--surface) 80%, transparent);
+  border-radius: inherit;
+}
+@keyframes spinner-turn {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner::before { animation-duration: calc(var(--dur-fly) * 4); }
+}

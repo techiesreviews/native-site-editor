@@ -593,3 +593,40 @@ test("the Icon's live cell puts its words on the side Place says, and draws a ba
   });
   expect(drawn).toEqual({ lineClass: "icon-line", order: ["strong", "svg"], aloneName: "svg", alonePlace: null });
 });
+
+test("the Spinner's live cell follows Size and Place, and the Progress bar's follows Amount", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  const outline = page.getByRole("navigation", { name: "Outline" });
+  const options = page.getByRole("complementary", { name: "Options" });
+
+  await outline.getByRole("button", { name: "Spinner", exact: true }).click();
+  const ring = page.locator("#card-spinner .cat-live__stage .spinner");
+  await expect(ring).toHaveAttribute("data-size", "medium");
+  await expect(ring).toHaveAttribute("role", "img");
+  await expect(ring).toHaveAttribute("aria-label", "Loading");
+  await options.getByRole("combobox", { name: /^Size/ }).selectOption("large");
+  await expect(ring).toHaveAttribute("data-size", "large");
+  // The ring is drawn on the element's ::before, a token wide (--space-l); the board's zoom may leave a fraction.
+  expect(await ring.evaluate((el) => parseFloat(getComputedStyle(el, "::before").width))).toBeCloseTo(24, 0);
+  expect(await ring.evaluate((el) => getComputedStyle(el, "::before").animationName)).toBe("spinner-turn");
+  await options.getByRole("textbox", { name: "Label" }).fill("Saving");
+  await expect(ring).toHaveAttribute("aria-label", "Saving");
+  await options.getByRole("combobox", { name: /^Place/ }).selectOption("overlay");
+  const overlay = page.locator("#card-spinner .cat-live__stage .cat-overlay-host > .spinner");
+  await expect(overlay).toHaveAttribute("data-place", "overlay");
+  // It covers the block it is over, corner to corner.
+  const [host, over] = await Promise.all([overlay.locator("xpath=..").boundingBox(), overlay.boundingBox()]);
+  expect(host && over && Math.abs(host.width - over.width) < 2 && Math.abs(host.height - over.height) < 2).toBe(true);
+
+  await outline.getByRole("button", { name: "Progress bar", exact: true }).click();
+  const bar = page.locator("#card-progress .cat-live__stage .progress");
+  await expect(bar).toHaveAttribute("data-mode", "known");
+  await expect(bar).toHaveAttribute("aria-valuenow", "60");
+  await expect(bar).toHaveAttribute("aria-label", "Adding pictures");
+  const fill = (el: Element) => parseFloat(getComputedStyle(el, "::before").width) / parseFloat(getComputedStyle(el).width);
+  await expect.poll(() => bar.evaluate(fill)).toBeCloseTo(0.6, 1);
+  await options.getByRole("combobox", { name: /^Amount/ }).selectOption("unknown");
+  await expect(bar).toHaveAttribute("data-mode", "unknown");
+  await expect(bar).not.toHaveAttribute("aria-valuenow", /.*/);
+  expect(await bar.evaluate((el) => getComputedStyle(el, "::before").animationName)).toBe("progress-slide");
+});
