@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { sheetReady } from "./phone-menu";
 
 // The three resize handles are also their panels' toggles: the sidebar's
 // edge hides page structure; the height handle hides code completely, while
@@ -288,7 +289,8 @@ test("the edit bar stays inside the frame with the sidebar hidden and code hidde
 test("in the narrow column layout a handle bar at the sidebar's bottom edge toggles on tap", async ({ page }) => {
   await page.setViewportSize({ width: 600, height: 900 });
   // Upright phones keep Page structure in the sheet under the page (slice 117): open it first,
-  // by key, so the focus ring check below still sees keyboard focus.
+  // by key, so the focus ring check below still sees keyboard focus. Its script loads with the phone top bar.
+  await sheetReady(page);
   await page.getByRole("button", { name: "Page structure and code" }).press("Enter");
   const handle = sidebarHandle(page);
   await expect(tree(page)).toBeVisible();

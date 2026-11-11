@@ -38,9 +38,6 @@
     .workspace:has(> main.has-preview) > * {
       grid-column: 1;
     }
-    .workspace:has(> main.has-preview) > .block-rail {
-      grid-row: 1;
-    }
     .workspace:has(> main.has-preview) > main {
       grid-row: 2 / -1;
       display: grid;

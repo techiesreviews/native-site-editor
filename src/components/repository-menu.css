@@ -460,12 +460,6 @@
   opacity: 1;
 }
 
-@media (max-width: 650px) {
-  .repository-menu__trigger {
-    max-width: 65vw;
-  }
-}
-
 /* Owner headings, when repositories of more than one owner are listed. */
 .repository-menu__owner {
   display: flex;

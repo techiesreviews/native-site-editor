@@ -78,6 +78,7 @@ export interface DockScrollOptions {
  */
 export function dockScroll({ selectionTop, selectionBottom, visibleTop = 0, visibleBottom, inset = 0 }: DockScrollOptions): number {
   const ceiling = Math.min(Math.max(inset, visibleTop), Math.max(0, visibleBottom - 16)) + 8;
+  // Less than a pixel is in view (a scroll in whole pixels can leave a fraction).
   const hidden = selectionBottom - (visibleBottom - 8);
-  return hidden > 0 ? Math.max(0, Math.min(hidden, selectionTop - ceiling)) : 0;
+  return hidden >= 1 ? Math.max(0, Math.min(hidden, selectionTop - ceiling)) : 0;
 }

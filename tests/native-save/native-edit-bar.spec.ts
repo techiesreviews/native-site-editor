@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { addBlockOnPhone } from "./phone-menu";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { connect } from "./agent-pins-support";
@@ -353,8 +354,9 @@ test.describe("on a desktop window with the 390 px device frame", () => {
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("a Heading just added from the Blocks rail is selected with its bar docked under the page, and no toast covers it", async ({ page }) => {
-    await page.getByRole("navigation", { name: "Blocks" }).getByRole("button", { name: "Heading", exact: true }).click();
+  test("a Heading just added from Add a block is selected with its bar docked under the page, and no toast covers it", async ({ page }) => {
+    // On a phone the blocks are in the top bar's Menu (ticket 66).
+    await addBlockOnPhone(page, "Heading");
     await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
     await expect(bar(page).getByRole("button", { name: "Bold" })).toBeVisible();
     // Said in the status line only: nothing stands over the new heading or the bar.
@@ -455,15 +457,18 @@ test.describe("on a phone", () => {
     // Mid-page, so the page can scroll it either way; three stacked cards, taller than the room.
     const section = page.frameLocator(".native-preview-frame").locator('section[data-key="cards"]');
     await expect(section).toBeVisible({ timeout: 30_000 });
-    // The view panned down to 500 px, as iOS does to keep a caret near the foot in sight.
-    await setView(page, { height: 300, offsetTop: 500 });
+    // The view panned down to 204 px under the frame's top, as iOS does to keep a caret near the foot in sight,
+    // and reaching the frame's foot: measured from the frame, which starts higher since the top bar is one row.
+    const frameBox = await box(page.locator(".native-preview-frame"));
+    const viewTop = Math.round(frameBox.y + 204);
+    await setView(page, { height: Math.round(frameBox.y + frameBox.height) - viewTop, offsetTop: viewTop });
     // Its top 360 px into the frame, its foot far below the bar.
     await section.evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 360));
     await section.evaluate((el) => (el as HTMLElement).click());
     await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
-    // Scrolled up to just under the view's top, not to the frame's top (296) out of sight.
-    await expect.poll(async () => Math.round((await box(section)).y)).toBeLessThan(560);
-    expect((await box(section)).y).toBeGreaterThanOrEqual(500);
+    // Scrolled up to just under the view's top, not to the frame's top out of sight.
+    await expect.poll(async () => Math.round((await box(section)).y)).toBeLessThan(viewTop + 60);
+    expect((await box(section)).y).toBeGreaterThanOrEqual(viewTop);
   });
 
   test("the bar growing taller over a selection in view scrolls it back above the bar", async ({ page }) => {

@@ -359,7 +359,7 @@ its number unused.
 
 ### F-canvas-02 Select an element
 - Try: Click an image or the edge of a block; press Ctrl+Up to climb.
-- Good: Hover labels the element, a click selects it with its edit bar, the breadcrumb shows its ancestors (B1).
+- Good: Hover labels the element, a click selects it with its edit bar, the breadcrumb shows its ancestors (on a phone the edit bar's name chip stands in for it) (B1).
 - Files: `src/controllers/preview-selection-controller.ts`, `src/components/canvas-bar.ts`, `src/components/canvas-path.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-canvas.spec.ts`
@@ -367,7 +367,7 @@ its number unused.
 
 ### F-canvas-03 Block rail
 - Try: Click Section, Div, Heading, Paragraph, Image or Button in the rail beside Page structure.
-- Good: The block goes after the selection, arrives selected and not typing, one Undo step each; on a phone the rail is a row above the page (B1, B10).
+- Good: The block goes after the selection, arrives selected and not typing, one Undo step each; on a phone the blocks are in the top bar's Menu, under Add a block (B1, B10).
 - Files: `src/components/block-rail.ts`, `src/components/block-rail.css`, `src/controllers/block-insert-controller.ts`, `src/page-builder/block-insert.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-blocks.spec.ts`
@@ -438,7 +438,7 @@ its number unused.
 - Steps: none yet (needs Add card, shown on a hovered grid inside the page frame)
 
 ### F-canvas-12 Frame width and breakpoints
-- Try: Press the desktop, tablet and phone buttons above the page, drag the frame's side, type a width.
+- Try: Press the desktop, tablet and phone buttons above the page (on a phone: Menu, Screen size), drag the frame's side, type a width.
 - Good: The frame resizes, the width shows in px, and the session remembers it.
 - Files: `src/components/canvas-bar.ts`, `src/page-builder/breakpoints.ts`
 - Phone: yes
@@ -1289,12 +1289,12 @@ its number unused.
 - Spec: `tests/native-save/native-phone-sheet.spec.ts`
 - Steps: `scripts/agents/shots/features/F-phone-02.json`
 
-### F-phone-03 Phone top bar and explorer
-- Try: On a phone open the explorer from the top bar.
-- Good: The top bar stays one row with Publish in view; the explorer never covers Publish.
-- Files: `src/workspace-mount.ts`, `src/style.css`
+### F-phone-03 Phone top bar, its Menu and the explorer
+- Try: On a phone tap the site and page name to open Pages; tap Menu and use its rows (Pages, Add a block, Page structure, Code, Screen size, History, Share a preview link, Site settings, Switch site).
+- Good: One 44 px row (the site and page name, Undo, Publish, Menu) and nothing else above the page: no block rail or canvas bar rows. The Menu is a bottom sheet over a dimmed page; a tap outside, Escape or the grabber closes it; each row does what its control does on a wide screen, Screen size shows the pressed size and stays open. The explorer never covers Publish (Lex's phone layout of 2026-11-11, U4, S4).
+- Files: `src/workspace-mount.ts`, `src/style.css`, `src/components/top-bar-phone.ts`, `src/components/top-bar-phone.css`, `src/components/top-bar-menu-rules.ts`
 - Phone: yes
-- Spec: `tests/native-save/native-explorer-size.spec.ts`
+- Spec: `tests/native-save/native-top-bar.spec.ts`, `tests/native-save/native-explorer-size.spec.ts`
 - Steps: none yet (the try also runs at 1280, where there is no phone top bar)
 
 ### F-phone-04 Touch without sticky hover
@@ -1312,3 +1312,11 @@ its number unused.
 - Phone: yes
 - Spec: `tests/native-save/native-phone-sheet.spec.ts`
 - Steps: none yet (needs a phone held on its side; tries use 900 px tall windows)
+
+### F-phone-06 Slim top bar on a wide screen
+- Try: At 1280 px look along the top bar; open the project menu and the page button.
+- Good: One 44 px row: the project tile and name, "/", the page button, then Undo, Redo, History and Publish on the right with no divider before Publish (atomic catalogue ticket 66, version B).
+- Files: `src/workspace-mount.ts`, `src/style.css`
+- Phone: no
+- Spec: `tests/native-save/native-top-bar.spec.ts`
+- Steps: none yet (desktop only)

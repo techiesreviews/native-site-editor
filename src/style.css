@@ -66,21 +66,30 @@ select {
   display: flex;
   flex-direction: column;
 }
+/* The slim top bar (atomic catalogue ticket 66, version B): one 44 px row. On the left a path, the project
+   tile and name, "/" (#repository-menu::after), then the page button; on the right Undo, Redo, History, then
+   Publish, with no divider before it (the Inbox's button goes before Publish, site-quality slice 40). On a phone
+   (below) the same row holds the site and page, Undo, Publish and the one Menu (top-bar-phone.ts). */
 .topbar {
-  min-height: 72px;
-  background: var(--surface);
-  /* The explorer opens from this bar's real bottom edge, however many rows it takes. */
-  anchor-name: --topbar;
-
-  display: grid;
-  /* Equal outer columns keep the page picker at the centre of the screen. */
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  padding: 8px 28px;
-  gap: 24px;
+  gap: var(--space-3xs);
+  min-height: var(--size-touch);
+  padding-inline: var(--space-xs) var(--space-s);
+  border-block-end: 1px solid var(--line);
+  background: var(--surface);
+  /* The explorer opens from this bar's bottom edge. */
+  anchor-name: --topbar;
 }
-.topbar > .explorer-toggle {
-  justify-self: center;
+#repository-menu::after {
+  content: "/";
+  color: var(--muted);
+}
+.topbar .repository-menu__trigger {
+  padding-block: 0;
+}
+.topbar :is(.repository-menu__repository, .repository-menu__caret) {
+  display: none;
 }
 .brand {
   display: flex;
@@ -155,43 +164,15 @@ select {
 .workspace--sidebar-collapsed .sidebar > :not(.sidebar-resize) {
   display: none;
 }
-.changes-window {
-  position: fixed;
-  inset: auto;
-  margin: 0;
-  width: min(420px, calc(100vw - 32px));
-  max-height: 70vh;
-  overflow: auto;
-  padding: var(--panel-padding);
-  border: 0;
-  border-radius: var(--radius-panel);
-  background: var(--panel-surface);
-  color: inherit;
-  box-shadow: var(--shadow);
-}
-/* History reads as the repository menu does: a section heading and rows
-   that hover grey, the version on show tinted. */
-.changes-window__title {
-  margin: 0;
-  padding: 6px 8px;
-  font-size: var(--type-small);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
 .topbar-actions {
-  justify-self: end;
   display: flex;
+  flex: none;
   align-items: center;
-  justify-content: end;
-  gap: 14px;
-  min-width: 0;
+  gap: var(--space-3xs);
+  margin-inline-start: auto;
 }
 .editor-toolbar-host {
   display: flex;
-  justify-content: end;
-  min-width: 0;
 }
 .code-split {
   position: relative;
@@ -307,7 +288,8 @@ select {
   color: var(--text);
 }
 @media (hover: hover) and (pointer: fine) {
-  .icon-button:hover:not(:disabled) {
+  .icon-button:hover:not(:disabled),
+  .explorer-toggle:hover {
     background: var(--hover);
     color: var(--text);
   }
@@ -571,24 +553,29 @@ dd {
   .steps {
     gap: 12px;
   }
-  /* Tablets: the side columns take what they need, so Publish never wraps to a second
-     row; the page button gets the rest and shortens its name first. */
-  .topbar {
-    padding: 0 20px;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-  .topbar > .explorer-toggle {
-    min-width: 0;
-  }
 }
 @media (max-width: 650px) {
+  /* Phones (Lex's layout of 2026-11-11): one row, the rest behind the Menu, so the page gets the screen. */
   .topbar {
-    display: flex;
-    height: auto;
-    min-height: 65px;
-    flex-wrap: wrap;
-    padding: 14px 17px;
-    gap: 10px;
+    gap: var(--space-4xs);
+    padding-inline: var(--space-4xs) var(--space-3xs);
+  }
+  .topbar :is(.repository-menu__trigger, .code-editor__redo, .code-editor__history),
+  #repository-menu::after,
+  .workspace :is(.block-rail, .canvas-bar:not(.canvas-bar--component)) {
+    display: none;
+  }
+  .topbar .code-editor__toolbar {
+    gap: var(--space-4xs);
+  }
+  .topbar .icon-button {
+    width: var(--size-touch);
+    height: var(--size-touch);
+  }
+  .explorer-toggle {
+    flex: 1;
+    max-width: none;
+    min-height: var(--size-touch);
   }
   .brand {
     font-size: 13px;
@@ -764,18 +751,23 @@ dd {
   display: block;
   margin-top: 8px;
 }
+/* The page button: a quiet button in the bar's path (its hover is the icon buttons'). */
 .explorer-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  min-width: 0;
+  max-width: min(48vw, 520px);
   min-height: var(--size-control);
+  padding: 0 var(--space-xs);
   border: 0;
-  background: var(--surface-subtle);
   border-radius: var(--radius);
-  /* The trailing caret's own inset makes up the rest of the end padding. */
-  padding: 0 12px 0 16px;
+  background: transparent;
   font-size: var(--type-base);
   white-space: nowrap;
 }
-.explorer-toggle {
-  gap: 12px;
+.explorer-toggle[aria-expanded="true"] {
+  background: var(--current);
 }
 .explorer.dropdown-panel {
   padding: var(--panel-padding-roomy);
@@ -817,10 +809,6 @@ dd {
   .login-card {
     padding: 20px;
   }
-  .explorer-toggle {
-    order: 3;
-    width: 100%;
-  }
 }
 
 /* Keep announcements available without a visible status footer. */
@@ -837,8 +825,10 @@ dd {
 }
 
 #repository-menu {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
   min-width: 0;
-  justify-self: start;
 }
 
 #current-page {
@@ -846,16 +836,6 @@ dd {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-}
-.explorer-toggle {
-  display: flex;
-  align-items: center;
-  max-width: min(48vw, 520px);
-}
-@media (max-width: 650px) {
-  .explorer-toggle {
-    max-width: 100%;
-  }
 }
 
 .login-signin {

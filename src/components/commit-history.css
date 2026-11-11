@@ -1,3 +1,28 @@
+/* The History panel (#changes in the top bar): drawn only once this file has loaded with the history.
+   It reads as the repository menu does: a section heading and rows that hover grey, the version on show tinted. */
+.changes-window {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: min(420px, calc(100vw - 32px));
+  max-height: 70vh;
+  overflow: auto;
+  padding: var(--panel-padding);
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
+  color: inherit;
+  box-shadow: var(--shadow);
+}
+.changes-window__title {
+  margin: 0;
+  padding: var(--space-2xs) var(--space-xs);
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
 .commit-history {
   display: grid;
   gap: 4px;

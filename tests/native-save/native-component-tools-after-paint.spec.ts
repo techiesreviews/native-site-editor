@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { addBlockOnPhone } from "./phone-menu";
 import { clickOnText } from "./click-text";
 import { editorMounted, effectiveSource } from "./drafts";
 
@@ -155,7 +156,8 @@ test("component tools that land right after a Bold leave the next bar change wor
   await expect(selectedCrumb(page)).toHaveText("p.lead");
   // The Blocks rail adds a paragraph after the lead; the lead's bar already says "Paragraph", so the
   // wait is on the crumb turning to the new paragraph, or the Bold lands on the lead's bar.
-  await page.getByRole("navigation", { name: "Blocks", exact: true }).getByRole("button", { name: "Paragraph", exact: true }).click();
+  // On a phone the blocks are in the top bar's Menu (ticket 66).
+  await addBlockOnPhone(page, "Paragraph");
   await expect(selectedCrumb(page)).toHaveText("p");
   await editBar(page).getByRole("button", { name: "Bold" }).click();
   tools.release();

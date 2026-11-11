@@ -19,7 +19,7 @@ Tickets live in [tickets/](tickets/), one slice each, numbered by wave:
 - 10s: wave 1, atoms;
 - 20s: wave 2, molecules and the agents map's parts;
 - 30s–40s: replacement slices;
-- 50s–60s: wave 3, organisms (66, the slim top bar, added 2026-10-26 from the site quality map, runs after 64);
+- 50s–60s: wave 3, organisms (66, the slim top bar, added 2026-10-26 from the site quality map; pulled forward by Lex on 2026-11-11 and built with the approved phone layout, ahead of 50–64: its ticket lists what is left for 52, 55, 58 and 62);
 - 65: close-out.
 
 Find takeable slices with `node scripts/agents/tickets.mjs frontier atomic-catalogue`.
@@ -133,7 +133,7 @@ Lex's end check and a release follow wave 0, the replacement slices, and wave 3 
 | [62 Rebuild from parts: History](tickets/62-organism-history.md) | S | visible | – | 61 |
 | [63 Rebuild from parts: Add panel and empty page](tickets/63-organism-add-panel.md) | M | visible | – | 62 |
 | [64 Rebuild from parts: Component panel, Edit component mode, canvas bar](tickets/64-organism-components.md) | L | visible | – | 63 |
-| [66 Rebuild from parts: Top bar, slimmer](tickets/66-organism-top-bar.md) | L | visible | – | 64 |
+| [66 Rebuild from parts: Top bar, slimmer](tickets/66-organism-top-bar.md) (pulled forward 2026-11-11) | L | visible | – | – |
 
 ## Close-out
 
