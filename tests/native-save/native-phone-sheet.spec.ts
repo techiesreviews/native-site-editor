@@ -2,6 +2,7 @@
 // phone width, while a page is on the canvas, Page structure and the code fold
 // into a pull-up sheet under the page; the edit bar never covers the selection.
 // Default fixture: index.html's hero image is images/placeholder.svg.
+import { sheetReady } from "./phone-menu";
 import { readFileSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { clickOnText } from "./click-text";
@@ -207,8 +208,9 @@ test.describe("phone", () => {
 
   test("keyboard users reach the handle and open, resize and fold the sheet", async ({ page, baseURL }) => {
     await open(page, baseURL);
-    // Tab from the block rail reaches the handle next.
-    await page.locator(".block-rail button").last().focus();
+    // Tab from the top bar's Menu button reaches the handle next (the block rail is in the Menu on a phone).
+    await sheetReady(page);
+    await page.getByRole("banner").getByRole("button", { name: "Menu", exact: true }).focus();
     await page.keyboard.press("Tab");
     await expect(handle(page)).toBeFocused();
     await page.keyboard.press("Enter");

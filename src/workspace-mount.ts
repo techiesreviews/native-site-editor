@@ -405,15 +405,16 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       ports.app.querySelector<HTMLElement>(".workspace")!,
       ports.app.querySelector<HTMLElement>(".sidebar")!,
     );
-    // Phones: Page structure and the code fold into a sheet under the page (phone-sheet.css); its handle loads on the first phone-wide window.
-    const phone = matchMedia("(max-width: 650px) and (min-height: 500px)");
-    const sheet = () => {
+    // Phones load on the first phone-wide window (top-bar-phone.ts): the slim top bar's Menu, and the pull-up
+    // sheet that folds Page structure and the code under the page (phone-sheet.css).
+    const phone = matchMedia("(max-width: 650px)");
+    const onPhone = () => {
       if (!phone.matches) return;
-      phone.removeEventListener("change", sheet);
-      void import("./components/phone-sheet").then((module) => module.mountPhoneSheet(ports.app.querySelector<HTMLElement>(".workspace")!, ports.element<HTMLButtonElement>("sheet-handle"))).catch(ports.errorMessage);
+      phone.removeEventListener("change", onPhone);
+      void import("./components/top-bar-phone").then((module) => module.mountTopBarPhone(ports)).catch(ports.errorMessage);
     };
-    phone.addEventListener("change", sheet);
-    sheet();
+    phone.addEventListener("change", onPhone);
+    onPhone();
     branchSelect = ports.element<HTMLSelectElement>("branch");
     refreshButton = ports.element<HTMLButtonElement>("refresh");
     content = ports.element<HTMLDivElement>("content");

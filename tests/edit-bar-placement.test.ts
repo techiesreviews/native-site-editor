@@ -75,6 +75,8 @@ const room = { selectionTop: 200, selectionBottom: 240, visibleBottom: 600 };
 test("docked: a selection in view above the bar needs no scroll", () => {
   assert.equal(dockScroll(room), 0);
   assert.equal(dockScroll({ ...room, selectionTop: 500, selectionBottom: 592 }), 0);
+  // Under a pixel into the 8 px gap is in view: a scroll left a fraction there, and the bar growing must still follow it.
+  assert.equal(dockScroll({ ...room, selectionTop: 500, selectionBottom: 592.47 }), 0);
 });
 
 test("docked: a tall selection in a visual viewport panned down shows its top under the view's top", () => {

@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Request } from "@playwright/test";
+import { openProjectMenu } from "./phone-menu";
 import { openEditor } from "../support/scenarios";
 import { clickOnText } from "./click-text";
 import { editorMounted } from "./drafts";
@@ -142,7 +143,7 @@ test("on a phone, the Preview link row and its copy icon are full tap targets, a
   await openEditor(page, baseURL);
   await editorMounted(page);
   const height = async (target: ReturnType<Page["locator"]>) => (await target.boundingBox())?.height ?? 0;
-  await page.locator(".repository-menu__trigger").tap();
+  await openProjectMenu(page, { tap: true });
   const share = page.getByRole("button", { name: "Preview link", exact: true });
   await expect(share).toBeVisible({ timeout: 15_000 });
   expect(await height(share)).toBeGreaterThanOrEqual(44);
@@ -244,7 +245,7 @@ test("in a 390 px window with a mouse (as the screenshots take it), Preview link
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await openEditor(page, baseURL);
   await editorMounted(page);
-  await page.locator(".repository-menu__trigger").click();
+  await openProjectMenu(page);
   const share = page.getByRole("button", { name: "Preview link", exact: true });
   await expect(share).toBeVisible({ timeout: 15_000 });
   expect((await share.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);

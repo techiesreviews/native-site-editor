@@ -292,6 +292,3 @@
   background: var(--surface);
   color: inherit;
 }
-.changes-window {
-  box-shadow: var(--shadow);
-}

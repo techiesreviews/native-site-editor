@@ -21,12 +21,6 @@
   gap: 16px;
   padding: 9px 20px;
 }
-.code-editor__toolbar--hosted {
-  background: transparent;
-  padding: 0;
-  gap: 10px;
-  justify-content: end;
-}
 .code-editor__history[aria-pressed="true"] {
   background: var(--pressed);
   color: var(--on-pressed);
@@ -81,4 +75,10 @@
     gap: 8px;
     padding: 8px 12px;
   }
+}
+/* In the top bar (after the phone rule, so it holds there too). */
+.code-editor__toolbar--hosted {
+  background: transparent;
+  padding: 0;
+  gap: 10px;
 }

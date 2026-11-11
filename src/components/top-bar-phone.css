@@ -1,0 +1,240 @@
+/* The slim top bar's phone half (top-bar-phone.ts, loaded with it on the first phone-wide window). Tokens only. */
+
+/* The page button names the project over the page; a window widened past a phone shows the page alone again. */
+.explorer-toggle__words {
+  display: grid;
+  min-width: 0;
+  line-height: 1.2;
+  text-align: start;
+}
+.explorer-toggle__site {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: var(--type-badge);
+}
+.explorer-toggle__words > #current-page {
+  font-weight: 600;
+}
+@media (min-width: 651px) {
+  #topbar-menu,
+  .explorer-toggle__tile,
+  .explorer-toggle__site {
+    display: none;
+  }
+  .explorer-toggle__words {
+    display: contents;
+  }
+}
+
+/* The project menu and History, opened from the Menu while their buttons are off the bar: bottom sheets.
+   History's script places its panel under its button (history-controller.ts), hence the overrides. */
+@media (max-width: 650px) {
+  #repository-actions,
+  #changes {
+    position-area: none;
+    inset: auto 0 0 !important;
+    justify-self: stretch;
+    width: auto;
+    max-height: 82dvh !important;
+    margin: 0;
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+  }
+}
+
+/* The Menu: a bottom sheet over a dimmed page, rows a finger can hit, the grabber on top closes it. */
+.top-bar-menu {
+  position: fixed;
+  inset: auto 0 0;
+  inline-size: auto;
+  max-inline-size: none;
+  max-block-size: 82dvh;
+  margin: 0;
+  padding: 0 var(--space-xs) calc(var(--space-m) + env(safe-area-inset-bottom));
+  border: 0;
+  border-start-start-radius: var(--radius-dialog);
+  border-start-end-radius: var(--radius-dialog);
+  background: var(--panel-surface);
+  color: var(--text);
+  box-shadow: var(--elevation-4);
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-size: var(--type-base);
+}
+.top-bar-menu[open] {
+  display: grid;
+  align-content: start;
+}
+.top-bar-menu::backdrop {
+  background: oklch(from var(--semantic-shadow) l c h / 0.45);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .top-bar-menu::backdrop {
+    transition: opacity var(--dur-sheet) var(--ease-out), display var(--dur-sheet) allow-discrete, overlay var(--dur-sheet) allow-discrete;
+  }
+  @starting-style {
+    .top-bar-menu[open]::backdrop {
+      opacity: 0;
+    }
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .top-bar-menu {
+    transition: translate var(--dur-sheet) cubic-bezier(0.32, 0.72, 0, 1), display var(--dur-sheet) allow-discrete, overlay var(--dur-sheet) allow-discrete;
+  }
+  .top-bar-menu:not([open]) {
+    translate: 0 100%;
+  }
+  @starting-style {
+    .top-bar-menu[open] {
+      translate: 0 100%;
+    }
+  }
+}
+
+.top-bar-menu__grab {
+  display: grid;
+  place-items: center;
+  block-size: var(--size-icon);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.top-bar-menu__grabber {
+  inline-size: 36px;
+  block-size: 4px;
+  border-radius: var(--radius-full);
+  background: var(--control-line);
+}
+.top-bar-menu__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  min-block-size: var(--size-touch);
+  padding-inline: var(--space-xs);
+  font-size: var(--type-title);
+  font-weight: 600;
+}
+.top-bar-menu__title:has(.top-bar-menu__back) {
+  padding-inline-start: 0;
+}
+.top-bar-menu__back {
+  inline-size: var(--size-touch);
+  block-size: var(--size-touch);
+}
+.top-bar-menu__page {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: var(--type-base);
+  font-weight: 400;
+}
+
+.top-bar-menu__rows {
+  display: grid;
+  gap: var(--space-4xs);
+}
+.top-bar-menu__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+  inline-size: 100%;
+  min-block-size: var(--size-touch);
+  padding: var(--space-3xs) var(--space-xs) var(--space-3xs) var(--space-s);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.top-bar-menu__row > svg {
+  color: var(--muted);
+}
+.top-bar-menu__row--static {
+  cursor: default;
+}
+button.top-bar-menu__row:active {
+  background: var(--hover);
+}
+@media (hover: hover) and (pointer: fine) {
+  button.top-bar-menu__row:hover {
+    background: var(--hover);
+  }
+}
+.top-bar-menu__label {
+  flex: 1;
+  min-inline-size: 0;
+}
+.top-bar-menu__end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3xs);
+  min-inline-size: 0;
+  max-inline-size: 45%;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.top-bar-menu__separator {
+  margin: var(--space-3xs) var(--space-s);
+  border: 0;
+  border-block-start: 1px solid var(--line);
+}
+
+/* Screen size: the canvas's three breakpoints as one segmented control. */
+.top-bar-menu__segments {
+  display: inline-flex;
+  padding: var(--space-4xs);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+}
+.top-bar-menu__segment {
+  display: grid;
+  place-items: center;
+  inline-size: var(--size-touch);
+  block-size: var(--size-control);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.top-bar-menu__segment[aria-pressed="true"] {
+  background: var(--current);
+  color: var(--text);
+}
+
+/* Add a block: the block rail's blocks as tiles. */
+.top-bar-menu__blocks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-xs);
+  padding-block: var(--space-3xs) var(--space-xs);
+}
+.top-bar-menu__block {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2xs);
+  padding: var(--space-s) var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--surface-subtle);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.top-bar-menu__block:active {
+  background: var(--hover);
+}
+.top-bar-menu :is(button):focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}

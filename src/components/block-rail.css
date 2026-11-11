@@ -40,12 +40,3 @@
   white-space: nowrap;
   pointer-events: none;
 }
-@media (max-width: 650px) {
-  .block-rail {
-    flex-direction: row;
-    flex-shrink: 0;
-    padding: 4px 10px;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-}

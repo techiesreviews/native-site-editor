@@ -485,7 +485,62 @@ const MOLECULES: Part[] = [
   },
 ];
 
-const ORGANISMS: Part[] = [];
+// The slim top bar (ticket 66, version B, pulled forward on 2026-11-11 with Lex's phone layout): drawn as the
+// editor draws it (src/workspace-mount.ts), with the real project menu tile and, on the phone, the real Menu
+// (src/components/top-bar-phone.ts). The toolbar on its right (Undo, Redo, History and Publish) belongs to the open
+// file's editor; here it is drawn with the same classes and the Save menu's place is a plain Publish button
+// (organisms 58 and 62 rebuild those, inside this bar).
+async function topBar(values: Values, phone: boolean, open: boolean) {
+  const [{ node }, { iconMarkup }, { createRepositoryMenu }, { signal }] = await Promise.all([
+    import("../ui/dom"), import("../icons"), import("../components/repository-menu"), import("@preact/signals-core"),
+  ]);
+  const project = str(values.project) || "techies-site";
+  const host = node("div", "cat-top-bar");
+  const tool = (name: "undo" | "redo" | "clock-counter-clockwise", label: string, part: string) =>
+    `<button type="button" class="icon-button code-editor__${part}" aria-label="${label}" title="${label}">${iconMarkup(name)}</button>`;
+  host.innerHTML = `<header class="topbar"><div id="repository-menu"></div>
+    <button type="button" id="explorer-toggle" class="explorer-toggle" title="Pages & files"><span id="current-page"></span> ${iconMarkup("caret-down", 12, "icon--after")}</button>
+    <div class="topbar-actions"><div class="editor-toolbar-host"><div class="code-editor__toolbar code-editor__toolbar--hosted">
+    ${tool("undo", "Undo", "undo")}${tool("redo", "Redo", "redo")}${tool("clock-counter-clockwise", "History", "history")}
+    <div class="publish-menu"><button type="button" class="button primary publish-menu__trigger">Publish</button><button type="button" class="button primary publish-menu__more" aria-label="More save options">${iconMarkup("caret-down", 12)}</button></div>
+    </div></div></div></header>`;
+  host.querySelector("#current-page")!.textContent = str(values.page) || "Home";
+  const repository = { id: 1, name: project, full_name: `techiesreviews/${project}`, owner: { login: "techiesreviews", type: "Organization" } };
+  const menu = createRepositoryMenu({ installUrl: null, accounts: [], onReload: () => undefined, onAccessChanged: () => undefined, onSwitchAccount: () => undefined, onSignOut: () => undefined });
+  menu.setRepository(repository as Parameters<typeof menu.setRepository>[0]);
+  host.querySelector("#repository-menu")!.append(menu.root);
+  if (phone) {
+    const { mountTopBarPhone } = await import("../components/top-bar-phone");
+    mountTopBarPhone({
+      app: host, appStore: { repository: signal(repository as Parameters<typeof menu.setRepository>[0]) },
+      page: { siteSettings: () => Promise.resolve() }, errorMessage: () => undefined,
+    });
+    // A state cell shows the Menu open, once the frame shows the bar.
+    if (open) requestAnimationFrame(() => host.querySelector<HTMLButtonElement>("#topbar-menu")?.click());
+  }
+  return host;
+}
+
+const ORGANISMS: Part[] = [
+  {
+    id: "top-bar", area: "organisms", name: "Top bar", madeOf: ["button", "icon"], frame: { width: 1280, height: 64 },
+    files: ["src/workspace-mount.ts", "src/style.css", "src/components/top-bar-phone.ts", "src/components/top-bar-phone.css"],
+    defaults: { project: "techies-site", page: "Home" },
+    controls: [text("project", "Project"), text("page", "Page")],
+    rows: [{ label: "A page open" }, { label: "A long page name", values: { page: "Winter pruning: when to cut back roses, shrubs and fruit trees" } }],
+    columns: [{ label: "1280 wide" }],
+    render: (values) => topBar(values, false, false),
+  },
+  {
+    id: "top-bar-phone", area: "organisms", name: "Top bar on a phone", madeOf: ["button", "icon"], frame: { width: 390, height: 720 },
+    files: ["src/components/top-bar-phone.ts", "src/components/top-bar-phone.css", "src/components/top-bar-menu-rules.ts", "src/style.css"],
+    defaults: { project: "techies-site", page: "Home", menu: false },
+    controls: [text("project", "Project"), text("page", "Page"), toggle("menu", "Menu open")],
+    rows: [{ label: "The bar" }, { label: "Menu open", values: { menu: true } }],
+    columns: [{ label: "390 wide" }],
+    render: (values, _state, live) => topBar(values, true, Boolean(values.menu) && !live),
+  },
+];
 
 /** Every entry on the board, areas in order (mock-ups come from mockups.ts). */
 export const PARTS: readonly BoardEntry[] = [...VALUES, ...ATOMS, ...MOLECULES, ...ORGANISMS];

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { phoneMenu, sheetReady } from "./phone-menu";
 
 // Default fixture group; nightly coverage for the boot block controls.
 const names = ["Section", "Div", "Heading", "Paragraph", "Media", "Button"];
@@ -82,7 +83,7 @@ for (const colorScheme of ["light", "dark"] as const) {
   });
 }
 
-test("rail leaves preview space when resizing and becomes a row above the page on a phone", async ({ page, baseURL }) => {
+test("rail leaves preview space when resizing; on a phone its blocks are in the top bar's Menu", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await page.setViewportSize({ width: 800, height: 900 });
   const handle = page.locator(".sidebar-resize");
@@ -90,16 +91,17 @@ test("rail leaves preview space when resizing and becomes a row above the page o
   await expect(handle).toHaveAttribute("aria-valuenow", "392");
   await page.setViewportSize({ width: 600, height: 900 });
   await expect(handle).toHaveAttribute("aria-orientation", "horizontal");
-  // Upright phones fold Page structure into the sheet under the page (slice 117): the rail is a row right above the page.
-  const blocks = (await rail(page).boundingBox())!;
-  const canvas = (await page.locator(".native-preview-pane").boundingBox())!;
-  expect(blocks.y + blocks.height).toBe(canvas.y);
-  const buttons = await rail(page).getByRole("button").all();
-  const rows = await Promise.all(buttons.map(async (button) => (await button.boundingBox())!.y));
-  expect(new Set(rows).size).toBe(1);
+  // On a phone the rail leaves the page's top (ticket 66, Lex's phone layout of 2026-11-11): Menu › Add a block holds
+  // the same blocks.
+  await expect(rail(page)).toBeHidden();
+  await phoneMenu(page, "Add a block");
+  const menu = page.getByRole("dialog", { name: "Menu", exact: true });
+  for (const name of await rail(page).getByRole("button").evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")!)))
+    await expect(menu.getByRole("button", { name, exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await sheetReady(page);
   await page.getByRole("button", { name: "Page structure and code" }).click();
   await handle.press("Enter");
-  await expect(rail(page)).toBeVisible();
   await expect(page.getByRole("tree", { name: "Page structure" })).toBeHidden();
 });
 
