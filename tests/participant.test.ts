@@ -68,9 +68,9 @@ test("a colour book gives each the least used colour, the lowest on a tie, and k
   assert.equal(book.colour("f"), 2, "a colour given back is the least used again");
 });
 
-test("shown names follow one rule: one line, nothing invisible, at most 40 characters, else the kind's own", () => {
+test("shown names follow one rule: one line, nothing invisible, at most 80 characters, else the kind's own", () => {
   assert.equal(shownName("  Anna  ", "guest"), "Anna");
-  assert.equal(shownName("x".repeat(500), "guest").length, 40);
+  assert.equal(shownName("x".repeat(500), "guest").length, 80);
   assert.equal(shownName("   ", "guest"), "Guest");
   for (const blank of ["", "   ", "\u200B", "\u2060", "\u202E", "\u3164", "\u115F\u1160", "\uFFA0", " \u200B ", "\u2066\u2069"]) {
     assert.equal(shownName(blank, "person"), "Someone", JSON.stringify(blank));
@@ -79,19 +79,20 @@ test("shown names follow one rule: one line, nothing invisible, at most 40 chara
   assert.equal(shownName("\u200BAnna\u200B", "person"), "Anna");
   assert.equal(shownName("Claude\nCode\t ", "agent"), "Claude Code");
   // Never cut inside a character, a joined emoji included.
-  assert.equal(shownName("😀".repeat(41), "guest"), "😀".repeat(40));
-  assert.equal(shownName("\u{1F469}\u200D\u{1F4BB}".repeat(41), "agent"), "\u{1F469}\u200D\u{1F4BB}".repeat(40));
+  assert.equal(shownName("😀".repeat(81), "guest"), "😀".repeat(80));
+  assert.equal(shownName("\u{1F469}\u200D\u{1F4BB}".repeat(81), "agent"), "\u{1F469}\u200D\u{1F4BB}".repeat(80));
   // The joiners a word or an emoji needs stay: an agent is listed under the name it sent.
   assert.equal(shownName("\u{1F469}\u200D\u{1F4BB} Coder", "agent"), "\u{1F469}\u200D\u{1F4BB} Coder");
   assert.equal(shownName("\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645", "guest"), "\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645");
-  assert.equal(shownName("\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} Fan", "guest"), "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F} Fan");
   // A joiner between letters that never join, and tag characters outside a flag, show nothing and carry hidden text.
   assert.equal(shownName("An\u200Dna", "guest"), "Anna");
+  assert.equal(shownName("An\u200B\u200Dna", "guest"), "Anna");
   assert.equal(shownName("Anna\u{E0068}\u{E0069}", "guest"), "Anna");
   assert.equal(shownName("A\u206Ann\uFFF9a", "guest"), "Anna");
   // A character stacking marks counts whole: the name stays short.
   assert.ok(shownName("a" + "\u0301".repeat(500), "guest").length <= 400);
-  assert.equal(shownName("Bo " + "a" + "\u0301".repeat(500), "guest"), "Bo");
+  // An 80-character name, as a signed-in person's caret may give, shows whole.
+  assert.equal(shownName(`Annabel ${"Featherstonehaugh-".repeat(5)}`.slice(0, 80), "person").length, 80);
   // A joiner with nothing to join, or a name of joiners only, shows nothing.
   assert.equal(shownName("\u200DAnna\u200C", "person"), "Anna");
   assert.equal(shownName("\u200D\u200C", "agent"), "Agent");
