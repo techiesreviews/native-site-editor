@@ -1,0 +1,66 @@
+/* The Badge part (atomic catalogue ticket 13): one class, the kind and the tone as data attributes. Only shared tokens. */
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3xs);
+  box-sizing: border-box;
+  block-size: 1.25rem;
+  padding-inline: var(--space-xs);
+  border-radius: var(--radius-full);
+  font-size: var(--type-small);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  background: var(--surface-subtle);
+  color: var(--link);
+}
+.ui-badge[data-tone="action"] { background: var(--primary); color: var(--on-primary); }
+.ui-badge[data-tone="warning"] { background: var(--warning-bg); color: var(--warning-fg); }
+.ui-badge[data-tone="question"] { background: var(--agent-question-surface); color: var(--agent-question-text); }
+.ui-badge[data-tone="success"] { background: var(--success-bg); color: var(--success-fg); }
+.ui-badge[data-tone="danger"] { background: var(--danger-bg); color: var(--danger-fg); }
+
+/* A number: a round chip that grows to fit two digits and 99+. */
+.ui-badge[data-kind="count"] {
+  min-inline-size: 1.125rem;
+  block-size: 1.125rem;
+  padding-inline: var(--space-3xs);
+  font-size: var(--type-badge);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A status: the tone's dot, then the words. */
+.ui-badge[data-kind="status"]::before {
+  content: "";
+  inline-size: 0.4375rem;
+  block-size: 0.4375rem;
+  border-radius: var(--radius-full);
+  background: currentcolor;
+}
+
+/* A dot: the tone's strong colour, no words. */
+.ui-badge[data-kind="dot"] {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  padding: 0;
+  background: var(--muted);
+}
+.ui-badge[data-kind="dot"][data-tone="action"] { background: var(--primary); }
+.ui-badge[data-kind="dot"][data-tone="warning"] { background: var(--warning-fg); }
+.ui-badge[data-kind="dot"][data-tone="question"] { background: var(--agent-question-strong); }
+.ui-badge[data-kind="dot"][data-tone="success"] { background: var(--success-fg); }
+.ui-badge[data-kind="dot"][data-tone="danger"] { background: var(--danger); }
+
+/* A mark: a round tone holding an icon in the tone's text colour. */
+.ui-badge[data-kind="mark"] {
+  inline-size: 1.25rem;
+  padding: 0;
+}
+
+/* Forced colours drop the fills: an outline keeps each badge's edge, and a dot keeps its colour. */
+@media (forced-colors: active) {
+  .ui-badge { border: 1px solid; }
+  .ui-badge[data-kind="dot"] { forced-color-adjust: none; border: 0; }
+}

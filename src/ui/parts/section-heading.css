@@ -1,0 +1,28 @@
+/* The Section heading part (atomic catalogue ticket 13): the words as a quiet uppercase heading, an optional slot at
+   the far end on the same line. Only shared tokens. */
+.ui-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  min-inline-size: 0;
+  color: var(--muted);
+}
+.ui-section-heading > :is(h2, h3, h4) {
+  margin: 0;
+  min-inline-size: 0;
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.ui-section-heading > [data-slot="end"] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2xs);
+  text-transform: none;
+}

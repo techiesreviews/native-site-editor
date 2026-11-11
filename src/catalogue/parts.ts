@@ -4,9 +4,11 @@
 // Shared values read the tokens in src/theme.css. Mock-ups for future features live in mockups.ts.
 
 import type { IconName } from "../icons";
+import { BADGE_KINDS, BADGE_TONES } from "../ui/parts/badge-options";
 import { ICON_PLACES, ICON_SIZES, type IconPlace } from "../ui/parts/icon-options";
 import { PROGRESS_STEPS } from "../ui/parts/progress-options";
 import { SPINNER_PLACES, SPINNER_SIZES, type SpinnerPlace, type SpinnerSize } from "../ui/parts/spinner-options";
+import { HEADING_LEVELS } from "../ui/parts/section-heading-options";
 
 export type AreaId = "values" | "atoms" | "molecules" | "organisms" | "mockups";
 export const AREAS: readonly { id: AreaId; name: string }[] = [
@@ -241,6 +243,14 @@ const SPINNER_SIZE_CHOICES: readonly Choice[] = SPINNER_SIZES.map((size) => [siz
 const SPINNER_PLACE_CHOICES: readonly Choice[] = SPINNER_PLACES.map((place) => [place, SPINNER_PLACE_LABELS[place]]);
 /** The amounts the board offers: not known, then a few places along the bar ("unknown" is the part's own word). */
 const PROGRESS_AMOUNTS: readonly Choice[] = [["unknown", "Unknown"], ...PROGRESS_STEPS.map((step): Choice => [String(step), step === 0 ? "Not started" : step === 100 ? "Done" : `${step}%`])];
+const BADGE_KIND_LABELS: Record<(typeof BADGE_KINDS)[number], string> = { count: "Count", status: "Status", tag: "Tag", dot: "Dot", mark: "Mark" };
+const BADGE_TONE_LABELS: Record<(typeof BADGE_TONES)[number], string> = {
+  neutral: "Neutral", action: "Action", warning: "Warning", question: "Question", success: "Success", danger: "Danger",
+};
+const BADGE_KIND_CHOICES: readonly Choice[] = BADGE_KINDS.map((kind) => [kind, BADGE_KIND_LABELS[kind]]);
+const BADGE_TONE_CHOICES: readonly Choice[] = BADGE_TONES.map((tone) => [tone, BADGE_TONE_LABELS[tone]]);
+const HEADING_LEVEL_CHOICES: readonly Choice[] = HEADING_LEVELS.map((level) => [String(level), `H${level}`]);
+const HEADING_ENDS: readonly Choice[] = [["none", "Nothing"], ["count", "A count"], ["button", "A button"]];
 
 const ATOMS: Part[] = [
   {
@@ -300,6 +310,68 @@ const ATOMS: Part[] = [
       const stage = node("div", "cat-progress-stage");
       stage.append(progress({ value: values.amount === "unknown" ? null : str(values.amount), label: str(values.label) }));
       return stage;
+    },
+  },
+  {
+    id: "badge", area: "atoms", name: "Badge", files: ["src/ui/parts/badge.ts", "src/ui/parts/badge-options.ts", "src/ui/parts/badge.css"],
+    defaults: { kind: "tag", tone: "neutral", words: "Draft", icon: "check" },
+    controls: [
+      choice("kind", "Kind", BADGE_KIND_CHOICES), choice("tone", "Tone", BADGE_TONE_CHOICES), text("words", "Words"), choice("icon", "Mark icon", ICON_NAMES),
+    ],
+    // Words per kind: a dot and a mark show none, their words are the name a screen reader says.
+    rows: [
+      { label: "Count", values: { kind: "count", words: "3" } },
+      { label: "Count over 99", values: { kind: "count", words: "120" } },
+      { label: "Status", values: { kind: "status", words: "Saved" } },
+      { label: "Tag", values: { kind: "tag", words: "Heading" } },
+      { label: "Dot", values: { kind: "dot", words: "Waiting" } },
+      { label: "Mark", values: { kind: "mark", words: "Done" } },
+    ],
+    // A badge is read, not pressed: it has no hover, pressed, focus, disabled or busy look, so the columns are tones.
+    columns: BADGE_TONE_CHOICES.map(([tone, label]) => ({ label, values: { tone } })),
+    async render(values) {
+      const { badgePart } = await import("../ui/parts/badge");
+      return badgePart({ kind: str(values.kind), tone: str(values.tone), words: str(values.words), icon: str(values.icon) as IconName });
+    },
+  },
+  {
+    id: "section-heading", area: "atoms", name: "Section heading", files: ["src/ui/parts/section-heading.ts", "src/ui/parts/section-heading-options.ts", "src/ui/parts/section-heading.css"],
+    defaults: { words: "Pages", level: "3", end: "none" },
+    controls: [text("words", "Words"), choice("level", "Level", HEADING_LEVEL_CHOICES), choice("end", "End slot", HEADING_ENDS)],
+    rows: [
+      { label: "Words only" },
+      { label: "With a count", values: { end: "count" } },
+      { label: "With a button", values: { end: "button" } },
+      { label: "Long words", values: { words: "Pages added since the last save", end: "count" } },
+    ],
+    // Hover, focus and pressed belong to the button in the end slot, not to the heading.
+    columns: states("normal"),
+    async render(values) {
+      const [{ sectionHeadingPart }, { badgePart }, { button }] = await Promise.all([
+        import("../ui/parts/section-heading"), import("../ui/parts/badge"), import("../ui/dom"),
+      ]);
+      const end = values.end === "count" ? badgePart({ kind: "count", words: "12" }) : values.end === "button" ? button("Add", () => undefined, "button secondary") : undefined;
+      const heading = sectionHeadingPart(str(values.words), { level: str(values.level), ...(end ? { end } : {}) });
+      heading.classList.add("cat-heading-stage");
+      return heading;
+    },
+  },
+  {
+    id: "key", area: "atoms", name: "Keyboard key", files: ["src/ui/parts/key.ts", "src/ui/parts/key-options.ts", "src/ui/parts/key.css"],
+    defaults: { keys: "Ctrl+K" },
+    controls: [text("keys", "Keys (joined with +)")],
+    rows: [
+      { label: "One key", values: { keys: "K" } },
+      { label: "Named key", values: { keys: "Esc" } },
+      { label: "Two keys", values: { keys: "Ctrl+K" } },
+      { label: "Three keys", values: { keys: "Ctrl+Shift+Z" } },
+      { label: "Symbols", values: { keys: "⌘+," } },
+    ],
+    // A key cap is a label: no hover, pressed, focus or disabled look of its own.
+    columns: states("normal"),
+    async render(values) {
+      const [{ keyPart }, node] = await Promise.all([import("../ui/parts/key"), dom()]);
+      return keyPart(str(values.keys)) ?? node("span", "cat-hint", "Type a key");
     },
   },
   {

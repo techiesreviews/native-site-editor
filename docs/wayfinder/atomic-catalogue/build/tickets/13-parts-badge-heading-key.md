@@ -1,8 +1,8 @@
 ---
 title: "Parts: Badge, Section heading, Keyboard key"
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: fleet-lead
 builder: claude
 blocked_by: [05-catalogue-board, 04-one-offs-count]
 ---
@@ -36,3 +36,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit size` against dev: boot bytes unchanged or lower.
 - `kit shots` of the part's frame on the board (`/catalogue.html`), light and dark, 390 and 1280 wide; the lead shows Lex the sheet, and Lex approves on the board.
 - The one-offs count (slice 04, once landed) does not rise; quote its `RESULT:` line.
+
+## Done (2026-11-11)
+
+- **Badge** (`src/ui/parts/badge.ts`, `badge-options.ts`, `badge.css`): `badgePart({ kind, tone, words, icon })` returns one `span.ui-badge` with the kind and the tone as data attributes. Kinds: `count` (a round chip; a whole number over 99 reads `99+`, nothing reads `0`), `status` (the tone's dot, then the words), `tag` (words in a pill), `dot` (a bare dot) and `mark` (a round tone holding an icon, drawn by the Icon part's one drawing body at 12). Tones: neutral, action, warning, question, success, danger. A dot or mark with words is an image with that name for screen readers; without words it is hidden. The words are escaped. An unknown kind or tone becomes `tag` or `neutral`. Colours are the shared tokens only; forced colours get an outline.
+- **Section heading** (`section-heading.ts`, `section-heading-options.ts`, `section-heading.css`): `sectionHeadingPart(words, { level, end })` returns `div.ui-section-heading` with the words as a real heading (level 2, 3 or 4, default 3) in small uppercase, and an optional end slot after it (`data-slot="end"`) that takes text or any node (a Badge, a button). Long words wrap; the slot keeps its size at the far end. No slot is drawn for a blank end.
+- **Keyboard key** (`key.ts`, `key-options.ts`, `key.css`): `keyPart(keys)` returns one `kbd.ui-key` for one key, or a `kbd.ui-key[data-combo]` of nested `kbd` caps for keys pressed together (text splits at `+`, a list is taken as it is); nothing to press gives no element. The cap takes the text colour of where it stands. `escape.ts` is the one place words become markup text.
+- **Board:** `src/catalogue/parts.ts` registers Badge, Section heading and Keyboard key as atoms. Badge: rows for each kind (and a count over 99), columns for each tone, controls for Kind, Tone, Words and Mark icon. Section heading: rows for words only, with a count, with a button and long words; controls for Words, Level and End slot. Keyboard key: rows for one, named, two, three and symbol keys; control for Keys. Light and dark show side by side. None of the three has a hover, pressed, focus, disabled or busy look of its own (a badge is read, a heading and a key are labels; the button in a heading's end slot is the Button part), so they show one Normal column, or the tones for Badge. `src/catalogue/board.css` gains a stage width for the heading and a quiet line for a key with nothing to show.
+- **Tests:** `tests/badge-heading-key-parts.test.ts` pins the kinds and tones, the one class and the data attributes, the count text, the names for dot and mark, the heading levels and end slot, the key list and caps, escaping, and that the board offers every kind, tone, end slot and key count. A spec in `tests/native-save/native-catalogue-board.spec.ts` drives the three live cells (count over 99, a dot's name, a mark's icon, the heading's level and end slot, one key, a combination and no key).
+- **No editor screen changes:** no editor code reaches the new parts; their CSS loads with the parts, on the board only, so the editor's boot did not change. The swaps wait for Lex's Approve.
+- **Evidence:** `kit unit --affected` RESULT: ok unit 30/30 (3 files); `npm run check` RESULT: ok tokens in step; `npm run lint` check-exports: 15 unused export(s), 0 failure(s); `kit specs --affected` RESULT: ok specs 1/1 passed; `kit specs tests/native-save/native-catalogue-board.spec.ts` RESULT: ok specs 1/1 passed (20 passed, 1 skipped); `kit size` RESULT: ok size boot 354 KB (±0 KB) vs dev@69e4f6b, budget 355 KB; one-offs RESULT: ok one-offs 1578 hand-typed values in 68 files, none above scripts/agents/one-offs.json. `kit shots` of the three cards at 1280 wide (light and dark) and the Badge card at 390 wide looked at: each card sits whole on the screen; the layout findings listed are the selected title's colour (also on Icon) and neighbouring cards cut off at the screen's edge, none inside the three cards. `kit shots editor pages --compare dev --width 390,1280` RESULT: ok; five of the eight pairs are byte for byte the same, and the three Pages pairs differ in four or five pixels by at most 3 of 255 in one colour channel (the "Page not found" row's dashed icon, base shots cached from an earlier run), nothing visible.
+- Feature list: no change (the board is on the preview editor only and no editor screen changed)
