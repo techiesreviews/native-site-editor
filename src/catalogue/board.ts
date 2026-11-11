@@ -797,9 +797,13 @@ export function startBoard(root: HTMLElement) {
   // ---------- Keys ----------
 
   let spaceHeld = false;
-  const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
+  /** Whether a key goes to a field: the event's own target, inside a live cell's shadow root too. */
+  const typing = (event: Event) => {
+    const target = event.composedPath()[0];
+    return target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable);
+  };
   document.addEventListener("keydown", (event) => {
-    if (typing(event.target)) { if (event.key === "Escape" && event.target !== searchInput) (event.target as HTMLElement).blur(); return; }
+    if (typing(event)) { const field = event.composedPath()[0] as HTMLElement; if (event.key === "Escape" && field !== searchInput) field.blur(); return; }
     if (event.key === "/" && !event.metaKey && !event.ctrlKey) { event.preventDefault(); openSearch(); return; }
     if (event.key === "Escape") { if (root.dataset.sheet) setSheet(""); else select(undefined); return; }
     // Space pans only from the canvas itself or the page: on a focused button it presses the button.

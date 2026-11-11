@@ -33,6 +33,10 @@ test("a problem: a brace, quote, comment or url( that does not close is named, a
   assert.equal(cssProblem(".a { background: url({) } } body { display: none }"), "A } closes a rule that was never opened");
   assert.equal(cssProblem(".a { background: url( \"x{\" ) }"), "");
   assert.equal(cssProblem(".a { background: url(a\\){) } } body { display: none }"), "A } closes a rule that was never opened");
+  // An open ( or [ takes in the braces after it, as in the browser: the rules after it are lost, so it is named.
+  assert.equal(cssProblem(".button:is(.a { color: red }"), "A ( is never closed");
+  assert.equal(cssProblem(".button[data-x { color: red }"), "A [ is never closed");
+  assert.equal(cssProblem(".a:is(.b, .c) { color: red } .d[x] { color: blue }"), "");
 });
 
 test("Send to agent copies the changed lines and the whole file as edited; nothing when the file is unchanged", () => {

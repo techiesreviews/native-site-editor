@@ -53,7 +53,8 @@ export function liveRoot(stage: HTMLElement, path: string, text: string): LiveRo
   if (!host) {
     host = document.createElement("div");
     host.className = "cat-live__host";
-    host.attachShadow({ mode: "open" });
+    // Focus given to the host (the board taking it back from a frame) goes on to the part inside.
+    host.attachShadow({ mode: "open", delegatesFocus: true });
     stage.replaceChildren(host);
   }
   const root = host.shadowRoot!;
