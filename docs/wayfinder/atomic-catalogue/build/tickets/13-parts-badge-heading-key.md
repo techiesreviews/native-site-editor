@@ -64,3 +64,9 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - **Comments (nit, taken):** the two comments at the top of `key.css` are one.
 - Not done: a `kit shots` crop of the badge at 2× zoom (the review's "better still"); the spec above catches the clipping on its own.
 - **Evidence:** `kit unit --affected` RESULT: ok unit 31/31 (3 files); `npm run check` RESULT: ok tokens in step; `npm run lint` check-exports: 15 unused export(s), 0 failure(s); `kit specs --affected` RESULT: ok specs 1/1 passed; `kit specs tests/native-save/native-catalogue-board.spec.ts` RESULT: ok specs 1/1 passed (21 passed, 1 skipped); `kit size` RESULT: ok size boot 354 KB (±0 KB) vs dev@69e4f6b, budget 355 KB; one-offs RESULT: ok one-offs 1578 hand-typed values in 68 files, none above scripts/agents/one-offs.json.
+
+### Review fixes, round 3 (2026-11-11)
+
+- **Long badge in a flex row (P2, fixed):** `.ui-badge` has `min-inline-size: 0`, so a long tag can shrink inside a row. The board spec now puts a title beside the long tag in a 120px flex row and checks the badge stays inside the row, its words are cut and the title keeps its width. That spec also passed before the CSS line in Chromium, so the line is a safeguard that the spec cannot tell apart; the count kind keeps its own minimum width. The heading's end slot is a fixed-size slot (`flex: none`), so a long tag there is the caller's to keep short.
+- **`+` key in list form (gap, fixed):** the unit test pins `keyList(["Ctrl", "+"])` and its markup.
+- Not done (nits): a looser colour check in the border spec, a forced-colours outline on the dot, and a maximum width for a very long key entry (board only; waits for the menu-row swap).

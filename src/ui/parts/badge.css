@@ -5,6 +5,7 @@
   justify-content: center;
   gap: var(--space-3xs);
   box-sizing: border-box;
+  min-inline-size: 0;
   max-inline-size: 100%;
   block-size: 1.25rem;
   padding-inline: var(--space-xs);
