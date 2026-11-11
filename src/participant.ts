@@ -19,20 +19,29 @@ export interface Participant { key: string; name: string; initial: string; colou
 
 /** The name shown for someone who gives none. */
 const UNNAMED: Record<ParticipantKind, string> = { agent: "Agent", person: "Someone", guest: "Guest" };
-/** Characters that show nothing and can hide or spoof a name: zero-width spaces, the soft hyphen, the word joiner and
- * invisible operators, direction marks and controls, and the Hangul fillers. The joiners a word or an emoji needs (U+200C, U+200D) and tag characters stay. */
-const INVISIBLE = /[\u00AD\u061C\u180E\u200B\u200E\u200F\u2060-\u2064\uFEFF\u202A-\u202E\u2066-\u2069\u115F\u1160\u3164\uFFA0]/g;
+/** Characters that show nothing and can hide or spoof a name: format controls (zero-width spaces, the soft hyphen,
+ * direction marks and controls, …) and the Hangul fillers; a joiner (U+200C, U+200D) after a Latin, Greek or Cyrillic
+ * letter, a digit, punctuation or a space; and tag characters outside a flag (U+1F3F4) of tags. The joiners an emoji or
+ * a Persian or Indic word needs stay. */
+const INVISIBLE = /(?![\u200C\u200D\u{E0020}-\u{E007F}])[\p{Cf}\u115F\u1160\u3164\uFFA0]|(?<=[\p{sc=Latn}\p{sc=Grek}\p{sc=Cyrl}\p{N}\p{P}\s])[\u200C\u200D]+|(?<!\u{1F3F4}[\u{E0020}-\u{E007E}]*)[\u{E0020}-\u{E007F}]/gu;
 /** Space, and a joiner with nothing to join, at either end. */
 const ENDS = /^[\s\u200C\u200D]+|[\s\u200C\u200D]+$/g;
+/** The most UTF-16 units a shown name holds (a joined emoji takes several, and a character can stack any number of marks). */
+const NAME_UNITS = AGENT_NAME_LIMIT * 10;
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const segments = (text: string) => [...graphemes.segment(text)].map(part => part.segment);
 
 /** The name shown for `name`, what someone says of itself: one line, nothing invisible, at most AGENT_NAME_LIMIT
- * characters (never cut inside one), else its kind's own ("Agent", "Someone", "Guest"). */
+ * characters and NAME_UNITS units (never cut inside a character), else its kind's own ("Agent", "Someone", "Guest"). */
 export function shownName(name: string, kind: ParticipantKind) {
-  const line = name.replace(INVISIBLE, "").replace(/[\u0000-\u001f\u007f\s]+/g, " ").replace(ENDS, "");
-  return segments(line).slice(0, AGENT_NAME_LIMIT).join("").replace(ENDS, "") || UNNAMED[kind];
+  const line = name.slice(0, NAME_UNITS * 2).replace(/[\p{Cc}\s]+/gu, " ").replace(INVISIBLE, "").replace(ENDS, "");
+  let shown = "";
+  for (const part of segments(line).slice(0, AGENT_NAME_LIMIT)) {
+    if (shown.length + part.length > NAME_UNITS) break;
+    shown += part;
+  }
+  return shown.replace(ENDS, "") || UNNAMED[kind];
 }
 
 /** A character that can stand for a name: a letter, a digit or an emoji (a flag too). */

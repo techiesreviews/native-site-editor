@@ -141,7 +141,7 @@ const CARET_MS = 50;
 const NAME_LIMIT = 80;
 /** The most agents' carets one tab's presence is read for (ticket am-25). */
 const AGENT_CARETS = 16;
-/** A name cut to NAME_LIMIT characters, never inside one. */
+/** A name cut to NAME_LIMIT code points, never inside a surrogate pair (src/participant.ts `shownName` cuts what shows). */
 const cut = (name: string) => [...name].slice(0, NAME_LIMIT).join("");
 /** The most client ids of others' text one copy holds while waiting for presence to name them (the starting texts' never are). */
 const UNNAMED_LIMIT = 256;
