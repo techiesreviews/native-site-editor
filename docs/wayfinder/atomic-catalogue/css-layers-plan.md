@@ -35,9 +35,10 @@ Rules that matter for every slice:
 - **The design board follows.** A part whose component file is done names it (`css` in `src/catalogue/parts.ts`):
   selecting it shows that file in the right panel, editable on the live cell only, with Reset and Send to agent, in
   place of the generic Tweak fields. Component files are left out of other parts' Tweak fields.
-- **The one-off count reads hooks as what they stand for.** In a file on the components layer, `--btn-padding-block`
-  counts as a `padding-block` value (`scripts/agents/one-offs.mjs`), so a component's defaults are held to the same
-  rule as any declaration: tokens, not hand-typed values.
+- **The one-off count reads hooks as what they stand for.** In a file on the components layer, a hook counts as the
+  counted property its name ends in (`scripts/agents/one-offs.mjs`): `--btn-padding-block` as `padding-block`,
+  `--btn-icon-gap` as `gap`. A hook that ends in none (`--btn-font-weight`) counts as a local custom property only when
+  it holds a hand-typed length, time or percentage. A component's defaults are held to tokens, not hand-typed values.
 
 ## Today's CSS, mapped
 

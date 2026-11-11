@@ -63,6 +63,7 @@ test("a problem: unbalanced braces or a closing tag would leave the live cell's 
   assert.equal(cssProblem(".a { color: red\\{ } } body { display: none }"), "A } closes a rule that was never opened");
   assert.equal(cssProblem(".a { background: url({) } } body { display: none }"), "A } closes a rule that was never opened");
   assert.equal(cssProblem(".a { background: url( \"x{\" ) }"), "");
+  assert.equal(cssProblem(".a { background: url(a\\){) } } body { display: none }"), "A } closes a rule that was never opened");
 });
 
 test("Send to agent copies the changed lines and the whole file as edited; nothing when the file is unchanged", () => {

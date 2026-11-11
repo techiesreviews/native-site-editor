@@ -75,9 +75,8 @@ export function cssSection(panel: CssPanel): HTMLElement {
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Shows the text's state: its problem beside the field, the changed mark, and whether the actions do anything. */
-  const paint = () => {
+  const paint = (wrong = problemOf(file.text ?? before, before)) => {
     const now = file.text ?? before;
-    const wrong = problemOf(now, before);
     text.setAttribute("aria-invalid", String(!!wrong));
     problem.textContent = wrong;
     problem.hidden = !wrong;
@@ -93,9 +92,10 @@ export function cssSection(panel: CssPanel): HTMLElement {
     file.text = text.value === before ? undefined : text.value;
     clearTimeout(copiedTimer);
     sendLabel();
-    paint();
+    const wrong = problemOf(text.value, before);
+    paint(wrong);
     // A file with a problem would reach past the live cell: the cell keeps the last text that had none.
-    if (problemOf(text.value, before)) return;
+    if (wrong) return;
     file.shown = file.text;
     panel.apply();
   });
