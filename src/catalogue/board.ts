@@ -893,7 +893,9 @@ export function startBoard(root: HTMLElement) {
     if (!article) return;
     press(article);
     if (byPointer) return;
-    const box = target.getBoundingClientRect(), view = viewport.getBoundingClientRect();
+    // Measured on the focused control itself: inside a live cell's shadow root the event names its host, which has no box.
+    const focused = event.composedPath()[0] as Element;
+    const box = focused.getBoundingClientRect(), view = viewport.getBoundingClientRect();
     if (cam.z < 0.5 || box.left < view.left || box.top < view.top || box.right > view.right || box.bottom > view.bottom) flyToCard(article.dataset.id!);
   });
   viewport.addEventListener("pointerdown", (event) => {

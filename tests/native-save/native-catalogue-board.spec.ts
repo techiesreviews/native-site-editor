@@ -272,6 +272,27 @@ test("the live Button reacts to a real hover, press and keyboard, and the board 
   expect(await camera()).toBe(before);
 });
 
+test("the keyboard reaching a live Button already in view leaves the board where it is", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true }).click();
+  await expectInView(page, "button");
+  await settled(page);
+  // Moved off the card's centre, the Button still in view: only a control out of view brings the camera along.
+  const canvas = (await page.getByRole("region", { name: "Canvas" }).boundingBox())!;
+  await page.mouse.move(canvas.x + 20, canvas.y + canvas.height - 20);
+  await page.mouse.wheel(30, 30);
+  const camera = () => page.locator(".cat-world").evaluate((world) => world.style.transform);
+  await expect.poll(async () => { const one = await camera(); await page.waitForTimeout(200); return one === await camera(); }).toBe(true);
+  const before = await camera();
+  await expectInView(page, "button");
+  await page.keyboard.press("Shift");
+  const button = page.locator('#card-button [data-cell="live"] button');
+  await button.focus();
+  await expect(button).toBeFocused();
+  await page.waitForTimeout(400);
+  expect(await camera()).toBe(before);
+});
+
 test("the keyboard reaching a live cell too small to see selects its card and brings it into view", async ({ page, baseURL }) => {
   await openBoard(page, baseURL);
   // The whole board in view: every card drawn, each too small to use.
