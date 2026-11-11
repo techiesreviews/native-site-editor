@@ -114,6 +114,8 @@ test("key: one key is one cap, several are a group of caps, none is nothing", ()
   assert.equal(keyMarkup(["Page Down"]), '<kbd class="ui-key">Page Down</kbd>');
   assert.equal(keyMarkup("Ctrl+K"), '<kbd class="ui-key" data-combo><kbd>Ctrl</kbd><kbd>K</kbd></kbd>');
   assert.equal(keyMarkup(["⌘", ","]), '<kbd class="ui-key" data-combo><kbd>⌘</kbd><kbd>,</kbd></kbd>');
+  assert.deepEqual(keyList(["Ctrl", "+"]), ["Ctrl", "+"], "a + key needs the list form");
+  assert.equal(keyMarkup(["Ctrl", "+"]), '<kbd class="ui-key" data-combo><kbd>Ctrl</kbd><kbd>+</kbd></kbd>');
   assert.equal(keyMarkup(""), "");
   assert.equal(keyMarkup([" ", ""]), "");
   assert.equal(keyMarkup("<b>"), '<kbd class="ui-key">&lt;b&gt;</kbd>', "escaped");

@@ -787,6 +787,26 @@ test("a long badge is cut inside its stage, a mark with no icon draws the check,
   expect(widths.badge).toBeLessThanOrEqual(widths.stage + 0.5);
   expect(widths.cut).toBe(true);
 
+  // In a flex row beside a title the badge shrinks too, so its words are cut and the title keeps its room.
+  const row = await stage.evaluate((element) => {
+    element.style.display = "flex";
+    const title = document.createElement("span");
+    title.textContent = "Title";
+    element.prepend(title);
+    const badgeEl = element.querySelector<HTMLElement>(":scope > .ui-badge")!;
+    const result = {
+      fits: badgeEl.getBoundingClientRect().right <= element.getBoundingClientRect().right + 0.5,
+      cut: badgeEl.firstElementChild!.scrollWidth > badgeEl.firstElementChild!.clientWidth,
+      title: title.getBoundingClientRect().width,
+    };
+    title.remove();
+    element.style.display = "";
+    return result;
+  });
+  expect(row.fits).toBe(true);
+  expect(row.cut).toBe(true);
+  expect(row.title).toBeGreaterThan(0);
+
   // Only the inline axis is cut: accents and descenders keep their room (the span is as tall as its words).
   await stage.evaluate((element) => { element.style.inlineSize = ""; });
   await options.getByRole("textbox", { name: "Words" }).fill("Égypte jumpy");
