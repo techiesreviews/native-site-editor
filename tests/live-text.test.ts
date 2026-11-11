@@ -1244,6 +1244,8 @@ test("liveShared: a file is shared in a live room only while another tab is in, 
   const room = fakeRoom();
   const lex = tab(room);
   const key = draftKey(scope, path);
+  // Until the room says who is here, the page may be shared: an outside change loads the branch again rather than fold in.
+  assert.equal(liveShared(lex.store, key), true, "before the room answers");
   await quiet();
   assert.equal(liveShared(lex.store, key), false, "alone, nobody shares it");
   const anna = tab(room, base, { account: "anna" });

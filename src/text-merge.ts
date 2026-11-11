@@ -1,8 +1,9 @@
 // The three-way text merge (ticket am-33): a draft and GitHub's new text, both changed from the text the draft started
 // from, merged by line and then by word inside lines both changed, so only the same words changed on both sides clash
-// (ticket 09). Used by outside changes folding in (src/outside-merge.ts) and by a shared copy taking a tab that joins
-// it from a newer version (src/live-text.ts). No DOM, no I/O.
+// (ticket 09). Used by outside changes folding in (src/outside-merge.ts); its diff by runs (`runChanges`) by a shared
+// copy putting back what a tab typed while away (src/live-text.ts). No DOM, no I/O.
 
+import type { TextChange } from "./draft-store";
 
 /** Past this many line differences one side is taken as a single change (Myers' trace grows with its square). */
 const MAX_LINE_EDITS = 2_000;
@@ -119,6 +120,16 @@ function mergeParts(baseParts: string[], ourParts: string[], theirParts: string[
   }
   const rest = baseParts.slice(at).join("");
   return { text: text + rest, mine: mine + rest, clashed };
+}
+
+/** The changes that turn `from` into `to` by runs of white space and runs of anything else, in order: the runs both
+ * have stay out of every change, so a word is changed whole or not at all. */
+export function runChanges(from: string, to: string): TextChange[] {
+  const runs = (text: string) => text.match(/\s+|\S+/g) ?? [];
+  const a = runs(from), b = runs(to), [x, y] = numbered(a, b);
+  const offsets = [0];
+  for (const part of a) offsets.push(offsets.at(-1)! + part.length);
+  return hunks(x, y, b).map(hunk => ({ start: offsets[hunk.start], end: offsets[hunk.end], text: hunk.lines.join("") }));
 }
 
 /**
