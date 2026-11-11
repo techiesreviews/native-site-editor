@@ -16,6 +16,22 @@ test("runChanges: a word is changed whole or not at all, and the words both text
   assert.deepEqual(runChanges("«1» «3» «4» <p>", "«6» «1» «3» <p>"), [{ start: 0, end: 0, text: "«6» " }, { start: 8, end: 12, text: "" }]);
   assert.deepEqual(runChanges("Open at seven.", "Open at half past seven."), [{ start: 8, end: 8, text: "half past " }]);
   assert.deepEqual(runChanges("same", "same"), []);
+  // At the start and end of a word, and several runs: the whole word changes.
+  assert.deepEqual(runChanges("one two three", "one twofold three"), [{ start: 4, end: 7, text: "twofold" }]);
+  assert.deepEqual(runChanges("a b c d", "x b y d!"), [{ start: 0, end: 1, text: "x" }, { start: 4, end: 5, text: "y" }, { start: 6, end: 7, text: "d!" }]);
+});
+
+test("runChanges: its changes, made from the end back, always turn one text into the other (seeded)", () => {
+  let state = 7;
+  const next = (n: number) => { state = (Math.imul(state, 1103515245) + 12345) >>> 0; return state % n; };
+  const pieces = ["a", "b", "«1»", " ", "  ", "\n", "<p>", "</p>", "x y"];
+  const text = () => Array.from({ length: next(12) }, () => pieces[next(pieces.length)]).join("");
+  for (let run = 0; run < 2_000; run++) {
+    const from = text(), to = next(4) ? text() : from;
+    let made = from;
+    for (const change of runChanges(from, to).reverse()) made = made.slice(0, change.start) + change.text + made.slice(change.end);
+    assert.equal(made, to, JSON.stringify({ from, to }));
+  }
 });
 
 test("mergeText: different lines merge by themselves, from either side", () => {

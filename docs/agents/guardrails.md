@@ -3,7 +3,7 @@
 Automated checks for mistakes made during Phase 5 (retro, 2026-10-08). Each one is mechanical and gives the same result on every run.
 
 - **`main.ts` line ceiling** (`tests/main-ts-ceiling.test.ts`, part of `npm test`): fails above `CEILING`; at 50 or more lines below it, asks to lower the ceiling to the count rounded up to a multiple of 10.
-- **Typing together** (`tests/live-text-converge.test.ts`, part of `npm test`; `kit unit --affected` picks it for any change that reaches `src/live-text.ts`; sweep 2026-11-10 item 1): 150 seeded random runs, plus the seeds it once failed, of tabs and agents sharing one file (joining, typing, leaving, reloading, saving, dropping their connection and folding in outside changes). A run fails when tabs on one file version end on different texts, or a word is doubled, cut apart or lost. `LIVE_SEED=<seed>` replays one run, its steps in the message.
+- **Typing together** (`tests/live-text-converge.test.ts`, part of `npm test`; `kit unit --affected` picks it for any change that reaches `src/live-text.ts`; sweep 2026-11-10 item 1): 150 seeded random runs, plus the seeds it once failed, of tabs and agents sharing one file (joining, typing, leaving, reloading, saving, dropping their connection and folding in outside changes). A run fails when tabs on one file version end on different texts, or a word is doubled, cut apart or lost. Tabs on two versions are compared apart: their copies never mix by design until folding into a live room exists (am-59). `LIVE_SEED=<seed>` replays one run, its steps in the message.
 
 ## Hooks
 
