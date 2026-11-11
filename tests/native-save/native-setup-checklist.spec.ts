@@ -115,8 +115,12 @@ test("dismissing setup keeps it hidden after reload and the repository menu offe
 test("the checklist is keyboard operable and fits a narrow window", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await startBlankSite(page, baseURL);
-  // On a phone the pill leaves the one-row top bar for its Menu (atomic catalogue ticket 66).
+  // On a phone the pill leaves the one-row top bar for its Menu (atomic catalogue ticket 66): the bar stays one row.
   await expect(pill(page)).toBeHidden();
+  const bar = (await page.locator(".topbar").boundingBox())!;
+  expect(bar.height).toBeLessThanOrEqual(45);
+  const name = (await page.locator("#explorer-toggle").boundingBox())!;
+  expect(Math.abs(name.y + name.height / 2 - (bar.y + bar.height / 2))).toBeLessThanOrEqual(2);
   const menu = page.getByRole("banner").getByRole("button", { name: "Menu", exact: true });
   await menu.focus();
   await page.keyboard.press("Enter");

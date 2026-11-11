@@ -108,6 +108,11 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
   const devices = () => [...app.querySelectorAll<HTMLButtonElement>(".canvas-bar:not([hidden]) .canvas-device")];
   const history = () => find<HTMLButtonElement>("#history-button:not(:disabled)");
   const setupPill = () => find<HTMLButtonElement>(".setup-checklist:not([hidden]) .setup-pill");
+  // The pill says "Setup 2/5", or "Set up" once done: the row says "2 of 5" or "Done".
+  const setupProgress = () => {
+    const steps = /(\d+)\/(\d+)/.exec(setupPill()?.textContent ?? "");
+    return steps ? `${steps[1]} of ${steps[2]}` : "Done";
+  };
 
   // Closes the sheet, then works the control (whose own menu or panel may open once the page is in reach again).
   const handOver = (run: () => void) => () => {
@@ -163,7 +168,7 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
   }
 
   const rows: Record<MenuRow, () => HTMLElement> = {
-    setup: () => rowButton("list-checks", "Set up your site", handOver(() => setupPill()?.click()), setupPill()?.textContent ?? ""),
+    setup: () => rowButton("list-checks", "Set up your site", handOver(() => setupPill()?.click()), setupProgress()),
     pages: () => rowButton("file", "Pages", handOver(() => find<HTMLButtonElement>("#explorer-toggle")?.click()), find("#current-page")?.textContent ?? ""),
     blocks: () => rowButton("plus", "Add a block", () => draw("blocks")),
     structure: () => rowButton("treeStructure", "Page structure", handOver(() => openSheet())),
@@ -229,7 +234,10 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
   // The project menu, History and the setup checklist hand focus back to their own buttons, which a phone's bar
   // leaves out: focus comes back to the Menu they were opened from instead of being lost.
   const handBack = (event: Event) => {
-    if (!trigger.isConnected) return document.removeEventListener("toggle", handBack, true);
+    if (!trigger.isConnected) {
+      document.removeEventListener("toggle", handBack, true);
+      return;
+    }
     const panel = event.target as HTMLElement;
     if ((event as ToggleEvent).newState !== "closed" || !["repository-actions", "changes", "setup-checklist-panel"].includes(panel.id)) return;
     queueMicrotask(() => {

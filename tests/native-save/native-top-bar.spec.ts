@@ -110,6 +110,8 @@ test.describe("phone", () => {
     await expect(page.getByRole("dialog", { name: "History" })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog", { name: "History" })).toBeHidden();
+    // Its button is off the phone's bar: focus comes back to the Menu.
+    await expect(menuButton(page)).toBeFocused();
 
     // Switch site opens the project menu, at the bottom of the screen.
     await menuButton(page).tap();
@@ -118,6 +120,7 @@ test.describe("phone", () => {
     const project = await box(page.locator("#repository-actions"));
     expect(project.y + project.height).toBeGreaterThanOrEqual(843);
     await page.keyboard.press("Escape");
+    await expect(menuButton(page)).toBeFocused();
 
     // Share a preview link opens the project menu with its Share rows.
     await menuButton(page).tap();
@@ -132,10 +135,19 @@ test.describe("phone", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog", { name: "Site settings", exact: true })).toBeHidden();
 
-    // Page structure opens the pull-up sheet.
+    // Code opens the pull-up sheet with the code in view.
+    await menuButton(page).tap();
+    await row(page, "Code").tap();
+    const pullUp = page.getByRole("button", { name: "Page structure and code" });
+    await expect(pullUp).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("#code-split")).toBeInViewport();
+    await pullUp.tap();
+    await expect(pullUp).toHaveAttribute("aria-expanded", "false");
+
+    // Page structure opens it too.
     await menuButton(page).tap();
     await row(page, "Page structure").tap();
-    await expect(page.getByRole("button", { name: "Page structure and code" })).toHaveAttribute("aria-expanded", "true");
+    await expect(pullUp).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByRole("complementary", { name: "Page structure" })).toBeVisible();
   });
 
