@@ -159,13 +159,13 @@ function keeper(): CopyKeeper & { copies: Map<string, KeptCopy | undefined> } {
 const settle = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
 
 type Room = ReturnType<typeof relay>;
-type Github = { text: string; sha: string };
+type Github = { text: string; sha: string; copies?: string[] };
 
 /** A tab: its own draft store with the file open (GitHub's text, and a draft over it), sharing it live. `seen`: GitHub's
  * version of the file in the tab's workspace (what its last load or head check read; src/live-text.ts `github`, which
- * asks whether it is still the newest); `heard` runs when a push notice reaches it. */
+ * also reads GitHub's newest version and the version before each one); `heard` runs when a push notice reaches it. */
 function openTab(room: Room, time: ReturnType<typeof fakeClock>, name: string, browser: ReturnType<typeof keeper>, from: { base: string; sha: string; text: string; seen: string },
-  heard: (tab: Tab) => void, versions: ReadonlyMap<string, string>, newest: () => string, yjs: typeof Y) {
+  heard: (tab: Tab) => void, versions: ReadonlyMap<string, string>, newest: () => Github, before: (sha: string) => Github[], yjs: typeof Y) {
   const store = createDraftStore();
   (store as any).__name = name;
   store.open(scope, path, { text: from.base, baseSha: from.sha });
@@ -184,7 +184,7 @@ function openTab(room: Room, time: ReturnType<typeof fakeClock>, name: string, b
     store, openFile, scope: () => scope, on: true, clock: time.clock, keeper: browser, authors: createSaveAuthors(),
     openRoom: options => (socket = room.open(options)),
     loadYjs: async () => yjs,
-    github: () => ({ sha: tab.seen, text: versions.get(tab.seen)!, current: async () => tab.seen === newest(), newest: async () => ({ sha: newest(), text: versions.get(newest())! }) }),
+    github: () => ({ sha: tab.seen, text: versions.get(tab.seen)!, newest: async () => newest(), before: async function* (sha) { yield* before(sha); } }),
     onPushed: () => heard(tab),
   });
   return tab;
@@ -224,6 +224,9 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
   let github: Github = { text: START, sha: shaOf(START) };
   /** Every version of the file GitHub had, by blob sha. */
   const versions = new Map<string, string>([[github.sha, github.text]]);
+  /** GitHub's history of the file, oldest first: the versions before one are those before its latest occurrence here. */
+  const history = [github.sha], commits = new Map<string, Github>([[github.sha, github]]);
+  const older = (sha: string) => history.slice(0, Math.max(history.lastIndexOf(sha), 0)).reverse().map(made => commits.get(made)!);
   let words = 0, browsers = 0;
   /** Every word typed, by whom, and the words someone deleted: those may be gone. */
   const typed = new Map<string, string>(), gone = new Set<string>();
@@ -257,10 +260,12 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
     };
     if (liveShared(tab.store, tab.file.key)) {
       say(`  ${tab.name} hears ${next.sha.slice(0, 7)} (${why}) and folds it into the room's copy`);
-      void liveFold(tab.store, tab.file.key, { sha: next.sha, text: next.text, author: "Sam · GitHub" }).then(took => {
+      void liveFold(tab.store, tab.file.key, { ...next, author: "Sam · GitHub" }).then(took => {
         say(`    ${tab.name}'s fold of ${next.sha.slice(0, 7)}: ${took === undefined ? "not shared" : took ? `taken, base ${tab.file.baseSha?.slice(0, 7)}` : "refused"}`);
         if (took === undefined && open().includes(tab) && tab.file.baseSha === was) intoDraft();
-        else if (took === false) failures.push(`${tab.name} could not fold ${next.sha.slice(0, 7)}`);
+        // Refused (a save's note did not come in time, or the copy could not take it): the branch loads again, as
+        // src/controllers/save-publish-controller.ts `checkHead` does, and the page comes back with its draft.
+        else if (took === false) { const entry = tabs.find(item => item.tab === tab); if (entry?.open) reopen(entry, true); }
       }, error => failures.push(`${tab.name}: ${error}`));
       return;
     }
@@ -280,7 +285,7 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
   /** Each tab's words before its latest change, for `watch`. */
   const watched = new Map<Tab, Set<string>>();
   const make = (name: string, browser: ReturnType<typeof keeper>, from: Parameters<typeof openTab>[4]) => {
-    const tab = openTab(room, time, name, browser, from, pushed => hear(pushed, "push notice"), versions, () => github.sha, yjs);
+    const tab = openTab(room, time, name, browser, from, pushed => hear(pushed, "push notice"), versions, () => github, older, yjs);
     const unwatch = watch(tab);
     const before = tab.store.subscribe(event => { if (event.type === "text") watched.set(tab, new Set(event.text.match(WORD) ?? [])); });
     const stop = tab.stop;
@@ -325,6 +330,8 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
   const commit = (next: Github) => {
     github = next;
     versions.set(next.sha, next.text);
+    commits.set(next.sha, next);
+    history.push(next.sha);
     room.push(next.sha);
   };
   /** A tab saves its draft over GitHub's newest version (a save over an older one is refused): through the room, so the
@@ -332,11 +339,11 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
   const save = (tab: Tab) => {
     const text = tab.text, sha = shaOf(text);
     if (tab.openFile.peek() !== path || sha === github.sha || tab.file.baseSha !== github.sha || tab.seen !== github.sha) return;
-    noteLiveSave(tab.file.key, text, tab.store);
+    const copies = noteLiveSave(tab.file.key, text, tab.store);
     tab.store.markSaved(scope, path, { baseSha: sha, original: text });
     tab.seen = sha;
-    say(`${tab.name} saves ${sha.slice(0, 7)}`);
-    commit({ text, sha });
+    say(`${tab.name} saves ${sha.slice(0, 7)}${copies.length ? ` from copy ${copies[0].slice(0, 7)}` : ""}`);
+    commit({ text, sha, ...(copies.length ? { copies } : {}) });
   };
   const outside = () => {
     const at = pick.pick(gaps(github.text)), made = word("github");
