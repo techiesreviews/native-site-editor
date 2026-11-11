@@ -13,8 +13,8 @@
 // - Two edges into one version (two tabs folding from different versions at once, or a save folded in as an outside
 //   change before its note arrived): the copy keeps one way there and every tab takes the other's words out
 //   (`superseded`), so each word of GitHub's text shows once. Kept is a save; else the edge that came by more versions;
-//   else, from the same version, the lowest client id. Edges from versions neither of which came before the other stay
-//   both (a known limit: two tabs that each skipped a different commit of a burst).
+//   else, from the same version, the lowest client id. Two versions neither of which came before the other in the copy
+//   (two tabs that each folded a different commit of a burst) are put in order by their texts and joined (`joinOf`).
 // - The clash rule (ticket 09, as src/outside-merge.ts): the latest version shows. A tab takes its own words out where
 //   GitHub's change replaced the words around them (`clashes`, matched against src/text-merge.ts `mergeText`), as one
 //   Undo step of its own.
@@ -54,15 +54,25 @@ const clientKey = (client: number) => client.toString(16).padStart(8, "0");
 
 /**
  * `change` on `text` as whole words, from the end of the text back: widened to the white space around it, then split
- * where it keeps runs of the text, so the words it kept are not written again. Written into a shared copy, a single
+ * where it keeps runs of the text, so the words it kept are not written again. A word kept with text put right
+ * against it stays as it is too (only what was put against it is written), so a word of GitHub's that someone typed up
+ * against is not written again by every tab that has it so. Written into a shared copy, a single
  * range would take others' words in it away and type its own again (sweep 2026-11-10 item 1).
  */
 export function wordRuns(text: string, change: TextChange): TextChange[] {
   let begin = change.start, end = change.end;
   while (begin > 0 && !/\s/.test(text[begin - 1])) begin--;
   while (end < text.length && !/\s/.test(text[end])) end++;
-  return runChanges(text.slice(begin, end), text.slice(begin, change.start) + change.text + text.slice(change.end, end))
-    .map(run => ({ start: begin + run.start, end: begin + run.end, text: run.text })).reverse();
+  const out: TextChange[] = [];
+  for (const run of runChanges(text.slice(begin, end), text.slice(begin, change.start) + change.text + text.slice(change.end, end))) {
+    const start = begin + run.start, stop = begin + run.end, kept = text.slice(start, stop), at = kept ? run.text.indexOf(kept) : -1;
+    // A word kept with text put right against it: the word stays as it is, and only what was put against it is written.
+    if (at >= 0) {
+      if (at) out.push({ start, end: start, text: run.text.slice(0, at) });
+      if (at + kept.length < run.text.length) out.push({ start: stop, end: stop, text: run.text.slice(at + kept.length) });
+    } else out.push({ start, end: stop, text: run.text });
+  }
+  return out.reverse();
 }
 
 /** `changes`, ordered from the end of the text back, made on `text`. */
@@ -128,6 +138,37 @@ export function superseded(all: readonly Edge[]) {
     }
   }
   return out;
+}
+
+/**
+ * Two versions the copy holds of which neither came before the other there (two tabs each folded a different commit of
+ * a burst, or a save's note arrived after a commit made on it was folded from an older version). GitHub's history of a
+ * branch is one line, so one came first: the later one holds the earlier one's changes (merged from the newest version
+ * both came from, the earlier one's changes are already in the later one's text). Returns the way to write from the
+ * earlier to the later (the copy then keeps that way, `superseded`), the lowest pair first; none when there is no such
+ * pair or the texts cannot tell. A save is never written into: its way is the one kept already.
+ */
+export function joinOf(Y: Yjs, doc: Doc, all: readonly Edge[]): { from: Edge; to: string; text: string } | undefined {
+  const before = ancestry(all), held = [...versionsOf(all)].sort();
+  const saves = new Set(all.filter(edge => edge.client === undefined).map(edge => edge.to));
+  const texts = new Map<string, string | undefined>();
+  const textOf = (version: string) => { if (!texts.has(version)) texts.set(version, textAt(Y, doc, all, version)); return texts.get(version); };
+  for (const a of held) for (const b of held) {
+    if (a >= b || before(a).has(b) || before(b).has(a)) continue;
+    const common = [...before(a)].filter(version => before(b).has(version)).sort();
+    const nearest = common.find(version => !common.some(other => other !== version && before(other).has(version)));
+    if (nearest === undefined) continue;
+    const base = textOf(nearest), textA = textOf(a), textB = textOf(b);
+    if (base === undefined || textA === undefined || textB === undefined) continue;
+    const intoB = mergeText(base, textA, textB), intoA = mergeText(base, textB, textA);
+    const aFirst = intoB.text === textB && (intoA.text !== textA || (!intoB.clashed && intoA.clashed));
+    const bFirst = intoA.text === textA && (intoB.text !== textB || (!intoA.clashed && intoB.clashed));
+    if (aFirst === bFirst) continue;
+    const [older, newer, text] = aFirst ? [a, b, textB] : [b, a, textA];
+    const from = edgeTo(all, older);
+    if (from && !saves.has(newer)) return { from, to: newer, text };
+  }
+  return undefined;
 }
 
 /** The edge that stands for `version`: a save, else one not superseded, the lowest id first. */

@@ -70,7 +70,7 @@ import { saveAuthors, type SaveAuthors } from "./save-authors";
 import type { SaveAuthor } from "../shared/types";
 import { mergeText, runChanges } from "./text-merge";
 import { onLiveSave } from "./live-saves";
-import { birthUpdate, clashes, clientOf, copyAt, draftUpdate, edgeClient, edgeTo as edgeFor, edgeUpdate, edges, headOf, metaOf, reaches, superseded, type Edge,
+import { birthUpdate, clashes, clientOf, copyAt, draftUpdate, edgeClient, edgeTo as edgeFor, edgeUpdate, edges, headOf, joinOf, metaOf, reaches, superseded, type Edge,
   textAt, textWith, tipOf, versionsOf, wordRuns, wordsOf } from "./live-versions";
 
 type Yjs = typeof import("yjs");
@@ -267,16 +267,30 @@ function changesBetween(from: string, to: string, changes?: readonly TextChange[
 /**
  * What was typed since a share began (`began` to `own`), as one change on the kept copy's text (`kept`). Where the
  * kept copy and `began` differ (`stale`), that range is left as the copy has it; a change clear of it moves by its
- * length, and one across it falls back to the whole difference from the copy.
+ * length. Found by characters first; where the typing and the stale range touch there, by words (`runChanges`), so a
+ * word deleted beside a word the copy lacks is not taken for typing; across them still, the whole difference from the
+ * copy.
  */
 export function typedSince(kept: string, began: string, own: string): TextChange | undefined {
   if (own === began) return undefined;
-  const change = diffRange(began, own);
-  if (kept === began) return change;
-  const stale = diffRange(began, kept), shift = stale.text.length - (stale.end - stale.start);
-  if (change.end <= stale.start) return change;
-  if (change.start >= stale.end) return { start: change.start + shift, end: change.end + shift, text: change.text };
-  return diffRange(kept, own);
+  if (kept === began) return diffRange(began, own);
+  return moveClear(kept, [diffRange(began, kept)], [diffRange(began, own)])
+    ?? moveClear(kept, runChanges(began, kept), runChanges(began, own)) ?? diffRange(kept, own);
+}
+/** `typed` (changes on a text, in order) moved past `stale` (changes on the same text, in order) onto `kept`, as one
+ * change; none when one of them crosses a stale range. */
+function moveClear(kept: string, stale: readonly TextChange[], typed: readonly TextChange[]) {
+  const moved: TextChange[] = [];
+  for (const change of typed) {
+    let shift = 0;
+    for (const range of stale) {
+      if (change.end <= range.start) break;
+      if (change.start < range.end) return undefined;
+      shift += range.text.length - (range.end - range.start);
+    }
+    moved.push({ start: change.start + shift, end: change.end + shift, text: change.text });
+  }
+  return diffRange(kept, applyChanges(kept, moved).text);
 }
 
 /** The name-tag Undo (ticket am-24): takes back someone else's latest text change in the open file's shared copy. */
@@ -475,7 +489,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     }
     const keptText = text.toString();
     /** The edges whose clash this tab weighed (or that came before it took part): each is weighed once, as it comes in. */
-    const weighed = new Set(edges(Y, doc).map(edge => edge.id));
+    const weighed = new Set(edges(Y, doc).map(edge => edge.id)), weighedVersions = new Set(edges(Y, doc).map(edge => edge.to));
     const baseVersion = () => { const file = store.get(scope, path); return file && versionOf(file.baseSha, file.base); };
     let keptBase: string | undefined;
     /** This tab is leaving this copy for another of the room (`meet`): it is not kept. */
@@ -632,6 +646,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       for (const edge of all) {
         if (weighed.has(edge.id)) continue;
         weighed.add(edge.id);
+        // A clash is weighed once per version of GitHub's text: a second way into it (`joinVersions`) is the same commit.
+        if (weighedVersions.has(edge.to)) continue;
+        weighedVersions.add(edge.to);
         if (edge.client === undefined || gone.has(edge)) continue;
         const out = clashes(Y, doc, all, edge, client => ownClients.has(client));
         if (!out.length) continue;
@@ -639,6 +656,23 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         store.edit({ scope, path, history: ports.history?.(scope, path), label: `${who}'s change`, changes: out });
       }
       moveBase(all);
+      const signature = all.map(edge => edge.id).join(" ");
+      if (signature !== joinedAt) { joinedAt = signature; joining = joining.then(joinVersions, () => undefined); }
+    }
+    /** The copy's edges when it last looked for versions to put in order, and that work, one at a time. */
+    let joinedAt = "", joining: Promise<unknown> = Promise.resolve();
+    /** Versions out of order in the copy (`joinOf`) are joined, as every tab would join them (the same update). */
+    async function joinVersions() {
+      for (let round = 0; round < 8 && !stopped; round++) {
+        const join = joinOf(Y, doc, versions());
+        if (!join) return;
+        const client = await edgeClient(join.from.to, join.to, join.from.snapshot);
+        if (stopped) return;
+        const update = edgeUpdate(Y, doc, join.from, join.to, join.text, client);
+        if (!update) return;
+        Y.applyUpdate(doc, update, OUTSIDE);
+        settle();
+      }
     }
     /** Another tab brought a newer version of GitHub's text into the copy (its fold, or its workspace read it): this tab's
      * draft, which follows the copy and so holds that version's words, is over that version from now on. */
@@ -774,7 +808,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       keep();
       // Commits that came in before this tab took part are not weighed for a clash: its own words came after them. A
       // resumed copy's words came before the commits it did not hold yet: those are weighed.
-      if (!resume) for (const edge of versions()) weighed.add(edge.id);
+      if (!resume) for (const edge of versions()) { weighed.add(edge.id); weighedVersions.add(edge.to); }
       settle();
       // Changes others sent while this tab was catching up can be taken back from now on.
       if (authors.size) authorsChanged();
