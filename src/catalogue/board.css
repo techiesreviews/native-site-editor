@@ -321,6 +321,8 @@ body:has(> .cat-board) {
 }
 /* A state cell's frame is a picture: the pointer goes to the board. A live cell works, except while the board pans. */
 .cat-iframe:not(.cat-iframe--live),
+/* `.cat-live__stage > *` is the part, or the shadow root's host (display: contents) around it: pointer-events
+   inherit into the shadow tree, and its events reach the board on the host. */
 .cat-board:is(.is-space, .is-panning) :is(.cat-iframe--live, .cat-live__stage > *) {
   pointer-events: none;
 }

@@ -2,6 +2,7 @@
 // The catalogue page loads each one as a <style data-component="<path>"> of its own, so a part's live cell can leave
 // its own file out: the live cell draws inside a shadow root that holds the board's other stylesheets and the file as
 // edited, so an edit (a deleted rule, a selector reaching out) stays inside that cell, as in a page of its own.
+import { forcedSheet } from "./force-states";
 import { PARTS, isPart } from "./parts";
 
 const TEXTS = import.meta.glob<string>("../ui/parts/*.css", { query: "?raw", import: "default", eager: true });
@@ -42,8 +43,10 @@ export interface LiveRoot { root: ShadowRoot; file: CSSStyleSheet }
 
 /**
  * The shadow root a part with its own CSS file draws its live cell in: under `stage`, a host that takes no box of its
- * own (the part lays out as the stage's child), with the board's styles but that file, then `text` in its place.
- * The board's styles are read again when its stylesheets changed (a part's CSS loading later).
+ * own (the part lays out as the stage's child), with the board's styles but that file, then `text` in its place, then
+ * the forced-state copies of both (the State option: hover, pressed and focus without a pointer). The board's styles
+ * are read again on a call after the number of its stylesheets changed (the board calls again once a part has drawn,
+ * for CSS its module brought in).
  */
 export function liveRoot(stage: HTMLElement, path: string, text: string): LiveRoot {
   let host = stage.querySelector<HTMLElement>(":scope > .cat-live__host");
@@ -56,11 +59,13 @@ export function liveRoot(stage: HTMLElement, path: string, text: string): LiveRo
   const root = host.shadowRoot!;
   const known = rooted.get(root);
   const count = document.styleSheets.length;
-  const base = known && known.count === count ? known.base : boardSheet(document, path);
+  const fresh = !known || known.count !== count;
+  const base = fresh ? boardSheet(document, path) : known.base;
+  const baseForced = fresh ? forcedSheet(base.cssRules) : known.baseForced;
   const file = known?.file ?? new CSSStyleSheet();
   file.replaceSync(text);
-  rooted.set(root, { base, file, count });
-  root.adoptedStyleSheets = [base, file];
+  rooted.set(root, { base, baseForced, file, count });
+  root.adoptedStyleSheets = [base, file, baseForced, forcedSheet(file.cssRules)];
   return { root, file };
 }
-const rooted = new WeakMap<ShadowRoot, { base: CSSStyleSheet; file: CSSStyleSheet; count: number }>();
+const rooted = new WeakMap<ShadowRoot, { base: CSSStyleSheet; baseForced: CSSStyleSheet; file: CSSStyleSheet; count: number }>();
