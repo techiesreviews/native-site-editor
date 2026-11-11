@@ -23,7 +23,7 @@
 //
 // Loaded with src/live-text.ts, never at boot.
 
-import { diffRange, type TextChange } from "./draft-store";
+import { applyChanges, diffRange, type TextChange } from "./draft-store";
 import { mergeText, runChanges, splitWords, wordChanges } from "./text-merge";
 
 type Yjs = typeof import("yjs");
@@ -75,6 +75,15 @@ export function wordRuns(text: string, change: TextChange): TextChange[] {
   const out: TextChange[] = [];
   for (const run of runChanges(kept, text.slice(begin, change.start) + change.text + text.slice(change.end, end))) out.push({ start: begin + run.start, end: begin + run.end, text: run.text });
   return out.reverse();
+}
+
+/** Changes that turn `from` into `to` as whole words (`wordRuns` over the range between them), else that one range: text
+ * put in beside a word starting with the same character is not taken for text put in inside that word, which would split
+ * Undo steps around it and cut words apart when they are undone (src/shared-undo.ts). */
+export function wordDiff(from: string, to: string): TextChange[] {
+  const range = diffRange(from, to), words = wordRuns(from, range);
+  try { if (applyChanges(from, words).text === to) return words; } catch { /* The one range, then. */ }
+  return [range];
 }
 
 /** `changes`, ordered from the end of the text back, made on `text`. What replaces a word goes in inside it, after its
@@ -292,6 +301,10 @@ export interface Clash {
   /** GitHub's words coming back as the outside participant writes them, which every tab putting back the same word
    * writes the very same (Yjs takes it once); `out` then finds them in the copy. */
   back?: Uint8Array;
+  /** Whether GitHub's change and the typists' clashed (src/text-merge.ts `mergeText`). Without a clash, `out` only takes
+   * out what the copy holds twice (a word typed and saved here that came in again as GitHub's): no one's change, no
+   * Undo step, as src/outside-merge.ts `foldFile` makes none. */
+  clashed?: boolean;
 }
 
 /** How well a change's end sits between characters `left` and `right`: a line, white space, a tag's or the text's edge. */
@@ -388,7 +401,7 @@ export function clashes(Y: Yjs, doc: Doc, all: readonly Edge[], edge: Edge, mine
         if (last && last.end === index) last.end++; else out.push({ start: index, end: index + 1, text: "" });
       }
     }
-    return { out: out.reverse() };
+    return { out: out.reverse(), clashed: true };
   };
   // Only where the copy and the merged text differ.
   let head = 0, tail = 0;
@@ -442,7 +455,7 @@ export function clashes(Y: Yjs, doc: Doc, all: readonly Edge[], edge: Edge, mine
   // change making a word neither the copy, GitHub nor the older version has (a word cut apart, two glued) is not made.
   const runs = new Set(`${current} ${theirs} ${base}`.split(/\s+/));
   if (out.reduce((text, change) => text.slice(0, change.start) + change.text + text.slice(change.end), current).split(/\s+/).some(run => !runs.has(run))) return ownWords();
-  if (!back.length) return { out };
+  if (!back.length) return { out, clashed: merged.clashed };
   // Each word of the older version with a character coming back, written again whole as GitHub's version has it, in its
   // own place (as `apply` replaces a word), its own characters taken out: one way per word, the same in every tab.
   const starts: number[] = [];
@@ -456,5 +469,5 @@ export function clashes(Y: Yjs, doc: Doc, all: readonly Edge[], edge: Edge, mine
     const client = hashClient(`back\n${edge.id}\n${chars[0].client}:${chars[0].clock}`);
     updates.push(writeOn(Y, doc, edge.snapshot, client, source => apply(source, [{ start, end: start + chars.length, text: chars.map(char => char.ch).join("") }])).update);
   }
-  return updates.length ? { out, back: Y.mergeUpdates(updates) } : { out };
+  return updates.length ? { out, back: Y.mergeUpdates(updates), clashed: merged.clashed } : { out, clashed: merged.clashed };
 }
