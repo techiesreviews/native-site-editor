@@ -491,8 +491,10 @@ const MOLECULES: Part[] = [
 // file's editor; here it is drawn with the same classes and the Save menu's place is a plain Publish button
 // (organisms 58 and 62 rebuild those, inside this bar).
 async function topBar(values: Values, phone: boolean, open: boolean) {
+  // The toolbar's and Publish's own stylesheets load with the file's editor in the editor; the board loads them here.
   const [{ node }, { iconMarkup }, { createRepositoryMenu }, { signal }] = await Promise.all([
     import("../ui/dom"), import("../icons"), import("../components/repository-menu"), import("@preact/signals-core"),
+    import("../components/source-editor.css"), import("../components/publish-menu.css"),
   ]);
   const project = str(values.project) || "techies-site";
   const host = node("div", "cat-top-bar");

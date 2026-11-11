@@ -415,7 +415,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       if (!phone.matches && topBar.isConnected) return;
       phone.removeEventListener("change", onPhone);
       if (!topBar.isConnected) return;
-      void import("./components/top-bar-phone").then((module) => module.mountTopBarPhone(ports)).catch(ports.errorMessage);
+      void import("./components/top-bar-phone").then((module) => topBar.isConnected && module.mountTopBarPhone(ports)).catch(ports.errorMessage);
     };
     phone.addEventListener("change", onPhone);
     onPhone();
