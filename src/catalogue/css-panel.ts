@@ -1,7 +1,7 @@
 // The CSS section's controls (css-file.ts writes the live CSS and the change request): the part's own component CSS
 // file in a code field, shown on its live cell as it is typed, Reset, and "Send to agent", which says Copied on itself.
 import { iconMarkup, svgElement } from "../icons";
-import { cssChangeRequest, cssProblem, liveCss } from "./css-file";
+import { cssChangeRequest, editProblem } from "./css-file";
 import { copy } from "./tweak-panel";
 
 /**
@@ -20,18 +20,7 @@ export interface CssPanel {
 }
 
 let fieldIds = 0;
-
-/**
- * Why the text cannot be shown on the live cell, or "": the text check first, then the browser's own reading, where
- * the edit nested in the cell's scope must stay the two rules it is written as, nothing reaching past them.
- */
-function problemOf(text: string, before: string): string {
-  const wrong = cssProblem(text);
-  if (wrong) return wrong;
-  const sheet = new CSSStyleSheet();
-  try { sheet.replaceSync(liveCss(before, text, ".cat-live__stage")); } catch { return "The browser cannot read this file"; }
-  return sheet.cssRules.length === 2 ? "" : "A rule closes past the end of the file";
-}
+const problemOf = (text: string, before: string) => editProblem(text, before, CSSStyleSheet);
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
   const element = document.createElement(tag);

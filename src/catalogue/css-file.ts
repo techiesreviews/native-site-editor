@@ -111,6 +111,21 @@ export function liveCss(original: string, edited: string, scope: string): string
   return `:where(${scope}) { ${revertCopy(original)} }\n:where(${scope}) {\n${withoutOrder(edited)}\n}`;
 }
 
+/** What the browser's stylesheet parser needs to read a file: `CSSStyleSheet` on the board. */
+export interface SheetReader { new(): { replaceSync(text: string): void; readonly cssRules: { readonly length: number } } }
+
+/**
+ * Why the edited file cannot be shown on the live cell, or "": the text check first, then the browser's own reading,
+ * where the edit nested in the cell's scope must stay the two rules it is written as, nothing reaching past them.
+ */
+export function editProblem(edited: string, original: string, Sheet: SheetReader): string {
+  const wrong = cssProblem(edited);
+  if (wrong) return wrong;
+  const sheet = new Sheet();
+  try { sheet.replaceSync(liveCss(original, edited, ".cat-live__stage")); } catch { return "The browser cannot read this file"; }
+  return sheet.cssRules.length === 2 ? "" : "A rule closes past the end of the file";
+}
+
 /** The plain-text change request "Send to agent" copies; "" when the file is unchanged. */
 export function cssChangeRequest(part: { id: string; name: string }, path: string, before: string, after: string): string {
   if (before === after) return "";

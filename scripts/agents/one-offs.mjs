@@ -61,7 +61,7 @@ const handTypedUnit = /\d(?:px|rem|em|ch|ex|vw|vh|vi|vb|vmin|vmax|cqi|cqb|ms|s)\
  * Every hand-typed value in one CSS file's text, with its 1-based line. Comments are blanked, lines kept. In a file on
  * the components layer (docs/wayfinder/atomic-catalogue/css-layers-plan.md), a component's own hook such as
  * `--btn-padding-block` counts as the counted property its name ends in (`padding-block`); a hook that ends in none
- * (`--btn-font-weight`) counts as a local custom property only when it holds a hand-typed length or time.
+ * (`--btn-font-weight`) counts as a local custom property only when it holds a hand-typed length, time or percentage.
  */
 export function oneOffs(text, { file = "" } = {}) {
   const code = text.replace(/\/\*[\s\S]*?\*\//g, comment => comment.replace(/[^\n]/g, " "));
