@@ -543,14 +543,15 @@ test("the Icon's live cell puts its words on the side Place says, and draws a ba
   await expect(line).toHaveText("Save");
   await expect(line.locator("> :first-child")).toHaveJSProperty("localName", "svg");
   await expect(line.locator("> svg")).toHaveAttribute("data-place", "before");
-  // The icon's gap sits on the words' side only: after the icon here.
-  const margins = () => line.locator("> svg").evaluate((svg) => {
-    const style = getComputedStyle(svg);
-    return { end: parseFloat(style.marginInlineEnd), start: parseFloat(style.marginInlineStart), font: parseFloat(style.fontSize) };
-  });
-  const before = await margins();
-  expect(before.start).toBe(0);
-  expect(before.end).toBeCloseTo(before.font * 0.3, 1);
+  // The gap is the shared small space, on the line, not a margin on the icon.
+  const gap = () => line.evaluate((element) => ({
+    gap: parseFloat(getComputedStyle(element).columnGap),
+    token: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--space-3xs")),
+    margin: parseFloat(getComputedStyle(element.querySelector("svg")!).marginInlineStart) + parseFloat(getComputedStyle(element.querySelector("svg")!).marginInlineEnd),
+  }));
+  const before = await gap();
+  expect(before.gap).toBe(before.token);
+  expect(before.margin).toBe(0);
   // A text node (nodeType 3) after the icon.
   expect(await line.evaluate((element) => element.lastChild?.nodeType)).toBe(3);
 
@@ -558,9 +559,7 @@ test("the Icon's live cell puts its words on the side Place says, and draws a ba
   await expect(line.locator("> svg")).toHaveAttribute("data-place", "after");
   await expect(line.locator("> :last-child")).toHaveJSProperty("localName", "svg");
   expect(await line.evaluate((element) => element.firstChild?.nodeType)).toBe(3);
-  const after = await margins();
-  expect(after.end).toBe(0);
-  expect(after.start).toBeCloseTo(after.font * 0.3, 1);
+  expect((await gap()).gap).toBe(before.token);
 
   // Right to left: Before words puts the icon on the right.
   await options.getByRole("combobox", { name: /^Place/ }).selectOption("before");
@@ -571,8 +570,26 @@ test("the Icon's live cell puts its words on the side Place says, and draws a ba
   await stage.evaluate((element) => element.removeAttribute("dir"));
   await options.getByRole("combobox", { name: /^Place/ }).selectOption("after");
 
-  // Nothing to stand beside: the icon is drawn alone, with no wrapper.
-  await options.getByRole("textbox", { name: "Words" }).fill("");
-  await expect(stage.locator("> svg.icon")).toHaveCount(1);
-  await expect(stage.locator("> svg.icon")).not.toHaveAttribute("data-place", /.*/);
+  // Nothing to stand beside (no words, or only spaces): the icon is drawn alone, with no wrapper.
+  for (const blank of ["", "   "]) {
+    await options.getByRole("textbox", { name: "Words" }).fill(blank);
+    await expect(stage.locator("> svg.icon")).toHaveCount(1);
+    await expect(stage.locator("> svg.icon")).not.toHaveAttribute("data-place", /.*/);
+  }
+
+  // The part itself: words may be an element, and Alone drops them.
+  const drawn = await page.evaluate(async () => {
+    const { iconPart } = await import("/src/ui/parts/icon.ts");
+    const strong = document.createElement("strong");
+    strong.textContent = "Next";
+    const withElement = iconPart("check", { place: "after", words: strong });
+    const alone = iconPart("check", { place: "alone", words: "Save" });
+    return {
+      lineClass: withElement.getAttribute("class"),
+      order: [...withElement.children].map((child) => child.localName),
+      aloneName: alone.localName,
+      alonePlace: alone.getAttribute("data-place"),
+    };
+  });
+  expect(drawn).toEqual({ lineClass: "icon-line", order: ["strong", "svg"], aloneName: "svg", alonePlace: null });
 });

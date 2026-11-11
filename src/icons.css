@@ -6,25 +6,26 @@
   margin-inline: auto;
 }
 .icon--after,
-.icon--before,
-.icon[data-place] {
+.icon--before {
   display: inline-block;
   vertical-align: -0.125em;
 }
-.icon--after,
-.icon[data-place="after"] {
+.icon--after {
   margin-inline: 0.3em 0;
 }
-.icon--before,
-.icon[data-place="before"] {
+.icon--before {
   margin-inline: 0 0.3em;
 }
 
-/* The Icon part beside words (iconPart): one line, the words kept on it like a control's label. */
+/* The Icon part beside words (iconPart): one line, the words kept on it like a control's label, the gap a shared space. */
 .icon-line {
   display: inline-flex;
   align-items: center;
+  gap: var(--space-3xs);
   white-space: nowrap;
+}
+.icon-line > .icon {
+  margin-inline: 0;
 }
 
 /* Icons a stylesheet draws as a ::before: the rule sets `mask-image` to one
