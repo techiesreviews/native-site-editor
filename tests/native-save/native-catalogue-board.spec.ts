@@ -422,6 +422,8 @@ test("after a click in a live frame, a key there and then Tab into the next card
 test("Tweak edits the live Button's CSS in light and dark, resets it, and Send to agent copies the change request", async ({ page, baseURL }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await openBoard(page, baseURL);
+  // A menu or dialog drawing in a state frame takes focus for a moment, which would take a field's typing with it.
+  await settled(page);
   await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true }).click();
   const options = page.getByRole("complementary", { name: "Options" });
   const tweak = options.getByRole("region", { name: "Tweak" });
