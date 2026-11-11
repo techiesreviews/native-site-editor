@@ -66,6 +66,8 @@ export interface PageBuilderHostPorts {
   lazyModule: <T>(load: () => Promise<T>) => () => Promise<T>;
   loadSiteSettings: () => Promise<ReturnType<typeof import("./native-settings").createNativeSettings>>;
   errorMessage: (error: unknown) => void;
+  /** The editor's GitHub reads (src/github-reads.ts `api`). */
+  api: <T>(path: string, params?: Record<string, string>) => Promise<T>;
   announce: (text: string) => void;
   currentLoad: () => number;
   setupScope: () => string;
@@ -105,7 +107,7 @@ export interface PageBuilderHostPorts {
 
 export function createPageBuilderHost(ports: PageBuilderHostPorts) {
   // Consts and functions main.ts never reassigns, read once; its `let` state and later consts stay `ports.` reads.
-  const { app, appStore, runtime, workspaceSession, editorModule, guardedEdits, element, lazyModule, loadSiteSettings, errorMessage, announce,
+  const { app, appStore, runtime, workspaceSession, editorModule, guardedEdits, element, lazyModule, loadSiteSettings, errorMessage, announce, api,
     currentLoad, setupScope, draftScope, stampOf, nativeHistorySession, nativeRouteInfo, nativeRouteForPath,
     nativeComponentTagForPath, nativePageStyles, nativeImagePaths, ensureNativeTextIndex, wantNativeTextIndex, showNativeWarnings,
     updateCurrentPageLabel, updateNativePreviewSources, updateAgentContext, restoreFile, ensureExplorer, openCreate, nativeSiteReadForCreate } = ports;
@@ -182,7 +184,9 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
       // The open file's shared copy (src/live-text.ts), started with the first component tools, after the first paint.
       // A push notice it hears (ticket am-32) has the branch head checked, as on focus.
       live: { store: editorModule.sourceStore(), openFile: appStore.openFile, scope: draftScope,
-        onPushed: (scope, commit) => ports.pagesAndFiles.savePublish.pushed(scope, commit) },
+        onPushed: (scope, commit) => ports.pagesAndFiles.savePublish.pushed(scope, commit),
+        // GitHub's history of a shared file (ticket am-59): the reads, and the workspace's snapshot and GitHub's texts.
+        github: { api, repo: () => appStore.repository.value?.full_name, snapshot: () => appStore.snapshot.value, base: path => runtime.base.sources.get(path) } },
       openFile: async (path) => {
         const at = workspaceSession.begin(), scope = draftScope();
         previewSelection.recordIntent(path);

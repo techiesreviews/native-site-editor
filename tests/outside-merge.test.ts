@@ -296,19 +296,37 @@ test("foldIn: a draft that is a deletion loads the branch again", async () => {
   assert.deepEqual(f.adopted, []);
 });
 
-test("foldIn: a page typed on together in a live room loads the branch again, and its draft is left as it is", async () => {
+test("foldIn: a page typed on together folds into its live room's copy, never into its draft as well (ticket am-59)", async () => {
   const mine = oldPage.replace("Hi", "Hello");
-  const f = foldSetup(changedIndex(), { drafts: [{ ...scope, version: 1, path: "index.html", baseSha: oldSha, original: oldPage, content: mine, updatedAt: 1 }] });
-  f.store.open(scope, "index.html", { text: oldPage, baseSha: oldSha });
-  f.store.edit({ scope, path: "index.html", text: mine });
-  const asked: string[] = [];
-  f.host.shared = key => { asked.push(key); return true; };
-  assert.equal(await foldIn(f.ports, f.host, f.after.commit, () => true), false);
-  assert.deepEqual(asked, [f.store.get(scope, "index.html")!.key]);
-  assert.equal(f.store.get(scope, "index.html")!.text, mine);
-  assert.equal(f.store.get(scope, "index.html")!.baseSha, oldSha);
-  assert.deepEqual(f.adopted, []);
-  assert.deepEqual(f.visits, []);
+  const live = () => {
+    const f = foldSetup(changedIndex(), { author: "sam", drafts: [{ ...scope, version: 1, path: "index.html", baseSha: oldSha, original: oldPage, content: mine, updatedAt: 1 }] });
+    f.store.open(scope, "index.html", { text: oldPage, baseSha: oldSha });
+    f.store.edit({ scope, path: "index.html", text: mine });
+    const asked: { key: string; sha: string; text: string; author?: string }[] = [];
+    return { f, asked, fold: (took: boolean | undefined) => { f.host.liveFold = async (key, commit) => { asked.push({ key, ...commit }); return took; }; } };
+  };
+  // The room's copy took it: the draft follows the copy (src/live-text.ts), so the fold leaves the draft to it.
+  const taken = live();
+  taken.fold(true);
+  assert.equal(await foldIn(taken.f.ports, taken.f.host, taken.f.after.commit, () => true), true);
+  assert.deepEqual(taken.asked, [{ key: taken.f.store.get(scope, "index.html")!.key, sha: newSha, text: newPage, author: "sam · GitHub" }]);
+  assert.equal(taken.f.store.get(scope, "index.html")!.text, mine);
+  assert.deepEqual(taken.f.adopted, [taken.f.after]);
+  assert.equal(taken.f.visits.length, 1);
+  // Not shared after all (the room said this tab is alone): it folds into the draft as for any file.
+  const alone = live();
+  alone.fold(undefined);
+  assert.equal(await foldIn(alone.f.ports, alone.f.host, alone.f.after.commit, () => true), true);
+  assert.equal(alone.f.store.get(scope, "index.html")!.baseSha, newSha);
+  assert.equal(alone.f.store.get(scope, "index.html")!.text, mergeText(oldPage, mine, newPage).text);
+  // The copy could not take it (GitHub's history unread): the branch loads again, and the draft is left as it is.
+  const refused = live();
+  refused.fold(false);
+  assert.equal(await foldIn(refused.f.ports, refused.f.host, refused.f.after.commit, () => true), false);
+  assert.equal(refused.f.store.get(scope, "index.html")!.text, mine);
+  assert.equal(refused.f.store.get(scope, "index.html")!.baseSha, oldSha);
+  assert.deepEqual(refused.f.adopted, []);
+  assert.deepEqual(refused.f.visits, []);
 });
 
 test("foldIn: while a dialog waits for an answer the branch loads again, and nothing folds", async () => {

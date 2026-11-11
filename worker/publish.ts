@@ -9,6 +9,7 @@ import { EMPTY_COMMIT } from "../shared/types";
 import { GitHub, HttpError } from "./github";
 import { base64Bytes } from "./blobs";
 import { touchesGithubConfig } from "../shared/protected-paths";
+import { liveCopyLines, validLiveCopies } from "../shared/live-copy";
 
 const encoder = new TextEncoder();
 const validSha = (value: unknown): value is string =>
@@ -91,6 +92,7 @@ export function validatePublish(value: unknown): PublishRequest {
     if (flag !== undefined && typeof flag !== "boolean") throw new HttpError(400, "Invalid request.");
   if (data.authors !== undefined && (!Array.isArray(data.authors) || data.authors.length > MAX_AUTHORS || !data.authors.every(validAuthor)))
     throw new HttpError(400, "Invalid request.");
+  if (data.liveCopies !== undefined && !validLiveCopies(data.liveCopies)) throw new HttpError(400, "Invalid request.");
   const workflows = [
     ...new Set(data.files.flatMap((file) => [file.path, ...(file.movedFrom ? [file.movedFrom] : [])]).filter(touchesGithubConfig)),
   ];
@@ -113,13 +115,14 @@ const validAuthor = (value: unknown) => {
 /**
  * The commit message (ADR 0003 decision 6): what it does, then everyone else whose changes it carries. Those with an
  * address go in `Co-authored-by` lines, which GitHub shows as co-authors; the rest are named in the message, agents
- * marked as such.
+ * marked as such. A save from a live room names the room's copy in a `Live-Copy` line (shared/live-copy.ts), after them.
  */
-export function commitMessage(summary: string, authors: readonly SaveAuthor[] = []): string {
+export function commitMessage(summary: string, authors: readonly SaveAuthor[] = [], copies: readonly string[] = []): string {
   const named = authors.filter((author) => !author.email).map((author) => `${author.name.trim()}${author.agent ? " (agent)" : ""}`);
   const trailers = authors.filter((author) => author.email).map((author) => `Co-authored-by: ${author.name.trim()} <${author.email}>`);
   const list = named.length > 1 ? `${named.slice(0, -1).join(", ")} and ${named.at(-1)}` : named[0];
-  return [summary, ...(list ? [`Changes by ${list}.`] : []), ...(trailers.length ? [trailers.join("\n")] : [])].join("\n\n");
+  const lines = [...trailers, ...liveCopyLines(copies)];
+  return [summary, ...(list ? [`Changes by ${list}.`] : []), ...(lines.length ? [lines.join("\n")] : [])].join("\n\n");
 }
 
 /** The user confirmed a save that changes `.github` (`allowGithubConfig`; `allowWorkflows` is the older name). */
@@ -367,7 +370,7 @@ export async function publish(
       `${base}/git/commits`,
       "POST",
       {
-        message: commitMessage(`${commitSummary(data.files, changes)} with Native Site Editor`, data.authors),
+        message: commitMessage(`${commitSummary(data.files, changes)} with Native Site Editor`, data.authors, data.liveCopies),
         tree,
         parents: [head],
       },
@@ -410,7 +413,7 @@ async function startRepository(github: GitHub, repo: Repository, data: PublishRe
     `${github.base(repo)}/contents/${file.path.split("/").map(encodeURIComponent).join("/")}`,
     "PUT",
     {
-      message: commitMessage(`Add ${file.path} with Native Site Editor`, data.authors),
+      message: commitMessage(`Add ${file.path} with Native Site Editor`, data.authors, data.liveCopies),
       content: base64Bytes(encoder.encode(file.content)),
       // An empty repository's first commit makes its default branch.
       ...(data.branch !== repo.default_branch ? { branch: data.branch } : {}),

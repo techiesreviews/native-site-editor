@@ -68,7 +68,8 @@ export function wordRuns(text: string, change: TextChange): TextChange[] {
   while (end < text.length && !/\s/.test(text[end])) end++;
   const kept = text.slice(begin, end), parts = wordChanges(kept, text.slice(begin, change.start) + change.text + text.slice(change.end, end));
   // Text put in strictly inside a word (between two characters of it that stay): the runs it touches are written whole.
-  const edge = (at: number) => at === 0 || at === kept.length || /\s/.test(kept[at - 1]) || /\s/.test(kept[at]);
+  // A tag's edge is a word's edge too: a word put in right before `</p>` or after `<p>` leaves the tag as it is.
+  const edge = (at: number) => at === 0 || at === kept.length || /\s/.test(kept[at - 1]) || /\s/.test(kept[at]) || kept[at - 1] === ">" || kept[at] === "<";
   if (parts.every(part => !part.text || edge(part.start) || edge(part.end))) return parts.map(part => ({ start: begin + part.start, end: begin + part.end, text: part.text })).reverse();
   const out: TextChange[] = [];
   for (const run of runChanges(kept, text.slice(begin, change.start) + change.text + text.slice(change.end, end))) out.push({ start: begin + run.start, end: begin + run.end, text: run.text });

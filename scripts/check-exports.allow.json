@@ -73,5 +73,10 @@
     "file": "worker/starter.ts",
     "name": "NATIVE_STARTER_VERSION",
     "reason": "Browser starter fixtures and component-loader specs load the matching versioned starter assets."
+  },
+  {
+    "file": "src/live-text.ts",
+    "name": "liveState",
+    "reason": "Test seam: tests/live-text.test.ts and tests/live-text-converge.test.ts read whether a file is shared, its room copy and the GitHub versions its copy holds (ticket am-59)."
   }
 ]

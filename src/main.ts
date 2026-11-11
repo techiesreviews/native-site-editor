@@ -231,7 +231,7 @@ const parkedSteps = createParkedSteps({ transitions: step => parkedTransitions(e
 // preview selection, the edit bar and Page Structure controller, page meta and settings, and the card grids.
 // By value: consts and hoisted functions declared above; `let` state and later consts go in as getters, later functions as arrows.
 const pageBuilder = createPageBuilderHost({
-  app, appStore, runtime, workspaceSession, editorModule, guardedEdits, element, lazyModule, loadSiteSettings, errorMessage, announce,
+  app, appStore, runtime, workspaceSession, editorModule, guardedEdits, element, lazyModule, loadSiteSettings, errorMessage, announce, api,
   currentLoad, draftScope, stampOf, nativeRouteInfo, nativeRouteForPath, nativeComponentTagForPath,
   nativePageStyles, nativeImagePaths: (...args) => nativeImagePaths(...args), ensureNativeTextIndex, wantNativeTextIndex, showNativeWarnings, updateCurrentPageLabel,
   updateNativePreviewSources, updateAgentContext,

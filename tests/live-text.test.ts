@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { signal } from "@preact/signals-core";
 import { createDraftStore, type DraftPersistence } from "../src/draft-store";
 import { draftKey, type DraftScope, type SavedDraft } from "../src/drafts";
-import { browserKeeper, LIVE_TEXT_CATCH_UP_MS, liveFold, liveShared, liveVersions, startLiveText, typedSince, type CopyKeeper, type KeptCopy } from "../src/live-text";
+import { browserKeeper, LIVE_TEXT_CATCH_UP_MS, liveFold, liveState, startLiveText, typedSince, type CopyKeeper, type KeptCopy } from "../src/live-text";
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 import { forEachAwait, type AwaitRace } from "./support/await-race";
@@ -260,7 +260,7 @@ test("commit 3 heard before commit 2: each enters the room's copy on top of the 
     liveFold(lex.store, draftKey(scope, path), history[2])]);
   assert.deepEqual(folds, [true, true, true]);
   await until(() => anna.text === three && lex.text === three, "commit 3 on both");
-  const edges = liveVersions(anna.store, draftKey(scope, path)).filter(edge => edge.from).map(edge => `${edge.from[0]}>${edge.to[0]}`).sort();
+  const edges = liveState(anna.store, draftKey(scope, path)).versions.filter(edge => edge.from).map(edge => `${edge.from[0]}>${edge.to[0]}`).sort();
   assert.deepEqual(edges, ["2>3", "a>2"], "commit 2 on the base, commit 3 on commit 2, nothing else");
   assert.equal(anna.store.get(scope, path)?.baseSha, history[2].sha);
   assert.equal(lex.store.get(scope, path)?.baseSha, history[2].sha);
@@ -419,7 +419,7 @@ test("a save landing at any await of loading the copy: the room's one copy takes
     run.loading = !run.anna!.keptRead;
     run.anna!.store.markSaved(scope, path, { baseSha: saved, original: run.anna!.text });
   }, async run => {
-    await until(() => run.lex!.text === run.anna!.text && liveVersions(run.anna!.store, draftKey(scope, path)).some(edge => edge.to === saved), "the saved version in the room's copy");
+    await until(() => run.lex!.text === run.anna!.text && liveState(run.anna!.store, draftKey(scope, path)).versions.some(edge => edge.to === saved), "the saved version in the room's copy");
     assert.equal(times(run.anna!.text, "Anna's unsaved line"), 1, "her saved words once");
     // One room copy: whichever tab started it, every frame she sends after the save names that one (or none yet).
     const tags = new Set(tagsSent(run.room, run.anna!.sockets, run.at).filter(tag => tag !== "0".repeat(40)));
@@ -1305,30 +1305,30 @@ test("a page whose room never answers counts as shared only for the catch-up wai
   const stop = startLiveText({ store, openFile: signal<string | undefined>(path), scope: () => scope, on: true, clock: time.clock, keeper: keeper(),
     openRoom: options => { room = options; return { send: async () => false, close: () => undefined }; }, loadYjs: () => import("yjs") });
   const key = draftKey(scope, path);
-  assert.equal(liveShared(store, key), true, "the room has not said who is here yet");
+  assert.equal(liveState(store, key).shared, true, "the room has not said who is here yet");
   time.advance(LIVE_TEXT_CATCH_UP_MS);
-  assert.equal(liveShared(store, key), false, "no answer: not shared");
+  assert.equal(liveState(store, key).shared, false, "no answer: not shared");
   // A slow room that answers later, with someone else in it: shared again.
   room!.onMembers?.(new Map([["2", "editor"]]));
-  assert.equal(liveShared(store, key), true, "someone else is here after all");
+  assert.equal(liveState(store, key).shared, true, "someone else is here after all");
   stop();
 });
 
-test("liveShared: a file is shared in a live room only while another tab is in, or its copy is made, and never after it stops", async () => {
+test("liveState(…).shared: a file is shared in a live room only while another tab is in, or its copy is made, and never after it stops", async () => {
   const room = fakeRoom();
   const lex = tab(room);
   const key = draftKey(scope, path);
   // Until the room says who is here, the page may be shared: an outside change loads the branch again rather than fold in.
-  assert.equal(liveShared(lex.store, key), true, "before the room answers");
+  assert.equal(liveState(lex.store, key).shared, true, "before the room answers");
   await quiet();
-  assert.equal(liveShared(lex.store, key), false, "alone, nobody shares it");
+  assert.equal(liveState(lex.store, key).shared, false, "alone, nobody shares it");
   const anna = tab(room, base, { account: "anna" });
   await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both sharing");
-  assert.equal(liveShared(lex.store, key), true);
+  assert.equal(liveState(lex.store, key).shared, true);
   anna.stop();
   await quiet();
-  assert.equal(liveShared(lex.store, key), true, "the copy stays while the file is open");
+  assert.equal(liveState(lex.store, key).shared, true, "the copy stays while the file is open");
   lex.stop();
-  assert.equal(liveShared(lex.store, key), false);
-  assert.equal(liveShared(lex.store, "another"), false);
+  assert.equal(liveState(lex.store, key).shared, false);
+  assert.equal(liveState(lex.store, "another").shared, false);
 });

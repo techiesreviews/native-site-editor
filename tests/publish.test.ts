@@ -594,6 +594,21 @@ test("authors with an address go in Co-authored-by lines; bad authors are refuse
   assert.equal(validatePublish({ branch: "main", files, authors: [{ name: "Anna" }] }).authors?.length, 1);
 });
 
+test("a save from a live room names the room's copy in a Live-Copy line; bad copies are refused (ticket am-59)", async () => {
+  const { commitMessage } = await import("../worker/publish.ts");
+  const { liveCopiesOf } = await import("../shared/live-copy.ts");
+  const copy = "ab".repeat(20), files = [{ path: "a.html", baseSha: null, content: "a" }];
+  const message = commitMessage("Update a", [{ name: "Anna", email: "anna@example.com" }], [copy, copy]);
+  assert.equal(message, `Update a\n\nCo-authored-by: Anna <anna@example.com>\nLive-Copy: ${copy}`);
+  assert.equal(commitMessage("Update a", [], [copy]), `Update a\n\nLive-Copy: ${copy}`);
+  // GitHub's history reads the copy back from the message.
+  assert.deepEqual(liveCopiesOf(message), [copy]);
+  assert.deepEqual(liveCopiesOf(`Update a\n\nLive-Copy: ${copy.toUpperCase()}\nLive-Copy: abc`), []);
+  for (const liveCopies of ["ab".repeat(20), ["AB".repeat(20)], ["ab".repeat(19)], [`${"ab".repeat(20)}\nLive-Copy: x`], Array.from({ length: 51 }, () => copy)])
+    assert.throws(() => validatePublish({ branch: "main", files, liveCopies }), (error: HttpError) => error.status === 400);
+  assert.deepEqual(validatePublish({ branch: "main", files, liveCopies: [copy] }).liveCopies, [copy]);
+});
+
 test("the first save to an empty repository names the others too", async () => {
   const calls: { path: string; method: string; body?: any }[] = [];
   const github = new GitHub("private-token", async (input, init) => {
