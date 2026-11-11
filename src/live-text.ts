@@ -69,7 +69,7 @@ import { agentKey, NAME_LIMIT } from "./participant";
 import { saveAuthors, type SaveAuthors } from "./save-authors";
 import type { SaveAuthor } from "../shared/types";
 import { mergeText, runChanges } from "./text-merge";
-import { onLiveSave } from "./live-saves";
+import { liveSaves } from "./live-saves";
 import { birthUpdate, clashes, clientOf, copyAt, draftUpdate, edgeClient, edgeTo as edgeFor, edgeUpdate, edges, headOf, metaOf, reaches, superseded, type Edge,
   textAt, textWith, tipOf, versionsOf, wordRuns, wordsOf } from "./live-versions";
 
@@ -353,6 +353,30 @@ export function liveFold(store: object, key: string, next: LiveCommit): Promise<
 export function liveState(store: object, key: string) {
   const share = liveFiles.get(store)?.get(key);
   return { shared: liveShared(store, key), copy: share?.copy(), versions: share?.versions() ?? [] };
+}
+type SaveNote = { store: object; note(text: string): string | undefined };
+const savers = new Map<string, Set<SaveNote>>();
+/** The file under draft key `key` is about to be saved as `text` (from `store`, any by default): its live copy, if it
+ * has one, notes it (the publish menu asks through src/live-saves.ts). Returns the copies (as hex) the save is from: the
+ * commit names them (`Live-Copy`, worker/publish.ts), so the others in the room wait for the note rather than take the
+ * commit in as an outside change. */
+function noteLiveSave(key: string, text: string, store?: object): string[] {
+  const copies: string[] = [];
+  for (const saver of savers.get(key) ?? []) {
+    if (store && saver.store !== store) continue;
+    try { const copy = saver.note(text); if (copy && !copies.includes(copy)) copies.push(copy); } catch { /* Best effort: the others then fold the commit in as an outside change. */ }
+  }
+  return copies;
+}
+liveSaves.note = noteLiveSave;
+/** `note` answers saves of the file under `key` in `store` while it is shared, with the copy it noted the save in;
+ * returns its removal. */
+function onLiveSave(store: object, key: string, note: (text: string) => string | undefined) {
+  const saver = { store, note };
+  let notes = savers.get(key);
+  if (!notes) savers.set(key, notes = new Set());
+  notes.add(saver);
+  return () => { notes.delete(saver); if (!notes.size && savers.get(key) === notes) savers.delete(key); };
 }
 /** This tab's saves made while its copy was not taking part, per draft store and key, by blob sha (their text): kept while
  * the page is open, so the copy notes them when the file opens again (`begin`). */

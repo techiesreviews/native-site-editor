@@ -3,7 +3,7 @@
 // or one made outside) in an order a seed picks. Each tab hears a commit at a moment of its own: the push notice is one
 // more item on its socket's queue, and a focus check reads GitHub's head whenever the run picks it. A tab sharing the
 // page folds the commit into the room's one copy (src/live-text.ts `liveFold`); a save goes through the room
-// (src/live-saves.ts `noteLiveSave`). Every run must end with every open tab on one copy and one text, where no word is
+// (src/live-saves.ts `liveSaves.note`, set by src/live-text.ts). Every run must end with every open tab on one copy and one text, where no word is
 // doubled and none that was typed (and not deleted since) is lost; every word of GitHub's text is there exactly once;
 // a word gone in a clash (the latest version shows) is one its own tab's Undo brings back. A failing run names its seed:
 // `LIVE_SEED=<seed> npx tsx --test tests/live-text-converge.test.ts` plays only that one, step by step in the message;
@@ -19,8 +19,8 @@ import { signal } from "@preact/signals-core";
 import * as Y from "yjs";
 import { createDraftStore } from "../src/draft-store";
 import { draftKey, type DraftScope } from "../src/drafts";
+import { liveSaves } from "../src/live-saves";
 import { liveFold, liveState, startLiveText, type CopyKeeper, type KeptCopy, type LiveTextPorts } from "../src/live-text";
-import { noteLiveSave } from "../src/live-saves";
 import { writeAs } from "../src/live-author";
 import { foldFile } from "../src/outside-merge";
 import { createSaveAuthors } from "../src/save-authors";
@@ -334,7 +334,7 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
   const save = (tab: Tab) => {
     const text = tab.text, sha = shaOf(text);
     if (tab.openFile.peek() !== path || sha === github.sha || tab.file.baseSha !== github.sha || tab.seen !== github.sha) return;
-    const copies = noteLiveSave(tab.file.key, text, tab.store);
+    const copies = liveSaves.note!(tab.file.key, text, tab.store);
     tab.store.markSaved(scope, path, { baseSha: sha, original: text });
     tab.seen = sha;
     say(`${tab.name} saves ${sha.slice(0, 7)}${copies.length ? ` from copy ${copies[0].slice(0, 7)}` : ""}`);
