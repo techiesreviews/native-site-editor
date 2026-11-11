@@ -367,9 +367,9 @@ its number unused.
 
 ### F-canvas-03 Block rail
 - Try: Click Section, Div, Heading, Paragraph, Image or Button in the rail beside Page structure.
-- Good: The block goes after the selection, arrives selected and not typing, one Undo step each; on a phone the blocks are in the top bar's Menu, under Add a block (B1, B10).
+- Good: The block goes after the selection, arrives selected and not typing, one Undo step each. A wide-screen control: on a phone the rail is off the page and its blocks are in the top bar's Menu, under Add a block (F-phone-03) (B1, B10).
 - Files: `src/components/block-rail.ts`, `src/components/block-rail.css`, `src/controllers/block-insert-controller.ts`, `src/page-builder/block-insert.ts`
-- Phone: yes
+- Phone: no
 - Spec: `tests/native-save/native-blocks.spec.ts`
 - Steps: `scripts/agents/shots/features/F-canvas-03.json`
 
