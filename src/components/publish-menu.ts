@@ -8,7 +8,7 @@ import { CHANGE_WORDS, listChanges, publishFiles, type FileChange } from "../fil
 import { formatBytes, postUpload, sendUploads, uploadBytes } from "../uploads";
 import { deployStatus, onDeployStatus, setDeployStatus, type DeployStatus } from "../deploy-status";
 import { saveAuthors, type SaveAuthors, type SentAuthors } from "../save-authors";
-import { noteLiveSave } from "../live-saves";
+import { liveSaves } from "../live-saves";
 import "./publish-menu.css";
 
 // Paths a save was refused for, by draft key: GitHub changed them (or
@@ -369,7 +369,7 @@ export function createPublishMenu(options: {
     async function post(files: PublishFile[], base: string | undefined, authors: SaveAuthor[]): Promise<PublishResult | undefined> {
       // A page typed on together notes the save in its live room's copy, and the commit names that copy (ticket am-59):
       // the others in the room then take the commit as the room's own save, not as an outside change.
-      const liveCopies = [...new Set(files.flatMap(file => (file.delete || file.sha ? [] : noteLiveSave(draftKey(options.scope, file.path), file.content))))];
+      const liveCopies = files.flatMap(file => (file.delete || file.sha ? [] : liveSaves.note?.(draftKey(options.scope, file.path), file.content) ?? []));
       // Gzipped, a commit of many pages stays a small request.
       const body = await gzip(JSON.stringify({ branch: options.scope.branch, ...(base ? { head: base } : {}), files, ...(authors.length ? { authors } : {}), ...(liveCopies.length ? { liveCopies } : {}) }));
       const response = await fetch(`/api/publish?${new URLSearchParams({ repo: options.scope.repo })}`, {
