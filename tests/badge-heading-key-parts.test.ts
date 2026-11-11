@@ -26,8 +26,8 @@ test("badge: kinds and tones are the set, anything else is the default", () => {
 });
 
 test("badge: one class, the kind and the tone as data, the words as text", () => {
-  assert.equal(badgeMarkup({ kind: "tag", tone: "warning", words: "Unsaved" }), '<span class="ui-badge" data-kind="tag" data-tone="warning">Unsaved</span>');
-  assert.equal(badgeMarkup({ kind: "status", tone: "success", words: " Saved " }), '<span class="ui-badge" data-kind="status" data-tone="success">Saved</span>');
+  assert.equal(badgeMarkup({ kind: "tag", tone: "warning", words: "Unsaved" }), '<span class="ui-badge" data-kind="tag" data-tone="warning"><span>Unsaved</span></span>');
+  assert.equal(badgeMarkup({ kind: "status", tone: "success", words: " Saved " }), '<span class="ui-badge" data-kind="status" data-tone="success"><span>Saved</span></span>');
   assert.equal(badgeMarkup(), '<span class="ui-badge" data-kind="tag" data-tone="neutral"></span>', "no options: an empty neutral tag");
   assert.equal(badgeMarkup({ kind: "sideways", tone: "loud", words: "x" }), badgeMarkup({ words: "x" }), "unknown options fall back to the defaults");
   for (const kind of BADGE_KINDS) for (const tone of BADGE_TONES) {
@@ -37,8 +37,15 @@ test("badge: one class, the kind and the tone as data, the words as text", () =>
   }
 });
 
+test("badge: the words sit in their own span (so long words can be cut), and a status with no words is hidden", () => {
+  assert.ok(badgeMarkup({ kind: "tag", words: "Heading" }).includes("><span>Heading</span></span>"));
+  assert.ok(badgeMarkup({ kind: "status", tone: "success", words: "Saved" }).includes("><span>Saved</span></span>"));
+  assert.equal(badgeMarkup({ kind: "status" }), '<span class="ui-badge" data-kind="status" data-tone="neutral" aria-hidden="true"></span>');
+  assert.equal(badgeMarkup({ kind: "tag", words: "  " }), '<span class="ui-badge" data-kind="tag" data-tone="neutral"></span>');
+});
+
 test("badge: words are escaped", () => {
-  assert.equal(badgeMarkup({ words: "<img src=x onerror=1>" }), '<span class="ui-badge" data-kind="tag" data-tone="neutral">&lt;img src=x onerror=1&gt;</span>');
+  assert.equal(badgeMarkup({ words: "<img src=x onerror=1>" }), '<span class="ui-badge" data-kind="tag" data-tone="neutral"><span>&lt;img src=x onerror=1&gt;</span></span>');
   assert.ok(badgeMarkup({ kind: "dot", words: 'say "hi"' }).includes('aria-label="say &quot;hi&quot;"'));
 });
 
@@ -52,8 +59,8 @@ test("badge count: a whole number up to the limit, 99+ above, 0 for nothing, oth
   assert.equal(countText(undefined), "0");
   assert.equal(countText("   "), "0");
   assert.equal(countText("New"), "New");
-  assert.ok(badgeMarkup({ kind: "count", tone: "action", words: "120" }).endsWith(">99+</span>"));
-  assert.ok(badgeMarkup({ kind: "count" }).endsWith(">0</span>"));
+  assert.ok(badgeMarkup({ kind: "count", tone: "action", words: "120" }).endsWith("><span>99+</span></span>"));
+  assert.ok(badgeMarkup({ kind: "count" }).endsWith("><span>0</span></span>"));
 });
 
 test("badge dot and mark: a name for a screen reader when there are words, hidden when there are none", () => {
@@ -116,6 +123,7 @@ test("the board shows every kind, tone, heading end slot and key count, and its 
   const badge = PARTS.find((entry) => entry.id === "badge");
   assert.ok(badge && isPart(badge));
   assert.deepEqual(badge.rows.map((row) => row.values?.kind).filter((kind, i, all) => all.indexOf(kind) === i), [...BADGE_KINDS]);
+  assert.ok(badge.rows.some((row) => row.label === "Long tag" && String(row.values?.words).length > 40), "a long tag");
   assert.deepEqual(badge.columns.map((column) => column.values?.tone), [...BADGE_TONES]);
   const choices = (part: typeof badge, key: string) => part.controls.flatMap((control) => (control.kind === "choice" && control.key === key ? control.choices.map(([value]) => value) : []));
   assert.deepEqual(choices(badge, "kind"), [...BADGE_KINDS]);

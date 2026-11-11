@@ -4,7 +4,8 @@
 
 import { escapeWords } from "./escape";
 
-/** The keys as a list: text splits at `+` (so `Ctrl+K` is two keys), a list is taken as it is. Blank keys are dropped. */
+/** The keys as a list: text splits at `+` (so `Ctrl+K` is two keys), a list is taken as it is. Blank keys are dropped.
+ * A `+` key itself needs the list form (`["Ctrl", "+"]`): as text it is the separator. */
 export function keyList(keys: string | readonly string[] | undefined): string[] {
   const list = typeof keys === "string" ? keys.split("+") : [...(keys ?? [])];
   return list.map((key) => key.trim()).filter(Boolean);
