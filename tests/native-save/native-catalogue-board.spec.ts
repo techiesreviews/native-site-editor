@@ -765,3 +765,42 @@ test("the Badge, Section heading and Keyboard key draw their options in the live
   await expect(stage.locator("kbd")).toHaveCount(0);
   await expect(stage).toContainText("Type a key");
 });
+
+test("a long badge is cut inside its stage, a mark with no icon draws the check, and a key takes the colour around it", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  const outline = page.getByRole("navigation", { name: "Outline" });
+  const options = page.getByRole("complementary", { name: "Options" });
+
+  // Long words: the badge never grows past the stage, and the words are cut with an ellipsis.
+  await outline.getByRole("button", { name: "Badge", exact: true }).click();
+  const stage = page.locator("#card-badge .cat-live__stage");
+  await options.getByRole("combobox", { name: /^Kind/ }).selectOption("tag");
+  await options.getByRole("textbox", { name: "Words" }).fill("A page title far longer than any badge should ever be, so it must be cut ".padEnd(80, "x"));
+  const badge = stage.locator("> .ui-badge");
+  await expect(badge).toHaveAttribute("data-kind", "tag");
+  await stage.evaluate((element) => { element.style.inlineSize = "120px"; });
+  const widths = await badge.evaluate((element) => ({
+    badge: element.getBoundingClientRect().width,
+    stage: element.parentElement!.getBoundingClientRect().width,
+    cut: element.firstElementChild!.scrollWidth > element.firstElementChild!.clientWidth,
+  }));
+  expect(widths.badge).toBeLessThanOrEqual(widths.stage + 0.5);
+  expect(widths.cut).toBe(true);
+
+  // A mark called with no icon draws the check, at the mark's size.
+  const mark = await page.evaluate(async () => {
+    const { badgePart } = await import("/src/ui/parts/badge.ts");
+    const element = badgePart({ kind: "mark" });
+    const svg = element.querySelector("svg.icon");
+    return { size: svg?.getAttribute("data-size") ?? null, hidden: element.getAttribute("aria-hidden") };
+  });
+  expect(mark).toEqual({ size: "12", hidden: "true" });
+
+  // The key has no colour of its own: it takes the one around it.
+  await outline.getByRole("button", { name: "Keyboard key", exact: true }).click();
+  const keyStage = page.locator("#card-key .cat-live__stage");
+  await expect(keyStage.locator("kbd.ui-key")).toBeVisible();
+  await keyStage.evaluate((element) => { element.style.color = "rgb(200, 0, 0)"; });
+  await expect.poll(() => keyStage.locator("kbd.ui-key").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(200, 0, 0)");
+  await expect.poll(() => keyStage.locator("kbd.ui-key > kbd").first().evaluate((element) => getComputedStyle(element).color)).toBe("rgb(200, 0, 0)");
+});

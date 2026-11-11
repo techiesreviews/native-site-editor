@@ -1,7 +1,7 @@
 /* The Keyboard key part (atomic catalogue ticket 13): a cap that borrows the text colour of where it stands, so it reads
    in a menu row and on a tooltip alike. Only shared tokens. */
+/* The colour is the caller's: a menu row's shortcut slot sets it to muted, a tooltip leaves its own. */
 .ui-key {
-  color: var(--muted);
   font: inherit;
 }
 .ui-key:not([data-combo]),

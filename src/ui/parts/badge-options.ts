@@ -44,7 +44,10 @@ export function badgeMarkup(options: BadgeOptions = {}, drawing = ""): string {
   const tone = badgeTone(options.tone);
   const words = (options.words ?? "").trim();
   const picture = kind === "dot" || kind === "mark";
-  const name = picture ? (words ? ` role="img" aria-label="${escapeWords(words)}"` : ' aria-hidden="true"') : "";
-  const inside = kind === "mark" ? drawing : kind === "dot" ? "" : escapeWords(kind === "count" ? countText(options.words) : words);
+  // A status with no words is only a dot: decoration, like a dot with no name.
+  const name = picture ? (words ? ` role="img" aria-label="${escapeWords(words)}"` : ' aria-hidden="true"') : kind === "status" && !words ? ' aria-hidden="true"' : "";
+  // The words sit in their own span so a long text can be cut with an ellipsis inside the badge's width.
+  const text = kind === "count" ? countText(options.words) : words;
+  const inside = kind === "mark" ? drawing : kind === "dot" ? "" : text ? `<span>${escapeWords(text)}</span>` : "";
   return `<span class="ui-badge" data-kind="${kind}" data-tone="${tone}"${name}>${inside}</span>`;
 }

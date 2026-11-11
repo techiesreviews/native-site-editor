@@ -324,6 +324,7 @@ const ATOMS: Part[] = [
       { label: "Count over 99", values: { kind: "count", words: "120" } },
       { label: "Status", values: { kind: "status", words: "Saved" } },
       { label: "Tag", values: { kind: "tag", words: "Heading" } },
+      { label: "Long tag", values: { kind: "tag", words: "A page title that is far longer than any badge should be" } },
       { label: "Dot", values: { kind: "dot", words: "Waiting" } },
       { label: "Mark", values: { kind: "mark", words: "Done" } },
     ],

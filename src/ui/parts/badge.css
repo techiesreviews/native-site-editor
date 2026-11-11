@@ -5,6 +5,7 @@
   justify-content: center;
   gap: var(--space-3xs);
   box-sizing: border-box;
+  max-inline-size: 100%;
   block-size: 1.25rem;
   padding-inline: var(--space-xs);
   border-radius: var(--radius-full);
@@ -14,6 +15,12 @@
   white-space: nowrap;
   background: var(--surface-subtle);
   color: var(--link);
+}
+/* Long words are cut with an ellipsis inside the badge's width, never pushed past the row it sits in. */
+.ui-badge > span {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ui-badge[data-tone="action"] { background: var(--primary); color: var(--on-primary); }
 .ui-badge[data-tone="warning"] { background: var(--warning-bg); color: var(--warning-fg); }
@@ -34,6 +41,7 @@
 /* A status: the tone's dot, then the words. */
 .ui-badge[data-kind="status"]::before {
   content: "";
+  flex: none;
   inline-size: 0.4375rem;
   block-size: 0.4375rem;
   border-radius: var(--radius-full);
