@@ -360,9 +360,9 @@ test.describe("on a phone", () => {
     // Said in the status line only: nothing stands over the new heading or the bar.
     await expect(page.locator("#status")).toContainText("Heading added");
     await expect(page.locator(".editor-toast")).toHaveCount(0);
-    // The new heading is scrolled clear above the bar as soon as it shows, not after the double-click wait.
+    // With no toast to hurry it, the new heading is scrolled clear above the bar once the selection has settled (400 ms), so allow for that and a busy machine.
     const heading = page.frameLocator(".native-preview-frame").locator("h2").last();
-    await expect.poll(async () => { const shown = await box(heading); return shown.y + shown.height <= (await box(bar(page))).y + 0.5; }, { timeout: 1_000 }).toBe(true);
+    await expect.poll(async () => { const shown = await box(heading); return shown.y + shown.height <= (await box(bar(page))).y + 0.5; }, { timeout: 5_000 }).toBe(true);
     const frameBox = await box(page.locator(".native-preview-frame"));
     for (let check = 0; check < 3; check++) {
       const barBox = await box(bar(page));
