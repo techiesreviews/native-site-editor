@@ -163,7 +163,7 @@ export interface CopyKeeper {
 }
 
 const HELLO = 1, ASK = 2, REPLY = 3, UPDATE = 4, GITHUB = 5;
-const HEAD = 2 + 20 + 4 + 8;
+const HEAD = 2 + 20 + 4;
 /** A tab that found others waits this long, after asking, for one of them to catch it up; then it starts from its own draft. */
 export const LIVE_TEXT_CATCH_UP_MS = 5_000;
 /** A caret that moves tells the room at most this often (typing moves it with every key). */
@@ -358,6 +358,9 @@ export function liveVersions(store: object, key: string) {
 export function liveCopy(store: object, key: string) {
   return liveFiles.get(store)?.get(key)?.copy();
 }
+/** This tab's saves made while its copy was not taking part, per draft store and key, by blob sha (their text): kept while
+ * the page is open, so the copy notes them when the file opens again (`begin`). */
+const keptSaves = new WeakMap<object, Map<string, Map<string, string>>>();
 /** The copy a room's tabs agreed on when two met (`meet`), per draft store and key: a tab starting again joins that one. */
 const preferredCopies = new WeakMap<object, Map<string, Uint8Array>>();
 
@@ -407,7 +410,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   const foldsReady = () => { for (const attempt of waitingFolds.splice(0)) if (!attempt()) waitingFolds.push(attempt); };
   const stopSaves = onLiveSave(store, start.key, text => (copy?.noteSave(text) ? copy.id() : undefined));
   /** This tab's saves made while its copy was not taking part, by blob sha: their text is the draft's, not GitHub's change. */
-  const ownSaves = new Map<string, string>();
+  const ownSaves = keptSaves.get(store)?.get(start.key) ?? new Map<string, string>();
+  if (!keptSaves.has(store)) keptSaves.set(store, new Map());
+  keptSaves.get(store)!.set(start.key, ownSaves);
   /** Others here, as the room's presence says; this tab's own caret (offsets in its text) and whoever draws carets. */
   let peers: ReadonlyMap<string, LivePeer> = new Map(), selection: (() => CaretSelection | undefined) | undefined;
   const caretWatchers = new Set<() => void>();
@@ -463,8 +468,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       // or the room agreed on another copy meanwhile.
       const now = store.get(scope, path), own = now?.text, wanted = preferred.get(start.key);
       const resume = kept && kept.base !== undefined && now && (!wanted || sameTag(wanted, kept.tag)) ? kept : undefined;
-      if (kept && !resume) { (globalThis as any).__LT_DEBUG?.log(`KEPTDROP@${(store as any).__name}`); keeper.write(start.key, undefined); }
-      if (resume) (globalThis as any).__LT_DEBUG?.log(`RESUME@${(store as any).__name}`);
+      if (kept && !resume) keeper.write(start.key, undefined);
       try { copy = makeCopy(Y, resume); }
       catch (error) {
         // A kept state Yjs cannot apply (damaged, from another Yjs version, or from before copies held their versions):
@@ -547,8 +551,6 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
      * Yjs ever give this doc a new client id (it does on a clash, very rarely), carets must keep naming this one. */
     const me = doc.clientID;
     ownClients.add(me);
-    const DBG = (globalThis as any).__LT_DEBUG as undefined | { label(c: number, l: string): void; docs: Map<object, Doc> };
-    DBG?.docs.set(store, doc); DBG?.label(me, `me@${(store as any).__name ?? "?"}`);
     /** Agents whose text this tab wrote, by connection and name: the client id their changes carry, a Yjs id of their own
      * made here (random, as Yjs makes its own, and never one this copy has seen), and where their latest change ended. */
     const agents = new Map<string, { author: number; name: string; who: LiveAuthor; at?: import("yjs").RelativePosition }>();
@@ -594,20 +596,12 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       out[1] = synced ? 1 : 0;
       out.set(copyId ?? NO_COPY, 2);
       view.setUint32(22, id);
-      view.setFloat64(26, bornAt());
       out.set(payload, HEAD);
       return out;
     };
     const send = (kind: number, payload: Uint8Array, id = me) => {
       if (stopped || HEAD + payload.length > FRAME_LIMIT) return Promise.resolve(false);
       return room.send(frame(kind, payload, id)).catch(() => false);
-    };
-    /** When this copy was first made (the earliest time a tab started it, in the copy; each tab that starts it notes its
-     * own, so it only ever gets earlier): of two copies of a room, the older stays (`meet`). */
-    const bornAt = () => {
-      let first = Number.MAX_VALUE;
-      for (const [key, value] of meta.entries()) if (key.startsWith("born:") && typeof value === "number" && Number.isFinite(value)) first = Math.min(first, value);
-      return first;
     };
     /** The draft now follows the shared copy (outside history: someone else's change). */
     /** A name-tag Undo running in this tab: this tab's own step, recorded in `history`. */
@@ -721,7 +715,6 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       // The snapshot its client id was derived from: another tab deriving the same id writes the very same items.
       const update = edgeUpdate(Y, doc, at, to, toText, client);
       if (!update) return false;
-      (globalThis as any).__LT_DEBUG?.log(`edge@${(store as any).__name} ${from.slice(0,7)}->${to.slice(0,7)} synced=${synced} catching=${catching} copy=${copyId && hex(copyId).slice(0,7)}`);
       Y.applyUpdate(doc, update, OUTSIDE);
       return true;
     }
@@ -802,6 +795,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     async function bringBase() {
       /** Versions asked about once: noted as a save, or brought in. */
       const checked = new Set<string>();
+      /** GitHub's newest version could not be brought in (its history unread): a version the copy lacks may be newer. */
+      let unread = false;
       for (let round = 0; round < 5; round++) {
         const file = store.get(scope, path);
         if (!file) return undefined;
@@ -814,9 +809,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         // it, on top of the version before it.
         if (!held.has(base) && file.baseSha && text.toString() === file.base && !checked.has(base)) {
           checked.add(base);
-          const parent = await parentOf(base);
+          // GitHub's history unread: on top of the copy's newest, as its very text says.
+          const older = await history(base, () => true);
           if (stopped) return undefined;
-          if (parent && versionsOf(versions()).has(parent.sha) && text.toString() === file.base) noteCopy(parent.sha, base);
+          const from = older === undefined ? headOf(versions()) : older[0]?.sha;
+          if (from && versionsOf(versions()).has(from) && text.toString() === file.base) noteCopy(from, base);
           continue;
         }
         if (shown && !checked.has(shown.sha)) {
@@ -824,11 +821,21 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           const latest = await shown.newest?.().catch(() => undefined) ?? shown;
           if (stopped) return undefined;
           // Not brought in (its history unread): the draft moves onto the copy's newest, and a later fold loads the branch.
-          if (!versionsOf(versions()).has(latest.sha)) await enter(latest);
+          if (!versionsOf(versions()).has(latest.sha) && !await enter(latest)) unread = true;
           if (stopped) return undefined;
           continue;
         }
         const target = shown && held.has(shown.sha) ? tipOf(all, shown.sha) : held.has(base) ? tipOf(all, base) : head;
+        if (!held.has(base) && unread && ownSaves.get(base) === file.base) {
+          // This tab's own save, made while the copy was starting, that GitHub's history could not place: its words are the
+          // draft's own, over the copy's version (noted as the save once they went in, `begin`). With the history read,
+          // the save enters as GitHub's version (`enter`) and the draft adds nothing over it.
+          store.acceptBase(scope, path, { text: textAt(Y, doc, all, target)!, baseSha: target });
+          continue;
+        }
+        // A version the copy lacks that may be newer than its own: moved back, the draft would lose that version's words.
+        // The copy is not joined (no doubled page, no lost words); a commit then loads the branch again.
+        if (!held.has(base) && unread) return undefined;
         if (target !== base) {
           const theirs = textAt(Y, doc, all, target)!, merged = mergeText(file.base, file.text, theirs);
           // A resumed copy holds this tab's words already: only its base moves; the clash rule runs in the copy (`settle`).
@@ -864,7 +871,6 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           if (stopped || copyId) return;
           Y.applyUpdate(doc, birth, OUTSIDE);
           copyId = id;
-          doc.transact(() => { meta.set(`born:${me}`, clock.now()); }, OUTSIDE);
         }
         // The text the draft is over before its base moves to the copy's: a resumed draft's typing since is read against it.
         let draftOver = store.get(scope, path)?.base;
@@ -901,13 +907,22 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
             // Typed meanwhile, or the room's copy caught up with it: decide again on the text as it is now.
             if (store.text(scope, path) !== own || adds(own) !== (client !== undefined)) continue;
             if (store.get(scope, path)?.base !== at.text) continue versions;
-            if (client !== undefined) { Y.applyUpdate(doc, draftUpdate(Y, doc, edge, at.text, own!, client), START); startClient = client; ownClients.add(client); DBG?.label(client, `runs@${(store as any).__name ?? "?"} caught=${caught} base=${at.base.slice(0,7)}`); }
+            if (client !== undefined) { Y.applyUpdate(doc, draftUpdate(Y, doc, edge, at.text, own!, client), START); startClient = client; ownClients.add(client); }
             synced = true;
             break versions;
           }
         }
       } finally { starting = false; }
       if (!synced) return;
+      // Saved while the copy was starting: the draft went in over the copy's version, and the copy, holding the saved text
+      // now, is noted as the save, so its words do not come in again as GitHub's change.
+      for (const [sha, saved] of ownSaves) {
+        if (!keptBase || versionsOf(versions()).has(sha) || text.toString() !== saved || store.get(scope, path)?.text !== saved) continue;
+        noteCopy(keptBase, sha);
+        store.acceptBase(scope, path, { text: saved, baseSha: sha });
+        keptBase = sha;
+        break;
+      }
       follow();
       for (const request of asked.splice(0)) answer(request.kind, request.theirs, request.from, request.vector);
       keep();
@@ -969,7 +984,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       merged.getText("source").observe(event => { lands = deltaChanges(event.delta as { retain?: number; insert?: unknown; delete?: number }[]); });
       Y.applyUpdate(merged, typed);
       merged.destroy();
-      if (lands.length) { (globalThis as any).__LT_DEBUG?.log(`resume lands@${(store as any).__name}: ${JSON.stringify(lands)}`); doc.transact(() => { applyText(lands.reverse()); }, START); }
+      if (lands.length) doc.transact(() => { applyText(lands.reverse()); }, START);
     }
 
     /** Commits taken one at a time, in the order this tab heard them. */
@@ -997,7 +1012,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (stopped) return false;
       if (next.author) doc.transact(() => { if (meta.get(`n:${next.sha}`) !== next.author) meta.set(`n:${next.sha}`, next.author!); }, META);
       let all = versions();
-      if (!versionsOf(all).has(base)) { (globalThis as any).__LT_DEBUG?.log(`FOLDFAIL base ${base.slice(0,7)} not held @${(store as any).__name} held=${[...versionsOf(all)].map(v=>v.slice(0,7))}`); return false; }
+      if (!versionsOf(all).has(base)) return false;
       // A commit this tab's version came after (a notice that waited behind a newer one): nothing to do.
       if (base !== next.sha && versionsOf(all).has(next.sha) && reaches(all, next.sha, base)) return true;
       // A save whose note did not come and whose commit does not say it was this room's (its tab was catching up, or
@@ -1007,7 +1022,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         if (stopped) return false;
         if (parent && versionsOf(versions()).has(parent.sha) && !versionsOf(versions()).has(next.sha) && next.text === text.toString()) noteCopy(parent.sha, next.sha);
       }
-      if (!versionsOf(versions()).has(next.sha) && !await enter(next)) { (globalThis as any).__LT_DEBUG?.log(`FOLDFAIL enter ${next.sha.slice(0,7)} @${(store as any).__name}`); return false; }
+      if (!versionsOf(versions()).has(next.sha) && !await enter(next)) return false;
       if (stopped) return false;
       const now = store.get(scope, path);
       if (now && (now.base !== next.text || now.baseSha !== next.sha)) store.acceptBase(scope, path, { text: next.text, baseSha: next.sha });
@@ -1187,16 +1202,14 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     const toldCopies = new Set<string>();
     /**
      * Two copies of one room met (a tab started its own while another's was out of reach, or came back with a copy kept
-     * from before the others started theirs): the older stays (the earlier birth; on a tie, the lower id) and the tabs of
+     * from before the others started theirs): the one with the lower id stays (an order that never changes as copies merge, so tabs never bounce between them) and the tabs of
      * the other join it, their drafts going in as a newcomer's do. Every tab decides the same from the frames alone.
      */
-    function meet(other: Uint8Array, born: number) {
+    function meet(other: Uint8Array) {
       if (!copyId) return;
-      const mine = bornAt(), lower = [...other].findIndex((byte, index) => byte !== copyId![index]);
-      void born; void mine;
+      const lower = [...other].findIndex((byte, index) => byte !== copyId![index]);
       const theirsWin = lower >= 0 && other[lower] < copyId[lower];
       if (theirsWin) {
-        (globalThis as any).__LT_DEBUG?.log(`MEETLOSS@${(store as any).__name} synced=${synced}`);
         preferred.set(start.key, Uint8Array.from(other));
         leaving = true;
         keeper.write(start.key, undefined);
@@ -1249,7 +1262,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     function receive(bytes: Uint8Array) {
       if (bytes.length < HEAD) return;
       const view = new DataView(bytes.buffer, bytes.byteOffset), kind = bytes[0], theirs = bytes[1] === 1;
-      const tag = bytes.subarray(2, 22), id = view.getUint32(22), born = view.getFloat64(26), payload = bytes.subarray(HEAD);
+      const tag = bytes.subarray(2, 22), id = view.getUint32(22), payload = bytes.subarray(HEAD);
       const none = sameTag(tag, NO_COPY);
       if (theirs && !none) heardCopy = true;
       try {
@@ -1269,7 +1282,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
             return;
           }
           // A request from another copy of the room: the two meet. One from a tab with no copy yet is answered.
-          if (!none && !sameTag(tag, copyId)) { meet(tag, born); return; }
+          if (!none && !sameTag(tag, copyId)) { meet(tag); return; }
           // Only a copy that is caught up answers: a seed alone would tell a waiting tab the room is empty.
           if (synced && !starting) answer(kind, theirs, id, payload);
           else if (asked.length < INBOX_LIMIT) asked.push({ kind, theirs, from: id, vector: Uint8Array.from(payload) });
@@ -1283,7 +1296,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           const wanted = preferred.get(start.key);
           if (kind !== REPLY || !theirs || id !== me || (wanted && !sameTag(wanted, tag))) return;
           copyId = Uint8Array.from(tag);
-        } else if (!sameTag(tag, copyId)) { meet(tag, born); return; }
+        } else if (!sameTag(tag, copyId)) { meet(tag); return; }
         // A frame naming an agent whose text this tab writes is not that agent's here: only this tab writes under its id.
         const local = authors.get(id), agentHere = local !== undefined && agentIds.has(local.origin);
         const before = Y.decodeStateVector(Y.encodeStateVector(doc)), theirChange = kind === UPDATE && id !== me && !agentHere;

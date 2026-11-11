@@ -167,7 +167,6 @@ type Github = { text: string; sha: string; copies?: string[] };
 function openTab(room: Room, time: ReturnType<typeof fakeClock>, name: string, browser: ReturnType<typeof keeper>, from: { base: string; sha: string; text: string; seen: string },
   heard: (tab: Tab) => void, versions: ReadonlyMap<string, string>, newest: () => Github, before: (sha: string) => Github[], yjs: typeof Y) {
   const store = createDraftStore();
-  (store as any).__name = name;
   store.open(scope, path, { text: from.base, baseSha: from.sha });
   if (from.text !== from.base) store.edit({ scope, path, text: from.text, label: "Earlier draft" });
   const openFile = signal<string | undefined>(path);
@@ -217,10 +216,6 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
   const yjs = { ...Y, Doc: SeededDoc } as typeof Y;
   const log: string[] = [];
   const say = (line: string) => { log.push(line); };
-  const labels = new Map<number, string>();
-  const dbg = { docs: new Map<object, Y.Doc>(), label: (c: number, l: string) => { labels.set(c, l); }, log: (l: string) => say(`      [${l}]`) };
-  if (process.env.LIVE_SEED || process.env.LIVE_DEBUG) (globalThis as any).__LT_DEBUG = dbg;
-  let dupSources = "";
   let github: Github = { text: START, sha: shaOf(START) };
   /** Every version of the file GitHub had, by blob sha. */
   const versions = new Map<string, string>([[github.sha, github.text]]);
@@ -444,24 +439,7 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
       await quiet();
     }
     await quiet();
-    if (process.env.LIVE_SEED || process.env.LIVE_DEBUG) for (const tab of open()) {
-      const doc = dbg.docs.get(tab.store); if (!doc) continue;
-      const meta = doc.getMap("meta");
-      for (const [k, v] of meta.entries()) if (k.startsWith("e:")) labels.set(parseInt(k.slice(2), 16) >>> 0, `edge ${v.split(" ").map((x: string) => x.slice(0, 7)).join("->")}`);
-      const byWord = new Map<string, string[]>();
-      for (let item = (doc.getText("source") as any)._start; item; item = item.right) {
-        if (item.deleted || typeof item.content?.str !== "string") continue;
-        for (const w of item.content.str.match(WORD) ?? []) { const l = (labels.get(item.id.client) ?? "unknown").replace(/@\S+| caught=.*| base=.*|[0-9a-f]{7}->[0-9a-f]{7}|-->[0-9a-f]{7}/g, ""); byWord.set(w, [...byWord.get(w) ?? [], l.trim()]); }
-      }
-      dupSources = [...new Set([...byWord.values()].filter(ls => ls.length > 1).map(ls => ls.sort().join("+")))].join(", ");
-      say(`items of ${tab.name}:`);
-      for (let item = (doc.getText("source") as any)._start; item; item = item.right) {
-        if (typeof item.content?.str !== "string") continue;
-        say(`   ${item.deleted ? "x" : " "} ${JSON.stringify(item.content.str)} ${labels.get(item.id.client) ?? item.id.client}:${item.id.clock}`);
-      }
-      break;
-    }
-    return { dupSources, log, tabs: before, after: end(), undone, typed, gone, settled: settledBefore, settledAfter: new Set(settled.keys()), github, failures };
+    return { log, tabs: before, after: end(), undone, typed, gone, settled: settledBefore, settledAfter: new Set(settled.keys()), github, failures };
   } finally {
     for (const tab of open()) tab.stop();
     Reflect.deleteProperty(subtle, "digest");
@@ -510,8 +488,9 @@ function fault(end: Awaited<ReturnType<typeof play>>) {
 }
 
 const SEEDS = Number(process.env.LIVE_SEEDS ?? 150), STEPS = Number(process.env.LIVE_STEPS ?? 60);
-/** Seeds past the first SEEDS that once failed, played every time: a commit landing on a tab still joining the room. */
-const FOUND = [819, 1370, 1722];
+/** Seeds past the first SEEDS that once failed, played every time: a commit landing on a tab still joining the room;
+ * 348: a commit that rewrites the one before it, which two tabs took in from different versions. */
+const FOUND = [348, 819, 1370, 1722];
 /** Steps left out of every run (`LIVE_SKIP=save,outside`), to narrow down what a failing seed needs. */
 const SKIP = new Set((process.env.LIVE_SKIP ?? "").split(",").filter(Boolean));
 
@@ -523,16 +502,14 @@ test("typing together, in seeded random order: every run ends with every tab on 
   // so on the console) breaks that, so it fails the run too.
   const print = console.log;
   let renamed = 0;
-  const stats = new Map<string, number>();
   console.log = (...args: unknown[]) => { if (String(args[0]).includes("Changed the client-id")) renamed++; else print(...args); };
   try {
     for (const seed of seeds) {
       renamed = 0;
       const end = await play(seed, STEPS, SKIP);
-      if (process.env.LIVE_DEBUG) { const ev = new Set(end.log.map(l => l.match(/\[(MEETLOSS|KEPTDROP|RESUME|join)/)?.[1]).filter(Boolean)); for (const e of ev) stats.set(e as string, (stats.get(e as string) ?? 0) + 1); }
       const wrong = fault(end) ?? (renamed ? `Yjs gave a copy a new client id ${renamed} times` : undefined);
-      if (wrong) failed.push(only === undefined ? `seed ${seed}: ${wrong.split("\n")[0].slice(0, 60)} [${end.dupSources}] {${[...new Set(end.log.map(l => l.match(/\[(MEETLOSS|KEPTDROP|RESUME|edge|join)/)?.[1]).filter(Boolean))].join(",")}}` : `seed ${seed}: ${wrong}\n${end.log.join("\n")}`);
+      if (wrong) failed.push(only === undefined ? `seed ${seed}: ${wrong.split("\n")[0]}` : `seed ${seed}: ${wrong}\n${end.log.join("\n")}`);
     }
-  } finally { console.log = print; if (process.env.LIVE_DEBUG) console.error("STATS", JSON.stringify([...stats])); }
+  } finally { console.log = print; }
   assert.deepEqual(failed, [], `failing seeds (rerun one with LIVE_SEED=<seed>):\n${failed.join("\n")}`);
 });
