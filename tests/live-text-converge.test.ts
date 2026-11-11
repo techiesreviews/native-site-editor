@@ -1,11 +1,11 @@
-// Typing together, played at random (sweep 2026-11-10 item 1): several tabs and agents share one file
-// (src/live-text.ts) and join, type, leave, reload, save, drop their connection and fold in outside changes in an
-// order a seed picks. Every run must end with the open tabs of each file version on one text, where no word is doubled
-// and none that was typed (and not deleted since) is lost: not on any tab, nor from the GitHub text a tab started from.
-// Copies of two file versions never mix (src/live-text.ts, frames): a tab that loads the branch again after a save keeps
-// its draft over the older version, and a tab opening the page later starts from the newer one, so they stay apart until
-// the draft is kept over the newer version. Bringing them together is a ticket of its own (am-59, folding into a live
-// room); here tabs are compared per version. A failing run names its seed:
+// Typing together, played at random (sweep 2026-11-10 item 1; ticket am-59): several tabs and agents share one file
+// (src/live-text.ts) and join, type, leave, reload, save, drop their connection and hear commits (a save of one of them,
+// or one made outside) in an order a seed picks. Each tab hears a commit at a moment of its own: the push notice is one
+// more item on its socket's queue, and a focus check reads GitHub's head whenever the run picks it. A tab sharing the
+// page folds the commit into the room's one copy (src/live-text.ts `liveFold`); a save goes through the room
+// (src/live-saves.ts `noteLiveSave`). Every run must end with every open tab on one copy and one text, where no word is
+// doubled and none that was typed (and not deleted since) is lost; every word of GitHub's text is there exactly once;
+// a word gone in a clash (the latest version shows) is one its own tab's Undo brings back. A failing run names its seed:
 // `LIVE_SEED=<seed> npx tsx --test tests/live-text-converge.test.ts` plays only that one, step by step in the message;
 // `LIVE_SEEDS` and `LIVE_STEPS` play more or longer runs, `LIVE_SKIP=save,outside` leaves steps out.
 //
@@ -19,7 +19,8 @@ import { signal } from "@preact/signals-core";
 import * as Y from "yjs";
 import { createDraftStore } from "../src/draft-store";
 import { draftKey, type DraftScope } from "../src/drafts";
-import { liveShared, startLiveText, type CopyKeeper, type KeptCopy, type LiveTextPorts } from "../src/live-text";
+import { liveCopy, liveFold, liveShared, liveVersions, startLiveText, type CopyKeeper, type KeptCopy, type LiveTextPorts } from "../src/live-text";
+import { noteLiveSave } from "../src/live-saves";
 import { writeAs } from "../src/live-author";
 import { foldFile } from "../src/outside-merge";
 import { createSaveAuthors } from "../src/save-authors";
@@ -140,6 +141,10 @@ function relay() {
       notice(member, true);
       if (rejoined) tellMembers(member);
     },
+    /** A GitHub push: the relay tells every socket of the room, after whatever it took before (src/live-room.ts `onPushed`). */
+    push(commit: string) {
+      for (const other of present()) if (!other.dropped) other.queue.push(item(`the push of ${commit.slice(0, 7)}`, () => other.options.onPushed?.(commit)));
+    },
     pending: () => members.filter(member => !member.closed && member.queue.length > 0),
   };
 }
@@ -151,33 +156,43 @@ function keeper(): CopyKeeper & { copies: Map<string, KeptCopy | undefined> } {
 }
 
 /** Lets every promise the last step started settle: nothing in a run waits on anything but microtasks. */
-const settle = async () => { for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
+const settle = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
 
 type Room = ReturnType<typeof relay>;
 type Github = { text: string; sha: string };
 
-/** A tab: its own draft store with the file open (GitHub's text, and a draft over it), sharing it live. */
-function openTab(room: Room, time: ReturnType<typeof fakeClock>, name: string, browser: ReturnType<typeof keeper>, from: { base: string; sha: string; text: string }) {
+/** A tab: its own draft store with the file open (GitHub's text, and a draft over it), sharing it live. `seen`: GitHub's
+ * version of the file in the tab's workspace (what its last load or head check read; src/live-text.ts `github`, which
+ * asks whether it is still the newest); `heard` runs when a push notice reaches it. */
+function openTab(room: Room, time: ReturnType<typeof fakeClock>, name: string, browser: ReturnType<typeof keeper>, from: { base: string; sha: string; text: string; seen: string },
+  heard: (tab: Tab) => void, versions: ReadonlyMap<string, string>, newest: () => string, yjs: typeof Y) {
   const store = createDraftStore();
   store.open(scope, path, { text: from.base, baseSha: from.sha });
   if (from.text !== from.base) store.edit({ scope, path, text: from.text, label: "Earlier draft" });
   const openFile = signal<string | undefined>(path);
   let socket: ReturnType<Room["open"]> | undefined;
-  const stop = startLiveText({
-    store, openFile, scope: () => scope, on: true, clock: time.clock, keeper: browser, authors: createSaveAuthors(),
-    openRoom: options => (socket = room.open(options)),
-    loadYjs: async () => Y,
-  });
-  return {
-    name, store, openFile, stop, browser,
+  const tab = {
+    name, store, openFile, browser, seen: from.seen, stop: () => {},
     get socket() { return socket; },
     get text() { return store.text(scope, path)!; },
     get file() { return store.get(scope, path)!; },
     /** Typed into the open file; false when the store refused it. */
     edit(start: number, end: number, text: string) { return store.edit({ scope, path, changes: [{ start, end, text }] }).ok; },
   };
+  tab.stop = startLiveText({
+    store, openFile, scope: () => scope, on: true, clock: time.clock, keeper: browser, authors: createSaveAuthors(),
+    openRoom: options => (socket = room.open(options)),
+    loadYjs: async () => yjs,
+    github: () => ({ sha: tab.seen, text: versions.get(tab.seen)!, current: async () => tab.seen === newest() }),
+    onPushed: () => heard(tab),
+  });
+  return tab;
 }
-type Tab = ReturnType<typeof openTab>;
+interface Tab {
+  name: string; store: ReturnType<typeof createDraftStore>; openFile: ReturnType<typeof signal<string | undefined>>; browser: ReturnType<typeof keeper>;
+  seen: string; stop(): void; readonly socket: ReturnType<Room["open"]> | undefined; readonly text: string;
+  readonly file: NonNullable<ReturnType<ReturnType<typeof createDraftStore>["get"]>>; edit(start: number, end: number, text: string): boolean;
+}
 
 /** A word typed: unique. It is typed with a space after it, so a merge by words (src/text-merge.ts) never takes two as one;
  * where that space ends up is not checked. */
@@ -191,25 +206,87 @@ function gaps(text: string) {
 
 /**
  * One seeded run: `length` random steps, then everyone settles (every queue delivered, every timer run, every
- * connection back). Returns what the end must satisfy, and the log of steps.
+ * connection back, every tab on GitHub's newest version). Returns what the end must satisfy, and the log of steps.
  */
 async function play(seed: number, length: number, skip: ReadonlySet<string> = new Set()) {
   const pick = random(seed), time = fakeClock(), room = relay();
+  // Yjs client ids from the seed too (Yjs picks them at random), so a seed always plays the same way.
+  const ids = random(seed ^ 0x5bd1e995);
+  class SeededDoc extends Y.Doc { constructor(options?: ConstructorParameters<typeof Y.Doc>[0]) { super(options); this.clientID = Math.floor(ids.next() * 2 ** 32) >>> 0; } }
+  const yjs = { ...Y, Doc: SeededDoc } as typeof Y;
   const log: string[] = [];
   const say = (line: string) => { log.push(line); };
   let github: Github = { text: START, sha: shaOf(START) };
+  /** Every version of the file GitHub had, by blob sha. */
+  const versions = new Map<string, string>([[github.sha, github.text]]);
   let words = 0, browsers = 0;
-  /** Every word typed, by whom, and the words someone deleted (or that a fold may have dropped): those may be gone. */
+  /** Every word typed, by whom, and the words someone deleted: those may be gone. */
   const typed = new Map<string, string>(), gone = new Set<string>();
+  /** Words a tab took out in a clash (an outside change replaced the words around them), each with its tab's Undo step. */
+  const settled = new Map<string, string>();
+  /** Folds into a shared copy that did not take: each is a fault. */
+  const failures: string[] = [];
   /** Each browser's tab, open or closed (its draft is what it shows on coming back). */
   type Entry = { tab: Tab; open: boolean };
   const tabs: Entry[] = [];
   const open = () => tabs.filter(entry => entry.open).map(entry => entry.tab);
   const word = (by: string) => { const made = `«${++words}»`; typed.set(made, by); return made; };
 
+  /**
+   * The tab checks GitHub's head (src/controllers/save-publish-controller.ts `checkHead`): it reads the newest commit,
+   * whichever notice or focus asked. A page shared live folds it into the room's copy (src/outside-merge.ts `foldIn`); a
+   * page not shared folds it into its draft. Either way its workspace sees the new version.
+   */
+  const hear = (tab: Tab, why: string) => {
+    const was = tab.seen, next = github;
+    if (was === next.sha || !open().includes(tab)) return;
+    tab.seen = next.sha;
+    if (tab.openFile.peek() !== path && tab.file.baseSha !== was) return;
+    /** Alone, the commit folds into the draft; a clash shows the latest version, its words one Undo away in this tab. */
+    const intoDraft = () => {
+      const before = new Set(tab.text.match(WORD) ?? []);
+      foldFile(tab.store, scope, path, undefined, next.text, next.sha, () => draftKey(scope, path), "Sam · GitHub");
+      const out = [...before].filter(made => !tab.text.includes(made));
+      for (const made of out) settled.set(made, tab.name);
+      if (out.length) latest.set(tab.name, out);
+    };
+    if (liveShared(tab.store, tab.file.key)) {
+      say(`  ${tab.name} hears ${next.sha.slice(0, 7)} (${why}) and folds it into the room's copy`);
+      void liveFold(tab.store, tab.file.key, { sha: next.sha, text: next.text, author: "Sam · GitHub" }).then(took => {
+        say(`    ${tab.name}'s fold of ${next.sha.slice(0, 7)}: ${took === undefined ? "not shared" : took ? `taken, base ${tab.file.baseSha?.slice(0, 7)}` : "refused"}`);
+        if (took === undefined && open().includes(tab) && tab.file.baseSha === was) intoDraft();
+        else if (took === false) failures.push(`${tab.name} could not fold ${next.sha.slice(0, 7)}`);
+      }, error => failures.push(`${tab.name}: ${error}`));
+      return;
+    }
+    say(`  ${tab.name} hears ${next.sha.slice(0, 7)} (${why}) and folds it into its draft`);
+    intoDraft();
+  };
+  /** Words a tab's own clash step took out (src/live-text.ts: the latest version shows, the typist's words one Undo away). */
+  const watch = (tab: Tab) => tab.store.subscribe(event => {
+    if (event.type !== "text" || event.origin === "shared" || event.origin === "external") return;
+    if (!tab.store.peek(draftKey(scope, path), "undo")?.endsWith("'s change")) return;
+    const now = new Set(event.text.match(WORD) ?? []), out = [...watched.get(tab) ?? []].filter(made => !now.has(made));
+    for (const made of out) settled.set(made, tab.name);
+    latest.set(tab.name, out);
+  });
+  /** The words each tab's latest clash step took out: its Undo brings these back. */
+  const latest = new Map<string, string[]>();
+  /** Each tab's words before its latest change, for `watch`. */
+  const watched = new Map<Tab, Set<string>>();
+  const make = (name: string, browser: ReturnType<typeof keeper>, from: Parameters<typeof openTab>[4]) => {
+    const tab = openTab(room, time, name, browser, from, pushed => hear(pushed, "push notice"), versions, () => github.sha, yjs);
+    const unwatch = watch(tab);
+    const before = tab.store.subscribe(event => { if (event.type === "text") watched.set(tab, new Set(event.text.match(WORD) ?? [])); });
+    const stop = tab.stop;
+    tab.stop = () => { unwatch(); before(); stop(); };
+    watched.set(tab, new Set(tab.text.match(WORD) ?? []));
+    return tab;
+  };
+
   const join = (draft: boolean) => {
     const name = `t${++browsers}`, extra = draft ? `<p>${word(name)}</p>\n` : "";
-    const tab = openTab(room, time, name, keeper(), { base: github.text, sha: github.sha, text: github.text + extra });
+    const tab = make(name, keeper(), { base: github.text, sha: github.sha, text: github.text + extra, seen: github.sha });
     tabs.push({ tab, open: true });
     say(`${name} joins${draft ? ` with a draft ${extra.trim()}` : ""}`);
   };
@@ -227,48 +304,49 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
     else typed.delete(made);
   };
   const leave = (entry: Entry) => { entry.tab.stop(); entry.open = false; say(`${entry.tab.name} closes the page`); };
-  /** The same browser opens the page again: GitHub's text as its store had it, its draft as it left it, its kept copy. */
+  /** The same browser opens the page again, its draft kept over the version it started from (src/workspace-boot.ts
+   * `loadSnapshot`) and its kept copy: on coming back to it, its workspace is on the version it last read (its next head
+   * check reads GitHub's newest); on a reload, the page reads GitHub's newest version as it loads. */
   const reopen = (entry: Entry, reload: boolean) => {
     const was = entry.tab, file = was.file;
     if (entry.open) was.stop();
-    entry.tab = openTab(room, time, was.name, was.browser, { base: file.base, sha: file.baseSha!, text: was.text });
+    entry.tab = make(was.name, was.browser, { base: file.base, sha: file.baseSha!, text: was.text, seen: reload ? github.sha : was.seen });
     entry.open = true;
     say(`${was.name} ${reload ? "reloads" : "opens the page again"}`);
   };
   const away = (tab: Tab) => { tab.openFile.value = "about.html"; say(`${tab.name} opens another page`); };
   const back = (tab: Tab) => { tab.openFile.value = path; say(`${tab.name} comes back to the page`); };
-  /** A commit on the branch (this tab's save, or one made outside): every other open tab hears of it. A tab sharing the
-   * page live loads the branch again (src/outside-merge.ts `foldIn` refuses the fold): the open file opens again, its draft
-   * kept over the version it started from (src/workspace-boot.ts `loadSnapshot`). A tab that is not folds it into its draft. */
-  const commit = (next: Github, by?: Tab) => {
-    const was = github;
+  /** A commit on the branch (this tab's save, or one made outside): the relay tells every socket, each in its turn. */
+  const commit = (next: Github) => {
     github = next;
-    for (const tab of open()) {
-      if (tab === by || tab.openFile.peek() !== path) continue;
-      if (liveShared(tab.store, tab.file.key)) {
-        tab.openFile.value = undefined;
-        tab.openFile.value = path;
-        say(`  ${tab.name} loads the branch again`);
-        continue;
-      }
-      if (tab.file.baseSha !== was.sha) continue;
-      // A fold may drop a word on a clash (the latest version shows): no word typed is expected to survive one.
-      const before = new Set(tab.text.match(WORD) ?? []);
-      foldFile(tab.store, scope, path, undefined, next.text, next.sha, () => draftKey(scope, path), "Sam · GitHub");
-      for (const lost of before) if (!tab.text.includes(lost)) gone.add(lost);
-    }
+    versions.set(next.sha, next.text);
+    room.push(next.sha);
   };
+  /** A tab saves its draft over GitHub's newest version (a save over an older one is refused): through the room, so the
+   * others take the commit as the copy's own text. */
   const save = (tab: Tab) => {
     const text = tab.text, sha = shaOf(text);
-    if (tab.openFile.peek() !== path || sha === github.sha || tab.file.baseSha !== github.sha) return;
+    if (tab.openFile.peek() !== path || sha === github.sha || tab.file.baseSha !== github.sha || tab.seen !== github.sha) return;
+    noteLiveSave(tab.file.key, text, tab.store);
     tab.store.markSaved(scope, path, { baseSha: sha, original: text });
-    say(`${tab.name} saves`);
-    commit({ text, sha }, tab);
+    tab.seen = sha;
+    say(`${tab.name} saves ${sha.slice(0, 7)}`);
+    commit({ text, sha });
   };
   const outside = () => {
     const at = pick.pick(gaps(github.text)), made = word("github");
     const text = `${github.text.slice(0, at)}${made} ${github.text.slice(at)}`;
-    say(`a commit made outside adds ${made} at ${at}`);
+    say(`a commit made outside adds ${made} at ${at} (${shaOf(text).slice(0, 7)})`);
+    commit({ text, sha: shaOf(text) });
+  };
+  /** An outside commit that replaces a word a tab may be typing around (a clash, when someone typed next to it). */
+  const rewrite = () => {
+    const present = github.text.match(WORD) ?? [];
+    if (!present.length) { outside(); return; }
+    const target = pick.pick(present), made = word("github");
+    const text = github.text.replace(target, made);
+    gone.add(target);
+    say(`a commit made outside replaces ${target} with ${made} (${shaOf(text).slice(0, 7)})`);
     commit({ text, sha: shaOf(text) });
   };
 
@@ -284,6 +362,8 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
     ["away", 3, live => live.length > 0, live => { const tab = pick.pick(live); if (tab.openFile.peek() === path) away(tab); else back(tab); }],
     ["save", 3, live => live.length > 0, live => save(pick.pick(live))],
     ["outside", 2, () => true, () => outside()],
+    ["rewrite", 1, () => true, () => rewrite()],
+    ["focus", 3, live => live.length > 0, live => hear(pick.pick(live), "focus")],
     ["drop", 3, live => live.length > 0, live => {
       const socket = pick.pick(live).socket?.me, member = room.members.find(item => item === socket);
       if (!member || member.closed) return;
@@ -298,6 +378,16 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
   const subtle = crypto.subtle;
   Object.defineProperty(subtle, "digest", { configurable: true, value: async (_: AlgorithmIdentifier, data: BufferSource) =>
     new Uint8Array(createHash("sha256").update(data as Uint8Array).digest()).buffer });
+  /** Every queue delivered, every timer run, every connection back. */
+  const quiet = async () => {
+    for (let round = 0; round < 400; round++) {
+      for (const member of room.members) if (member.dropped && !member.closed) room.reconnect(member);
+      const pending = room.pending();
+      if (pending.length) { for (const member of pending) member.queue.shift()!(); await settle(); continue; }
+      if (time.timers.size) { time.advance(5_000); await settle(); continue; }
+      break;
+    }
+  };
   try {
     join(pick.next() < 0.5);
     await settle();
@@ -315,46 +405,79 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
     // Everyone who closed the page comes back to it, with the draft it kept: their unsaved words count too.
     for (const entry of tabs) if (!entry.open) { reopen(entry, false); await settle(); }
     await settle();
-    for (let round = 0; round < 400; round++) {
-      for (const member of room.members) if (member.dropped && !member.closed) room.reconnect(member);
-      const pending = room.pending();
-      if (pending.length) { for (const member of pending) member.queue.shift()!(); await settle(); continue; }
-      if (time.timers.size) { time.advance(5_000); await settle(); continue; }
-      break;
+    await quiet();
+    // Every tab checks GitHub's head once more (a focus), and the room settles again.
+    for (const tab of open()) hear(tab, "focus");
+    await settle();
+    await quiet();
+    const end = () => open().map(tab => ({ name: tab.name, text: tab.text, base: tab.file.baseSha!, copy: liveCopy(tab.store, tab.file.key) }));
+    const before = end();
+    for (const tab of open()) say(`${tab.name} on ${tab.file.baseSha?.slice(0, 7)}, copy ${liveCopy(tab.store, tab.file.key)?.slice(0, 7)}: ${liveVersions(tab.store, tab.file.key)
+      .map(edge => `${edge.from.slice(0, 7) || "birth"}→${edge.to.slice(0, 7)}${edge.client === undefined ? " (save)" : ""}`).join(", ")}`);
+    const settledBefore = new Set(settled.keys());
+    // The Undo check: a tab whose latest step took words out in a clash takes it back, and its words are back everywhere.
+    const undone: { tab: string; words: string[] }[] = [];
+    for (const tab of open()) {
+      if (!tab.store.peek(draftKey(scope, path), "undo")?.endsWith("'s change")) continue;
+      const mine = (latest.get(tab.name) ?? []).filter(made => !tab.text.includes(made) && !gone.has(made));
+      const label = tab.store.peek(draftKey(scope, path), "undo"), was = tab.text;
+      const undid = await tab.store.undo(draftKey(scope, path));
+      say(`${tab.name} undid ${label} from ${JSON.stringify(was)}`);
+      if (!undid.ok) { say(`${tab.name} cannot undo the clash: ${undid.error}`); continue; }
+      say(`${tab.name} undoes the clash, for ${mine.join(" ") || "nothing"}: ${JSON.stringify(tab.text)}`);
+      undone.push({ tab: tab.name, words: mine.filter(made => !tab.text.includes(made)) });
+      for (const made of mine) settled.delete(made);
+      // One tab's Undo reaches the others before the next tab takes its own back.
+      await settle();
+      await quiet();
     }
-    // The file version each tab's copy is on: a copy keeps the version it started from, even once its tab saved (a known
-    // limit, src/live-text.ts `load`), and copies of two versions never mix by design. Tabs are compared per version.
-    const version = (tab: Tab) => room.members.find(member => member === tab.socket?.me)?.tag ?? tab.file.baseSha!;
-    return { log, tabs: open().map(tab => ({ name: tab.name, text: tab.text, base: tab.file.base, version: version(tab) })), typed, gone, github };
+    await quiet();
+    return { log, tabs: before, after: end(), undone, typed, gone, settled: settledBefore, settledAfter: new Set(settled.keys()), github, failures };
   } finally {
     for (const tab of open()) tab.stop();
     Reflect.deleteProperty(subtle, "digest");
   }
 }
 
-/** What every run must end with; undefined when it does. */
-function fault(end: Awaited<ReturnType<typeof play>>) {
-  const versions = new Map<string, typeof end.tabs>();
-  for (const tab of end.tabs) versions.set(tab.version, [...versions.get(tab.version) ?? [], tab]);
-  for (const [version, tabs] of versions) if (new Set(tabs.map(tab => tab.text)).size > 1)
-    return `the tabs on ${version.slice(0, 7)} differ:\n${tabs.map(tab => `  ${tab.name}: ${JSON.stringify(tab.text)}`).join("\n")}`;
+/** What one end must satisfy; undefined when it does. `undone`: after the Undo check, where a clash's Undo brought the
+ * tab's words back instead of GitHub's there (src/outside-merge.ts `foldFile`), so GitHub's words may be gone. */
+function wrongAt(end: Awaited<ReturnType<typeof play>>, tabs: typeof end.tabs, undone = false) {
+  const settled = undone ? end.settledAfter : end.settled;
+  if (end.failures.length) return end.failures[0];
+  if (new Set(tabs.map(tab => tab.copy)).size > 1)
+    return `the tabs are on ${new Set(tabs.map(tab => tab.copy)).size} copies: ${tabs.map(tab => `${tab.name} ${tab.copy?.slice(0, 7)}`).join(", ")}`;
+  if (new Set(tabs.map(tab => tab.text)).size > 1) return `the tabs differ:\n${tabs.map(tab => `  ${tab.name}: ${JSON.stringify(tab.text)}`).join("\n")}`;
+  // A tab alone with the page shares nothing: a draft it reloaded over an older version stays so, as without a room.
+  const solo = tabs.length === 1 && tabs[0].copy === undefined;
+  const stale = solo ? [] : tabs.filter(tab => tab.base !== end.github.sha);
+  if (stale.length) return `not on GitHub's newest version: ${stale.map(tab => tab.name).join(" ")}`;
   const seen = new Set<string>();
-  for (const { name, text } of end.tabs) {
+  for (const { name, text } of tabs) {
     const counts = new Map<string, number>();
     for (const made of text.match(WORD) ?? []) { counts.set(made, (counts.get(made) ?? 0) + 1); seen.add(made); }
     const doubled = [...counts].filter(([, count]) => count > 1).map(([made]) => made);
     if (doubled.length) return `doubled at ${name}: ${doubled.join(" ")} in ${JSON.stringify(text)}`;
     if ((text.match(/[«»]/g) ?? []).length !== 2 * [...counts.values()].reduce((sum, count) => sum + count, 0)) return `a word cut apart at ${name}: ${JSON.stringify(text)}`;
+    // Every word of GitHub's newest text is there, unless someone deleted it since.
+    const missing = undone || solo ? [] : (end.github.text.match(WORD) ?? []).filter(made => !text.includes(made) && !end.gone.has(made) && !settled.has(made));
+    if (missing.length) return `GitHub's ${missing.join(" ")} missing at ${name}: ${JSON.stringify(text)}`;
   }
-  // Words typed (by a tab or an agent) and never deleted: each is on some tab. An outside commit's word is on every tab whose
-  // GitHub text holds it (one that loaded the branch again keeps its draft over the older version, without it).
-  const lost = [...end.typed.keys()].filter(made => !end.gone.has(made) && !seen.has(made) && end.typed.get(made) !== "github");
-  if (lost.length) return `lost: ${lost.map(made => `${made} (${end.typed.get(made)})`).join(" ")} in ${JSON.stringify(end.tabs.map(tab => tab.text))}`;
-  for (const { name, text, base } of end.tabs) {
-    const dropped = (base.match(WORD) ?? []).filter(made => !end.gone.has(made) && !text.includes(made));
-    if (dropped.length) return `lost at ${name}: ${dropped.join(" ")} of its GitHub text, in ${JSON.stringify(text)}`;
-  }
+  // Words typed (by a tab or an agent) and never deleted: each is on the tabs, unless its own tab took it out in a clash.
+  // GitHub's own words are checked against its newest text above.
+  // After the Undo check, a clash's Undo may have taken out the words of GitHub's text there, whoever typed them.
+  const github = new Set(undone ? end.github.text.match(WORD) ?? [] : []);
+  const lost = [...end.typed.keys()].filter(made => !end.gone.has(made) && !settled.has(made) && !seen.has(made) && end.typed.get(made) !== "github" && !github.has(made));
+  if (lost.length) return `lost: ${lost.map(made => `${made} (${end.typed.get(made)})`).join(" ")} in ${JSON.stringify(tabs.map(tab => tab.text))}`;
   return undefined;
+}
+/** What every run must end with; undefined when it does: one copy, one text, before and after the Undo check, whose
+ * words come back. */
+function fault(end: Awaited<ReturnType<typeof play>>) {
+  const before = wrongAt(end, end.tabs);
+  if (before) return before;
+  for (const { tab, words } of end.undone) if (words.length) return `${tab}'s Undo of the clash did not bring back ${words.join(" ")}`;
+  const after = wrongAt(end, end.after, true);
+  return after && `after the Undo check: ${after}\n  before it: ${JSON.stringify(end.tabs.map(tab => tab.text))}`;
 }
 
 const SEEDS = Number(process.env.LIVE_SEEDS ?? 150), STEPS = Number(process.env.LIVE_STEPS ?? 60);
@@ -363,7 +486,7 @@ const FOUND = [819, 1370, 1722];
 /** Steps left out of every run (`LIVE_SKIP=save,outside`), to narrow down what a failing seed needs. */
 const SKIP = new Set((process.env.LIVE_SKIP ?? "").split(",").filter(Boolean));
 
-test("typing together, in seeded random order: every run ends with the tabs of each file version on one text, nothing doubled or lost", async () => {
+test("typing together, in seeded random order: every run ends with every tab on one copy and one text, nothing doubled or lost", async () => {
   const only = process.env.LIVE_SEED === undefined ? undefined : Number(process.env.LIVE_SEED);
   const seeds = only === undefined ? [...Array.from({ length: SEEDS }, (_, index) => index + 1), ...FOUND.filter(seed => seed > SEEDS)] : [only];
   const failed: string[] = [];
