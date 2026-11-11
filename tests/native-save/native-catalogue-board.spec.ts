@@ -445,6 +445,7 @@ test("Tweak edits the live Badge's CSS in light and dark, resets it, and Send to
   // A value that would break out of its declaration is marked and changes nothing.
   await dotPadding.fill("1px; } body { display: none");
   await expect(dotPadding).toHaveAttribute("aria-invalid", "true");
+  expect(await css(liveBadge, "padding-inline-start")).toBe("8px");
   await expect(send).toBeDisabled();
   // A slider beside a single length moves the value from the keyboard.
   await tweak.getByRole("slider", { name: "--space-xs", exact: true }).press("ArrowRight");

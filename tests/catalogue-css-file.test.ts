@@ -58,6 +58,11 @@ test("a problem: unbalanced braces or a closing tag would leave the live cell's 
   assert.equal(cssProblem("/* } */ .a { color: red }"), "");
   assert.equal(cssProblem(".a { color: red } </style><script>"), "A closing tag cannot be in a stylesheet");
   assert.equal(cssProblem(".a { content: \"open"), "A quote is never closed");
+  // As the browser reads them: an escaped brace and one inside an unquoted url() are text, so the brace after them
+  // closes the rule and the next one is a stray.
+  assert.equal(cssProblem(".a { color: red\\{ } } body { display: none }"), "A } closes a rule that was never opened");
+  assert.equal(cssProblem(".a { background: url({) } } body { display: none }"), "A } closes a rule that was never opened");
+  assert.equal(cssProblem(".a { background: url( \"x{\" ) }"), "");
 });
 
 test("Send to agent copies the changed lines and the whole file as edited; nothing when the file is unchanged", () => {

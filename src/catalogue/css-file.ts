@@ -25,7 +25,8 @@ function withoutComments(css: string): string {
 
 /**
  * Why the edited text cannot be shown safely, or "" when it can: a brace that does not pair up would end the live
- * cell's scope and reach the whole board, and a closing tag has no place in a stylesheet.
+ * cell's scope and reach the whole board, and a closing tag has no place in a stylesheet. Braces are read as the
+ * browser reads them: one escaped, quoted, in a comment or in an unquoted `url(…)` is text.
  */
 export function cssProblem(css: string): string {
   if (/<\//.test(css)) return "A closing tag cannot be in a stylesheet";
@@ -37,7 +38,13 @@ export function cssProblem(css: string): string {
       else if (char === quote) quote = "";
       continue;
     }
-    if (char === "/" && css[i + 1] === "*") {
+    const url = /^url\(\s*(?!["'\s])/i.exec(css.slice(i, i + 64));
+    if (char === "\\") i++;
+    else if (url && !/[\w-]/.test(css[i - 1] ?? "")) {
+      const end = css.indexOf(")", i + url[0].length);
+      if (end < 0) return "A url( is never closed";
+      i = end;
+    } else if (char === "/" && css[i + 1] === "*") {
       const end = css.indexOf("*/", i + 2);
       if (end < 0) return "A comment is never closed";
       i = end + 1;

@@ -892,6 +892,7 @@ label.cat-control--row {
   overflow: auto;
   resize: vertical;
 }
+/* As .cat-input: 16 px on a phone, which zooms the page into any smaller field. */
 @media (pointer: coarse) {
   .cat-css__text {
     font-size: calc(var(--type-heading) * 0.8);

@@ -67,11 +67,17 @@ test("a component's own hooks on the components layer count as the property they
     "    --btn-font-weight: 600;",
     "    --btn-background: var(--primary);",
     "    --btn-hover-background: linear-gradient(var(--hover) 0 0), var(--surface);",
+    "    --btn-icon-gap: 13px;",
+    "    --btn-hover-shadow: 0 2px 4px black;",
+    "    --btn-corner: 8px;",
+    "    --btn-press-duration: 90ms;",
     "  }",
     "}",
   ].join("\n");
+  // A hook that ends in a counted property counts as it (icon-gap as gap, hover-shadow as a shadow); one that ends in
+  // none still counts as a local property when it holds a hand-typed length or time.
   assert.deepEqual(oneOffs(component, { file: "src/ui/parts/button.css" }).map(({ kind, line }: Found) => [kind, line]), [
-    ["spacing", 3], ["radii", 5], ["fontSizes", 6],
+    ["spacing", 3], ["radii", 5], ["fontSizes", 6], ["spacing", 10], ["shadows", 11], ["localProperties", 12], ["timings", 13],
   ]);
   // Off the components layer, a custom property is still a local one, whatever it is named.
   assert.deepEqual(oneOffs(".btn { --btn-background: var(--primary); }", { file: "src/a.css" }).map(({ kind }: Found) => kind), ["localProperties"]);
