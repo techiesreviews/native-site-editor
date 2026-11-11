@@ -8,7 +8,7 @@
 // not know (another tab's person or agent, seen only by their caret) takes the colour of the Yjs client id their
 // changes carry, which every tab reads the same.
 
-import type { AgentWho } from "../shared/agent";
+import { AGENT_NAME_LIMIT, type AgentWho } from "../shared/agent";
 
 /** The presence colours, theme tokens by index: the MCP green, the components' violet, video pink, data teal (src/theme.css). */
 export const AGENT_COLOURS = ["agent-presence", "agent-presence-2", "agent-presence-3", "agent-presence-4"] as const;
@@ -17,27 +17,35 @@ export type ParticipantKind = "agent" | "person" | "guest";
 /** Who someone is, as every view draws them: `colour` an index into AGENT_COLOURS. */
 export interface Participant { key: string; name: string; initial: string; colour: number }
 
-/** The most a shown name holds: a chip's few words. */
-const NAME_LIMIT = 40;
 /** The name shown for someone who gives none. */
 const UNNAMED: Record<ParticipantKind, string> = { agent: "Agent", person: "Someone", guest: "Guest" };
-/** Characters that show nothing: format controls (zero-width spaces, joiners, direction marks) and the Hangul fillers. */
-const INVISIBLE = /[\p{Cf}\u115F\u1160\u3164\uFFA0]/gu;
-
-/** The name shown for `name`, what someone says of itself: one line, nothing invisible, at most NAME_LIMIT characters
- * (never cut inside one), else its kind's own ("Agent", "Someone", "Guest"). */
-export function shownName(name: string, kind: ParticipantKind) {
-  const line = name.replace(INVISIBLE, "").replace(/[\u0000-\u001f\u007f\s]+/g, " ").trim();
-  return [...line].slice(0, NAME_LIMIT).join("").trim() || UNNAMED[kind];
-}
+/** Characters that show nothing and can hide or spoof a name: zero-width spaces, the soft hyphen, the word joiner and
+ * invisible operators, direction marks and controls, and the Hangul fillers. The joiners a word or an emoji needs (U+200C, U+200D) and tag characters stay. */
+const INVISIBLE = /[\u00AD\u061C\u180E\u200B\u200E\u200F\u2060-\u2064\uFEFF\u202A-\u202E\u2066-\u2069\u115F\u1160\u3164\uFFA0]/g;
+/** Space, and a joiner with nothing to join, at either end. */
+const ENDS = /^[\s\u200C\u200D]+|[\s\u200C\u200D]+$/g;
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-const firstGrapheme = (text: string) => graphemes.segment(text)[Symbol.iterator]().next().value?.segment ?? "";
-/** The first character a reader sees in `name` (a letter with its accents, a whole emoji), the rest of `name`, and
- * `letter`: that character upper-cased, one character still ("ß" is "SS": the first), "·" for no name. */
+const segments = (text: string) => [...graphemes.segment(text)].map(part => part.segment);
+
+/** The name shown for `name`, what someone says of itself: one line, nothing invisible, at most AGENT_NAME_LIMIT
+ * characters (never cut inside one), else its kind's own ("Agent", "Someone", "Guest"). */
+export function shownName(name: string, kind: ParticipantKind) {
+  const line = name.replace(INVISIBLE, "").replace(/[\u0000-\u001f\u007f\s]+/g, " ").replace(ENDS, "");
+  return segments(line).slice(0, AGENT_NAME_LIMIT).join("").replace(ENDS, "") || UNNAMED[kind];
+}
+
+/** A character that can stand for a name: a letter, a digit or an emoji (a flag too). */
+const STANDS = /[\p{L}\p{N}\p{Extended_Pictographic}\p{Regional_Indicator}]/u;
+/** The initial of `name`: `letter`, its first letter, digit or emoji (with its accents, a whole emoji) upper-cased, one
+ * character still ("ß" is "SS": the first), "·" when there is none; `first`, `name` up to and with it, and `rest` after. */
 export function initialOf(name: string) {
-  const first = firstGrapheme(name);
-  return { first, letter: firstGrapheme(first.toLocaleUpperCase()) || "·", rest: name.slice(first.length) };
+  let first = "";
+  for (const part of segments(name)) {
+    first += part;
+    if (STANDS.test(part)) return { first, letter: segments(part.toLocaleUpperCase())[0], rest: name.slice(first.length) };
+  }
+  return { first: "", letter: "·", rest: name };
 }
 
 /** A tab's colours for those it holds, by key: each keeps the one it was given, the least used then (the lowest on a tie). */

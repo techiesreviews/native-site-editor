@@ -4,8 +4,10 @@
 // under the agent's own Yjs client id, so its words carry its name and its caret's name tag takes back only
 // them. Kept apart from live-text so the agent's side never loads the shared copy's code.
 
+import type { AgentWho } from "../shared/agent";
+
 /** The agent a draft change is being written for: its connection and the name it gave itself. */
-export interface LiveAuthor { grant: string; name: string }
+export type LiveAuthor = AgentWho;
 
 let writing: LiveAuthor | undefined;
 
