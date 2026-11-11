@@ -1,5 +1,6 @@
 // The Icon part (atomic catalogue ticket 10): a Phosphor Regular icon by name, at a size from a small set, alone or
-// standing before or after words. Words are the caller's: it puts them next to the icon, in the order the place says.
+// standing before or after words. Words are the caller's: put them before or after the icon to match `place`; the part
+// only sets the spacing.
 // The editor's screens still draw icons through `icon()` in src/icons.ts until the Icon swap slice (ticket 30).
 
 import { iconSource, svgElement, type IconName } from "../../icons";

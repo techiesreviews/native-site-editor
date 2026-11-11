@@ -1,6 +1,7 @@
 // The Icon part's options and how they become markup (atomic catalogue ticket 10). Pure text in, text out, so a unit
 // test can pin it without a browser; src/ui/parts/icon.ts draws it. One way to draw a Phosphor Regular icon: the
-// markup of any icon (src/icons.ts or a lazy chunk) goes through iconSvg, whatever file it comes from.
+// markup of any icon (src/icons.ts or a lazy chunk) goes through iconSvg, whatever file it comes from
+// (once the editor's own copies move over, ticket 30).
 
 /** The sizes an icon is drawn at, in px: beside small print, in a control, in a larger control, alone above words. */
 export const ICON_SIZES = [12, 16, 20, 24] as const;
