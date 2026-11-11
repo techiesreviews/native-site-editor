@@ -356,7 +356,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       preview: ports.preview,
     });
     ports.element("repository-menu").append(repositoryMenu.root);
-    const topBar = ports.app.querySelector(".topbar")!;
+    // This top bar, while it is shown (the project tile stays in it).
+    const topBar = repositoryMenu.root;
     ports.element("site-settings-toggle").addEventListener("click", () => void ports.page.siteSettings());
     ports.mediaController.disposeGallery();
     siteActions = mountSiteActions({ statusHost: ports.element("change-status"), menuHost: ports.element("site-actions"), siteFiles: () => ports.site.files(), announce: ports.announce });
