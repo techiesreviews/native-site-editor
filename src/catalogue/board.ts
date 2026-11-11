@@ -285,8 +285,13 @@ export function startBoard(root: HTMLElement) {
       }
     } else {
       // A part with its own CSS file draws in a shadow root that holds that file as edited in place of the board's copy.
-      const into = entry.css ? liveRoot(stage, entry.css, shownText(entry, entry.css)).root : stage;
-      void drawInline(entry, now.values, now.state, into, true).then(placeSel);
+      const css = entry.css;
+      const into = css ? liveRoot(stage, css, shownText(entry, css)).root : stage;
+      void drawInline(entry, now.values, now.state, into, true).then(() => {
+        // Its module may have brought CSS of its own as it drew: the shadow root reads the board's styles again.
+        if (css) liveRoot(stage, css, shownText(entry, css));
+        placeSel();
+      });
     }
   }
 

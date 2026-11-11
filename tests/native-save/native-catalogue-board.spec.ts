@@ -551,6 +551,16 @@ test("the Button's own CSS file edits its live cell only, resets, and Send to ag
   await expect(file).toHaveAttribute("aria-invalid", "false");
   await expect(section.getByText("A } closes a rule that was never opened")).toBeHidden();
 
+  // The State option forces the live cell's hover from the file as edited.
+  const state = options.getByRole("combobox", { name: "State" });
+  const hoverCell = page.locator('#card-button .cat-half[data-theme="light"] .cat-cell[data-state="hover"] button').first();
+  await state.selectOption("hover");
+  await expect.poll(() => css(liveButton, "background-color")).toBe(await css(hoverCell, "background-color"));
+  await file.fill(edited.replace("--btn-hover-background: var(--primary-hover);", "--btn-hover-background: rgb(0, 128, 0);"));
+  await expect.poll(() => css(liveButton, "background-color")).toBe("rgb(0, 128, 0)");
+  await file.fill(edited);
+  await state.selectOption("normal");
+
   // The live cell shows the file as edited, alone: a deleted hover rule leaves the hover on the normal fill.
   const fill = await css(liveButton, "background-color");
   await liveButton.hover();

@@ -61,6 +61,17 @@ function copies(rules: CSSRuleList, wrap: (inner: string) => string, out: string
   }
 }
 
+/** The forced copies of `rules` as one constructed sheet (a live cell's shadow root, which the page's copies miss). */
+export function forcedSheet(...lists: CSSRuleList[]): CSSStyleSheet {
+  const out: string[] = [];
+  for (const rules of lists) copies(rules, (inner) => inner, out);
+  const sheet = new CSSStyleSheet();
+  for (const text of out) {
+    try { sheet.insertRule(text, sheet.cssRules.length); } catch { /* A selector this browser does not parse: left out. */ }
+  }
+  return sheet;
+}
+
 /** Adds the forced copies of every stylesheet in `doc`, and of each one that loads later (a lazy part's CSS). */
 export function forceStates(doc: Document = document) {
   const done = new WeakSet<CSSStyleSheet>();
