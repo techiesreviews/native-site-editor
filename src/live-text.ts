@@ -70,7 +70,7 @@ import { saveAuthors, type SaveAuthors } from "./save-authors";
 import type { SaveAuthor } from "../shared/types";
 import { mergeText, runChanges } from "./text-merge";
 import { onLiveSave } from "./live-saves";
-import { birthUpdate, clashes, clientOf, copyAt, draftUpdate, edgeClient, edgeTo as edgeFor, edgeUpdate, edges, headOf, metaOf, reaches, superseded,
+import { birthUpdate, clashes, clientOf, copyAt, draftUpdate, edgeClient, edgeTo as edgeFor, edgeUpdate, edges, headOf, metaOf, reaches, superseded, type Edge,
   textAt, textWith, tipOf, versionsOf, wordRuns, wordsOf } from "./live-versions";
 
 type Yjs = typeof import("yjs");
@@ -415,7 +415,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       // A copy this tab shared before: kept unless the draft went back to GitHub's text since (discarded, or saved over),
       // or the room agreed on another copy meanwhile.
       const now = store.get(scope, path), own = now?.text, wanted = preferred.get(start.key);
-      const resume = kept && kept.base !== undefined && now && own !== now.base && (!wanted || sameTag(wanted, kept.tag)) ? kept : undefined;
+      const resume = kept && kept.base !== undefined && now && (!wanted || sameTag(wanted, kept.tag)) ? kept : undefined;
       if (kept && !resume) keeper.write(start.key, undefined);
       try { copy = makeCopy(Y, resume); }
       catch (error) {
@@ -638,6 +638,19 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         const author = meta.get(`n:${edge.to}`), who = typeof author === "string" && author ? author.split(" · ")[0] : "Someone";
         store.edit({ scope, path, history: ports.history?.(scope, path), label: `${who}'s change`, changes: out });
       }
+      moveBase(all);
+    }
+    /** Another tab brought a newer version of GitHub's text into the copy (its fold, or its workspace read it): this tab's
+     * draft, which follows the copy and so holds that version's words, is over that version from now on. */
+    function moveBase(all: readonly Edge[]) {
+      const file = store.get(scope, path);
+      if (!keptBase || !file || file.baseSha !== keptBase || !versionsOf(all).has(keptBase)) return;
+      const tip = tipOf(all, keptBase);
+      if (tip === keptBase) return;
+      const tipText = textAt(Y, doc, all, tip);
+      if (tipText === undefined) return;
+      store.acceptBase(scope, path, { text: tipText, baseSha: tip });
+      keptBase = tip;
     }
 
     /** Writes the outside participant's edge from `from` to GitHub's `to` (its text `toText`), unless the copy holds `to` already. */
@@ -731,25 +744,29 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         }
         // The text the draft is over before its base moves to the copy's: a resumed draft's typing since is read against it.
         const draftOver = store.get(scope, path)?.base;
-        const at = await bringBase();
-        if (!at || stopped) return;
-        keptBase = at.base;
-        // Resumed from its own kept copy: what the draft took on after the copy was kept goes in, unless the copy has it now.
-        if (resume) resumeDraft(resume, draftOver ?? at.text);
-        for (; !resume;) {
-          const own = store.text(scope, path), base = store.get(scope, path)?.base;
-          const adds = (now: string | undefined) => now !== undefined && now !== base && (!caught || now !== text.toString());
-          const edge = edgeFor(versions(), at.base);
-          if (!edge || base !== at.text) return;
-          // `runs`: the draft goes in word by word (`wordRuns`) over the copy as it was at its version.
-          const client = adds(own) ? await clientOf(`runs\n${at.base}\n${edge.id}\n${own}`) : undefined;
-          if (stopped) return;
-          // Typed meanwhile, or the room's copy caught up with it: decide again on the text as it is now.
-          if (store.text(scope, path) !== own || adds(own) !== (client !== undefined)) continue;
-          if (client !== undefined) { Y.applyUpdate(doc, draftUpdate(Y, doc, edge, at.text, own!, client), START); startClient = client; ownClients.add(client); }
-          break;
+        // A save or a commit can move the draft's version while it goes in: the versions are brought together again.
+        versions: for (let round = 0; round < 5; round++) {
+          const at = await bringBase();
+          if (!at || stopped) return;
+          keptBase = at.base;
+          // Resumed from its own kept copy: what the draft took on after the copy was kept goes in, unless the copy has it now.
+          if (resume) { resumeDraft(resume, draftOver ?? at.text); synced = true; break; }
+          for (;;) {
+            const own = store.text(scope, path), base = store.get(scope, path)?.base;
+            const adds = (now: string | undefined) => now !== undefined && now !== base && (!caught || now !== text.toString());
+            const edge = edgeFor(versions(), at.base);
+            if (!edge || base !== at.text) continue versions;
+            // `runs`: the draft goes in word by word (`wordRuns`) over the copy as it was at its version.
+            const client = adds(own) ? await clientOf(`runs\n${at.base}\n${edge.id}\n${own}`) : undefined;
+            if (stopped) return;
+            // Typed meanwhile, or the room's copy caught up with it: decide again on the text as it is now.
+            if (store.text(scope, path) !== own || adds(own) !== (client !== undefined)) continue;
+            if (store.get(scope, path)?.base !== at.text) continue versions;
+            if (client !== undefined) { Y.applyUpdate(doc, draftUpdate(Y, doc, edge, at.text, own!, client), START); startClient = client; ownClients.add(client); }
+            synced = true;
+            break versions;
+          }
         }
-        synced = true;
       } finally { starting = false; }
       if (!synced) return;
       follow();
@@ -894,7 +911,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       const file = store.get(scope, path);
       if (!file?.baseSha || !synced) return;
       const noted = savedKey(file.base), sha = file.baseSha;
-      if (meta.get(`s:${noted}`) instanceof Uint8Array && !versionsOf(versions()).has(sha)) doc.transact(() => { meta.set(`g:${sha}`, noted); }, META);
+      if (!versionsOf(versions()).has(sha)) {
+        if (meta.get(`s:${noted}`) instanceof Uint8Array) doc.transact(() => { meta.set(`g:${sha}`, noted); }, META);
+        // Saved without a note (not through the publish menu), while the copy holds that very text: the copy is that version.
+        else if (keptBase && text.toString() === file.base) noteCopy(keptBase, sha);
+      }
       if (versionsOf(versions()).has(sha)) keptBase = sha;
       settle();
       keep();
@@ -1056,17 +1077,30 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       toldCopies.add(name);
       hello();
     }
+    /** A caught-up copy of the room has been heard from: this tab joins it rather than starting one. */
+    let heardCopy = false;
     function receive(bytes: Uint8Array) {
       if (bytes.length < HEAD) return;
       const view = new DataView(bytes.buffer, bytes.byteOffset), kind = bytes[0], theirs = bytes[1] === 1;
       const tag = bytes.subarray(2, 22), id = view.getUint32(22), born = view.getFloat64(26), payload = bytes.subarray(HEAD);
       const none = sameTag(tag, NO_COPY);
+      if (theirs && !none) heardCopy = true;
       try {
         if (kind === HELLO || kind === ASK) {
           // Tabs that have no caught-up copy yet ask one another: the one with a copy of its own (kept from before), else
           // the lower id, starts the room's copy at once, and the others are caught up by it, so a room starts one copy.
-          if (kind === HELLO && none && !synced && !starting && (copyId || me < id)) void begin(false);
-          if (!copyId) return;
+          // Two tabs back with the same kept copy, neither caught up: the lower id starts. A tab that heard from a caught-up
+          // copy of the room waits for it instead.
+          if (kind === HELLO && !theirs && !synced && !starting && (none ? copyId || (me < id && !heardCopy) : copyId && sameTag(tag, copyId) && me < id)) void begin(false);
+          // A request from a tab with no copy, while this one has none either: answered once this one has (it starts the
+          // room's copy, or is caught up), so a joiner is not left waiting for the fallback.
+          if (!copyId) {
+            if (none) { if (asked.length < INBOX_LIMIT) asked.push({ kind, theirs, from: id, vector: Uint8Array.from(payload) }); }
+            // A caught-up copy says it is here (after a reconnect, its request lost before): this tab asks it, rather than
+            // waiting out the fallback and starting a copy of its own.
+            else if (kind === HELLO && theirs && !synced && !starting) void send(HELLO, Y.encodeStateVector(doc));
+            return;
+          }
           // A request from another copy of the room: the two meet. One from a tab with no copy yet is answered.
           if (!none && !sameTag(tag, copyId)) { meet(tag, born); return; }
           // Only a copy that is caught up answers: a seed alone would tell a waiting tab the room is empty.
