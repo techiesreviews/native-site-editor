@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { signal } from "@preact/signals-core";
 import { createDraftStore, type DraftPersistence } from "../src/draft-store";
 import { draftKey, type DraftScope, type SavedDraft } from "../src/drafts";
-import { browserKeeper, LIVE_TEXT_CATCH_UP_MS, liveShared, liveVersions, startLiveText, typedSince, type CopyKeeper, type KeptCopy } from "../src/live-text";
+import { browserKeeper, LIVE_TEXT_CATCH_UP_MS, liveFold, liveShared, liveVersions, startLiveText, typedSince, type CopyKeeper, type KeptCopy } from "../src/live-text";
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 import { forEachAwait, type AwaitRace } from "./support/await-race";
@@ -240,6 +240,30 @@ test("a tab on another version of the file joins the room's copy: its own words 
   assert.equal(lex.store.get(scope, path)?.baseSha, newer, "Lex's draft is over the newest version now");
   lex.type(0, "!");
   await until(() => anna.text.startsWith("!"), "typing after");
+  anna.stop(); lex.stop();
+});
+
+test("commit 3 heard before commit 2: each enters the room's copy on top of the one before it, once, in GitHub's order (am-59)", async () => {
+  // GitHub's history of the file: the base, then commit 2 adds a line, then commit 3 rewrites that line.
+  const two = `${base}<p>Closed Mondays.</p>\n`, three = `${base}<p>Closed Sundays.</p>\n`;
+  const history = [{ sha, text: base }, { sha: "2".repeat(40), text: two }, { sha: "3".repeat(40), text: three }];
+  let newest = 0;
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => history[newest],
+    before: async function* (of) { for (let at = history.findIndex(version => version.sha === of) - 1; at >= 0; at--) yield history[at]; } });
+  const room = fakeRoom();
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  newest = 2;
+  // Anna hears commit 3 first, Lex commit 2 (late) and then commit 3: whichever tab writes, the line enters once.
+  const folds = await Promise.all([liveFold(anna.store, draftKey(scope, path), history[2]), liveFold(lex.store, draftKey(scope, path), history[1]),
+    liveFold(lex.store, draftKey(scope, path), history[2])]);
+  assert.deepEqual(folds, [true, true, true]);
+  await until(() => anna.text === three && lex.text === three, "commit 3 on both");
+  const edges = liveVersions(anna.store, draftKey(scope, path)).filter(edge => edge.from).map(edge => `${edge.from[0]}>${edge.to[0]}`).sort();
+  assert.deepEqual(edges, ["2>3", "a>2"], "commit 2 on the base, commit 3 on commit 2, nothing else");
+  assert.equal(anna.store.get(scope, path)?.baseSha, history[2].sha);
+  assert.equal(lex.store.get(scope, path)?.baseSha, history[2].sha);
   anna.stop(); lex.stop();
 });
 
