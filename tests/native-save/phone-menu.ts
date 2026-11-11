@@ -13,7 +13,7 @@ export async function phoneMenu(page: Page, row: string, options: { tap?: boolea
 /** The project menu: its tile on a wide screen, Menu › Switch site on a phone. */
 export async function openProjectMenu(page: Page, options: { tap?: boolean } = {}) {
   const tile = page.locator(".repository-menu__trigger");
-  if (await tile.isVisible()) await (options.tap ? tile.tap() : tile.click());
+  if (page.viewportSize()!.width > 650) await (options.tap ? tile.tap() : tile.click());
   else await phoneMenu(page, "Switch site", options);
   await expect.poll(() => page.locator("#repository-actions").evaluate((el) => el.matches(":popover-open"))).toBe(true);
 }

@@ -34,6 +34,7 @@ Rebuild the top bar from catalogue parts, in a slimmer design (version B), one o
 
 ## Left for the organism slices
 
+- **61 Setup checklist:** on a phone its pill leaves the bar; the Menu's first row, "Set up your site", opens the checklist (as a bottom sheet) until site-quality slice 44 moves it into the Inbox.
 - **55 Project menu:** "Share a preview link" and "Switch site" in the phone Menu both open the whole project menu for now (as a bottom sheet); 55 can split them into their own sheets. The tile's counts (agents' questions, finished work) are not shown on a phone, where the tile leaves the bar.
 - **58 Save menu:** Save carrying its own state ("Save 3 changes", an outlined "Live" with a green dot) is the Save menu's inside; the bar keeps today's Publish split button in its place, with no divider before it.
 - **62 History:** the History button and panel are unchanged; on a phone the panel opens from the Menu as a bottom sheet.
@@ -47,7 +48,7 @@ Rebuild the top bar from catalogue parts, in a slimmer design (version B), one o
 
 ## Done when
 
-- All existing specs that touch the top bar pass unchanged.
+- All existing specs that touch the top bar pass: unchanged at 1280; at 390 their steps reach the moved controls through the Menu (the phone layout of 2026-11-11 moved them; Done lists the edited specs).
 - `kit shots --compare dev` shows the approved slim design, light and dark, 390 and 1280 wide.
 - The one-offs count for its files is at or near zero (numbers in Done).
 

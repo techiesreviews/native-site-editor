@@ -1,4 +1,5 @@
-/* The slim top bar's phone half (top-bar-phone.ts, loaded with it on the first phone-wide window). Tokens only. */
+/* The slim top bar's phone half (top-bar-phone.ts, loaded with it on the first phone-wide window). Spacing,
+   corners, shadows and timings are tokens; the sheet's curve is the iOS sheet curve phone-sheet.css uses. */
 
 /* The page button names the project over the page; a window widened past a phone shows the page alone again. */
 .explorer-toggle__words {
@@ -31,7 +32,8 @@
    History's script places its panel under its button (history-controller.ts), hence the overrides. */
 @media (max-width: 650px) {
   #repository-actions,
-  #changes {
+  #changes,
+  #setup-checklist-panel {
     position-area: none;
     inset: auto 0 0 !important;
     justify-self: stretch;
@@ -96,7 +98,8 @@
 .top-bar-menu__grab {
   display: grid;
   place-items: center;
-  block-size: var(--size-icon);
+  block-size: var(--size-touch);
+  margin-block-end: calc(var(--space-m) * -1);
   border: 0;
   background: transparent;
   cursor: pointer;
@@ -199,13 +202,16 @@ button.top-bar-menu__row:active {
   display: grid;
   place-items: center;
   inline-size: var(--size-touch);
-  block-size: var(--size-control);
+  block-size: var(--size-touch);
   padding: 0;
   border: 0;
   border-radius: var(--radius-small);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+}
+.top-bar-menu__segment:active {
+  background: var(--hover);
 }
 .top-bar-menu__segment[aria-pressed="true"] {
   background: var(--current);

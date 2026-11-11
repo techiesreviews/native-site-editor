@@ -41,6 +41,8 @@ const picture = (name: Draw, size = 20) =>
 
 export function mountTopBarPhone(ports: TopBarPhonePorts) {
   const { app } = ports;
+  // Once per top bar: a workspace drawn afresh has a new one.
+  if (app.querySelector("#topbar-menu")) return;
   const trigger = node("button", "icon-button");
   trigger.type = "button";
   trigger.id = "topbar-menu";
@@ -50,9 +52,10 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
   // Page structure and the code fold into a pull-up sheet under the page on an upright phone (phone-sheet.css);
   // its handle loads on the first such window.
   const upright = matchMedia("(max-width: 650px) and (min-height: 500px)");
-  const workspace = app.querySelector<HTMLElement>(".workspace");
   const sheetHandle = () => {
-    // The catalogue board draws the bar without a workspace under it.
+    // Read when it fires: the workspace of this top bar, or none once it is gone (or on the catalogue board).
+    const workspace = trigger.isConnected ? app.querySelector<HTMLElement>(".workspace") : null;
+    if (!trigger.isConnected) upright.removeEventListener("change", sheetHandle);
     if (!upright.matches || !workspace) return;
     upright.removeEventListener("change", sheetHandle);
     void import("./phone-sheet").then((module) => module.mountPhoneSheet(workspace, app.querySelector<HTMLButtonElement>("#sheet-handle")!)).catch((error: unknown) => ports.errorMessage(error));
@@ -104,6 +107,7 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
   const rail = () => find(".block-rail");
   const devices = () => [...app.querySelectorAll<HTMLButtonElement>(".canvas-bar:not([hidden]) .canvas-device")];
   const history = () => find<HTMLButtonElement>("#history-button:not(:disabled)");
+  const setupPill = () => find<HTMLButtonElement>(".setup-checklist:not([hidden]) .setup-pill");
 
   // Closes the sheet, then works the control (whose own menu or panel may open once the page is in reach again).
   const handOver = (run: () => void) => () => {
@@ -159,6 +163,7 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
   }
 
   const rows: Record<MenuRow, () => HTMLElement> = {
+    setup: () => rowButton("list-checks", "Set up your site", handOver(() => setupPill()?.click()), setupPill()?.textContent ?? ""),
     pages: () => rowButton("file", "Pages", handOver(() => find<HTMLButtonElement>("#explorer-toggle")?.click()), find("#current-page")?.textContent ?? ""),
     blocks: () => rowButton("plus", "Add a block", () => draw("blocks")),
     structure: () => rowButton("treeStructure", "Page structure", handOver(() => openSheet())),
@@ -202,6 +207,7 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
     }
     const strip = handle();
     const shown = menuRows({
+      setup: Boolean(setupPill()),
       blocks: Boolean(rail() && !rail()!.hidden),
       sheet: Boolean(strip && getComputedStyle(strip).display !== "none"),
       devices: devices().length > 0,
@@ -220,6 +226,17 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
     body.scrollTop = 0;
   }
 
+  // The project menu, History and the setup checklist hand focus back to their own buttons, which a phone's bar
+  // leaves out: focus comes back to the Menu they were opened from instead of being lost.
+  const handBack = (event: Event) => {
+    if (!trigger.isConnected) return document.removeEventListener("toggle", handBack, true);
+    const panel = event.target as HTMLElement;
+    if ((event as ToggleEvent).newState !== "closed" || !["repository-actions", "changes", "setup-checklist-panel"].includes(panel.id)) return;
+    queueMicrotask(() => {
+      if ((document.activeElement === document.body || !document.activeElement) && getComputedStyle(trigger).display !== "none") trigger.focus();
+    });
+  };
+  document.addEventListener("toggle", handBack, true);
   // A tap on the dimmed page lands on the sheet's backdrop, which counts as the sheet itself: close it here.
   sheet.addEventListener("click", (event) => {
     if (event.target === sheet && event.clientY < sheet.getBoundingClientRect().top) sheet.close();

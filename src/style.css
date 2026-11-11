@@ -560,7 +560,7 @@ dd {
     gap: var(--space-4xs);
     padding-inline: var(--space-4xs) var(--space-3xs);
   }
-  .topbar :is(.repository-menu__trigger, .code-editor__redo, .code-editor__history),
+  .topbar :is(.repository-menu__trigger, .code-editor__redo, .code-editor__history, .setup-pill),
   #repository-menu::after,
   .workspace :is(.block-rail, .canvas-bar:not(.canvas-bar--component)) {
     display: none;
@@ -766,7 +766,7 @@ dd {
   font-size: var(--type-base);
   white-space: nowrap;
 }
-.explorer-toggle[aria-expanded="true"] {
+.explorer-toggle:is(:active, [aria-expanded="true"]) {
   background: var(--current);
 }
 .explorer.dropdown-panel {

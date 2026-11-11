@@ -28,9 +28,12 @@ test.describe("desktop", () => {
     expect((await box(bar)).height).toBeLessThanOrEqual(45);
     const project = page.locator(".repository-menu__trigger"), picker = page.locator("#explorer-toggle");
     const undo = banner(page).getByRole("button", { name: "Undo", exact: true });
+    const redo = banner(page).getByRole("button", { name: "Redo", exact: true });
     const history = banner(page).getByRole("button", { name: "History", exact: true });
     const publish = banner(page).getByRole("button", { name: "Publish", exact: true });
-    for (const control of [project, picker, undo, history, publish]) await expect(control).toBeVisible();
+    for (const control of [project, picker, undo, redo, history, publish]) await expect(control).toBeVisible();
+    // No divider before Publish: History sits right beside it.
+    expect(await page.locator(".publish-menu").evaluate((el) => el.previousElementSibling?.id)).toBe("history-button");
     // The slash between them.
     expect(await page.locator("#repository-menu").evaluate((el) => getComputedStyle(el, "::after").content)).toBe('"/"');
     // The path reads left to right, the page right after the project and its slash.
@@ -116,11 +119,36 @@ test.describe("phone", () => {
     expect(project.y + project.height).toBeGreaterThanOrEqual(843);
     await page.keyboard.press("Escape");
 
+    // Share a preview link opens the project menu with its Share rows.
+    await menuButton(page).tap();
+    await row(page, "Share a preview link").tap();
+    await expect(page.getByRole("button", { name: "Preview link", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // Site settings opens its dialog.
+    await menuButton(page).tap();
+    await row(page, "Site settings").tap();
+    await expect(page.getByRole("dialog", { name: "Site settings", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Site settings", exact: true })).toBeHidden();
+
     // Page structure opens the pull-up sheet.
     await menuButton(page).tap();
     await row(page, "Page structure").tap();
     await expect(page.getByRole("button", { name: "Page structure and code" })).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByRole("complementary", { name: "Page structure" })).toBeVisible();
+  });
+
+  test("a window widened past a phone shows the wide bar again", async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    await menuButton(page).tap();
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(menuButton(page)).toBeHidden();
+    await expect(page.locator(".repository-menu__trigger")).toBeVisible();
+    await expect(page.locator(".explorer-toggle__site")).toBeHidden();
+    await expect(page.locator(".explorer-toggle__tile")).toBeHidden();
+    expect((await box(page.locator(".topbar"))).height).toBeLessThanOrEqual(45);
   });
 
   test("Escape or a tap outside closes the sheet and gives focus back to the Menu button", async ({ page, baseURL }) => {
@@ -131,6 +159,10 @@ test.describe("phone", () => {
     await expect(sheet(page)).toBeHidden();
     await expect(menuButton(page)).toBeFocused();
     await menuButton(page).tap();
+    await expect(sheet(page)).toBeVisible();
+    // A tap on the sheet's own padding keeps it open.
+    const own = await box(sheet(page));
+    await page.mouse.click(own.x + own.width - 4, own.y + own.height - 4);
     await expect(sheet(page)).toBeVisible();
     // The dimmed page above the sheet.
     await page.mouse.click(195, 120);
