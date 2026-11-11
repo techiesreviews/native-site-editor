@@ -65,7 +65,7 @@ import type { JsonValue } from "../shared/agent-command";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 import { rebaseHistory } from "./shared-undo";
 import { liveAuthor, type LiveAuthor } from "./live-author";
-import { agentKey } from "./participant";
+import { agentKey, NAME_LIMIT } from "./participant";
 import { saveAuthors, type SaveAuthors } from "./save-authors";
 import type { SaveAuthor } from "../shared/types";
 import { runChanges } from "./text-merge";
@@ -137,8 +137,6 @@ const HEAD = 2 + 20 + 4;
 export const LIVE_TEXT_CATCH_UP_MS = 5_000;
 /** A caret that moves tells the room at most this often (typing moves it with every key). */
 const CARET_MS = 50;
-/** A name longer than this is cut: presence is only what others say of themselves. */
-const NAME_LIMIT = 80;
 /** The most agents' carets one tab's presence is read for (ticket am-25). */
 const AGENT_CARETS = 16;
 /** A name cut to NAME_LIMIT code points, never inside a surrogate pair (src/participant.ts `shownName` cuts what shows). */
