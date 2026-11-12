@@ -70,8 +70,8 @@ import { saveAuthors, type SaveAuthors } from "./save-authors";
 import type { SaveAuthor } from "../shared/types";
 import { mergeText, runChanges } from "./text-merge";
 import { liveSaves } from "./live-saves";
-import { birthUpdate, clashes, clientOf, copyAt, draftUpdate, edgeClient, edgeTo as edgeFor, edgeUpdate, edges, headOf, metaOf, reaches, superseded, type Edge,
-  textAt, textWith, tipOf, versionsOf, wordDiff, wordRuns, wordsOf } from "./live-versions";
+import { birthUpdate, clashes, clientOf, copyAt, draftUpdate, edgeClient, edgeTo as edgeFor, edgeUpdate, edges, headOf, metaOf, newestOf, occurrenceOn,
+  shaOf, superseded, type Edge, textAt, textWith, tipOf, versionsOf, wordDiff, wordRuns, wordsOf } from "./live-versions";
 
 type Yjs = typeof import("yjs");
 type Doc = import("yjs").Doc;
@@ -260,6 +260,9 @@ function savedKey(text: string) {
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
   return `${(h2 >>> 0).toString(16).padStart(8, "0")}${(h1 >>> 0).toString(16).padStart(8, "0")}:${text.length}`;
 }
+/** The key of a save's note: its text saved over the copy's version `from` (a revert's save of an earlier text is
+ * over another version, so its note does not take the earlier save's place). */
+const noteKey = (from: string, text: string) => savedKey(`${from}\n${text}`);
 
 /** A Yjs text event's delta as changes in the text before it. */
 function deltaChanges(delta: { retain?: number; insert?: unknown; delete?: number }[]) {
@@ -729,6 +732,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
 
     /** The edges the copy holds now. */
     const versions = () => edges(Y, doc);
+    /** Whether the copy holds any occurrence of GitHub's `sha`. */
+    const holds = (sha: string) => newestOf(versions(), sha) !== undefined;
+    /** The copy's version for GitHub's `sha` that this tab is on: its own when it is that text, else the latest
+     * occurrence the copy holds (`sha` when it holds none). */
+    const nodeOf = (sha: string) => (keptBase && shaOf(keptBase) === sha && versionsOf(versions()).has(keptBase) ? keptBase : newestOf(versions(), sha) ?? sha);
     /**
      * After any change from outside this tab's typing: words of a way into a version the copy does not keep go (every
      * tab does the same, so it is done once in effect), and each edge that just came in is weighed for a clash with this
@@ -756,7 +764,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         // GitHub's words coming back go into the copy first, as every tab writes them (the draft does not follow them:
         // they are part of this tab's step below, whose change then writes only what the copy still lacks).
         if (back) { quiet = true; try { Y.applyUpdate(doc, back, OUTSIDE); } finally { quiet = false; } }
-        const author = meta.get(`n:${edge.to}`), who = typeof author === "string" && author ? author.split(" · ")[0] : "Someone";
+        const author = meta.get(`n:${shaOf(edge.to)}`), who = typeof author === "string" && author ? author.split(" · ")[0] : "Someone";
         store.edit({ scope, path, history: ports.history?.(scope, path), label: `${who}'s change`, changes: out });
       }
       moveBase(all);
@@ -765,12 +773,12 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
      * draft, which follows the copy and so holds that version's words, is over that version from now on. */
     function moveBase(all: readonly Edge[]) {
       const file = store.get(scope, path);
-      if (!keptBase || !file || file.baseSha !== keptBase || !versionsOf(all).has(keptBase)) return;
+      if (!keptBase || !file || file.baseSha !== shaOf(keptBase) || !versionsOf(all).has(keptBase)) return;
       const tip = tipOf(all, keptBase);
       if (tip === keptBase) return;
       const tipText = textAt(Y, doc, all, tip);
       if (tipText === undefined) return;
-      store.acceptBase(scope, path, { text: tipText, baseSha: tip });
+      store.acceptBase(scope, path, { text: tipText, baseSha: shaOf(tip) });
       keptBase = tip;
     }
 
@@ -810,12 +818,13 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
      * right before it, and that one first, on top of its own, when the copy lacks it, back to a version the copy holds.
      * Every tab bringing the same versions writes the same items, so they enter once and in GitHub's order, whichever
      * tab heard which commit first. False when the history could not be read or does not reach a version the copy holds
-     * within HISTORY_LIMIT versions.
+     * within HISTORY_LIMIT versions. `again`: GitHub's newest brings back a text the copy holds (a revert), which enters
+     * as its next occurrence.
      */
-    async function enter(version: LiveVersion) {
-      if (versionsOf(versions()).has(version.sha)) return true;
-      const older = await history(version.sha, before => versionsOf(versions()).has(before.sha));
-      if (!older?.length || !versionsOf(versions()).has(older.at(-1)!.sha)) return false;
+    async function enter(version: LiveVersion, again = false) {
+      if (!again && holds(version.sha)) return true;
+      const older = await history(version.sha, before => holds(before.sha));
+      if (!older?.length || !holds(older.at(-1)!.sha)) return false;
       const chain = [version, ...older];
       for (let index = chain.length - 1; index > 0; index--)
         if (!await take(chain[index].sha, chain[index - 1])) return false;
@@ -823,30 +832,47 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     }
     /** `version` enters on top of `from`: a save from this room as its note says (waiting for the note when the commit
      * says it was this room's), else as the outside participant. */
-    async function take(from: string, version: LiveVersion) {
-      if (versionsOf(versions()).has(version.sha)) return true;
+    async function take(sha: string, version: LiveVersion) {
+      const from = nodeOf(sha), at = () => occurrenceOn(versions(), from, version.sha);
+      if (versionsOf(versions()).has(at())) return true;
       const ours = copyId !== undefined && version.copies?.includes(hex(copyId));
-      const noted = ours ? await noteFor(version) : noteOf(version);
+      const noted = ours ? await noteFor(version, from) : noteOf(version, from);
       if (stopped) return false;
-      if (versionsOf(versions()).has(version.sha)) return true;
-      if (noted) { doc.transact(() => { meta.set(`g:${version.sha}`, noted); }, META); return true; }
+      const node = at();
+      if (versionsOf(versions()).has(node)) return true;
+      if (noted) { doc.transact(() => { meta.set(`g:${node}`, noted); }, META); return true; }
       // This room's save whose note never came (its tab left before it could note it): the branch loads again.
-      return !ours && edgeTo(from, version.sha, version.text);
+      return !ours && edgeTo(from, node, version.text);
     }
-    /** The key of the note of a save of `version`'s text in the copy, once its items have all arrived. */
-    function noteOf(version: LiveVersion) {
-      const key = savedKey(version.text), snapshot = meta.get(`s:${key}`);
-      return snapshot instanceof Uint8Array && typeof meta.get(`t:${key}`) === "string" && savedText(snapshot) === version.text ? key : undefined;
+    /** The key of the note of a save of `version`'s text in the copy, once its items have all arrived: the one this
+     * room's save from `from` wrote, else one no version took yet (from another version, or written before notes
+     * named theirs). A note a version took is that version's: a revert's save of the same text has a note of its own. */
+    function noteOf(version: LiveVersion, from?: string) {
+      const fits = (key: string) => {
+        const snapshot = meta.get(`s:${key}`);
+        return snapshot instanceof Uint8Array && typeof meta.get(`t:${key}`) === "string" && savedText(snapshot) === version.text;
+      };
+      const own = from === undefined ? undefined : noteKey(from, version.text);
+      if (own && fits(own)) return own;
+      const taken = new Set<unknown>();
+      for (const [key, value] of meta.entries()) if (key.startsWith("g:")) taken.add(value);
+      for (const [key, from] of meta.entries()) {
+        if (!key.startsWith("t:") || typeof from !== "string") continue;
+        // Only a note of this very text (its key says so) is made again to be sure.
+        const note = key.slice(2);
+        if (note !== own && !taken.has(note) && (note === noteKey(from, version.text) || note === savedKey(version.text)) && fits(note)) return note;
+      }
+      return undefined;
     }
     /** `noteOf`, waiting for the note (as long as a catch-up may take) while it has not come. */
-    function noteFor(version: LiveVersion) {
-      const found = noteOf(version);
+    function noteFor(version: LiveVersion, from?: string) {
+      const found = noteOf(version, from);
       if (found || stopped) return Promise.resolve(found);
       return new Promise<string | undefined>(resolve => {
         const done = (key: string | undefined) => { notesWaiting.delete(end); doc.off("update", check); clock.clearTimeout(timer); resolve(key); };
         const end = () => done(undefined);
-        const check = () => { const key = stopped ? undefined : noteOf(version); if (key || stopped) done(key); };
-        const timer = clock.setTimeout(() => done(stopped ? undefined : noteOf(version)), LIVE_TEXT_CATCH_UP_MS);
+        const check = () => { const key = stopped ? undefined : noteOf(version, from); if (key || stopped) done(key); };
+        const timer = clock.setTimeout(() => done(stopped ? undefined : noteOf(version, from)), LIVE_TEXT_CATCH_UP_MS);
         doc.on("update", check);
         notesWaiting.add(end);
       });
@@ -872,16 +898,16 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         const base = await versionOf(file.baseSha, file.base), shown = ports.github?.(scope, path);
         if (stopped) return undefined;
         if (store.get(scope, path)?.base !== file.base) continue;
-        const all = versions(), held = versionsOf(all), head = headOf(all);
+        const all = versions(), head = headOf(all);
         if (!head) return undefined;
         // This tab's version is the copy's text exactly (its own save, noted before it could take part): the copy holds
         // it, on top of the version before it.
-        if (!held.has(base) && file.baseSha && text.toString() === file.base && !checked.has(base)) {
+        if (!holds(base) && file.baseSha && text.toString() === file.base && !checked.has(base)) {
           checked.add(base);
           // GitHub's history unread: on top of the copy's newest, as its very text says.
           const older = await history(base, () => true);
           if (stopped) return undefined;
-          const from = older === undefined ? headOf(versions()) : older[0]?.sha;
+          const from = older === undefined ? headOf(versions()) : older[0] && nodeOf(older[0].sha);
           if (from && versionsOf(versions()).has(from) && text.toString() === file.base) noteCopy(from, base);
           continue;
         }
@@ -890,32 +916,32 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           const latest = await shown.newest?.().catch(() => undefined) ?? shown;
           if (stopped) return undefined;
           // Not brought in (its history unread): the draft moves onto the copy's newest, and a later fold loads the branch.
-          if (!versionsOf(versions()).has(latest.sha) && !await enter(latest)) unread = true;
+          if (!holds(latest.sha) && !await enter(latest)) unread = true;
           if (stopped) return undefined;
           continue;
         }
-        const target = shown && held.has(shown.sha) ? tipOf(all, shown.sha) : held.has(base) ? tipOf(all, base) : head;
-        if (!held.has(base) && unread && ownSaves.get(base) === file.base) {
+        const node = nodeOf(base), target = shown && holds(shown.sha) ? tipOf(all, nodeOf(shown.sha)) : holds(base) ? tipOf(all, node) : head;
+        if (!holds(base) && unread && ownSaves.get(base) === file.base) {
           // This tab's own save, made while the copy was starting, that GitHub's history could not place: its words are the
           // draft's own, over the copy's version (noted as the save once they went in, `begin`). With the history read,
           // the save enters as GitHub's version (`enter`) and the draft adds nothing over it.
-          store.acceptBase(scope, path, { text: textAt(Y, doc, all, target)!, baseSha: target });
+          store.acceptBase(scope, path, { text: textAt(Y, doc, all, target)!, baseSha: shaOf(target) });
           continue;
         }
         // A version the copy lacks that may be newer than its own: moved back, the draft would lose that version's words.
         // The copy is not joined (no doubled page, no lost words); a commit then loads the branch again.
-        if (!held.has(base) && unread) return undefined;
-        if (target !== base) {
+        if (!holds(base) && unread) return undefined;
+        if (target !== node) {
           const theirs = textAt(Y, doc, all, target)!, merged = mergeText(file.base, file.text, theirs);
           // A resumed copy holds this tab's words already: only its base moves; the clash rule runs in the copy (`settle`).
-          if (resume) { store.acceptBase(scope, path, { text: theirs, baseSha: target }); continue; }
+          if (resume) { store.acceptBase(scope, path, { text: theirs, baseSha: shaOf(target) }); continue; }
           if (merged.mine !== file.text) store.edit({ scope, path, text: merged.mine, record: false, origin: "shared", rebase: rebaseHistory });
-          store.acceptBase(scope, path, { text: theirs, baseSha: target });
+          store.acceptBase(scope, path, { text: theirs, baseSha: shaOf(target) });
           // By whole words, so its Undo puts whole words back into the copy too.
           if (merged.clashed) store.edit({ scope, path, history: ports.history?.(scope, path), label: "GitHub's change", changes: runChanges(merged.mine, merged.text) });
           continue;
         }
-        return { base, text: file.base };
+        return { base: node, text: file.base };
       }
       return undefined;
     }
@@ -950,13 +976,14 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         // draft's own), then the copy, holding that text, is noted as the save, so its words do not come in again as
         // GitHub's change; then the typing since the save.
         const savedNow = store.get(scope, path);
-        if (resume && resume.base && savedNow?.baseSha && ownSaves.get(savedNow.baseSha) === savedNow.base && !versionsOf(versions()).has(savedNow.baseSha)) {
+        if (resume && resume.base && savedNow?.baseSha && ownSaves.get(savedNow.baseSha) === savedNow.base
+          && !versionsOf(versions()).has(occurrenceOn(versions(), resume.base, savedNow.baseSha))) {
           const keptOver = textAt(Y, doc, versions(), resume.base);
           if (keptOver !== undefined && versionsOf(versions()).has(resume.base)) {
             resumeDraft(resume, keptOver, savedNow.base);
             resumed = true;
             draftOver = savedNow.base;
-            if (text.toString() === savedNow.base) noteCopy(resume.base, savedNow.baseSha);
+            if (text.toString() === savedNow.base) noteCopy(resume.base, occurrenceOn(versions(), resume.base, savedNow.baseSha));
             const own = store.text(scope, path), change = own === undefined ? undefined : typedSince(text.toString(), savedNow.base, own);
             if (change) { const now = text.toString(); doc.transact(() => { applyText(wordRuns(now, change)); }, START); }
           }
@@ -994,10 +1021,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       // Saved while the copy was starting: the draft went in over the copy's version, and the copy, holding the saved text
       // now, is noted as the save, so its words do not come in again as GitHub's change.
       for (const [sha, saved] of ownSaves) {
-        if (!keptBase || versionsOf(versions()).has(sha) || text.toString() !== saved || store.get(scope, path)?.text !== saved) continue;
-        noteCopy(keptBase, sha);
+        const node = keptBase && occurrenceOn(versions(), keptBase, sha);
+        if (!keptBase || !node || versionsOf(versions()).has(node) || text.toString() !== saved || store.get(scope, path)?.text !== saved) continue;
+        noteCopy(keptBase, node);
         store.acceptBase(scope, path, { text: saved, baseSha: sha });
-        keptBase = sha;
+        keptBase = node;
         break;
       }
       follow();
@@ -1092,25 +1120,31 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       const base = await versionOf(file.baseSha, file.base);
       if (stopped) return false;
       if (next.author) doc.transact(() => { if (meta.get(`n:${next.sha}`) !== next.author) meta.set(`n:${next.sha}`, next.author!); }, META);
-      let all = versions();
-      if (!versionsOf(all).has(base)) return false;
-      // A version this tab's came after: a notice that waited behind a newer one (nothing to do), or GitHub's newest
-      // bringing back an earlier text exactly (a revert): the copy holds each text once, so the branch loads again.
-      if (base !== next.sha && versionsOf(all).has(next.sha) && reaches(all, next.sha, base)) return latest?.sha !== next.sha;
+      const all = versions(), from = nodeOf(base);
+      if (!versionsOf(all).has(from)) return false;
+      /** The copy's version for it: an occurrence of its text on the way to this tab's version makes it a later one. */
+      const node = occurrenceOn(all, from, next.sha), again = node !== from && node !== next.sha;
+      if (again && !versionsOf(all).has(node)) {
+        // A version this tab's came after: a notice that waited behind a newer one (nothing to do).
+        if (latest?.sha !== next.sha) return true;
+        // GitHub's newest brings back an earlier text exactly (a revert): a save from this room enters as its next
+        // occurrence, as its note says; an outside one loads the branch again.
+        if (!next.copies?.includes(hex(copyId)) && !noteOf(next, from)) return false;
+      }
       // A save whose note did not come and whose commit does not say it was this room's (its tab was catching up, or
       // saved outside the publish menu), while the copy still holds its very text.
-      if (!versionsOf(all).has(next.sha) && !noteOf(next) && !next.copies?.includes(hex(copyId)) && next.text === text.toString()) {
+      if (!again && !holds(next.sha) && !noteOf(next) && !next.copies?.includes(hex(copyId)) && next.text === text.toString()) {
         const parent = await parentOf(next.sha);
         if (stopped) return false;
-        if (parent && versionsOf(versions()).has(parent.sha) && !versionsOf(versions()).has(next.sha) && next.text === text.toString()) noteCopy(parent.sha, next.sha);
+        if (parent && holds(parent.sha) && !holds(next.sha) && next.text === text.toString()) noteCopy(nodeOf(parent.sha), next.sha);
       }
-      if (!versionsOf(versions()).has(next.sha) && !await enter(next)) return false;
+      if (!versionsOf(versions()).has(node) && !await enter(next, again)) return false;
       if (stopped) return false;
       const now = store.get(scope, path);
       // A save that landed during the fold moved the draft on to a newer version: it stays there (`saved`).
       if (now && (now.baseSha === began || now.baseSha === next.sha)) {
         if (now.base !== next.text || now.baseSha !== next.sha) store.acceptBase(scope, path, { text: next.text, baseSha: next.sha });
-        keptBase = next.sha;
+        keptBase = versionsOf(versions()).has(node) ? node : nodeOf(next.sha);
       }
       // A version the copy holds after it (a save noted meanwhile): the draft moves on to it (`moveBase`).
       settle();
@@ -1129,7 +1163,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     /** Notes the copy as it is now as holding GitHub's version `version` (a save from the room: its text is the copy's
      * text now), from `from`; with no version, only the note, for the commit to come (`noteSave`). */
     function noteCopy(from: string, version?: string) {
-      const noted = savedKey(text.toString()), snapshot = Y.encodeSnapshot(Y.snapshot(doc));
+      const noted = noteKey(from, text.toString()), snapshot = Y.encodeSnapshot(Y.snapshot(doc));
       doc.transact(() => {
         meta.set(`s:${noted}`, snapshot);
         meta.set(`t:${noted}`, from);
@@ -1147,13 +1181,14 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     function saved() {
       const file = store.get(scope, path);
       if (!file?.baseSha || !synced) return;
-      const noted = savedKey(file.base), sha = file.baseSha;
-      if (!versionsOf(versions()).has(sha)) {
-        if (meta.get(`s:${noted}`) instanceof Uint8Array) doc.transact(() => { meta.set(`g:${sha}`, noted); }, META);
+      const sha = file.baseSha, node = keptBase ? occurrenceOn(versions(), keptBase, sha) : sha;
+      if (!versionsOf(versions()).has(node)) {
+        const noted = noteOf({ sha, text: file.base }, keptBase);
+        if (noted) doc.transact(() => { meta.set(`g:${node}`, noted); }, META);
         // Saved without a note (not through the publish menu), while the copy holds that very text: the copy is that version.
-        else if (keptBase && text.toString() === file.base) noteCopy(keptBase, sha);
+        else if (keptBase && text.toString() === file.base) noteCopy(keptBase, node);
       }
-      if (versionsOf(versions()).has(sha)) keptBase = sha;
+      if (versionsOf(versions()).has(node)) keptBase = node;
       settle();
       keep();
     }

@@ -14,6 +14,9 @@
 //   change before its note arrived): the copy keeps one way there and every tab takes the other's words out
 //   (`superseded`), so each word of GitHub's text shows once. Kept is a save; else the edge that came by more versions;
 //   else, from the same version, the lowest client id.
+// - A version is GitHub's blob sha, the same for the same text: a commit bringing back an earlier text exactly (a revert,
+//   A to B to A, often a save) is another occurrence of it, `<sha>~<n>` after n earlier ones on the way to it
+//   (`occurrenceOn`), so the copy's versions stay in GitHub's order and a tab back on A is not taken on to B.
 // - Every version enters on top of the one right before it on GitHub (src/live-text.ts `enter`, from GitHub's history of
 //   the file), so the copy holds GitHub's versions in GitHub's order whichever tab heard which commit first.
 // - The clash rule (ticket 09, as src/outside-merge.ts): the latest version shows. Where GitHub's change replaced the
@@ -33,7 +36,8 @@ type Doc = import("yjs").Doc;
 export interface Edge {
   /** Its key in `meta`, unique per edge. */
   id: string;
-  /** The version it starts from ("" for the copy's birth) and the one it makes, as 40 hex digits (src/live-text.ts `versionOf`). */
+  /** The version it starts from ("" for the copy's birth) and the one it makes, as 40 hex digits (src/live-text.ts
+   * `versionOf`), with `~<n>` for a later occurrence of the same text (`occurrenceOn`). */
   from: string;
   to: string;
   /** The Yjs client id its words carry; none for a save. */
@@ -167,9 +171,27 @@ export function edgeTo(all: readonly Edge[], version: string) {
 /** The versions the copy holds. */
 export const versionsOf = (all: readonly Edge[]) => new Set(all.map(edge => edge.to));
 
-/** Whether `older` came before `version` in the copy (or is it). */
-export function reaches(all: readonly Edge[], older: string, version: string) {
-  return older === version || ancestry(all)(version).has(older);
+/** GitHub's blob sha of the copy's version `version` (one of its occurrences). */
+export const shaOf = (version: string) => version.slice(0, 40);
+
+/** The copy's version for GitHub's `sha` entering on top of its version `from`: `from` itself when it is that text;
+ * else `sha`, or `sha~<n>` when n occurrences of that text came before (`from` and the versions before it): a revert. */
+export function occurrenceOn(all: readonly Edge[], from: string, sha: string) {
+  if (shaOf(from) === sha) return from;
+  let count = 0;
+  for (const version of [from, ...ancestry(all)(from)]) if (shaOf(version) === sha) count++;
+  return count ? `${sha}~${count}` : sha;
+}
+
+/** The copy's latest occurrence of GitHub's `sha` (the one most occurrences on), if it holds one. */
+export function newestOf(all: readonly Edge[], sha: string) {
+  let out: string | undefined, most = -1;
+  for (const { to } of all) {
+    if (shaOf(to) !== sha) continue;
+    const count = to.length > 40 ? Number(to.slice(41)) : 0;
+    if (count > most) { most = count; out = to; }
+  }
+  return out;
 }
 
 /** The newest version reached from `version`: the one most versions on (the lowest key on a tie). */
