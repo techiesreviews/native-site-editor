@@ -183,6 +183,19 @@ export function occurrenceOn(all: readonly Edge[], from: string, sha: string) {
   return count ? `${sha}~${count}` : sha;
 }
 
+/** The copy's occurrence of GitHub's `sha` that came right after a version of `parent` (GitHub's version right before
+ * it; `parentHeld`: the copy holds some occurrence of that): the latest such. The copy's first version came after none
+ * it holds. None when `sha` came there after no occurrence of `parent`: a later one the copy lacks (a revert). */
+export function occurrenceAfter(all: readonly Edge[], sha: string, parent: string, parentHeld: boolean) {
+  let out: string | undefined, most = -1;
+  for (const { from, to } of all) {
+    if (shaOf(to) !== sha || !(from ? shaOf(from) === parent : !parentHeld)) continue;
+    const count = to.length > 40 ? Number(to.slice(41)) : 0;
+    if (count > most) { most = count; out = to; }
+  }
+  return out;
+}
+
 /** The copy's latest occurrence of GitHub's `sha` (the one most occurrences on), if it holds one. */
 export function newestOf(all: readonly Edge[], sha: string) {
   let out: string | undefined, most = -1;

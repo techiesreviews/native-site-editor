@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as Y from "yjs";
-import { birthUpdate, clashes, draftUpdate, edgeClient, edgeTo, edgeUpdate, edges, textAt } from "../src/live-versions.ts";
+import { birthUpdate, clashes, draftUpdate, edgeClient, edgeTo, edgeUpdate, edges, newestOf, occurrenceAfter, occurrenceOn, textAt, tipOf, type Edge } from "../src/live-versions.ts";
 import { mergeText } from "../src/text-merge.ts";
 import { diffRange } from "../src/draft-store.ts";
 import type { TextChange } from "../src/draft-store.ts";
@@ -59,6 +59,23 @@ test("a word typed here and saved, coming in again as GitHub's: the second goes,
   const found = clashes(Y, doc, all, edgeTo(all, V1)!, client => client === 7, (client, clock) => Y.isDeleted(gone, Y.createID(client, clock)));
   assert.equal(found.clashed, false);
   assert.equal(settle(doc, 7, typed).settled, github);
+});
+
+test("a text GitHub brings back (A to B to A to B to A) is its next occurrence, after the one before it, and the tip from it (am-59)", () => {
+  const A = "a".repeat(40), B = "b".repeat(40), none = new Uint8Array();
+  const way = (from: string, to: string): Edge => ({ id: `e:${to}`, from, to, snapshot: none });
+  const all = [way("", A), way(A, B), way(B, `${A}~1`), way(`${A}~1`, `${B}~1`), way(`${B}~1`, `${A}~2`)];
+  assert.equal(occurrenceOn(all, A, B), B, "B after the first A is the B the copy holds");
+  assert.equal(occurrenceOn(all, `${A}~1`, B), `${B}~1`);
+  assert.equal(occurrenceOn(all, `${B}~1`, A), `${A}~2`);
+  assert.equal(occurrenceOn(all, `${A}~1`, A), `${A}~1`, "a version is its own text's occurrence");
+  assert.equal(newestOf(all, A), `${A}~2`);
+  assert.equal(newestOf(all, "c".repeat(40)), undefined);
+  assert.equal(occurrenceAfter(all, A, B, true), `${A}~2`, "the latest A that came after a B");
+  assert.equal(occurrenceAfter(all, A, "c".repeat(40), false), A, "the copy's first version came after none it holds");
+  assert.equal(occurrenceAfter(all.slice(0, 2), A, B, true), undefined, "an A after B the copy lacks");
+  assert.equal(tipOf(all, `${A}~1`), `${A}~2`);
+  assert.equal(tipOf(all.slice(0, 3), `${A}~1`), `${A}~1`, "the tip from A's second occurrence is not B");
 });
 
 test("two tabs folding the same commit write the same bytes, whatever each typed meanwhile, and the words enter once", async () => {
