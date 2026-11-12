@@ -273,7 +273,9 @@ export function startBoard(root: HTMLElement) {
           // Reached by the keyboard too: the label picks its screen as it takes focus, and the arrows then nudge it.
           const name = side.querySelector<HTMLElement>(".cat-label")!;
           name.tabIndex = 0;
+          name.setAttribute("role", "button");
           name.setAttribute("aria-label", `${entry.name}, ${name.textContent}`);
+          name.setAttribute("aria-roledescription", "movable screen");
           side.append(frameElement({ kind: "mockup", id: entry.id, theme, values: entry.defaults, width, height: entry.height, live: true }, `${entry.name}, ${width} px, ${theme}`));
           row.append(side);
         }
@@ -613,7 +615,7 @@ export function startBoard(root: HTMLElement) {
     selected = id && byId.has(id) ? id : undefined;
     picked = piece && pieceOf(piece) ? piece : undefined;
     for (const article of world.querySelectorAll<HTMLElement>(".cat-card[data-id]")) article.classList.toggle("is-selected", article.dataset.id === selected);
-    for (const piece of world.querySelectorAll<HTMLElement>(".cat-half[data-piece], .cat-area")) piece.classList.toggle("is-selected", piece.dataset.piece === picked);
+    for (const holder of world.querySelectorAll<HTMLElement>(".cat-half[data-piece], .cat-area")) holder.classList.toggle("is-selected", holder.dataset.piece === picked);
     for (const head of outline.querySelectorAll<HTMLElement>(".cat-outline__area")) {
       if (`area:${head.dataset.area}` === picked) head.setAttribute("aria-current", "true"); else head.removeAttribute("aria-current");
     }
@@ -1104,6 +1106,13 @@ export function startBoard(root: HTMLElement) {
   document.addEventListener("keydown", () => { byPointer = false; }, true);
   world.addEventListener("cat-frame-press", (event) => { byPointer = true; press((event.target as Element).closest<HTMLElement>(".cat-card[data-id]")); });
   world.addEventListener("cat-frame-key", () => { byPointer = false; });
+  // Enter or Space on a screen's label picks it (and opens its options below wide widths), as a press does.
+  world.addEventListener("keydown", (event) => {
+    const label = (event.target as Element).closest<HTMLElement>(".cat-half[data-piece] > .cat-label");
+    if (!label || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    selectPiece(label.parentElement!.dataset.piece!);
+  });
   world.addEventListener("focusin", (event) => {
     const target = event.target as HTMLElement;
     const holder = target.matches(".cat-half[data-piece] > .cat-label") ? target.parentElement : null;
@@ -1203,7 +1212,8 @@ export function startBoard(root: HTMLElement) {
       const twice = lastTap.id === same && now - lastTap.t < 340 && !target.closest("button, input, select");
       if (twice) { lastTap = { t: 0, id: "" }; flyToCard(id, 2); return; }
       lastTap = { t: now, id: same };
-      if (screen) { if (picked !== screen) select(id, true, screen); }
+      // The label's focus may have picked the screen already (a press focuses it): the sheet still opens below wide widths.
+      if (screen) { if (picked !== screen) select(id, true, screen); else if (mode() !== "wide") setSheet("options"); }
       else if (selected !== id || picked) select(id);
       return;
     }

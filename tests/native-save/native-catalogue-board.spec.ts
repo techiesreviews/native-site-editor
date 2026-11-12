@@ -229,6 +229,28 @@ test("on a phone, a part chosen in the outline sheet sits above the options shee
   }).toBe(true);
 });
 
+test("below the wide layout, a screen's label opens the Options sheet, with the mouse and with Enter", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 900, height: 800 });
+  await page.goto(`${baseURL}${BOARD}`);
+  await expect(page.locator('.cat-outline__item[data-id="sharing-panel"]')).toBeAttached();
+  await page.getByRole("button", { name: "Outline" }).click();
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Sharing, one panel", exact: true }).click();
+  const board = page.locator(".cat-board"), label = page.locator('#card-sharing-panel [data-width="390"][data-theme="dark"]').locator(":scope > .cat-label");
+  await expect(board).toHaveAttribute("data-sheet", "options");
+  await page.keyboard.press("Escape");
+  await expect(board).not.toHaveAttribute("data-sheet", /./);
+  await stillBox(page.locator("#card-sharing-panel"));
+  await label.click();
+  await expect(board).toHaveAttribute("data-sheet", "options");
+  await expect(page.getByRole("complementary", { name: "Options" }).getByRole("region", { name: "Place · 390 px · Dark" })).toBeVisible();
+  // From the keyboard: Enter on the focused label does the same.
+  await page.keyboard.press("Escape");
+  await expect(board).not.toHaveAttribute("data-sheet", /./);
+  await label.focus();
+  await page.keyboard.press("Enter");
+  await expect(board).toHaveAttribute("data-sheet", "options");
+});
+
 test("every card and every live cell carries its part's name", async ({ page, baseURL }) => {
   await openBoard(page, baseURL);
   const cards = await page.locator(".cat-card[data-id]").evaluateAll((list) => list.map((card) => {
