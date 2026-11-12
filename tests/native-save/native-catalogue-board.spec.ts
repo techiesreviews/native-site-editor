@@ -295,9 +295,59 @@ test("a card dragged by its title moves, Escape puts a drag back, the arrows nud
   // Typing a place moves the card there.
   await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true }).click();
   const typed = page.getByRole("complementary", { name: "Options" }).getByRole("spinbutton", { name: "X" });
+  const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem("catalogue:places") ?? "{}").button?.x as number);
+  const savedBefore = await saved();
   await typed.fill(String(xBefore - 40));
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("catalogue:places") ?? "{}").button?.x)).toBeDefined();
+  await expect.poll(saved).toBe(savedBefore - 50);
   await expect(page.locator("#card-button")).not.toHaveAttribute("style", new RegExp(nudged.replace(/[.]/g, "\\.")));
+});
+
+test("a dragged card snaps to another's edge with a guide, and nothing else on the board moves", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  // The whole board in view, so both cards are on screen.
+  await page.getByRole("region", { name: "Canvas" }).focus();
+  await page.keyboard.press("Shift+Digit1");
+  const button = page.locator("#card-button"), badge = page.locator("#card-badge"), icon = page.locator("#card-icon");
+  let last = "";
+  await expect.poll(async () => { const box = JSON.stringify(await button.boundingBox()); const still = box === last; last = box; return still; }, { intervals: [150] }).toBe(true);
+  const [from, to, iconBefore] = [(await button.boundingBox())!, (await badge.boundingBox())!, (await icon.boundingBox())!];
+  const title = (await button.locator(".cat-card__title").boundingBox())!;
+  // Dropped 3 px right of the Badge's left edge, well below it: within reach (6 px on screen), so it snaps.
+  const start = { x: title.x + 4, y: title.y + title.height / 2 };
+  const end = { x: start.x + (to.x - from.x) + 3, y: start.y + (to.y + to.height + 60 - from.y) };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move((start.x + end.x) / 2, (start.y + end.y) / 2, { steps: 4 });
+  await page.mouse.move(end.x, end.y, { steps: 4 });
+  const guide = page.locator(".cat-guide[data-axis='x']");
+  await expect(guide).toHaveCount(1);
+  // Zoomed out this far other edges are in reach too: the card lands on whichever is nearest, along its guide.
+  const line = (await guide.boundingBox())!.x;
+  await page.mouse.up();
+  await expect(page.locator(".cat-guide")).toHaveCount(0);
+  const placed = (await button.boundingBox())!;
+  expect(Math.min(...[placed.x, placed.x + placed.width / 2, placed.x + placed.width].map((edge) => Math.abs(edge - line)))).toBeLessThan(1);
+  expect(Math.abs(placed.x - end.x + start.x - from.x)).toBeLessThan(8);
+  expect(await badge.boundingBox()).toEqual(to);
+  expect(await icon.boundingBox()).toEqual(iconBefore);
+});
+
+test("a tap on a card's title selects it and a double tap brings it close", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  await flyTo(page, "Badge");
+  await page.getByRole("button", { name: "Close" }).click();
+  const card = page.locator("#card-badge"), title = card.locator(".cat-card__title");
+  await title.click();
+  await expect(card).toHaveClass(/is-selected/);
+  await expect(card).not.toHaveAttribute("style", /translate/);
+  await page.keyboard.press("Minus");
+  await page.keyboard.press("Minus");
+  let last = "";
+  await expect.poll(async () => { const box = JSON.stringify(await card.boundingBox()); const still = box === last; last = box; return still; }, { intervals: [150] }).toBe(true);
+  const before = (await card.boundingBox())!;
+  await title.dblclick();
+  await expect.poll(async () => (await card.boundingBox())!.width).toBeGreaterThan(before.width * 1.2);
+  await expect(card).not.toHaveAttribute("style", /translate/);
 });
 
 test("the live Button reacts to a real hover, press and keyboard, and the board stays put", async ({ page, baseURL }) => {
