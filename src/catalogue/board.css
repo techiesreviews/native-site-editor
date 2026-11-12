@@ -260,6 +260,10 @@ body:has(> .cat-board) {
 .cat-half[data-piece] > .cat-label {
   cursor: grab;
 }
+.cat-half[data-piece] > .cat-label:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
 .cat-board.is-moving,
 .cat-board.is-moving :is(.cat-card__title, .cat-half[data-piece] > .cat-label, .cat-area__label) {
   cursor: grabbing;
@@ -604,7 +608,7 @@ body:has(> .cat-board) {
   .cat-segmented button:hover {
     color: var(--text);
   }
-  .cat-outline__item[aria-current="true"]:hover {
+  :is(.cat-outline__item, .cat-outline__area)[aria-current="true"]:hover {
     background: linear-gradient(var(--hover) 0 0), var(--current);
   }
 }
@@ -650,7 +654,7 @@ body:has(> .cat-board) {
   color: var(--text);
   text-align: start;
 }
-.cat-outline__item[aria-current="true"] {
+:is(.cat-outline__item, .cat-outline__area)[aria-current="true"] {
   background: var(--current);
   font-weight: 600;
 }

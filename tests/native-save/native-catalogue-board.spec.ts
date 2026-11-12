@@ -510,7 +510,7 @@ test("a screen is dragged by its label and keeps working inside: a Mock-up and a
   // The Place box names the screen, and the arrows nudge it.
   await expect(options.getByRole("region", { name: "Place · 390 px · Light" })).toBeVisible();
   const x = options.getByRole("spinbutton", { name: "X" });
-  await expect(page.getByRole("region", { name: "Canvas" })).toBeFocused();
+  await expect(light.locator(":scope > .cat-label")).toBeFocused();
   const xBefore = Number(await x.inputValue());
   const storedBefore = (await placesNow(page))["screen:sharing-panel:390:light"].x;
   await page.keyboard.press("Shift+ArrowRight");
@@ -522,13 +522,29 @@ test("a screen is dragged by its label and keeps working inside: a Mock-up and a
   await expect(light).not.toHaveCSS("translate", "none");
   // Escape puts a drag back (the press on the label takes the keys back from the field).
   const placed = await light.evaluate((element) => (element as HTMLElement).style.translate);
-  await dragLabel(page, light.locator(":scope > .cat-label"), -150, 0, async () => { await expect(page.getByRole("region", { name: "Canvas" })).toBeFocused(); await page.keyboard.press("Escape"); await page.mouse.up(); });
+  await dragLabel(page, light.locator(":scope > .cat-label"), -150, 0, async () => { await expect(light.locator(":scope > .cat-label")).toBeFocused(); await page.keyboard.press("Escape"); await page.mouse.up(); });
   await expect.poll(() => light.evaluate((element) => (element as HTMLElement).style.translate)).toBe(placed);
   // It still works where it is: the Done button is pressed in the moved screen, and the screen stays put.
   const nudged = await stillBox(light);
   expect(nudged.x).toBeCloseTo(lightAfter.x, 0);
   await page.frameLocator('#card-sharing-panel [data-cell="live"][data-width="390"][data-theme="light"] iframe').getByRole("button", { name: "Done" }).click();
   expect(await stillBox(light)).toEqual(nudged);
+  // Two quick taps on different screens pick the second, and the board does not zoom.
+  const zoom = page.getByRole("toolbar", { name: "Zoom" }).locator("output"), zoomed = await zoom.textContent();
+  await light.locator(":scope > .cat-label").click();
+  await dark.locator(":scope > .cat-label").click();
+  await expect(options.getByRole("region", { name: "Place · 390 px · Dark" })).toBeVisible();
+  await expect(zoom).toHaveText(zoomed ?? "");
+  // The keyboard reaches a screen too: its label takes focus, and the arrows nudge it (and back, so it is in its flow again).
+  await page.getByRole("region", { name: "Canvas" }).focus();
+  await light.locator(":scope > .cat-label").focus();
+  await expect(options.getByRole("region", { name: "Place · 390 px · Light" })).toBeVisible();
+  await dark.locator(":scope > .cat-label").focus();
+  await expect(options.getByRole("region", { name: "Place · 390 px · Dark" })).toBeVisible();
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect.poll(async () => (await placesNow(page))["screen:sharing-panel:390:dark"]?.y).toBe(10);
+  await page.keyboard.press("Shift+ArrowUp");
+  await expect.poll(async () => (await placesNow(page))["screen:sharing-panel:390:dark"]).toBeUndefined();
 
   // An Editor screen.
   await flyTo(page, "Editor");
