@@ -484,8 +484,8 @@ export function startBoard(root: HTMLElement) {
     dots.style.backgroundPosition = `${cam.x}px ${cam.y}px`;
     dots.style.opacity = String(clamp((grid - 6) / 8, 0, 1));
     zoomPct.textContent = `${Math.round(cam.z * 100)}%`;
-    // Guides drawn at the old zoom would point at the wrong place: the next pointer move draws them again.
-    if (move?.moved) drawGuides([]);
+    // A zoom or pan mid-drag: the guides follow the board.
+    if (move?.moved) drawGuides(move.guides);
     placeSel();
     cull();
   }
@@ -944,14 +944,13 @@ export function startBoard(root: HTMLElement) {
   // ---------- Moving a card: drag its title; it snaps to the other cards, with guides along the edges it meets ----------
 
   // `sx`, `sy`: the press on screen; `bx`, `by`: on the board, so a zoom during the drag keeps the card under the pointer.
-  let move: { id: string; pointer: number; sx: number; sy: number; bx: number; by: number; from: Point; base: Box; others: Box[]; moved: boolean; target: Element } | undefined;
+  let move: { id: string; pointer: number; sx: number; sy: number; bx: number; by: number; from: Point; base: Box; others: Box[]; moved: boolean; target: Element; guides: Guide[] } | undefined;
   function startMove(event: PointerEvent, article: HTMLElement) {
     stopFlight();
     const id = article.dataset.id!, from = placeOf(id), box = cardBox(article);
     const others = [...world.querySelectorAll<HTMLElement>(".cat-card[data-id]")].filter((other) => other !== article).map(cardBox);
-    const at = boardAt(event);
-    const bx = at.x, by = at.y;
-    move = { id, pointer: event.pointerId, sx: event.clientX, sy: event.clientY, bx, by, from, base: { ...box, x: box.x - from.x, y: box.y - from.y }, others, moved: false, target: event.target as Element };
+    const { x: bx, y: by } = boardAt(event);
+    move = { id, pointer: event.pointerId, sx: event.clientX, sy: event.clientY, bx, by, from, base: { ...box, x: box.x - from.x, y: box.y - from.y }, others, moved: false, target: event.target as Element, guides: [] };
     try { viewport.setPointerCapture(event.pointerId); } catch { /* The pointer is gone already. */ }
   }
   /** The pointer on the board: `cam` is measured from the canvas's own corner, not the window's. */
@@ -974,6 +973,7 @@ export function startBoard(root: HTMLElement) {
     const now = boardAt(event), dx = now.x - move.bx, dy = now.y - move.by;
     const at = snapMove({ ...move.base, x: move.base.x + move.from.x + dx, y: move.base.y + move.from.y + dy }, move.others, 6 / cam.z);
     setPlace(move.id, { x: Math.round(at.x - move.base.x), y: Math.round(at.y - move.base.y) }, false);
+    move.guides = at.guides;
     drawGuides(at.guides);
   }
   /** `drop` keeps the card where it is, `cancel` (Escape, a cancelled pointer) puts it back; a press that never moved is a tap. */
