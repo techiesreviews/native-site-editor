@@ -70,7 +70,7 @@ import { saveAuthors, type SaveAuthors } from "./save-authors";
 import type { SaveAuthor } from "../shared/types";
 import { mergeText, runChanges } from "./text-merge";
 import { liveSaves } from "./live-saves";
-import { birthUpdate, clashes, clientOf, copyAt, draftUpdate, edgeClient, edgeTo as edgeFor, edgeUpdate, edges, headOf, metaOf, newestOf, occurrenceOn,
+import { birthUpdate, clashes, clientOf, copyAt, draftUpdate, edgeClient, edgeTo as edgeFor, edgeUpdate, edges, headOf, metaOf, newestOf, occurrenceAfter, occurrenceOn,
   shaOf, superseded, type Edge, textAt, textWith, tipOf, versionsOf, wordDiff, wordRuns, wordsOf } from "./live-versions";
 
 type Yjs = typeof import("yjs");
@@ -764,7 +764,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         // GitHub's words coming back go into the copy first, as every tab writes them (the draft does not follow them:
         // they are part of this tab's step below, whose change then writes only what the copy still lacks).
         if (back) { quiet = true; try { Y.applyUpdate(doc, back, OUTSIDE); } finally { quiet = false; } }
-        const author = meta.get(`n:${shaOf(edge.to)}`), who = typeof author === "string" && author ? author.split(" · ")[0] : "Someone";
+        const author = meta.get(`n:${edge.to}`), who = typeof author === "string" && author ? author.split(" · ")[0] : "Someone";
         store.edit({ scope, path, history: ports.history?.(scope, path), label: `${who}'s change`, changes: out });
       }
       moveBase(all);
@@ -815,34 +815,49 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     const parentOf = async (sha: string) => (await history(sha, () => true))?.[0];
     /**
      * Brings GitHub's version `version` into the copy along GitHub's history of the file: it enters on top of the version
-     * right before it, and that one first, on top of its own, when the copy lacks it, back to a version the copy holds.
-     * Every tab bringing the same versions writes the same items, so they enter once and in GitHub's order, whichever
-     * tab heard which commit first. False when the history could not be read or does not reach a version the copy holds
-     * within HISTORY_LIMIT versions. `again`: GitHub's newest brings back a text the copy holds (a revert), which enters
-     * as its next occurrence.
+     * right before it, and that one first, on top of its own, when the copy lacks it, back to a version the copy holds
+     * as that very occurrence of its text (`occurrenceAfter`: a revert's text the copy holds only from before is read
+     * past). Every tab bringing the same versions writes the same items, so they enter once and in GitHub's order,
+     * whichever tab heard which commit first. False when the history could not be read or does not reach a version the
+     * copy holds within HISTORY_LIMIT versions. `again`: GitHub's newest brings back a text the copy holds (a revert),
+     * which enters as its next occurrence.
      */
     async function enter(version: LiveVersion, again = false) {
       if (!again && holds(version.sha)) return true;
-      const older = await history(version.sha, before => holds(before.sha));
-      if (!older?.length || !holds(older.at(-1)!.sha)) return false;
+      /** The copy's version the chain starts from, and a version read that the copy holds some occurrence of. */
+      let from: string | undefined, held: LiveVersion | undefined;
+      const older = await history(version.sha, before => {
+        // The version before a held one tells which occurrence of its text it is.
+        if (held) from = occurrenceAfter(versions(), held.sha, before.sha, holds(before.sha));
+        held = from || !holds(before.sha) ? undefined : before;
+        return from !== undefined;
+      });
+      if (!older?.length) return false;
+      // Read only to tell the occurrence; or the file's first version (or the history's limit): its latest occurrence.
+      if (from) older.pop();
+      else if (held && held === older.at(-1)) from = newestOf(versions(), held.sha);
+      if (!from) return false;
       const chain = [version, ...older];
-      for (let index = chain.length - 1; index > 0; index--)
-        if (!await take(chain[index].sha, chain[index - 1])) return false;
+      for (let index = chain.length - 2; index >= 0; index--) {
+        const entered = await take(from, chain[index]);
+        if (!entered) return false;
+        from = entered;
+      }
       return !stopped;
     }
-    /** `version` enters on top of `from`: a save from this room as its note says (waiting for the note when the commit
-     * says it was this room's), else as the outside participant. */
-    async function take(sha: string, version: LiveVersion) {
-      const from = nodeOf(sha), at = () => occurrenceOn(versions(), from, version.sha);
-      if (versionsOf(versions()).has(at())) return true;
+    /** `version` enters on top of the copy's version `from`: a save from this room as its note says (waiting for the
+     * note when the commit says it was this room's), else as the outside participant. The copy's version it is now. */
+    async function take(from: string, version: LiveVersion) {
+      const at = () => occurrenceOn(versions(), from, version.sha);
+      if (versionsOf(versions()).has(at())) return at();
       const ours = copyId !== undefined && version.copies?.includes(hex(copyId));
       const noted = ours ? await noteFor(version, from) : noteOf(version, from);
-      if (stopped) return false;
+      if (stopped) return undefined;
       const node = at();
-      if (versionsOf(versions()).has(node)) return true;
-      if (noted) { doc.transact(() => { meta.set(`g:${node}`, noted); }, META); return true; }
+      if (versionsOf(versions()).has(node)) return node;
+      if (noted) { doc.transact(() => { meta.set(`g:${node}`, noted); }, META); return node; }
       // This room's save whose note never came (its tab left before it could note it): the branch loads again.
-      return !ours && edgeTo(from, node, version.text);
+      return !ours && await edgeTo(from, node, version.text) ? node : undefined;
     }
     /** The key of the note of a save of `version`'s text in the copy, once its items have all arrived: the one this
      * room's save from `from` wrote, else one no version took yet (from another version, or written before notes
@@ -856,11 +871,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (own && fits(own)) return own;
       const taken = new Set<unknown>();
       for (const [key, value] of meta.entries()) if (key.startsWith("g:")) taken.add(value);
-      for (const [key, from] of meta.entries()) {
-        if (!key.startsWith("t:") || typeof from !== "string") continue;
+      for (const [key, over] of meta.entries()) {
+        if (!key.startsWith("t:") || typeof over !== "string") continue;
         // Only a note of this very text (its key says so) is made again to be sure.
         const note = key.slice(2);
-        if (note !== own && !taken.has(note) && (note === noteKey(from, version.text) || note === savedKey(version.text)) && fits(note)) return note;
+        if (note !== own && !taken.has(note) && (note === noteKey(over, version.text) || note === savedKey(version.text)) && fits(note)) return note;
       }
       return undefined;
     }
@@ -1119,11 +1134,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (!file) return false;
       const base = await versionOf(file.baseSha, file.base);
       if (stopped) return false;
-      if (next.author) doc.transact(() => { if (meta.get(`n:${next.sha}`) !== next.author) meta.set(`n:${next.sha}`, next.author!); }, META);
       const all = versions(), from = nodeOf(base);
-      if (!versionsOf(all).has(from)) return false;
       /** The copy's version for it: an occurrence of its text on the way to this tab's version makes it a later one. */
       const node = occurrenceOn(all, from, next.sha), again = node !== from && node !== next.sha;
+      if (next.author) doc.transact(() => { if (meta.get(`n:${node}`) !== next.author) meta.set(`n:${node}`, next.author!); }, META);
+      if (!versionsOf(all).has(from)) return false;
       if (again && !versionsOf(all).has(node)) {
         // A version this tab's came after: a notice that waited behind a newer one (nothing to do).
         if (latest?.sha !== next.sha) return true;
