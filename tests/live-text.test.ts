@@ -500,6 +500,55 @@ test("a commit right after a save brought the page back to an earlier text goes 
   anna.stop(); lex.stop();
 });
 
+test("a tab that missed two saves of a page going back and forth (A B A B A) and hears a commit first ends on it with the others, its words once (am-59)", async () => {
+  const line = "<p>Closed Mondays.</p>\n", one = `${base}<p>Fresh daily.</p>\n`, two = `${one}${line}`, three = `${one}<p>Closed Sundays.</p>\n`;
+  const history: LiveVersion[] = [{ sha, text: base }];
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => history.at(-1),
+    before: async function* (of) { for (let at = history.findLastIndex(version => version.sha === of) - 1; at >= 0; at--) yield history[at]; } });
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  const save = (version: LiveVersion) => {
+    const copies = liveSaves.note!(scope, [{ path, content: lex.text }], lex.store);
+    history.push({ ...version, copies });
+    lex.store.markSaved(scope, path, { baseSha: version.sha, original: lex.text });
+    return { ...version, copies };
+  };
+  const A = "1".repeat(40), B = "2".repeat(40), C = "3".repeat(40);
+  lex.type(base.length, "<p>Fresh daily.</p>\n");
+  await until(() => anna.text === one, "A shared");
+  assert.equal(await liveFold(anna.store, key, save({ sha: A, text: one })), true);
+  lex.type(one.length, line);
+  await until(() => anna.text === two, "B shared");
+  assert.equal(await liveFold(anna.store, key, save({ sha: B, text: two })), true);
+  lex.type(one.length, "", line.length);
+  await until(() => anna.text === one, "A again shared");
+  assert.equal(await liveFold(anna.store, key, save({ sha: A, text: one })), true);
+  await until(() => anna.store.get(scope, path)?.baseSha === A, "Anna on A's second occurrence");
+  // Anna's socket is down for two more saves (B, A) and a commit C on top; she hears C first, the saves late.
+  anna.socket.me.cut = true;
+  lex.type(one.length, line);
+  save({ sha: B, text: two });
+  lex.type(one.length, "", line.length);
+  save({ sha: A, text: one });
+  history.push({ sha: C, text: three });
+  const folding = liveFold(anna.store, key, { sha: C, text: three });
+  await quiet();
+  anna.socket.me.cut = false;
+  anna.socket.me.options.onKey?.();
+  assert.equal(await folding, true);
+  assert.equal(await liveFold(lex.store, key, { sha: C, text: three }), true);
+  // Her way into C (from A's second occurrence) and Lex's (from the third) are two ways into one version: the copy keeps
+  // the one that came by more versions and takes the other's words out (src/live-versions.ts `superseded`).
+  await until(() => anna.text === three && lex.text === three, "C on both");
+  await quiet();
+  assert.equal(anna.text, lex.text);
+  assert.equal(times(anna.text, "Sundays"), 1);
+  assert.deepEqual([anna.store.get(scope, path)?.baseSha, lex.store.get(scope, path)?.baseSha], [C, C]);
+  anna.stop(); lex.stop();
+});
+
 test("the copy follows the open file: another file closes the room, and agents alone do not load Yjs", async () => {
   const room = fakeRoom();
   const anna = tab(room);
