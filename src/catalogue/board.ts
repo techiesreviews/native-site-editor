@@ -270,6 +270,10 @@ export function startBoard(root: HTMLElement) {
           // Every mock-up frame works: each is a live cell, told apart by its width and theme.
           Object.assign(side.dataset, { part: entry.id, cell: "live", width: String(width), piece: `screen:${entry.id}:${width}:${theme}` });
           placePiece(side);
+          // Reached by the keyboard too: the label picks its screen as it takes focus, and the arrows then nudge it.
+          const name = side.querySelector<HTMLElement>(".cat-label")!;
+          name.tabIndex = 0;
+          name.setAttribute("aria-label", `${entry.name}, ${name.textContent}`);
           side.append(frameElement({ kind: "mockup", id: entry.id, theme, values: entry.defaults, width, height: entry.height, live: true }, `${entry.name}, ${width} px, ${theme}`));
           row.append(side);
         }
@@ -945,7 +949,7 @@ export function startBoard(root: HTMLElement) {
     const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
     const from = event.target as Element;
     const key = placeKey();
-    if (step && key && !move && (from === document.body || from === viewport || from.closest?.(".cat-outline__item, .cat-outline__area"))) {
+    if (step && key && !move && (from === document.body || from === viewport || from.closest?.(".cat-outline__item, .cat-outline__area, .cat-half[data-piece] > .cat-label"))) {
       event.preventDefault();
       const size = event.shiftKey ? 10 : 1, place = placeOf(key);
       setPlace(key, { x: place.x + step[0] * size, y: place.y + step[1] * size });
@@ -1102,6 +1106,8 @@ export function startBoard(root: HTMLElement) {
   world.addEventListener("cat-frame-key", () => { byPointer = false; });
   world.addEventListener("focusin", (event) => {
     const target = event.target as HTMLElement;
+    const holder = target.matches(".cat-half[data-piece] > .cat-label") ? target.parentElement : null;
+    if (holder && placeKey() !== holder.dataset.piece) selectPiece(holder.dataset.piece!, false);
     const article = target.closest('[data-cell="live"]') ? target.closest<HTMLElement>(".cat-card[data-id]") : null;
     if (!article) return;
     press(article);
@@ -1192,9 +1198,11 @@ export function startBoard(root: HTMLElement) {
     if (mode() !== "wide" && root.dataset.sheet === "outline") setSheet("");
     if (article) {
       const id = article.dataset.id!;
-      const twice = lastTap.id === id && now - lastTap.t < 340 && !target.closest("button, input, select");
+      // A double tap is two on the same thing: a card, or one of its screens.
+      const same = screen ?? id;
+      const twice = lastTap.id === same && now - lastTap.t < 340 && !target.closest("button, input, select");
       if (twice) { lastTap = { t: 0, id: "" }; flyToCard(id, 2); return; }
-      lastTap = { t: now, id };
+      lastTap = { t: now, id: same };
       if (screen) { if (picked !== screen) select(id, true, screen); }
       else if (selected !== id || picked) select(id);
       return;
