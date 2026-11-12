@@ -12,7 +12,7 @@ import { fakeIndexedDB } from "./support/fake-agent-indexeddb";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 import { forEachAwait, type AwaitRace } from "./support/await-race";
 import type { LiveClock, LivePeer, LiveRoomOptions } from "../src/live-room";
-import type { CaretShare, LiveTextPorts } from "../src/live-text";
+import type { CaretShare, LiveTextPorts, LiveVersion } from "../src/live-text";
 import type { JsonValue } from "../shared/agent-command";
 import type { LiveAccess } from "../shared/live-room";
 import { writeAs, type LiveAuthor } from "../src/live-author";
@@ -311,6 +311,35 @@ test("Save right after a page opens again waits until it caught up with the room
   assert.equal(times(anna.text, "Lex's line"), 1, "Lex's words once");
   assert.equal(liveSaves.ready?.(key, again.store), undefined, "caught up, the next save does not wait");
   anna.stop(); again.stop();
+});
+
+test("a save landing while a commit folds into the room's copy keeps the draft on the save's newer version (am-59)", async () => {
+  const one = { sha: "1".repeat(40), text: `${base}<p>Closed Mondays.</p>\n` };
+  // GitHub's newest commit: the base, until Anna's fold asks; that answer waits until `release`.
+  let holding = false, release: ((version: LiveVersion) => void) | undefined;
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base,
+    newest: () => (holding ? new Promise<LiveVersion>(resolve => { release = resolve; }) : Promise.resolve({ sha, text: base })),
+    before: async function* (of) { if (of === one.sha) yield { sha, text: base }; } });
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room, base, { github });
+  await quiet();
+  const lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  lex.type(0, "<!-- Lex -->");
+  await until(() => anna.text.startsWith("<!-- Lex -->"), "both caught up");
+  // Anna hears commit 1; while her fold asks GitHub for its newest commit, her own save of the room's text lands.
+  holding = true;
+  const folding = liveFold(anna.store, key, one);
+  await until(() => release !== undefined, "the fold asking GitHub");
+  anna.type(0, "<!-- Anna -->");
+  const saved = "2".repeat(40), copies = liveSaves.note!(key, anna.text, anna.store);
+  anna.store.markSaved(scope, path, { baseSha: saved, original: anna.text });
+  holding = false;
+  release!(one);
+  assert.equal(await folding, true);
+  assert.equal(anna.store.get(scope, path)?.baseSha, saved, "the draft stays on her save");
+  assert.equal(copies.length, 1);
+  anna.stop(); lex.stop();
 });
 
 test("the copy follows the open file: another file closes the room, and agents alone do not load Yjs", async () => {
