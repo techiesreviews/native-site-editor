@@ -45,6 +45,11 @@ test.describe("desktop", () => {
     for (const control of [project, picker, undo, history, publish]) expect(Math.abs((await middle(control)) - row)).toBeLessThanOrEqual(2);
     // The phone's Menu button is not on a wide screen.
     await expect(menuButton(page)).toBeHidden();
+    // Mock-up 05 v2's sizes: 28 px buttons, the icon buttons 4 px apart.
+    for (const control of [picker, undo, redo, history, publish]) expect(Math.round((await box(control)).height)).toBe(28);
+    const [undoBox, redoBox] = [await box(undo), await box(redo)];
+    expect(Math.round(undoBox.width)).toBe(28);
+    expect(Math.round(redoBox.x - (undoBox.x + undoBox.width))).toBe(4);
   });
 
   test("Ctrl+Z while typing in the page takes the typing back through the editor: Redo lights up and brings it back", async ({ page, baseURL }) => {
@@ -68,6 +73,7 @@ test.describe("desktop", () => {
     await expect(redo).toBeDisabled();
     await page.keyboard.press("ControlOrMeta+z");
     await expect(heading).toHaveText(before!);
+    // Ctrl+Y on purpose (not ControlOrMeta): it is the Windows and Linux redo key.
     await page.keyboard.press("Control+y");
     await expect(heading).toHaveText(`${before} Wow`);
     await page.keyboard.press("ControlOrMeta+z");

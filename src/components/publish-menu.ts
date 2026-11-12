@@ -301,7 +301,8 @@ export function createPublishMenu(options: {
       if (!disposed) message.textContent = "Couldn't open the comparison. Try again.";
       return;
     }
-    if (disposed || !from.isConnected) return;
+    // The menu closed or its list changed while the comparison loaded: it no longer opens.
+    if (disposed || !from.isConnected || !panel.matches(":popover-open")) return;
     const { splitView, unifiedView } = view;
     opener = from;
     dialogTitle.textContent = path;
