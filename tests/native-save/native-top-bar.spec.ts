@@ -3,6 +3,7 @@
 // Publish and one Menu button; Pages, Add a block, Page structure, Code, Screen size, History, Share a preview
 // link, Site settings and Switch site sit behind the Menu as a bottom sheet. Default fixture.
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const banner = (page: Page) => page.getByRole("banner");
@@ -44,6 +45,33 @@ test.describe("desktop", () => {
     for (const control of [project, picker, undo, history, publish]) expect(Math.abs((await middle(control)) - row)).toBeLessThanOrEqual(2);
     // The phone's Menu button is not on a wide screen.
     await expect(menuButton(page)).toBeHidden();
+  });
+
+  test("Ctrl+Z while typing in the page takes the typing back through the editor: Redo lights up and brings it back", async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    const heading = frame(page).locator(".hero h1");
+    const before = await heading.textContent();
+    const undo = banner(page).getByRole("button", { name: "Undo", exact: true });
+    const redo = banner(page).getByRole("button", { name: "Redo", exact: true });
+    await clickOnText(heading);
+    await expect(heading).toHaveAttribute("contenteditable", /.+/);
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.type(" Wow");
+    await expect(heading).toHaveText(`${before} Wow`);
+    await expect(undo).toBeEnabled();
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(heading).toHaveText(before!);
+    await expect(redo).toBeEnabled();
+    await expect(undo).toBeDisabled();
+    await page.keyboard.press("ControlOrMeta+Shift+z");
+    await expect(heading).toHaveText(`${before} Wow`);
+    await expect(redo).toBeDisabled();
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(heading).toHaveText(before!);
+    await redo.click();
+    await expect(heading).toHaveText(`${before} Wow`);
+    await expect(redo).toBeDisabled();
+    await expect(undo).toBeEnabled();
   });
 });
 

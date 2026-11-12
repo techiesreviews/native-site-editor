@@ -3,7 +3,7 @@ import { setIcon } from "../icons";
 import { mountDropdown } from "./dropdown";
 import { draftKey, draftStore, type DraftScope, type SavedDraft } from "../drafts";
 import { EMPTY_COMMIT, type PublishFile, type PublishResult, type SaveAuthor } from "../../shared/types";
-import { diffCounts, diffHunks, sideBySideRows, type SideCell } from "../text-diff";
+import { diffCounts } from "../text-diff";
 import { CHANGE_WORDS, listChanges, publishFiles, type FileChange } from "../file-changes";
 import { formatBytes, postUpload, sendUploads, uploadBytes } from "../uploads";
 import { deployStatus, onDeployStatus, setDeployStatus, type DeployStatus } from "../deploy-status";
@@ -245,7 +245,7 @@ export function createPublishMenu(options: {
   function showButton(path: string, before: string, after: string, isNew = false) {
     const { added, deleted } = diffCounts(before, after);
     const summary = isNew ? `New file, ${after.split("\n").length} lines` : `${added} added, ${deleted} removed`;
-    const show = button(summary, () => openComparison(path, before, after, show), "publish-menu__show-changes");
+    const show = button(summary, () => void openComparison(path, before, after, show), "publish-menu__show-changes");
     show.setAttribute("aria-label", `${summary}. Show changes in ${path}`);
     show.setAttribute("aria-haspopup", "dialog");
     show.dataset.path = path;
@@ -289,62 +289,15 @@ export function createPublishMenu(options: {
     opener = null;
     target?.focus();
   });
-  function openComparison(path: string, before: string, after: string, from: HTMLButtonElement) {
+  // The comparison and its look load on first use: they stay out of the editor's boot.
+  async function openComparison(path: string, before: string, after: string, from: HTMLButtonElement) {
+    const { splitView, unifiedView } = await import("./publish-diff");
+    if (disposed) return;
     opener = from;
     dialogTitle.textContent = path;
     dialogBody.replaceChildren(splitView(before, after), unifiedView(before, after));
     dialog.showModal();
     dialogBody.scrollTop = 0;
-  }
-  // GitHub's version on the left, the draft on the right.
-  function splitView(before: string, after: string) {
-    const table = node("table", "publish-diff__split");
-    const head = node("thead"), headRow = node("tr");
-    const leftHead = node("th", "", "GitHub"), rightHead = node("th", "", "Draft");
-    leftHead.colSpan = rightHead.colSpan = 2;
-    leftHead.scope = rightHead.scope = "col";
-    // Fixed layout takes its widths from the columns: narrow numbers, even code halves.
-    const columns = node("colgroup");
-    for (const kind of ["num", "code", "num", "code"]) columns.append(node("col", `publish-diff__col-${kind}`));
-    table.append(columns);
-    headRow.append(leftHead, rightHead);
-    head.append(headRow);
-    const body = node("tbody");
-    const cells = (cell: SideCell | null) => {
-      const number = node("td", "publish-diff__num", cell ? String(cell.line) : "");
-      const code = node("td", `publish-diff__code is-${cell?.kind ?? "empty"}`);
-      if (cell) code.append(node("span", "publish-diff__sign", cell.kind === "add" ? "+" : cell.kind === "del" ? "−" : " "), node("span", "", cell.text));
-      return [number, code];
-    };
-    for (const row of sideBySideRows(before, after)) {
-      const tr = node("tr", `publish-diff__row is-${row.kind}`);
-      if (row.kind === "gap") {
-        const cell = node("td", "publish-diff__gap", `${row.count} unchanged ${row.count === 1 ? "line" : "lines"}`);
-        cell.colSpan = 4;
-        tr.append(cell);
-      } else tr.append(...cells(row.left), ...cells(row.right));
-      body.append(tr);
-    }
-    table.append(head, body);
-    return table;
-  }
-  // The narrow fallback: the changed lines in one column.
-  function unifiedView(before: string, after: string) {
-    const pre = node("pre", "publish-menu__diff publish-diff__unified");
-    diffHunks(before, after, 3).forEach((hunk, index) => {
-      if (index) pre.append(node("span", "publish-menu__diff-gap", "⋯\n"));
-      for (const line of hunk.lines) {
-        const row = node("span", `publish-menu__diff-line is-${line.kind}`);
-        row.append(
-          node("span", "publish-menu__diff-number", String(line.line)),
-          node("span", "publish-menu__diff-sign", line.kind === "add" ? "+" : line.kind === "del" ? "−" : " "),
-          node("span", "publish-menu__diff-text", line.text),
-          "\n",
-        );
-        pre.append(row);
-      }
-    });
-    return pre;
   }
   async function send() {
     if (pending) return;
