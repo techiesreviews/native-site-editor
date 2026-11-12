@@ -83,7 +83,8 @@ export function frameOf(query: string): { entry: Part | Mockup; theme: Theme; va
 /**
  * Storage that lives and dies with one page. The board is served from the preview editor's own site, so its frames
  * share the editor's saved settings; a screen's real parts (the sidebar's width, the canvas's width) read and write
- * this instead, so the board never changes the editor, and every browser shows the screens alike.
+ * this instead, so the board never changes the editor, and every browser shows the screens alike. Only its
+ * methods hold items (no `localStorage[key]`), as every part reads storage today.
  */
 export function pageStorage(): Storage {
   const items = new Map<string, string>();

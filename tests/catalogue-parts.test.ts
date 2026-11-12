@@ -30,7 +30,7 @@ function imports(file: string): Set<string> {
 }
 
 test("every entry has a unique id, a known area and a name", () => {
-  assert.equal(byId.size, entries.length, "ids are unique across parts and mock-ups");
+  assert.equal(byId.size, entries.length, "ids are unique across parts, screens and mock-ups");
   const areas = new Set(AREAS.map((area) => area.id));
   for (const entry of entries) {
     assert.ok(areas.has(entry.area), `${entry.id}: area ${entry.area}`);
@@ -74,7 +74,7 @@ test("parts have rows and columns, columns name real states, and frames a size",
   for (const mockup of [...SCREENS, ...MOCKUPS]) assert.ok(mockup.widths.length && mockup.widths.every((width) => width >= 320) && mockup.height > 0, `${mockup.id}: widths`);
 });
 
-test("made of: molecules, organisms and mock-ups list known parts; atoms list none", () => {
+test("made of: molecules, organisms, screens and mock-ups list known parts; atoms list none", () => {
   for (const entry of entries) {
     const madeOf = "madeOf" in entry ? entry.madeOf ?? [] : [];
     if (entry.area === "atoms" || entry.area === "values") assert.equal(madeOf.length, 0, `${entry.id}: an atom is made of nothing`);
