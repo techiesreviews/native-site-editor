@@ -560,7 +560,7 @@ test("outside commits taking a line in and out again (A B A) and one more on top
   await quiet();
   assert.deepEqual(await Promise.all([liveFold(anna.store, key, history[3]), liveFold(lex.store, key, history[3])]), [true, true]);
   await until(() => anna.text === three && lex.text === three, "C on both");
-  assert.equal(times(anna.text, "Sundays"), 1);
+  assert.deepEqual([times(anna.text, "Sundays"), times(lex.text, "Sundays")], [1, 1]);
   assert.deepEqual([anna.store.get(scope, path)?.baseSha, lex.store.get(scope, path)?.baseSha], [C, C]);
   anna.stop(); lex.stop();
 });
