@@ -47,7 +47,7 @@ test("a text that is not the build's list gives no areas, and a card that is not
     { map: "a", mockups: [
       card("ok.html"), card("", {}), card("no-title.html", { title: "" }), card("wrong-label.html", { label: "shipped" }), card("no-words.html", { labelName: "" }),
       card("tickets.html", { tickets: 3 }), card("elsewhere.html", { href: "https://example.com/x.html" }), card("script.html", { href: "javascript:alert(1)" }),
-      card("pic.html", { picture: "https://example.com/x.webp" }), null,
+      card("up.html", { href: "/mockups/../catalogue.html" }), card("back.html", { href: "/mockups/a\\b.html" }), card("pic.html", { picture: "https://example.com/x.webp" }), null,
     ] },
     { map: "empty", mockups: [card("bad.html", { label: "x" })] },
     { map: "a", mockups: [card("again.html")] },

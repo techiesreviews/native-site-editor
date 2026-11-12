@@ -276,7 +276,7 @@ export function startBoard(root: HTMLElement, plans: Plans = { areas: [], mockup
     title.id = `title-${entry.id}`;
     title.append(el("span", "", entry.name));
     if (!isPlan(entry)) title.append(el("span", "cat-mark"));
-    else article.classList.add("cat-card--plan");
+    else { article.classList.add("cat-card--plan"); title.title = entry.name; }
     const body = el("div", "cat-card__body");
     if (isPlan(entry)) {
       body.append(planBody(entry));
