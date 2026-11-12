@@ -6,6 +6,7 @@
 import type { DraftScope } from "./drafts";
 import type { LiveGithub, LiveVersion } from "./live-text";
 import type { FileRevision, HistoryCommit, HistoryPage, Snapshot } from "../shared/types";
+import { sameBranch } from "./workspace-session";
 
 /** The reads it needs: the editor's GitHub API (src/github-reads.ts `api`) and the repository on show. */
 export interface GithubReads {
@@ -92,7 +93,7 @@ export interface GithubPort extends GithubReads {
 export function liveGithub(port: GithubPort) {
   return (scope: DraftScope, path: string): LiveGithub | undefined => {
     const snapshot = port.snapshot(), text = port.base(path);
-    if (port.repo() !== scope.repo || snapshot?.branch !== scope.branch || text === undefined) return undefined;
+    if (!snapshot || !sameBranch({ repo: port.repo(), branch: snapshot.branch }, scope) || text === undefined) return undefined;
     const entry = snapshot.tree?.find(item => item.path === path && item.type === "blob");
     return entry && { sha: entry.sha, text, ...githubHistory(port, scope, path) };
   };
