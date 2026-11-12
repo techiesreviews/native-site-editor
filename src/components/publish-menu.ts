@@ -294,15 +294,16 @@ export function createPublishMenu(options: {
     target?.focus();
   });
   async function openComparison(path: string, before: string, after: string, from: HTMLButtonElement) {
+    // The menu closed or its list changed while the comparison loaded: it no longer opens, nor says anything.
+    const stale = () => disposed || !from.isConnected || !panel.matches(":popover-open");
     let view: Awaited<ReturnType<typeof loadComparison>>;
     try {
       view = await loadComparison();
     } catch {
-      if (!disposed) message.textContent = "Couldn't open the comparison. Try again.";
+      if (!stale()) message.textContent = "Couldn't open the comparison. Try again.";
       return;
     }
-    // The menu closed or its list changed while the comparison loaded: it no longer opens.
-    if (disposed || !from.isConnected || !panel.matches(":popover-open")) return;
+    if (stale()) return;
     const { splitView, unifiedView } = view;
     opener = from;
     dialogTitle.textContent = path;
