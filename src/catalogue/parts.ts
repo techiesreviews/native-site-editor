@@ -519,12 +519,16 @@ export async function fillTopBar(scope: HTMLElement, values: Values) {
   menu.setRepository(sampleRepository(values));
   scope.querySelector("#repository-menu")!.append(menu.root);
 }
-/** The phone's top bar on a bar filled by fillTopBar: its Menu, opened when `open` (and the pull-up sheet in a workspace). */
-export async function phoneTopBar(app: HTMLElement, values: Values, open: boolean) {
+/**
+ * The phone's top bar on a bar filled by fillTopBar: its Menu, opened when `open` (and the pull-up sheet in a
+ * workspace). `current`: whether the bar is still the one on show, read again after its module loads.
+ */
+export async function phoneTopBar(app: HTMLElement, values: Values, open: boolean, current = () => true) {
   const [{ mountTopBarPhone }, { signal }] = await Promise.all([import("../components/top-bar-phone"), import("@preact/signals-core")]);
+  if (!current()) return;
   mountTopBarPhone({ app, appStore: { repository: signal(sampleRepository(values)) }, page: { siteSettings: () => Promise.resolve() }, errorMessage: () => undefined });
   // Open as the cell asks (the frame is its own page, so its modal never holds the board), once the frame shows the bar.
-  if (open) requestAnimationFrame(() => app.querySelector<HTMLButtonElement>("#topbar-menu")?.click());
+  if (open) requestAnimationFrame(() => { if (current()) app.querySelector<HTMLButtonElement>("#topbar-menu")?.click(); });
 }
 async function topBar(values: Values, phone: boolean, open: boolean) {
   const [{ node }, { topBarMarkup }] = await Promise.all([import("../ui/dom"), import("../workspace-shell")]);

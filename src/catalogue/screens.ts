@@ -67,7 +67,7 @@ async function editorScreen(values: Values): Promise<HTMLElement> {
   app.innerHTML = workspaceMarkup();
   await fillTopBar(app, values);
   // The page button opens Pages & files under the top bar, as the editor shows it before its lists load.
-  mountDropdown({
+  const explorer = mountDropdown({
     trigger: app.querySelector<HTMLButtonElement>("#explorer-toggle")!, panel: app.querySelector<HTMLElement>("#explorer")!,
     below: app.querySelector<HTMLElement>(".topbar")!, anchor: "--explorer",
   });
@@ -115,12 +115,13 @@ async function editorScreen(values: Values): Promise<HTMLElement> {
   requestAnimationFrame(() => {
     if (gone || !app.isConnected) return;
     sidebar = mountSidebarResize(app.querySelector<HTMLElement>(".workspace")!, app.querySelector<HTMLElement>(".sidebar")!);
-    if (matchMedia("(max-width: 650px)").matches) void phoneTopBar(app, values, Boolean(values.menu));
+    if (matchMedia("(max-width: 650px)").matches) void phoneTopBar(app, values, Boolean(values.menu), () => !gone && app.isConnected);
   });
   // Drawn again with other options (frame.ts): the old screen's parts stop listening.
   app.addEventListener("cat-redraw", () => {
     gone = true;
     canvas.destroy();
+    explorer.destroy();
     structure.destroy();
     sidebar?.dispose();
   }, { once: true });
@@ -131,7 +132,9 @@ export const SCREENS: readonly Mockup[] = [
   {
     id: "editor", area: "screens", name: "Editor",
     files: [
-      "src/workspace-shell.ts", "src/style.css", "src/components/page-structure.ts", "src/components/page-structure.css",
+      "src/workspace-shell.ts", "src/style.css", "src/components/repository-menu.ts", "src/components/repository-menu.css",
+      "src/components/page-structure.ts", "src/components/page-structure.css", "src/native-structure.ts",
+      "src/components/sidebar-resize.ts", "src/components/sidebar-resize.css", "src/components/dropdown.ts", "src/components/files-tree.css",
       "src/components/canvas-bar.ts", "src/components/canvas-bar.css", "src/components/native-preview.css",
       "src/components/top-bar-phone.ts", "src/components/top-bar-phone.css", "src/components/phone-sheet.css", "src/components/pages-tree.css",
     ],
