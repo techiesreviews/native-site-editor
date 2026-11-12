@@ -507,9 +507,9 @@ export function startBoard(root: HTMLElement) {
     placeSel();
     cull();
   }
+  const movedScreens = (article: HTMLElement) => [...article.querySelectorAll<HTMLElement>("[data-piece]")].filter((screen) => places.has(screen.dataset.piece!));
   /** A card with the screens moved out of it. */
-  const cardSpan = (article: HTMLElement) =>
-    boundsOf([pieceBox(article), ...[...article.querySelectorAll<HTMLElement>("[data-piece]")].filter((screen) => places.has(screen.dataset.piece!)).map(pieceBox)])!;
+  const cardSpan = (article: HTMLElement) => boundsOf([pieceBox(article), ...movedScreens(article).map(pieceBox)])!;
   // Cards wholly off screen are not drawn (as tldraw culls shapes); their place on the canvas stays. A card counts with the
   // screens moved out of it. Positions are read each time: offsets ignore the transform, so moving the board lays nothing out again.
   function cull() {
@@ -609,7 +609,10 @@ export function startBoard(root: HTMLElement) {
     selected = id && byId.has(id) ? id : undefined;
     picked = piece && pieceOf(piece) ? piece : undefined;
     for (const article of world.querySelectorAll<HTMLElement>(".cat-card[data-id]")) article.classList.toggle("is-selected", article.dataset.id === selected);
-    for (const screen of world.querySelectorAll<HTMLElement>(".cat-half[data-piece]")) screen.classList.toggle("is-selected", screen.dataset.piece === picked);
+    for (const piece of world.querySelectorAll<HTMLElement>(".cat-half[data-piece], .cat-area")) piece.classList.toggle("is-selected", piece.dataset.piece === picked);
+    for (const head of outline.querySelectorAll<HTMLElement>(".cat-outline__area")) {
+      if (`area:${head.dataset.area}` === picked) head.setAttribute("aria-current", "true"); else head.removeAttribute("aria-current");
+    }
     for (const item of outline.querySelectorAll<HTMLElement>(".cat-outline__item")) item.setAttribute("aria-current", String(item.dataset.id === selected));
     renderInspector();
     placeSel();
