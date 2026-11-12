@@ -24,16 +24,16 @@ const SAMPLE_SOURCE = `<!doctype html>
 <html lang="en">
 <head>
   <title>Garden & Co: garden care that lasts</title>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header><a class="logo" href="/">Garden &amp; Co</a>
-    <nav><a href="/services">Services</a> <a href="/journal">Journal</a> <a href="/about">About</a></nav></header>
+  <header><a class="logo" href="index.html">Garden &amp; Co</a>
+    <nav><a href="services.html">Services</a> <a href="journal.html">Journal</a> <a href="about.html">About</a></nav></header>
   <main>
     <section class="hero">
       <h1>Garden care that lasts</h1>
       <p>Seasonal pruning, planting and plans, from people who stay to see them grow.</p>
-      <a class="button" href="/book">Book a visit</a>
+      <a class="button" href="book.html">Book a visit</a>
     </section>
     <section class="cards">
       <article><h2>Winter pruning</h2><p>Roses, shrubs and fruit trees, cut at the right time.</p></article>
@@ -94,7 +94,7 @@ async function editorScreen(values: Values): Promise<HTMLElement> {
   frame.className = "preview-frame native-preview-frame cat-sample-site";
   frame.title = "Native site preview";
   frame.setAttribute("sandbox", "");
-  frame.srcdoc = SAMPLE_SOURCE.replace('<link rel="stylesheet" href="/style.css">', `<style>${SAMPLE_STYLE}</style>`);
+  frame.srcdoc = SAMPLE_SOURCE.replace('<link rel="stylesheet" href="style.css">', `<style>${SAMPLE_STYLE}</style>`);
   frameHost.append(frame);
   const canvas = createCanvasBar(frameHost, frame, { onCrumb: () => undefined, onCrumbHover: () => undefined });
   canvas.setCrumbs([{ label: "main", kind: "element" }, { label: "section.hero", kind: "element" }]);
