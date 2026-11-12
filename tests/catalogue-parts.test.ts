@@ -6,6 +6,7 @@ import { parseApprovals } from "../src/catalogue/approvals.ts";
 import { forcedSelector, groupPrelude } from "../src/catalogue/force-states.ts";
 import { boardPoint, frameOf, frameQuery } from "../src/catalogue/frame.ts";
 import { MOCKUPS } from "../src/catalogue/mockups.ts";
+import { SCREENS } from "../src/catalogue/screens.ts";
 import { AREAS, PARTS, STATE_NAMES, isPart, untracedLines, type Part } from "../src/catalogue/parts.ts";
 
 // The catalogue board's one list of parts (src/catalogue/parts.ts) and its mock-ups (mockups.ts), atomic catalogue
@@ -13,7 +14,7 @@ import { AREAS, PARTS, STATE_NAMES, isPart, untracedLines, type Part } from "../
 // its code really imports.
 
 const repo = new URL("..", import.meta.url).pathname;
-const entries = [...PARTS, ...MOCKUPS];
+const entries = [...PARTS, ...SCREENS, ...MOCKUPS];
 const byId = new Map(entries.map((entry) => [entry.id, entry]));
 const tsFiles = (files: readonly string[]) => files.filter((file) => file.endsWith(".ts"));
 
@@ -69,14 +70,15 @@ test("parts have rows and columns, columns name real states, and frames a size",
     for (const column of part.columns) if (column.state) assert.ok(column.state in STATE_NAMES, `${part.id}: state ${column.state}`);
     if (part.frame) assert.ok(part.frame.width > 0 && part.frame.height > 0, `${part.id}: frame size`);
   }
-  for (const mockup of MOCKUPS) assert.ok(mockup.widths.length && mockup.widths.every((width) => width >= 320) && mockup.height > 0, `${mockup.id}: widths`);
+  assert.ok(SCREENS.length && SCREENS.every((screen) => screen.area === "screens"));
+  for (const mockup of [...SCREENS, ...MOCKUPS]) assert.ok(mockup.widths.length && mockup.widths.every((width) => width >= 320) && mockup.height > 0, `${mockup.id}: widths`);
 });
 
 test("made of: molecules, organisms and mock-ups list known parts; atoms list none", () => {
   for (const entry of entries) {
     const madeOf = "madeOf" in entry ? entry.madeOf ?? [] : [];
     if (entry.area === "atoms" || entry.area === "values") assert.equal(madeOf.length, 0, `${entry.id}: an atom is made of nothing`);
-    if (entry.area === "molecules" || entry.area === "organisms" || entry.area === "mockups") assert.ok(madeOf.length, `${entry.id}: says what it is made of`);
+    if (entry.area === "molecules" || entry.area === "organisms" || entry.area === "screens" || entry.area === "mockups") assert.ok(madeOf.length, `${entry.id}: says what it is made of`);
     for (const id of madeOf) {
       assert.notEqual(id, entry.id, `${entry.id}: not made of itself`);
       const part = byId.get(id);
