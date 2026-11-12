@@ -1,6 +1,7 @@
-// Free placement on the catalogue board (TOOLS-215): each card can be dragged by its title. It keeps its place in its
-// area's flow and moves by an offset from there (a `translate`, so dragging one card never lays out another), which
-// this browser remembers. While it moves it snaps to the edges and centres of the other cards, with a guide drawn
+// Free placement on the catalogue board (TOOLS-215): each card, each screen frame and each area can be dragged by its
+// name. It keeps its place in the flow and moves by an offset from there (a `translate`, so dragging one piece never
+// lays out another), which this browser remembers by its key (a card's id, `screen:<card>:<width>:<theme>`,
+// `area:<id>`). While it moves it snaps to the edges and centres of the other cards and screens, with a guide drawn
 // along each edge it meets.
 
 export interface Point { x: number; y: number }
