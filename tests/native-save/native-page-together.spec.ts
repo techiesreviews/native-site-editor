@@ -2,6 +2,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import { openEditor } from "../support/scenarios";
 import { clickOnText } from "./click-text";
+import { circleOnTop } from "./caret-flags";
 import { editorMounted } from "./drafts";
 import { openLiveRoom, type LiveRoomSocket } from "../../src/live-room";
 import type { JsonValue } from "../../shared/agent-command";
@@ -166,6 +167,9 @@ test("Lex and Anna type in one paragraph on the page and end identical; each see
     await expect(annaAtLex).toBeVisible({ timeout: 20_000 });
     await expect(annaAtLex.locator(".live-caret__mark b")).toHaveText("A");
     await expect(lexAtAnna).toBeVisible({ timeout: 20_000 });
+    await expect(lexAtAnna.locator(".live-caret__mark b")).toHaveText("N");
+    await expect.poll(() => circleOnTop(annaAtLex), { timeout: 10_000 }).toBe(true);
+    await expect.poll(() => circleOnTop(lexAtAnna), { timeout: 10_000 }).toBe(true);
     await expect.poll(() => caretInside(annaAtLex, lead(lex.page)), { timeout: 10_000 }).toBe(true);
     await expect.poll(() => caretInside(lexAtAnna, lead(anna.page)), { timeout: 10_000 }).toBe(true);
     // Anna's caret stands after her words, Lex's at the paragraph's end: no element is outlined for them.
@@ -205,6 +209,38 @@ test("Lex and Anna type in one paragraph on the page and end identical; each see
     await expect(undo).toBeHidden();
     expect(await source(anna.page)).toBe(await source(lex.page));
     expect(await source(lex.page)).toContain(lexTyped.trim());
+  } finally {
+    await lex.context.close();
+    await anna.context.close();
+  }
+});
+
+test("Anna's circle with her first letter stays on top of Lex's edit bar while both type in the same section", async ({ browser, baseURL }) => {
+  const lex = await person(browser), anna = await person(browser, "Anna");
+  try {
+    await shared(lex.page, anna.page, baseURL);
+    // Lex types in the heading: his edit bar opens under it (the heading is the page's first block), over the paragraph.
+    // Anna types at the start of that paragraph: her caret's circle stands in the line above her words, where his bar is.
+    await typeIn(lex.page, frame(lex.page).locator(".hero h1"), "End");
+    await lex.page.keyboard.type(" and more", { delay: 30 });
+    await typeIn(anna.page, frame(anna.page).locator(".hero .lead"), "Home");
+    await anna.page.keyboard.type("Anna: ", { delay: 30 });
+    const bar = lex.page.locator(".edit-bar");
+    await expect(bar).toBeVisible();
+
+    const annaAtLex = pageFlag(lex.page, "Anna");
+    await expect(annaAtLex).toBeVisible({ timeout: 20_000 });
+    await expect(annaAtLex.locator(".live-caret__mark b")).toHaveText("A");
+    // The bar really is over her words: the circle's centre is inside the bar's box, and the circle is shown on top of it.
+    const [barBox, markBox] = await Promise.all([bar.boundingBox(), annaAtLex.locator(".live-caret__mark").boundingBox()]);
+    const centre = { x: markBox!.x + markBox!.width / 2, y: markBox!.y + markBox!.height / 2 };
+    expect(centre.x).toBeGreaterThan(barBox!.x);
+    expect(centre.x).toBeLessThan(barBox!.x + barBox!.width);
+    expect(centre.y).toBeGreaterThan(barBox!.y);
+    expect(centre.y).toBeLessThan(barBox!.y + barBox!.height);
+    await expect.poll(() => circleOnTop(annaAtLex), { timeout: 10_000 }).toBe(true);
+    // Lex still reaches his bar's controls beside her circle.
+    await expect(bar.getByRole("button", { name: "Bold" })).toBeVisible();
   } finally {
     await lex.context.close();
     await anna.context.close();
