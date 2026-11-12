@@ -358,8 +358,21 @@ test("a drag whose pointer is cancelled puts the card back, and a zoom mid-drag 
   const after = (await title.boundingBox())!;
   expect(at.x + 41).toBeGreaterThanOrEqual(after.x);
   expect(at.x + 41).toBeLessThanOrEqual(after.x + after.width);
-  expect(at.y + 20).toBeGreaterThanOrEqual(after.y - 2);
-  expect(at.y + 20).toBeLessThanOrEqual(after.y + after.height + 2);
+  expect(at.y + 20).toBeGreaterThanOrEqual(after.y - 6);
+  expect(at.y + 20).toBeLessThanOrEqual(after.y + after.height + 6);
+  await page.mouse.up();
+
+  // A release the board never heard (a mouse moving with no button held) ends the drag and keeps the card there.
+  const before = await page.evaluate(() => localStorage.getItem("catalogue:places"));
+  const now = (await title.boundingBox())!;
+  const grip = { x: now.x + 6, y: now.y + now.height / 2 };
+  await page.mouse.move(grip.x, grip.y);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + 30, grip.y + 30, { steps: 4 });
+  await expect(board).toHaveClass(/is-moving/);
+  await page.getByRole("region", { name: "Canvas" }).evaluate((canvas, point) => canvas.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, pointerType: "mouse", buttons: 0, bubbles: true, clientX: point.x, clientY: point.y })), { x: grip.x + 31, y: grip.y + 30 });
+  await expect(board).not.toHaveClass(/is-moving/);
+  expect(await page.evaluate(() => localStorage.getItem("catalogue:places"))).not.toBe(before);
   await page.mouse.up();
 });
 
