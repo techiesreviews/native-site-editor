@@ -21,13 +21,16 @@ import { cssSection, type CssFile } from "./css-panel";
 import { force, forceStates, type Forced } from "./force-states";
 import { frameElement, updateFrame, type Theme } from "./frame";
 import { MOCKUPS, type Mockup } from "./mockups";
+import { SCREENS } from "./screens";
 import { boundsOf, readPlaces, snapMove, writePlaces, type Box, type Guide, type Point } from "./places";
 import { AREAS, FORCED, PARTS, STATE_NAMES, isPart, untracedLines, type AreaId, type BoardEntry, type Control, type OneOffCounts, type Part, type State, type Values } from "./parts";
 import { readFields, tweakCss, type Edits, type Side, type TweakField } from "./tweak";
 import { tweakSection } from "./tweak-panel";
 
 type Entry = BoardEntry | Mockup;
-const ENTRIES: readonly Entry[] = [...PARTS, ...MOCKUPS];
+const ENTRIES: readonly Entry[] = [...PARTS, ...SCREENS, ...MOCKUPS];
+/** Screens (the editor's own, and mock-ups of features to come): one frame per width and theme, each a live cell. */
+const isScreen = (entry: Entry): entry is Mockup => entry.area === "screens" || entry.area === "mockups";
 const byId = new Map(ENTRIES.map((entry) => [entry.id, entry]));
 const areaName = (id: AreaId) => AREAS.find((area) => area.id === id)!.name;
 const svg = (markup: string, size = 16) => svgElement(sizedSvg(markup, size));
@@ -255,7 +258,7 @@ export function startBoard(root: HTMLElement) {
         halves.append(side);
       }
       body.append(halves);
-    } else if (entry.area === "mockups") {
+    } else if (isScreen(entry)) {
       for (const width of entry.widths) {
         const row = el("div", "cat-halves");
         for (const theme of ["light", "dark"] as const) {
@@ -283,7 +286,7 @@ export function startBoard(root: HTMLElement) {
       body.append(halves);
     }
     article.append(title, body);
-    if (entry.area === "molecules" || entry.area === "organisms" || entry.area === "mockups") {
+    if (entry.area === "molecules" || entry.area === "organisms" || isScreen(entry)) {
       const foot = el("footer", "cat-card__foot");
       foot.append(el("span", "cat-label", "Made of"), madeOfList(entry));
       article.append(foot);
@@ -298,7 +301,7 @@ export function startBoard(root: HTMLElement) {
       for (const into of article.querySelectorAll<HTMLElement>(".cat-value-body")) void entry.render(now.values).then((element) => { into.replaceChildren(element); placeSel(); });
       return;
     }
-    if (entry.area === "mockups") {
+    if (isScreen(entry)) {
       for (const frame of article.querySelectorAll("iframe")) updateFrame(frame, now.values);
       return;
     }
@@ -755,7 +758,7 @@ export function startBoard(root: HTMLElement) {
     if (controls.length) sections.push(section("Options", ...controls));
     sections.push(placeSection(entry));
     if (isPart(entry)) sections.push(entry.css ? cssFor(entry, entry.css) : tweakFor(entry, true));
-    if (entry.area === "molecules" || entry.area === "organisms" || entry.area === "mockups") sections.push(section("Made of", madeOfList(entry)));
+    if (entry.area === "molecules" || entry.area === "organisms" || isScreen(entry)) sections.push(section("Made of", madeOfList(entry)));
     sections.push(approveSection(entry));
     inspector.replaceChildren(...sections);
     syncPlace();

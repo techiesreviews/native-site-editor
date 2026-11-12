@@ -36,7 +36,7 @@ test("every entry has a unique id, a known area and a name", () => {
     assert.match(entry.id, /^[a-z][a-z0-9-]*$/, `${entry.id}: id`);
     assert.ok(entry.name.trim(), `${entry.id}: name`);
   }
-  assert.deepEqual(AREAS.map((area) => area.id), ["values", "atoms", "molecules", "organisms", "mockups"]);
+  assert.deepEqual(AREAS.map((area) => area.id), ["values", "atoms", "molecules", "organisms", "screens", "mockups"]);
   assert.ok(MOCKUPS.every((mockup) => mockup.area === "mockups"));
   assert.ok(PARTS.every((part) => part.area !== "mockups"));
 });

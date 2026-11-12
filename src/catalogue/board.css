@@ -344,7 +344,11 @@ body:has(> .cat-board) {
     pointer-events: none;
   }
 }
+/* The footer wraps to the card's width and never widens it (a long Made of list would). */
 .cat-card__foot {
+  box-sizing: border-box;
+  inline-size: 0;
+  min-inline-size: 100%;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -1142,4 +1146,18 @@ label.cat-control--row {
 }
 .cat-mock__done {
   justify-self: end;
+}
+
+/* An editor screen's code pane (screens.ts): the page's source as text, where the editor loads its code editor. */
+.cat-code {
+  box-sizing: border-box;
+  block-size: 100%;
+  margin: 0;
+  padding: var(--space-s) var(--space-m);
+  overflow: auto;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
+  line-height: 1.7;
+  white-space: pre;
 }
