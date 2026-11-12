@@ -27,7 +27,7 @@
 // Loaded with src/live-text.ts, never at boot.
 
 import { applyChanges, diffRange, type TextChange } from "./draft-store";
-import { mergeText, runChanges, splitWords, wordChanges } from "./text-merge";
+import { mergeText, runChanges, wordChanges } from "./text-merge";
 
 type Yjs = typeof import("yjs");
 type Doc = import("yjs").Doc;
@@ -297,7 +297,7 @@ export function draftUpdate(Y: Yjs, doc: Doc, at: Edge, base: string, draft: str
 }
 
 /** The items of `doc`'s text in order: their client, whether deleted, and their text. */
-function items(doc: Doc) {
+export function items(doc: Doc) {
   const out: { client: number; clock: number; deleted: boolean; text: string }[] = [];
   for (let item = doc.getText("source")._start; item; item = item.right) {
     if (!item.countable) continue;
@@ -506,10 +506,12 @@ export function clashes(Y: Yjs, doc: Doc, all: readonly Edge[], edge: Edge, mine
   if (out.reduce((text, change) => text.slice(0, change.start) + change.text + text.slice(change.end), current).split(/\s+/).some(run => !runs.has(run))) return ownWords();
   if (!back.length) return { out, clashed: merged.clashed };
   // Each word of the older version with a character coming back, written again whole as GitHub's version has it, in its
-  // own place (as `apply` replaces a word), its own characters taken out: one way per word, the same in every tab.
+  // own place (as `apply` replaces a word), its own characters taken out: one way per word, the same in every tab. A word
+  // here runs from white space to white space, signs and all ("«3»", "<p>"): put back sign by sign, each in its own place,
+  // a word's parts could land apart around text others put in beside the characters taken out (TOOLS-216).
   const starts: number[] = [];
   let offset = 0;
-  for (const part of splitWords(base)) { starts.push(offset); offset += part.length; }
+  for (const part of base.match(/\s+|\S+/g) ?? []) { starts.push(offset); offset += part.length; }
   const wordOf = (old: number) => { let low = 0, high = starts.length - 1; while (low < high) { const mid = (low + high + 1) >> 1; if (starts[mid] <= old) low = mid; else high = mid - 1; } return low; };
   const words = new Set(back.map(index => wordOf(list[index].old))), updates: Uint8Array[] = [];
   for (const word of words) {

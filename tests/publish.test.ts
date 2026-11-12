@@ -609,6 +609,21 @@ test("a save from a live room names the room's copy in a Live-Copy line; bad cop
   assert.deepEqual(validatePublish({ branch: "main", files, liveCopies: [copy] }).liveCopies, [copy]);
 });
 
+test("a Live-Copy line carries the save's record after the copy id; GitHub's history reads it back, and a bad one is refused (TOOLS-216)", async () => {
+  const { commitMessage } = await import("../worker/publish.ts");
+  const { liveCopiesOf, MAX_LIVE_RECORD } = await import("../shared/live-copy.ts");
+  const copy = "cd".repeat(20), entry = `${copy} AAEC_-xyz09`, files = [{ path: "a.html", baseSha: null, content: "a" }];
+  const message = commitMessage("Update a", [], [entry]);
+  assert.equal(message, `Update a\n\nLive-Copy: ${entry}`);
+  assert.deepEqual(liveCopiesOf(message), [entry]);
+  // One entry per copy (the first line naming it), and a line whose record is not base64url names nothing.
+  assert.deepEqual(liveCopiesOf(`Update a\n\nLive-Copy: ${entry}\nLive-Copy: ${copy} QUJD`), [entry]);
+  assert.deepEqual(liveCopiesOf(`Update a\n\nLive-Copy: ${copy} not+base64`), []);
+  assert.deepEqual(validatePublish({ branch: "main", files, liveCopies: [entry] }).liveCopies, [entry]);
+  for (const liveCopies of [[`${copy} `], [`${copy} a b`], [`${copy} ${"A".repeat(MAX_LIVE_RECORD + 1)}`], [`${copy} a+b`]])
+    assert.throws(() => validatePublish({ branch: "main", files, liveCopies }), (error: HttpError) => error.status === 400);
+});
+
 test("the first save to an empty repository names the others too", async () => {
   const calls: { path: string; method: string; body?: any }[] = [];
   const github = new GitHub("private-token", async (input, init) => {

@@ -521,15 +521,23 @@ function fault(end: Awaited<ReturnType<typeof play>>) {
 const SEEDS = Number(process.env.LIVE_SEEDS ?? 150), STEPS = Number(process.env.LIVE_STEPS ?? 60);
 /** Seeds past the first SEEDS that once failed, played every time: a commit landing on a tab still joining the room;
  * 348: a commit that rewrites the one before it, which two tabs took in from different versions; 288: a save right after
- * a page opened again (Save waits until it caught up, Lex's choice A). 1370 is out until TOOLS-216: since a save waits,
- * its run ends on a tab coming back to the page with what it typed elsewhere (the returning-tab case). */
-const FOUND = [288, 348, 819, 1722];
+ * a page opened again (Save waits until it caught up, Lex's choice A); 1370: a run ending on a tab coming back to the
+ * page with what it typed elsewhere (TOOLS-216). */
+const FOUND = [288, 348, 819, 1370, 1722];
+/** Seeds whose 120-step runs once failed (TOOLS-216, PR #352's list), played every time at 120 steps: a tab coming back
+ * to a page (its words saved by another tab meanwhile, a commit folded in while it was on another page, or a copy kept
+ * from before the room's) doubled or lost words (25 26 163 335 454 511 560 762 937), its clash Undo brought words back
+ * twice (517), or the room stayed silent past Save's wait (317 418). */
+const FOUND_LONG = [25, 26, 163, 317, 335, 418, 454, 511, 517, 560, 762, 937];
 /** Steps left out of every run (`LIVE_SKIP=save,outside`), to narrow down what a failing seed needs. */
 const SKIP = new Set((process.env.LIVE_SKIP ?? "").split(",").filter(Boolean));
 
 test("typing together, in seeded random order: every run ends with every tab on one copy and one text, nothing doubled or lost", async () => {
   const only = process.env.LIVE_SEED === undefined ? undefined : Number(process.env.LIVE_SEED);
   const seeds = only === undefined ? [...Array.from({ length: SEEDS }, (_, index) => index + 1), ...FOUND.filter(seed => seed > SEEDS)] : [only];
+  /** Each seed with its steps: the long ones at 120 unless every run is that long already. */
+  const runs: [number, number][] = [...seeds.map(seed => [seed, STEPS] as [number, number]),
+    ...(only === undefined && STEPS < 120 ? FOUND_LONG.map(seed => [seed, 120] as [number, number]) : [])];
   const failed: string[] = [];
   // A tab's changes carry its Yjs client id, which carets and the name-tag Undo name: Yjs giving a copy a new one (it says
   // so on the console) breaks that, so it fails the run too.
@@ -537,11 +545,12 @@ test("typing together, in seeded random order: every run ends with every tab on 
   let renamed = 0;
   console.log = (...args: unknown[]) => { if (String(args[0]).includes("Changed the client-id")) renamed++; else print(...args); };
   try {
-    for (const seed of seeds) {
+    for (const [seed, steps] of runs) {
       renamed = 0;
-      const end = await play(seed, STEPS, SKIP);
+      const end = await play(seed, steps, SKIP);
       const wrong = fault(end) ?? (renamed ? `Yjs gave a copy a new client id ${renamed} times` : undefined);
-      if (wrong) failed.push(only === undefined ? `seed ${seed}: ${wrong.split("\n")[0]}` : `seed ${seed}: ${wrong}\n${end.log.join("\n")}`);
+      const name = steps === STEPS ? `seed ${seed}` : `seed ${seed} (${steps} steps)`;
+      if (wrong) failed.push(only === undefined ? `${name}: ${wrong.split("\n")[0]}` : `${name}: ${wrong}\n${end.log.join("\n")}`);
     }
   } finally { console.log = print; }
   assert.deepEqual(failed, [], `failing seeds (rerun one with LIVE_SEED=<seed>):\n${failed.join("\n")}`);

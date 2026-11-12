@@ -178,6 +178,18 @@ test("two tabs putting back the same word write the same bytes, and it shows onc
   assert.equal(text(anna), theirs);
 });
 
+test("a word put back in a clash goes back whole, signs and all: words others put in beside it cannot cut it apart (TOOLS-216)", async () => {
+  const base = "<p>«3» «17» end</p>\n", mine = "<p>end</p>\n", theirs = "<p>«3» «30» end</p>\n";
+  const doc = await copyOf(base), typed = type(doc, base, mine, 7);
+  Y.applyUpdate(doc, await outside(doc, theirs));
+  const gone = Y.decodeUpdate(typed).ds, took = (client: number, clock: number) => Y.isDeleted(gone, Y.createID(client, clock));
+  const { back } = clashes(Y, doc, edges(Y, doc), edgeTo(edges(Y, doc), V1)!, client => client === 7, took);
+  assert.ok(back, "«3» comes back");
+  // One item per word put back, from white space to white space ("<p>«3»"), not "«", "3" and "»" each in a place of its own.
+  const put = Y.decodeUpdate(back).structs.flatMap(struct => struct instanceof Y.Item && struct.content instanceof Y.ContentString ? [struct.content.str] : []);
+  assert.ok(put.some(item => item.includes("«3»")), JSON.stringify(put));
+});
+
 /** Seeded one-word changes (replaced, put in or taken out) on both sides of a short paragraph: each case's base, this
  * tab's text and GitHub's, the copy's text once the clash rule ran, and mergeText's. */
 async function seeded(runs: number) {
