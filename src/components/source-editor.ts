@@ -790,7 +790,7 @@ export function mountSourceEditor(
   );
   review.append(icon("clock-counter-clockwise"));
   review.setAttribute("aria-label", file.onHistory ? "History" : "Changes");
-  review.title = file.onHistory ? "Commit history for this file" : "Changes on this branch";
+  review.title = file.onHistory ? "History" : "Changes on this branch";
   review.id = "history-button";
   if (file.onHistory) {
     review.setAttribute("aria-controls", "changes");

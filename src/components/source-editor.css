@@ -80,5 +80,5 @@
 .code-editor__toolbar--hosted {
   background: transparent;
   padding: 0;
-  gap: 10px;
+  gap: var(--space-3xs);
 }

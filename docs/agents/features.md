@@ -1314,9 +1314,9 @@ its number unused.
 - Steps: none yet (needs a phone held on its side; tries use 900 px tall windows)
 
 ### F-phone-06 Slim top bar on a wide screen
-- Try: At 1280 px look along the top bar; open the project menu and the page button.
-- Good: One 44 px row: the project tile (at the bar's own left padding, with no space of its own on the left) and name, "/", the page button, then Undo, Redo, History and Publish on the right with no divider before Publish (atomic catalogue ticket 66, version B).
-- Files: `src/workspace-mount.ts`, `src/style.css`
+- Try: At 1280 px look along the top bar; open the project menu and the page button. Type in the page's heading, press Ctrl+Z, then press Redo.
+- Good: One 44 px row: the project tile (at the bar's own left padding, with no space of its own on the left) and name in 13 px, a thin faint "/", the page button (28 px, a muted caret), then Undo, Redo and History as 28 px buttons 4 px apart, and Publish (28 px) on the right with no divider before Publish (atomic catalogue ticket 66, version B; mock-up 05 v2). Ctrl+Z while typing on the page takes the typing back as the Undo button does: Undo greys out, Redo lights up and brings it back (TOOLS-220).
+- Files: `src/workspace-mount.ts`, `src/style.css`, `src/components/source-editor.css`, `src/components/native-preview-runtime.js`
 - Phone: no
 - Spec: `tests/native-save/native-top-bar.spec.ts`
 - Steps: none yet (desktop only)

@@ -3004,13 +3004,18 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   // ⌘Z / ⇧⌘Z / Ctrl+Y (undo, redo), and for a selected section ⌘D
   // (duplicate), Delete or Backspace (remove); Shift+Enter selects the parent.
   function typingHere(event) {
+    // A committed element can remain connected after blur; only its live caret is typing.
+    if (editingHere()) return true;
     var active = document.activeElement;
     while (active && active.shadowRoot && active.shadowRoot.activeElement) active = active.shadowRoot.activeElement;
-    // A committed element can remain connected after blur; only its live caret is typing.
-    if (editing && editing.isConnected && (active === editing || editing.contains(active))) return true;
     var target = event && typeof event.composedPath === "function" ? event.composedPath()[0] : event && event.target;
     if (target instanceof Element && (target.isContentEditable || /^(input|textarea|select)$/.test(target.localName))) return true;
     return !!(active && (active.isContentEditable || /^(input|textarea|select)$/.test(active.localName)));
+  }
+  function editingHere() {
+    var active = document.activeElement;
+    while (active && active.shadowRoot && active.shadowRoot.activeElement) active = active.shadowRoot.activeElement;
+    return !!(editing && editing.isConnected && (active === editing || editing.contains(active)));
   }
   function textSelectedForLink() {
     var sel = document.getSelection();
@@ -3022,13 +3027,16 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     var key = (e.key || "").toLowerCase();
     var plain = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
     var section = selected && selected.isConnected && sectionLike(selected);
+    var history = mod && !e.altKey && key === "z" ? (e.shiftKey ? "redo" : "undo")
+      : e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && key === "y" ? "redo" : null;
     var name = null;
     if (mod && !e.altKey && !e.shiftKey && key === "k" && !textSelectedForLink()) name = "palette";
     else if (mod && !e.altKey && !e.shiftKey && key === "p") name = "go";
+    // Typing in the page's text is the editor's history too: the browser's own undo would come back as a new edit.
+    else if (history && editingHere()) name = history;
     else if (typingHere(e)) return;
     else if (e.key === "?" && !mod && !e.altKey) name = "shortcuts";
-    else if (mod && !e.altKey && key === "z") name = e.shiftKey ? "redo" : "undo";
-    else if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && key === "y") name = "redo";
+    else if (history) name = history;
     else if (mod && !e.altKey && !e.shiftKey && key === "d" && section) name = "duplicate";
     else if (plain && (e.key === "Delete" || e.key === "Backspace") && selected && selected.isConnected) name = "remove";
     else if (e.shiftKey && !mod && !e.altKey && e.key === "Enter" && selected) name = "parent";
