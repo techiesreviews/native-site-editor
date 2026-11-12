@@ -77,7 +77,7 @@ pre:focus-visible {
 #repository-menu::after {
   content: "/";
   color: var(--control-line);
-  font-size: 18px;
+  font-size: var(--type-title);
   font-weight: 300;
 }
 .topbar .icon-button {
@@ -85,7 +85,7 @@ pre:focus-visible {
   height: max(var(--size-compact), var(--size-tap));
 }
 .topbar .publish-menu > :is(.publish-menu__trigger, .publish-menu__more) {
-  --btn-padding-block: var(--space-3xs);
+  padding-block: var(--space-3xs);
   min-block-size: max(var(--size-compact), var(--size-tap));
 }
 .topbar .repository-menu__trigger {
