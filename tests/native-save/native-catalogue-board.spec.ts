@@ -1197,6 +1197,13 @@ test("the Editor screen is the editor's own workspace at 1280 and 390, light and
   await wide.locator(".sidebar-resize").click();
   await expect(wide.locator(".workspace")).toHaveClass(/workspace--sidebar-collapsed/);
   expect(await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("astro-editor.sidebar-width")))).toEqual([]);
+
+  // The wheel over the sample site in the page frame still zooms the board.
+  const before = await percent(page);
+  const site = (await wide.locator(".native-preview-frame").boundingBox())!;
+  await page.mouse.move(site.x + site.width / 2, site.y + site.height / 2);
+  await page.mouse.wheel(0, -200);
+  await expect.poll(() => percent(page)).not.toBe(before);
 });
 
 test("the Editor screen's options reach its frames: the page's name and the phone's Menu open", async ({ page, baseURL }) => {

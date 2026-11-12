@@ -117,7 +117,8 @@ export async function startFrame(shown: NonNullable<ReturnType<typeof frameOf>>)
   const draw = async (values: Values) => {
     const turn = ++drawing;
     const element = isPart(shown.entry) ? await shown.entry.render(values, "normal", shown.live) : await shown.entry.render(values);
-    if (turn !== drawing) return;
+    // A draw overtaken by a later one is never shown: it lets go of what it set up, as a replaced one does.
+    if (turn !== drawing) { element.dispatchEvent(new CustomEvent("cat-redraw")); return; }
     stage.firstElementChild?.dispatchEvent(new CustomEvent("cat-redraw"));
     stage.replaceChildren(element);
     placeTweaks();
