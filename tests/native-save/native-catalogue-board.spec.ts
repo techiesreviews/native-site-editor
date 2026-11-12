@@ -1563,8 +1563,10 @@ test("a very long mock-up name and map name stay inside their card and area at e
   }
 });
 
-test("on a phone /mockups/ opens the board on the first mock-up, big enough to read", async ({ page, baseURL }) => {
-  await page.setViewportSize({ width: 390, height: 800 });
+test("on a phone /mockups/ opens the board on the first mock-up, big enough to read", async ({ browser, baseURL }) => {
+  // A touch screen: the link is as tall as a finger needs (`--size-tap` is 0 for a mouse).
+  const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true });
+  const page = await context.newPage();
   await page.route("**/mockups/board.json", (route) => route.fulfill({ json: PLANS }));
   await page.goto(`${baseURL}${BOARD}#plans`);
   const first = page.locator('.cat-card[data-id="plan:atomic-catalogue/08-board.html"]'), canvas = page.getByRole("region", { name: "Canvas" });
@@ -1572,6 +1574,21 @@ test("on a phone /mockups/ opens the board on the first mock-up, big enough to r
   const view = (await canvas.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(view.x - 1);
   expect(box.x + box.width).toBeLessThanOrEqual(view.x + view.width + 1);
-  // Not the whole board shrunk to fit: the card is most of the canvas's width.
+  // Not the whole board shrunk to fit: the card is most of the canvas's width, and its link is as big as a finger needs.
   expect(box.width).toBeGreaterThan(view.width * 0.7);
+  const link = (await first.getByRole("link", { name: /^Open mock-up/ }).boundingBox())!;
+  expect(link.height).toBeGreaterThanOrEqual(44);
+  expect(link.width).toBeGreaterThanOrEqual(44);
+  await context.close();
+});
+
+test("the keyboard reaching a mock-up's link brings its card up to a readable size and picks it", async ({ page, baseURL }) => {
+  await openPlans(page, baseURL, "#plans");
+  const card = page.locator('.cat-card[data-id="plan:agents-and-multiplayer/14-share-live.html"]');
+  const small = (await stillBox(card)).width;
+  expect(small).toBeLessThan(352 * 0.5);
+  await card.getByRole("link", { name: /^Open mock-up/ }).focus();
+  await expect.poll(async () => (await stillBox(card)).width).toBeGreaterThan(352 * 0.5);
+  await expect(page.getByRole("complementary", { name: "Options" }).getByRole("heading", { name: "14 Share, live" })).toBeVisible();
+  await expectInView(page, "plan\\:agents-and-multiplayer\\/14-share-live\\.html");
 });

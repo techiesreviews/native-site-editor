@@ -498,6 +498,10 @@ body:has(> .cat-board) {
 }
 .cat-plan__open {
   justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--size-tap);
+  min-inline-size: var(--size-tap);
   color: var(--link);
   font-size: var(--type-small);
   text-underline-offset: 0.2em;
