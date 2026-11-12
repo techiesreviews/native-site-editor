@@ -186,7 +186,7 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
       live: { store: editorModule.sourceStore(), openFile: appStore.openFile, scope: draftScope,
         onPushed: (scope, commit) => ports.pagesAndFiles.savePublish.pushed(scope, commit),
         // GitHub's history of a shared file (ticket am-59): the reads, and the workspace's snapshot and GitHub's texts.
-        github: { api, repo: () => appStore.repository.value?.full_name, snapshot: () => appStore.snapshot.value, base: path => runtime.base.sources.get(path) } },
+        github: { api, app: appStore, runtime } },
       openFile: async (path) => {
         const at = workspaceSession.begin(), scope = draftScope();
         previewSelection.recordIntent(path);
