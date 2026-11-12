@@ -1,12 +1,12 @@
 // Takes the picture of a mock-up that the mock-ups page (vite-mockups.ts) shows once its feature is released
 // (label Live or On preview): `docs/wayfinder/<map>/prototypes/agreed/<name>.webp`, the page as it opens, 1280 × 800,
-// light, scaled to 480 × 300. The picture is committed, so it stays the mock-up Lex agreed on when the file changes later.
+// light, scaled to 480 × 300. The picture is committed, so it keeps the mock-up as it was when released, whatever the file becomes later.
 //
 //   node scripts/mockup-pictures.mjs                  every released mock-up that has no picture yet
 //   node scripts/mockup-pictures.mjs <map>/<file>…    those mock-ups, replacing a picture that exists
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "@playwright/test";
 import { buildTickets, isReleased, mockupFiles, mockupPicturePath, mockupShipping } from "../vite-mockups.ts";
 
@@ -25,8 +25,9 @@ try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: "light", reducedMotion: "reduce", serviceWorkers: "block" });
     try {
       const page = await context.newPage();
-      await page.goto(`file://${mockup.path}`, { waitUntil: "load" });
+      await page.goto(pathToFileURL(mockup.path).href, { waitUntil: "load" });
       await page.evaluate(() => document.fonts.ready);
+      // Entrance animations and the first module imports (some mock-ups load Yjs from esm.sh) settle after load.
       await page.waitForTimeout(500);
       const png = (await page.screenshot()).toString("base64");
       const encoder = await context.newPage();

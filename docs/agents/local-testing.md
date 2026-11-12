@@ -67,5 +67,7 @@ enough; it caches results per commit.
 The lead deploys the preview with `kit preview`, which also checks the live
 bundle. The preview builds with `npm run build:preview`, which adds every
 `docs/wayfinder/*/prototypes/` mock-up at `/mockups/` (index by map);
-`build:ui` has none. CI deploys `dev` by itself only once Lex adds the
+`build:ui` has none. A mock-up whose feature is released (Live or On preview) shows its picture
+on that index: when a ticket closes the last open link to a mock-up, run
+`node scripts/mockup-pictures.mjs` and commit the picture (`npm test` fails until it is there). CI deploys `dev` by itself only once Lex adds the
 Cloudflare secret: [github-settings.md](github-settings.md).
