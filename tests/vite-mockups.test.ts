@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { build, loadConfigFromFile } from "vite";
 import { unstable_startWorker } from "wrangler";
-import { buildTickets, isReleased, MOCKUPS_HEADERS, mockupFiles, mockupIndex, mockupPicturePath, mockups, mockupsHeaders, mockupShipping, mockupTitle, referencedFiles, ticketsOnMain } from "../vite-mockups.ts";
+import { BOARD_MOCKUPS, buildTickets, isReleased, MOCKUPS_HEADERS, mockupBoard, mockupFiles, mockupIndex, mockupPicturePath, mockups, mockupsHeaders, mockupShipping, mockupsRedirect, mockupTitle, referencedFiles, ticketsOnMain } from "../vite-mockups.ts";
 
 const repoRoot = new URL("..", import.meta.url).pathname;
 const scratch = mkdtempSync(join(tmpdir(), "ase-mockups-"));
@@ -227,11 +227,59 @@ test("a build with the plugin writes the mock-ups and the index under mockups/",
   const built = readdirSync(join(outDir, "mockups"), { recursive: true, withFileTypes: true })
     .filter(entry => entry.isFile()).map(entry => join(entry.parentPath, entry.name).slice(outDir.length + 1)).sort();
   assert.deepEqual(built,
-    ["mockups/agents/05-untitled.html", "mockups/agents/12-reference.png", "mockups/agents/14-share.html", "mockups/index.html", "mockups/site-structure/08-site-map.html"]);
+    ["mockups/agents/05-untitled.html", "mockups/agents/12-reference.png", "mockups/agents/14-share.html", "mockups/index.html", "mockups/list/index.html", "mockups/site-structure/08-site-map.html"]);
   assert.equal(readFileSync(join(outDir, "mockups/agents/12-reference.png"), "utf8"), "png");
   const index = readFileSync(join(outDir, "mockups/index.html"), "utf8");
   assert.match(index, /href="site-structure\/08-site-map.html">08 Site map<\/a> <span class="shipping shipping--idea">Idea only<\/span>/);
   assert.match(index, /--success-bg: var\(--semantic-success-surface\);/);
+  // The plain list is always at /mockups/list/, one folder deeper, so its links start with `../`.
+  const list = readFileSync(join(outDir, "mockups/list/index.html"), "utf8");
+  assert.match(list, /href="\.\.\/site-structure\/08-site-map.html">08 Site map<\/a> <span class="shipping shipping--idea">Idea only<\/span>/);
+  assert.doesNotMatch(list, /href="(?!\.\.\/|#)[a-z-]+\/[^"]*\.html"/);
+});
+
+test("with the board built too, /mockups/ opens the board's mock-ups, the plain list stays at /mockups/list/ and board.json feeds the cards", async () => {
+  const root = repo();
+  writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
+  const outDir = join(root, "dist");
+  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(root, { board: true })], build: { outDir } });
+  assert.equal(readFileSync(join(outDir, "mockups/index.html"), "utf8"), mockupsRedirect());
+  assert.match(mockupsRedirect(), new RegExp(`<meta http-equiv="refresh" content="0; url=${BOARD_MOCKUPS}">`));
+  assert.match(mockupsRedirect(), new RegExp(`<a href="${BOARD_MOCKUPS}">Mock-ups</a>`));
+  const list = readFileSync(join(outDir, "mockups/list/index.html"), "utf8");
+  assert.match(list, /<h1>Mock-ups<\/h1>/);
+  assert.match(list, /href="\.\.\/agents\/14-share.html">14 Share &amp; &lt;edit&gt;<\/a>/);
+  assert.deepEqual(JSON.parse(readFileSync(join(outDir, "mockups/board.json"), "utf8")), {
+    maps: [
+      { map: "agents", mockups: [
+        { file: "05-untitled.html", title: "05-untitled.html", label: "idea", labelName: "Idea only", tickets: "", href: "/mockups/agents/05-untitled.html" },
+        { file: "14-share.html", title: "14 Share & <edit>", label: "idea", labelName: "Idea only", tickets: "", href: "/mockups/agents/14-share.html" },
+      ] },
+      { map: "site-structure", mockups: [
+        { file: "08-site-map.html", title: "08 Site map", label: "idea", labelName: "Idea only", tickets: "", href: "/mockups/site-structure/08-site-map.html" },
+      ] },
+    ],
+  });
+});
+
+test("a board card has the page's label, tickets and title, its picture only for a released mock-up that has one, and addresses from the site's root", () => {
+  const { root } = shippingRepo();
+  const files = mockupFiles(root);
+  const tickets = buildTickets(root, files);
+  const shipping = mockupShipping(files, tickets, ticketsOnMain(root, tickets));
+  const board = mockupBoard(files, { shipping, pictures: new Set(["agents/live.html", "agents/preview.html"]) });
+  assert.deepEqual(board.maps.map(({ map }) => map), ["agents"]);
+  const card = (file: string) => board.maps[0].mockups.find(item => item.file === `${file}.html`)!;
+  assert.deepEqual(card("live"), { file: "live.html", title: "live", label: "live", labelName: "Live", tickets: "ticket 01", href: "/mockups/agents/live.html", picture: "/mockups/agents/agreed/live.webp" });
+  assert.deepEqual(card("live-and-preview"), { file: "live-and-preview.html", title: "live-and-preview", label: "preview", labelName: "On preview", tickets: "tickets 01, 02", href: "/mockups/agents/live-and-preview.html" });
+  assert.deepEqual([card("shared").labelName, card("shared").tickets], ["Being built", "tickets 07, styling 06"]);
+  assert.deepEqual([card("planned").labelName, card("planned").tickets], ["Planned", "ticket 05"]);
+  assert.deepEqual([card("idea").labelName, card("idea").tickets], ["Idea only", ""]);
+  // A picture beside an unreleased mock-up is not shown; the other maps and file names needing escapes are kept as written.
+  const odd = mockupBoard([{ map: "my map", file: "a #1?.html", path: "x" }, { map: "my map", file: "b.png", path: "y" }],
+    { read: () => "<title>PROTOTYPE (throwaway) · A &amp; B</title>", shipping: new Map([["my map/a #1?.html", { label: "preview", tickets: [] }]]), pictures: new Set(["my map/a #1?.html"]) });
+  assert.deepEqual(odd, { maps: [{ map: "my map", mockups: [{ file: "a #1?.html", title: "A & B", label: "preview", labelName: "On preview", tickets: "", href: "/mockups/my%20map/a%20%231%3F.html", picture: "/mockups/my%20map/agreed/a%20%231%3F.webp" }] }] });
+  assert.equal(mockupBoard([]).maps.length, 0);
 });
 
 test("served by Cloudflare's asset handler, mock-ups get one sandboxed policy and the editor keeps its own", async () => {
@@ -317,11 +365,13 @@ test("index links are URL-encoded and a rebuild adds the header rule once", asyn
 });
 
 /** Builds `root` with the mock-ups from `mockupsRoot` and the editor's real `_headers`, served by Cloudflare's asset handler. */
-async function serveBuild(root: string, mockupsRoot: string) {
+async function serveBuild(root: string, mockupsRoot: string, board = false) {
   writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
   mkdirSync(join(root, "public"));
   writeFileSync(join(root, "public/_headers"), readFileSync(join(repoRoot, "public/_headers"), "utf8"));
-  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(mockupsRoot)], build: { outDir: join(root, "dist") } });
+  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(mockupsRoot, { board })], build: { outDir: join(root, "dist") } });
+  // The board's page is the catalogue build's (vite.config.ts); a stand-in is enough to see where /mockups/ leads.
+  if (board) writeFileSync(join(root, "dist/catalogue.html"), "<!doctype html><title>Board stand-in</title>");
   writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify({ name: "mockups-browser-test", compatibility_date: "2026-09-17", assets: { directory: "./dist" } }));
   return unstable_startWorker({ config: join(root, "wrangler.jsonc"), dev: { server: { port: 0 }, inspector: false, watch: false, logLevel: "none" } });
 }
@@ -542,8 +592,11 @@ test("the index fits a phone with its pictures, and the sandboxed design sketch 
     const page = await browser.newPage();
     for (const width of [320, 390]) {
       await page.setViewportSize({ width, height: 800 });
-      await page.goto(new URL("mockups/", base).href, { waitUntil: "load" });
+      await page.goto(new URL("mockups/list/", base).href, { waitUntil: "load" });
       assert.ok(await page.locator(".with-picture").count() > 0);
+      // The list is one folder deeper than the page it replaced: its pictures still load.
+      await page.locator(".picture img").first().scrollIntoViewIfNeeded();
+      await page.waitForFunction(() => document.querySelector<HTMLImageElement>(".picture img")!.naturalWidth > 0);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${width} px wide`);
     }
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -557,6 +610,32 @@ test("the index fits a phone with its pictures, and the sandboxed design sketch 
     await page.keyboard.press("ArrowLeft");
     await page.keyboard.type("+-");
     assert.deepEqual(await place(), before);
+  } finally {
+    await browser.close();
+    await worker.dispose();
+  }
+});
+
+test("in a browser, /mockups/ leads to the board's mock-ups despite the sandboxed policy, and the plain list and the card data answer", async () => {
+  const { chromium } = await import("@playwright/test");
+  const worker = await serveBuild(mkdtempSync(join(scratch, "board-")), repoRoot, true);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const base = await worker.url;
+    const page = await browser.newPage();
+    await page.goto(new URL("mockups/", base).href, { waitUntil: "commit" }).catch(() => undefined);
+    await page.waitForFunction(() => document.title === "Board stand-in");
+    assert.equal(new URL(page.url()).hash, "#plans");
+    assert.match(new URL(page.url()).pathname, /^\/catalogue(\.html)?$/);
+    // The old links still work: the plain list, and the mock-ups themselves.
+    const list = await page.goto(new URL("mockups/list/", base).href, { waitUntil: "load" });
+    assert.equal(list!.status(), 200);
+    assert.ok(await page.locator("section h2").count() > 0);
+    const board = await page.request.get(new URL("mockups/board.json", base).href);
+    assert.equal(board.status(), 200);
+    const maps = (await board.json() as { maps: { map: string; mockups: { href: string }[] }[] }).maps;
+    assert.ok(maps.some(({ map }) => map === "atomic-catalogue"));
+    assert.equal((await page.request.get(new URL(maps[0].mockups[0].href, base).href)).status(), 200);
   } finally {
     await browser.close();
     await worker.dispose();

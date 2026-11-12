@@ -22,17 +22,17 @@ import { force, forceStates, type Forced } from "./force-states";
 import { frameElement, updateFrame, type Theme } from "./frame";
 import { MOCKUPS, type Mockup } from "./mockups";
 import { SCREENS } from "./screens";
+import { isPlan, type PlanAreaId, type PlanMockup, type Plans } from "./plans";
 import { boundsOf, readPlaces, snapMove, writePlaces, type Box, type Guide, type Point } from "./places";
-import { AREAS, FORCED, PARTS, STATE_NAMES, isPart, untracedLines, type AreaId, type BoardEntry, type Control, type OneOffCounts, type Part, type State, type Values } from "./parts";
+import { AREAS as BOARD_AREAS, FORCED, PARTS, STATE_NAMES, isPart, untracedLines, type AreaId, type BoardEntry, type Control, type OneOffCounts, type Part, type State, type Values } from "./parts";
 import { readFields, tweakCss, type Edits, type Side, type TweakField } from "./tweak";
 import { tweakSection } from "./tweak-panel";
 
-type Entry = BoardEntry | Mockup;
-const ENTRIES: readonly Entry[] = [...PARTS, ...SCREENS, ...MOCKUPS];
+type Entry = BoardEntry | Mockup | PlanMockup;
+type AreaKey = AreaId | PlanAreaId;
+const BOARD_ENTRIES: readonly (BoardEntry | Mockup)[] = [...PARTS, ...SCREENS, ...MOCKUPS];
 /** Screens (the editor's own, and mock-ups of features to come): one frame per width and theme, each a live cell. */
 const isScreen = (entry: Entry): entry is Mockup => entry.area === "screens" || entry.area === "mockups";
-const byId = new Map(ENTRIES.map((entry) => [entry.id, entry]));
-const areaName = (id: AreaId) => AREAS.find((area) => area.id === id)!.name;
 const svg = (markup: string, size = 16) => svgElement(sizedSvg(markup, size));
 const clamp = (value: number, low: number, high: number) => Math.min(Math.max(value, low), high);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
@@ -64,7 +64,14 @@ const untraced = (() => {
 
 // ---------- The board ----------
 
-export function startBoard(root: HTMLElement) {
+/** `plans`: the planning mock-ups of the mock-ups page, one area per map after the others (plans.ts), if the build has them. */
+export function startBoard(root: HTMLElement, plans: Plans = { areas: [], mockups: [] }) {
+  const ENTRIES: readonly Entry[] = [...BOARD_ENTRIES, ...plans.mockups];
+  const AREAS: readonly { id: AreaKey; name: string }[] = [...BOARD_AREAS, ...plans.areas];
+  const byId = new Map(ENTRIES.map((entry) => [entry.id, entry]));
+  const areaName = (id: AreaKey) => AREAS.find((area) => area.id === id)!.name;
+  /** What Approve is for: parts and screens; a planning mock-up's own page is not approved here. */
+  const approvable = ENTRIES.filter((entry) => !isPlan(entry));
   forceStates();
   const target = approvalTarget(location.search);
   let approvals: Approvals = parseApprovals(approvalsText);
@@ -235,6 +242,23 @@ export function startBoard(root: HTMLElement) {
     }
     return list;
   }
+  /** A planning mock-up: its picture (a released one that has it), its label and tickets, and the link that opens it. */
+  function planBody(entry: PlanMockup) {
+    const plan = el("div", "cat-plan");
+    if (entry.picture) {
+      const picture = el("img", "cat-plan__picture");
+      Object.assign(picture, { src: entry.picture, alt: "", width: 480, height: 300, loading: "lazy", decoding: "async", draggable: false });
+      plan.append(picture);
+    }
+    const line = el("div", "cat-plan__line");
+    line.append(el("span", `cat-plan__label cat-plan__label--${entry.label}`, entry.labelName));
+    if (entry.tickets) line.append(el("span", "cat-plan__tickets", entry.tickets));
+    const open = el("a", "cat-plan__open", "Open mock-up");
+    Object.assign(open, { href: entry.href, target: "_blank", rel: "noopener" });
+    open.setAttribute("aria-label", `Open mock-up: ${entry.name}`);
+    plan.append(line, open);
+    return plan;
+  }
   function card(entry: Entry) {
     const article = el("article", "cat-card");
     article.id = `card-${entry.id}`;
@@ -249,9 +273,13 @@ export function startBoard(root: HTMLElement) {
     placePiece(article);
     const title = el("h3", "cat-card__title");
     title.id = `title-${entry.id}`;
-    title.append(el("span", "", entry.name), el("span", "cat-mark"));
+    title.append(el("span", "", entry.name));
+    if (!isPlan(entry)) title.append(el("span", "cat-mark"));
+    else article.classList.add("cat-card--plan");
     const body = el("div", "cat-card__body");
-    if (entry.area === "values") {
+    if (isPlan(entry)) {
+      body.append(planBody(entry));
+    } else if (entry.area === "values") {
       const halves = el("div", "cat-halves");
       for (const theme of entry.themed ? (["light", "dark"] as const) : (["light"] as const)) {
         const side = half(theme, entry.themed ? (theme === "light" ? "Light" : "Dark") : entry.name);
@@ -307,7 +335,7 @@ export function startBoard(root: HTMLElement) {
   function drawLive(entry: Entry) {
     const now = live.get(entry.id)!;
     const article = world.querySelector<HTMLElement>(`#card-${CSS.escape(entry.id)}`);
-    if (!article) return;
+    if (!article || isPlan(entry)) return;
     if (entry.area === "values") {
       for (const into of article.querySelectorAll<HTMLElement>(".cat-value-body")) void entry.render(now.values).then((element) => { into.replaceChildren(element); placeSel(); });
       return;
@@ -422,12 +450,13 @@ export function startBoard(root: HTMLElement) {
     return cssSection({ part: entry, path, file: cssFile(entry, path), apply: () => applyTweaks(entry), say });
   }
 
-  const areas = new Map<AreaId, HTMLElement>();
+  const areas = new Map<AreaKey, HTMLElement>();
   for (const area of AREAS) {
     const section = el("section", "cat-area");
     section.id = `area-${area.id}`;
     section.dataset.area = area.id;
     section.dataset.piece = `area:${area.id}`;
+    if (area.id.startsWith("plan:")) section.classList.add("cat-area--plan");
     placePiece(section);
     const label = el("h2", "cat-area__label", area.name);
     label.dataset.area = area.id;
@@ -458,7 +487,8 @@ export function startBoard(root: HTMLElement) {
       button.type = "button";
       button.dataset.id = entry.id;
       button.setAttribute("aria-current", "false");
-      button.append(el("span", "cat-outline__name", entry.name), el("span", "cat-mark"));
+      button.append(el("span", "cat-outline__name", entry.name));
+      if (!isPlan(entry)) button.append(el("span", "cat-mark"));
       item.append(button);
       list.append(item);
     }
@@ -542,8 +572,12 @@ export function startBoard(root: HTMLElement) {
     cam.x = Math.round(cam.x); cam.y = Math.round(cam.y);
     apply();
     const titleScale = String(clamp(1 / cam.z, 1, 6)), labelScale = String(clamp(0.4 / cam.z, 1, 9));
-    for (const title of titles()) title.style.scale = titleScale;
+    for (const title of titles()) if (!title.closest(".cat-card--plan")) title.style.scale = titleScale;
     for (const label of areaLabels()) label.style.scale = labelScale;
+    // A mock-up's name (smaller cards, longer names) and a map's name keep to their card or area at any zoom (board.css), so
+    // zoomed out they do not run into the next.
+    world.style.setProperty("--cat-title-scale", titleScale);
+    world.style.setProperty("--cat-label-scale", labelScale);
   }
   const settleSoon = () => { clearTimeout(gestureTimer); gestureTimer = setTimeout(settle, 160); };
   function zoomAt(sx: number, sy: number, factor: number) {
@@ -587,8 +621,8 @@ export function startBoard(root: HTMLElement) {
   }
   const cardRect = (id: string) => { const r = cardSpan(pieceOf(id)!); return { x: r.x, y: r.y - 30, w: r.w, h: r.h + 30 }; };
   const flyToCard = (id: string, maxZ = 1.25) => flyTo(camFor(cardRect(id), maxZ));
-  const areaRect = (id: AreaId) => { const r = pieceBox(areas.get(id)!); return { x: r.x, y: r.y - 100, w: r.w, h: r.h + 100 }; };
-  const flyToArea = (id: AreaId) => flyTo(camFor(areaRect(id), 1, 32));
+  const areaRect = (id: AreaKey) => { const r = pieceBox(areas.get(id)!); return { x: r.x, y: r.y - 100, w: r.w, h: r.h + 100 }; };
+  const flyToArea = (id: AreaKey) => flyTo(camFor(areaRect(id), 1, 32));
   // Everything on the board: the areas, and what was moved out of them (with room for the names above them).
   const allRect = () => boundsOf([{ x: 0, y: 0, w: world.offsetWidth, h: world.offsetHeight },
     ...[...world.querySelectorAll<HTMLElement>("[data-piece]")].map((piece) => {
@@ -790,9 +824,9 @@ export function startBoard(root: HTMLElement) {
       return;
     }
     if (!entry) {
-      const count = ENTRIES.filter((item) => approvals.approved[item.id]).length;
+      const count = approvable.filter((item) => approvals.approved[item.id]).length;
       const empty = el("div", "cat-inspector__empty");
-      empty.append(el("span", "", `Approved ${count} of ${ENTRIES.length}`));
+      empty.append(el("span", "", `Approved ${count} of ${approvable.length}`));
       inspector.replaceChildren(empty);
       return;
     }
@@ -815,7 +849,7 @@ export function startBoard(root: HTMLElement) {
     sections.push(placeSection(picked ?? entry.id));
     if (isPart(entry)) sections.push(entry.css ? cssFor(entry, entry.css) : tweakFor(entry, true));
     if (entry.area === "molecules" || entry.area === "organisms" || isScreen(entry)) sections.push(section("Made of", madeOfList(entry)));
-    sections.push(approveSection(entry));
+    if (!isPlan(entry)) sections.push(approveSection(entry));
     inspector.replaceChildren(...sections);
     syncPlace();
   }
@@ -869,7 +903,7 @@ export function startBoard(root: HTMLElement) {
     const target = event.target as Element;
     const item = target.closest<HTMLElement>(".cat-outline__item"), area = target.closest<HTMLElement>(".cat-outline__area");
     if (item) go(item.dataset.id!);
-    else if (area) { if (mode() !== "wide") setSheet(""); selectPiece(`area:${area.dataset.area}`, false); flyToArea(area.dataset.area as AreaId); }
+    else if (area) { if (mode() !== "wide") setSheet(""); selectPiece(`area:${area.dataset.area}`, false); flyToArea(area.dataset.area as AreaKey); }
   });
   for (const toggle of [outlineToggle, optionsToggle])
     toggle.addEventListener("click", () => setSheet(root.dataset.sheet === toggle.dataset.sheet ? "" : toggle.dataset.sheet as "outline" | "options"));
@@ -1218,7 +1252,7 @@ export function startBoard(root: HTMLElement) {
       return;
     }
     lastTap = { t: 0, id: "" };
-    if (label) { selectPiece(label.parentElement!.dataset.piece!, false); flyToArea(label.dataset.area as AreaId); return; }
+    if (label) { selectPiece(label.parentElement!.dataset.piece!, false); flyToArea(label.dataset.area as AreaKey); return; }
     if (mode() !== "wide") setSheet("");
     select(undefined);
   }
@@ -1229,7 +1263,13 @@ export function startBoard(root: HTMLElement) {
   renderInspector();
   let last: { w: number; h: number } | undefined, moved = false;
   // The shared values area opens in view; on a phone its first card, as the whole area would be too small to read.
-  const firstView = () => { Object.assign(cam, mode() === "phone" ? camFor(cardRect(ENTRIES[0].id), 1, 16) : camFor(areaRect("values"), 1, 24)); settle(); };
+  // `#plans` (where /mockups/ leads) opens on the planning mock-ups instead: every map's area in view.
+  const onPlans = location.hash === "#plans" && plans.areas.length > 0;
+  const firstView = () => {
+    if (onPlans) Object.assign(cam, camFor(boundsOf(plans.areas.map((area) => areaRect(area.id)))!, 1, 24));
+    else Object.assign(cam, mode() === "phone" ? camFor(cardRect(ENTRIES[0].id), 1, 16) : camFor(areaRect("values"), 1, 24));
+    settle();
+  };
   for (const type of ["pointerdown", "wheel", "keydown"]) root.addEventListener(type, () => { moved = true; }, { once: true, capture: true });
   new ResizeObserver(() => {
     const w = viewport.clientWidth, h = viewport.clientHeight;

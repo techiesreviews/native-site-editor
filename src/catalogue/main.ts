@@ -7,9 +7,11 @@ import "../theme.css";
 import "./board.css";
 import { loadComponentStyles } from "./component-css";
 import { frameOf, ownQuery, startFrame } from "./frame";
+import { loadPlans } from "./plans";
 
 // Component files load as styles of their own (component-css.ts), so a live cell can leave its part's file out.
 loadComponentStyles();
 const shown = frameOf(ownQuery());
 if (shown) void startFrame(shown);
-else void import("./board").then(({ startBoard }) => startBoard(document.getElementById("catalogue")!));
+// The board opens once the build's planning mock-ups (none on the dev server) have been read.
+else void Promise.all([import("./board"), loadPlans()]).then(([{ startBoard }, plans]) => startBoard(document.getElementById("catalogue")!, plans));

@@ -578,4 +578,4 @@ export function untracedLines(files: readonly string[], counts: OneOffCounts): s
   });
 }
 
-export const isPart = (entry: { area: AreaId }): entry is Part => entry.area === "atoms" || entry.area === "molecules" || entry.area === "organisms";
+export const isPart = (entry: { area: string }): entry is Part => entry.area === "atoms" || entry.area === "molecules" || entry.area === "organisms";
