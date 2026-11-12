@@ -427,9 +427,8 @@ body:has(> .cat-board) {
 /* The name grows as the board zooms out, but only to twice its size, and wraps to the card's width (never more than three
    lines), so zoomed out it does not run into the next card's. */
 .cat-card--plan .cat-card__title {
-  --plan-title-scale: min(var(--cat-title-scale, 1), 2);
-  inline-size: calc(100% / var(--plan-title-scale));
-  scale: var(--plan-title-scale);
+  inline-size: calc(100% / min(var(--cat-title-scale, 1), 2));
+  scale: min(var(--cat-title-scale, 1), 2);
   white-space: normal;
 }
 .cat-card--plan .cat-card__title > :first-child {
@@ -465,7 +464,7 @@ body:has(> .cat-board) {
 }
 .cat-plan__label {
   padding-inline: var(--space-2xs);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   font-size: var(--type-badge);
   font-weight: 600;
   line-height: 1.6;
