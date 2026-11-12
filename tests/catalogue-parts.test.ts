@@ -148,3 +148,12 @@ test("forced states leave a mouse-only condition and keep any other", () => {
   assert.equal(groupPrelude("@media (max-width: 650px) { a:hover { } }", "(max-width: 650px)"), "@media (max-width: 650px)");
   assert.equal(groupPrelude("@supports (anchor-name: --a) { a:hover { } }", undefined), "@supports (anchor-name: --a)");
 });
+
+test("the Editor screen names every editor file it draws from, so an annotation on any of its parts finds its file", () => {
+  // What it loads to draw (its type-only imports draw nothing).
+  const text = readFileSync(join(repo, "src/catalogue/screens.ts"), "utf8");
+  const drawn = [...text.matchAll(/import\("(\.\.\/[^"]+)"\)/g)].map(([, path]) => normalize(join("src/catalogue", path))).map((path) => (/\.\w+$/.test(path) ? path : `${path}.ts`));
+  assert.ok(drawn.length > 5);
+  const editor = SCREENS.find((screen) => screen.id === "editor")!;
+  for (const file of drawn) assert.ok(editor.files.includes(file), `editor screen: ${file} in its files`);
+});
