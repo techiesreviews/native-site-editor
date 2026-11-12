@@ -114,19 +114,23 @@ test("Publish right after Lex reloads waits until his page caught up with the ro
     holding = true;
     await lex.page.reload();
     await expect(lex.page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-    // His page has joined the room again (live text loads a beat after the first paint) and asked to be caught up.
+    // His page has joined the room again (live text loads a beat after the first paint) and sent it frames (its request
+    // to be caught up among them).
     await expect.poll(() => routed, { timeout: 20_000 }).toBe(2);
     await expect.poll(() => asked, { timeout: 20_000 }).toBeGreaterThan(0);
     await expect.poll(() => source(lex.page), { timeout: 20_000 }).toContain("Fresh bread: warm A native");
+    const before = await head(lex.page, baseURL);
+    let sentWhileHeld = 0;
+    lex.page.on("request", request => { if (holding && request.url().includes("/api/publish")) sentWhileHeld++; });
     await publishButton(lex.page).click();
     const trigger = lex.page.locator(".publish-menu__trigger");
     await expect(trigger).toHaveText("Catching up…", { timeout: 2_000 });
     await expect(trigger).toBeDisabled();
-    const before = await head(lex.page, baseURL);
-    expect(await head(lex.page, baseURL)).toBe(before);
+    // Released well within the wait (about 5 s): the save goes out once the page caught up, not when the wait ran out.
     holding = false;
     for (const send of held.splice(0)) send();
     await expect(lex.page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+    expect(sentWhileHeld, "nothing sent while the catch-up was held").toBe(0);
     const saved = await head(lex.page, baseURL);
     expect(saved).not.toBe(before);
     // Anna hears the save: the room's own text, so the words stay once, the same in both tabs, with no reload.

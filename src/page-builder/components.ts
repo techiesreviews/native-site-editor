@@ -6,7 +6,8 @@ import { createComponentMode, EnterTimeout, scopeHolds, type Level } from "./com
 import type { ElementMenuTarget } from "../components/element-menu";
 import type { MenuItem } from "../components/row-menu";
 import type { LiveTextPorts } from "../live-text";
-import type { GithubPort } from "../live-github";
+import type { GithubReads } from "../live-github";
+import type { AppStore } from "../app-store";
 // Components, first class (docs/page-builder/components.md): what the page
 // builder does around a component instance, alongside the edit bar and the
 // page structure.
@@ -127,8 +128,9 @@ export interface ComponentDeps {
   selection: () => NativePreviewSelection | undefined;
   /** The open file's shared copy (src/live-text.ts, ADR 0003): started once, with the first tools made. */
   live?: Pick<LiveTextPorts, "store" | "openFile" | "scope" | "onPushed"> & {
-    /** GitHub's reads and the file as the workspace read it, for GitHub's history (src/live-github.ts, ticket am-59). */
-    github?: GithubPort;
+    /** GitHub's reads, and the workspace's snapshot and GitHub's texts, for GitHub's history of a shared file
+     * (src/live-github.ts, ticket am-59). The port is made here, so the boot chunk carries only these references. */
+    github?: { api: GithubReads["api"]; app: Pick<AppStore, "repository" | "snapshot">; runtime: { base: { sources: ReadonlyMap<string, string> } } };
   };
   /** Opens a file in the code pane; resolves once it is mounted (true) or not. */
   openFile: (path: string) => Promise<boolean>;
@@ -268,7 +270,11 @@ const LATE_MODE = `${new EnterTimeout().message} The template's code is open.`;
 let liveText: Promise<unknown> | undefined;
 function startLiveText(live: NonNullable<ComponentDeps["live"]>) {
   liveText ??= Promise.all([import("../live-text"), import("../live-github")])
-    .then(([module, history]) => module.startLiveText({ ...live, github: live.github && history.liveGithub(live.github) }))
+    .then(([module, history]) => {
+      const github = live.github;
+      return module.startLiveText({ ...live, github: github && history.liveGithub({ api: github.api, repo: () => github.app.repository.value?.full_name,
+        snapshot: () => github.app.snapshot.value, base: path => github.runtime.base.sources.get(path) }) });
+    })
     .catch(() => { liveText = undefined; });
 }
 
