@@ -79,6 +79,7 @@ pre:focus-visible {
 }
 .topbar .repository-menu__trigger {
   padding-block: 0;
+  padding-inline-start: 0;
 }
 .topbar :is(.repository-menu__repository, .repository-menu__caret) {
   display: none;
