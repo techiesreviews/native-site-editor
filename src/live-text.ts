@@ -764,7 +764,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         // GitHub's words coming back go into the copy first, as every tab writes them (the draft does not follow them:
         // they are part of this tab's step below, whose change then writes only what the copy still lacks).
         if (back) { quiet = true; try { Y.applyUpdate(doc, back, OUTSIDE); } finally { quiet = false; } }
-        const author = meta.get(`n:${edge.to}`), who = typeof author === "string" && author ? author.split(" · ")[0] : "Someone";
+        const author = meta.get(`n:${edge.to}`) ?? meta.get(`n:${shaOf(edge.to)}`), who = typeof author === "string" && author ? author.split(" · ")[0] : "Someone";
         store.edit({ scope, path, history: ports.history?.(scope, path), label: `${who}'s change`, changes: out });
       }
       moveBase(all);
@@ -818,7 +818,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
      * right before it, and that one first, on top of its own, when the copy lacks it, back to a version the copy holds
      * as that very occurrence of its text (`occurrenceAfter`: a revert's text the copy holds only from before is read
      * past). Every tab bringing the same versions writes the same items, so they enter once and in GitHub's order,
-     * whichever tab heard which commit first. False when the history could not be read or does not reach a version the
+     * whichever tab heard which commit first. (A page going back and forth, A B A B A, that this tab missed more than
+     * one turn of can look like a turn it holds: it then enters on that one, and the copy, holding two ways into the
+     * version, keeps the one that came by more versions, `superseded`; telling them apart needs GitHub's commit ids.) False when the history could not be read or does not reach a version the
      * copy holds within HISTORY_LIMIT versions. `again`: GitHub's newest brings back a text the copy holds (a revert),
      * which enters as its next occurrence.
      */
