@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { openEditor } from "../support/scenarios";
+import { circleOnTop } from "./caret-flags";
 import { editorMounted } from "./drafts";
 import { openLiveRoom, type LiveRoomSocket } from "../../src/live-room";
 import type { JsonValue } from "../../shared/agent-command";
@@ -105,6 +106,11 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
     await expect(annaAtLex).toHaveAccessibleName("Anna");
     await expect(lexAtAnna).toBeVisible({ timeout: 20_000 });
     await expect(lexAtAnna).toHaveAccessibleName("Lex");
+    // Each circle holds the right first letter and is what shows at its spot, not something drawn over it.
+    await expect(annaAtLex.locator(".live-caret__mark b")).toHaveText("A");
+    await expect(lexAtAnna.locator(".live-caret__mark b")).toHaveText("L");
+    await expect.poll(() => circleOnTop(annaAtLex), { timeout: 10_000 }).toBe(true);
+    await expect.poll(() => circleOnTop(lexAtAnna), { timeout: 10_000 }).toBe(true);
     // Closed, the name is there for no one; its first letter shows only when the tag opens to the left.
     await expect(annaAtLex.locator(".live-caret__name")).toHaveText("Anna");
     await expect(annaAtLex.locator(".live-caret__initial")).toBeHidden();

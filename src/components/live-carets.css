@@ -163,11 +163,13 @@
 .live-caret-tint--2 { background: color-mix(in oklch, var(--agent-presence-3) 22%, transparent); }
 .live-caret-tint--3 { background: color-mix(in oklch, var(--agent-presence-4) 22%, transparent); }
 
-/* On the page (ticket am-23): a layer over the preview's frame viewport, clipped to it, under the agents' pins. The
-   carets sit where the frame finds them in the page's text (live-carets.ts `attachPage`); no element highlight. */
+/* On the page (ticket am-23): a layer over the preview's frame viewport, clipped to it. The carets sit where the frame
+   finds them in the page's text (live-carets.ts `attachPage`); no element highlight. Above the edit bar (z-index 30,
+   src/components/edit-bar.css): the bar opens over the text next to the block this tab types in, which is where
+   another's caret stands when they type in the block above or below it, and a circle under the bar is no caret at all. */
 .live-carets-page {
   position: absolute;
-  z-index: 20;
+  z-index: 31;
   overflow: clip;
   pointer-events: none;
 }
