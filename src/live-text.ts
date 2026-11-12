@@ -928,6 +928,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (synced || starting) return;
       starting = true;
       clock.clearTimeout(waiting);
+      /** A copy of the room caught this tab up while it was starting its own: it joins that one once this start ends. */
+      let joined = false;
       try {
         if (!copyId) {
           // No copy of the room came to this tab: it starts one, from its own version of GitHub's text.
@@ -935,7 +937,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           if (!file) return;
           const version = await versionOf(file.baseSha, file.base), birth = await birthUpdate(Y, version, file.base);
           const id = (await digest(`copy\n${version}\n${start.key}`)).subarray(0, 20);
-          if (stopped || copyId) return;
+          if (stopped) return;
+          if (copyId) { joined = true; return; }
           Y.applyUpdate(doc, birth, OUTSIDE);
           copyId = id;
         }
@@ -979,7 +982,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
             break versions;
           }
         }
-      } finally { starting = false; }
+      } finally {
+        starting = false;
+        // The answer to its request came during the start (`receive` could not begin then): it begins as caught up now.
+        if (joined && !stopped) void begin(true);
+      }
       // A save waiting for this start goes on (`caughtUp`); a commit tries again (and waits on).
       if (!synced) { foldsReady(); return; }
       // Saved while the copy was starting: the draft went in over the copy's version, and the copy, holding the saved text
@@ -1085,8 +1092,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (next.author) doc.transact(() => { if (meta.get(`n:${next.sha}`) !== next.author) meta.set(`n:${next.sha}`, next.author!); }, META);
       let all = versions();
       if (!versionsOf(all).has(base)) return false;
-      // A commit this tab's version came after (a notice that waited behind a newer one): nothing to do.
-      if (base !== next.sha && versionsOf(all).has(next.sha) && reaches(all, next.sha, base)) return true;
+      // A version this tab's came after: a notice that waited behind a newer one (nothing to do), or GitHub's newest
+      // bringing back an earlier text exactly (a revert): the copy holds each text once, so the branch loads again.
+      if (base !== next.sha && versionsOf(all).has(next.sha) && reaches(all, next.sha, base)) return latest?.sha !== next.sha;
       // A save whose note did not come and whose commit does not say it was this room's (its tab was catching up, or
       // saved outside the publish menu), while the copy still holds its very text.
       if (!versionsOf(all).has(next.sha) && !noteOf(next) && !next.copies?.includes(hex(copyId)) && next.text === text.toString()) {

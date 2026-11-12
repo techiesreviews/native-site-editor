@@ -185,6 +185,43 @@ test("two tabs opening an empty room at once do not double the text, with GitHub
   }
 });
 
+test("an answer reaching a tab while it starts its own copy (its wait ran out) is joined, and typing goes on reaching it (am-59)", async () => {
+  const time = fakeTimers(), room = fakeRoom(), kept = keeper();
+  // Anna runs a copy kept from before, alone.
+  const before = tab(room, base, { keeper: kept }), sam = tab(room);
+  await until(() => before.yjsLoads + sam.yjsLoads === 2, "the copy");
+  before.type(0, "<!-- Anna -->");
+  await until(() => sam.text.startsWith("<!-- Anna -->"), "shared");
+  before.stop(); sam.stop();
+  await quiet();
+  const anna = tab(room, before.text, { keeper: kept });
+  await until(() => anna.yjsLoads === 1, "Anna's kept copy");
+  await quiet();
+  // What the room sends Lex waits while `holding`: Anna's answer to his request comes late.
+  let holding = true;
+  const held: (() => void)[] = [];
+  const slow = { ...room, open: (options: LiveRoomOptions, access?: LiveAccess) => room.open({ ...options, onMessage: bytes => { if (holding) held.push(() => options.onMessage(bytes)); else options.onMessage(bytes); } }, access) };
+  const lex = tab(slow, base, { clock: time.clock });
+  await until(() => held.length > 0 && time.timers.size > 0, "Lex asked; Anna's answer held");
+  // A slow digest (the copy id his own start makes): Anna's answer comes in during his start.
+  const subtle = crypto.subtle, digest = subtle.digest.bind(subtle);
+  Object.defineProperty(subtle, "digest", { configurable: true, value: async (...args: Parameters<SubtleCrypto["digest"]>) => {
+    await new Promise(resolve => setTimeout(resolve, 20));
+    return digest(...args);
+  } });
+  try {
+    time.advance(LIVE_TEXT_CATCH_UP_MS);
+    holding = false;
+    for (const deliver of held.splice(0)) deliver();
+    await until(() => lex.text.startsWith("<!-- Anna -->"), "Lex on Anna's copy");
+  } finally { Object.defineProperty(subtle, "digest", { configurable: true, value: digest }); }
+  anna.type(0, "<!-- after -->");
+  await until(() => lex.text.startsWith("<!-- after --><!-- Anna -->"), "Anna's typing reaching Lex");
+  lex.type(0, "x");
+  await until(() => anna.text.startsWith("x<!-- after -->"), "Lex's typing reaching Anna");
+  anna.stop(); lex.stop();
+});
+
 test("a catch-up request that arrives while a tab is still starting its copy is answered once it has", async () => {
   const subtle = crypto.subtle, digest = subtle.digest.bind(subtle);
   let release!: () => void, held = false;
@@ -339,6 +376,27 @@ test("a save landing while a commit folds into the room's copy keeps the draft o
   assert.equal(await folding, true);
   assert.equal(anna.store.get(scope, path)?.baseSha, saved, "the draft stays on her save");
   assert.equal(copies.length, 1);
+  anna.stop(); lex.stop();
+});
+
+test("a commit bringing back the page's earlier text (a revert, A to B to A) is not skipped: the branch loads again (am-59)", async () => {
+  const two = `${base}<p>Closed Mondays.</p>\n`;
+  const history = [{ sha, text: base }, { sha: "2".repeat(40), text: two }, { sha, text: base }];
+  let newest = 0;
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => history[newest],
+    before: async function* (of) { for (let at = history.findIndex(version => version.sha === of) - 1; at >= 0; at--) yield history[at]; } });
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room, base, { github });
+  await quiet();
+  const lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  lex.type(0, "<!-- Lex -->");
+  await until(() => anna.text.startsWith("<!-- Lex -->"), "both caught up");
+  newest = 1;
+  assert.deepEqual(await Promise.all([liveFold(anna.store, key, history[1]), liveFold(lex.store, key, history[1])]), [true, true]);
+  await until(() => anna.text.includes("Closed Mondays") && lex.text.includes("Closed Mondays"), "commit 2 on both");
+  newest = 2;
+  assert.deepEqual(await Promise.all([liveFold(anna.store, key, history[2]), liveFold(lex.store, key, history[2])]), [false, false]);
   anna.stop(); lex.stop();
 });
 

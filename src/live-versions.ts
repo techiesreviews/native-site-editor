@@ -403,52 +403,64 @@ export function clashes(Y: Yjs, doc: Doc, all: readonly Edge[], edge: Edge, mine
     }
     return { out: out.reverse(), clashed: true };
   };
-  // Only where the copy and the merged text differ.
-  let head = 0, tail = 0;
-  while (head < current.length && head < target.length && current[head] === target[head]) head++;
-  while (tail < current.length - head && tail < target.length - head && current[current.length - 1 - tail] === target[target.length - 1 - tail]) tail++;
   const shown: number[] = [];
   list.forEach((char, index) => { if (char.kind < 2) shown.push(index); });
-  // Widened to the whole line (within WIDEN characters): the same text can be taken out in several places, and the
-  // cheapest way (this tab's own words) may lie beside the first difference.
-  if (head) head = Math.max(current.lastIndexOf("\n", head - 1) + 1, head - WIDEN);
-  const end = current.indexOf("\n", current.length - tail);
-  tail = Math.max(Math.min(tail, end < 0 ? 0 : current.length - end), tail - WIDEN, 0);
-  const lo = head ? shown[head - 1] + 1 : 0, hi = current.length - tail < shown.length ? shown[current.length - tail] : list.length;
-  const want = target.slice(head, target.length - tail), n = hi - lo, m = want.length;
-  if ((n + 1) * (m + 1) > MATCH_LIMIT) return ownWords();
-  // The cheapest way to show the merged text: cost[i][j], the copy's characters from i on showing `want` from j on. A
-  // shown character stays (or, this tab's own, goes for 1); one taken out stays out (or, GitHub's taken by this tab,
-  // comes back for 1); what cannot match costs MISS.
-  const cost = new Int32Array((n + 1) * (m + 1)), at = (i: number, j: number) => i * (m + 1) + j;
-  for (let j = m - 1; j >= 0; j--) cost[at(n, j)] = cost[at(n, j + 1)] + MISS;
-  const steps = (i: number, j: number) => {
-    const { ch, kind } = list[lo + i], match = j < m && want[j] === ch;
-    return {
-      skip: cost[at(i + 1, j)] + (kind === 0 ? MISS : kind === 1 ? 1 : 0),
-      take: match && kind !== 3 ? cost[at(i + 1, j + 1)] + (kind === 2 ? 1 : 0) : Infinity,
-      miss: j < m ? cost[at(i, j + 1)] + MISS : Infinity,
-    };
-  };
-  for (let i = n - 1; i >= 0; i--) for (let j = m; j >= 0; j--) { const step = steps(i, j); cost[at(i, j)] = Math.min(step.skip, step.take, step.miss); }
-  if (cost[0] >= MISS) return ownWords();
   const out: TextChange[] = [], back: number[] = [];
   const change = (index: number, gone: number, put: string) => {
     const last = out.at(-1);
     if (last && last.end === index) { last.end += gone; last.text += put; } else out.push({ start: index, end: index + gone, text: put });
   };
-  for (let i = 0, j = 0, index = head; i < n;) {
-    const step = steps(i, j), { ch, kind } = list[lo + i], best = cost[at(i, j)];
-    if (step.take === best) {
-      if (kind === 2) { change(index, 0, ch); back.push(lo + i); }
-      else index++;
-      i++; j++;
-    } else if (step.skip === best) {
-      if (kind === 1) change(index, 1, "");
-      if (kind < 2) index++;
-      i++;
-    } else j++;
+  /** The cheapest way to show the merged text in one stretch: the copy from `head` to `end` (offsets in its text) showing
+   * the merged text from `from` to `to`. False when it cannot (too large, or this tab's part cannot make it). */
+  const region = (head: number, end: number, from: number, to: number) => {
+    // Widened to the whole line (within WIDEN characters, text both have): the same text can be taken out in several
+    // places, and the cheapest way (this tab's own words) may lie beside the first difference.
+    const wider = head && Math.min(head - Math.max(current.lastIndexOf("\n", head - 1) + 1, head - WIDEN), from);
+    head -= wider; from -= wider;
+    const line = current.indexOf("\n", end), after = Math.min((line < 0 ? current.length : line) - end, WIDEN, target.length - to);
+    end += after; to += after;
+    const lo = head ? shown[head - 1] + 1 : 0, hi = end < shown.length ? shown[end] : list.length;
+    const want = target.slice(from, to), n = hi - lo, m = want.length;
+    if ((n + 1) * (m + 1) > MATCH_LIMIT) return false;
+    // cost[i][j], the copy's characters from i on showing `want` from j on. A shown character stays (or, this tab's own,
+    // goes for 1); one taken out stays out (or, GitHub's taken by this tab, comes back for 1); what cannot match costs MISS.
+    const cost = new Int32Array((n + 1) * (m + 1)), at = (i: number, j: number) => i * (m + 1) + j;
+    for (let j = m - 1; j >= 0; j--) cost[at(n, j)] = cost[at(n, j + 1)] + MISS;
+    const steps = (i: number, j: number) => {
+      const { ch, kind } = list[lo + i], match = j < m && want[j] === ch;
+      return {
+        skip: cost[at(i + 1, j)] + (kind === 0 ? MISS : kind === 1 ? 1 : 0),
+        take: match && kind !== 3 ? cost[at(i + 1, j + 1)] + (kind === 2 ? 1 : 0) : Infinity,
+        miss: j < m ? cost[at(i, j + 1)] + MISS : Infinity,
+      };
+    };
+    for (let i = n - 1; i >= 0; i--) for (let j = m; j >= 0; j--) { const step = steps(i, j); cost[at(i, j)] = Math.min(step.skip, step.take, step.miss); }
+    if (cost[0] >= MISS) return false;
+    for (let i = 0, j = 0, index = head; i < n;) {
+      const step = steps(i, j), { ch, kind } = list[lo + i], best = cost[at(i, j)];
+      if (step.take === best) {
+        if (kind === 2) { change(index, 0, ch); back.push(lo + i); }
+        else index++;
+        i++; j++;
+      } else if (step.skip === best) {
+        if (kind === 1) change(index, 1, "");
+        if (kind < 2) index++;
+        i++;
+      } else j++;
+    }
+    return true;
+  };
+  // Only where the copy and the merged text differ: each stretch of differences on its own (two clashes far apart on one
+  // page are two small matches, not one too large), stretches closer than twice WIDEN as one.
+  const stretches: { head: number; end: number; from: number; to: number }[] = [];
+  let shift = 0;
+  for (const part of [...runChanges(current, target)].sort((a, b) => a.start - b.start)) {
+    const from = part.start + shift, last = stretches.at(-1);
+    if (last && part.start - last.end < 2 * WIDEN) { last.end = part.end; last.to = from + part.text.length; }
+    else stretches.push({ head: part.start, end: part.end, from, to: from + part.text.length });
+    shift += part.text.length - (part.end - part.start);
   }
+  if (!stretches.length || !stretches.every(part => region(part.head, part.end, part.from, part.to))) return ownWords();
   alignWords(current, out, index => list[shown[index]].kind === 1);
   out.reverse();
   // The merged text is read from the copy, the typists' part guessed where others took out what GitHub took out too: a
