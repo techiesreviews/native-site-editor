@@ -83,10 +83,9 @@ test("a list that never answers is given up on after a few seconds, so the board
     signal?.addEventListener("abort", () => reject(signal!.reason));
   })) as typeof fetch;
   try {
-    const started = Date.now();
-    assert.deepEqual(await loadPlans(), { areas: [], mockups: [] });
-    assert.ok(signal, "the request carries a time limit");
-    assert.ok(Date.now() - started >= PLANS_WAIT_MS - 100 && Date.now() - started < PLANS_WAIT_MS + 2000);
+    assert.deepEqual(await loadPlans(50), { areas: [], mockups: [] });
+    assert.ok(signal?.aborted, "the request carries a time limit, and it ran out");
+    assert.ok(PLANS_WAIT_MS >= 1000 && PLANS_WAIT_MS <= 5000, "a few seconds");
   } finally {
     globalThis.fetch = real;
   }

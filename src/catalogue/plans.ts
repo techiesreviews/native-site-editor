@@ -72,9 +72,9 @@ export function parsePlans(source: string): Plans {
 export const PLANS_WAIT_MS = 3000;
 
 /** The build's list of mock-ups; none where there is no list (the dev server answers with its own page), or it is slow or fails. */
-export async function loadPlans(): Promise<Plans> {
+export async function loadPlans(wait = PLANS_WAIT_MS): Promise<Plans> {
   try {
-    const response = await fetch("/mockups/board.json", { signal: AbortSignal.timeout(PLANS_WAIT_MS) });
+    const response = await fetch("/mockups/board.json", { signal: AbortSignal.timeout(wait) });
     return response.ok ? parsePlans(await response.text()) : { areas: [], mockups: [] };
   } catch {
     return { areas: [], mockups: [] };
