@@ -350,11 +350,11 @@ export function createPublishMenu(options: {
     if (pending) return;
     // A page just opened again catches up with its live room first (at most about 5 s; Lex's choice A, ticket am-59), so
     // the room's copy notes the save; the button says so meanwhile. The drafts are read after: catching up can change them.
-    const waits = listChanges(drafts()).filter(selected).flatMap(change => change.drafts).map(draft => liveSaves.ready?.(draftKey(options.scope, draft.path))).filter(Boolean);
-    if (waits.length) {
+    const wait = liveSaves.ready?.(options.scope, listChanges(drafts()).filter(selected).flatMap(change => change.drafts).map(draft => draft.path));
+    if (wait) {
       pending = trigger.disabled = true;
       showProgress("Catching up…");
-      await Promise.all(waits);
+      await wait;
       pending = false;
       if (disposed) return;
     }
@@ -379,7 +379,7 @@ export function createPublishMenu(options: {
     async function post(files: PublishFile[], base: string | undefined, authors: SaveAuthor[]): Promise<PublishResult | undefined> {
       // A page typed on together notes the save in its live room's copy, and the commit names that copy (ticket am-59):
       // the others in the room then take the commit as the room's own save, not as an outside change.
-      const liveCopies = files.flatMap(file => (file.delete || file.sha ? [] : liveSaves.note?.(draftKey(options.scope, file.path), file.content) ?? []));
+      const liveCopies = liveSaves.note?.(options.scope, files) ?? [];
       // Gzipped, a commit of many pages stays a small request.
       const body = await gzip(JSON.stringify({ branch: options.scope.branch, ...(base ? { head: base } : {}), files, ...(authors.length ? { authors } : {}), liveCopies }));
       const response = await fetch(`/api/publish?${new URLSearchParams({ repo: options.scope.repo })}`, {

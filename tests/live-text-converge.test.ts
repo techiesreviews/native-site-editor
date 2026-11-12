@@ -350,14 +350,14 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
   const save = (tab: Tab) => {
     const can = () => open().includes(tab) && tab.openFile.peek() === path && shaOf(tab.text) !== github.sha && tab.file.baseSha === github.sha && tab.seen === github.sha;
     if (!can()) return;
-    const wait = liveSaves.ready!(tab.file.key, tab.store);
+    const wait = liveSaves.ready!(scope, [path], tab.store);
     if (!wait) { saveNow(tab); return; }
     say(`${tab.name} saves: waits until the page caught up`);
     void wait.then(() => { if (can()) saveNow(tab); else say(`${tab.name}'s save is called off`); });
   };
   const saveNow = (tab: Tab) => {
     const text = tab.text, sha = shaOf(text);
-    const copies = liveSaves.note!(tab.file.key, text, tab.store);
+    const copies = liveSaves.note!(scope, [{ path, content: text }], tab.store);
     tab.store.markSaved(scope, path, { baseSha: sha, original: text });
     tab.seen = sha;
     say(`${tab.name} saves ${sha.slice(0, 7)}${copies.length ? ` from copy ${copies[0].slice(0, 7)}` : ""}`);
