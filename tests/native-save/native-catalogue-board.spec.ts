@@ -540,8 +540,11 @@ test("a screen is dragged by its label and keeps working inside: a Mock-up and a
   // Dragged far to the right, another screen of its card is still taken in by the card's Zoom to fit.
   const away = editor.locator('[data-cell="live"][data-width="1280"][data-theme="dark"]');
   await dragLabel(page, away.locator(":scope > .cat-label"), 400, 0);
+  const canvas = (await page.getByRole("region", { name: "Canvas" }).boundingBox())!;
+  const out = (await away.boundingBox())!;
+  expect(out.x + out.width).toBeGreaterThan(canvas.x + canvas.width);
   await page.getByRole("toolbar", { name: "Zoom" }).getByRole("button", { name: "Fit" }).click();
-  const [canvas, moved] = [(await page.getByRole("region", { name: "Canvas" }).boundingBox())!, await stillBox(away)];
+  const moved = await stillBox(away);
   expect(moved.x + moved.width).toBeLessThanOrEqual(canvas.x + canvas.width + 1);
   expect(moved.x).toBeGreaterThanOrEqual(canvas.x - 1);
   const saved = await placesNow(page);
