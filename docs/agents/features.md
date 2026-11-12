@@ -1315,7 +1315,7 @@ its number unused.
 
 ### F-phone-06 Slim top bar on a wide screen
 - Try: At 1280 px look along the top bar; open the project menu and the page button.
-- Good: One 44 px row: the project tile (flush with the bar's left edge, no space of its own on the left) and name, "/", the page button, then Undo, Redo, History and Publish on the right with no divider before Publish (atomic catalogue ticket 66, version B).
+- Good: One 44 px row: the project tile (at the bar's own left padding, with no space of its own on the left) and name, "/", the page button, then Undo, Redo, History and Publish on the right with no divider before Publish (atomic catalogue ticket 66, version B).
 - Files: `src/workspace-mount.ts`, `src/style.css`
 - Phone: no
 - Spec: `tests/native-save/native-top-bar.spec.ts`

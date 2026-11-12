@@ -79,7 +79,7 @@ pre:focus-visible {
 }
 .topbar .repository-menu__trigger {
   padding-block: 0;
-  /* The tile sits flush with the bar's own left padding; its counts and share dot move left with it:
+  /* The tile starts at the bar's own left padding; its counts and share dot move left with it:
      22px and 26px are the base offsets (30px in repository-menu.css, 34px in share-row.css) minus the 8px left
      padding removed here; change them together. */
   padding-inline-start: 0;
