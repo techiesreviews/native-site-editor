@@ -247,7 +247,8 @@ export function startBoard(root: HTMLElement, plans: Plans = { areas: [], mockup
     const plan = el("div", "cat-plan");
     if (entry.picture) {
       const picture = el("img", "cat-plan__picture");
-      Object.assign(picture, { src: entry.picture, alt: "", width: 480, height: 300, loading: "lazy", decoding: "async", draggable: false });
+      // `src` last: the browser reads `loading` and `decoding` when the address is set.
+      Object.assign(picture, { alt: "", width: 480, height: 300, loading: "lazy", decoding: "async", draggable: false, src: entry.picture });
       plan.append(picture);
     }
     const line = el("div", "cat-plan__line");
@@ -456,10 +457,11 @@ export function startBoard(root: HTMLElement, plans: Plans = { areas: [], mockup
     section.id = `area-${area.id}`;
     section.dataset.area = area.id;
     section.dataset.piece = `area:${area.id}`;
-    if (area.id.startsWith("plan:")) section.classList.add("cat-area--plan");
     placePiece(section);
     const label = el("h2", "cat-area__label", area.name);
     label.dataset.area = area.id;
+    // A long map name is cut short on the board (board.css): the full name is the label's tooltip.
+    if (area.id.startsWith("plan:")) { section.classList.add("cat-area--plan"); label.title = area.name; }
     const cards = el("div", "cat-area__cards");
     const inArea = ENTRIES.filter((entry) => entry.area === area.id);
     cards.append(...inArea.map(card));
@@ -1266,7 +1268,8 @@ export function startBoard(root: HTMLElement, plans: Plans = { areas: [], mockup
   // `#plans` (where /mockups/ leads) opens on the planning mock-ups instead: every map's area in view.
   const onPlans = location.hash === "#plans" && plans.areas.length > 0;
   const firstView = () => {
-    if (onPlans) Object.assign(cam, camFor(boundsOf(plans.areas.map((area) => areaRect(area.id)))!, 1, 24));
+    // On a phone every area at once would be too small to read: it opens on the first card, as the shared values do.
+    if (onPlans) Object.assign(cam, mode() === "phone" ? camFor(cardRect(plans.mockups[0].id), 1, 16) : camFor(boundsOf(plans.areas.map((area) => areaRect(area.id)))!, 1, 24));
     else Object.assign(cam, mode() === "phone" ? camFor(cardRect(ENTRIES[0].id), 1, 16) : camFor(areaRect("values"), 1, 24));
     settle();
   };

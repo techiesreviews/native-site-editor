@@ -414,7 +414,8 @@ body:has(> .cat-board) {
   font-weight: 600;
 }
 
-/* Planning mock-ups (plans.ts): an area per map, a card per mock-up with its picture, label and link. The name wraps to the card. */
+/* Planning mock-ups (plans.ts): an area per map, a card per mock-up with its picture, label and link. The name wraps to the card.
+   The labels' colours are the mock-ups list's (`.shipping--*` in vite-mockups.ts): change them together. */
 .cat-area--plan .cat-area__cards {
   max-inline-size: 1600px;
 }
@@ -423,10 +424,10 @@ body:has(> .cat-board) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* The name grows as the board zooms out, but only to two and a half times, and wraps to the card's width (never more than three
+/* The name grows as the board zooms out, but only to twice its size, and wraps to the card's width (never more than three
    lines), so zoomed out it does not run into the next card's. */
 .cat-card--plan .cat-card__title {
-  --plan-title-scale: min(var(--cat-title-scale, 1), 2.5);
+  --plan-title-scale: min(var(--cat-title-scale, 1), 2);
   inline-size: calc(100% / var(--plan-title-scale));
   scale: var(--plan-title-scale);
   white-space: normal;
