@@ -185,7 +185,8 @@ export function occurrenceOn(all: readonly Edge[], from: string, sha: string) {
 
 /** The copy's occurrence of GitHub's `sha` that came right after a version of `parent` (GitHub's version right before
  * it; `parentHeld`: the copy holds some occurrence of that): the latest such. The copy's first version came after none
- * it holds. None when `sha` came there after no occurrence of `parent`: a later one the copy lacks (a revert). */
+ * it holds (also when it is a revert of it the copy lacks: its two ways into a later version settle by `superseded`).
+ * None when `sha` came there after no occurrence of `parent`: a later one the copy lacks (a revert). */
 export function occurrenceAfter(all: readonly Edge[], sha: string, parent: string, parentHeld: boolean) {
   let out: string | undefined, most = -1;
   for (const { from, to } of all) {

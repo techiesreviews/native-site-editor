@@ -549,6 +549,22 @@ test("a tab that missed two saves of a page going back and forth (A B A B A) and
   anna.stop(); lex.stop();
 });
 
+test("outside commits taking a line in and out again (A B A) and one more on top, heard only as the last: every tab ends on it, its words once (am-59)", async () => {
+  const line = "<p>Closed Mondays.</p>\n", two = `${base}${line}`, three = `${base}<p>Closed Sundays.</p>\n`, C = "3".repeat(40);
+  const history: LiveVersion[] = [{ sha, text: base }, { sha: "2".repeat(40), text: two }, { sha, text: base }, { sha: C, text: three }];
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => history.at(-1),
+    before: async function* (of) { for (let at = history.findLastIndex(version => version.sha === of) - 1; at >= 0; at--) yield history[at]; } });
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  assert.deepEqual(await Promise.all([liveFold(anna.store, key, history[3]), liveFold(lex.store, key, history[3])]), [true, true]);
+  await until(() => anna.text === three && lex.text === three, "C on both");
+  assert.equal(times(anna.text, "Sundays"), 1);
+  assert.deepEqual([anna.store.get(scope, path)?.baseSha, lex.store.get(scope, path)?.baseSha], [C, C]);
+  anna.stop(); lex.stop();
+});
+
 test("the copy follows the open file: another file closes the room, and agents alone do not load Yjs", async () => {
   const room = fakeRoom();
   const anna = tab(room);
