@@ -331,10 +331,16 @@ export function pressArea(mark: Box, width: number, height: number, below: boole
   return { left: Math.min(mark.left, middle - width / 2), right: Math.max(mark.right, middle + width / 2),
     top: Math.min(mark.top, top), bottom: Math.max(mark.bottom, top + height) };
 }
-/** Whether `outer` holds the point `at` (a box with no size). */
-export const holds = (outer: Box, at: Box) => at.left >= outer.left && at.left <= outer.right && at.top >= outer.top && at.top <= outer.bottom;
 /** Whether two boxes share any area. */
-export const boxesMeet = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+const boxesMeet = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+/** What a circle gives way to among the edit bar's `controls` (live-carets.css `data-over-bar`): `circle` when its middle is
+ * over a control (it takes no press), `pad` when it only touches one or its press `area` does (the area goes, the circle
+ * stays pressable, so its target is then smaller than the 24 px, 44 px on touch, on purpose), none when it is clear of them. */
+export function overBarState(circle: Box, area: Box, controls: Box[]): "circle" | "pad" | undefined {
+  const x = (circle.left + circle.right) / 2, y = (circle.top + circle.bottom) / 2;
+  if (controls.some(box => x >= box.left && x <= box.right && y >= box.top && y <= box.bottom)) return "circle";
+  return controls.some(box => boxesMeet(circle, box) || boxesMeet(area, box)) ? "pad" : undefined;
+}
 
 /**
  * Draws `share`'s carets on the page (ticket am-23), over the preview's frame where the frame finds them in the page's
@@ -388,8 +394,7 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
       const mark = widget.flag.element.querySelector(".live-caret__mark")!, circle = mark.getBoundingClientRect();
       const press = getComputedStyle(mark, "::after");
       const area = pressArea(circle, parseFloat(press.width), parseFloat(press.height), widget.root.hasAttribute("data-below"));
-      const middle = { left: (circle.left + circle.right) / 2, right: (circle.left + circle.right) / 2, top: (circle.top + circle.bottom) / 2, bottom: (circle.top + circle.bottom) / 2 };
-      const state = widget.root.hidden ? undefined : controls.some(box => holds(box, middle)) ? "circle" : controls.some(box => boxesMeet(area, box)) ? "pad" : undefined;
+      const state = widget.root.hidden ? undefined : overBarState(circle, area, controls);
       if (state === undefined) widget.root.removeAttribute("data-over-bar");
       else if (widget.root.getAttribute("data-over-bar") !== state) widget.root.setAttribute("data-over-bar", state);
     }
