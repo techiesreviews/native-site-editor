@@ -390,8 +390,10 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
   const overBar = () => {
     barDue = 0;
     if (!widgets.size) return;
-    const controls = [...page.layer.querySelectorAll(CONTROLS)].filter(control => !layer.contains(control))
-      .map(control => control.getBoundingClientRect()).filter(box => box.width > 0);
+    // Only a control that takes a press now: the insert points' plus and the bars' faded parts stay laid out, unseen and
+    // with presses off, until the pointer is near.
+    const controls = [...page.layer.querySelectorAll(CONTROLS)].filter(control => !layer.contains(control) && getComputedStyle(control).pointerEvents !== "none"
+      && control.checkVisibility({ opacityProperty: true, visibilityProperty: true })).map(control => control.getBoundingClientRect()).filter(box => box.width > 0);
     for (const widget of widgets.values()) {
       if (widget.root.hidden) { widget.root.removeAttribute("data-over-control"); continue; }
       const mark = widget.flag.element.querySelector(".live-caret__mark")!, circle = mark.getBoundingClientRect();
