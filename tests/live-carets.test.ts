@@ -10,7 +10,7 @@ registerHooks({
     : url.endsWith("/components/source-editor.ts") ? { format: "module", source: "export const caretPanes = () => []; export const watchCaretPanes = () => () => {};", shortCircuit: true }
     : next(url, context),
 });
-const { overBarState, pressArea, programMark, rightToLeft } = await import("../src/components/live-carets");
+const { overControlState, pressArea, programMark, rightToLeft } = await import("../src/components/live-carets");
 
 test("each agent's program has its own mark, and any other agent the plain one", () => {
   const [claude, codex, openai, gemini, cursor] = ["claude-code", "codex", "openai-mcp", "gemini-cli", "cursor"].map(programMark);
@@ -38,11 +38,11 @@ test("a circle's press area reaches up from the caret's line (down from it for a
   assert.deepEqual(pressArea(circle, 10, 10, false), circle);
   const area = pressArea(circle, 24, 24, false);
   const control = (left: number, right: number, top = 40, bottom = 70) => ({ left, right, top, bottom });
-  assert.equal(overBarState(circle, area, [control(120, 150)]), "pad", "only the press area's edge reaches the control");
-  assert.equal(overBarState(circle, pressArea(circle, 10, 10, false), [control(120, 150)]), undefined, "the circle alone is clear of it");
-  assert.equal(overBarState(circle, area, [control(105, 150)]), "circle", "the circle's middle (109, 59) is over the control");
-  assert.equal(overBarState(circle, area, [control(110, 150)]), "pad", "a control only touching the circle's edge is not over its middle");
-  assert.equal(overBarState(circle, area, [control(200, 230), control(105, 150)]), "circle", "any control over the middle decides");
-  assert.equal(overBarState(circle, area, []), undefined, "no controls, no giving way");
-  assert.equal(overBarState({ left: 0, right: 10, top: 0, bottom: 10 }, { left: 0, right: 10, top: 0, bottom: 10 }, [control(10, 20, 0, 10)]), undefined, "boxes that only share an edge do not meet");
+  assert.equal(overControlState(circle, area, [control(120, 150)]), "pad", "only the press area's edge reaches the control");
+  assert.equal(overControlState(circle, pressArea(circle, 10, 10, false), [control(120, 150)]), undefined, "the circle alone is clear of it");
+  assert.equal(overControlState(circle, area, [control(105, 150)]), "circle", "the circle's middle (109, 59) is over the control");
+  assert.equal(overControlState(circle, area, [control(110, 150)]), "pad", "a control only touching the circle's edge is not over its middle");
+  assert.equal(overControlState(circle, area, [control(200, 230), control(105, 150)]), "circle", "any control over the middle decides");
+  assert.equal(overControlState(circle, area, []), undefined, "no controls, no giving way");
+  assert.equal(overControlState({ left: 0, right: 10, top: 0, bottom: 10 }, { left: 0, right: 10, top: 0, bottom: 10 }, [control(10, 20, 0, 10)]), undefined, "boxes that only share an edge do not meet");
 });
