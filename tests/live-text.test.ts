@@ -333,9 +333,9 @@ test("Save right after a page opens again waits until it caught up with the room
   await quiet();
   const again = tab(room, lex.text, { keeper: lex.keeper, github });
   const started = Date.now();
-  await liveSaves.ready?.(key, again.store);
+  await liveSaves.ready?.(scope, [path], again.store);
   assert.ok(Date.now() - started < LIVE_TEXT_CATCH_UP_MS, "caught up before the wait ran out");
-  const text = again.text, copies = liveSaves.note!(key, text, again.store);
+  const text = again.text, copies = liveSaves.note!(scope, [{ path, content: text }], again.store);
   assert.deepEqual(copies, [liveState(anna.store, key).copy], "the room's copy noted the save");
   saved.text = text;
   again.store.markSaved(scope, path, { baseSha: saved.sha, original: text });
@@ -345,7 +345,7 @@ test("Save right after a page opens again waits until it caught up with the room
   await quiet();
   assert.equal(anna.text, again.text);
   assert.equal(times(anna.text, "Lex's line"), 1, "Lex's words once");
-  assert.equal(liveSaves.ready?.(key, again.store), undefined, "caught up, the next save does not wait");
+  assert.equal(liveSaves.ready?.(scope, [path], again.store), undefined, "caught up, the next save does not wait");
   anna.stop(); again.stop();
 });
 
@@ -368,7 +368,7 @@ test("a save landing while a commit folds into the room's copy keeps the draft o
   const folding = liveFold(anna.store, key, one);
   await until(() => release !== undefined, "the fold asking GitHub");
   anna.type(0, "<!-- Anna -->");
-  const saved = "2".repeat(40), copies = liveSaves.note!(key, anna.text, anna.store);
+  const saved = "2".repeat(40), copies = liveSaves.note!(scope, [{ path, content: anna.text }], anna.store);
   anna.store.markSaved(scope, path, { baseSha: saved, original: anna.text });
   holding = false;
   release!(one);

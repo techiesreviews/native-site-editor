@@ -59,7 +59,7 @@
 
 import { effect, untracked, type ReadonlySignal } from "@preact/signals-core";
 import { applyChanges, diffRange, type DraftEvent, type DraftTextStore, type TextChange } from "./draft-store";
-import type { DraftScope } from "./drafts";
+import { draftKey, type DraftScope } from "./drafts";
 import { openLiveRoom, type LiveClock, type LivePeer, type LiveRoom, type LiveRoomOptions } from "./live-room";
 import type { JsonValue } from "../shared/agent-command";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
@@ -372,8 +372,12 @@ function liveSaveReady(key: string, store?: object): Promise<void> | undefined {
   const waits = [...savers.get(key) ?? []].flatMap(saver => (store && saver.store !== store ? [] : [saver.ready()])).filter(wait => wait !== undefined);
   return waits.length ? Promise.all(waits).then(() => undefined) : undefined;
 }
-liveSaves.note = noteLiveSave;
-liveSaves.ready = liveSaveReady;
+liveSaves.note = (scope, files, store) =>
+  [...new Set(files.flatMap(file => (file.delete || file.sha ? [] : noteLiveSave(draftKey(scope, file.path), file.content, store))))];
+liveSaves.ready = (scope, paths, store) => {
+  const waits = paths.map(path => liveSaveReady(draftKey(scope, path), store)).filter(wait => wait !== undefined);
+  return waits.length ? Promise.all(waits) : undefined;
+};
 /** `note` answers saves of the file under `key` in `store` while it is shared, with the copy it noted the save in;
  * `ready` says when a save can be noted (`liveSaveReady`). Returns its removal. */
 function onLiveSave(store: object, key: string, note: (text: string) => string | undefined, ready: () => Promise<void> | undefined) {
