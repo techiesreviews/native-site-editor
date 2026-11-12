@@ -4,7 +4,7 @@
 // editor's boot never see these files. The images a mock-up uses sit beside it and are copied too;
 // images no mock-up uses (reference screenshots for planning) stay unpublished. Each mock-up on the
 // index carries a label saying how far the build tickets linking to it have got (`mockupShipping`). A mock-up
-// whose feature is released (Live or On preview) also shows its picture, taken when it was agreed
+// whose feature is released (Live or On preview) also shows its picture, taken when it was released and then kept
 // (`prototypes/agreed/<name>.webp`, made by `scripts/mockup-pictures.mjs`), and a link to the working mock-up.
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -207,7 +207,7 @@ export function mockupIndex(mockups: readonly Mockup[], { read = path => readFil
     const released = isReleased(state.label);
     const picture = released && pictures.has(key)
       ? `<a class="picture" href="${href}" tabindex="-1" aria-hidden="true"><img src="${escapeHtml(`${encodeURIComponent(map)}/${pictureUrl(page.file).split("/").map(encodeURIComponent).join("/")}`)}" alt="" width="480" height="300" loading="lazy" decoding="async"></a>` : "";
-    const open = released ? ` <a class="open" href="${href}">Open mock-up</a>` : "";
+    const open = released ? ` <a class="open" href="${href}" aria-label="Open mock-up: ${title}">Open mock-up</a>` : "";
     const line = `<a href="${href}">${title}</a> ${shippingBadge(map, state)}${open}`;
     return picture ? `<li class="with-picture">${picture}<span class="entry">${line}</span></li>` : `<li>${line}</li>`;
   };
@@ -236,7 +236,7 @@ li { margin-block: 0.375rem; }
 .with-picture { display: grid; grid-template-columns: 11rem 1fr; align-items: center; gap: 0.75rem; margin-block: 0.75rem; }
 .picture { display: block; }
 .picture img { display: block; inline-size: 100%; block-size: auto; aspect-ratio: 8 / 5; border-radius: var(--radius-small); box-shadow: 0 0 0 1px var(--control-line); background: var(--component-surface); }
-@media (max-width: 30rem) { .with-picture { grid-template-columns: 1fr; gap: 0.375rem; } }
+@media (width <= 30rem) { .with-picture { grid-template-columns: 1fr; gap: 0.375rem; } }
 .legend { display: grid; grid-template-columns: max-content 1fr; align-items: baseline; gap: 0.375rem 0.75rem; margin-block: 0; }
 .legend dd { margin: 0; }
 .shipping { padding: 0 6px; border-radius: 999px; font-size: var(--type-badge); font-weight: 600; line-height: 18px; white-space: nowrap; }

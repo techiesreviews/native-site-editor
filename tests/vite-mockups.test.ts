@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { build, loadConfigFromFile } from "vite";
 import { unstable_startWorker } from "wrangler";
-import { buildTickets, MOCKUPS_HEADERS, mockupFiles, mockupIndex, mockupPicturePath, mockups, mockupsHeaders, mockupShipping, mockupTitle, referencedFiles, ticketsOnMain } from "../vite-mockups.ts";
+import { buildTickets, isReleased, MOCKUPS_HEADERS, mockupFiles, mockupIndex, mockupPicturePath, mockups, mockupsHeaders, mockupShipping, mockupTitle, referencedFiles, ticketsOnMain } from "../vite-mockups.ts";
 
 const repoRoot = new URL("..", import.meta.url).pathname;
 const scratch = mkdtempSync(join(tmpdir(), "ase-mockups-"));
@@ -205,7 +205,7 @@ test("the index shows each label with the tickets it came from, and a legend say
   const tickets = buildTickets(root, files);
   const html = mockupIndex(files, { shipping: mockupShipping(files, tickets, ticketsOnMain(root, tickets)) });
   const row = (page: string, badge: string, open = "") => assert.ok(html.includes(`<li><a href="agents/${page}.html">${page}</a> ${badge}${open}</li>`), page);
-  const open = (page: string) => ` <a class="open" href="agents/${page}.html">Open mock-up</a>`;
+  const open = (page: string) => ` <a class="open" href="agents/${page}.html" aria-label="Open mock-up: ${page}">Open mock-up</a>`;
   row("live", '<span class="shipping shipping--live">Live</span> <span class="tickets">ticket 01</span>', open("live"));
   row("live-and-preview", '<span class="shipping shipping--preview">On preview</span> <span class="tickets">tickets 01, 02</span>', open("live-and-preview"));
   row("shared", '<span class="shipping shipping--building">Being built</span> <span class="tickets">tickets 07, styling 06</span>');
@@ -483,12 +483,15 @@ test("a released mock-up with a picture shows it and a link to the mock-up; the 
   const image = (page: string) => `<img src="agents/agreed/${page}.webp" alt="" width="480" height="300" loading="lazy" decoding="async">`;
   assert.ok(html.includes(`<li class="with-picture"><a class="picture" href="agents/live.html" tabindex="-1" aria-hidden="true">${image("live")}</a><span class="entry"><a href="agents/live.html">live</a> `), "Live");
   assert.ok(html.includes(`<li class="with-picture"><a class="picture" href="agents/preview.html" tabindex="-1" aria-hidden="true">${image("preview")}</a>`), "On preview");
-  assert.ok(html.includes(' <a class="open" href="agents/preview.html">Open mock-up</a></span></li>'));
+  assert.ok(html.includes(' <a class="open" href="agents/preview.html" aria-label="Open mock-up: preview">Open mock-up</a></span></li>'));
   // Planned has a picture file, but the feature is not released: no picture, no link. Released without a picture: the link only.
   assert.doesNotMatch(html, /agreed\/planned|href="agents\/planned.html">Open/);
   assert.ok(html.includes('<li><a href="agents/live-and-preview.html">live-and-preview</a> '));
-  assert.ok(html.includes('<a class="open" href="agents/live-and-preview.html">Open mock-up</a></li>'));
+  assert.ok(html.includes('<a class="open" href="agents/live-and-preview.html" aria-label="Open mock-up: live-and-preview">Open mock-up</a></li>'));
   assert.equal(html.match(/<img /g)?.length, 2);
+  // A file name needing escapes is escaped in the picture's address too.
+  const odd = mockupIndex([{ map: "agents", file: "a b.html", path: "x" }], { read: () => "", shipping: new Map([["agents/a b.html", { label: "preview", tickets: [] }]]), pictures: new Set(["agents/a b.html"]) });
+  assert.match(odd, /<img src="agents\/agreed\/a%20b\.webp"/);
 });
 
 test("a build publishes the picture of each released mock-up, small and beside the mock-up, and of no other", async () => {
@@ -513,7 +516,7 @@ test("a build publishes the picture of each released mock-up, small and beside t
 test("the real mock-ups: each released one has a small picture, no picture is left over, and the two approved sketches are listed", () => {
   const files = mockupFiles(repoRoot).filter(({ file }) => file.endsWith(".html"));
   const shipping = mockupShipping(files, buildTickets(repoRoot, files));
-  const missing = files.filter(({ map, file }) => ["live", "preview"].includes(shipping.get(`${map}/${file}`)?.label ?? "") && !mockupPicturePath(repoRoot, { map, file }).exists)
+  const missing = files.filter(({ map, file }) => isReleased(shipping.get(`${map}/${file}`)?.label) && !mockupPicturePath(repoRoot, { map, file }).exists)
     .map(({ map, file }) => `${map}/${file}`);
   assert.deepEqual(missing, [], "run node scripts/mockup-pictures.mjs for these released mock-ups and commit the pictures");
   const wanted = new Set(files.map(({ map, file }) => mockupPicturePath(repoRoot, { map, file }).path));
@@ -525,7 +528,7 @@ test("the real mock-ups: each released one has a small picture, no picture is le
   assert.deepEqual(pictures.filter(path => !wanted.has(path)), [], "a picture without its mock-up");
   for (const path of pictures) assert.ok(statSync(path).size < 40_000, `${path} is small`);
   for (const sketch of ["atomic-catalogue/66-phone-editor.html", "atomic-catalogue/design-board-canvas.html"]) {
-    assert.equal(shipping.get(sketch)?.label, "preview", sketch);
+    assert.ok(isReleased(shipping.get(sketch)?.label), sketch);
     assert.ok(mockupPicturePath(repoRoot, { map: "atomic-catalogue", file: sketch.split("/")[1] }).exists, sketch);
   }
 });
