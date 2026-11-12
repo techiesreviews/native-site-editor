@@ -1,4 +1,4 @@
-import { expect, test, webkit, type Page } from "@playwright/test";
+import { expect, test, webkit, type Locator, type Page } from "@playwright/test";
 
 // The catalogue board (catalogue.html, atomic catalogue ticket 05): fly to a part from the outline, change an option,
 // Approve it, and the mark reaches src/catalogue/approvals.json through Save to GitHub (here the fake GitHub's demo
@@ -407,6 +407,138 @@ test("a second finger on a title being dragged turns the drag into a pinch", asy
   await touch("touchEnd", []);
   await expect(zoom).not.toHaveText(before ?? "");
   await expect(card).not.toHaveAttribute("style", /translate/);
+});
+
+/** Presses a name label and drags it (dx, dy) on screen; `end` finishes the drag (a release unless told otherwise). */
+async function dragLabel(page: Page, label: Locator, dx: number, dy: number, end: () => Promise<void> = () => page.mouse.up()) {
+  const box = (await label.boundingBox())!;
+  const from = { x: box.x + 8, y: box.y + Math.min(box.height / 2, 6) };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + dx / 2, from.y + dy / 2, { steps: 4 });
+  await page.mouse.move(from.x + dx, from.y + dy, { steps: 4 });
+  await end();
+}
+/** Waits until the thing has stopped moving (the board flies to it, frames draw), then returns its box. */
+async function stillBox(target: Locator) {
+  let last = "";
+  await expect.poll(async () => { const box = JSON.stringify(await target.boundingBox()); const still = box === last; last = box; return still; }, { intervals: [150] }).toBe(true);
+  return (await target.boundingBox())!;
+}
+const placesNow = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem("catalogue:places") ?? "{}") as Record<string, { x: number; y: number }>);
+
+test("the Mock-ups and Screens groups are dragged by their names, cards and all, and keep their places", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  const options = page.getByRole("complementary", { name: "Options" });
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Mock-ups", exact: true }).click();
+  const group = page.locator("#area-mockups"), label = group.locator(".cat-area__label");
+  const mock = page.locator("#card-sharing-panel"), editor = page.locator("#card-editor");
+  const [groupBefore, mockBefore, editorBefore] = [await stillBox(group), await stillBox(mock), await stillBox(editor)];
+  await dragLabel(page, label, 140, 90);
+  const groupAfter = (await group.boundingBox())!, mockAfter = (await mock.boundingBox())!;
+  expect(groupAfter.x - groupBefore.x).toBeGreaterThan(80);
+  expect(groupAfter.y - groupBefore.y).toBeGreaterThan(40);
+  // Its card went along; the Screens group stayed where it was.
+  expect(mockAfter.x - mockBefore.x).toBeCloseTo(groupAfter.x - groupBefore.x, 0);
+  expect(await editor.boundingBox()).toEqual(editorBefore);
+  // Dragging picks the group: the Place box says where it is.
+  const x = options.getByRole("spinbutton", { name: "X" });
+  await expect(x).toBeVisible();
+  await expect(options.getByRole("heading", { name: "Mock-ups" })).toBeVisible();
+  const placed = await group.evaluate((element) => (element as HTMLElement).style.translate);
+  expect(placed).toMatch(/px/);
+
+  // Escape puts a drag back.
+  await expect(page.getByRole("region", { name: "Canvas" })).toBeFocused();
+  await dragLabel(page, label, -200, 0, async () => { await page.keyboard.press("Escape"); await page.mouse.up(); });
+  await expect.poll(() => group.evaluate((element) => (element as HTMLElement).style.translate)).toBe(placed);
+
+  // The arrow keys nudge it, and typing a place moves it.
+  const xBefore = Number(await x.inputValue());
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect(x).toHaveValue(String(xBefore + 10));
+  await expect.poll(async () => (await placesNow(page))["area:mockups"]?.x).toBeGreaterThan(0);
+  await x.fill(String(xBefore));
+  await expect.poll(async () => (await placesNow(page))["area:mockups"]?.x).toBe(Math.round((await placesNow(page))["area:mockups"].x));
+  const kept = await group.evaluate((element) => (element as HTMLElement).style.translate);
+
+  // The Screens group moves the same way, and only it.
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Screens", exact: true }).click();
+  const screens = page.locator("#area-screens");
+  const screensBefore = await stillBox(screens), mockMoved = await stillBox(mock);
+  await dragLabel(page, screens.locator(".cat-area__label"), 120, 60);
+  expect((await screens.boundingBox())!.x - screensBefore.x).toBeGreaterThan(60);
+  expect(await mock.boundingBox()).toEqual(mockMoved);
+
+  // A reload keeps both places.
+  const saved = await placesNow(page);
+  expect(Object.keys(saved).sort()).toEqual(["area:mockups", "area:screens"]);
+  await page.reload();
+  await expect(page.locator("#area-mockups")).toHaveAttribute("style", new RegExp(kept.replace(/[.]/g, "\\.")));
+  await expect(page.locator("#area-screens")).toHaveAttribute("style", /translate/);
+  expect(await placesNow(page)).toEqual(saved);
+});
+
+test("a screen is dragged by its label and keeps working inside: a Mock-up and an Editor screen keep their places", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  const options = page.getByRole("complementary", { name: "Options" });
+
+  // A Mock-up's phone screen.
+  await flyTo(page, "Sharing, one panel");
+  const card = page.locator("#card-sharing-panel");
+  const light = card.locator('[data-cell="live"][data-width="390"][data-theme="light"]'), dark = card.locator('[data-cell="live"][data-width="390"][data-theme="dark"]');
+  const [cardBefore, lightBefore, darkBefore] = [await stillBox(card), await stillBox(light), await stillBox(dark)];
+  // A press and drag inside the screen uses the screen: it never moves.
+  const inside = (await light.locator("iframe").boundingBox())!;
+  await page.mouse.move(inside.x + 20, inside.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(inside.x + 120, inside.y + 80, { steps: 4 });
+  await page.mouse.up();
+  expect(await light.boundingBox()).toEqual(lightBefore);
+  await dragLabel(page, light.locator(":scope > .cat-label"), 130, 70);
+  const lightAfter = (await light.boundingBox())!;
+  expect(lightAfter.x - lightBefore.x).toBeGreaterThan(80);
+  expect(lightAfter.y - lightBefore.y).toBeGreaterThan(40);
+  // Nothing else moved: not its card, not the screen beside it.
+  expect(await card.boundingBox()).toEqual(cardBefore);
+  expect(await dark.boundingBox()).toEqual(darkBefore);
+  // The Place box names the screen, and the arrows nudge it.
+  await expect(options.getByRole("region", { name: "Place · 390 px · Light" })).toBeVisible();
+  const x = options.getByRole("spinbutton", { name: "X" });
+  await expect(page.getByRole("region", { name: "Canvas" })).toBeFocused();
+  const xBefore = Number(await x.inputValue());
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect(x).toHaveValue(String(xBefore + 10));
+  // Escape puts a drag back.
+  const placed = await light.evaluate((element) => (element as HTMLElement).style.translate);
+  await dragLabel(page, light.locator(":scope > .cat-label"), -150, 0, async () => { await page.keyboard.press("Escape"); await page.mouse.up(); });
+  await expect.poll(() => light.evaluate((element) => (element as HTMLElement).style.translate)).toBe(placed);
+  // It still works where it is: the Done button is pressed in the moved screen, and the screen stays put.
+  const nudged = (await light.boundingBox())!;
+  expect(nudged.x).toBeGreaterThan(lightAfter.x + 3);
+  await page.frameLocator('#card-sharing-panel [data-cell="live"][data-width="390"][data-theme="light"] iframe').getByRole("button", { name: "Done" }).click();
+  expect(await light.boundingBox()).toEqual(nudged);
+
+  // An Editor screen.
+  await flyTo(page, "Editor");
+  const editor = page.locator("#card-editor");
+  const wide = editor.locator('[data-cell="live"][data-width="1280"][data-theme="light"]');
+  const wideBefore = await stillBox(wide);
+  await dragLabel(page, wide.locator(":scope > .cat-label"), 90, 50);
+  expect((await wide.boundingBox())!.x - wideBefore.x).toBeGreaterThan(50);
+  expect(await editor.locator('[data-cell="live"][data-width="1280"][data-theme="dark"]').boundingBox()).not.toBeNull();
+  const saved = await placesNow(page);
+  expect(Object.keys(saved).sort()).toEqual(["screen:editor:1280:light", "screen:sharing-panel:390:light"]);
+
+  // A reload keeps both places, and the screens still work.
+  await page.reload();
+  await expect(page.locator('#card-editor [data-cell="live"][data-width="1280"][data-theme="light"]')).toHaveAttribute("style", /translate/);
+  await expect(page.locator('#card-sharing-panel [data-cell="live"][data-width="390"][data-theme="light"]')).toHaveAttribute("style", /translate/);
+  expect(await placesNow(page)).toEqual(saved);
+  await flyTo(page, "Editor");
+  const frame = page.locator('#card-editor [data-cell="live"][data-width="1280"][data-theme="light"] iframe').contentFrame();
+  await frame.locator("#explorer-toggle").click();
+  await expect(frame.locator("#explorer")).toBeVisible();
 });
 
 test("a tap on a card's title selects it and a double tap brings it close", async ({ page, baseURL }) => {
