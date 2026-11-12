@@ -454,13 +454,18 @@ test("the Mock-ups and Screens groups are dragged by their names, cards and all,
   await expect.poll(() => group.evaluate((element) => (element as HTMLElement).style.translate)).toBe(placed);
 
   // The arrow keys nudge it, and typing a place moves it.
-  const xBefore = Number(await x.inputValue());
+  const xBefore = Number(await x.inputValue()), storedBefore = (await placesNow(page))["area:mockups"].x;
   await page.keyboard.press("Shift+ArrowRight");
   await expect(x).toHaveValue(String(xBefore + 10));
-  await expect.poll(async () => (await placesNow(page))["area:mockups"]?.x).toBeGreaterThan(0);
+  await expect.poll(async () => (await placesNow(page))["area:mockups"]?.x).toBe(storedBefore + 10);
   await x.fill(String(xBefore));
-  await expect.poll(async () => (await placesNow(page))["area:mockups"]?.x).toBe(Math.round((await placesNow(page))["area:mockups"].x));
+  await expect.poll(async () => (await placesNow(page))["area:mockups"]?.x).toBe(storedBefore);
   const kept = await group.evaluate((element) => (element as HTMLElement).style.translate);
+
+  // A moved area is a layer of its own: the one holding a picked card goes over the areas after it.
+  await flyTo(page, "Sharing, one panel");
+  const layer = (id: string) => page.locator(id).evaluate((element) => getComputedStyle(element).zIndex);
+  expect(await layer("#area-mockups")).not.toBe("auto");
 
   // The Screens group moves the same way, and only it.
   await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Screens", exact: true }).click();
@@ -507,17 +512,23 @@ test("a screen is dragged by its label and keeps working inside: a Mock-up and a
   const x = options.getByRole("spinbutton", { name: "X" });
   await expect(page.getByRole("region", { name: "Canvas" })).toBeFocused();
   const xBefore = Number(await x.inputValue());
+  const storedBefore = (await placesNow(page))["screen:sharing-panel:390:light"].x;
   await page.keyboard.press("Shift+ArrowRight");
   await expect(x).toHaveValue(String(xBefore + 10));
-  // Escape puts a drag back.
+  await expect.poll(async () => (await placesNow(page))["screen:sharing-panel:390:light"]?.x).toBe(storedBefore + 10);
+  // Typing a place moves it too.
+  await x.fill(String(xBefore));
+  await expect.poll(async () => (await placesNow(page))["screen:sharing-panel:390:light"]?.x).toBe(storedBefore);
+  await expect(light).not.toHaveCSS("translate", "none");
+  // Escape puts a drag back (the press on the label takes the keys back from the field).
   const placed = await light.evaluate((element) => (element as HTMLElement).style.translate);
-  await dragLabel(page, light.locator(":scope > .cat-label"), -150, 0, async () => { await page.keyboard.press("Escape"); await page.mouse.up(); });
+  await dragLabel(page, light.locator(":scope > .cat-label"), -150, 0, async () => { await expect(page.getByRole("region", { name: "Canvas" })).toBeFocused(); await page.keyboard.press("Escape"); await page.mouse.up(); });
   await expect.poll(() => light.evaluate((element) => (element as HTMLElement).style.translate)).toBe(placed);
   // It still works where it is: the Done button is pressed in the moved screen, and the screen stays put.
-  const nudged = (await light.boundingBox())!;
-  expect(nudged.x).toBeGreaterThan(lightAfter.x + 3);
+  const nudged = await stillBox(light);
+  expect(nudged.x).toBeCloseTo(lightAfter.x, 0);
   await page.frameLocator('#card-sharing-panel [data-cell="live"][data-width="390"][data-theme="light"] iframe').getByRole("button", { name: "Done" }).click();
-  expect(await light.boundingBox()).toEqual(nudged);
+  expect(await stillBox(light)).toEqual(nudged);
 
   // An Editor screen.
   await flyTo(page, "Editor");
@@ -526,11 +537,17 @@ test("a screen is dragged by its label and keeps working inside: a Mock-up and a
   const wideBefore = await stillBox(wide);
   await dragLabel(page, wide.locator(":scope > .cat-label"), 90, 50);
   expect((await wide.boundingBox())!.x - wideBefore.x).toBeGreaterThan(50);
-  expect(await editor.locator('[data-cell="live"][data-width="1280"][data-theme="dark"]').boundingBox()).not.toBeNull();
+  // Dragged far to the right, another screen of its card is still taken in by the card's Zoom to fit.
+  const away = editor.locator('[data-cell="live"][data-width="1280"][data-theme="dark"]');
+  await dragLabel(page, away.locator(":scope > .cat-label"), 400, 0);
+  await page.getByRole("toolbar", { name: "Zoom" }).getByRole("button", { name: "Fit" }).click();
+  const [canvas, moved] = [(await page.getByRole("region", { name: "Canvas" }).boundingBox())!, await stillBox(away)];
+  expect(moved.x + moved.width).toBeLessThanOrEqual(canvas.x + canvas.width + 1);
+  expect(moved.x).toBeGreaterThanOrEqual(canvas.x - 1);
   const saved = await placesNow(page);
-  expect(Object.keys(saved).sort()).toEqual(["screen:editor:1280:light", "screen:sharing-panel:390:light"]);
+  expect(Object.keys(saved).sort()).toEqual(["screen:editor:1280:dark", "screen:editor:1280:light", "screen:sharing-panel:390:light"]);
 
-  // A reload keeps both places, and the screens still work.
+  // A reload keeps every place, and the screens still work.
   await page.reload();
   await expect(page.locator('#card-editor [data-cell="live"][data-width="1280"][data-theme="light"]')).toHaveAttribute("style", /translate/);
   await expect(page.locator('#card-sharing-panel [data-cell="live"][data-width="390"][data-theme="light"]')).toHaveAttribute("style", /translate/);
