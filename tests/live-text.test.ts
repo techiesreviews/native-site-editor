@@ -2,7 +2,6 @@
 // draft store, sharing one file through a fake room that forwards frames as the
 // relay does (tests/live-room.test.ts proves the real room), with real Yjs.
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { signal } from "@preact/signals-core";
 import { createDraftStore, type DraftPersistence } from "../src/draft-store";

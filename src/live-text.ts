@@ -242,7 +242,6 @@ const systemClock: LiveClock = {
 const utf8 = new TextEncoder();
 async function digest(text: string) { return new Uint8Array(await crypto.subtle.digest("SHA-256", utf8.encode(text))); }
 const hex = (bytes: Uint8Array) => [...bytes].map(byte => byte.toString(16).padStart(2, "0")).join("");
-const bytesOf = (hexText: string) => Uint8Array.from(hexText.match(/../g) ?? [], pair => parseInt(pair, 16));
 /** A version of GitHub's text, as 40 hex digits: its blob sha, or (a file not on GitHub) a hash of the text. */
 async function versionOf(baseSha: string | null | undefined, base: string) {
   return baseSha && /^[a-f\d]{40}$/.test(baseSha) ? baseSha : hex((await digest(`new\n${base}`)).subarray(0, 20));
@@ -396,7 +395,7 @@ const preferredCopies = new WeakMap<object, Map<string, Uint8Array>>();
 function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended: (why: "left" | "again") => void, authorsChanged: () => void, copied: () => void) {
   const store = ports.store, clock = ports.clock ?? systemClock, keeper = ports.keeper ?? (pageKeeper ??= browserKeeper());
   const start = store.get(scope, path)!;
-  let stopped = false, aloneOnce = false, editors = 0, discarded = false, heard = false;
+  let stopped = false, editors = 0, discarded = false, heard = false;
   let copy: ReturnType<typeof makeCopy> | undefined, loading = false;
   const inbox: Uint8Array[] = [];
   // Until the room says who is here, the file may be shared: a tab coming back to a page it typed on with others would
@@ -493,7 +492,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       clock.clearTimeout(unheard);
       editors = [...members.values()].filter(access => access === "editor").length;
       // Alone with a copy kept from before, it runs that copy still, so a save or a commit is noted in it as with others.
-      if (!editors) { aloneOnce = true; if (copy) void copy.startOwn(); else if (!loading) void load(true); }
+      if (!editors) { if (copy) void copy.startOwn(); else if (!loading) void load(true); }
       else if (!copy && !loading) void load();
       foldsReady();
     },
@@ -593,7 +592,6 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     const keptText = text.toString();
     /** The edges whose clash this tab weighed (or that came before it took part): each is weighed once, as it comes in. */
     const weighed = new Set(edges(Y, doc).map(edge => edge.id)), weighedVersions = new Set(edges(Y, doc).map(edge => edge.to));
-    const baseVersion = () => { const file = store.get(scope, path); return file && versionOf(file.baseSha, file.base); };
     let keptBase: string | undefined;
     /** This tab is leaving this copy for another of the room (`meet`): it is not kept. */
     let leaving = false;
