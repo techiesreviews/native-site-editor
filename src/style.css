@@ -79,7 +79,8 @@ pre:focus-visible {
 }
 .topbar .repository-menu__trigger {
   padding-block: 0;
-  padding-inline-start: 0;
+  /* The tile sits flush with the bar's own left padding. */
+  --trigger-pad-start: 0px;
 }
 .topbar :is(.repository-menu__repository, .repository-menu__caret) {
   display: none;

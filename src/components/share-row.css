@@ -192,7 +192,7 @@
   content: "";
   position: absolute;
   inset-block-start: 30px;
-  inset-inline-start: 34px;
+  inset-inline-start: calc(var(--trigger-pad-start) + 26px);
   inline-size: 10px;
   block-size: 10px;
   box-sizing: border-box;
