@@ -247,7 +247,7 @@
 /* Menu or field opened from a bar button, under it. */
 .edit-bar__popover {
   position: absolute;
-  z-index: 32;
+  z-index: 31;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -488,7 +488,7 @@
 }
 .edit-bar__note {
   position: absolute;
-  z-index: 32;
+  z-index: 31;
   display: flex;
   flex-direction: column;
   gap: 3px;

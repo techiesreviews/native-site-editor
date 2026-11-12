@@ -164,13 +164,14 @@
 .live-caret-tint--3 { background: color-mix(in oklch, var(--agent-presence-4) 22%, transparent); }
 
 /* On the page (ticket am-23): a layer over the preview's frame viewport, clipped to it. The carets sit where the frame
-   finds them in the page's text (live-carets.ts `attachPage`); no element highlight. Above the edit bar (z-index 30,
-   src/components/edit-bar.css): the bar opens over the text next to the block this tab types in, which is where
-   another's caret stands when they type in the block above or below it, and a circle under the bar is no caret at all.
-   Below the bar's menus and fields, the cards and the pin conversations (z-index 32), which open over the page. */
+   finds them in the page's text (live-carets.ts `attachPage`); no element highlight. Over the edit bar: the bar opens over
+   the text next to the block this tab types in, which is where another's caret stands when they type in the block above or
+   below it, and a circle under the bar is no caret at all. The bar's level (z-index 30, src/components/edit-bar.css), and
+   later in the pane than the bar (made when the preview is, this layer when someone else is here), so it wins the tie.
+   Below the bar's menus and fields, the cards and the pin conversations (z-index 31), which open over the page. */
 .live-carets-page {
   position: absolute;
-  z-index: 31;
+  z-index: 30;
   overflow: clip;
   pointer-events: none;
 }

@@ -295,7 +295,7 @@
    with no room above). */
 .agent-pin-card {
   position: absolute;
-  z-index: 32;
+  z-index: 31;
   display: flex;
   flex-direction: column;
   gap: 10px;
