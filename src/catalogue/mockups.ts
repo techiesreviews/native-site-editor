@@ -22,7 +22,7 @@ export interface Mockup {
 export const MOCKUPS: readonly Mockup[] = [
   {
     id: "sharing-panel", area: "mockups", name: "Sharing, one panel",
-    files: ["src/components/repository-menu.ts", "src/components/share-row.ts", "src/components/share-row.css", "src/components/repository-menu.css"],
+    files: ["src/components/repository-menu.ts", "src/components/share-row.ts", "src/components/repository-menu.css", "src/components/share-row.css"],
     madeOf: ["share-row", "button", "icon"],
     widths: [390, 1280], height: 300,
     defaults: { guests: true },

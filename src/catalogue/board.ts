@@ -946,13 +946,14 @@ export function startBoard(root: HTMLElement) {
   // ---------- Moving a card: drag its title; it snaps to the other cards, with guides along the edges it meets ----------
 
   // `sx`, `sy`: the press on screen; `bx`, `by`: on the board, so a zoom during the drag keeps the card under the pointer.
-  let move: { id: string; pointer: number; sx: number; sy: number; bx: number; by: number; from: Point; base: Box; others: Box[]; moved: boolean; target: Element; guides: Guide[] } | undefined;
+  // `lx`, `ly`: the pointer's last place on screen, where a pinch starts if a second finger joins.
+  let move: { id: string; pointer: number; sx: number; sy: number; lx: number; ly: number; bx: number; by: number; from: Point; base: Box; others: Box[]; moved: boolean; target: Element; guides: Guide[] } | undefined;
   function startMove(event: PointerEvent, article: HTMLElement) {
     stopFlight();
     const id = article.dataset.id!, from = placeOf(id), box = cardBox(article);
     const others = [...world.querySelectorAll<HTMLElement>(".cat-card[data-id]")].filter((other) => other !== article).map(cardBox);
     const { x: bx, y: by } = boardAt(event);
-    move = { id, pointer: event.pointerId, sx: event.clientX, sy: event.clientY, bx, by, from, base: { ...box, x: box.x - from.x, y: box.y - from.y }, others, moved: false, target: event.target as Element, guides: [] };
+    move = { id, pointer: event.pointerId, sx: event.clientX, sy: event.clientY, lx: event.clientX, ly: event.clientY, bx, by, from, base: { ...box, x: box.x - from.x, y: box.y - from.y }, others, moved: false, target: event.target as Element, guides: [] };
     try { viewport.setPointerCapture(event.pointerId); } catch { /* The pointer is gone already. */ }
   }
   /** The pointer on the board: `cam` is measured from the canvas's own corner, not the window's. */
@@ -965,6 +966,7 @@ export function startBoard(root: HTMLElement) {
     // The button came up where the board never heard it (over another window, say): the drag ends there, kept, as
     // the release was the person's own; a capture taken away (lostpointercapture) was not, so that one puts it back.
     if (event.pointerType === "mouse" && event.buttons === 0) { endMove("drop"); return; }
+    move.lx = event.clientX; move.ly = event.clientY;
     if (!move.moved) {
       if (Math.hypot(event.clientX - move.sx, event.clientY - move.sy) <= 4) return;
       move.moved = true;
@@ -1047,9 +1049,14 @@ export function startBoard(root: HTMLElement) {
     const target = event.target as Element;
     if (target.closest(".cat-zoombar, .cat-search")) return;
     if (event.pointerType === "mouse" && event.button !== 0 && event.button !== 1) return;
-    // A drag whose end the board never heard (the pointer let go elsewhere) ends before anything new starts; a second
-    // finger during a touch drag is ignored.
-    if (move) { if (event.pointerId !== move.pointer && event.pointerType !== "mouse") return; endMove("drop"); }
+    // A drag whose end the board never heard (the pointer let go elsewhere) ends before anything new starts. A second
+    // finger during a touch drag turns it into a pinch, as in Figma: the card goes back and both fingers zoom.
+    if (move && event.pointerId !== move.pointer && event.pointerType !== "mouse") {
+      const first = { id: move.pointer, x: move.lx, y: move.ly };
+      endMove("cancel");
+      points.set(first.id, { x: first.x, y: first.y });
+      drag = { id: first.id, sx: first.x, sy: first.y, lx: first.x, ly: first.y, moved: true, target: viewport };
+    } else if (move) endMove("drop");
     // A card's title is its handle: dragging it moves the card (with Space held, the board pans as anywhere else).
     const grip = !spaceHeld && event.button === 0 && points.size === 0 ? target.closest<HTMLElement>(".cat-card__title") : null;
     if (grip?.parentElement?.dataset.id) { startMove(event, grip.parentElement); return; }

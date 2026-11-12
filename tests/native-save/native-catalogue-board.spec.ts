@@ -385,6 +385,28 @@ test("a drag whose pointer is cancelled puts the card back, and a zoom mid-drag 
   await page.mouse.up();
 });
 
+test("a second finger on a title being dragged turns the drag into a pinch", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  await flyTo(page, "Button");
+  const card = page.locator("#card-button");
+  const title = (await card.locator(".cat-card__title").boundingBox())!;
+  const zoom = page.getByRole("toolbar", { name: "Zoom" }).locator("output");
+  const before = await zoom.textContent();
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type: string, points: { x: number; y: number; id: number }[]) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
+  const a = { x: title.x + 6, y: title.y + title.height / 2, id: 1 };
+  await touch("touchStart", [a]);
+  await touch("touchMove", [{ ...a, x: a.x + 20 }]);
+  await expect(page.locator(".cat-board")).toHaveClass(/is-moving/);
+  const b = { x: a.x + 120, y: a.y + 160, id: 2 };
+  await touch("touchStart", [{ ...a, x: a.x + 20 }, b]);
+  await expect(page.locator(".cat-board")).not.toHaveClass(/is-moving/);
+  for (let step = 1; step <= 4; step++) await touch("touchMove", [{ ...a, x: a.x + 20 - step * 20, y: a.y - step * 20 }, { ...b, x: b.x + step * 20, y: b.y + step * 20 }]);
+  await touch("touchEnd", []);
+  await expect(zoom).not.toHaveText(before ?? "");
+  await expect(card).not.toHaveAttribute("style", /translate/);
+});
+
 test("a tap on a card's title selects it and a double tap brings it close", async ({ page, baseURL }) => {
   await openBoard(page, baseURL);
   await flyTo(page, "Badge");
