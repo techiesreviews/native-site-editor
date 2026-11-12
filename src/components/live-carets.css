@@ -166,12 +166,13 @@
 /* On the page (ticket am-23): a layer over the preview's frame viewport, clipped to it. The carets sit where the frame
    finds them in the page's text (live-carets.ts `attachPage`); no element highlight. Over the edit bar: the bar opens over
    the text next to the block this tab types in, which is where another's caret stands when they type in the block above or
-   below it, and a circle under the bar is no caret at all. The bar's level (z-index 30, src/components/edit-bar.css), and
-   later in the pane than the bar (made when the preview is, this layer when someone else is here), so it wins the tie.
+   below it, and a circle under the bar is no caret at all. The layer takes the bar's level (src/theme.css `--layer-bar`) and
+   comes later in the pane than the bar (made with the preview; this layer when someone else is here), so it wins the tie.
+   The agents' pins (25) and the card grid's Add (21) are under it, which their controls' give-way below makes harmless.
    Below the bar's menus and fields, the cards and the pin conversations (z-index 31), which open over the page. */
 .live-carets-page {
   position: absolute;
-  z-index: 30;
+  z-index: var(--layer-bar);
   overflow: clip;
   pointer-events: none;
 }
@@ -182,10 +183,10 @@
   left: 0;
 }
 .live-carets-page :is(.live-caret, .live-caret-tint)[hidden] { display: none; }
-/* Where a circle reaches the edit bar's controls the control answers (live-carets.ts `overBar`): a circle whose middle is over
+/* Where a circle reaches a control of the page's overlays (the edit bar's, the pins', the card grid's) the control answers (live-carets.ts `overBar`): a circle whose middle is over
    one shows but takes no press, and one that only touches a control, or whose press area does, gives the area up. */
-.live-carets-page .live-caret[data-over-bar="circle"] .live-caret__mark { pointer-events: none; }
-.live-carets-page .live-caret[data-over-bar="pad"] .live-caret__mark::after { display: none; }
+.live-carets-page .live-caret[data-over-control="circle"] .live-caret__mark { pointer-events: none; }
+.live-carets-page .live-caret[data-over-control="pad"] .live-caret__mark::after { display: none; }
 /* The press target is then the circle alone, below the 24 px (44 px on touch) of the others, on purpose: its press area is
    what would take the control's press. A tag the user opened over a control takes presses while it is open (pointer on it,
    or focus in it); moving away or Escape closes it. */

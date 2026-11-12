@@ -320,8 +320,9 @@ function attach(share: CaretShare, pane: CaretPane, told: (read: () => CaretSele
   };
 }
 
-/** The edit bar's controls: where a press goes to the bar and not to a caret's circle standing over it. */
-const BAR_CONTROLS = "button, input, select, textarea, a[href], [role=button], [role=combobox], [role=menuitem]";
+/** The page's overlay controls (the edit bar's, the agents' pins and their tray, the card grid's Add, the insert points): where a
+ * press goes to the control and not to a caret's circle standing over it. */
+const CONTROLS = "button, input, select, textarea, a[href], [role=button], [role=combobox], [role=menuitem]";
 interface Box { left: number; right: number; top: number; bottom: number }
 /** The circle's press area (live-carets.css `.live-caret__mark::after`: `width` by `height`, centred on the circle, its foot
  * 2 px above the circle's, reaching down from 2 px below its top for a tag below), joined with the circle itself. */
@@ -333,10 +334,10 @@ export function pressArea(mark: Box, width: number, height: number, below: boole
 }
 /** Whether two boxes share any area. */
 const boxesMeet = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-/** What a circle gives way to among the edit bar's `controls` (live-carets.css `data-over-bar`): `circle` when its middle is
+/** What a circle gives way to among the page's overlay `controls` (live-carets.css `data-over-control`): `circle` when its middle is
  * over a control (it takes no press), `pad` when it only touches one or its press `area` does (the area goes, the circle
  * stays pressable, so its target is then smaller than the 24 px, 44 px on touch, on purpose), none when it is clear of them. */
-export function overBarState(circle: Box, area: Box, controls: Box[]): "circle" | "pad" | undefined {
+export function overControlState(circle: Box, area: Box, controls: Box[]): "circle" | "pad" | undefined {
   const x = (circle.left + circle.right) / 2, y = (circle.top + circle.bottom) / 2;
   if (controls.some(box => x >= box.left && x <= box.right && y >= box.top && y <= box.bottom)) return "circle";
   return controls.some(box => boxesMeet(circle, box) || boxesMeet(area, box)) ? "pad" : undefined;
@@ -381,22 +382,23 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
     layer.style.height = `${page.frame.clientHeight}px`;
   };
   const place = (widget: Widget) => { if (widget.at) placeTag(widget, widget.at.left, widget.at.top, layer.clientWidth); };
-  // The circles stand above the edit bar (live-carets.css), so where one reaches a control of the bar the control answers:
+  // The circles stand above the edit bar and the pins (live-carets.css), so where one reaches a control the control answers:
   // a circle whose middle is over a control shows but takes no press (`circle`); one that only touches a control, or whose
-  // press area does, gives up the area (`pad`) and still takes presses on the circle. The bar's own box and its blank parts
-  // let presses pass to the circle. The bar moves with the selection, with no news for the carets.
+  // press area does, gives up the area (`pad`) and still takes presses on the circle. The controls' own boxes and their
+  // blank parts let presses pass to the circle. The bar moves with the selection, with no news for the carets.
   let barDue = 0;
   const overBar = () => {
     barDue = 0;
     if (!widgets.size) return;
-    const controls = [...page.layer.querySelectorAll(`.edit-bar :is(${BAR_CONTROLS})`)].map(control => control.getBoundingClientRect()).filter(box => box.width > 0);
+    const controls = [...page.layer.querySelectorAll(CONTROLS)].filter(control => !layer.contains(control))
+      .map(control => control.getBoundingClientRect()).filter(box => box.width > 0);
     for (const widget of widgets.values()) {
+      if (widget.root.hidden) { widget.root.removeAttribute("data-over-control"); continue; }
       const mark = widget.flag.element.querySelector(".live-caret__mark")!, circle = mark.getBoundingClientRect();
       const press = getComputedStyle(mark, "::after");
-      const area = pressArea(circle, parseFloat(press.width), parseFloat(press.height), widget.root.hasAttribute("data-below"));
-      const state = widget.root.hidden ? undefined : overBarState(circle, area, controls);
-      if (state === undefined) widget.root.removeAttribute("data-over-bar");
-      else if (widget.root.getAttribute("data-over-bar") !== state) widget.root.setAttribute("data-over-bar", state);
+      const state = overControlState(circle, pressArea(circle, parseFloat(press.width), parseFloat(press.height), widget.root.hasAttribute("data-below")), controls);
+      if (state === undefined) widget.root.removeAttribute("data-over-control");
+      else if (widget.root.getAttribute("data-over-control") !== state) widget.root.setAttribute("data-over-control", state);
     }
   };
   const overBarSoon = () => { barDue ||= requestAnimationFrame(overBar); };
