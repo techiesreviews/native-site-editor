@@ -1181,6 +1181,7 @@ test("the Editor screen is the editor's own workspace at 1280 and 390, light and
   // A real hover: Publish takes its hover colour under the pointer.
   const publish = wide.locator(".publish-menu__trigger");
   await page.keyboard.press("Escape");
+  await expect(wide.locator("#explorer")).toBeHidden();
   const rest = await publish.evaluate((element) => getComputedStyle(element).backgroundColor);
   await publish.hover();
   await expect.poll(() => publish.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(rest);
@@ -1191,6 +1192,11 @@ test("the Editor screen is the editor's own workspace at 1280 and 390, light and
   await expect(phone.locator("#sheet-handle")).toBeVisible();
   await phone.locator("#topbar-menu").click();
   await expect(phone.getByRole("dialog", { name: "Menu" })).toBeVisible();
+
+  // The sidebar's handle works in the frame and leaves the editor's own saved width alone.
+  await wide.locator(".sidebar-resize").click();
+  await expect(wide.locator(".workspace")).toHaveClass(/workspace--sidebar-collapsed/);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("astro-editor.sidebar-width")))).toEqual([]);
 });
 
 test("the Editor screen's options reach its frames: the page's name and the phone's Menu open", async ({ page, baseURL }) => {
@@ -1198,8 +1204,10 @@ test("the Editor screen's options reach its frames: the page's name and the phon
   await flyTo(page, "Editor");
   const options = page.getByRole("complementary", { name: "Options" });
   await options.getByRole("textbox", { name: "Page" }).fill("Journal");
+  await options.getByRole("textbox", { name: "Project" }).fill("garden-and-co");
   await options.getByRole("switch", { name: "Menu open on the phone" }).check();
   const card = page.locator("#card-editor");
   await expect(card.locator('[data-width="1280"][data-theme="light"] iframe').contentFrame().locator("#current-page")).toHaveText("Journal");
+  await expect(card.locator('[data-width="1280"][data-theme="light"] iframe').contentFrame().locator(".repository-menu__trigger")).toContainText("garden-and-co");
   await expect(card.locator('[data-width="390"][data-theme="light"] iframe').contentFrame().getByRole("dialog", { name: "Menu" })).toBeVisible();
 });

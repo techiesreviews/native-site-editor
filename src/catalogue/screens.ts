@@ -66,7 +66,7 @@ async function editorScreen(values: Values): Promise<HTMLElement> {
   app.id = "app";
   app.innerHTML = workspaceMarkup();
   await fillTopBar(app, values);
-  // The page button opens Pages & files under the top bar, as in the editor (its lists stay loading here).
+  // The page button opens Pages & files under the top bar, as the editor shows it before its lists load.
   mountDropdown({
     trigger: app.querySelector<HTMLButtonElement>("#explorer-toggle")!, panel: app.querySelector<HTMLElement>("#explorer")!,
     below: app.querySelector<HTMLElement>(".topbar")!, anchor: "--explorer",

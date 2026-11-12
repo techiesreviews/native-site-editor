@@ -80,8 +80,26 @@ export function frameOf(query: string): { entry: Part | Mockup; theme: Theme; va
   return { entry, theme: params.get("theme") === "dark" ? "dark" : "light", values: { ...entry.defaults, ...values }, live: params.get("live") === "1" };
 }
 
+/**
+ * Storage that lives and dies with one page. The board is served from the preview editor's own site, so its frames
+ * share the editor's saved settings; a screen's real parts (the sidebar's width, the canvas's width) read and write
+ * this instead, so the board never changes the editor, and every browser shows the screens alike.
+ */
+export function pageStorage(): Storage {
+  const items = new Map<string, string>();
+  return {
+    get length() { return items.size; },
+    key: (index) => [...items.keys()][index] ?? null,
+    getItem: (key) => items.get(key) ?? null,
+    setItem: (key, value) => { items.set(key, String(value)); },
+    removeItem: (key) => { items.delete(key); },
+    clear: () => items.clear(),
+  };
+}
+
 /** Runs a frame page: the one part or mock-up, in its theme, redrawn when the board sets new options. */
 export async function startFrame(shown: NonNullable<ReturnType<typeof frameOf>>) {
+  if (!isPart(shown.entry)) for (const name of ["localStorage", "sessionStorage"]) Object.defineProperty(window, name, { value: pageStorage(), configurable: true });
   document.documentElement.dataset.theme = shown.theme;
   document.body.className = `cat-frame-page${isPart(shown.entry) ? "" : " cat-frame-page--screen"}`;
   const stage = document.createElement("div");
