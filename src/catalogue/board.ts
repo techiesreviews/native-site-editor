@@ -1153,7 +1153,8 @@ export function startBoard(root: HTMLElement, plans: Plans = { areas: [], mockup
     const target = event.target as HTMLElement;
     const holder = target.matches(".cat-half[data-piece] > .cat-label") ? target.parentElement : null;
     if (holder && placeKey() !== holder.dataset.piece) selectPiece(holder.dataset.piece!, false);
-    const article = target.closest('[data-cell="live"]') ? target.closest<HTMLElement>(".cat-card[data-id]") : null;
+    // A live cell, or a mock-up card's link: the keyboard reaching it selects its card and shows it when it is far too small to use.
+    const article = target.closest('[data-cell="live"], .cat-plan__open') ? target.closest<HTMLElement>(".cat-card[data-id]") : null;
     if (!article) return;
     press(article);
     if (byPointer) return;
