@@ -9,7 +9,11 @@ import { formatBytes, postUpload, sendUploads, uploadBytes } from "../uploads";
 import { deployStatus, onDeployStatus, setDeployStatus, type DeployStatus } from "../deploy-status";
 import { saveAuthors, type SaveAuthors, type SentAuthors } from "../save-authors";
 import { liveSaves } from "../live-saves";
+import { lazyModule } from "../lazy-module";
 import "./publish-menu.css";
+
+// The comparison and its look load on first use: they stay out of the editor's boot.
+const loadComparison = lazyModule(() => import("./publish-diff"));
 
 // Paths a save was refused for, by draft key: GitHub changed them (or
 // deleted them, `gone`) since their drafts began. Each is said until its
@@ -289,10 +293,16 @@ export function createPublishMenu(options: {
     opener = null;
     target?.focus();
   });
-  // The comparison and its look load on first use: they stay out of the editor's boot.
   async function openComparison(path: string, before: string, after: string, from: HTMLButtonElement) {
-    const { splitView, unifiedView } = await import("./publish-diff");
-    if (disposed) return;
+    let view: Awaited<ReturnType<typeof loadComparison>>;
+    try {
+      view = await loadComparison();
+    } catch {
+      if (!disposed) message.textContent = "Couldn't open the comparison. Try again.";
+      return;
+    }
+    if (disposed || !from.isConnected) return;
+    const { splitView, unifiedView } = view;
     opener = from;
     dialogTitle.textContent = path;
     dialogBody.replaceChildren(splitView(before, after), unifiedView(before, after));
