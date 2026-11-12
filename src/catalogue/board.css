@@ -335,7 +335,7 @@ body:has(> .cat-board) {
 .cat-iframe:not(.cat-iframe--live),
 /* `.cat-live__stage > *` is the part, or the shadow root's host (display: contents) around it: pointer-events
    inherit into the shadow tree, and its events reach the board on the host. */
-.cat-board:is(.is-space, .is-panning) :is(.cat-iframe--live, .cat-live__stage > *) {
+.cat-board:is(.is-space, .is-panning, .is-moving) :is(.cat-iframe--live, .cat-live__stage > *) {
   pointer-events: none;
 }
 /* A finger on a live frame never reaches the board, so on a touch screen a frame works once its card is selected. */

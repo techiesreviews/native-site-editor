@@ -484,6 +484,8 @@ export function startBoard(root: HTMLElement) {
     dots.style.backgroundPosition = `${cam.x}px ${cam.y}px`;
     dots.style.opacity = String(clamp((grid - 6) / 8, 0, 1));
     zoomPct.textContent = `${Math.round(cam.z * 100)}%`;
+    // Guides drawn at the old zoom would point at the wrong place: the next pointer move draws them again.
+    if (move?.moved) drawGuides([]);
     placeSel();
     cull();
   }
@@ -941,29 +943,33 @@ export function startBoard(root: HTMLElement) {
 
   // ---------- Moving a card: drag its title; it snaps to the other cards, with guides along the edges it meets ----------
 
-  let move: { id: string; pointer: number; sx: number; sy: number; from: Point; base: Box; others: Box[]; moved: boolean; target: Element } | undefined;
+  // `sx`, `sy`: the press on screen; `bx`, `by`: on the board, so a zoom during the drag keeps the card under the pointer.
+  let move: { id: string; pointer: number; sx: number; sy: number; bx: number; by: number; from: Point; base: Box; others: Box[]; moved: boolean; target: Element } | undefined;
   function startMove(event: PointerEvent, article: HTMLElement) {
     stopFlight();
     const id = article.dataset.id!, from = placeOf(id), box = cardBox(article);
     const others = [...world.querySelectorAll<HTMLElement>(".cat-card[data-id]")].filter((other) => other !== article).map(cardBox);
-    move = { id, pointer: event.pointerId, sx: event.clientX, sy: event.clientY, from, base: { ...box, x: box.x - from.x, y: box.y - from.y }, others, moved: false, target: event.target as Element };
+    const bx = (event.clientX - cam.x) / cam.z, by = (event.clientY - cam.y) / cam.z;
+    move = { id, pointer: event.pointerId, sx: event.clientX, sy: event.clientY, bx, by, from, base: { ...box, x: box.x - from.x, y: box.y - from.y }, others, moved: false, target: event.target as Element };
     try { viewport.setPointerCapture(event.pointerId); } catch { /* The pointer is gone already. */ }
   }
   function moveTo(event: PointerEvent) {
     if (!move) return;
-    const dx = event.clientX - move.sx, dy = event.clientY - move.sy;
+    // The button came up where the board never heard it (over another window, say): the drag ends there.
+    if (event.pointerType === "mouse" && event.buttons === 0) { endMove("drop"); return; }
     if (!move.moved) {
-      if (Math.hypot(dx, dy) <= 4) return;
+      if (Math.hypot(event.clientX - move.sx, event.clientY - move.sy) <= 4) return;
       move.moved = true;
       root.classList.add("is-moving");
       cardOf(move.id)?.classList.add("is-moving");
       if (selected !== move.id) select(move.id, false);
     }
-    const at = snapMove({ ...move.base, x: move.base.x + move.from.x + dx / cam.z, y: move.base.y + move.from.y + dy / cam.z }, move.others, 6 / cam.z);
+    const dx = (event.clientX - cam.x) / cam.z - move.bx, dy = (event.clientY - cam.y) / cam.z - move.by;
+    const at = snapMove({ ...move.base, x: move.base.x + move.from.x + dx, y: move.base.y + move.from.y + dy }, move.others, 6 / cam.z);
     setPlace(move.id, { x: Math.round(at.x - move.base.x), y: Math.round(at.y - move.base.y) }, false);
     drawGuides(at.guides);
   }
-  /** `drop` keeps the card where it is, `cancel` (Escape) puts it back; a press that never moved is a tap. */
+  /** `drop` keeps the card where it is, `cancel` (Escape, a cancelled pointer) puts it back; a press that never moved is a tap. */
   function endMove(outcome: "drop" | "cancel") {
     if (!move) return;
     const { id, moved, from, target } = move;
@@ -1031,7 +1037,8 @@ export function startBoard(root: HTMLElement) {
     const target = event.target as Element;
     if (target.closest(".cat-zoombar, .cat-search")) return;
     if (event.pointerType === "mouse" && event.button !== 0 && event.button !== 1) return;
-    if (move) return;
+    // A drag whose end the board never heard (the pointer let go elsewhere) ends before anything new starts.
+    if (move) endMove("drop");
     // A card's title is its handle: dragging it moves the card (with Space held, the board pans as anywhere else).
     const grip = !spaceHeld && event.button === 0 && points.size === 0 ? target.closest<HTMLElement>(".cat-card__title") : null;
     if (grip?.parentElement?.dataset.id) { startMove(event, grip.parentElement); return; }
@@ -1065,7 +1072,7 @@ export function startBoard(root: HTMLElement) {
     drag.lx = event.clientX; drag.ly = event.clientY;
   });
   function endPointer(event: PointerEvent) {
-    if (move?.pointer === event.pointerId) { endMove("drop"); return; }
+    if (move?.pointer === event.pointerId) { endMove(event.type === "pointerup" ? "drop" : "cancel"); return; }
     if (!points.has(event.pointerId)) return;
     points.delete(event.pointerId);
     if (pinch && points.size < 2) {
@@ -1083,6 +1090,8 @@ export function startBoard(root: HTMLElement) {
     }
   }
   viewport.addEventListener("pointerup", endPointer);
+  // The board lost the pointer mid-drag (another window took it): the card goes back where it was.
+  viewport.addEventListener("lostpointercapture", (event) => { if (move?.pointer === event.pointerId) endMove("cancel"); });
   // A made-of link pressed from the keyboard (a pointer's press is a tap, above).
   world.addEventListener("click", (event) => {
     const fly = (event.target as Element).closest<HTMLElement>("[data-fly]");
