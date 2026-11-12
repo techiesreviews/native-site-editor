@@ -19,7 +19,7 @@
   opacity: 0;
   pointer-events: none;
 }
-.insert-layer.has-occluded-focus { z-index: 32; }
+.insert-layer.has-occluded-focus { z-index: 33; }
 /* Only the pair around the hovered item shows; the rest stay out of the way
    but reachable by keyboard. */
 .insert-point:not(.is-near, .is-open, :focus-within) {

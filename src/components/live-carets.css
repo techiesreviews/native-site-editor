@@ -166,7 +166,8 @@
 /* On the page (ticket am-23): a layer over the preview's frame viewport, clipped to it. The carets sit where the frame
    finds them in the page's text (live-carets.ts `attachPage`); no element highlight. Above the edit bar (z-index 30,
    src/components/edit-bar.css): the bar opens over the text next to the block this tab types in, which is where
-   another's caret stands when they type in the block above or below it, and a circle under the bar is no caret at all. */
+   another's caret stands when they type in the block above or below it, and a circle under the bar is no caret at all.
+   Below the bar's menus and fields, the cards and the pin conversations (z-index 32), which open over the page. */
 .live-carets-page {
   position: absolute;
   z-index: 31;
@@ -180,6 +181,10 @@
   left: 0;
 }
 .live-carets-page :is(.live-caret, .live-caret-tint)[hidden] { display: none; }
+/* Where a circle reaches the edit bar's controls the control answers (live-carets.ts `overBar`): a circle whose middle is over
+   one shows but takes no press, and one that only touches a control, or whose press area does, gives the area up. */
+.live-carets-page .live-caret[data-over-bar="circle"] .live-caret__mark { pointer-events: none; }
+.live-carets-page .live-caret[data-over-bar="pad"] .live-caret__mark::after { display: none; }
 .live-carets-page .live-caret-tint {
   position: absolute;
   border-radius: 2px;
