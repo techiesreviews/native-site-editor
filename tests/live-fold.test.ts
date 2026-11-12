@@ -194,6 +194,7 @@ test("seeded: the copy's text once the clash rule ran is mergeText's in every ca
   assert.deepEqual(await differing(300), []);
 });
 
-test("seeded spot check: 1000 cases", { skip: !process.env.LIVE_FOLD_SPOT && "set LIVE_FOLD_SPOT=1" }, async () => {
-  assert.deepEqual(await differing(1000), []);
+// LIVE_FOLD_SPOT=1 plays 1000 cases; a larger number plays that many.
+test("seeded spot check: 1000 cases or LIVE_FOLD_SPOT", { skip: !process.env.LIVE_FOLD_SPOT && "set LIVE_FOLD_SPOT=1" }, async () => {
+  assert.deepEqual(await differing(Math.max(1000, Number(process.env.LIVE_FOLD_SPOT) || 0)), []);
 });

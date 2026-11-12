@@ -439,10 +439,17 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     const now = () => stopped || !shared() || copy?.ready() === true;
     if (now()) return undefined;
     return new Promise<void>(resolve => {
-      let over = false;
-      const timer = clock.setTimeout(() => { over = true; resolve(); }, LIVE_TEXT_CATCH_UP_MS);
+      /** `over`: the wait ran out; `start`: it ran out while the copy was starting, so the save waits for that start. */
+      let over = false, start = false, timer: unknown;
+      const done = () => over || now() || (start && !copy?.starting());
+      timer = clock.setTimeout(() => {
+        // No one caught the copy up in time and it is starting on its own this very moment: that takes a moment more.
+        if (copy?.starting()) { start = true; timer = clock.setTimeout(() => { over = true; foldsReady(); }, LIVE_TEXT_CATCH_UP_MS); }
+        else over = true;
+        foldsReady();
+      }, LIVE_TEXT_CATCH_UP_MS);
       waitingFolds.push(() => {
-        if (!over && !now()) return false;
+        if (!done()) return false;
         clock.clearTimeout(timer);
         resolve();
         return true;
@@ -974,7 +981,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           }
         }
       } finally { starting = false; }
-      if (!synced) return;
+      // A save waiting for this start goes on (`caughtUp`); a commit tries again (and waits on).
+      if (!synced) { foldsReady(); return; }
       // Saved while the copy was starting: the draft went in over the copy's version, and the copy, holding the saved text
       // now, is noted as the save, so its words do not come in again as GitHub's change.
       for (const [sha, saved] of ownSaves) {
@@ -1379,6 +1387,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       versions: () => versions().map(({ from, to, client }) => ({ from, to, ...(client === undefined ? {} : { client }) })),
       /** Whether a commit can enter now: caught up, and not catching up again after a reconnect. */
       ready: () => synced && !catching && !starting,
+      starting: () => starting,
       /** Alone in the room (first in, or everyone else left before catching this tab up): its own draft starts the copy. */
       startOwn: () => begin(false),
       /** The name-tag Undo: `author`'s latest change that still changes the text (its UPDATE frames, grouped as Yjs groups
