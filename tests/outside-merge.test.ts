@@ -161,8 +161,8 @@ const changedIndex = (): TreeEntry[] => [
   { path: "style.css", type: "blob", sha: "c".repeat(40), mode: "100644" },
 ];
 
-function foldSetup(next: TreeEntry[], options: { texts?: Record<string, string>; author?: string; drafts?: SavedDraft[]; race?: AwaitRace } = {}) {
-  const tree: TreeEntry[] = [
+function foldSetup(next: TreeEntry[], options: { texts?: Record<string, string>; author?: string; drafts?: SavedDraft[]; race?: AwaitRace; tree?: TreeEntry[] } = {}) {
+  const tree: TreeEntry[] = options.tree ?? [
     { path: "index.html", type: "blob", sha: oldSha, mode: "100644" },
     { path: "style.css", type: "blob", sha: "c".repeat(40), mode: "100644" },
   ];
@@ -327,6 +327,18 @@ test("foldIn: a page typed on together folds into its live room's copy, never in
   assert.equal(refused.f.store.get(scope, "index.html")!.baseSha, oldSha);
   assert.deepEqual(refused.f.adopted, []);
   assert.deepEqual(refused.f.visits, []);
+});
+
+test("foldIn: a workspace moved on while one live page folds into its room's copy folds no other page (ticket am-59)", async () => {
+  const page = (path: string, sha: string): TreeEntry => ({ path, type: "blob", sha, mode: "100644" });
+  const f = foldSetup([page("index.html", newSha), page("about.html", "e".repeat(40))], { tree: [page("index.html", oldSha), page("about.html", "d".repeat(40))] });
+  for (const path of ["index.html", "about.html"]) f.store.open(scope, path, { text: oldPage, baseSha: path === "index.html" ? oldSha : "d".repeat(40) });
+  let ended = false;
+  const asked: string[] = [];
+  f.host.liveFold = async key => { asked.push(key); ended = true; return true; };
+  assert.equal(await foldIn(f.ports, f.host, f.after.commit, () => !ended), true);
+  assert.equal(asked.length, 1, "the second page is not folded");
+  assert.deepEqual(f.adopted, []);
 });
 
 test("foldIn: while a dialog waits for an answer the branch loads again, and nothing folds", async () => {
