@@ -170,10 +170,14 @@ test("Anna's tab takes Sam's commit while Lex's tab hears nothing from the room;
     holding = true;
     const github = await (await anna.page.request.get(`${baseURL}/__demo/file?path=${file}`)).text();
     await samPushes([anna.page, lex.page], baseURL, github.replace("Edit plain HTML", "Edit plain HTML with Sam"));
-    // Each tab took the commit on its own: Lex's from GitHub, as Anna's frames have not reached him.
+    // Each tab has the commit, whichever wrote it into the room's copy first: Anna's frames have not reached Lex.
     for (const tab of [anna, lex]) await expect.poll(() => source(tab.page), { timeout: 20_000 }).toContain("Edit plain HTML with Sam");
     await insert(lex.page, "Fresh bread: ", "warm ");
     await insert(anna.page, "with Sam", " daily");
+    await expect.poll(() => source(anna.page), { timeout: 20_000 }).toContain("with Sam daily");
+    // The hold held: Anna's frames wait, and Lex does not have her words yet.
+    expect(held.length).toBeGreaterThan(0);
+    expect(await source(lex.page)).not.toContain(" daily");
     holding = false;
     for (const send of held.splice(0)) send();
     await expect.poll(() => source(lex.page), { timeout: 20_000 }).toContain("with Sam daily");
