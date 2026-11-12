@@ -68,10 +68,21 @@ test.describe("desktop", () => {
     await expect(redo).toBeDisabled();
     await page.keyboard.press("ControlOrMeta+z");
     await expect(heading).toHaveText(before!);
+    await page.keyboard.press("Control+y");
+    await expect(heading).toHaveText(`${before} Wow`);
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(heading).toHaveText(before!);
     await redo.click();
     await expect(heading).toHaveText(`${before} Wow`);
     await expect(redo).toBeDisabled();
     await expect(undo).toBeEnabled();
+    // Typing after an Undo starts from the undone text and comes back as one step.
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(heading).toHaveText(before!);
+    await page.keyboard.type(" Again");
+    await expect(heading).toHaveText(`${before} Again`);
+    await undo.click();
+    await expect(heading).toHaveText(before!);
   });
 });
 
