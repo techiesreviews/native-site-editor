@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { build, loadConfigFromFile } from "vite";
 import { unstable_startWorker } from "wrangler";
-import { buildTickets, MOCKUPS_HEADERS, mockupFiles, mockupIndex, mockups, mockupShipping, mockupTitle, referencedFiles, ticketsOnMain } from "../vite-mockups.ts";
+import { buildTickets, MOCKUPS_HEADERS, mockupFiles, mockupIndex, mockupPicturePath, mockups, mockupsHeaders, mockupShipping, mockupTitle, referencedFiles, ticketsOnMain } from "../vite-mockups.ts";
 
 const repoRoot = new URL("..", import.meta.url).pathname;
 const scratch = mkdtempSync(join(tmpdir(), "ase-mockups-"));
@@ -204,9 +204,10 @@ test("the index shows each label with the tickets it came from, and a legend say
   const files = mockupFiles(root);
   const tickets = buildTickets(root, files);
   const html = mockupIndex(files, { shipping: mockupShipping(files, tickets, ticketsOnMain(root, tickets)) });
-  const row = (page: string, badge: string) => assert.ok(html.includes(`<li><a href="agents/${page}.html">${page}</a> ${badge}</li>`), page);
-  row("live", '<span class="shipping shipping--live">Live</span> <span class="tickets">ticket 01</span>');
-  row("live-and-preview", '<span class="shipping shipping--preview">On preview</span> <span class="tickets">tickets 01, 02</span>');
+  const row = (page: string, badge: string, open = "") => assert.ok(html.includes(`<li><a href="agents/${page}.html">${page}</a> ${badge}${open}</li>`), page);
+  const open = (page: string) => ` <a class="open" href="agents/${page}.html">Open mock-up</a>`;
+  row("live", '<span class="shipping shipping--live">Live</span> <span class="tickets">ticket 01</span>', open("live"));
+  row("live-and-preview", '<span class="shipping shipping--preview">On preview</span> <span class="tickets">tickets 01, 02</span>', open("live-and-preview"));
   row("shared", '<span class="shipping shipping--building">Being built</span> <span class="tickets">tickets 07, styling 06</span>');
   row("planned", '<span class="shipping shipping--planned">Planned</span> <span class="tickets">ticket 05</span>');
   row("idea", '<span class="shipping shipping--idea">Idea only</span>');
@@ -414,5 +415,117 @@ test("a mock-up loads an image the plugin copied beside it, under the sandboxed 
   } finally {
     await browser.close();
     await worker.dispose();
+  }
+});
+
+/** Writes `text` at `path` under `root`, making the folders. */
+function writeIn(root: string, path: string, text: string | Buffer) {
+  mkdirSync(join(root, path, ".."), { recursive: true });
+  writeFileSync(join(root, path), text);
+}
+
+test("the catalogue board's second build copies public/ again and the mock-ups' header rule is added back", async () => {
+  const loadedPlugins = async (env: Record<string, string | undefined>) => {
+    const saved = Object.fromEntries(Object.keys(env).map(name => [name, process.env[name]]));
+    for (const [name, value] of Object.entries(env)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+    try {
+      const loaded = await loadConfigFromFile({ command: "build", mode: "production" }, join(repoRoot, "vite.config.ts"), repoRoot, "silent", undefined, "runner");
+      return (loaded!.config.plugins ?? []).flat(Infinity).flatMap(plugin => plugin && "name" in plugin ? [plugin.name] : []);
+    } finally {
+      for (const [name, value] of Object.entries(saved)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+    }
+  };
+  assert.ok((await loadedPlugins({ CATALOGUE_ONLY: "1", MOCKUPS: "1" })).includes("ase-mockups-headers"));
+  assert.ok(!(await loadedPlugins({ CATALOGUE_ONLY: "1", MOCKUPS: undefined })).includes("ase-mockups-headers"));
+  assert.ok(!(await loadedPlugins({ CATALOGUE_ONLY: undefined, MOCKUPS: "1" })).includes("ase-mockups-headers"));
+
+  const root = repo();
+  const editorHeaders = readFileSync(new URL("../public/_headers", import.meta.url), "utf8");
+  writeIn(root, "index.html", "<!doctype html><title>editor</title>");
+  writeIn(root, "catalogue.html", "<!doctype html><title>catalogue</title>");
+  writeIn(root, "public/_headers", editorHeaders);
+  const outDir = join(root, "dist");
+  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(root)], build: { outDir } });
+  // The second build: only the catalogue page, into the same folder, with public/ copied over `_headers` again.
+  await build({ root, configFile: false, logLevel: "silent", plugins: [mockupsHeaders()], build: { outDir, emptyOutDir: false, rolldownOptions: { input: join(root, "catalogue.html") } } });
+  assert.equal(readFileSync(join(outDir, "_headers"), "utf8"), editorHeaders + MOCKUPS_HEADERS);
+  // Without the rule's plugin, that copy is what dropped it.
+  await build({ root, configFile: false, logLevel: "silent", build: { outDir, emptyOutDir: false, rolldownOptions: { input: join(root, "catalogue.html") } } });
+  assert.equal(readFileSync(join(outDir, "_headers"), "utf8"), editorHeaders);
+});
+
+test("work under docs/work/<work>/issues counts as build tickets for the mock-ups it links", () => {
+  const { root, git } = shippingRepo();
+  writeIn(root, "docs/work/board/issues/01-canvas.md", "---\ntitle: canvas\nstatus: closed\nassignee: am-01\n---\n\nSketch [copy](../../../wayfinder/agents/prototypes/idea.html).\n");
+  writeIn(root, "docs/work/board/issues/02-more.md", "---\ntitle: more\nstatus: open\nassignee:\n---\n\nSketch prototypes/planned.html and [x](../../../wayfinder/agents/prototypes/idea.html).\n");
+  writeIn(root, "docs/work/board/notes.md", "[ignored](../wayfinder/agents/prototypes/claimed.html)");
+  const files = mockupFiles(root);
+  const tickets = buildTickets(root, files).filter(({ map }) => map === "board");
+  assert.deepEqual(tickets.map(({ name, path, closed, mockups }) => ({ name, path, closed, mockups })), [
+    { name: "01", path: "docs/work/board/issues/01-canvas.md", closed: true, mockups: ["agents/idea.html"] },
+    { name: "02", path: "docs/work/board/issues/02-more.md", closed: false, mockups: ["agents/idea.html"] },
+  ]);
+  // Closed in `dev`'s tree only, so the sketch reads On preview, not Live; its other ticket is still open.
+  git("add", "-A");
+  git("commit", "--quiet", "-m", "board issues");
+  const labels = labelsIn(root);
+  assert.equal(labels["idea.html"], "building 01,02");
+  writeIn(root, "docs/work/board/issues/02-more.md", "---\ntitle: more\nstatus: closed\nassignee:\n---\n\n[x](../../../wayfinder/agents/prototypes/idea.html)\n");
+  assert.equal(labelsIn(root)["idea.html"], "preview 01,02");
+});
+
+test("a released mock-up with a picture shows it and a link to the mock-up; the others show neither", () => {
+  const { root } = shippingRepo();
+  const files = mockupFiles(root);
+  const shipping = mockupShipping(files, buildTickets(root, files), ticketsOnMain(root, buildTickets(root, files)));
+  const pictures = new Set(["agents/live.html", "agents/preview.html", "agents/planned.html"]);
+  const html = mockupIndex(files, { shipping, pictures });
+  const image = (page: string) => `<img src="agents/agreed/${page}.webp" alt="" width="480" height="300" loading="lazy" decoding="async">`;
+  assert.ok(html.includes(`<li class="with-picture"><a class="picture" href="agents/live.html" tabindex="-1" aria-hidden="true">${image("live")}</a><span class="entry"><a href="agents/live.html">live</a> `), "Live");
+  assert.ok(html.includes(`<li class="with-picture"><a class="picture" href="agents/preview.html" tabindex="-1" aria-hidden="true">${image("preview")}</a>`), "On preview");
+  assert.ok(html.includes(' <a class="open" href="agents/preview.html">Open mock-up</a></span></li>'));
+  // Planned has a picture file, but the feature is not released: no picture, no link. Released without a picture: the link only.
+  assert.doesNotMatch(html, /agreed\/planned|href="agents\/planned.html">Open/);
+  assert.ok(html.includes('<li><a href="agents/live-and-preview.html">live-and-preview</a> '));
+  assert.ok(html.includes('<a class="open" href="agents/live-and-preview.html">Open mock-up</a></li>'));
+  assert.equal(html.match(/<img /g)?.length, 2);
+});
+
+test("a build publishes the picture of each released mock-up, small and beside the mock-up, and of no other", async () => {
+  const { root, git } = shippingRepo();
+  const pictureBytes = Buffer.from("RIFFpicture");
+  for (const page of ["live", "preview", "planned"]) writeIn(root, `docs/wayfinder/agents/prototypes/agreed/${page}.webp`, pictureBytes);
+  writeIn(root, "index.html", "<!doctype html><title>editor</title>");
+  git("add", "-A");
+  git("commit", "--quiet", "-m", "pictures");
+  const outDir = join(root, "dist");
+  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(root)], build: { outDir } });
+  const built = readdirSync(join(outDir, "mockups"), { recursive: true, withFileTypes: true })
+    .filter(entry => entry.isFile() && entry.name.endsWith(".webp")).map(entry => join(entry.parentPath, entry.name).slice(outDir.length + 1)).sort();
+  assert.deepEqual(built, ["mockups/agents/agreed/live.webp", "mockups/agents/agreed/preview.webp"]);
+  assert.deepEqual(readFileSync(join(outDir, "mockups/agents/agreed/live.webp")), pictureBytes);
+  const index = readFileSync(join(outDir, "mockups/index.html"), "utf8");
+  assert.equal(index.match(/<img src="agents\/agreed\/[a-z-]+\.webp"/g)?.length, 2);
+  assert.deepEqual(mockupPicturePath(root, { map: "agents", file: "live.html" }), { path: join(root, "docs/wayfinder/agents/prototypes/agreed/live.webp"), exists: true });
+  assert.equal(mockupPicturePath(root, { map: "agents", file: "idea.html" }).exists, false);
+});
+
+test("the real mock-ups: each released one has a small picture, no picture is left over, and the two approved sketches are listed", () => {
+  const files = mockupFiles(repoRoot).filter(({ file }) => file.endsWith(".html"));
+  const shipping = mockupShipping(files, buildTickets(repoRoot, files));
+  const missing = files.filter(({ map, file }) => ["live", "preview"].includes(shipping.get(`${map}/${file}`)?.label ?? "") && !mockupPicturePath(repoRoot, { map, file }).exists)
+    .map(({ map, file }) => `${map}/${file}`);
+  assert.deepEqual(missing, [], "run node scripts/mockup-pictures.mjs for these released mock-ups and commit the pictures");
+  const wanted = new Set(files.map(({ map, file }) => mockupPicturePath(repoRoot, { map, file }).path));
+  const pictures: string[] = [];
+  for (const map of readdirSync(join(repoRoot, "docs/wayfinder"))) {
+    const folder = join(repoRoot, "docs/wayfinder", map, "prototypes/agreed");
+    for (const file of statSync(folder, { throwIfNoEntry: false })?.isDirectory() ? readdirSync(folder) : []) pictures.push(join(folder, file));
+  }
+  assert.deepEqual(pictures.filter(path => !wanted.has(path)), [], "a picture without its mock-up");
+  for (const path of pictures) assert.ok(statSync(path).size < 40_000, `${path} is small`);
+  for (const sketch of ["atomic-catalogue/66-phone-editor.html", "atomic-catalogue/design-board-canvas.html"]) {
+    assert.equal(shipping.get(sketch)?.label, "preview", sketch);
+    assert.ok(mockupPicturePath(repoRoot, { map: "atomic-catalogue", file: sketch.split("/")[1] }).exists, sketch);
   }
 });

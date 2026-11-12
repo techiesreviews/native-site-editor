@@ -3,7 +3,9 @@
 // preview build turns this on (`MOCKUPS=1`, `npm run build:preview`); production builds and the
 // editor's boot never see these files. The images a mock-up uses sit beside it and are copied too;
 // images no mock-up uses (reference screenshots for planning) stay unpublished. Each mock-up on the
-// index carries a label saying how far the build tickets linking to it have got (`mockupShipping`).
+// index carries a label saying how far the build tickets linking to it have got (`mockupShipping`). A mock-up
+// whose feature is released (Live or On preview) also shows its picture, taken when it was agreed
+// (`prototypes/agreed/<name>.webp`, made by `scripts/mockup-pictures.mjs`), and a link to the working mock-up.
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -60,6 +62,18 @@ export function mockupFiles(root: string): Mockup[] {
   });
 }
 
+/** Whether a label means the feature is released: on `main` (Live) or on the dev preview. */
+export const isReleased = (label: string | undefined) => label === "live" || label === "preview";
+
+/** Where a mock-up's agreed picture sits, beside the mock-up: `prototypes/agreed/<name>.webp`. */
+export function mockupPicturePath(root: string, { map, file }: { map: string; file: string }) {
+  const path = join(root, "docs/wayfinder", map, "prototypes/agreed", `${file.replace(/\.html$/i, "")}.webp`);
+  return { path, exists: statSync(path, { throwIfNoEntry: false })?.isFile() ?? false };
+}
+
+/** The published path of a mock-up's picture, from its map's folder in the build (`mockups/<map>/`). */
+const pictureUrl = (file: string) => `agreed/${file.replace(/\.html$/i, "")}.webp`;
+
 const escapeHtml = (text: string) => text.replace(/[&<>"]/g, char => `&${({ "&": "amp", "<": "lt", ">": "gt", '"': "quot" })[char]};`);
 
 /** A mock-up's `<title>` without the shared "PROTOTYPE (throwaway)" prefix, or its file name. */
@@ -68,8 +82,8 @@ export function mockupTitle(html: string, file: string): string {
   return title || file;
 }
 
-/** A build ticket, its `path` from the repo root (`docs/wayfinder/<map>/build/tickets/*.md`), and the mock-ups it
- * links to, as `<map>/<file>`. */
+/** A build ticket, its `path` from the repo root (`docs/wayfinder/<map>/build/tickets/*.md`, or
+ * `docs/work/<work>/issues/*.md` with the work's name as its `map`), and the mock-ups it links to, as `<map>/<file>`. */
 export type BuildTicket = { map: string; name: string; path: string; closed: boolean; claimed: boolean; mockups: string[] };
 
 /** What a mock-up's label says, and what the legend says it means. */
@@ -91,12 +105,13 @@ const frontMatterField = (text: string, name: string) =>
 const mockupLink = /((?:[\w.-]+\/)*)prototypes\/([\w.-]+\.html)/gi;
 
 /** Every build ticket that links to one of `mockups`: closed by its `status`, claimed by its `assignee`. A link
- * counts relative to the ticket, the repo or the ticket's map, whichever names a published mock-up. */
+ * counts relative to the ticket, the repo or the ticket's map, whichever names a published mock-up. The tickets
+ * are each wayfinder map's `build/tickets` and each piece of work's `issues` under `docs/work/`. */
 export function buildTickets(root: string, mockups: readonly Mockup[]): BuildTicket[] {
   const wayfinder = join(root, "docs/wayfinder");
   const known = new Set(mockups.map(({ map, file }) => `${map}/${file}`));
-  return readdirSync(wayfinder).sort().flatMap(map => {
-    const folder = join(wayfinder, map, "build/tickets");
+  const folders = (parent: string, below: string) => (isDir(parent) ? readdirSync(parent).sort() : []).map(map => ({ map, folder: join(parent, map, below) }));
+  return [...folders(wayfinder, "build/tickets"), ...folders(join(root, "docs/work"), "issues")].flatMap(({ map, folder }) => {
     if (!isDir(folder)) return [];
     return readdirSync(folder).sort().filter(file => file.endsWith(".md")).flatMap(file => {
       const path = join(folder, file);
@@ -109,7 +124,7 @@ export function buildTickets(root: string, mockups: readonly Mockup[]): BuildTic
         if (key) linked.add(key);
       }
       if (!linked.size) return [];
-      return [{ map, name: /^\d+/.exec(file)?.[0] ?? file.slice(0, -3), path: `docs/wayfinder/${map}/build/tickets/${file}`, closed: frontMatterField(text, "status") === "closed", claimed: frontMatterField(text, "assignee") !== "", mockups: [...linked] }];
+      return [{ map, name: /^\d+/.exec(file)?.[0] ?? file.slice(0, -3), path: relative(root, path).split("\\").join("/"), closed: frontMatterField(text, "status") === "closed", claimed: frontMatterField(text, "assignee") !== "", mockups: [...linked] }];
     });
   });
 }
@@ -169,10 +184,13 @@ function shippingBadge(map: string, { label, tickets }: Shipping): string {
   return `<span class="shipping shipping--${label}">${SHIPPING_LABELS[label][0]}</span>${from}`;
 }
 
-/** The index page: a legend of the labels, then one section per map, one link per HTML mock-up with its label. */
-export function mockupIndex(mockups: readonly Mockup[], { read = path => readFileSync(path, "utf8"), shipping = new Map() }: {
+/** The index page: a legend of the labels, then one section per map, one link per HTML mock-up with its label.
+ * A released mock-up (Live or On preview) that has a picture (`pictures`: its `<map>/<file>`) shows it, linked to
+ * the mock-up, and a link "Open mock-up" after its label. */
+export function mockupIndex(mockups: readonly Mockup[], { read = path => readFileSync(path, "utf8"), shipping = new Map(), pictures = new Set() }: {
   read?: (path: string) => string;
   shipping?: ReadonlyMap<string, Shipping>;
+  pictures?: ReadonlySet<string>;
 } = {}): string {
   const maps = new Map<string, Mockup[]>();
   for (const mockup of mockups) {
@@ -181,10 +199,22 @@ export function mockupIndex(mockups: readonly Mockup[], { read = path => readFil
     if (pages) pages.push(mockup);
     else maps.set(mockup.map, [mockup]);
   }
+  const entry = (map: string, page: Mockup) => {
+    const key = `${map}/${page.file}`;
+    const state = shipping.get(key) ?? { label: "idea", tickets: [] };
+    const href = escapeHtml(`${encodeURIComponent(map)}/${encodeURIComponent(page.file)}`);
+    const title = escapeHtml(mockupTitle(read(page.path), page.file));
+    const released = isReleased(state.label);
+    const picture = released && pictures.has(key)
+      ? `<a class="picture" href="${href}" tabindex="-1" aria-hidden="true"><img src="${escapeHtml(`${encodeURIComponent(map)}/${pictureUrl(page.file).split("/").map(encodeURIComponent).join("/")}`)}" alt="" width="480" height="300" loading="lazy" decoding="async"></a>` : "";
+    const open = released ? ` <a class="open" href="${href}">Open mock-up</a>` : "";
+    const line = `<a href="${href}">${title}</a> ${shippingBadge(map, state)}${open}`;
+    return picture ? `<li class="with-picture">${picture}<span class="entry">${line}</span></li>` : `<li>${line}</li>`;
+  };
   const sections = [...maps].map(([map, pages]) => `<section>
 <h2>${escapeHtml(map)}</h2>
 <ul>
-${pages.map(page => `<li><a href="${escapeHtml(`${encodeURIComponent(map)}/${encodeURIComponent(page.file)}`)}">${escapeHtml(mockupTitle(read(page.path), page.file))}</a> ${shippingBadge(map, shipping.get(`${map}/${page.file}`) ?? { label: "idea", tickets: [] })}</li>`).join("\n")}
+${pages.map(page => entry(map, page)).join("\n")}
 </ul>
 </section>`);
   const legend = Object.entries(SHIPPING_LABELS).map(([label, [name, meaning]]) => `<dt><span class="shipping shipping--${label}">${name}</span></dt><dd>${escapeHtml(meaning)}</dd>`);
@@ -201,7 +231,12 @@ ${editorTheme()}
 body { max-inline-size: 48rem; margin-inline: auto; padding: 1rem; background: var(--background); color: var(--text); }
 a { color: var(--link); }
 ul { padding-inline-start: 0; list-style: none; }
-li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; margin-block: 0.375rem; }
+li, .entry { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; }
+li { margin-block: 0.375rem; }
+.with-picture { display: grid; grid-template-columns: 11rem 1fr; align-items: center; gap: 0.75rem; margin-block: 0.75rem; }
+.picture { display: block; }
+.picture img { display: block; inline-size: 100%; block-size: auto; aspect-ratio: 8 / 5; border-radius: var(--radius-small); box-shadow: 0 0 0 1px var(--control-line); background: var(--component-surface); }
+@media (max-width: 30rem) { .with-picture { grid-template-columns: 1fr; gap: 0.375rem; } }
 .legend { display: grid; grid-template-columns: max-content 1fr; align-items: baseline; gap: 0.375rem 0.75rem; margin-block: 0; }
 .legend dd { margin: 0; }
 .shipping { padding: 0 6px; border-radius: 999px; font-size: var(--type-badge); font-weight: 600; line-height: 18px; white-space: nowrap; }
@@ -236,6 +271,20 @@ export const MOCKUPS_HEADERS = `
   X-Robots-Tag: noindex
 `;
 
+/** Appends the mock-ups' rule to the built `_headers`, once. */
+function appendMockupsHeaders(dir: string | undefined) {
+  if (!dir) return;
+  const headers = join(dir, "_headers");
+  if (!existsSync(headers) || !readFileSync(headers, "utf8").includes(MOCKUPS_HEADERS)) appendFileSync(headers, MOCKUPS_HEADERS);
+}
+
+/** The header rule on its own, for a build that copies `public/` into the same folder after the mock-ups' build
+ * (the catalogue board's second build, vite.config.ts): that copy writes the editor's `_headers` again and the rule
+ * is gone, so every mock-up with a script was blocked by the editor's policy. */
+export function mockupsHeaders(): Plugin {
+  return { name: "ase-mockups-headers", apply: "build", writeBundle: ({ dir }) => appendMockupsHeaders(dir) };
+}
+
 export function mockups(root: string): Plugin {
   return {
     name: "ase-mockups",
@@ -245,13 +294,16 @@ export function mockups(root: string): Plugin {
       for (const { map, file, path } of files) this.emitFile({ type: "asset", fileName: `mockups/${map}/${file}`, source: readFileSync(path) });
       const tickets = buildTickets(root, files);
       const shipping = mockupShipping(files, tickets, ticketsOnMain(root, tickets));
-      this.emitFile({ type: "asset", fileName: "mockups/index.html", source: mockupIndex(files, { shipping }) });
+      const pictures = new Set<string>();
+      for (const mockup of files) {
+        const picture = mockupPicturePath(root, mockup);
+        if (!picture.exists || !isReleased(shipping.get(`${mockup.map}/${mockup.file}`)?.label)) continue;
+        this.emitFile({ type: "asset", fileName: `mockups/${mockup.map}/${pictureUrl(mockup.file)}`, source: readFileSync(picture.path) });
+        pictures.add(`${mockup.map}/${mockup.file}`);
+      }
+      this.emitFile({ type: "asset", fileName: "mockups/index.html", source: mockupIndex(files, { shipping, pictures }) });
     },
     // After Vite has copied public/_headers into the output folder; once, even across watch rebuilds.
-    writeBundle({ dir }) {
-      if (!dir) return;
-      const headers = join(dir, "_headers");
-      if (!existsSync(headers) || !readFileSync(headers, "utf8").includes(MOCKUPS_HEADERS)) appendFileSync(headers, MOCKUPS_HEADERS);
-    },
+    writeBundle: ({ dir }) => appendMockupsHeaders(dir),
   };
 }

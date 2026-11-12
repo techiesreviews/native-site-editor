@@ -5,7 +5,7 @@ import { monacoDompurify } from "./vite-monaco-dompurify.ts";
 import { monacoTrim } from "./vite-monaco-trim.ts";
 import { previewRuntime } from "./vite-preview-runtime.ts";
 import { pdfjsAssets } from "./vite-pdfjs-assets.ts";
-import { mockups } from "./vite-mockups.ts";
+import { mockups, mockupsHeaders } from "./vite-mockups.ts";
 
 const monaco = monacoTrim();
 const dompurify = monacoDompurify();
@@ -31,7 +31,8 @@ export default defineConfig({
   // The self-contained browser bundle keeps Mediabunny from splitting shared boot helpers into new chunks.
   resolve: { alias: [{ find: /^mediabunny$/, replacement: fileURLToPath(new URL("./node_modules/mediabunny/dist/bundles/mediabunny.mjs", import.meta.url)) }] },
   // MOCKUPS=1 (`npm run build:preview`) adds the planning mock-ups at /mockups/; production never has them.
-  plugins: catalogueOnly ? [monaco.plugin, dompurify.plugin] : [
+  // The catalogue-only build copies public/ again, which drops the mock-ups' header rule: it adds the rule back.
+  plugins: catalogueOnly ? [monaco.plugin, dompurify.plugin, ...(process.env.MOCKUPS === "1" ? [mockupsHeaders()] : [])] : [
     monaco.plugin, dompurify.plugin, previewRuntime(), pdfjsAssets(),
     ...(process.env.MOCKUPS === "1" ? [mockups(fileURLToPath(new URL(".", import.meta.url)))] : []),
     ...(process.env.CATALOGUE === "1" ? [catalogue()] : []),
