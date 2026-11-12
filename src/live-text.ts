@@ -823,10 +823,10 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
      * the copy, holding two ways into the version, keeps the one that came by more versions (`superseded`). Telling
      * them apart needs GitHub's commit ids. False when the history could not be read or does not reach a version the
      * copy holds within HISTORY_LIMIT versions. `again`: GitHub's newest brings back a text the copy holds (a revert),
-     * which enters as its next occurrence.
+     * which enters as its next occurrence. The copy's version it is (none when it could not enter).
      */
-    async function enter(version: LiveVersion, again = false) {
-      if (!again && holds(version.sha)) return true;
+    async function enter(version: LiveVersion, again = false): Promise<string | undefined> {
+      if (!again && holds(version.sha)) return newestOf(versions(), version.sha);
       /** The copy's version the chain starts from, and a version read that the copy holds some occurrence of. */
       let from: string | undefined, held: LiveVersion | undefined;
       const older = await history(version.sha, before => {
@@ -835,18 +835,18 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         held = from || !holds(before.sha) ? undefined : before;
         return from !== undefined;
       });
-      if (!older?.length) return false;
+      if (!older?.length) return undefined;
       // Read only to tell the occurrence; or the file's first version (or the history's limit): its latest occurrence.
       if (from) older.pop();
       else if (held && held === older.at(-1)) from = newestOf(versions(), held.sha);
-      if (!from) return false;
+      if (!from) return undefined;
       const chain = [version, ...older];
       for (let index = chain.length - 2; index >= 0; index--) {
         const entered = await take(from, chain[index]);
-        if (!entered) return false;
+        if (!entered) return undefined;
         from = entered;
       }
-      return !stopped;
+      return stopped ? undefined : from;
     }
     /** `version` enters on top of the copy's version `from`: a save from this room as its note says (waiting for the
      * note when the commit says it was this room's), else as the outside participant. The copy's version it is now. */
@@ -1126,8 +1126,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
      */
     async function foldOne(heard: LiveCommit) {
       if (!copyId) return false;
-      /** The draft's version as the fold began: a save landing meanwhile moves it on, and the fold leaves it there. */
-      const began = store.get(scope, path)?.baseSha;
+      /** The draft's version as the fold began (and the copy's occurrence of it): a save landing meanwhile moves it on,
+       * also back to an earlier text, and the fold leaves it there. */
+      const began = store.get(scope, path)?.baseSha, beganAt = keptBase;
       const latest = await ports.github?.(scope, path)?.newest?.().catch(() => undefined);
       if (stopped) return false;
       // The notice names no live copies; GitHub's history does (the commit's `Live-Copy` lines). A newer commit than the
@@ -1156,13 +1157,15 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         if (stopped) return false;
         if (parent && holds(parent.sha) && !holds(next.sha) && next.text === text.toString()) noteCopy(nodeOf(parent.sha), next.sha);
       }
-      if (!versionsOf(versions()).has(node) && !await enter(next, again)) return false;
-      if (stopped) return false;
+      const at = versionsOf(versions()).has(node) ? node : await enter(next, again);
+      if (!at || stopped) return false;
+      // GitHub's answer was of an earlier moment (it came late): the version it names came before this tab's.
+      if (again && at !== node) return true;
       const now = store.get(scope, path);
       // A save that landed during the fold moved the draft on to a newer version: it stays there (`saved`).
-      if (now && (now.baseSha === began || now.baseSha === next.sha)) {
+      if (now && ((now.baseSha === began && (beganAt === undefined || keptBase === beganAt)) || now.baseSha === next.sha)) {
         if (now.base !== next.text || now.baseSha !== next.sha) store.acceptBase(scope, path, { text: next.text, baseSha: next.sha });
-        keptBase = versionsOf(versions()).has(node) ? node : nodeOf(next.sha);
+        keptBase = at;
       }
       // A version the copy holds after it (a save noted meanwhile): the draft moves on to it (`moveBase`).
       settle();
