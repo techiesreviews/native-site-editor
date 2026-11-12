@@ -366,8 +366,9 @@ test("a drag whose pointer is cancelled puts the card back, and a zoom mid-drag 
   await page.keyboard.up("Control");
   await page.mouse.move(at.x + 41, at.y + 20);
   const after = (await title.boundingBox())!;
-  expect(at.x + 41).toBeGreaterThanOrEqual(after.x);
-  expect(at.x + 41).toBeLessThanOrEqual(after.x + after.width);
+  // Within the snap distance (6 px on screen): a neighbour's edge in reach may pull the card that far.
+  expect(at.x + 41).toBeGreaterThanOrEqual(after.x - 6);
+  expect(at.x + 41).toBeLessThanOrEqual(after.x + after.width + 6);
   expect(at.y + 20).toBeGreaterThanOrEqual(after.y - 6);
   expect(at.y + 20).toBeLessThanOrEqual(after.y + after.height + 6);
   await page.mouse.up();
