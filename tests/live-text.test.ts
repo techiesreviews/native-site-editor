@@ -399,6 +399,56 @@ test("a commit bringing back the page's earlier text (a revert, A to B to A) is 
   anna.stop(); lex.stop();
 });
 
+test("a save bringing the page back to its earlier text (A to B to A) puts every tab, and a reload, on that text (am-59)", async () => {
+  // A and B are both saves from the room; then Lex takes B's line out again and saves: GitHub's file is A's text, and
+  // blob sha, again. The copy holds A twice, in GitHub's order, and each save's note stays its own.
+  const line = "<p>Closed Mondays.</p>\n", one = `${base}<p>Fresh daily.</p>\n`, two = `${one}${line}`;
+  const history: LiveVersion[] = [{ sha, text: base }];
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => history.at(-1),
+    before: async function* (of) { for (let at = history.findLastIndex(version => version.sha === of) - 1; at >= 0; at--) yield history[at]; } });
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  const save = async (version: LiveVersion) => {
+    await until(() => anna.text === version.text, "the text shared");
+    const copies = liveSaves.note!(scope, [{ path, content: lex.text }], lex.store);
+    history.push({ ...version, copies });
+    lex.store.markSaved(scope, path, { baseSha: version.sha, original: lex.text });
+    assert.equal(await liveFold(anna.store, key, { ...version, copies }), true);
+    await until(() => anna.store.get(scope, path)?.baseSha === version.sha, "Anna on the saved version");
+  };
+  lex.type(base.length, "<p>Fresh daily.</p>\n");
+  await save({ sha: "1".repeat(40), text: one });
+  lex.type(one.length, line);
+  await save({ sha: "2".repeat(40), text: two });
+  lex.type(one.length, "", line.length);
+  await save({ sha: "1".repeat(40), text: one });
+  await quiet(); await quiet();
+  const short = (version: string) => version[0] + version.slice(40);
+  const ways = liveState(anna.store, key).versions.filter(edge => edge.from).map(edge => `${short(edge.from)}>${short(edge.to)}`).sort();
+  assert.deepEqual(ways, ["1>2", "2>1~1", "a>1"], "A after B is A's second occurrence; A's first stays on the base");
+  for (const [name, at] of [["Lex", lex], ["Anna", anna]] as const) {
+    assert.equal(at.store.get(scope, path)?.baseSha, "1".repeat(40), `${name} on A`);
+    assert.equal(at.store.get(scope, path)?.base, one, `${name}'s base is A's text`);
+    assert.equal(at.text, one, `${name}'s text is A's`);
+  }
+  // Anna reloads with her kept copy: she lands on A, and typing after goes on reaching Lex.
+  await new Promise(resolve => setTimeout(resolve, 400));
+  anna.stop();
+  await quiet();
+  const again = tab(room, anna.text, { keeper: anna.keeper, github, base: one, baseSha: "1".repeat(40) });
+  await until(() => again.yjsLoads === 1, "the copy");
+  await quiet(); await quiet();
+  assert.equal(again.store.get(scope, path)?.baseSha, "1".repeat(40), "the reload is on A");
+  assert.equal(again.text, one);
+  again.type(4, "Warm ");
+  await until(() => lex.text.includes("Warm"), "typing after the reload");
+  assert.equal(lex.text, again.text);
+  assert.equal(times(lex.text, "Mondays"), 0);
+  again.stop(); lex.stop();
+});
+
 test("the copy follows the open file: another file closes the room, and agents alone do not load Yjs", async () => {
   const room = fakeRoom();
   const anna = tab(room);
