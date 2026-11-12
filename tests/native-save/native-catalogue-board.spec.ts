@@ -1547,7 +1547,7 @@ test("a very long mock-up name and map name stay inside their card and area at e
   await expect(area).toBeAttached();
   await expect(label).toHaveAttribute("title", map);
   const zoomOut = page.getByRole("button", { name: "Zoom out" });
-  for (let step = 0; step < 4; step++) {
+  for (let step = 0; step <= 4; step++) {
     const areaBox = await stillBox(area), labelBox = (await label.boundingBox())!;
     expect(labelBox.x + labelBox.width).toBeLessThanOrEqual(areaBox.x + areaBox.width + 1);
     for (const card of await page.locator(".cat-card--plan").all()) {
@@ -1559,7 +1559,7 @@ test("a very long mock-up name and map name stay inside their card and area at e
       expect(name.y + name.height).toBeLessThanOrEqual(box.y + 1);
       expect(name.height / zoom).toBeLessThan(144);
     }
-    await zoomOut.click();
+    if (step < 4) await zoomOut.click();
   }
 });
 
