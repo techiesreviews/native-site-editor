@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 66 Phone editor: one row and one Menu</title>
+<style>
+/* Throwaway sketch for TOOLS-206. Tokens copied from the slim top bar prototype
+   (site-quality 05, which copies src/theme.css), dark pair through light-dark(). */
+:root {
+  color-scheme: light dark;
+  --primary: light-dark(oklch(50% 0.18 262.9), oklch(72% 0.13 262.9));
+  --primary-hover: light-dark(oklch(42.5% 0.18 262.9), oklch(78% 0.12 262.9));
+  --on-primary: light-dark(oklch(98.9% 0.003 275.8), oklch(16% 0.04 262.9));
+  --background: light-dark(oklch(97% 0.019 275.5), oklch(15% 0.025 265));
+  --surface: light-dark(oklch(98.9% 0.003 275.8), oklch(19% 0.03 265));
+  --surface-subtle: light-dark(oklch(95.4% 0.019 275.5), oklch(22% 0.032 265));
+  --text: light-dark(oklch(15.3% 0.06 262.9), oklch(95% 0.01 265));
+  --muted: light-dark(oklch(40.4% 0.045 262.9), oklch(74% 0.03 265));
+  --line: light-dark(oklch(88.3% 0.048 274.7), oklch(30% 0.03 265));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --danger: light-dark(oklch(52% 0.19 27), oklch(72% 0.16 27));
+  --success: light-dark(oklch(52% 0.13 145), oklch(74% 0.14 145));
+  --shadow: 0 12px 32px light-dark(oklch(15.3% 0.06 262.9 / 0.18), oklch(0% 0 0 / 0.5));
+  --focus-ring: 2px solid var(--primary);
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --type-small: 12px;
+  --type-base: 13px;
+  --radius-small: 4px;
+  --radius: 6px;
+  --radius-panel: 8px;
+  --size-compact: 28px;
+  --size-control: 32px;
+  --size-touch: 44px;
+  font: 14px/1.5 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--text);
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 8px 0 24px; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+:is(button, input):focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+svg { display: block; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+[hidden] { display: none !important; }
+
+/* ---------- Presentation page ---------- */
+.head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; max-inline-size: 860px; margin: 0 auto 12px; }
+.head h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.seg { display: inline-flex; padding: 2px; border-radius: var(--radius); background: var(--surface); box-shadow: inset 0 0 0 1px var(--control-line); }
+.seg button { block-size: 28px; padding-inline: 12px; border: 0; border-radius: var(--radius-small); background: transparent; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--current); color: var(--text); font-weight: 600; }
+.tool { block-size: 32px; padding-inline: 12px; border: 0; border-radius: var(--radius); background: var(--surface); box-shadow: inset 0 0 0 1px var(--control-line); }
+.demo { display: flex; flex-wrap: wrap; gap: 8px; max-inline-size: 860px; margin: 0 auto 20px; font-size: var(--type-base); color: var(--muted); align-items: center; }
+.phones { display: flex; flex-wrap: wrap; justify-content: center; gap: 40px; }
+@media (max-width: 860px) and (min-width: 680px) { .phones { gap: 28px; } .phone { zoom: 0.85; } }
+figure { margin: 0; display: grid; gap: 10px; justify-items: center; }
+figcaption { display: grid; justify-items: center; font-size: var(--type-base); color: var(--muted); }
+figcaption b { font-size: 15px; color: var(--text); }
+
+.phone {
+  position: relative;
+  inline-size: 390px;
+  max-inline-size: calc(100vw - 32px);
+  block-size: 844px;
+  border-radius: 40px;
+  overflow: clip;
+  background: var(--background);
+  box-shadow: 0 0 0 10px light-dark(oklch(25% 0.02 265), oklch(8% 0.01 265)), 0 0 0 11px var(--line), var(--shadow);
+  display: grid;
+  font-size: var(--type-base);
+  isolation: isolate;
+}
+
+/* ---------- The user's site (its own look, not the editor's) ---------- */
+.site { background: #0b0a1f; color: #f2f0ff; font-family: Inter, ui-sans-serif, system-ui, sans-serif; min-block-size: 100%; }
+.s-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 24px; background: #0d0b24; }
+.s-head__icons { display: flex; gap: 22px; color: #cfcbe6; }
+.s-avatar { inline-size: 46px; block-size: 46px; border-radius: 30%; padding: 3px; background: conic-gradient(#ff5a2a, #c03aa8, #6a4cff, #ff5a2a); }
+.s-avatar::after { content: "L"; display: grid; place-items: center; block-size: 100%; border-radius: 28%; background: #2b2550; font-weight: 700; font-size: 18px; }
+.s-avatar[data-v="1"] { background: conic-gradient(#2ad1ff, #6a4cff, #2ad1ff); }
+.s-avatar[data-v="2"] { background: conic-gradient(#3ddc84, #1d8f5a, #3ddc84); }
+.s-hero { display: grid; gap: 14px; justify-items: start; padding: 28px 24px 32px; background: radial-gradient(120% 70% at 70% 0%, #3a1426 0%, #0b0a1f 70%); }
+.s-tag { padding: 6px 14px; border-radius: 999px; background: #1d1a44; color: #ff5a3a; font: 500 12px/1.4 var(--font-mono); }
+.s-hero h1 { margin: 4px 0 0; font-size: 37px; line-height: 1.08; font-weight: 800; letter-spacing: -0.02em; }
+.s-hero p { margin: 0; font-size: 17px; line-height: 1.6; color: #b9b4d6; }
+.s-btns { display: grid; gap: 10px; justify-items: start; padding-block-start: 6px; }
+.s-btn { display: inline-block; padding: 10px 20px; border-radius: 4px; font-weight: 700; font-size: 17px; }
+.s-btn--hot { background: #ff4a1c; }
+.s-btn--calm { background: #2e2a6b; }
+.s-videos { display: grid; gap: 16px; padding: 28px 24px 40px; }
+.s-videos h2 { margin: 0; font-size: 24px; font-weight: 800; }
+.s-card { display: grid; gap: 8px; }
+.s-card h3 { margin: 0; font-size: 16px; line-height: 1.35; }
+.s-thumb { aspect-ratio: 16 / 9; border-radius: 6px; background: linear-gradient(135deg, #ff4a1c, #6a2bd9); }
+.s-thumb[data-v="2"] { background: linear-gradient(135deg, #2ad1ff, #2e2a6b); }
+.s-thumb[data-v="3"] { background: linear-gradient(135deg, #3ddc84, #0b0a1f); }
+.s-thumb[data-v="4"] { background: repeating-linear-gradient(45deg, #2b2550 0 10px, #24204a 10px 20px); }
+
+/* ---------- Today ---------- */
+#today { grid-template-rows: auto minmax(0, 1fr) auto; }
+.t-chrome { background: var(--surface); }
+.t-proj { display: flex; align-items: center; gap: 12px; padding: 18px 24px 10px; }
+.t-tile { display: grid; place-items: center; inline-size: 32px; block-size: 32px; border-radius: var(--radius); background: oklch(55% 0.13 295); color: #fff; font-weight: 600; font-size: 15px; }
+.t-proj small { display: block; color: var(--muted); font-size: 11px; line-height: 1.2; }
+.t-proj b { font-size: 14px; }
+.t-row { display: flex; align-items: center; gap: 6px; }
+.t-actions { padding: 6px 24px 10px 52px; }
+.t-ic { display: grid; place-items: center; inline-size: 36px; block-size: 36px; color: var(--muted); }
+.t-ic.dim { opacity: 0.5; }
+.t-split { display: flex; align-items: stretch; margin-inline-start: 8px; block-size: 40px; border-radius: var(--radius-panel); background: var(--background); }
+.t-split span { display: grid; place-items: center; padding-inline: 12px; font-weight: 500; }
+.t-split span + span { border-inline-start: 1px solid var(--line); padding-inline: 12px; }
+.t-page { display: flex; align-items: center; gap: 10px; margin: 6px 16px; block-size: 30px; padding-inline: 14px; border-radius: var(--radius); background: var(--background); }
+.t-blocks { padding: 12px 10px 6px; gap: 0; }
+.t-bp { justify-content: space-between; block-size: 52px; padding-inline: 10px; border-block: 1px solid var(--line); background: var(--surface-subtle); }
+.t-chip { padding: 2px 6px; border-radius: var(--radius-small); background: var(--current); font-weight: 600; font-size: var(--type-small); }
+.t-seg { display: flex; padding: 3px; border-radius: var(--radius); background: var(--hover); }
+.t-seg .t-ic { inline-size: 40px; block-size: 34px; border-radius: var(--radius-small); }
+.t-seg .t-ic.on { background: var(--current); color: var(--text); }
+.t-px { padding: 4px 8px; border-radius: var(--radius); box-shadow: inset 0 0 0 1px var(--line); font-size: var(--type-small); }
+.t-canvas { overflow: auto; overscroll-behavior: contain; }
+.t-foot { display: grid; justify-items: center; gap: 6px; padding: 6px 0 12px; border-block-start: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: var(--type-small); }
+.grabber { inline-size: 36px; block-size: 4px; border-radius: 2px; background: var(--control-line); }
+
+/* ---------- After ---------- */
+#after { grid-template-rows: 48px minmax(0, 1fr); }
+.a-bar {
+  position: relative; z-index: 3;
+  display: flex; align-items: center; gap: 2px;
+  padding-inline: 6px 8px;
+  background: var(--surface);
+  border-block-end: 1px solid var(--line);
+}
+.a-name { display: flex; align-items: center; gap: 8px; min-inline-size: 0; flex: 1; block-size: var(--size-touch); padding-inline: 6px 8px; border: 0; border-radius: var(--radius); background: transparent; text-align: start; }
+.a-name .words { display: grid; min-inline-size: 0; line-height: 1.2; }
+.a-name small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a-name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile { display: grid; place-items: center; inline-size: 26px; block-size: 26px; border-radius: var(--radius-small); background: var(--primary); color: var(--on-primary); font-weight: 600; font-size: var(--type-small); flex: none; }
+.caret { color: var(--muted); }
+.icon-button { display: inline-grid; place-items: center; inline-size: var(--size-touch); block-size: var(--size-touch); padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); flex: none; }
+.icon-button:disabled { opacity: 0.4; cursor: default; }
+.icon-button[aria-expanded="true"] { background: var(--current); color: var(--text); }
+.a-name:active, .icon-button:not(:disabled):active { background: var(--hover); }
+.save {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  block-size: 32px; padding-inline: 10px 12px; margin-inline: 4px;
+  border: 0; border-radius: var(--radius);
+  background: var(--primary); color: var(--on-primary); font-weight: 500; white-space: nowrap;
+}
+.save::before { content: ""; inline-size: 7px; block-size: 7px; border-radius: 50%; background: currentColor; opacity: 0.85; }
+.save[data-state="saved"] { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--control-line); }
+.save[data-state="saved"]::before { background: var(--success); opacity: 1; }
+.save[data-state="busy"] { opacity: 0.75; }
+
+.a-canvas { position: relative; overflow: auto; overscroll-behavior: contain; padding-block-end: var(--cover, 0px); transition: padding 250ms ease-out; }
+.a-canvas .site { transform-origin: 0 0; }
+#after [data-text] { outline: none; cursor: text; }
+#after .is-sel { outline: 2px solid var(--primary) !important; outline-offset: 3px; border-radius: 2px; }
+#after .is-new { animation: mark 1200ms ease-out; }
+@keyframes mark { from { box-shadow: 0 0 0 6px color-mix(in oklch, var(--primary) 55%, transparent); } to { box-shadow: 0 0 0 6px transparent; } }
+
+/* The content edit bar, docked at the foot (riding on the keyboard while typing) */
+.editbar {
+  position: absolute; z-index: 4; inset-inline: 0; inset-block-end: var(--kb, 0px);
+  display: flex; align-items: center; gap: 2px;
+  block-size: 52px; padding-inline: 8px;
+  background: var(--surface); border-block-start: 1px solid var(--line);
+  overflow-x: auto; scrollbar-width: none;
+  transition: inset-block-end 250ms cubic-bezier(.32,.72,0,1);
+}
+.chip { flex: none; padding: 4px 10px; margin-inline-end: 6px; border-radius: var(--radius); background: var(--current); font-weight: 600; }
+.text-button { flex: none; block-size: var(--size-touch); padding-inline: 12px; border: 0; border-radius: var(--radius); background: transparent; font-weight: 500; }
+.text-button:active { background: var(--hover); }
+.editbar .grow { flex: 1; }
+.icon-button.danger { color: var(--danger); }
+.icon-button.ink { color: var(--text); }
+.linkfield { flex: 1; min-inline-size: 0; block-size: 36px; padding-inline: 10px; border: 0; border-radius: var(--radius); background: var(--surface-subtle); box-shadow: inset 0 0 0 1px var(--control-line); font-size: 16px; }
+
+/* A stand-in for the phone keyboard */
+.kbd {
+  position: absolute; z-index: 4; inset-inline: 0; inset-block-end: 0; block-size: 226px;
+  display: grid; align-content: start; gap: 9px; padding: 9px 3px 0;
+  background: light-dark(oklch(86% 0.01 265), oklch(26% 0.01 265));
+  transform: translateY(100%); transition: transform 250ms cubic-bezier(.32,.72,0,1);
+}
+.kbd[data-on] { transform: none; }
+.kbd div { display: flex; justify-content: center; gap: 5px; }
+.kbd i { inline-size: 33px; block-size: 42px; border-radius: 5px; background: light-dark(#fff, oklch(42% 0.01 265)); font: 400 18px/42px system-ui; text-align: center; font-style: normal; color: var(--text); }
+.kbd i.w { inline-size: 190px; font-size: 14px; }
+.kbd i.m { inline-size: 48px; font-size: 13px; background: light-dark(oklch(76% 0.01 265), oklch(34% 0.01 265)); }
+
+/* The one menu: a bottom sheet */
+.scrim { position: absolute; z-index: 5; inset: 0; background: oklch(0% 0 0 / 0.35); opacity: 0; pointer-events: none; transition: opacity 250ms ease-out; }
+.scrim[data-on] { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: absolute; z-index: 6; inset-inline: 0; inset-block-end: 0;
+  max-block-size: 82%; display: grid; grid-template-rows: auto minmax(0, 1fr);
+  background: var(--surface); border-radius: 14px 14px 0 0; box-shadow: var(--shadow);
+  transform: translateY(105%); transition: transform 320ms cubic-bezier(.32,.72,0,1);
+}
+.sheet[data-on] { transform: none; }
+.sheet__top { display: grid; justify-items: center; padding-block: 8px 2px; }
+.sheet__grab { inline-size: 100%; display: grid; place-items: center; block-size: 20px; border: 0; background: transparent; }
+.sheet__body { overflow: auto; padding: 0 8px 20px; }
+.sheet__title { display: flex; align-items: center; gap: 4px; min-block-size: 44px; padding-inline: 4px 8px; font-weight: 600; font-size: 15px; }
+.sheet__title .muted { color: var(--muted); font-weight: 400; font-size: var(--type-base); }
+.rows { display: grid; gap: 2px; }
+.row {
+  display: flex; align-items: center; gap: 12px; inline-size: 100%;
+  min-block-size: var(--size-touch); padding: 4px 10px;
+  border: 0; border-radius: var(--radius); background: transparent; text-align: start;
+}
+button.row:active { background: var(--hover); }
+.row svg.lead { color: var(--muted); }
+.row .label { flex: 1; min-inline-size: 0; }
+.row .end { color: var(--muted); font-size: var(--type-small); display: flex; align-items: center; gap: 4px; }
+.row.is-current { background: var(--current); font-weight: 600; }
+.row .seg button { inline-size: 40px; padding: 0; display: grid; place-items: center; }
+.sep { block-size: 1px; margin: 6px 10px; background: var(--line); }
+.blocks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 4px; }
+.block-tile { display: grid; justify-items: center; gap: 6px; padding: 14px 4px 10px; border: 0; border-radius: var(--radius-panel); background: var(--surface-subtle); box-shadow: inset 0 0 0 1px var(--line); }
+.block-tile:active { background: var(--hover); }
+.code { margin: 4px; padding: 12px; border-radius: var(--radius-panel); background: var(--surface-subtle); font: 12px/1.6 var(--font-mono); color: var(--muted); white-space: pre; overflow: auto; }
+.code b { color: var(--primary); font-weight: 400; }
+.tree .row { min-block-size: 40px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet, .scrim, .kbd, .editbar, .a-canvas { transition: none; }
+  #after .is-new { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+  <symbol id="redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></symbol>
+  <symbol id="history" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5"/><path d="M3.5 3.5v5h5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="caret" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+  <symbol id="menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="rows" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="7" rx="1.5"/><rect x="3.5" y="13" width="17" height="7" rx="1.5"/></symbol>
+  <symbol id="box" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5"/></symbol>
+  <symbol id="heading" viewBox="0 0 24 24"><path d="M6 4v16M18 4v16M6 12h12"/></symbol>
+  <symbol id="text" viewBox="0 0 24 24"><path d="M5 5h14M12 5v14"/></symbol>
+  <symbol id="image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><circle cx="9" cy="10" r="1.6"/><path d="m4 17 5-5 4 4 3-3 4 4"/></symbol>
+  <symbol id="pointer" viewBox="0 0 24 24"><path d="m10 10 10 3.5-4.5 1.8-1.8 4.5z"/><path d="M5 5 7 7M10 3v3M3 10h3M5.5 14.5 7.5 12.5"/></symbol>
+  <symbol id="button" viewBox="0 0 24 24"><rect x="3.5" y="7" width="17" height="10" rx="3"/><path d="M8 12h8"/></symbol>
+  <symbol id="desktop" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></symbol>
+  <symbol id="tablet" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M11 18h2"/></symbol>
+  <symbol id="phone" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/></symbol>
+  <symbol id="link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3A4 4 0 0 0 13 5.3l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+  <symbol id="trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+  <symbol id="pencil" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
+  <symbol id="tree" viewBox="0 0 24 24"><path d="M4 5h7M9 12h7M9 19h7M6 5v14h3M6 12h3"/></symbol>
+  <symbol id="code" viewBox="0 0 24 24"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/></symbol>
+  <symbol id="share" viewBox="0 0 24 24"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5M5 13v7h14v-7"/></symbol>
+  <symbol id="pages" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
+  <symbol id="gear" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></symbol>
+  <symbol id="swap" viewBox="0 0 24 24"><path d="M7 4 3 8l4 4M3 8h14M17 12l4 4-4 4M21 16H7"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
+  <symbol id="burger" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14"/></symbol>
+</svg>
+
+<header class="head">
+  <h1>Editor on a phone</h1>
+  <div class="tools">
+    <div class="seg" role="group" aria-label="Theme">
+      <button type="button" data-theme-set="" aria-pressed="true">System</button>
+      <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+      <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+    </div>
+  </div>
+</header>
+<div class="demo">
+  <span>Try (demo buttons):</span>
+  <button type="button" class="tool" data-demo="heading">Tap the big heading</button>
+  <button type="button" class="tool" data-demo="picture">Tap a picture</button>
+  <button type="button" class="tool" data-demo="menu">Open the menu</button>
+  <button type="button" class="tool" data-demo="reset">Start again</button>
+</div>
+
+<div class="phones">
+  <figure>
+    <div class="phone" id="today" aria-label="Today">
+      <div class="t-chrome" id="todayChrome">
+        <div class="t-proj"><span class="t-tile">T</span><span><small>techiesreviews</small><b>techies-reviews</b></span><svg width="16" height="16" class="caret"><use href="#caret"/></svg></div>
+        <div class="t-row t-actions">
+          <span class="t-ic dim"><svg width="20" height="20"><use href="#undo"/></svg></span>
+          <span class="t-ic dim"><svg width="20" height="20"><use href="#redo"/></svg></span>
+          <span class="t-ic"><svg width="20" height="20"><use href="#history"/></svg></span>
+          <span class="t-split"><span>Publish</span><span><svg width="16" height="16"><use href="#caret"/></svg></span></span>
+        </div>
+        <div class="t-page">Home <svg width="16" height="16"><use href="#caret"/></svg></div>
+        <div class="t-row t-blocks">
+          <span class="t-ic"><svg width="22" height="22"><use href="#rows"/></svg></span>
+          <span class="t-ic"><svg width="22" height="22"><use href="#box"/></svg></span>
+          <span class="t-ic"><svg width="22" height="22"><use href="#heading"/></svg></span>
+          <span class="t-ic"><svg width="22" height="22"><use href="#text"/></svg></span>
+          <span class="t-ic"><svg width="22" height="22"><use href="#image"/></svg></span>
+          <span class="t-ic"><svg width="22" height="22"><use href="#pointer"/></svg></span>
+        </div>
+        <div class="t-row t-bp">
+          <span class="t-chip">body</span>
+          <span class="t-seg">
+            <span class="t-ic on"><svg width="18" height="18"><use href="#desktop"/></svg></span>
+            <span class="t-ic"><svg width="18" height="18"><use href="#tablet"/></svg></span>
+            <span class="t-ic"><svg width="18" height="18"><use href="#phone"/></svg></span>
+          </span>
+          <span class="t-px">434 px</span>
+        </div>
+      </div>
+      <div class="t-canvas" id="todayCanvas"></div>
+      <div class="t-foot" id="todayFoot"><span class="grabber"></span>Page structure and code</div>
+    </div>
+    <figcaption><b>Today</b><span id="todayShare">The page gets about 60% of the screen</span></figcaption>
+  </figure>
+
+  <figure>
+    <div class="phone" id="after" aria-label="After">
+      <header class="a-bar">
+        <button type="button" class="a-name" id="nameBtn" aria-label="Pages"><span class="tile">T</span><span class="words"><small>techies-reviews</small><b id="pageName">Home</b></span><svg width="14" height="14" class="caret"><use href="#caret"/></svg></button>
+        <button type="button" class="icon-button" id="undoBtn" aria-label="Undo" title="Undo" disabled><svg width="20" height="20"><use href="#undo"/></svg></button>
+        <button type="button" class="save" id="publishBtn" data-state="saved">Published</button>
+        <button type="button" class="icon-button" id="menuBtn" aria-label="Menu" title="Menu" aria-expanded="false"><svg width="22" height="22"><use href="#menu"/></svg></button>
+      </header>
+      <main class="a-canvas" id="canvas"></main>
+      <div class="editbar" id="editbar" hidden></div>
+      <div class="kbd" id="kbd" aria-hidden="true"></div>
+      <div class="scrim" id="scrim"></div>
+      <section class="sheet" id="sheet" aria-label="Menu">
+        <div class="sheet__top"><button type="button" class="sheet__grab" id="grab" aria-label="Close menu"><span class="grabber"></span></button></div>
+        <div class="sheet__body" id="sheetBody"></div>
+      </section>
+    </div>
+    <figcaption><b>After</b><span id="afterShare">The page gets about 94% of the screen</span></figcaption>
+  </figure>
+</div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const ic = (id, s = 20, cls = "") => `<svg width="${s}" height="${s}" class="${cls}"><use href="#${id}"/></svg>`;
+
+const SITE = `<div class="site">
+<header class="s-head" data-name="Header" data-kind="box">
+  <div class="s-avatar" data-pic data-name="Logo" data-v="0"></div>
+  <span class="s-head__icons">${ic("moon", 22)}${ic("burger", 24)}</span>
+</header>
+<section class="s-hero" data-name="Hero" data-kind="box">
+  <span class="s-tag" data-text data-name="Tag">WordPress, CSS and AI</span>
+  <h1 data-text data-name="Heading">Build better WorPress sites, one practical video at a time.</h1>
+  <p data-text data-name="Text">Practical tutorials, honest reviews and experiments with WordPress, CSS, AI and MCP. See the tools in action, then build on what works.</p>
+  <div class="s-btns" data-name="Buttons" data-kind="box">
+    <span class="s-btn s-btn--hot" data-text data-name="Button" data-href="/videos">Explore videos</span>
+    <span class="s-btn s-btn--calm" data-text data-name="Button" data-href="/prebuilts">Browse prebuilts</span>
+  </div>
+</section>
+<section class="s-videos" data-name="Videos" data-kind="box">
+  <h2 data-text data-name="Heading">Latest videos</h2>
+  <article class="s-card" data-name="Card" data-kind="box">
+    <div class="s-thumb" data-pic data-name="Picture" data-v="1"></div>
+    <h3 data-text data-name="Title">Container queries, explained in ten minutes</h3>
+  </article>
+  <article class="s-card" data-name="Card" data-kind="box">
+    <div class="s-thumb" data-pic data-name="Picture" data-v="2"></div>
+    <h3 data-text data-name="Title">I let an AI agent build my WordPress theme</h3>
+  </article>
+</section>
+</div>`;
+
+const phoneEl = $("#after"), canvas = $("#canvas"), editbar = $("#editbar"), kbd = $("#kbd");
+const sheet = $("#sheet"), sheetBody = $("#sheetBody"), scrim = $("#scrim");
+const undoBtn = $("#undoBtn"), publishBtn = $("#publishBtn"), menuBtn = $("#menuBtn");
+
+kbd.innerHTML = ["qwertyuiop", "asdfghjkl", "zxcvbnm"].map((r, i) =>
+  `<div>${i === 2 ? '<i class="m">⇧</i>' : ""}${[...r].map((k) => `<i>${k}</i>`).join("")}${i === 2 ? '<i class="m">⌫</i>' : ""}</div>`
+).join("") + `<div><i class="m">123</i><i class="w">space</i><i class="m">return</i></div>`;
+
+let sel = null, selKind = null, typing = false, mode = "bar";
+let undo = [], pubMark = 0, bp = "phone", page = "Home", shared = false;
+
+function build() {
+  $("#todayCanvas").innerHTML = SITE;
+  canvas.innerHTML = SITE;
+  canvas.querySelectorAll("[data-text]").forEach((el) => (el.contentEditable = "true"));
+  sel = null; undo = []; pubMark = 0; bp = "phone"; page = "Home"; shared = false;
+  $("#pageName").textContent = page;
+  closeSheet(); deselect(); refresh(); applyBp();
+}
+
+/* ---------- Top bar state ---------- */
+function refresh() {
+  undoBtn.disabled = undo.length === 0;
+  if (publishBtn.dataset.state === "busy") return;
+  const dirty = undo.length !== pubMark;
+  publishBtn.dataset.state = dirty ? "dirty" : "saved";
+  publishBtn.textContent = dirty ? "Publish" : "Published";
+}
+function push(step) { if (undo.length < pubMark) pubMark = -1; undo.push(step); refresh(); }
+publishBtn.addEventListener("click", () => {
+  if (publishBtn.dataset.state !== "dirty") return;
+  document.activeElement?.blur();
+  publishBtn.dataset.state = "busy"; publishBtn.textContent = "Publishing…";
+  setTimeout(() => { publishBtn.dataset.state = "dirty"; pubMark = undo.length; refresh(); }, 900);
+});
+undoBtn.addEventListener("pointerdown", (e) => e.preventDefault());
+undoBtn.addEventListener("click", () => {
+  if (document.activeElement?.closest?.("#canvas [data-text]")) commit(document.activeElement);
+  const s = undo.pop(); if (!s) return;
+  if (s.type === "text") s.el.innerHTML = s.html;
+  if (s.type === "remove") s.parent.insertBefore(s.el, s.next && s.next.parentNode === s.parent ? s.next : null);
+  if (s.type === "add") s.el.remove();
+  if (s.type === "pic") s.el.dataset.v = s.v;
+  if (s.type === "link") s.el.dataset.href = s.href;
+  document.activeElement?.blur(); deselect(); refresh();
+});
+
+/* ---------- Selecting and typing ---------- */
+function cover() {
+  const kb = kbd.hasAttribute("data-on") ? kbd.offsetHeight : 0;
+  const bar = editbar.hidden ? 0 : 52;
+  phoneEl.style.setProperty("--kb", kb + "px");
+  canvas.style.setProperty("--cover", kb + bar + "px");
+  return kb + bar;
+}
+function showKbd(on) { kbd.toggleAttribute("data-on", on); cover(); }
+function reveal(el) {
+  requestAnimationFrame(() => {
+    const c = canvas.getBoundingClientRect(), r = el.getBoundingClientRect();
+    const visible = canvas.clientHeight - cover();
+    const top = r.top - c.top + canvas.scrollTop;
+    const want = top - Math.max(16, (visible - r.height) / 2);
+    if (r.top < c.top + 8 || r.bottom > c.top + visible - 8) canvas.scrollTo({ top: want, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  });
+}
+function select(el, kind, isTyping) {
+  if (sel && sel !== el) sel.classList.remove("is-sel");
+  sel = el; selKind = kind; typing = isTyping; mode = "bar";
+  el.classList.add("is-sel");
+  renderBar(); editbar.hidden = false;
+  showKbd(isTyping); reveal(el);
+}
+function deselect() {
+  sel?.classList.remove("is-sel");
+  sel = null; selKind = null; typing = false; editbar.hidden = true; showKbd(false);
+}
+function commit(el) {
+  if (el.dataset.before !== undefined && el.innerHTML !== el.dataset.before) push({ type: "text", el, html: el.dataset.before });
+  el.dataset.before = el.innerHTML;
+}
+canvas.addEventListener("focusin", (e) => {
+  const el = e.target.closest("[data-text]"); if (!el) return;
+  el.dataset.before = el.innerHTML;
+  closeSheet(); select(el, "text", true);
+});
+canvas.addEventListener("focusout", (e) => { const el = e.target.closest("[data-text]"); if (el) commit(el); });
+canvas.addEventListener("input", (e) => { const el = e.target.closest("[data-text]"); if (el && undo.length === pubMark) { publishBtn.dataset.state = "dirty"; publishBtn.textContent = "Publish"; } });
+canvas.addEventListener("click", (e) => {
+  if (e.target.closest("[data-text]")) return;
+  const pic = e.target.closest("[data-pic]");
+  if (pic) { document.activeElement?.blur(); select(pic, "pic", false); return; }
+  const box = e.target.closest("[data-kind='box']");
+  if (box) { document.activeElement?.blur(); select(box, "box", false); return; }
+  deselect();
+});
+
+function renderBar() {
+  const el = sel; if (!el) return;
+  if (mode === "link") {
+    editbar.innerHTML = `<button type="button" class="icon-button" data-act="back" aria-label="Back">${ic("left")}</button>
+      <input class="linkfield" id="linkfield" value="${el.dataset.href || ""}" placeholder="Page or web address" aria-label="Link to">
+      <button type="button" class="icon-button ink" data-act="back" aria-label="Done">${ic("check")}</button>`;
+    const f = $("#linkfield"); const old = el.dataset.href || "";
+    f.addEventListener("input", () => (el.dataset.href = f.value));
+    f.addEventListener("change", () => { if (f.value !== old) push({ type: "link", el, href: old }); });
+    showKbd(true); f.focus(); return;
+  }
+  let h = `<span class="chip">${el.dataset.name}</span>`;
+  if (selKind === "text" && !typing) h += `<button type="button" class="icon-button ink" data-act="type" aria-label="Edit text" title="Edit text">${ic("pencil")}</button>`;
+  if (selKind === "pic") h += `<button type="button" class="text-button" data-act="replace">Replace</button>`;
+  if (selKind !== "box") h += `<button type="button" class="icon-button ink" data-act="link" aria-label="Link" title="Link">${ic("link")}</button>`;
+  h += `<button type="button" class="icon-button danger" data-act="delete" aria-label="Delete" title="Delete">${ic("trash")}</button>`;
+  h += `<span class="grow"></span><button type="button" class="icon-button ink" data-act="done" aria-label="Done" title="Done">${ic("check", 22)}</button>`;
+  editbar.innerHTML = h;
+}
+editbar.addEventListener("pointerdown", (e) => { if (e.target.closest("button")) e.preventDefault(); });
+editbar.addEventListener("click", (e) => {
+  const act = e.target.closest("button")?.dataset.act; if (!act || !sel) return;
+  const el = sel;
+  if (act === "done") { document.activeElement?.blur(); deselect(); }
+  if (act === "type") { el.focus(); placeEnd(el); }
+  if (act === "link") { if (document.activeElement === el) commit(el); mode = "link"; renderBar(); }
+  if (act === "back") { document.activeElement?.blur(); mode = "bar"; typing = false; renderBar(); showKbd(false); }
+  if (act === "replace") { push({ type: "pic", el, v: el.dataset.v }); el.dataset.v = String((+el.dataset.v % 4) + 1); }
+  if (act === "delete") {
+    if (document.activeElement === el) commit(el);
+    document.activeElement?.blur();
+    push({ type: "remove", el, parent: el.parentNode, next: el.nextSibling });
+    el.remove(); deselect();
+  }
+});
+function placeEnd(el) { const r = document.createRange(); r.selectNodeContents(el); r.collapse(false); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+
+/* ---------- The one menu ---------- */
+const PAGES = ["Home", "Videos", "Prebuilts", "About"];
+const BLOCKS = [["rows", "Section"], ["box", "Box"], ["heading", "Heading"], ["text", "Text"], ["image", "Picture"], ["button", "Button"]];
+const row = (icon, label, end = ic("right", 16), attrs = "") => `<button type="button" class="row" ${attrs}>${ic(icon, 20, "lead")}<span class="label">${label}</span><span class="end">${end}</span></button>`;
+const title = (t, back = true) => `<div class="sheet__title">${back ? `<button type="button" class="icon-button" data-go="root" aria-label="Back">${ic("left")}</button>` : `<span style="inline-size:8px"></span>`}${t}</div>`;
+
+const VIEWS = {
+  root: () => `${title(`techies-reviews <span class="muted">· ${page}</span>`, false)}<div class="rows">
+    ${row("pages", "Pages", `${page} ${ic("right", 16)}`, 'data-go="pages"')}
+    ${row("plus", "Add a block", undefined, 'data-go="blocks"')}
+    ${row("tree", "Page structure", undefined, 'data-go="tree"')}
+    ${row("code", "Code", undefined, 'data-go="code"')}
+    <div class="row">${ic("phone", 20, "lead")}<span class="label">Screen size</span>
+      <span class="seg" role="group" aria-label="Screen size">${[["phone", "Phone"], ["tablet", "Tablet"], ["desktop", "Desktop"]].map(([k, n]) => `<button type="button" data-bp="${k}" aria-label="${n}" aria-pressed="${bp === k}">${ic(k, 18)}</button>`).join("")}</span></div>
+    ${row("history", "History", undefined, 'data-go="history"')}
+    ${row("share", "Share a preview link", shared ? `${ic("check", 16)} Copied` : "Copy", 'data-share')}
+    <div class="sep"></div>
+    ${row("gear", "Site settings")}
+    ${row("swap", "Switch site")}
+  </div>`,
+  pages: () => `${title("Pages")}<div class="rows">${PAGES.map((p) => `<button type="button" class="row${p === page ? " is-current" : ""}" data-page="${p}">${ic("pages", 20, "lead")}<span class="label">${p}</span></button>`).join("")}
+    ${row("plus", "New page", "")}</div>`,
+  blocks: () => `${title("Add a block")}<div class="blocks">${BLOCKS.map(([i, n]) => `<button type="button" class="block-tile" data-add="${n}">${ic(i, 24)}<span>${n}</span></button>`).join("")}</div>`,
+  tree: () => {
+    const items = [];
+    const walk = (node, depth) => node.querySelectorAll(":scope > *").forEach((c) => {
+      if (c.dataset.name) { items.push([c, depth]); walk(c, depth + 1); } else walk(c, depth);
+    });
+    walk(canvas.querySelector(".site"), 0);
+    const icon = (c) => c.dataset.pic !== undefined ? "image" : c.dataset.kind === "box" ? "box" : c.dataset.name === "Button" ? "button" : /Heading|Title/.test(c.dataset.name) ? "heading" : "text";
+    window.__tree = items.map((x) => x[0]);
+    return `${title("Page structure")}<div class="rows tree">${items.map(([c, d], i) => `<button type="button" class="row" data-pick="${i}" style="padding-inline-start:${10 + d * 18}px">${ic(icon(c), 18, "lead")}<span class="label">${c.dataset.name}</span></button>`).join("")}</div>`;
+  },
+  code: () => `${title("Code")}<pre class="code">&lt;<b>section</b> class="hero"&gt;
+  &lt;<b>span</b> class="tag"&gt;WordPress, CSS and AI&lt;/<b>span</b>&gt;
+  &lt;<b>h1</b>&gt;Build better WorPress sites,
+    one practical video at a time.&lt;/<b>h1</b>&gt;
+  &lt;<b>p</b>&gt;Practical tutorials, honest
+    reviews and experiments…&lt;/<b>p</b>&gt;
+  &lt;<b>div</b> class="buttons"&gt;
+    &lt;<b>a</b> href="/videos"&gt;Explore videos&lt;/<b>a</b>&gt;
+    &lt;<b>a</b> href="/prebuilts"&gt;Browse prebuilts&lt;/<b>a</b>&gt;
+  &lt;/<b>div</b>&gt;
+&lt;/<b>section</b>&gt;</pre>`,
+  history: () => `${title("History")}<div class="rows">
+    ${undo.length !== pubMark ? `<div class="row is-current">${ic("pencil", 20, "lead")}<span class="label">Now</span><span class="end">Not published</span></div>` : ""}
+    <div class="row">${ic("check", 20, "lead")}<span class="label">Today, 14:02</span><span class="end">Published</span></div>
+    <div class="row">${ic("history", 20, "lead")}<span class="label">Today, 09:40</span></div>
+    <div class="row">${ic("history", 20, "lead")}<span class="label">Yesterday, 18:15</span></div></div>`,
+};
+function openSheet(view = "root") {
+  document.activeElement?.blur(); deselect();
+  sheetBody.innerHTML = VIEWS[view](); sheetBody.scrollTop = 0;
+  sheet.setAttribute("data-on", ""); scrim.setAttribute("data-on", "");
+  menuBtn.setAttribute("aria-expanded", "true");
+}
+function closeSheet() {
+  sheet.removeAttribute("data-on"); scrim.removeAttribute("data-on");
+  menuBtn.setAttribute("aria-expanded", "false");
+}
+menuBtn.addEventListener("click", () => (sheet.hasAttribute("data-on") ? closeSheet() : openSheet()));
+$("#nameBtn").addEventListener("click", () => openSheet("pages"));
+scrim.addEventListener("click", closeSheet);
+$("#grab").addEventListener("click", closeSheet);
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (sheet.hasAttribute("data-on")) closeSheet();
+  else if (sel) { document.activeElement?.blur(); typing = false; renderBar(); showKbd(false); }
+});
+sheetBody.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.go) { sheetBody.innerHTML = VIEWS[b.dataset.go](); sheetBody.scrollTop = 0; return; }
+  if (b.dataset.bp) { bp = b.dataset.bp; applyBp(); sheetBody.innerHTML = VIEWS.root(); return; }
+  if (b.hasAttribute("data-share")) { shared = true; sheetBody.innerHTML = VIEWS.root(); return; }
+  if (b.dataset.page) { page = b.dataset.page; $("#pageName").textContent = page; closeSheet(); return; }
+  if (b.dataset.pick) { const el = window.__tree[+b.dataset.pick]; closeSheet(); setTimeout(() => select(el, el.dataset.pic !== undefined ? "pic" : el.dataset.kind === "box" ? "box" : "text", false), 200); return; }
+  if (b.dataset.add) { addBlock(b.dataset.add); }
+});
+function addBlock(kind) {
+  const site = canvas.querySelector(".site");
+  const wrap = document.createElement("div");
+  const make = {
+    Section: `<section class="s-videos" data-name="Section" data-kind="box"><h2 data-text data-name="Heading">New section</h2></section>`,
+    Box: `<div class="s-videos" data-name="Box" data-kind="box" style="min-block-size:80px"></div>`,
+    Heading: `<h2 data-text data-name="Heading" style="margin:0;padding:20px 24px;font-size:24px">New heading</h2>`,
+    Text: `<p data-text data-name="Text" style="margin:0;padding:12px 24px;color:#b9b4d6">New text</p>`,
+    Picture: `<div style="padding:12px 24px"><div class="s-thumb" data-pic data-name="Picture" data-v="4"></div></div>`,
+    Button: `<div style="padding:12px 24px"><span class="s-btn s-btn--hot" data-text data-name="Button" data-href="">New button</span></div>`,
+  }[kind];
+  wrap.innerHTML = make;
+  const el = wrap.firstElementChild;
+  el.querySelectorAll("[data-text]").forEach((t) => (t.contentEditable = "true"));
+  if (el.dataset.text !== undefined) el.contentEditable = "true";
+  site.append(el);
+  push({ type: "add", el });
+  closeSheet();
+  const target = el.querySelector("[data-pic]") || el.querySelector("[data-text]") || el;
+  const k = target.dataset.pic !== undefined ? "pic" : target.dataset.text !== undefined ? "text" : "box";
+  setTimeout(() => { target.classList.add("is-new"); select(target, k, false); setTimeout(() => target.classList.remove("is-new"), 1300); }, 250);
+}
+function applyBp() {
+  const site = canvas.querySelector(".site"); if (!site) return;
+  const w = { phone: 0, tablet: 768, desktop: 1280 }[bp];
+  site.style.width = w ? w + "px" : ""; site.style.zoom = w ? canvas.clientWidth / w : "";
+}
+
+/* ---------- Page tools ---------- */
+document.querySelectorAll("[data-theme-set]").forEach((b) => b.addEventListener("click", () => {
+  const t = b.dataset.themeSet;
+  if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  document.querySelectorAll("[data-theme-set]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+}));
+document.querySelectorAll("[data-demo]").forEach((b) => b.addEventListener("click", () => {
+  const d = b.dataset.demo;
+  if (d === "reset") return build();
+  if (d === "menu") return openSheet();
+  closeSheet();
+  if (d === "heading") { const h = canvas.querySelector("h1"); if (h) { h.focus({ preventScroll: true }); placeEnd(h); } }
+  if (d === "picture") { const p = canvas.querySelector(".s-thumb"); if (p) select(p, "pic", false); }
+}));
+
+function shares() {
+  const total = $("#today").clientHeight;
+  const tChrome = $("#todayChrome").offsetHeight + $("#todayFoot").offsetHeight;
+  $("#todayShare").textContent = `Editor bars take ${tChrome} px · the page gets ${Math.round(100 * (1 - tChrome / total))}%`;
+  const aBar = 48;
+  $("#afterShare").textContent = `Editor bar takes ${aBar} px · the page gets ${Math.round(100 * (1 - aBar / total))}%`;
+}
+build(); shares();
+</script>
+</body>
+</html>

@@ -6,7 +6,7 @@ blocked_by: []
 ---
 # Design board 01: the canvas arranges freely (Orbit TOOLS-215, slice 1)
 
-Lex (2026-11-12): "I want a full real experience of the designs we already have and use, and be able to, like in Figma, drag things around." Approved sketch: fleet inbox `editor-TOOLS-215-design-canvas-sketch-approved-2026-11-12.html`.
+Lex (2026-11-12): "I want a full real experience of the designs we already have and use, and be able to, like in Figma, drag things around." Approved sketch: fleet inbox `editor-TOOLS-215-design-canvas-sketch-approved-2026-11-12.html` (copy: [design-board-canvas.html](../../../wayfinder/atomic-catalogue/prototypes/design-board-canvas.html)).
 
 ## What
 On the catalogue board (catalogue.html, preview editor only), every card is dragged by its title to wherever suits; it snaps to the edges and centres of the other cards with a guide; Escape during a drag puts it back; the arrow keys nudge the selected card (Shift: 10); the right panel's Place section shows and types its X and Y; places are remembered in this browser. Fit covers moved cards. Each card names its files (`data-files`) and stylesheet (`data-css`) and is an article named by its title, and a frame's stage names its files, so a T3 Code preview annotation names the exact part and its CSS file.
