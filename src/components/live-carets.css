@@ -186,6 +186,9 @@
    one shows but takes no press, and one that only touches a control, or whose press area does, gives the area up. */
 .live-carets-page .live-caret[data-over-bar="circle"] .live-caret__mark { pointer-events: none; }
 .live-carets-page .live-caret[data-over-bar="pad"] .live-caret__mark::after { display: none; }
+/* The press target is then the circle alone, below the 24 px (44 px on touch) of the others, on purpose: its press area is
+   what would take the control's press. A tag the user opened over a control takes presses while it is open (pointer on it,
+   or focus in it); moving away or Escape closes it. */
 .live-carets-page .live-caret-tint {
   position: absolute;
   border-radius: 2px;
