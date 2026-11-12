@@ -35,8 +35,8 @@ export interface Plans { areas: PlanArea[]; mockups: PlanMockup[] }
 
 export const isPlan = (entry: { area: string }): entry is PlanMockup => entry.area.startsWith("plan:");
 
-/** A text is an address on the site's own mock-ups. */
-const ownAddress = (value: unknown): value is string => typeof value === "string" && value.startsWith("/mockups/") && !value.includes("//");
+/** A text is a path on this site under /mockups/ (never another site, never a way up out of it). */
+const ownAddress = (value: unknown): value is string => typeof value === "string" && value.startsWith("/mockups/") && !value.includes("//") && !value.includes("\\") && !value.split("/").includes("..");
 const text = (value: unknown): value is string => typeof value === "string" && value !== "";
 
 /** The areas and cards from `/mockups/board.json`; anything that is not as the build writes it is left out. */

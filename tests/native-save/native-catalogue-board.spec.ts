@@ -1413,7 +1413,7 @@ test("the Editor screen's options reach its frames: the page's name and the phon
 // The planning mock-ups (TOOLS-218): what the preview build writes to /mockups/board.json becomes one area per map and one
 // card per mock-up, with its label, its picture when it has one, and a link that opens it. The test server has no such file
 // (it serves the editor through Vite), so these tests answer for it.
-const onePixelWebp = Buffer.from("UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==", "base64");
+const onePixelWebp = Buffer.from("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA", "base64");
 const PLANS = { maps: [
   { map: "atomic-catalogue", mockups: [
     { file: "08-board.html", title: "08 The board, with its parts", label: "live", labelName: "Live", tickets: "tickets 05, 07", href: "/mockups/atomic-catalogue/08-board.html", picture: "/mockups/atomic-catalogue/agreed/08-board.webp" },
@@ -1441,10 +1441,13 @@ test("each mock-up of the mock-ups page is a card in its map's area, with its la
   // A card off screen is not drawn (the board culls it), so each is looked at from the outline.
   await flyTo(page, "08 The board, with its parts");
   await expect(live.locator(".cat-card__title")).toHaveText("08 The board, with its parts");
+  await expect(live.locator(".cat-card__title")).toHaveAttribute("title", "08 The board, with its parts");
   await expect(live.locator(".cat-plan__label")).toHaveText("Live");
   await expect(live.locator(".cat-plan__label")).toHaveClass(/cat-plan__label--live/);
   await expect(live.locator(".cat-plan__tickets")).toHaveText("tickets 05, 07");
   await expect(live.locator("img.cat-plan__picture")).toHaveAttribute("src", "/mockups/atomic-catalogue/agreed/08-board.webp");
+  // It really loads on the board's page (its content policy lets the site's own pictures in).
+  await expect.poll(() => live.locator("img.cat-plan__picture").evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   const open = live.getByRole("link", { name: "Open mock-up: 08 The board, with its parts" });
   await expect(open).toHaveText("Open mock-up");
   await expect(open).toHaveAttribute("href", "/mockups/atomic-catalogue/08-board.html");
