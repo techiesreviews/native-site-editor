@@ -90,7 +90,8 @@ async function editorScreen(values: Values): Promise<HTMLElement> {
   const frameHost = document.createElement("div");
   frameHost.className = "preview-frame-host";
   const frame = document.createElement("iframe");
-  frame.className = "preview-frame native-preview-frame";
+  // The sample site is a picture of a page: the pointer and the wheel go on to the board (zoom and pan over it too).
+  frame.className = "preview-frame native-preview-frame cat-sample-site";
   frame.title = "Native site preview";
   frame.setAttribute("sandbox", "");
   frame.srcdoc = SAMPLE_SOURCE.replace('<link rel="stylesheet" href="/style.css">', `<style>${SAMPLE_STYLE}</style>`);
@@ -110,11 +111,19 @@ async function editorScreen(values: Values): Promise<HTMLElement> {
 
   // Once on the page (the phone's sheet and the sidebar's handle measure the workspace they join): the phone's top
   // bar where the frame is phone-wide, as the editor loads it (workspace-mount.ts), and the sidebar's resize handle.
+  let sidebar: ReturnType<typeof mountSidebarResize> | undefined, gone = false;
   requestAnimationFrame(() => {
-    if (!app.isConnected) return;
-    mountSidebarResize(app.querySelector<HTMLElement>(".workspace")!, app.querySelector<HTMLElement>(".sidebar")!);
+    if (gone || !app.isConnected) return;
+    sidebar = mountSidebarResize(app.querySelector<HTMLElement>(".workspace")!, app.querySelector<HTMLElement>(".sidebar")!);
     if (matchMedia("(max-width: 650px)").matches) void phoneTopBar(app, values, Boolean(values.menu));
   });
+  // Drawn again with other options (frame.ts): the old screen's parts stop listening.
+  app.addEventListener("cat-redraw", () => {
+    gone = true;
+    canvas.destroy();
+    structure.destroy();
+    sidebar?.dispose();
+  }, { once: true });
   return app;
 }
 
