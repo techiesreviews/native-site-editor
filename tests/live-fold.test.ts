@@ -128,6 +128,23 @@ test("where both changed words right next to each other, no word is glued to ano
   }
 });
 
+test("two clashes far apart on one page each end as mergeText's: GitHub's words show, the typist's one Undo away (am-59)", async () => {
+  // About 1.7 KB: the two clashes are too far apart to be matched as one stretch.
+  const filler = Array.from({ length: 36 }, (_, index) => `<p>Line ${index} of the page, unchanged by anyone.</p>\n`).join("");
+  const base = `<p>Open Tuesday to Saturday</p>\n${filler}<p>Bakes Monday to Friday</p>\n`;
+  const mine = base.replace("to Saturday", "to").replace("to Friday", "to");
+  const theirs = base.replace("Tuesday to", "Tuesday").replace("Monday to", "Monday");
+  const merged = mergeText(base, mine, theirs);
+  assert.ok(base.length > 1_600 && merged.clashed);
+  const doc = await copyOf(base), own = 7;
+  const typed = type(doc, base, mine, own);
+  Y.applyUpdate(doc, await outside(doc, theirs));
+  const { settled, back } = settle(doc, own, typed);
+  assert.equal(settled, merged.text);
+  assert.ok(settled.includes("Saturday") && settled.includes("Friday"), "GitHub kept Saturday and Friday: this tab's taking them out is undone");
+  assert.ok(back, "the words this tab took out come back");
+});
+
 test("two tabs putting back the same word write the same bytes, and it shows once", async () => {
   const base = "<p>rye to Saturday</p>\n", mine = "<p>rye to</p>\n", theirs = "<p>rye Saturday</p>\n";
   const anna = await copyOf(base), lex = await copyOf(base);
