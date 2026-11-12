@@ -332,6 +332,37 @@ test("a dragged card snaps to another's edge with a guide, and nothing else on t
   expect(await icon.boundingBox()).toEqual(iconBefore);
 });
 
+test("a drag whose pointer is cancelled puts the card back, and a zoom mid-drag keeps the card under the pointer", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  await flyTo(page, "Button");
+  const card = page.locator("#card-button"), title = card.locator(".cat-card__title"), board = page.locator(".cat-board");
+  const box = (await title.boundingBox())!;
+  const at = { x: box.x + 6, y: box.y + box.height / 2 };
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 40, at.y + 20, { steps: 4 });
+  await expect(board).toHaveClass(/is-moving/);
+  await page.getByRole("region", { name: "Canvas" }).evaluate((canvas) => canvas.dispatchEvent(new PointerEvent("pointercancel", { pointerId: 1, bubbles: true })));
+  await expect(board).not.toHaveClass(/is-moving/);
+  await expect(card).not.toHaveAttribute("style", /translate/);
+  expect(await page.evaluate(() => localStorage.getItem("catalogue:places"))).toBeNull();
+  await page.mouse.up();
+
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 40, at.y + 20, { steps: 4 });
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, 200);
+  await page.keyboard.up("Control");
+  await page.mouse.move(at.x + 41, at.y + 20);
+  const after = (await title.boundingBox())!;
+  expect(at.x + 41).toBeGreaterThanOrEqual(after.x);
+  expect(at.x + 41).toBeLessThanOrEqual(after.x + after.width);
+  expect(at.y + 20).toBeGreaterThanOrEqual(after.y - 2);
+  expect(at.y + 20).toBeLessThanOrEqual(after.y + after.height + 2);
+  await page.mouse.up();
+});
+
 test("a tap on a card's title selects it and a double tap brings it close", async ({ page, baseURL }) => {
   await openBoard(page, baseURL);
   await flyTo(page, "Badge");
