@@ -85,6 +85,8 @@ export async function startFrame(shown: NonNullable<ReturnType<typeof frameOf>>)
   const stage = document.createElement("div");
   stage.className = "cat-frame-stage";
   stage.dataset.part = shown.entry.id;
+  // What a preview annotation inside the frame names besides the part: its files.
+  stage.dataset.files = shown.entry.files.join(" ");
   document.body.replaceChildren(stage);
   // The board's Tweak edits, last in the page so they win over the rules they change, also over a part's stylesheet
   // that loads as it first draws.

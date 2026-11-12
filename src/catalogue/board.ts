@@ -1,6 +1,7 @@
 // The catalogue board (atomic catalogue tickets 07, 08 and 05): an endless canvas with areas left to right, each part a
 // frame (a live cell that works, then options in rows, states in columns, light and dark side by side; each card and
-// live cell named by `data-part`, for preview annotations), an outline that flies to a part and ticks
+// live cell named by `data-part`, each card its files by `data-files` and `data-css`, for preview annotations), cards
+// dragged by their titles to wherever suits (places.ts, remembered in this browser), an outline that flies to a part and ticks
 // approved ones, and a right panel with live options, a part's own component CSS file to edit on its live cell
 // (css-file.ts) or else a Tweak section for its CSS values there (tweak.ts), where the part lives, what it is made
 // of, and Approve.
@@ -20,6 +21,7 @@ import { cssSection, type CssFile } from "./css-panel";
 import { force, forceStates, type Forced } from "./force-states";
 import { frameElement, updateFrame, type Theme } from "./frame";
 import { MOCKUPS, type Mockup } from "./mockups";
+import { boundsOf, readPlaces, snapMove, writePlaces, type Box, type Guide, type Point } from "./places";
 import { AREAS, FORCED, PARTS, STATE_NAMES, isPart, untracedLines, type AreaId, type BoardEntry, type Control, type OneOffCounts, type Part, type State, type Values } from "./parts";
 import { readFields, tweakCss, type Edits, type Side, type TweakField } from "./tweak";
 import { tweakSection } from "./tweak-panel";
@@ -31,6 +33,10 @@ const areaName = (id: AreaId) => AREAS.find((area) => area.id === id)!.name;
 const svg = (markup: string, size = 16) => svgElement(sizedSvg(markup, size));
 const clamp = (value: number, low: number, high: number) => Math.min(Math.max(value, low), high);
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+/** The page's storage, or none where the browser refuses it (reading `localStorage` itself can throw). */
+const store: Pick<Storage, "getItem" | "setItem"> = (() => {
+  try { return localStorage; } catch { return { getItem: () => null, setItem: () => undefined }; }
+})();
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
   const element = document.createElement(tag);
@@ -72,6 +78,24 @@ export function startBoard(root: HTMLElement) {
     if (!file) cssFiles.set(entry.id, file = { before: componentText(path) });
     return file;
   };
+  /** Each moved card's offset from its place in its area's flow (places.ts), remembered in this browser. */
+  const places = readPlaces(store);
+  const placeOf = (id: string): Point => places.get(id) ?? { x: 0, y: 0 };
+  function placeCard(article: HTMLElement) {
+    const place = placeOf(article.dataset.id!);
+    article.style.translate = place.x || place.y ? `${place.x}px ${place.y}px` : "";
+  }
+  const cardOf = (id: string) => world.querySelector<HTMLElement>(`#card-${CSS.escape(id)}`);
+  /** Moves a card to `place` (an offset from its flow); `keep`: remembered now, else when the drag ends. */
+  function setPlace(id: string, place: Point, keep = true) {
+    if (place.x || place.y) places.set(id, place); else places.delete(id);
+    const article = cardOf(id);
+    if (article) placeCard(article);
+    placeSel();
+    cull();
+    if (selected === id) syncPlace();
+    if (keep) writePlaces(store, places);
+  }
   /** The text a part's live cell shows of its own CSS file: the last edit without a problem, else the code's. */
   const shownText = (entry: Part, path: string) => { const file = cssFile(entry, path); return file.shown ?? file.before ?? ""; };
 
@@ -87,6 +111,7 @@ export function startBoard(root: HTMLElement) {
         <div class="cat-dots"></div>
         <div class="cat-world"></div>
         <div class="cat-sel" hidden></div>
+        <div class="cat-guides" aria-hidden="true"></div>
         <div class="cat-zoombar" role="toolbar" aria-label="Zoom"></div>
         <div class="cat-search" hidden>
           <label class="cat-search__box"><input class="cat-input cat-search__input" placeholder="Jump to a part" aria-label="Jump to a part" autocomplete="off" spellcheck="false"></label>
@@ -99,7 +124,7 @@ export function startBoard(root: HTMLElement) {
     <div class="cat-probes" hidden><div data-theme="light"></div><div data-theme="dark"></div></div>`;
   const $ = <T extends Element>(selector: string) => root.querySelector<T>(selector)!;
   const viewport = $<HTMLElement>(".cat-viewport"), world = $<HTMLElement>(".cat-world"), dots = $<HTMLElement>(".cat-dots");
-  const selBox = $<HTMLElement>(".cat-sel"), outline = $<HTMLElement>(".cat-outline"), inspector = $<HTMLElement>(".cat-inspector");
+  const selBox = $<HTMLElement>(".cat-sel"), guideLayer = $<HTMLElement>(".cat-guides"), outline = $<HTMLElement>(".cat-outline"), inspector = $<HTMLElement>(".cat-inspector");
   const status = $<HTMLElement>("[role='status']");
   const say = (text: string) => { status.textContent = text; };
   const probes = { light: $<HTMLElement>('.cat-probes [data-theme="light"]'), dark: $<HTMLElement>('.cat-probes [data-theme="dark"]') };
@@ -209,7 +234,14 @@ export function startBoard(root: HTMLElement) {
     article.id = `card-${entry.id}`;
     article.dataset.id = entry.id;
     article.dataset.part = entry.id;
+    // What a preview annotation on the card names: the part, its files and the stylesheet that draws it.
+    article.dataset.files = entry.files.join(" ");
+    const sheet = ("css" in entry ? entry.css : undefined) ?? entry.files.find((file) => file.endsWith(".css"));
+    if (sheet) article.dataset.css = sheet;
+    article.setAttribute("aria-labelledby", `title-${entry.id}`);
+    placeCard(article);
     const title = el("h3", "cat-card__title");
+    title.id = `title-${entry.id}`;
     title.append(el("span", "", entry.name), el("span", "cat-mark"));
     const body = el("div", "cat-card__body");
     if (entry.area === "values") {
@@ -440,6 +472,11 @@ export function startBoard(root: HTMLElement) {
     for (let node: HTMLElement | null = element; node && node !== world; node = node.offsetParent as HTMLElement | null) { x += node.offsetLeft; y += node.offsetTop; }
     return { x, y, w: element.offsetWidth, h: element.offsetHeight };
   }
+  /** Where a card is on the board: its place in its area's flow, moved by its offset (offsets ignore a `translate`). */
+  function cardBox(article: HTMLElement): Box {
+    const rect = rectOf(article), place = placeOf(article.dataset.id ?? "");
+    return { x: rect.x + place.x, y: rect.y + place.y, w: rect.w, h: rect.h };
+  }
   function apply() {
     world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.z})`;
     const grid = 20 * cam.z;
@@ -455,7 +492,7 @@ export function startBoard(root: HTMLElement) {
   function cull() {
     const w = viewport.clientWidth, h = viewport.clientHeight, title = 40;
     for (const article of world.querySelectorAll<HTMLElement>(".cat-card")) {
-      const box = rectOf(article);
+      const box = cardBox(article);
       const left = box.x * cam.z + cam.x, top = (box.y - title) * cam.z + cam.y;
       article.classList.toggle("is-culled", left > w || top > h || left + box.w * cam.z < 0 || top + (box.h + title) * cam.z < 0);
     }
@@ -463,7 +500,7 @@ export function startBoard(root: HTMLElement) {
   function placeSel() {
     const article = selected ? world.querySelector<HTMLElement>(`#card-${CSS.escape(selected)}`) : null;
     if (!article) { selBox.hidden = true; return; }
-    const rect = rectOf(article);
+    const rect = cardBox(article);
     selBox.hidden = false;
     selBox.style.transform = `translate(${rect.x * cam.z + cam.x}px, ${rect.y * cam.z + cam.y}px)`;
     selBox.style.inlineSize = `${rect.w * cam.z}px`;
@@ -519,11 +556,14 @@ export function startBoard(root: HTMLElement) {
     };
     flight = requestAnimationFrame(step);
   }
-  const cardRect = (id: string) => { const r = rectOf(world.querySelector<HTMLElement>(`#card-${CSS.escape(id)}`)!); return { x: r.x, y: r.y - 30, w: r.w, h: r.h + 30 }; };
+  const cardRect = (id: string) => { const r = cardBox(world.querySelector<HTMLElement>(`#card-${CSS.escape(id)}`)!); return { x: r.x, y: r.y - 30, w: r.w, h: r.h + 30 }; };
   const flyToCard = (id: string, maxZ = 1.25) => flyTo(camFor(cardRect(id), maxZ));
   const areaRect = (id: AreaId) => { const r = rectOf(areas.get(id)!); return { x: r.x, y: r.y - 100, w: r.w, h: r.h + 100 }; };
   const flyToArea = (id: AreaId) => flyTo(camFor(areaRect(id), 1, 32));
-  const fitAll = () => flyTo(camFor({ x: 0, y: 0, w: world.offsetWidth, h: world.offsetHeight }, 1, 24));
+  // Everything on the board: the areas, and the cards moved out of them (with room for their titles).
+  const allRect = () => boundsOf([{ x: 0, y: 0, w: world.offsetWidth, h: world.offsetHeight },
+    ...[...world.querySelectorAll<HTMLElement>(".cat-card[data-id]")].map((article) => { const box = cardBox(article); return { ...box, y: box.y - 40, h: box.h + 40 }; })])!;
+  const fitAll = () => flyTo(camFor(allRect(), 1, 24));
   function zoomCentre(factor: number) {
     const w = viewport.clientWidth, h = viewport.clientHeight, next = clamp(cam.z * factor, MIN_Z, MAX_Z), k = next / cam.z;
     flyTo({ z: next, x: w / 2 - (w / 2 - cam.x) * k, y: h / 2 - (h / 2 - cam.y) * k }, 200);
@@ -615,6 +655,36 @@ export function startBoard(root: HTMLElement) {
     element.append(el("h3", "cat-inspector__heading", title), ...children);
     return element;
   }
+  /** Where the card sits on the board, to type exactly; dragging its title or the arrow keys move it too. */
+  function placeSection(entry: Entry) {
+    const fields = el("div", "cat-place");
+    for (const axis of ["x", "y"] as const) {
+      const label = el("label", "cat-control");
+      const input = el("input", "cat-input");
+      input.type = "number";
+      input.step = "1";
+      input.dataset.place = axis;
+      input.addEventListener("input", () => {
+        const article = cardOf(entry.id), value = input.valueAsNumber;
+        if (!article || !Number.isFinite(value)) return;
+        const place = placeOf(entry.id);
+        setPlace(entry.id, { ...place, [axis]: place[axis] + Math.round(value) - cardBox(article)[axis] });
+      });
+      label.append(el("span", "cat-control__label", axis.toUpperCase()), input);
+      fields.append(label);
+    }
+    const place = section("Place", fields);
+    place.dataset.placeSection = "";
+    return place;
+  }
+  /** The Place fields follow the card as it moves, except the one being typed in. */
+  function syncPlace() {
+    const article = selected ? cardOf(selected) : null;
+    if (!article) return;
+    const box = cardBox(article);
+    for (const input of inspector.querySelectorAll<HTMLInputElement>("[data-place]"))
+      if (input !== document.activeElement) input.value = String(Math.round(box[input.dataset.place as "x" | "y"]));
+  }
   function approveSection(entry: Entry) {
     const mark = approvals.approved[entry.id];
     const save = saving.get(entry.id);
@@ -681,10 +751,12 @@ export function startBoard(root: HTMLElement) {
       controls.push(segmented("Colours", [["light", "Light"], ["dark", "Dark"]], now.theme, (theme) => { now.theme = theme as Theme; drawLive(entry); refreshTweak(); }));
     }
     if (controls.length) sections.push(section("Options", ...controls));
+    sections.push(placeSection(entry));
     if (isPart(entry)) sections.push(entry.css ? cssFor(entry, entry.css) : tweakFor(entry, true));
     if (entry.area === "molecules" || entry.area === "organisms" || entry.area === "mockups") sections.push(section("Made of", madeOfList(entry)));
     sections.push(approveSection(entry));
     inspector.replaceChildren(...sections);
+    syncPlace();
   }
   function stateControl(entry: Part, choices: readonly (readonly [State, string])[]) {
     const now = live.get(entry.id)!;
@@ -805,7 +877,7 @@ export function startBoard(root: HTMLElement) {
   document.addEventListener("keydown", (event) => {
     if (typing(event)) { const field = event.composedPath()[0] as HTMLElement; if (event.key === "Escape" && field !== searchInput) field.blur(); return; }
     if (event.key === "/" && !event.metaKey && !event.ctrlKey) { event.preventDefault(); openSearch(); return; }
-    if (event.key === "Escape") { if (root.dataset.sheet) setSheet(""); else select(undefined); return; }
+    if (event.key === "Escape") { if (move) endMove("cancel"); else if (root.dataset.sheet) setSheet(""); else select(undefined); return; }
     // Space pans only from the canvas itself or the page: on a focused button it presses the button.
     if (event.code === "Space" && (event.target === document.body || event.target === viewport)) {
       event.preventDefault();
@@ -813,6 +885,14 @@ export function startBoard(root: HTMLElement) {
       return;
     }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
+    // The arrow keys move the selected card from the canvas, a step of 1 (10 with Shift), as in Figma.
+    const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
+    if (step && selected && !move && (event.target === document.body || event.target === viewport)) {
+      event.preventDefault();
+      const size = event.shiftKey ? 10 : 1, place = placeOf(selected);
+      setPlace(selected, { x: place.x + step[0] * size, y: place.y + step[1] * size });
+      return;
+    }
     if (event.key === "+" || event.key === "=") zoomCentre(1.25);
     else if (event.key === "-") zoomCentre(0.8);
     else if (event.key === "!" || (event.shiftKey && event.code === "Digit1")) fitAll();
@@ -859,6 +939,55 @@ export function startBoard(root: HTMLElement) {
   }, { passive: false });
   for (const type of ["gesturestart", "gesturechange"]) viewport.addEventListener(type, (event) => event.preventDefault());
 
+  // ---------- Moving a card: drag its title; it snaps to the other cards, with guides along the edges it meets ----------
+
+  let move: { id: string; pointer: number; sx: number; sy: number; from: Point; base: Box; others: Box[]; moved: boolean; target: Element } | undefined;
+  function startMove(event: PointerEvent, article: HTMLElement) {
+    stopFlight();
+    const id = article.dataset.id!, from = placeOf(id), box = cardBox(article);
+    const others = [...world.querySelectorAll<HTMLElement>(".cat-card[data-id]")].filter((other) => other !== article).map(cardBox);
+    move = { id, pointer: event.pointerId, sx: event.clientX, sy: event.clientY, from, base: { ...box, x: box.x - from.x, y: box.y - from.y }, others, moved: false, target: event.target as Element };
+    try { viewport.setPointerCapture(event.pointerId); } catch { /* The pointer is gone already. */ }
+  }
+  function moveTo(event: PointerEvent) {
+    if (!move) return;
+    const dx = event.clientX - move.sx, dy = event.clientY - move.sy;
+    if (!move.moved) {
+      if (Math.hypot(dx, dy) <= 4) return;
+      move.moved = true;
+      root.classList.add("is-moving");
+      cardOf(move.id)?.classList.add("is-moving");
+      if (selected !== move.id) select(move.id, false);
+    }
+    const at = snapMove({ ...move.base, x: move.base.x + move.from.x + dx / cam.z, y: move.base.y + move.from.y + dy / cam.z }, move.others, 6 / cam.z);
+    setPlace(move.id, { x: Math.round(at.x - move.base.x), y: Math.round(at.y - move.base.y) }, false);
+    drawGuides(at.guides);
+  }
+  /** `drop` keeps the card where it is, `cancel` (Escape) puts it back; a press that never moved is a tap. */
+  function endMove(outcome: "drop" | "cancel") {
+    if (!move) return;
+    const { id, moved, from, target } = move;
+    move = undefined;
+    drawGuides([]);
+    root.classList.remove("is-moving");
+    cardOf(id)?.classList.remove("is-moving");
+    if (!moved) { if (outcome === "drop") tap(target); return; }
+    if (outcome === "cancel") setPlace(id, from);
+    else { writePlaces(store, places); say(`${byId.get(id)?.name ?? id} moved`); }
+  }
+  /** Guides in screen space, so they stay one pixel at every zoom. */
+  function drawGuides(guides: readonly Guide[]) {
+    guideLayer.replaceChildren(...guides.map((guide) => {
+      const line = el("div", "cat-guide");
+      line.dataset.axis = guide.axis;
+      const at = guide.at * cam.z + (guide.axis === "x" ? cam.x : cam.y);
+      const from = guide.from * cam.z + (guide.axis === "x" ? cam.y : cam.x), length = `${(guide.to - guide.from) * cam.z}px`;
+      line.style.transform = guide.axis === "x" ? `translate(${at}px, ${from}px)` : `translate(${from}px, ${at}px)`;
+      if (guide.axis === "x") line.style.blockSize = length; else line.style.inlineSize = length;
+      return line;
+    }));
+  }
+
   // ---------- Pointers: drag to pan, two fingers to pinch, a tap selects, a double tap fits ----------
 
   const points = new Map<number, { x: number; y: number }>();
@@ -902,6 +1031,10 @@ export function startBoard(root: HTMLElement) {
     const target = event.target as Element;
     if (target.closest(".cat-zoombar, .cat-search")) return;
     if (event.pointerType === "mouse" && event.button !== 0 && event.button !== 1) return;
+    if (move) return;
+    // A card's title is its handle: dragging it moves the card (with Space held, the board pans as anywhere else).
+    const grip = !spaceHeld && event.button === 0 && points.size === 0 ? target.closest<HTMLElement>(".cat-card__title") : null;
+    if (grip?.parentElement?.dataset.id) { startMove(event, grip.parentElement); return; }
     if (!spaceHeld && event.button === 0 && target.closest(".cat-live__stage > *")) { press(target.closest<HTMLElement>(".cat-card[data-id]")); return; }
     stopFlight();
     points.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -916,6 +1049,7 @@ export function startBoard(root: HTMLElement) {
     }
   });
   viewport.addEventListener("pointermove", (event) => {
+    if (move?.pointer === event.pointerId) { moveTo(event); return; }
     if (!points.has(event.pointerId)) return;
     points.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pinch && points.size >= 2) {
@@ -931,6 +1065,7 @@ export function startBoard(root: HTMLElement) {
     drag.lx = event.clientX; drag.ly = event.clientY;
   });
   function endPointer(event: PointerEvent) {
+    if (move?.pointer === event.pointerId) { endMove("drop"); return; }
     if (!points.has(event.pointerId)) return;
     points.delete(event.pointerId);
     if (pinch && points.size < 2) {
