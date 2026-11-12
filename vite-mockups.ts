@@ -185,7 +185,7 @@ function ticketsText(map: string, { tickets }: Shipping): string {
   return names.length ? `${names.length === 1 ? "ticket" : "tickets"} ${names.join(", ")}` : "";
 }
 
-/** A mock-up's label and, after it, the tickets it came from. */
+/** A mock-up's label and, after it, the tickets it came from. The label's colours are also the board's (`.cat-plan__label--*` in src/catalogue/board.css): change them together. */
 function shippingBadge(map: string, state: Shipping): string {
   const from = ticketsText(map, state);
   return `<span class="shipping shipping--${state.label}">${SHIPPING_LABELS[state.label][0]}</span>${from ? ` <span class="tickets">${escapeHtml(from)}</span>` : ""}`;

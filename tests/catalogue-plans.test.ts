@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isPlan, loadPlans, parsePlans } from "../src/catalogue/plans.ts";
+import { PLANS_WAIT_MS, isPlan, loadPlans, parsePlans } from "../src/catalogue/plans.ts";
 
 // The planning mock-ups on the catalogue board (TOOLS-218): /mockups/board.json from the preview build, read into one
 // area per map and one card per mock-up. Anything that is not as the build writes it is left out, so a board served
@@ -32,6 +32,14 @@ test("each map becomes an area and each mock-up a card named by its title, with 
   assert.equal(isPlan({ area: "atoms" }), false);
 });
 
+test("an id holds no space or character an address would escape, so a card's name can be found by aria-labelledby", () => {
+  const plans = parsePlans(JSON.stringify({ maps: [{ map: "my map", mockups: [card("a #1?.html", { href: "/mockups/my%20map/a%20%231%3F.html" })] }] }));
+  assert.deepEqual(plans.areas, [{ id: "plan:my%20map", name: "my map" }]);
+  assert.deepEqual(plans.mockups.map(({ id, area, files }) => ({ id, area, files })),
+    [{ id: "plan:my%20map/a%20%231%3F.html", area: "plan:my%20map", files: ["docs/wayfinder/my map/prototypes/a #1?.html"] }]);
+  assert.ok(plans.mockups.every(({ id }) => !/\s/.test(id)));
+});
+
 test("a text that is not the build's list gives no areas, and a card that is not as written is left out", () => {
   const none = { areas: [], mockups: [] };
   for (const text of ["", "<!doctype html><title>editor</title>", "null", "[]", "{}", '{"maps":{}}', '{"maps":[null,{"map":"","mockups":[]},{"map":"a"}]}']) assert.deepEqual(parsePlans(text), none, text);
@@ -61,6 +69,24 @@ test("the list is read from /mockups/board.json, and a missing or broken one lea
     assert.deepEqual(await loadPlans(), { areas: [], mockups: [] });
     answer(() => { throw new TypeError("offline"); });
     assert.deepEqual(await loadPlans(), { areas: [], mockups: [] });
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+test("a list that never answers is given up on after a few seconds, so the board still opens", async () => {
+  const real = globalThis.fetch;
+  let signal: AbortSignal | null | undefined;
+  // Like the browser's fetch: it settles only when its signal aborts.
+  globalThis.fetch = ((_input: unknown, init?: RequestInit) => new Promise((_resolve, reject) => {
+    signal = init?.signal;
+    signal?.addEventListener("abort", () => reject(signal!.reason));
+  })) as typeof fetch;
+  try {
+    const started = Date.now();
+    assert.deepEqual(await loadPlans(), { areas: [], mockups: [] });
+    assert.ok(signal, "the request carries a time limit");
+    assert.ok(Date.now() - started >= PLANS_WAIT_MS - 100 && Date.now() - started < PLANS_WAIT_MS + 2000);
   } finally {
     globalThis.fetch = real;
   }

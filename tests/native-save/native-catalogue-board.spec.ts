@@ -1510,3 +1510,68 @@ test("/mockups/ opens the board on the mock-up areas; without that, the board op
   await page.goto(`${baseURL}${BOARD}`);
   await inView('.cat-area[data-area="values"]');
 });
+
+test("Open mock-up opens the mock-up in a new tab, and the board's own pointer handling leaves the click alone", async ({ page, baseURL }) => {
+  await openPlans(page, baseURL);
+  await flyTo(page, "08 The board, with its parts");
+  const open = page.locator('.cat-card[data-id="plan:atomic-catalogue/08-board.html"]').getByRole("link", { name: /^Open mock-up/ });
+  const popup = page.waitForEvent("popup");
+  await open.click();
+  expect((await popup).url()).toContain("/mockups/atomic-catalogue/08-board.html");
+});
+
+test("a list that never answers leaves the board opening without the mock-up areas, and a later visit shows them", async ({ page, baseURL }) => {
+  // Held: the request never gets an answer.
+  await page.route("**/mockups/board.json", () => undefined);
+  await page.goto(`${baseURL}${BOARD}`);
+  await expect(page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".cat-area--plan")).toHaveCount(0);
+  // Released: the next visit has them.
+  await page.unroute("**/mockups/board.json");
+  await openPlans(page, baseURL);
+  await expect(page.locator(".cat-area--plan")).toHaveCount(2);
+  // A list that answers with something else (the dev server's own page, an error) is no list.
+  await page.unroute("**/mockups/board.json");
+  await page.route("**/mockups/board.json", (route) => route.fulfill({ status: 500, body: "boom" }));
+  await page.goto(`${baseURL}${BOARD}`);
+  await expect(page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true })).toBeVisible();
+  await expect(page.locator(".cat-area--plan")).toHaveCount(0);
+});
+
+test("a very long mock-up name and map name stay inside their card and area at every zoom", async ({ page, baseURL }) => {
+  const title = `${"Long name ".repeat(20)}end`, map = `a-map-with-a-very-long-name-${"x".repeat(90)}`;
+  const long = { maps: [{ map, mockups: Array.from({ length: 4 }, (_, index) => ({ file: `${index}.html`, title: `${index} ${title}`, label: "planned", labelName: "Planned", tickets: "", href: `/mockups/${map}/${index}.html` })) }] };
+  await page.route("**/mockups/board.json", (route) => route.fulfill({ json: long }));
+  await page.goto(`${baseURL}${BOARD}#plans`);
+  const area = page.locator(".cat-area--plan"), label = area.locator(".cat-area__label");
+  await expect(area).toBeAttached();
+  await expect(label).toHaveAttribute("title", map);
+  const zoomOut = page.getByRole("button", { name: "Zoom out" });
+  for (let step = 0; step < 4; step++) {
+    const areaBox = await stillBox(area), labelBox = (await label.boundingBox())!;
+    expect(labelBox.x + labelBox.width).toBeLessThanOrEqual(areaBox.x + areaBox.width + 1);
+    for (const card of await page.locator(".cat-card--plan").all()) {
+      const box = (await card.boundingBox())!, name = (await card.locator(".cat-card__title").boundingBox())!;
+      // A card is 352 board units wide, so its width on screen gives the zoom; the row gap above it is 144.
+      const zoom = box.width / 352;
+      expect(name.x).toBeGreaterThanOrEqual(box.x - 1);
+      expect(name.x + name.width).toBeLessThanOrEqual(box.x + box.width + 1);
+      expect(name.y + name.height).toBeLessThanOrEqual(box.y + 1);
+      expect(name.height / zoom).toBeLessThan(144);
+    }
+    await zoomOut.click();
+  }
+});
+
+test("on a phone /mockups/ opens the board on the first mock-up, big enough to read", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.route("**/mockups/board.json", (route) => route.fulfill({ json: PLANS }));
+  await page.goto(`${baseURL}${BOARD}#plans`);
+  const first = page.locator('.cat-card[data-id="plan:atomic-catalogue/08-board.html"]'), canvas = page.getByRole("region", { name: "Canvas" });
+  const box = await stillBox(first);
+  const view = (await canvas.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(view.x - 1);
+  expect(box.x + box.width).toBeLessThanOrEqual(view.x + view.width + 1);
+  // Not the whole board shrunk to fit: the card is most of the canvas's width.
+  expect(box.width).toBeGreaterThan(view.width * 0.7);
+});

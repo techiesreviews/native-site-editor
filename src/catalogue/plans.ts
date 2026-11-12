@@ -49,14 +49,15 @@ export function parsePlans(source: string): Plans {
   for (const entry of maps) {
     const { map, mockups } = (entry ?? {}) as { map?: unknown; mockups?: unknown };
     if (!text(map) || !Array.isArray(mockups)) continue;
-    const area: PlanAreaId = `plan:${map}`;
+    // Ids never hold a space (an aria-labelledby id list is split at spaces) or a character an address would escape.
+    const area: PlanAreaId = `plan:${encodeURIComponent(map)}`;
     const cards: PlanMockup[] = [];
     for (const item of mockups) {
       const card = (item ?? {}) as Record<string, unknown>;
       const { file, title, label, labelName, tickets, href, picture } = card;
       if (!text(file) || !text(title) || !PLAN_LABELS.includes(label as PlanLabel) || !text(labelName) || typeof tickets !== "string" || !ownAddress(href)) continue;
       cards.push({
-        id: `plan:${map}/${file}`, area, name: title, files: [`docs/wayfinder/${map}/prototypes/${file}`], defaults: {}, controls: [],
+        id: `plan:${encodeURIComponent(map)}/${encodeURIComponent(file)}`, area, name: title, files: [`docs/wayfinder/${map}/prototypes/${file}`], defaults: {}, controls: [],
         label: label as PlanLabel, labelName, tickets, href, ...(ownAddress(picture) ? { picture } : {}),
       });
     }
@@ -67,10 +68,13 @@ export function parsePlans(source: string): Plans {
   return plans;
 }
 
-/** The build's list of mock-ups; none where there is no list (the dev server answers with its own page). */
+/** How long the board waits for the list before it opens without the mock-ups. */
+export const PLANS_WAIT_MS = 3000;
+
+/** The build's list of mock-ups; none where there is no list (the dev server answers with its own page), or it is slow or fails. */
 export async function loadPlans(): Promise<Plans> {
   try {
-    const response = await fetch("/mockups/board.json");
+    const response = await fetch("/mockups/board.json", { signal: AbortSignal.timeout(PLANS_WAIT_MS) });
     return response.ok ? parsePlans(await response.text()) : { areas: [], mockups: [] };
   } catch {
     return { areas: [], mockups: [] };
