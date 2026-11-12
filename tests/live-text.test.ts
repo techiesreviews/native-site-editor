@@ -18,6 +18,7 @@ import { writeAs, type LiveAuthor } from "../src/live-author";
 import { createSaveAuthors, type SaveAuthors } from "../src/save-authors";
 import { commitMessage } from "../worker/publish";
 import { liveSaves } from "../src/live-saves";
+import { foldFile } from "../src/outside-merge";
 
 const scope: DraftScope = { account: "lex", repoId: 501, repo: "lex/starter", branch: "main" };
 const path = "index.html";
@@ -336,7 +337,9 @@ test("Save right after a page opens again waits until it caught up with the room
   await liveSaves.ready?.(scope, [path], again.store);
   assert.ok(Date.now() - started < LIVE_TEXT_CATCH_UP_MS, "caught up before the wait ran out");
   const text = again.text, copies = liveSaves.note!(scope, [{ path, content: text }], again.store);
-  assert.deepEqual(copies, [liveState(anna.store, key).copy], "the room's copy noted the save");
+  // Each entry names the room's copy, then the save's record (TOOLS-216): the copy as saved, a Yjs snapshot.
+  assert.deepEqual(copies.map(entry => entry.slice(0, 40)), [liveState(anna.store, key).copy], "the room's copy noted the save");
+  assert.match(copies[0], /^[a-f0-9]{40} [A-Za-z0-9_-]+$/, "with its record");
   saved.text = text;
   again.store.markSaved(scope, path, { baseSha: saved.sha, original: text });
   // Anna hears the commit: it names the room's copy, so it enters as the room's own save, not as an outside change.
@@ -1683,6 +1686,73 @@ test("a tab back on a page with what it typed while away puts back only its own 
   anna.stop(); lex.stop();
 });
 
+test("a tab back with a copy kept from before the room's copy adds only its own words, none another tab saved meanwhile (TOOLS-216)", async () => {
+  // Anna and Lex share a copy. Anna types two words; Lex saves the first while Anna's connection is out, and Anna types
+  // a third beside them. The room then starts a new copy from that save. Anna comes back with her kept copy.
+  const v1 = { sha: "c".repeat(40), text: "" };
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => (v1.text ? v1 : { sha, text: base }),
+    before: async function* (of) { if (of === v1.sha) yield { sha, text: base }; } });
+  const room = fakeRoom();
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  const at = base.indexOf("seven");
+  anna.type(at, "«1» «2» ");
+  await until(() => lex.text.includes("«2»"), "Anna's words at Lex's");
+  anna.socket.me.cut = true;
+  const saved = lex.text, copies = liveSaves.note!(scope, [{ path, content: saved }], lex.store);
+  lex.store.markSaved(scope, path, { baseSha: v1.sha, original: saved });
+  Object.assign(v1, { text: saved, copies });
+  anna.type(anna.text.indexOf("«2»"), "«3» ");
+  anna.stop(); lex.stop();
+  await quiet();
+  // A new copy of the room, from the saved version, with someone typing right beside Anna's words.
+  const sam = tab(room, saved, { base: saved, baseSha: v1.sha, github, account: "sam" }), tom = tab(room, saved, { base: saved, baseSha: v1.sha, github, account: "tom" });
+  await until(() => sam.yjsLoads + tom.yjsLoads === 2, "the room's new copy");
+  await quiet();
+  sam.type(sam.text.indexOf("«1»"), "«4» ");
+  await until(() => tom.text.includes("«4»"), "Sam's word at Tom's");
+  const back = tab(room, anna.text, { keeper: anna.keeper, github });
+  await until(() => back.text === sam.text && back.text.includes("«3»"), "Anna back on the room's copy, her word in");
+  await quiet();
+  assert.equal(back.text, sam.text);
+  assert.equal(tom.text, sam.text);
+  assert.deepEqual(["«1»", "«2»", "«3»", "«4»"].map(word => times(back.text, word)), [1, 1, 1, 1], back.text);
+  assert.equal(liveState(back.store, draftKey(scope, path)).copy, liveState(sam.store, draftKey(sam.scope, path)).copy, "one copy");
+  back.stop(); sam.stop(); tom.stop();
+});
+
+test("a tab on another page while a commit lands takes it into its kept copy: back on the page, GitHub's words and its own typing are there once (TOOLS-216)", async () => {
+  const v1 = { sha: "c".repeat(40), text: base.replace("seven", "«9» seven") };
+  let landed = false;
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => (landed ? v1 : { sha, text: base }),
+    before: async function* (of) { if (of === v1.sha) yield { sha, text: base }; } });
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.openFile.value = "about.html";
+  await quiet();
+  // The commit lands; Anna's tab hears it while on the other page (as src/outside-merge.ts `foldIn` does: the live room
+  // first, else the draft), and so does Lex's.
+  landed = true;
+  const hear = async (who: ReturnType<typeof tab>) => {
+    if (liveState(who.store, key).shared && await liveFold(who.store, key, { ...v1, author: "Sam · GitHub" }) !== undefined) return;
+    foldFile(who.store, scope, path, undefined, v1.text, v1.sha, () => key, "Sam · GitHub");
+  };
+  await hear(anna);
+  await hear(lex);
+  // Still away, Anna's draft changes right beside GitHub's new word (an agent writing into it, say).
+  anna.type(anna.text.indexOf("«9»"), "«1» ");
+  anna.openFile.value = path;
+  await until(() => anna.text === lex.text && lex.text.includes("«1»"), "Anna back, one text");
+  await quiet();
+  assert.equal(anna.text, lex.text);
+  assert.deepEqual(["«1»", "«9»"].map(word => times(lex.text, word)), [1, 1], lex.text);
+  assert.equal(anna.store.get(scope, path)?.baseSha, v1.sha);
+  anna.stop(); lex.stop();
+});
+
 test("a joiner's unsaved changes in two places go in word by word: what someone typed between them stays, once", async () => {
   const room = fakeRoom();
   const anna = tab(room);
@@ -1694,7 +1764,7 @@ test("a joiner's unsaved changes in two places go in word by word: what someone 
   anna.stop(); lex.stop();
 });
 
-test("a page whose room never answers counts as shared only for the catch-up wait, so outside changes fold in again", () => {
+test("a page whose room never answers counts as shared only for the catch-up wait, so outside changes fold in again", async () => {
   const time = fakeTimers(), store = createDraftStore();
   store.open(scope, path, { text: base, baseSha: sha });
   let room: LiveRoomOptions | undefined;
@@ -1703,6 +1773,8 @@ test("a page whose room never answers counts as shared only for the catch-up wai
   const key = draftKey(scope, path);
   assert.equal(liveState(store, key).shared, true, "the room has not said who is here yet");
   time.advance(LIVE_TEXT_CATCH_UP_MS);
+  // It looks for a copy it kept from before (a commit then goes into that copy); with none, it is not shared.
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(liveState(store, key).shared, false, "no answer: not shared");
   // A slow room that answers later, with someone else in it: shared again.
   room!.onMembers?.(new Map([["2", "editor"]]));

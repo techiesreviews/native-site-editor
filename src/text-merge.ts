@@ -45,11 +45,11 @@ function matchLines(a: readonly number[], b: readonly number[]): [number, number
   return pairs.reverse();
 }
 
-/** What `side` changed of `base` (both as line ids), with `lines` the side's own lines. */
-function hunks(base: readonly number[], side: readonly number[], lines: readonly string[]): Hunk[] {
+/** What `side` changed of `base` (both as line ids), with `lines` the side's own lines; `match` pairs their equal parts. */
+function hunks(base: readonly number[], side: readonly number[], lines: readonly string[], match = matchLines): Hunk[] {
   const out: Hunk[] = [];
   let i = 0, j = 0;
-  for (const [bi, si] of [...matchLines(base, side), [base.length, side.length] as [number, number]]) {
+  for (const [bi, si] of [...match(base, side), [base.length, side.length] as [number, number]]) {
     if (bi > i || si > j) out.push({ start: i, end: bi, lines: lines.slice(j, si) });
     i = bi + 1; j = si + 1;
   }
@@ -91,9 +91,9 @@ function numbered(...sides: string[][]) {
  * different parts merge by themselves; parts both sides changed alike are taken once. Parts both changed differently
  * are merged again by `deeper` (lines by word) when given, else they clash.
  */
-function mergeParts(baseParts: string[], ourParts: string[], theirParts: string[], deeper?: (base: string, ours: string, theirs: string) => Merged): Merged {
+function mergeParts(baseParts: string[], ourParts: string[], theirParts: string[], deeper?: (base: string, ours: string, theirs: string) => Merged, match = matchLines): Merged {
   const [b, o, t] = numbered(baseParts, ourParts, theirParts);
-  const tagged = [...hunks(b, o, ourParts).map(hunk => ({ hunk, mine: true })), ...hunks(b, t, theirParts).map(hunk => ({ hunk, mine: false }))]
+  const tagged = [...hunks(b, o, ourParts, match).map(hunk => ({ hunk, mine: true })), ...hunks(b, t, theirParts, match).map(hunk => ({ hunk, mine: false }))]
     .sort((x, y) => x.hunk.start - y.hunk.start || x.hunk.end - y.hunk.end);
   let text = "", mine = "", at = 0, clashed = false;
   for (let index = 0; index < tagged.length;) {
@@ -136,7 +136,22 @@ export function runChanges(from: string, to: string): TextChange[] {
  * and brackets, found everywhere, would otherwise make look as short.
  */
 export function wordChanges(from: string, to: string): TextChange[] {
-  const a = splitWords(from), b = splitWords(to), [x, y] = numbered(a, b), pairs: [number, number][] = [];
+  const a = splitWords(from), b = splitWords(to), [x, y] = numbered(a, b), pairs = matchParts(x, y);
+  const offsets = [0];
+  for (const part of a) offsets.push(offsets.at(-1)! + part.length);
+  const out: TextChange[] = [];
+  let i = 0, j = 0;
+  for (const [ai, bj] of [...pairs, [a.length, b.length] as [number, number]]) {
+    if (ai > i || bj > j) out.push({ start: offsets[i], end: offsets[ai], text: b.slice(j, bj).join("") });
+    i = ai + 1; j = bj + 1;
+  }
+  return slide(from, out);
+}
+
+/** Pairs of equal parts `[i, j]` (x's part i is y's part j), in order: parts found once in each kept first (patience),
+ * the parts between compared again the same way, then by Myers' shortest script (`wordChanges`). */
+function matchParts(x: readonly number[], y: readonly number[]): [number, number][] {
+  const pairs: [number, number][] = [];
   const walk = (aLo: number, aHi: number, bLo: number, bHi: number) => {
     while (aLo < aHi && bLo < bHi && x[aLo] === y[bLo]) pairs.push([aLo++, bLo++]);
     const tail: [number, number][] = [];
@@ -168,16 +183,8 @@ export function wordChanges(from: string, to: string): TextChange[] {
     }
     pairs.push(...tail);
   };
-  walk(0, a.length, 0, b.length);
-  const offsets = [0];
-  for (const part of a) offsets.push(offsets.at(-1)! + part.length);
-  const out: TextChange[] = [];
-  let i = 0, j = 0;
-  for (const [ai, bj] of [...pairs, [a.length, b.length] as [number, number]]) {
-    if (ai > i || bj > j) out.push({ start: offsets[i], end: offsets[ai], text: b.slice(j, bj).join("") });
-    i = ai + 1; j = bj + 1;
-  }
-  return slide(from, out);
+  walk(0, x.length, 0, y.length);
+  return pairs;
 }
 
 /** How well a change's end sits between characters `left` and `right`: a line, white space or a tag's edge. The text's
@@ -240,6 +247,8 @@ function partChanges(from: string, to: string, split: (text: string) => string[]
 export function mergeText(base: string, ours: string, theirs: string): Merged {
   if (ours === base || ours === theirs) return { text: theirs, mine: theirs, clashed: false };
   if (theirs === base) return { text: ours, mine: ours, clashed: false };
+  // By word as `wordChanges` pairs them: a word each side has once is kept first, so spaces and signs, found everywhere,
+  // do not pair one side's word with another word of the other ("«3» «17»" against "«21» «3»": «3» stays «3»).
   return mergeParts(splitLines(base), splitLines(ours), splitLines(theirs),
-    (b, o, t) => mergeParts(splitWords(b), splitWords(o), splitWords(t)));
+    (b, o, t) => mergeParts(splitWords(b), splitWords(o), splitWords(t), undefined, matchParts));
 }

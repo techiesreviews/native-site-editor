@@ -83,6 +83,15 @@ test("mergeText: different words changed on one line are no clash, and both chan
   assert.equal(clash.mine, "<p>Open Tuesday to Sunday, 8 to 4.</p>\n");
 });
 
+test("mergeText: a word both sides kept stays, even where signs and spaces could pair it with another word (TOOLS-216)", () => {
+  // Lex took «17» and «4» out and typed «21» and «20»; GitHub replaced «17» with «30». Paired sign by sign, «3» would be
+  // the draft's word for «17», and GitHub's «30» would replace it.
+  const merged = mergeText("«3» «17» «4» <h1>A</h1>\n", "«21» «3» «20» <h1>A</h1>\n", "«3» «30» «4» <h1>A</h1>\n");
+  assert.equal(merged.clashed, true);
+  assert.ok(merged.text.includes("«21» «3» «30»"), merged.text);
+  assert.equal(merged.mine, "«21» «3» «20» <h1>A</h1>\n");
+});
+
 test("mergeText: no draft change takes GitHub's text; no GitHub change keeps the draft; a last line without a newline merges", () => {
   assert.deepEqual(mergeText("a", "a", "b"), { text: "b", mine: "b", clashed: false });
   assert.deepEqual(mergeText("a", "b", "a"), { text: "b", mine: "b", clashed: false });
