@@ -11,6 +11,13 @@ async function openBoard(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}${BOARD}`);
   await expect(page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true })).toBeVisible();
 }
+/** Picks a part in the outline and waits for the board to settle on its card. */
+async function flyTo(page: Page, name: string) {
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name, exact: true }).click();
+  const card = page.locator(".cat-card[data-id]").filter({ has: page.locator(".cat-card__title", { hasText: new RegExp(`^${name}$`) }) });
+  let last = "";
+  await expect.poll(async () => { const box = JSON.stringify(await card.boundingBox()); const still = box === last; last = box; return still; }, { intervals: [150] }).toBe(true);
+}
 /** The card is on screen: its centre lies inside the canvas. */
 async function expectInView(page: Page, id: string) {
   await expect.poll(async () => {
@@ -235,6 +242,62 @@ test("every card and every live cell carries its part's name", async ({ page, ba
   }
   // Each mock-up frame works, so each is a live cell of its own.
   expect(cards.find((card) => card.id === "sharing-panel")?.lives).toEqual(["sharing-panel", "sharing-panel", "sharing-panel", "sharing-panel"]);
+});
+
+test("a preview annotation on a card names its files and its stylesheet, inside a frame too", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  const button = page.locator("#card-button");
+  await expect(button).toHaveAttribute("data-css", "src/ui/parts/button.css");
+  await expect(button).toHaveAttribute("data-files", "src/ui/parts/button.css src/ui/dom.ts");
+  // Off screen a card is not drawn: in view, it is an article named by its title.
+  await flyTo(page, "Button");
+  await expect(page.getByRole("article", { name: "Button" })).toHaveAttribute("data-part", "button");
+  await expect(page.locator("#card-badge")).toHaveAttribute("data-css", "src/ui/parts/badge.css");
+  const stage = page.locator("#card-row-menu .cat-live__stage iframe").contentFrame().locator(".cat-frame-stage");
+  await expect(stage).toHaveAttribute("data-files", "src/components/row-menu.ts src/components/row-menu.css");
+});
+
+test("a card dragged by its title moves, Escape puts a drag back, the arrows nudge it, and its place outlasts a reload", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  const card = page.locator("#card-button"), title = card.locator(".cat-card__title");
+  await expect(card).not.toHaveAttribute("style", /translate/);
+  await flyTo(page, "Button");
+  const drag = async (dx: number, dy: number, end: () => Promise<void>) => {
+    const box = (await title.boundingBox())!;
+    await page.mouse.move(box.x + 10, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 10 + dx / 2, box.y + box.height / 2 + dy / 2, { steps: 4 });
+    await page.mouse.move(box.x + 10 + dx, box.y + box.height / 2 + dy, { steps: 4 });
+    await end();
+  };
+  const before = (await card.boundingBox())!;
+  await drag(160, 90, () => page.mouse.up());
+  const after = (await card.boundingBox())!;
+  expect(after.x - before.x).toBeGreaterThan(100);
+  expect(after.y - before.y).toBeGreaterThan(50);
+  // Dragging selects the card; its Place fields say where it is.
+  const x = page.getByRole("complementary", { name: "Options" }).getByRole("spinbutton", { name: "X" });
+  await expect(x).toBeVisible();
+  const placed = await card.evaluate((element) => (element as HTMLElement).style.translate);
+  expect(placed).toMatch(/px/);
+
+  await drag(-300, 0, async () => { await page.keyboard.press("Escape"); await page.mouse.up(); });
+  await expect.poll(() => card.evaluate((element) => (element as HTMLElement).style.translate)).toBe(placed);
+
+  const xBefore = Number(await x.inputValue());
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect(x).toHaveValue(String(xBefore + 10));
+  const nudged = await card.evaluate((element) => (element as HTMLElement).style.translate);
+  expect(nudged).not.toBe(placed);
+
+  await page.reload();
+  await expect(page.locator("#card-button")).toHaveAttribute("style", new RegExp(nudged.replace(/[.]/g, "\\.")));
+  // Typing a place moves the card there.
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true }).click();
+  const typed = page.getByRole("complementary", { name: "Options" }).getByRole("spinbutton", { name: "X" });
+  await typed.fill(String(xBefore - 40));
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("catalogue:places") ?? "{}").button?.x)).toBeDefined();
+  await expect(page.locator("#card-button")).not.toHaveAttribute("style", new RegExp(nudged.replace(/[.]/g, "\\.")));
 });
 
 test("the live Button reacts to a real hover, press and keyboard, and the board stays put", async ({ page, baseURL }) => {
