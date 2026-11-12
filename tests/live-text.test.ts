@@ -551,6 +551,53 @@ test("GitHub's answer naming B that comes late, after a save brought the page ba
   anna.stop(); lex.stop();
 });
 
+test("a save bringing the page back to A while a fold of B reads GitHub's history does not take the tab to B either (am-59)", async () => {
+  const line = "<p>Closed Mondays.</p>\n", one = `${base}<p>Fresh daily.</p>\n`, two = `${one}${line}`;
+  const history: LiveVersion[] = [{ sha, text: base }];
+  // GitHub's history of the file: read at once, until Anna's fold reads it while `holding`; then it waits for `release`.
+  let holding = false, release: (() => void) | undefined;
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => history.at(-1),
+    before: async function* (of) {
+      if (holding) await new Promise<void>(resolve => { release = resolve; });
+      for (let at = history.findLastIndex(version => version.sha === of) - 1; at >= 0; at--) yield history[at];
+    } });
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  const save = (version: LiveVersion) => {
+    const copies = liveSaves.note!(scope, [{ path, content: lex.text }], lex.store);
+    history.push({ ...version, copies });
+    lex.store.markSaved(scope, path, { baseSha: version.sha, original: lex.text });
+    return { ...version, copies };
+  };
+  const A = "1".repeat(40), B = "2".repeat(40);
+  lex.type(base.length, "<p>Fresh daily.</p>\n");
+  await until(() => anna.text === one, "A shared");
+  assert.equal(await liveFold(anna.store, key, save({ sha: A, text: one })), true);
+  lex.type(one.length, line);
+  await until(() => anna.text === two, "B shared");
+  // Anna hears B's commit at once, still on A, and her fold reads GitHub's history to bring B in; meanwhile she follows
+  // Lex's save of B, and Lex takes the line out again and saves A.
+  holding = true;
+  const folding = liveFold(anna.store, key, save({ sha: B, text: two }));
+  await until(() => release !== undefined, "the fold reading GitHub's history");
+  holding = false;
+  await until(() => anna.store.get(scope, path)?.baseSha === B, "Anna on B");
+  lex.type(one.length, "", line.length);
+  save({ sha: A, text: one });
+  await until(() => anna.store.get(scope, path)?.baseSha === A, "Anna on A again");
+  const bases: (string | undefined)[] = [];
+  const watching = anna.store.subscribeState(() => { bases.push(anna.store.get(scope, path)?.baseSha); });
+  release!();
+  assert.equal(await folding, true);
+  await quiet();
+  watching();
+  assert.ok(!bases.includes(B), "not even for a moment");
+  for (const at of [lex, anna]) assert.deepEqual([at.store.get(scope, path)?.baseSha, at.text], [A, one]);
+  anna.stop(); lex.stop();
+});
+
 test("a tab that missed two saves of a page going back and forth (A B A B A) and hears a commit first ends on it with the others, its words once (am-59)", async () => {
   const line = "<p>Closed Mondays.</p>\n", one = `${base}<p>Fresh daily.</p>\n`, two = `${one}${line}`, three = `${one}<p>Closed Sundays.</p>\n`;
   const history: LiveVersion[] = [{ sha, text: base }];

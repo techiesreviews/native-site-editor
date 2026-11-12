@@ -821,9 +821,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
      * whichever tab heard which commit first. A page going back and forth (A B A B A) that this tab missed more than
      * one turn of can look like a turn it holds, and so can the copy's first version: it then enters on that one, and
      * the copy, holding two ways into the version, keeps the one that came by more versions (`superseded`). Telling
-     * them apart needs GitHub's commit ids. False when the history could not be read or does not reach a version the
-     * copy holds within HISTORY_LIMIT versions. `again`: GitHub's newest brings back a text the copy holds (a revert),
-     * which enters as its next occurrence. The copy's version it is (none when it could not enter).
+     * them apart needs GitHub's commit ids. The copy's version it is now; none when the history could not be read or
+     * does not reach a version the copy holds within HISTORY_LIMIT versions. `again`: GitHub's newest brings back a
+     * text the copy holds (a revert), which enters as its next occurrence.
      */
     async function enter(version: LiveVersion, again = false): Promise<string | undefined> {
       if (!again && holds(version.sha)) return newestOf(versions(), version.sha);
