@@ -18,6 +18,7 @@ import type { LiveAccess } from "../shared/live-room";
 import { writeAs, type LiveAuthor } from "../src/live-author";
 import { createSaveAuthors, type SaveAuthors } from "../src/save-authors";
 import { commitMessage } from "../worker/publish";
+import { liveSaves } from "../src/live-saves";
 
 const scope: DraftScope = { account: "lex", repoId: 501, repo: "lex/starter", branch: "main" };
 const path = "index.html";
@@ -278,6 +279,38 @@ test("commit 3 heard before commit 2: each enters the room's copy on top of the 
   assert.equal(anna.store.get(scope, path)?.baseSha, history[2].sha);
   assert.equal(lex.store.get(scope, path)?.baseSha, history[2].sha);
   anna.stop(); lex.stop();
+});
+
+test("Save right after a page opens again waits until it caught up with the room: the save is the room's own, its words once (am-59, Lex's choice A)", async () => {
+  const saved = { sha: "c".repeat(40), text: "" };
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => (saved.text ? saved : { sha, text: base }),
+    before: async function* (of) { if (of === saved.sha) yield { sha, text: base }; } });
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  lex.type(base.length, "<p>Lex's line.</p>\n");
+  await until(() => anna.text.includes("Lex's line"), "Lex's line shared");
+  // Lex reloads and saves at once, as the publish menu does (src/components/publish-menu.ts `send`): it waits for the
+  // page to catch up with the room, then reads the draft and notes the save in the room's copy.
+  lex.stop();
+  await quiet();
+  const again = tab(room, lex.text, { keeper: lex.keeper, github });
+  const started = Date.now();
+  await liveSaves.ready?.(key, again.store);
+  assert.ok(Date.now() - started < LIVE_TEXT_CATCH_UP_MS, "caught up before the wait ran out");
+  const text = again.text, copies = liveSaves.note!(key, text, again.store);
+  assert.deepEqual(copies, [liveState(anna.store, key).copy], "the room's copy noted the save");
+  saved.text = text;
+  again.store.markSaved(scope, path, { baseSha: saved.sha, original: text });
+  // Anna hears the commit: it names the room's copy, so it enters as the room's own save, not as an outside change.
+  assert.equal(await liveFold(anna.store, key, { ...saved, copies }), true);
+  await until(() => anna.store.get(scope, path)?.baseSha === saved.sha, "Anna on the saved version");
+  await quiet();
+  assert.equal(anna.text, again.text);
+  assert.equal(times(anna.text, "Lex's line"), 1, "Lex's words once");
+  assert.equal(liveSaves.ready?.(key, again.store), undefined, "caught up, the next save does not wait");
+  anna.stop(); again.stop();
 });
 
 test("the copy follows the open file: another file closes the room, and agents alone do not load Yjs", async () => {

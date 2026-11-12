@@ -352,7 +352,7 @@ export function liveState(store: object, key: string) {
   const share = liveFiles.get(store)?.get(key);
   return { shared: liveShared(store, key), copy: share?.copy(), versions: share?.versions() ?? [] };
 }
-type SaveNote = { store: object; note(text: string): string | undefined };
+type SaveNote = { store: object; note(text: string): string | undefined; ready(): Promise<void> | undefined };
 const savers = new Map<string, Set<SaveNote>>();
 /** The file under draft key `key` is about to be saved as `text` (from `store`, any by default): its live copy, if it
  * has one, notes it (the publish menu asks through src/live-saves.ts). Returns the copies (as hex) the save is from: the
@@ -366,11 +366,19 @@ function noteLiveSave(key: string, text: string, store?: object): string[] {
   }
   return copies;
 }
+/** Lex's choice A (2026-11-12): a save of the file under draft key `key` (from `store`, any by default) waits until each
+ * page sharing it has caught up with its live room (just opened again, or catching up after a reconnect), so the room's
+ * copy can note the save, at most LIVE_TEXT_CATCH_UP_MS. Undefined when no page has to wait. */
+function liveSaveReady(key: string, store?: object): Promise<void> | undefined {
+  const waits = [...savers.get(key) ?? []].flatMap(saver => (store && saver.store !== store ? [] : [saver.ready()])).filter(wait => wait !== undefined);
+  return waits.length ? Promise.all(waits).then(() => undefined) : undefined;
+}
 liveSaves.note = noteLiveSave;
+liveSaves.ready = liveSaveReady;
 /** `note` answers saves of the file under `key` in `store` while it is shared, with the copy it noted the save in;
- * returns its removal. */
-function onLiveSave(store: object, key: string, note: (text: string) => string | undefined) {
-  const saver = { store, note };
+ * `ready` says when a save can be noted (`liveSaveReady`). Returns its removal. */
+function onLiveSave(store: object, key: string, note: (text: string) => string | undefined, ready: () => Promise<void> | undefined) {
+  const saver = { store, note, ready };
   let notes = savers.get(key);
   if (!notes) savers.set(key, notes = new Set());
   notes.add(saver);
@@ -426,7 +434,22 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   };
   live.set(start.key, share);
   const foldsReady = () => { for (const attempt of waitingFolds.splice(0)) if (!attempt()) waitingFolds.push(attempt); };
-  const stopSaves = onLiveSave(store, start.key, text => (copy?.noteSave(text) ? copy.id() : undefined));
+  /** A save waits for this (`liveSaveReady`): the copy caught up, or the file not shared after all, or the wait is over. */
+  const caughtUp = () => {
+    const now = () => stopped || !shared() || copy?.ready() === true;
+    if (now()) return undefined;
+    return new Promise<void>(resolve => {
+      let over = false;
+      const timer = clock.setTimeout(() => { over = true; resolve(); }, LIVE_TEXT_CATCH_UP_MS);
+      waitingFolds.push(() => {
+        if (!over && !now()) return false;
+        clock.clearTimeout(timer);
+        resolve();
+        return true;
+      });
+    });
+  };
+  const stopSaves = onLiveSave(store, start.key, text => (copy?.noteSave(text) ? copy.id() : undefined), caughtUp);
   /** This tab's saves made while its copy was not taking part, by blob sha: their text is the draft's, not GitHub's change. */
   const ownSaves = keptSaves.get(store)?.get(start.key) ?? new Map<string, string>();
   if (!keptSaves.has(store)) keptSaves.set(store, new Map());

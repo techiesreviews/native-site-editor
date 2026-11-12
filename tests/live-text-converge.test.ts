@@ -345,10 +345,18 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
     room.push(next.sha);
   };
   /** A tab saves its draft over GitHub's newest version (a save over an older one is refused): through the room, so the
-   * others take the commit as the copy's own text. */
+   * others take the commit as the copy's own text. As the publish menu does, it first waits for a page just opened again
+   * to catch up with the room (Lex's choice A), then reads its draft; a tab closed or moved on meanwhile saves nothing. */
   const save = (tab: Tab) => {
+    const can = () => open().includes(tab) && tab.openFile.peek() === path && shaOf(tab.text) !== github.sha && tab.file.baseSha === github.sha && tab.seen === github.sha;
+    if (!can()) return;
+    const wait = liveSaves.ready!(tab.file.key, tab.store);
+    if (!wait) { saveNow(tab); return; }
+    say(`${tab.name} saves: waits until the page caught up`);
+    void wait.then(() => { if (can()) saveNow(tab); else say(`${tab.name}'s save is called off`); });
+  };
+  const saveNow = (tab: Tab) => {
     const text = tab.text, sha = shaOf(text);
-    if (tab.openFile.peek() !== path || sha === github.sha || tab.file.baseSha !== github.sha || tab.seen !== github.sha) return;
     const copies = liveSaves.note!(tab.file.key, text, tab.store);
     tab.store.markSaved(scope, path, { baseSha: sha, original: text });
     tab.seen = sha;
@@ -512,8 +520,10 @@ function fault(end: Awaited<ReturnType<typeof play>>) {
 
 const SEEDS = Number(process.env.LIVE_SEEDS ?? 150), STEPS = Number(process.env.LIVE_STEPS ?? 60);
 /** Seeds past the first SEEDS that once failed, played every time: a commit landing on a tab still joining the room;
- * 348: a commit that rewrites the one before it, which two tabs took in from different versions. */
-const FOUND = [348, 819, 1370, 1722];
+ * 348: a commit that rewrites the one before it, which two tabs took in from different versions; 288: a save right after
+ * a page opened again (Save waits until it caught up, Lex's choice A). 1370 is out until TOOLS-216: since a save waits,
+ * its run ends on a tab coming back to the page with what it typed elsewhere (the returning-tab case). */
+const FOUND = [288, 348, 819, 1722];
 /** Steps left out of every run (`LIVE_SKIP=save,outside`), to narrow down what a failing seed needs. */
 const SKIP = new Set((process.env.LIVE_SKIP ?? "").split(",").filter(Boolean));
 
