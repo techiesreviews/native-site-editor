@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { openEditor } from "../support/scenarios";
 import { pushDelivery } from "./fake-webhook";
+import { publishButton } from "./publish";
 
 // Outside changes into a page typed on together (ticket am-59): Anna and Lex have the page open in a live room, each
 // in a browser of their own (their own drafts), on one GitHub. A commit Sam makes on GitHub enters the room's one copy
@@ -79,6 +80,62 @@ test("a commit on GitHub enters the page Anna and Lex type on together once, in 
     // Folded in place: neither tab loaded the branch again.
     await stillMarked(anna.page);
     await stillMarked(lex.page);
+  } finally {
+    for (const tab of tabs) await tab.context.close();
+  }
+});
+
+test("Publish right after Lex reloads waits until his page caught up with the room, says so on the button, and the save is the room's own", async ({ browser, baseURL }) => {
+  const anna = await browserTab(browser);
+  const tabs = [anna];
+  try {
+    await openEditor(anna.page, baseURL);
+    const lex = await browserTab(browser, anna.context);
+    tabs.push(lex);
+    // Lex's room socket: the others' frames (catch-up answers, typing) are held while `holding`, as a slow catch-up after
+    // a reload; who is in the room still comes through.
+    let holding = false;
+    const held: (() => void)[] = [];
+    let routed = 0, asked = 0;
+    await lex.context.routeWebSocket(/\/api\/live\/room/, ws => {
+      routed++;
+      const server = ws.connectToServer();
+      ws.onMessage(message => { if (holding && typeof message !== "string") asked++; server.send(message); });
+      server.onMessage(message => { if (holding && typeof message !== "string") held.push(() => ws.send(message)); else ws.send(message); });
+    });
+    await openEditor(lex.page, baseURL);
+    await insert(anna.page, '<h1 data-key="hero-title">', "Fresh bread: ");
+    await expect.poll(() => source(lex.page), { timeout: 20_000 }).toContain("Fresh bread: A native browser preview");
+    await insert(lex.page, "Fresh bread: ", "warm ");
+    await expect.poll(() => source(anna.page), { timeout: 20_000 }).toContain("Fresh bread: warm A native");
+    await markContent(anna.page);
+
+    // Lex reloads; the room has not caught his page up yet when he presses Publish.
+    holding = true;
+    await lex.page.reload();
+    await expect(lex.page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    // His page has joined the room again (live text loads a beat after the first paint) and asked to be caught up.
+    await expect.poll(() => routed, { timeout: 20_000 }).toBe(2);
+    await expect.poll(() => asked, { timeout: 20_000 }).toBeGreaterThan(0);
+    await expect.poll(() => source(lex.page), { timeout: 20_000 }).toContain("Fresh bread: warm A native");
+    await publishButton(lex.page).click();
+    const trigger = lex.page.locator(".publish-menu__trigger");
+    await expect(trigger).toHaveText("Catching up…", { timeout: 2_000 });
+    await expect(trigger).toBeDisabled();
+    const before = await head(lex.page, baseURL);
+    expect(await head(lex.page, baseURL)).toBe(before);
+    holding = false;
+    for (const send of held.splice(0)) send();
+    await expect(lex.page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+    const saved = await head(lex.page, baseURL);
+    expect(saved).not.toBe(before);
+    // Anna hears the save: the room's own text, so the words stay once, the same in both tabs, with no reload.
+    await expect.poll(async () => (await anna.page.request.post(`${baseURL}/api/github/webhook`, pushDelivery(saved))).status()).toBe(200);
+    await expect(anna.page.locator("#revision")).toHaveText(saved.slice(0, 7), { timeout: 20_000 });
+    await expect.poll(() => source(lex.page)).toBe(await source(anna.page));
+    const after = await source(anna.page);
+    for (const part of ["Fresh bread: ", "warm "]) expect(count(after, part), part).toBe(1);
+    await stillMarked(anna.page);
   } finally {
     for (const tab of tabs) await tab.context.close();
   }

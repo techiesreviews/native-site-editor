@@ -178,8 +178,6 @@ const UNNAMED_LIMIT = 256;
 const INBOX_LIMIT = 500;
 /** The room closes a socket over its limit: a larger copy is not sent (the room's own framing needs a little room). */
 const FRAME_LIMIT = LIVE_MESSAGE_LIMIT - 1024;
-/** A kept copy larger than this is not resumed (`load`). */
-const KEPT_LIMIT = FRAME_LIMIT / 2;
 const LOCAL = Symbol("local"), REMOTE = Symbol("remote"), START = Symbol("start"), OUTSIDE = Symbol("outside"), META = Symbol("meta");
 /** A copy is kept this long after its last change, as drafts are (src/drafts.ts), and at once when the page hides or the file
  * closes: the copy kept and the draft saved must say the same, or text shared since would go in again on resuming. */
@@ -514,10 +512,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       const Y = await (ports.loadYjs ?? (() => import("yjs")))();
       const kept = keptOnly ? first : await keeper.read(start.key);
       if (stopped || discarded) return;
-      // A copy this tab shared before: kept unless the room agreed on another copy meanwhile, or it grew past half a
-      // frame (it keeps every item, `gc: false`): then this tab joins afresh, so a newcomer's catch-up still fits a frame.
+      // A copy this tab shared before: kept unless the room agreed on another copy meanwhile.
       const now = store.get(scope, path), wanted = preferred.get(start.key);
-      const resume = kept && kept.base !== undefined && now && kept.update.length <= KEPT_LIMIT && (!wanted || sameTag(wanted, kept.tag)) ? kept : undefined;
+      const resume = kept && kept.base !== undefined && now && (!wanted || sameTag(wanted, kept.tag)) ? kept : undefined;
       if (kept && !resume) keeper.write(start.key, undefined);
       try { copy = makeCopy(Y, resume); }
       catch (error) {
@@ -1079,7 +1076,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       const latest = await ports.github?.(scope, path)?.newest?.().catch(() => undefined);
       if (stopped) return false;
       // The notice names no live copies; GitHub's history does (the commit's `Live-Copy` lines). A newer commit than the
-      // notice's is named by the notice's author (GitHub's newest names none), for the clash step's label.
+      // notice's is labelled with the notice's author, a guess (GitHub's newest names none), for the clash step's label.
       const next: LiveCommit = latest && latest.sha !== heard.sha ? { ...latest, ...(heard.author ? { author: heard.author } : {}) } : { ...heard, copies: heard.copies ?? latest?.copies };
       const file = store.get(scope, path);
       if (!file) return false;
