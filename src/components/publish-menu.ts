@@ -347,10 +347,21 @@ export function createPublishMenu(options: {
     return pre;
   }
   async function send() {
+    if (pending) return;
+    // A page just opened again catches up with its live room first (at most about 5 s; Lex's choice A, ticket am-59), so
+    // the room's copy notes the save; the button says so meanwhile. The drafts are read after: catching up can change them.
+    const waits = listChanges(drafts()).filter(selected).flatMap(change => change.drafts)
+      .flatMap(draft => { const wait = liveSaves.ready?.(draftKey(options.scope, draft.path)); return wait ? [wait] : []; });
+    if (waits.length) {
+      pending = true; trigger.disabled = true;
+      showProgress("Catching up…");
+      await Promise.all(waits);
+      pending = false;
+      if (disposed) return;
+    }
     const chosen = listChanges(drafts()).filter(selected);
     const submitted: SavedDraft[] = chosen.flatMap(change => change.drafts);
-    if (pending) return;
-    if (!submitted.length) { message.textContent = "Nothing selected to publish."; return; }
+    if (!submitted.length) { message.textContent = "Nothing selected to publish."; showState(); return; }
     pending = true; trigger.disabled = true;
     if (discard) discard.disabled = true;
     list.querySelectorAll("input").forEach(input => input.disabled = true);
