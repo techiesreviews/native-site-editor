@@ -136,6 +136,7 @@ export async function foldIn(ports: Ports, host: OutsideHost, commit: string, li
     const key = store.get(scope, entry.path)?.key;
     if (key === undefined) continue;
     const took = await fold(key, { sha: entry.sha, text: texts.get(entry.path)!, author: label });
+    if (!live()) return true;
     if (took === false) return false;
     if (took) folded.add(entry.path);
   }
