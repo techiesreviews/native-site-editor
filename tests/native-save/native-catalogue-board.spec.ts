@@ -253,6 +253,9 @@ test("a preview annotation on a card names its files and its stylesheet, inside 
   await flyTo(page, "Button");
   await expect(page.getByRole("article", { name: "Button" })).toHaveAttribute("data-part", "button");
   await expect(page.locator("#card-badge")).toHaveAttribute("data-css", "src/ui/parts/badge.css");
+  // Every card names a stylesheet, and it is one of its files.
+  const sheets = await page.locator(".cat-card[data-id]").evaluateAll((cards) => cards.map((card) => [(card as HTMLElement).dataset.css ?? "", (card as HTMLElement).dataset.files ?? ""]));
+  for (const [css, files] of sheets) { expect(css).toMatch(/\.css$/); expect(files.split(" ")).toContain(css); }
   const stage = page.locator("#card-row-menu .cat-live__stage iframe").contentFrame().locator(".cat-frame-stage");
   await expect(stage).toHaveAttribute("data-files", "src/components/row-menu.ts src/components/row-menu.css");
 });
@@ -281,7 +284,8 @@ test("a card dragged by its title moves, Escape puts a drag back, the arrows nud
   const placed = await card.evaluate((element) => (element as HTMLElement).style.translate);
   expect(placed).toMatch(/px/);
 
-  await drag(-300, 0, async () => { await page.keyboard.press("Escape"); await page.mouse.up(); });
+  // A state cell's frame drawing as the board opens may hold the keys for a moment; the board takes them back.
+  await drag(-300, 0, async () => { await expect(page.getByRole("region", { name: "Canvas" })).toBeFocused(); await page.keyboard.press("Escape"); await page.mouse.up(); });
   await expect.poll(() => card.evaluate((element) => (element as HTMLElement).style.translate)).toBe(placed);
 
   const xBefore = Number(await x.inputValue());
@@ -292,8 +296,13 @@ test("a card dragged by its title moves, Escape puts a drag back, the arrows nud
 
   await page.reload();
   await expect(page.locator("#card-button")).toHaveAttribute("style", new RegExp(nudged.replace(/[.]/g, "\\.")));
-  // Typing a place moves the card there.
+  // Picked in the outline, the arrows move it straight away.
   await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true }).click();
+  const shown = page.getByRole("complementary", { name: "Options" }).getByRole("spinbutton", { name: "Y" });
+  const yBefore = Number(await shown.inputValue());
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(shown).toHaveValue(String(yBefore + 10));
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("catalogue:places") ?? "{}").button?.y as number)).toBeGreaterThan(0);
   const typed = page.getByRole("complementary", { name: "Options" }).getByRole("spinbutton", { name: "X" });
   const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem("catalogue:places") ?? "{}").button?.x as number);
   const savedBefore = await saved();

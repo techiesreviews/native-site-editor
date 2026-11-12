@@ -887,9 +887,11 @@ export function startBoard(root: HTMLElement) {
       return;
     }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    // The arrow keys move the selected card from the canvas, a step of 1 (10 with Shift), as in Figma.
+    // The arrow keys move the selected card from the canvas or from its row in the outline, a step of 1 (10 with
+    // Shift), as in Figma.
     const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
-    if (step && selected && !move && (event.target === document.body || event.target === viewport)) {
+    const from = event.target as Element;
+    if (step && selected && !move && (from === document.body || from === viewport || from.closest?.(".cat-outline__item"))) {
       event.preventDefault();
       const size = event.shiftKey ? 10 : 1, place = placeOf(selected);
       setPlace(selected, { x: place.x + step[0] * size, y: place.y + step[1] * size });
