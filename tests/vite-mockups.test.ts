@@ -532,3 +532,33 @@ test("the real mock-ups: each released one has a small picture, no picture is le
     assert.ok(mockupPicturePath(repoRoot, { map: "atomic-catalogue", file: sketch.split("/")[1] }).exists, sketch);
   }
 });
+
+test("the index fits a phone with its pictures, and the sandboxed design sketch ignores keys typed in its fields", async () => {
+  const { chromium } = await import("@playwright/test");
+  const worker = await serveBuild(mkdtempSync(join(scratch, "phone-")), repoRoot);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const base = await worker.url;
+    const page = await browser.newPage();
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(new URL("mockups/", base).href, { waitUntil: "load" });
+      assert.ok(await page.locator(".with-picture").count() > 0);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${width} px wide`);
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(new URL("mockups/atomic-catalogue/design-board-canvas.html", base).href, { waitUntil: "load" });
+    const editor = page.frameLocator("iframe[data-id=editor-1280]");
+    const field = editor.locator("input").first();
+    await field.waitFor();
+    const place = () => page.evaluate(() => ({ left: document.querySelector<HTMLElement>('.dc-frame[data-id=editor-1280]')!.style.left, zoom: document.body.textContent!.match(/\d+%/)![0] }));
+    const before = await place();
+    await field.click();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.type("+-");
+    assert.deepEqual(await place(), before);
+  } finally {
+    await browser.close();
+    await worker.dispose();
+  }
+});

@@ -4734,7 +4734,8 @@ function frameBoot(frame) {
     dc.wheel(e);
   }, { passive: false });
   const interactive = (t) => t && t.closest && t.closest("input, textarea, select, button, a, [contenteditable]");
-  addEventListener("keydown", (e) => { if (e.code === "Space" && interactive(e.target)) return; dc.key(e, true); });
+  const typing = (t) => t && t.closest && t.closest("input, textarea, select, [contenteditable]");
+  addEventListener("keydown", (e) => { if (typing(e.target) || (e.code === "Space" && interactive(e.target))) return; dc.key(e, true); });
   addEventListener("keyup", (e) => dc.key(e, false));
 
   // Real behaviour that needs a little script: the structure tree's selection, device buttons, the sheet handle, the phone Menu.
