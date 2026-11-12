@@ -129,6 +129,7 @@ test("Publish right after Lex reloads waits until his page caught up with the ro
     // Released well within the wait (about 5 s): the save goes out once the page caught up, not when the wait ran out.
     holding = false;
     for (const send of held.splice(0)) send();
+    await expect(trigger).not.toHaveText("Catching up…", { timeout: 2_000 });
     await expect(lex.page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
     expect(sentWhileHeld, "nothing sent while the catch-up was held").toBe(0);
     const saved = await head(lex.page, baseURL);
@@ -140,6 +141,48 @@ test("Publish right after Lex reloads waits until his page caught up with the ro
     const after = await source(anna.page);
     for (const part of ["Fresh bread: ", "warm "]) expect(count(after, part), part).toBe(1);
     await stillMarked(anna.page);
+  } finally {
+    for (const tab of tabs) await tab.context.close();
+  }
+});
+
+test("Anna's tab takes Sam's commit while Lex's tab hears nothing from the room; Lex types meanwhile; released, the words are once in both, with no reload", async ({ browser, baseURL }) => {
+  const anna = await browserTab(browser);
+  const tabs = [anna];
+  try {
+    await openEditor(anna.page, baseURL);
+    const lex = await browserTab(browser, anna.context);
+    tabs.push(lex);
+    // Lex's room socket: the room's frames to him are held while `holding` (who is here and push notices still come).
+    let holding = false;
+    const held: (() => void)[] = [];
+    await lex.context.routeWebSocket(/\/api\/live\/room/, ws => {
+      const server = ws.connectToServer();
+      ws.onMessage(message => server.send(message));
+      server.onMessage(message => { if (holding && typeof message !== "string") held.push(() => ws.send(message)); else ws.send(message); });
+    });
+    await openEditor(lex.page, baseURL);
+    await insert(anna.page, '<h1 data-key="hero-title">', "Fresh bread: ");
+    await expect.poll(() => source(lex.page), { timeout: 20_000 }).toContain("Fresh bread: A native browser preview");
+    await markContent(anna.page);
+    await markContent(lex.page);
+
+    holding = true;
+    const github = await (await anna.page.request.get(`${baseURL}/__demo/file?path=${file}`)).text();
+    await samPushes([anna.page, lex.page], baseURL, github.replace("Edit plain HTML", "Edit plain HTML with Sam"));
+    // Each tab took the commit on its own: Lex's from GitHub, as Anna's frames have not reached him.
+    for (const tab of [anna, lex]) await expect.poll(() => source(tab.page), { timeout: 20_000 }).toContain("Edit plain HTML with Sam");
+    await insert(lex.page, "Fresh bread: ", "warm ");
+    await insert(anna.page, "with Sam", " daily");
+    holding = false;
+    for (const send of held.splice(0)) send();
+    await expect.poll(() => source(lex.page), { timeout: 20_000 }).toContain("with Sam daily");
+    await expect.poll(() => source(anna.page), { timeout: 20_000 }).toContain("Fresh bread: warm A native");
+    await expect.poll(() => source(lex.page)).toBe(await source(anna.page));
+    const after = await source(anna.page);
+    for (const part of ["Fresh bread: ", "warm ", "with Sam", " daily"]) expect(count(after, part), part).toBe(1);
+    await stillMarked(anna.page);
+    await stillMarked(lex.page);
   } finally {
     for (const tab of tabs) await tab.context.close();
   }
