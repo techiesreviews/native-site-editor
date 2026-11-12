@@ -320,6 +320,22 @@ function attach(share: CaretShare, pane: CaretPane, told: (read: () => CaretSele
   };
 }
 
+/** The edit bar's controls: where a press goes to the bar and not to a caret's circle standing over it. */
+const BAR_CONTROLS = "button, input, select, textarea, a[href], [role=button], [role=combobox], [role=menuitem]";
+interface Box { left: number; right: number; top: number; bottom: number }
+/** The circle's press area (live-carets.css `.live-caret__mark::after`: `width` by `height`, centred on the circle, its foot
+ * 2 px above the circle's, reaching down from 2 px below its top for a tag below), joined with the circle itself. */
+export function pressArea(mark: Box, width: number, height: number, below: boolean): Box {
+  const middle = (mark.left + mark.right) / 2;
+  const top = below ? mark.top + 2 : mark.bottom - 2 - height;
+  return { left: Math.min(mark.left, middle - width / 2), right: Math.max(mark.right, middle + width / 2),
+    top: Math.min(mark.top, top), bottom: Math.max(mark.bottom, top + height) };
+}
+/** Whether `outer` holds the point `at` (a box with no size). */
+export const holds = (outer: Box, at: Box) => at.left >= outer.left && at.left <= outer.right && at.top >= outer.top && at.top <= outer.bottom;
+/** Whether two boxes share any area. */
+export const boxesMeet = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+
 /**
  * Draws `share`'s carets on the page (ticket am-23), over the preview's frame where the frame finds them in the page's
  * text, and tells `told` where this tab's caret is while it types on the page (none once typing ends there).
@@ -359,6 +375,28 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
     layer.style.height = `${page.frame.clientHeight}px`;
   };
   const place = (widget: Widget) => { if (widget.at) placeTag(widget, widget.at.left, widget.at.top, layer.clientWidth); };
+  // The circles stand above the edit bar (live-carets.css), so where one reaches a control of the bar the control answers:
+  // a circle whose middle is over a control shows but takes no press (`circle`); one that only touches a control, or whose
+  // press area does, gives up the area (`pad`) and still takes presses on the circle. The bar's own box and its blank parts
+  // let presses pass to the circle. The bar moves with the selection, with no news for the carets.
+  let barDue = 0;
+  const overBar = () => {
+    barDue = 0;
+    if (!widgets.size) return;
+    const controls = [...page.layer.querySelectorAll(`.edit-bar :is(${BAR_CONTROLS})`)].map(control => control.getBoundingClientRect()).filter(box => box.width > 0);
+    for (const widget of widgets.values()) {
+      const mark = widget.flag.element.querySelector(".live-caret__mark")!, circle = mark.getBoundingClientRect();
+      const press = getComputedStyle(mark, "::after");
+      const area = pressArea(circle, parseFloat(press.width), parseFloat(press.height), widget.root.hasAttribute("data-below"));
+      const middle = { left: (circle.left + circle.right) / 2, right: (circle.left + circle.right) / 2, top: (circle.top + circle.bottom) / 2, bottom: (circle.top + circle.bottom) / 2 };
+      const state = widget.root.hidden ? undefined : controls.some(box => holds(box, middle)) ? "circle" : controls.some(box => boxesMeet(area, box)) ? "pad" : undefined;
+      if (state === undefined) widget.root.removeAttribute("data-over-bar");
+      else if (widget.root.getAttribute("data-over-bar") !== state) widget.root.setAttribute("data-over-bar", state);
+    }
+  };
+  const overBarSoon = () => { barDue ||= requestAnimationFrame(overBar); };
+  const barMoved = new MutationObserver(records => { if (records.some(record => !layer.contains(record.target))) overBarSoon(); });
+  barMoved.observe(page.layer, { subtree: true, childList: true, attributes: true, attributeFilter: ["style", "class", "hidden"] });
   // The frame moving or changing size in its pane (a banner above it, the code pane growing) moves no caret in its
   // viewport, so no new positions come: the layer follows the frame by itself.
   const resized = new ResizeObserver(() => { fit(); for (const widget of widgets.values()) place(widget); });
@@ -434,6 +472,7 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
     }
     page.show(points);
     if (added) askUndo();
+    overBarSoon();
   };
   const drawSoon = () => { frame ||= requestAnimationFrame(draw); };
 
@@ -462,6 +501,7 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
         if (box) Object.assign(tint.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` });
       });
     }
+    overBar();
   };
   const stopRects = page.onRects(shown);
   const stopCarets = share.onCarets(drawSoon);
@@ -476,8 +516,10 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
     stopUndo();
     stopPage();
     resized.disconnect();
+    barMoved.disconnect();
     cancelAnimationFrame(frame);
     cancelAnimationFrame(asking);
+    cancelAnimationFrame(barDue);
     page.show([]);
     for (const gone of widgets.values()) { clearTimeout(gone.leaving); remove(gone); }
     widgets.clear();

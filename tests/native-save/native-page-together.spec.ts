@@ -167,6 +167,7 @@ test("Lex and Anna type in one paragraph on the page and end identical; each see
     await expect(annaAtLex).toBeVisible({ timeout: 20_000 });
     await expect(annaAtLex.locator(".live-caret__mark b")).toHaveText("A");
     await expect(lexAtAnna).toBeVisible({ timeout: 20_000 });
+    // (Lex keeps the fixture account's own name, native-demo-user, so Anna sees its initial.)
     await expect(lexAtAnna.locator(".live-caret__mark b")).toHaveText("N");
     await expect.poll(() => circleOnTop(annaAtLex), { timeout: 10_000 }).toBe(true);
     await expect.poll(() => circleOnTop(lexAtAnna), { timeout: 10_000 }).toBe(true);
@@ -231,16 +232,28 @@ test("Anna's circle with her first letter stays on top of Lex's edit bar while b
     const annaAtLex = pageFlag(lex.page, "Anna");
     await expect(annaAtLex).toBeVisible({ timeout: 20_000 });
     await expect(annaAtLex.locator(".live-caret__mark b")).toHaveText("A");
-    // The bar really is over her words: the circle's centre is inside the bar's box, and the circle is shown on top of it.
-    const [barBox, markBox] = await Promise.all([bar.boundingBox(), annaAtLex.locator(".live-caret__mark").boundingBox()]);
-    const centre = { x: markBox!.x + markBox!.width / 2, y: markBox!.y + markBox!.height / 2 };
-    expect(centre.x).toBeGreaterThan(barBox!.x);
-    expect(centre.x).toBeLessThan(barBox!.x + barBox!.width);
-    expect(centre.y).toBeGreaterThan(barBox!.y);
-    expect(centre.y).toBeLessThan(barBox!.y + barBox!.height);
+    // The bar really is over her words (the carets may still be moving as their rectangles arrive: polled): the circle's
+    // centre is inside the bar's box, and the circle is shown on top of it, not under.
+    await expect.poll(async () => {
+      const [barBox, markBox] = await Promise.all([bar.boundingBox(), annaAtLex.locator(".live-caret__mark").boundingBox()]);
+      if (!barBox || !markBox) return false;
+      const x = markBox.x + markBox.width / 2, y = markBox.y + markBox.height / 2;
+      return x > barBox.x && x < barBox.x + barBox.width && y > barBox.y && y < barBox.y + barBox.height;
+    }, { timeout: 10_000 }).toBe(true);
     await expect.poll(() => circleOnTop(annaAtLex), { timeout: 10_000 }).toBe(true);
-    // Lex still reaches his bar's controls beside her circle.
-    await expect(bar.getByRole("button", { name: "Bold" })).toBeVisible();
+    // Every control of the bar answers a press at its middle, wherever her circle stands (a circle whose press area reaches a
+    // control gives way to it: the bar's blank parts under the circle leave its press).
+    const reached = await lex.page.evaluate(() => [...document.querySelectorAll<HTMLElement>(".edit-bar button")].filter(button => button.getBoundingClientRect().width > 0).map(button => {
+      const box = button.getBoundingClientRect();
+      return button.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    }));
+    expect(reached.length).toBeGreaterThan(3);
+    expect(reached.every(Boolean)).toBe(true);
+    // The bar's menus and fields, and the cards over the page, open above the carets, which are above the bar.
+    const level = (selector: string) => lex.page.locator(selector).first().evaluate(element => Number(getComputedStyle(element).zIndex));
+    const [bars, carets, menus] = [await level(".edit-bar"), await level(".live-carets-page"), await level(".edit-bar__popover")];
+    expect(carets).toBeGreaterThan(bars);
+    expect(menus).toBeGreaterThan(carets);
   } finally {
     await lex.context.close();
     await anna.context.close();
