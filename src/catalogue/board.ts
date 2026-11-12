@@ -81,22 +81,25 @@ export function startBoard(root: HTMLElement) {
     if (!file) cssFiles.set(entry.id, file = { before: componentText(path) });
     return file;
   };
-  /** Each moved card's offset from its place in its area's flow (places.ts), remembered in this browser. */
+  /**
+   * Each moved piece's offset from its place in the flow (places.ts), remembered in this browser. A piece is a card (its
+   * id), a screen frame (`screen:<card>:<width>:<theme>`) or an area (`area:<id>`), each named by `data-piece`.
+   */
   const places = readPlaces(store);
-  const placeOf = (id: string): Point => places.get(id) ?? { x: 0, y: 0 };
-  function placeCard(article: HTMLElement) {
-    const place = placeOf(article.dataset.id!);
-    article.style.translate = place.x || place.y ? `${place.x}px ${place.y}px` : "";
+  const placeOf = (key: string): Point => places.get(key) ?? { x: 0, y: 0 };
+  function placePiece(element: HTMLElement) {
+    const place = placeOf(element.dataset.piece!);
+    element.style.translate = place.x || place.y ? `${place.x}px ${place.y}px` : "";
   }
-  const cardOf = (id: string) => world.querySelector<HTMLElement>(`#card-${CSS.escape(id)}`);
-  /** Moves a card to `place` (an offset from its flow); `keep`: remembered now, else when the drag ends. */
-  function setPlace(id: string, place: Point, keep = true) {
-    if (place.x || place.y) places.set(id, place); else places.delete(id);
-    const article = cardOf(id);
-    if (article) placeCard(article);
+  const pieceOf = (key: string) => world.querySelector<HTMLElement>(`[data-piece="${CSS.escape(key)}"]`);
+  /** Moves a piece to `place` (an offset from its flow); `keep`: remembered now, else when the drag ends. */
+  function setPlace(key: string, place: Point, keep = true) {
+    if (place.x || place.y) places.set(key, place); else places.delete(key);
+    const element = pieceOf(key);
+    if (element) placePiece(element);
     placeSel();
     cull();
-    if (selected === id) syncPlace();
+    if (placeKey() === key) syncPlace();
     if (keep) writePlaces(store, places);
   }
   /** The text a part's live cell shows of its own CSS file: the last edit without a problem, else the code's. */
@@ -236,13 +239,14 @@ export function startBoard(root: HTMLElement) {
     const article = el("article", "cat-card");
     article.id = `card-${entry.id}`;
     article.dataset.id = entry.id;
+    article.dataset.piece = entry.id;
     article.dataset.part = entry.id;
     // What a preview annotation on the card names: the part, its files and the stylesheet that draws it.
     article.dataset.files = entry.files.join(" ");
     const sheet = ("css" in entry ? entry.css : undefined) ?? entry.files.find((file) => file.endsWith(".css"));
     if (sheet) article.dataset.css = sheet;
     article.setAttribute("aria-labelledby", `title-${entry.id}`);
-    placeCard(article);
+    placePiece(article);
     const title = el("h3", "cat-card__title");
     title.id = `title-${entry.id}`;
     title.append(el("span", "", entry.name), el("span", "cat-mark"));
@@ -264,7 +268,8 @@ export function startBoard(root: HTMLElement) {
         for (const theme of ["light", "dark"] as const) {
           const side = half(theme, `${width} px · ${theme === "light" ? "Light" : "Dark"}`);
           // Every mock-up frame works: each is a live cell, told apart by its width and theme.
-          Object.assign(side.dataset, { part: entry.id, cell: "live", width: String(width) });
+          Object.assign(side.dataset, { part: entry.id, cell: "live", width: String(width), piece: `screen:${entry.id}:${width}:${theme}` });
+          placePiece(side);
           side.append(frameElement({ kind: "mockup", id: entry.id, theme, values: entry.defaults, width, height: entry.height, live: true }, `${entry.name}, ${width} px, ${theme}`));
           row.append(side);
         }
@@ -416,6 +421,8 @@ export function startBoard(root: HTMLElement) {
     const section = el("section", "cat-area");
     section.id = `area-${area.id}`;
     section.dataset.area = area.id;
+    section.dataset.piece = `area:${area.id}`;
+    placePiece(section);
     const label = el("h2", "cat-area__label", area.name);
     label.dataset.area = area.id;
     const cards = el("div", "cat-area__cards");
@@ -475,10 +482,18 @@ export function startBoard(root: HTMLElement) {
     for (let node: HTMLElement | null = element; node && node !== world; node = node.offsetParent as HTMLElement | null) { x += node.offsetLeft; y += node.offsetTop; }
     return { x, y, w: element.offsetWidth, h: element.offsetHeight };
   }
-  /** Where a card is on the board: its place in its area's flow, moved by its offset (offsets ignore a `translate`). */
-  function cardBox(article: HTMLElement): Box {
-    const rect = rectOf(article), place = placeOf(article.dataset.id ?? "");
-    return { x: rect.x + place.x, y: rect.y + place.y, w: rect.w, h: rect.h };
+  /**
+   * Where a piece is on the board: its place in the flow, moved by its own offset and those of the pieces around it (a
+   * card in a moved area, a screen in a moved card); offsets ignore a `translate`.
+   */
+  function pieceBox(element: HTMLElement): Box {
+    const rect = rectOf(element);
+    let { x, y } = rect;
+    for (let node: HTMLElement | null = element; node; node = node.parentElement?.closest<HTMLElement>("[data-piece]") ?? null) {
+      const place = placeOf(node.dataset.piece!);
+      x += place.x; y += place.y;
+    }
+    return { x, y, w: rect.w, h: rect.h };
   }
   function apply() {
     world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.z})`;
@@ -492,20 +507,20 @@ export function startBoard(root: HTMLElement) {
     placeSel();
     cull();
   }
-  // Cards wholly off screen are not drawn (as tldraw culls shapes); their place on the canvas stays.
-  // Positions are read each time: offsets ignore the transform, so moving the board lays nothing out again.
+  // Cards wholly off screen are not drawn (as tldraw culls shapes); their place on the canvas stays. A card counts with the
+  // screens moved out of it. Positions are read each time: offsets ignore the transform, so moving the board lays nothing out again.
   function cull() {
     const w = viewport.clientWidth, h = viewport.clientHeight, title = 40;
     for (const article of world.querySelectorAll<HTMLElement>(".cat-card")) {
-      const box = cardBox(article);
+      const box = boundsOf([pieceBox(article), ...[...article.querySelectorAll<HTMLElement>("[data-piece]")].filter((screen) => places.has(screen.dataset.piece!)).map(pieceBox)])!;
       const left = box.x * cam.z + cam.x, top = (box.y - title) * cam.z + cam.y;
       article.classList.toggle("is-culled", left > w || top > h || left + box.w * cam.z < 0 || top + (box.h + title) * cam.z < 0);
     }
   }
   function placeSel() {
-    const article = selected ? world.querySelector<HTMLElement>(`#card-${CSS.escape(selected)}`) : null;
-    if (!article) { selBox.hidden = true; return; }
-    const rect = cardBox(article);
+    const key = placeKey(), element = key ? pieceOf(key) : null;
+    if (!element) { selBox.hidden = true; return; }
+    const rect = pieceBox(element);
     selBox.hidden = false;
     selBox.style.transform = `translate(${rect.x * cam.z + cam.x}px, ${rect.y * cam.z + cam.y}px)`;
     selBox.style.inlineSize = `${rect.w * cam.z}px`;
@@ -561,13 +576,16 @@ export function startBoard(root: HTMLElement) {
     };
     flight = requestAnimationFrame(step);
   }
-  const cardRect = (id: string) => { const r = cardBox(world.querySelector<HTMLElement>(`#card-${CSS.escape(id)}`)!); return { x: r.x, y: r.y - 30, w: r.w, h: r.h + 30 }; };
+  const cardRect = (id: string) => { const r = pieceBox(pieceOf(id)!); return { x: r.x, y: r.y - 30, w: r.w, h: r.h + 30 }; };
   const flyToCard = (id: string, maxZ = 1.25) => flyTo(camFor(cardRect(id), maxZ));
-  const areaRect = (id: AreaId) => { const r = rectOf(areas.get(id)!); return { x: r.x, y: r.y - 100, w: r.w, h: r.h + 100 }; };
+  const areaRect = (id: AreaId) => { const r = pieceBox(areas.get(id)!); return { x: r.x, y: r.y - 100, w: r.w, h: r.h + 100 }; };
   const flyToArea = (id: AreaId) => flyTo(camFor(areaRect(id), 1, 32));
-  // Everything on the board: the areas, and the cards moved out of them (with room for their titles).
+  // Everything on the board: the areas, and what was moved out of them (with room for the names above them).
   const allRect = () => boundsOf([{ x: 0, y: 0, w: world.offsetWidth, h: world.offsetHeight },
-    ...[...world.querySelectorAll<HTMLElement>(".cat-card[data-id]")].map((article) => { const box = cardBox(article); return { ...box, y: box.y - 40, h: box.h + 40 }; })])!;
+    ...[...world.querySelectorAll<HTMLElement>("[data-piece]")].map((piece) => {
+      const box = pieceBox(piece), room = piece.matches(".cat-area") ? 100 : piece.matches(".cat-card") ? 40 : 0;
+      return { ...box, y: box.y - room, h: box.h + room };
+    })])!;
   const fitAll = () => flyTo(camFor(allRect(), 1, 24));
   function zoomCentre(factor: number) {
     const w = viewport.clientWidth, h = viewport.clientHeight, next = clamp(cam.z * factor, MIN_Z, MAX_Z), k = next / cam.z;
@@ -576,19 +594,30 @@ export function startBoard(root: HTMLElement) {
 
   // ---------- Selection and the right panel ----------
 
-  let selected: string | undefined;
+  /** `selected`: the card whose options show; `picked`: the screen or area (a piece's key) being placed, else the card itself. */
+  let selected: string | undefined, picked: string | undefined;
+  const placeKey = () => picked ?? selected;
   function setSheet(name: "" | "outline" | "options") {
     if (name) root.dataset.sheet = name; else delete root.dataset.sheet;
     for (const toggle of [outlineToggle, optionsToggle]) toggle.setAttribute("aria-pressed", String(toggle.dataset.sheet === name));
   }
   /** `sheet`: below wide widths, a selection opens the Options sheet (not when a live cell is being used). */
-  function select(id: string | undefined, sheet = true) {
+  function select(id: string | undefined, sheet = true, piece?: string) {
     selected = id && byId.has(id) ? id : undefined;
+    picked = piece && pieceOf(piece) ? piece : undefined;
     for (const article of world.querySelectorAll<HTMLElement>(".cat-card[data-id]")) article.classList.toggle("is-selected", article.dataset.id === selected);
     for (const item of outline.querySelectorAll<HTMLElement>(".cat-outline__item")) item.setAttribute("aria-current", String(item.dataset.id === selected));
     renderInspector();
     placeSel();
-    if (mode() !== "wide" && sheet) { if (selected) setSheet("options"); else if (root.dataset.sheet === "options") setSheet(""); }
+    if (mode() !== "wide" && sheet) { if (placeKey()) setSheet("options"); else if (root.dataset.sheet === "options") setSheet(""); }
+  }
+  /** Picks whatever a name label belongs to: a card, one of its screens, or an area. */
+  function selectPiece(key: string, sheet = true) {
+    const element = pieceOf(key);
+    if (!element) return;
+    if (element.matches(".cat-area")) select(undefined, sheet, key);
+    else if (element.matches(".cat-card")) select(key, sheet);
+    else select(element.closest<HTMLElement>(".cat-card")!.dataset.id, sheet, key);
   }
   function go(id: string) {
     select(id);
@@ -660,8 +689,8 @@ export function startBoard(root: HTMLElement) {
     element.append(el("h3", "cat-inspector__heading", title), ...children);
     return element;
   }
-  /** Where the card sits on the board, to type exactly; dragging its title or the arrow keys move it too. */
-  function placeSection(entry: Entry) {
+  /** Where the picked piece sits on the board, to type exactly; dragging its name or the arrow keys move it too. */
+  function placeSection(key: string) {
     const fields = el("div", "cat-place");
     for (const axis of ["x", "y"] as const) {
       const label = el("label", "cat-control");
@@ -670,23 +699,25 @@ export function startBoard(root: HTMLElement) {
       input.step = "1";
       input.dataset.place = axis;
       input.addEventListener("input", () => {
-        const article = cardOf(entry.id), value = input.valueAsNumber;
-        if (!article || !Number.isFinite(value)) return;
-        const place = placeOf(entry.id);
-        setPlace(entry.id, { ...place, [axis]: place[axis] + Math.round(value) - cardBox(article)[axis] });
+        const element = pieceOf(key), value = input.valueAsNumber;
+        if (!element || !Number.isFinite(value)) return;
+        const place = placeOf(key);
+        setPlace(key, { ...place, [axis]: place[axis] + Math.round(value) - pieceBox(element)[axis] });
       });
       label.append(el("span", "cat-control__label", axis.toUpperCase()), input);
       fields.append(label);
     }
-    const place = section("Place", fields);
+    // A screen names itself (its width and colours), as its card has others beside it.
+    const screen = key.startsWith("screen:") ? pieceOf(key)?.querySelector(":scope > .cat-label")?.textContent : "";
+    const place = section(screen ? `Place · ${screen}` : "Place", fields);
     place.dataset.placeSection = "";
     return place;
   }
-  /** The Place fields follow the card as it moves, except the one being typed in. */
+  /** The Place fields follow the piece as it moves, except the one being typed in. */
   function syncPlace() {
-    const article = selected ? cardOf(selected) : null;
-    if (!article) return;
-    const box = cardBox(article);
+    const element = pieceOf(placeKey() ?? "");
+    if (!element) return;
+    const box = pieceBox(element);
     for (const input of inspector.querySelectorAll<HTMLInputElement>("[data-place]"))
       if (input !== document.activeElement) input.value = String(Math.round(box[input.dataset.place as "x" | "y"]));
   }
@@ -733,6 +764,18 @@ export function startBoard(root: HTMLElement) {
   }
   function renderInspector() {
     const entry = selected ? byId.get(selected) : undefined;
+    if (!entry && picked) {
+      // An area: its name, and where it sits.
+      const head = el("div", "cat-inspector__head"), heads = el("div", "cat-inspector__heads");
+      const area = AREAS.find((item) => `area:${item.id}` === picked)!;
+      heads.append(el("h2", "cat-inspector__title", area.name), el("span", "cat-inspector__area", "Area"));
+      const close = iconButton("Close", svgElement(iconMarkup("x")));
+      close.addEventListener("click", () => { select(undefined); setSheet(""); });
+      head.append(heads, close);
+      inspector.replaceChildren(head, placeSection(picked));
+      syncPlace();
+      return;
+    }
     if (!entry) {
       const count = ENTRIES.filter((item) => approvals.approved[item.id]).length;
       const empty = el("div", "cat-inspector__empty");
@@ -756,7 +799,7 @@ export function startBoard(root: HTMLElement) {
       controls.push(segmented("Colours", [["light", "Light"], ["dark", "Dark"]], now.theme, (theme) => { now.theme = theme as Theme; drawLive(entry); refreshTweak(); }));
     }
     if (controls.length) sections.push(section("Options", ...controls));
-    sections.push(placeSection(entry));
+    sections.push(placeSection(picked ?? entry.id));
     if (isPart(entry)) sections.push(entry.css ? cssFor(entry, entry.css) : tweakFor(entry, true));
     if (entry.area === "molecules" || entry.area === "organisms" || isScreen(entry)) sections.push(section("Made of", madeOfList(entry)));
     sections.push(approveSection(entry));
@@ -890,14 +933,15 @@ export function startBoard(root: HTMLElement) {
       return;
     }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    // The arrow keys move the selected card from the canvas or from its row in the outline, a step of 1 (10 with
-    // Shift), as in Figma.
+    // The arrow keys move the selected card, screen or area from the canvas or from its row in the outline, a step of 1
+    // (10 with Shift), as in Figma.
     const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
     const from = event.target as Element;
-    if (step && selected && !move && (from === document.body || from === viewport || from.closest?.(".cat-outline__item"))) {
+    const key = placeKey();
+    if (step && key && !move && (from === document.body || from === viewport || from.closest?.(".cat-outline__item"))) {
       event.preventDefault();
-      const size = event.shiftKey ? 10 : 1, place = placeOf(selected);
-      setPlace(selected, { x: place.x + step[0] * size, y: place.y + step[1] * size });
+      const size = event.shiftKey ? 10 : 1, place = placeOf(key);
+      setPlace(key, { x: place.x + step[0] * size, y: place.y + step[1] * size });
       return;
     }
     if (event.key === "+" || event.key === "=") zoomCentre(1.25);
@@ -946,18 +990,30 @@ export function startBoard(root: HTMLElement) {
   }, { passive: false });
   for (const type of ["gesturestart", "gesturechange"]) viewport.addEventListener(type, (event) => event.preventDefault());
 
-  // ---------- Moving a card: drag its title; it snaps to the other cards, with guides along the edges it meets ----------
+  // ---------- Moving a card, a screen or an area: drag its name; it snaps to the others, with guides along the edges it meets ----------
 
-  // `sx`, `sy`: the press on screen; `bx`, `by`: on the board, so a zoom during the drag keeps the card under the pointer.
+  /** The name label a piece is dragged by: a card's title, a screen's label, an area's name. */
+  const gripOf = (target: Element) => target.closest<HTMLElement>(".cat-card__title, .cat-half[data-piece] > .cat-label, .cat-area__label");
+  // `sx`, `sy`: the press on screen; `bx`, `by`: on the board, so a zoom during the drag keeps the piece under the pointer.
   // `lx`, `ly`: the pointer's last place on screen, where a pinch starts if a second finger joins.
-  let move: { id: string; pointer: number; sx: number; sy: number; lx: number; ly: number; bx: number; by: number; from: Point; base: Box; others: Box[]; moved: boolean; target: Element; guides: Guide[] } | undefined;
-  function startMove(event: PointerEvent, article: HTMLElement) {
+  let move: { key: string; pointer: number; sx: number; sy: number; lx: number; ly: number; bx: number; by: number; from: Point; base: Box; others: Box[]; moved: boolean; target: Element; guides: Guide[] } | undefined;
+  function startMove(event: PointerEvent, piece: HTMLElement) {
     stopFlight();
-    const id = article.dataset.id!, from = placeOf(id), box = cardBox(article);
-    const others = [...world.querySelectorAll<HTMLElement>(".cat-card[data-id]")].filter((other) => other !== article).map(cardBox);
+    const key = piece.dataset.piece!, from = placeOf(key), box = pieceBox(piece);
+    // It snaps to the cards and screens, except what it holds or sits in.
+    const others = [...world.querySelectorAll<HTMLElement>("[data-piece]")]
+      .filter((other) => !other.matches(".cat-area") && !piece.contains(other) && !other.contains(piece)).map(pieceBox);
     const { x: bx, y: by } = boardAt(event);
-    move = { id, pointer: event.pointerId, sx: event.clientX, sy: event.clientY, lx: event.clientX, ly: event.clientY, bx, by, from, base: { ...box, x: box.x - from.x, y: box.y - from.y }, others, moved: false, target: event.target as Element, guides: [] };
+    move = { key, pointer: event.pointerId, sx: event.clientX, sy: event.clientY, lx: event.clientX, ly: event.clientY, bx, by, from, base: { ...box, x: box.x - from.x, y: box.y - from.y }, others, moved: false, target: event.target as Element, guides: [] };
     try { viewport.setPointerCapture(event.pointerId); } catch { /* The pointer is gone already. */ }
+  }
+  /** What a piece is called: a card or area by its name, a screen by its card and label. */
+  function pieceName(key: string) {
+    const element = pieceOf(key);
+    if (!element) return key;
+    if (element.matches(".cat-area")) return element.querySelector(":scope > .cat-area__label")?.textContent ?? key;
+    if (element.matches(".cat-half")) return `${byId.get(element.closest<HTMLElement>(".cat-card")!.dataset.id!)?.name ?? ""}, ${element.querySelector(":scope > .cat-label")?.textContent ?? ""}`;
+    return byId.get(key)?.name ?? key;
   }
   /** The pointer on the board: `cam` is measured from the canvas's own corner, not the window's. */
   function boardAt(event: PointerEvent) {
@@ -974,27 +1030,27 @@ export function startBoard(root: HTMLElement) {
       if (Math.hypot(event.clientX - move.sx, event.clientY - move.sy) <= 4) return;
       move.moved = true;
       root.classList.add("is-moving");
-      cardOf(move.id)?.classList.add("is-moving");
-      if (selected !== move.id) select(move.id, false);
+      pieceOf(move.key)?.classList.add("is-moving");
+      if (placeKey() !== move.key) selectPiece(move.key, false);
     }
     const now = boardAt(event), dx = now.x - move.bx, dy = now.y - move.by;
     const at = snapMove({ ...move.base, x: move.base.x + move.from.x + dx, y: move.base.y + move.from.y + dy }, move.others, 6 / cam.z);
-    setPlace(move.id, { x: Math.round(at.x - move.base.x), y: Math.round(at.y - move.base.y) }, false);
+    setPlace(move.key, { x: Math.round(at.x - move.base.x), y: Math.round(at.y - move.base.y) }, false);
     move.guides = at.guides;
     drawGuides(at.guides);
   }
   /** `drop` keeps the card where it is, `cancel` (Escape, a cancelled pointer) puts it back; a press that never moved is a tap. */
   function endMove(outcome: "drop" | "cancel") {
     if (!move) return;
-    const { id, moved, from, target } = move;
+    const { key, moved, from, target } = move;
     move = undefined;
     drawGuides([]);
     root.classList.remove("is-moving");
-    cardOf(id)?.classList.remove("is-moving");
+    pieceOf(key)?.classList.remove("is-moving");
     if (!moved) { if (outcome === "drop") tap(target); return; }
     // Put back: the stored places never had the drag in them, so they stay as they are.
-    if (outcome === "cancel") setPlace(id, from, false);
-    else { writePlaces(store, places); say(`${byId.get(id)?.name ?? id} moved`); }
+    if (outcome === "cancel") setPlace(key, from, false);
+    else { writePlaces(store, places); say(`${pieceName(key)} moved`); }
   }
   /** Guides in screen space, so they stay one pixel at every zoom. */
   function drawGuides(guides: readonly Guide[]) {
@@ -1060,9 +1116,9 @@ export function startBoard(root: HTMLElement) {
       points.set(first.id, { x: first.x, y: first.y });
       drag = { id: first.id, sx: first.x, sy: first.y, lx: first.x, ly: first.y, moved: true, target: viewport };
     } else if (move) endMove("drop");
-    // A card's title is its handle: dragging it moves the card (with Space held, the board pans as anywhere else).
-    const grip = !spaceHeld && event.button === 0 && points.size === 0 ? target.closest<HTMLElement>(".cat-card__title") : null;
-    if (grip?.parentElement?.dataset.id) { startMove(event, grip.parentElement); return; }
+    // A name label is the handle: dragging it moves what it names (with Space held, the board pans as anywhere else).
+    const grip = !spaceHeld && event.button === 0 && points.size === 0 ? gripOf(target) : null;
+    if (grip?.parentElement?.dataset.piece) { startMove(event, grip.parentElement); return; }
     if (!spaceHeld && event.button === 0 && target.closest(".cat-live__stage > *")) { press(target.closest<HTMLElement>(".cat-card[data-id]")); return; }
     stopFlight();
     points.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -1124,17 +1180,20 @@ export function startBoard(root: HTMLElement) {
     const fly = target.closest<HTMLElement>("[data-fly]");
     if (fly) { go(fly.dataset.fly!); return; }
     const article = target.closest<HTMLElement>(".cat-card[data-id]"), label = target.closest<HTMLElement>(".cat-area__label");
+    // A screen's own label picks that screen, as a card's title picks the card.
+    const holder = gripOf(target)?.parentElement, screen = holder?.matches(".cat-half") ? holder.dataset.piece : undefined;
     if (mode() !== "wide" && root.dataset.sheet === "outline") setSheet("");
     if (article) {
       const id = article.dataset.id!;
       const twice = lastTap.id === id && now - lastTap.t < 340 && !target.closest("button, input, select");
       if (twice) { lastTap = { t: 0, id: "" }; flyToCard(id, 2); return; }
       lastTap = { t: now, id };
-      if (selected !== id) select(id);
+      if (screen) { if (picked !== screen) select(id, true, screen); }
+      else if (selected !== id || picked) select(id);
       return;
     }
     lastTap = { t: 0, id: "" };
-    if (label) { flyToArea(label.dataset.area as AreaId); return; }
+    if (label) { selectPiece(label.parentElement!.dataset.piece!, false); flyToArea(label.dataset.area as AreaId); return; }
     if (mode() !== "wide") setSheet("");
     select(undefined);
   }

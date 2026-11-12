@@ -204,7 +204,7 @@ body:has(> .cat-board) {
   white-space: nowrap;
   color: var(--muted);
   transform-origin: left bottom;
-  cursor: pointer;
+  cursor: grab;
 }
 .cat-area__cards {
   display: flex;
@@ -220,9 +220,14 @@ body:has(> .cat-board) {
   box-shadow: var(--shadow-small);
   background: var(--panel-surface);
 }
-/* A card being moved, or the one selected, sits over the cards it is dragged across. */
-.cat-card:is(.is-moving, .is-selected) {
+/* A card being moved, or the one selected, sits over the cards it is dragged across; so do a moved screen and area. */
+.cat-card:is(.is-moving, .is-selected),
+.cat-area.is-moving,
+.cat-half[data-piece].is-moving {
   z-index: var(--layer-raised);
+}
+.cat-half[data-piece] {
+  position: relative;
 }
 .cat-card.is-culled {
   visibility: hidden;
@@ -251,11 +256,14 @@ body:has(> .cat-board) {
   transform-origin: left bottom;
   cursor: grab;
 }
+.cat-half[data-piece] > .cat-label {
+  cursor: grab;
+}
 .cat-board.is-moving,
-.cat-board.is-moving .cat-card__title {
+.cat-board.is-moving :is(.cat-card__title, .cat-half[data-piece] > .cat-label, .cat-area__label) {
   cursor: grabbing;
 }
-.cat-board.is-space .cat-card__title {
+.cat-board.is-space :is(.cat-card__title, .cat-half[data-piece] > .cat-label, .cat-area__label) {
   cursor: inherit;
 }
 .cat-card.is-selected .cat-card__title {
