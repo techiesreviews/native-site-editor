@@ -949,13 +949,20 @@ export function startBoard(root: HTMLElement) {
     stopFlight();
     const id = article.dataset.id!, from = placeOf(id), box = cardBox(article);
     const others = [...world.querySelectorAll<HTMLElement>(".cat-card[data-id]")].filter((other) => other !== article).map(cardBox);
-    const bx = (event.clientX - cam.x) / cam.z, by = (event.clientY - cam.y) / cam.z;
+    const at = boardAt(event);
+    const bx = at.x, by = at.y;
     move = { id, pointer: event.pointerId, sx: event.clientX, sy: event.clientY, bx, by, from, base: { ...box, x: box.x - from.x, y: box.y - from.y }, others, moved: false, target: event.target as Element };
     try { viewport.setPointerCapture(event.pointerId); } catch { /* The pointer is gone already. */ }
   }
+  /** The pointer on the board: `cam` is measured from the canvas's own corner, not the window's. */
+  function boardAt(event: PointerEvent) {
+    const box = viewport.getBoundingClientRect();
+    return { x: (event.clientX - box.left - cam.x) / cam.z, y: (event.clientY - box.top - cam.y) / cam.z };
+  }
   function moveTo(event: PointerEvent) {
     if (!move) return;
-    // The button came up where the board never heard it (over another window, say): the drag ends there.
+    // The button came up where the board never heard it (over another window, say): the drag ends there, kept, as
+    // the release was the person's own; a capture taken away (lostpointercapture) was not, so that one puts it back.
     if (event.pointerType === "mouse" && event.buttons === 0) { endMove("drop"); return; }
     if (!move.moved) {
       if (Math.hypot(event.clientX - move.sx, event.clientY - move.sy) <= 4) return;
@@ -964,7 +971,7 @@ export function startBoard(root: HTMLElement) {
       cardOf(move.id)?.classList.add("is-moving");
       if (selected !== move.id) select(move.id, false);
     }
-    const dx = (event.clientX - cam.x) / cam.z - move.bx, dy = (event.clientY - cam.y) / cam.z - move.by;
+    const now = boardAt(event), dx = now.x - move.bx, dy = now.y - move.by;
     const at = snapMove({ ...move.base, x: move.base.x + move.from.x + dx, y: move.base.y + move.from.y + dy }, move.others, 6 / cam.z);
     setPlace(move.id, { x: Math.round(at.x - move.base.x), y: Math.round(at.y - move.base.y) }, false);
     drawGuides(at.guides);
@@ -978,7 +985,8 @@ export function startBoard(root: HTMLElement) {
     root.classList.remove("is-moving");
     cardOf(id)?.classList.remove("is-moving");
     if (!moved) { if (outcome === "drop") tap(target); return; }
-    if (outcome === "cancel") setPlace(id, from);
+    // Put back: the stored places never had the drag in them, so they stay as they are.
+    if (outcome === "cancel") setPlace(id, from, false);
     else { writePlaces(store, places); say(`${byId.get(id)?.name ?? id} moved`); }
   }
   /** Guides in screen space, so they stay one pixel at every zoom. */
@@ -1037,8 +1045,9 @@ export function startBoard(root: HTMLElement) {
     const target = event.target as Element;
     if (target.closest(".cat-zoombar, .cat-search")) return;
     if (event.pointerType === "mouse" && event.button !== 0 && event.button !== 1) return;
-    // A drag whose end the board never heard (the pointer let go elsewhere) ends before anything new starts.
-    if (move) endMove("drop");
+    // A drag whose end the board never heard (the pointer let go elsewhere) ends before anything new starts; a second
+    // finger during a touch drag is ignored.
+    if (move) { if (event.pointerId !== move.pointer && event.pointerType !== "mouse") return; endMove("drop"); }
     // A card's title is its handle: dragging it moves the card (with Space held, the board pans as anywhere else).
     const grip = !spaceHeld && event.button === 0 && points.size === 0 ? target.closest<HTMLElement>(".cat-card__title") : null;
     if (grip?.parentElement?.dataset.id) { startMove(event, grip.parentElement); return; }
