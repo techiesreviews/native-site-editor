@@ -1,7 +1,7 @@
 /* "Link to a page…" on a card just added (card-link-picker.ts): hung from the card's foot, over the page. */
 .card-link {
   position: absolute;
-  z-index: 32;
+  z-index: 31;
   display: flex;
   flex-direction: column;
   gap: 6px;

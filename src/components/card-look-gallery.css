@@ -1,7 +1,7 @@
 /* "Add card as…" (card-look-gallery.ts): every card look as a live thumbnail, under Add card's ▾. */
 .card-looks {
   position: absolute;
-  z-index: 32;
+  z-index: 31;
   display: flex;
   flex-direction: column;
   gap: 6px;

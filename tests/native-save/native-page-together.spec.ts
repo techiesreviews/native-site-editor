@@ -249,11 +249,11 @@ test("Anna's circle with her first letter stays on top of Lex's edit bar while b
     }));
     expect(reached.length).toBeGreaterThan(3);
     expect(reached.every(Boolean)).toBe(true);
-    // The bar's menus and fields, and the cards over the page, open above the carets, which are above the bar.
+    // Over the bar by order in the pane (the same level), under the bar's menus and fields, which open over the page.
     const level = (selector: string) => lex.page.locator(selector).first().evaluate(element => Number(getComputedStyle(element).zIndex));
-    const [bars, carets, menus] = [await level(".edit-bar"), await level(".live-carets-page"), await level(".edit-bar__popover")];
-    expect(carets).toBeGreaterThan(bars);
-    expect(menus).toBeGreaterThan(carets);
+    expect(await level(".live-carets-page")).toBe(await level(".edit-bar"));
+    expect(await level(".edit-bar__popover")).toBeGreaterThan(await level(".live-carets-page"));
+    expect(await lex.page.evaluate(() => Boolean(document.querySelector(".edit-bar")!.compareDocumentPosition(document.querySelector(".live-carets-page")!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   } finally {
     await lex.context.close();
     await anna.context.close();
