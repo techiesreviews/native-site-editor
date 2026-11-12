@@ -1,5 +1,7 @@
 // The planning mock-ups (`docs/wayfinder/<map>/prototypes/*`), served by the preview site at
-// `/mockups/<map>/<file>` with a generated `/mockups/index.html` listing them by map. Only the
+// `/mockups/<map>/<file>` with a generated plain list of them by map at `/mockups/list/`. Where the catalogue board
+// is built too (`CATALOGUE=1`), `/mockups/` opens the board's mock-ups (`/catalogue.html#plans`) and `/mockups/board.json`
+// gives the board each mock-up's card; without it `/mockups/` is the plain list. Only the
 // preview build turns this on (`MOCKUPS=1`, `npm run build:preview`); production builds and the
 // editor's boot never see these files. The images a mock-up uses sit beside it and are copied too;
 // images no mock-up uses (reference screenshots for planning) stay unpublished. Each mock-up on the
@@ -177,20 +179,27 @@ export function mockupShipping(mockups: readonly Mockup[], tickets: readonly Bui
 /** The editor's palette and type tokens, light and dark, so the index looks like the editor's chrome. */
 const editorTheme = () => readFileSync(new URL("./src/theme.css", import.meta.url), "utf8");
 
-/** A mock-up's label and, after it, the tickets it came from: `tickets 21, 22, atomic-catalogue 66`. */
-function shippingBadge(map: string, { label, tickets }: Shipping): string {
+/** The tickets a mock-up came from: `tickets 21, 22, atomic-catalogue 66`; empty for none. */
+function ticketsText(map: string, { tickets }: Shipping): string {
   const names = tickets.map(ticket => ticket.map === map ? ticket.name : `${ticket.map} ${ticket.name}`);
-  const from = names.length ? ` <span class="tickets">${names.length === 1 ? "ticket" : "tickets"} ${escapeHtml(names.join(", "))}</span>` : "";
-  return `<span class="shipping shipping--${label}">${SHIPPING_LABELS[label][0]}</span>${from}`;
+  return names.length ? `${names.length === 1 ? "ticket" : "tickets"} ${names.join(", ")}` : "";
+}
+
+/** A mock-up's label and, after it, the tickets it came from. */
+function shippingBadge(map: string, state: Shipping): string {
+  const from = ticketsText(map, state);
+  return `<span class="shipping shipping--${state.label}">${SHIPPING_LABELS[state.label][0]}</span>${from ? ` <span class="tickets">${escapeHtml(from)}</span>` : ""}`;
 }
 
 /** The index page: a legend of the labels, then one section per map, one link per HTML mock-up with its label.
  * A released mock-up (Live or On preview) that has a picture (`pictures`: its `<map>/<file>`) shows it, linked to
  * the mock-up, and a link "Open mock-up" after its label. */
-export function mockupIndex(mockups: readonly Mockup[], { read = path => readFileSync(path, "utf8"), shipping = new Map(), pictures = new Set() }: {
+export function mockupIndex(mockups: readonly Mockup[], { read = path => readFileSync(path, "utf8"), shipping = new Map(), pictures = new Set(), up = "" }: {
   read?: (path: string) => string;
   shipping?: ReadonlyMap<string, Shipping>;
   pictures?: ReadonlySet<string>;
+  /** What the links start with to reach `/mockups/` from the page: `../` for the list at `/mockups/list/`. */
+  up?: string;
 } = {}): string {
   const maps = new Map<string, Mockup[]>();
   for (const mockup of mockups) {
@@ -202,11 +211,11 @@ export function mockupIndex(mockups: readonly Mockup[], { read = path => readFil
   const entry = (map: string, page: Mockup) => {
     const key = `${map}/${page.file}`;
     const state = shipping.get(key) ?? { label: "idea", tickets: [] };
-    const href = escapeHtml(`${encodeURIComponent(map)}/${encodeURIComponent(page.file)}`);
+    const href = escapeHtml(`${up}${encodeURIComponent(map)}/${encodeURIComponent(page.file)}`);
     const title = escapeHtml(mockupTitle(read(page.path), page.file));
     const released = isReleased(state.label);
     const picture = released && pictures.has(key)
-      ? `<a class="picture" href="${href}" tabindex="-1" aria-hidden="true"><img src="${escapeHtml(`${encodeURIComponent(map)}/${pictureUrl(page.file).split("/").map(encodeURIComponent).join("/")}`)}" alt="" width="480" height="300" loading="lazy" decoding="async"></a>` : "";
+      ? `<a class="picture" href="${href}" tabindex="-1" aria-hidden="true"><img src="${escapeHtml(`${up}${encodeURIComponent(map)}/${pictureUrl(page.file).split("/").map(encodeURIComponent).join("/")}`)}" alt="" width="480" height="300" loading="lazy" decoding="async"></a>` : "";
     const open = released ? ` <a class="open" href="${href}" aria-label="Open mock-up: ${title}">Open mock-up</a>` : "";
     const line = `<a href="${href}">${title}</a> ${shippingBadge(map, state)}${open}`;
     return picture ? `<li class="with-picture">${picture}<span class="entry">${line}</span></li>` : `<li>${line}</li>`;
@@ -260,6 +269,57 @@ ${sections.join("\n") || "<p>No mock-ups yet.</p>"}
 `;
 }
 
+/** One mock-up as the catalogue board draws its card: the label (`label`, and its words `labelName`), the tickets it
+ * came from, where to open it and, for a released one with a picture, the picture. Every address starts at the site's root. */
+export type MockupCard = { file: string; title: string; label: keyof typeof SHIPPING_LABELS; labelName: string; tickets: string; href: string; picture?: string };
+/** `/mockups/board.json`: each map's mock-ups, in the order of the plain list. */
+export type MockupBoard = { maps: { map: string; mockups: MockupCard[] }[] };
+
+/** The cards of the board, by map, from the same labels, titles and pictures as the plain list. */
+export function mockupBoard(mockups: readonly Mockup[], { read = path => readFileSync(path, "utf8"), shipping = new Map(), pictures = new Set() }: {
+  read?: (path: string) => string;
+  shipping?: ReadonlyMap<string, Shipping>;
+  pictures?: ReadonlySet<string>;
+} = {}): MockupBoard {
+  const maps = new Map<string, MockupCard[]>();
+  for (const { map, file, path } of mockups) {
+    if (!file.endsWith(".html")) continue;
+    const key = `${map}/${file}`;
+    const state = shipping.get(key) ?? { label: "idea", tickets: [] };
+    const base = `/mockups/${encodeURIComponent(map)}/`;
+    const card: MockupCard = {
+      file, title: decodeCharacters(mockupTitle(read(path), file)), label: state.label, labelName: SHIPPING_LABELS[state.label][0], tickets: ticketsText(map, state),
+      href: `${base}${encodeURIComponent(file)}`,
+    };
+    if (isReleased(state.label) && pictures.has(key)) card.picture = `${base}${pictureUrl(file).split("/").map(encodeURIComponent).join("/")}`;
+    const cards = maps.get(map);
+    if (cards) cards.push(card);
+    else maps.set(map, [card]);
+  }
+  return { maps: [...maps].map(([map, cards]) => ({ map, mockups: cards })) };
+}
+
+/** Where `/mockups/` leads when the board is built too: the board, opened on its mock-ups (src/catalogue/board.ts). */
+export const BOARD_MOCKUPS = "/catalogue.html#plans";
+
+/** `/mockups/` itself: it opens the board's mock-ups. A plain page with a link, for a browser that does not follow the redirect. */
+export function mockupsRedirect(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta http-equiv="refresh" content="0; url=${BOARD_MOCKUPS}">
+<title>Mock-ups</title>
+</head>
+<body>
+<a href="${BOARD_MOCKUPS}">Mock-ups</a>
+</body>
+</html>
+`;
+}
+
 /** Mock-ups are single files with inline scripts (one imports Yjs from esm.sh), which the editor's policy
  * in `public/_headers` forbids. This rule, appended to the built `_headers`, swaps that policy for one
  * allowing them under `/mockups/` only: a rule's `!` removes the header earlier rules set. `sandbox`
@@ -286,7 +346,9 @@ export function mockupsHeaders(): Plugin {
   return { name: "ase-mockups-headers", apply: "build", writeBundle: ({ dir }) => appendMockupsHeaders(dir) };
 }
 
-export function mockups(root: string): Plugin {
+/** `board`: the catalogue board is built too, so `/mockups/` opens its mock-ups and `/mockups/board.json` feeds them;
+ * without it `/mockups/` is the plain list. The plain list is always at `/mockups/list/`. */
+export function mockups(root: string, { board = false }: { board?: boolean } = {}): Plugin {
   return {
     name: "ase-mockups",
     apply: "build",
@@ -302,7 +364,11 @@ export function mockups(root: string): Plugin {
         this.emitFile({ type: "asset", fileName: `mockups/${mockup.map}/${pictureUrl(mockup.file)}`, source: readFileSync(picture.path) });
         pictures.add(`${mockup.map}/${mockup.file}`);
       }
-      this.emitFile({ type: "asset", fileName: "mockups/index.html", source: mockupIndex(files, { shipping, pictures }) });
+      this.emitFile({ type: "asset", fileName: "mockups/list/index.html", source: mockupIndex(files, { shipping, pictures, up: "../" }) });
+      if (board) {
+        this.emitFile({ type: "asset", fileName: "mockups/index.html", source: mockupsRedirect() });
+        this.emitFile({ type: "asset", fileName: "mockups/board.json", source: JSON.stringify(mockupBoard(files, { shipping, pictures })) });
+      } else this.emitFile({ type: "asset", fileName: "mockups/index.html", source: mockupIndex(files, { shipping, pictures }) });
     },
     // After Vite has copied public/_headers into the output folder; once, even across watch rebuilds.
     writeBundle: ({ dir }) => appendMockupsHeaders(dir),

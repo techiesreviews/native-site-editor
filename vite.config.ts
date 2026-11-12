@@ -30,11 +30,12 @@ function catalogue(): Plugin {
 export default defineConfig({
   // The self-contained browser bundle keeps Mediabunny from splitting shared boot helpers into new chunks.
   resolve: { alias: [{ find: /^mediabunny$/, replacement: fileURLToPath(new URL("./node_modules/mediabunny/dist/bundles/mediabunny.mjs", import.meta.url)) }] },
-  // MOCKUPS=1 (`npm run build:preview`) adds the planning mock-ups at /mockups/; production never has them.
+  // MOCKUPS=1 (`npm run build:preview`) adds the planning mock-ups at /mockups/ (with CATALOGUE=1, /mockups/ opens the board's
+  // mock-ups and the plain list is at /mockups/list/); production never has them.
   // The catalogue-only build copies public/ again, which drops the mock-ups' header rule: it adds the rule back.
   plugins: catalogueOnly ? [monaco.plugin, dompurify.plugin, ...(process.env.MOCKUPS === "1" ? [mockupsHeaders()] : [])] : [
     monaco.plugin, dompurify.plugin, previewRuntime(), pdfjsAssets(),
-    ...(process.env.MOCKUPS === "1" ? [mockups(fileURLToPath(new URL(".", import.meta.url)))] : []),
+    ...(process.env.MOCKUPS === "1" ? [mockups(fileURLToPath(new URL(".", import.meta.url)), { board: process.env.CATALOGUE === "1" })] : []),
     ...(process.env.CATALOGUE === "1" ? [catalogue()] : []),
   ],
   // Three pages: the editor, a synced session's guest page (live.html, slice 30), which loads the preview and the live room only,

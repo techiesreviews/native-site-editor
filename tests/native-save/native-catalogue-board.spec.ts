@@ -1409,3 +1409,104 @@ test("the Editor screen's options reach its frames: the page's name and the phon
   await expect(card.locator('[data-width="1280"][data-theme="light"] iframe').contentFrame().locator(".repository-menu__trigger")).toContainText("garden-and-co");
   await expect(card.locator('[data-width="390"][data-theme="light"] iframe').contentFrame().getByRole("dialog", { name: "Menu" })).toBeVisible();
 });
+
+// The planning mock-ups (TOOLS-218): what the preview build writes to /mockups/board.json becomes one area per map and one
+// card per mock-up, with its label, its picture when it has one, and a link that opens it. The test server has no such file
+// (it serves the editor through Vite), so these tests answer for it.
+const onePixelWebp = Buffer.from("UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==", "base64");
+const PLANS = { maps: [
+  { map: "atomic-catalogue", mockups: [
+    { file: "08-board.html", title: "08 The board, with its parts", label: "live", labelName: "Live", tickets: "tickets 05, 07", href: "/mockups/atomic-catalogue/08-board.html", picture: "/mockups/atomic-catalogue/agreed/08-board.webp" },
+    { file: "55-menu.html", title: "55 Project menu, Today / After", label: "planned", labelName: "Planned", tickets: "ticket 55", href: "/mockups/atomic-catalogue/55-menu.html" },
+  ] },
+  { map: "agents-and-multiplayer", mockups: [
+    { file: "14-share-live.html", title: "14 Share, live", label: "preview", labelName: "On preview", tickets: "", href: "/mockups/agents-and-multiplayer/14-share-live.html" },
+    { file: "99-idea.html", title: "99 An idea", label: "idea", labelName: "Idea only", tickets: "", href: "/mockups/agents-and-multiplayer/99-idea.html" },
+  ] },
+] };
+async function openPlans(page: Page, baseURL: string | undefined, hash = "") {
+  await page.route("**/mockups/board.json", (route) => route.fulfill({ json: PLANS }));
+  await page.route("**/mockups/**/*.webp", (route) => route.fulfill({ body: onePixelWebp, contentType: "image/webp" }));
+  await page.goto(`${baseURL}${BOARD}${hash}`);
+  await expect(page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true })).toBeVisible();
+}
+
+test("each mock-up of the mock-ups page is a card in its map's area, with its label, picture and Open mock-up link", async ({ page, baseURL }) => {
+  await openPlans(page, baseURL);
+  // One area per map, named like the page names it, after the board's own areas.
+  const areas = page.locator(".cat-area--plan");
+  await expect(areas.locator(".cat-area__label")).toHaveText(["atomic-catalogue", "agents-and-multiplayer"]);
+  expect(await page.locator(".cat-area").evaluateAll((all) => all.slice(-2).map((area) => area.classList.contains("cat-area--plan")))).toEqual([true, true]);
+  const live = page.locator('.cat-card[data-id="plan:atomic-catalogue/08-board.html"]');
+  // A card off screen is not drawn (the board culls it), so each is looked at from the outline.
+  await flyTo(page, "08 The board, with its parts");
+  await expect(live.locator(".cat-card__title")).toHaveText("08 The board, with its parts");
+  await expect(live.locator(".cat-plan__label")).toHaveText("Live");
+  await expect(live.locator(".cat-plan__label")).toHaveClass(/cat-plan__label--live/);
+  await expect(live.locator(".cat-plan__tickets")).toHaveText("tickets 05, 07");
+  await expect(live.locator("img.cat-plan__picture")).toHaveAttribute("src", "/mockups/atomic-catalogue/agreed/08-board.webp");
+  const open = live.getByRole("link", { name: "Open mock-up: 08 The board, with its parts" });
+  await expect(open).toHaveText("Open mock-up");
+  await expect(open).toHaveAttribute("href", "/mockups/atomic-catalogue/08-board.html");
+  await expect(open).toHaveAttribute("target", "_blank");
+  // A mock-up not released has no picture, and a card is in its own map's area.
+  const planned = page.locator('.cat-card[data-id="plan:atomic-catalogue/55-menu.html"]');
+  await flyTo(page, "55 Project menu, Today / After");
+  await expect(planned.locator(".cat-plan__label")).toHaveText("Planned");
+  await expect(planned.locator("img")).toHaveCount(0);
+  await expect(planned.getByRole("link", { name: /^Open mock-up/ })).toBeVisible();
+  await expect(areas.first().locator(".cat-card")).toHaveCount(2);
+  await expect(page.locator('.cat-area[data-area="plan:agents-and-multiplayer"] .cat-card')).toHaveCount(2);
+  await expect(page.locator('[data-id="plan:agents-and-multiplayer/99-idea.html"] .cat-plan__label')).toHaveText("Idea only");
+});
+
+test("a mock-up card is picked and found like any card, is not approved, and is dragged by its title and keeps its place", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}${BOARD}`);
+  const options = page.getByRole("complementary", { name: "Options" });
+  const without = await options.textContent();
+  await openPlans(page, baseURL);
+  // The mock-ups are not counted among what Approve is for.
+  await expect(options).toHaveText(without!);
+  const outline = page.getByRole("navigation", { name: "Outline" });
+  await expect(outline.getByRole("button", { name: "atomic-catalogue", exact: true })).toBeVisible();
+  await outline.getByRole("button", { name: "55 Project menu, Today / After", exact: true }).click();
+  const id = "plan:atomic-catalogue/55-menu.html";
+  const card = page.locator(`.cat-card[data-id="${id}"]`);
+  await expectInView(page, `${id}`.replace(/[:/.]/g, "\\$&"));
+  await expect(options.getByRole("heading", { name: "55 Project menu, Today / After" })).toBeVisible();
+  await expect(options.getByText("docs/wayfinder/atomic-catalogue/prototypes/55-menu.html", { exact: true })).toBeVisible();
+  await expect(options.getByRole("button", { name: "Approve" })).toHaveCount(0);
+  await expect(options.getByRole("spinbutton", { name: "X" })).toBeVisible();
+  // Search finds it by its name.
+  await page.keyboard.press("/");
+  await page.getByRole("combobox", { name: "Jump to a part" }).fill("share, live");
+  await expect(page.getByRole("option", { name: /14 Share, live/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  const title = card.locator(".cat-card__title");
+  const before = (await stillBox(card));
+  await dragLabel(page, title, 120, 70);
+  const after = (await card.boundingBox())!;
+  expect(after.x - before.x).toBeGreaterThan(60);
+  expect(after.y - before.y).toBeGreaterThan(30);
+  await expect.poll(async () => (await placesNow(page))[id]?.x).toBeGreaterThan(0);
+  const placed = await card.evaluate((element) => (element as HTMLElement).style.translate);
+  expect(placed).toMatch(/px/);
+  await page.reload();
+  await expect(page.locator(`.cat-card[data-id="${id}"]`)).toHaveAttribute("style", new RegExp(placed.replace(/[.]/g, "\\.")));
+});
+
+test("/mockups/ opens the board on the mock-up areas; without that, the board opens on the shared values", async ({ page, baseURL }) => {
+  await openPlans(page, baseURL, "#plans");
+  const canvas = page.getByRole("region", { name: "Canvas" });
+  const inView = (selector: string) => expect.poll(async () => {
+    const [box, view] = await Promise.all([page.locator(selector).boundingBox(), canvas.boundingBox()]);
+    return Boolean(box && view && box.x >= view.x - 1 && box.y >= view.y - 1 && box.x + box.width <= view.x + view.width + 1 && box.y + box.height <= view.y + view.height + 1);
+  }).toBe(true);
+  await inView('.cat-area[data-area="plan:atomic-catalogue"]');
+  await inView('.cat-area[data-area="plan:agents-and-multiplayer"]');
+  // Nothing is picked: the Options panel is not showing a card.
+  await expect(page.getByRole("complementary", { name: "Options" })).toContainText("Approved 0 of");
+  await page.goto(`${baseURL}${BOARD}`);
+  await inView('.cat-area[data-area="values"]');
+});

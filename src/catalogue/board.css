@@ -414,6 +414,94 @@ body:has(> .cat-board) {
   font-weight: 600;
 }
 
+/* Planning mock-ups (plans.ts): an area per map, a card per mock-up with its picture, label and link. The name wraps to the card. */
+.cat-area--plan .cat-area__cards {
+  max-inline-size: 1600px;
+}
+.cat-area--plan .cat-area__label {
+  max-inline-size: calc((100% - var(--space-l)) / var(--cat-label-scale, 1));
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The name grows as the board zooms out, but only to two and a half times, and wraps to the card's width (never more than three
+   lines), so zoomed out it does not run into the next card's. */
+.cat-card--plan .cat-card__title {
+  --plan-title-scale: min(var(--cat-title-scale, 1), 2.5);
+  inline-size: calc(100% / var(--plan-title-scale));
+  scale: var(--plan-title-scale);
+  white-space: normal;
+}
+.cat-card--plan .cat-card__title > :first-child {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.cat-plan {
+  box-sizing: border-box;
+  inline-size: 22rem;
+  display: grid;
+  gap: var(--space-s);
+  padding: var(--space-m);
+}
+.cat-plan__picture {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 8 / 5;
+  border-radius: var(--radius-small);
+  outline: 1px solid var(--control-line);
+  background: var(--component-surface);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.cat-plan__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2xs) var(--space-xs);
+}
+.cat-plan__label {
+  padding-inline: var(--space-2xs);
+  border-radius: 999px;
+  font-size: var(--type-badge);
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.cat-plan__label--live {
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+.cat-plan__label--preview {
+  background: var(--current);
+  color: var(--link);
+}
+.cat-plan__label--building {
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+}
+.cat-plan__label--planned {
+  background: var(--component-surface);
+  color: var(--component-text);
+}
+.cat-plan__label--idea {
+  outline: 1px solid var(--control-line);
+  outline-offset: -1px;
+  color: var(--muted);
+}
+.cat-plan__tickets {
+  color: var(--muted);
+  font-size: var(--type-small);
+}
+.cat-plan__open {
+  justify-self: start;
+  color: var(--link);
+  font-size: var(--type-small);
+  text-underline-offset: 0.2em;
+}
+
 /* The selection, drawn over the canvas in screen space so it stays thin at every zoom. */
 .cat-sel {
   position: absolute;
