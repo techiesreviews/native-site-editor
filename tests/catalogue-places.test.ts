@@ -5,14 +5,14 @@ import { PLACES_KEY, boundsOf, parsePlaces, readPlaces, serialisePlaces, snapMov
 // Free placement on the catalogue board (TOOLS-215): a card dragged by its title moves by an offset from its place in
 // the areas' flow, snaps to the edges and centres of the other cards, and its offset is remembered in this browser.
 
+type Store = Pick<Storage, "getItem" | "setItem">;
 function memoryStorage(seed: Record<string, string> = {}) {
   const items = new Map(Object.entries(seed));
-  return {
+  const store = {
     getItem: (key: string) => items.get(key) ?? null,
     setItem: (key: string, value: string) => { items.set(key, value); },
-    removeItem: (key: string) => { items.delete(key); },
-    items,
-  };
+  } satisfies Store;
+  return { ...store, items };
 }
 
 test("places read back what was written, and a moved-back card is left out", () => {
@@ -31,7 +31,7 @@ test("broken, hand-edited or missing places read as none, keeping only the good 
 });
 
 test("a browser that refuses storage leaves the board in its flow, and a refused write is no error", () => {
-  const refusing = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } };
+  const refusing = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } } satisfies Store;
   assert.equal(readPlaces(refusing).size, 0);
   assert.doesNotThrow(() => writePlaces(refusing, new Map([["button", { x: 1, y: 1 }]])));
 });
