@@ -6,8 +6,10 @@
 // to. It loads this page's own stylesheets and entry script, reads what to show from its <iframe>'s `data-frame`, and
 // redraws when the board sets new options on `data-values`; a live frame shows the board's Tweak edits from
 // `data-tweaks` (CSS for this page alone). The same page opened at
-// catalogue.html?frame=<part> or ?mockup=<id> (&theme=dark&v=<options>&live=1) shows one frame on its own, as a link.
+// catalogue.html?frame=<part> or ?mockup=<id> (&theme=dark&v=<options>&live=1) shows one frame on its own, as a link;
+// `mockup=` also names the editor's own screens (screens.ts).
 import { MOCKUPS, type Mockup } from "./mockups";
+import { SCREENS } from "./screens";
 import { PARTS, isPart, type Part, type Values } from "./parts";
 
 export type Theme = "light" | "dark";
@@ -71,7 +73,7 @@ export function frameOf(query: string): { entry: Part | Mockup; theme: Theme; va
   const params = new URLSearchParams(query);
   const partId = params.get("frame"), mockupId = params.get("mockup");
   const part = partId ? PARTS.find((item) => item.id === partId) : undefined;
-  const entry = part && isPart(part) ? part : mockupId ? MOCKUPS.find((item) => item.id === mockupId) : undefined;
+  const entry = part && isPart(part) ? part : mockupId ? [...SCREENS, ...MOCKUPS].find((item) => item.id === mockupId) : undefined;
   if (!entry) return undefined;
   let values: Values = {};
   try { values = JSON.parse(params.get("v") ?? "{}") as Values; } catch { /* A hand-edited address: the defaults. */ }
@@ -81,7 +83,7 @@ export function frameOf(query: string): { entry: Part | Mockup; theme: Theme; va
 /** Runs a frame page: the one part or mock-up, in its theme, redrawn when the board sets new options. */
 export async function startFrame(shown: NonNullable<ReturnType<typeof frameOf>>) {
   document.documentElement.dataset.theme = shown.theme;
-  document.body.className = `cat-frame-page${shown.entry.area === "mockups" ? " cat-frame-page--screen" : ""}`;
+  document.body.className = `cat-frame-page${isPart(shown.entry) ? "" : " cat-frame-page--screen"}`;
   const stage = document.createElement("div");
   stage.className = "cat-frame-stage";
   stage.dataset.part = shown.entry.id;
@@ -95,7 +97,7 @@ export async function startFrame(shown: NonNullable<ReturnType<typeof frameOf>>)
   let drawing = 0;
   const draw = async (values: Values) => {
     const turn = ++drawing;
-    const element = shown.entry.area === "mockups" ? await shown.entry.render(values) : await shown.entry.render(values, "normal", shown.live);
+    const element = isPart(shown.entry) ? await shown.entry.render(values, "normal", shown.live) : await shown.entry.render(values);
     if (turn !== drawing) return;
     stage.firstElementChild?.dispatchEvent(new CustomEvent("cat-redraw"));
     stage.replaceChildren(element);

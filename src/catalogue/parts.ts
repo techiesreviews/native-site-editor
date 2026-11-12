@@ -10,12 +10,13 @@ import { PROGRESS_STEPS } from "../ui/parts/progress-options";
 import { SPINNER_PLACES, SPINNER_SIZES, type SpinnerPlace, type SpinnerSize } from "../ui/parts/spinner-options";
 import { HEADING_LEVELS } from "../ui/parts/section-heading-options";
 
-export type AreaId = "values" | "atoms" | "molecules" | "organisms" | "mockups";
+export type AreaId = "values" | "atoms" | "molecules" | "organisms" | "screens" | "mockups";
 export const AREAS: readonly { id: AreaId; name: string }[] = [
   { id: "values", name: "Shared values" },
   { id: "atoms", name: "Atoms" },
   { id: "molecules", name: "Molecules" },
   { id: "organisms", name: "Organisms" },
+  { id: "screens", name: "Screens" },
   { id: "mockups", name: "Mock-ups" },
 ];
 
@@ -490,48 +491,54 @@ const MOLECULES: Part[] = [
   },
 ];
 
-// The slim top bar (ticket 66, version B, pulled forward on 2026-11-11 with Lex's phone layout): drawn as the
-// editor draws it (src/workspace-mount.ts), with the real project menu tile and, on the phone, the real Menu
+// The slim top bar (ticket 66, version B, pulled forward on 2026-11-11 with Lex's phone layout): the editor's own
+// markup (src/workspace-shell.ts), with the real project menu tile and, on the phone, the real Menu
 // (src/components/top-bar-phone.ts). The toolbar on its right (Undo, Redo, History and Publish) belongs to the open
 // file's editor; here it is drawn with the same classes and the Save menu's place is a plain Publish button
-// (organisms 58 and 62 rebuild those, inside this bar).
-async function topBar(values: Values, phone: boolean, open: boolean) {
+// (organisms 58 and 62 rebuild those, inside this bar). The editor screens (screens.ts) fill their bar the same way.
+type Repository = Parameters<ReturnType<typeof import("../components/repository-menu").createRepositoryMenu>["setRepository"]>[0];
+const sampleRepository = (values: Values) => {
+  const project = str(values.project) || "techies-site";
+  return { id: 1, name: project, full_name: `techiesreviews/${project}`, owner: { login: "techiesreviews", type: "Organization" } } as Repository;
+};
+/** Fills a top bar drawn from the editor's markup inside `scope`: the project menu, the page's name and the toolbar. */
+export async function fillTopBar(scope: HTMLElement, values: Values) {
   // The toolbar's and Publish's own stylesheets load with the file's editor in the editor; the board loads them here.
-  const [{ node }, { iconMarkup }, { createRepositoryMenu }, { signal }] = await Promise.all([
-    import("../ui/dom"), import("../icons"), import("../components/repository-menu"), import("@preact/signals-core"),
+  const [{ iconMarkup }, { createRepositoryMenu }] = await Promise.all([
+    import("../icons"), import("../components/repository-menu"),
     import("../components/source-editor.css"), import("../components/publish-menu.css"),
   ]);
-  const project = str(values.project) || "techies-site";
-  const host = node("div", "cat-top-bar");
   const tool = (name: "undo" | "redo" | "clock-counter-clockwise", label: string, part: string) =>
     `<button type="button" class="icon-button code-editor__${part}" aria-label="${label}" title="${label}">${iconMarkup(name)}</button>`;
-  host.innerHTML = `<header class="topbar"><div id="repository-menu"></div>
-    <button type="button" id="explorer-toggle" class="explorer-toggle" title="Pages & files"><span id="current-page"></span> ${iconMarkup("caret-down", 12, "icon--after")}</button>
-    <div class="topbar-actions"><div class="editor-toolbar-host"><div class="code-editor__toolbar code-editor__toolbar--hosted">
+  scope.querySelector("#editor-toolbar-host")!.innerHTML = `<div class="code-editor__toolbar code-editor__toolbar--hosted">
     ${tool("undo", "Undo", "undo")}${tool("redo", "Redo", "redo")}${tool("clock-counter-clockwise", "History", "history")}
     <div class="publish-menu"><button type="button" class="button primary publish-menu__trigger">Publish</button><button type="button" class="button primary publish-menu__more" aria-label="More save options">${iconMarkup("caret-down", 12)}</button></div>
-    </div></div></div></header>`;
-  host.querySelector("#current-page")!.textContent = str(values.page) || "Home";
-  const repository = { id: 1, name: project, full_name: `techiesreviews/${project}`, owner: { login: "techiesreviews", type: "Organization" } };
+    </div>`;
+  scope.querySelector("#current-page")!.textContent = str(values.page) || "Home";
   const menu = createRepositoryMenu({ installUrl: null, accounts: [], onReload: () => undefined, onAccessChanged: () => undefined, onSwitchAccount: () => undefined, onSignOut: () => undefined });
-  menu.setRepository(repository as Parameters<typeof menu.setRepository>[0]);
-  host.querySelector("#repository-menu")!.append(menu.root);
-  if (phone) {
-    const { mountTopBarPhone } = await import("../components/top-bar-phone");
-    mountTopBarPhone({
-      app: host, appStore: { repository: signal(repository as Parameters<typeof menu.setRepository>[0]) },
-      page: { siteSettings: () => Promise.resolve() }, errorMessage: () => undefined,
-    });
-    // Open as the cell asks (the frame is its own page, so its modal never holds the board), once the frame shows the bar.
-    if (open) requestAnimationFrame(() => host.querySelector<HTMLButtonElement>("#topbar-menu")?.click());
-  }
+  menu.setRepository(sampleRepository(values));
+  scope.querySelector("#repository-menu")!.append(menu.root);
+}
+/** The phone's top bar on a bar filled by fillTopBar: its Menu, opened when `open` (and the pull-up sheet in a workspace). */
+export async function phoneTopBar(app: HTMLElement, values: Values, open: boolean) {
+  const [{ mountTopBarPhone }, { signal }] = await Promise.all([import("../components/top-bar-phone"), import("@preact/signals-core")]);
+  mountTopBarPhone({ app, appStore: { repository: signal(sampleRepository(values)) }, page: { siteSettings: () => Promise.resolve() }, errorMessage: () => undefined });
+  // Open as the cell asks (the frame is its own page, so its modal never holds the board), once the frame shows the bar.
+  if (open) requestAnimationFrame(() => app.querySelector<HTMLButtonElement>("#topbar-menu")?.click());
+}
+async function topBar(values: Values, phone: boolean, open: boolean) {
+  const [{ node }, { topBarMarkup }] = await Promise.all([import("../ui/dom"), import("../workspace-shell")]);
+  const host = node("div", "cat-top-bar");
+  host.innerHTML = topBarMarkup();
+  await fillTopBar(host, values);
+  if (phone) await phoneTopBar(host, values, open);
   return host;
 }
 
 const ORGANISMS: Part[] = [
   {
     id: "top-bar", area: "organisms", name: "Top bar", madeOf: ["button", "icon"], frame: { width: 1280, height: 64 },
-    files: ["src/workspace-mount.ts", "src/style.css", "src/components/top-bar-phone.ts", "src/components/top-bar-phone.css"],
+    files: ["src/workspace-shell.ts", "src/style.css", "src/components/top-bar-phone.ts", "src/components/top-bar-phone.css"],
     defaults: { project: "techies-site", page: "Home" },
     controls: [text("project", "Project"), text("page", "Page")],
     rows: [{ label: "A page open" }, { label: "A long page name", values: { page: "Winter pruning: when to cut back roses, shrubs and fruit trees" } }],

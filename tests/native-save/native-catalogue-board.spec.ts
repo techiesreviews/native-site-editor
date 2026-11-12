@@ -150,7 +150,8 @@ const percent = async (page: Page) => parseInt(await page.getByRole("toolbar", {
 /** Every frame has drawn, the camera holds still (the first view fits again once every part has drawn) and keys reach the board. */
 async function settled(page: Page) {
   await expect.poll(async () => {
-    const frames = page.frames().filter((frame) => frame !== page.mainFrame());
+    // The board's own frames (an editor screen's page frame inside one is the sample site's).
+    const frames = page.frames().filter((frame) => frame.parentFrame() === page.mainFrame());
     const drawn = await Promise.all(frames.map((frame) => frame.evaluate(() => (document.querySelector(".cat-frame-stage")?.childElementCount ?? 0) > 0).catch(() => false)));
     return frames.length > 0 && drawn.every(Boolean);
   }).toBe(true);
@@ -1152,4 +1153,53 @@ test("a long badge is cut inside its stage, a mark with no icon draws the check,
   await expect(single).toHaveText("K");
   await expect.poll(() => single.evaluate((element) => getComputedStyle(element).color)).toBe("rgb(200, 0, 0)");
   await expect.poll(() => single.evaluate((element) => getComputedStyle(element).borderTopColor)).toMatch(/ 29\.\d+ \/ 0\.28\)$/); // the red's hue, at the 28% the cap mixes in
+});
+
+test("the Editor screen is the editor's own workspace at 1280 and 390, light and dark, and it works", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  await flyTo(page, "Editor");
+  const card = page.locator("#card-editor");
+  await expect(card).toHaveAttribute("data-files", /src\/workspace-shell\.ts/);
+  const frames = card.locator("iframe");
+  await expect(frames).toHaveCount(4);
+  const wide = card.locator('[data-cell="live"][data-width="1280"][data-theme="light"] iframe').contentFrame();
+  // The editor's own top bar, Page structure, canvas bar and code pane, with its ids and classes.
+  await expect(wide.locator(".cat-frame-stage")).toHaveAttribute("data-files", /src\/components\/page-structure\.ts/);
+  await expect(wide.locator("#app .topbar .repository-menu__trigger")).toBeVisible();
+  await expect(wide.locator("#app .topbar #current-page")).toHaveText("Home");
+  const rows = wide.getByRole("complementary", { name: "Page structure" }).locator(".page-structure__row");
+  await expect(rows.first()).toContainText("Header");
+  await expect(rows.filter({ hasText: "Garden care that lasts" })).toHaveCount(1);
+  await expect(wide.locator(".page-structure__row[aria-selected='true']")).toContainText("Section");
+  await expect(wide.locator(".canvas-bar .canvas-crumbs")).toContainText("section.hero");
+  await expect(wide.locator("#primary-title")).toHaveText("index.html");
+  // Real behaviour: a row chosen in Page structure is selected; the page button opens Pages & files.
+  await wide.locator(".page-structure__row", { hasText: "Main" }).click();
+  await expect(wide.locator(".page-structure__row[aria-selected='true']")).toContainText("Main");
+  await wide.locator("#explorer-toggle").click();
+  await expect(wide.locator("#explorer")).toBeVisible();
+  // A real hover: Publish takes its hover colour under the pointer.
+  const publish = wide.locator(".publish-menu__trigger");
+  await page.keyboard.press("Escape");
+  const rest = await publish.evaluate((element) => getComputedStyle(element).backgroundColor);
+  await publish.hover();
+  await expect.poll(() => publish.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(rest);
+
+  // At 390 the frame is a phone-wide window: the phone's top bar, its Menu, and the pull-up sheet.
+  const phone = card.locator('[data-cell="live"][data-width="390"][data-theme="dark"] iframe').contentFrame();
+  await expect(phone.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(phone.locator("#sheet-handle")).toBeVisible();
+  await phone.locator("#topbar-menu").click();
+  await expect(phone.getByRole("dialog", { name: "Menu" })).toBeVisible();
+});
+
+test("the Editor screen's options reach its frames: the page's name and the phone's Menu open", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  await flyTo(page, "Editor");
+  const options = page.getByRole("complementary", { name: "Options" });
+  await options.getByRole("textbox", { name: "Page" }).fill("Journal");
+  await options.getByRole("switch", { name: "Menu open on the phone" }).check();
+  const card = page.locator("#card-editor");
+  await expect(card.locator('[data-width="1280"][data-theme="light"] iframe').contentFrame().locator("#current-page")).toHaveText("Journal");
+  await expect(card.locator('[data-width="390"][data-theme="light"] iframe').contentFrame().getByRole("dialog", { name: "Menu" })).toBeVisible();
 });

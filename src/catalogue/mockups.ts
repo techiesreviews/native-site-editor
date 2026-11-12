@@ -5,7 +5,8 @@ import type { Control, Values } from "./parts";
 
 export interface Mockup {
   id: string;
-  area: "mockups";
+  /** `screens`: the editor's own screens (screens.ts); `mockups`: screens of features still to build. */
+  area: "mockups" | "screens";
   name: string;
   /** Where the screen will live once built, for hand edits. */
   files: readonly string[];
