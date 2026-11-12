@@ -243,12 +243,14 @@ test("Anna's circle with her first letter stays on top of Lex's edit bar while b
     await expect.poll(() => circleOnTop(annaAtLex), { timeout: 10_000 }).toBe(true);
     // Every control of the bar answers a press at its middle, wherever her circle stands (a circle whose press area reaches a
     // control gives way to it: the bar's blank parts under the circle leave its press).
-    const reached = await lex.page.evaluate(() => [...document.querySelectorAll<HTMLElement>(".edit-bar button")].filter(button => button.getBoundingClientRect().width > 0).map(button => {
-      const box = button.getBoundingClientRect();
-      return button.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
-    }));
-    expect(reached.length).toBeGreaterThan(3);
-    expect(reached.every(Boolean)).toBe(true);
+    // (Polled: a circle gives way on the frame after the bar moved.)
+    await expect.poll(() => lex.page.evaluate(() => {
+      const reached = [...document.querySelectorAll<HTMLElement>(".edit-bar button")].filter(button => button.getBoundingClientRect().width > 0).map(button => {
+        const box = button.getBoundingClientRect();
+        return button.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+      });
+      return reached.length > 3 && reached.every(Boolean);
+    }), { timeout: 10_000 }).toBe(true);
     // Over the bar by order in the pane (the same level), under the bar's menus and fields, which open over the page.
     const level = (selector: string) => lex.page.locator(selector).first().evaluate(element => Number(getComputedStyle(element).zIndex));
     expect(await level(".live-carets-page")).toBe(await level(".edit-bar"));
