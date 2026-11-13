@@ -181,7 +181,8 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     refresh: () => filesTree ? filesTree.refresh() : ports.mediaController.requestGalleryRefresh(),
     // Files found follow the files: a new or removed file shows in them without typing again.
     render: () => { filesTree?.render(); if (searchText("files")) search(); }, reset: () => { spareListings.clear(); filesTree?.reset(); },
-    shown: () => filesTree?.shown(), row: (path: string) => filesTree?.row(path),
+    // While a search shows found files, a file's row is its found row (a copy or a renamed file takes the focus there).
+    shown: () => filesTree?.shown(), row: (path: string) => (ports.files.hidden ? [...ports.element("files-found").querySelectorAll<HTMLElement>(".file-row")].find((row) => row.dataset.path === path) : undefined) ?? filesTree?.row(path),
     openFolder: (path: string) => filesTree?.openFolder(path), listings: () => filesTree?.listings() ?? spareListings, visible: filesShown,
   };
   let explorerMount: Promise<void> | undefined;

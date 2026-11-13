@@ -1,0 +1,5 @@
+/* The files the explorer's Files search found (src/pages-and-files-explorer.ts), loaded with the search rather than at boot:
+   the name, then its folder in small grey mono type at the row's end. */
+.files-found { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 0; list-style: none; }
+.files-found .filename { flex: none; max-inline-size: 70%; overflow: hidden; text-overflow: ellipsis; }
+.files-found .file-folder { min-width: 0; margin-inline-start: auto; padding-inline-start: var(--space-s); overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-family: var(--font-mono); font-size: var(--type-small); }

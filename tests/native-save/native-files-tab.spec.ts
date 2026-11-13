@@ -174,6 +174,29 @@ test("the search lists every file whose name or folder has it, closed folders to
   await expect(explorer(page).getByLabel("Search pages", { exact: true })).toHaveValue("");
 });
 
+test("found files drawn again keep the focus on the row that had it; very many matches draw the first 200 and count the rest", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  for (let i = 1; i <= 205; i++)
+    expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: `notes/n-${String(i).padStart(3, "0")}.txt`, content: `${i}\n` } })).status()).toBe(204);
+  await openFiles(page, baseURL);
+  const search = explorer(page).getByLabel("Search files", { exact: true });
+  const found = explorer(page).getByRole("list", { name: "Files found", exact: true });
+  await search.fill("site");
+  // A copy made from a found row takes the focus among the found files, and so does a file renamed there.
+  await found.locator('.file-row[data-path="styles/site.css"]').click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for styles/site.css" }).getByRole("menuitem", { name: "Duplicate" }).click();
+  await expect(page.locator("#status")).toContainText("Duplicated styles/site.css as styles/site-copy.css");
+  await expect(found.locator('.file-row[data-path="styles/site-copy.css"]')).toBeFocused();
+  await page.keyboard.press("F2");
+  const rename = found.getByRole("textbox", { name: "New name for styles/site-copy.css", exact: true });
+  await rename.fill("site-main.css");
+  await rename.press("Enter");
+  await expect(found.locator('.file-row[data-path="styles/site-main.css"]')).toBeFocused();
+  await search.fill("notes/n-");
+  await expect(found.locator(".file-row")).toHaveCount(200);
+  await expect(found.locator("li").last()).toHaveText("5 more files match: keep typing to narrow the list");
+});
+
 test("a folder made while the search hides it is in view, with focus on it, once the dialog closes", async ({ page, baseURL }) => {
   await openFiles(page, baseURL);
   const search = explorer(page).getByLabel("Search files", { exact: true });
