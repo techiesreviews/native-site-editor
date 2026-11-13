@@ -21,8 +21,6 @@ import { pageCarets, watchPageCarets, type PageCaretPoint, type PageCaretRect, t
 import { sourceOffsetOfText, textPointAt } from "../native-source-location";
 import { icon } from "../icons";
 import { caretFlag, placeTag, type CaretWho, type Tagged } from "./caret-flag";
-// The tag's look is its own module (src/components/caret-flag.ts), which a guest's page draws too.
-export { programMark, rightToLeft } from "./caret-flag";
 import { githubScope, same } from "../workspace-session";
 import { participants } from "../participant";
 

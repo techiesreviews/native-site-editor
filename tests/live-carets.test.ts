@@ -10,7 +10,8 @@ registerHooks({
     : url.endsWith("/components/source-editor.ts") ? { format: "module", source: "export const caretPanes = () => []; export const watchCaretPanes = () => () => {};", shortCircuit: true }
     : next(url, context),
 });
-const { overControlState, pressArea, programMark, rightToLeft } = await import("../src/components/live-carets");
+const { overControlState, pressArea } = await import("../src/components/live-carets");
+const { programMark, rightToLeft } = await import("../src/components/caret-flag");
 
 test("each agent's program has its own mark, and any other agent the plain one", () => {
   const [claude, codex, openai, gemini, cursor] = ["claude-code", "codex", "openai-mcp", "gemini-cli", "cursor"].map(programMark);
