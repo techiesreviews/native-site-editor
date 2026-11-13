@@ -162,10 +162,12 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
   }
 
   // Files from the computer into `folder` (Upload files…, or dropped on a row or the head row): once added, in view, unless
-  // another repository or load is shown by then.
+  // another repository or load is shown by then, or the person typed another search meanwhile (it stays).
   function upload(folder: string, files: File[]) {
-    const at = ports.workspaceSession.begin();
-    void ports.uploadFilesTo(folder, files).then((paths) => { if (paths.length && at.holds()) host.filesTreeController.reveal(paths); });
+    const at = ports.workspaceSession.begin(), field = ports.element<HTMLInputElement>("explorer-search"), typed = field.value;
+    void ports.uploadFilesTo(folder, files).then((paths) => {
+      if (paths.length && at.holds() && field.value === typed) host.filesTreeController.reveal(paths);
+    });
   }
 
   async function copyFilePath(path: string, opener?: HTMLElement) {
@@ -272,7 +274,8 @@ export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | 
     item.append(line);
     return item;
   });
-  if (matches.length > FOUND_MAX) rows.push(node("li", "muted pages-empty", `${matches.length - FOUND_MAX} more files match: keep typing to narrow the list`));
+  const more = matches.length - FOUND_MAX;
+  if (more > 0) rows.push(node("li", "muted pages-empty", `${more} more ${more === 1 ? "file matches" : "files match"}`));
   found.replaceChildren(...rows.length ? rows : [node("li", "muted pages-empty", "No file matches")]);
   if (had === undefined) return;
   const shown = [...found.querySelectorAll<HTMLElement>(".file-row")];

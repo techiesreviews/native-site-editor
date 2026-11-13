@@ -176,7 +176,7 @@ test("the search lists every file whose name or folder has it, closed folders to
 
 test("found files drawn again keep the focus on the row that had it; very many matches draw the first 200 and count the rest", async ({ page, baseURL }) => {
   await page.goto(baseURL!);
-  for (let i = 1; i <= 205; i++)
+  for (let i = 1; i <= 201; i++)
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: `notes/n-${String(i).padStart(3, "0")}.txt`, content: `${i}\n` } })).status()).toBe(204);
   await openFiles(page, baseURL);
   const search = explorer(page).getByLabel("Search files", { exact: true });
@@ -211,7 +211,7 @@ test("found files drawn again keep the focus on the row that had it; very many m
   await expect(explorer(page).locator("#files-found")).toBeHidden();
   await search.fill("notes/n-");
   await expect(found.locator(".file-row")).toHaveCount(200);
-  await expect(found.locator("li").last()).toHaveText("5 more files match: keep typing to narrow the list");
+  await expect(found.locator("li").last()).toHaveText("1 more file matches");
 });
 
 test("a folder made while the search hides it is in view, with focus on it, once the dialog closes", async ({ page, baseURL }) => {
