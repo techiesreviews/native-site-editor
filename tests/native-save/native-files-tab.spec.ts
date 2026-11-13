@@ -137,6 +137,17 @@ test("the search lists every file whose name or folder has it, closed folders to
   const found = explorer(page).getByRole("list", { name: "Files found", exact: true });
   await expect(found.locator('.file-row[data-path="styles/site.css"]')).toBeVisible();
   await expect(explorer(page).locator("#files")).toBeHidden();
+  // A found row has the tree's actions: its menu renames it in place, and so does F2.
+  const siteRow = found.locator('.file-row[data-path="styles/site.css"]');
+  await siteRow.click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for styles/site.css" }).getByRole("menuitem", { name: /^Rename/ }).click();
+  const rename = found.getByRole("textbox", { name: "New name for styles/site.css", exact: true });
+  await expect(rename).toHaveValue("site.css");
+  await rename.press("Escape");
+  await expect(siteRow).toBeFocused();
+  await page.keyboard.press("F2");
+  await expect(rename).toBeFocused();
+  await rename.press("Escape");
   // A found row shows keyboard focus as the tree's rows do.
   await explorer(page).getByLabel("Search files", { exact: true }).focus();
   await page.keyboard.press("Tab");
@@ -200,13 +211,19 @@ test("in a repository with no site the search narrows the rows drawn, and cleari
   await page.keyboard.press("Enter");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "documentation/guide.md");
   if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
-  // The search narrows the rows drawn, so the folder is open first.
+  // A folder opened and closed again: the search opens it on the way to what it finds.
   if (!(await row(page, "documentation/guide.md").isVisible())) await row(page, "documentation").click();
   await expect(row(page, "documentation/guide.md")).toBeVisible();
+  await row(page, "documentation").click();
+  await expect(row(page, "documentation/guide.md")).toBeHidden();
   for (const words of ["documentation", "documentation/guide"]) {
     await explorer(page).getByLabel("Search files", { exact: true }).fill(words);
     await expect(row(page, "documentation/guide.md")).toBeVisible();
     await expect(row(page, "documentation")).toBeVisible();
     await expect(readme).toBeHidden();
   }
+  // Cleared, the folder is closed again, as it was.
+  await explorer(page).getByLabel("Search files", { exact: true }).fill("");
+  await expect(row(page, "documentation/guide.md")).toBeHidden();
+  await expect(row(page, "documentation")).toHaveAttribute("aria-expanded", "false");
 });
