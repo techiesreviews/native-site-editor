@@ -154,6 +154,21 @@ test.describe("touch tablet", () => {
   });
 });
 
+test("a page added while the search hides it starts the search afresh, and shows in the list", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const search = explorer(page).getByLabel("Search pages", { exact: true });
+  await search.fill("journal");
+  await expect(item(page, "Home")).toBeHidden();
+  await explorer(page).getByRole("button", { name: "+ New page" }).click();
+  await explorer(page).getByRole("textbox", { name: "New page title" }).fill("Summer opening hours");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#status")).toHaveText(/^Created the page Summer opening hours/);
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  await expect(search).toHaveValue("");
+  await expect(item(page, "Summer opening hours")).toBeVisible();
+  await expect(item(page, "Home")).toBeVisible();
+});
+
 test("only the URL's text changes the URL; the rest of the row opens the page", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await open(page, baseURL);

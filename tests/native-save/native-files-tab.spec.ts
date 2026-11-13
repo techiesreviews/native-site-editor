@@ -190,6 +190,23 @@ test("in a repository with no site the search narrows the rows drawn, and cleari
   await expect(readme).toBeVisible({ timeout: 30_000 });
   await explorer(page).getByLabel("Search files", { exact: true }).fill("zzzz");
   await expect(readme).toBeHidden();
+  await expect(explorer(page).getByRole("list", { name: "Files found", exact: true })).toHaveText("No file matches");
   await explorer(page).getByLabel("Search files", { exact: true }).fill("");
   await expect(readme).toBeVisible();
+  // A file in a folder: the folder's name or the whole path finds it, with its folder kept.
+  await explorer(page).getByRole("button", { name: "New file or folder", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "New file or folder" });
+  await dialog.getByRole("textbox", { name: "File name" }).fill("documentation/guide.md");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "documentation/guide.md");
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  // The search narrows the rows drawn, so the folder is open first.
+  if (!(await row(page, "documentation/guide.md").isVisible())) await row(page, "documentation").click();
+  await expect(row(page, "documentation/guide.md")).toBeVisible();
+  for (const words of ["documentation", "documentation/guide"]) {
+    await explorer(page).getByLabel("Search files", { exact: true }).fill(words);
+    await expect(row(page, "documentation/guide.md")).toBeVisible();
+    await expect(row(page, "documentation")).toBeVisible();
+    await expect(readme).toBeHidden();
+  }
 });

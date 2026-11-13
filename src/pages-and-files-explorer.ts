@@ -208,8 +208,16 @@ export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | 
   ports.files.hidden = Boolean(words && all.length);
   found.hidden = !ports.files.hidden;
   if (found.hidden) {
-    for (const item of ports.files.querySelectorAll<HTMLElement>("li")) item.hidden = Boolean(words) && !item.textContent?.toLowerCase().includes(words);
-    return;
+    // The rows drawn whose path has the words, with the folders leading to them; nothing found says so.
+    const items = [...ports.files.querySelectorAll<HTMLElement>("li")];
+    for (const item of items) item.hidden = Boolean(words);
+    for (const item of words ? items : []) {
+      if (!item.querySelector<HTMLElement>(":scope > .file-row-line > .file-row")?.dataset.path?.toLowerCase().includes(words)) continue;
+      for (let at: HTMLElement | null = item; at && at !== ports.files; at = at.parentElement) if (at.tagName === "LI") at.hidden = false;
+    }
+    if (!words || items.some((item) => !item.hidden)) return;
+    ports.files.hidden = true;
+    found.hidden = false;
   }
   const rows = all.filter((path) => path.toLowerCase().includes(words)).sort().map((path) => {
     const item = node("li"), line = node("div", "file-row-line"), slash = path.lastIndexOf("/");
