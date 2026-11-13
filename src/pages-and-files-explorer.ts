@@ -14,6 +14,7 @@ import type { ExplorerHost, PagesAndFilesPorts } from "./pages-and-files-host";
 import { setIcon } from "./icons";
 import { button, node } from "./ui/dom";
 import { pickFiles } from "./uploads";
+import "./components/files-found.css";
 import { markDone } from "./ui/done-mark";
 
 // What a creation in the Files tab writes: new files (drafts with no base
@@ -200,6 +201,9 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
   return { planCreation, createFromRequest, fileRowItems, renameProblem, renameFileTarget, dropProblem, dropFileTarget };
 }
 
+/** The most files a search draws at once; the rest are counted under them. */
+const FOUND_MAX = 200;
+
 /** A folder of the tree opened by the search (`open`), or closed again: its list, its icon and what its row says. */
 function searchOpens(list: HTMLElement, open: boolean) {
   list.hidden = !open;
@@ -237,7 +241,10 @@ export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | 
     ports.files.hidden = true;
     found.hidden = false;
   }
-  const rows = all.filter((path) => path.toLowerCase().includes(words)).sort().map((path) => {
+  // Drawn again (a keystroke, or the files changed), the list keeps the focus on the row that had it.
+  const had = found.contains(document.activeElement) ? (document.activeElement?.closest<HTMLElement>(".file-row")?.dataset.path ?? "") : undefined;
+  const matches = all.filter((path) => path.toLowerCase().includes(words)).sort();
+  const rows = matches.slice(0, FOUND_MAX).map((path) => {
     const item = node("li"), line = node("div", "file-row-line"), slash = path.lastIndexOf("/");
     const row = button("", () => { ports.previewSelection.recordIntent(path); void ports.restoreFile(path, ports.workspaceSession.begin()); }, "file-row");
     row.dataset.path = path;
@@ -252,7 +259,11 @@ export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | 
     item.append(line);
     return item;
   });
+  if (matches.length > FOUND_MAX) rows.push(node("li", "muted pages-empty", `${matches.length - FOUND_MAX} more files match: keep typing to narrow the list`));
   found.replaceChildren(...rows.length ? rows : [node("li", "muted pages-empty", "No file matches")]);
+  if (had === undefined) return;
+  const shown = [...found.querySelectorAll<HTMLElement>(".file-row")];
+  (shown.find((row) => row.dataset.path === had) ?? shown[0] ?? ports.element("explorer-search")).focus();
 }
 
 /** Keeps the switch's width on the explorer (--explorer-switch), where Media's One bar starts on the head row (media-picker.css). */
