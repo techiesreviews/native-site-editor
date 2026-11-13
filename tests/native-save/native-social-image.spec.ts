@@ -4,6 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
 import { openPageSettingsFromPages } from "./settings-entry";
 import { animatedGif } from "./animated-gif";
+import { openSiteSettings } from "./site-settings-open";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const panel = (page: Page) => page.getByRole("dialog", { name: "Site settings", exact: true });
@@ -33,7 +34,7 @@ async function fixture(page: Page, baseURL: string | undefined, address: boolean
 
 async function chooseDefault(page: Page) {
   await pages(page);
-  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await openSiteSettings(page);
   await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
   // An empty Social image: its Image button opens the picker for still pictures.
   await panel(page).getByRole("button", { name: "Choose default social image", exact: true }).click();
@@ -189,7 +190,7 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
   expect(await output(page, "media/images/sharing-source-social.jpg", { x: 600, y: 2 })).toMatchObject({ width: 1200, height: 630, green: true });
 
   await pages(page);
-  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await openSiteSettings(page);
   await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
   const field = panel(page).getByLabel("Default social image", { exact: true });
   await expect(field).toHaveValue(first);
@@ -237,7 +238,7 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
   await expect(panel(page)).not.toBeVisible();
   expect(JSON.stringify(await storedDrafts(page))).toBe(drafts);
   await pages(page);
-  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await openSiteSettings(page);
   await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
   await expect(field).toHaveValue(first);
 
@@ -272,7 +273,7 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
   expect(records.files["media/images/sharing-source-social.jpg"]).toBeUndefined();
   // Re-opened, the popup shows the copy's frame on its picture.
   await pages(page);
-  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await openSiteSettings(page);
   await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
   await image.click();
   await expect(square).toHaveAttribute("aria-valuetext", /^50% across, 0% down/);

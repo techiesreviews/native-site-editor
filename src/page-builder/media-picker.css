@@ -668,3 +668,42 @@
 .media-library img[data-transparent] {
   background: var(--checkerboard);
 }
+
+/* The explorer's Media tab (mock-up 05 v2, TOOLS-220): the One bar sits on the head row beside
+   Pages | Media | Files on a computer; tiles with rounded corners and their names under them. */
+@media (min-width: 651px) {
+  /* The grid on show: the pane rises under the head row, whose switch stays on top; the bar starts after the switch
+     (--explorer-switch, measured). A sub-screen (details, collections, settings) keeps the bar in its own row. */
+  .explorer[data-tab="media"]:not(:has(.media-library__sheet:not([hidden]))) {
+    .explorer-head { position: relative; z-index: var(--layer-canvas); pointer-events: none; }
+    .explorer-tabs { pointer-events: auto; }
+    #explorer-media { margin-block-start: calc(-1 * (max(var(--size-compact), var(--size-tap)) + var(--space-4xs) * 2 + var(--space-xs))); }
+    .media-library--pane .media-library__bar { padding: 0 0 var(--space-s) calc(var(--explorer-switch, 0px) + var(--space-xs)); }
+    .media-library--pane .media-library__bar + .media-library__body .media-library__browse { padding-block-start: 0; }
+  }
+}
+.explorer .media-library .media-library__bar > * { height: max(var(--size-control), var(--size-tap)); min-height: 0; }
+.explorer .media-library .media-library__search input { border-radius: var(--radius); background: var(--surface-subtle); }
+.explorer .media-library__footer { display: none; }
+.explorer .media-library__grid:not(.media-library__grid--list) {
+  grid-template-columns: repeat(auto-fill, minmax(min(150px, 40%), 1fr));
+  gap: calc(var(--space-s) + var(--space-l)) var(--space-s);
+  padding-block-end: var(--space-l);
+}
+.explorer .media-library__grid:not(.media-library__grid--list) > .media-library__card {
+  aspect-ratio: 4 / 3;
+  overflow: visible;
+  border-radius: var(--radius);
+}
+.explorer .media-library__grid:not(.media-library__grid--list) :is(.media-library__thumbnail, .media-library__thumbnail img) { border-radius: inherit; }
+.explorer .media-library__grid:not(.media-library__grid--list) .media-library__card:has(input:checked)::after { box-shadow: none; outline: 2px solid var(--primary); outline-offset: 2px; }
+.explorer .media-library__grid:not(.media-library__grid--list) .media-library__name {
+  inset: calc(100% + var(--space-2xs)) 0 auto;
+  padding: 0;
+  color: var(--muted);
+  font-weight: 400;
+  text-shadow: none;
+  opacity: 1;
+}
+.explorer .media-library__grid:not(.media-library__grid--list) .media-library__name::before,
+.explorer .media-library__grid:not(.media-library__grid--list) .media-library__name::after { display: none; }

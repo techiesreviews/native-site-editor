@@ -160,7 +160,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
       import("./components/create-dialog"), import("./components/file-row-actions"), ports.loadConfirmDialog(),
       import("./components/page-picker"), import("./controllers/files-tree-controller"), import("./pages-and-files-explorer"), loadPagesActions(), loadFileOps(),
     ]);
-    return { ...create, ...actions, ...confirm, ...picker, ...tree, createExplorerActions: explorer.createExplorerActions };
+    return { ...create, ...actions, ...confirm, ...picker, ...tree, createExplorerActions: explorer.createExplorerActions, findFiles: explorer.findFiles, measureSwitch: explorer.measureSwitch };
   });
 
   function treeState(scope = ports.draftScope()): TreeState {
@@ -187,8 +187,9 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     if (filesTree) return ensurePagesTree();
     if (explorerMount) return explorerMount;
     const host = ports.element("explorer");
-    const pending = loadExplorerModules().then(async ({ createCreateDialog, createFileRowActions, createConfirmDialog, createPagePicker, createFilesTreeController, createExplorerActions }) => {
+    const pending = loadExplorerModules().then(async ({ createCreateDialog, createFileRowActions, createConfirmDialog, createPagePicker, createFilesTreeController, createExplorerActions, measureSwitch }) => {
       if (!host.isConnected || host !== document.getElementById("explorer")) return;
+      measureSwitch(host, ports.element("explorer-tabs"));
       const { planCreation, createFromRequest, fileRowItems, renameProblem, renameFileTarget, dropProblem, dropFileTarget } = createExplorerActions(ports, {
         get createDialog() { return createDialog; }, get fileActions() { return fileActions; }, get fileOps() { return fileOps; },
         filesTreeController, treeState, undoFileChanges, savePublish, branchPathProblem, resyncNativeSite,
@@ -218,7 +219,8 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
         announce: ports.announce,
       });
       fileActions.attachRoot(ports.files);
-      fileActions.attachRoot(ports.element("explorer-files").querySelector<HTMLElement>(".files-heading")!);
+      // The head row is the top of the repository: a row or files dropped on it go there.
+      fileActions.attachRoot(ports.element("explorer").querySelector<HTMLElement>(".explorer-head")!);
       filesTree = createFilesTreeController({
         ui: { node, button, setIcon },
         snapshot: () => ports.appStore.snapshot.value, repo: () => ports.appStore.repository.value,
@@ -283,6 +285,9 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
       });
       pagesTree.agents(agentMarks);
       ports.element("explorer-pages").replaceChildren(pagesTree.root);
+      // + New page sits in the head row, beside the search, on the Pages tab.
+      ports.element("explorer-new").prepend(pagesTree.newButton);
+      pagesTree.filter(searchText("pages"));
 
       if (ports.explorerDropdown?.isOpen()) pagesController.renderTree();
     }).finally(() => { if (pagesTreeMount === pending) pagesTreeMount = undefined; });
@@ -292,6 +297,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
 
   function mountExplorerTabs() {
     const explorer = ports.element("explorer");
+    ports.element("explorer-search").addEventListener("input", search);
     explorer.addEventListener("toggle", () => {
       // Closing a popover queues its toggle; session expiry may detach it before dispatch.
       if (!explorer.isConnected) return;
@@ -311,9 +317,28 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     }
   }
 
+  // One search field in the head row for every tab (mock-up 05 v2); Media's own search takes its place there.
+  const searchWords = { pages: "Search pages", media: "Search media", files: "Search files" } satisfies Record<ExplorerTab, string>;
+  const searchText = (tab: ExplorerTab) => (ports.element("explorer").dataset.tab === tab ? ports.element<HTMLInputElement>("explorer-search").value : "");
+  function search() {
+    pagesTree?.filter(searchText("pages"));
+    const files = searchText("files");
+    // Files found load with the explorer's own actions (src/pages-and-files-explorer.ts).
+    if (files || !ports.element("files-found").hidden) void loadExplorerModules().then(({ findFiles }) => findFiles(ports, searchText("files"))).catch(ports.errorMessage);
+  }
   function paintExplorerTabs(tab: ExplorerTab, native: boolean) {
     ports.element("explorer-tabs").hidden = !native;
-    ports.element("site-settings-toggle").hidden = !native;
+    const settings = document.getElementById("site-settings-toggle");
+    if (settings) settings.hidden = !native;
+    const explorer = ports.element("explorer"), shown = native ? tab : "files";
+    if (explorer.dataset.tab !== shown) {
+      explorer.dataset.tab = shown;
+      const field = ports.element<HTMLInputElement>("explorer-search");
+      field.value = "";
+      field.placeholder = searchWords[shown];
+      field.setAttribute("aria-label", searchWords[shown]);
+      search();
+    }
     for (const name of explorerTabNames) {
       const button = ports.element(`explorer-tab-${name}`);
       const panel = ports.element(`explorer-${name}`);

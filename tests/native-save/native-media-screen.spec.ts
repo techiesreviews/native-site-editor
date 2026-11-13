@@ -296,8 +296,9 @@ test("in the list a tap on a phone leaves no row lit, and a mouse lights only th
 const tileMarks = (page: Page) => pane(page).locator(".media-library__grid").evaluate(grid => [...grid.querySelectorAll<HTMLElement>(".media-library__card")].flatMap(card => {
   const path = card.dataset.path, marks: string[] = [];
   if (getComputedStyle(card.querySelector(".media-library__usage-label")!).display !== "none") marks.push(`${path} words`);
-  if (getComputedStyle(card, "::after").boxShadow !== "none") marks.push(`${path} ring`);
-  if (getComputedStyle(card.querySelector(".media-library__name")!).opacity === "1") marks.push(`${path} name`);
+  const ring = getComputedStyle(card, "::after");
+  if (ring.boxShadow !== "none" || (card.querySelector("input:checked") && ring.outlineStyle !== "none")) marks.push(`${path} ring`);
+  // Names always show under the explorer's tiles (mock-up 05 v2, TOOLS-220): they are not a mark.
   return marks;
 }));
 
@@ -321,7 +322,7 @@ test("on tiles a tap on a touch screen leaves nothing lit, and a mouse or keyboa
   expect(await tileMarks(phone)).toEqual(["images/placeholder.svg ring"]);
   await select.tap();
   await expect(select.getByRole("checkbox")).not.toBeChecked();
-  // Unticked: nothing stays lit, and touch screens show no names (slice 122).
+  // Unticked: nothing stays lit.
   expect(await lit(phone)).toEqual([]);
   expect(await tileMarks(phone)).toEqual([]);
   await context.close();
@@ -333,7 +334,7 @@ test("on tiles a tap on a touch screen leaves nothing lit, and a mouse or keyboa
   expect(await lit(page)).toEqual([]);
   await card.locator(".media-library__usage").hover();
   await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg usage"]);
-  expect(await tileMarks(page)).toEqual(["images/studio-desk.svg words", "images/studio-desk.svg name"]);
+  expect(await tileMarks(page)).toEqual(["images/studio-desk.svg words"]);
   await card.locator(".media-library__select").hover();
   await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg select"]);
   await page.mouse.move(1270, 890);
@@ -343,10 +344,10 @@ test("on tiles a tap on a touch screen leaves nothing lit, and a mouse or keyboa
   await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
   await expect(card.locator(".media-library__usage")).toBeFocused();
   await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg usage"]);
-  expect(await tileMarks(page)).toEqual(["images/studio-desk.svg words", "images/studio-desk.svg name"]);
+  expect(await tileMarks(page)).toEqual(["images/studio-desk.svg words"]);
   await card.getByRole("checkbox").focus();
   await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg select"]);
-  expect(await tileMarks(page)).toEqual(["images/studio-desk.svg name"]);
+  expect(await tileMarks(page)).toEqual([]);
   // A click leaves focus behind, but once the mouse leaves the tile nothing stays lit.
   await card.locator(".media-library__usage").click();
   const words = page.getByRole("dialog", { name: "studio-desk.svg", exact: true });

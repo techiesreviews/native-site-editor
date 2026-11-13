@@ -1,8 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { filterTo } from "./media-filter";
 
-// The explorer's size (media fix slice 104, audit C1): one box for Pages, Media and Files that runs
-// from under the top bar to 16 px above the window's bottom, a sticky One bar, and action rows that
+// The explorer's size (media fix slice 104, audit C1; mock-up 05 v2, TOOLS-220): one box for Pages, Media and Files
+// that runs from 6 px under the top bar to 12 px above the window's bottom, a sticky One bar, and action rows that
 // stay in view. Default fixture group (the frozen native starter).
 test.beforeEach(({ page }) => page.setDefaultTimeout(15_000));
 
@@ -33,13 +33,13 @@ async function tab(page: Page, name: "Pages" | "Media" | "Files") {
 /** The shown list's bottom edge, which fills the box down to its 12px padding. */
 const listBottom = (page: Page, selector: string) => page.locator(selector).evaluate(element => element.getBoundingClientRect().bottom);
 
-/** Every tab shows the same box, reaching 16 px above the window's bottom, under the top bar;
+/** Every tab shows the same box, reaching 12 px above the window's bottom, under the top bar;
  * the Pages and Files lists fill it and scroll inside. */
 async function expectOneBox(page: Page) {
   await tab(page, "Pages");
   const pages = await box(page);
   expect(await listBottom(page, ".pages-tree")).toBeGreaterThanOrEqual(pages.bottom - 13);
-  expect(pages.bottom).toBe(pages.viewport - 16);
+  expect(pages.bottom).toBe(pages.viewport - 12);
   const bar = await page.locator(".topbar").evaluate(element => element.getBoundingClientRect().bottom);
   expect(pages.top).toBeGreaterThanOrEqual(Math.floor(bar) - 1);
   await tab(page, "Media");
@@ -74,17 +74,23 @@ async function expectActionsInView(page: Page) {
 
 test.describe("on a computer", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
-  test("the explorer is one full-height box; the gear sits in the tab row; the One bar and actions stay in view", async ({ page, baseURL }) => {
+  test("the explorer is one 760 px box from the left edge, with no gear; Media's One bar sits on the head row; actions stay in view", async ({ page, baseURL }) => {
     await open(page, baseURL);
     await expectOneBox(page);
-    expect((await box(page)).width).toBe(1040);
+    const panel = await box(page);
+    expect(panel.width).toBe(760);
+    expect(panel.left).toBe(8);
+    const bar = await page.locator(".topbar").evaluate(element => element.getBoundingClientRect().bottom);
+    expect(panel.top).toBe(Math.round(bar) + 6);
 
-    // The gear is at the end of the tab row, with no band above it.
-    const gear = page.getByRole("button", { name: "Site settings", exact: true });
-    const [tabs, settings] = await Promise.all([page.getByRole("tablist").boundingBox(), gear.boundingBox()]);
-    expect(Math.abs((tabs!.y + tabs!.height / 2) - (settings!.y + settings!.height / 2))).toBeLessThan(2);
-    expect(settings!.x).toBeGreaterThanOrEqual(tabs!.x + tabs!.width);
-    expect(settings!.width).toBe(44);
+    // Site settings is in the project menu now, not a gear in the explorer.
+    await expect(explorer(page).getByRole("button", { name: "Site settings", exact: true })).toHaveCount(0);
+
+    // On Media the One bar (search, Filter, + and More) sits level with Pages | Media | Files.
+    await tab(page, "Media");
+    const [tabs, search] = await Promise.all([page.getByRole("tablist").boundingBox(), pane(page).getByLabel("Search media", { exact: true }).boundingBox()]);
+    expect(Math.abs((tabs!.y + tabs!.height / 2) - (search!.y + search!.height / 2))).toBeLessThan(2);
+    expect(search!.x).toBeGreaterThan(tabs!.x + tabs!.width);
 
     // Scrolling the grid keeps search, Collections and More in view.
     await tab(page, "Media");

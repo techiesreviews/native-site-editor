@@ -311,13 +311,14 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       onAccessChanged: () => void ports.account.reload(),
       onSwitchAccount: (login) => void ports.account.switchTo(login),
       onSignOut: reported(ports.account.signOut), onNote: (note) => { ports.finishedWork.open(note); handOver(); },
+      // The settings dialog closes the menu as it opens, and gives focus back to the project button.
+      onSiteSettings: () => void ports.page.siteSettings(),
       ...ports.share ? { share: ports.share } : {},
       preview: ports.preview,
     });
     ports.element("repository-menu").append(repositoryMenu.root);
     // This top bar, while it is shown (the project tile stays in it).
     const topBar = repositoryMenu.root;
-    ports.element("site-settings-toggle").addEventListener("click", () => void ports.page.siteSettings());
     ports.mediaController.disposeGallery();
     siteActions = mountSiteActions({ statusHost: ports.element("change-status"), menuHost: ports.element("site-actions"), siteFiles: () => ports.site.files(), announce: ports.announce });
     const menuPanel = ports.element("repository-actions");

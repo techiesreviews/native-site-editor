@@ -70,6 +70,8 @@ test("one Save details with a description, Always keep and a new name is one Und
   await expect(panel.getByLabel("File name", { exact: true })).toHaveValue("garden-desk.svg");
   await expect(panel.getByLabel("Description", { exact: true })).toHaveValue("Studio portrait");
   await expect(panel.getByRole("checkbox", { name: "Always keep", exact: true })).toBeChecked();
+  // The records draft is written just after the fields show the save: wait for it under load.
+  await expect.poll(() => storedDraft(page, ".editor/media.json")).toBeDefined();
   const records = JSON.parse((await storedDraft(page, ".editor/media.json"))!.content!);
   expect(records.files["images/garden-desk.svg"]).toEqual({ description: { text: "Studio portrait" }, alwaysKeep: true });
   await expect.poll(source).toEqual(before.replaceAll("studio-desk.svg", "garden-desk.svg"));

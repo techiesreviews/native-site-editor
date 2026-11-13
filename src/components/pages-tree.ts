@@ -100,7 +100,9 @@ export function createPagesTree(options: {
   cardOffer?: (parent: string) => string | undefined;
 }) {
   const root = node("section", "pages");
-  const heading = node("div", "files-heading pages-heading");
+  // The tree's name and count, for assistive technology: the explorer's head row is the visible heading (mock-up 05 v2).
+  const heading = node("div", "pages-heading");
+  heading.hidden = true;
   const title = node("span", "pages-title", "Pages");
   title.id = "pages-heading";
   // How many pages the site has, beside the heading (not part of the tree's name).
@@ -308,7 +310,28 @@ export function createPagesTree(options: {
   const rowByKey = (key: string | undefined) => (key ? rows().find((row) => row.dataset.key === key) : undefined);
   const rowOfRoute = (route: string) => rows().find((row) => row.dataset.route === route);
   // Rows a person can reach: not inside a collapsed row.
-  const visibleRows = () => rows().filter((row) => !row.parentElement?.closest("[role='group'][hidden]"));
+  const visibleRows = () => rows().filter((row) => !row.hidden && !row.parentElement?.closest("[role='group'][hidden], [role='treeitem'][hidden]"));
+  // The explorer's search (mock-up 05 v2): rows whose title or URL has it, with the rows leading to them open.
+  let query = "";
+  function applyFilter() {
+    const words = query.trim().toLowerCase();
+    const keep = (item: HTMLElement): boolean => {
+      const group = item.querySelector<HTMLElement>(":scope > ul");
+      const children = group ? [...group.children].filter((child): child is HTMLElement => child.getAttribute("role") === "treeitem") : [];
+      const inside = children.map(keep).some(Boolean);
+      const own = !words || `${item.getAttribute("aria-label") ?? ""} ${item.dataset.route ?? ""}`.toLowerCase().includes(words);
+      item.hidden = !own && !inside;
+      if (words && inside && group) group.hidden = false;
+      return own || inside;
+    };
+    const shown = [...tree.children].filter((child): child is HTMLElement => child.getAttribute("role") === "treeitem").map(keep).some(Boolean);
+    tree.querySelector(":scope > .pages-found-none")?.remove();
+    if (words && !shown) {
+      const none = node("li", "muted pages-empty pages-found-none", "No page matches");
+      none.setAttribute("role", "none");
+      tree.append(none);
+    }
+  }
 
   function focusRow(key: string | undefined) {
     const row = rowByKey(key) ?? visibleRows()[0];
@@ -819,6 +842,7 @@ export function createPagesTree(options: {
         tree.append(empty);
       }
       place();
+      if (query) applyFilter();
       const key = focus?.file ? pageKey(focus.file) : focus?.route ? (rowOfRoute(focus.route)?.dataset.key ?? routeKey(focus.route)) : active;
       const row = rowByKey(key) ?? rowByKey(currentFile && pageKey(currentFile)) ?? visibleRows()[0];
       if (row) setActive(row);
@@ -834,6 +858,15 @@ export function createPagesTree(options: {
       cancelRename(false);
       cancelUrl(false);
       menu.close(false);
+    },
+    /** + New page, which the explorer's head row shows on the Pages tab. */
+    newButton,
+    /** Shows only the pages whose title or URL has `text` (all pages when empty); `site` draws them again when cleared. */
+    filter(text: string) {
+      const was = query;
+      query = text;
+      if (query) applyFilter();
+      else if (was && model) this.render(model, current);
     },
     /** Starts a new page in place under `parent`, as + New page does at the top. */
     startNew(parent = "/") {

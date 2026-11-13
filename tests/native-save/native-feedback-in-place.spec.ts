@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
+import { openSiteSettings } from "./site-settings-open";
 
 // Atomic catalogue 07: no toasts. A result is said in the #status live region (heard by screen
 // readers) and shows where it happened; Undo is the top bar's. A Media screen's inline warning
@@ -19,7 +20,7 @@ test("Site settings' Update links is said in the live region only, and the top b
   await expect(toast(page)).toHaveCount(0);
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await openSiteSettings(page);
   await dialog(page).getByLabel("Site address", { exact: true }).fill("https://user.github.io/my-site/");
   await dialog(page).getByRole("button", { name: "Apply site settings", exact: true }).click();
   await dialog(page).getByRole("button", { name: "Update links", exact: true }).click();

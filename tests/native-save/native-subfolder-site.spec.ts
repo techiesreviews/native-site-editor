@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
+import { openSiteSettings } from "./site-settings-open";
 
 // Default fixture group: native-starter (501), a site at a domain root with no Site address.
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
@@ -15,7 +16,7 @@ async function open(page: Page, baseURL: string | undefined) {
 async function applyAddress(page: Page, address: string) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await openSiteSettings(page);
   await expect(dialog(page)).toBeVisible();
   await dialog(page).getByLabel("Site address", { exact: true }).fill(address);
   await dialog(page).getByRole("button", { name: "Apply site settings", exact: true }).click();

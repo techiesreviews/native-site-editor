@@ -2,6 +2,7 @@ import { openPageSettingsFromPages, openNavigationFromPages } from "./settings-e
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { storedDraft } from "./drafts";
+import { openSiteSettings } from "./site-settings-open";
 const settings = (page: Page, name = "Page settings") => page.getByRole("dialog", { name, exact: true });
 async function showPages(page: Page) {
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
@@ -63,7 +64,7 @@ test("all settings families fit 390px with horizontal categories and stacked con
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, baseURL);
   for (const [family, categories] of [["Page settings", ["General", "Search", "Social"]], ["Site settings", ["General", "Social", "Pages"]], ["Navigation", ["Links", "Add link"]]] as const) {
-    if (family === "Site settings") { await showPages(page); await page.getByRole("button", { name: family, exact: true }).click(); }
+    if (family === "Site settings") await openSiteSettings(page);
     else if (family === "Page settings") await openPageSettingsFromPages(page);
     else await openNavigationFromPages(page);
     const panel = settings(page, family);
@@ -83,7 +84,7 @@ test("all settings families fit 390px with horizontal categories and stacked con
 test("site categories preserve identity and image edits until Cancel, returning focus to the settings control", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await showPages(page);
-  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await openSiteSettings(page);
   const panel = settings(page, "Site settings");
   await panel.getByLabel("Site name", { exact: true }).fill("Unsaved identity");
   await panel.getByRole("tab", { name: "Social", exact: true }).click();
@@ -96,7 +97,8 @@ test("site categories preserve identity and image edits until Cancel, returning 
   await expect(panel.getByLabel("Default social image", { exact: true })).toHaveValue("https://studio.example/share.png");
   await panel.locator(".site-settings__actions").getByRole("button", { name: "Cancel", exact: true }).click();
   expect(await storedDraft(page, ".editor/config.json")).toBeUndefined();
-  await expect(page.locator("#explorer-toggle")).toBeFocused();
+  // Site settings opens from the project menu (mock-up 05 v2): focus goes back to the project button.
+  await expect(page.locator(".topbar .repository-menu__trigger")).toBeFocused();
 });
 
 test("Explorer omits the redundant Page bar while page menus retain settings and navigation", async ({ page, baseURL }) => {

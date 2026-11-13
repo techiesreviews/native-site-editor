@@ -510,7 +510,16 @@ export function createSiteLoading(ports: SiteLoadingPorts) {
       })
       : undefined;
     const text = label ?? path ?? "Select a page";
-    if (span.textContent !== text) span.textContent = text;
+    if (span.textContent !== text) {
+      // A file by its path: the folder muted, then a spaced slash and its name (mock-up 05 v2).
+      const at = label ? -1 : text.lastIndexOf("/");
+      if (at > 0) {
+        const folder = document.createElement("span"), slash = document.createElement("span");
+        folder.className = "folder-part"; folder.textContent = text.slice(0, at);
+        slash.className = "path-slash"; slash.textContent = "/";
+        span.replaceChildren(folder, slash, text.slice(at + 1));
+      } else span.textContent = text;
+    }
     if (path) span.dataset.path = path;
     else delete span.dataset.path;
   }

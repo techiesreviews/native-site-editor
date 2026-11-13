@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { openEditor } from "../support/scenarios";
 import { sampleContrast, type Pixel } from "./tone-contrast";
+import { openSiteSettings } from "./site-settings-open";
 
 // Slice 106 (audit C3): a tap leaves no hover patch, a mouse still gets one; links and disabled
 // buttons keep their contrast in both themes; see-through pictures sit on a light checkerboard.
@@ -183,7 +184,7 @@ test("usage page names (details and popup) and Choose favicon… use the link co
   await page.keyboard.press("Escape");
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await openSiteSettings(page);
   const favicon = page.getByRole("dialog", { name: "Site settings", exact: true }).getByRole("button", { name: "Choose favicon…", exact: true });
   await expect(favicon).toBeVisible();
   for (const scheme of ["light", "dark"] as const) {
@@ -251,7 +252,7 @@ test("a see-through picture added to Media sits on the checkerboard on its tile,
   await media(page).getByRole("button", { name: "Back", exact: true }).click();
 
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await openSiteSettings(page);
   await page.getByRole("dialog", { name: "Site settings", exact: true }).getByRole("button", { name: "Choose favicon…", exact: true }).click();
   const picker = page.locator("dialog.media-library--picker");
   await expect(picker.locator(`.media-library__card[data-path="${path}"] img`)).toHaveAttribute("data-transparent", "");

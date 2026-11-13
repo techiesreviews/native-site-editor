@@ -145,7 +145,8 @@ export function createRepositoryMenu(options: {
   siteSlot.id = "site-actions";
   const actions = node("div", "repository-menu__section repository-menu__actions");
   actions.append(siteSlot);
-  if (options.onSiteSettings) actions.append(button("Site settings", options.onSiteSettings, actionClass));
+  // Site settings (mock-up 05 v2): a row here, shown only while a site is open (pages-and-files-host.ts).
+  if (options.onSiteSettings) actions.append(Object.assign(button("Site settings", options.onSiteSettings, actionClass), { id: "site-settings-toggle", hidden: true }));
   // Preview link and Edit together (ticket 58): one row each, loaded on the menu's first open (src/shares-later.ts),
   // drawn into these places, under their own "Share" title as the menu's other groups have (Lex, 2026-11-09: spacing,
   // no line). A load that fails is tried again on the next open.

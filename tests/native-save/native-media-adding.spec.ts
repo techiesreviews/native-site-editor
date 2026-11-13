@@ -284,7 +284,7 @@ test("Files drop in a repository without a home page adds the file", async ({ pa
   const explorer = page.locator("#explorer");
   if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
   await expect(explorer.getByRole("button", { name: "README.md", exact: true })).toBeVisible({ timeout: 30_000 });
-  await page.locator("#explorer-files > .files-heading").evaluate(element => {
+  await page.locator("#explorer .explorer-head").evaluate(element => {
     const transfer = new DataTransfer();
     transfer.items.add(new File(["%PDF-1.4"], "Guide.pdf", { type: "application/pdf" }));
     for (const type of ["dragenter", "dragover", "drop"]) element.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true }));
@@ -381,7 +381,7 @@ async function filesTab(page: Page) {
   return explorer;
 }
 async function dropOnFiles(page: Page, files: { name: string; type: string; base64?: string; size?: number }[]) {
-  await page.locator("#explorer-files > .files-heading").evaluate((element, files) => {
+  await page.locator("#explorer .explorer-head").evaluate((element, files) => {
     const transfer = new DataTransfer();
     for (const file of files)
       transfer.items.add(new File([file.base64 === undefined ? new Uint8Array(file.size ?? 0) : Uint8Array.from(atob(file.base64), char => char.charCodeAt(0))], file.name, { type: file.type }));

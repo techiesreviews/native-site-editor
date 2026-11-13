@@ -18,14 +18,16 @@ async function openFiles(page: Page, baseURL: string | undefined) {
 }
 const left = (page: Page, selector: string) => explorer(page).locator(selector).evaluate(element => element.getBoundingClientRect().left);
 
-test("the header names the tab, with no count; rows are one height with names lined up and typed icons", async ({ page, baseURL }) => {
+test("one head row with the switch, the search and + New, no heading or count; rows are one height with names lined up and typed icons", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openFiles(page, baseURL);
-  const heading = explorer(page).locator("#explorer-files > .files-heading");
-  await expect(heading.getByRole("heading", { name: "Files", exact: true })).toHaveCSS("text-transform", "none");
-  // No count beside the heading (S2).
+  const heading = explorer(page).locator(".explorer-head");
+  await expect(heading.getByRole("tab", { name: "Files", exact: true })).toHaveAttribute("aria-selected", "true");
+  // No heading row and no count (S2, mock-up 05 v2).
+  await expect(explorer(page).locator("#explorer-files > .files-heading")).toHaveCount(0);
   await expect(page.locator("#files-count")).toHaveCount(0);
   await expect(heading.getByRole("button", { name: "New file or folder", exact: true })).toHaveText("+ New");
+  await expect(heading.getByLabel("Search files", { exact: true })).toBeVisible();
   await expect(page.locator("#revision")).toBeHidden();
 
   // Icons by type arrive with the explorer (the tree is drawn again then); the wide panel says the type.
@@ -126,4 +128,21 @@ test.describe("touch", () => {
     await expect(page.getByRole("menuitem", { name: "New file…" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Upload files…" })).toBeVisible();
   });
+});
+
+test("the search lists every file whose name or folder has it, closed folders too; one opens on a click and the page button names it by folder and name", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openFiles(page, baseURL);
+  await explorer(page).getByLabel("Search files", { exact: true }).fill("site.css");
+  const found = explorer(page).getByRole("list", { name: "Files found", exact: true });
+  await expect(found.locator('.file-row[data-path="styles/site.css"]')).toBeVisible();
+  await expect(explorer(page).locator("#files")).toBeHidden();
+  await found.locator('.file-row[data-path="styles/site.css"]').click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
+  await expect(page.locator("#current-page")).toHaveText("styles/site.css");
+  await expect(page.locator("#current-page .folder-part")).toHaveText("styles");
+  // A tab switch starts the search afresh.
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  await explorer(page).getByRole("tab", { name: "Pages", exact: true }).click();
+  await expect(explorer(page).getByLabel("Search pages", { exact: true })).toHaveValue("");
 });
