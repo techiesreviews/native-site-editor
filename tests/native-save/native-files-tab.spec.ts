@@ -322,8 +322,12 @@ test("at 390 px, a file uploaded while the search would hide it is in view, the 
   await expect(explorer(page).locator("#files-found")).toBeHidden();
 });
 
+// A rename begun while the page is still loading is refused ("The repository changed meanwhile"): these wait for the preview.
+const settled = (page: Page) => expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
+
 test("Move back and Discard changes bring a renamed file back in view where the search would hide it", async ({ page, baseURL }) => {
   await openFiles(page, baseURL);
+  await settled(page);
   const search = explorer(page).getByLabel("Search files", { exact: true });
   const found = explorer(page).getByRole("list", { name: "Files found", exact: true });
   const renameRobots = async () => {
@@ -352,4 +356,32 @@ test("Move back and Discard changes bring a renamed file back in view where the 
   await expect(page.locator("#status")).toContainText("Discarded the changes to crawl.txt.");
   await expect(search).toHaveValue("");
   await expect(row(page, "robots.txt")).toBeVisible();
+});
+
+test("an Undo or a Redo that brings a file back where the search would hide it shows it, the search started afresh", async ({ page, baseURL }) => {
+  await openFiles(page, baseURL);
+  await settled(page);
+  const search = explorer(page).getByLabel("Search files", { exact: true });
+  const found = explorer(page).getByRole("list", { name: "Files found", exact: true });
+  await search.fill("robots");
+  await found.locator('.file-row[data-path="robots.txt"]').focus();
+  await page.keyboard.press("F2");
+  const rename = found.getByRole("textbox", { name: "New name for robots.txt", exact: true });
+  await rename.fill("crawl.txt");
+  await rename.press("Enter");
+  await expect(row(page, "crawl.txt")).toBeFocused();
+  await search.fill("crawl");
+  await expect(found.locator('.file-row[data-path="crawl.txt"]')).toBeVisible();
+  // Undo brings robots.txt back, which "crawl" leaves out.
+  await page.locator(".code-editor__undo").first().click();
+  await expect(search).toHaveValue("");
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  await expect(row(page, "robots.txt")).toBeVisible();
+  // Redo brings crawl.txt back, which "robots" leaves out.
+  await search.fill("robots");
+  await expect(found.locator('.file-row[data-path="robots.txt"]')).toBeVisible();
+  await page.locator(".code-editor__redo").first().click();
+  await expect(search).toHaveValue("");
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  await expect(row(page, "crawl.txt")).toBeVisible();
 });

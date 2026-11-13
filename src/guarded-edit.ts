@@ -203,8 +203,8 @@ export interface EditorWorkspace {
   afterFileChanges(): void;
   /** Opens `path` after a step (the home page, else the folder, when it is gone); may be done at once. */
   openAfter(path: string | undefined, keepExplorer: boolean): void | Promise<void>;
-  /** Shows the Pages tab's row and focuses it, when the tab is open. */
-  showRow(focus: { file?: string; route?: string } | undefined): void;
+  /** Shows the Pages tab's row and focuses it, when the tab is open; `files` an Undo or Redo brought back show in Files (src/pages-and-files-explorer.ts revealFiles). */
+  showRow(focus: { file?: string; route?: string } | undefined, files?: string[]): void;
   /** Runs `task` once the history move under way is accepted. */
   later(task: () => void): void;
   /** The status line's text. */

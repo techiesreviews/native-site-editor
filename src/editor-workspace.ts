@@ -80,7 +80,7 @@ export interface WorkspaceHost {
   afterFileChanges(): void;
   /** openAfter, quietly */
   openAfter(path: string | undefined, keepExplorer: boolean): Promise<void>;
-  showRow(focus: { file?: string; route?: string } | undefined): void;
+  showRow(focus: { file?: string; route?: string } | undefined, files?: string[]): void;
   status(): string;
   select(request: (NodeRef & { source?: string }) | undefined, reveal?: boolean): void;
   flash(request: NodeRef): void;
@@ -152,7 +152,7 @@ export function createEditorWorkspace(host: WorkspaceHost): EditorWorkspace {
     closePane: () => host.closePane(),
     afterFileChanges: () => host.afterFileChanges(),
     openAfter: (path, keepExplorer) => host.openAfter(path, keepExplorer),
-    showRow: focus => host.showRow(focus),
+    showRow: (focus, files) => host.showRow(focus, files),
     // A macrotask: the history accepts the move under way first.
     later: task => { setTimeout(task, 0); },
     status: () => host.status(),

@@ -403,7 +403,8 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
     const dispose = () => { adopters.delete(adoptPane); receipt.dispose(); releaseUploads(); unshare(); for (const release of kept.values()) release(); kept.clear(); };
 
     /** Opens `path` after the step, its Undo or its Redo, proving the step's files through the opening. */
-    const refresh = (path: string | undefined, initial: boolean, message?: string, previousStatus = ws.status()): boolean | Promise<boolean> => {
+    /** `files`: what Undo or Redo brings back, shown in Files. */
+    const refresh = (path: string | undefined, initial: boolean, message?: string, previousStatus = ws.status(), files?: string[]): boolean | Promise<boolean> => {
       // An unchanged stylesheet pane is not declared here: it stays an unrelated proof, or is proved at its remount.
       const changing = [...new Set([anchor, ws.openFile(), next, path, ...changingTextPaths].filter((value): value is string => !!value))];
       const complete = receipt.beginOwnUITransition(changing);
@@ -422,7 +423,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
           if (!structuralLive() || !complete(owned)) return failed();
           keep();
           ws.afterFileChanges();
-          ws.showRow(initial && op.focus ? op.focus : path ? { file: path } : undefined);
+          ws.showRow(initial && op.focus ? op.focus : path ? { file: path } : undefined, files);
           if (message && structuralLive() && receipt.isCurrent() && ws.status() === previousStatus) ws.announce(message);
           return true;
         } finally { end(); }
@@ -456,7 +457,9 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
       // The history must first accept this exact journal move; the refresh runs after it.
       ws.later(() => {
         try {
-          const refreshed = refresh(direction === "undo" ? home : next, false, direction === "undo" ? op.undone : done, previousStatus);
+          const refreshed = direction === "undo"
+            ? refresh(home, false, op.undone, previousStatus, [...moves.map(move => move.from), ...deletes])
+            : refresh(next, false, done, previousStatus, [...arriving]);
           if (refreshed instanceof Promise) refreshed.catch(error => { refreshPending = false; ws.error(error); });
         } catch (error) { refreshPending = false; ws.error(error); }
       });
