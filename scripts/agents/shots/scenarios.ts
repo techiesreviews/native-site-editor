@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { openEditor, openMedia, openFileDetails, openFiles, openPages, pickPicture, openImagePicker, openStructure } from "../../../tests/support/scenarios";
+import { openSiteSettings } from "../../../tests/native-save/site-settings-open";
 import type { Screen } from "./core";
 
 export type RunStep = <T>(name: string, action: () => Promise<T>) => Promise<T>;
@@ -67,7 +68,7 @@ export async function runScenario(page: Page, screen: Screen, step: RunStep) {
     case "site-settings":
       await step("openPages", () => openPages(page));
       await step('open dialog "Site settings"', async () => {
-        await page.getByRole("button", { name: "Site settings", exact: true }).click();
+        await openSiteSettings(page);
         await expect(page.getByRole("dialog", { name: "Site settings", exact: true })).toBeVisible();
       });
       return;

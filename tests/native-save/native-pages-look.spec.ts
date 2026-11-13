@@ -31,14 +31,15 @@ async function open(page: Page, baseURL: string | undefined) {
 
 const background = (page: Page, name: string) => row(page, name).evaluate(element => getComputedStyle(element).backgroundColor);
 
-test("desktop: calm head, 32px rows, names without the site's name, guide lines, one URL column, the current page marked", async ({ page, baseURL }) => {
+test("desktop: one head row, 32px rows, names without the site's name, guide lines, URLs at the row's end, the current page marked", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await open(page, baseURL);
-  await expect(explorer(page).locator("#pages-heading")).toHaveText("Pages");
-  await expect(explorer(page).locator(".pages-heading")).toHaveCSS("text-transform", "none");
-  // Home, About, Journal, its two posts and the first note: six pages.
-  await expect(explorer(page).locator(".pages-total")).toHaveText("6");
+  // No heading row or count (mock-up 05 v2): the head row holds the switch, the search and + New page.
+  await expect(explorer(page).locator(".pages-heading")).toBeHidden();
   await expect(explorer(page).getByRole("tree", { name: "Pages", exact: true })).toBeVisible();
+  const head = await explorer(page).locator(".explorer-head").boundingBox();
+  for (const control of [explorer(page).getByRole("tablist"), explorer(page).getByLabel("Search pages", { exact: true }), explorer(page).getByRole("button", { name: "+ New page" })])
+    expect(Math.abs((await control.boundingBox())!.y - head!.y)).toBeLessThanOrEqual(4);
 
   for (const name of ["Home", "Journal", "Spring planting", "Notes"])
     expect((await row(page, name).boundingBox())!.height).toBe(32);
@@ -62,11 +63,20 @@ test("desktop: calm head, 32px rows, names without the site's name, guide lines,
   const line = await group.evaluate(element => element.getBoundingClientRect().left + parseFloat(getComputedStyle(element).backgroundPositionX));
   expect(Math.abs(line - (chevron.x + chevron.width / 2))).toBeLessThanOrEqual(1.5);
 
-  // URLs start in one column, whatever the nesting, after the title.
-  const starts = await Promise.all(["Home", "Journal", "Spring planting"].map(async name => (await row(page, name).locator(".pages-url").boundingBox())!.x));
-  expect(Math.max(...starts) - Math.min(...starts)).toBeLessThanOrEqual(1);
+  // URLs end at the row's end, whatever the nesting, after the title, in muted mono type.
+  const ends = await Promise.all(["Home", "Journal", "Spring planting"].map(async name => { const box = (await row(page, name).locator(".pages-url").boundingBox())!; return box.x + box.width; }));
+  expect(Math.max(...ends) - Math.min(...ends)).toBeLessThanOrEqual(1);
   const title = (await row(page, "Spring planting").locator(".pages-label").boundingBox())!;
-  expect(starts[0]).toBeGreaterThan(title.x + title.width);
+  expect(ends[2] - (await row(page, "Spring planting").locator(".pages-url").boundingBox())!.width).toBeGreaterThan(title.x + title.width);
+  await expect(row(page, "Journal").locator(".pages-url")).toHaveCSS("font-family", /mono/i);
+
+  // The search keeps the pages whose title or URL has it, with the rows leading to them.
+  await explorer(page).getByLabel("Search pages", { exact: true }).fill("spring");
+  await expect(item(page, "Spring planting")).toBeVisible();
+  await expect(item(page, "Journal")).toBeVisible();
+  await expect(item(page, "Home")).toBeHidden();
+  await explorer(page).getByLabel("Search pages", { exact: true }).fill("");
+  await expect(item(page, "Home")).toBeVisible();
 
   // + and ⋯ rest hidden, and show on hover with a gentle tint.
   const add = row(page, "Journal").getByRole("button", { name: /^Add subpage to Journal/ });
@@ -110,29 +120,29 @@ test.describe("touch", () => {
 
 test.describe("touch tablet", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 768, height: 1024 } });
-  test("a wide touch list keeps one URL column, clear of the ⋯ at the row's end", async ({ page, baseURL }) => {
+  test("a wide touch list ends every URL just before the ⋯ at the row's end", async ({ page, baseURL }) => {
     await open(page, baseURL);
-    const starts: number[] = [];
+    const ends: number[] = [];
     for (const name of ["Home", "Journal", "Spring planting", "Winter pruning"]) {
       expect((await row(page, name).boundingBox())!.height).toBeGreaterThanOrEqual(44);
       const url = (await row(page, name).locator(".pages-url").boundingBox())!;
       const more = (await row(page, name).locator(".pages-more").boundingBox())!;
       const box = (await row(page, name).boundingBox())!;
-      starts.push(url.x);
+      ends.push(url.x + url.width);
       expect(url.x + url.width).toBeLessThanOrEqual(more.x + 0.5);
       expect(box.x + box.width - (more.x + more.width)).toBeLessThanOrEqual(8);
       await expect(row(page, name).locator(".pages-add")).toBeHidden();
     }
-    expect(Math.max(...starts) - Math.min(...starts)).toBeLessThanOrEqual(1);
+    expect(Math.max(...ends) - Math.min(...ends)).toBeLessThanOrEqual(1);
   });
 });
 
-test("in the URL column only the URL's text changes the URL; the rest of the row opens the page", async ({ page, baseURL }) => {
+test("only the URL's text changes the URL; the rest of the row opens the page", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await open(page, baseURL);
   const url = (await row(page, "Winter pruning").locator(".pages-url").boundingBox())!;
   const box = (await row(page, "Winter pruning").boundingBox())!;
-  await page.mouse.click(url.x + url.width + 24, box.y + box.height / 2);
+  await page.mouse.click(url.x - 24, box.y + box.height / 2);
   await expect(page.locator("#explorer-toggle")).toContainText("Winter pruning");
   await expect(explorer(page).locator(".pages-url-change")).toHaveCount(0);
 });

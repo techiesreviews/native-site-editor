@@ -19,12 +19,12 @@
     justify-self: start;
     margin-top: 6px;
   }
-  /* The explorer hangs from the top bar's bottom edge (not the page button's), so a
-     top bar of two rows never puts it over Publish; centred, 16px above the bottom. */
+  /* The explorer hangs 6px under the top bar's bottom edge (not the page button's), so a top bar of two
+     rows never puts it over Publish; from the bar's left edge, 12px above the bottom (mock-up 05 v2). */
   .explorer.dropdown-panel {
     position-area: none;
-    inset: anchor(--topbar bottom) 0 16px;
-    margin: 0 auto;
-    justify-self: center;
+    inset: calc(anchor(--topbar bottom) + var(--space-2xs)) auto var(--space-s) var(--space-xs);
+    margin: 0;
+    justify-self: start;
   }
 }

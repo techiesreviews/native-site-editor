@@ -5,6 +5,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openEditor, pickPicture, openImagePicker } from "../support/scenarios";
 import { storedDraft } from "./drafts";
+import { openSiteSettings } from "./site-settings-open";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
@@ -217,7 +218,7 @@ test("Site settings' Choose favicon… opens the picker over the settings and fi
   await open(page, baseURL);
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await openSiteSettings(page);
   const settings = page.getByRole("dialog", { name: "Site settings", exact: true });
   const favicon = settings.getByLabel("Favicon", { exact: true });
   const before = await favicon.inputValue();

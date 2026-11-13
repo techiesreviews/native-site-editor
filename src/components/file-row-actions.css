@@ -72,7 +72,7 @@
 .file-row-line.is-dragging { opacity: 0.5; }
 .file-row-line.is-drop-target,
 #files.is-drop-target,
-.files-heading.is-drop-target { background: var(--current); outline: 2px dashed var(--primary); outline-offset: -2px; border-radius: var(--radius); }
+.explorer-head.is-drop-target { background: var(--current); outline: 2px dashed var(--primary); outline-offset: -2px; border-radius: var(--radius); }
 .file-row[hidden] { display: none; }
 
 /* The fade matches what the line paints: panel at rest, hover or keyboard

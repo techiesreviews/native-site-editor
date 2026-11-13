@@ -21,17 +21,18 @@ export const workspaceMarkup = () => `${topBarMarkup()}
     <div id="explorer" class="explorer" role="region" aria-label="Pages & files">
       <div class="explorer-head">
         <div id="explorer-tabs" class="explorer-tabs" role="tablist" aria-label="Pages, media or files" hidden>
-          <button type="button" id="explorer-tab-pages" class="explorer-tab" role="tab" aria-controls="explorer-pages" aria-selected="true">Pages</button>
-          <button type="button" id="explorer-tab-media" class="explorer-tab" role="tab" aria-controls="explorer-media" aria-selected="false" tabindex="-1">Media</button>
-          <button type="button" id="explorer-tab-files" class="explorer-tab" role="tab" aria-controls="explorer-files" aria-selected="false" tabindex="-1">Files</button>
+          <button type="button" id="explorer-tab-pages" class="explorer-tab" role="tab" aria-controls="explorer-pages" aria-selected="true">${iconMarkup("file", 14)}Pages</button>
+          <button type="button" id="explorer-tab-media" class="explorer-tab" role="tab" aria-controls="explorer-media" aria-selected="false" tabindex="-1">${iconMarkup("image-square", 14)}Media</button>
+          <button type="button" id="explorer-tab-files" class="explorer-tab" role="tab" aria-controls="explorer-files" aria-selected="false" tabindex="-1">${iconMarkup("folder", 14)}Files</button>
         </div>
-        <button type="button" id="site-settings-toggle" class="icon-button explorer-settings" aria-label="Site settings" title="Site settings">${iconMarkup("gear")}</button>
+        <label class="explorer-search"><input type="search" id="explorer-search" placeholder="Search files" aria-label="Search files" autocomplete="off" spellcheck="false"></label>
+        <span id="explorer-new" class="explorer-new-slot"><span id="revision" hidden>—</span><button type="button" id="new-at-root" class="explorer-new" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">+ New</button></span>
       </div>
       <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden><p class="muted sidebar-hint">Loading pages…</p></div>
       <div id="explorer-media" class="explorer-panel" aria-labelledby="explorer-tab-media" hidden><p class="muted sidebar-hint">Loading media…</p></div>
       <div id="explorer-files" class="explorer-panel" aria-labelledby="explorer-tab-files">
-        <div class="files-heading explorer-heading"><span class="explorer-heading__start"><h2 class="explorer-heading__title">Files</h2></span><span id="revision" hidden>—</span><button type="button" id="new-at-root" class="explorer-new" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">+ New</button></div>
         <nav id="files" aria-label="Repository files"></nav>
+        <ul id="files-found" class="file-list files-found" aria-label="Files found" hidden></ul>
       </div>
     </div>
     <div class="workspace">

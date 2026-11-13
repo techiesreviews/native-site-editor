@@ -754,16 +754,17 @@ dd {
 .explorer-toggle:is(:active, [aria-expanded="true"]) {
   background: var(--current);
 }
+/* Pages, Media and Files (mock-up 05 v2, version B): one white panel from the left edge, under the project /
+   page path, 6px below the bar and 12px above the window's bottom; its own list scrolls inside. */
 .explorer.dropdown-panel {
-  padding: var(--panel-padding-roomy);
-  /* One box for Pages, Media and Files (media audit C1): Media's width, from under the top
-     bar to 16px above the window's bottom, so switching tabs never resizes it. */
-  width: min(1040px, calc(100vw - 32px));
-  inset-block-end: 16px;
+  padding: var(--space-xs) var(--space-s) var(--space-s);
+  width: min(760px, calc(100vw - 16px));
+  inset-block-end: var(--space-s);
   block-size: auto;
   max-height: none;
   flex-direction: column;
   overflow: clip;
+  border: 1px solid var(--line);
 }
 .explorer.dropdown-panel:popover-open {
   display: flex;
@@ -823,7 +824,42 @@ dd {
   min-width: 0;
 }
 
+/* A file by its path in the page button: the folder muted, the slash spaced. */
+#current-page .folder-part { color: var(--muted); font-weight: 400; }
+#current-page .path-slash { margin-inline: var(--space-3xs); color: var(--muted); font-weight: 400; }
 
-.explorer-head { display: flex; align-items: stretch; gap: 4px; margin-block-end: 4px; border-block-end: 1px solid var(--control-line); }
-.explorer-head:has(> .explorer-tabs[hidden]) { display: none; }
-.explorer .explorer-settings { flex: none; inline-size: 44px; block-size: 44px; align-self: center; }
+/* The explorer's one head row: Pages | Media | Files, the search, and the tab's New (mock-up 05 v2). */
+.explorer-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); padding-block-end: var(--space-xs); }
+.explorer-search {
+  position: relative;
+  flex: 1 1 12rem;
+  display: flex;
+  min-width: 0;
+}
+.explorer-search::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 var(--space-xs);
+  width: 14px;
+  background: var(--muted);
+  mask: url("@phosphor-icons/core/regular/magnifying-glass.svg") center / 14px no-repeat;
+  pointer-events: none;
+}
+.explorer-search > input {
+  flex: 1;
+  min-width: 0;
+  block-size: max(var(--size-control), var(--size-tap));
+  padding-inline: calc(var(--space-xs) * 3) var(--space-xs);
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  color: var(--text);
+  font: inherit;
+}
+.explorer-search > input:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.explorer-new-slot { display: contents; }
+.explorer:not([data-tab="pages"]) .pages-new,
+.explorer:not([data-tab="files"]) #new-at-root,
+.explorer[data-tab="media"] .explorer-search { display: none; }
+.files-found { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 0; list-style: none; }
+.files-found .file-folder { margin-inline-start: auto; padding-inline-start: var(--space-s); color: var(--muted); font-family: var(--font-mono); font-size: var(--type-small); }

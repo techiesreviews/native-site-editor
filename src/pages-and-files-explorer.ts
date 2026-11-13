@@ -11,6 +11,8 @@ import { draftStore } from "./drafts";
 import type { Checked } from "./native-create";
 import { isRenamableMedia, mediaFileName } from "./page-builder/media-names";
 import type { ExplorerHost, PagesAndFilesPorts } from "./pages-and-files-host";
+import { setIcon } from "./icons";
+import { button, node } from "./ui/dom";
 import { pickFiles } from "./uploads";
 import { markDone } from "./ui/done-mark";
 
@@ -192,4 +194,35 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
   }
 
   return { planCreation, createFromRequest, fileRowItems, renameProblem, renameFileTarget, dropProblem, dropFileTarget };
+}
+
+/** The explorer's Files search (mock-up 05 v2): every file of the site whose name or folder has `text`, as rows that open the file;
+ * without a site's file list (a plain repository), the rows drawn are narrowed instead. Empty `text` shows the tree again. */
+export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | "runtime" | "previewSelection" | "restoreFile" | "workspaceSession" | "appStore">, text: string) {
+  const found = ports.element("files-found"), words = text.trim().toLowerCase();
+  const all = words ? ports.runtime.files() : [];
+  ports.files.hidden = Boolean(words && all.length);
+  found.hidden = !ports.files.hidden;
+  if (found.hidden) {
+    for (const line of ports.files.querySelectorAll<HTMLElement>(".file-row-line")) line.hidden = Boolean(words) && !line.closest("li")?.textContent?.toLowerCase().includes(words);
+    return;
+  }
+  const rows = all.filter((path) => path.toLowerCase().includes(words)).sort().slice(0, 200).map((path) => {
+    const item = node("li"), slash = path.lastIndexOf("/");
+    const row = button("", () => { ports.previewSelection.recordIntent(path); void ports.restoreFile(path, ports.workspaceSession.begin()); }, "file-row");
+    row.dataset.path = path;
+    if (path === ports.appStore.openFile.value) row.classList.add("selected");
+    const icon = node("span", "file-icon");
+    setIcon(icon, "file", 16);
+    row.append(icon, node("span", "filename", path.slice(slash + 1)));
+    if (slash > 0) row.append(node("span", "file-folder", path.slice(0, slash)));
+    item.append(row);
+    return item;
+  });
+  found.replaceChildren(...rows.length ? rows : [node("li", "muted pages-empty", "No file matches")]);
+}
+
+/** Keeps the switch's width on the explorer (--explorer-switch), where Media's One bar starts on the head row (media-picker.css). */
+export function measureSwitch(explorer: HTMLElement, tabs: HTMLElement) {
+  new ResizeObserver(() => explorer.style.setProperty("--explorer-switch", `${tabs.offsetWidth}px`)).observe(tabs);
 }

@@ -244,10 +244,10 @@ for (const colorScheme of ["light", "dark"] as const) {
     await expect.poll(() => pane(page).locator(".media-library__card img").first().evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
     const box = await page.locator("#explorer-media").boundingBox();
     await test.info().attach("pane-geometry", { body: JSON.stringify(box), contentType: "application/json" });
-    // Slice 104 (audit C1): a library is a full-height surface; the explorer stops 16px above the bottom.
+    // Slice 104 (audit C1): a library is a full-height surface; the explorer stops 12px above the bottom (mock-up 05 v2).
     const explorer = await page.locator("#explorer").boundingBox();
-    expect(explorer!.y + explorer!.height).toBeCloseTo(900 - 16, 0);
-    expect(box!.y + box!.height).toBeLessThanOrEqual(900 - 16);
+    expect(explorer!.y + explorer!.height).toBeCloseTo(900 - 12, 0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(900 - 12);
     expect(box!.height).toBeGreaterThan(650);
     await page.screenshot({ path: `.scratch/t3-continuation/media-manager-desktop-${colorScheme}.png` });
     await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
@@ -398,13 +398,14 @@ test("a failed detail image clears its focus request and later refresh preserves
 });
 
 const columns = (page: Page) => pane(page).locator(".media-library__grid").evaluate(grid => getComputedStyle(grid).gridTemplateColumns.split(" ").length);
-for (const [width, across] of [[320, 2], [390, 3], [768, 4], [1280, 6]] as const) {
-  test(`Media shows ${across} square tiles across at ${width} px, with usage and selection targets apart`, async ({ page, baseURL }) => {
+// Mock-up 05 v2 (TOOLS-220): four 4:3 tiles across the 760 px explorer, two on a phone.
+for (const [width, across] of [[320, 2], [390, 2], [768, 4], [1280, 4]] as const) {
+  test(`Media shows ${across} tiles across at ${width} px, with usage and selection targets apart`, async ({ page, baseURL }) => {
     await page.setViewportSize({ width, height: 900 }); await open(page, baseURL);
     await expect.poll(() => columns(page)).toBe(across);
     const card = pane(page).locator(".media-library__card").first();
     const tile = await card.boundingBox();
-    expect(Math.abs(tile!.width - tile!.height)).toBeLessThan(1);
+    expect(Math.abs(tile!.width * 3 / 4 - tile!.height)).toBeLessThan(1);
     const usage = (await card.locator(".media-library__usage").boundingBox())!, select = (await card.locator(".media-library__select").boundingBox())!;
     for (const target of [usage, select]) expect(Math.min(target.width, target.height)).toBeGreaterThanOrEqual(44);
     expect(usage.x + usage.width).toBeLessThanOrEqual(select.x);
@@ -483,17 +484,17 @@ test("Media tiles: one per Image family, names on hover or keyboard focus, a cle
   await page.evaluate(() => (window as any).tilesProbe.dispose());
 });
 
-test("touch keeps each tile's number and circle without hover, and drops the name band", async ({ browser, baseURL }) => {
+test("touch keeps each tile's number and circle without hover, and its name under it", async ({ browser, baseURL }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const page = await context.newPage();
   await open(page, baseURL);
   const first = pane(page).locator(".media-library__card").first();
-  for (const [selector, opacity] of [[".media-library__usage", "1"], [".media-library__select", "1"], [".media-library__name", "0"]])
+  for (const [selector, opacity] of [[".media-library__usage", "1"], [".media-library__select", "1"], [".media-library__name", "1"]])
     await expect(first.locator(selector), selector).toHaveCSS("opacity", opacity);
   await context.close();
 });
 
-test("One bar: search, then Filter, + and More as one 44 px group at every width; + opens the chooser; More holds the five tools", async ({ page, baseURL }) => {
+test("One bar: search, then Filter, + and More as one group, 32 px with a mouse (mock-up 05 v2), at every width; + opens the chooser; More holds the five tools", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 }); await open(page, baseURL);
   const library = pane(page);
   const search = library.getByLabel("Search media", { exact: true }), filter = filterButton(library);
@@ -507,7 +508,7 @@ test("One bar: search, then Filter, + and More as one 44 px group at every width
       const [a, f, p, m] = await Promise.all([search, filter, add, more].map(control => control.boundingBox()));
       return a && f && p && m && [a.height, f.height, p.height, m.height, p.width, m.width, Math.round(f.y - a.y), Math.round(m.y - a.y),
         Math.round(f.x - a.x - a.width), Math.round(p.x - f.x - f.width), Math.round(m.x - p.x - p.width), m.x + m.width <= width];
-    }, `width ${width}`).toEqual([44, 44, 44, 44, 44, 44, 0, 0, 8, -1, -1, true]);
+    }, `width ${width}`).toEqual([...Array(4).fill(width > 768 ? 32 : 44), expect.any(Number), expect.any(Number), 0, 0, 8, -1, -1, true]);
   }
   // Lex (slice 122): at every width Filter reads as a muted "Filter" and its choice, in the text colour and
   // not bold, both whole; and 16 px separate search from the first tiles.
@@ -528,7 +529,8 @@ test("One bar: search, then Filter, + and More as one 44 px group at every width
     expect(looks.value.color, `width ${width}`).not.toBe(looks.name.color);
     expect(looks.value.weight, `width ${width}`).toBeLessThanOrEqual(500);
     const [field, card] = await Promise.all([search.boundingBox(), library.locator(".media-library__card").first().boundingBox()]);
-    expect(Math.round(card!.y - field!.y - field!.height), `width ${width}: search to tiles`).toBe(16);
+    // On a computer the One bar sits on the explorer's head row (mock-up 05 v2): 12 px to the tiles.
+    expect(Math.round(card!.y - field!.y - field!.height), `width ${width}: search to tiles`).toBe(width > 650 ? 12 : 16);
   }
   await page.setViewportSize({ width: 1280, height: 900 });
   await search.focus(); await page.keyboard.press("Tab"); await expect(filter).toBeFocused();

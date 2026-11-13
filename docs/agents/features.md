@@ -213,7 +213,7 @@ its number unused.
 
 ### F-pages-01 Pages tab
 - Try: Open the explorer on Pages.
-- Good: The site by its address, each page by its title with its subpages under it; calm 32 px rows, 44 px with one ⋯ on touch (L3, L9).
+- Good: One white panel, 760 px wide from the bar's left edge (mock-up 05 v2): one head row with Pages | Media | Files as a segmented switch, a search and + New page, no heading or count. The site by its address, each page by its title with its subpages under it, its URL at the row's end in small grey mono type; calm 32 px rows, 44 px with one ⋯ on touch (L3, L9). Typing in the search keeps the pages whose title or URL has it.
 - Files: `src/components/pages-tree.ts`, `src/components/pages-tree.css`, `src/controllers/pages-controller.ts`, `src/controllers/pages-state.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-pages-look.spec.ts`
@@ -269,7 +269,7 @@ its number unused.
 
 ### F-pages-08 Files tab
 - Try: Open the explorer on Files.
-- Good: A sentence-case header, rows one height with names lined up and icons by kind; the open file is tinted (L3, L9).
+- Good: The head row's switch, search and + New, no heading row; rows one height with names lined up and icons by kind, a type column on a wide panel; the open file is tinted (L3, L9). Typing in the search lists the site's files whose name or folder has it, each opening on a click.
 - Files: `src/controllers/files-tree-controller.ts`, `src/components/files-tree.css`, `src/components/file-type-icons.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-files-tab.spec.ts`
@@ -316,7 +316,7 @@ its number unused.
 - Steps: `scripts/agents/shots/features/F-pages-13.json`
 
 ### F-pages-14 Site settings
-- Try: Press the gear and set the site's name, address, favicon and default social image; open the 404 page.
+- Try: Open the project menu (on a phone, the Menu), press Site settings and set the site's name, address, favicon and default social image; open the 404 page.
 - Good: Categories keep every value until Apply or Cancel; a sub-folder address moves every link and picture with one Undo; it fits 390 px.
 - Files: `src/components/site-settings.ts`, `src/page-builder/site-identity.ts`, `src/page-builder/site-address-rewrite.ts`
 - Phone: yes
@@ -727,7 +727,7 @@ its number unused.
 
 ### F-media-01 Media tab
 - Try: Open the Media tab between Pages and Files.
-- Good: Square tiles of just the picture, names on hover or focus, the One bar of search, Filter, + and More with 16 px above the grid (L5, L7, S2).
+- Good: Tiles with rounded corners, four across on a computer with 12 px between, each with its name under it; the One bar of search, Filter, + and More on the head row beside Pages | Media | Files (mock-up 05 v2; L5, L7, S2).
 - Files: `src/page-builder/media-library-view.ts`, `src/page-builder/media-library-shell.ts`, `src/page-builder/media-library-grid.ts`, `src/page-builder/media-picker.css`
 - Phone: yes
 - Spec: `tests/native-save/native-media-tab.spec.ts`

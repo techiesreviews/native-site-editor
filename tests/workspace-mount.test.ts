@@ -533,7 +533,8 @@ test("a finished-elsewhere note, the repository menu opening and Site settings r
   panel.dispatch("toggle");
   panel.open = true;
   panel.dispatch("toggle");
-  byId("site-settings-toggle").dispatch("click");
+  // Site settings is the project menu's row (mock-up 05 v2): it opens the settings.
+  (last("menu").options as { onSiteSettings(): void }).onSiteSettings();
   await flush();
   assert.deepEqual(calls.filter((call) => /^(agent\.ensure|setupController\.mount|siteSettings)$/.test(call)), ["agent.ensure", "setupController.mount", "siteSettings"]);
 });

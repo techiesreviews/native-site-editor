@@ -2,6 +2,7 @@ import { openPageSettingsFromPages, openNavigationFromPages } from "./settings-e
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, editorMounted } from "./drafts";
 import { mkdir } from "node:fs/promises";
+import { openSiteSettings } from "./site-settings-open";
 
 const dialog = (page: Page, name: string) => page.getByRole("dialog", { name, exact: true });
 const pageBlock = (page: Page) => page.locator("#structure").getByRole("group", { name: "Page", exact: true });
@@ -20,7 +21,7 @@ async function open(page: Page, baseURL: string | undefined, repo = 501, file = 
 }
 async function openSite(page: Page) {
   await showPages(page);
-  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await openSiteSettings(page);
   await expect(dialog(page, "Site settings")).toBeVisible();
 }
 
