@@ -556,8 +556,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     draftText = event.text;
     const changes = unplaced.size || liveAuthor() ? changesBetween(was ?? "", event.text, event.changes).sort((a, b) => a.start - b.start) : [];
     // Carets waiting to be placed move with the text that changes before them (from the end back, so each change's
-    // offsets still hold): one inside a replaced range goes to the end of what took its place.
-    if (unplaced.size && !copy?.taking()) for (const waiting of unplaced.values()) {
+    // offsets still hold): one inside a replaced range goes to the end of what took its place. They move until the copy
+    // places them, also while it takes part and the draft follows the room's text it caught up with (`begin`).
+    if (unplaced.size) for (const waiting of unplaced.values()) {
       for (let at = changes.length - 1; at >= 0; at--) {
         const { start, end, text } = changes[at];
         if (waiting.index >= end) waiting.index += text.length - (end - start);
