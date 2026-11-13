@@ -915,8 +915,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         // with the room's copy when this page shows again; kept as it is, and only what is typed since goes in.
         if (event.origin === "external" || event.text === now) return;
         if (seen !== undefined && seen !== now) {
-          const change = typedSince(now, seen, event.text);
-          if (change) doc.transact(() => { applyText(wordRuns(now, change)); }, LOCAL);
+          const change = typedSince(now, seen, event.text), agent = liveAuthor();
+          if (change && agent) writeAgent(agent, wordRuns(now, change));
+          else if (change) doc.transact(() => { applyText(wordRuns(now, change)); }, LOCAL);
           return;
         }
       }
