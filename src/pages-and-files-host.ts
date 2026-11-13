@@ -304,6 +304,8 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     explorer.addEventListener("toggle", () => {
       // Closing a popover queues its toggle; session expiry may detach it before dispatch.
       if (!explorer.isConnected) return;
+      // Found files are drawn afresh on opening, so the file opened meanwhile carries the tint.
+      if (explorer.matches(":popover-open") && searchText("files")) search();
       if (ports.mediaController.galleryVisible() && pagesController.explorerTab() === "media") void ensureExplorer().then(() => ports.mediaController.ensureGallery()).catch(ports.errorMessage);
     });
     const tabs = { pages: ports.element<HTMLButtonElement>("explorer-tab-pages"), media: ports.element<HTMLButtonElement>("explorer-tab-media"), files: ports.element<HTMLButtonElement>("explorer-tab-files") };
