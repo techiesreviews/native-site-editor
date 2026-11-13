@@ -11,6 +11,7 @@ import { pageCarets, watchPageCarets, type PageCarets, type PageTextCaret, type 
 import { sourceOffsetOfText, textPointAt } from "./native-source-location";
 import { participants } from "./participant";
 import type { LiveCaret } from "./live-text";
+import type { DraftScope } from "./drafts";
 
 /** A caret as a guest's page draws it: who (`guest`: a guest's id, so their own page leaves it out), its colour ("host"
  * for Lex, `g` and the index Lex's tab gave a guest, else a presence colour's index) and where in the page's text. */
@@ -35,6 +36,9 @@ export function guestCaret(value: unknown): PageTextCaret | null | undefined {
   if (typeof path !== "string" || path.length > 1024 || !Array.isArray(node) || node.length > 256 || !node.every(index) || !index(anchor) || !index(head)) return undefined;
   return { path, node: node as number[], anchor: anchor as number, head: head as number };
 }
+
+/** No workspace: the page's own drawing of the guests' carets (`drawPage`) matches no code pane, which the open file's draw. */
+const NO_SCOPE: DraftScope = { account: "", repoId: 0, repo: "", branch: "" };
 
 /** A guest's own number for their caret: below zero, so it is never a Yjs client id, and the same for the same id. */
 const authorOf = (id: string) => {
@@ -120,6 +124,26 @@ export function startSessionCarets(ports: { host: string; guests(): CaretGuest[]
   const soon = () => { if (!stopped) timer ??= setTimeout(flush, SEND_MS); };
   const again = () => { last = ""; soon(); };
 
+  // The open file's carets draw the guests' in the code pane and on the page. While the code pane shows another file (a
+  // stylesheet, say) the page still shows the page: its guests' carets are drawn there by the session itself.
+  let drawn: string | undefined, undraw: (() => void) | undefined;
+  const drawPage = () => {
+    const covered = sessionCarets.file()?.path;
+    const target = stopped ? undefined : page()?.files().find((path) => path !== covered);
+    if (target === drawn) return;
+    undraw?.();
+    undraw = undefined;
+    drawn = target;
+    if (target === undefined) return;
+    void import("./components/live-carets").then(({ startCarets }) => {
+      if (drawn !== target || stopped) return;
+      undraw = startCarets({
+        scope: NO_SCOPE, path: target, carets: () => sessionCarets.guests(target), onCarets: (listener) => sessionCarets.watchGuests(listener),
+        own: () => undefined, canUndo: () => false, undo: () => false, onAuthorUndo: () => () => undefined,
+      });
+    }).catch(() => { if (drawn === target) drawn = undefined; });
+  };
+
   // Lex's page: its caret and its text moving (one page at a time, which can come and go).
   let watched: PageCarets | undefined, unwatchPage: (() => void) | undefined;
   const follow = () => {
@@ -127,11 +151,12 @@ export function startSessionCarets(ports: { host: string; guests(): CaretGuest[]
     if (now === watched) return;
     unwatchPage?.();
     watched = now;
-    unwatchPage = now?.onChange(() => { soon(); sessionCarets.guestsMoved(); });
+    unwatchPage = now?.onChange(() => { soon(); sessionCarets.guestsMoved(); drawPage(); });
     again();
+    drawPage();
   };
   const unwatchPages = watchPageCarets(follow);
-  const unwatchFile = sessionCarets.watchFile(soon);
+  const unwatchFile = sessionCarets.watchFile(() => { soon(); drawPage(); });
   follow();
 
   return {
@@ -154,6 +179,9 @@ export function startSessionCarets(ports: { host: string; guests(): CaretGuest[]
     stop() {
       stopped = true;
       clearTimeout(timer);
+      undraw?.();
+      undraw = undefined;
+      drawn = undefined;
       unwatchPages();
       unwatchPage?.();
       unwatchFile();

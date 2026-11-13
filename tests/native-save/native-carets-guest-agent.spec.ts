@@ -36,6 +36,19 @@ async function caretInside(flag: Locator, element: Locator) {
   return caret.x >= box.x - 2 && caret.x <= box.x + box.width + 2 && middle >= box.y && middle <= box.y + box.height;
 }
 
+/** Opens `path` in the code pane from the Files tab. */
+async function openFile(page: Page, path: string) {
+  if (!(await page.locator("#explorer").isVisible())) await page.locator("#explorer-toggle").click();
+  await page.locator("#explorer").getByRole("tab", { name: "Files" }).click();
+  const parts = path.split("/");
+  for (let index = 1; index <= parts.length; index++) {
+    const item = page.locator(`#explorer .file-row[data-path='${parts.slice(0, index).join("/")}']`);
+    await expect(item).toBeVisible({ timeout: 20_000 });
+    if (index === parts.length || (await item.getAttribute("aria-expanded")) === "false") await item.click();
+  }
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
+}
+
 /** Starts typing in `target` on the page, the caret at its text's end. */
 async function typeAtEnd(page: Page, target: Locator) {
   await clickOnText(target);
@@ -133,6 +146,12 @@ test("a guest on Lex's edit link and Lex see each other's carets: on both pages,
     await expect(annaInCode.locator(".live-caret__mark b")).toHaveText("A");
     await annaInCode.locator(".live-caret__mark").hover();
     await expect(annaInCode.locator(".live-caret__undo")).toBeHidden();
+
+    // Lex opens a stylesheet in the code pane: the page still shows Home, and her caret stays there by her words.
+    await openFile(lex, "styles/site.css");
+    await expect(annaOnPage).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => caretInside(annaOnPage, frame(lex).locator(".hero h1")), { timeout: 10_000 }).toBe(true);
+    await openFile(lex, "index.html");
 
     // Lex types at the end of the lead paragraph: Anna sees his caret there on her page, with his first letter.
     const lead = frame(lex).locator(".hero .lead");
