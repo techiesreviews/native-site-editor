@@ -168,7 +168,7 @@
    the text next to the block this tab types in, which is where another's caret stands when they type in the block above or
    below it, and a circle under the bar is no caret at all. The layer takes the bar's level (src/theme.css `--layer-bar`) and
    comes later in the pane than the bar (made with the preview; this layer when someone else is here), so it wins the tie.
-   The agents' pins (25) are under it, which the pins' give-way below makes harmless; the card grid's Add (21) and the insert points (20) always were.
+   The agents' pins (25) and the card grid's Add (21) are under it, which their give-way below makes harmless; the insert points (20) were level with it.
    Below the bar's menus and fields, the cards and the pin conversations (z-index 31), which open over the page. */
 .live-carets-page {
   position: absolute;
@@ -183,13 +183,13 @@
   left: 0;
 }
 .live-carets-page :is(.live-caret, .live-caret-tint)[hidden] { display: none; }
-/* Where a circle reaches a control of the edit bar or a pin the control answers (live-carets.ts `overBar`): a circle whose middle is over
+/* Where a circle reaches a control of the edit bar, a pin or the card grid's Add the control answers (live-carets.ts `overBar`): a circle whose middle is over
    one shows but takes no press, and one that only touches a control, or whose press area does, gives the area up. */
 .live-carets-page .live-caret[data-over-control="circle"] .live-caret__mark { pointer-events: none; }
 .live-carets-page .live-caret[data-over-control="pad"] .live-caret__mark::after { display: none; }
 /* The press target is then the circle alone, below the 24 px (44 px on touch) of the others, on purpose: its press area is
    what would take the control's press. A tag the user opened over a control takes presses while it is open (pointer on it,
-   or focus in it); moving away or Escape closes it. */
+   or focus in it); moving away, or focus moving on, closes it. */
 .live-carets-page .live-caret-tint {
   position: absolute;
   border-radius: 2px;
