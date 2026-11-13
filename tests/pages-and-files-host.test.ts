@@ -28,7 +28,7 @@ fakeGlobals.requestAnimationFrame = () => 0;
 fakeGlobals.ResizeObserver = class { observe() {} disconnect() {} } satisfies new () => Pick<ResizeObserver, "observe" | "disconnect">;
 // The explorer's panels by id: enough element for the host to mount its trees, dialogs and tabs into.
 class FakeElement {
-  isConnected = true; hidden = false; textContent = ""; title = ""; tabIndex = 0; dataset: Record<string, string> = {};
+  isConnected = true; hidden = false; textContent = ""; title = ""; value = ""; tabIndex = 0; dataset: Record<string, string> = {};
   listeners = new Map<string, () => void>();
   addEventListener(type: string, listener: () => void) { this.listeners.set(type, listener); }
   append() {} prepend() {} replaceChildren() {} setAttribute() {} removeAttribute() {} focus() {}

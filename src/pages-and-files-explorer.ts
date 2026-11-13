@@ -133,14 +133,17 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
       items.push(
         { label: "New file…", run: () => openCreateKind(target.path, "file") },
         { label: "New folder…", run: () => openCreateKind(target.path, "folder") },
-        { label: "Upload files…", run: () => void pickFiles().then((picked) => ports.uploadFilesTo(target.path, picked)) },
+        { label: "Upload files…", run: () => void pickFiles().then((picked) => upload(target.path, picked)) },
       );
     // Renamed in place where the row shows: the tree, or the files a search found.
     items.push({ label: "Rename", shortcut: "F2", run: () => host.fileActions?.rename(ports.files.hidden ? ports.element("files-found") : ports.files, target.path) });
     if (!target.folder) items.push({ label: "Duplicate", run: () => void host.fileOps!.duplicateFileTarget(target) });
     const change = host.treeState().changes.get(target.path);
     if (change?.kind === "R" && change.from) items.push({ label: `Move back to ${change.from}`, run: () => host.undoFileChanges({ moveBack: [target.path] }) });
-    if (change && !target.folder) items.push({ label: "Discard changes", run: () => void host.savePublish.discardFile(target.path) });
+    // A rename discarded brings the file back at its old path, in view.
+    if (change && !target.folder) items.push({ label: "Discard changes", run: () => void host.savePublish.discardFile(target.path).then(() => {
+      if (change.from && !host.treeState().changes.has(target.path)) host.filesTreeController.reveal([change.from]);
+    }) });
     items.push(
       { label: "Delete", shortcut: "Delete", run: () => void host.fileOps!.deleteFileTarget(target) },
       { label: "Copy path", run: opener => void copyFilePath(target.path, opener) },
@@ -153,6 +156,13 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
     if (!ports.appStore.snapshot.value) return;
     const opener = host.filesTreeController.row(folder) ?? ports.element<HTMLButtonElement>("new-at-root");
     host.createDialog?.open({ in: folder, kinds: ["file", "folder"], first: kind, opener });
+  }
+
+  // Files from the computer into `folder` (Upload files…, or dropped on a row or the head row): once added, in view, unless
+  // another repository or load is shown by then.
+  function upload(folder: string, files: File[]) {
+    const at = ports.workspaceSession.begin();
+    void ports.uploadFilesTo(folder, files).then((paths) => { if (paths.length && at.holds()) host.filesTreeController.reveal(paths); });
   }
 
   async function copyFilePath(path: string, opener?: HTMLElement) {
@@ -198,7 +208,7 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
     if (error) ports.errorMessage(new Error(error));
   }
 
-  return { planCreation, createFromRequest, fileRowItems, renameProblem, renameFileTarget, dropProblem, dropFileTarget };
+  return { planCreation, createFromRequest, fileRowItems, renameProblem, renameFileTarget, dropProblem, dropFileTarget, upload };
 }
 
 /** The most files a search draws at once; the rest are counted under them. */
@@ -274,18 +284,23 @@ export function fileRowNow(ports: Pick<PagesAndFilesPorts, "element" | "files">,
   return [...ports.element("files-found").querySelectorAll<HTMLElement>(".file-row")].find((row) => row.dataset.path === path);
 }
 
-/** After a copy or a rename the person made in Files: the file's row, shown. One the search leaves out shows in the tree, with
- * the search started afresh and the folders leading to it opened; until its row is drawn, the focus waits in the search field. */
-export function revealFile(ports: Pick<PagesAndFilesPorts, "element" | "files">, tree: TreeRows, path: string) {
-  const found = fileRowNow(ports, tree, path);
-  if (found || !ports.files.hidden) return found;
-  ports.element<HTMLInputElement>("explorer-search").value = "";
-  ports.files.hidden = false;
-  ports.element("files-found").hidden = true;
-  const parts = path.split("/").slice(0, -1);
-  parts.forEach((_, index) => tree?.openFolder(parts.slice(0, index + 1).join("/")));
+/** After the person adds something in Files (a copy, a rename or move, an upload, Move back, Restore, Discard changes on a
+ * rename): its rows, shown (ux-rulebook B12). A Files search that would leave any of them out (the search's own test: the path
+ * has the words, in a repository with no site too) starts afresh; the folders leading to them open, and the tree (`tree`, whose
+ * render applies a search that stays) is drawn again. Returns the first one's row; until it is drawn, the search field. */
+export function revealFiles(ports: Parameters<typeof findFiles>[0], tree: TreeRows, paths: string[]) {
+  const field = ports.element<HTMLInputElement>("explorer-search"), words = field.value.trim().toLowerCase();
+  if (!paths.length) return;
+  if (words && (ports.element("explorer").dataset.tab ?? "files") === "files" && paths.some((path) => !path.toLowerCase().includes(words))) {
+    field.value = "";
+    findFiles(ports, "");
+  }
+  for (const path of paths) {
+    const parts = path.split("/").slice(0, -1);
+    parts.forEach((_, index) => tree?.openFolder(parts.slice(0, index + 1).join("/")));
+  }
   tree?.render();
-  return tree?.row(path) ?? ports.element("explorer-search");
+  return fileRowNow(ports, tree, paths[0]) ?? field;
 }
 
 /** No row left to take the focus (a found file deleted): the first found file takes it, or the search field. */
