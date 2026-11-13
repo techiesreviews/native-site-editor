@@ -376,7 +376,7 @@ function alignWords(text: string, changes: TextChange[], own: (index: number) =>
  * made again on its own, between the changes that put text in (GitHub's words coming back), which stay as they are; one
  * that no such runs make is left as it is.
  */
-function wholeWords(text: string, changes: TextChange[], own: (index: number) => boolean, joined: (index: number) => boolean) {
+export function wholeWords(text: string, changes: TextChange[], own: (index: number) => boolean, joined: (index: number) => boolean) {
   const out: TextChange[] = [];
   for (let from = 0; from < changes.length;) {
     if (changes[from].text) { out.push(changes[from++]); continue; }
