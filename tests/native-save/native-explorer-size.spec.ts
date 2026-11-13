@@ -105,6 +105,19 @@ test.describe("on a computer", () => {
     // Neither the page button nor the Media tab carries a count (Lex, slice 122); More has Clean up's.
     await expect(page.locator(".media-count")).toHaveCount(0);
   });
+  // Older Safari and Firefox place the box from script (src/components/dropdown.ts), not from the top bar's anchor.
+  test("without CSS anchor positioning, the box hangs 6 px under the top bar, 8 px from the window's left edge", async ({ page, baseURL }) => {
+    await page.addInitScript(() => {
+      const supports = CSS.supports.bind(CSS);
+      CSS.supports = ((property: string, value?: string) => !property.includes("position-area") && (value === undefined ? supports(property) : supports(property, value))) as typeof CSS.supports;
+    });
+    await open(page, baseURL);
+    const bar = await page.locator(".topbar").evaluate(element => Math.round(element.getBoundingClientRect().bottom));
+    expect(await explorer(page).evaluate(element => [element.style.left, element.style.top])).toEqual(["8px", `${bar + 6}px`]);
+    const placed = await box(page);
+    expect(placed.left).toBe(8);
+    expect(placed.top).toBe(bar + 6);
+  });
   test("before Media's library is there (loading, or a failed load), its text keeps its own row under the switch", async ({ page, baseURL }) => {
     await open(page, baseURL);
     await tab(page, "Media");

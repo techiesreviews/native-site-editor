@@ -257,6 +257,7 @@ export function createPagesTree(options: {
         return;
       }
       pending = true;
+      const typed = query;
       try {
         const error = await options.create(request());
         if (error) {
@@ -268,8 +269,8 @@ export function createPagesTree(options: {
             editing = undefined;
             item.remove();
           }
-          // After adding, the new page is in view: a search that could hide it starts afresh.
-          if (query) options.searchCleared?.();
+          // After adding, the new page is in view: a search that could hide it starts afresh (one typed meanwhile stays).
+          if (query && query === typed) options.searchCleared?.();
         }
       } finally {
         pending = false;
@@ -335,10 +336,12 @@ export function createPagesTree(options: {
     options.searchCleared?.();
     if (tree.contains(document.activeElement)) focusRow(hidden.dataset.key);
   }
-  /** `work`'s result, once done, names the row it gave (none: cancelled, refused or failed). */
+  /** `work`'s result, once done, names the row it gave (none: cancelled, refused or failed). A search the person typed
+   * while it was being made stays: nothing is revealed then. */
   function own<T>(work: T | Promise<T>, gave: (result: T) => (() => HTMLElement | undefined) | undefined) {
+    const typed = query;
     return Promise.resolve(work).then((result) => {
-      const find = gave(result);
+      const find = query === typed && gave(result);
       if (find) { revealing = [find]; revealDrawn(); }
       return result;
     });
