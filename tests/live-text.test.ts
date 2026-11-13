@@ -1005,36 +1005,42 @@ test("a reload whose kept copy missed what the tab typed alone keeps that typing
   again.stop(); back.stop();
 });
 
-test("two saves made before a tab's copy is there both stay with its kept copy, for a reload (TOOLS-224)", async () => {
-  const room = fakeRoom(), key = draftKey(scope, path);
-  const anna = tab(room), lex = tab(room);
-  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
-  await quiet();
-  anna.type(4, "Warm ");
-  await until(() => lex.text.includes("Warm"), "Anna's edit");
-  anna.stop(); lex.stop();
-  await quiet();
-  assert.ok(anna.keeper.copies.get(key), "Anna kept her copy");
-  // Anna opens the page again alone: every read of her kept copy is held until she saved twice, and Yjs does not load.
-  let release!: () => void;
-  const held = new Promise<void>(resolve => { release = resolve; });
-  const slow: CopyKeeper = { read: async at => { await held; return anna.keeper.read(at); }, write: (at, copy) => anna.keeper.write(at, copy) };
-  const again = tab(room, anna.text, { keeper: slow, loadYjs: () => new Promise<never>(() => undefined) });
-  await quiet();
-  const saves: string[] = [];
-  for (const [word, version] of [["«1» ", "1".repeat(40)], ["«2» ", "2".repeat(40)]]) {
-    again.type(0, word);
-    again.store.markSaved(scope, path, { baseSha: version, original: again.text });
-    saves.push(version, again.text);
-  }
-  release();
-  await quiet();
-  const kept = anna.keeper.copies.get(key)?.saves ?? [];
-  for (let at = 0; at < saves.length; at += 2) {
-    const found = kept.indexOf(saves[at]);
-    assert.ok(found >= 0 && found % 2 === 0 && kept[found + 1] === saves[at + 1], `save ${at / 2 + 1} kept: ${JSON.stringify(kept)}`);
-  }
-  again.stop();
+test("a save at any await of a tab opening a page again alone, before its copy is there: every save stays with its kept copy, for a reload (TOOLS-224)", async () => {
+  type Run = { done: Promise<unknown>; again?: ReturnType<typeof tab>; kept: ReturnType<typeof keeper>; saves: string[]; save(word: string): void };
+  const key = draftKey(scope, path);
+  const points = await forEachAwait((race): Run => {
+    const run: Run = { done: Promise.resolve(), kept: keeper(), saves: [], save(word) {
+      const again = run.again!, version = String(run.saves.length / 2 + 1).repeat(40);
+      again.type(0, word);
+      again.store.markSaved(scope, path, { baseSha: version, original: again.text });
+      run.saves.push(version, again.text);
+    } };
+    run.done = (async () => {
+      const room = fakeRoom();
+      const anna = tab(room, base, { keeper: run.kept }), lex = tab(room);
+      await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+      await quiet();
+      anna.type(4, "Warm ");
+      await until(() => lex.text.includes("Warm"), "Anna's edit");
+      anna.stop(); lex.stop();
+      await quiet();
+      // Anna opens the page again alone, and saves; Yjs never loads, so her copy is not made.
+      run.again = tab(room, anna.text, { keeper: run.kept, race, loadYjs: () => new Promise<never>(() => undefined) });
+      await quiet();
+      run.save("«1» ");
+      await quiet();
+    })();
+    return run;
+  }, run => { run.save("«2» "); }, async run => {
+    await quiet();
+    const kept = run.kept.copies.get(key)?.saves ?? [];
+    for (let at = 0; at < run.saves.length; at += 2) {
+      const found = kept.indexOf(run.saves[at]);
+      assert.ok(found >= 0 && found % 2 === 0 && kept[found + 1] === run.saves[at + 1], `save ${at / 2 + 1} kept: ${JSON.stringify(kept)}`);
+    }
+    run.again?.stop();
+  });
+  assert.ok(points >= 3, `await points: ${points}`);
 });
 
 test("a tab alone sends no edits to the room; the next one in is caught up all the same", async () => {
@@ -1134,6 +1140,92 @@ test("a tab back with an older kept copy that started alone (the room slow to an
   assert.deepEqual(["«1»", "«2»", "«3»"].map(word => times(back.text, word)), [1, 1, 1], back.text);
   assert.equal(sam.text, back.text);
   back.stop(); sam.stop(); tom.stop();
+});
+
+test("a newcomer caught up by a tab that resumed an older kept copy alone does not make the room leave its copy for it (TOOLS-224)", async () => {
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(base.indexOf("seven"), "«1» ");
+  await until(() => lex.text.includes("«1»"), "Anna's word at Lex's");
+  const older = liveState(anna.store, key).copy;
+  anna.stop(); lex.stop();
+  await quiet();
+  const sam = tab(room, base, { account: "sam" }), tom = tab(room, base, { account: "tom" });
+  const copyOf = (who: ReturnType<typeof tab>) => liveState(who.store, draftKey(who.scope, path)).copy;
+  await until(() => copyOf(sam) !== undefined && copyOf(sam) === copyOf(tom), "the room's new copy");
+  await quiet();
+  const newer = copyOf(sam);
+  sam.type(0, "«2» ");
+  await until(() => tom.text.includes("«2»"), "Sam's word at Tom's");
+  // Sam and Tom are out of reach: Anna, back with her kept copy, hears no one and starts it alone after the wait.
+  for (const who of [sam, tom]) who.socket.me.cut = true;
+  const time = fakeTimers();
+  const back = tab(room, anna.text, { keeper: anna.keeper, clock: time.clock });
+  await until(() => liveState(back.store, key).copy === older && time.timers.size > 0, "Anna asking the room");
+  await quiet();
+  time.advance(LIVE_TEXT_CATCH_UP_MS);
+  await quiet();
+  back.type(0, "«3» ");
+  // Carl opens the page and Anna catches him up; he types.
+  const carl = tab(room, base, { account: "carl" });
+  await until(() => copyOf(carl) === older && carl.text.includes("«3»"), "Carl on Anna's copy");
+  carl.type(0, "«4» ");
+  await until(() => back.text.includes("«4»"), "Carl's word at Anna's");
+  // Sam and Tom are back in reach; everyone asks the room again.
+  for (const who of [sam, tom]) who.socket.me.cut = false;
+  for (const member of room.members) member.options.onKey?.();
+  await until(() => [sam, tom, carl].every(other => other.text === back.text) && ["«1»", "«2»", "«3»", "«4»"].every(word => back.text.includes(word)), "one text with every word");
+  await quiet();
+  assert.deepEqual([back, sam, tom, carl].map(copyOf), [newer, newer, newer, newer], "everyone on the room's copy");
+  assert.deepEqual(["«1»", "«2»", "«3»", "«4»"].map(word => times(back.text, word)), [1, 1, 1, 1], back.text);
+  back.stop(); sam.stop(); tom.stop(); carl.stop();
+});
+
+test("a copy resumed alone that others joined is the room's copy once the room has been heard for the catch-up wait: a copy started later gives way to it (TOOLS-224)", async () => {
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(base.indexOf("seven"), "«1» ");
+  await until(() => lex.text.includes("«1»"), "Anna's word at Lex's");
+  const kept = liveState(anna.store, key).copy;
+  anna.stop(); lex.stop();
+  await quiet();
+  // Anna comes back alone and resumes her kept copy; Carl joins it.
+  const time = fakeTimers();
+  const back = tab(room, anna.text, { keeper: anna.keeper, clock: time.clock });
+  await until(() => liveState(back.store, key).copy === kept && back.keptRead, "Anna on her kept copy");
+  await quiet();
+  const carl = tab(room, base, { account: "carl" });
+  const copyOf = (who: ReturnType<typeof tab>) => liveState(who.store, draftKey(who.scope, path)).copy;
+  await until(() => copyOf(carl) === kept && carl.text === back.text, "Carl on Anna's copy");
+  carl.type(0, "«2» ");
+  await until(() => back.text.includes("«2»"), "Carl's word at Anna's");
+  // No other copy came for the catch-up wait: Anna's copy is the room's, and she says so as she types.
+  time.advance(LIVE_TEXT_CATCH_UP_MS);
+  back.type(0, "«3» ");
+  await until(() => carl.text.includes("«3»"), "Anna's word at Carl's");
+  // Dan's request does not reach them: after the wait he starts a copy of his own, newer than Anna's, and types.
+  for (const who of [back, carl]) who.socket.me.cut = true;
+  const dans = fakeTimers();
+  // His clock reads now: his copy is born after Anna's.
+  dans.advance(Date.now());
+  const dan = tab(room, base, { account: "dan", clock: dans.clock });
+  await until(() => dans.timers.size > 0 && room.members.size === 3, "Dan asking the room");
+  await quiet();
+  dans.advance(LIVE_TEXT_CATCH_UP_MS);
+  await until(() => copyOf(dan) !== undefined, "Dan's own copy");
+  dan.type(0, "«4» ");
+  await quiet();
+  for (const who of [back, carl]) who.socket.me.cut = false;
+  for (const member of room.members) member.options.onKey?.();
+  await until(() => [carl, dan].every(other => other.text === back.text) && ["«1»", "«2»", "«3»", "«4»"].every(word => back.text.includes(word)), "one text with every word");
+  await quiet();
+  assert.deepEqual([back, carl, dan].map(copyOf), [kept, kept, kept], "everyone on Anna's copy");
+  assert.deepEqual(["«1»", "«2»", "«3»", "«4»"].map(word => times(back.text, word)), [1, 1, 1, 1], back.text);
+  back.stop(); carl.stop(); dan.stop();
 });
 
 test("a joiner does not count an answer to another tab's request as its own catch-up", async () => {

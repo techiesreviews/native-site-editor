@@ -611,7 +611,7 @@ test("a save from a live room names the room's copy in a Live-Copy line; bad cop
 
 test("a Live-Copy line carries the save's record after the copy id; GitHub's history reads it back, and a bad one is refused (TOOLS-216)", async () => {
   const { commitMessage } = await import("../worker/publish.ts");
-  const { liveCopiesOf, MAX_LIVE_RECORD } = await import("../shared/live-copy.ts");
+  const { liveCopiesOf, MAX_READ_LIVE_RECORD } = await import("../shared/live-copy.ts");
   const copy = "cd".repeat(20), entry = `${copy} AAEC_-xyz09`, files = [{ path: "a.html", baseSha: null, content: "a" }];
   const message = commitMessage("Update a", [], [entry]);
   assert.equal(message, `Update a\n\nLive-Copy: ${entry}`);
@@ -620,7 +620,7 @@ test("a Live-Copy line carries the save's record after the copy id; GitHub's his
   assert.deepEqual(liveCopiesOf(`Update a\n\nLive-Copy: ${entry}\nLive-Copy: ${copy} QUJD`), [entry]);
   assert.deepEqual(liveCopiesOf(`Update a\n\nLive-Copy: ${copy} not+base64`), []);
   assert.deepEqual(validatePublish({ branch: "main", files, liveCopies: [entry] }).liveCopies, [entry]);
-  for (const liveCopies of [[`${copy} `], [`${copy} a b`], [`${copy} ${"A".repeat(MAX_LIVE_RECORD + 1)}`], [`${copy} a+b`]])
+  for (const liveCopies of [[`${copy} `], [`${copy} a b`], [`${copy} ${"A".repeat(MAX_READ_LIVE_RECORD + 1)}`], [`${copy} a+b`]])
     assert.throws(() => validatePublish({ branch: "main", files, liveCopies }), (error: HttpError) => error.status === 400);
 });
 
@@ -640,6 +640,14 @@ test("a commit's save records stay within one budget, so a page of GitHub's hist
   // worker/history.ts reads 20 commits per page, at most 1 MiB; GitHub's answer can repeat a message (a signed
   // commit's verification payload) beside a few kilobytes of other fields per commit.
   assert.ok(20 * (2 * message.length + 5_000) < 1024 * 1024, `message: ${message.length} characters`);
+  // A record as long as pages opened before TOOLS-224 write: the save goes through, its line naming the copy alone; a
+  // commit line written then reads whole, and a longer one still names its copy.
+  const { MAX_READ_LIVE_RECORD } = await import("../shared/live-copy.ts");
+  const copy = "ef".repeat(20), old = `${copy} ${"B".repeat(MAX_READ_LIVE_RECORD)}`;
+  assert.deepEqual(validatePublish({ branch: "main", files, liveCopies: [old] }).liveCopies, [old]);
+  assert.equal(commitMessage("Update a", [], [old]), `Update a\n\nLive-Copy: ${copy}`);
+  assert.deepEqual(liveCopiesOf(`Update a\n\nLive-Copy: ${old}`), [old]);
+  assert.deepEqual(liveCopiesOf(`Update a\n\nLive-Copy: ${old}B`), [copy]);
   // One entry per copy, as GitHub's history reads it back: the first.
   assert.equal(commitMessage("Update a", [], [`${"ab".repeat(20)} QUJD`, `${"ab".repeat(20)} REVG`]), `Update a\n\nLive-Copy: ${"ab".repeat(20)} QUJD`);
 });
