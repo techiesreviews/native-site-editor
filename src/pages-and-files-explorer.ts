@@ -134,7 +134,8 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
         { label: "New folder…", run: () => openCreateKind(target.path, "folder") },
         { label: "Upload files…", run: () => void pickFiles().then((picked) => ports.uploadFilesTo(target.path, picked)) },
       );
-    items.push({ label: "Rename", shortcut: "F2", run: () => host.fileActions?.rename(ports.files, target.path) });
+    // Renamed in place where the row shows: the tree, or the files a search found.
+    items.push({ label: "Rename", shortcut: "F2", run: () => host.fileActions?.rename(ports.files.hidden ? ports.element("files-found") : ports.files, target.path) });
     if (!target.folder) items.push({ label: "Duplicate", run: () => void host.fileOps!.duplicateFileTarget(target) });
     const change = host.treeState().changes.get(target.path);
     if (change?.kind === "R" && change.from) items.push({ label: `Move back to ${change.from}`, run: () => host.undoFileChanges({ moveBack: [target.path] }) });
@@ -199,9 +200,21 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
   return { planCreation, createFromRequest, fileRowItems, renameProblem, renameFileTarget, dropProblem, dropFileTarget };
 }
 
-/** The explorer's Files search (mock-up 05 v2): every file of the site whose name or folder has `text`, as rows that open the file;
- * without a site's file list (a plain repository), the rows drawn are narrowed instead. Empty `text` shows the tree again. */
-export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | "runtime" | "previewSelection" | "restoreFile" | "workspaceSession" | "appStore">, text: string) {
+/** A folder of the tree opened by the search (`open`), or closed again: its list, its icon and what its row says. */
+function searchOpens(list: HTMLElement, open: boolean) {
+  list.hidden = !open;
+  list.toggleAttribute("data-search-open", open);
+  const row = list.parentElement?.querySelector<HTMLElement>(":scope > .file-row-line > .file-row");
+  row?.setAttribute("aria-expanded", String(open));
+  const icon = row?.querySelector<HTMLElement>(".file-icon");
+  if (icon) setIcon(icon, open ? "folder-open" : "folder", 16);
+}
+
+/** The explorer's Files search (mock-up 05 v2): every file of the site whose name or folder has `text`, as rows that open the file
+ * and carry the tree's row actions (`attach`); without a site's file list (a plain repository), the rows drawn are narrowed instead,
+ * the folders on the way to a match opened. Empty `text` shows the tree again. */
+export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | "runtime" | "previewSelection" | "restoreFile" | "workspaceSession" | "appStore">, text: string,
+  attach?: (row: HTMLButtonElement, line: HTMLElement, target: FileRowTarget) => void) {
   const found = ports.element("files-found"), words = text.trim().toLowerCase();
   // Only a site's file list is whole; a plain repository's tree knows the folders opened.
   const all = words && ports.runtime.site ? ports.runtime.files() : [];
@@ -209,11 +222,16 @@ export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | 
   found.hidden = !ports.files.hidden;
   if (found.hidden) {
     // The rows drawn whose path has the words, with the folders leading to them; nothing found says so.
+    // The folders the last search opened close again first.
+    for (const list of ports.files.querySelectorAll<HTMLElement>("ul[data-search-open]")) searchOpens(list, false);
     const items = [...ports.files.querySelectorAll<HTMLElement>("li")];
     for (const item of items) item.hidden = Boolean(words);
     for (const item of words ? items : []) {
       if (!item.querySelector<HTMLElement>(":scope > .file-row-line > .file-row")?.dataset.path?.toLowerCase().includes(words)) continue;
-      for (let at: HTMLElement | null = item; at && at !== ports.files; at = at.parentElement) if (at.tagName === "LI") at.hidden = false;
+      for (let at: HTMLElement | null = item; at && at !== ports.files; at = at.parentElement) {
+        if (at.tagName === "LI") at.hidden = false;
+        else if (at.tagName === "UL" && at.hidden) searchOpens(at, true);
+      }
     }
     if (!words || items.some((item) => !item.hidden)) return;
     ports.files.hidden = true;
@@ -230,6 +248,7 @@ export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | 
     row.append(icon, node("span", "filename", path.slice(slash + 1)));
     if (slash > 0) row.append(node("span", "file-folder", path.slice(0, slash)));
     line.append(row);
+    attach?.(row, line, { path, name: path.slice(slash + 1), folder: false, gone: false });
     item.append(line);
     return item;
   });

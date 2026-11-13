@@ -334,7 +334,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     if (!files && ports.element("files-found").hidden && !ports.files.querySelector("li[hidden]")) return;
     // Another workspace drawn while the module loaded has its own explorer: this search no longer writes.
     const explorer = ports.element("explorer");
-    void loadExplorerModules().then(({ findFiles }) => { if (document.getElementById("explorer") === explorer) findFiles(ports, searchText("files")); }).catch(ports.errorMessage);
+    void loadExplorerModules().then(({ findFiles }) => { if (document.getElementById("explorer") === explorer) findFiles(ports, searchText("files"), fileActions?.attach); }).catch(ports.errorMessage);
   }
   // `reset`: another repository, branch or load: the search starts afresh too.
   function paintExplorerTabs(tab: ExplorerTab, native: boolean, reset = false) {
