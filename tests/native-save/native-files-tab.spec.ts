@@ -148,8 +148,10 @@ test("the search lists every file whose name or folder has it, closed folders to
   await expect(page.locator("#current-page")).toHaveText("styles/site.css");
   await expect(page.locator("#current-page .folder-part")).toHaveText("styles");
   await expect(page.locator("#current-page .file-part")).toHaveText("site.css");
-  // Nothing found says so; clearing the search shows the tree again.
+  // Opened again, the found file just opened carries the tint, as the tree's open file does.
   if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  await expect(found.locator('.file-row[data-path="styles/site.css"]')).toHaveClass(/\bselected\b/);
+  // Nothing found says so; clearing the search shows the tree again.
   await explorer(page).getByLabel("Search files", { exact: true }).fill("zzzz");
   await expect(found).toHaveText("No file matches");
   await explorer(page).getByLabel("Search files", { exact: true }).fill("");
@@ -159,6 +161,22 @@ test("the search lists every file whose name or folder has it, closed folders to
   if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
   await explorer(page).getByRole("tab", { name: "Pages", exact: true }).click();
   await expect(explorer(page).getByLabel("Search pages", { exact: true })).toHaveValue("");
+});
+
+test("a folder made while the search hides it is in view, with focus on it, once the dialog closes", async ({ page, baseURL }) => {
+  await openFiles(page, baseURL);
+  const search = explorer(page).getByLabel("Search files", { exact: true });
+  await search.fill("site.css");
+  await expect(explorer(page).locator("#files")).toBeHidden();
+  await explorer(page).getByRole("button", { name: "New file or folder", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "New file or folder" });
+  await dialog.getByRole("radio", { name: "Folder" }).check();
+  await dialog.getByRole("textbox", { name: "Folder name" }).fill("campaign");
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeHidden();
+  await expect(search).toHaveValue("");
+  await expect(row(page, "campaign")).toBeVisible();
+  await expect(row(page, "campaign")).toBeFocused();
 });
 
 test("in a repository with no site the search narrows the rows drawn, and clearing it brings every row back", async ({ page, baseURL }) => {

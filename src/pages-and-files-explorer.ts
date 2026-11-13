@@ -106,6 +106,9 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
     if (ports.runtime.site) ports.refreshNativeRoutes();
     ports.updateAgentContext();
     if (host.resyncNativeSite()) return undefined;
+    // After adding, the new thing is in view: a Files search that could hide it starts afresh.
+    const field = ports.element<HTMLInputElement>("explorer-search");
+    if (field.value && !ports.element("explorer-files").hidden) { field.value = ""; findFiles(ports, ""); }
     if (creation.folder) {
       // The new folder shows open in the tree, with the dialog's focus returned to it.
       const parts = creation.folder.split("/");
