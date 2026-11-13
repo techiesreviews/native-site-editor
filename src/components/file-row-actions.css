@@ -72,6 +72,7 @@
 .file-row-line.is-dragging { opacity: 0.5; }
 .file-row-line.is-drop-target,
 #files.is-drop-target,
+#files-found.is-drop-target,
 .explorer-head.is-drop-target { background: var(--current); outline: 2px dashed var(--primary); outline-offset: -2px; border-radius: var(--radius); }
 .file-row[hidden] { display: none; }
 

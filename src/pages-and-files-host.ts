@@ -233,6 +233,8 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
         announce: ports.announce,
       });
       fileActions.attachRoot(ports.files);
+      // The found files' own space (and "No file matches") is the top of the repository too, as the tree's is.
+      fileActions.attachRoot(ports.element("files-found"));
       // On the Files tab the head row is the top of the repository: a row or files dropped on it go there.
       // Pages and Media leave a drop on their head row alone.
       fileActions.attachRoot(host.querySelector<HTMLElement>(".explorer-head")!, undefined, () => host.dataset.tab === "files");
