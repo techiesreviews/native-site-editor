@@ -188,13 +188,13 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
   async function renameFileTarget(target: FileRowTarget, name: string): Promise<string | undefined> {
     const to = renameTarget(target, name);
     if (!to.ok) return to.error;
-    return host.fileOps!.moveFileTarget(target, to.value, "rename");
+    return host.fileOps!.moveFileTarget(target, to.value, "rename", { reveal: true });
   }
 
   async function dropFileTarget(source: FileRowTarget, folder: string) {
     const problem = dropProblem(source, folder);
     if (problem) { refuse(problem); return; }
-    const error = await host.fileOps!.moveFileTarget(source, folder ? `${folder}/${source.name}` : source.name, "move");
+    const error = await host.fileOps!.moveFileTarget(source, folder ? `${folder}/${source.name}` : source.name, "move", { reveal: true });
     if (error) ports.errorMessage(new Error(error));
   }
 

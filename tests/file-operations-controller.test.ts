@@ -85,6 +85,16 @@ test("plain rename records one receipt; undo refuses an edit to the moved file",
   assert.equal(h.memory.undo(), false); assert.ok(h.memory.refusals.length); assert.deepEqual(h.memory.draft("b.txt"), draft);
 });
 
+test("only a rename the person makes in Files reveals the file; an agent's rename only looks its row up", async () => {
+  const h = fixture(), revealed: string[] = [];
+  h.ports.revealFile = (path: string) => { revealed.push(path); return { focus: () => {} }; };
+  assert.equal(await h.controller.moveFileTarget(target, "b.txt", "rename"), undefined);
+  assert.deepEqual(revealed, []);
+  assert.deepEqual(h.focused, ["b.txt"]);
+  assert.equal(await h.controller.moveFileTarget({ path: "b.txt", name: "b.txt", folder: false }, "c.txt", "rename", { reveal: true }), undefined);
+  assert.deepEqual(revealed, ["c.txt"]);
+});
+
 test("plain delete goes through the module and undoes as one step", async () => {
   const h = fixture();
   assert.equal(await h.controller.deleteFileTarget(target), undefined);
