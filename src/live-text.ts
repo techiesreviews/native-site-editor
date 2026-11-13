@@ -750,7 +750,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       }
     }
     /** The draft as the own copy last took it: another tab's draft adopted meanwhile (`external`) is not this tab's typing. */
-    let draftSeen = own ? store.text(scope, path) : undefined;
+    let draftSeen = store.text(scope, path);
     /** The own copy, holding `text`, noted as GitHub's version `sha`, a save this tab made before it took part: the copy it
      * joins takes that commit as these words, not as GitHub's words a second time. */
     function noteOwn(sha: string, saved: string) {
@@ -889,11 +889,13 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       return false;
     };
     const unsubscribe = store.subscribe((event: DraftEvent) => {
-      if (event.type !== "text" || event.key !== start.key || discarded || event.origin === "shared" || event.origin === "discard") return;
+      if (event.type !== "text" || event.key !== start.key) return;
+      const seen = draftSeen;
+      draftSeen = event.text;
+      if (discarded || event.origin === "shared" || event.origin === "discard") return;
       // Not taking part yet: the own copy takes it (an own copy's text is the draft's).
       if (!synced) {
-        const was = own?.getText("source").toString(), seen = draftSeen;
-        draftSeen = event.text;
+        const was = own?.getText("source").toString();
         if (was === undefined || was === event.text) return;
         // Another tab of this browser's saved draft, adopted (`reload`): its words are the room's, which this tab follows
         // once it takes part, not its own typing.
@@ -907,10 +909,20 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         writeOwn(changesBetween(was, event.text, event.changes).sort((a, b) => a.start - b.start).reverse());
         return;
       }
+      const now = text.toString();
+      if (apart) {
+        // On another page, the copy hears nothing of the room: another tab's draft adopted is the room's words, which come
+        // with the room's copy when this page shows again; kept as it is, and only what is typed since goes in.
+        if (event.origin === "external" || event.text === now) return;
+        if (seen !== undefined && seen !== now) {
+          const change = typedSince(now, seen, event.text);
+          if (change) doc.transact(() => { applyText(wordRuns(now, change)); }, LOCAL);
+          return;
+        }
+      }
       // Another tab of this browser's saved draft, adopted (`reload`): it may lag behind this copy, so the draft
       // follows the copy again rather than sending that text to everyone as this tab's edit.
       if (event.origin === "external") { follow(); return; }
-      const now = text.toString();
       if (event.text === now) return;
       // From the end back; two put in at one place go in the later one first, so they stay in the draft's order
       // (src/draft-store.ts `applyChanges` keeps the given order at one place).
@@ -1065,10 +1077,10 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       const node = at();
       if (versionsOf(versions(into)).has(node)) return node;
       if (noted) { into.transact(() => { metaOf(into).set(`g:${node}`, noted); }, META); return node; }
-      // A save of this copy, read apart, that names items this copy lacks (its other tabs typed after this one left): the
-      // record says which of its own items the save holds; the rest of the saved text, words this copy never had, enters
-      // over them as the outside participant.
-      if (record && !ours) return await recordEdge(from, node, version, record, into) ? node : undefined;
+      // A save of this copy that names items this copy lacks (read apart: its other tabs typed after this one left; or a tab
+      // of this copy on another page, whose note never reaches the room): the record says which of the copy's items the
+      // save holds; the rest of the saved text, words this copy never had, enters over them as the outside participant.
+      if (record) return await recordEdge(from, node, version, record, into) ? node : undefined;
       // This room's save whose note never came (its tab left before it could note it): the branch loads again.
       return !ours && await edgeTo(from, node, version.text, into) ? node : undefined;
     }
@@ -1841,7 +1853,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     editors = 0;
     heard = true;
     clock.clearTimeout(unheard);
-    stopSaves();
+    // Its saves still note the copy and name it with their record: the room takes them by that record (`take`).
     room.close();
     // Not caught up yet: alone from now on, it starts its part on its own (a copy loading still does, once made, `load`).
     // No copy yet: a copy kept from before runs, as when alone (none: a commit folds into the draft, as for any file).

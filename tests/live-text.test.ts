@@ -1149,6 +1149,58 @@ test("another tab's draft adopted while a tab back with its kept copy catches up
   again.stop(); lex.stop(); other.stop();
 });
 
+test("a page saved while another page shows names its copy with a record, and the room takes the save once (TOOLS-216)", async () => {
+  const saved = { sha: "c".repeat(40), text: "" };
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => (saved.text ? saved : { sha, text: base }),
+    before: async function* (of) { if (of === saved.sha) yield { sha, text: base }; } });
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Warm ");
+  await until(() => lex.text.includes("Warm"), "Anna's word shared");
+  anna.openFile.value = "about.html";
+  await quiet();
+  // The publish menu saves every changed page, the one on show or not.
+  const copies = liveSaves.note!(scope, [{ path, content: anna.text }], anna.store);
+  assert.equal(copies.length, 1);
+  assert.ok(copies[0].startsWith(`${liveState(lex.store, key).copy} `), "the copy's id and its record");
+  saved.text = anna.text;
+  anna.store.markSaved(scope, path, { baseSha: saved.sha, original: anna.text });
+  assert.equal(await liveFold(lex.store, key, { ...saved, copies }), true);
+  await until(() => lex.store.get(scope, path)?.baseSha === saved.sha, "Lex on the save");
+  anna.openFile.value = path;
+  await until(() => anna.store.get(scope, path)?.baseSha === saved.sha && anna.text === lex.text, "Anna back");
+  await quiet();
+  assert.deepEqual([times(anna.text, "Warm"), times(lex.text, "Warm")], [1, 1]);
+  anna.stop(); lex.stop();
+});
+
+test("another tab's draft adopted on a page kept apart while another page shows is kept, not taken back to the copy's text (TOOLS-216)", async () => {
+  const records = new Map<string, SavedDraft>();
+  const persistence: DraftPersistence = {
+    get: (draftScope, file) => records.get(draftKey(draftScope, file)),
+    save: record => { records.set(draftKey(record, record.path), record); return true; },
+    remove: (draftScope, file) => records.delete(draftKey(draftScope, file)),
+  };
+  const room = fakeRoom();
+  const anna = tab(room, base, { persistence }), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Warm ");
+  await until(() => lex.text.includes("Warm"), "Anna's word shared");
+  anna.openFile.value = "about.html";
+  await quiet();
+  // Another tab of Anna's browser adds a line and saves its draft; her page adopts it while it shows another page.
+  const older = records.get(draftKey(scope, path))!;
+  records.set(draftKey(scope, path), { ...older, content: `${anna.text}<p>Newer line.</p>\n`, updatedAt: older.updatedAt + 1 });
+  assert.equal(anna.store.reload(scope, path), true);
+  await quiet();
+  assert.ok(anna.text.includes("Newer line"), "the draft keeps the adopted line");
+  assert.ok(records.get(draftKey(scope, path))?.content.includes("Newer line"), "and so does storage");
+  anna.stop(); lex.stop();
+});
+
 test("the browser keeper keeps copies in IndexedDB: a fresh keeper reads them, a removal deletes, a wrong shape reads as none", async () => {
   const fake = fakeIndexedDB();
   const saved = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
