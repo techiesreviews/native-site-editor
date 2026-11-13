@@ -914,7 +914,8 @@ export function createPagesTree(options: {
     /** Shows only the pages whose title or URL has `text` (all pages when empty); `site` draws them again when cleared. */
     filter(text: string) {
       const was = query;
-      if (text !== was) revealing = [];
+      // A search typed, another tab or another load: what waits to be revealed is forgotten.
+      revealing = [];
       query = text;
       if (query) applyFilter();
       else if (was && model) this.render(model, current);
