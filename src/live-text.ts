@@ -183,7 +183,8 @@ const HEAD = 2 + 20 + 4;
 export const LIVE_TEXT_CATCH_UP_MS = 5_000;
 /** A start that cannot bring its versions together or carry its words over (GitHub's history unread) is tried again until
  * this many rounds failed, for as long as its copy runs: 5 s after the first, twice as long after each one since, at most
- * 40 s. Starts that fail together (one per answer to its request) are one round. */
+ * 40 s. Only the first failure and a retry's start a round; other starts that fail in between (more answers to its
+ * request, a reconnect) are not counted, and the wait starts again from them. */
 const START_TRIES = 6;
 /** A caret that moves tells the room at most this often (typing moves it with every key). */
 const CARET_MS = 50;
@@ -611,7 +612,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     /** The room copy this one is: from a kept copy, the first answer to this tab's request, or its own birth. */
     let copyId: Uint8Array | undefined;
     let synced = false, starting = false, waiting: unknown, keeping: unknown;
-    /** Rounds of starts that failed (`begin`): the next waits longer, up to START_TRIES. `retrying`: the start running was the
+    /** Rounds of starts that failed (`begin`): the next waits longer, up to START_TRIES. `retrying`: the next start is the
      * retry's, which begins a new round. */
     let failures = 0, retrying = false;
     /** Resumed from its kept copy with no one in the room catching it up, or caught up by such a copy (TOOLS-224): its frames
@@ -1241,6 +1242,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (synced || starting) return;
       starting = true;
       clock.clearTimeout(waiting);
+      /** This start is the retry's (`START_TRIES`). */
+      const retry = retrying;
+      retrying = false;
       /** A copy of the room caught this tab up while it was starting its own: it joins that one once this start ends. */
       let joined = false;
       /** Its versions could not be brought together, or its words carried over (GitHub's history unread): it tries again. */
@@ -1317,8 +1321,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         // time, until START_TRIES failed. Then the draft stays as it is, apart from the room's copy, until the room catches it
         // up again (a new key or a reconnect asks, `again`) or the page opens again.
         else if (failed && !stopped && !synced) {
-          if (retrying || !failures) failures++;
-          retrying = false;
+          if (retry || !failures) failures++;
           clock.clearTimeout(waiting);
           if (failures < START_TRIES) waiting = clock.setTimeout(() => { retrying = true; void begin(caught); }, Math.min(2 ** (failures - 1), 8) * LIVE_TEXT_CATCH_UP_MS);
         }
