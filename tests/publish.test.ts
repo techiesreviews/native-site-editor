@@ -624,6 +624,26 @@ test("a Live-Copy line carries the save's record after the copy id; GitHub's his
     assert.throws(() => validatePublish({ branch: "main", files, liveCopies }), (error: HttpError) => error.status === 400);
 });
 
+test("a commit's save records stay within one budget, so a page of GitHub's history stays readable (TOOLS-224)", async () => {
+  const { commitMessage } = await import("../worker/publish.ts");
+  const { liveCopiesOf, MAX_LIVE_COPIES, MAX_LIVE_RECORD, MAX_LIVE_RECORDS } = await import("../shared/live-copy.ts");
+  const files = [{ path: "a.html", baseSha: null, content: "a" }];
+  // A save of many pages typed on together, each with the longest record a line may carry.
+  const entries = Array.from({ length: MAX_LIVE_COPIES }, (_, index) => `${index.toString(16).padStart(40, "0")} ${"A".repeat(MAX_LIVE_RECORD)}`);
+  assert.deepEqual(validatePublish({ branch: "main", files, liveCopies: entries }).liveCopies, entries);
+  const message = commitMessage("Update pages", [], entries), named = liveCopiesOf(message);
+  // Every copy is still named; records past the budget leave the line with the copy id alone.
+  assert.deepEqual(named.map((entry) => entry.slice(0, 40)), entries.map((entry) => entry.slice(0, 40)));
+  const recorded = named.map((entry) => entry.slice(41).length).reduce((sum, length) => sum + length, 0);
+  assert.ok(recorded > 0 && recorded <= MAX_LIVE_RECORDS, `records: ${recorded} characters`);
+  assert.ok(named.filter((entry) => entry.length > 40).every((entry) => entries.includes(entry)), "a record goes whole or not at all");
+  // worker/history.ts reads 20 commits per page, at most 1 MiB; GitHub's answer can repeat a message (a signed
+  // commit's verification payload) beside a few kilobytes of other fields per commit.
+  assert.ok(20 * (2 * message.length + 5_000) < 1024 * 1024, `message: ${message.length} characters`);
+  // One entry per copy, as GitHub's history reads it back: the first.
+  assert.equal(commitMessage("Update a", [], [`${"ab".repeat(20)} QUJD`, `${"ab".repeat(20)} REVG`]), `Update a\n\nLive-Copy: ${"ab".repeat(20)} QUJD`);
+});
+
 test("the first save to an empty repository names the others too", async () => {
   const calls: { path: string; method: string; body?: any }[] = [];
   const github = new GitHub("private-token", async (input, init) => {

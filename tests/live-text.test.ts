@@ -85,7 +85,7 @@ function keeper(): CopyKeeper & { copies: Map<string, KeptCopy | undefined> } {
   return { copies, read: async key => copies.get(key), write: (key, copy) => { copies.set(key, copy); } };
 }
 
-function tab(room: ReturnType<typeof fakeRoom>, text = base, options: { baseSha?: string; clock?: LiveClock; keeper?: CopyKeeper; race?: AwaitRace; persistence?: DraftPersistence; loadYjs?: () => Promise<typeof import("yjs")>; carets?: (share: CaretShare) => () => void; account?: string; authors?: SaveAuthors; base?: string; github?: LiveTextPorts["github"] } = {}) {
+function tab(room: Pick<ReturnType<typeof fakeRoom>, "open">, text = base, options: { baseSha?: string; clock?: LiveClock; keeper?: CopyKeeper; race?: AwaitRace; persistence?: DraftPersistence; loadYjs?: () => Promise<typeof import("yjs")>; carets?: (share: CaretShare) => () => void; account?: string; authors?: SaveAuthors; base?: string; github?: LiveTextPorts["github"] } = {}) {
   const own: DraftScope = options.account ? { ...scope, account: options.account } : scope;
   const authors = options.authors ?? createSaveAuthors();
   const store = createDraftStore(options.persistence ? { persistence: options.persistence } : {});
@@ -1005,6 +1005,38 @@ test("a reload whose kept copy missed what the tab typed alone keeps that typing
   again.stop(); back.stop();
 });
 
+test("two saves made before a tab's copy is there both stay with its kept copy, for a reload (TOOLS-224)", async () => {
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Warm ");
+  await until(() => lex.text.includes("Warm"), "Anna's edit");
+  anna.stop(); lex.stop();
+  await quiet();
+  assert.ok(anna.keeper.copies.get(key), "Anna kept her copy");
+  // Anna opens the page again alone: every read of her kept copy is held until she saved twice, and Yjs does not load.
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const slow: CopyKeeper = { read: async at => { await held; return anna.keeper.read(at); }, write: (at, copy) => anna.keeper.write(at, copy) };
+  const again = tab(room, anna.text, { keeper: slow, loadYjs: () => new Promise<never>(() => undefined) });
+  await quiet();
+  const saves: string[] = [];
+  for (const [word, version] of [["«1» ", "1".repeat(40)], ["«2» ", "2".repeat(40)]]) {
+    again.type(0, word);
+    again.store.markSaved(scope, path, { baseSha: version, original: again.text });
+    saves.push(version, again.text);
+  }
+  release();
+  await quiet();
+  const kept = anna.keeper.copies.get(key)?.saves ?? [];
+  for (let at = 0; at < saves.length; at += 2) {
+    const found = kept.indexOf(saves[at]);
+    assert.ok(found >= 0 && found % 2 === 0 && kept[found + 1] === saves[at + 1], `save ${at / 2 + 1} kept: ${JSON.stringify(kept)}`);
+  }
+  again.stop();
+});
+
 test("a tab alone sends no edits to the room; the next one in is caught up all the same", async () => {
   const room = fakeRoom();
   const anna = tab(room), lex = tab(room);
@@ -1048,6 +1080,60 @@ test("a joiner whose only other tab leaves before answering starts from its own 
   await until(() => sam.text === draft, "Sam caught up from Lex");
   assert.equal(lex.text, draft);
   lex.stop(); sam.stop();
+});
+
+test("a tab back with an older kept copy that started alone (the room slow to answer) joins the room's copy; the room never leaves for it (TOOLS-224)", async () => {
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(base.indexOf("seven"), "«1» ");
+  await until(() => lex.text.includes("«1»"), "Anna's word at Lex's");
+  const older = liveState(anna.store, key).copy;
+  anna.stop(); lex.stop();
+  await quiet();
+  // A newer copy of the room, from GitHub's text.
+  const sam = tab(room, base, { account: "sam" }), tom = tab(room, base, { account: "tom" });
+  await until(() => liveState(sam.store, draftKey(sam.scope, path)).copy !== undefined && liveState(sam.store, draftKey(sam.scope, path)).copy === liveState(tom.store, draftKey(tom.scope, path)).copy, "the room's new copy");
+  await quiet();
+  const newer = liveState(sam.store, draftKey(sam.scope, path)).copy;
+  assert.ok(older && newer && older < newer, `the kept copy is the older one: ${older} ${newer}`);
+  sam.type(0, "«2» ");
+  await until(() => tom.text.includes("«2»"), "Sam's word at Tom's");
+  // Anna comes back with her kept copy. The room says nothing to her past the catch-up wait: she starts it alone and types.
+  const time = fakeTimers();
+  let release!: () => void;
+  const slow: Pick<typeof room, "open"> = {
+    open(options) {
+      if (release) return room.open(options);
+      let released = false;
+      const socket = room.open({ ...options, onMembers: members => { if (released) options.onMembers?.(members); }, onKey: () => { if (released) options.onKey?.(); } });
+      socket.me.cut = true;
+      release = () => {
+        released = true;
+        socket.me.cut = false;
+        options.onMembers?.(new Map([...room.members].filter(member => member !== socket.me).map(member => [member.id, member.access])));
+        options.onKey?.();
+      };
+      return socket;
+    },
+  };
+  const back = tab(slow, anna.text, { keeper: anna.keeper, clock: time.clock });
+  await until(() => release !== undefined, "Anna's room opened");
+  await quiet();
+  time.advance(LIVE_TEXT_CATCH_UP_MS);
+  await until(() => liveState(back.store, key).copy === older, "Anna on her kept copy, alone");
+  await quiet();
+  back.type(0, "«3» ");
+  await quiet();
+  // The room answers at last.
+  release();
+  await until(() => [sam, tom].every(other => other.text === back.text) && back.text.includes("«1»") && back.text.includes("«3»"), "one text with every word");
+  await quiet();
+  assert.deepEqual([back, sam, tom].map(who => liveState(who.store, draftKey(who.scope, path)).copy), [newer, newer, newer], "everyone on the room's copy");
+  assert.deepEqual(["«1»", "«2»", "«3»"].map(word => times(back.text, word)), [1, 1, 1], back.text);
+  assert.equal(sam.text, back.text);
+  back.stop(); sam.stop(); tom.stop();
 });
 
 test("a joiner does not count an answer to another tab's request as its own catch-up", async () => {
@@ -1869,6 +1955,48 @@ test("a tab back with a copy kept from before the room's copy adds only its own 
   back.stop(); sam.stop(); tom.stop();
 });
 
+test("a tab back with a kept copy whose carry-over cannot read GitHub's history tries again until it can, its words once (TOOLS-224)", async () => {
+  const v1 = { sha: "c".repeat(40), text: "" };
+  let failing = 0;
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => (v1.text ? v1 : { sha, text: base }),
+    before: async function* (of) {
+      if (failing > 0) { failing--; throw new Error("GitHub's history is out of reach"); }
+      if (of === v1.sha) yield { sha, text: base };
+    } });
+  const room = fakeRoom();
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(base.indexOf("seven"), "«1» ");
+  await until(() => lex.text.includes("«1»"), "Anna's word at Lex's");
+  anna.socket.me.cut = true;
+  const saved = lex.text, copies = liveSaves.note!(scope, [{ path, content: saved }], lex.store);
+  lex.store.markSaved(scope, path, { baseSha: v1.sha, original: saved });
+  Object.assign(v1, { text: saved, copies });
+  anna.type(anna.text.indexOf("«1»"), "«2» ");
+  anna.stop(); lex.stop();
+  await quiet();
+  const sam = tab(room, saved, { base: saved, baseSha: v1.sha, github, account: "sam" }), tom = tab(room, saved, { base: saved, baseSha: v1.sha, github, account: "tom" });
+  await until(() => sam.yjsLoads + tom.yjsLoads === 2, "the room's new copy");
+  await quiet();
+  sam.type(0, "«3» ");
+  await until(() => tom.text.includes("«3»"), "Sam's word at Tom's");
+  // Anna comes back while GitHub's history cannot be read, three times.
+  const time = fakeTimers();
+  failing = 3;
+  const back = tab(room, anna.text, { keeper: anna.keeper, github, clock: time.clock });
+  // Both tabs of the room answer her: each answer starts a carry-over, and each fails.
+  await until(() => failing === 1, "both carry-overs failed");
+  await quiet();
+  assert.equal(back.text, anna.text, "not carried over: the draft stays as it is");
+  for (let wait = 0; wait < 8 && back.text !== sam.text; wait++) { time.advance(LIVE_TEXT_CATCH_UP_MS); await quiet(); }
+  await until(() => back.text === sam.text && back.text.includes("«2»"), "Anna back on the room's copy, her word in");
+  assert.deepEqual(["«1»", "«2»", "«3»"].map(word => times(back.text, word)), [1, 1, 1], back.text);
+  assert.equal(tom.text, sam.text);
+  assert.equal(liveState(back.store, draftKey(scope, path)).copy, liveState(sam.store, draftKey(sam.scope, path)).copy, "one copy");
+  back.stop(); sam.stop(); tom.stop();
+});
+
 test("a tab back with a kept copy keeps a change typed inside a word where it was typed (Fresh to French) (TOOLS-216)", async () => {
   // Anna and Lex share a copy. Anna types two words; Lex saves the first while Anna's connection is out, and Anna types
   // a third beside them. The room then starts a new copy from that save. Anna comes back with her kept copy.
@@ -1947,6 +2075,32 @@ test("the same with a save record too long for its line: the tab back adds only 
   assert.deepEqual(["«1»", "«2»", "«3»", "«4»"].map(word => times(back.text, word)), [1, 1, 1, 1], back.text);
   assert.equal(times(back.text, "y".repeat(4000)), 1);
   assert.equal(liveState(back.store, draftKey(scope, path)).copy, liveState(sam.store, draftKey(sam.scope, path)).copy, "one copy");
+  back.stop(); sam.stop(); tom.stop();
+});
+
+test("an empty page on GitHub: a tab back with a kept copy puts its words at the start, where it typed them (TOOLS-224)", async () => {
+  // Anna and Lex share a copy of an empty page; Anna's connection is out while she types at its start. Then the room
+  // starts a new copy of the page, where Sam types. Anna comes back with her kept copy.
+  const github: LiveTextPorts["github"] = () => ({ sha, text: "", newest: async () => ({ sha, text: "" }), before: async function* () { /* Its first version. */ } });
+  const room = fakeRoom();
+  const anna = tab(room, "", { base: "", github }), lex = tab(room, "", { base: "", github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.socket.me.cut = true;
+  anna.type(0, "«Anna» ");
+  anna.stop(); lex.stop();
+  await quiet();
+  const sam = tab(room, "", { base: "", github, account: "sam" }), tom = tab(room, "", { base: "", github, account: "tom" });
+  await until(() => sam.yjsLoads + tom.yjsLoads === 2, "the room's new copy");
+  await quiet();
+  sam.type(0, "«Sam»");
+  await until(() => tom.text === "«Sam»", "Sam's word at Tom's");
+  const back = tab(room, anna.text, { base: "", keeper: anna.keeper, github });
+  await until(() => back.text === sam.text && back.text.includes("«Anna»"), "Anna back on the room's copy, her word in");
+  await quiet();
+  assert.equal(sam.text, "«Anna» «Sam»");
+  assert.equal(back.text, sam.text);
+  assert.equal(tom.text, sam.text);
   back.stop(); sam.stop(); tom.stop();
 });
 
