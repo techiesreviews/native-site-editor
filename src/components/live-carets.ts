@@ -320,10 +320,10 @@ function attach(share: CaretShare, pane: CaretPane, told: (read: () => CaretSele
   };
 }
 
-/** The overlay controls a circle gives way to: the edit bar's and the agents' pins and their tray (always laid out where they
- * show), where a press goes to the control and not to a caret's circle standing over it. The insert points' plus and the card
- * grid's Add fade in as the pointer nears and are left out: they were under the circles before, and are still. */
-const CONTROLS = ".edit-bar :is(button, input, select, textarea, a[href], [role=button], [role=combobox], [role=menuitem]), .agent-pin, .agent-pins__tray";
+/** The overlay controls a circle gives way to, where a press goes to the control and not to a caret's circle standing over it:
+ * the edit bar's (not a disabled one), the agents' pins and their tray, and the card grid's Add and its looks. The insert
+ * points' plus fades in as the pointer nears and is left out: it was level with the circles before, and is under them. */
+const CONTROLS = ".edit-bar :is(button, input, select, textarea, a[href], [role=button], [role=combobox], [role=menuitem]):not(:disabled, [aria-disabled=true]), .agent-pin, .agent-pins__tray, .card-ghost__add, .card-ghost__looks";
 interface Box { left: number; right: number; top: number; bottom: number }
 /** The circle's press area (live-carets.css `.live-caret__mark::after`: `width` by `height`, centred on the circle, its foot
  * 2 px above the circle's, reaching down from 2 px below its top for a tag below), joined with the circle itself. */
