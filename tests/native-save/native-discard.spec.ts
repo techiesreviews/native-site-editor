@@ -5,6 +5,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { discardAllChanges, publishActions, publishButton, showPublish, showPublishActions } from "./publish";
 import { sampleContrast, type Pixel } from "./tone-contrast";
 import { storedDrafts } from "./drafts";
+import { openFile } from "./open-file";
 import { copyConnectionPrompt, waitForConnection } from "./mcp-prompt";
 
 // These specs exercise edits through the fixture relay socket.
@@ -88,19 +89,6 @@ async function pasteSource(page: Page, source: string) {
   await page.locator("#content [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.press("ControlOrMeta+V");
-}
-
-async function openFile(page: Page, path: string) {
-  if (!(await page.locator("#explorer").isVisible())) await page.locator("#explorer-toggle").click();
-  await page.locator("#explorer").getByRole("tab", { name: "Files" }).click();
-  const parts = path.split("/");
-  for (let index = 1; index <= parts.length; index++) {
-    const item = page.locator(`#explorer .file-row[data-path='${parts.slice(0, index).join("/")}']`);
-    await expect(item).toBeVisible({ timeout: 20_000 });
-    if (index === parts.length || (await item.getAttribute("aria-expanded")) === "false") await item.click();
-  }
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
-  await expect(page.locator("#content [role=\"textbox\"]").first()).toBeAttached({ timeout: 20_000 });
 }
 
 test("Discard changes asks, then drops every draft, the agent's too: edits, a new file, a deletion; the refusal notice goes with them", async ({ page, baseURL }) => {
