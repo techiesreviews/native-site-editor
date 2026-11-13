@@ -685,20 +685,20 @@
 .explorer .media-library .media-library__bar > * { height: max(var(--size-control), var(--size-tap)); min-height: 0; }
 .explorer .media-library .media-library__search input { border-radius: var(--radius); background: var(--surface-subtle); }
 .explorer .media-library__footer { display: none; }
-.explorer .media-library__grid:not(.media-library__grid--list) {
+.explorer .media-library__browse > .media-library__grid:not(.media-library__grid--list) {
   grid-template-columns: repeat(auto-fill, minmax(min(150px, 40%), 1fr));
   gap: calc(var(--space-s) + var(--space-l)) var(--space-s);
   padding-block-end: var(--space-l);
 }
-.explorer .media-library__grid:not(.media-library__grid--list) > .media-library__card {
+.explorer .media-library__browse > .media-library__grid:not(.media-library__grid--list) > .media-library__card {
   aspect-ratio: 4 / 3;
   overflow: visible;
   border-radius: var(--radius);
 }
-.explorer .media-library__grid:not(.media-library__grid--list) :is(.media-library__thumbnail, .media-library__thumbnail img) { border-radius: inherit; }
-.explorer .media-library__grid:not(.media-library__grid--list) > .media-library__pending { aspect-ratio: 4 / 3; }
-.explorer .media-library__grid:not(.media-library__grid--list) .media-library__card:has(input:checked)::after { box-shadow: none; outline: 2px solid var(--primary); outline-offset: 2px; }
-.explorer .media-library__grid:not(.media-library__grid--list) .media-library__name {
+.explorer .media-library__browse > .media-library__grid:not(.media-library__grid--list) :is(.media-library__thumbnail, .media-library__thumbnail img) { border-radius: inherit; }
+.explorer .media-library__browse > .media-library__grid:not(.media-library__grid--list) > .media-library__pending { aspect-ratio: 4 / 3; }
+.explorer .media-library__browse > .media-library__grid:not(.media-library__grid--list) .media-library__card:has(input:checked)::after { box-shadow: none; outline: 2px solid var(--primary); outline-offset: 2px; }
+.explorer .media-library__browse > .media-library__grid:not(.media-library__grid--list) .media-library__name {
   inset: calc(100% + var(--space-2xs)) 0 auto;
   padding: 0;
   color: var(--muted);
@@ -706,5 +706,5 @@
   text-shadow: none;
   opacity: 1;
 }
-.explorer .media-library__grid:not(.media-library__grid--list) .media-library__name::before,
-.explorer .media-library__grid:not(.media-library__grid--list) .media-library__name::after { display: none; }
+.explorer .media-library__browse > .media-library__grid:not(.media-library__grid--list) .media-library__name::before,
+.explorer .media-library__browse > .media-library__grid:not(.media-library__grid--list) .media-library__name::after { display: none; }

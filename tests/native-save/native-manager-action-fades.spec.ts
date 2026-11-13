@@ -164,14 +164,15 @@ test("renaming a page in place gives the field its whole row: a click near its e
   expect(JSON.stringify(await storedDrafts(page))).toBe(before);
 });
 
-test("keyboard focus on a Media tile's checkbox shows its name at once, and the usage number still opens the details", async ({ page, baseURL }) => {
+test("a Media tile shows its name under it at rest and on keyboard focus, and the usage number still opens the details", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await page.locator("#explorer").getByRole("tab", { name: "Media", exact: true }).click();
   const card = page.locator(".media-library__card").first();
   const name = card.locator(".media-library__name");
   await page.mouse.move(1400, 900);
-  await expect(name).toHaveCSS("opacity", "0");
-  // Arrive by keyboard (back one stop and forward again): a click's focus does not show the name.
+  // The explorer's tiles carry their names under them (mock-up 05 v2, TOOLS-220).
+  await expect(name).toHaveCSS("opacity", "1");
+  // Arrive by keyboard (back one stop and forward again).
   await card.getByRole("checkbox").focus();
   await page.keyboard.press("Shift+Tab"); await page.keyboard.press("Tab");
   await expect(card.getByRole("checkbox")).toBeFocused();
