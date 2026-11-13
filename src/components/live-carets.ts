@@ -320,9 +320,10 @@ function attach(share: CaretShare, pane: CaretPane, told: (read: () => CaretSele
   };
 }
 
-/** The page's overlay controls (the edit bar's, the agents' pins and their tray, the card grid's Add, the insert points): where a
- * press goes to the control and not to a caret's circle standing over it. */
-const CONTROLS = "button, input, select, textarea, a[href], [role=button], [role=combobox], [role=menuitem]";
+/** The overlay controls a circle gives way to: the edit bar's and the agents' pins and their tray (always laid out where they
+ * show), where a press goes to the control and not to a caret's circle standing over it. The insert points' plus and the card
+ * grid's Add fade in as the pointer nears and are left out: they were under the circles before, and are still. */
+const CONTROLS = ".edit-bar :is(button, input, select, textarea, a[href], [role=button], [role=combobox], [role=menuitem]), .agent-pin, .agent-pins__tray";
 interface Box { left: number; right: number; top: number; bottom: number }
 /** The circle's press area (live-carets.css `.live-caret__mark::after`: `width` by `height`, centred on the circle, its foot
  * 2 px above the circle's, reaching down from 2 px below its top for a tag below), joined with the circle itself. */
@@ -334,7 +335,7 @@ export function pressArea(mark: Box, width: number, height: number, below: boole
 }
 /** Whether two boxes share any area. */
 const boxesMeet = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-/** What a circle gives way to among the page's overlay `controls` (live-carets.css `data-over-control`): `circle` when its middle is
+/** What a circle gives way to among the overlay `controls` (live-carets.css `data-over-control`): `circle` when its middle is
  * over a control (it takes no press), `pad` when it only touches one or its press `area` does (the area goes, the circle
  * stays pressable, so its target is then smaller than the 24 px, 44 px on touch, on purpose), none when it is clear of them. */
 export function overControlState(circle: Box, area: Box, controls: Box[]): "circle" | "pad" | undefined {
@@ -390,8 +391,7 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
   const overBar = () => {
     barDue = 0;
     if (!widgets.size) return;
-    // Only a control that takes a press now: the insert points' plus and the bars' faded parts stay laid out, unseen and
-    // with presses off, until the pointer is near.
+    // Only a control that takes a press now: the bar's faded parts stay laid out, unseen and with presses off.
     const controls = [...page.layer.querySelectorAll(CONTROLS)].filter(control => !layer.contains(control) && getComputedStyle(control).pointerEvents !== "none"
       && control.checkVisibility({ opacityProperty: true, visibilityProperty: true })).map(control => control.getBoundingClientRect()).filter(box => box.width > 0);
     for (const widget of widgets.values()) {
