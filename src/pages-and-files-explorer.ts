@@ -200,23 +200,26 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
  * without a site's file list (a plain repository), the rows drawn are narrowed instead. Empty `text` shows the tree again. */
 export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | "runtime" | "previewSelection" | "restoreFile" | "workspaceSession" | "appStore">, text: string) {
   const found = ports.element("files-found"), words = text.trim().toLowerCase();
-  const all = words ? ports.runtime.files() : [];
+  // Only a site's file list is whole; a plain repository's tree knows the folders opened.
+  const all = words && ports.runtime.site ? ports.runtime.files() : [];
   ports.files.hidden = Boolean(words && all.length);
   found.hidden = !ports.files.hidden;
   if (found.hidden) {
     for (const item of ports.files.querySelectorAll<HTMLElement>("li")) item.hidden = Boolean(words) && !item.textContent?.toLowerCase().includes(words);
     return;
   }
-  const rows = all.filter((path) => path.toLowerCase().includes(words)).sort().slice(0, 200).map((path) => {
-    const item = node("li"), slash = path.lastIndexOf("/");
+  const rows = all.filter((path) => path.toLowerCase().includes(words)).sort().map((path) => {
+    const item = node("li"), line = node("div", "file-row-line"), slash = path.lastIndexOf("/");
     const row = button("", () => { ports.previewSelection.recordIntent(path); void ports.restoreFile(path, ports.workspaceSession.begin()); }, "file-row");
     row.dataset.path = path;
+    row.title = path;
     if (path === ports.appStore.openFile.value) row.classList.add("selected");
     const icon = node("span", "file-icon");
     setIcon(icon, "file", 16);
     row.append(icon, node("span", "filename", path.slice(slash + 1)));
     if (slash > 0) row.append(node("span", "file-folder", path.slice(0, slash)));
-    item.append(row);
+    line.append(row);
+    item.append(line);
     return item;
   });
   found.replaceChildren(...rows.length ? rows : [node("li", "muted pages-empty", "No file matches")]);

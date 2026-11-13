@@ -137,6 +137,12 @@ test("the search lists every file whose name or folder has it, closed folders to
   const found = explorer(page).getByRole("list", { name: "Files found", exact: true });
   await expect(found.locator('.file-row[data-path="styles/site.css"]')).toBeVisible();
   await expect(explorer(page).locator("#files")).toBeHidden();
+  // A found row shows keyboard focus as the tree's rows do.
+  await explorer(page).getByLabel("Search files", { exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(found.locator(".file-row").first()).toBeFocused();
+  await expect(found.locator(".file-row-line").first()).toHaveCSS("outline-style", "solid");
   await found.locator('.file-row[data-path="styles/site.css"]').click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
   await expect(page.locator("#current-page")).toHaveText("styles/site.css");

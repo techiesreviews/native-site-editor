@@ -81,6 +81,8 @@ test("desktop: one head row, 32px rows, names without the site's name, guide lin
   const caret = () => row(page, "Journal").locator(".pages-twisty svg").evaluate(svg => svg.outerHTML);
   const opened = await caret();
   await expect(item(page, "Home")).toBeHidden();
+  // The keyboard's tab stop moves to a row that shows.
+  expect(await explorer(page).locator("[role='treeitem'][tabindex='0']").evaluate(row => row.checkVisibility())).toBe(true);
   await explorer(page).getByLabel("Search pages", { exact: true }).fill("zzzz");
   await expect(explorer(page).getByText("No page matches", { exact: true })).toBeVisible();
   await explorer(page).getByLabel("Search pages", { exact: true }).fill("");

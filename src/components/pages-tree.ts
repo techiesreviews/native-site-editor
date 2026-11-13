@@ -332,6 +332,9 @@ export function createPagesTree(options: {
       return own || inside;
     };
     const shown = [...tree.children].filter((child): child is HTMLElement => child.getAttribute("role") === "treeitem").map(keep).some(Boolean);
+    // The tab stop stays on a row that shows.
+    const reachable = visibleRows();
+    if (reachable.length && !reachable.some((row) => row.tabIndex === 0)) setActive(reachable[0]);
     tree.querySelector(":scope > .pages-found-none")?.remove();
     if (words && !shown) {
       const none = node("li", "muted pages-empty pages-found-none", "No page matches");
@@ -849,10 +852,10 @@ export function createPagesTree(options: {
         tree.append(empty);
       }
       place();
-      if (query) applyFilter();
       const key = focus?.file ? pageKey(focus.file) : focus?.route ? (rowOfRoute(focus.route)?.dataset.key ?? routeKey(focus.route)) : active;
       const row = rowByKey(key) ?? rowByKey(currentFile && pageKey(currentFile)) ?? visibleRows()[0];
       if (row) setActive(row);
+      if (query) applyFilter();
       if (focus || hadFocus) focusRow(row?.dataset.key);
     },
     /** A menu, in-place edit or drag must finish before deferred titles replace rows. */
