@@ -122,7 +122,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
 
   // Renames or moves a file or folder to `to`: the pages among them that other
   // pages link to are named in a confirmation first.
-  async function moveFileTarget(source: FileRowTarget, to: string, operation: "rename" | "move", options?: { keepOldAddress?: boolean }): Promise<string | undefined> {
+  async function moveFileTarget(source: FileRowTarget, to: string, operation: "rename" | "move", options?: { keepOldAddress?: boolean; reveal?: boolean }): Promise<string | undefined> {
     // The stamp, the file list and the target's drafts as the action began: held through the
     // index, the branch reads and the dialog (the guard is proved before the plan and at the write).
     const since = ports.edits.stamp(), key = ports.nativeFiles().sort().join("\n"), drafts = targetDrafts(source);
@@ -198,15 +198,16 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       ? urlDialog ? `The site changed while the ${operation === "rename" ? "Rename" : "Move"} dialog was open, so nothing was ${operation === "rename" ? "renamed" : "moved"}. Try again to see the latest links.` : "The repository changed meanwhile. Try again."
       : outcome.message;
     if (outcome.message) return outcome.message;
-    focusMovedFile(to);
+    focusMovedFile(to, options?.reveal);
     return undefined;
   }
 
-  function focusMovedFile(to: string) {
+  /** `reveal`: the person moved or renamed it in Files, so it shows even where their search would leave it out (never for an agent's move). */
+  function focusMovedFile(to: string, reveal = false) {
     ports.requestAnimationFrame(() => {
       for (let part = ports.parentOf(to); part; part = ports.parentOf(part)) ports.openFolder(part);
       if (!ports.fileRow(to)) ports.renderFileTree();
-      if (ports.filesTabOpen()) (ports.revealFile ? ports.revealFile(to) : ports.fileRow(to))?.focus();
+      if (ports.filesTabOpen()) (reveal && ports.revealFile ? ports.revealFile(to) : ports.fileRow(to))?.focus();
     });
   }
 
