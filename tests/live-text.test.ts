@@ -1198,6 +1198,12 @@ test("another tab's draft adopted on a page kept apart while another page shows 
   await quiet();
   assert.ok(anna.text.includes("Newer line"), "the draft keeps the adopted line");
   assert.ok(records.get(draftKey(scope, path))?.content.includes("Newer line"), "and so does storage");
+  // An agent writes into the page still kept apart: the adopted line stays.
+  const agent: LiveAuthor = { grant: "grant-1", name: "Claude Code" };
+  writeAs(agent, () => anna.store.edit({ scope, path, changes: [{ start: 4, end: 4, text: "Agent " }] }));
+  await quiet();
+  assert.ok(anna.text.includes("Newer line") && anna.text.includes("Agent "), "both in the draft");
+  assert.ok(records.get(draftKey(scope, path))?.content.includes("Newer line"), "and the adopted line in storage");
   anna.stop(); lex.stop();
 });
 
@@ -1853,6 +1859,45 @@ test("a tab back with a copy kept from before the room's copy adds only its own 
   assert.equal(back.text, sam.text);
   assert.equal(tom.text, sam.text);
   assert.deepEqual(["«1»", "«2»", "«3»", "«4»"].map(word => times(back.text, word)), [1, 1, 1, 1], back.text);
+  assert.equal(liveState(back.store, draftKey(scope, path)).copy, liveState(sam.store, draftKey(sam.scope, path)).copy, "one copy");
+  back.stop(); sam.stop(); tom.stop();
+});
+
+test("a tab back with a kept copy keeps a change typed inside a word where it was typed (Fresh to French) (TOOLS-216)", async () => {
+  // Anna and Lex share a copy. Anna types two words; Lex saves the first while Anna's connection is out, and Anna types
+  // a third beside them. The room then starts a new copy from that save. Anna comes back with her kept copy.
+  const v1 = { sha: "c".repeat(40), text: "" };
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => (v1.text ? v1 : { sha, text: base }),
+    before: async function* (of) { if (of === v1.sha) yield { sha, text: base }; } });
+  const room = fakeRoom();
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  const at = base.indexOf("seven");
+  anna.type(at, "«1» «2» ");
+  await until(() => lex.text.includes("«2»"), "Anna's words at Lex's");
+  anna.socket.me.cut = true;
+  const saved = lex.text, copies = liveSaves.note!(scope, [{ path, content: saved }], lex.store);
+  lex.store.markSaved(scope, path, { baseSha: v1.sha, original: saved });
+  Object.assign(v1, { text: saved, copies });
+  anna.type(anna.text.indexOf("«2»"), "«3» ");
+  anna.type(anna.text.indexOf("Fresh") + 3, "", 1);
+  anna.type(anna.text.indexOf("Freh") + 3, "nc");
+  anna.stop(); lex.stop();
+  await quiet();
+  // A new copy of the room, from the saved version, with someone typing right beside Anna's words.
+  const sam = tab(room, saved, { base: saved, baseSha: v1.sha, github, account: "sam" }), tom = tab(room, saved, { base: saved, baseSha: v1.sha, github, account: "tom" });
+  await until(() => sam.yjsLoads + tom.yjsLoads === 2, "the room's new copy");
+  await quiet();
+  sam.type(sam.text.indexOf("«1»"), "«4» ");
+  await until(() => tom.text.includes("«4»"), "Sam's word at Tom's");
+  const back = tab(room, anna.text, { keeper: anna.keeper, github });
+  await until(() => back.text === sam.text && back.text.includes("«3»"), "Anna back on the room's copy, her word in");
+  await quiet();
+  assert.equal(back.text, sam.text);
+  assert.equal(tom.text, sam.text);
+  assert.deepEqual(["«1»", "«2»", "«3»", "«4»"].map(word => times(back.text, word)), [1, 1, 1, 1], back.text);
+  assert.ok(back.text.includes("<h1>French bread</h1>"), back.text);
   assert.equal(liveState(back.store, draftKey(scope, path)).copy, liveState(sam.store, draftKey(sam.scope, path)).copy, "one copy");
   back.stop(); sam.stop(); tom.stop();
 });

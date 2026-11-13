@@ -916,7 +916,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         if (event.origin === "external" || event.text === now) return;
         if (seen !== undefined && seen !== now) {
           const change = typedSince(now, seen, event.text), agent = liveAuthor();
-          if (change && agent) writeAgent(agent, wordRuns(now, change));
+          // Written quietly: the draft does not follow the copy here (it holds the adopted words the copy lacks).
+          if (change && agent) { quiet = true; try { writeAgent(agent, wordRuns(now, change)); } finally { quiet = false; } }
           else if (change) doc.transact(() => { applyText(wordRuns(now, change)); }, LOCAL);
           return;
         }
@@ -1402,6 +1403,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       /** At each place (the count of `version`'s characters before it), the own text `old` holds there, each character with
        * the one it was typed as; and what goes. */
       const puts = new Map<number, { ch: string; first: string }[]>(), drops: Id[] = [];
+      /** Places where the old copy held someone else's characters that `version` does not show (taken out since). */
+      const others = new Set<number>();
       let at = 0, oldMarks = "";
       for (const item of items(old)) for (let index = 0; index < item.text.length; index++) {
         const clock = item.clock + index, id = Y.createID(item.client, clock), ch = item.text[index];
@@ -1411,7 +1414,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           at++;
           continue;
         }
-        if (!mine.has(item.client)) continue;
+        if (!mine.has(item.client)) { others.add(at); continue; }
         const first = firstThere(item.client, clock), here = held.get(first);
         if (here) { if (item.deleted && Y.isDeleted(gone, id)) drops.push(here); continue; }
         if (item.deleted) continue;
@@ -1419,12 +1422,13 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         if (put) put.push({ ch, first }); else puts.set(at, [{ ch, first }]);
       }
       if (oldMarks !== marks.map(mark => mark.ch).join("")) return false;
-      // A place inside a word of `version` (the old copy had its words between two characters of a word taken out since):
-      // the word's edge, before it for words that end with white space, else after it, so no word is cut apart here.
+      // A place inside a word of `version` where the old copy had someone else's characters taken out since (its words were
+      // beside those, not inside this word): the word's edge, before it for words that end with white space, else after
+      // it, so no word is cut apart here. Typing inside a word itself ("Fresh" to "French") stays where it was typed.
       const inside = (index: number) => index > 0 && index < marks.length && !/\s/.test(marks[index - 1].ch) && !/\s/.test(marks[index].ch)
         && marks[index - 1].ch !== ">" && marks[index].ch !== "<";
       for (const [index, put] of [...puts]) {
-        if (!inside(index)) continue;
+        if (!inside(index) || !others.has(index)) continue;
         let edge = index;
         if (/\s/.test(put.at(-1)!.ch)) while (inside(edge)) edge--; else while (inside(edge)) edge++;
         puts.delete(index);
