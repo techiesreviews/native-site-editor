@@ -141,6 +141,13 @@ test("the search lists every file whose name or folder has it, closed folders to
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
   await expect(page.locator("#current-page")).toHaveText("styles/site.css");
   await expect(page.locator("#current-page .folder-part")).toHaveText("styles");
+  // Nothing found says so; clearing the search shows the tree again.
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  await explorer(page).getByLabel("Search files", { exact: true }).fill("zzzz");
+  await expect(found).toHaveText("No file matches");
+  await explorer(page).getByLabel("Search files", { exact: true }).fill("");
+  await expect(found).toBeHidden();
+  await expect(row(page, "index.html")).toBeVisible();
   // A tab switch starts the search afresh.
   if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
   await explorer(page).getByRole("tab", { name: "Pages", exact: true }).click();

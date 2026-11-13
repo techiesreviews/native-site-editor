@@ -87,9 +87,9 @@ test("desktop: one head row, 32px rows, names without the site's name, guide lin
   await expect(item(page, "Home")).toBeVisible();
   await expect(item(page, "Journal")).toHaveAttribute("aria-expanded", "false");
   // Its arrow pointed down while the search opened it, and points right again now.
-  expect(await caret()).not.toBe(opened);
+  await expect.poll(caret).not.toBe(opened);
   await item(page, "Journal").locator(":scope > .pages-row > .pages-twisty").click();
-  expect(await caret()).toBe(opened);
+  await expect.poll(caret).toBe(opened);
 
   // + and ⋯ rest hidden, and show on hover with a gentle tint.
   const add = row(page, "Journal").getByRole("button", { name: /^Add subpage to Journal/ });
