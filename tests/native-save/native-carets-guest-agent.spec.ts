@@ -232,7 +232,7 @@ test("a caret one drawing hands to another within one frame, at the same spot, i
     const ids: string[] = [];
     const stop = page.onRects(rects => ids.push(...rects.map(rect => rect.id)));
     const first = {}, second = {};
-    const until = async (check: () => boolean) => { for (let tries = 0; tries < 100 && !check(); tries++) await new Promise(done => setTimeout(done, 20)); return check(); };
+    const until = async (check: () => boolean) => { for (let tries = 0; tries < 100 && !check(); tries++) await new Promise(done => setTimeout(done, 20)); return check(); }; // fixed-wait: one step of a bounded poll inside the page, for rects the frame posts
     page.show([caret], first);
     const found = await until(() => ids.includes("probe"));
     // The first drawing lets it go and the second takes it in the same tick: the frame's list is the same as before.
