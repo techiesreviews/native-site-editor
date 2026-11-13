@@ -56,7 +56,8 @@ export interface PagesPorts {
   /** Rendering consumes queued title work. */
   clearPendingTitles(): void;
   tabsMounted(): boolean;
-  paintTabs(tab: ExplorerTab, native: boolean): void;
+  /** `reset`: a new load (repository or branch), so the explorer starts afresh. */
+  paintTabs(tab: ExplorerTab, native: boolean, reset?: boolean): void;
   /** Without a native site: reset the Pages tree and dispose the images gallery. */
   resetExplorer(): void;
   showMedia(): void;
@@ -115,7 +116,7 @@ export function createPagesState(ports: PagesPorts) {
     if (!ports.tabsMounted()) return;
     const native = Boolean(ports.site());
     if (reset) explorerTab = "pages";
-    ports.paintTabs(native ? explorerTab : "files", native);
+    ports.paintTabs(native ? explorerTab : "files", native, reset);
     if (!native) ports.resetExplorer();
   }
 

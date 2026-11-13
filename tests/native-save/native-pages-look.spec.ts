@@ -121,6 +121,8 @@ test.describe("touch", () => {
       expect(box.x + box.width - (more.x + more.width)).toBeLessThanOrEqual(8);
     }
     await expect(explorer(page).getByRole("button", { name: "+ New page" })).toHaveCSS("min-height", "44px");
+    // The search's text is 16 px on touch, so focusing it never zooms the page.
+    expect(parseFloat(await explorer(page).getByLabel("Search pages", { exact: true }).evaluate((input) => getComputedStyle(input).fontSize))).toBeGreaterThanOrEqual(16);
 
     await row(page, "Journal").getByRole("button", { name: /^Actions for Journal/ }).tap();
     await page.getByRole("menuitem", { name: "Add subpage" }).tap();
