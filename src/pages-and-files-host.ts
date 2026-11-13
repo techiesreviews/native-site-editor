@@ -160,7 +160,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
       import("./components/create-dialog"), import("./components/file-row-actions"), ports.loadConfirmDialog(),
       import("./components/page-picker"), import("./controllers/files-tree-controller"), import("./pages-and-files-explorer"), loadPagesActions(), loadFileOps(),
     ]);
-    return { ...create, ...actions, ...confirm, ...picker, ...tree, createExplorerActions: explorer.createExplorerActions, findFiles: explorer.findFiles, measureSwitch: explorer.measureSwitch, fileRowNow: explorer.fileRowNow };
+    return { ...create, ...actions, ...confirm, ...picker, ...tree, createExplorerActions: explorer.createExplorerActions, findFiles: explorer.findFiles, measureSwitch: explorer.measureSwitch, fileRowNow: explorer.fileRowNow, revealFile: explorer.revealFile, focusFiles: explorer.focusFiles };
   });
 
   function treeState(scope = ports.draftScope()): TreeState {
@@ -189,18 +189,19 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     },
     render: () => { filesTree?.render(); if (searchText("files")) search(); }, reset: () => { spareListings.clear(); filesTree?.reset(); },
     // While a search shows found files, a file's row is its found row (src/pages-and-files-explorer.ts).
-    shown: () => filesTree?.shown(), row: (path: string) => rowNow ? rowNow(ports, filesTree, path) : filesTree?.row(path),
+    shown: () => filesTree?.shown(), row: (path: string) => rows ? rows.fileRowNow(ports, filesTree, path) : filesTree?.row(path),
+    reveal: (path: string) => rows ? rows.revealFile(ports, filesTree, path) : filesTree?.row(path),
     openFolder: (path: string) => filesTree?.openFolder(path), listings: () => filesTree?.listings() ?? spareListings, visible: filesShown,
   };
   let explorerMount: Promise<void> | undefined;
-  let rowNow: typeof import("./pages-and-files-explorer").fileRowNow | undefined;
+  let rows: Pick<typeof import("./pages-and-files-explorer"), "fileRowNow" | "revealFile" | "focusFiles"> | undefined;
   function ensureExplorer() {
     if (filesTree) return ensurePagesTree();
     if (explorerMount) return explorerMount;
     const host = ports.element("explorer");
-    const pending = loadExplorerModules().then(async ({ createCreateDialog, createFileRowActions, createConfirmDialog, createPagePicker, createFilesTreeController, createExplorerActions, measureSwitch, fileRowNow }) => {
+    const pending = loadExplorerModules().then(async ({ createCreateDialog, createFileRowActions, createConfirmDialog, createPagePicker, createFilesTreeController, createExplorerActions, measureSwitch, fileRowNow, revealFile, focusFiles }) => {
       if (!host.isConnected || host !== document.getElementById("explorer")) return;
-      rowNow = fileRowNow;
+      rows = { fileRowNow, revealFile, focusFiles };
       measureSwitch(host, ports.element("explorer-tabs"));
       const { planCreation, createFromRequest, fileRowItems, renameProblem, renameFileTarget, dropProblem, dropFileTarget } = createExplorerActions(ports, {
         get createDialog() { return createDialog; }, get fileActions() { return fileActions; }, get fileOps() { return fileOps; },
@@ -557,7 +558,9 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     undoFileChanges,
     duplicateFile: (scope, file, to) => duplicateFile(draftStore(), scope, file, to),
     afterFileChanges, announce: ports.announce, refuse, errorMessage: ports.errorMessage, requestAnimationFrame: callback => { requestAnimationFrame(callback); },
-    openFolder: path => filesTreeController.openFolder(path), fileRow: path => filesTreeController.row(path), renderFileTree: () => filesTreeController.render(),
+    openFolder: path => filesTreeController.openFolder(path), fileRow: path => filesTreeController.row(path), revealFile: path => filesTreeController.reveal(path),
+    focusFiles: () => rows?.focusFiles(ports),
+    renderFileTree: () => filesTreeController.render(),
     filesTabOpen: () => filesTreeController.visible(),
   });
   // Files checks and actions load with the explorer, Pages actions or an agent's file command.
