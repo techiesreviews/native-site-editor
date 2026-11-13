@@ -2312,6 +2312,26 @@ test("a commit heard while the copy catches up, then the page kept apart and sho
   anna.stop(); lex.stop();
 });
 
+test("a save waiting while the copy catches up, then the page kept apart and shown again, waits for the copy that takes over (TOOLS-223)", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(anna.text.indexOf("Fresh"), "«1» ");
+  await until(() => lex.text.includes("«1»"), "Anna's word at Lex's");
+  anna.socket.me.options.onKey?.();
+  const wait = liveSaves.ready?.(scope, [path], anna.store);
+  assert.ok(wait, "catching up, the save waits");
+  anna.openFile.value = "about.html";
+  anna.openFile.value = path;
+  await wait;
+  // Let through when the share kept apart stopped, it found no copy taking part to note it in: the commit named none.
+  const copies = liveSaves.note!(scope, [{ path, content: anna.text }], anna.store);
+  assert.equal(copies.length, 1, "the copy of the page shown again notes the save");
+  assert.equal(times(anna.text, "«1»"), 1, anna.text);
+  anna.stop(); lex.stop();
+});
+
 test("a joiner's unsaved changes in two places go in word by word: what someone typed between them stays, once", async () => {
   const room = fakeRoom();
   const anna = tab(room);
