@@ -78,6 +78,7 @@ import { saveAuthors, type SaveAuthors } from "./save-authors";
 import type { SaveAuthor } from "../shared/types";
 import { mergeText, runChanges } from "./text-merge";
 import { liveSaves } from "./live-saves";
+import { sessionCarets, type FileCarets } from "./session-carets";
 import { MAX_LIVE_RECORD } from "../shared/live-copy";
 import { birthUpdate, clashes, clientOf, copyAt, draftUpdate, edgeClient, edgeTo as edgeFor, edgeUpdate, edges, headOf, items, metaOf, newestOf,
   occurrenceAfter, occurrenceOn, shaOf, superseded, type Edge, textAt, tipOf, versionsOf, wordDiff, wordRuns, wordsOf } from "./live-versions";
@@ -136,8 +137,10 @@ export interface LiveTextPorts {
  * a tab wrote into the copy, ticket am-25, the name its commands carry), none for a person.
  * Name and author are what each participant says of itself (the relay vouches for neither): `contested` marks an author
  * id another participant here also claims, or this tab's own, whose name tag offers no Undo. `who`: an agent this tab
- * writes for, by its connection, so its caret is drawn as its outline and pin are (src/participant.ts); never sent. */
-export interface LiveCaret { peer: string; author: number; name: string; agent?: string; who?: LiveAuthor; anchor: number; head: number; contested?: boolean }
+ * writes for, by its connection, so its caret is drawn as its outline and pin are (src/participant.ts); never sent.
+ * `guest`: a synced session's guest (TOOLS-219, src/live-session-carets.ts), by the colour Lex's tab gave them; their
+ * `author` is a number of their own below zero, which no Yjs client id is, so their tag offers no Undo. */
+export interface LiveCaret { peer: string; author: number; name: string; agent?: string; who?: LiveAuthor; guest?: number; anchor: number; head: number; contested?: boolean }
 /** A caret as offsets in this tab's text: where the selection began and where the caret is. */
 export interface CaretSelection { anchor: number; head: number }
 /** The open file's carets as the code pane draws them (src/components/live-carets.ts). */
@@ -1902,6 +1905,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     list: () => copy?.carets() ?? [],
     on: (watcher: () => void) => { caretWatchers.add(watcher); return () => { caretWatchers.delete(watcher); }; },
     own: (next: (() => CaretSelection | undefined) | undefined) => { selection = next; copy?.tellCaret(); },
+    /** This tab's own caret now, as offsets in its text. */
+    ownNow: () => selection?.(),
   };
   /** `handover`: the page shows again and a new share of it takes over from this one, kept apart (`away`): a commit or a
    * save waiting on this one waits on that one, so the draft never takes a commit in apart from the copy it comes back to. */
@@ -1969,7 +1974,8 @@ export interface LiveText {
 const AWAY_LIMIT = 10;
 /** Shares the open file while it is open in the draft store, for as long as this runs; calling the result stops it. */
 export function startLiveText(ports: LiveTextPorts): LiveText {
-  type Share = { key: string; at: { scope: DraftScope; path: string }; stop(handover?: boolean): void; away?(): boolean; authors?: AuthorUndo; drawing?: boolean; undraw?: () => void };
+  type Share = { key: string; at: { scope: DraftScope; path: string }; stop(handover?: boolean): void; away?(): boolean; authors?: AuthorUndo; drawing?: boolean; undraw?: () => void;
+    draw?(): void; carets?(): FileCarets };
   let current: Share | undefined;
   /** Files shared before that another page replaced, by key: their copies take the drafts' changes until they show again.
    * At most AWAY_LIMIT, the oldest stopped first (its copy is kept for the next opening). */
@@ -2022,6 +2028,22 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
     const at = { scope: file!.scope, path: file!.path };
     const share: Share = { key, at, stop: () => undefined };
     current = share;
+    // Someone else is here (the copy is made), or a synced session runs (its guests' carets, and this tab's own for them):
+    // the carets are drawn (loaded once) for as long as this file is shared. A session's guests are drawn with the room's.
+    const draw = () => {
+      if (current !== share || share.drawing || !loadCarets) return;
+      share.drawing = true;
+      void loadCarets().then(start => {
+        if (current !== share) return;
+        share.undraw = start({
+          ...at, carets: () => [...shared.carets.list(), ...sessionCarets.guests(at.path)],
+          onCarets: listener => { const room = shared.carets.on(listener), guests = sessionCarets.watchGuests(listener); return () => { room(); guests(); }; },
+          own: read => { shared.carets.own(read); sessionCarets.fileMoved(); },
+          canUndo: author => shared.authors.can(author), undo: (author, history) => shared.authors.undo(author, history),
+          onAuthorUndo: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+        });
+      }).catch(() => { share.drawing = false; });
+    };
     const shared = shareFile(ports, at.scope, at.path, why => {
       if (aways.get(key) === share) { aways.delete(key); share.stop(); return; }
       if (current !== share) return;
@@ -2029,29 +2051,28 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
       share.stop();
       current = undefined;
       check();
-    }, () => { if (current === share) changed(); }, () => {
-      // Someone else is here: their carets are drawn (loaded once, with Yjs) for as long as this file is shared.
-      if (current !== share || share.drawing || !loadCarets) return;
-      share.drawing = true;
-      void loadCarets().then(start => {
-        if (current !== share) return;
-        share.undraw = start({
-          ...at, carets: shared.carets.list, onCarets: shared.carets.on, own: shared.carets.own,
-          canUndo: author => shared.authors.can(author), undo: (author, history) => shared.authors.undo(author, history),
-          onAuthorUndo: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
-        });
-      }).catch(() => { share.drawing = false; });
-    });
-    share.stop = handover => { share.undraw?.(); share.undraw = undefined; shared.stop(handover); };
+    }, () => { if (current === share) changed(); }, draw);
+    share.draw = draw;
+    share.carets = () => ({ path: at.path, own: shared.carets.ownNow(), others: shared.carets.list() });
+    // Someone's caret in the room moved: a session's guests are told.
+    shared.carets.on(sessionCarets.fileMoved);
+    if (sessionCarets.on()) draw();
+    sessionCarets.fileMoved();
+    share.stop = handover => { share.undraw?.(); share.undraw = undefined; shared.stop(handover); sessionCarets.fileMoved(); };
     share.away = () => { share.undraw?.(); share.undraw = undefined; share.drawing = false; return shared.away(); };
     share.authors = shared.authors;
   };
   const stopEffect = effect(() => { void ports.openFile.value; untracked(() => { left = undefined; check(); }); });
+  // A synced session starting draws the open file's carets (its guests', and this tab's own for them); the session reads
+  // the file's carets from here.
+  const stopSession = sessionCarets.watchGuests(() => { if (sessionCarets.on()) current?.draw?.(); });
+  sessionCarets.offerFile(() => current?.carets?.());
   const stopStore = ports.store.subscribe(event => { if (event.type === "file") check(); });
   // `clear` (sign-out, another workspace) says nothing per file: any settled change looks again, which is cheap.
   const stopState = ports.store.subscribeState(check);
   return port(() => {
-    stopAgents(); stopEffect(); stopStore(); stopState(); current?.stop(); current = undefined; listeners.clear();
+    stopAgents(); stopEffect(); stopStore(); stopState(); stopSession(); current?.stop(); current = undefined; listeners.clear();
+    sessionCarets.offerFile(undefined);
     for (const share of aways.values()) share.stop();
     aways.clear();
   });

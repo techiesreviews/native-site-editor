@@ -19,116 +19,16 @@ import type { monaco as Monaco } from "./monaco";
 import { caretPanes, watchCaretPanes, type CaretPane } from "./source-editor";
 import { pageCarets, watchPageCarets, type PageCaretPoint, type PageCaretRect, type PageCarets } from "./page-caret-port";
 import { sourceOffsetOfText, textPointAt } from "../native-source-location";
-import { icon, svgElement } from "../icons";
+import { icon } from "../icons";
+import { caretFlag, placeTag, type CaretWho, type Tagged } from "./caret-flag";
+// The tag's look is its own module (src/components/caret-flag.ts), which a guest's page draws too.
+export { programMark, rightToLeft } from "./caret-flag";
 import { githubScope, same } from "../workspace-session";
-import { initialOf, participants } from "../participant";
+import { participants } from "../participant";
 
-/** Who a caret is: its colour (the presence colours, src/theme.css) and its name come from the tab's participants
- * (src/participant.ts), so an agent's caret matches its outline and pin. */
-type CaretWho = Pick<LiveCaret, "author" | "name" | "agent" | "who">;
-const colourOf = (caret: CaretWho) => participants.caret(caret).colour;
-
-/** Tiny marks of the programs agents work in, by their MCP client's name; any other agent gets the plain one. */
-const PROGRAMS: [RegExp, string][] = [
-  [/claude/i, '<path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/>'],
-  [/codex|openai|chatgpt|gpt/i, '<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9Z"/>'],
-  [/gemini/i, '<path d="M12 3c.6 4.6 3.4 7.4 9 9-5.6 1.6-8.4 4.4-9 9-.6-4.6-3.4-7.4-9-9 5.6-1.6 8.4-4.4 9-9Z"/>'],
-];
-const PLAIN_AGENT = '<rect x="5" y="7" width="14" height="11" rx="3"/><path d="M12 4v3M9.5 12.5h.01M14.5 12.5h.01"/>';
-/** The mark of `agent`'s program (exported for its unit test). */
-export function programMark(agent: string) {
-  return PROGRAMS.find(([pattern]) => pattern.test(agent))?.[1] ?? PLAIN_AGENT;
-}
-function programIcon(agent: string) {
-  return svgElement(`<svg class="live-caret__program" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${programMark(agent)}</svg>`);
-}
-
-/** Whether `name`'s first strong letter is written right to left (Hebrew, Arabic, Syriac, Thaana, N'Ko, …). */
-export const rightToLeft = (name: string) =>
-  /^[^\p{L}]*[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u.test(name);
-
-/** A caret's name tag: the circle, the rest of the name and the undo button (shown while `undoable`). */
-export function caretFlag(caret: CaretWho, onUndo: () => void) {
-  const flag = document.createElement("span");
-  flag.className = "live-caret__flag";
-  flag.tabIndex = 0;
-  // A group takes its name from aria-label: screen readers say whose caret has focus.
-  flag.setAttribute("role", "group");
-  const mark = document.createElement("span");
-  mark.className = "live-caret__mark";
-  const rest = document.createElement("span");
-  rest.className = "live-caret__name";
-  rest.setAttribute("aria-hidden", "true");
-  // A tag opened to the left reads its name whole, its first letter included.
-  const initial = document.createElement("span");
-  initial.className = "live-caret__initial";
-  const after = document.createTextNode("");
-  const undo = document.createElement("button");
-  undo.type = "button";
-  undo.className = "live-caret__undo";
-  undo.hidden = true;
-  undo.append(icon("undo", 12));
-  undo.addEventListener("click", event => {
-    event.stopPropagation();
-    onUndo();
-  });
-  // Monaco takes a press inside the editor as a click in the text: the tag keeps its own. A press on the circle opens the
-  // tag (focus), on touch too, where nothing hovers.
-  // (Monaco hears touches at the document and would take focus into the code.) The press focuses the tag or its undo
-  // without scrolling: a browser's own focus would scroll Monaco's inner layers and move the code under the caret.
-  for (const type of ["mousedown", "pointerdown", "touchstart", "touchend"] as const) flag.addEventListener(type, event => event.stopPropagation());
-  flag.addEventListener("mousedown", event => {
-    event.preventDefault();
-    ((event.target as Element).closest("button") ?? flag).focus({ preventScroll: true });
-  });
-  flag.append(mark, rest, undo);
-  const name = (next: CaretWho) => {
-    const full = participants.caret(next).name;
-    if (flag.dataset.name === full && flag.dataset.agent === next.agent) return;
-    flag.dataset.name = full;
-    if (next.agent === undefined) {
-      delete flag.dataset.agent;
-      const parts = initialOf(full);
-      const letter = document.createElement("b");
-      letter.textContent = parts.letter;
-      mark.replaceChildren(letter);
-      initial.textContent = parts.first;
-      after.textContent = parts.rest;
-      rest.replaceChildren(initial, after);
-      // A name that cannot read on from a circle on its left shows whole: a right-to-left one, in its own direction, and
-      // one whose initial (src/participant.ts `initialOf`: a letter, digit or symbol) is not its first character, "@ben".
-      flag.toggleAttribute("data-whole", rightToLeft(full) || !/^[\p{L}\p{N}\p{So}]/u.test(full));
-    } else {
-      flag.removeAttribute("data-whole");
-      flag.dataset.agent = next.agent;
-      mark.replaceChildren(programIcon(next.agent));
-      rest.textContent = full;
-    }
-    rest.dir = "auto";
-    rest.title = full;
-    flag.setAttribute("aria-label", full);
-    undo.setAttribute("aria-label", `Undo ${full}'s change`);
-    undo.title = `Undo ${full}'s change`;
-    changed?.();
-  };
-  let changed: (() => void) | undefined;
-  name(caret);
-  return {
-    element: flag,
-    name,
-    /** Shows or hides the undo button; a focused button that goes keeps focus on the tag. */
-    undoable(can: boolean) {
-      if (undo.hidden === !can) return;
-      const focused = document.activeElement === undo;
-      undo.hidden = !can;
-      if (focused && !can) flag.focus();
-      changed?.();
-    },
-    /** Called when the tag's width may have changed (its name, its undo). */
-    onResize(listener: () => void) { changed = listener; },
-  };
-}
-
+/** A caret's colour: a synced session's guest in the colour Lex's tab gave them (`g` and its index, src/theme.css
+ * `--guest-N`), anyone else from the tab's participants (src/participant.ts), so an agent's caret matches its outline and pin. */
+const colourOf = (caret: CaretWho) => caret.guest === undefined ? String(participants.caret(caret).colour) : `g${caret.guest}`;
 /** Draws `share`'s carets in every code pane showing its file and on the page, and tells it where this tab's caret is. */
 export function startCarets(share: CaretShare): () => void {
   const attached = new Map<CaretPane | PageCarets, () => void>();
@@ -173,25 +73,6 @@ export function startCarets(share: CaretShare): () => void {
 /** How long a caret takes to fade out before it goes (its CSS transition). */
 const FADE_MS = 160;
 
-type Tagged = { root: HTMLElement; flag: ReturnType<typeof caretFlag>; width?: number; half?: number };
-/** The open tag stays in its pane at every width: it opens on the side of the caret with room for it (the right unless only
- * the left has it), and its name is cut to the room there (`--live-caret-room`), so its undo always shows. On the pane's
- * top line it sits below the caret. `x` and `top`: the caret in the room the pane leaves for tags, `width` wide. The tag's
- * natural width and its circle are measured once it shows, and the width again only when its name or undo changed. */
-function placeTag(widget: Tagged, x: number, top: number, width: number) {
-  const flag = widget.flag.element;
-  if (flag.offsetParent === null) return;
-  const name = flag.querySelector<HTMLElement>(".live-caret__name");
-  widget.width ??= flag.scrollWidth - (name?.clientWidth ?? 0) + (name?.scrollWidth ?? 0);
-  widget.half ??= flag.querySelector<HTMLElement>(".live-caret__mark")!.offsetWidth / 2;
-  const half = widget.half;
-  const right = width - x + half, left = x + half;
-  const flip = widget.width > right && left > right;
-  widget.root.toggleAttribute("data-flip", flip);
-  widget.root.toggleAttribute("data-below", top < half * 2 + 2);
-  widget.root.style.setProperty("--live-caret-room", `${Math.floor(flip ? left : right)}px`);
-}
-
 function attach(share: CaretShare, pane: CaretPane, told: (read: () => CaretSelection | undefined) => void) {
   const { editor, monaco } = pane;
   const model = editor.getModel();
@@ -228,7 +109,7 @@ function attach(share: CaretShare, pane: CaretPane, told: (read: () => CaretSele
       const can = new Map<number, boolean>();
       for (const widget of widgets.values()) {
         const author = widget.caret.author;
-        if (!can.has(author)) can.set(author, !widget.caret.contested && share.canUndo(author));
+        if (!can.has(author)) can.set(author, !widget.caret.contested && widget.caret.guest === undefined && share.canUndo(author));
         widget.flag.undoable(!widget.leaving && can.get(author)!);
       }
     });
@@ -246,7 +127,7 @@ function attach(share: CaretShare, pane: CaretPane, told: (read: () => CaretSele
   const widget = (caret: LiveCaret): Widget => {
     const root = document.createElement("div");
     root.className = "live-caret";
-    const flag = caretFlag(caret, () => { share.undo(made.caret.author, pane.history()); askUndo(); });
+    const flag = caretFlag(caret, { icon: icon("undo", 12), onUndo: () => { share.undo(made.caret.author, pane.history()); askUndo(); } });
     const line = document.createElement("span");
     line.className = "live-caret__line";
     root.append(line, flag.element);
@@ -429,7 +310,7 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
       const can = new Map<number, boolean>();
       for (const widget of widgets.values()) {
         const author = widget.caret.author;
-        if (!can.has(author)) can.set(author, !widget.caret.contested && share.canUndo(author));
+        if (!can.has(author)) can.set(author, !widget.caret.contested && widget.caret.guest === undefined && share.canUndo(author));
         widget.flag.undoable(!widget.leaving && can.get(author)!);
       }
     });
@@ -439,12 +320,12 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
     root.className = "live-caret";
     // Hidden until the frame says where it is.
     root.hidden = true;
-    const flag = caretFlag(caret, () => {
+    const flag = caretFlag(caret, { icon: icon("undo", 12), onUndo: () => {
       // A second claim of its author, or the caret going, takes the undo away in the next frame: not taken meanwhile.
       if (made.caret.contested || made.leaving) return;
       share.undo(made.caret.author);
       askUndo();
-    });
+    } });
     const line = document.createElement("span");
     line.className = "live-caret__line";
     root.append(line, flag.element);
