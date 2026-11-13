@@ -181,6 +181,9 @@ const HELLO = 1, ASK = 2, REPLY = 3, UPDATE = 4, GITHUB = 5;
 const HEAD = 2 + 20 + 4;
 /** A tab that found others waits this long, after asking, for one of them to catch it up; then it starts from its own draft. */
 export const LIVE_TEXT_CATCH_UP_MS = 5_000;
+/** A start that cannot bring its versions together or carry its words over (GitHub's history unread) is tried again this
+ * many times, after 5, 10, 20, 40, 40 and 40 s. */
+const START_TRIES = 6;
 /** A caret that moves tells the room at most this often (typing moves it with every key). */
 const CARET_MS = 50;
 /** The most agents' carets one tab's presence is read for (ticket am-25). */
@@ -607,11 +610,13 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     /** The room copy this one is: from a kept copy, the first answer to this tab's request, or its own birth. */
     let copyId: Uint8Array | undefined;
     let synced = false, starting = false, waiting: unknown, keeping: unknown;
-    /** Starts that failed in a row (`begin`): the next waits longer. */
+    /** Starts that failed in a row (`begin`): the next waits longer, up to START_TRIES. */
     let retries = 0;
-    /** Resumed from its kept copy with no one in the room catching it up, and no one caught up has joined that copy since
-     * (TOOLS-224): its frames say so, and in a meet it gives way to any copy of the room that is caught up (`meet`). */
-    let alone = false;
+    /** Resumed from its kept copy with no one in the room catching it up, or caught up by such a copy (TOOLS-224): its frames
+     * say so, and in a meet it gives way to any copy of the room that is caught up (`meet`). It is the room's copy once the
+     * room has been heard from for as long as a catch-up may take with no other copy coming (`roomHeard`), or someone on it
+     * says it is (a caught-up frame naming it). */
+    let alone = false, roomHeard: unknown;
     /** After a new room key or a reconnect: frames may have been lost, so a commit waits until a catch-up answer came. */
     let catching = false, caught: unknown;
     /** Whether the text changed in the update being applied (`receive`); set by the text's observer. */
@@ -1264,7 +1269,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           if (!at || stopped) { failed = !at; return; }
           keptBase = at.base;
           // Resumed from its own kept copy: what the draft took on after the copy was kept goes in, unless the copy has it now.
-          if (resume) { joinOwn(); synced = true; alone = !caught; break; }
+          if (resume) { joinOwn(); synced = true; if (!caught) alone = true; break; }
           // Back with a copy the room left: its own words of that copy go in, told apart by their Yjs ids. Not placed, the
           // copy is not joined (no doubled page, no lost words): the draft stays as it is.
           // The room's copy is the one it was kept from after all (it answered first): the own copy goes in as Yjs updates.
@@ -1307,8 +1312,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         // The answer to its request came during the start (`receive` could not begin then): it begins as caught up now.
         if (joined && !stopped) void begin(true);
         // Not joined (no doubled page, no lost words), and not left so: it starts its part again later, waiting longer each
-        // time, for as long as the page is open (an answer to its request may start it sooner).
-        else if (failed && !stopped && !synced) {
+        // time, START_TRIES times. Then the draft stays as it is, apart from the room's copy, until the room catches it up
+        // again (a new key or a reconnect asks, `again`) or the page opens again.
+        else if (failed && !stopped && !synced && retries < START_TRIES) {
           clock.clearTimeout(waiting);
           waiting = clock.setTimeout(() => { void begin(caught); }, Math.min(2 ** retries++, 8) * LIVE_TEXT_CATCH_UP_MS);
         }
@@ -1737,7 +1743,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (!copyId) return;
       const lower = [...other].findIndex((byte, index) => byte !== copyId![index]), older = lower >= 0 && other[lower] < copyId[lower];
       // A copy this tab joined (an answer to its request) is caught up, as one it started is: only an older one takes it.
-      const mine = !synced && !joined ? 0 : synced && alone ? 2 : 1;
+      const mine = !synced && !joined ? 0 : alone ? 2 : 1;
       if (state && (!mine || (state === 1 && mine === 2) || (state === mine && older))) {
         preferred.set(start.key, Uint8Array.from(other));
         // Kept as it is now (a copy not caught up yet stays as it was kept), to carry this tab's words over from.
@@ -1763,8 +1769,10 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       const tag = bytes.subarray(2, 22), id = view.getUint32(22), payload = bytes.subarray(HEAD);
       const none = sameTag(tag, NO_COPY);
       if (theirs && !none) heardCopy = true;
-      // Someone caught up is on the copy this tab resumed alone: it is the room's copy now.
+      // Someone caught up is on the copy this tab resumed alone: it is the room's copy now. So it is once the room has been
+      // heard from for a catch-up's time with no caught-up copy of its own taking this tab (`meet`).
       if (alone && state === 1 && copyId && sameTag(tag, copyId)) alone = false;
+      if (alone && synced && roomHeard === undefined) roomHeard = clock.setTimeout(() => { alone = false; }, LIVE_TEXT_CATCH_UP_MS);
       try {
         if (kind === HELLO || kind === ASK) {
           // Tabs that have no caught-up copy yet ask one another: the one with a copy of its own (kept from before), else
@@ -1796,6 +1804,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           if (kind !== REPLY || !theirs || id !== me) return;
           copyId = Uint8Array.from(tag);
           joined = true;
+          // Caught up by a copy resumed alone: so is this one, until that copy is the room's.
+          if (state === 2) alone = true;
           // Joined the copy two met on: later openings ask the room afresh.
           const wanted = preferred.get(start.key);
           if (wanted && sameTag(wanted, tag)) preferred.delete(start.key);
@@ -1808,7 +1818,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         heardFrom(before, theirChange && textChanged ? id : undefined);
         // Caught up only by an answer to its own request: one to another tab's holds only what that tab lacked.
         if (kind === REPLY && theirs && id === me) {
-          if (!synced) void begin(true);
+          if (!synced) { if (state === 2) alone = true; void begin(true); }
           else if (catching) { catching = false; clock.clearTimeout(caught); foldsReady(); }
         }
         settle();
@@ -1836,7 +1846,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         can: author => synced && !discarded && Boolean(authors.get(author)?.undo.undoStack.some(undoable)),
       } satisfies AuthorUndo,
       destroy() {
-        clock.clearTimeout(waiting); clock.clearTimeout(telling); clock.clearTimeout(caught); keep(); unsubscribe();
+        clock.clearTimeout(waiting); clock.clearTimeout(telling); clock.clearTimeout(caught); clock.clearTimeout(roomHeard); keep(); unsubscribe();
         for (const end of [...notesWaiting]) end(); page?.removeEventListener("pagehide", keep); page?.document.removeEventListener("visibilitychange", hidden);
         // Gone before anyone hears it: a name tag asking now finds nothing to take back.
         const had = authors.size > 0;
