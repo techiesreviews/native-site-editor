@@ -307,13 +307,6 @@ export function items(doc: Doc) {
   return out;
 }
 
-/** The copy's text with only the words `keep` keeps (by each item's client id and clock). */
-export function textWith(doc: Doc, keep: (client: number, clock: number) => boolean) {
-  let out = "";
-  for (const item of items(doc)) if (!item.deleted && keep(item.client, item.clock)) out += item.text;
-  return out;
-}
-
 /** The changes, in the copy's text now (from the end back), that take out the words `edge` wrote: the copy keeps another way. */
 export function wordsOf(doc: Doc, client: number): TextChange[] {
   const out: TextChange[] = [];
