@@ -10,7 +10,7 @@ import { mockups, mockupsHeaders } from "./vite-mockups.ts";
 const monaco = monacoTrim();
 const dompurify = monacoDompurify();
 
-// CATALOGUE=1 (the preview editor's build, wrangler.preview.jsonc) adds the catalogue board, catalogue.html (atomic
+// CATALOGUE=1 (the preview editor's build, `npm run build:preview`) adds the catalogue board, catalogue.html (atomic
 // catalogue ticket 05); production builds never contain it. It is a second build, run once the editor's is written,
 // into the same dist/ with only that page: sharing no chunk with the editor's pages, it leaves the editor's files and
 // boot exactly as without it (one build of all four pages split shared modules into new chunks, +4 KB at boot).

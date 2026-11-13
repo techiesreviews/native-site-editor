@@ -302,9 +302,10 @@ test("only the preview Worker builds with the mock-ups and the catalogue board",
     return [file, /"build"\s*:\s*\{\s*"command"\s*:\s*"([^"]+)"/.exec(config)?.[1]];
   }));
   // CATALOGUE=1 adds catalogue.html as a build of its own (vite.config.ts, atomic catalogue ticket 05).
-  assert.deepEqual(commands, { "wrangler.jsonc": "npm run build:ui", "wrangler.preview.jsonc": "CATALOGUE=1 npm run build:preview", "wrangler.techies.jsonc": "npm run build:ui" });
+  assert.deepEqual(commands, { "wrangler.jsonc": "npm run build:ui", "wrangler.preview.jsonc": "npm run build:preview", "wrangler.techies.jsonc": "npm run build:ui" });
   const scripts = (JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts;
-  assert.match(scripts["build:preview"], /^MOCKUPS=1 vite build\b/);
+  // /mockups/ opens the board, so the preview build always builds it.
+  assert.match(scripts["build:preview"], /^CATALOGUE=1 MOCKUPS=1 vite build\b/);
   assert.doesNotMatch(scripts["build:ui"], /MOCKUPS/);
   // Its GitHub deploy fetches main, so the index can label work Live.
   assert.match(readFileSync(join(repoRoot, ".github/workflows/deploy-preview.yml"), "utf8"), /^\s+- run: git fetch --no-tags --depth=1 origin main:refs\/remotes\/origin\/main$/m);
@@ -550,6 +551,7 @@ test("in a browser, /mockups/ and the old list's address lead to the board's moc
   try {
     const base = await worker.url;
     const page = await browser.newPage();
+    // The page redirects at once, which interrupts the navigation that started it.
     await page.goto(new URL("mockups/", base).href, { waitUntil: "commit" }).catch(() => undefined);
     await page.waitForFunction(() => document.title === "Board stand-in");
     assert.equal(new URL(page.url()).hash, "#plans");
