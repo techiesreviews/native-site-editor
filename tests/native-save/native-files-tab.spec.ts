@@ -147,6 +147,7 @@ test("the search lists every file whose name or folder has it, closed folders to
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
   await expect(page.locator("#current-page")).toHaveText("styles/site.css");
   await expect(page.locator("#current-page .folder-part")).toHaveText("styles");
+  await expect(page.locator("#current-page .file-part")).toHaveText("site.css");
   // Nothing found says so; clearing the search shows the tree again.
   if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
   await explorer(page).getByLabel("Search files", { exact: true }).fill("zzzz");
