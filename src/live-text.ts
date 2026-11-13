@@ -439,7 +439,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   const store = ports.store, clock = ports.clock ?? systemClock, keeper = ports.keeper ?? (pageKeeper ??= browserKeeper());
   const start = store.get(scope, path)!;
   let stopped = false, editors = 0, discarded = false, heard = false;
-  /** This share stops to start again on another copy of the room (`meet`): what waits on it waits on the next one. */
+  /** This share stops for another share of the same page to take over (another copy of the room won, `meet`; or the page
+   * kept apart shows again, `stop(true)`): what waits on it (a commit heard, a save) waits on the next one. */
   let restarting = false;
   /** Another page shows (`away`): the room is closed, and the copy goes on taking the draft's changes and commits. */
   let apart = false;
@@ -1876,7 +1877,10 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     on: (watcher: () => void) => { caretWatchers.add(watcher); return () => { caretWatchers.delete(watcher); }; },
     own: (next: (() => CaretSelection | undefined) | undefined) => { selection = next; copy?.tellCaret(); },
   };
-  const stop = () => {
+  /** `handover`: the page shows again and a new share of it takes over from this one, kept apart (`away`): a commit or a
+   * save waiting on this one waits on that one, so the draft never takes a commit in apart from the copy it comes back to. */
+  const stop = (handover = false) => {
+    restarting ||= handover;
     stopped = true;
     clock.clearTimeout(unheard);
     if (live.get(start.key) === share) live.delete(start.key);
@@ -1939,7 +1943,7 @@ export interface LiveText {
 const AWAY_LIMIT = 10;
 /** Shares the open file while it is open in the draft store, for as long as this runs; calling the result stops it. */
 export function startLiveText(ports: LiveTextPorts): LiveText {
-  type Share = { key: string; at: { scope: DraftScope; path: string }; stop(): void; away?(): boolean; authors?: AuthorUndo; drawing?: boolean; undraw?: () => void };
+  type Share = { key: string; at: { scope: DraftScope; path: string }; stop(handover?: boolean): void; away?(): boolean; authors?: AuthorUndo; drawing?: boolean; undraw?: () => void };
   let current: Share | undefined;
   /** Files shared before that another page replaced, by key: their copies take the drafts' changes until they show again.
    * At most AWAY_LIMIT, the oldest stopped first (its copy is kept for the next opening). */
@@ -1978,8 +1982,9 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
     // A file away that can no longer be shared (its draft went: sign-out, another workspace) is let go.
     for (const [away, share] of aways) if (!shareable(ports.store.get(share.at.scope, share.at.path))) { aways.delete(away); share.stop(); }
     if (current?.key === key) return;
-    // The page showing again is no longer kept apart (taken out first, so it does not count against the limit).
-    if (key) { aways.get(key)?.stop(); aways.delete(key); }
+    // The page showing again is no longer kept apart (taken out first, so it does not count against the limit); the share
+    // made for it below takes over what waited on the one kept apart.
+    if (key) { aways.get(key)?.stop(true); aways.delete(key); }
     // Its name tags take nothing back from now on: they are told so.
     if (current?.away?.()) {
       aways.set(current.key, current);
@@ -2011,7 +2016,7 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
         });
       }).catch(() => { share.drawing = false; });
     });
-    share.stop = () => { share.undraw?.(); share.undraw = undefined; shared.stop(); };
+    share.stop = handover => { share.undraw?.(); share.undraw = undefined; shared.stop(handover); };
     share.away = () => { share.undraw?.(); share.undraw = undefined; share.drawing = false; return shared.away(); };
     share.authors = shared.authors;
   };
