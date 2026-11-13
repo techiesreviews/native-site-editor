@@ -129,3 +129,16 @@ test("Lex's caret goes to the guests: where he types on the page, else his lates
     hide();
   }
 });
+
+test("a share overtaken by the next one offers its guests too until it stops, and stopping it leaves the next one's carets (TOOLS-219)", () => {
+  const caret = (name: string) => ({ peer: `guest/${name}`, author: -1, name, guest: 0, anchor: 0, head: 0 });
+  const next = sessionCarets.offerGuests(() => [caret("Ben")]);
+  const late = sessionCarets.offerGuests(() => []);
+  assert.deepEqual(sessionCarets.guests("index.html").map(found => found.name), ["Ben"]);
+  late();
+  late();
+  assert.ok(sessionCarets.on(), "the next share still runs");
+  assert.deepEqual(sessionCarets.guests("index.html").map(found => found.name), ["Ben"]);
+  next();
+  assert.equal(sessionCarets.on(), false);
+});
