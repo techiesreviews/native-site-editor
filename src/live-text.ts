@@ -1521,7 +1521,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     function noteSave(saving: string) {
       if (!synced || discarded || saving !== text.toString() || !keptBase || !copyId) return undefined;
       const snapshot = noteCopy(keptBase);
-      if (Math.ceil(snapshot.length / 3) * 4 > MAX_LIVE_RECORD) return hex(copyId);
+      if (Math.ceil(snapshot.length * 4 / 3) > MAX_LIVE_RECORD) return hex(copyId);
       const record = base64url(snapshot);
       return record.length <= MAX_LIVE_RECORD ? `${hex(copyId)} ${record}` : hex(copyId);
     }
@@ -1904,6 +1904,8 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
     // A file away that can no longer be shared (its draft went: sign-out, another workspace) is let go.
     for (const [away, share] of aways) if (!shareable(ports.store.get(share.at.scope, share.at.path))) { aways.delete(away); share.stop(); }
     if (current?.key === key) return;
+    // The page showing again is no longer kept apart (taken out first, so it does not count against the limit).
+    if (key) { aways.get(key)?.stop(); aways.delete(key); }
     // Its name tags take nothing back from now on: they are told so.
     if (current?.away?.()) {
       aways.set(current.key, current);
@@ -1911,7 +1913,6 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
       for (const [away, share] of aways) { if (aways.size <= AWAY_LIMIT) break; aways.delete(away); share.stop(); }
       changed();
     } else current?.stop();
-    if (key) { aways.get(key)?.stop(); aways.delete(key); }
     if (!key) { current = undefined; return; }
     const at = { scope: file!.scope, path: file!.path };
     const share: Share = { key, at, stop: () => undefined };
