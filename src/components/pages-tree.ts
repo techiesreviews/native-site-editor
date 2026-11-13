@@ -97,6 +97,8 @@ export function createPagesTree(options: {
   dropProblem?: (source: NativePagesTarget, parent: string) => string | undefined;
   /** A row dropped: `source` goes under `parent` (the caller confirms). */
   drop?: (source: NativePagesTarget, parent: string) => void;
+  /** The search is to start afresh (a page was added): the host empties its field and filters again. */
+  searchCleared?: () => void;
   /** For a new page under `parent`: the label of a checkbox (on by default) that adds its card to the grid listing its siblings, when one does. */
   cardOffer?: (parent: string) => string | undefined;
 }) {
@@ -261,9 +263,13 @@ export function createPagesTree(options: {
           message.textContent = error;
           message.classList.add("is-error");
           if (item.isConnected) (slugInput.hidden ? input : slugInput).focus();
-        } else if (editing?.item === item) {
-          editing = undefined;
-          item.remove();
+        } else {
+          if (editing?.item === item) {
+            editing = undefined;
+            item.remove();
+          }
+          // After adding, the new page is in view: a search that could hide it starts afresh.
+          if (query) options.searchCleared?.();
         }
       } finally {
         pending = false;

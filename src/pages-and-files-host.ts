@@ -285,6 +285,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
         dropProblem: (source, parent) => pageActions!.dropProblem(source, parent),
         drop: (source, parent) => void pageActions!.confirmMove(source, parent),
         cardOffer: (parent) => ports.cards.cardOffer(parent),
+        searchCleared: () => { ports.element<HTMLInputElement>("explorer-search").value = ""; search(); },
       });
       pagesTree.agents(agentMarks);
       ports.element("explorer-pages").replaceChildren(pagesTree.root);
