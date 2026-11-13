@@ -13,12 +13,14 @@ import "./components/person-chip.css";
 import "./live-guest.css";
 import { runtimeDoc } from "./components/preview-frame-doc";
 import { createPreviewLink, iframeFramePort } from "./components/preview-link";
+import { createGuestCarets, sessionCaretList } from "./components/guest-carets";
 import { watchEditorTheme } from "./theme";
 import { importSessionKey, randomId, readSessionLink, sessionWire, type GuestMessage, type HostMessage, type SessionPresence } from "./live-session";
 import type { LivePeer, LiveRoom } from "./live-room";
 import { initialOf, shownName } from "./participant";
 import { LIVE_HOST_GRACE_MS, LIVE_HOST_LOST, LIVE_ROOM_CLOSED, type LiveAccess } from "../shared/live-room";
 import type { AssetChanges, UpdatePayload } from "./components/native-preview";
+import type { PageTextCaret } from "./components/page-caret-port";
 import type { JsonValue } from "../shared/agent-command";
 
 /** The name typed last time, offered again (this browser only). */
@@ -28,6 +30,8 @@ const ENDED = "This edit link has ended.";
 const JOIN_WAIT_MS = 10_000;
 /** While the sharing tab's connection is lost, a guest tries again this often (within LIVE_HOST_GRACE_MS). */
 const REJOIN_EVERY_MS = 2_000;
+/** This guest's caret is told to Lex's tab at most this often. */
+const CARET_MS = 50;
 const root = document.getElementById("live")!;
 
 const element = <K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text?: string) => {
@@ -177,7 +181,7 @@ async function join(shared: Shared, name: string): Promise<"in" | "ended" | "inv
 }
 
 /** The page being edited: a top bar with the site and who is here, and the frame. */
-function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, name: string, send: (message: Omit<GuestMessage, "from">) => void, me: string) {
+function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, name: string, send: (message: GuestMessage) => void, me: string) {
   const site = shared.site || "This site";
   const bar = element("header", "live-guest__bar");
   const mark = element("span", "live-guest__mark", initialOf(site).letter);
@@ -202,6 +206,15 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
   root.replaceChildren(bar, canvas);
 
   const frameLink = createPreviewLink(iframeFramePort(frame));
+  // Lex's caret, the room's and the other guests' over the frame (TOOLS-219); this guest's own goes to Lex's tab as they
+  // type, at most every CARET_MS (typing moves it with every key), and once more when it goes.
+  const carets = createGuestCarets(canvas, frame, frameLink, me);
+  let caretTimer: ReturnType<typeof setTimeout> | undefined, caretNext: PageTextCaret | null | undefined;
+  const sendCaret = () => { caretTimer = undefined; if (caretNext !== undefined) send({ t: "caret", caret: caretNext }); caretNext = undefined; };
+  frameLink.on("text-caret", (message) => {
+    caretNext = message.caret;
+    caretTimer ??= setTimeout(sendCaret, CARET_MS);
+  });
   let ready = false;
   let colours: { focus: string; component: string } | undefined;
   // Every asset the page has been sent, and those the frame holds: a fresh frame document gets them all again.
@@ -258,6 +271,8 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
         draw();
         const next = message.colours && typeof message.colours === "object" ? message.colours : {};
         if (JSON.stringify(next) !== JSON.stringify(guestColours)) { guestColours = next; this.people(present); }
+      } else if (message.t === "carets") {
+        carets.set(sessionCaretList(message.carets));
       } else if (message.t === "assets" && message.assets && typeof message.assets === "object") {
         take(message.assets.assetChanges);
         if (last) last = { ...last, payload: { ...last.payload, styles: message.assets.styles, componentStyles: message.assets.componentStyles } };
@@ -283,6 +298,8 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
     },
     close() {
       stopTheme();
+      clearTimeout(caretTimer);
+      carets.close();
       frameLink.close();
     },
   };

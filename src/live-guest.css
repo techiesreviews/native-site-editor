@@ -99,7 +99,7 @@ button, input { font: inherit; color: inherit; }
 .live-guest__status[hidden] { display: none; }
 .live-guest__canvas[inert] .live-guest__frame { opacity: 0.6; }
 
-.live-guest__canvas { display: grid; min-block-size: 0; background: var(--surface-subtle); }
+.live-guest__canvas { position: relative; display: grid; min-block-size: 0; background: var(--surface-subtle); }
 .live-guest__waiting { place-self: center; padding: 16px; color: var(--muted); }
 .live-guest__frame { inline-size: 100%; block-size: 100%; min-block-size: 0; border: 0; background: var(--surface); }
 .live-guest__frame[hidden], .live-guest__waiting[hidden] { display: none; }

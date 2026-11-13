@@ -27,17 +27,21 @@ import { b64u, sessionWire } from "./live-wire";
 // The wire and the room key's encoding live in src/live-wire.ts, which preview links' pages share without this module.
 export { importSessionKey, randomId, sessionWire } from "./live-wire";
 import type { GuestTextEdit, MirrorMessage, NativePreview } from "./components/native-preview";
+import type { PageTextCaret } from "./components/page-caret-port";
+import type { SessionCaret } from "./live-session-carets";
 
 /** The guest page's address. */
 export const LIVE_SESSION_PATH = "/live";
 /** Lex's tab to guests: the page on show (its components and stylesheets only when they changed), each guest's typing
- * written so far (its frame's numbering) and each guest's colour, by guest id. */
+ * written so far (its frame's numbering) and each guest's colour, by guest id; and everyone's carets in the page's text
+ * (TOOLS-219, src/live-session-carets.ts). */
 export type HostMessage =
   | { t: "render"; payload: Extract<MirrorMessage, { kind: "render" }>["payload"]; typed: Record<string, number>; colours: Record<string, string> }
-  | { t: "assets"; assets: Extract<MirrorMessage, { kind: "assets" }>["assets"] };
-/** A guest to Lex's tab: one text change typed in their copy, numbered as their frame numbered it. Who sent it is the
- * relay's word, not the message's. */
-export type GuestMessage = { t: "edit"; edit: GuestTextEdit; seq: number; session: number };
+  | { t: "assets"; assets: Extract<MirrorMessage, { kind: "assets" }>["assets"] }
+  | { t: "carets"; carets: SessionCaret[] };
+/** A guest to Lex's tab: one text change typed in their copy, numbered as their frame numbered it; or where their caret
+ * is in the page's text as they type (none once they stop). Who sent it is the relay's word, not the message's. */
+export type GuestMessage = { t: "edit"; edit: GuestTextEdit; seq: number; session: number } | { t: "caret"; caret: PageTextCaret | null };
 /** Who sent a frame, as the relay names it. */
 type Sender = { peer: string; access: LiveAccess };
 /** What each participant shows the others: a name, and for a guest the id its messages carry. */
@@ -92,6 +96,7 @@ async function mintSession(repo: string, branch: string) {
 /** Starts a synced session on the page shown: resolves its link once the room is open, or throws. */
 export async function startSharing(ports: SharePorts) {
   const openRoom = ports.open ?? (await import("./live-room")).openLiveRoom;
+  const { guestCaret, startSessionCarets } = await import("./live-session-carets");
   const { session: token, host } = await (ports.mint ?? mintSession)(ports.repo, ports.branch);
   const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
   const raw = b64u.encode(new Uint8Array(await crypto.subtle.exportKey("raw", key)));
@@ -109,7 +114,16 @@ export async function startSharing(ports: SharePorts) {
   // A render the socket did not take, or one too big, is followed by the whole page again (and once the room is back, `onKey`).
   let resend: ReturnType<typeof setTimeout> | undefined;
   const lost = () => { if (!resend && !ended) resend = setTimeout(() => { resend = undefined; sendWhole(); }, RESEND_MS); };
-  const wire = sessionWire<GuestMessage>(() => room, (message, from) => { if (message.t === "edit") written(message, from); }, lost);
+  const wire = sessionWire<GuestMessage>(() => room, (message, from) => {
+    if (message.t === "edit") written(message, from);
+    else if (message.t === "caret") caretTold(message, from);
+  }, lost);
+  // Everyone's carets, both ways: the guests' drawn here, Lex's and the room's sent to the guests.
+  const carets = startSessionCarets({
+    host: ports.host,
+    guests: () => guests,
+    send: (list) => { if (!ended && guests.length) wire.send({ t: "carets", carets: list } satisfies HostMessage); },
+  });
 
   const end = () => {
     if (ended) return;
@@ -117,6 +131,7 @@ export async function startSharing(ports: SharePorts) {
     clearTimeout(resend);
     mirror?.stop();
     mirror = undefined;
+    carets.stop();
     room.close();
     ports.changed({ guests: [], ended: true });
   };
@@ -127,6 +142,7 @@ export async function startSharing(ports: SharePorts) {
     mirror = undefined;
     const preview = ports.preview();
     if (!preview || ended || !guests.length) return;
+    carets.again();
     mirror = preview.mirror((message) => {
       if (!ports.holds()) { end(); return; }
       wire.send(message.kind === "render" ? { t: "render", payload: message.payload, typed, colours: Object.fromEntries(guests.map((guest) => [guest.id, guest.colour])) } satisfies HostMessage
@@ -134,7 +150,7 @@ export async function startSharing(ports: SharePorts) {
     }, end);
   };
   // A change counts only from a guest's own socket, as the relay names it: never from someone claiming their id.
-  const written = (message: GuestMessage, sender: Sender) => {
+  const written = (message: Extract<GuestMessage, { t: "edit" }>, sender: Sender) => {
     const from = sender.access === "guest" ? guests.find((guest) => guest.peer === sender.peer) : undefined;
     if (!from || !message.edit || typeof message.seq !== "number" || typeof message.session !== "number") return;
     const edit = message.edit;
@@ -151,6 +167,12 @@ export async function startSharing(ports: SharePorts) {
       if (!done) preview?.refresh();
     });
   };
+  // A caret counts only from a guest's own socket, as for their typing.
+  const caretTold = (message: Extract<GuestMessage, { t: "caret" }>, sender: Sender) => {
+    const from = sender.access === "guest" ? guests.find((guest) => guest.peer === sender.peer) : undefined;
+    const caret = guestCaret(message.caret);
+    if (from && caret !== undefined && !ended) carets.guestCaret(from.id, caret);
+  };
   const peersChanged = (peers: ReadonlyMap<string, LivePeer>) => {
     const next: SessionGuest[] = [];
     for (const [peer, at] of peers) {
@@ -165,7 +187,7 @@ export async function startSharing(ports: SharePorts) {
     const same = next.length === guests.length && !joined;
     guests = next;
     if (joined || !guests.length) sendWhole();
-    if (!same) ports.changed({ guests });
+    if (!same) { carets.guestsChanged(); ports.changed({ guests }); }
   };
 
   const room: LiveRoom = openRoom({

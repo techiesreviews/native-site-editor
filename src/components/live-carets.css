@@ -24,6 +24,13 @@
 .live-caret[data-colour="1"] { --live-caret: var(--agent-presence-2); --live-caret-pin: var(--agent-presence-2-pin); --live-caret-ink: var(--agent-presence-2-ink); }
 .live-caret[data-colour="2"] { --live-caret: var(--agent-presence-3); --live-caret-pin: var(--agent-presence-3-pin); --live-caret-ink: var(--agent-presence-3-ink); }
 .live-caret[data-colour="3"] { --live-caret: var(--agent-presence-4); --live-caret-pin: var(--agent-presence-4-pin); --live-caret-ink: var(--agent-presence-4-ink); }
+/* A synced session's guests in the colour Lex's tab gave them (their chips', src/components/person-chip.css), and Lex on a
+   guest's page in the editor's own (TOOLS-219). */
+.live-caret[data-colour="g0"] { --live-caret: var(--guest-1); --live-caret-pin: var(--guest-1-pin); --live-caret-ink: var(--guest-1-ink); }
+.live-caret[data-colour="g1"] { --live-caret: var(--guest-2); --live-caret-pin: var(--guest-2-pin); --live-caret-ink: var(--guest-2-ink); }
+.live-caret[data-colour="g2"] { --live-caret: var(--guest-3); --live-caret-pin: var(--guest-3-pin); --live-caret-ink: var(--guest-3-ink); }
+.live-caret[data-colour="g3"] { --live-caret: var(--guest-4); --live-caret-pin: var(--guest-4-pin); --live-caret-ink: var(--guest-4-ink); }
+.live-caret[data-colour="host"] { --live-caret: var(--primary); --live-caret-pin: var(--primary); --live-caret-ink: var(--on-primary); }
 
 .live-caret__line {
   position: absolute;
@@ -162,6 +169,11 @@
 .live-caret-tint--1 { background: color-mix(in oklch, var(--agent-presence-2) 22%, transparent); }
 .live-caret-tint--2 { background: color-mix(in oklch, var(--agent-presence-3) 22%, transparent); }
 .live-caret-tint--3 { background: color-mix(in oklch, var(--agent-presence-4) 22%, transparent); }
+.live-caret-tint--g0 { background: color-mix(in oklch, var(--guest-1) 22%, transparent); }
+.live-caret-tint--g1 { background: color-mix(in oklch, var(--guest-2) 22%, transparent); }
+.live-caret-tint--g2 { background: color-mix(in oklch, var(--guest-3) 22%, transparent); }
+.live-caret-tint--g3 { background: color-mix(in oklch, var(--guest-4) 22%, transparent); }
+.live-caret-tint--host { background: color-mix(in oklch, var(--primary) 22%, transparent); }
 
 /* On the page (ticket am-23): a layer over the preview's frame viewport, clipped to it. The carets sit where the frame
    finds them in the page's text (live-carets.ts `attachPage`); no element highlight. Over the edit bar: the bar opens over
