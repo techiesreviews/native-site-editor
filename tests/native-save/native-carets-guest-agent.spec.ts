@@ -46,19 +46,49 @@ async function typeAtEnd(page: Page, target: Locator) {
 test.beforeEach(() => { pageErrors.length = 0; });
 test.afterEach(() => { expect(pageErrors).toEqual([]); });
 
-/** Lex shares from the project menu's Edit together row; the link from the clipboard. */
+/** Lex shares from the project menu's Edit together row; the link (with this share's own token) from the clipboard. */
 async function share(lex: Page) {
   await lex.evaluate(() => navigator.clipboard.writeText(""));
   await lex.locator(".repository-menu__trigger").click();
+  const minted = lex.waitForResponse(response => new URL(response.url()).pathname === "/api/live/share" && response.request().method() === "POST");
   await lex.getByRole("button", { name: "Edit together", exact: true }).click();
-  await expect.poll(() => lex.evaluate(() => navigator.clipboard.readText())).toMatch(/\/live\?s=/);
+  const { session } = await (await minted).json() as { session: string };
+  await expect.poll(() => lex.evaluate(() => navigator.clipboard.readText())).toContain(`/live?s=${session}#`);
   const link = await lex.evaluate(() => navigator.clipboard.readText());
   await lex.keyboard.press("Escape");
   return link;
 }
 
+/** Connects an agent from Lex's project menu (his tab receives its commands): an MCP client named "Claude Code". */
+async function connectAgent(lex: Page, baseURL: string | undefined) {
+  const messages: string[] = [];
+  lex.on("websocket", socket => {
+    if (socket.url().includes("/api/agent/relay?")) socket.on("framereceived", ({ payload }) => messages.push(String(payload)));
+  });
+  await lex.locator(".repository-menu__trigger").click();
+  const made = lex.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await lex.getByRole("button", { name: "Connect to MCP", exact: true }).click();
+  const { token } = await (await made).json() as { token: string };
+  await expect.poll(() => messages.some(message => message.includes('"type":"ready"'))).toBe(true);
+  await lex.keyboard.press("Escape");
+  const client = new Client({ name: "Claude Code", version: "1" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  const call = async (tool: string, args: Record<string, unknown> = {}) => {
+    const response = await client.callTool({ name: tool, arguments: args });
+    const value = JSON.parse((response.content as { text: string }[])[0].text);
+    expect(Boolean(response.isError), JSON.stringify(value)).toBe(false);
+    return value;
+  };
+  /** The agent changes the heading's "A native" to "One agent's". */
+  const editHeading = async (requestId: string) => {
+    const read = await call("read_file", { path: file });
+    await call("edit_file", { path: file, expectedHash: read.hash, edits: [{ oldText: "A native", newText: "One agent's" }], requestId, waitSeconds: 10 });
+  };
+  return { client, editHeading };
+}
+
 /** Another browser with nobody signed in opens the link and joins as `name`; resolves with its page and frame. */
-async function guestJoins(browser: Browser, link: string, name: string) {
+async function guestJoins(browser: Browser, link: string, name: string, shows = heading) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const page = await context.newPage();
   page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -66,12 +96,12 @@ async function guestJoins(browser: Browser, link: string, name: string) {
   await page.getByLabel("Your name").fill(name);
   await page.getByRole("button", { name: "Join", exact: true }).click();
   const shown = page.frameLocator(".live-guest__frame");
-  await expect(shown.locator(".hero h1")).toHaveText(heading, { timeout: 20_000 });
+  await expect(shown.locator(".hero h1")).toHaveText(shows, { timeout: 20_000 });
   return { context, page, frame: shown };
 }
 
-test("a guest on Lex's edit link and Lex see each other's carets: on both pages, and in Lex's code pane", async ({ page: lex, browser, baseURL, context }) => {
-  test.setTimeout(120_000);
+test("a guest on Lex's edit link and Lex see each other's carets: on both pages, and in Lex's code pane; guests see each other's and an agent's", async ({ page: lex, browser, baseURL, context }) => {
+  test.setTimeout(180_000);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   lex.on("pageerror", (error) => pageErrors.push(error.message));
   await openEditor(lex, baseURL);
@@ -79,6 +109,8 @@ test("a guest on Lex's edit link and Lex see each other's carets: on both pages,
   await expect(frame(lex).locator(".hero h1")).toHaveText(heading);
   const link = await share(lex);
   const anna = await guestJoins(browser, link, "Anna");
+  let ben: Awaited<ReturnType<typeof guestJoins>> | undefined;
+  let agent: Awaited<ReturnType<typeof connectAgent>> | undefined;
   try {
     // Anna types at the end of the heading: Lex sees her words, and her caret in them, with her first letter.
     const annaHeading = anna.frame.locator(".hero h1");
@@ -89,11 +121,18 @@ test("a guest on Lex's edit link and Lex see each other's carets: on both pages,
     await expect(annaOnPage).toBeVisible({ timeout: 20_000 });
     await expect(annaOnPage.locator(".live-caret__mark b")).toHaveText("A");
     await expect.poll(() => caretInside(annaOnPage, frame(lex).locator(".hero h1")), { timeout: 10_000 }).toBe(true);
+    // Her tag names her, in her colour (her initial's in his menu), and takes nothing back: a guest's words are his own change.
+    await annaOnPage.locator(".live-caret__mark").hover();
+    await expect(annaOnPage.locator(".live-caret__name")).toHaveText("Anna");
+    await expect(annaOnPage.locator(".live-caret__undo")).toBeHidden();
+    await expect(annaOnPage.locator("xpath=..")).toHaveAttribute("data-colour", /^g[0-3]$/);
     // In his code pane too, at the end of her words.
     await reveal(lex, (await source(lex)).indexOf(" together") + " together".length);
     const annaInCode = codeFlag(lex, "Anna");
     await expect(annaInCode).toBeVisible({ timeout: 20_000 });
     await expect(annaInCode.locator(".live-caret__mark b")).toHaveText("A");
+    await annaInCode.locator(".live-caret__mark").hover();
+    await expect(annaInCode.locator(".live-caret__undo")).toBeHidden();
 
     // Lex types at the end of the lead paragraph: Anna sees his caret there on her page, with his first letter.
     const lead = frame(lex).locator(".hero .lead");
@@ -110,11 +149,38 @@ test("a guest on Lex's edit link and Lex see each other's carets: on both pages,
     // Anna's own caret is not drawn on her page.
     await expect(pageFlag(anna.page, "Anna")).toHaveCount(0);
 
+    // Ben joins and types at the end of the second section's heading: Anna sees his caret there, and Ben none of his own.
+    await anna.page.keyboard.press("Escape");
+    await lex.keyboard.press("Escape");
+    ben = await guestJoins(browser, link, "Ben", `${heading} together`);
+    const benHeading = ben.frame.locator(".filler h2").first();
+    await typeAtEnd(ben.page, benHeading);
+    await ben.page.keyboard.type(" too", { delay: 30 });
+    const benAtAnna = pageFlag(anna.page, "Ben");
+    await expect(benAtAnna).toBeVisible({ timeout: 20_000 });
+    await expect(benAtAnna.locator(".live-caret__mark b")).toHaveText("B");
+    await expect.poll(() => caretInside(benAtAnna, anna.frame.locator(".filler h2").first()), { timeout: 10_000 }).toBe(true);
+    await expect(pageFlag(ben.page, "Ben")).toHaveCount(0);
+    await expect(pageFlag(lex, "Ben")).toBeVisible({ timeout: 20_000 });
+    await ben.page.keyboard.press("Escape");
+    await expect(benAtAnna).toHaveCount(0, { timeout: 20_000 });
+
+    // An agent Lex connected changes the heading: the guests see its caret there, with its program's icon.
+    agent = await connectAgent(lex, baseURL);
+    await agent.editHeading("guests-see-agent");
+    await expect(anna.frame.locator(".hero h1")).toHaveText("One agent's browser preview together", { timeout: 20_000 });
+    const agentAtAnna = pageFlag(anna.page, "Claude Code");
+    await expect(agentAtAnna).toBeVisible({ timeout: 20_000 });
+    await expect(agentAtAnna.locator("svg.live-caret__program")).toBeVisible();
+    await expect.poll(() => caretInside(agentAtAnna, anna.frame.locator(".hero h1")), { timeout: 10_000 }).toBe(true);
+
     // Anna leaves: her caret goes from Lex's page and code pane.
     await anna.context.close();
     await expect(annaOnPage).toHaveCount(0, { timeout: 20_000 });
     await expect(annaInCode).toHaveCount(0, { timeout: 20_000 });
   } finally {
+    await agent?.client.close();
+    await ben?.context.close();
     await anna.context.close();
   }
 });
@@ -126,27 +192,9 @@ test("an agent Lex connected over MCP, with nobody else on the page, shows its c
   await editorMounted(lex);
   await expect(frame(lex).locator(".hero h1")).toHaveText(heading);
 
-  const messages: string[] = [];
-  lex.on("websocket", socket => {
-    if (socket.url().includes("/api/agent/relay?")) socket.on("framereceived", ({ payload }) => messages.push(String(payload)));
-  });
-  await lex.locator(".repository-menu__trigger").click();
-  const made = lex.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
-  await lex.getByRole("button", { name: "Connect to MCP", exact: true }).click();
-  const { token } = await (await made).json() as { token: string };
-  await expect.poll(() => messages.some(message => message.includes('"type":"ready"'))).toBe(true);
-  await lex.keyboard.press("Escape");
-  const client = new Client({ name: "Claude Code", version: "1" });
-  await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  const agent = await connectAgent(lex, baseURL);
   try {
-    const call = async (tool: string, args: Record<string, unknown> = {}) => {
-      const response = await client.callTool({ name: tool, arguments: args });
-      const value = JSON.parse((response.content as { text: string }[])[0].text);
-      expect(Boolean(response.isError), JSON.stringify(value)).toBe(false);
-      return value;
-    };
-    const read = await call("read_file", { path: file });
-    await call("edit_file", { path: file, expectedHash: read.hash, edits: [{ oldText: "A native", newText: "One agent's" }], requestId: "alone-heading", waitSeconds: 10 });
+    await agent.editHeading("alone-heading");
     await expect(frame(lex).locator(".hero h1")).toHaveText("One agent's browser preview", { timeout: 20_000 });
     await expect.poll(() => source(lex), { timeout: 10_000 }).toContain("One agent's browser preview");
 
@@ -161,6 +209,6 @@ test("an agent Lex connected over MCP, with nobody else on the page, shows its c
     await expect(inCode).toBeVisible({ timeout: 20_000 });
     await expect(inCode.locator("svg.live-caret__program")).toBeVisible();
   } finally {
-    await client.close();
+    await agent.client.close();
   }
 });

@@ -53,7 +53,7 @@ export function startSessionCarets(ports: { host: string; guests(): CaretGuest[]
   const page = (): PageCarets | undefined => pageCarets()[0];
 
   // The guests' carets, read in the file's text as Lex's page shows it now, for the open file's carets to draw.
-  sessionCarets.offerGuests((path) => {
+  const withdraw = sessionCarets.offerGuests((path) => {
     const source = page()?.source(path);
     if (source === undefined) return [];
     const out: LiveCaret[] = [];
@@ -158,7 +158,7 @@ export function startSessionCarets(ports: { host: string; guests(): CaretGuest[]
       unwatchPage?.();
       unwatchFile();
       told.clear();
-      sessionCarets.offerGuests(undefined);
+      withdraw();
     },
   };
 }

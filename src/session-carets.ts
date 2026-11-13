@@ -15,8 +15,13 @@ const tell = (watchers: Watchers) => { for (const watcher of [...watchers]) try 
 const watch = (watchers: Watchers, watcher: () => void) => { watchers.add(watcher); return () => { watchers.delete(watcher); }; };
 
 export const sessionCarets = {
-  /** The session offers its guests' carets in a file, in this tab's text (none: the session ended). */
-  offerGuests(next: ((path: string) => LiveCaret[]) | undefined) { guests = next; tell(guestWatchers); },
+  /** The session offers its guests' carets in a file, in this tab's text; the returned call takes back that offer only
+   * (a session ending late leaves a newer session's in place). */
+  offerGuests(next: (path: string) => LiveCaret[]) {
+    guests = next;
+    tell(guestWatchers);
+    return () => { if (guests !== next) return; guests = undefined; tell(guestWatchers); };
+  },
   /** The guests' carets in `path`. */
   guests: (path: string): LiveCaret[] => guests?.(path) ?? [],
   /** Whether a session runs: the file's carets are drawn then, so this tab's own caret reaches its guests. */

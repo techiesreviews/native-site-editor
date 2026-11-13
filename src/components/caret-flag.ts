@@ -20,6 +20,7 @@ const PLAIN_AGENT = '<rect x="5" y="7" width="14" height="11" rx="3"/><path d="M
 export function programMark(agent: string) {
   return PROGRAMS.find(([pattern]) => pattern.test(agent))?.[1] ?? PLAIN_AGENT;
 }
+/** Made here rather than with src/icons.ts `svgElement`, which brings every icon of the editor to a guest's page. */
 function programIcon(agent: string) {
   const template = document.createElement("template");
   template.innerHTML = `<svg class="live-caret__program" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${programMark(agent)}</svg>`;
@@ -28,7 +29,7 @@ function programIcon(agent: string) {
 
 /** Whether `name`'s first strong letter is written right to left (Hebrew, Arabic, Syriac, Thaana, N'Ko, …). */
 export const rightToLeft = (name: string) =>
-  /^[^\p{L}]*[֐-ࣿיִ-﷿ﹰ-﻿\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u.test(name);
+  /^[^\p{L}]*[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u.test(name);
 
 /** A caret's name tag: the circle, the rest of the name and, with `undo`, its button (shown while `undoable`) holding
  * `undo.icon`. Without `undo` the tag never offers one (a guest's page takes nothing back). */
