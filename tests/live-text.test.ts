@@ -1753,6 +1753,28 @@ test("an agent writing while Lex is alone shows its caret at the end of its word
   assert.ok(points >= 3, `the copy's making was disturbed (${points})`);
 });
 
+test("an agent writing while Lex's tab joins the room keeps its caret at the end of its words once he catches up with others' text (TOOLS-219)", async () => {
+  const room = fakeRoom();
+  const anna = tab(room), sam = tab(room);
+  await until(() => anna.yjsLoads === 1 && sam.yjsLoads === 1, "Anna and Sam share the file");
+  await quiet();
+  anna.type(0, "<!-- Anna's note -->");
+  await until(() => sam.text.startsWith("<!-- Anna's note -->"), "her note at Sam's");
+  // Lex opens the page while Yjs is still loading; meanwhile his agent writes in the heading.
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let share: CaretShare | undefined;
+  const lex = tab(room, base, { loadYjs: () => held.then(() => import("yjs")), carets: drawn => { share = drawn; return () => undefined; } });
+  await quiet();
+  writeAs({ grant: "g", name: "Claude Code" }, () => lex.store.edit({ scope, path, changes: [{ start: 4, end: 4, text: "Agent " }] }));
+  release();
+  await until(() => lex.text === anna.text && lex.text.startsWith("<!-- Anna's note -->") && lex.text.includes("Agent "), "Lex caught up, his agent's words with everyone");
+  await until(() => Boolean(share?.carets().some(caret => caret.agent === "Claude Code")), "the agent's caret");
+  const caret = share!.carets().find(found => found.agent === "Claude Code")!;
+  assert.equal(caret.head, lex.text.indexOf("Agent ") + "Agent ".length, "at the end of the agent's words");
+  anna.stop(); sam.stop(); lex.stop();
+});
+
 test("a joiner's caret placed before it caught up is told where it is in the shared text", async () => {
   const room = fakeRoom();
   const shares = new Map<string, CaretShare>();

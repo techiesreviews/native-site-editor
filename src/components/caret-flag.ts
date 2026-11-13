@@ -119,7 +119,7 @@ export function caretFlag(caret: CaretWho, undo?: { icon: Element; onUndo(): voi
 
 /** The theme's colours (src/theme.css) of a caret's colour as the carets name it: a synced session's guest (`g` and the
  * index Lex's tab gave them) in their chip's colour, Lex on a guest's page in the editor's own; none for the presence
- * colours, which live-carets.css maps by index. */
+ * colours, which live-carets.css maps by index. A selection's tint takes the same colours there (`.live-caret-tint--g0`…). */
 const PAINTS: Record<string, [line: string, pin: string, ink: string]> = {
   g0: ["--guest-1", "--guest-1-pin", "--guest-1-ink"], g1: ["--guest-2", "--guest-2-pin", "--guest-2-ink"],
   g2: ["--guest-3", "--guest-3-pin", "--guest-3-ink"], g3: ["--guest-4", "--guest-4-pin", "--guest-4-ink"],
