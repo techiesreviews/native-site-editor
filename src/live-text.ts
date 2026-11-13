@@ -450,7 +450,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   // otherwise fold an outside change into a draft that holds the room's words, and the room's copy would take them twice.
   // A room that never answers (the relay out of reach) stops counting after the catch-up wait, so outside changes fold again.
   // A copy kept from before still runs then, as when alone (`onMembers`): a commit goes into it, not apart from it into the draft.
-  const unheard = clock.setTimeout(() => { heard = true; if (!editors && !copy && !loading) void load(true); foldsReady(); }, LIVE_TEXT_CATCH_UP_MS);
+  const unheard = clock.setTimeout(() => { heard = true; if (!editors && !copy && !loading) void load(!unplaced.size); foldsReady(); }, LIVE_TEXT_CATCH_UP_MS);
   const shared = () => !stopped && (!heard || editors > 0 || loading || copy !== undefined);
   let live = liveFiles.get(store);
   if (!live) liveFiles.set(store, live = new Map());
@@ -524,6 +524,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   let peers: ReadonlyMap<string, LivePeer> = new Map(), selection: (() => CaretSelection | undefined) | undefined;
   const caretWatchers = new Set<() => void>();
   const caretsMoved = () => { for (const watcher of [...caretWatchers]) try { watcher(); } catch { /* A caret must not break sharing. */ } };
+  /** Agents whose text went into the draft before this tab's copy took part (alone with an agent, no copy kept: TOOLS-219),
+   * by connection: where their latest change ended, in the draft's text. The copy places their carets there once it takes
+   * part, so an agent working with Lex alone shows its caret too. Their words are this tab's own in the copy, as the draft's. */
+  const unplaced = new Map<string, { who: LiveAuthor; index: number }>();
+  let draftText = store.text(scope, path);
   // Discard is this tab's own, from the moment it shares the file (alone, loading Yjs, or with a copy): it leaves the
   // shared copy rather than taking everyone's changes away, and drops its kept copy so nothing brings them back.
   const unwatch = store.subscribe(event => {
@@ -540,7 +545,23 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       copy?.saved();
       return;
     }
-    if (event.type !== "text" || event.key !== start.key || event.origin !== "discard" || discarded) return;
+    if (event.type !== "text" || event.key !== start.key) return;
+    const was = draftText;
+    draftText = event.text;
+    const agent = liveAuthor();
+    if (agent && !discarded && !stopped && !copy?.taking() && was !== undefined && event.origin !== "shared" && event.origin !== "discard" && event.origin !== "external") {
+      // The first changed range, as `writeAgent` places a caret: at its end.
+      const first = changesBetween(was, event.text, event.changes).sort((a, b) => a.start - b.start)[0];
+      if (first) {
+        const key = agentKey(agent);
+        unplaced.delete(key);
+        unplaced.set(key, { who: { grant: agent.grant, name: agent.name }, index: first.start + first.text.length });
+        while (unplaced.size > AGENT_CARETS) unplaced.delete(unplaced.keys().next().value!);
+        // Alone with no copy: one is made now (Yjs loads), so the agent's caret can be drawn.
+        if (heard && !editors && !copy && !loading) void load();
+      }
+    }
+    if (event.origin !== "discard" || discarded) return;
     discarded = true;
     keeper.write(start.key, undefined);
     ended("left");
@@ -558,7 +579,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       clock.clearTimeout(unheard);
       editors = [...members.values()].filter(access => access === "editor").length;
       // Alone with a copy kept from before, it runs that copy still, so a save or a commit is noted in it as with others.
-      if (!editors) { if (copy) void copy.startOwn(); else if (!loading) void load(true); }
+      if (!editors) { if (copy) void copy.startOwn(); else if (!loading) void load(!unplaced.size); }
       else if (!copy && !loading) void load();
       foldsReady();
     },
@@ -1349,6 +1370,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       settle();
       // Changes others sent while this tab was catching up can be taken back from now on.
       if (authors.size) authorsChanged();
+      // Agents that wrote before this copy took part: their carets where their latest change ended.
+      for (const { who, index } of unplaced.values()) agentAuthor(who).at = Y.createRelativePositionFromTypeIndex(text, Math.min(index, text.length));
+      unplaced.clear();
       // Its caret and theirs are in the shared text from now on.
       tellCaret();
       caretsMoved();
@@ -1840,6 +1864,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       versions: () => versions().map(({ from, to, client }) => ({ from, to, ...(client === undefined ? {} : { client }) })),
       /** Whether a commit can enter now: caught up, and not catching up again after a reconnect. */
       ready: () => synced && !catching && !starting,
+      /** Taking part: the draft's changes go into this copy as they happen (an agent's with its caret, `writeAgent`). */
+      taking: () => synced,
       starting: () => starting,
       /** Alone in the room (first in, or everyone else left before catching this tab up): its own draft starts the copy. */
       startOwn: () => begin(false),
