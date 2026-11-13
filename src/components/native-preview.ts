@@ -521,6 +521,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let caretPoints: PageCaretPoint[] = [];
   /** Each drawing's carets (page-caret-port.ts `show`): the frame is asked for all of them. */
   const caretLists = new Map<object, PageCaretPoint[]>();
+  /** Where the frame last found each caret, by id. The frame reports only what moved, so a drawing that takes over a caret
+   * still where it was (a synced session's drawing and the open file's handing over, src/live-session-carets.ts) hears it
+   * from here. */
+  const caretRects = new Map<string, PageCaretRect>();
+  /** The last point the frame was asked to find for each caret id, as sent. */
+  const caretAsked = new Map<string, string>();
   const caretListeners = new Set<() => void>(), caretRectListeners = new Set<(rects: PageCaretRect[]) => void>();
   const caretChanged = () => { for (const listener of [...caretListeners]) listener(); };
   // The runtime finds each pin's element and reports where it is (`pin-rects`).
@@ -680,6 +686,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       ownCaret = undefined;
       // A caret the old document sent after this is not this one's: heard again from its `ready`.
       caretsAwaitReady = true;
+      caretRects.clear();
       if (rafHandle) cancelAnimationFrame(rafHandle);
       rafHandle = 0;
       frame.setAttribute("srcdoc", runtimeDoc(link.reload()));
@@ -726,8 +733,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (carets.length) caretLists.set(owner, carets);
       else caretLists.delete(owner);
       const all = [...caretLists.values()].flat();
+      // A caret asked for at the very spot it was found at: its place is told again (the frame says nothing new for it).
+      const still = carets.flatMap((caret) => caretAsked.get(caret.id) === JSON.stringify(caret) && caretRects.has(caret.id) ? [caretRects.get(caret.id)!] : []);
+      if (still.length) queueMicrotask(() => { for (const listener of [...caretRectListeners]) listener(still); });
       if (JSON.stringify(all) === JSON.stringify(caretPoints)) return;
       caretPoints = all;
+      for (const caret of all) caretAsked.set(caret.id, JSON.stringify(caret));
       if (frameState.ready) link.send({ type: "carets", carets: all });
     },
     onRects(listener) { caretRectListeners.add(listener); return () => { caretRectListeners.delete(listener); }; },
@@ -898,6 +909,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     caretChanged();
   });
   link.on("caret-rects", (message) => {
+    caretRects.clear();
+    for (const rect of message.rects) caretRects.set(rect.id, rect);
     for (const listener of [...caretRectListeners]) listener(message.rects);
   });
   // Where typing happens (ticket 52), and when it is left: after that element's text edit above.

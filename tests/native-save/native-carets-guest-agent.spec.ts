@@ -219,3 +219,30 @@ test("an agent Lex connected over MCP, with nobody else on the page, shows its c
     await agent.client.close();
   }
 });
+
+test("a caret one drawing hands to another within one frame, at the same spot, is placed at once (the frame reports only what moved)", async ({ page: lex, baseURL }) => {
+  lex.on("pageerror", (error) => pageErrors.push(error.message));
+  await openEditor(lex, baseURL);
+  await editorMounted(lex);
+  await expect(frame(lex).locator(".hero h1")).toHaveText(heading);
+  const heard = await lex.evaluate(async () => {
+    const { pageCarets } = await import("/src/components/page-caret-port.ts");
+    const page = pageCarets()[0];
+    const caret = { id: "probe", path: "index.html", head: { node: [0, 0], at: 1 }, anchor: null };
+    const ids: string[] = [];
+    const stop = page.onRects(rects => ids.push(...rects.map(rect => rect.id)));
+    const first = {}, second = {};
+    const until = async (check: () => boolean) => { for (let tries = 0; tries < 100 && !check(); tries++) await new Promise(done => setTimeout(done, 20)); return check(); };
+    page.show([caret], first);
+    const found = await until(() => ids.includes("probe"));
+    // The first drawing lets it go and the second takes it in the same tick: the frame's list is the same as before.
+    ids.length = 0;
+    page.show([], first);
+    page.show([caret], second);
+    const placed = await until(() => ids.includes("probe"));
+    page.show([], second);
+    stop();
+    return { found, placed };
+  });
+  expect(heard).toEqual({ found: true, placed: true });
+});
