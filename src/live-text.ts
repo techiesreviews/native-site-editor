@@ -554,10 +554,20 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     if (event.type !== "text" || event.key !== start.key) return;
     const was = draftText;
     draftText = event.text;
+    const changes = unplaced.size || liveAuthor() ? changesBetween(was ?? "", event.text, event.changes).sort((a, b) => a.start - b.start) : [];
+    // Carets waiting to be placed move with the text that changes before them (from the end back, so each change's
+    // offsets still hold): one inside a replaced range goes to the end of what took its place.
+    if (unplaced.size && !copy?.taking()) for (const waiting of unplaced.values()) {
+      for (let at = changes.length - 1; at >= 0; at--) {
+        const { start, end, text } = changes[at];
+        if (waiting.index >= end) waiting.index += text.length - (end - start);
+        else if (waiting.index > start) waiting.index = start + text.length;
+      }
+    }
     const agent = liveAuthor();
     if (agent && !discarded && !stopped && !copy?.taking() && was !== undefined && event.origin !== "shared" && event.origin !== "discard" && event.origin !== "external") {
       // The first changed range, as `writeAgent` places a caret: at its end.
-      const first = changesBetween(was, event.text, event.changes).sort((a, b) => a.start - b.start)[0];
+      const first = changes[0];
       if (first) {
         const key = agentKey(agent);
         unplaced.delete(key);
@@ -627,8 +637,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     } catch { /* Yjs did not load, or starting the copy failed: this tab keeps its own draft, as before, until the room changes again. */ }
     finally {
       loading = false;
-      // Others came meanwhile: they are joined now. Commits that waited for this copy fold now (or into the draft).
-      if (!copy && editors && !stopped) void load();
+      // Others came meanwhile: they are joined now. An agent that wrote while this read only for a kept copy (and found
+      // none) has its copy made now, so its caret is drawn. Commits that waited for this copy fold now (or into the draft).
+      if (!copy && !stopped && !discarded && (editors || (keptOnly && unplaced.size))) void load();
       foldsReady();
     }
   }

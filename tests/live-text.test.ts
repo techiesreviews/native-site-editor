@@ -1721,6 +1721,38 @@ test("stopping at any await of loading the carets starts no carets and tells the
   assert.ok(points >= 2, `the carets' load was disturbed (${points})`);
 });
 
+test("an agent writing while Lex is alone shows its caret at the end of its words, at any await of making the copy (TOOLS-219)", async () => {
+  type Run = { done: Promise<unknown>; room: ReturnType<typeof fakeRoom>; lex?: ReturnType<typeof tab>; share?: CaretShare; wrote: boolean; noted: boolean };
+  const agent: LiveAuthor = { grant: "g", name: "Claude Code" };
+  const write = (run: Run) => {
+    run.wrote = true;
+    writeAs(agent, () => run.lex!.store.edit({ scope, path, changes: [{ start: 4, end: 4, text: "Agent " }] }));
+  };
+  const points = await forEachAwait((race): Run => {
+    const run: Run = { done: Promise.resolve(), room: fakeRoom(), wrote: false, noted: false };
+    run.done = (async () => {
+      run.lex = tab(run.room, base, { race, carets: share => { run.share = share; return () => { run.share = undefined; }; } });
+      await quiet();
+      if (!run.wrote) write(run);
+      await until(() => Boolean(run.share?.carets().some(caret => caret.agent === "Claude Code")), "the agent's caret drawn");
+      await quiet();
+    })();
+    return run;
+  }, run => {
+    // At this await the agent writes (the room said Lex is alone, and his kept copy is being read), or, once it has,
+    // Lex types a note before its words while the copy is still being made.
+    if (!run.wrote) write(run);
+    else { run.noted = true; run.lex!.type(0, "<!-- note -->"); }
+  }, async run => {
+    const caret = run.share!.carets().find(found => found.agent === "Claude Code")!;
+    assert.equal(run.lex!.text, `${run.noted ? "<!-- note -->" : ""}<h1>Agent Fresh bread</h1>\n<p>Open at seven.</p>\n`);
+    assert.equal(caret.head, run.lex!.text.indexOf("Agent ") + "Agent ".length, "at the end of the agent's words");
+    assert.equal(caret.name, "Claude Code");
+    run.lex!.stop();
+  });
+  assert.ok(points >= 3, `the copy's making was disturbed (${points})`);
+});
+
 test("a joiner's caret placed before it caught up is told where it is in the shared text", async () => {
   const room = fakeRoom();
   const shares = new Map<string, CaretShare>();
@@ -1874,7 +1906,9 @@ test("an agent's change while Lex is alone with the file stays his draft; a tab 
   const lex = tab(room);
   await quiet();
   agentWrites(lex, lex.text.replace("seven", "eight"));
-  assert.equal(lex.yjsLoads, 0, "alone: no copy, no Yjs");
+  assert.ok(lex.text.includes("eight"), "his draft holds it");
+  // Alone, the agent's change makes the copy (TOOLS-219), so its caret can be drawn.
+  await until(() => lex.yjsLoads === 1, "the copy made for the agent's caret");
   const anna = tab(room);
   await until(() => anna.text === lex.text && anna.text.includes("eight"), "Anna caught up");
   assert.equal(times(anna.text, "eight"), 1);
