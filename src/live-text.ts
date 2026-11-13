@@ -263,7 +263,12 @@ async function versionOf(baseSha: string | null | undefined, base: string) {
   return baseSha && /^[a-f\d]{40}$/.test(baseSha) ? baseSha : hex((await digest(`new\n${base}`)).subarray(0, 20));
 }
 /** Bytes as base64url, and back (a commit line's save record). */
-const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const base64url = (bytes: Uint8Array) => {
+  // In parts: a long snapshot spread into one call's arguments would pass the engine's limit.
+  let text = "";
+  for (let at = 0; at < bytes.length; at += 0x8000) text += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  return btoa(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
 const fromBase64url = (text: string) => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/")), char => char.charCodeAt(0));
 /** Whether `version`'s commit names `copy` (a `Live-Copy` entry, shared/live-copy.ts). */
 const namesCopy = (version: LiveVersion, copy: Uint8Array) => version.copies?.some(entry => entry.slice(0, 40) === hex(copy)) ?? false;
@@ -516,7 +521,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         ownSaves.set(file.baseSha, file.base);
         // No copy yet: kept with the copy kept from before too, for a reload.
         const sha = file.baseSha, saved = file.base;
-        if (!copy) void keeper.read(start.key).then(kept => { if (kept && !discarded) keeper.write(start.key, { ...kept, saves: [...kept.saves ?? [], sha, saved].slice(-20) }); });
+        // Still no copy once the read is back (a copy made meanwhile keeps its own state, saves and all).
+        if (!copy) void keeper.read(start.key).then(kept => { if (kept && !copy && !stopped && !discarded) keeper.write(start.key, { ...kept, saves: [...kept.saves ?? [], sha, saved].slice(-20) }); });
       }
       copy?.saved();
       return;
@@ -667,14 +673,14 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       clock.clearTimeout(keeping);
       keeping = undefined;
       const draft = store.text(scope, path);
-      const took_ = [...took.clients].flatMap(([client, ranges]) => ranges.flatMap(({ clock, len }) => [client, clock, len]));
+      const tookIds = [...took.clients].flatMap(([client, ranges]) => ranges.flatMap(({ clock, len }) => [client, clock, len]));
       const saves = [...(resume ?? carry)?.saves ?? [], ...[...ownSaves].flat()].slice(-20);
       if (discarded) return;
       if (synced && !leaving && copyId && keptBase) keeper.write(start.key, { tag: copyId, update: Y.encodeStateAsUpdate(doc),
-        ...(draft === undefined ? {} : { draft }), base: keptBase, mine: [...ownClients], took: took_, ...(saves.length ? { saves } : {}) });
+        ...(draft === undefined ? {} : { draft }), base: keptBase, mine: [...ownClients], took: tookIds, ...(saves.length ? { saves } : {}) });
       // Not taking part yet: the own copy, which holds what the draft took on since it was kept.
       else if (!synced && own && kept && ownBase) keeper.write(start.key, { tag: kept.tag, update: Y.encodeStateAsUpdate(own),
-        ...(draft === undefined ? {} : { draft }), base: ownBase, mine: [...ownClients], took: took_, ...(saves.length ? { saves } : {}) });
+        ...(draft === undefined ? {} : { draft }), base: ownBase, mine: [...ownClients], took: tookIds, ...(saves.length ? { saves } : {}) });
     };
     /** Catch-up requests that came before this copy could answer: answered once it can. */
     let asked: { kind: number; theirs: boolean; from: number; vector: Uint8Array }[] = [];
@@ -1235,8 +1241,12 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
             break;
           }
           if (carried) {
+            const over = store.get(scope, path)?.baseSha;
             const went = await carryIn(at.base);
             if (!went || stopped) return;
+            // A save landed meanwhile and moved the draft's version: the versions are brought together again (what this
+            // carry put in is not put in twice, `firstOf`).
+            if (store.get(scope, path)?.baseSha !== over) continue versions;
             store.acceptBase(scope, path, { text: at.text, baseSha: shaOf(at.base) });
             synced = true;
             break;
@@ -1510,7 +1520,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
      * the save's record (`recordOf`), or only the id when the record is too long for the line. */
     function noteSave(saving: string) {
       if (!synced || discarded || saving !== text.toString() || !keptBase || !copyId) return undefined;
-      const record = base64url(noteCopy(keptBase));
+      const snapshot = noteCopy(keptBase);
+      if (Math.ceil(snapshot.length / 3) * 4 > MAX_LIVE_RECORD) return hex(copyId);
+      const record = base64url(snapshot);
       return record.length <= MAX_LIVE_RECORD ? `${hex(copyId)} ${record}` : hex(copyId);
     }
     /** This tab's save landed (`markSaved`): its note becomes the copy's newest version. */
@@ -1703,7 +1715,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           // Tabs that have no caught-up copy yet ask one another: the one with a copy of its own (kept from before), else
           // the lower id, starts the room's copy at once, and the others are caught up by it, so a room starts one copy.
           // Two tabs back with the same kept copy, neither caught up: the lower id starts. A tab that heard from a caught-up
-          // copy of the room waits for it instead.
+          // copy of the room waits for it instead, as does one whose copy lost a meet (`preferred`) until it joined that one.
           if (kind === HELLO && !theirs && !synced && !starting && (none ? copyId || (me < id && !heardCopy) : copyId && sameTag(tag, copyId) && me < id)) void begin(false);
           // A request from a tab with no copy, while this one has none either: answered once this one has (it starts the
           // room's copy, or is caught up), so a joiner is not left waiting for the fallback.
@@ -1729,6 +1741,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
           if (kind !== REPLY || !theirs || id !== me) return;
           copyId = Uint8Array.from(tag);
           joined = true;
+          // Joined the copy two met on: later openings ask the room afresh.
+          const wanted = preferred.get(start.key);
+          if (wanted && sameTag(wanted, tag)) preferred.delete(start.key);
         } else if (!sameTag(tag, copyId)) { meet(tag, theirs); return; }
         // A frame naming an agent whose text this tab writes is not that agent's here: only this tab writes under its id.
         const local = authors.get(id), agentHere = local !== undefined && agentIds.has(local.origin);
@@ -1846,11 +1861,14 @@ export interface LiveText {
   onAuthorUndo(listener: () => void): () => void;
 }
 
+/** The most pages kept apart while another page shows (`away`): each holds a copy and folds its commits. */
+const AWAY_LIMIT = 10;
 /** Shares the open file while it is open in the draft store, for as long as this runs; calling the result stops it. */
 export function startLiveText(ports: LiveTextPorts): LiveText {
   type Share = { key: string; at: { scope: DraftScope; path: string }; stop(): void; away?(): boolean; authors?: AuthorUndo; drawing?: boolean; undraw?: () => void };
   let current: Share | undefined;
-  /** Files shared before that another page replaced, by key: their copies take the drafts' changes until they show again. */
+  /** Files shared before that another page replaced, by key: their copies take the drafts' changes until they show again.
+   * At most AWAY_LIMIT, the oldest stopped first (its copy is kept for the next opening). */
   const aways = new Map<string, Share>();
   const listeners = new Set<() => void>();
   const changed = () => { for (const listener of [...listeners]) try { listener(); } catch { /* A name tag must not break sharing. */ } };
@@ -1887,7 +1905,12 @@ export function startLiveText(ports: LiveTextPorts): LiveText {
     for (const [away, share] of aways) if (!shareable(ports.store.get(share.at.scope, share.at.path))) { aways.delete(away); share.stop(); }
     if (current?.key === key) return;
     // Its name tags take nothing back from now on: they are told so.
-    if (current?.away?.()) { aways.set(current.key, current); current = undefined; changed(); } else current?.stop();
+    if (current?.away?.()) {
+      aways.set(current.key, current);
+      current = undefined;
+      for (const [away, share] of aways) { if (aways.size <= AWAY_LIMIT) break; aways.delete(away); share.stop(); }
+      changed();
+    } else current?.stop();
     if (key) { aways.get(key)?.stop(); aways.delete(key); }
     if (!key) { current = undefined; return; }
     const at = { scope: file!.scope, path: file!.path };

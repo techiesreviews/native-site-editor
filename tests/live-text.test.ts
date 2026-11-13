@@ -901,6 +901,46 @@ test("clearing the drafts (sign-out, another workspace) closes the file's room",
   anna.stop();
 });
 
+test("a page kept apart while another page shows lets go of its copy when the drafts are cleared (sign-out)", async () => {
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.openFile.value = "about.html";
+  await quiet();
+  assert.equal(liveState(anna.store, key).shared, true, "kept apart, it still takes the draft's changes");
+  anna.store.clear();
+  await quiet();
+  assert.equal(liveState(anna.store, key).shared, false);
+  anna.stop(); lex.stop();
+});
+
+test("a save whose record is too long for its commit line names only the copy, and the room still takes it as its own (TOOLS-216)", async () => {
+  const saved = { sha: "c".repeat(40), text: "" };
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => (saved.text ? saved : { sha, text: base }),
+    before: async function* (of) { if (of === saved.sha) yield { sha, text: base }; } });
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  // Thousands of characters taken out apart from one another: the copy's record (its delete set) runs long.
+  const long = "xy".repeat(4000);
+  lex.type(base.length, long);
+  await until(() => anna.text.includes(long), "the long line shared");
+  assert.equal(lex.store.edit({ scope, path, changes: Array.from({ length: 4000 }, (_, at) => ({ start: base.length + 2 * at, end: base.length + 2 * at + 1, text: "" })).reverse() }).ok, true);
+  await until(() => anna.text === lex.text && !anna.text.includes("x"), "the x's gone on both");
+  const copies = liveSaves.note!(scope, [{ path, content: lex.text }], lex.store);
+  assert.deepEqual(copies, [liveState(lex.store, key).copy], "only the copy's id");
+  saved.text = lex.text;
+  lex.store.markSaved(scope, path, { baseSha: saved.sha, original: lex.text });
+  assert.equal(await liveFold(anna.store, key, { ...saved, copies }), true);
+  await until(() => anna.store.get(scope, path)?.baseSha === saved.sha, "Anna on the save");
+  await quiet();
+  assert.equal(anna.text, lex.text);
+  assert.equal(times(anna.text, "y".repeat(4000)), 1);
+  anna.stop(); lex.stop();
+});
+
 test("resuming adds only what was typed since the share began, wherever the kept copy and the draft disagreed", () => {
   const apply = (text: string, change: ReturnType<typeof typedSince>) => change ? text.slice(0, change.start) + change.text + text.slice(change.end) : text;
   // Nothing typed since: nothing added, even when the kept copy missed the last shared change.
