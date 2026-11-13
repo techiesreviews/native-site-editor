@@ -915,3 +915,23 @@ test("Files: Review… takes a failed picture to Media's Optimise with its full 
   await expect(media.getByRole("heading", { name: "Optimise", exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(media.locator(".media-library__sheet .media-library__problem")).toHaveText(/^phone-export\.png could not be prepared\. .+ again\.$/);
 });
+
+test("files dragged onto the head row are taken only on the Files tab, not on Pages", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const explorer = await filesTab(page);
+  /** Drags a file over the head row: whether the row takes it (the drop allowed) and lights up. */
+  const dragOver = () => page.locator("#explorer .explorer-head").evaluate(element => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["%PDF-1.4"], "head.pdf", { type: "application/pdf" }));
+    element.dispatchEvent(new DragEvent("dragenter", { dataTransfer: transfer, bubbles: true, cancelable: true }));
+    const over = new DragEvent("dragover", { dataTransfer: transfer, bubbles: true, cancelable: true });
+    element.dispatchEvent(over);
+    const lit = element.classList.contains("is-drop-target");
+    element.dispatchEvent(new DragEvent("dragleave", { dataTransfer: transfer, bubbles: true, cancelable: true, clientX: -1, clientY: -1 }));
+    return { taken: over.defaultPrevented, lit };
+  });
+  expect(await dragOver()).toEqual({ taken: true, lit: true });
+  await explorer.getByRole("tab", { name: "Pages", exact: true }).click();
+  await expect(explorer.getByRole("tab", { name: "Pages", exact: true })).toHaveAttribute("aria-selected", "true");
+  expect(await dragOver()).toEqual({ taken: false, lit: false });
+});

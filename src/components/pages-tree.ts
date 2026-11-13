@@ -107,12 +107,10 @@ export function createPagesTree(options: {
   heading.hidden = true;
   const title = node("span", "pages-title", "Pages");
   title.id = "pages-heading";
-  // How many pages the site has, beside the heading (not part of the tree's name).
-  const total = node("span", "pages-total");
   const newButton = button("+ New page", () => startEditing("/", newButton), "pages-new");
   newButton.title = "New page at the top of the site";
   heading.append(node("span", "pages-heading__start"), newButton);
-  heading.firstElementChild!.append(title, total);
+  heading.firstElementChild!.append(title);
   const tree = node("ul", "pages-tree");
   tree.setAttribute("role", "tree");
   tree.setAttribute("aria-labelledby", "pages-heading");
@@ -578,27 +576,25 @@ export function createPagesTree(options: {
     void item;
   }
   // The tree's empty space takes a drop to the top level, and lights up for it.
-  for (const area of [tree] as HTMLElement[]) {
-    const over = (event: DragEvent) => {
-      if (!dragging || (event.target instanceof Element && event.target.closest(".pages-row") && area === tree)) return;
-      if (options.dropProblem?.(dragging, "/")) { mark(undefined); return; }
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-      mark(tree);
-    };
-    area.addEventListener("dragenter", over);
-    area.addEventListener("dragover", over);
-    area.addEventListener("drop", (event) => {
-      if (!dragging) return;
-      event.preventDefault();
-      const source = dragging;
-      dragging = undefined;
-      mark(undefined);
-      const problem = options.dropProblem?.(source, "/");
-      if (problem) refuse(problem, { pointer: { x: event.clientX, y: event.clientY } });
-      else options.drop?.(source, "/");
-    });
-  }
+  const over = (event: DragEvent) => {
+    if (!dragging || (event.target instanceof Element && event.target.closest(".pages-row"))) return;
+    if (options.dropProblem?.(dragging, "/")) { mark(undefined); return; }
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    mark(tree);
+  };
+  tree.addEventListener("dragenter", over);
+  tree.addEventListener("dragover", over);
+  tree.addEventListener("drop", (event) => {
+    if (!dragging) return;
+    event.preventDefault();
+    const source = dragging;
+    dragging = undefined;
+    mark(undefined);
+    const problem = options.dropProblem?.(source, "/");
+    if (problem) refuse(problem, { pointer: { x: event.clientX, y: event.clientY } });
+    else options.drop?.(source, "/");
+  });
 
   function pageRow(page: NativePageNode, level: number) {
     const item = node("li", "pages-item");
@@ -833,8 +829,6 @@ export function createPagesTree(options: {
       current = currentFile;
       const pages = nativeTreePages(site).filter((page) => page.file);
       ending = sharedTitleEnding(pages.filter((page) => page.special !== "home").map((page) => page.label));
-      total.textContent = pages.length ? String(pages.length) : "";
-      total.title = `${pages.length} ${pages.length === 1 ? "page" : "pages"}`;
       menu.close(false);
       cancelRename(false);
       cancelUrl(false);
