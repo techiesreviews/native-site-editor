@@ -4,7 +4,7 @@
 // draws the line, the tag and a selection's tint over the frame, with the editor's caret look (src/components/caret-flag.ts).
 // A guest's page takes nothing back: its tags have no undo.
 import "./live-carets.css";
-import { caretFlag, placeTag, type Tagged } from "./caret-flag";
+import { caretFlag, paintCaret, placeTag, type Tagged } from "./caret-flag";
 import type { createPreviewLink } from "./preview-link";
 import type { PageCaretRect } from "./page-caret-port";
 import type { SessionCaret } from "../live-session-carets";
@@ -126,7 +126,7 @@ export function createGuestCarets(host: HTMLElement, frame: HTMLIFrameElement, l
         if (!found) widgets.set(caret.id, found = widget(caret));
         found.caret = caret;
         found.flag.name(who(caret));
-        found.root.dataset.colour = caret.colour;
+        paintCaret(found.root, caret.colour);
       }
       for (const [id, gone] of widgets) {
         if (seen.has(id) || gone.leaving) continue;
