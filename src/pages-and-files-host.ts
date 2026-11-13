@@ -221,8 +221,9 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
         announce: ports.announce,
       });
       fileActions.attachRoot(ports.files);
-      // The head row is the top of the repository: a row or files dropped on it go there.
-      fileActions.attachRoot(ports.element("explorer").querySelector<HTMLElement>(".explorer-head")!);
+      // On the Files tab the head row is the top of the repository: a row or files dropped on it go there.
+      // Pages and Media leave a drop on their head row alone.
+      fileActions.attachRoot(host.querySelector<HTMLElement>(".explorer-head")!, undefined, () => host.dataset.tab === "files");
       filesTree = createFilesTreeController({
         ui: { node, button, setIcon },
         snapshot: () => ports.appStore.snapshot.value, repo: () => ports.appStore.repository.value,
@@ -327,7 +328,10 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     pagesTree?.filter(searchText("pages"));
     const files = searchText("files");
     // Files found load with the explorer's own actions (src/pages-and-files-explorer.ts).
-    if (files || !ports.element("files-found").hidden || ports.files.querySelector("li[hidden]")) void loadExplorerModules().then(({ findFiles }) => findFiles(ports, searchText("files"))).catch(ports.errorMessage);
+    if (!files && ports.element("files-found").hidden && !ports.files.querySelector("li[hidden]")) return;
+    // Another workspace drawn while the module loaded has its own explorer: this search no longer writes.
+    const explorer = ports.element("explorer");
+    void loadExplorerModules().then(({ findFiles }) => { if (document.getElementById("explorer") === explorer) findFiles(ports, searchText("files")); }).catch(ports.errorMessage);
   }
   // `reset`: another repository, branch or load: the search starts afresh too.
   function paintExplorerTabs(tab: ExplorerTab, native: boolean, reset = false) {

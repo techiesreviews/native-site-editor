@@ -673,8 +673,9 @@
    Pages | Media | Files on a computer; tiles with rounded corners and their names under them. */
 @media (min-width: 651px) {
   /* The grid on show: the pane rises under the head row, whose switch stays on top; the bar starts after the switch
-     (--explorer-switch, measured). A sub-screen (details, collections, settings) keeps the bar in its own row. */
-  .explorer[data-tab="media"]:not(:has(.media-library__sheet:not([hidden]))) {
+     (--explorer-switch, measured). A sub-screen (details, collections, settings) keeps the bar in its own row, and so do
+     "Loading media…" and a failed load, which have no library yet. */
+  .explorer[data-tab="media"]:has(#explorer-media > .media-library--pane):not(:has(.media-library__sheet:not([hidden]))) {
     .explorer-head { position: relative; z-index: var(--layer-canvas); pointer-events: none; }
     .explorer-tabs { pointer-events: auto; }
     #explorer-media { margin-block-start: calc(-1 * (max(var(--size-compact), var(--size-tap)) + var(--space-4xs) * 2 + var(--space-xs))); }

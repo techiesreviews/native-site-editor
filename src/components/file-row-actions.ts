@@ -167,11 +167,12 @@ export function createFileRowActions(options: {
     });
   }
 
-  /** Makes `area` (the tree's empty space, the FILES heading) a drop target for the repository root. */
+  /** Makes `area` (the tree's empty space, the explorer's head row) a drop target for the repository root, while `live()`. */
   let rootArea: HTMLElement | undefined;
-  function attachRoot(area: HTMLElement, marked: HTMLElement = area) {
+  function attachRoot(area: HTMLElement, marked: HTMLElement = area, live: () => boolean = () => true) {
     rootArea ??= marked;
     const over = (event: DragEvent) => {
+      if (!live()) return;
       const files = !dragging && options.dropFiles && dragHasFiles(event);
       if (!files && (!dragging || options.dropProblem(dragging, ""))) return;
       event.preventDefault();
@@ -188,6 +189,7 @@ export function createFileRowActions(options: {
       if (event.clientX <= box.left || event.clientX >= box.right || event.clientY <= box.top || event.clientY >= box.bottom) highlight(undefined);
     });
     area.addEventListener("drop", (event) => {
+      if (!live()) return;
       if (!dragging) {
         if (!options.dropFiles || !event.dataTransfer?.files.length) return;
         event.preventDefault();

@@ -105,6 +105,15 @@ test.describe("on a computer", () => {
     // Neither the page button nor the Media tab carries a count (Lex, slice 122); More has Clean up's.
     await expect(page.locator(".media-count")).toHaveCount(0);
   });
+  test("before Media's library is there (loading, or a failed load), its text keeps its own row under the switch", async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    await tab(page, "Media");
+    const tabs = (await page.locator("#explorer-tabs").boundingBox())!;
+    // What the tab holds while the library loads, and what a failed load leaves: a hint, no library.
+    await page.locator("#explorer-media").evaluate(element => element.replaceChildren(Object.assign(document.createElement("p"), { className: "muted sidebar-hint", textContent: "Loading media…" })));
+    const hint = (await page.locator("#explorer-media > .sidebar-hint").boundingBox())!;
+    expect(hint.y).toBeGreaterThanOrEqual(tabs.y + tabs.height);
+  });
 });
 
 test.describe("on a phone", () => {
