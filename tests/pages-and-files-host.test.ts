@@ -25,7 +25,7 @@ fakeGlobals.addEventListener = () => {};
 // No other tabs: an open channel would keep the test process alive.
 fakeGlobals.BroadcastChannel = undefined;
 fakeGlobals.requestAnimationFrame = () => 0;
-fakeGlobals.ResizeObserver = class { observe() {} disconnect() {} };
+fakeGlobals.ResizeObserver = class { observe() {} disconnect() {} } satisfies new () => Pick<ResizeObserver, "observe" | "disconnect">;
 // The explorer's panels by id: enough element for the host to mount its trees, dialogs and tabs into.
 class FakeElement {
   isConnected = true; hidden = false; textContent = ""; title = ""; tabIndex = 0; dataset: Record<string, string> = {};

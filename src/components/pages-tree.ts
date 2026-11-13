@@ -321,7 +321,8 @@ export function createPagesTree(options: {
       const inside = children.map(keep).some(Boolean);
       const own = !words || `${item.getAttribute("aria-label") ?? ""} ${item.dataset.route ?? ""}`.toLowerCase().includes(words);
       item.hidden = !own && !inside;
-      if (words && inside && group) group.hidden = false;
+      // Opened for the search only: the next draw puts the row's own state back.
+      if (words && inside && group) { group.hidden = false; item.setAttribute("aria-expanded", "true"); }
       return own || inside;
     };
     const shown = [...tree.children].filter((child): child is HTMLElement => child.getAttribute("role") === "treeitem").map(keep).some(Boolean);
@@ -564,13 +565,14 @@ export function createPagesTree(options: {
     void item;
   }
   // The heading and the tree's empty space take a drop to the top level.
-  for (const area of [heading, tree] as HTMLElement[]) {
+  // The tree's empty space takes a drop to the top level, and lights up for it.
+  for (const area of [tree] as HTMLElement[]) {
     const over = (event: DragEvent) => {
       if (!dragging || (event.target instanceof Element && event.target.closest(".pages-row") && area === tree)) return;
       if (options.dropProblem?.(dragging, "/")) { mark(undefined); return; }
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-      mark(heading);
+      mark(tree);
     };
     area.addEventListener("dragenter", over);
     area.addEventListener("dragover", over);

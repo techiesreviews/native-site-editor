@@ -146,3 +146,18 @@ test("the search lists every file whose name or folder has it, closed folders to
   await explorer(page).getByRole("tab", { name: "Pages", exact: true }).click();
   await expect(explorer(page).getByLabel("Search pages", { exact: true })).toHaveValue("");
 });
+
+test("in a repository with no site the search narrows the rows drawn, and clearing it brings every row back", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  await page.request.post(`${baseURL}/__demo/onboarding`, { data: { add: [{ name: "search-notes", kind: "no-site" }] } });
+  const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
+  await page.goto(`${baseURL}/#repo=${repos.find(repo => repo.name === "search-notes")!.id}&branch=main`);
+  await page.reload();
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  const readme = explorer(page).getByRole("button", { name: "README.md", exact: true });
+  await expect(readme).toBeVisible({ timeout: 30_000 });
+  await explorer(page).getByLabel("Search files", { exact: true }).fill("zzzz");
+  await expect(readme).toBeHidden();
+  await explorer(page).getByLabel("Search files", { exact: true }).fill("");
+  await expect(readme).toBeVisible();
+});

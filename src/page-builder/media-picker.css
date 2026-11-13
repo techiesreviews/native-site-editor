@@ -696,6 +696,7 @@
   border-radius: var(--radius);
 }
 .explorer .media-library__grid:not(.media-library__grid--list) :is(.media-library__thumbnail, .media-library__thumbnail img) { border-radius: inherit; }
+.explorer .media-library__grid:not(.media-library__grid--list) > .media-library__pending { aspect-ratio: 4 / 3; }
 .explorer .media-library__grid:not(.media-library__grid--list) .media-library__card:has(input:checked)::after { box-shadow: none; outline: 2px solid var(--primary); outline-offset: 2px; }
 .explorer .media-library__grid:not(.media-library__grid--list) .media-library__name {
   inset: calc(100% + var(--space-2xs)) 0 auto;
