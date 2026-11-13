@@ -192,6 +192,15 @@ test("found files drawn again keep the focus on the row that had it; very many m
   await rename.fill("site-main.css");
   await rename.press("Enter");
   await expect(found.locator('.file-row[data-path="styles/site-main.css"]')).toBeFocused();
+  // Deleting a found file keeps the search; the focus stays among the found files.
+  await found.locator('.file-row[data-path="styles/site-main.css"]').click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for styles/site-main.css" }).getByRole("menuitem", { name: "Delete" }).click();
+  const confirm = page.getByRole("dialog", { name: /^Delete styles\/site-main\.css/ });
+  await confirm.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(found.locator('.file-row[data-path="styles/site-main.css"]')).toHaveCount(0);
+  await expect(search).toHaveValue("site");
+  await expect(found).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest("#files-found, #explorer-search")))).toBe(true);
   // A copy the search leaves out shows in the tree, its folder opened, the search started afresh.
   await search.fill("site.css");
   await found.locator('.file-row[data-path="styles/site.css"]').click({ button: "right" });

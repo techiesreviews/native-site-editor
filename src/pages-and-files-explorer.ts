@@ -266,24 +266,31 @@ export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | 
   (shown.find((row) => row.dataset.path === had) ?? shown[0] ?? ports.element("explorer-search")).focus();
 }
 
-/** A file's row while a search may show found files: its found row (a copy or a renamed file takes the focus there), or, for
- * one the search leaves out (a copy or a new name outside it), its row in the tree, with the search started afresh. */
-export function fileRowNow(ports: Pick<PagesAndFilesPorts, "element" | "files">,
-  tree: { row(path: string): HTMLElement | undefined; openFolder(path: string): void; render(): void } | undefined, path: string) {
-  if (ports.files.hidden) {
-    const found = [...ports.element("files-found").querySelectorAll<HTMLElement>(".file-row")].find((row) => row.dataset.path === path);
-    if (found) return found;
-    ports.element<HTMLInputElement>("explorer-search").value = "";
-    ports.files.hidden = false;
-    ports.element("files-found").hidden = true;
-    // The folders leading to it open, so its row is drawn (at once, or when a folder's listing arrives); until it is,
-    // the focus waits in the search field rather than on a found row that just hid.
-    const parts = path.split("/").slice(0, -1);
-    parts.forEach((_, index) => tree?.openFolder(parts.slice(0, index + 1).join("/")));
-    tree?.render();
-    if (!tree?.row(path)) ports.element("explorer-search").focus();
-  }
-  return tree?.row(path);
+type TreeRows = { row(path: string): HTMLElement | undefined; openFolder(path: string): void; render(): void } | undefined;
+
+/** A file's row: while a search shows found files, its found row (none when the search leaves it out); otherwise its tree row. */
+export function fileRowNow(ports: Pick<PagesAndFilesPorts, "element" | "files">, tree: TreeRows, path: string) {
+  if (!ports.files.hidden) return tree?.row(path);
+  return [...ports.element("files-found").querySelectorAll<HTMLElement>(".file-row")].find((row) => row.dataset.path === path);
+}
+
+/** After a copy or a rename the person made in Files: the file's row, shown. One the search leaves out shows in the tree, with
+ * the search started afresh and the folders leading to it opened; until its row is drawn, the focus waits in the search field. */
+export function revealFile(ports: Pick<PagesAndFilesPorts, "element" | "files">, tree: TreeRows, path: string) {
+  const found = fileRowNow(ports, tree, path);
+  if (found || !ports.files.hidden) return found;
+  ports.element<HTMLInputElement>("explorer-search").value = "";
+  ports.files.hidden = false;
+  ports.element("files-found").hidden = true;
+  const parts = path.split("/").slice(0, -1);
+  parts.forEach((_, index) => tree?.openFolder(parts.slice(0, index + 1).join("/")));
+  tree?.render();
+  return tree?.row(path) ?? ports.element("explorer-search");
+}
+
+/** No row left to take the focus (a found file deleted): the first found file takes it, or the search field. */
+export function focusFiles(ports: Pick<PagesAndFilesPorts, "element" | "files">) {
+  if (ports.files.hidden) (ports.element("files-found").querySelector<HTMLElement>(".file-row") ?? ports.element("explorer-search")).focus();
 }
 
 /** Keeps the switch's width on the explorer (--explorer-switch), where Media's One bar starts on the head row (media-picker.css). */

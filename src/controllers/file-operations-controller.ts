@@ -55,6 +55,10 @@ export interface FileOperationsPorts {
   requestAnimationFrame(callback: () => void): void;
   openFolder(path: string): void;
   fileRow(path: string): { focus(): void } | undefined;
+  /** After a copy or rename the person made in Files: its row, shown even where a search would leave it out. */
+  revealFile?(path: string): { focus(): void } | undefined;
+  /** Where the focus goes in Files when no row is left to take it (a search's found files, or its field). */
+  focusFiles?(): void;
   renderFileTree(): void;
   filesTabOpen(): boolean;
 }
@@ -202,7 +206,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     ports.requestAnimationFrame(() => {
       for (let part = ports.parentOf(to); part; part = ports.parentOf(part)) ports.openFolder(part);
       if (!ports.fileRow(to)) ports.renderFileTree();
-      if (ports.filesTabOpen()) ports.fileRow(to)?.focus();
+      if (ports.filesTabOpen()) (ports.revealFile ? ports.revealFile(to) : ports.fileRow(to))?.focus();
     });
   }
 
@@ -436,7 +440,12 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     if (cancelled) { if (!outcome.ok) ports.announce(cancel); return "Cancelled."; }
     const error = !outcome.ok && outcome.reason === "stale" ? changed : outcome.message;
     if (error) { ports.errorMessage(new Error(error)); if (!outcome.ok && outcome.reason === "refused") ports.refuse(error); return error; }
-    ports.requestAnimationFrame(() => { if (ports.filesTabOpen()) (ports.fileRow(target.path) ?? ports.fileRow(ports.parentOf(target.path)))?.focus(); });
+    ports.requestAnimationFrame(() => {
+      if (!ports.filesTabOpen()) return;
+      const row = ports.fileRow(target.path) ?? ports.fileRow(ports.parentOf(target.path));
+      if (row) row.focus();
+      else ports.focusFiles?.();
+    });
     return undefined;
   }
 
@@ -461,7 +470,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     if (ports.draftStore().error) { ports.errorMessage(new Error(ports.draftStore().error!)); return; }
     ports.afterFileChanges();
     ports.announce(`Duplicated ${target.path} as ${to}.`);
-    ports.requestAnimationFrame(() => ports.fileRow(to)?.focus());
+    ports.requestAnimationFrame(() => (ports.filesTabOpen() && ports.revealFile ? ports.revealFile(to) : ports.fileRow(to))?.focus());
   }
 
   return { deleteFileTarget, duplicateFileTarget, restoreFileTarget, protectedProblem, moveProblem, fileMoveProblem, targetFiles, pageLinks, moveFileTarget };
