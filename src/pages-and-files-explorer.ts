@@ -204,7 +204,7 @@ export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | 
   ports.files.hidden = Boolean(words && all.length);
   found.hidden = !ports.files.hidden;
   if (found.hidden) {
-    for (const line of ports.files.querySelectorAll<HTMLElement>(".file-row-line")) line.hidden = Boolean(words) && !line.closest("li")?.textContent?.toLowerCase().includes(words);
+    for (const item of ports.files.querySelectorAll<HTMLElement>("li")) item.hidden = Boolean(words) && !item.textContent?.toLowerCase().includes(words);
     return;
   }
   const rows = all.filter((path) => path.toLowerCase().includes(words)).sort().slice(0, 200).map((path) => {

@@ -319,12 +319,13 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
 
   // One search field in the head row for every tab (mock-up 05 v2); Media's own search takes its place there.
   const searchWords = { pages: "Search pages", media: "Search media", files: "Search files" } satisfies Record<ExplorerTab, string>;
-  const searchText = (tab: ExplorerTab) => (ports.element("explorer").dataset.tab === tab ? ports.element<HTMLInputElement>("explorer-search").value : "");
+  // Before the tabs are painted (a repository with no site) the explorer is its Files.
+  const searchText = (tab: ExplorerTab) => ((ports.element("explorer").dataset.tab ?? "files") === tab ? ports.element<HTMLInputElement>("explorer-search").value : "");
   function search() {
     pagesTree?.filter(searchText("pages"));
     const files = searchText("files");
     // Files found load with the explorer's own actions (src/pages-and-files-explorer.ts).
-    if (files || !ports.element("files-found").hidden) void loadExplorerModules().then(({ findFiles }) => findFiles(ports, searchText("files"))).catch(ports.errorMessage);
+    if (files || !ports.element("files-found").hidden || ports.files.querySelector("li[hidden]")) void loadExplorerModules().then(({ findFiles }) => findFiles(ports, searchText("files"))).catch(ports.errorMessage);
   }
   function paintExplorerTabs(tab: ExplorerTab, native: boolean) {
     ports.element("explorer-tabs").hidden = !native;

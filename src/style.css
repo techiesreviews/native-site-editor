@@ -825,8 +825,9 @@ dd {
 }
 
 /* A file by its path in the page button: the folder muted, the slash spaced. */
-#current-page .folder-part { color: var(--muted); font-weight: 400; }
-#current-page .path-slash { margin-inline: var(--space-3xs); color: var(--muted); font-weight: 400; }
+#current-page:has(> .folder-part) { display: inline-flex; }
+#current-page .folder-part { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-weight: 400; }
+#current-page .path-slash { flex: none; margin-inline: var(--space-3xs); color: var(--muted); font-weight: 400; }
 
 /* The explorer's one head row: Pages | Media | Files, the search, and the tab's New (mock-up 05 v2). */
 .explorer-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); padding-block-end: var(--space-xs); }

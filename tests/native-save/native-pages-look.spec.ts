@@ -71,12 +71,20 @@ test("desktop: one head row, 32px rows, names without the site's name, guide lin
   await expect(row(page, "Journal").locator(".pages-url")).toHaveCSS("font-family", /mono/i);
 
   // The search keeps the pages whose title or URL has it, with the rows leading to them.
+  // A collapsed parent opens for the search, and says so; clearing it puts the row's own state back.
+  await item(page, "Journal").locator(":scope > .pages-row > .pages-twisty").click();
+  await expect(item(page, "Journal")).toHaveAttribute("aria-expanded", "false");
   await explorer(page).getByLabel("Search pages", { exact: true }).fill("spring");
   await expect(item(page, "Spring planting")).toBeVisible();
   await expect(item(page, "Journal")).toBeVisible();
+  await expect(item(page, "Journal")).toHaveAttribute("aria-expanded", "true");
   await expect(item(page, "Home")).toBeHidden();
+  await explorer(page).getByLabel("Search pages", { exact: true }).fill("zzzz");
+  await expect(explorer(page).getByText("No page matches", { exact: true })).toBeVisible();
   await explorer(page).getByLabel("Search pages", { exact: true }).fill("");
   await expect(item(page, "Home")).toBeVisible();
+  await expect(item(page, "Journal")).toHaveAttribute("aria-expanded", "false");
+  await item(page, "Journal").locator(":scope > .pages-row > .pages-twisty").click();
 
   // + and ⋯ rest hidden, and show on hover with a gentle tint.
   const add = row(page, "Journal").getByRole("button", { name: /^Add subpage to Journal/ });
