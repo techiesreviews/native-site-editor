@@ -214,7 +214,10 @@ const editorWorkspace = createEditorWorkspace({
   closePane: () => linkedStyles.closeSecondary(),
   afterFileChanges: () => afterFileChanges(),
   openAfter: (path, keepExplorer) => openAfter(path, keepExplorer, true),
-  showRow: focus => { if (workspace.explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") pagesController.renderTree(focus); },
+  showRow: (focus, files) => {
+    if (files) filesTreeController.reveal(files);
+    if (workspace.explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") pagesController.renderTree(focus);
+  },
   status: () => element("status").textContent ?? "",
   select: (request, reveal) => nativePreview?.selectAfterUpdate(request, reveal ? { reveal: "center" } : undefined),
   flash: request => nativePreview?.flashInsert(request),

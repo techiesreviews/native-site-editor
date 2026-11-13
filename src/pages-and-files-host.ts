@@ -335,7 +335,6 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
   }
 
   // One search field in the head row for every tab (mock-up 05 v2); Media's own search takes its place there.
-  const searchWords = { pages: "Search pages", media: "Search media", files: "Search files" } satisfies Record<ExplorerTab, string>;
   // Before the tabs are painted (a repository with no site) the explorer is its Files.
   const searchText = (tab: ExplorerTab) => ((ports.element("explorer").dataset.tab ?? "files") === tab ? ports.element<HTMLInputElement>("explorer-search").value : "");
   function search() {
@@ -357,8 +356,8 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
       explorer.dataset.tab = shown;
       const field = ports.element<HTMLInputElement>("explorer-search");
       field.value = "";
-      field.placeholder = searchWords[shown];
-      field.setAttribute("aria-label", searchWords[shown]);
+      field.placeholder = `Search ${shown}`;
+      field.setAttribute("aria-label", field.placeholder);
       search();
     }
     for (const name of explorerTabNames) {
