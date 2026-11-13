@@ -366,6 +366,65 @@ function alignWords(text: string, changes: TextChange[], own: (index: number) =>
   });
 }
 
+/**
+ * `changes` (on `text`, in order) that only take out characters of this tab's own (`own`, by index in `text`), made
+ * again as whole words: the same text, taking out only whole runs of characters typed one after another (`joined`: the
+ * character at an index and the next one, as one Yjs item would hold them), cut where white space starts or ends. The
+ * match picks any of the characters that are alike, so taking out "«21» " from "«21» «11» " can keep "«1" of the one word
+ * and "1» " of the other: the word left over then holds characters typed as another word, and a tab carrying its own
+ * words over by their Yjs ids (src/live-text.ts `carryIn`) cuts it apart. Each stretch of changes that only take out is
+ * made again on its own, between the changes that put text in (GitHub's words coming back), which stay as they are; one
+ * that no such runs make is left as it is.
+ */
+function wholeWords(text: string, changes: TextChange[], own: (index: number) => boolean, joined: (index: number) => boolean) {
+  const out: TextChange[] = [];
+  for (let from = 0; from < changes.length;) {
+    if (changes[from].text) { out.push(changes[from++]); continue; }
+    let to = from;
+    while (to < changes.length && !changes[to].text) to++;
+    const low = from ? changes[from - 1].end : 0, high = to < changes.length ? changes[to].start : text.length;
+    out.push(...outWhole(text, changes.slice(from, to), low, high, own, joined));
+    from = to;
+  }
+  changes.splice(0, changes.length, ...out);
+}
+/** `changes` (only taking out, in order, between `low` and `high` in `text`) as whole runs (`wholeWords`), or as they are. */
+function outWhole(text: string, changes: TextChange[], low: number, high: number, own: (index: number) => boolean, joined: (index: number) => boolean) {
+  const space = (index: number) => /\s/.test(text[index]);
+  // The stretch the changes take out of, out to the edges of the runs they cut into, and the text it must make.
+  let head = changes[0].start, end = changes.at(-1)!.end;
+  while (head > low && joined(head - 1) && space(head - 1) === space(head)) head--;
+  while (end < high && joined(end - 1) && space(end - 1) === space(end)) end++;
+  const gone = changes.reduce((sum, change) => sum + change.end - change.start, 0);
+  let want = "", at = head;
+  for (const change of changes) { want += text.slice(at, change.start); at = change.end; }
+  want += text.slice(at, end);
+  const runs: { start: number; end: number; own: boolean }[] = [];
+  for (let index = head; index < end; index++) {
+    const last = runs.at(-1);
+    if (last && joined(index - 1) && space(index - 1) === space(index)) { last.end++; last.own &&= own(index); }
+    else runs.push({ start: index, end: index + 1, own: own(index) });
+  }
+  const m = want.length, n = runs.length;
+  if ((n + 1) * (m + 1) > MATCH_LIMIT || want.length !== end - head - gone) return changes;
+  // can[i][j]: runs from i on can make `want` from j on, each run kept whole or (this tab's own) taken out whole.
+  const can = new Uint8Array((n + 1) * (m + 1)), cell = (i: number, j: number) => i * (m + 1) + j;
+  can[cell(n, m)] = 1;
+  const keeps = (i: number, j: number) => {
+    const length = runs[i].end - runs[i].start;
+    return j + length <= m && want.startsWith(text.slice(runs[i].start, runs[i].end), j) && can[cell(i + 1, j + length)] === 1;
+  };
+  for (let i = n - 1; i >= 0; i--) for (let j = m; j >= 0; j--) can[cell(i, j)] = keeps(i, j) || (runs[i].own && can[cell(i + 1, j)] === 1) ? 1 : 0;
+  if (!can[cell(0, 0)]) return changes;
+  const words: TextChange[] = [];
+  for (let i = 0, j = 0; i < n; i++) {
+    if (keeps(i, j)) { j += runs[i].end - runs[i].start; continue; }
+    const last = words.at(-1);
+    if (last && last.end === runs[i].start) last.end = runs[i].end; else words.push({ start: runs[i].start, end: runs[i].end, text: "" });
+  }
+  return words;
+}
+
 /** A 32-bit FNV-1a hash of `text`: the client id a word put back is written under, the same in every tab. */
 function hashClient(text: string) {
   let hash = 0x811c9dc5;
@@ -492,6 +551,10 @@ export function clashes(Y: Yjs, doc: Doc, all: readonly Edge[], edge: Edge, mine
   }
   if (!stretches.length || !stretches.every(part => region(part.head, part.end, part.from, part.to))) return ownWords();
   alignWords(current, out, index => list[shown[index]].kind === 1);
+  wholeWords(current, out, index => list[shown[index]].kind === 1, index => {
+    const char = list[shown[index]], next = list[shown[index + 1]];
+    return next !== undefined && next.client === char.client && next.clock === char.clock + 1;
+  });
   out.reverse();
   // The merged text is read from the copy, the typists' part guessed where others took out what GitHub took out too: a
   // change making a word neither the copy, GitHub nor the older version has (a word cut apart, two glued) is not made.

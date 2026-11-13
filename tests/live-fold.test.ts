@@ -190,6 +190,25 @@ test("a word put back in a clash goes back whole, signs and all: words others pu
   assert.ok(put.some(item => item.includes("«3»")), JSON.stringify(put));
 });
 
+test("a clash takes this tab's words out whole: a word of its own that stays keeps its own characters (TOOLS-223)", async () => {
+  const cases = [
+    // GitHub replaced w0 and took out w2: «12» and «21» go, «11» stays.
+    { base: "<p>w0 w1 w2 w3</p>\n", mine: "<p>w0 w1 «12» «21» w2 «11» w3</p>\n", theirs: "<p>Z0 w1 w3</p>\n" },
+    // The same with a word of GitHub's coming back (the white space after "Z1").
+    { base: "<p>w0 w1 w2 w3</p>\n", mine: "<p>w0 w2 «4» «12» w3 «11»</p>\n", theirs: "<p>w0 Z1 w2</p>\n" },
+  ];
+  for (const { base, mine, theirs } of cases) {
+    const doc = await copyOf(base), own = 7;
+    const typed = type(doc, base, mine, own);
+    Y.applyUpdate(doc, await outside(doc, theirs));
+    const before = text(doc), { out, settled } = settle(doc, own, typed);
+    // Taken out by matching characters alike, "«21» «1" and "1» " made «11» of two words' characters: a tab carrying its
+    // own words over by their ids then put "«1" in one place and "1»" in another.
+    for (const change of out) if (!change.text) assert.match(before.slice(change.start, change.end), /^(\s|«\d+»)+$/, `${before} ${JSON.stringify(out)}`);
+    assert.equal(settled, mergeText(base, mine, theirs).text);
+  }
+});
+
 /** Seeded one-word changes (replaced, put in or taken out) on both sides of a short paragraph: each case's base, this
  * tab's text and GitHub's, the copy's text once the clash rule ran, and mergeText's. */
 async function seeded(runs: number) {

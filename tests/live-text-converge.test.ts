@@ -529,15 +529,21 @@ const FOUND = [288, 348, 819, 1370, 1722];
  * from before the room's) doubled or lost words (25 26 163 335 454 511 560 762 937), its clash Undo brought words back
  * twice (517), or the room stayed silent past Save's wait (317 418). */
 const FOUND_LONG = [25, 26, 163, 317, 335, 418, 454, 511, 517, 560, 762, 937];
+/** Seeds whose 180-step runs once failed (TOOLS-223), played every time at 180 steps: a commit heard while the copy caught
+ * up went into the draft apart from it when the page, kept apart meanwhile, showed again, and the tab later took its
+ * own words in twice (65 733 895); a clash took this tab's words out by characters alike, so a word left over held
+ * another word's characters and a carry over by Yjs ids cut it apart (327 946). */
+const FOUND_180 = [65, 327, 733, 895, 946];
 /** Steps left out of every run (`LIVE_SKIP=save,outside`), to narrow down what a failing seed needs. */
 const SKIP = new Set((process.env.LIVE_SKIP ?? "").split(",").filter(Boolean));
 
 test("typing together, in seeded random order: every run ends with every tab on one copy and one text, nothing doubled or lost", async () => {
   const only = process.env.LIVE_SEED === undefined ? undefined : Number(process.env.LIVE_SEED);
   const seeds = only === undefined ? [...Array.from({ length: SEEDS }, (_, index) => index + 1), ...FOUND.filter(seed => seed > SEEDS)] : [only];
-  /** Each seed with its steps: the long ones at 120 unless every run is that long already. */
+  /** Each seed with its steps: the long ones at 120 and 180 unless every run is that long already. */
   const runs: [number, number][] = [...seeds.map(seed => [seed, STEPS] as [number, number]),
-    ...(only === undefined && STEPS < 120 ? FOUND_LONG.map(seed => [seed, 120] as [number, number]) : [])];
+    ...(only === undefined && STEPS < 120 ? FOUND_LONG.map(seed => [seed, 120] as [number, number]) : []),
+    ...(only === undefined && STEPS < 180 ? FOUND_180.map(seed => [seed, 180] as [number, number]) : [])];
   const failed: string[] = [];
   // A tab's changes carry its Yjs client id, which carets and the name-tag Undo name: Yjs giving a copy a new one (it says
   // so on the console) breaks that, so it fails the run too.

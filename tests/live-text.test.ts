@@ -2284,6 +2284,34 @@ test("a tab on another page while a commit lands takes it into its kept copy: ba
   anna.stop(); lex.stop();
 });
 
+test("a commit heard while the copy catches up, then the page kept apart and shown again, goes into the copy that takes over, never into the draft apart (TOOLS-223)", async () => {
+  const v1 = { sha: "c".repeat(40), text: base.replace("seven", "«9» seven") };
+  let landed = false;
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => (landed ? v1 : { sha, text: base }),
+    before: async function* (of) { if (of === v1.sha) yield { sha, text: base }; } });
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(anna.text.indexOf("Fresh"), "«1» ");
+  await until(() => lex.text.includes("«1»"), "Anna's word at Lex's");
+  landed = true;
+  // A new room key: Anna's copy asks the room again, and a commit it hears waits for the answer. Before it comes, another
+  // page shows and then this one again.
+  anna.socket.me.options.onKey?.();
+  const took = liveFold(anna.store, key, { ...v1, author: "Sam · GitHub" });
+  anna.openFile.value = "about.html";
+  anna.openFile.value = path;
+  // Left to the draft (undefined), it would fold in apart from the copy the page comes back to, and that copy, kept with
+  // a draft over another version, took words in twice in a long session.
+  assert.equal(await took, true, "the copy of the page shown again takes the commit");
+  await until(() => anna.text === lex.text && lex.text.includes("«9»"), "one text with GitHub's word");
+  await quiet();
+  assert.deepEqual(["«1»", "«9»"].map(word => times(lex.text, word)), [1, 1], lex.text);
+  assert.equal(anna.store.get(scope, path)?.baseSha, v1.sha);
+  anna.stop(); lex.stop();
+});
+
 test("a joiner's unsaved changes in two places go in word by word: what someone typed between them stays, once", async () => {
   const room = fakeRoom();
   const anna = tab(room);
