@@ -407,6 +407,9 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
   const overBarSoon = () => { barDue ||= requestAnimationFrame(overBar); };
   const barMoved = new MutationObserver(records => { if (records.some(record => !layer.contains(record.target))) overBarSoon(); });
   barMoved.observe(page.layer, { subtree: true, childList: true, attributes: true, attributeFilter: ["style", "class", "hidden"] });
+  // A pin grows on focus or hover, and a control's fade or slide ends, with no attribute written: those are looked at too.
+  const GROWTH = ["focusin", "focusout", "pointerover", "transitionend", "animationend"] as const;
+  for (const type of GROWTH) page.layer.addEventListener(type, overBarSoon, true);
   // The frame moving or changing size in its pane (a banner above it, the code pane growing) moves no caret in its
   // viewport, so no new positions come: the layer follows the frame by itself.
   const resized = new ResizeObserver(() => { fit(); for (const widget of widgets.values()) place(widget); });
@@ -527,6 +530,7 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
     stopPage();
     resized.disconnect();
     barMoved.disconnect();
+    for (const type of GROWTH) page.layer.removeEventListener(type, overBarSoon, true);
     cancelAnimationFrame(frame);
     cancelAnimationFrame(asking);
     cancelAnimationFrame(barDue);
