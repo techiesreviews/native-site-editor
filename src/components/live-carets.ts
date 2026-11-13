@@ -20,7 +20,7 @@ import { caretPanes, watchCaretPanes, type CaretPane } from "./source-editor";
 import { pageCarets, watchPageCarets, type PageCaretPoint, type PageCaretRect, type PageCarets } from "./page-caret-port";
 import { sourceOffsetOfText, textPointAt } from "../native-source-location";
 import { icon } from "../icons";
-import { caretFlag, placeTag, type CaretWho, type Tagged } from "./caret-flag";
+import { caretFlag, paintCaret, placeTag, type CaretWho, type Tagged } from "./caret-flag";
 import { githubScope, same } from "../workspace-session";
 import { participants } from "../participant";
 
@@ -156,7 +156,7 @@ function attach(share: CaretShare, pane: CaretPane, told: (read: () => CaretSele
       if (found.caret.author !== caret.author || found.caret.contested !== caret.contested) added = true;
       found.caret = caret;
       found.flag.name(caret);
-      found.root.dataset.colour = String(colourOf(caret));
+      paintCaret(found.root, colourOf(caret));
       editor.layoutContentWidget(found);
     }
     for (const [peer, gone] of widgets) {
@@ -358,7 +358,7 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
       if (found.caret.author !== caret.author || found.caret.contested !== caret.contested) added = true;
       found.caret = caret;
       found.flag.name(caret);
-      found.root.dataset.colour = String(colourOf(caret));
+      paintCaret(found.root, colourOf(caret));
     }
     for (const [peer, gone] of widgets) {
       if (seen.has(peer) || gone.leaving) continue;
