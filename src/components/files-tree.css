@@ -2,9 +2,6 @@
    one row height, a chevron on every folder, a guide under it, icons by file type, and a
    quiet type column where Pages shows its URLs. */
 
-/* The head ("Files 46", + New) shares the Pages rules in pages-tree.css; the heading is an h2. */
-.explorer-heading__title { margin: 0; font: inherit; }
-
 #files { container-type: inline-size; }
 .file-list {
   list-style: none;
