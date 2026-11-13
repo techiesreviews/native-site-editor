@@ -302,6 +302,8 @@ function attach(share: CaretShare, pane: CaretPane, told: (read: () => CaretSele
   const lineHeight = () => editor.getDomNode()?.style.setProperty("--live-caret-line", `${editor.getOption(EditorOption.lineHeight)}px`);
   lineHeight();
   const options = editor.onDidChangeConfiguration(event => { if (event.hasChanged(EditorOption.lineHeight)) lineHeight(); });
+  // Monaco hides a caret laid out inside a fold and leaves it hidden when the fold opens: each is laid out again then.
+  const folds = editor.onDidChangeHiddenAreas(drawSoon);
   const stopCarets = share.onCarets(drawSoon);
   const stopUndo = share.onAuthorUndo(askUndo);
   draw();
@@ -309,6 +311,7 @@ function attach(share: CaretShare, pane: CaretPane, told: (read: () => CaretSele
   return () => {
     moved.dispose();
     options.dispose();
+    folds.dispose();
     stopCarets();
     stopUndo();
     cancelAnimationFrame(frame);

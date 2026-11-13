@@ -19,6 +19,14 @@ const pageFlag = (page: Page, name: string) => page.locator(`.live-carets-page .
 /** A caret's tag drawn in the code pane, by the name it shows. */
 const codeFlag = (page: Page, name: string) => page.locator(`.monaco-editor .live-caret__flag[aria-label="${name}"]`);
 
+/** Unfolds the code pane's sections (they open folded; a caret in a fold is not shown) and scrolls to `offset`. */
+const reveal = (page: Page, offset: number) => page.evaluate(async (offset) => {
+  const { monaco } = await import("/src/components/monaco.ts");
+  const editor = monaco.editor.getEditors().find(view => view.getModel()?.uri.path.endsWith("/index.html"))!;
+  await editor.getAction("editor.unfoldAll")?.run();
+  editor.revealPosition(editor.getModel()!.getPositionAt(offset));
+}, offset);
+
 /** Whether the caret drawn for `flag` stands inside `element`'s box on the page. */
 async function caretInside(flag: Locator, element: Locator) {
   const caret = await flag.locator("xpath=..").locator(".live-caret__line").boundingBox();
@@ -82,6 +90,7 @@ test("a guest on Lex's edit link and Lex see each other's carets: on both pages,
     await expect(annaOnPage.locator(".live-caret__mark b")).toHaveText("A");
     await expect.poll(() => caretInside(annaOnPage, frame(lex).locator(".hero h1")), { timeout: 10_000 }).toBe(true);
     // In his code pane too, at the end of her words.
+    await reveal(lex, (await source(lex)).indexOf(" together") + " together".length);
     const annaInCode = codeFlag(lex, "Anna");
     await expect(annaInCode).toBeVisible({ timeout: 20_000 });
     await expect(annaInCode.locator(".live-caret__mark b")).toHaveText("A");
@@ -147,6 +156,7 @@ test("an agent Lex connected over MCP, with nobody else on the page, shows its c
     await expect(onPage.locator("svg.live-caret__program")).toBeVisible();
     await expect.poll(() => caretInside(onPage, frame(lex).locator(".hero h1")), { timeout: 10_000 }).toBe(true);
     // And in the code pane.
+    await reveal(lex, (await source(lex)).indexOf("One agent's"));
     const inCode = codeFlag(lex, "Claude Code");
     await expect(inCode).toBeVisible({ timeout: 20_000 });
     await expect(inCode.locator("svg.live-caret__program")).toBeVisible();
