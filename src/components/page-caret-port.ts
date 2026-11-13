@@ -26,8 +26,10 @@ export interface PageCarets {
   own(): PageTextCaret | undefined;
   /** Called when the caret, the file shown or its text may have changed; returns its unsubscribe. */
   onChange(listener: () => void): () => void;
-  /** Asks the frame where these carets are (none: no carets). */
-  show(carets: PageCaretPoint[]): void;
+  /** Asks the frame where `owner`'s carets are (none: no carets of its own). Each drawing over the page (the open file's,
+   * and a synced session's for a page file the code pane does not show, src/live-session-carets.ts) is its own owner: the
+   * frame finds all of theirs together. */
+  show(carets: PageCaretPoint[], owner: object): void;
   /** Called with where the frame found them; returns its unsubscribe. */
   onRects(listener: (rects: PageCaretRect[]) => void): () => void;
   /** Where the carets are drawn (over the frame) and the frame. */

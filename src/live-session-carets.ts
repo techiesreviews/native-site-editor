@@ -125,23 +125,26 @@ export function startSessionCarets(ports: { host: string; guests(): CaretGuest[]
   const again = () => { last = ""; soon(); };
 
   // The open file's carets draw the guests' in the code pane and on the page. While the code pane shows another file (a
-  // stylesheet, say) the page still shows the page: its guests' carets are drawn there by the session itself.
-  let drawn: string | undefined, undraw: (() => void) | undefined;
+  // stylesheet, or the template in Edit component mode) the page still shows its files: the guests' carets in each of
+  // those are drawn there by the session itself, one drawing per file. Each drawing is its own start: one that a later
+  // look stopped or replaced while its code loaded starts nothing.
+  const drawings = new Map<string, { undraw?: () => void }>();
   const drawPage = () => {
     const covered = sessionCarets.file()?.path;
-    const target = stopped ? undefined : page()?.files().find((path) => path !== covered);
-    if (target === drawn) return;
-    undraw?.();
-    undraw = undefined;
-    drawn = target;
-    if (target === undefined) return;
-    void import("./components/live-carets").then(({ startCarets }) => {
-      if (drawn !== target || stopped) return;
-      undraw = startCarets({
-        scope: NO_SCOPE, path: target, carets: () => sessionCarets.guests(target), onCarets: (listener) => sessionCarets.watchGuests(listener),
-        own: () => undefined, canUndo: () => false, undo: () => false, onAuthorUndo: () => () => undefined,
-      });
-    }).catch(() => { if (drawn === target) drawn = undefined; });
+    const wanted = new Set(stopped ? [] : page()?.files().filter((path) => path !== covered) ?? []);
+    for (const [path, drawing] of drawings) if (!wanted.has(path)) { drawings.delete(path); drawing.undraw?.(); }
+    for (const path of wanted) {
+      if (drawings.has(path)) continue;
+      const drawing: { undraw?: () => void } = {};
+      drawings.set(path, drawing);
+      void import("./components/live-carets").then(({ startCarets }) => {
+        if (drawings.get(path) !== drawing) return;
+        drawing.undraw = startCarets({
+          scope: NO_SCOPE, path, carets: () => sessionCarets.guests(path), onCarets: (listener) => sessionCarets.watchGuests(listener),
+          own: () => undefined, canUndo: () => false, undo: () => false, onAuthorUndo: () => () => undefined,
+        });
+      }).catch(() => { if (drawings.get(path) === drawing) drawings.delete(path); });
+    }
   };
 
   // Lex's page: its caret and its text moving (one page at a time, which can come and go).
@@ -179,9 +182,8 @@ export function startSessionCarets(ports: { host: string; guests(): CaretGuest[]
     stop() {
       stopped = true;
       clearTimeout(timer);
-      undraw?.();
-      undraw = undefined;
-      drawn = undefined;
+      for (const drawing of drawings.values()) drawing.undraw?.();
+      drawings.clear();
       unwatchPages();
       unwatchPage?.();
       unwatchFile();
