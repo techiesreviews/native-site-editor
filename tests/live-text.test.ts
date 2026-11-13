@@ -915,7 +915,7 @@ test("a page kept apart while another page shows lets go of its copy when the dr
   anna.stop(); lex.stop();
 });
 
-test("a save whose record is too long for its commit line names only the copy, and the room still takes it as its own (TOOLS-216)", async () => {
+test("a save whose record is too long for its commit line leaves out the characters taken out, and the room still takes it as its own (TOOLS-216)", async () => {
   const saved = { sha: "c".repeat(40), text: "" };
   const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => (saved.text ? saved : { sha, text: base }),
     before: async function* (of) { if (of === saved.sha) yield { sha, text: base }; } });
@@ -929,8 +929,9 @@ test("a save whose record is too long for its commit line names only the copy, a
   await until(() => anna.text.includes(long), "the long line shared");
   assert.equal(lex.store.edit({ scope, path, changes: Array.from({ length: 4000 }, (_, at) => ({ start: base.length + 2 * at, end: base.length + 2 * at + 1, text: "" })).reverse() }).ok, true);
   await until(() => anna.text === lex.text && !anna.text.includes("x"), "the x's gone on both");
-  const copies = liveSaves.note!(scope, [{ path, content: lex.text }], lex.store);
-  assert.deepEqual(copies, [liveState(lex.store, key).copy], "only the copy's id");
+  const copies = liveSaves.note!(scope, [{ path, content: lex.text }], lex.store), [id, record] = copies[0].split(" ");
+  assert.equal(id, liveState(lex.store, key).copy);
+  assert.ok(record && record.length < 200, "the record without the characters taken out");
   saved.text = lex.text;
   lex.store.markSaved(scope, path, { baseSha: saved.sha, original: lex.text });
   assert.equal(await liveFold(anna.store, key, { ...saved, copies }), true);
@@ -1104,6 +1105,46 @@ test("another tab's older saved draft adopted while sharing does not take newer 
   assert.ok(lex.text.includes("Newer line"), "Lex keeps the newer change");
   assert.equal(anna.text, lex.text, "and Anna's draft follows the copy again");
   anna.stop(); lex.stop();
+});
+
+test("another tab's draft adopted while a tab back with its kept copy catches up is not typed in again (TOOLS-216)", async () => {
+  const records = new Map<string, SavedDraft>();
+  const persistence: DraftPersistence = {
+    get: (draftScope, file) => records.get(draftKey(draftScope, file)),
+    save: record => { records.set(draftKey(record, record.path), record); return true; },
+    remove: (draftScope, file) => records.delete(draftKey(draftScope, file)),
+  };
+  // GitHub's newest version: read at once, until the tab back reads it while `holding`; then it waits for `release`.
+  let holding = false, release: (() => void) | undefined;
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base,
+    newest: () => (holding ? new Promise<LiveVersion>(resolve => { release = () => resolve({ sha, text: base }); }) : Promise.resolve({ sha, text: base })) });
+  const room = fakeRoom();
+  const anna = tab(room, base, { persistence }), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(4, "Warm ");
+  await until(() => lex.text.includes("Warm"), "Anna's edit");
+  await new Promise(resolve => setTimeout(resolve, 400));
+  anna.stop();
+  await quiet();
+  // Anna's page comes back with its kept copy; while it reads GitHub, another tab of her browser adds a line and her
+  // code pane adopts that tab's saved draft.
+  holding = true;
+  const again = tab(room, anna.text, { keeper: anna.keeper, persistence, github });
+  await until(() => release !== undefined, "the tab back reading GitHub");
+  holding = false;
+  const other = tab(room, anna.text, { persistence });
+  await until(() => other.text === lex.text, "the other tab caught up");
+  await quiet();
+  other.type(other.text.length, "<p>Newer line.</p>\n");
+  await until(() => lex.text.includes("Newer line"), "the other tab's line shared");
+  assert.equal(again.store.reload(scope, path), true);
+  release!();
+  await until(() => again.text === lex.text, "the tab back caught up");
+  await quiet();
+  assert.deepEqual([again, lex, other].map(at => times(at.text, "Newer line")), [1, 1, 1]);
+  assert.equal(times(lex.text, "Warm"), 1);
+  again.stop(); lex.stop(); other.stop();
 });
 
 test("the browser keeper keeps copies in IndexedDB: a fresh keeper reads them, a removal deletes, a wrong shape reads as none", async () => {
@@ -1758,6 +1799,48 @@ test("a tab back with a copy kept from before the room's copy adds only its own 
   assert.equal(back.text, sam.text);
   assert.equal(tom.text, sam.text);
   assert.deepEqual(["«1»", "«2»", "«3»", "«4»"].map(word => times(back.text, word)), [1, 1, 1, 1], back.text);
+  assert.equal(liveState(back.store, draftKey(scope, path)).copy, liveState(sam.store, draftKey(sam.scope, path)).copy, "one copy");
+  back.stop(); sam.stop(); tom.stop();
+});
+
+test("the same with a save record too long for its line: the tab back adds only its own words (TOOLS-216)", async () => {
+  // Anna and Lex share a copy. Anna types two words; Lex saves the first while Anna's connection is out, and Anna types
+  // a third beside them. The room then starts a new copy from that save. Anna comes back with her kept copy.
+  const v1 = { sha: "c".repeat(40), text: "" };
+  const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => (v1.text ? v1 : { sha, text: base }),
+    before: async function* (of) { if (of === v1.sha) yield { sha, text: base }; } });
+  const room = fakeRoom();
+  const anna = tab(room, base, { github }), lex = tab(room, base, { github });
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  const at = base.indexOf("seven");
+  anna.type(at, "«1» «2» ");
+  await until(() => lex.text.includes("«2»"), "Anna's words at Lex's");
+  // Thousands of characters taken out apart from one another before the save: its record runs long.
+  anna.type(0, "xy".repeat(4000));
+  await until(() => lex.text.startsWith("xy"), "the long line at Lex's");
+  assert.equal(anna.store.edit({ scope, path, changes: Array.from({ length: 4000 }, (_, at) => ({ start: 2 * at, end: 2 * at + 1, text: "" })).reverse() }).ok, true);
+  await until(() => lex.text.startsWith("yy"), "the x's gone at Lex's");
+  anna.socket.me.cut = true;
+  const saved = lex.text, copies = liveSaves.note!(scope, [{ path, content: saved }], lex.store);
+  lex.store.markSaved(scope, path, { baseSha: v1.sha, original: saved });
+  Object.assign(v1, { text: saved, copies });
+  anna.type(anna.text.indexOf("«2»"), "«3» ");
+  anna.stop(); lex.stop();
+  await quiet();
+  // A new copy of the room, from the saved version, with someone typing right beside Anna's words.
+  const sam = tab(room, saved, { base: saved, baseSha: v1.sha, github, account: "sam" }), tom = tab(room, saved, { base: saved, baseSha: v1.sha, github, account: "tom" });
+  await until(() => sam.yjsLoads + tom.yjsLoads === 2, "the room's new copy");
+  await quiet();
+  sam.type(sam.text.indexOf("«1»"), "«4» ");
+  await until(() => tom.text.includes("«4»"), "Sam's word at Tom's");
+  const back = tab(room, anna.text, { keeper: anna.keeper, github });
+  await until(() => back.text === sam.text && back.text.includes("«3»"), "Anna back on the room's copy, her word in");
+  await quiet();
+  assert.equal(back.text, sam.text);
+  assert.equal(tom.text, sam.text);
+  assert.deepEqual(["«1»", "«2»", "«3»", "«4»"].map(word => times(back.text, word)), [1, 1, 1, 1], back.text);
+  assert.equal(times(back.text, "y".repeat(4000)), 1);
   assert.equal(liveState(back.store, draftKey(scope, path)).copy, liveState(sam.store, draftKey(sam.scope, path)).copy, "one copy");
   back.stop(); sam.stop(); tom.stop();
 });

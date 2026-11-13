@@ -749,6 +749,8 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         typeOwn(began, draft);
       }
     }
+    /** The draft as the own copy last took it: another tab's draft adopted meanwhile (`external`) is not this tab's typing. */
+    let draftSeen = own ? store.text(scope, path) : undefined;
     /** The own copy, holding `text`, noted as GitHub's version `sha`, a save this tab made before it took part: the copy it
      * joins takes that commit as these words, not as GitHub's words a second time. */
     function noteOwn(sha: string, saved: string) {
@@ -890,8 +892,19 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       if (event.type !== "text" || event.key !== start.key || discarded || event.origin === "shared" || event.origin === "discard") return;
       // Not taking part yet: the own copy takes it (an own copy's text is the draft's).
       if (!synced) {
-        const was = own?.getText("source").toString();
-        if (was !== undefined && was !== event.text) writeOwn(changesBetween(was, event.text, event.changes).sort((a, b) => a.start - b.start).reverse());
+        const was = own?.getText("source").toString(), seen = draftSeen;
+        draftSeen = event.text;
+        if (was === undefined || was === event.text) return;
+        // Another tab of this browser's saved draft, adopted (`reload`): its words are the room's, which this tab follows
+        // once it takes part, not its own typing.
+        if (event.origin === "external") return;
+        // The draft holds such words: only what was typed since goes in.
+        if (seen !== undefined && seen !== was) {
+          const change = typedSince(was, seen, event.text);
+          if (change) writeOwn(wordRuns(was, change));
+          return;
+        }
+        writeOwn(changesBetween(was, event.text, event.changes).sort((a, b) => a.start - b.start).reverse());
         return;
       }
       // Another tab of this browser's saved draft, adopted (`reload`): it may lag behind this copy, so the draft
@@ -1517,11 +1530,15 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     }
     /** This tab is about to save the file as `text`: when the copy holds that very text, it notes the copy as it is, so the
      * others take the commit as the copy's own text (`fold`). The commit's `Live-Copy` entry: the copy's id and the note as
-     * the save's record (`recordOf`), or only the id when the record is too long for the line. */
+     * the save's record (`recordOf`), without the characters taken out when that is too long for the line, or only the id
+     * when even that is. */
     function noteSave(saving: string) {
       if (!synced || discarded || saving !== text.toString() || !keptBase || !copyId) return undefined;
-      const snapshot = noteCopy(keptBase);
-      if (Math.ceil(snapshot.length * 4 / 3) > MAX_LIVE_RECORD) return hex(copyId);
+      let snapshot = noteCopy(keptBase);
+      // Too long for the commit's line (a long session's characters taken out): the record says which characters the copy
+      // held, not which of them were taken out by then. A tab coming back still tells its own saved words apart by
+      // their ids, and the saved text's own deletions enter as the outside participant's (`recordEdge`).
+      if (Math.ceil(snapshot.length * 4 / 3) > MAX_LIVE_RECORD) snapshot = Y.encodeSnapshot(Y.createSnapshot(Y.createDeleteSet(), Y.decodeSnapshot(snapshot).sv));
       const record = base64url(snapshot);
       return record.length <= MAX_LIVE_RECORD ? `${hex(copyId)} ${record}` : hex(copyId);
     }
