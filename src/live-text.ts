@@ -80,7 +80,7 @@ import { mergeText, runChanges } from "./text-merge";
 import { liveSaves } from "./live-saves";
 import { MAX_LIVE_RECORD } from "../shared/live-copy";
 import { birthUpdate, clashes, clientOf, copyAt, draftUpdate, edgeClient, edgeTo as edgeFor, edgeUpdate, edges, headOf, items, metaOf, newestOf,
-  occurrenceAfter, occurrenceOn, shaOf, superseded, type Edge, textAt, textWith, tipOf, versionsOf, wordDiff, wordRuns, wordsOf } from "./live-versions";
+  occurrenceAfter, occurrenceOn, shaOf, superseded, type Edge, textAt, tipOf, versionsOf, wordDiff, wordRuns, wordsOf } from "./live-versions";
 
 type Yjs = typeof import("yjs");
 type Doc = import("yjs").Doc;
