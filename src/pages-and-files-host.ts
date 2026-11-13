@@ -160,7 +160,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
       import("./components/create-dialog"), import("./components/file-row-actions"), ports.loadConfirmDialog(),
       import("./components/page-picker"), import("./controllers/files-tree-controller"), import("./pages-and-files-explorer"), loadPagesActions(), loadFileOps(),
     ]);
-    return { ...create, ...actions, ...confirm, ...picker, ...tree, createExplorerActions: explorer.createExplorerActions, findFiles: explorer.findFiles, measureSwitch: explorer.measureSwitch };
+    return { ...create, ...actions, ...confirm, ...picker, ...tree, createExplorerActions: explorer.createExplorerActions, findFiles: explorer.findFiles, measureSwitch: explorer.measureSwitch, fileRowNow: explorer.fileRowNow };
   });
 
   function treeState(scope = ports.draftScope()): TreeState {
@@ -178,20 +178,29 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
   // Files is on show: its tab, or the only panel of a repository with no site (its tab state stays "pages").
   const filesShown = () => !!ports.explorerDropdown?.isOpen() && (pagesController.explorerTab() === "files" || !ports.element("explorer-files").hidden);
   const filesTreeController = {
-    refresh: () => filesTree ? filesTree.refresh() : ports.mediaController.requestGalleryRefresh(),
-    // Files found follow the files: a new or removed file shows in them without typing again.
+    // Files found follow the files: a new or removed file (an agent's too) shows in them without typing again; a closed
+    // explorer draws them on opening.
+    refresh: () => {
+      if (!filesTree) return ports.mediaController.requestGalleryRefresh();
+      // Only a tree drawn again (the files changed) draws the found files again, so a rename typed there stays.
+      const drawn = ports.files.firstElementChild;
+      filesTree.refresh();
+      if (ports.files.firstElementChild !== drawn && searchText("files") && filesShown()) search();
+    },
     render: () => { filesTree?.render(); if (searchText("files")) search(); }, reset: () => { spareListings.clear(); filesTree?.reset(); },
-    // While a search shows found files, a file's row is its found row (a copy or a renamed file takes the focus there).
-    shown: () => filesTree?.shown(), row: (path: string) => (ports.files.hidden ? [...ports.element("files-found").querySelectorAll<HTMLElement>(".file-row")].find((row) => row.dataset.path === path) : undefined) ?? filesTree?.row(path),
+    // While a search shows found files, a file's row is its found row (src/pages-and-files-explorer.ts).
+    shown: () => filesTree?.shown(), row: (path: string) => rowNow ? rowNow(ports, filesTree, path) : filesTree?.row(path),
     openFolder: (path: string) => filesTree?.openFolder(path), listings: () => filesTree?.listings() ?? spareListings, visible: filesShown,
   };
   let explorerMount: Promise<void> | undefined;
+  let rowNow: typeof import("./pages-and-files-explorer").fileRowNow | undefined;
   function ensureExplorer() {
     if (filesTree) return ensurePagesTree();
     if (explorerMount) return explorerMount;
     const host = ports.element("explorer");
-    const pending = loadExplorerModules().then(async ({ createCreateDialog, createFileRowActions, createConfirmDialog, createPagePicker, createFilesTreeController, createExplorerActions, measureSwitch }) => {
+    const pending = loadExplorerModules().then(async ({ createCreateDialog, createFileRowActions, createConfirmDialog, createPagePicker, createFilesTreeController, createExplorerActions, measureSwitch, fileRowNow }) => {
       if (!host.isConnected || host !== document.getElementById("explorer")) return;
+      rowNow = fileRowNow;
       measureSwitch(host, ports.element("explorer-tabs"));
       const { planCreation, createFromRequest, fileRowItems, renameProblem, renameFileTarget, dropProblem, dropFileTarget } = createExplorerActions(ports, {
         get createDialog() { return createDialog; }, get fileActions() { return fileActions; }, get fileOps() { return fileOps; },
