@@ -178,7 +178,9 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
   // Files is on show: its tab, or the only panel of a repository with no site (its tab state stays "pages").
   const filesShown = () => !!ports.explorerDropdown?.isOpen() && (pagesController.explorerTab() === "files" || !ports.element("explorer-files").hidden);
   const filesTreeController = {
-    refresh: () => filesTree ? filesTree.refresh() : ports.mediaController.requestGalleryRefresh(), render: () => filesTree?.render(), reset: () => { spareListings.clear(); filesTree?.reset(); },
+    refresh: () => filesTree ? filesTree.refresh() : ports.mediaController.requestGalleryRefresh(),
+    // Files found follow the files: a new or removed file shows in them without typing again.
+    render: () => { filesTree?.render(); if (searchText("files")) search(); }, reset: () => { spareListings.clear(); filesTree?.reset(); },
     shown: () => filesTree?.shown(), row: (path: string) => filesTree?.row(path),
     openFolder: (path: string) => filesTree?.openFolder(path), listings: () => filesTree?.listings() ?? spareListings, visible: filesShown,
   };
@@ -327,12 +329,13 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     // Files found load with the explorer's own actions (src/pages-and-files-explorer.ts).
     if (files || !ports.element("files-found").hidden || ports.files.querySelector("li[hidden]")) void loadExplorerModules().then(({ findFiles }) => findFiles(ports, searchText("files"))).catch(ports.errorMessage);
   }
-  function paintExplorerTabs(tab: ExplorerTab, native: boolean) {
+  // `reset`: another repository, branch or load: the search starts afresh too.
+  function paintExplorerTabs(tab: ExplorerTab, native: boolean, reset = false) {
     ports.element("explorer-tabs").hidden = !native;
     const settings = document.getElementById("site-settings-toggle");
     if (settings) settings.hidden = !native;
     const explorer = ports.element("explorer"), shown = native ? tab : "files";
-    if (explorer.dataset.tab !== shown) {
+    if (explorer.dataset.tab !== shown || reset) {
       explorer.dataset.tab = shown;
       const field = ports.element<HTMLInputElement>("explorer-search");
       field.value = "";

@@ -345,7 +345,9 @@ export function createPagesTree(options: {
   }
 
   function focusRow(key: string | undefined) {
-    const row = rowByKey(key) ?? visibleRows()[0];
+    // A row the search hides gives the focus to the first row that shows.
+    const wanted = rowByKey(key), shown = visibleRows();
+    const row = wanted && shown.includes(wanted) ? wanted : shown[0];
     if (!row) return;
     setActive(row);
     row.focus();

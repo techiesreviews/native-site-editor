@@ -860,6 +860,8 @@ dd {
   font: inherit;
 }
 .explorer-search > input:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+/* Touch: at least 16px (the spacing step of that size), so focusing the field never zooms the page. */
+@media (hover: none), (pointer: coarse) { .explorer-search > input { font-size: max(var(--space-m), var(--type-base)); } }
 .explorer-new-slot { display: contents; }
 .explorer:not([data-tab="pages"]) .pages-new,
 .explorer:not([data-tab="files"]) #new-at-root,
