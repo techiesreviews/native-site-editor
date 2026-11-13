@@ -1026,7 +1026,6 @@ test("a save at any await of a tab opening a page again alone, before its copy i
       await quiet();
       // Anna opens the page again alone, and saves; Yjs never loads, so her copy is not made.
       run.again = tab(room, anna.text, { keeper: run.kept, race, loadYjs: () => new Promise<never>(() => undefined) });
-      await quiet();
       run.save("«1» ");
       await quiet();
     })();
@@ -1169,7 +1168,7 @@ test("a newcomer caught up by a tab that resumed an older kept copy alone does n
   await quiet();
   back.type(0, "«3» ");
   // Carl opens the page and Anna catches him up; he types.
-  const carl = tab(room, base, { account: "carl" });
+  const carl = tab(room, base, { account: "carl", clock: time.clock });
   await until(() => copyOf(carl) === older && carl.text.includes("«3»"), "Carl on Anna's copy");
   carl.type(0, "«4» ");
   await until(() => back.text.includes("«4»"), "Carl's word at Anna's");
@@ -2047,11 +2046,14 @@ test("a tab back with a copy kept from before the room's copy adds only its own 
   back.stop(); sam.stop(); tom.stop();
 });
 
-test("a tab back with a kept copy whose carry-over cannot read GitHub's history tries again until it can, its words once (TOOLS-224)", async () => {
+/** Anna and Lex share a copy; Lex saves while Anna types apart; Sam and Tom start a new copy from the save, and Sam types.
+ * Then Anna comes back with her kept copy while GitHub's history cannot be read `failures` times. */
+async function backWhileHistoryUnread(failures: number) {
   const v1 = { sha: "c".repeat(40), text: "" };
-  let failing = 0;
+  let failing = 0, reads = 0;
   const github: LiveTextPorts["github"] = () => ({ sha, text: base, newest: async () => (v1.text ? v1 : { sha, text: base }),
     before: async function* (of) {
+      reads++;
       if (failing > 0) { failing--; throw new Error("GitHub's history is out of reach"); }
       if (of === v1.sha) yield { sha, text: base };
     } });
@@ -2073,20 +2075,46 @@ test("a tab back with a kept copy whose carry-over cannot read GitHub's history 
   await quiet();
   sam.type(0, "«3» ");
   await until(() => tom.text.includes("«3»"), "Sam's word at Tom's");
-  // Anna comes back while GitHub's history cannot be read, three times.
   const time = fakeTimers();
-  failing = 3;
+  failing = failures;
+  reads = 0;
   const back = tab(room, anna.text, { keeper: anna.keeper, github, clock: time.clock });
   // Both tabs of the room answer her: each answer starts a carry-over, and each fails.
-  await until(() => failing === 1, "both carry-overs failed");
+  await until(() => reads === 2, "both carry-overs failed");
   await quiet();
   assert.equal(back.text, anna.text, "not carried over: the draft stays as it is");
+  return { room, anna, back, sam, tom, time, failing: () => failing, reads: () => reads, end: () => { back.stop(); sam.stop(); tom.stop(); } };
+}
+
+test("a tab back with a kept copy whose carry-over cannot read GitHub's history tries again until it can, its words once (TOOLS-224)", async () => {
+  const { back, sam, tom, time, failing, end } = await backWhileHistoryUnread(3);
   for (let wait = 0; wait < 8 && back.text !== sam.text; wait++) { time.advance(LIVE_TEXT_CATCH_UP_MS); await quiet(); }
   await until(() => back.text === sam.text && back.text.includes("«2»"), "Anna back on the room's copy, her word in");
+  assert.equal(failing(), 0, "tried again until it could");
   assert.deepEqual(["«1»", "«2»", "«3»"].map(word => times(back.text, word)), [1, 1, 1], back.text);
   assert.equal(tom.text, sam.text);
   assert.equal(liveState(back.store, draftKey(scope, path)).copy, liveState(sam.store, draftKey(sam.scope, path)).copy, "one copy");
-  back.stop(); sam.stop(); tom.stop();
+  end();
+});
+
+test("a carry-over that never reads GitHub's history is tried until it failed six times, waiting longer each time; the room catching the tab up again tries once more (TOOLS-224)", async () => {
+  const { room, back, anna, time, reads, end } = await backWhileHistoryUnread(Infinity);
+  // Two failed already (one per answer): 10 s after the second, then twice as long, at most 40 s.
+  for (const wait of [10, 20, 40, 40]) {
+    const before = reads();
+    time.advance(wait * 1000 - 1);
+    await quiet();
+    assert.equal(reads(), before, `not before ${wait} s`);
+    time.advance(1);
+    await until(() => reads() === before + 1, `tried again after ${wait} s`);
+  }
+  for (let wait = 0; wait < 10; wait++) { time.advance(LIVE_TEXT_CATCH_UP_MS * 8); await quiet(); }
+  assert.equal(reads(), 6, "no more tries");
+  assert.equal(back.text, anna.text, "the draft stays as it is");
+  // A new key: the room catches her up again, and she tries once more.
+  for (const member of room.members) member.options.onKey?.();
+  await until(() => reads() > 6, "tried once more");
+  end();
 });
 
 test("a tab back with a kept copy keeps a change typed inside a word where it was typed (Fresh to French) (TOOLS-216)", async () => {
