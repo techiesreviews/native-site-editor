@@ -39,7 +39,10 @@
 //   the room's presence (src/live-room.ts), as Yjs relative positions, so a
 //   caret stays by the same words while others type. Others' carets are read
 //   in this tab's text and drawn in the code pane (src/components/live-carets.ts,
-//   loaded with Yjs, only once someone else is in the room).
+//   loaded with Yjs, only once someone else is in the room, or an agent wrote
+//   while this tab is alone, TOOLS-219). A synced session's guests' carets come
+//   through src/session-carets.ts and are drawn with them; the session reads
+//   this tab's caret and the room's from there for its guests' pages.
 // - Agents join the merge (ticket am-25): an agent's change is written into the
 //   drafts of the tab that receives its commands (src/live-author.ts says whose
 //   it is). That tab puts the text change into the copy as the smallest change,
@@ -595,7 +598,7 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
   async function load(keptOnly = false) {
     loading = true;
     try {
-      // Alone, the kept copy is read first: without one, Yjs is not loaded.
+      // Alone, the kept copy is read first: without one, Yjs is not loaded (unless an agent wrote meanwhile: `unplaced`).
       const first = keptOnly ? await keeper.read(start.key) : undefined;
       if (stopped || discarded || (keptOnly && (!first || first.base === undefined || editors))) return;
       const Y = await (ports.loadYjs ?? (() => import("yjs")))();
