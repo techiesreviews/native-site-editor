@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { build, loadConfigFromFile } from "vite";
 import { unstable_startWorker } from "wrangler";
-import { BOARD_MOCKUPS, buildTickets, isReleased, MOCKUPS_HEADERS, mockupBoard, mockupFiles, mockupIndex, mockupPicturePath, mockups, mockupsHeaders, mockupShipping, mockupsRedirect, mockupTitle, referencedFiles, ticketsOnMain } from "../vite-mockups.ts";
+import { BOARD_MOCKUPS, buildTickets, isReleased, MOCKUPS_HEADERS, mockupBoard, mockupFiles, mockupPicturePath, mockups, mockupsHeaders, mockupShipping, mockupsRedirect, mockupTitle, referencedFiles, ticketsOnMain } from "../vite-mockups.ts";
 
 const repoRoot = new URL("..", import.meta.url).pathname;
 const scratch = mkdtempSync(join(tmpdir(), "ase-mockups-"));
@@ -64,17 +64,9 @@ test("a build copies only the images a mock-up in the same map uses; notes namin
   assert.deepEqual(images, ["agents/12-reference.png"]);
 });
 
-test("the index lists HTML mock-ups under their map by title, without the prototype prefix", () => {
-  const html = mockupIndex(mockupFiles(repo()));
-  const idea = ' <span class="shipping shipping--idea">Idea only</span>';
-  assert.match(html, new RegExp(`<h2>agents</h2>\n<ul>\n<li><a href="agents/05-untitled.html">05-untitled.html</a>${idea}</li>\n<li><a href="agents/14-share.html">14 Share &amp; &lt;edit&gt;</a>${idea}</li>\n</ul>`));
-  assert.match(html, new RegExp(`<h2>site-structure</h2>\n<ul>\n<li><a href="site-structure/08-site-map.html">08 Site map</a>${idea}</li>`));
-  assert.doesNotMatch(html, /12-reference\.png|kit/);
+test("a mock-up's title drops the prototype prefix and falls back to the file name", () => {
+  assert.equal(mockupTitle("<title>PROTOTYPE (throwaway) · 08 Site map</title>", "a.html"), "08 Site map");
   assert.equal(mockupTitle("<title>  </title>", "a.html"), "a.html");
-});
-
-test("the index says so when there are no mock-ups", () => {
-  assert.match(mockupIndex([]), /<p>No mock-ups yet\.<\/p>/);
 });
 
 /** Runs git in `dir` without the user's identity, signing or hooks. */
@@ -199,27 +191,7 @@ test("a ticket renamed on dev reads as not on main until the rename is released"
   assert.equal(labelsIn(root)["live.html"], "live 11");
 });
 
-test("the index shows each label with the tickets it came from, and a legend saying what each means", () => {
-  const { root } = shippingRepo();
-  const files = mockupFiles(root);
-  const tickets = buildTickets(root, files);
-  const html = mockupIndex(files, { shipping: mockupShipping(files, tickets, ticketsOnMain(root, tickets)) });
-  const row = (page: string, badge: string, open = "") => assert.ok(html.includes(`<li><a href="agents/${page}.html">${page}</a> ${badge}${open}</li>`), page);
-  const open = (page: string) => ` <a class="open" href="agents/${page}.html" aria-label="Open mock-up: ${page}">Open mock-up</a>`;
-  row("live", '<span class="shipping shipping--live">Live</span> <span class="tickets">ticket 01</span>', open("live"));
-  row("live-and-preview", '<span class="shipping shipping--preview">On preview</span> <span class="tickets">tickets 01, 02</span>', open("live-and-preview"));
-  row("shared", '<span class="shipping shipping--building">Being built</span> <span class="tickets">tickets 07, styling 06</span>');
-  row("planned", '<span class="shipping shipping--planned">Planned</span> <span class="tickets">ticket 05</span>');
-  row("idea", '<span class="shipping shipping--idea">Idea only</span>');
-  for (const [label, meaning] of [["live", "Live</span></dt><dd>Built and released to editor.techies.tools."], ["preview", "On preview</span></dt><dd>Built and on preview"],
-    ["building", "Being built</span></dt><dd>"], ["planned", "Planned</span></dt><dd>"], ["idea", "Idea only</span></dt><dd>No build ticket"]]) {
-    assert.ok(html.includes(`<dt><span class="shipping shipping--${label}">${meaning}`), label);
-  }
-  // The editor's own tokens, each light and dark in one light-dark() value, colour the labels.
-  assert.match(html, /--semantic-success-surface: light-dark\([\s\S]*--success-bg: var\(--semantic-success-surface\);[\s\S]*\.shipping--live \{ background: var\(--success-bg\)/);
-});
-
-test("a build with the plugin writes the mock-ups and the index under mockups/", async () => {
+test("a build with the plugin writes the mock-ups, the board's card data and a redirect to the board at /mockups/ and at the old list's address", async () => {
   const root = repo();
   writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
   const outDir = join(root, "dist");
@@ -227,28 +199,13 @@ test("a build with the plugin writes the mock-ups and the index under mockups/",
   const built = readdirSync(join(outDir, "mockups"), { recursive: true, withFileTypes: true })
     .filter(entry => entry.isFile()).map(entry => join(entry.parentPath, entry.name).slice(outDir.length + 1)).sort();
   assert.deepEqual(built,
-    ["mockups/agents/05-untitled.html", "mockups/agents/12-reference.png", "mockups/agents/14-share.html", "mockups/index.html", "mockups/list/index.html", "mockups/site-structure/08-site-map.html"]);
+    ["mockups/agents/05-untitled.html", "mockups/agents/12-reference.png", "mockups/agents/14-share.html", "mockups/board.json", "mockups/index.html", "mockups/list/index.html", "mockups/site-structure/08-site-map.html"]);
   assert.equal(readFileSync(join(outDir, "mockups/agents/12-reference.png"), "utf8"), "png");
-  const index = readFileSync(join(outDir, "mockups/index.html"), "utf8");
-  assert.match(index, /href="site-structure\/08-site-map.html">08 Site map<\/a> <span class="shipping shipping--idea">Idea only<\/span>/);
-  assert.match(index, /--success-bg: var\(--semantic-success-surface\);/);
-  // The plain list is always at /mockups/list/, one folder deeper, so its links start with `../`.
-  const list = readFileSync(join(outDir, "mockups/list/index.html"), "utf8");
-  assert.match(list, /href="\.\.\/site-structure\/08-site-map.html">08 Site map<\/a> <span class="shipping shipping--idea">Idea only<\/span>/);
-  assert.doesNotMatch(list, /href="(?!\.\.\/|#)[a-z-]+\/[^"]*\.html"/);
-});
-
-test("with the board built too, /mockups/ opens the board's mock-ups, the plain list stays at /mockups/list/ and board.json feeds the cards", async () => {
-  const root = repo();
-  writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
-  const outDir = join(root, "dist");
-  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(root, { board: true })], build: { outDir } });
   assert.equal(readFileSync(join(outDir, "mockups/index.html"), "utf8"), mockupsRedirect());
+  // The plain list is gone; its old address lands on the board too, by an address from the site's root.
+  assert.equal(readFileSync(join(outDir, "mockups/list/index.html"), "utf8"), mockupsRedirect());
   assert.match(mockupsRedirect(), new RegExp(`<meta http-equiv="refresh" content="0; url=${BOARD_MOCKUPS}">`));
   assert.match(mockupsRedirect(), new RegExp(`<a href="${BOARD_MOCKUPS}">Mock-ups</a>`));
-  const list = readFileSync(join(outDir, "mockups/list/index.html"), "utf8");
-  assert.match(list, /<h1>Mock-ups<\/h1>/);
-  assert.match(list, /href="\.\.\/agents\/14-share.html">14 Share &amp; &lt;edit&gt;<\/a>/);
   assert.deepEqual(JSON.parse(readFileSync(join(outDir, "mockups/board.json"), "utf8")), {
     maps: [
       { map: "agents", mockups: [
@@ -353,8 +310,7 @@ test("only the preview Worker builds with the mock-ups and the catalogue board",
   assert.match(readFileSync(join(repoRoot, ".github/workflows/deploy-preview.yml"), "utf8"), /^\s+- run: git fetch --no-tags --depth=1 origin main:refs\/remotes\/origin\/main$/m);
 });
 
-test("index links are URL-encoded and a rebuild adds the header rule once", async () => {
-  assert.match(mockupIndex([{ map: "m", file: "a #1?.html", path: "x" }], { read: () => "" }), /href="m\/a%20%231%3F\.html"/);
+test("a rebuild adds the header rule once", async () => {
   const root = repo();
   writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
   const outDir = join(root, "dist");
@@ -365,13 +321,13 @@ test("index links are URL-encoded and a rebuild adds the header rule once", asyn
 });
 
 /** Builds `root` with the mock-ups from `mockupsRoot` and the editor's real `_headers`, served by Cloudflare's asset handler. */
-async function serveBuild(root: string, mockupsRoot: string, board = false) {
+async function serveBuild(root: string, mockupsRoot: string) {
   writeFileSync(join(root, "index.html"), "<!doctype html><title>editor</title>");
   mkdirSync(join(root, "public"));
   writeFileSync(join(root, "public/_headers"), readFileSync(join(repoRoot, "public/_headers"), "utf8"));
-  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(mockupsRoot, { board })], build: { outDir: join(root, "dist") } });
+  await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(mockupsRoot)], build: { outDir: join(root, "dist") } });
   // The board's page is the catalogue build's (vite.config.ts); a stand-in is enough to see where /mockups/ leads.
-  if (board) writeFileSync(join(root, "dist/catalogue.html"), "<!doctype html><title>Board stand-in</title>");
+  writeFileSync(join(root, "dist/catalogue.html"), "<!doctype html><title>Board stand-in</title>");
   writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify({ name: "mockups-browser-test", compatibility_date: "2026-09-17", assets: { directory: "./dist" } }));
   return unstable_startWorker({ config: join(root, "wrangler.jsonc"), dev: { server: { port: 0 }, inspector: false, watch: false, logLevel: "none" } });
 }
@@ -524,26 +480,6 @@ test("work under docs/work/<work>/issues counts as build tickets for the mock-up
   assert.equal(labelsIn(root)["idea.html"], "preview 01,02");
 });
 
-test("a released mock-up with a picture shows it and a link to the mock-up; the others show neither", () => {
-  const { root } = shippingRepo();
-  const files = mockupFiles(root);
-  const shipping = mockupShipping(files, buildTickets(root, files), ticketsOnMain(root, buildTickets(root, files)));
-  const pictures = new Set(["agents/live.html", "agents/preview.html", "agents/planned.html"]);
-  const html = mockupIndex(files, { shipping, pictures });
-  const image = (page: string) => `<img src="agents/agreed/${page}.webp" alt="" width="480" height="300" loading="lazy" decoding="async">`;
-  assert.ok(html.includes(`<li class="with-picture"><a class="picture" href="agents/live.html" tabindex="-1" aria-hidden="true">${image("live")}</a><span class="entry"><a href="agents/live.html">live</a> `), "Live");
-  assert.ok(html.includes(`<li class="with-picture"><a class="picture" href="agents/preview.html" tabindex="-1" aria-hidden="true">${image("preview")}</a>`), "On preview");
-  assert.ok(html.includes(' <a class="open" href="agents/preview.html" aria-label="Open mock-up: preview">Open mock-up</a></span></li>'));
-  // Planned has a picture file, but the feature is not released: no picture, no link. Released without a picture: the link only.
-  assert.doesNotMatch(html, /agreed\/planned|href="agents\/planned.html">Open/);
-  assert.ok(html.includes('<li><a href="agents/live-and-preview.html">live-and-preview</a> '));
-  assert.ok(html.includes('<a class="open" href="agents/live-and-preview.html" aria-label="Open mock-up: live-and-preview">Open mock-up</a></li>'));
-  assert.equal(html.match(/<img /g)?.length, 2);
-  // A file name needing escapes is escaped in the picture's address too.
-  const odd = mockupIndex([{ map: "agents", file: "a b.html", path: "x" }], { read: () => "", shipping: new Map([["agents/a b.html", { label: "preview", tickets: [] }]]), pictures: new Set(["agents/a b.html"]) });
-  assert.match(odd, /<img src="agents\/agreed\/a%20b\.webp"/);
-});
-
 test("a build publishes the picture of each released mock-up, small and beside the mock-up, and of no other", async () => {
   const { root, git } = shippingRepo();
   const pictureBytes = Buffer.from("RIFFpicture");
@@ -557,13 +493,13 @@ test("a build publishes the picture of each released mock-up, small and beside t
     .filter(entry => entry.isFile() && entry.name.endsWith(".webp")).map(entry => join(entry.parentPath, entry.name).slice(outDir.length + 1)).sort();
   assert.deepEqual(built, ["mockups/agents/agreed/live.webp", "mockups/agents/agreed/preview.webp"]);
   assert.deepEqual(readFileSync(join(outDir, "mockups/agents/agreed/live.webp")), pictureBytes);
-  const index = readFileSync(join(outDir, "mockups/index.html"), "utf8");
-  assert.equal(index.match(/<img src="agents\/agreed\/[a-z-]+\.webp"/g)?.length, 2);
+  const cards = (JSON.parse(readFileSync(join(outDir, "mockups/board.json"), "utf8")) as { maps: { mockups: { picture?: string }[] }[] }).maps.flatMap(({ mockups }) => mockups);
+  assert.deepEqual(cards.flatMap(({ picture }) => picture ?? []).sort(), ["/mockups/agents/agreed/live.webp", "/mockups/agents/agreed/preview.webp"]);
   assert.deepEqual(mockupPicturePath(root, { map: "agents", file: "live.html" }), { path: join(root, "docs/wayfinder/agents/prototypes/agreed/live.webp"), exists: true });
   assert.equal(mockupPicturePath(root, { map: "agents", file: "idea.html" }).exists, false);
 });
 
-test("the real mock-ups: each released one has a small picture, no picture is left over, and the two approved sketches are listed", () => {
+test("the real mock-ups: each released one has a small picture, no picture is left over, and the two approved sketches are released", () => {
   const files = mockupFiles(repoRoot).filter(({ file }) => file.endsWith(".html"));
   const shipping = mockupShipping(files, buildTickets(repoRoot, files));
   const missing = files.filter(({ map, file }) => isReleased(shipping.get(`${map}/${file}`)?.label) && !mockupPicturePath(repoRoot, { map, file }).exists)
@@ -583,22 +519,13 @@ test("the real mock-ups: each released one has a small picture, no picture is le
   }
 });
 
-test("the index fits a phone with its pictures, and the sandboxed design sketch ignores keys typed in its fields", async () => {
+test("the sandboxed design sketch ignores keys typed in its fields", async () => {
   const { chromium } = await import("@playwright/test");
   const worker = await serveBuild(mkdtempSync(join(scratch, "phone-")), repoRoot);
   const browser = await chromium.launch({ headless: true });
   try {
     const base = await worker.url;
     const page = await browser.newPage();
-    for (const width of [320, 390]) {
-      await page.setViewportSize({ width, height: 800 });
-      await page.goto(new URL("mockups/list/", base).href, { waitUntil: "load" });
-      assert.ok(await page.locator(".with-picture").count() > 0);
-      // The list is one folder deeper than the page it replaced: its pictures still load.
-      await page.locator(".picture img").first().scrollIntoViewIfNeeded();
-      await page.waitForFunction(() => document.querySelector<HTMLImageElement>(".picture img")!.naturalWidth > 0);
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${width} px wide`);
-    }
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(new URL("mockups/atomic-catalogue/design-board-canvas.html", base).href, { waitUntil: "load" });
     const editor = page.frameLocator("iframe[data-id=editor-1280]");
@@ -616,9 +543,9 @@ test("the index fits a phone with its pictures, and the sandboxed design sketch 
   }
 });
 
-test("in a browser, /mockups/ leads to the board's mock-ups despite the sandboxed policy, and the plain list and the card data answer", async () => {
+test("in a browser, /mockups/ and the old list's address lead to the board's mock-ups despite the sandboxed policy, and the card data answers", async () => {
   const { chromium } = await import("@playwright/test");
-  const worker = await serveBuild(mkdtempSync(join(scratch, "board-")), repoRoot, true);
+  const worker = await serveBuild(mkdtempSync(join(scratch, "board-")), repoRoot);
   const browser = await chromium.launch({ headless: true });
   try {
     const base = await worker.url;
@@ -627,10 +554,10 @@ test("in a browser, /mockups/ leads to the board's mock-ups despite the sandboxe
     await page.waitForFunction(() => document.title === "Board stand-in");
     assert.equal(new URL(page.url()).hash, "#plans");
     assert.match(new URL(page.url()).pathname, /^\/catalogue(\.html)?$/);
-    // The old links still work: the plain list, and the mock-ups themselves.
-    const list = await page.goto(new URL("mockups/list/", base).href, { waitUntil: "load" });
-    assert.equal(list!.status(), 200);
-    assert.ok(await page.locator("section h2").count() > 0);
+    // The old links still work: the plain list's address lands on the board, and the mock-ups themselves open.
+    await page.goto(new URL("mockups/list/", base).href, { waitUntil: "commit" }).catch(() => undefined);
+    await page.waitForFunction(() => document.title === "Board stand-in");
+    assert.equal(new URL(page.url()).hash, "#plans");
     const board = await page.request.get(new URL("mockups/board.json", base).href);
     assert.equal(board.status(), 200);
     const maps = (await board.json() as { maps: { map: string; mockups: { href: string }[] }[] }).maps;

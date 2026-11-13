@@ -1,4 +1,4 @@
-// The planning mock-ups on the catalogue board: every mock-up of the mock-ups page (vite-mockups.ts, `/mockups/list/`) as a
+// The planning mock-ups on the catalogue board: every mock-up of the mock-ups page (vite-mockups.ts) as a
 // card, one area per map like the page. The preview build writes them to `/mockups/board.json`; a board served without
 // them (the dev server, a build without MOCKUPS=1) simply has no such areas. A card shows its label, its picture when it
 // has one, and a link that opens the mock-up. Cards move like every other card; they are not parts, so they are not approved.
