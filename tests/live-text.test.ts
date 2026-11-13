@@ -2325,7 +2325,7 @@ test("a save waiting while the copy catches up, then the page kept apart and sho
   anna.openFile.value = "about.html";
   anna.openFile.value = path;
   await wait;
-  // Let through when the share kept apart stopped, it found no copy taking part to note it in: the commit named none.
+  // Had the save been let through when the share kept apart stopped, there would be no copy yet to note it in.
   const copies = liveSaves.note!(scope, [{ path, content: anna.text }], anna.store);
   assert.equal(copies.length, 1, "the copy of the page shown again notes the save");
   assert.equal(times(anna.text, "«1»"), 1, anna.text);

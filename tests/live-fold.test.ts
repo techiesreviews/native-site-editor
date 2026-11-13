@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as Y from "yjs";
-import { birthUpdate, clashes, draftUpdate, edgeClient, edgeTo, edgeUpdate, edges, newestOf, occurrenceAfter, occurrenceOn, textAt, tipOf, type Edge } from "../src/live-versions.ts";
+import { birthUpdate, clashes, draftUpdate, edgeClient, edgeTo, edgeUpdate, edges, newestOf, occurrenceAfter, occurrenceOn, textAt, tipOf, wholeWords, type Edge } from "../src/live-versions.ts";
 import { mergeText } from "../src/text-merge.ts";
 import { diffRange } from "../src/draft-store.ts";
 import type { TextChange } from "../src/draft-store.ts";
@@ -262,4 +262,21 @@ test("seeded: the copy's text once the clash rule ran is mergeText's in every ca
 // LIVE_FOLD_SPOT=1 plays 1000 cases; a larger number plays that many.
 test("seeded spot check: 1000 cases or LIVE_FOLD_SPOT", { skip: !process.env.LIVE_FOLD_SPOT && "set LIVE_FOLD_SPOT=1" }, async () => {
   assert.deepEqual(await differing(Math.max(1000, Number(process.env.LIVE_FOLD_SPOT) || 0)), []);
+});
+
+test("taking out whole words leaves a take-out as it is when no whole runs make the same text", () => {
+  // "ab" was typed as one run by someone else: taking out only "b" cannot be made of whole runs of this tab's own.
+  const changes: TextChange[] = [{ start: 1, end: 2, text: "" }];
+  wholeWords("ab cd", changes, () => false, index => index === 0);
+  assert.deepEqual(changes, [{ start: 1, end: 2, text: "" }]);
+});
+
+test("taking out whole words leaves take-outs as they are when the stretch is too long to match", () => {
+  // 2,001 signs of this tab's own, each typed apart, every other one taken out: too many to match, so nothing moves
+  // (matched, the alike signs would let it keep the first 1,000 and take out the last 1,000 in one go).
+  const text = "x".repeat(2001);
+  const changes: TextChange[] = Array.from({ length: 1000 }, (_, index) => ({ start: 2 * index + 1, end: 2 * index + 2, text: "" }));
+  const before = changes.map(change => ({ ...change }));
+  wholeWords(text, changes, () => true, () => false);
+  assert.deepEqual(changes, before);
 });
