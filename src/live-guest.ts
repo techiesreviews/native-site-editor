@@ -207,10 +207,15 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
 
   const frameLink = createPreviewLink(iframeFramePort(frame));
   // Lex's caret, the room's and the other guests' over the frame (TOOLS-219); this guest's own goes to Lex's tab as they
-  // type, at most every CARET_MS (typing moves it with every key), and once more when it goes.
+  // type, at most every CARET_MS (typing moves it with every key), and once more when it goes. The latest is told again
+  // whenever who is here changes: back after a dropped connection, Lex's tab has forgotten it.
   const carets = createGuestCarets(canvas, frame, frameLink, me);
-  let caretTimer: ReturnType<typeof setTimeout> | undefined, caretNext: PageTextCaret | null | undefined;
-  const sendCaret = () => { caretTimer = undefined; if (caretNext !== undefined) send({ t: "caret", caret: caretNext }); caretNext = undefined; };
+  let caretTimer: ReturnType<typeof setTimeout> | undefined, caretNext: PageTextCaret | null | undefined, caretTold: PageTextCaret | null = null;
+  const sendCaret = () => {
+    caretTimer = undefined;
+    if (caretNext !== undefined) { caretTold = caretNext; send({ t: "caret", caret: caretNext }); }
+    caretNext = undefined;
+  };
   frameLink.on("text-caret", (message) => {
     caretNext = message.caret;
     caretTimer ??= setTimeout(sendCaret, CARET_MS);
@@ -282,6 +287,7 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
     /** Who else is here: Lex first, then the other guests; this guest last, as "you". */
     people(peers: ReadonlyMap<string, LivePeer>) {
       present = peers;
+      if (caretTold && caretNext === undefined) { caretNext = caretTold; caretTimer ??= setTimeout(sendCaret, CARET_MS); }
       const colourOf = (id: string) => typeof guestColours[id] === "string" && /^[0-3]$/.test(guestColours[id]) ? guestColours[id] : "0";
       const others = [...peers.values()].map((peer) => ({ peer, state: peer.state as SessionPresence | null | undefined }))
         .filter(({ state }) => state && typeof state.name === "string" && state.guest !== me);

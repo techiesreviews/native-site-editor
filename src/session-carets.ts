@@ -9,7 +9,9 @@ export interface FileCarets { path: string; own: CaretSelection | undefined; oth
 
 type Watchers = Set<() => void>;
 const guestWatchers: Watchers = new Set(), fileWatchers: Watchers = new Set();
-let guests: ((path: string) => LiveCaret[]) | undefined;
+/** Each running session's offer: one at a time as a rule, but a start overtaken by another (a share of the next project
+ * while the first still mints) may offer too until it is stopped, so each takes back only its own. */
+const guests = new Set<(path: string) => LiveCaret[]>();
 let file: (() => FileCarets | undefined) | undefined;
 const tell = (watchers: Watchers) => { for (const watcher of [...watchers]) try { watcher(); } catch { /* A caret must not break the session. */ } };
 const watch = (watchers: Watchers, watcher: () => void) => { watchers.add(watcher); return () => { watchers.delete(watcher); }; };
@@ -18,14 +20,15 @@ export const sessionCarets = {
   /** The session offers its guests' carets in a file, in this tab's text; the returned call takes back that offer only
    * (a session ending late leaves a newer session's in place). */
   offerGuests(next: (path: string) => LiveCaret[]) {
-    guests = next;
+    const mine = (path: string) => next(path);
+    guests.add(mine);
     tell(guestWatchers);
-    return () => { if (guests !== next) return; guests = undefined; tell(guestWatchers); };
+    return () => { if (guests.delete(mine)) tell(guestWatchers); };
   },
   /** The guests' carets in `path`. */
-  guests: (path: string): LiveCaret[] => guests?.(path) ?? [],
+  guests: (path: string): LiveCaret[] => [...guests].flatMap(offer => offer(path)),
   /** Whether a session runs: the file's carets are drawn then, so this tab's own caret reaches its guests. */
-  on: () => guests !== undefined,
+  on: () => guests.size > 0,
   /** A guest's caret moved, or a guest came or left. */
   guestsMoved: () => tell(guestWatchers),
   /** Called when the guests' carets may have moved or the session started or ended; returns its unsubscribe. */
