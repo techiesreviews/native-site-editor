@@ -227,5 +227,10 @@ export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | 
 
 /** Keeps the switch's width on the explorer (--explorer-switch), where Media's One bar starts on the head row (media-picker.css). */
 export function measureSwitch(explorer: HTMLElement, tabs: HTMLElement) {
-  new ResizeObserver(() => explorer.style.setProperty("--explorer-switch", `${tabs.offsetWidth}px`)).observe(tabs);
+  const watch = new ResizeObserver(() => {
+    // A workspace drawn afresh has its own explorer: this one stops watching.
+    if (!explorer.isConnected) watch.disconnect();
+    else explorer.style.setProperty("--explorer-switch", `${tabs.offsetWidth}px`);
+  });
+  watch.observe(tabs);
 }

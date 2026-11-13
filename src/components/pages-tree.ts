@@ -100,7 +100,8 @@ export function createPagesTree(options: {
   cardOffer?: (parent: string) => string | undefined;
 }) {
   const root = node("section", "pages");
-  // The tree's name and count, for assistive technology: the explorer's head row is the visible heading (mock-up 05 v2).
+  // Hidden (mock-up 05 v2: the explorer's head row is the visible heading); the tree still takes its name from the
+  // title, as aria-labelledby reads hidden elements.
   const heading = node("div", "pages-heading");
   heading.hidden = true;
   const title = node("span", "pages-title", "Pages");

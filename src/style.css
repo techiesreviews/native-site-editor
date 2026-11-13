@@ -826,7 +826,9 @@ dd {
 
 /* A file by its path in the page button: the folder muted, the slash spaced. */
 #current-page:has(> .folder-part) { display: inline-flex; }
-#current-page .folder-part { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-weight: 400; }
+/* The folder gives way first; a name too long on its own still ends in "…". */
+#current-page :is(.folder-part, .file-part) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#current-page .folder-part { flex-shrink: 1000; color: var(--muted); font-weight: 400; }
 #current-page .path-slash { flex: none; margin-inline: var(--space-3xs); color: var(--muted); font-weight: 400; }
 
 /* The explorer's one head row: Pages | Media | Files, the search, and the tab's New (mock-up 05 v2). */

@@ -514,10 +514,11 @@ export function createSiteLoading(ports: SiteLoadingPorts) {
       // A file by its path: the folder muted, then a spaced slash and its name (mock-up 05 v2).
       const at = label ? -1 : text.lastIndexOf("/");
       if (at > 0) {
-        const folder = document.createElement("span"), slash = document.createElement("span");
+        const folder = document.createElement("span"), slash = document.createElement("span"), name = document.createElement("span");
         folder.className = "folder-part"; folder.textContent = text.slice(0, at);
         slash.className = "path-slash"; slash.textContent = "/";
-        span.replaceChildren(folder, slash, text.slice(at + 1));
+        name.className = "file-part"; name.textContent = text.slice(at + 1);
+        span.replaceChildren(folder, slash, name);
       } else span.textContent = text;
     }
     if (path) span.dataset.path = path;
