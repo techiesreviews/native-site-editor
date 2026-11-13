@@ -10,6 +10,7 @@ import { isFolderRoute, nativePageRoute } from "../../shared/native-routes";
 import { createRowMenu, type MenuItem } from "./row-menu";
 import { convertWhileTyping, createUrlChange, type UrlPlan } from "./url-change";
 import "./pages-tree.css";
+import "./pages-edit.css";
 import type { AgentMark } from "../agent-presence";
 import { setAgentDots } from "./agent-dots";
 import { rowActions } from "./row-actions";

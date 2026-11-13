@@ -109,65 +109,8 @@
   @container (width >= 30rem) { .pages-row > .row-action-overlay { margin-inline-start: 0; } }
   :is(.pages-new, .explorer-new) { min-block-size: var(--size-touch); }
 }
-/* Change URL and New page open as a card under the row, aligned with the titles. */
-.pages-url-change, .pages-edit {
-  max-inline-size: 40rem;
-  margin: 4px 0 6px calc((var(--level, 1) - 1) * var(--pages-indent) + 4px);
-  padding: 8px 10px 10px 6px;
-  border: 1px solid var(--control-line);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-  cursor: default;
-}
-.pages-url-change { padding-inline-start: 26px; }
-.pages-url-change .url-change__input { height: var(--size-compact); }
-/* Dragging a page: onto a row (a subpage), or on the line above or below it (that level). */
-.pages-row.is-dragging { opacity: 0.5; }
-.pages-tree.is-drop-target { outline: 2px dashed var(--primary); outline-offset: -2px; }
-.pages-row.is-drop-target { background: var(--current); outline: 2px dashed var(--primary); outline-offset: -2px; }
-.pages-row.is-drop-before { box-shadow: inset 0 2px 0 var(--primary); }
-.pages-row.is-drop-after { box-shadow: inset 0 -2px 0 var(--primary); }
 .pages-empty { padding: 8px; font-size: var(--type-small); }
 
-/* A new page typed in place. */
-.pages-edit { display: flex; flex-direction: column; gap: 4px; }
-.pages-edit__line { display: flex; align-items: center; gap: 6px; }
-.pages-edit__title, .pages-edit__slug {
-  box-sizing: border-box;
-  height: var(--size-compact);
-  padding: 0 8px;
-  border: 1px solid var(--control-line);
-  border-radius: var(--radius);
-  background: var(--surface-input);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--type-base);
-}
-.pages-edit__title { flex: 1; min-width: 0; }
-.pages-edit__slug { width: 16ch; min-width: 0; font-family: var(--font-mono); font-size: var(--type-small); }
-.pages-edit__title:focus-visible, .pages-edit__slug:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
-.pages-edit__title[aria-invalid="true"], .pages-edit__slug[aria-invalid="true"] { border-color: var(--warning-fg); }
-.pages-edit__url { padding-left: 22px; font-family: var(--font-mono); font-size: var(--type-small); color: var(--muted); }
-.pages-edit__url-button {
-  padding: 1px 4px;
-  margin-left: -4px;
-  border: 0;
-  border-radius: var(--radius-small);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: text;
-  text-decoration: underline dotted;
-  text-underline-offset: 3px;
-}
-.pages-edit__url-button:hover { background: var(--hover); color: var(--text); }
-.pages-edit__url-button:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
-.pages-edit__url-button[hidden], .pages-edit__slug-box[hidden] { display: none; }
-.pages-edit__slug-text { color: var(--text); }
-.pages-edit__slug-box { display: inline-flex; align-items: center; gap: 1px; }
-.pages-edit__message { margin: 0; padding-left: 22px; font-size: var(--type-small); line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
-.pages-edit__message:empty { display: none; }
-.pages-edit__message.is-error { color: var(--warning-fg); }
 .pages-edit__action {
   min-height: var(--size-icon);
   padding: 0 10px;
@@ -219,22 +162,6 @@
 }
 .explorer-panel[hidden] { display: none; }
 
-/* A title edited in place. */
-.pages-label[hidden] { display: none; }
-.pages-rename {
-  flex: 1;
-  min-width: 0;
-  box-sizing: border-box;
-  height: var(--size-compact);
-  padding: 0 6px;
-  border: 1px solid var(--control-line);
-  border-radius: var(--radius);
-  background: var(--surface-input);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--type-base);
-}
-.pages-rename:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
 #explorer-media { min-width: 0; overflow: hidden; }
 
 /* The action strip overlays text only while it is in use. */
