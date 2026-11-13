@@ -14,6 +14,8 @@ export const textPointAt = (source, offset) => { for (const [node, [start, lengt
 registerHooks({
   load: (url, context, next) => /\.css$|\?raw$/.test(url) ? { format: "module", source: "export default '';", shortCircuit: true }
     : url.endsWith("/src/native-source-location.ts") ? { format: "module", source: LOOKUPS, shortCircuit: true }
+    // The page's own drawing of the guests' carets (src/components/live-carets.ts) is the browser specs': drawn on nothing here.
+    : url.endsWith("/src/components/live-carets.ts") ? { format: "module", source: "export const startCarets = () => () => {};", shortCircuit: true }
     : next(url, context),
 });
 const { guestCaret, startSessionCarets } = await import("../src/live-session-carets");
