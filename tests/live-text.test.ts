@@ -1139,10 +1139,12 @@ test("another tab's draft adopted while a tab back with its kept copy catches up
   other.type(other.text.length, "<p>Newer line.</p>\n");
   await until(() => lex.text.includes("Newer line"), "the other tab's line shared");
   assert.equal(again.store.reload(scope, path), true);
+  // Typing after the adoption, still catching up: only that goes in as hers.
+  again.type(4, "«7» ");
   release!();
-  await until(() => again.text === lex.text, "the tab back caught up");
+  await until(() => again.text === lex.text && lex.text.includes("«7»"), "the tab back caught up, her word in");
   await quiet();
-  assert.deepEqual([again, lex, other].map(at => times(at.text, "Newer line")), [1, 1, 1]);
+  assert.deepEqual([again, lex, other].map(at => [times(at.text, "Newer line"), times(at.text, "«7»")]), [[1, 1], [1, 1], [1, 1]]);
   assert.equal(times(lex.text, "Warm"), 1);
   again.stop(); lex.stop(); other.stop();
 });
