@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // The Files tab's look (slice 124 design note): a title-case header with a quiet count, one row
 // height (32 px desktop, 44 px touch), a chevron slot on every row so names at a level line up,
@@ -297,7 +297,7 @@ test("in a repository with no site, a copy or a rename the search would hide is 
   await page.keyboard.press("F2");
   const rename = explorer(page).getByRole("textbox", { name: "New name for README-copy.md", exact: true });
   await rename.fill("notes.md");
-  await rename.press("Enter");
+  await submitRename(rename);
   await expect(search).toHaveValue("");
   await expect(row(page, "notes.md")).toBeVisible();
   await expect(row(page, "notes.md")).toBeFocused();
@@ -322,8 +322,15 @@ test("at 390 px, a file uploaded while the search would hide it is in view, the 
   await expect(explorer(page).locator("#files-found")).toBeHidden();
 });
 
-// A rename begun while the page is still loading is refused ("The repository changed meanwhile"): these wait for the preview.
+// A rename begun while the page is still loading is refused ("The repository changed meanwhile"): these wait for the preview,
+// and a rename refused all the same (a slow machine) is sent again.
 const settled = (page: Page) => expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
+async function submitRename(input: Locator) {
+  await expect(async () => {
+    if (await input.isVisible()) await input.press("Enter");
+    await expect(input).toBeHidden({ timeout: 3_000 });
+  }).toPass({ timeout: 20_000 });
+}
 
 test("Move back and Discard changes bring a renamed file back in view where the search would hide it", async ({ page, baseURL }) => {
   await openFiles(page, baseURL);
@@ -336,7 +343,7 @@ test("Move back and Discard changes bring a renamed file back in view where the 
     await page.keyboard.press("F2");
     const rename = found.getByRole("textbox", { name: "New name for robots.txt", exact: true });
     await rename.fill("crawl.txt");
-    await rename.press("Enter");
+    await submitRename(rename);
     // Renamed to a name the search leaves out: the tree shows it, focused.
     await expect(search).toHaveValue("");
     await expect(row(page, "crawl.txt")).toBeFocused();
@@ -368,7 +375,7 @@ test("an Undo or a Redo that brings a file back where the search would hide it s
   await page.keyboard.press("F2");
   const rename = found.getByRole("textbox", { name: "New name for robots.txt", exact: true });
   await rename.fill("crawl.txt");
-  await rename.press("Enter");
+  await submitRename(rename);
   await expect(row(page, "crawl.txt")).toBeFocused();
   await search.fill("crawl");
   await expect(found.locator('.file-row[data-path="crawl.txt"]')).toBeVisible();
