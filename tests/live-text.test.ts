@@ -1176,7 +1176,7 @@ test("a page saved while another page shows names its copy with a record, and th
   anna.stop(); lex.stop();
 });
 
-test("another tab's draft adopted on a page kept apart while another page shows is kept, not taken back to the copy's text (TOOLS-216)", async () => {
+test("another tab's draft adopted on a page kept apart while another page shows is kept: back on the page, the adopted words and what was written after them are there once (TOOLS-216)", async () => {
   const records = new Map<string, SavedDraft>();
   const persistence: DraftPersistence = {
     get: (draftScope, file) => records.get(draftKey(draftScope, file)),
@@ -1191,20 +1191,26 @@ test("another tab's draft adopted on a page kept apart while another page shows 
   await until(() => lex.text.includes("Warm"), "Anna's word shared");
   anna.openFile.value = "about.html";
   await quiet();
-  // Another tab of Anna's browser adds a line and saves its draft; her page adopts it while it shows another page.
-  const older = records.get(draftKey(scope, path))!;
-  records.set(draftKey(scope, path), { ...older, content: `${anna.text}<p>Newer line.</p>\n`, updatedAt: older.updatedAt + 1 });
+  // Another tab of Anna's browser, in the room, adds a line; her page adopts that tab's saved draft while another page shows.
+  const other = tab(room, lex.text, { persistence });
+  await until(() => other.text === lex.text, "the other tab caught up");
+  await quiet();
+  other.type(other.text.length, "<p>Newer line.</p>\n");
+  await until(() => lex.text.includes("Newer line") && records.get(draftKey(scope, path))?.content.includes("Newer line") === true, "the line shared and saved");
   assert.equal(anna.store.reload(scope, path), true);
   await quiet();
   assert.ok(anna.text.includes("Newer line"), "the draft keeps the adopted line");
-  assert.ok(records.get(draftKey(scope, path))?.content.includes("Newer line"), "and so does storage");
-  // An agent writes into the page still kept apart: the adopted line stays.
+  // An agent writes into the page still on show elsewhere.
   const agent: LiveAuthor = { grant: "grant-1", name: "Claude Code" };
   writeAs(agent, () => anna.store.edit({ scope, path, changes: [{ start: 4, end: 4, text: "Agent " }] }));
   await quiet();
   assert.ok(anna.text.includes("Newer line") && anna.text.includes("Agent "), "both in the draft");
   assert.ok(records.get(draftKey(scope, path))?.content.includes("Newer line"), "and the adopted line in storage");
-  anna.stop(); lex.stop();
+  anna.openFile.value = path;
+  await until(() => lex.text.includes("Agent ") && anna.text === lex.text && other.text === lex.text, "Anna back in the room");
+  await quiet();
+  assert.deepEqual([anna, lex, other].map(at => [times(at.text, "Newer line"), times(at.text, "Agent "), times(at.text, "Warm ")]), [[1, 1, 1], [1, 1, 1], [1, 1, 1]]);
+  anna.stop(); lex.stop(); other.stop();
 });
 
 test("the browser keeper keeps copies in IndexedDB: a fresh keeper reads them, a removal deletes, a wrong shape reads as none", async () => {
