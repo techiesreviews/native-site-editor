@@ -192,6 +192,14 @@ test("found files drawn again keep the focus on the row that had it; very many m
   await rename.fill("site-main.css");
   await rename.press("Enter");
   await expect(found.locator('.file-row[data-path="styles/site-main.css"]')).toBeFocused();
+  // A copy the search leaves out shows in the tree, its folder opened, the search started afresh.
+  await search.fill("site.css");
+  await found.locator('.file-row[data-path="styles/site.css"]').click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for styles/site.css" }).getByRole("menuitem", { name: "Duplicate" }).click();
+  await expect(page.locator("#status")).toContainText("Duplicated styles/site.css as styles/site-copy.css");
+  await expect(search).toHaveValue("");
+  await expect(explorer(page).locator('#files .file-row[data-path="styles/site-copy.css"]')).toBeVisible();
+  await expect(explorer(page).locator("#files-found")).toBeHidden();
   await search.fill("notes/n-");
   await expect(found.locator(".file-row")).toHaveCount(200);
   await expect(found.locator("li").last()).toHaveText("5 more files match: keep typing to narrow the list");
