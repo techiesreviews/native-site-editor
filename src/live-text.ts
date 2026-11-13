@@ -910,18 +910,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         return;
       }
       const now = text.toString();
-      if (apart) {
-        // On another page, the copy hears nothing of the room: another tab's draft adopted is the room's words, which come
-        // with the room's copy when this page shows again; kept as it is, and only what is typed since goes in.
-        if (event.origin === "external" || event.text === now) return;
-        if (seen !== undefined && seen !== now) {
-          const change = typedSince(now, seen, event.text), agent = liveAuthor();
-          // Written quietly: the draft does not follow the copy here (it holds the adopted words the copy lacks).
-          if (change && agent) { quiet = true; try { writeAgent(agent, wordRuns(now, change)); } finally { quiet = false; } }
-          else if (change) doc.transact(() => { applyText(wordRuns(now, change)); }, LOCAL);
-          return;
-        }
-      }
+      // On another page, the copy hears nothing of the room: another tab's draft adopted there holds the room's words this
+      // copy lacks. The page stops being kept apart: its copy is kept with the adopted draft as the draft it was kept with,
+      // so when the page shows again only what the draft took on after the adoption goes in as its own (`typeOwn`), and the
+      // adopted words come with the room's copy.
+      if (apart && event.origin === "external") { ended("again"); return; }
       // Another tab of this browser's saved draft, adopted (`reload`): it may lag behind this copy, so the draft
       // follows the copy again rather than sending that text to everyone as this tab's edit.
       if (event.origin === "external") { follow(); return; }
