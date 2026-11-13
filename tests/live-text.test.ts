@@ -1227,6 +1227,35 @@ test("a copy resumed alone that others joined is the room's copy once the room h
   back.stop(); carl.stop(); dan.stop();
 });
 
+test("a tab with no copy yet asking the room does not make a copy resumed alone the room's copy (TOOLS-224)", async () => {
+  const room = fakeRoom(), key = draftKey(scope, path);
+  const anna = tab(room), lex = tab(room);
+  await until(() => anna.yjsLoads + lex.yjsLoads === 2, "the copy");
+  await quiet();
+  anna.type(base.indexOf("seven"), "«1» ");
+  await until(() => lex.text.includes("«1»"), "Anna's word at Lex's");
+  const kept = liveState(anna.store, key).copy;
+  anna.stop(); lex.stop();
+  await quiet();
+  // Anna comes back alone and resumes her kept copy; what she sends is lost.
+  const time = fakeTimers();
+  const back = tab(room, anna.text, { keeper: anna.keeper, clock: time.clock });
+  await until(() => liveState(back.store, key).copy === kept && back.keptRead, "Anna on her kept copy");
+  await quiet();
+  back.socket.me.mute = true;
+  // Nia opens the page and asks the room, with no copy yet; long past the catch-up wait, Anna is still resumed alone.
+  const nia = tab(room, base, { account: "nia" });
+  await until(() => room.log.some(item => item.from === nia.sockets[0] && item.bytes[0] === 1), "Nia asking the room");
+  await quiet();
+  time.advance(2 * LIVE_TEXT_CATCH_UP_MS);
+  back.socket.me.mute = false;
+  const at = room.log.length;
+  back.type(0, "«2» ");
+  await until(() => room.log.slice(at).some(item => item.from === back.sockets[0]), "Anna's typing sent");
+  assert.deepEqual(room.log.slice(at).filter(item => item.from === back.sockets[0]).map(item => item.bytes[1]), [2], "resumed alone");
+  back.stop(); nia.stop();
+});
+
 test("a joiner does not count an answer to another tab's request as its own catch-up", async () => {
   const time = fakeTimers(), room = fakeRoom();
   const anna = tab(room), lex = tab(room);
@@ -2097,10 +2126,10 @@ test("a tab back with a kept copy whose carry-over cannot read GitHub's history 
   end();
 });
 
-test("a carry-over that never reads GitHub's history is tried until it failed six times, waiting longer each time; the room catching the tab up again tries once more (TOOLS-224)", async () => {
+test("a carry-over that never reads GitHub's history is tried until six rounds failed, waiting longer each time; the room catching the tab up again tries once more (TOOLS-224)", async () => {
   const { room, back, anna, time, reads, end } = await backWhileHistoryUnread(Infinity);
-  // Two failed already (one per answer): 10 s after the second, then twice as long, at most 40 s.
-  for (const wait of [10, 20, 40, 40]) {
+  // The first round failed (one carry-over per answer): 5 s after it, then twice as long each time, at most 40 s.
+  for (const wait of [5, 10, 20, 40, 40]) {
     const before = reads();
     time.advance(wait * 1000 - 1);
     await quiet();
@@ -2109,11 +2138,11 @@ test("a carry-over that never reads GitHub's history is tried until it failed si
     await until(() => reads() === before + 1, `tried again after ${wait} s`);
   }
   for (let wait = 0; wait < 10; wait++) { time.advance(LIVE_TEXT_CATCH_UP_MS * 8); await quiet(); }
-  assert.equal(reads(), 6, "no more tries");
+  assert.equal(reads(), 7, "no more tries");
   assert.equal(back.text, anna.text, "the draft stays as it is");
   // A new key: the room catches her up again, and she tries once more.
   for (const member of room.members) member.options.onKey?.();
-  await until(() => reads() > 6, "tried once more");
+  await until(() => reads() > 7, "tried once more");
   end();
 });
 

@@ -182,7 +182,8 @@ const HEAD = 2 + 20 + 4;
 /** A tab that found others waits this long, after asking, for one of them to catch it up; then it starts from its own draft. */
 export const LIVE_TEXT_CATCH_UP_MS = 5_000;
 /** A start that cannot bring its versions together or carry its words over (GitHub's history unread) is tried again until
- * it failed this many times in all: 5 s after the first failure, twice as long after each one since, at most 40 s. */
+ * this many rounds failed, for as long as its copy runs: 5 s after the first, twice as long after each one since, at most
+ * 40 s. Starts that fail together (one per answer to its request) are one round. */
 const START_TRIES = 6;
 /** A caret that moves tells the room at most this often (typing moves it with every key). */
 const CARET_MS = 50;
@@ -610,8 +611,9 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     /** The room copy this one is: from a kept copy, the first answer to this tab's request, or its own birth. */
     let copyId: Uint8Array | undefined;
     let synced = false, starting = false, waiting: unknown, keeping: unknown;
-    /** Starts that failed (`begin`): the next waits longer, up to START_TRIES in all. */
-    let failures = 0;
+    /** Rounds of starts that failed (`begin`): the next waits longer, up to START_TRIES. `retrying`: the start running was the
+     * retry's, which begins a new round. */
+    let failures = 0, retrying = false;
     /** Resumed from its kept copy with no one in the room catching it up, or caught up by such a copy (TOOLS-224): its frames
      * say so, and in a meet it gives way to any copy of the room that is caught up (`meet`). It is the room's copy once
      * another tab on it has been heard from for as long as a catch-up may take with no other copy coming (`roomHeard`), or
@@ -1314,9 +1316,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         // Not joined (no doubled page, no lost words), and not left so: it starts its part again later, waiting longer each
         // time, until START_TRIES failed. Then the draft stays as it is, apart from the room's copy, until the room catches it
         // up again (a new key or a reconnect asks, `again`) or the page opens again.
-        else if (failed && !stopped && !synced && ++failures < START_TRIES) {
+        else if (failed && !stopped && !synced) {
+          if (retrying || !failures) failures++;
+          retrying = false;
           clock.clearTimeout(waiting);
-          waiting = clock.setTimeout(() => { void begin(caught); }, Math.min(2 ** (failures - 1), 8) * LIVE_TEXT_CATCH_UP_MS);
+          if (failures < START_TRIES) waiting = clock.setTimeout(() => { retrying = true; void begin(caught); }, Math.min(2 ** (failures - 1), 8) * LIVE_TEXT_CATCH_UP_MS);
         }
         // A save waiting for this start goes on (`caughtUp`); a commit tries again (and waits on). So on every way out.
         if (!synced) foldsReady();
