@@ -322,6 +322,37 @@ test("at 390 px, a file uploaded while the search would hide it is in view, the 
   await expect(explorer(page).locator("#files-found")).toBeHidden();
 });
 
+test("a file dropped on the found files' empty space, or where no file matches, goes to the top of the repository", async ({ page, baseURL }) => {
+  await openFiles(page, baseURL);
+  const search = explorer(page).getByLabel("Search files", { exact: true });
+  const found = explorer(page).locator("#files-found");
+  // Dropped on `target`: the found files show where it will go, then take it.
+  const drop = async (target: Locator, name: string) => {
+    await target.evaluate((element, name) => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(["%PDF-1.4\n"], name, { type: "application/pdf" }));
+      (window as unknown as { dropped: DataTransfer }).dropped = transfer;
+      for (const type of ["dragenter", "dragover"]) element.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true }));
+    }, name);
+    await expect(found).toHaveClass(/is-drop-target/);
+    await target.evaluate((element) => element.dispatchEvent(new DragEvent("drop", { dataTransfer: (window as unknown as { dropped: DataTransfer }).dropped, bubbles: true, cancelable: true })));
+  };
+  // The list's own empty space, under the one file found.
+  await search.fill("site.css");
+  await expect(found.locator('.file-row[data-path="styles/site.css"]')).toBeVisible();
+  await drop(found, "Guide.pdf");
+  await expect(page.locator("#status")).toContainText("Added guide.pdf.");
+  await expect(search).toHaveValue("");
+  await expect(row(page, "guide.pdf")).toBeVisible();
+  // Where no file matches.
+  await search.fill("no such file");
+  await expect(found.getByText("No file matches")).toBeVisible();
+  await drop(found.getByText("No file matches"), "Second.pdf");
+  await expect(page.locator("#status")).toContainText("Added second.pdf.");
+  await expect(search).toHaveValue("");
+  await expect(row(page, "second.pdf")).toBeVisible();
+});
+
 // A rename begun while the page is still loading is refused ("The repository changed meanwhile"): these wait for the preview,
 // and a rename refused all the same (a slow machine) is sent again.
 const settled = (page: Page) => expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });

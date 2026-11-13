@@ -218,6 +218,29 @@ test("a page the person renames, gives another URL or moves where the search wou
   await expect(item(page, "Winter pruning")).toBeVisible();
 });
 
+test("a search typed while a page's change is still being made stays, once the change is made", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const search = explorer(page).getByLabel("Search pages", { exact: true });
+  await search.fill("notes");
+  await expect(item(page, "First note")).toBeVisible();
+  await row(page, "First note").click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for First note" }).getByRole("menuitem", { name: "Change URL…" }).click();
+  await explorer(page).getByRole("textbox", { name: "URL of First note" }).fill("/jottings/");
+  // The change waits on the server from here until `release`.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/**", async (route) => { await held; await route.continue(); });
+  await page.keyboard.press("Enter");
+  await search.fill("winter");
+  await expect(item(page, "Winter pruning")).toBeVisible();
+  release();
+  await expect(page.locator("#status")).toContainText("URL changed to /jottings/");
+  await page.unroute("**/api/**");
+  await expect(search).toHaveValue("winter");
+  await expect(item(page, "Winter pruning")).toBeVisible();
+  await expect(item(page, "First note")).toBeHidden();
+});
+
 test("an Undo, a Redo or Discard changes that brings a page back where the Pages search would hide it shows it", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const search = explorer(page).getByLabel("Search pages", { exact: true });
