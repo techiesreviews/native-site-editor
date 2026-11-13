@@ -217,3 +217,42 @@ test("a page the person renames, gives another URL or moves where the search wou
   await expect(search).toHaveValue("");
   await expect(item(page, "Winter pruning")).toBeVisible();
 });
+
+test("an Undo, a Redo or Discard changes that brings a page back where the Pages search would hide it shows it", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const search = explorer(page).getByLabel("Search pages", { exact: true });
+  const reopen = async () => { if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click(); };
+  const moveFirstNote = async () => {
+    await row(page, "First note").click({ button: "right" });
+    await page.getByRole("menu", { name: "Actions for First note" }).getByRole("menuitem", { name: "Change URL…" }).click();
+    await explorer(page).getByRole("textbox", { name: "URL of First note" }).fill("/jottings/");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#status")).toContainText("URL changed to /jottings/");
+  };
+  // Its folder starts closed: a search for it opens the way.
+  await search.fill("first");
+  await moveFirstNote();
+  // Undo puts it back at /notes/first/, which "jottings" leaves out.
+  await search.fill("jottings");
+  await expect(item(page, "First note")).toBeVisible();
+  await page.locator(".code-editor__undo").first().click();
+  await reopen();
+  await expect(search).toHaveValue("");
+  await expect(item(page, "First note")).toBeVisible();
+  await expect(item(page, "First note").locator(":scope > .pages-row .pages-url")).toHaveText("/notes/first/");
+  // Redo takes it to /jottings/ again, which "notes" leaves out.
+  await search.fill("notes");
+  await expect(item(page, "First note")).toBeVisible();
+  await page.locator(".code-editor__redo").first().click();
+  await reopen();
+  await expect(search).toHaveValue("");
+  await expect(item(page, "First note").locator(":scope > .pages-row .pages-url")).toHaveText("/jottings/");
+  // Discard changes puts it back at /notes/first/ too.
+  await search.fill("jottings");
+  await row(page, "First note").click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for First note" }).getByRole("menuitem", { name: "Discard changes" }).click();
+  await page.getByRole("dialog", { name: /^Discard the changes to / }).getByRole("button", { name: "Discard" }).click();
+  await reopen();
+  await expect(search).toHaveValue("");
+  await expect(item(page, "First note").locator(":scope > .pages-row .pages-url")).toHaveText("/notes/first/");
+});

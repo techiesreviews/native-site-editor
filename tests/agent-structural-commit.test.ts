@@ -233,7 +233,7 @@ function controllerPorts(f: Awaited<ReturnType<typeof fixture>>, race?: AwaitRac
     onBranchHere: path => Object.hasOwn(branch, path), withMovedPageUrls: () => {}, readNativeRedirects: wait,
     confirmDialog: () => undefined, undoFileChanges: () => {}, duplicateFile: () => false,
     afterFileChanges: () => workspace.afterFileChanges(), announce: () => {}, refuse: () => {}, errorMessage: () => {},
-    requestAnimationFrame: task => task(), openFolder: () => {}, fileRow: () => undefined, renderFileTree: () => {}, filesTabOpen: () => false,
+    requestAnimationFrame: task => task(), openFolder: () => {}, fileRow: () => undefined, revealFile: () => undefined, focusFiles: () => {}, renderFileTree: () => {}, filesTabOpen: () => false,
   };
   return { pages, files, components: () => { throw new Error("This unit fixture does not mount component UI."); },
     factories: { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField },
