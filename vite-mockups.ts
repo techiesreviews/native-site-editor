@@ -1,7 +1,7 @@
 // The planning mock-ups (`docs/wayfinder/<map>/prototypes/*`), served by the preview site at
 // `/mockups/<map>/<file>`. `/mockups/` opens the catalogue board's mock-ups (`/catalogue.html#plans`) and
 // `/mockups/board.json` gives the board each mock-up's card; the old plain list's address `/mockups/list/` leads to the
-// board too. Only the preview build turns this on (`MOCKUPS=1`, `npm run build:preview`, always with the board);
+// board too. Only the preview build turns this on (`MOCKUPS=1`, `npm run build:preview`, which builds the board too);
 // production builds and the editor's boot never see these files. The images a mock-up uses sit beside it and are
 // copied too; images no mock-up uses (reference screenshots for planning) stay unpublished. Each card carries a label
 // saying how far the build tickets linking to it have got (`mockupShipping`). A mock-up whose feature is released
@@ -182,7 +182,7 @@ function ticketsText(map: string, { tickets }: Shipping): string {
 /** One mock-up as the catalogue board draws its card: the label (`label`, and its words `labelName`), the tickets it
  * came from, where to open it and, for a released one with a picture, the picture. Every address starts at the site's root. */
 export type MockupCard = { file: string; title: string; label: keyof typeof SHIPPING_LABELS; labelName: string; tickets: string; href: string; picture?: string };
-/** `/mockups/board.json`: each map's mock-ups, in the order of the files. */
+/** `/mockups/board.json`: each map's mock-ups, in `mockupFiles` order. */
 export type MockupBoard = { maps: { map: string; mockups: MockupCard[] }[] };
 
 /** The cards of the board, by map, from each mock-up's label, title and picture. */

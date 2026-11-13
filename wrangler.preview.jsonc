@@ -14,9 +14,9 @@
   "compatibility_flags": ["enable_request_signal"],
   "workers_dev": false,
   "observability": { "enabled": true },
-  // build:preview adds the planning mock-ups at /mockups/ (MOCKUPS=1, vite-mockups.ts) and CATALOGUE=1 the
-  // catalogue board at /catalogue.html (vite.config.ts); production has neither.
-  "build": { "command": "CATALOGUE=1 npm run build:preview" },
+  // build:preview adds the planning mock-ups at /mockups/ (MOCKUPS=1, vite-mockups.ts) and the
+  // catalogue board at /catalogue.html they open on (CATALOGUE=1, vite.config.ts); production has neither.
+  "build": { "command": "npm run build:preview" },
   "routes": [{ "pattern": "preview-editor.techies.tools", "custom_domain": true }],
   "vars": {
     // Off pauses remote connections and agent tools; existing grants are kept.
