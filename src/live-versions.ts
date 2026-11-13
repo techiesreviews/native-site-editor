@@ -406,6 +406,7 @@ function outWhole(text: string, changes: TextChange[], low: number, high: number
     else runs.push({ start: index, end: index + 1, own: own(index) });
   }
   const m = want.length, n = runs.length;
+  // Changes that overlap or are out of order (never so after `alignWords`) are left as they are.
   if ((n + 1) * (m + 1) > MATCH_LIMIT || want.length !== end - head - gone) return changes;
   // can[i][j]: runs from i on can make `want` from j on, each run kept whole or (this tab's own) taken out whole.
   const can = new Uint8Array((n + 1) * (m + 1)), cell = (i: number, j: number) => i * (m + 1) + j;
