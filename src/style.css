@@ -863,4 +863,5 @@ dd {
 .explorer:not([data-tab="files"]) #new-at-root,
 .explorer[data-tab="media"] .explorer-search { display: none; }
 .files-found { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 0; list-style: none; }
-.files-found .file-folder { margin-inline-start: auto; padding-inline-start: var(--space-s); color: var(--muted); font-family: var(--font-mono); font-size: var(--type-small); }
+.files-found .filename { flex: none; max-inline-size: 70%; overflow: hidden; text-overflow: ellipsis; }
+.files-found .file-folder { min-width: 0; margin-inline-start: auto; padding-inline-start: var(--space-s); overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-family: var(--font-mono); font-size: var(--type-small); }
