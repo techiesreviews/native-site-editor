@@ -178,3 +178,42 @@ test("only the URL's text changes the URL; the rest of the row opens the page", 
   await expect(page.locator("#explorer-toggle")).toContainText("Winter pruning");
   await expect(explorer(page).locator(".pages-url-change")).toHaveCount(0);
 });
+
+test("a page the person renames, gives another URL or moves where the search would hide it is in view, the search started afresh", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const search = explorer(page).getByLabel("Search pages", { exact: true });
+  // A rename: "project" is only in the title.
+  await search.fill("project");
+  await expect(item(page, "Home")).toBeHidden();
+  await row(page, "About this project").click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for About this project" }).getByRole("menuitem", { name: /^Rename/ }).click();
+  const title = explorer(page).getByRole("textbox", { name: "Title of About this project", exact: true });
+  await title.fill("Studio story");
+  await title.press("Enter");
+  await expect(item(page, "Studio story")).toBeVisible();
+  await expect(search).toHaveValue("");
+  await expect(item(page, "Studio story")).toBeFocused();
+  await expect(item(page, "Home")).toBeVisible();
+  // Another URL: "notes" is only in the URL.
+  await search.fill("notes");
+  await expect(item(page, "First note")).toBeVisible();
+  await row(page, "First note").click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for First note" }).getByRole("menuitem", { name: "Change URL…" }).click();
+  await explorer(page).getByRole("textbox", { name: "URL of First note" }).fill("/jottings/");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#status")).toContainText("URL changed to /jottings/");
+  await expect(search).toHaveValue("");
+  await expect(item(page, "First note")).toBeVisible();
+  // A move: "blog" is only in the URL, which leaves it for the top level.
+  await search.fill("blog");
+  await expect(item(page, "Winter pruning")).toBeVisible();
+  await row(page, "Winter pruning").click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for Winter pruning" }).getByRole("menuitem", { name: "Move to…" }).click();
+  await expect(page.getByRole("dialog", { name: /^Move Winter pruning( · Studio)? to…$/ }).getByRole("treeitem", { name: "Top level" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await page.getByRole("dialog", { name: /^Move Winter pruning( · Studio)? to \/winter-pruning\/\?/ }).getByRole("button", { name: "Move" }).click();
+  await expect(page.locator("#status")).toContainText("URL changed to /winter-pruning/");
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  await expect(search).toHaveValue("");
+  await expect(item(page, "Winter pruning")).toBeVisible();
+});

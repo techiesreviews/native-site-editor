@@ -71,15 +71,15 @@ export function createPagesTree(options: {
   retitle?: (file: string, title: string) => string | undefined | Promise<string | undefined>;
   /** Why titles cannot be edited here now, when they cannot: Rename is then disabled with that hint. */
   retitleBlocked?: () => string | undefined;
-  /** Makes a copy of a page. */
-  duplicate?: (file: string) => void;
+  /** Makes a copy of a page; resolves once done. */
+  duplicate?: (file: string) => unknown;
   /** Whether a page's file has unsaved changes, which `discard` drops (the caller confirms). */
   changed?: (file: string) => boolean;
   discard?: (file: string) => void;
   /** Deletes a page (the caller confirms, and asks about its subpages). */
   remove?: (target: NativePagesTarget) => void;
-  /** Gives a URL with no page its own page. */
-  createPage?: (route: string) => void;
+  /** Gives a URL with no page its own page; resolves once done. */
+  createPage?: (route: string) => unknown;
   pageSettings?: (file: string) => void;
   /** Opens the navigation used by this page. */
   navigation?: (file: string) => void;
@@ -91,12 +91,12 @@ export function createPagesTree(options: {
   typedUrl?: (target: NativePagesTarget, text: string, typing: boolean) => string;
   /** Changes a page's URL; resolves to an error message, or nothing when done. */
   changeUrl?: (target: NativePagesTarget, value: string, keep: boolean) => Promise<string | undefined>;
-  /** Move to…: the caller asks where. */
-  moveTo?: (target: NativePagesTarget) => void;
+  /** Move to…: the caller asks where; resolves once done. */
+  moveTo?: (target: NativePagesTarget) => unknown;
   /** Why `source` cannot go under the page at `parent` ("/" the top), when it cannot. */
   dropProblem?: (source: NativePagesTarget, parent: string) => string | undefined;
-  /** A row dropped: `source` goes under `parent` (the caller confirms). */
-  drop?: (source: NativePagesTarget, parent: string) => void;
+  /** A row dropped: `source` goes under `parent` (the caller confirms); resolves once done. */
+  drop?: (source: NativePagesTarget, parent: string) => unknown;
   /** The search is to start afresh (a page was added): the host empties its field and filters again. */
   searchCleared?: () => void;
   /** For a new page under `parent`: the label of a checkbox (on by default) that adds its card to the grid listing its siblings, when one does. */
@@ -319,6 +319,21 @@ export function createPagesTree(options: {
   const visibleRows = () => rows().filter((row) => !row.hidden && !row.parentElement?.closest("[role='group'][hidden], [role='treeitem'][hidden]"));
   // The explorer's search (mock-up 05 v2): rows whose title or URL has it, with the rows leading to them open.
   let query = "";
+  // Once the person's own change made here is done (a rename, URL change, move, copy or page made), its row (the one a draw
+  // meanwhile was asked to show, else `key`) is in view and focused: a search that would hide it starts afresh (ux-rulebook B12),
+  // the host's filter("") drawing the tree again. An agent's change keeps the search.
+  let wanted: string | undefined;
+  function own<T>(work: T, key?: string) {
+    wanted = undefined;
+    const done = Promise.resolve(work);
+    void done.then(() => {
+      const row = rowByKey(wanted ?? key);
+      if (!query || !row || visibleRows().includes(row)) return;
+      options.searchCleared?.();
+      focusRow(row.dataset.key);
+    });
+    return done;
+  }
   function applyFilter() {
     const words = query.trim().toLowerCase();
     const keep = (item: HTMLElement): boolean => {
@@ -390,7 +405,7 @@ export function createPagesTree(options: {
     const key = keyOf(page);
     if (!page.file) {
       return [
-        ...(options.createPage ? [{ label: "Create page", run: () => options.createPage!(page.route) }] : []),
+        ...(options.createPage ? [{ label: "Create page", run: () => own(options.createPage!(page.route)) }] : []),
         { label: "Add subpage", run: () => startEditing(page.route, key) },
       ];
     }
@@ -401,8 +416,8 @@ export function createPagesTree(options: {
       ...(isFolderRoute(page.route) ? [{ label: "Add subpage", run: () => startEditing(home ? "/" : page.route, key) }] : []),
       ...(options.retitle ? [{ label: "Rename", shortcut: "F2", disabled: options.retitleBlocked?.(), run: () => startRename(key) }] : []),
       ...(!home && options.changeUrl ? [{ label: "Change URL…", run: () => startUrl(key) }] : []),
-      ...(!home && options.moveTo ? [{ label: "Move to…", run: () => options.moveTo!(target) }] : []),
-      ...(options.duplicate ? [{ label: "Duplicate", run: () => options.duplicate!(page.file!) }] : []),
+      ...(!home && options.moveTo ? [{ label: "Move to…", run: () => own(options.moveTo!(target)) }] : []),
+      ...(options.duplicate ? [{ label: "Duplicate", run: () => own(options.duplicate!(page.file!)) }] : []),
       ...(options.discard && options.changed?.(page.file) ? [{ label: "Discard changes", run: () => options.discard!(page.file!) }] : []),
       ...(!home && options.remove ? [{ label: "Delete", shortcut: "Delete", run: () => options.remove!(target) }] : []),
     ];
@@ -439,7 +454,7 @@ export function createPagesTree(options: {
       input.remove();
       label.hidden = false;
       if (commit && value !== before) {
-        void Promise.resolve(options.retitle!(file, value)).then((error) => {
+        void own(options.retitle!(file, value), key).then((error) => {
           if (error) refuse(error);
           else options.announce(value ? `Renamed ${before} to ${value}` : `Removed the title of ${before}`);
           focusRow(key);
@@ -489,7 +504,7 @@ export function createPagesTree(options: {
       plan: (value) => options.planUrl!(target, value),
       ...(options.typedUrl ? { typedUrl: (text: string, typing: boolean) => options.typedUrl!(target, text, typing) } : {}),
       apply: async (value, keep) => {
-        const error = await options.changeUrl!(target, value, keep);
+        const error = await own(options.changeUrl!(target, value, keep));
         if (!error && !done) { done = true; cancelUrl(false); }
         return error;
       },
@@ -577,7 +592,7 @@ export function createPagesTree(options: {
       mark(undefined);
       const problem = options.dropProblem?.(source, at.parent);
       if (problem) refuse(problem, { pointer: { x: event.clientX, y: event.clientY } });
-      else options.drop?.(source, at.parent);
+      else void own(options.drop?.(source, at.parent));
     });
     void item;
   }
@@ -599,7 +614,7 @@ export function createPagesTree(options: {
     mark(undefined);
     const problem = options.dropProblem?.(source, "/");
     if (problem) refuse(problem, { pointer: { x: event.clientX, y: event.clientY } });
-    else options.drop?.(source, "/");
+    else void own(options.drop?.(source, "/"));
   });
 
   function pageRow(page: NativePageNode, level: number) {
@@ -858,6 +873,7 @@ export function createPagesTree(options: {
       place();
       const key = focus?.file ? pageKey(focus.file) : focus?.route ? (rowOfRoute(focus.route)?.dataset.key ?? routeKey(focus.route)) : active;
       const row = rowByKey(key) ?? rowByKey(currentFile && pageKey(currentFile)) ?? visibleRows()[0];
+      if (focus?.file || focus?.route) wanted = key;
       if (row) setActive(row);
       if (query) applyFilter();
       if (focus || hadFocus) focusRow(row?.dataset.key);
