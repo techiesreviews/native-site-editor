@@ -256,10 +256,6 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
   type Widget = Tagged & { caret: LiveCaret; tints: HTMLElement[]; at?: { left: number; top: number }; leaving?: ReturnType<typeof setTimeout> };
   const widgets = new Map<string, Widget>();
   let frame = 0, asking = 0;
-  /** Whether the frame was last asked for carets of this file: a drawing with none says so once, then stays quiet, so the
-   * page's other drawing (a synced session's guests while the code pane shows a stylesheet, src/live-session-carets.ts)
-   * keeps the frame's list. */
-  let asked = false;
   /** Over the frame, its border left out: the frame's viewport, where its carets are measured. */
   const fit = () => {
     const box = page.frame.getBoundingClientRect(), pane = page.layer.getBoundingClientRect();
@@ -371,8 +367,8 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
       for (const tint of gone.tints) tint.hidden = true;
       gone.leaving = setTimeout(() => { widgets.delete(peer); remove(gone); }, FADE_MS);
     }
-    if (points.length || asked) page.show(points);
-    asked = points.length > 0;
+    // The layer names this drawing: the page's other drawings keep their own carets in the frame's list.
+    page.show(points, layer);
     if (added) askUndo();
     overBarSoon();
   };
@@ -423,7 +419,7 @@ function attachPage(share: CaretShare, page: PageCarets, told: (read: (() => Car
     cancelAnimationFrame(frame);
     cancelAnimationFrame(asking);
     cancelAnimationFrame(barDue);
-    if (asked) page.show([]);
+    page.show([], layer);
     for (const gone of widgets.values()) { clearTimeout(gone.leaving); remove(gone); }
     widgets.clear();
     layer.remove();

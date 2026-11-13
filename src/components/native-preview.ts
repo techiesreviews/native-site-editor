@@ -519,6 +519,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let frameLoads = 0, typedSeq = 0, caretsAwaitReady = false;
   let ownCaret: PageTextCaret | undefined;
   let caretPoints: PageCaretPoint[] = [];
+  /** Each drawing's carets (page-caret-port.ts `show`): the frame is asked for all of them. */
+  const caretLists = new Map<object, PageCaretPoint[]>();
   const caretListeners = new Set<() => void>(), caretRectListeners = new Set<(rects: PageCaretRect[]) => void>();
   const caretChanged = () => { for (const listener of [...caretListeners]) listener(); };
   // The runtime finds each pin's element and reports where it is (`pin-rects`).
@@ -720,10 +722,13 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     source: (path) => sources[path],
     own: () => ownCaret,
     onChange(listener) { caretListeners.add(listener); return () => { caretListeners.delete(listener); }; },
-    show(carets) {
-      if (JSON.stringify(carets) === JSON.stringify(caretPoints)) return;
-      caretPoints = carets;
-      if (frameState.ready) link.send({ type: "carets", carets });
+    show(carets, owner) {
+      if (carets.length) caretLists.set(owner, carets);
+      else caretLists.delete(owner);
+      const all = [...caretLists.values()].flat();
+      if (JSON.stringify(all) === JSON.stringify(caretPoints)) return;
+      caretPoints = all;
+      if (frameState.ready) link.send({ type: "carets", carets: all });
     },
     onRects(listener) { caretRectListeners.add(listener); return () => { caretRectListeners.delete(listener); }; },
     layer: pane,

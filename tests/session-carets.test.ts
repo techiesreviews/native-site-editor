@@ -15,7 +15,8 @@ registerHooks({
   load: (url, context, next) => /\.css$|\?raw$/.test(url) ? { format: "module", source: "export default '';", shortCircuit: true }
     : url.endsWith("/src/native-source-location.ts") ? { format: "module", source: LOOKUPS, shortCircuit: true }
     // The page's own drawing of the guests' carets (src/components/live-carets.ts) is the browser specs': drawn on nothing here.
-    : url.endsWith("/src/components/live-carets.ts") ? { format: "module", source: "export const startCarets = () => () => {};", shortCircuit: true }
+    : url.endsWith("/src/components/live-carets.ts") ? { format: "module", shortCircuit: true,
+      source: "export const startCarets = (share) => { globalThis.caretDrawings.push(share.path); return () => { globalThis.caretDrawings.splice(globalThis.caretDrawings.indexOf(share.path), 1); }; };" }
     : next(url, context),
 });
 const { guestCaret, startSessionCarets } = await import("../src/live-session-carets");
@@ -43,6 +44,8 @@ function fakePage(own?: import("../src/components/page-caret-port").PageTextCare
   return { page, moved: () => { for (const listener of [...listeners]) listener(); } };
 }
 const wait = () => new Promise(resolve => setTimeout(resolve, 80));
+/** The page drawings the session started and has not stopped, by file (the stub of src/components/live-carets.ts). */
+const drawings: string[] = (globalThis as typeof globalThis & { caretDrawings: string[] }).caretDrawings = [];
 
 test("a guest's page may tell only a well-formed caret: a file, an element's index path and text offsets", () => {
   assert.equal(guestCaret(null), null, "typing ended");
@@ -143,4 +146,35 @@ test("a share overtaken by the next one offers its guests too until it stops, an
   assert.deepEqual(sessionCarets.guests("index.html").map(found => found.name), ["Ben"]);
   next();
   assert.equal(sessionCarets.on(), false);
+});
+
+test("while the code pane shows another file, the session draws its guests' carets in the page's files itself, once each (TOOLS-219)", async () => {
+  const { page } = fakePage();
+  const hide = showPageCarets(page);
+  const carets = startSessionCarets({ host: "lex", guests: () => [], send: () => undefined });
+  const open = (path: string) => { sessionCarets.offerFile(() => ({ path, own: undefined, others: [] })); };
+  try {
+    // The page itself open in the code pane: its carets draw the guests'.
+    open("index.html");
+    await wait();
+    assert.deepEqual(drawings, []);
+    // A stylesheet open: the session draws the page.
+    open("styles/site.css");
+    await wait();
+    assert.deepEqual(drawings, ["index.html"]);
+    // Back on the page, and away and back again within one tick: one drawing at most, never two.
+    open("index.html");
+    await wait();
+    assert.deepEqual(drawings, []);
+    open("styles/site.css");
+    open("index.html");
+    open("styles/site.css");
+    await wait();
+    assert.deepEqual(drawings, ["index.html"]);
+  } finally {
+    carets.stop();
+    sessionCarets.offerFile(undefined);
+    hide();
+  }
+  assert.deepEqual(drawings, [], "stopping the session stops its drawing");
 });
