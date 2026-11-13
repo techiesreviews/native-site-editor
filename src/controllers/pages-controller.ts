@@ -40,9 +40,10 @@ export function createPagesController(ports: PagesPorts, state = createPagesStat
   }
 
   // A copy of a page beside it: `<slug>-copy/index.html` (then `-copy-2`, …),
-  // its content as it is now, titled "… (copy)".
-  async function duplicateNativePage(file: string) {
+  // its content as it is now, titled "… (copy)". Resolves to the copy's URL once made.
+  async function duplicateNativePage(file: string): Promise<string | undefined> {
     const since = ports.edits.stamp();
+    let made: string | undefined;
     const outcome = await ports.edits.run(r => {
       const site = r.site(), route = site && Object.entries(site.routes).find(([, path]) => path === file)?.[0];
       if (!site || !route) return { refuse: "This page has no URL in the site." };
@@ -58,11 +59,13 @@ export function createPagesController(ports: PagesPorts, state = createPagesStat
       if (original === undefined) return { refuse: "The page could not be read." };
       const label = nativePageHead(original).title?.trim() || (route === "/" ? "Home" : firstHeadingText(original)) || routeHeading(route);
       const title = `${label} (copy)`;
+      made = target.value.route;
       return { creates: [{ path: target.value.file, content: nativePageWithUrl(nativePageWithDetail(original, "title", title), address(target.value.route, r)) }],
         open: target.value.file, done: `Duplicated ${label} as ${title} at ${target.value.route}.`, undone: `Undid creating the page ${title}.` };
     }, { since });
     const error = message(outcome, "The repository changed meanwhile. Try again.");
     if (error) ports.error(new Error(error));
+    return error ? undefined : made;
   }
 
   // The drafts of a page and, for a folder page, of everything in its folder: an edit while its
@@ -311,7 +314,8 @@ export function createPagesController(ports: PagesPorts, state = createPagesStat
   // Moves a page under `parent` ("/" the top level) after a confirmation that
   // says its new URL, what else moves, the links updated, and offers to keep
   // the old URL working: Move to… and a drop in the Pages tab.
-  async function confirmNativeMove(source: NativePagesTarget, parent?: string, since: Stamp = ports.edits.stamp()) {
+  /** Resolves to the page's new URL once moved. */
+  async function confirmNativeMove(source: NativePagesTarget, parent?: string, since: Stamp = ports.edits.stamp()): Promise<string | undefined> {
     if (!source.file || !ports.confirmation()) return;
     const key = fileKey(), drafts = targetDrafts(source), cancel = `Cancelled moving ${source.label}`;
     let cancelled = false;
@@ -319,13 +323,14 @@ export function createPagesController(ports: PagesPorts, state = createPagesStat
     // meanwhile refuses before the picker or the dialog opens (the guard is proved before the plan).
     const indexed = await ports.ensureIndex();
     if (indexed && since.holds()) { ports.error(new Error(indexed)); ports.refuse(indexed); return; }
+    let to = "";
     const outcome = await ports.edits.run(async r => {
       if (r.site()?.routes[source.route] !== source.file) return { refuse: changedMove };
       if (parent === undefined) {
         parent = await ports.picker()!.pick({ title: `Move ${source.label} to…`, items: nativeMoveChoices(source, r) });
         if (parent === undefined) { cancelled = true; return { stayed: cancel }; }
       }
-      const to = movedRoute(parent, source.route);
+      to = movedRoute(parent, source.route);
       const planned = planNativeUrlChange(source.file!, to, r);
       if (!planned.ok) return { refuse: planned.error };
       try { await ports.readRedirects(); }
@@ -344,13 +349,14 @@ export function createPagesController(ports: PagesPorts, state = createPagesStat
     }, { since, guard: () => fileKey() === key && targetDrafts(source) === drafts });
     if (cancelled) { if (!outcome.ok) ports.announce(cancel); return; }
     const error = message(outcome, changedMove);
-    if (error) { ports.error(new Error(error)); if (!outcome.ok && outcome.reason === "refused") ports.refuse(error); }
+    if (error) { ports.error(new Error(error)); if (!outcome.ok && outcome.reason === "refused") ports.refuse(error); return; }
+    return to;
   }
 
   async function moveNativePageTo(target: NativePagesTarget) {
     if (!ports.picker() || !target.file) return;
     const since = ports.edits.stamp();
-    await confirmNativeMove(target, undefined, since);
+    return confirmNativeMove(target, undefined, since);
   }
 
   // ---- New pages. ----
@@ -416,14 +422,15 @@ export function createPagesController(ports: PagesPorts, state = createPagesStat
     return message(outcome, "The page template or repository changed. Create the page again.");
   }
 
-  async function createNativeFolderPage(route: string) {
+  /** Resolves to `route` once it has its page. */
+  async function createNativeFolderPage(route: string): Promise<string | undefined> {
     const since = ports.edits.stamp();
     if (!ports.site() || !ports.hasDraftScope()) return;
     const unread = await ports.siteReadForCreate();
     if (!since.holds()) { ports.error(new Error("The repository changed meanwhile. Try again.")); return; }
     if (unread) { ports.error(new Error(unread)); return; }
     const file = nativeRouteFile(route);
-    if (ports.drafts().find(draft => draft.path === file)?.deleted) { ports.restoreDeleted(file); return; }
+    if (ports.drafts().find(draft => draft.path === file)?.deleted) { ports.restoreDeleted(file); return route; }
     const outcome = await ports.edits.run(r => {
       const site = r.site();
       if (!site || !ports.hasDraftScope()) return { refuse: "Open a native site first." };
@@ -435,6 +442,7 @@ export function createPagesController(ports: PagesPorts, state = createPagesStat
     }, { since });
     const error = message(outcome, "The repository changed meanwhile. Try again.");
     if (error) ports.error(new Error(error));
+    return error ? undefined : route;
   }
 
   return { retitle: retitleNativePage, duplicate: duplicateNativePage, remove: removeNativePagesTarget,

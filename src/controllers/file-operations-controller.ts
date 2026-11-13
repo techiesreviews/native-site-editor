@@ -56,9 +56,9 @@ export interface FileOperationsPorts {
   openFolder(path: string): void;
   fileRow(path: string): { focus(): void } | undefined;
   /** After a copy or rename the person made in Files: its row, shown even where a search would leave it out. */
-  revealFile?(path: string): { focus(): void } | undefined;
+  revealFile(path: string): { focus(): void } | undefined;
   /** Where the focus goes in Files when no row is left to take it (a search's found files, or its field). */
-  focusFiles?(): void;
+  focusFiles(): void;
   renderFileTree(): void;
   filesTabOpen(): boolean;
 }
@@ -202,12 +202,13 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     return undefined;
   }
 
-  /** `reveal`: the person moved or renamed it in Files, so it shows even where their search would leave it out (never for an agent's move). */
+  /** `reveal`: the person moved or renamed it in Files, so it shows, focused, even where their search would leave it out. An
+   * agent's move (no `reveal`) leaves the person's search and focus alone. */
   function focusMovedFile(to: string, reveal = false) {
     ports.requestAnimationFrame(() => {
       for (let part = ports.parentOf(to); part; part = ports.parentOf(part)) ports.openFolder(part);
       if (!ports.fileRow(to)) ports.renderFileTree();
-      if (ports.filesTabOpen()) (reveal && ports.revealFile ? ports.revealFile(to) : ports.fileRow(to))?.focus();
+      if (reveal && ports.filesTabOpen()) ports.revealFile(to)?.focus();
     });
   }
 
@@ -441,11 +442,12 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     if (cancelled) { if (!outcome.ok) ports.announce(cancel); return "Cancelled."; }
     const error = !outcome.ok && outcome.reason === "stale" ? changed : outcome.message;
     if (error) { ports.errorMessage(new Error(error)); if (!outcome.ok && outcome.reason === "refused") ports.refuse(error); return error; }
+    // An agent's delete leaves the person's focus where it is.
     ports.requestAnimationFrame(() => {
-      if (!ports.filesTabOpen()) return;
+      if (agent || !ports.filesTabOpen()) return;
       const row = ports.fileRow(target.path) ?? ports.fileRow(ports.parentOf(target.path));
       if (row) row.focus();
-      else ports.focusFiles?.();
+      else ports.focusFiles();
     });
     return undefined;
   }
@@ -471,7 +473,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     if (ports.draftStore().error) { ports.errorMessage(new Error(ports.draftStore().error!)); return; }
     ports.afterFileChanges();
     ports.announce(`Duplicated ${target.path} as ${to}.`);
-    ports.requestAnimationFrame(() => (ports.filesTabOpen() && ports.revealFile ? ports.revealFile(to) : ports.fileRow(to))?.focus());
+    ports.requestAnimationFrame(() => { if (ports.filesTabOpen()) ports.revealFile(to)?.focus(); });
   }
 
   return { deleteFileTarget, duplicateFileTarget, restoreFileTarget, protectedProblem, moveProblem, fileMoveProblem, targetFiles, pageLinks, moveFileTarget };

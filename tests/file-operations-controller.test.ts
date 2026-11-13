@@ -16,7 +16,7 @@ function fixture(native = false, extra: Record<string, string> = {}) {
   Object.assign(branch, extra);
   const parsed = resolveNativeProject(Object.keys(branch));
   const memory = createMemoryWorkspace({ branch, open: native ? "index.html" : "open.txt", site: native && parsed.ok ? parsed.site : undefined });
-  const edits = createGuardedEdits(memory.workspace), errors: string[] = [], refused: string[] = [], restored: string[][] = [], focused: string[] = [];
+  const edits = createGuardedEdits(memory.workspace), errors: string[] = [], refused: string[] = [], restored: string[][] = [], focused: string[] = [], revealed: string[] = [];
   const store = new DraftStore({ getItem: () => null, setItem: () => {}, removeItem: () => {}, key: () => null, length: 0 });
   const entries: TreeEntry[] = Object.keys(branch).map((path, n) => ({ path, type: "blob", sha: `sha-${n}`, mode: "100644" }));
   let copied = 0;
@@ -42,8 +42,9 @@ function fixture(native = false, extra: Record<string, string> = {}) {
     undoFileChanges: ({ restore }: { restore?: string[] }) => { restored.push(restore ?? []); }, duplicateFile: () => { copied++; return true; },
     afterFileChanges: () => {}, announce: (message: string) => memory.announced.push(message), refuse: (message: string) => refused.push(message), errorMessage: (error: unknown) => errors.push((error as Error).message),
     requestAnimationFrame: (callback: () => void) => callback(), openFolder: () => {}, fileRow: (path: string) => ({ focus: () => focused.push(path) }), renderFileTree: () => {}, filesTabOpen: () => true,
+    revealFile: (path: string) => { revealed.push(path); return { focus: () => focused.push(path) }; }, focusFiles: () => focused.push("(files)"),
   } satisfies FileOperationsPorts;
-  return { ports, memory, errors, refused, restored, focused, copied: () => copied, controller: createFileOperationsController(ports) };
+  return { ports, memory, errors, refused, restored, focused, revealed, copied: () => copied, controller: createFileOperationsController(ports) };
 }
 const target = { path: "a.txt", name: "a.txt", folder: false };
 const page = { path: "about/index.html", name: "index.html", folder: false };
@@ -85,14 +86,23 @@ test("plain rename records one receipt; undo refuses an edit to the moved file",
   assert.equal(h.memory.undo(), false); assert.ok(h.memory.refusals.length); assert.deepEqual(h.memory.draft("b.txt"), draft);
 });
 
-test("only a rename the person makes in Files reveals the file; an agent's rename only looks its row up", async () => {
-  const h = fixture(), revealed: string[] = [];
-  h.ports.revealFile = (path: string) => { revealed.push(path); return { focus: () => {} }; };
+test("only a rename the person makes in Files reveals and focuses the file; an agent's rename leaves search and focus alone", async () => {
+  const h = fixture();
   assert.equal(await h.controller.moveFileTarget(target, "b.txt", "rename"), undefined);
-  assert.deepEqual(revealed, []);
-  assert.deepEqual(h.focused, ["b.txt"]);
+  assert.deepEqual(h.revealed, []);
+  assert.deepEqual(h.focused, []);
   assert.equal(await h.controller.moveFileTarget({ path: "b.txt", name: "b.txt", folder: false }, "c.txt", "rename", { reveal: true }), undefined);
-  assert.deepEqual(revealed, ["c.txt"]);
+  assert.deepEqual(h.revealed, ["c.txt"]);
+  assert.deepEqual(h.focused, ["c.txt"]);
+});
+
+test("an agent's delete moves no focus; the person's delete focuses what is left", async () => {
+  const h = fixture();
+  assert.equal(await h.controller.deleteFileTarget(target, undefined, true), undefined);
+  assert.deepEqual(h.focused, []);
+  const other = fixture();
+  assert.equal(await other.controller.deleteFileTarget(target), undefined);
+  assert.equal(other.focused.length, 1);
 });
 
 test("plain delete goes through the module and undoes as one step", async () => {
@@ -170,9 +180,10 @@ test("duplicate refuses a repository switch before making its draft copy", async
   assert.equal(h.copied(), 0); assert.match(h.refused[0], /repository changed meanwhile/);
 });
 
-test("duplicate stays a draft copy outside operation history", async () => {
+test("duplicate stays a draft copy outside operation history, and the copy is revealed and focused", async () => {
   const h = fixture(); await h.controller.duplicateFileTarget(target);
   assert.equal(h.copied(), 1); assert.deepEqual(h.memory.steps(), []);
+  assert.equal(h.revealed.length, 1); assert.deepEqual(h.focused, h.revealed);
 });
 
 test("a changed file list refuses a URL move", async () => {
@@ -720,7 +731,8 @@ test("confirming a plain move's link-note dialog moves once and Undo restores th
     ask: async question => { questions.push(question); return true; },
     choose: async () => { assert.fail("a plain move uses ask, not choose"); },
   });
-  assert.equal(await h.controller.moveFileTarget(page, "page.txt", "move"), undefined);
+  // The person's move in Files (`reveal`): the moved file takes the focus.
+  assert.equal(await h.controller.moveFileTarget(page, "page.txt", "move", { reveal: true }), undefined);
   assert.equal(questions.length, 1);
   assert.equal(questions[0].title, "Move about/index.html to page.txt?");
   assert.equal(questions[0].action, "Move");

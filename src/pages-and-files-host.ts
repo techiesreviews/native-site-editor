@@ -190,7 +190,8 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     render: () => { filesTree?.render(); if (searchText("files")) search(); }, reset: () => { spareListings.clear(); filesTree?.reset(); },
     // While a search shows found files, a file's row is its found row (src/pages-and-files-explorer.ts).
     shown: () => filesTree?.shown(), row: (path: string) => rows ? rows.fileRowNow(ports, filesTree, path) : filesTree?.row(path),
-    reveal: (paths: string[]) => rows?.revealFiles(ports, filesTreeController, paths),
+    // Their pages too, for an Undo, Redo, Restore or Move back (src/components/pages-tree.ts revealFiles).
+    reveal: (paths: string[]) => { pagesTree?.revealFiles(paths); return rows?.revealFiles(ports, filesTreeController, paths); },
     openFolder: (path: string) => filesTree?.openFolder(path), listings: () => filesTree?.listings() ?? spareListings, visible: filesShown,
   };
   let explorerMount: Promise<void> | undefined;
@@ -281,8 +282,8 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
         announce: ports.announce,
         onInteractionEnd: ports.flushPendingNativePageTitles,
         retitle: (file, title) => pageActions!.retitle(file, title),
-        changed: (file) => Boolean(treeState().changes.get(file)),
-        discard: (file) => void savePublish.discardFile(file),
+        changed: (file) => treeState().changes.get(file),
+        discard: (file) => savePublish.discardFile(file),
         duplicate: (file) => pageActions!.duplicate(file),
         remove: (target) => void pageActions!.remove(target),
         createPage: (route) => pageActions!.createFolderPage(route),

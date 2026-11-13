@@ -140,10 +140,13 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
     if (!target.folder) items.push({ label: "Duplicate", run: () => void host.fileOps!.duplicateFileTarget(target) });
     const change = host.treeState().changes.get(target.path);
     if (change?.kind === "R" && change.from) items.push({ label: `Move back to ${change.from}`, run: () => host.undoFileChanges({ moveBack: [target.path] }) });
-    // A rename discarded brings the file back at its old path, in view.
-    if (change && !target.folder) items.push({ label: "Discard changes", run: () => void host.savePublish.discardFile(target.path).then(() => {
-      if (change.from && !host.treeState().changes.has(target.path)) host.filesTreeController.reveal([change.from]);
-    }) });
+    // A rename discarded brings the file back at its old path, in view (in the workspace and load it was discarded in).
+    if (change && !target.folder) items.push({ label: "Discard changes", run: () => {
+      const at = ports.workspaceSession.begin();
+      void host.savePublish.discardFile(target.path).then(() => {
+        if (at.holds() && change.from && !host.treeState().changes.has(target.path)) host.filesTreeController.reveal([change.from]);
+      });
+    } });
     items.push(
       { label: "Delete", shortcut: "Delete", run: () => void host.fileOps!.deleteFileTarget(target) },
       { label: "Copy path", run: opener => void copyFilePath(target.path, opener) },
@@ -285,13 +288,16 @@ export function fileRowNow(ports: Pick<PagesAndFilesPorts, "element" | "files">,
 }
 
 /** After the person adds something in Files (a copy, a rename or move, an upload, Move back, Restore, Discard changes on a
- * rename): its rows, shown (ux-rulebook B12). A Files search that would leave any of them out (the search's own test: the path
- * has the words, in a repository with no site too) starts afresh; the folders leading to them open, and the tree (`tree`, whose
+ * rename, an Undo or Redo): its rows, shown (ux-rulebook B12). A Files search that would leave any of them out (the search's own
+ * test: the path has the words, in a repository with no site too; or one past the found files drawn) starts afresh; the folders leading to them open, and the tree (`tree`, whose
  * render applies a search that stays) is drawn again. Returns the first one's row; until it is drawn, the search field. */
 export function revealFiles(ports: Parameters<typeof findFiles>[0], tree: TreeRows, paths: string[]) {
   const field = ports.element<HTMLInputElement>("explorer-search"), words = field.value.trim().toLowerCase();
   if (!paths.length) return;
-  if (words && (ports.element("explorer").dataset.tab ?? "files") === "files" && paths.some((path) => !path.toLowerCase().includes(words))) {
+  // Found files draw the first FOUND_MAX matches by name: one past them is left out too.
+  const has = (path: string) => path.toLowerCase().includes(words);
+  const matches = words && ports.runtime.site ? ports.runtime.files().filter(has).sort() : [];
+  if (words && (ports.element("explorer").dataset.tab ?? "files") === "files" && paths.some((path) => !has(path) || matches.indexOf(path) >= FOUND_MAX)) {
     field.value = "";
     findFiles(ports, "");
   }
