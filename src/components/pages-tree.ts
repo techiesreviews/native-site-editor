@@ -322,7 +322,13 @@ export function createPagesTree(options: {
       const own = !words || `${item.getAttribute("aria-label") ?? ""} ${item.dataset.route ?? ""}`.toLowerCase().includes(words);
       item.hidden = !own && !inside;
       // Opened for the search only: the next draw puts the row's own state back.
-      if (words && inside && group) { group.hidden = false; item.setAttribute("aria-expanded", "true"); }
+      if (words && inside && group) {
+        group.hidden = false;
+        item.setAttribute("aria-expanded", "true");
+        const twisty = item.querySelector(":scope > .pages-row > .pages-twisty"), folder = item.querySelector(":scope > .pages-row--empty > .pages-icon");
+        if (twisty) setIcon(twisty, "caret-down", 12);
+        if (folder) setIcon(folder, "folder-open", 14);
+      }
       return own || inside;
     };
     const shown = [...tree.children].filter((child): child is HTMLElement => child.getAttribute("role") === "treeitem").map(keep).some(Boolean);
@@ -564,7 +570,6 @@ export function createPagesTree(options: {
     });
     void item;
   }
-  // The heading and the tree's empty space take a drop to the top level.
   // The tree's empty space takes a drop to the top level, and lights up for it.
   for (const area of [tree] as HTMLElement[]) {
     const over = (event: DragEvent) => {
