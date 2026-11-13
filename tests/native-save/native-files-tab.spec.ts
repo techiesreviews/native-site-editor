@@ -267,3 +267,89 @@ test("in a repository with no site the search narrows the rows drawn, and cleari
   await expect(row(page, "documentation/guide.md")).toBeHidden();
   await expect(row(page, "documentation")).toHaveAttribute("aria-expanded", "false");
 });
+
+// After the person adds something in Files (a copy, a rename, a move, an upload, Move back, Discard changes), it is in view:
+// a search that would hide it starts afresh (ux-rulebook B12).
+async function openNoSite(page: Page, baseURL: string | undefined, name: string) {
+  await page.goto(baseURL!);
+  await page.request.post(`${baseURL}/__demo/onboarding`, { data: { add: [{ name, kind: "no-site" }] } });
+  const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
+  await page.goto(`${baseURL}/#repo=${repos.find(repo => repo.name === name)!.id}&branch=main`);
+  await page.reload();
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  await expect(row(page, "README.md")).toBeVisible({ timeout: 30_000 });
+}
+
+test("in a repository with no site, a copy or a rename the search would hide is in view and focused, the search started afresh", async ({ page, baseURL }) => {
+  await openNoSite(page, baseURL, "search-adds");
+  const search = explorer(page).getByLabel("Search files", { exact: true });
+  await search.fill("README.md");
+  await row(page, "README.md").click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for README.md" }).getByRole("menuitem", { name: "Duplicate" }).click();
+  await expect(page.locator("#status")).toContainText("Duplicated README.md as README-copy.md");
+  await expect(search).toHaveValue("");
+  await expect(row(page, "README-copy.md")).toBeVisible();
+  await expect(row(page, "README-copy.md")).toBeFocused();
+  // A rename the search finds, to a name it does not.
+  await search.fill("README-copy");
+  await expect(row(page, "README.md")).toBeHidden();
+  await row(page, "README-copy.md").focus();
+  await page.keyboard.press("F2");
+  const rename = explorer(page).getByRole("textbox", { name: "New name for README-copy.md", exact: true });
+  await rename.fill("notes.md");
+  await rename.press("Enter");
+  await expect(search).toHaveValue("");
+  await expect(row(page, "notes.md")).toBeVisible();
+  await expect(row(page, "notes.md")).toBeFocused();
+  await expect(row(page, "README.md")).toBeVisible();
+});
+
+test("at 390 px, a file uploaded while the search would hide it is in view, the search started afresh", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openFiles(page, baseURL);
+  const search = explorer(page).getByLabel("Search files", { exact: true });
+  await search.fill("site.css");
+  await expect(explorer(page).getByRole("list", { name: "Files found", exact: true }).locator('.file-row[data-path="styles/site.css"]')).toBeVisible();
+  // Dropped on the head row, it goes to the top of the repository.
+  await explorer(page).locator(".explorer-head").evaluate((head) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["%PDF-1.4\n"], "Guide.pdf", { type: "application/pdf" }));
+    for (const type of ["dragenter", "dragover", "drop"]) head.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true }));
+  });
+  await expect(page.locator("#status")).toContainText("Added guide.pdf.");
+  await expect(search).toHaveValue("");
+  await expect(row(page, "guide.pdf")).toBeVisible();
+  await expect(explorer(page).locator("#files-found")).toBeHidden();
+});
+
+test("Move back and Discard changes bring a renamed file back in view where the search would hide it", async ({ page, baseURL }) => {
+  await openFiles(page, baseURL);
+  const search = explorer(page).getByLabel("Search files", { exact: true });
+  const found = explorer(page).getByRole("list", { name: "Files found", exact: true });
+  const renameRobots = async () => {
+    await search.fill("robots");
+    await found.locator('.file-row[data-path="robots.txt"]').focus();
+    await page.keyboard.press("F2");
+    const rename = found.getByRole("textbox", { name: "New name for robots.txt", exact: true });
+    await rename.fill("crawl.txt");
+    await rename.press("Enter");
+    // Renamed to a name the search leaves out: the tree shows it, focused.
+    await expect(search).toHaveValue("");
+    await expect(row(page, "crawl.txt")).toBeFocused();
+    await search.fill("crawl");
+  };
+  await renameRobots();
+  await found.locator('.file-row[data-path="crawl.txt"]').click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for crawl.txt" }).getByRole("menuitem", { name: "Move back to robots.txt" }).click();
+  await expect(page.locator("#status")).toContainText("Moved crawl.txt back to robots.txt.");
+  await expect(search).toHaveValue("");
+  await expect(row(page, "robots.txt")).toBeVisible();
+
+  await renameRobots();
+  await found.locator('.file-row[data-path="crawl.txt"]').click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for crawl.txt" }).getByRole("menuitem", { name: "Discard changes" }).click();
+  await page.getByRole("dialog", { name: "Discard the changes to robots.txt → crawl.txt?" }).getByRole("button", { name: "Discard" }).click();
+  await expect(page.locator("#status")).toContainText("Discarded the changes to crawl.txt.");
+  await expect(search).toHaveValue("");
+  await expect(row(page, "robots.txt")).toBeVisible();
+});
