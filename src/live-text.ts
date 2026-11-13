@@ -181,8 +181,8 @@ const HELLO = 1, ASK = 2, REPLY = 3, UPDATE = 4, GITHUB = 5;
 const HEAD = 2 + 20 + 4;
 /** A tab that found others waits this long, after asking, for one of them to catch it up; then it starts from its own draft. */
 export const LIVE_TEXT_CATCH_UP_MS = 5_000;
-/** A start that cannot bring its versions together or carry its words over (GitHub's history unread) is tried again this
- * many times, after 5, 10, 20, 40, 40 and 40 s. */
+/** A start that cannot bring its versions together or carry its words over (GitHub's history unread) is tried again until
+ * it failed this many times in all: 5 s after the first failure, twice as long after each one since, at most 40 s. */
 const START_TRIES = 6;
 /** A caret that moves tells the room at most this often (typing moves it with every key). */
 const CARET_MS = 50;
@@ -610,12 +610,12 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
     /** The room copy this one is: from a kept copy, the first answer to this tab's request, or its own birth. */
     let copyId: Uint8Array | undefined;
     let synced = false, starting = false, waiting: unknown, keeping: unknown;
-    /** Starts that failed in a row (`begin`): the next waits longer, up to START_TRIES. */
-    let retries = 0;
+    /** Starts that failed (`begin`): the next waits longer, up to START_TRIES in all. */
+    let failures = 0;
     /** Resumed from its kept copy with no one in the room catching it up, or caught up by such a copy (TOOLS-224): its frames
-     * say so, and in a meet it gives way to any copy of the room that is caught up (`meet`). It is the room's copy once the
-     * room has been heard from for as long as a catch-up may take with no other copy coming (`roomHeard`), or someone on it
-     * says it is (a caught-up frame naming it). */
+     * say so, and in a meet it gives way to any copy of the room that is caught up (`meet`). It is the room's copy once
+     * another tab on it has been heard from for as long as a catch-up may take with no other copy coming (`roomHeard`), or
+     * someone on it says it is (a caught-up frame naming it). */
     let alone = false, roomHeard: unknown;
     /** After a new room key or a reconnect: frames may have been lost, so a commit waits until a catch-up answer came. */
     let catching = false, caught: unknown;
@@ -1312,11 +1312,11 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
         // The answer to its request came during the start (`receive` could not begin then): it begins as caught up now.
         if (joined && !stopped) void begin(true);
         // Not joined (no doubled page, no lost words), and not left so: it starts its part again later, waiting longer each
-        // time, START_TRIES times. Then the draft stays as it is, apart from the room's copy, until the room catches it up
-        // again (a new key or a reconnect asks, `again`) or the page opens again.
-        else if (failed && !stopped && !synced && retries < START_TRIES) {
+        // time, until START_TRIES failed. Then the draft stays as it is, apart from the room's copy, until the room catches it
+        // up again (a new key or a reconnect asks, `again`) or the page opens again.
+        else if (failed && !stopped && !synced && ++failures < START_TRIES) {
           clock.clearTimeout(waiting);
-          waiting = clock.setTimeout(() => { void begin(caught); }, Math.min(2 ** retries++, 8) * LIVE_TEXT_CATCH_UP_MS);
+          waiting = clock.setTimeout(() => { void begin(caught); }, Math.min(2 ** (failures - 1), 8) * LIVE_TEXT_CATCH_UP_MS);
         }
         // A save waiting for this start goes on (`caughtUp`); a commit tries again (and waits on). So on every way out.
         if (!synced) foldsReady();
@@ -1769,10 +1769,12 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       const tag = bytes.subarray(2, 22), id = view.getUint32(22), payload = bytes.subarray(HEAD);
       const none = sameTag(tag, NO_COPY);
       if (theirs && !none) heardCopy = true;
-      // Someone caught up is on the copy this tab resumed alone: it is the room's copy now. So it is once the room has been
-      // heard from for a catch-up's time with no caught-up copy of its own taking this tab (`meet`).
-      if (alone && state === 1 && copyId && sameTag(tag, copyId)) alone = false;
-      if (alone && synced && roomHeard === undefined) roomHeard = clock.setTimeout(() => { alone = false; }, LIVE_TEXT_CATCH_UP_MS);
+      // Someone caught up is on the copy this tab resumed alone: it is the room's copy now. So it is once another tab on it
+      // has been heard from for a catch-up's time with no caught-up copy of the room taking this tab (`meet`).
+      if (alone && copyId && sameTag(tag, copyId)) {
+        if (state === 1) { alone = false; clock.clearTimeout(roomHeard); }
+        else if (synced && roomHeard === undefined) roomHeard = clock.setTimeout(() => { alone = false; }, LIVE_TEXT_CATCH_UP_MS);
+      }
       try {
         if (kind === HELLO || kind === ASK) {
           // Tabs that have no caught-up copy yet ask one another: the one with a copy of its own (kept from before), else
