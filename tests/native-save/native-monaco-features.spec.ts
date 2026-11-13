@@ -451,9 +451,12 @@ test("a Files row dragged out of the explorer and let go where nothing takes it 
   await file.hover();
   await page.mouse.down();
   await page.mouse.move(box.x + 40, box.y + box.height / 2, { steps: 4 });
-  await page.mouse.move(box.x - 30, box.y + box.height / 2, { steps: 4 });
+  // Out under the box's bottom edge, over Page structure (the page beside it is a frame of its own); a
+  // drag hears where the pointer is on its next move.
+  await page.mouse.move(box.x + 40, box.y + box.height + 4, { steps: 4 });
+  await page.mouse.move(box.x + 44, box.y + box.height + 6);
   await expect(explorer).toHaveClass(/is-stepping-aside/);
-  // Let go beside the box, over the structure panel, which takes no file drop: nothing moves.
+  // Let go over Page structure, which takes no file drop: nothing moves.
   await page.mouse.up();
   await expect(explorer).not.toHaveClass(/is-stepping-aside/);
   await expect(explorer).toHaveCSS("pointer-events", "auto");
@@ -465,7 +468,7 @@ test("a Files row dragged out of the explorer and let go where nothing takes it 
 });
 
 test("dropping a Files row inserts its plain path into editable source", async ({ page, baseURL }) => {
-  // At 1280 the explorer (one centred 1040px box, slice 104) covers the code. Once the drag
+  // At 1280 the explorer (one 760px box from the left edge, mock-up 05 v2) covers the code. Once the drag
   // leaves the box it steps aside, so the code under it takes the drop (slice 111).
   await page.setViewportSize({ width: 1280, height: 800 });
   await open(page, baseURL, "robots.txt");
@@ -487,7 +490,10 @@ test("dropping a Files row inserts its plain path into editable source", async (
   await page.mouse.move(box.x + 40, box.y + box.height / 2, { steps: 4 });
   // Still inside the box: rows take drops to move files, so it stays.
   await expect(explorer).not.toHaveClass(/is-stepping-aside/);
-  await page.mouse.move(box.x - 30, box.y + box.height / 2, { steps: 4 });
+  // Out under the box's bottom edge, over Page structure (the page beside it is a frame of its own); a
+  // drag hears where the pointer is on its next move.
+  await page.mouse.move(box.x + 40, box.y + box.height + 4, { steps: 4 });
+  await page.mouse.move(box.x + 44, box.y + box.height + 6);
   await expect(explorer).toHaveClass(/is-stepping-aside/);
   await expect(explorer).toHaveCSS("pointer-events", "none");
   await page.mouse.move(line.x + 1, line.y + 8, { steps: 6 });
