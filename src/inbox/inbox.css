@@ -1,4 +1,66 @@
-/* The Inbox's rows (src/inbox/inbox.ts; mock-up 05 v2). The panel's place and surface load with the top bar (style.css). */
+/* The Inbox (src/inbox/inbox.ts; mock-up 05 v2, TOOLS-222), loaded with its list: the dots and the panel. */
+/* An orange dot while something waits, never a number (data-inbox-waiting). On a phone the button leaves the bar
+   for the Menu, whose button wears the dot, and its Inbox row (top-bar-phone.css). */
+.topbar :is(#inbox-button, #topbar-menu) {
+  position: relative;
+}
+.topbar :is(#inbox-button, #topbar-menu)::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--agent-question-strong);
+  box-shadow: 0 0 0 2px var(--surface);
+  scale: 0;
+  transition: scale 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+:root[data-inbox-waiting] .topbar :is(#inbox-button, #topbar-menu)::after {
+  scale: 1;
+}
+.inbox {
+  position: fixed;
+  inset: calc(anchor(--topbar bottom) + var(--space-2xs)) var(--space-xs) auto auto;
+  inline-size: min(340px, 100vw - 2 * var(--space-xs));
+  max-block-size: calc(100dvh - 80px);
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-3xs);
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+/* A page with something waiting in the Inbox (TOOLS-222): a small dot after its name, nothing else
+   (inbox.ts sets --inbox-dot on its row). */
+.pages-label::after {
+  content: "";
+  display: var(--inbox-dot, none);
+  inline-size: 7px;
+  block-size: 7px;
+  margin-inline-start: var(--space-xs);
+  border-radius: 50%;
+  background: var(--agent-question-strong);
+  vertical-align: 1px;
+}
+/* A picture with something waiting in the Inbox (TOOLS-222): a small dot in its corner, nothing else
+   (inbox.ts sets --inbox-dot on its tile). */
+.media-library__card::before {
+  content: "";
+  display: var(--inbox-dot, none);
+  position: absolute;
+  inset: auto var(--space-2xs) var(--space-2xs) auto;
+  z-index: 2;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--agent-question-strong);
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
+}
 .inbox__title {
   margin: 0;
   padding: var(--space-2xs) var(--space-xs);

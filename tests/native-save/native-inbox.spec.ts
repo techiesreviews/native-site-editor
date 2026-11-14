@@ -11,7 +11,7 @@ const inbox = (page: Page) => page.getByRole("dialog", { name: "Inbox", exact: t
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact: true });
 const picture = (page: Page) => inbox(page).getByRole("button", { name: /^Picture without a description/ });
 const dot = (page: Page, selector: string, pseudo = "::after") =>
-  page.locator(selector).first().evaluate((el, which) => { const style = getComputedStyle(el, which); return style.display !== "none" && style.scale !== "0"; }, pseudo);
+  page.locator(selector).first().evaluate((el, which) => { const style = getComputedStyle(el, which); return style.content !== "none" && style.display !== "none" && style.scale !== "0"; }, pseudo);
 const homeSource = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html") ?? "");
 
 async function open(page: Page, baseURL: string | undefined) {

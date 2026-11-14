@@ -1,6 +1,7 @@
-// The Inbox's checks and its panel (TOOLS-222), loaded once the site is read or the Inbox opens
-// (src/inbox/inbox-host.ts keeps the list). Mock-up 05 v2: a panel under the tray headed "Inbox", one row per item
-// (its icon, what and where, and a wave-off named for what it means), "All done" with a check when nothing waits.
+// The Inbox's checks, list, dots and panel (TOOLS-222), loaded once the site is read or the Inbox opens
+// (src/inbox/inbox-host.ts). Mock-up 05 v2: an orange dot on the tray while something waits, never a number; a panel
+// under it headed "Inbox", one row per item (its icon, what and where, and a wave-off named for what it means), "All
+// done" with a check when nothing waits; a small dot on each page and picture with something waiting in Pages and Media.
 import "./inbox.css";
 import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 import { icon } from "../icons";
@@ -10,14 +11,14 @@ import { mediaResolvePath } from "../page-builder/media-references";
 import { node } from "../ui/dom";
 import type { InboxItem } from "./inbox-item";
 import type { InboxPorts } from "./inbox-host";
-import { siteItems as findItems } from "./site-items";
+import { siteItems } from "./site-items";
 
 /** The site's items now; `unsure` while a picture's verdict is not known yet. */
-export function siteItems(ports: InboxPorts) {
+function findItems(ports: InboxPorts) {
   let unsure = false;
   const prefix = nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH));
   const pages = ports.pages().map(file => ({ file, label: ports.label(file), route: ports.route(file) ?? file, source: ports.source(file) }));
-  const items = findItems(pages, {
+  const items = siteItems(pages, {
     picture: (page, src, alt) => {
       const state = ports.picture(page, src, alt);
       if (!state) unsure = true;
@@ -29,7 +30,7 @@ export function siteItems(ports: InboxPorts) {
 }
 
 /** Goes to an item's spot: its picture selected on its page, or a page's details for its title. */
-export async function goTo(item: InboxItem, ports: InboxPorts) {
+async function goTo(item: InboxItem, ports: InboxPorts) {
   const shown = ports.appStore.openFile.value === item.page;
   if (item.kind === "title") {
     if (!shown) await ports.open(item.page);
@@ -44,52 +45,122 @@ export async function goTo(item: InboxItem, ports: InboxPorts) {
   if (!shown) await ports.open(item.page);
 }
 
-const kinds: Record<InboxItem["kind"], Parameters<typeof icon>[0]> = { picture: "image-square", title: "file" };
-
-export interface InboxActions { go(item: InboxItem): void; wave(item: InboxItem): Promise<void> }
-
-/** The first row's button takes the keyboard once the panel shows (the empty line has none). */
-export function focusFirst(panel: HTMLElement) {
-  panel.querySelector<HTMLElement>(".inbox__item")?.focus();
+/** A picture's Decorative: Media's own (alt="" on each of its pictures on that page, and the place's record), one Undo step. */
+async function decorative(item: InboxItem, ports: InboxPorts) {
+  const { createMediaWorkspace } = await import("../page-builder/media-workspace");
+  const media = createMediaWorkspace(() => ports.media());
+  await media.load();
+  await media.describe(item.media!, { decorative: true, page: item.page }, false);
 }
 
-/** Draws the list into the panel, keeping focus on the same row's control (or the first, when it had gone). */
-export function drawInbox(panel: HTMLElement, items: readonly InboxItem[], actions: InboxActions) {
-  const active = document.activeElement instanceof HTMLElement && panel.contains(document.activeElement) ? document.activeElement : undefined;
-  const focusKey = active?.closest<HTMLElement>("[data-key]")?.dataset.key, focusWave = active?.classList.contains("inbox__wave");
-  const title = node("h2", "inbox__title", "Inbox");
-  if (!items.length) {
-    const done = node("p", "inbox__empty");
-    done.append(icon("check", 16), "All done");
-    panel.replaceChildren(title, done);
-    return;
+const kinds: Record<InboxItem["kind"], Parameters<typeof icon>[0]> = { picture: "image-square", title: "file" };
+
+export function createInboxList(ports: InboxPorts) {
+  let items: readonly InboxItem[] = [];
+  let retry: ReturnType<typeof setTimeout> | undefined, retries = 0, checked = false;
+  // Opened while the pages were still being checked: the first row takes the keyboard once it is there.
+  let focusFirst = false;
+  // The dots in Pages and Media: the rows and tiles named here wear theirs (inbox.css), however often they are drawn.
+  const dots = new CSSStyleSheet();
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, dots];
+  const panel = () => document.getElementById("inbox");
+
+  function show(next: readonly InboxItem[]) {
+    items = next;
+    document.documentElement.toggleAttribute("data-inbox-waiting", items.length > 0);
+    const any = (attribute: string, values: (string | undefined)[]) =>
+      [...new Set(values.filter((value): value is string => Boolean(value)))].map(value => `[${attribute}="${CSS.escape(value)}"]`).join(",");
+    const pages = any("data-file", items.map(item => item.page)), media = any("data-path", items.map(item => item.media));
+    dots.replaceSync(`${pages ? `.pages-item:is(${pages}) > .pages-row { --inbox-dot: inline-block; }` : ""}${media ? `.media-library__card:is(${media}) { --inbox-dot: block; }` : ""}`);
+    const open = panel();
+    if (open?.matches(":popover-open")) draw(open);
   }
-  const list = node("ul", "inbox__list");
-  for (const item of items) {
-    const row = node("li", "inbox__row");
-    row.dataset.key = item.key;
-    row.dataset.kind = item.kind;
-    const go = node("button", "inbox__item");
-    go.type = "button";
-    go.append(icon(kinds[item.kind], 16), node("b", "", item.what), node("small", "", item.where));
-    go.setAttribute("aria-label", `${item.what}, ${item.where}`);
-    go.addEventListener("click", () => actions.go(item));
-    row.append(go);
-    if (item.wave) {
-      const wave = node("button", "inbox__wave", item.wave);
-      wave.type = "button";
-      wave.setAttribute("aria-label", `${item.wave}: ${item.what}, ${item.where}`);
-      wave.addEventListener("click", () => {
-        wave.disabled = true;
-        wave.setAttribute("aria-busy", "true");
-        void actions.wave(item).finally(() => { wave.disabled = false; wave.removeAttribute("aria-busy"); });
-      });
-      row.append(wave);
+
+  /** Checks the site again (the host waits for a pause in the changes). */
+  function check(again = false) {
+    clearTimeout(retry);
+    if (!again) retries = 0;
+    if (!ports.pages().length) { show([]); return; }
+    // Until every page is read the list would be partial; the text index asks again once it has them.
+    if (!ports.indexed()) return;
+    const found = findItems(ports);
+    checked = true;
+    show(found.items);
+    // A picture's verdict waits for the Media rules, which load on the first ask: look again shortly.
+    if (found.unsure && retries++ < 10) retry = setTimeout(() => check(true), 1000);
+  }
+
+  async function go(item: InboxItem) {
+    panel()?.hidePopover();
+    try { await goTo(item, ports); } catch (error) { ports.error(error); }
+  }
+
+  // Busy until the change, which checks the site again, takes the row away; a refusal leaves it ready for another go.
+  async function wave(item: InboxItem, button: HTMLButtonElement) {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    try { await decorative(item, ports); } catch (error) {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+      ports.error(error);
     }
-    list.append(row);
   }
-  panel.replaceChildren(title, list);
-  const back = focusKey && list.querySelector<HTMLElement>(`[data-key="${CSS.escape(focusKey)}"] ${focusWave ? ".inbox__wave" : ".inbox__item"}`);
-  if (back) back.focus();
-  else if (active) focusFirst(panel);
+
+  /** Draws the list into the panel, keeping focus on the same row's control (or the first, when it had gone). */
+  function draw(into: HTMLElement) {
+    const active = document.activeElement instanceof HTMLElement && into.contains(document.activeElement) ? document.activeElement : undefined;
+    const focusKey = active?.closest<HTMLElement>("[data-key]")?.dataset.key, focusWave = active?.classList.contains("inbox__wave");
+    const title = node("h2", "inbox__title", "Inbox");
+    // Opened before the pages are read: busy, rather than an "All done" not yet known.
+    if (!checked) {
+      const busy = node("p", "inbox__empty", "Checking pages…");
+      busy.setAttribute("aria-busy", "true");
+      into.replaceChildren(title, busy);
+      return;
+    }
+    if (!items.length) {
+      const done = node("p", "inbox__empty");
+      done.append(icon("check", 16), "All done");
+      into.replaceChildren(title, done);
+      return;
+    }
+    const list = node("ul", "inbox__list");
+    for (const item of items) {
+      const row = node("li", "inbox__row");
+      row.dataset.key = item.key;
+      row.dataset.kind = item.kind;
+      const button = node("button", "inbox__item");
+      button.type = "button";
+      button.append(icon(kinds[item.kind], 16), node("b", "", item.what), node("small", "", item.where));
+      button.setAttribute("aria-label", `${item.what}, ${item.where}`);
+      button.addEventListener("click", () => void go(item));
+      row.append(button);
+      if (item.wave) {
+        const off = node("button", "inbox__wave", item.wave);
+        off.type = "button";
+        off.setAttribute("aria-label", `${item.wave}: ${item.what}, ${item.where}`);
+        off.addEventListener("click", () => void wave(item, off));
+        row.append(off);
+      }
+      list.append(row);
+    }
+    into.replaceChildren(title, list);
+    const back = focusKey && list.querySelector<HTMLElement>(`[data-key="${CSS.escape(focusKey)}"] ${focusWave ? ".inbox__wave" : ".inbox__item"}`);
+    if (back) back.focus();
+    else if (active || focusFirst) list.querySelector<HTMLElement>(".inbox__item")?.focus();
+    focusFirst = false;
+  }
+
+  return {
+    check,
+    /** The panel opening: drawn before it shows, its first row focused once it does. */
+    opened(into: HTMLElement, drawing: boolean) {
+      if (drawing && !checked) check();
+      if (drawing) draw(into);
+      else if (into.matches(":popover-open")) {
+        const first = into.querySelector<HTMLElement>(".inbox__item");
+        if (first) first.focus(); else focusFirst = !checked;
+      }
+    },
+  };
 }
