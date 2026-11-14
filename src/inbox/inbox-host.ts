@@ -86,12 +86,18 @@ export function createInbox(ports: InboxPorts) {
     },
   };
 
-  // Drawn as it opens (popovertarget opens it; Escape and a click outside close it, focus goes back to the button).
-  document.addEventListener("beforetoggle", (event) => {
+  // Drawn as it opens, then its first row takes the keyboard once it shows (popovertarget opens it; Escape and a
+  // click outside close it, and focus goes back to the button).
+  const opened = (draw: boolean) => (event: Event) => {
     const target = event.target as HTMLElement;
     if (target.id !== "inbox" || (event as ToggleEvent).newState !== "open") return;
-    void load().then(view => view.drawInbox(target, items, actions, true)).catch((error: unknown) => ports.error(error));
-  }, true);
+    void load().then(view => {
+      if (draw) view.drawInbox(target, items, actions);
+      else if (target.matches(":popover-open")) view.focusFirst(target);
+    }).catch((error: unknown) => ports.error(error));
+  };
+  document.addEventListener("beforetoggle", opened(true), true);
+  document.addEventListener("toggle", opened(false), true);
   effect(() => {
     void ports.appStore.drafts.revision.value;
     void ports.appStore.snapshot.value;
