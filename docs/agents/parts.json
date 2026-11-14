@@ -303,6 +303,15 @@
     "src/components/publish-menu.ts": "The Save menu: the changes to save or publish, each with its comparison, and Discard.",
     "src/page-builder/media-clean-up-review.ts": "The Clean up review's words and sizes: titles, lines and byte counts for each group.",
     "src/page-builder/media-adding-summary.ts": "The summary while files are added: one row per file with its progress.",
-    "src/page-builder/media-busy-lock.ts": "Media's busy lock: one image change at a time, the screen marked busy meanwhile, and the Cancel or Close button (`cancellation()`) a running change offers."
+    "src/page-builder/media-busy-lock.ts": "Media's busy lock: one image change at a time, the screen marked busy meanwhile, and the Cancel or Close button (`cancellation()`) a running change offers.",
+    "src/components/block-icon-kind.ts": "Which icon a block shows in Page structure and while dragged, from its tag and kind (`blockIconKind()`).",
+    "src/components/canvas-path.ts": "The site route or repository path an address on the canvas names, with the site's sub-folder prefix.",
+    "src/components/element-menu.ts": "The menu items for a selected element, gathered from each provider into one Row menu list (`elementMenuItems()`).",
+    "src/components/preview-files.ts": "Whether two sets of preview files are the same, so the preview frame is not redrawn for nothing.",
+    "src/components/agent-pin-geometry.ts": "Where an agent pin and its notes sit over the preview: pure geometry for agent-pins.ts.",
+    "src/components/card-ghost-view.ts": "Whether a card grid's ghost (the place a new card goes) is in view: pure geometry.",
+    "src/components/card-popover-placement.ts": "Where a card's popover goes in the pane, above or below its card: pure geometry.",
+    "src/components/edit-bar-placement.ts": "Where the edit bar sits around the selected element in the preview frame: pure geometry.",
+    "src/components/edit-bar-sources.ts": "The sources whose changes make the edit bar redraw its controls."
   }
 }

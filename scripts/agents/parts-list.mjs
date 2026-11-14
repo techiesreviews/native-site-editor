@@ -31,10 +31,13 @@ function walk(root, dir) {
   });
 }
 
-/** Every UI file under src: each stylesheet, and each TypeScript file that builds elements. */
+/** The component folders: every TypeScript file in them is UI, also one built only from other parts (`shareRow()`). */
+const componentFolders = /^src\/(?:ui|components)\//;
+
+/** Every UI file under src: each stylesheet, each TypeScript file in a component folder, and each that builds elements. */
 export function uiFiles(root) {
   return walk(root, "src").filter(path => !outside.test(path) && (path.endsWith(".css")
-    || (path.endsWith(".ts") && buildsElements.test(readFileSync(join(root, path), "utf8")))));
+    || (path.endsWith(".ts") && (componentFolders.test(path) || buildsElements.test(readFileSync(join(root, path), "utf8"))))));
 }
 
 /**
