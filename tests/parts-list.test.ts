@@ -58,12 +58,13 @@ test("every UI file is listed: parts by hand, screens from the code with their s
     "src/components/publish-menu.ts": '// The Save menu: the changes to save.\nexport const m = () => node("div");\n',
     "src/components/publish-menu.css": ".publish-menu {}\n",
     "src/components/maths.ts": "export const add = (a: number, b: number) => a + b;\n",
+    "src/page-builder/busy-lock.ts": "// The busy lock's Cancel.\nexport const cancel = (label: string) => button(label, stop);\n",
     "src/catalogue/board.ts": 'node("div");\n',
     "tests/badge.test.ts": 'import { badgePart } from "../src/ui/parts/badge";\n',
     "tests/publish.test.ts": 'readFileSync("src/components/publish-menu.css");\n',
   });
   try {
-    assert.deepEqual(uiFiles(p.root), ["src/components/publish-menu.css", "src/components/publish-menu.ts", "src/ui/parts/badge.css", "src/ui/parts/badge.ts"]);
+    assert.deepEqual(uiFiles(p.root), ["src/components/publish-menu.css", "src/components/publish-menu.ts", "src/page-builder/busy-lock.ts", "src/ui/parts/badge.css", "src/ui/parts/badge.ts"]);
     assert.equal(p.run("write").status, 0);
     const list = p.list();
     assert.match(list, /### Badge\n\n- \*\*For:\*\* A count or a status\.\n- \*\*Use:\*\* `badgePart\(options\)`\n- \*\*Variants:\*\* tones: neutral, danger\n/);
