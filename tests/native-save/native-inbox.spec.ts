@@ -83,6 +83,10 @@ test.describe("desktop", () => {
     await inbox(page).getByRole("button", { name: /^Decorative: / }).click();
     await expect(picture(page)).toHaveCount(0);
     await expect(inbox(page)).toContainText("All done");
+    // The last row gone, the keyboard stays in the panel, and Escape hands it back to the tray.
+    await expect(inbox(page).getByRole("heading", { name: "Inbox" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(inboxButton(page)).toBeFocused();
     await expect.poll(() => dot(page, "#inbox-button")).toBe(false);
     await expect.poll(() => homeSource(page)).toMatch(/<img alt="" class="hero-image" src="\/images\/placeholder.svg"|<img class="hero-image" src="\/images\/placeholder.svg"[^>]*alt=""/);
     await page.reload();
