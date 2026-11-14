@@ -2,7 +2,7 @@
 // layout of 2026-11-11). A row shows only while the control it works is there. Tested in
 // tests/top-bar-menu-rules.test.ts.
 
-export type MenuRow = "setup" | "pages" | "blocks" | "structure" | "code" | "screen" | "history" | "share" | "settings" | "switch";
+export type MenuRow = "setup" | "pages" | "blocks" | "structure" | "code" | "screen" | "history" | "inbox" | "share" | "settings" | "switch";
 
 export interface MenuFacts {
   /** The setup checklist's pill is offered (a site not yet set up): on a phone it leaves the bar for the Menu. */
@@ -28,6 +28,7 @@ export function menuRows(facts: MenuFacts): MenuRow[] {
     ["code", facts.sheet],
     ["screen", facts.devices],
     ["history", facts.history],
+    ["inbox", facts.project],
     ["share", facts.project],
     ["settings", facts.project],
     ["switch", true],
