@@ -5,6 +5,7 @@ main.ts holds the host's state and builds the hosts and controllers in order, th
 Historical searches: `applyNativeOperation` is gone; use guarded edits and native source transforms below.
 For historical src/components.ts searches, start at the Component tools row.
 Features a user can notice, with how to try each and the files that make it: [features.md](features.md).
+Building or changing UI: read [the parts list](parts.md) first and reuse before new (AGENTS.md); the target shape is [parts-plan.md](parts-plan.md).
 
 ## Where things live
 
@@ -37,6 +38,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | On-demand palette catalog | `src/page-builder/palette-catalog.ts` — `nativePaletteCommands` |
 | Command palette | `src/controllers/command-palette-controller.ts` — `createCommandPaletteController` |
 | Editor colours and surfaces; the CSS layers (tokens, elements, components, then the editor's unlayered screen CSS: [the plan](../wayfinder/atomic-catalogue/css-layers-plan.md)) | `src/style.css` (the layer order, the bare element rules on the elements layer); `src/theme.css`; `src/utilities.css`; `src/ui/parts/button.css` (the Button component and its --btn- defaults) |
+| Parts list, reuse before new and the copy counter | `docs/agents/parts.md` (generated: every UI component, read first); `docs/agents/parts.json` (the parts and shared pieces, described by hand); `scripts/agents/parts-list.mjs` — `build`, `uiFiles`, `purpose`; `scripts/agents/copies.mjs` — `scan`, `copiesInScript`, `copiesInStyles`; `scripts/agents/copies.json` (the committed count, which may only go down) |
 | The open site's state and effective sources | `src/native-site-runtime.ts` — `createNativeSiteRuntime` (the site, GitHub's layer, its source, text source, files, new drafts, shown paths, a save adopted and reset), `textNow` (a file's text now: the preview's source, and the text source of media text, guarded edits and agent reads), `nativeFiles`; `src/main.ts` — `runtime` |
 | Routes and preview updates | `src/site-preview.ts` — `createSitePreview`, `SitePreviewPorts` (a file's route and component, a page's head, the stylesheets pages link, the preview's sources and updates, the page shown after one is gone); `src/page-builder-host.ts` — `refreshNativeRoutes`; `src/main.ts` — `sitePreview`, `updateNativePreviewSources` |
 | Status line and Undo | `src/announce.ts` — `createAnnounce` (said in #status only: no toast; `undoAction` for an Undo button in place); `src/ui/done-mark.ts` — a menu button's check after Copy path; `src/main.ts` — `announce` |

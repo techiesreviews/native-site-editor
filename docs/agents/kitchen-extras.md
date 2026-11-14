@@ -14,6 +14,9 @@ This editor's own facts for the shared rulebook ([`docs/kitchen.md` in the kit r
   `kit specs --affected` for the browser specs a change reaches, `kit size` when boot code moves,
   `kit shots` for every visible change (also today's screens for a mock-up, station 3).
 - **Shared file:** `src/main.ts`; at most 2 slices in it at once (station 5).
+- **UI work reads the parts list first:** [parts.md](parts.md). Reuse before new (a part that fits, extended when it
+  nearly fits; a new one only with a reason in the PR); home-made copies may only go down (`scripts/agents/copies.json`).
+  Target shape and the one-component-per-PR slices: [parts-plan.md](parts-plan.md).
 - **Docs the shared rulebook names:** [runner.md](runner.md) (and a build's own `runner-extras.md`),
   [issue-tracker.md](issue-tracker.md) (files and claiming, station 2:
   [Wayfinding operations](issue-tracker.md#wayfinding-operations); the feedback log, station 10:
