@@ -36,6 +36,21 @@ test("an import after a statement with no semicolon keeps its own line", () => {
   assert.deepEqual(lines(importsInScript('export interface A {\n  a: number\n}\nimport { b } from "../components/b";\n')), [[4, "../components/b"]]);
 });
 
+test("a dynamic import with options or a trailing comma still counts", () => {
+  assert.deepEqual(lines(importsInScript('import("../components/a", { with: { type: "json" } });\nimport("../components/b",);\nimport(\n  "../components/c"\n);\n')), [
+    [1, "../components/a"], [2, "../components/b"], [3, "../components/c"],
+  ]);
+});
+
+test("import-like text inside a string or a template never counts; an import inside a template's ${} does", () => {
+  assert.deepEqual(importsInScript([
+    "const example = 'import(\"../components/flyout\")';",
+    'const shown = "import { x } from \'../workspace-shell\'";',
+    "const note = `import \"../page-builder/pane\"`;",
+  ].join("\n")), []);
+  assert.deepEqual(lines(importsInScript('const later = `${await import("../components/a")}`;\n')), [[1, "../components/a"]]);
+});
+
 test("an import in a comment never counts", () => {
   assert.deepEqual(importsInScript('// import { x } from "../components/a";\n/* import("../workspace-shell") */\nconst a = 1;\n'), []);
 });
