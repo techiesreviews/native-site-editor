@@ -40,7 +40,8 @@ test("a comment opener inside a string, or a URL, never hides the code after it"
 
 test("a quote or backtick inside a regex literal opens no string", () => {
   const found: Found[] = copiesInScript(['s.replace(/[`*]/g, "");', '// node("button")', "const t = `a`;", 'node("button");', "const half = a / 2; node(\"dialog\");"].join("\n"));
-  assert.deepEqual(kindsAndLines(found), [["buttons", 4], ["dialogs", 5]]);  assert.deepEqual(copiesInScript('const half = a / 2; // node("dialog")\nn++ / 2; // node("button")\nwidth\n// a long comment between the two halves of a division\n/ height; // node("button")'), [],
+  assert.deepEqual(kindsAndLines(found), [["buttons", 4], ["dialogs", 5]]);
+  assert.deepEqual(copiesInScript('const half = a / 2; // node("dialog")\nn++ / 2; // node("button")\nwidth\n// a long comment between the two halves of a division\n/ height; // node("button")'), [],
     "a division is no regex");
   assert.deepEqual(kindsAndLines(copiesInScript('if (x) return /"/.test(s); node("button");')), [["buttons", 1]]);
   assert.deepEqual(copiesInScript('const r = /a\\\n"x"; // node("button")'), [], "a regex never runs past its line");
@@ -111,6 +112,16 @@ test("a look inside :is() or :where() counts, once per place a group names", () 
   assert.deepEqual(found.map(({ kind, line, text }) => [kind, line, text]), [
     ["buttonLooks", 1, ".panel button"], ["buttonLooks", 2, ".a .button"], ["buttonLooks", 2, ".b .button"], ["buttonLooks", 3, ".bar .bar__button:hover"],
   ]);
+});
+
+test("spaces or combinator signs inside an attribute test or an argument never split the selector", () => {
+  const found: Found[] = copiesInStyles([
+    '.button[aria-label="Open menu"] { background: var(--surface); }',
+    ".bar__badge[data-note='a > b'] { border-radius: var(--radius-full); }",
+    'dialog[aria-label="Site settings"]::backdrop { background: var(--scrim); }',
+    ".bar__button:not(:has(.a > .b)) { border: 0; }",
+  ].join("\n"));
+  assert.deepEqual(kindsAndLines(found), [["buttonLooks", 1], ["badgeLooks", 2], ["dialogLooks", 3], ["buttonLooks", 4]]);
 });
 
 test("placing, sizing or setting a part's hooks never counts, nor a look on a name that only sounds alike", () => {
