@@ -194,7 +194,10 @@ export function expandGroups(selector) {
     const from = lastCombinator(current.slice(0, start)) + 1;
     for (const choice of splitList(current.slice(open + 1, end))) {
       const cut = lastCombinator(choice) + 1;
-      queue.push(`${current.slice(0, from)}${choice.slice(0, cut)}${current.slice(from, start)}${choice.slice(cut)}${current.slice(end + 1)}`);
+      // An element name leads its compound (`.button:is(button)` is `button.button`).
+      const tail = choice.slice(cut), element = /^(?:[a-z][\w-]*|\*)/i.exec(tail)?.[0] ?? "";
+      const glued = element ? `${element}${current.slice(from, start)}${tail.slice(element.length)}` : `${current.slice(from, start)}${tail}`;
+      queue.push(`${current.slice(0, from)}${choice.slice(0, cut)}${glued}${current.slice(end + 1)}`);
     }
   }
   return [...out, ...queue];
@@ -226,10 +229,13 @@ function subject(selector) {
   const bare = compound => compound.replace(/::?[\w-]+(\(\))?/g, "").replace(/\[[^\]]*\]/g, "");
   const plain = bare(last);
   return {
-    // Each compound of the context keeps its element and first class, the name of the thing; its states and further
+    // Each compound of the context keeps its element, id and first class, the name of the thing; its states and further
     // classes go, so `.row:hover .row__button` and `.row.is-open .row__button` draw the look `.row .row__button` does.
     backdrop: /::backdrop\b/.test(last),
-    context: parts.slice(0, -1).map(compound => /^(?:[a-z][\w-]*)?(?:\.[\w-]+)?/i.exec(bare(compound))[0]).filter(Boolean).join(" "),
+    context: parts.slice(0, -1).map(compound => {
+      const plainCompound = bare(compound);
+      return `${/^[a-z][\w-]*/i.exec(plainCompound)?.[0] ?? ""}${/#[\w-]+/.exec(plainCompound)?.[0] ?? ""}${/\.[\w-]+/.exec(plainCompound)?.[0] ?? ""}`;
+    }).filter(Boolean).join(" "),
     element: /^[a-z][\w-]*/.exec(plain)?.[0] ?? "", classes: [...plain.matchAll(/\.([\w-]+)/g)].map(match => match[1]),
   };
 }
