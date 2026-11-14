@@ -1534,7 +1534,7 @@ test("agent move_file renames a media family through Files, rewrites every menti
     onBranchHere: path => Object.hasOwn(branch, path), withMovedPageUrls() {}, readNativeRedirects: async () => undefined,
     confirmDialog: () => { throw new Error("Agents must never open a dialog"); },
     undoFileChanges() {}, duplicateFile: () => true, afterFileChanges() {}, announce() {}, refuse() {}, errorMessage() {},
-    requestAnimationFrame: callback => callback(), openFolder() {}, fileRow: () => undefined, revealFile: () => undefined, focusFiles() {}, renderFileTree() {}, filesTabOpen: () => true,
+    requestAnimationFrame: callback => callback(), openFolder() {}, fileRow: () => undefined, revealFile: () => undefined, rowsBeside: () => [], focusFiles() {}, filesSearch: () => "", renderFileTree() {}, filesTabOpen: () => true,
   } satisfies FileOperationsPorts;
   const controller = createFileOperationsController(ports), actions = agentTidyActions(agentMediaFixture());
   actions.text = async path => memory.workspace.source(path);

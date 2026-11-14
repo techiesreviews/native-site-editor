@@ -413,6 +413,20 @@ test("a file dropped on a found file marks that row and goes into its folder: a 
   await expect(search).toHaveValue("s");
 });
 
+test("deleting a new file at the top of the tree puts the focus on the row after it", async ({ page, baseURL }) => {
+  await openFiles(page, baseURL);
+  await settled(page);
+  await row(page, "robots.txt").click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for robots.txt" }).getByRole("menuitem", { name: "Duplicate" }).click();
+  await expect(row(page, "robots-copy.txt")).toBeFocused();
+  // Not on GitHub, the copy's row goes with it: the next row takes the focus (ux-rulebook B2).
+  await row(page, "robots-copy.txt").click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for robots-copy.txt" }).getByRole("menuitem", { name: "Delete" }).click();
+  await page.getByRole("dialog", { name: "Delete robots-copy.txt?" }).getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(row(page, "robots-copy.txt")).toHaveCount(0);
+  await expect(row(page, "robots.txt")).toBeFocused();
+});
+
 // A rename begun while the page is still loading is refused ("The repository changed meanwhile"): these wait for the preview,
 // and a rename refused all the same (a slow machine) is sent again.
 const settled = (page: Page) => expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
