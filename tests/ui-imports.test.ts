@@ -32,6 +32,10 @@ test("every form of import is read: static, type-only, re-export, side effect an
   ]);
 });
 
+test("an import after a statement with no semicolon keeps its own line", () => {
+  assert.deepEqual(lines(importsInScript('export interface A {\n  a: number\n}\nimport { b } from "../components/b";\n')), [[4, "../components/b"]]);
+});
+
 test("an import in a comment never counts", () => {
   assert.deepEqual(importsInScript('// import { x } from "../components/a";\n/* import("../workspace-shell") */\nconst a = 1;\n'), []);
 });
@@ -48,6 +52,9 @@ test("src/ui/ may import its own files, packages, code outside src/ and the icon
   assert.equal(wrongTarget(from, "../dom"), "");
   assert.equal(wrongTarget(from, "../../icons"), "");
   assert.equal(wrongTarget(from, "../../icons.ts"), "");
+  assert.equal(wrongTarget(from, "../../icons.js"), "");
+  assert.equal(wrongTarget(from, "../../icons?raw"), "", "a bundler query names the same module");
+  assert.equal(wrongTarget(from, ".."), "", "src/ui/ itself is inside");
   assert.equal(wrongTarget(from, "@preact/signals-core"), "");
   assert.equal(wrongTarget(from, "node:path"), "");
   assert.equal(wrongTarget(from, "../../../shared/css-imports.ts"), "");
@@ -74,7 +81,7 @@ test("a planted wrong import fails the check with its file, line and target; the
   const p = project({
     "src/ui/dom.ts": 'import { icon } from "../icons";\n',
     "src/ui/parts/badge.ts": 'import { escape } from "./escape";\n',
-    "src/components/flyout.ts": 'import { button } from "../ui/dom";\n',
+    "src/components/flyout.ts": 'import { pane } from "../page-builder/pane";\n',
   });
   try {
     const ok = p.run("check");
@@ -83,13 +90,15 @@ test("a planted wrong import fails the check with its file, line and target; the
 
     p.write("src/ui/parts/badge.ts", 'import { escape } from "./escape";\nimport type { Pane } from "../../page-builder/pane";\n');
     p.write("src/ui/inline-field.css", '@import "../components/flyout.css";\n');
+    p.write("src/ui/parts/later.mjs", 'export { shell } from "../../workspace-shell.ts";\n');
     const wrong = p.run("check");
     assert.equal(wrong.status, 1);
     assert.match(wrong.stderr, /^src\/ui\/parts\/badge\.ts:2: imports src\/page-builder\/pane \("\.\.\/\.\.\/page-builder\/pane"\)/m);
     assert.match(wrong.stderr, /^src\/ui\/inline-field\.css:1: imports src\/components\/flyout\.css/m);
     assert.match(wrong.stderr, /docs\/agents\/parts-plan\.md/);
-    assert.match(wrong.stdout, /RESULT: fail ui-imports 2 wrong imports in 2 files/);
-    assert.equal(scan(p.root).length, 2);
+    assert.match(wrong.stderr, /^src\/ui\/parts\/later\.mjs:1: imports src\/workspace-shell\.ts/m, "a JavaScript file under src/ui/ is read too");
+    assert.match(wrong.stdout, /RESULT: fail ui-imports 3 wrong imports in 3 files/);
+    assert.equal(scan(p.root).length, 3);
   } finally { rmSync(p.root, { recursive: true, force: true }); }
 });
 

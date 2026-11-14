@@ -3,13 +3,14 @@
 // its own.
 //
 //   node scripts/agents/ui-imports.mjs check [--then <script> [args…]]
-//       fail when a TypeScript or CSS file under src/ui/ imports anything under src/ outside src/ui/, but for the
+//       fail when a script or CSS file under src/ui/ imports anything under src/ outside src/ui/, but for the
 //       shared icons (src/icons.ts). Packages and code outside src/ (shared/) are fine. Never writes. --then runs one
 //       more node script with every argument after it, so the kit's single css command can run this check too.
 //
 // `--root <dir>` reads that project instead of this one. Every other module under src/ counts as a screen:
 // src/components/, src/page-builder/, src/catalogue/ and the editor's own top-level files. Today no import breaks the
-// rule, so there is no allow-list: a part that needs a screen's piece gets it moved into src/ui/ or passed in.
+// rule, so there is no allow-list: a part that needs a screen's piece gets it moved into src/ui/ or passed in. Not read:
+// TypeScript's `import x = require("…")` and `import(`…${x}`)`, which the editor does not use.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, posix, relative, sep } from "node:path";
@@ -22,9 +23,10 @@ export const foundations = ["src/icons"];
 
 const lineAt = (text, index) => text.slice(0, index).split("\n").length;
 
-// Read from the text with its comments blanked (lines kept). `from` imports and re-exports may span lines.
+// Read from the text with its comments blanked (lines kept). `from` imports and re-exports may span lines, but never
+// run past a line that starts the next statement, so an import after a statement with no semicolon keeps its own line.
 const scriptPatterns = [
-  /\b(?:import|export)\b[^;'"`]*?\bfrom\s*(["'])([^"'\n]+)\1/g,
+  /\b(?:import|export)\b(?:(?!\n\s*(?:import|export)\b)[^;'"`])*?\bfrom\s*(["'])([^"'\n]+)\1/g,
   /\bimport\s*(["'])([^"'\n]+)\1/g,
   /\bimport\s*\(\s*(["'`])([^"'`\n$]+)\1\s*\)/g,
 ];
@@ -50,19 +52,23 @@ export function importsInStyles(text) {
  */
 export function wrongTarget(from, specifier) {
   if (!specifier.startsWith(".") && !specifier.startsWith("/")) return "";
-  const target = specifier.startsWith("/") ? posix.normalize(specifier.slice(1)) : posix.join(posix.dirname(from), specifier);
-  if (!target.startsWith("src/") || target.startsWith(uiDir)) return "";
-  return foundations.includes(target.replace(/\.(?:ts|js|mjs)$/, "")) ? "" : target;
+  // A bundler query or hash (`../icons?raw`) names the same module.
+  const path = specifier.replace(/[?#].*$/, "");
+  const target = path.startsWith("/") ? posix.normalize(path.slice(1)) : posix.join(posix.dirname(from), path);
+  if (!target.startsWith("src/") || `${target}/`.startsWith(uiDir)) return "";
+  return foundations.includes(target.replace(/\.(?:[cm]?[jt]sx?)$/, "")) ? "" : target;
 }
 
 function sources(dir) {
   return readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1)).flatMap(entry => {
     const path = join(dir, entry.name);
-    return entry.isDirectory() ? sources(path) : /\.(ts|css)$/.test(entry.name) ? [path] : [];
+    return entry.isDirectory() ? sources(path) : scriptOrStyle.test(entry.name) ? [path] : [];
   });
 }
 
-/** The TypeScript and CSS files under src/ui/, as project paths. */
+const scriptOrStyle = /\.(?:[cm]?[jt]sx?|css)$/;
+
+/** The script (TypeScript or JavaScript) and CSS files under src/ui/, as project paths. */
 export function uiSources(root) {
   const dir = join(root, uiDir);
   return existsSync(dir) ? sources(dir).map(path => relative(root, path).split(sep).join("/")) : [];
