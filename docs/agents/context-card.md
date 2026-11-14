@@ -28,7 +28,8 @@ exits 0. `CHAT_MEMORY_DIR` overrides the folder (tests). `--cwd DIR` picks anoth
 
 ## In this repo
 
-`scripts/agents/kit card` prints the card for this worktree. The SessionStart hooks in
+`node "$(scripts/agents/kit --home)/context-card.mjs"` prints the card for this worktree (`kit card` was merged
+into the hook on 2026-11-14). The SessionStart hooks in
 `.claude/settings.json` and `.codex/hooks.json` call `scripts/agents/hooks/run.sh context-card`
 ([Hooks](guardrails.md#hooks)).
 

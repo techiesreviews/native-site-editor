@@ -65,7 +65,7 @@ closed tickets; planned items have their slices in
 [the factory build](../wayfinder/software-factory/build/README.md).
 
 - Context card (station 1): [factory 10](../wayfinder/software-factory/tickets/10-grill-central-memory.md#resolution-2026-10-22).
-- UX ladder and UX review (stations 8, 11; ladder): [factory 02](../wayfinder/software-factory/tickets/02-grill-ux-confidence-ladder.md#resolution-2026-10-22).
+- UX ladder and UX review (stations 8, 11; ladder): [factory 02](../wayfinder/software-factory/tickets/02-grill-ux-confidence-ladder.md#resolution-2026-10-22). The ladder was dropped on 2026-11-14 (TOOLS-235): Lex tries every visible change himself.
 - `kit ux` and the end check's `kit ux --all` (stations 7, 11): [factory 03](../wayfinder/software-factory/tickets/03-grill-checking-skill.md#resolution-2026-10-22).
 - Review evidence and the scoreboard (stations 8, 10): [factory 04](../wayfinder/software-factory/tickets/04-grill-scoreboard.md#resolution-2026-10-22).
 - `kit next` hand-out rules (station 5): [factory 05](../wayfinder/software-factory/tickets/05-grill-hand-out.md#resolution-2026-10-22).
