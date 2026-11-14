@@ -302,6 +302,7 @@
     "src/components/repository-menu.ts": "The project menu under the project tile: repositories, branches, site settings, sharing, download and sign out.",
     "src/components/publish-menu.ts": "The Save menu: the changes to save or publish, each with its comparison, and Discard.",
     "src/page-builder/media-clean-up-review.ts": "The Clean up review's words and sizes: titles, lines and byte counts for each group.",
-    "src/page-builder/media-adding-summary.ts": "The summary while files are added: one row per file with its progress."
+    "src/page-builder/media-adding-summary.ts": "The summary while files are added: one row per file with its progress.",
+    "src/page-builder/media-busy-lock.ts": "Media's busy lock: one image change at a time, the screen marked busy meanwhile, and the Cancel or Close button (`cancellation()`) a running change offers."
   }
 }

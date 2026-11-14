@@ -82,6 +82,18 @@ test("a look set straight inside a nested at-rule belongs to the rule around it"
   assert.deepEqual(kindsAndLines(found), [["buttonLooks", 1]]);
 });
 
+test("every border side counts as a look; the same look in another place is another copy, its states are not", () => {
+  const found: Found[] = copiesInStyles([
+    ".panel__button { border-bottom: 1px solid var(--line); }",
+    ".panel__chip { border-inline-start-color: var(--line); }",
+    ".table__count { border-collapse: collapse; }",
+    ".publish-menu .button { background: var(--hover); }",
+    ".publish-menu:hover .button:focus-visible { background: var(--surface); }",
+    ".another-screen .button { background: var(--hover); }",
+  ].join("\n"));
+  assert.deepEqual(kindsAndLines(found), [["buttonLooks", 1], ["badgeLooks", 2], ["buttonLooks", 4], ["buttonLooks", 6]]);
+});
+
 test("placing, sizing or setting a part's hooks never counts, nor a look on a name that only sounds alike", () => {
   assert.deepEqual(copiesInStyles([
     ".bar__button { margin: 0; inline-size: 100%; color: var(--text); }",

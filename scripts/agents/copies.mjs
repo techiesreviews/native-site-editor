@@ -177,9 +177,11 @@ function declarations(text) {
 function subject(selector) {
   const parts = selector.replace(/\([^()]*\)/g, "()").split(/\s*[\s>+~]\s*/).filter(Boolean);
   const last = parts.at(-1) ?? "";
-  const plain = last.replace(/::?[\w-]+(\(\))?/g, "").replace(/\[[^\]]*\]/g, "");
+  const bare = compound => compound.replace(/::?[\w-]+(\(\))?/g, "").replace(/\[[^\]]*\]/g, "");
+  const plain = bare(last);
   return {
-    backdrop: /::backdrop\b/.test(last), context: parts.slice(0, -1).join(" "),
+    // The context keeps its classes and drops its states, so `.row:hover .row__button` is the look `.row .row__button` draws.
+    backdrop: /::backdrop\b/.test(last), context: parts.slice(0, -1).map(bare).filter(Boolean).join(" "),
     element: /^[a-z][\w-]*/.exec(plain)?.[0] ?? "", classes: [...plain.matchAll(/\.([\w-]+)/g)].map(match => match[1]),
   };
 }
@@ -198,24 +200,25 @@ function named(classes, list) {
   }
   return "";
 }
-const looks = /^(background|background-color|background-image|border|border-color|border-radius|box-shadow)$/;
+// Every border property draws a look (sides, logical sides, colour, style, width, corners), except a table's layout.
+const looks = /^(?:background|background-color|background-image|box-shadow)$|^border(?:$|-(?!collapse$|spacing$)[a-z-]+$)/;
 const setsLook = rule => rule.declarations.some(({ name }) => looks.test(name));
 
-/** Per kind: the key of the look a selector's subject draws, or "" when it draws none of that kind. */
+/** Per kind: the name of the look a selector's subject draws, or "" when it draws none of that kind. */
 const styleKinds = {
-  buttonLooks: ({ element, classes, context }) => named(classes, ["button", "btn"]) || (element === "button" ? `${context} button`.trim() : ""),
+  buttonLooks: ({ element, classes }) => named(classes, ["button", "btn"]) || (element === "button" ? "button" : ""),
   badgeLooks: ({ classes }) => named(classes, ["badge", "pill", "chip", "count", "counter"]),
-  dialogLooks: ({ element, classes, backdrop, context }) => {
-    const name = named(classes, ["dialog", "modal", "backdrop", "scrim"]) || (element === "dialog" ? `${context} dialog`.trim() : "");
-    if (backdrop) return `${name || classes[0] || `${context} ${element}`.trim()}::backdrop`;
+  dialogLooks: ({ element, classes, backdrop }) => {
+    const name = named(classes, ["dialog", "modal", "backdrop", "scrim"]) || (element === "dialog" ? "dialog" : "");
+    if (backdrop) return `${name || classes[0] || element}::backdrop`;
     return name;
   },
 };
 
 /**
  * Every home-made look in one CSS file's text: a rule that sets a look (background, border, corner or shadow) on
- * something named as a button, a badge or a dialog. One copy per look, however many rules and states draw it: the
- * same subject (`.x__button` and `.x__button:hover`) counts once, at its first line. A rule that sets only a part's
+ * something named as a button, a badge or a dialog. One copy per look and place, however many rules and states draw
+ * it: `.x__button` and `.x__button:hover` count once, at the first line; `.a .button` and `.b .button` count twice. A rule that sets only a part's
  * hooks (`--btn-*`) uses the part and never counts.
  */
 export function copiesInStyles(text) {
@@ -227,7 +230,8 @@ export function copiesInStyles(text) {
       for (const [kind, look] of Object.entries(styleKinds)) {
         const name = look(target);
         if (!name) continue;
-        const key = `${kind} ${name}`;
+        // The same look in another place (its context) is another copy; its states are the same one.
+        const key = `${kind} ${target.context} ${name}`;
         if (seen.has(key)) continue;
         seen.add(key);
         found.push({ kind, line: rule.line, text: selector.replace(/\s+/g, " ").slice(0, 120) });
