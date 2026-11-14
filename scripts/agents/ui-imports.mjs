@@ -62,8 +62,10 @@ const scriptPatterns = [
 ];
 // Vite: `import.meta.glob("…")` or a list of patterns, with any type argument; a negated one (`!…`) imports nothing,
 // and a `base` option is where its relative patterns start.
-const globPattern = /\bimport\.meta\.glob\s*(?:<[^;]*?>)?\s*\(\s*(\[[^\]]*\]|(["'`])[^"'`\n$]+\2)/dg;
-const globBase = /^\s*,\s*\{[^)]*?\bbase\s*:\s*(["'`])([^"'`\n$]+)\1/d;
+// The type argument ends at the first `>` the call's `(` follows, so an arrow (`=>`) or a `;` inside it is part of it.
+const globPattern = /\bimport\.meta\.glob\s*(?:<[\s\S]{0,500}?>)?\s*\(\s*(\[[^\]]*\]|(["'`])[^"'`\n$]+\2)/dg;
+// Read on the code itself, as its key may be quoted (`"base"`), and its strings are blanked in the bare text.
+const globBase = /^\s*,\s*\{[^)]*?(["']?)\bbase\1\s*:\s*(["'`])([^"'`\n$]+)\2/d;
 
 /** Every module one script file's text imports, with the 1-based line its statement starts on. */
 export function importsInScript(text) {
@@ -73,8 +75,7 @@ export function importsInScript(text) {
     for (const match of bare.matchAll(pattern)) found.push({ line: lineAt(code, match.index), specifier: code.slice(...match.indices[2]) });
   for (const match of bare.matchAll(globPattern)) {
     const [start, end] = match.indices[1];
-    const baseMatch = globBase.exec(bare.slice(end));
-    const base = baseMatch ? code.slice(end + baseMatch.indices[2][0], end + baseMatch.indices[2][1]) : "";
+    const base = globBase.exec(code.slice(end))?.[3] ?? "";
     for (const quoted of bare.slice(start, end).matchAll(/(["'`])([^"'`\n]+)\1/dg)) {
       const pattern = code.slice(start + quoted.indices[2][0], start + quoted.indices[2][1]);
       if (pattern.startsWith("!")) continue;
@@ -90,7 +91,7 @@ export function importsInScript(text) {
 /** Every `@import` in one CSS file's text, quoted or in `url()`. Comments never count. */
 export function importsInStyles(text) {
   const code = text.replace(/\/\*[\s\S]*?\*\//g, match => match.replace(/[^\n]/g, " "));
-  return [...code.matchAll(/@import\s+(?:url\(\s*)?(["']?)([^"')\s;]+)\1/g)].map(match => ({ line: lineAt(code, match.index), specifier: match[2] }));
+  return [...code.matchAll(/@import\s*(?:url\(\s*)?(["']?)([^"')\s;]+)\1/g)].map(match => ({ line: lineAt(code, match.index), specifier: match[2] }));
 }
 
 /**
@@ -102,7 +103,7 @@ export function wrongTarget(from, specifier) {
   // A bundler query or hash (`../icons?raw`) names the same module.
   const path = specifier.replace(/[?#].*$/, "");
   const target = path.startsWith("/") ? posix.normalize(path.slice(1)) : posix.join(posix.dirname(from), path);
-  if (!target.startsWith("src/") || `${target}/`.startsWith(uiDir)) return "";
+  if ((target !== "src" && !target.startsWith("src/")) || `${target}/`.startsWith(uiDir)) return "";
   return foundations.includes(target.replace(/\.(?:[cm]?[jt]sx?)$/, "")) ? "" : target;
 }
 

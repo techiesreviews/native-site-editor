@@ -70,9 +70,11 @@ test("a glob's base option is where its relative patterns start; a typed glob is
     'const c = import.meta.glob("./*.css", { base: "./parts" });',
     'const d = import.meta.glob<{ default: () => void }>("../components/*.ts");',
     'const e = import.meta.glob<Record<string, string>>("../workspace-shell.ts", { query: { raw: true } });',
+    'const f = import.meta.glob<{ title: string; body: string }>("../components/*.ts");',
+    "const g = import.meta.glob('./*.ts', { 'base': '../page-builder' });",
   ].join("\n"))), [
     [1, "../components/*.ts"], [2, "/src/page-builder/*.ts"], [2, "/src/ui/x.ts"], [3, "./parts/*.css"], [4, "../components/*.ts"],
-    [5, "../workspace-shell.ts"],
+    [5, "../workspace-shell.ts"], [6, "../components/*.ts"], [7, "../page-builder/*.ts"],
   ]);
   assert.equal(wrongTarget("src/ui/dom.ts", "../components/*.ts"), "src/components/*.ts");
   assert.equal(wrongTarget("src/ui/dom.ts", "./parts/*.css"), "", "a base inside src/ui/ stays inside");
@@ -83,8 +85,8 @@ test("an import in a comment never counts", () => {
 });
 
 test("a CSS @import is read in both forms", () => {
-  assert.deepEqual(lines(importsInStyles('@import "../components/a.css";\n/* @import "../b.css"; */\n@import url(../theme.css) layer(x);\n')), [
-    [1, "../components/a.css"], [3, "../theme.css"],
+  assert.deepEqual(lines(importsInStyles('@import "../components/a.css";\n/* @import "../b.css"; */\n@import url(../theme.css) layer(x);\n@import"../c.css";\n@import url("../d.css");\n')), [
+    [1, "../components/a.css"], [3, "../theme.css"], [4, "../c.css"], [5, "../d.css"],
   ]);
 });
 
@@ -97,6 +99,7 @@ test("src/ui/ may import its own files, packages, code outside src/ and the icon
   assert.equal(wrongTarget(from, "../../icons.js"), "");
   assert.equal(wrongTarget(from, "../../icons?raw"), "", "a bundler query names the same module");
   assert.equal(wrongTarget(from, ".."), "", "src/ui/ itself is inside");
+  assert.equal(wrongTarget(from, "../.."), "src", "src/ itself is the editor's entry, a screen");
   assert.equal(wrongTarget(from, "@preact/signals-core"), "");
   assert.equal(wrongTarget(from, "node:path"), "");
   assert.equal(wrongTarget(from, "../../../shared/css-imports.ts"), "");
