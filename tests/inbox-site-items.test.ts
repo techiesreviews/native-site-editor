@@ -94,3 +94,8 @@ test("a picture offering Decorative carries the page text it was found in", () =
   const text = `${head("Home")}<img src="/images/team.jpg"></body>`;
   assert.equal(siteItems([page("index.html", text)], rules)[0].found, text);
 });
+
+test("a picture inside an inactive <template> shows nothing and is not listed; one in a declarative shadow root is", () => {
+  const items = siteItems([page("index.html", `${head("Home")}<template id="card"><img src="/images/a.jpg"></template><div><template shadowrootmode="open"><img src="/images/b.jpg"></template></div></body>`)], rules);
+  assert.deepEqual(items.map(item => item.media), ["images/b.jpg"]);
+});

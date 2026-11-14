@@ -109,6 +109,11 @@
   cursor: pointer;
 }
 .inbox__wave:disabled { cursor: progress; opacity: 0.6; }
+/* Touch: the row and Decorative are 44 px targets (U6). */
+@media (hover: none), (pointer: coarse), (width <= 768px) {
+  .inbox__item { min-block-size: var(--size-touch); }
+  .inbox__wave { block-size: var(--size-touch); }
+}
 .inbox__item:focus-visible, .inbox__wave:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 @media (hover: hover) and (pointer: fine) {
   .inbox__row:has(.inbox__item:hover) { background: var(--hover); }

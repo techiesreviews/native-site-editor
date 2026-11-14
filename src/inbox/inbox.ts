@@ -33,7 +33,8 @@ function findItems(ports: InboxPorts, settle: boolean) {
 
 /** Goes to an item's spot: its picture selected on its page, or a page's details for its title. */
 async function goTo(item: InboxItem, ports: InboxPorts) {
-  const shown = ports.appStore.openFile.value === item.page;
+  // Shown: the page is the open file and on the canvas (a Ctrl+click on a link takes the canvas away alone).
+  const shown = ports.appStore.openFile.value === item.page && ports.showing() === ports.route(item.page);
   if (item.kind === "title") {
     // Page settings open only for the page opened, on the site it was asked on.
     const stamp = ports.stamp();

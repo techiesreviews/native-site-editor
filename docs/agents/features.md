@@ -1249,7 +1249,7 @@ its number unused.
 
 ### F-inbox-02 An Inbox item goes to its spot and goes away once fixed
 - Try: On a page with a picture that has no alt text, open the Inbox and click "Picture without a description". Write the alt text in the edit bar. Remove a page's title with F2 in Pages, then click its "Page without a title" row.
-- Good: Every page of the site is checked, not only the open one, after load and after each change. The picture's row opens its page if needed, closes the Inbox and selects the picture with the edit bar on its missing alt text; once a description is written the row and the dot go by themselves (no "mark as read"). The title's row opens that page's Page settings. Each picture is listed once per page, as the edit bar judges it, including one shown only through `srcset` or a `<picture>`'s source (with no Decorative). A title's row opens Page settings only if you are still on that site.
+- Good: Every page of the site is checked, not only the open one, after load and after each change. The picture's row opens its page if needed (also when a Ctrl+click on a link took the canvas to another page), closes the Inbox and selects the picture with the edit bar on its missing alt text; once a description is written the row and the dot go by themselves (no "mark as read"). The title's row opens that page's Page settings. Each picture is listed once per page, as the edit bar judges it, including one shown only through `srcset` or a `<picture>`'s source (with no Decorative); a picture inside a `<template>` the page does not show is not listed. A title's row opens Page settings only if you are still on that site.
 - Files: `src/inbox/site-items.ts`, `src/inbox/inbox.ts`, `src/inbox/inbox-item.ts`, `src/site-text-index.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-inbox.spec.ts`
@@ -1273,7 +1273,7 @@ its number unused.
 
 ### F-inbox-05 The Inbox on a phone
 - Try: At 390 px, with something waiting, look at the bar's Menu button, open the Menu and tap Inbox.
-- Good: The tray button stays off the phone's bar; the Menu button wears the orange dot instead, and the Menu's Inbox row wears it too. Tapping the row closes the Menu and opens the Inbox panel within the screen; closing it brings the keyboard back to the Menu button.
+- Good: The tray button stays off the phone's bar; the Menu button wears the orange dot instead, and the Menu's Inbox row wears it too. Tapping the row closes the Menu and opens the Inbox panel within the screen, its rows and Decorative 44 px targets (U6); closing it brings the keyboard back to the Menu button.
 - Files: `src/components/top-bar-phone.ts`, `src/components/top-bar-phone.css`, `src/components/top-bar-menu-rules.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-inbox.spec.ts`

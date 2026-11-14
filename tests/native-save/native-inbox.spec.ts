@@ -92,6 +92,19 @@ test.describe("desktop", () => {
     expect(await dot(page, "#inbox-button")).toBe(false);
   });
 
+  test("after a Ctrl+click took the canvas to another page, an item still goes back to its own page's picture", async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    await expect.poll(() => dot(page, "#inbox-button")).toBe(true);
+    // The canvas follows the link alone: the open file stays Home.
+    await frame(page).locator("site-header [data-key='nav-about']").click({ modifiers: ["ControlOrMeta"] });
+    await expect(frame(page).locator(".hero img")).toHaveCount(0);
+    await inboxButton(page).click();
+    await picture(page).click();
+    await expect(inbox(page)).toBeHidden();
+    await expect(frame(page).locator(".hero img")).toBeVisible();
+    await expect(bar(page).getByRole("button", { name: "Alt text missing", exact: true })).toBeVisible();
+  });
+
   test("a page whose title is removed waits in the Inbox, and its item opens the page's details", async ({ page, baseURL }) => {
     await open(page, baseURL);
     await page.locator("#explorer-toggle").click();
@@ -130,6 +143,9 @@ test.describe("phone", () => {
     await expect(sheet).toBeHidden();
     await expect(inbox(page)).toBeVisible();
     await expect(picture(page)).toBeVisible();
+    // Touch targets of 44 px (U6).
+    expect((await inbox(page).getByRole("button", { name: /^Decorative: / }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    expect((await picture(page).boundingBox())!.height).toBeGreaterThanOrEqual(44);
     const box = (await inbox(page).boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(390);
