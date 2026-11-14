@@ -446,11 +446,11 @@ test("a rename or a copy that finishes after the person typed another search lea
   // the person types another search while the change is still finishing (a slow read held in the controller is covered by
   // tests/file-operations-controller.test.ts).
   const holdFrames = () => page.evaluate(() => {
-    const frame = window.requestAnimationFrame, waiting: FrameRequestCallback[] = [];
+    const frame = window.requestAnimationFrame.bind(window), waiting: FrameRequestCallback[] = [];
     window.requestAnimationFrame = (callback) => { waiting.push(callback); return 0; };
-    (window as unknown as { releaseFrames(): void }).releaseFrames = () => { window.requestAnimationFrame = frame; waiting.forEach(callback => frame(callback)); };
+    window.addEventListener("release-frames", () => { window.requestAnimationFrame = frame; waiting.forEach(callback => frame(callback)); }, { once: true });
   });
-  const releaseFrames = () => page.evaluate(() => (window as unknown as { releaseFrames(): void }).releaseFrames());
+  const releaseFrames = () => page.evaluate(() => window.dispatchEvent(new Event("release-frames")));
   const searchStays = async () => {
     await expect(search).toHaveValue("index");
     await expect(found.locator('.file-row[data-path="index.html"]')).toBeVisible();
