@@ -16,6 +16,7 @@ import { button, node } from "./ui/dom";
 import { pickFiles } from "./uploads";
 import "./components/files-found.css";
 import { markDone } from "./ui/done-mark";
+import { foundCount, sayFound } from "./ui/say-found";
 
 // What a creation in the Files tab writes: new files (drafts with no base
 // blob), and what to show after. Planned as the name is typed, so the dialog says the result
@@ -234,7 +235,7 @@ function searchOpens(list: HTMLElement, open: boolean) {
  * the folders on the way to a match opened. Empty `text` shows the tree again. */
 export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | "runtime" | "previewSelection" | "restoreFile" | "workspaceSession" | "appStore">, text: string,
   attach?: (row: HTMLButtonElement, line: HTMLElement, target: FileRowTarget) => void) {
-  const found = ports.element("files-found"), words = text.trim().toLowerCase();
+  const found = ports.element("files-found"), said = ports.element("files-found-said"), words = text.trim().toLowerCase();
   // Only a site's file list is whole; a plain repository's tree knows the folders opened.
   const all = words && ports.runtime.site ? ports.runtime.files() : [];
   ports.files.hidden = Boolean(words && all.length);
@@ -245,14 +246,17 @@ export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | 
     for (const list of ports.files.querySelectorAll<HTMLElement>("ul[data-search-open]")) searchOpens(list, false);
     const items = [...ports.files.querySelectorAll<HTMLElement>("li")];
     for (const item of items) item.hidden = Boolean(words);
+    let narrowed = 0;
     for (const item of words ? items : []) {
       if (!item.querySelector<HTMLElement>(":scope > .file-row-line > .file-row")?.dataset.path?.toLowerCase().includes(words)) continue;
+      narrowed++;
       for (let at: HTMLElement | null = item; at && at !== ports.files; at = at.parentElement) {
         if (at.tagName === "LI") at.hidden = false;
         else if (at.tagName === "UL" && at.hidden) searchOpens(at, true);
       }
     }
-    if (!words || items.some((item) => !item.hidden)) return;
+    // The rows kept are files and folders alike: only their number is said.
+    if (!words || narrowed) { sayFound(said, words ? foundCount(narrowed) : ""); return; }
     ports.files.hidden = true;
     found.hidden = false;
   }
@@ -277,6 +281,7 @@ export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | 
   const more = matches.length - FOUND_MAX;
   if (more > 0) rows.push(node("li", "muted pages-empty", `${more} more ${more === 1 ? "file matches" : "files match"}`));
   found.replaceChildren(...rows.length ? rows : [node("li", "muted pages-empty", "No file matches")]);
+  sayFound(said, matches.length ? foundCount(matches.length, "file") : "No file matches");
   if (had === undefined) return;
   const shown = [...found.querySelectorAll<HTMLElement>(".file-row")];
   (shown.find((row) => row.dataset.path === had) ?? shown[0] ?? ports.element("explorer-search")).focus();

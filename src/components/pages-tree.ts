@@ -15,6 +15,7 @@ import type { AgentMark } from "../agent-presence";
 import { setAgentDots } from "./agent-dots";
 import { rowActions } from "./row-actions";
 import { sharedTitleEnding, withoutTitleEnding } from "./page-title-ending";
+import { foundCount, sayFound } from "../ui/say-found";
 
 /** A new page, as typed in the tree. */
 export interface NativeNewRequest {
@@ -116,7 +117,10 @@ export function createPagesTree(options: {
   const tree = node("ul", "pages-tree");
   tree.setAttribute("role", "tree");
   tree.setAttribute("aria-labelledby", "pages-heading");
-  root.append(heading, tree);
+  // What the search found, for a screen reader (src/ui/say-found.ts).
+  const said = node("p", "sr-only");
+  said.setAttribute("role", "status");
+  root.append(heading, tree, said);
 
   // Rows' open state by route, kept across renders; unset is the default:
   // collapsed, except the rows leading to the open page.
@@ -349,11 +353,13 @@ export function createPagesTree(options: {
   const atUrl = (route: string | undefined) => (route ? () => rowOfRoute(route) : undefined);
   function applyFilter() {
     const words = query.trim().toLowerCase();
+    let matches = 0;
     const keep = (item: HTMLElement): boolean => {
       const group = item.querySelector<HTMLElement>(":scope > ul");
       const children = group ? [...group.children].filter((child): child is HTMLElement => child.getAttribute("role") === "treeitem") : [];
       const inside = children.map(keep).some(Boolean);
       const own = !words || `${item.getAttribute("aria-label") ?? ""} ${item.dataset.route ?? ""}`.toLowerCase().includes(words);
+      if (own) matches++;
       item.hidden = !own && !inside;
       // Opened for the search only: the next draw puts the row's own state back.
       if (words && inside && group) {
@@ -369,6 +375,7 @@ export function createPagesTree(options: {
     // The tab stop stays on a row that shows.
     const reachable = visibleRows();
     if (reachable.length && !reachable.some((row) => row.tabIndex === 0)) setActive(reachable[0]);
+    sayFound(said, !words ? "" : matches ? foundCount(matches, "page") : "No page matches");
     tree.querySelector(":scope > .pages-found-none")?.remove();
     if (words && !shown) {
       const none = node("li", "muted pages-empty pages-found-none", "No page matches");

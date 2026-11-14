@@ -33,6 +33,7 @@ export const workspaceMarkup = () => `${topBarMarkup()}
       <div id="explorer-files" class="explorer-panel" aria-labelledby="explorer-tab-files">
         <nav id="files" aria-label="Repository files"></nav>
         <ul id="files-found" class="file-list files-found" aria-label="Files found" hidden></ul>
+        <p id="files-found-said" class="sr-only" role="status"></p>
       </div>
     </div>
     <div class="workspace">
