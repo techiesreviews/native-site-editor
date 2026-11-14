@@ -655,6 +655,22 @@ test("lazy file validation and Restore need no action chunk", () => {
 });
 
 
+test("a person's first rename or copy keeps a search typed while its action chunk loads", async () => {
+  const module = await import("../src/controllers/file-operations-controller");
+  for (const action of ["rename", "copy"] as const) {
+    const f = fixture(), held = deferred<typeof module>();
+    let search = "a";
+    f.ports.filesSearch = () => search;
+    const controller = createLazyFileOperationsController(f.ports, () => held.promise);
+    const pending = action === "rename" ? controller.moveFileTarget(target, "b.txt", "rename", { reveal: true }) : controller.duplicateFileTarget(target);
+    search = "other";
+    held.resolve(module);
+    await pending;
+    assert.deepEqual(f.revealed, [], action);
+    assert.deepEqual(f.focused, [], action);
+  }
+});
+
 test("lazy file actions retain the target draft proof from before their chunk load", async () => {
   const module = await import("../src/controllers/file-operations-controller");
   for (const action of ["move", "delete"] as const) {
