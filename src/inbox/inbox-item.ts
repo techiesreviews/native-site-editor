@@ -19,4 +19,6 @@ export interface InboxItem {
   wave?: string;
   /** Every use of `media` on the page waits, so Decorative marks them all; otherwise only the one at `at`. */
   allUses?: boolean;
+  /** The page's text the item was found in: Decorative writes only over that text, never a change made since. */
+  found?: string;
 }
