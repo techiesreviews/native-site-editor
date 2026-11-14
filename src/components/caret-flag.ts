@@ -144,7 +144,7 @@ export function placeTag(widget: Tagged, x: number, top: number, width: number) 
   if (widget.width === undefined) {
     // A person's name reads on from where their letter ends (live-carets.css), however wide the letter.
     const letter = flag.querySelector<HTMLElement>(".live-caret__mark b");
-    if (letter) widget.root.style.setProperty("--live-caret-letter", `${letter.offsetWidth}px`);
+    if (letter) widget.root.style.setProperty("--live-caret-letter", `${letter.getBoundingClientRect().width}px`);
     else widget.root.style.removeProperty("--live-caret-letter");
     widget.width = flag.scrollWidth - (name?.clientWidth ?? 0) + (name?.scrollWidth ?? 0);
   }

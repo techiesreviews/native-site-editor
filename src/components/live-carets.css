@@ -1,7 +1,8 @@
 /* Others' carets (src/components/live-carets.ts, ticket am-22): a thin line in their colour with a small
    circle on top, opened into the name on hover or keyboard focus. The script editor's caret (prototypes 13 and 14):
-   the line and the circle in one solid colour, its letter white (dark in a dark theme). `--live-caret` is their colour's
-   caret shade (src/theme.css `--agent-presence-caret`…, the colour from src/participant.ts). */
+   the line and the circle in one solid colour, its letter white (dark in the code pane of a dark theme; the page's
+   carets keep the light shade, below). `--live-caret` is their colour's caret shade (src/theme.css
+   `--agent-presence-caret`…, the colour from src/participant.ts). */
 .live-caret {
   --live-caret: var(--agent-presence-caret);
   --live-caret-on: light-dark(var(--on-media), var(--color-primary-darkest));
