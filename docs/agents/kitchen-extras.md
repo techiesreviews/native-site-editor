@@ -43,7 +43,8 @@ This editor's own facts for the shared rulebook ([`docs/kitchen.md` in the kit r
   The heartbeat's after-merge step is the same `kit preview`. New work that starts while a release
   waits for Lex goes to `dev` and its preview the same way (station 11).
 - **End check:** Lex tries the change on the preview (station 11). A problem he finds on production
-  adds `--after-release` to its feedback line.
+  goes to the chat memory as a correction that says it was found on production (`kit feedback` and
+  its `--after-release` flag were cut on 2026-11-14).
 
 ## Release to production
 
