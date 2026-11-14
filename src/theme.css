@@ -197,6 +197,9 @@
   /* An input's or a bordered button's edge, visible on every surface. */
   --control-line: color-mix(in oklch, var(--text) 16%, transparent);
   --focus-ring: 2px solid var(--focus);
+  /* The focus ring drawn inside an edge that already carries a ring (a selected Media tile), with a band of the surface inside
+     it so a picture's edge of the same colour cannot hide it. */
+  --focus-ring-inset: inset 0 0 0 2px var(--focus), inset 0 0 0 4px var(--surface);
 
   /* Type. WCAG sets no minimum size (it asks for 4.5:1 contrast and text
      that zooms to 200%); words stay at 12px or more for legibility, and
