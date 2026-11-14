@@ -135,6 +135,29 @@ test("every caret colour's letter reads on its circle (4.5:1) in a light and a d
   expect(dark.page).toEqual(light.page);
 });
 
+test("an open tag's undo beside a one-letter name takes a press at its middle, with the circle's touch-sized press area beside it", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  await editorMounted(page);
+  const hit = await page.evaluate(async () => {
+    const [{ caretFlag, placeTag }] = await Promise.all([import("/src/components/caret-flag.ts"), import("/src/components/live-carets.css")]);
+    const root = Object.assign(document.createElement("span"), { className: "live-caret" });
+    Object.assign(root.style, { position: "fixed", left: "200px", top: "200px" });
+    const flag = caretFlag({ author: 5, name: "J" }, { icon: document.createElement("span"), onUndo() {} });
+    flag.undoable(true);
+    // The press areas a touch screen gives (src/theme.css `--size-touch`).
+    flag.element.style.setProperty("--live-caret-press", "44px");
+    root.append(Object.assign(document.createElement("span"), { className: "live-caret__line" }), flag.element);
+    document.body.append(root);
+    placeTag({ root, flag }, 200, 200, 1000);
+    flag.element.focus();
+    const undo = flag.element.querySelector(".live-caret__undo")!, box = undo.getBoundingClientRect();
+    const found = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    root.remove();
+    return found?.closest(".live-caret__undo") === undo;
+  });
+  expect(hit).toBe(true);
+});
+
 test("Lex and Anna type in the code pane and see each other's carets; an agent shows its program; Anna's tag takes back only her words", async ({ browser, baseURL }) => {
   const lex = await person(browser, "Lex"), anna = await person(browser, "Anna");
   let agent: Awaited<ReturnType<typeof agentAt>> | undefined;
