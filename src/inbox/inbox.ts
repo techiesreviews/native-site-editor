@@ -6,7 +6,7 @@ import "./inbox.css";
 import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 import { icon } from "../icons";
 import { elementPathAt } from "../native-source-location";
-import { node } from "../ui/dom";
+import { button, node } from "../ui/dom";
 import type { InboxItem } from "./inbox-item";
 import type { InboxPorts } from "./inbox-host";
 import { markDecorative } from "./decorative";
@@ -169,17 +169,14 @@ export function createInboxList(ports: InboxPorts) {
       const row = node("li", "inbox__row");
       row.dataset.key = item.key;
       row.dataset.kind = item.kind;
-      const button = node("button", "inbox__item");
-      button.type = "button";
-      button.append(icon(kinds[item.kind], 16), node("b", "", item.what), node("small", "", item.where));
-      button.setAttribute("aria-label", `${item.what}, ${item.where}`);
-      button.addEventListener("click", () => void go(item, found));
-      row.append(button);
+      // The Button part (src/ui/dom.ts) in the panel's own row look.
+      const spot = button("", () => go(item, found), "inbox__item");
+      spot.append(icon(kinds[item.kind], 16), node("b", "", item.what), node("small", "", item.where));
+      spot.setAttribute("aria-label", `${item.what}, ${item.where}`);
+      row.append(spot);
       if (item.wave) {
-        const off = node("button", "inbox__wave", item.wave);
-        off.type = "button";
+        const off: HTMLButtonElement = button(item.wave, () => wave(item, off, found), "inbox__wave");
         off.setAttribute("aria-label", `${item.wave}: ${item.what}, ${item.where}`);
-        off.addEventListener("click", () => void wave(item, off, found));
         row.append(off);
       }
       list.append(row);

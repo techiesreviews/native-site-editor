@@ -424,7 +424,9 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     ports.pagesAndFiles.mountExplorer();
     // No project open: the panel offers the project list (the project menu, behind Menu on a phone).
     const noProject = ports.element("explorer-none");
-    ports.element("explorer-choose").addEventListener("click", chooseProject);
+    const choose = button("Choose a project", chooseProject, "button primary");
+    choose.id = "explorer-choose";
+    noProject.append(choose);
     stopNoProject?.();
     stopNoProject = effect(() => { noProject.hidden = Boolean(ports.appStore.repository.value); });
     codePanes.mountResize(ports.element("main"), ports.element("code-split"), ports.element("secondary-pane"));
