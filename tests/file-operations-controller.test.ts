@@ -43,6 +43,7 @@ function fixture(native = false, extra: Record<string, string> = {}) {
     afterFileChanges: () => {}, announce: (message: string) => memory.announced.push(message), refuse: (message: string) => refused.push(message), errorMessage: (error: unknown) => errors.push((error as Error).message),
     requestAnimationFrame: (callback: () => void) => callback(), openFolder: () => {}, fileRow: (path: string) => ({ focus: () => focused.push(path) }), renderFileTree: () => {}, filesTabOpen: () => true,
     revealFile: (path: string) => { revealed.push(path); return { focus: () => focused.push(path) }; }, focusFiles: () => focused.push("(files)"),
+    rowsBeside: () => [], filesSearch: () => "",
   } satisfies FileOperationsPorts;
   return { ports, memory, errors, refused, restored, focused, revealed, copied: () => copied, controller: createFileOperationsController(ports) };
 }
@@ -103,6 +104,40 @@ test("an agent's delete moves no focus; the person's delete focuses what is left
   const other = fixture();
   assert.equal(await other.controller.deleteFileTarget(target), undefined);
   assert.equal(other.focused.length, 1);
+});
+
+test("a person's delete focuses the row still showing the file, else the next row, else the one before, else its folder", async () => {
+  const cases: [FileOperationsPorts["rowsBeside"], string[], string][] = [
+    [() => ["b.txt", "0.txt"], ["a.txt", "b.txt", "0.txt"], "a.txt"],
+    [() => ["b.txt", "0.txt"], ["b.txt", "0.txt"], "b.txt"],
+    [() => ["b.txt", "0.txt"], ["0.txt"], "0.txt"],
+    [() => [], [], "(files)"],
+  ];
+  for (const [rowsBeside, shown, expected] of cases) {
+    const h = fixture();
+    h.ports.rowsBeside = rowsBeside;
+    h.ports.fileRow = path => shown.includes(path) ? { focus: () => h.focused.push(path) } : undefined;
+    assert.equal(await h.controller.deleteFileTarget(target), undefined);
+    assert.deepEqual(h.focused, [expected]);
+  }
+  const nested = fixture(false, { "folder/x.txt": "x" });
+  nested.ports.fileRow = path => path === "folder" ? { focus: () => nested.focused.push(path) } : undefined;
+  assert.equal(await nested.controller.deleteFileTarget({ path: "folder/x.txt", name: "x.txt", folder: false }), undefined);
+  assert.deepEqual(nested.focused, ["folder"]);
+});
+
+test("a person's rename or copy that finishes after another search was typed leaves that search and the focus alone", async () => {
+  for (const action of ["rename", "copy"] as const) {
+    const h = fixture();
+    let search = "a";
+    h.ports.filesSearch = () => search;
+    const find = h.ports.findEntry.bind(h.ports);
+    h.ports.findEntry = async path => { search = "other"; return find(path); };
+    if (action === "rename") assert.equal(await h.controller.moveFileTarget(target, "b.txt", "rename", { reveal: true }), undefined);
+    else await h.controller.duplicateFileTarget(target);
+    assert.deepEqual(h.revealed, [], action);
+    assert.deepEqual(h.focused, [], action);
+  }
 });
 
 test("plain delete goes through the module and undoes as one step", async () => {
