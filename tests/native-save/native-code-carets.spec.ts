@@ -179,7 +179,8 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
     await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("opacity", "1");
     await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("filter", "none");
     await lex.page.emulateMedia({ reducedMotion: "reduce" });
-    // Open, the name reads on from the letter and starts where the letter ends: the letter's box hides none of it.
+    // Open, the name reads on from the letter and starts where the letter ends, as measured: the letter's box hides none of it.
+    await expect(annaAtLex.locator("xpath=..")).toHaveCSS("--live-caret-letter", /^\d+(\.\d+)?px$/);
     expect(await annaAtLex.evaluate((tag) => {
       const letter = tag.querySelector(".live-caret__mark b")!.getBoundingClientRect(), name = tag.querySelector(".live-caret__name")!.getBoundingClientRect();
       return name.left - letter.right;
