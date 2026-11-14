@@ -1,0 +1,307 @@
+{
+  "about": "The source of docs/agents/parts.md (node scripts/agents/parts-list.mjs write). parts: the editor's parts (group part) and shared pieces (group shared), described by hand; every other UI file is listed from the code. screens: a description for a screen file whose leading comment does not say what it is for. Keys per entry: id, name, group, for, notFor, use, variants, files, copies.",
+  "parts": [
+    {
+      "id": "button",
+      "name": "Button",
+      "group": "part",
+      "for": "Any action a person clicks: a filled primary action or a quiet secondary one, with words and optionally an icon.",
+      "notFor": "A link that leaves the editor (use `link()` beside it), or an icon alone (no icon button part yet: see Copies to swap).",
+      "use": "`button(text, action, className = \"button secondary\")` from `src/ui/dom.ts`; `link(text, href, className = \"button primary\")` for an `<a>` with the same look. A screen that needs it to differ sets a `--btn-*` hook in its own CSS.",
+      "variants": "tone: primary (class `button` or `button primary`), secondary (`button secondary`, the default of `button()`); disabled is plain, not a pale tone",
+      "files": [
+        "src/ui/dom.ts",
+        "src/ui/parts/button.css"
+      ],
+      "copies": "buttons made with `node(\"button\")` and button looks styled in screens (`node scripts/agents/copies.mjs report`); `.icon-button` and `.text-button` in `src/style.css` are the next parts to make (icon button, text button)."
+    },
+    {
+      "id": "icon",
+      "name": "Icon",
+      "group": "part",
+      "for": "A Phosphor Regular icon by name, alone or standing before or after words.",
+      "use": "`iconPart(name, { size, place, words })` from `src/ui/parts/icon.ts`; the screens still call `icon(name, size, className)` from `src/icons.ts` until the Icon swap.",
+      "files": [
+        "src/ui/parts/icon.ts",
+        "src/ui/parts/icon-options.ts",
+        "src/icons.ts",
+        "src/icons.css"
+      ]
+    },
+    {
+      "id": "spinner",
+      "name": "Spinner",
+      "group": "part",
+      "for": "A ring turning while something loads, inline or as an overlay over the panel that is loading.",
+      "notFor": "A control as small as its ring (overlay), or progress that can be measured (use the Progress bar).",
+      "use": "`spinner({ size, place, label })` from `src/ui/parts/spinner.ts`; the caller marks the loading host `aria-busy=\"true\"` and `inert`.",
+      "files": [
+        "src/ui/parts/spinner.ts",
+        "src/ui/parts/spinner-options.ts",
+        "src/ui/parts/spinner.css"
+      ]
+    },
+    {
+      "id": "progress",
+      "name": "Progress bar",
+      "group": "part",
+      "for": "A bar that fills as far as a value says, or slides while nobody can tell how long it takes.",
+      "use": "`progress({ value, max, label })` from `src/ui/parts/progress.ts`; move a bar already on the page with `setProgress(bar, options)` so it animates.",
+      "files": [
+        "src/ui/parts/progress.ts",
+        "src/ui/parts/progress-options.ts",
+        "src/ui/parts/progress.css"
+      ]
+    },
+    {
+      "id": "badge",
+      "name": "Badge",
+      "group": "part",
+      "for": "A count, a status, a tag, a dot or a round mark, in one of six tones.",
+      "use": "`badgePart({ kind, tone, words, icon })` from `src/ui/parts/badge.ts`, or `badgeMarkup(options)` from `src/ui/parts/badge-options.ts` for markup text.",
+      "files": [
+        "src/ui/parts/badge.ts",
+        "src/ui/parts/badge-options.ts",
+        "src/ui/parts/badge.css"
+      ],
+      "copies": "the shared `.badge` in `src/style.css` and the badge looks screens style themselves (`node scripts/agents/copies.mjs report`)."
+    },
+    {
+      "id": "section-heading",
+      "name": "Section heading",
+      "group": "part",
+      "for": "Small uppercase words naming a group in a panel or menu, with an optional end slot for a count or a button.",
+      "use": "`sectionHeadingPart(words, { level, end })` from `src/ui/parts/section-heading.ts`.",
+      "files": [
+        "src/ui/parts/section-heading.ts",
+        "src/ui/parts/section-heading-options.ts",
+        "src/ui/parts/section-heading.css"
+      ]
+    },
+    {
+      "id": "key",
+      "name": "Keyboard key",
+      "group": "part",
+      "for": "A key cap, or several keys pressed together, in a menu row, a tooltip or the shortcuts sheet.",
+      "use": "`keyPart(keys)` from `src/ui/parts/key.ts` (a string or a list of keys).",
+      "files": [
+        "src/ui/parts/key.ts",
+        "src/ui/parts/key-options.ts",
+        "src/ui/parts/key.css"
+      ]
+    },
+    {
+      "id": "inline-field",
+      "name": "Inline field",
+      "group": "part",
+      "for": "A text value in a panel row that reads as plain text and becomes a field on focus, with a red underline for an error.",
+      "use": "class `inline-field` on the input; the panels listed at the top of `src/ui/inline-field.css` get it by selector.",
+      "files": [
+        "src/ui/inline-field.css"
+      ]
+    },
+    {
+      "id": "values",
+      "name": "Shared values",
+      "group": "shared",
+      "for": "The colours (light and dark), spacing, type sizes, corners, shadows and timings every part and screen styles with.",
+      "use": "`var(--token)` in CSS; never a hand-typed px, colour or duration (the one-offs count, `scripts/agents/one-offs.mjs`, and `scripts/check-colours.mjs` hold this).",
+      "files": [
+        "src/theme.css",
+        "src/tokens/framework-editor.css",
+        "src/utilities.css"
+      ]
+    },
+    {
+      "id": "dropdown",
+      "name": "Dropdown",
+      "group": "shared",
+      "for": "A menu that opens under its button (nonmodal): opening, closing on Escape and outside click, focus, placement.",
+      "use": "`mountDropdown({ … })` from `src/components/dropdown.ts`.",
+      "files": [
+        "src/components/dropdown.ts",
+        "src/components/dropdown.css"
+      ]
+    },
+    {
+      "id": "flyout",
+      "name": "Flyout",
+      "group": "shared",
+      "for": "A submenu beside a dropdown, opened from one of its rows.",
+      "use": "`mountFlyout({ … })` from `src/components/flyout.ts`.",
+      "files": [
+        "src/components/flyout.ts",
+        "src/components/flyout.css"
+      ]
+    },
+    {
+      "id": "row-menu",
+      "name": "Row menu",
+      "group": "shared",
+      "for": "A menu of actions for one row (a page, a file, an element): items with an icon, a hint key, a disabled reason.",
+      "use": "`createRowMenu(host, onClose)` from `src/components/row-menu.ts`, items as `MenuItem`.",
+      "files": [
+        "src/components/row-menu.ts",
+        "src/components/row-menu.css",
+        "src/components/row-actions.ts",
+        "src/components/row-action-overlay.css"
+      ]
+    },
+    {
+      "id": "confirm-dialog",
+      "name": "Confirm dialog",
+      "group": "shared",
+      "for": "A modal question before an action that cannot be undone: a title, notes, the action and Cancel.",
+      "use": "`createConfirmDialog(id)` from `src/components/confirm-dialog.ts`. Its look is the create dialog's (`src/components/create-dialog.css`).",
+      "files": [
+        "src/components/confirm-dialog.ts"
+      ],
+      "copies": "dialogs made by hand and their backdrops (`node scripts/agents/copies.mjs report`); one Dialog part is planned."
+    },
+    {
+      "id": "field-suggestions",
+      "name": "Field suggestions",
+      "group": "shared",
+      "for": "A suggestion list anchored to a text field (a URL's pages, an image's files), with keyboard choice.",
+      "use": "`attachFieldSuggestions(input, entries, label)` from `src/components/field-suggestions.ts`; rows from `suggestionLines()` in `src/components/suggestion-rows.ts`.",
+      "files": [
+        "src/components/field-suggestions.ts",
+        "src/components/field-suggestions.css",
+        "src/components/suggestion-rows.ts",
+        "src/components/suggestion-rows.css"
+      ]
+    },
+    {
+      "id": "resize-handle",
+      "name": "Resize handle",
+      "group": "shared",
+      "for": "A splitter that resizes a panel by drag and toggles it by click or key.",
+      "use": "`createGrip()` and `trackPress(handle, handlers)` from `src/components/resize-handle.ts`.",
+      "files": [
+        "src/components/resize-handle.ts",
+        "src/components/resize-handle.css"
+      ]
+    },
+    {
+      "id": "spotlight",
+      "name": "Spotlight",
+      "group": "shared",
+      "for": "Dims the page, rings one element and shows a callout beside it with a title, text and buttons.",
+      "use": "`spotlight(target, options)` from `src/components/spotlight.ts`; placement in `src/components/spotlight-layout.ts`.",
+      "files": [
+        "src/components/spotlight.ts",
+        "src/components/spotlight.css",
+        "src/components/spotlight-layout.ts"
+      ]
+    },
+    {
+      "id": "refusal-note",
+      "name": "Refusal note",
+      "group": "shared",
+      "for": "Says why an action cannot run, next to the control that was used.",
+      "use": "`refuse(reason, near)` from `src/components/refusal-note.ts`.",
+      "files": [
+        "src/components/refusal-note.ts",
+        "src/components/refusal-note.css"
+      ]
+    },
+    {
+      "id": "done-mark",
+      "name": "Done mark",
+      "group": "shared",
+      "for": "Shows a finished action on the menu button that ran it: its icon turns into a check for a moment.",
+      "use": "`markDone(control, ms)` from `src/ui/done-mark.ts`.",
+      "files": [
+        "src/ui/done-mark.ts"
+      ]
+    },
+    {
+      "id": "person-chip",
+      "name": "Person chip",
+      "group": "shared",
+      "for": "Someone in a synced session by initial, in the top bar and on the guest page.",
+      "use": "class `person-chip` (and `person-chip--more` for the rest count).",
+      "files": [
+        "src/components/person-chip.css"
+      ]
+    },
+    {
+      "id": "say-found",
+      "name": "Found announcer",
+      "group": "shared",
+      "for": "Tells a screen reader what a search found once the typing rests.",
+      "use": "`sayFound(region, text)` and `foundCount(count, noun)` from `src/ui/say-found.ts`.",
+      "files": [
+        "src/ui/say-found.ts"
+      ]
+    },
+    {
+      "id": "media-fields",
+      "name": "Media form fields",
+      "group": "shared",
+      "for": "A labelled text field, select or tick box (with an optional hint line) in the Media screens' sheets.",
+      "use": "`input(label, type)`, `select(label, choices)`, `field(label, control)`, `check(label, control, hint)` from `src/page-builder/media-library-fields.ts`.",
+      "files": [
+        "src/page-builder/media-library-fields.ts"
+      ]
+    },
+    {
+      "id": "editor-scrollbars",
+      "name": "Editor scrollbars",
+      "group": "shared",
+      "for": "The thin scrollbars of the editor's own panels.",
+      "files": [
+        "src/ui/editor-scrollbars.css"
+      ]
+    }
+  ],
+  "screens": {
+    "src/components/sidebar-resize.ts": "The sidebar's width: the handle on its right edge resizes when dragged and hides or shows the sidebar when clicked.",
+    "src/components/site-settings.ts": "The Site settings dialog: the site's name, address, favicon and social image.",
+    "src/native-settings.ts": "Opens the Site settings dialog and writes what it changes into the site's files.",
+    "src/page-builder/improve-images.ts": "The Improve images screen in Media: heavy pictures to make lighter, and the ones Lex left alone.",
+    "src/page-builder/media-files-adding.ts": "Files dropped on a Files folder or chosen with Upload files: each row's progress and Cancel.",
+    "src/page-builder/media-library-adding.ts": "Adding files to Media: the Optimise sheet's choices, the save, and the grid read again after.",
+    "src/page-builder/media-library-clean-up.ts": "The Clean up review in Media: groups of older copies and unused files to remove, with Undo.",
+    "src/page-builder/media-library-delete.ts": "Remove file in Media: its own screen with Back, naming the pages that still use the file.",
+    "src/page-builder/media-library-optimise.ts": "The Optimise sheet in Media: size, quality and folder for new files before they are saved.",
+    "src/page-builder/media-library-shell.ts": "The Media library's frame: header, the One bar, grid, selection bar, sheet and footer.",
+    "src/page-builder/media-library-view.ts": "The Media pane, or the Choose image dialog: the library's grid, details and sheets together.",
+    "src/page-builder/media-markup.ts": "The markup a picture or video gets when placed on a page: sizes, sources and the player.",
+    "src/page-builder/media-picker.ts": "The Media picker's data: the library's files, online videos and what each one is used for.",
+    "src/agent-media.ts": "Lists and previews the site's media files for agents (the MCP media tools).",
+    "src/components/block-rail.ts": "The block rail beside the canvas: the blocks to add, and the Add toggle that opens the Add panel.",
+    "src/components/slot-ghosts.ts": "Ghost outlines of a component's slots on the canvas, from the preview's report of where each slot sits.",
+    "src/theme.ts": "Hands the theme's colours to what cannot read CSS variables (Monaco, the preview overlay) and keeps them in step.",
+    "src/page-builder/native-elements.ts": "The markup of the plain elements the rail adds (section, div, heading, paragraph, media, button), with their checks.",
+    "src/page-builder/site-navigation.ts": "Reads and edits the site's navigation links in the page source.",
+    "src/page-builder/pdf-preview.ts": "A PDF download's first page as a preview picture, sized to fit.",
+    "src/page-builder/improve-gifs-players.ts": "Improve images for GIFs: turns them into looping videos with the site's player.",
+    "src/page-builder/looping-video.ts": "The markup of a looping, background or placed video in the page source.",
+    "src/page-builder/media-transparency.ts": "Whether a picture has see-through pixels, so it is never turned into a format that cannot keep them.",
+    "src/page-builder/media-attributes.ts": "Reads a picture's attributes (such as its existing alt text) from page markup.",
+    "src/page-builder/component-shapes.ts": "A component's shape on the canvas (picture, frame, popup), read from its template.",
+    "src/controllers/files-tree-controller.ts": "The Files tab's tree: folders opened, rows listed and kept in step with the branch.",
+    "src/controllers/page-structure-controller.ts": "The Page structure sidebar's wiring to the workspace: selection, edits and refreshes.",
+    "src/outside-merge.ts": "Folds changes made outside the editor (on GitHub) into the open drafts.",
+    "src/page-builder/player-markup.ts": "The markup of a video or audio player and its subtitles in the page source.",
+    "src/page-builder/online-video.ts": "YouTube and Vimeo videos: their address checks, records and still pictures.",
+    "src/page-builder/media-page-markup.ts": "The page edits that place a media file: its path, priority and sizes.",
+    "src/components/file-row-actions.ts": "The Files tree's row actions: the ⋯ button and right-click menu, rename, delete, and moving or uploading by drag.",
+    "src/components/page-picker.ts": "Picks where a new page goes: under which page in the site's tree.",
+    "src/components/pages-tree.ts": "The explorer's Pages tab: the site's pages as a tree, with new page and rename.",
+    "src/components/card-grid-controls.ts": "Add card and New page + card under a grid of cards on the canvas.",
+    "src/page-builder/media-library-grid.ts": "Draws the Media library's grid of tiles for the current search, kind and collection.",
+    "src/page-builder/media-place.ts": "Swaps the picture at a place on a page for a chosen file, as one Undo step.",
+    "src/page-builder/component-panel-resize.ts": "The splitter that resizes the component panel.",
+    "src/page-builder/media-library-collections.ts": "The Media library's collection screens: manage, name and delete a collection.",
+    "src/page-builder/media-library-recently-removed.ts": "Recently removed in Media: files removed lately, to bring back.",
+    "src/page-builder/media-library-to-check.ts": "To check in Media: each description an agent wrote, with its picture, to accept (Looks right) or Edit.",
+    "src/page-builder/media-adding-settings.ts": "Adding settings in Media: how new files are prepared when they are added.",
+    "src/page-builder/media-library-improve.ts": "Opens Improve images from the Media library and keeps its Undo list.",
+    "src/components/repository-menu.ts": "The project menu under the project tile: repositories, branches, site settings, sharing, download and sign out.",
+    "src/components/publish-menu.ts": "The Save menu: the changes to save or publish, each with its comparison, and Discard.",
+    "src/page-builder/media-clean-up-review.ts": "The Clean up review's words and sizes: titles, lines and byte counts for each group.",
+    "src/page-builder/media-adding-summary.ts": "The summary while files are added: one row per file with its progress."
+  }
+}
