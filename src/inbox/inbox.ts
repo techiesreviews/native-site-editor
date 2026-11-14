@@ -71,7 +71,7 @@ export function createInboxList(ports: InboxPorts) {
     const any = (attribute: string, values: (string | undefined)[]) =>
       [...new Set(values.filter((value): value is string => Boolean(value)))].map(value => `[${attribute}="${CSS.escape(value)}"]`).join(",");
     const pages = any("data-file", items.map(item => item.page)), media = any("data-path", items.map(item => item.media));
-    dots.replaceSync(`${pages ? `.pages-item:is(${pages}) > .pages-row { --inbox-dot: inline-block; }` : ""}${media ? `.media-library__card:is(${media}) { --inbox-dot: block; }` : ""}`);
+    dots.replaceSync(`${pages ? `.pages-item:is(${pages}) > .pages-row { --inbox-dot: inline-block; }` : ""}${media ? `.media-library__card:is(${media}) { --inbox-dot-size: 100% 100%; }` : ""}`);
     const open = panel();
     if (open?.matches(":popover-open")) draw(open);
   }
