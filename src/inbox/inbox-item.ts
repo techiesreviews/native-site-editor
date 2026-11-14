@@ -17,4 +17,6 @@ export interface InboxItem {
   media?: string;
   /** The wave-off, named for what it means ("Decorative"). */
   wave?: string;
+  /** Every use of `media` on the page waits, so Decorative marks them all; otherwise only the one at `at`. */
+  allUses?: boolean;
 }

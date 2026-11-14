@@ -1249,7 +1249,7 @@ its number unused.
 
 ### F-inbox-02 An Inbox item goes to its spot and goes away once fixed
 - Try: On a page with a picture that has no alt text, open the Inbox and click "Picture without a description". Write the alt text in the edit bar. Remove a page's title with F2 in Pages, then click its "Page without a title" row.
-- Good: Every page of the site is checked, not only the open one, after load and after each change. The picture's row opens its page if needed, closes the Inbox and selects the picture with the edit bar on its missing alt text; once a description is written the row and the dot go by themselves (no "mark as read"). The title's row opens that page's Page settings. Each picture is listed once per page, as the edit bar judges it.
+- Good: Every page of the site is checked, not only the open one, after load and after each change. The picture's row opens its page if needed, closes the Inbox and selects the picture with the edit bar on its missing alt text; once a description is written the row and the dot go by themselves (no "mark as read"). The title's row opens that page's Page settings. Each picture is listed once per page, as the edit bar judges it, including one shown only through `srcset` or a `<picture>`'s source (with no Decorative). A title's row opens Page settings only if you are still on that site.
 - Files: `src/inbox/site-items.ts`, `src/inbox/inbox.ts`, `src/inbox/inbox-item.ts`, `src/site-text-index.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-inbox.spec.ts`
@@ -1257,7 +1257,7 @@ its number unused.
 
 ### F-inbox-03 Decorative from the Inbox
 - Try: Open the Inbox on a site with a picture stored in the site that has no alt text, and choose Decorative on its row. Reload.
-- Good: Decorative turns busy while it works, then the row goes and the dot with it. The picture gets `alt=""` on that page and the place's Media record is marked decorative, exactly as Media's own Decorative writes it, as one Undo step; after a reload it stays done. A picture from another address, or whose file the site does not hold, offers no Decorative. Pressed just before you switch site or branch, it changes nothing and says so.
+- Good: Decorative turns busy while it works, then the row goes and the dot with it. The picture gets `alt=""` on that page and the place's Media record is marked decorative, exactly as Media's own Decorative writes it, as one Undo step; when another use of the same picture on that page has words, only the waiting one is marked and the words stay. A change to the page after the press is never overwritten; after a reload it stays done. A picture from another address, or whose file the site does not hold, offers no Decorative. Pressed just before you switch site or branch, it changes nothing and says so.
 - Files: `src/inbox/inbox.ts`, `src/page-builder/media-workspace.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-inbox.spec.ts`

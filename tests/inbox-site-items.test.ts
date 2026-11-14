@@ -73,3 +73,19 @@ test("a picture's verdict is the edit bar's Alt text warning, unknown only while
   assert.equal(pictureVerdict("A desk", undefined, false), "described");
   assert.equal(pictureVerdict("", undefined, false), "missing");
 });
+
+test("a picture shown through srcset or a <picture>'s source is judged as the edit bar does, with no Decorative", () => {
+  const items = siteItems([page("index.html", `${head("Home")}<img srcset="/images/a.jpg 1x, /images/a@2x.jpg 2x"><picture><source srcset="/images/b.webp"><img></picture><picture><source srcset="/images/c.webp"><img alt="C"></picture></body>`)], rules);
+  assert.deepEqual(items.map(({ kind, media, wave }) => ({ kind, media, wave })), [
+    { kind: "picture", media: undefined, wave: undefined },
+    { kind: "picture", media: undefined, wave: undefined },
+  ]);
+  assert.equal(new Set(items.map(item => item.key)).size, 2);
+});
+
+test("an item says whether every use of its file on the page waits, so Decorative never clears another use's words", () => {
+  const [some] = siteItems([page("index.html", `${head("Home")}<img alt="The team" src="/images/team.jpg"><img src="/images/team.jpg"></body>`)], rules);
+  assert.equal(some.allUses, false);
+  const [every] = siteItems([page("index.html", `${head("Home")}<img src="/images/team.jpg"><img src="/images/team.jpg"></body>`)], rules);
+  assert.equal(every.allUses, true);
+});
