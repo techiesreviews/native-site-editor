@@ -60,7 +60,7 @@ pre:focus-visible {
 }
 /* The slim top bar (atomic catalogue ticket 66, version B): one 44 px row. On the left a path, the project
    tile and name, "/" (#repository-menu::after), then the page button; on the right Undo, Redo, History, then
-   Publish, with no divider before it (the Inbox's button goes before Publish, site-quality slice 40). On a phone
+   Publish, with no divider before it (the Inbox's button sits before Publish, TOOLS-222). On a phone
    (below) the same row holds the site and page, Undo, Publish and the one Menu (top-bar-phone.ts). */
 .topbar {
   display: flex;
@@ -184,8 +184,49 @@ pre:focus-visible {
   gap: var(--space-3xs);
   margin-inline-start: auto;
 }
-.editor-toolbar-host {
-  display: flex;
+/* The file's tools (Undo, Redo, History, Publish: source-editor.ts) are the bar's own items, so the Inbox's
+   button, which stays when no file is open, sits between History and Publish, and the phone's Menu after them. */
+.editor-toolbar-host,
+.topbar .code-editor__toolbar--hosted {
+  display: contents;
+}
+.topbar .publish-menu { order: 1; }
+#topbar-menu { order: 2; }
+/* The Inbox (TOOLS-222, mock-up 05 v2): an orange dot while something waits, never a number (inbox-host.ts sets
+   data-inbox-waiting). On a phone the button leaves the bar for the Menu, whose button wears the dot, and its
+   Inbox row (top-bar-phone.css). */
+.topbar :is(#inbox-button, #topbar-menu) {
+  position: relative;
+}
+.topbar :is(#inbox-button, #topbar-menu)::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--agent-question-strong);
+  box-shadow: 0 0 0 2px var(--surface);
+  scale: 0;
+  transition: scale 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+:root[data-inbox-waiting] .topbar :is(#inbox-button, #topbar-menu)::after {
+  scale: 1;
+}
+.inbox {
+  position: fixed;
+  inset: calc(anchor(--topbar bottom) + var(--space-2xs)) var(--space-xs) auto auto;
+  inline-size: min(340px, 100vw - 2 * var(--space-xs));
+  max-block-size: calc(100dvh - 80px);
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-3xs);
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
 }
 .code-split {
   position: relative;
@@ -527,7 +568,7 @@ dd {
     gap: var(--space-4xs);
     padding-inline: var(--space-4xs) var(--space-3xs);
   }
-  .topbar :is(.repository-menu__trigger, .code-editor__redo, .code-editor__history, .setup-pill),
+  .topbar :is(.repository-menu__trigger, .code-editor__redo, .code-editor__history, #inbox-button, .setup-pill),
   #repository-menu::after,
   .workspace :is(.block-rail, .canvas-bar:not(.canvas-bar--component)) {
     display: none;

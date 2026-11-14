@@ -53,13 +53,13 @@ import { createFinishedElsewhere, openLink } from "./finished-elsewhere";
 import { createAgentPresence } from "./agent-presence";
 import { participants } from "./participant";
 import { createWorkspaceShares } from "./workspace-shares";
+import { createInbox } from "./inbox/inbox-host";
 import { agentStops, STOPPED_AGENTS_KEY } from "./agent-stops";
 import { createWorkspaceSession, draftScopeOf, holdsDraftScope, sameBranch, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { Repository, SessionInfo, TreeEntry } from "../shared/types";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
-const element = <T extends HTMLElement>(id: string) =>
-  document.getElementById(id) as T;
+const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 // #status and the Undo of a step (src/announce.ts).
 const { announce, undoAction } = createAnnounce({ element, editorModule: sourceEditor });
 // #status, the notice bar and the GitHub reads.
@@ -131,7 +131,7 @@ const { readFile, readFiles, readBlob, readNativeTexts, noteNativeUnreadable, na
 const { nativeTextIndexScopeKey, startNativeTextIndex, wantNativeTextIndex, nativeTextIndexGate, afterNativePaint, noteNativePainted,
   flushPendingNativePageTitles, ensureNativeTextIndex, clearPendingTitles } = createSiteTextIndex({
   runtime, appStore, workspaceSession, element, currentLoad, draftScope, findEntry, updateNativePreviewSources, updateAgentContext,
-  readNativeTexts, noteNativeUnreadable, updateCurrentPageLabel,
+  readNativeTexts, noteNativeUnreadable, updateCurrentPageLabel, indexed: () => inbox.changed(),
   get mediaController() { return mediaController; }, get pagesAndFiles() { return pagesAndFiles; }, get pagesController() { return pagesController; },
   get componentTools() { return componentTools; }, get nativePreview() { return nativePreview; }, get pageStructure() { return pageStructure; },
   get nativePreviewBehind() { return sitePreview.nativePreviewBehind; }, set nativePreviewBehind(value) { sitePreview.nativePreviewBehind = value; },
@@ -190,9 +190,7 @@ const editorWorkspace = createEditorWorkspace({
   route: () => nativePreview?.route(),
   editModeEntry: () => componentTools?.mode.entry(),
   agentActing: () => agentCommands.acting(),
-  site: () => runtime.site,
-  files: () => runtime.files(),
-  store: draftStore,
+  site: () => runtime.site, files: () => runtime.files(), store: draftStore,
   source: path => runtime.textSource(path),
   exists: path => nativePathExists(path) || (!runtime.site && (pathNow(path, treeState()) === "file" || pathNow(path, treeState()) === "folder")),
   base: path => runtime.base.sources.get(path),
@@ -301,6 +299,10 @@ const media = createMediaHost({
   setupScope: () => setupScope(), afterFileChanges: () => afterFileChanges(), openAfter: (...args) => openAfter(...args), restoreFile: (...args) => restoreFile(...args),
 });
 const { mediaPorts, mediaController, nativeImagePaths, uploadFilesTo, discardUpload, readMediaText, mediaOrigins } = media;
+const inbox = createInbox({ appStore, pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), indexed: () => runtime.state.textIndexed, // The Inbox (TOOLS-222)
+  label: file => pagesController.pageLabel(file), route: file => nativeRouteForPath(file), picture: (...args) => mediaController.placeState(...args)?.state, open: page => openAfter(page),
+  select: (request, later) => later ? nativePreview?.selectAfterUpdate(request, { reveal: "center" }) : nativePreview?.selectNode(request, false), error: errorMessage,
+  pageDetails: page => void openNativePageSettings(page), decorative: (file, page) => mediaController.markDecorative(file, page) });
 
 // `away`: another workspace is opening, so a picker's Use under way still lands in its own (ticket 27); closing the workspace cancels it.
 let deactivatingAway = false;
@@ -528,10 +530,7 @@ const boot = createBootController({
   },
 });
 
-document.addEventListener("click", (event) => {
-  if ((event.target as Element).closest?.(`a[href="${EDITOR_LOGIN}"]`))
-    retainWorkspaceLink();
-});
+document.addEventListener("click", (event) => { if ((event.target as Element).closest?.(`a[href="${EDITOR_LOGIN}"]`)) retainWorkspaceLink(); });
 // A fragment change before the session has loaded is not lost: once signed
 // in, the repositories load from the location as it is then.
 window.addEventListener("hashchange", () => { workspaceBoot.dropGuess(); boot.onHashChange(); });

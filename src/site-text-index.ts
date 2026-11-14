@@ -38,6 +38,8 @@ export interface SiteTextIndexPorts {
   readNativeTexts: SiteLoading["readNativeTexts"];
   noteNativeUnreadable: SiteLoading["noteNativeUnreadable"];
   updateCurrentPageLabel: () => void;
+  /** Every page is read (the Inbox checks them, TOOLS-222). */
+  indexed?: () => void;
 }
 
 // The files read with the site (pages, templates, stylesheets), so links
@@ -66,7 +68,7 @@ export function createSiteTextIndex(ports: SiteTextIndexPorts) {
     else release();
     const indexing: Promise<boolean> = due.then(() => (live() ? indexNativeTextFiles(repo, site, scope, live) : false)).then((done) => {
       if (done && live() && ports.runtime.state.textIndexing === indexing) ports.runtime.state.textIndexed = true;
-      if (live()) ports.mediaController.refreshUsage();
+      if (live()) { ports.mediaController.refreshUsage(); ports.indexed?.(); }
       return done;
     }, (error) => {
       if (live() && ports.runtime.site === site) ports.nativePreview?.setError(error instanceof Error ? error.message : "Native sources could not be loaded.");

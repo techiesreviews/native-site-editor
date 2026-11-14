@@ -211,6 +211,14 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
     } catch (error) { ports.error(error); }
   }
 
+  /** The Inbox's Decorative (TOOLS-222): see media-actions.ts `markDecorative`. */
+  async function markDecorative(file: string, page: string) {
+    const stamp = ports.stamp();
+    const module = await getActions();
+    if (!stamp.holds()) throw new Error("The project changed. Open the Inbox again.");
+    await module.markDecorative(file, page);
+  }
+
   function preparePlacement(target: { path: string; node: number[] }) {
     const stamp = ports.stamp(), epoch = ports.generation(), source = ports.source(target.path);
     const range = source === undefined ? undefined : (ports.locateElement ?? locateNativeElementRange)(source, target.node);
@@ -373,6 +381,6 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
         url: () => ports.usage?.url(),
       };
     },
-    workspaceContext, preparePlacement, prepareLoop, prepareFrame, chooseImage, insertMedia, choosePath, chooseBackground, videoControls, mediaButton, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
+    workspaceContext, preparePlacement, prepareLoop, prepareFrame, chooseImage, insertMedia, choosePath, chooseBackground, videoControls, mediaButton, placeState, placeFrame, editImage, changePlace, markDecorative, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     closePicker: (away?: boolean) => loaded?.closeMediaPicker(away), galleryVisible: () => ports.galleryVisible() };
 }

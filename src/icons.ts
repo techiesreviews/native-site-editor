@@ -39,6 +39,7 @@ import sparkle from "@phosphor-icons/core/regular/sparkle.svg?raw";
 import stop from "@phosphor-icons/core/regular/stop.svg?raw";
 import listChecks from "@phosphor-icons/core/regular/list-checks.svg?raw";
 import trash from "@phosphor-icons/core/regular/trash.svg?raw";
+import tray from "@phosphor-icons/core/regular/tray.svg?raw";
 import undo from "@phosphor-icons/core/regular/arrow-u-up-left.svg?raw";
 import redo from "@phosphor-icons/core/regular/arrow-u-up-right.svg?raw";
 import x from "@phosphor-icons/core/regular/x.svg?raw";
@@ -78,6 +79,7 @@ const icons = {
   sparkle,
   stop,
   trash,
+  tray,
   undo,
   x,
 };

@@ -11,6 +11,8 @@ export const topBarMarkup = () => `    <header class="topbar">
         <div id="setup-checklist"></div>
         <div id="change-status"></div>
         <div id="editor-toolbar-host" class="editor-toolbar-host"></div>
+        <button type="button" id="inbox-button" class="icon-button inbox-button" popovertarget="inbox" aria-label="Inbox" title="Inbox">${iconMarkup("tray", 17)}</button>
+        <div id="inbox" class="inbox" popover="auto" role="dialog" aria-label="Inbox"></div>
         <div id="changes" class="changes-window" popover="auto" role="dialog" aria-label="History"></div>
       </div>
     </header>`;
