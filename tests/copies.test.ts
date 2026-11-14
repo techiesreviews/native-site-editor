@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 // @ts-expect-error The script is plain JavaScript without declarations.
-import { baselinePath, byKind, compare, copiesInScript, copiesInStyles, readBaseline, scan, styleRules, tally } from "../scripts/agents/copies.mjs";
+import { baselinePath, byKind, compare, copiesInScript, copiesInStyles, expandGroups, readBaseline, scan, styleRules, tally } from "../scripts/agents/copies.mjs";
 
 const script = new URL("../scripts/agents/copies.mjs", import.meta.url).pathname;
 const repo = new URL("..", import.meta.url).pathname;
@@ -99,6 +99,18 @@ test("every border side counts as a look; the same look in another place is anot
     ".image-popup__button { background: var(--surface); }",
   ].join("\n"));
   assert.deepEqual(kindsAndLines(found), [["buttonLooks", 1], ["badgeLooks", 2], ["buttonLooks", 4], ["buttonLooks", 6], ["badgeLooks", 8], ["buttonLooks", 10]]);
+});
+
+test("a look inside :is() or :where() counts, once per place a group names", () => {
+  assert.deepEqual(expandGroups(".panel :is(button, .other:where(.a, .b))"), [".panel button", ".panel .other.a", ".panel .other.b"]);
+  const found: Found[] = copiesInStyles([
+    ".panel :is(button, .other) { background: var(--surface); }",
+    ":is(.a, .b) .button { background: var(--hover); }",
+    ".bar :where(.bar__button:hover) { border: 0; }",
+  ].join("\n"));
+  assert.deepEqual(found.map(({ kind, line, text }) => [kind, line, text]), [
+    ["buttonLooks", 1, ".panel button"], ["buttonLooks", 2, ".a .button"], ["buttonLooks", 2, ".b .button"], ["buttonLooks", 3, ".bar .bar__button:hover"],
+  ]);
 });
 
 test("placing, sizing or setting a part's hooks never counts, nor a look on a name that only sounds alike", () => {
