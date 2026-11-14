@@ -20,17 +20,17 @@ import { fileURLToPath } from "node:url";
 
 export const kinds = ["buttons", "dialogs", "buttonLooks", "badgeLooks", "dialogLooks"];
 const what = {
-  buttons: "button element made by hand instead of button() from src/ui/dom.ts",
+  buttons: "button element made by hand instead of button() from src/ui/dom.ts or a button part",
   dialogs: "dialog element made by hand",
-  buttonLooks: "button look styled outside src/ui/parts/button.css",
+  buttonLooks: "button look styled outside the button parts' own CSS",
   badgeLooks: "badge look styled outside src/ui/parts/badge.css",
   dialogLooks: "dialog or backdrop look styled by hand",
 };
 /** A part's own files: copies of its kind never count there. A kind with no part yet has none. */
 export const homes = {
-  buttons: ["src/ui/dom.ts"],
+  buttons: ["src/ui/dom.ts", "src/ui/icon-button/icon-button.ts", "src/ui/icon-button/icon-button-options.ts"],
   dialogs: [],
-  buttonLooks: ["src/ui/parts/button.css"],
+  buttonLooks: ["src/ui/parts/button.css", "src/ui/icon-button/icon-button.css", "src/ui/text-button/text-button.css"],
   badgeLooks: ["src/ui/parts/badge.css", "src/ui/parts/badge-options.ts"],
   dialogLooks: [],
 };

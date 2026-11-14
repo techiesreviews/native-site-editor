@@ -1,0 +1,41 @@
+/* The Text button component: an action written as link-coloured words. Its whole look in one file on the components
+   layer, like the Button (src/ui/parts/button.css); a screen places and sizes it in its own unlayered CSS, which wins
+   over this layer. Disabled fades, as every bare button does (src/style.css). Classes: `text-button` (the base size),
+   `text-button text-button--compact` (smaller words in a padded box that fills on hover, for a panel row). */
+@layer tokens, elements, components;
+
+@layer components {
+  .text-button {
+    border: 0;
+    background: none;
+    /* 5px: the base size's height from before it was a part. */
+    padding: calc(var(--space-3xs) + var(--space-4xs) / 2) 0;
+    color: var(--link);
+    font-size: var(--type-base);
+
+    /* Touch gets the press; hover waits for a mouse, as a touch screen keeps :hover on the last tap. */
+    &:active {
+      text-decoration: underline;
+    }
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  .text-button--compact {
+    min-height: var(--size-icon);
+    padding: 0 var(--space-2xs);
+    border-radius: var(--radius);
+    font-size: var(--type-small);
+
+    &:active {
+      text-decoration: none;
+    }
+    &:hover {
+      background: var(--hover);
+      text-decoration: none;
+    }
+  }
+}

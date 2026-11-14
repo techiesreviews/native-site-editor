@@ -1,5 +1,6 @@
 import { HEIC_ACCEPT } from "../../shared/media-kinds-policies";
 import { button, node } from "../ui/dom";
+import { textButton } from "../ui/text-button/text-button";
 import { setIcon } from "../icons";
 import { mediaSelectionActions } from "./media-collection-choices";
 import type { MediaPickerOptions } from "./media-picker";
@@ -65,7 +66,7 @@ export function createMediaLibraryShell(
   tools.append(filter, add, more);
   toolbar.append(searchField);
   // Add → Media (slices 68, 113): a quiet text button in the One bar reveals the link field (Notion's Link tab).
-  const paste = modal && actions.address ? button("Paste a YouTube or Vimeo link", () => revealOnline(), "text-button media-library__paste") : undefined;
+  const paste = modal && actions.address ? textButton("Paste a YouTube or Vimeo link", () => revealOnline(), { className: "media-library__paste" }) : undefined;
   if (paste) { paste.setAttribute("aria-expanded", "false"); toolbar.append(paste); }
   toolbar.append(tools);
   // Revealed: one field, its own Use and one helper line; a problem shows inline under the field.

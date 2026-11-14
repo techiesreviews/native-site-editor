@@ -9,6 +9,7 @@ import { ICON_PLACES, ICON_SIZES, type IconPlace } from "../ui/parts/icon-option
 import { PROGRESS_STEPS } from "../ui/parts/progress-options";
 import { SPINNER_PLACES, SPINNER_SIZES, type SpinnerPlace, type SpinnerSize } from "../ui/parts/spinner-options";
 import { HEADING_LEVELS } from "../ui/parts/section-heading-options";
+import { iconButtonMarkup } from "../ui/icon-button/icon-button-options";
 
 export type AreaId = "values" | "atoms" | "molecules" | "organisms" | "screens" | "mockups";
 export const AREAS: readonly { id: AreaId; name: string }[] = [
@@ -509,7 +510,7 @@ export async function fillTopBar(scope: HTMLElement, values: Values) {
     import("../components/source-editor.css"), import("../components/publish-menu.css"),
   ]);
   const tool = (name: "undo" | "redo" | "clock-counter-clockwise", label: string, part: string) =>
-    `<button type="button" class="icon-button code-editor__${part}" aria-label="${label}" title="${label}">${iconMarkup(name)}</button>`;
+    iconButtonMarkup({ label, glyph: iconMarkup(name), className: `code-editor__${part}` });
   scope.querySelector("#editor-toolbar-host")!.innerHTML = `<div class="code-editor__toolbar code-editor__toolbar--hosted">
     ${tool("undo", "Undo", "undo")}${tool("redo", "Redo", "redo")}${tool("clock-counter-clockwise", "History", "history")}
     <div class="publish-menu"><button type="button" class="button primary publish-menu__trigger">Publish</button><button type="button" class="button primary publish-menu__more" aria-label="More save options">${iconMarkup("caret-down", 12)}</button></div>

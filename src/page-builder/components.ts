@@ -42,6 +42,8 @@ import { mountComponentPanelResize } from "./component-panel-resize";
 import { mountDropdown } from "../components/dropdown";
 import { icon } from "../icons";
 import { button, node } from "../ui/dom";
+import { iconButton as iconButtonPart } from "../ui/icon-button/icon-button";
+import { textButton } from "../ui/text-button/text-button";
 import { NATIVE_CONFIG_PATH, nativeSitePrefix, nativePageBody, type NativeSite } from "../../shared/native-project";
 import { componentSourceProblem } from "../../shared/site-rules";
 import type { NativePreviewSelection } from "../components/native-preview";
@@ -1173,11 +1175,7 @@ export function createComponentTools(deps: ComponentDeps) {
   }
 
   function iconButton(label: string, name: ComponentMark, action: () => void, className = "") {
-    const item = button("", action, `component-panel__icon-button ${className}`.trim());
-    item.append(mark(name, 14));
-    item.setAttribute("aria-label", label);
-    item.title = label;
-    return item;
+    return iconButtonPart(label, mark(name, 14), { action, className: `component-panel__icon-button ${className}` });
   }
 
   function render(at: Located, values: SlotValue[]) {
@@ -1300,7 +1298,7 @@ export function createComponentTools(deps: ComponentDeps) {
   }
 
   function chooseButton(slot: TemplateSlot) {
-    const pick = button("Choose image…", async () => {
+    const pick = textButton("Choose image…", async () => {
       // The instance the choice is for, not whatever is selected when Use places it.
       const target = shown && { path: shown.path, node: [...shown.node], tag: shown.tag, source: deps.sources()[shown.path] };
       if (!target) return;
@@ -1314,7 +1312,7 @@ export function createComponentTools(deps: ComponentDeps) {
       } };
       const path = await deps.chooseImage(`${componentLabel(target.tag)} · ${slotLabel(slot.name)}`, placement);
       if (path !== undefined && !placement?.placed) setImage(target, slot.name, path);
-    }, "component-panel__text-button");
+    }, { size: "compact", className: "component-panel__text-button" });
     const row = node("div", "component-field__upload");
     row.append(pick);
     return row;

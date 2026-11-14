@@ -1,5 +1,6 @@
 import "./media-adding-settings.css";
-import { button, node } from "../ui/dom";
+import { node } from "../ui/dom";
+import { textButton } from "../ui/text-button/text-button";
 import { icon } from "../icons";
 import { repoSizeStatus } from "./media-limits";
 import { sheetHead, takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
@@ -58,7 +59,7 @@ export function showAddingSettings(sheet: LibrarySheet, h: AddingSettingsHost) {
   const keepRow = choiceRow(keep, "Keep original", "Also keeps each changed file as you added it, in media/originals. Anyone can download it by its address.");
   keepRow.classList.add("media-settings__keep");
   keepCard.append(keepRow);
-  const reset = button("Reset to defaults", () => save("reset"), "text-button media-settings__reset");
+  const reset = textButton("Reset to defaults", () => save("reset"), { className: "media-settings__reset" });
   form.append(keepCard, reset);
   element.append(form);
 

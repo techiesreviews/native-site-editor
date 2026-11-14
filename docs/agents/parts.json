@@ -6,14 +6,42 @@
       "name": "Button",
       "group": "part",
       "for": "Any action a person clicks: a filled primary action or a quiet secondary one, with words and optionally an icon.",
-      "notFor": "A link that leaves the editor (use `link()` beside it), or an icon alone (no icon button part yet: see Copies to swap).",
+      "notFor": "A link that leaves the editor (use `link()` beside it), an icon alone (use the Icon button), or a quiet action written as words (use the Text button).",
       "use": "`button(text, action, className = \"button secondary\")` from `src/ui/dom.ts`; `link(text, href, className = \"button primary\")` for an `<a>` with the same look. A screen that needs it to differ sets a `--btn-*` hook in its own CSS.",
       "variants": "tone: primary (class `button` or `button primary`), secondary (`button secondary`, the default of `button()`); disabled is plain, not a pale tone",
       "files": [
         "src/ui/dom.ts",
         "src/ui/parts/button.css"
       ],
-      "copies": "buttons made with `node(\"button\")` and button looks styled in screens (`node scripts/agents/copies.mjs report`); `.icon-button` and `.text-button` in `src/style.css` are the next parts to make (icon button, text button)."
+      "copies": "buttons made with `node(\"button\")` and button looks styled in screens (`node scripts/agents/copies.mjs report`)."
+    },
+    {
+      "id": "icon-button",
+      "name": "Icon button",
+      "group": "part",
+      "for": "An action shown as an icon alone (Undo, Back, Refresh, the phone Menu): a quiet square, muted until hovered or pressed, filled while a toggle is pressed (`aria-pressed`).",
+      "notFor": "An action that needs words to be understood (use the Button or the Text button).",
+      "use": "`iconButton(label, glyph, { action, className, title })` from `src/ui/icon-button/icon-button.ts`: `label` names it for assistive technology and is its tooltip unless `title` says otherwise (`false` for none); `iconButtonMarkup(options)` from `src/ui/icon-button/icon-button-options.ts` for markup text. A screen sizes it with width and height in its own CSS (32px by default).",
+      "variants": "pressed: `aria-pressed=\"true\"`; disabled fades, as every bare button does",
+      "files": [
+        "src/ui/icon-button/icon-button.ts",
+        "src/ui/icon-button/icon-button-options.ts",
+        "src/ui/icon-button/icon-button.css"
+      ]
+    },
+    {
+      "id": "text-button",
+      "name": "Text button",
+      "group": "part",
+      "for": "A quiet action written as link-coloured words beside other text (Undo, Review…, Reset to defaults, Choose image…).",
+      "notFor": "A main or secondary action (use the Button), a link that goes somewhere (an `<a>`), or a row in a menu (the menus draw their own rows until the Menu item part).",
+      "use": "`textButton(words, action, { size, className })` from `src/ui/text-button/text-button.ts`; `link(text, href, \"text-button\")` from `src/ui/dom.ts` for an `<a>` with the same look.",
+      "variants": "size: base (underlines on hover), compact (`text-button--compact`: smaller words in a padded box that fills on hover, for a panel row); disabled fades, as every bare button does",
+      "files": [
+        "src/ui/text-button/text-button.ts",
+        "src/ui/text-button/text-button-options.ts",
+        "src/ui/text-button/text-button.css"
+      ]
     },
     {
       "id": "icon",

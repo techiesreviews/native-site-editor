@@ -391,23 +391,11 @@
 }
 
 
+/* An Icon button (src/ui/icon-button/icon-button.css) in the heading: small, and pulled into the corner. */
 .repository-menu__heading-button {
-  display: inline-grid;
-  place-items: center;
   width: var(--size-icon);
   height: var(--size-icon);
   margin: -4px -4px -4px 0;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.repository-menu__heading-button:hover,
-.repository-menu__heading-button:focus-visible {
-  background: var(--hover);
-  color: var(--text);
 }
 
 .repository-menu__add,

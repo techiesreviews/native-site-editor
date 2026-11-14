@@ -2,7 +2,9 @@ import "./repository-menu.css";
 import { mountDropdown } from "./dropdown";
 import { mountFlyout } from "./flyout";
 import { button, link, node } from "../ui/dom";
-import { setIcon } from "../icons";
+import { iconButton } from "../ui/icon-button/icon-button";
+import { textButton } from "../ui/text-button/text-button";
+import { icon, setIcon } from "../icons";
 import { noteCount, noteWords, tileWords, type FinishedNote } from "../finished-elsewhere";
 import { sameBranch, sameRepository } from "../workspace-session";
 import type { Repository, SessionInfo } from "../../shared/types";
@@ -80,10 +82,7 @@ export function createRepositoryMenu(options: {
   const heading = node("div", "repository-menu__heading");
   const title = node("span", "", "Repositories");
   title.id = "repository-menu-title";
-  const reload = button("", options.onReload, "repository-menu__heading-button");
-  setIcon(reload, "arrows-clockwise");
-  reload.title = "Reload repositories";
-  reload.setAttribute("aria-label", "Reload repositories");
+  const reload = iconButton("Reload repositories", icon("arrows-clockwise"), { action: options.onReload, className: "repository-menu__heading-button" });
   heading.append(title, reload);
   const search = node("input", "repository-menu__search");
   search.type = "search";
@@ -117,12 +116,8 @@ export function createRepositoryMenu(options: {
   branchesHeading.setAttribute("role", "none");
   const branchesTitle = node("span", "", "Branches");
   branchesTitle.setAttribute("aria-hidden", "true");
-  const refresh = node("button", "flyout__icon-button");
-  setIcon(refresh, "arrows-clockwise");
-  refresh.type = "button";
+  const refresh = iconButton("Refresh from GitHub", icon("arrows-clockwise"), { className: "flyout__icon-button" });
   refresh.id = "refresh";
-  refresh.title = "Refresh from GitHub";
-  refresh.setAttribute("aria-label", "Refresh from GitHub");
   refresh.setAttribute("role", "menuitem");
   refresh.disabled = true;
   branchesHeading.append(branchesTitle, refresh);
@@ -410,11 +405,11 @@ export function createRepositoryMenu(options: {
       });
       confirm.append(
         go,
-        button("Cancel", () => {
+        textButton("Cancel", () => {
           confirming = undefined;
           render();
           list.querySelector<HTMLElement>(`[aria-label="Remove ${CSS.escape(repo.name)}"]`)?.focus();
-        }, "text-button"),
+        }),
       );
       item.append(confirm);
     }

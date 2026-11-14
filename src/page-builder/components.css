@@ -180,21 +180,10 @@
   gap: 2px;
   flex: none;
 }
+/* The panel's Icon buttons (src/ui/icon-button/icon-button.css), sized for its rows. */
 .component-panel__icon-button {
-  display: inline-grid;
-  place-items: center;
   width: var(--size-compact);
   height: var(--size-compact);
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-.component-panel__icon-button:hover {
-  background: var(--hover);
-  color: var(--text);
 }
 .component-panel__icon-button:focus-visible,
 .component-slot__name:focus-visible,
@@ -236,20 +225,9 @@
 .component-panel__problem[hidden] {
   display: none;
 }
+/* A compact Text button (src/ui/text-button/text-button.css) at the start of its row. */
 .component-panel__text-button {
   align-self: flex-start;
-  min-height: var(--size-icon);
-  padding: 0 6px;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--link);
-  font: inherit;
-  font-size: var(--type-small);
-  cursor: pointer;
-}
-.component-panel__text-button:hover {
-  background: var(--hover);
 }
 
 /* A slot: its name (which selects it in the preview), its state, its fields. */
