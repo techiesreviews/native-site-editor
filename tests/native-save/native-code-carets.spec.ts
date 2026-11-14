@@ -150,8 +150,9 @@ test("beside a one-letter name, an open tag's undo and its circle each take a pr
     document.body.append(root);
     placeTag({ root, flag }, 200, 200, 1000);
     flag.element.focus();
-    // The tag shows from the next frame on (its visibility turns on as its fade starts), before any press could come.
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    // The tag shows once its fade has started (its visibility turns on with it), before any press could come.
+    const undoShown = flag.element.querySelector(".live-caret__undo")!;
+    for (let frames = 0; frames < 120 && getComputedStyle(undoShown).visibility !== "visible"; frames++) await new Promise(requestAnimationFrame);
     const at = (part: Element) => {
       const box = part.getBoundingClientRect();
       return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
