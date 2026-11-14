@@ -99,3 +99,14 @@ test("a picture inside an inactive <template> shows nothing and is not listed; o
   const items = siteItems([page("index.html", `${head("Home")}<template id="card"><img src="/images/a.jpg"></template><div><template shadowrootmode="open"><img src="/images/b.jpg"></template></div></body>`)], rules);
   assert.deepEqual(items.map(item => item.media), ["images/b.jpg"]);
 });
+
+test("a use inside an inactive <template> with words keeps Decorative to the waiting use alone", () => {
+  const [item] = siteItems([page("index.html", `${head("Home")}<template><img alt="The team" src="/images/team.jpg"></template><img src="/images/team.jpg"></body>`)], rules);
+  assert.equal(item.allUses, false);
+});
+
+test("template and picture rules read the page's elements, not its text: comments and scripts do not count", () => {
+  const items = siteItems([page("index.html", `${head("Home")}<!-- <template> --><script>let t = "<template>";</script><img src="/images/a.jpg"><picture><source srcset="/images/b.webp"><span><img></span></picture></body>`)], rules);
+  // The picture after the comment and script is listed; an img nested deeper than the <picture>'s child is the edit bar's "No image".
+  assert.deepEqual(items.map(item => item.media ?? "none"), ["images/a.jpg"]);
+});

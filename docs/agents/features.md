@@ -1241,7 +1241,7 @@ its number unused.
 
 ### F-inbox-01 The Inbox in the top bar
 - Try: At 1280 px look between History and Publish, then click the tray button. Press Escape. Do it again on a site where nothing waits.
-- Good: A 28 px tray button sits between History and Publish (mock-up 05 v2). While something waits it wears a small orange dot, never a number. Its panel opens under it, headed "Inbox", one row per item: an icon, what needs doing ("Picture without a description") and where ("Home page", "/about/"), with the first row focused. Nothing waiting: no dot, and the panel says "All done" with a check in one line; opened before the pages are read (or, after a switch, the new site's) it says "Checking pages…" and lists nothing. Escape or a click outside closes it and the keyboard goes back to the tray. No toast and no explainer text. Light and dark (S1, S3, S4).
+- Good: A 28 px tray button sits between History and Publish (mock-up 05 v2). While something waits it wears a small orange dot, never a number. Its panel opens under it, headed "Inbox", one row per item: an icon, what needs doing ("Picture without a description") and where ("Home page", "/about/"), with the first row focused. Nothing waiting: no dot, and the panel says "All done" with a check in one line; opened before the pages are read (or, after a switch, the new site's) it says "Checking pages…" and lists nothing. Escape or a click outside closes it and the keyboard goes back to the tray. A repository with no site says "All done". Rows drawn before a switch to another site or branch never act on the new one: the list is checked again. No toast and no explainer text. Light and dark (S1, S3, S4).
 - Files: `src/inbox/inbox-host.ts`, `src/inbox/inbox.ts`, `src/inbox/inbox.css`, `src/workspace-shell.ts`, `src/style.css`
 - Phone: no
 - Spec: `tests/native-save/native-inbox.spec.ts`
@@ -1265,7 +1265,7 @@ its number unused.
 
 ### F-inbox-04 Dots in Pages and Media
 - Try: With something waiting in the Inbox, open Pages, then Media.
-- Good: The page with something waiting wears a small orange dot after its name in Pages, and a picture with no description wears one on its Media tile; the dots go when the Inbox item does.
+- Good: The page with something waiting wears a small orange dot on its page icon's corner in Pages (never cut off with a long name), and a picture with no description wears one on its Media tile; the dots go when the Inbox item does.
 - Files: `src/inbox/inbox.ts`, `src/inbox/inbox.css`, `src/page-builder/media-workspace.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-inbox.spec.ts`
