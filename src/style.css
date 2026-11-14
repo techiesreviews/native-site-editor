@@ -4,8 +4,6 @@
 @layer tokens, elements, components;
 @import "./ui/inline-field.css";
 @import "./ui/editor-scrollbars.css";
-@import "./ui/icon-button/icon-button.css";
-@import "./ui/text-button/text-button.css";
 
 :root {
   font-family:
