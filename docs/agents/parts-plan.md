@@ -14,7 +14,7 @@ reuse when they exist, and extend when needed.
   components layer, its own `--btn-*` defaults, a tone changes only those, and a screen that needs it to differ sets a
   hook in its own CSS. Its code is still `button()` in `src/ui/dom.ts`.
 - **Copies:** screens still make their own buttons, badges and dialogs. `scripts/agents/copies.json` counts them per
-  file and kind (128 on 2026-11-14: 58 buttons made by hand, 15 dialogs made by hand, 25 button looks, 17 badge
+  file and kind (124 on 2026-11-14: 58 buttons made by hand, 15 dialogs made by hand, 24 button looks, 14 badge
   looks, 13 dialog and backdrop looks). `npm test` and the kit's css check fail when a count rises.
 
 ## Target shape
