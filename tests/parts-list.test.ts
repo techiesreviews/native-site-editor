@@ -57,20 +57,25 @@ test("every UI file is listed: parts by hand, screens from the code with their s
     "src/ui/parts/badge.css": ".ui-badge {}\n",
     "src/components/publish-menu.ts": '// The Save menu: the changes to save.\nexport const m = () => node("div");\n',
     "src/components/publish-menu.css": ".publish-menu {}\n",
-    "src/components/maths.ts": "export const add = (a: number, b: number) => a + b;\n",
+    "src/page-builder/maths.ts": "export const add = (a: number, b: number) => a + b;\n",
+    "src/components/preview-menu.ts": "// The preview row, built from the sharing row.\nexport const row = () => shareRow();\n",
     "src/page-builder/busy-lock.ts": "// The busy lock's Cancel.\nexport const cancel = (label: string) => button(label, stop);\n",
     "src/catalogue/board.ts": 'node("div");\n',
     "tests/badge.test.ts": 'import { badgePart } from "../src/ui/parts/badge";\n',
     "tests/publish.test.ts": 'readFileSync("src/components/publish-menu.css");\n',
   });
   try {
-    assert.deepEqual(uiFiles(p.root), ["src/components/publish-menu.css", "src/components/publish-menu.ts", "src/page-builder/busy-lock.ts", "src/ui/parts/badge.css", "src/ui/parts/badge.ts"]);
+    assert.deepEqual(uiFiles(p.root), [
+      "src/components/preview-menu.ts", "src/components/publish-menu.css", "src/components/publish-menu.ts", "src/page-builder/busy-lock.ts",
+      "src/ui/parts/badge-options.ts", "src/ui/parts/badge.css", "src/ui/parts/badge.ts",
+    ], "every file in a component folder is UI; elsewhere, one that builds elements");
     assert.equal(p.run("write").status, 0);
     const list = p.list();
     assert.match(list, /### Badge\n\n- \*\*For:\*\* A count or a status\.\n- \*\*Use:\*\* `badgePart\(options\)`\n- \*\*Variants:\*\* tones: neutral, danger\n/);
     assert.match(list, /- \*\*Options:\*\* `src\/ui\/parts\/badge-options\.ts`\n- \*\*Tests:\*\* `tests\/badge\.test\.ts`/);
     assert.match(list, /^\| Publish menu \| The Save menu: the changes to save\. \| `src\/components\/publish-menu\.ts` `src\/components\/publish-menu\.css` \| `tests\/publish\.test\.ts` \|$/m);
-    assert.doesNotMatch(list, /maths|board/, "plumbing and the design board are not UI");
+    assert.match(list, /^\| Preview menu \| The preview row, built from the sharing row\. \|/m);
+    assert.doesNotMatch(list, /maths|board/, "plumbing outside the component folders and the design board are not UI");
     assert.equal(p.run("check").status, 0);
   } finally { rmSync(p.root, { recursive: true, force: true }); }
 });
