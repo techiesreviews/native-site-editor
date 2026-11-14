@@ -13,12 +13,13 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
+import { withoutComments } from "./copies.mjs";
 
 export const sourcePath = "docs/agents/parts.json";
 export const listPath = "docs/agents/parts.md";
 /** Not the editor's UI: the design board (preview only), web workers, the page builder's pure rules. */
 const outside = /^src\/catalogue\/|\.worker\.ts$|^src\/page-builder\/rules\/|\.d\.ts$/;
-/** A TypeScript file that builds elements: it is UI. One without (maths, protocols, state) is plumbing. */
+/** A TypeScript file that builds elements (outside its comments): it is UI. One without (maths, protocols, state) is plumbing. */
 const buildsElements = /\bnode\(\s*["'`]|\b(?:button|link)\(|\bdocument\.createElement(?:NS)?\(|\.innerHTML\s*=|\binsertAdjacentHTML\(|<(?:div|span|button|dialog|section|ul|ol|li|label|input|form|p|a|svg|img|details)[\s>]/;
 
 
@@ -37,7 +38,7 @@ const componentFolders = /^src\/(?:ui|components)\//;
 /** Every UI file under src: each stylesheet, each TypeScript file in a component folder, and each that builds elements. */
 export function uiFiles(root) {
   return walk(root, "src").filter(path => !outside.test(path) && (path.endsWith(".css")
-    || (path.endsWith(".ts") && (componentFolders.test(path) || buildsElements.test(readFileSync(join(root, path), "utf8"))))));
+    || (path.endsWith(".ts") && (componentFolders.test(path) || buildsElements.test(withoutComments(readFileSync(join(root, path), "utf8")))))));
 }
 
 /**
@@ -176,8 +177,11 @@ export function build(root) {
   // A stem's other file (its stylesheet, or a code file that builds nothing) belongs on its row too.
   for (const [stem, files] of stems) for (const extension of [".ts", ".css"]) {
     const sibling = `${stem}${extension}`;
-    if (!files.includes(sibling) && existsSync(join(root, sibling))) files.push(sibling);
+    if (!files.includes(sibling) && !claimed.has(sibling) && existsSync(join(root, sibling))) files.push(sibling);
   }
+  // A description for a file that is no longer on a row (now a part, or plumbing) is dropped, so none goes stale.
+  const listed = new Set([...stems.values()].flat());
+  for (const file of Object.keys(descriptions)) if (existsSync(join(root, file)) && !listed.has(file)) problems.push(`${sourcePath}: screens describes ${file}, which is not a screen file on the list; remove it`);
   const rows = [...stems].sort(([a], [b]) => (a < b ? -1 : 1)).map(([stem, files]) => {
     files.sort((a, b) => (a.endsWith(".ts") === b.endsWith(".ts") ? 0 : a.endsWith(".ts") ? -1 : 1));
     const said = files.map(file => descriptions[file]).find(Boolean)

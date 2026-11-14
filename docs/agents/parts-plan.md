@@ -7,9 +7,10 @@ reuse when they exist, and extend when needed.
 
 ## Today
 
-- **Parts:** eight on the design board, in `src/ui/parts/` (a flat folder) and `src/ui/inline-field.css`. Each has
-  its code (`<part>.ts`), its options (`<part>-options.ts`, pure, tested without a browser) and its styles
-  (`<part>.css`); its tests sit in the shared `tests/` folder.
+- **Parts:** eight on the design board, in `src/ui/parts/` (a flat folder) and `src/ui/inline-field.css`. Six have
+  their code (`<part>.ts`), their options (`<part>-options.ts`, pure, tested without a browser) and their styles
+  (`<part>.css`; the Icon's are `src/icons.css`); the Button's code is `button()` in `src/ui/dom.ts`, and the Inline
+  field is styles only. Their tests sit in the shared `tests/` folder.
 - **The Button pilot** (`src/ui/parts/button.css`, TOOLS-207) did the styles right: its whole look in one file on the
   components layer, its own `--btn-*` defaults, a tone changes only those, and a screen that needs it to differ sets a
   hook in its own CSS. Its code is still `button()` in `src/ui/dom.ts`.
@@ -47,7 +48,7 @@ worktrees work on this repo at the same time).
 
 | Order | Slice | What changes |
 | --- | --- | --- |
-| 1 | Folders for the eight parts | Pure moves into `src/ui/<part>/` with `part.json`; the parts list reads the folders; the unit test globs (`package.json` `test`, `unit.files` and `paths.unitTests` in `scripts/agents/kit.json`) learn tests beside code |
+| 1 | Folders for the eight parts | Pure moves into `src/ui/<part>/` with `part.json`; the parts list reads the folders; the unit test globs (`package.json` `test`, `unit.files` and `paths.unitTests` in `scripts/agents/kit.json`) learn tests beside code; the parts' own files in `homes` (`scripts/agents/copies.mjs`) follow the move |
 | 2 | Import direction | A guard: nothing in `src/ui/` imports from `src/components/`, `src/page-builder/` or a screen |
 | 3 | Icon button and text button | Two parts from `.icon-button` and `.text-button` in `src/style.css`; screens swap to them |
 | 4 | Badge swap | Screens use the Badge part; badge looks in screens go |
