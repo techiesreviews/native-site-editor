@@ -121,15 +121,16 @@ export function createLazyFileOperationsController(ports: FileOperationsPorts, l
     ...checks,
     async moveFileTarget(this: void, ...args: Parameters<FileOperationsController["moveFileTarget"]>) {
       // What is refused without asking GitHub is refused at once, as before, without the chunk.
-      const [source, value, operation] = args;
+      const [source, value, operation, options] = args;
       const to = checks.isMediaTarget(source) && operation === "rename" ? value.slice(0, value.lastIndexOf("/") + 1) + mediaFileName(source.path, value.split("/").at(-1)!) : value;
       const problem = checks.fileMoveProblem(source, to, operation);
       if (problem) return problem;
       if (to === source.path) return undefined;
-      const proof = capture(source);
+      // The search as the person acted: one typed while the chunk loads stays (a copy the same).
+      const proof = capture(source), search = options?.search ?? ports.filesSearch();
       const actions = await get();
       if (!proof.holds()) return changed;
-      return actions.moveFileTarget(...args);
+      return actions.moveFileTarget(source, value, operation, { ...options, search });
     },
     async deleteFileTarget(this: void, ...args: Parameters<FileOperationsController["deleteFileTarget"]>) {
       const target = args[0];
@@ -148,10 +149,10 @@ export function createLazyFileOperationsController(ports: FileOperationsPorts, l
     },
     async duplicateFileTarget(this: void, ...args: Parameters<FileOperationsController["duplicateFileTarget"]>) {
       if (!ports.draftScope() || args[0].folder || args[0].gone) return;
-      const since = ports.edits.stamp();
+      const since = ports.edits.stamp(), [target, search = ports.filesSearch()] = args;
       const actions = await get();
       if (!since.holds()) { ports.errorMessage(new Error(changed)); ports.refuse(changed); return; }
-      return actions.duplicateFileTarget(...args);
+      return actions.duplicateFileTarget(target, search);
     },
     async targetFiles(...args: Parameters<FileOperationsController["targetFiles"]>) {
       const since = ports.edits.stamp();

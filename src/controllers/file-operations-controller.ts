@@ -126,10 +126,11 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
 
   // Renames or moves a file or folder to `to`: the pages among them that other
   // pages link to are named in a confirmation first.
-  async function moveFileTarget(source: FileRowTarget, to: string, operation: "rename" | "move", options?: { keepOldAddress?: boolean; reveal?: boolean }): Promise<string | undefined> {
+  /** `search`: what the explorer's search held as the person acted, when that was before this call (its code still loading). */
+  async function moveFileTarget(source: FileRowTarget, to: string, operation: "rename" | "move", options?: { keepOldAddress?: boolean; reveal?: boolean; search?: string }): Promise<string | undefined> {
     // The stamp, the file list and the target's drafts as the action began: held through the
     // index, the branch reads and the dialog (the guard is proved before the plan and at the write).
-    const since = ports.edits.stamp(), key = ports.nativeFiles().sort().join("\n"), drafts = targetDrafts(source), typed = ports.filesSearch();
+    const since = ports.edits.stamp(), key = ports.nativeFiles().sort().join("\n"), drafts = targetDrafts(source), typed = options?.search ?? ports.filesSearch();
     // Media files (what the Media screen lists) rename by the media plan; fonts, archives and the rest keep the file rename.
     const media = isMediaTarget(source);
     if (media && operation === "rename") to = to.slice(0, to.lastIndexOf("/") + 1) + mediaFileName(source.path, to.split("/").at(-1)!);
@@ -465,8 +466,8 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
   }
 
   // A copy of a file beside it, `name-copy.ext`, as a new file.
-  async function duplicateFileTarget(target: FileRowTarget) {
-    const since = ports.edits.stamp(), typed = ports.filesSearch();
+  async function duplicateFileTarget(target: FileRowTarget, search = ports.filesSearch()) {
+    const since = ports.edits.stamp(), typed = search;
     const scope = ports.draftScope();
     if (!scope || target.folder || target.gone) return;
     let found: MovableFile[];
