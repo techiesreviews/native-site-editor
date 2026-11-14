@@ -7,7 +7,7 @@
 // Page Structure and the component tools: this module mounts those three and
 // hands them back through the host's setters. Everything comes in as live ports.
 
-import { batch } from "@preact/signals-core";
+import { batch, effect } from "@preact/signals-core";
 import type { EditorContext, Directory, Repository, SessionInfo } from "../shared/types";
 import type { AppStore } from "./app-store";
 import { handleChunkLoadFailure } from "./chunk-recovery";
@@ -199,6 +199,12 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   let content: HTMLDivElement;
   let files: HTMLElement;
   let explorerDropdown: ReturnType<typeof mountDropdown> | undefined;
+  let stopNoProject: (() => void) | undefined;
+  /** The project list: the project menu opened, the explorer closed (the welcome's and the empty panel's Choose a project). */
+  function chooseProject() {
+    explorerDropdown?.close();
+    repositoryMenu?.open();
+  }
   let repositoryMenu: ReturnType<typeof createRepositoryMenu> | undefined;
   let siteActions: ReturnType<typeof mountSiteActions> | undefined;
   let sidebarResize: SidebarResize | undefined;
@@ -411,6 +417,11 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       anchor: "--explorer",
     });
     ports.pagesAndFiles.mountExplorer();
+    // No project open: the panel offers the project list (the project menu, behind Menu on a phone).
+    const noProject = ports.element("explorer-none");
+    ports.element("explorer-choose").addEventListener("click", chooseProject);
+    stopNoProject?.();
+    stopNoProject = effect(() => { noProject.hidden = Boolean(ports.appStore.repository.value); });
     codePanes.mountResize(ports.element("main"), ports.element("code-split"), ports.element("secondary-pane"));
     // A selection inside a component's template gets Select card once the runtime says which card.
     // A remount must not leave the old pane (parked or shown) behind.
@@ -632,6 +643,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     activeFileContext = null;
     explorerDropdown?.destroy();
     explorerDropdown = undefined;
+    stopNoProject?.();
+    stopNoProject = undefined;
     sidebarResize?.dispose();
     sidebarResize = undefined;
     blockRail?.dispose();
@@ -714,7 +727,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     get primaryHistoryScope() { return primaryHistoryScope; },
     get activeFileContext() { return activeFileContext; }, set activeFileContext(value) { activeFileContext = value; },
     get repositorySelect() { return repositorySelect; }, get branchSelect() { return branchSelect; }, get refreshButton() { return refreshButton; },
-    get content() { return content; }, get files() { return files; }, get explorerDropdown() { return explorerDropdown; },
+    get content() { return content; }, get files() { return files; }, get explorerDropdown() { return explorerDropdown; }, chooseProject,
     get repositoryMenu() { return repositoryMenu; }, get siteActions() { return siteActions; }, get sidebarResize() { return sidebarResize; },
   };
 }

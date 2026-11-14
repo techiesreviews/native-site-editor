@@ -105,7 +105,7 @@ function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Pro
     errorMessage: (error: unknown) => { errors.push(error); },
     announce: (text: string) => { announced.push(text); },
     setCurrentPage: () => {},
-    openExplorer: () => {},
+    chooseProject: () => {},
     removeFinishStarter: () => {},
     showGetStarted: async () => { calls.gotStarted++; },
     knownRepositories: () => undefined,

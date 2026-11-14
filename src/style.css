@@ -814,6 +814,13 @@ dd {
 #current-page .folder-part { flex-shrink: 1000; color: var(--muted); font-weight: 400; }
 #current-page .path-slash { flex: none; margin-inline: var(--space-3xs); color: var(--muted); font-weight: 400; }
 
+/* No project open: the panel says so and offers the project list (src/workspace-mount.ts), instead of an empty search. */
+.explorer:has(> .explorer-none:not([hidden])) > :not(.explorer-none) { display: none; }
+.explorer-none { display: grid; justify-items: start; gap: var(--space-s); padding: var(--space-xs); }
+.explorer-none[hidden] { display: none; }
+.explorer-none p { margin: 0; color: var(--muted); }
+.explorer-none .button { min-height: var(--size-touch); }
+
 /* The explorer's one head row: Pages | Media | Files, the search, and the tab's New (mock-up 05 v2). */
 .explorer-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); padding-block-end: var(--space-xs); }
 .explorer-search {

@@ -19,6 +19,7 @@ export const topBarMarkup = () => `    <header class="topbar">
 export const workspaceMarkup = () => `${topBarMarkup()}
     <div id="notice" class="notice" role="alert" hidden></div>
     <div id="explorer" class="explorer" role="region" aria-label="Pages & files">
+      <div id="explorer-none" class="explorer-none" hidden><p>No project open yet. Choose one to see its pages, media and files.</p><button type="button" id="explorer-choose" class="button primary">Choose a project</button></div>
       <div class="explorer-head">
         <div id="explorer-tabs" class="explorer-tabs" role="tablist" aria-label="Pages, media or files" hidden>
           <button type="button" id="explorer-tab-pages" class="explorer-tab" role="tab" aria-controls="explorer-pages" aria-selected="true">${iconMarkup("file", 14)}Pages</button>

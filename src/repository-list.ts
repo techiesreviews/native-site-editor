@@ -48,7 +48,8 @@ export interface RepositoryListPorts {
   errorMessage: (error: unknown) => void;
   announce(text: string): void;
   setCurrentPage(path?: string): void;
-  openExplorer: () => void;
+  /** Opens the project list (the project menu). */
+  chooseProject: () => void;
   removeFinishStarter(): void;
   showGetStarted(): Promise<void>;
   knownRepositories(): number[] | undefined;
@@ -148,7 +149,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
           "intro",
           "You’re connected to GitHub. Choose a repository to explore its pages and files.",
         ),
-        button("Choose a project", ports.openExplorer, "button primary"),
+        button("Choose a project", ports.chooseProject, "button primary"),
       );
       ports.content.replaceChildren(panel);
       status("Connected to GitHub. Choose a project to start.");
