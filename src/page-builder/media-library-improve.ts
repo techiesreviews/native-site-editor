@@ -1,5 +1,6 @@
 import { planWithPictureSizes } from "./improve-images-facts";
 import { button, node } from "../ui/dom";
+import { textButton } from "../ui/text-button/text-button";
 import { input } from "./media-library-fields";
 import { icon } from "../icons";
 import { OUTSIDE_PICTURE_LABELS } from "./outside-pictures";
@@ -185,10 +186,10 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
         line.append(node("span", "media-improve__reason", "Left alone everywhere"));
         return line;
       }
-      const leave = button("Leave alone everywhere", () => void h.task(async () => {
+      const leave = textButton("Leave alone everywhere", () => void h.task(async () => {
         await session!.leftAsIs({ picture: picture.key }, true);
         await load(); if (shown()) draw(tickKey);
-      }), "text-button media-improve__everywhere");
+      }), { className: "media-improve__everywhere" });
       leave.setAttribute("aria-label", `Leave ${improvePictureName(picture)} alone everywhere`);
       return leave;
     }

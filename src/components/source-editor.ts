@@ -23,7 +23,9 @@ import { createPublishMenu } from "./publish-menu";
 import { textHash, type AgentCommand } from "../../shared/agent";
 import type { EditorContext, PublishResult } from "../../shared/types";
 import type { FileChange } from "../file-changes";
-import { button, node } from "../ui/dom";
+import { node } from "../ui/dom";
+import { iconButton } from "../ui/icon-button/icon-button";
+import { textButton } from "../ui/text-button/text-button";
 import { icon } from "../icons";
 import { workingPart } from "../working-part";
 
@@ -759,14 +761,8 @@ export function mountSourceEditor(
   const root = node("section", "code-editor");
   root.setAttribute("aria-label", "Source editor");
   const toolbar = node("div", "code-editor__toolbar");
-  const undo = button("", () => void runVisualHistory("undo", file.path), "icon-button code-editor__undo");
-  undo.append(icon("undo"));
-  undo.setAttribute("aria-label", "Undo");
-  undo.title = "Undo";
-  const redo = button("", () => void runVisualHistory("redo", file.path), "icon-button code-editor__redo");
-  redo.append(icon("redo"));
-  redo.setAttribute("aria-label", "Redo");
-  redo.title = "Redo";
+  const undo = iconButton("Undo", icon("undo"), { action: () => void runVisualHistory("undo", file.path), className: "code-editor__undo" });
+  const redo = iconButton("Redo", icon("redo"), { action: () => void runVisualHistory("redo", file.path), className: "code-editor__redo" });
   for (const control of [undo, redo])
     control.addEventListener("mousedown", (event) => event.preventDefault());
   const historyShortcut = (event: KeyboardEvent) => {
@@ -783,14 +779,11 @@ export function mountSourceEditor(
   };
   document.addEventListener("keydown", historyShortcut);
   // Review mode shows a diff against the GitHub baseline; the button toggles it.
-  const review = button(
-    "",
-    () => (file.onHistory ? file.onHistory() : render(mode === "review" ? "edit" : "review")),
-    "icon-button code-editor__history",
-  );
-  review.append(icon("clock-counter-clockwise"));
-  review.setAttribute("aria-label", file.onHistory ? "History" : "Changes");
-  review.title = file.onHistory ? "History" : "Changes on this branch";
+  const review = iconButton(file.onHistory ? "History" : "Changes", icon("clock-counter-clockwise"), {
+    action: () => (file.onHistory ? file.onHistory() : render(mode === "review" ? "edit" : "review")),
+    className: "code-editor__history",
+    title: file.onHistory ? "History" : "Changes on this branch",
+  });
   review.id = "history-button";
   if (file.onHistory) {
     review.setAttribute("aria-controls", "changes");
@@ -845,34 +838,26 @@ export function mountSourceEditor(
   notice.setAttribute("role", "status");
   const conflictBar = node("div", "code-editor__conflict");
   conflictBar.setAttribute("role", "status");
-  const reviewLatest = button(
-    "Review latest GitHub version",
-    () => {
-      reviewingLatest = true;
-      render("review");
-      acceptLatest.hidden = false;
-    },
-    "text-button",
-  );
-  const acceptLatest = button(
-    "Keep my draft over this version",
-    () => {
-      store.acceptBase(scope, file.path, { text: file.source, baseSha: file.baseSha });
-      conflict = false;
-      reviewingLatest = false;
-      update();
-      render(mode);
-    },
-    "text-button",
-  );
+  const reviewLatest = textButton("Review latest GitHub version", () => {
+    reviewingLatest = true;
+    render("review");
+    acceptLatest.hidden = false;
+  });
+  const acceptLatest = textButton("Keep my draft over this version", () => {
+    store.acceptBase(scope, file.path, { text: file.source, baseSha: file.baseSha });
+    conflict = false;
+    reviewingLatest = false;
+    update();
+    render(mode);
+  });
   acceptLatest.hidden = true;
   // GitHub deleted the file: nothing to review, only to settle.
   const deletedUpstream = baseSha() !== null && Boolean(file.deletedUpstream?.(file.path));
   if (deletedUpstream)
     conflictBar.append(
       node("span", "", "GitHub deleted this file since this draft started."),
-      button("Discard draft", () => file.onSettleDeleted?.(file.path, false), "text-button"),
-      button("Keep as new file", () => file.onSettleDeleted?.(file.path, true), "text-button"),
+      textButton("Discard draft", () => file.onSettleDeleted?.(file.path, false)),
+      textButton("Keep as new file", () => file.onSettleDeleted?.(file.path, true)),
     );
   else
     conflictBar.append(

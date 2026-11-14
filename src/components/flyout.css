@@ -75,29 +75,11 @@
   cursor: default;
 }
 
+/* An Icon button (src/ui/icon-button/icon-button.css) in a flyout heading: the flyout sizes it. */
 .flyout__icon-button {
   flex: none;
-  display: inline-grid;
-  place-items: center;
   width: var(--size-icon);
   height: var(--size-icon);
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.flyout__icon-button:hover:not(:disabled),
-.flyout__icon-button:focus-visible {
-  background: var(--hover);
-  color: var(--text);
-}
-
-.flyout__icon-button:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .flyout__note {

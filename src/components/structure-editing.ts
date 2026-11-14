@@ -1,5 +1,6 @@
 import { refuse as showRefusal } from "./refusal-note";
-import { button, node } from "../ui/dom";
+import { node } from "../ui/dom";
+import { textButton } from "../ui/text-button/text-button";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import type { NativeStructure } from "./native-preview";
 import type { ComponentFieldSession, ComponentSlotEditSession, ComponentSlotPart, ComponentStructureModel } from "../page-builder/components";
@@ -284,10 +285,10 @@ export function createStructureEditing(host: StructureEditingHost) {
       suggest(image.field as HTMLInputElement, model.images.map(value => ({ value })), "Images of this site");
       // The Media picker: the choice is a step of its own, for this instance; what was typed so
       // far is kept first. The picker outlives this card's redraws; the session checks the instance.
-      const choose = button("Choose image…", () => {
+      const choose = textButton("Choose image…", () => {
         flush(current); current.session?.close(); current.session = undefined;
         void host.componentSlots(model.host.path, model.host.node)?.openImageChoice(slot.name)?.choose();
-      }, "text-button");
+      });
       group.append(image.wrap, choose, labelled("alt", "Alt text", slot.value.alt ?? "", true).wrap);
     } else {
       const link = labelled("href", "Link / URL", slot.value.href ?? "", false);
@@ -367,7 +368,7 @@ export function createStructureEditing(host: StructureEditingHost) {
     for (const attribute of model.attributes) {
       const row = node("div", "page-structure__attribute");
       row.append(attributeField(`${id}:${attribute.name}`, attribute.name, `Attribute: ${attribute.name}`, attribute.value, () => host.componentSlots(model.host.path, model.host.node)?.openAttribute(attribute.name)),
-        button("Remove", () => model.removeAttribute(attribute.name), "text-button"));
+        textButton("Remove", () => model.removeAttribute(attribute.name)));
       row.lastElementChild?.setAttribute("aria-label", `Remove ${attribute.name}`);
       group.append(row);
     }
@@ -377,7 +378,7 @@ export function createStructureEditing(host: StructureEditingHost) {
       const name = document.createElement("input"), value = document.createElement("input");
       name.placeholder = "name"; name.setAttribute("aria-label", "New attribute name");
       value.placeholder = "value"; value.setAttribute("aria-label", "New attribute value");
-      const submit = button("Add", () => undefined, "text-button"); submit.type = "submit"; submit.setAttribute("aria-label", "Add attribute");
+      const submit = textButton("Add", () => undefined); submit.type = "submit"; submit.setAttribute("aria-label", "Add attribute");
       const problem = node("p", "page-structure__attribute-error"); problem.setAttribute("role", "alert"); problem.hidden = true;
       let origin: ReturnType<ComponentStructureModel["openAttributeAdd"]>;
       form.addEventListener("focusin", () => {

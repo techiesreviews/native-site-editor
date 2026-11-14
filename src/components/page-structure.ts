@@ -2,6 +2,7 @@ import { refuse } from "./refusal-note";
 import { createRowMenu, type MenuItem } from "./row-menu";
 import { setIcon } from "../icons";
 import { button, node } from "../ui/dom";
+import { textButton } from "../ui/text-button/text-button";
 import type { NativeStructure, NativeStructureItem } from "./native-preview";
 import { createUrlChange, type UrlPlan } from "./url-change";
 import { mark } from "../page-builder/component-icon";
@@ -160,8 +161,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   meta.hidden = true;
   meta.append(node("span", "page-structure__meta-heading", "Page"));
   const summary = node("p", "page-structure__meta-summary");
-  const settings = button("Page settings", () => { if (structure?.path) handlers.onPageSettings?.(structure.path); }, "text-button");
-  const navigation = button("Navigation", () => { if (structure?.path) handlers.onNavigation?.(structure.path); }, "text-button");
+  const settings = textButton("Page settings", () => { if (structure?.path) handlers.onPageSettings?.(structure.path); });
+  const navigation = textButton("Navigation", () => { if (structure?.path) handlers.onNavigation?.(structure.path); });
   summary.hidden = settings.hidden = !handlers.onPageSettings;
   navigation.hidden = !handlers.onNavigation;
   meta.append(summary, settings, navigation);

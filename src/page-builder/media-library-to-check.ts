@@ -1,4 +1,5 @@
 import { button, node } from "../ui/dom";
+import { textButton } from "../ui/text-button/text-button";
 import { icon } from "../icons";
 import { basename, mediaKind } from "./media-library-filter";
 import { sheetHead, takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
@@ -80,10 +81,10 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
           if (version !== sheet.version && sheet.element.dataset.mode === "to-check") focusAfter(next);
         }));
         ok.setAttribute("aria-label", `Looks right ${name}${where}`);
-        const edit = button("Edit", () => {
+        const edit = textButton("Edit", () => {
           editing.set(key, { seen: row.text, value: row.text });
           draw(`${row.subtitles ? "Subtitles" : "Description"} for ${name}${where}`);
-        }, "text-button");
+        });
         edit.setAttribute("aria-label", `Edit ${name}${where}`);
         actions.append(ok, edit);
       } else {
@@ -104,7 +105,7 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
           });
         });
         save.setAttribute("aria-label", `Save ${name}${where}`);
-        const cancel = button("Cancel", () => { editing.delete(key); draw(`Edit ${name}${where}`); }, "text-button");
+        const cancel = textButton("Cancel", () => { editing.delete(key); draw(`Edit ${name}${where}`); });
         cancel.setAttribute("aria-label", `Cancel ${name}${where}`);
         actions.append(save, cancel);
       }

@@ -1,6 +1,7 @@
 import { PIN_HEIGHT, noteAnchor, noteTop } from "./agent-pin-geometry";
 import { guardChunkReload } from "../chunk-recovery";
 import { button, node } from "../ui/dom";
+import { textButton } from "../ui/text-button/text-button";
 import { icon } from "../icons";
 import { AGENT_COLOURS, shownName } from "../participant";
 import { REQUEST_TEXT_LIMIT, requestThread, type AgentRequest } from "../../shared/agent";
@@ -503,7 +504,7 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     const undoState = answered && changes.length ? handlers.undoState?.(changes, request.agent?.grant) : undefined;
     if (handlers.onUndo && undoState) {
       const was = undoState === "undone";
-      const undo = button(was ? "Undone" : "Undo", () => void undoChanges(request.id, changes, request.agent?.grant), "text-button agent-pin-card__undo");
+      const undo = textButton(was ? "Undone" : "Undo", () => void undoChanges(request.id, changes, request.agent?.grant), { className: "agent-pin-card__undo" });
       undo.disabled = was || undoing.has(request.id);
       const problem = problems.get(`undo:${request.id}`);
       if (problem) {
@@ -513,26 +514,26 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
       }
       actions.append(undo);
     }
-    const dismiss = button(answered ? "Clear" : "Dismiss", () => {
+    const dismiss = textButton(answered ? "Clear" : "Dismiss", () => {
       close(false);
       handlers.onDismiss(request.id);
-    }, "text-button agent-pin-card__dismiss");
+    }, { className: "agent-pin-card__dismiss" });
     dismiss.title = answered ? "Remove this pin" : "Withdraw this request, so no agent works on it";
     if (inTray && request.element.route && request.element.route !== route) {
       const target = request.element.route;
-      actions.append(button("Show page", () => {
+      actions.append(textButton("Show page", () => {
         close(false);
         pending = request.id;
         scrolledTo = undefined;
         handlers.onShowPage(target);
-      }, "text-button"));
+      }));
     } else if (inTray && rects.get(request.id)) {
       // A question on this page, scrolled out of view.
-      actions.append(button("Show", () => {
+      actions.append(textButton("Show", () => {
         close(false);
         pending = scrolledTo = request.id;
         handlers.onShowElement(request.id);
-      }, "text-button"));
+      }));
     }
     actions.append(dismiss);
     body.append(actions);

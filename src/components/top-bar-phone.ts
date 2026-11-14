@@ -11,6 +11,7 @@ import shareNetwork from "@phosphor-icons/core/regular/share-network.svg?raw";
 import arrowsLeftRight from "@phosphor-icons/core/regular/arrows-left-right.svg?raw";
 import { icon, sizedSvg, svgElement, type IconName } from "../icons";
 import { node } from "../ui/dom";
+import { iconButton } from "../ui/icon-button/icon-button";
 import { initial } from "./repository-menu";
 import { menuRows, type MenuRow } from "./top-bar-menu-rules";
 
@@ -43,10 +44,8 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
   const { app } = ports;
   // Once per top bar: a workspace drawn afresh has a new one.
   if (app.querySelector("#topbar-menu")) return;
-  const trigger = node("button", "icon-button");
-  trigger.type = "button";
+  const trigger = iconButton("Menu", null, { title: false });
   trigger.id = "topbar-menu";
-  trigger.setAttribute("aria-label", "Menu");
   app.querySelector(".topbar-actions")!.append(trigger);
   const siteName = () => ports.appStore.repository.value?.name;
   // Page structure and the code fold into a pull-up sheet under the page on an upright phone (phone-sheet.css);
@@ -191,14 +190,14 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
   function title(text: string, back: boolean) {
     const head = node("div", "top-bar-menu__title");
     if (back) {
-      const button = node("button", "icon-button top-bar-menu__back");
-      button.type = "button";
-      button.setAttribute("aria-label", "Back");
-      button.append(icon("arrow-left", 20));
-      button.addEventListener("click", () => {
-        draw("root");
-        // Back where the keyboard came from, not lost with the redrawn list.
-        body.querySelector<HTMLElement>('[data-row="blocks"]')?.focus();
+      const button = iconButton("Back", icon("arrow-left", 20), {
+        className: "top-bar-menu__back",
+        title: false,
+        action: () => {
+          draw("root");
+          // Back where the keyboard came from, not lost with the redrawn list.
+          body.querySelector<HTMLElement>('[data-row="blocks"]')?.focus();
+        },
       });
       head.append(button);
     }

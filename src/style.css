@@ -4,6 +4,8 @@
 @layer tokens, elements, components;
 @import "./ui/inline-field.css";
 @import "./ui/editor-scrollbars.css";
+@import "./ui/icon-button/icon-button.css";
+@import "./ui/text-button/text-button.css";
 
 :root {
   font-family:
@@ -294,23 +296,7 @@ select {
   font-size: var(--type-base);
   text-overflow: ellipsis;
 }
-.icon-button {
-  display: inline-grid;
-  place-items: center;
-  height: var(--size-control);
-  width: var(--size-control);
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--muted);
-}
-.icon-button:active:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
-}
 @media (hover: hover) and (pointer: fine) {
-  .icon-button:hover:not(:disabled),
   .explorer-toggle:hover {
     background: var(--hover);
     color: var(--text);
@@ -425,19 +411,10 @@ h1 {
 .notice[hidden] {
   display: none;
 }
-.text-button {
-  border: 0;
-  background: none;
-  padding: 5px 0;
-  color: var(--link);
-  font-size: var(--type-base);
-}
-.text-button:active,
 .text-link:active {
   text-decoration: underline;
 }
 @media (hover: hover) and (pointer: fine) {
-  .text-button:hover,
   .text-link:hover {
     text-decoration: underline;
   }

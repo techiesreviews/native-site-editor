@@ -52,7 +52,7 @@
     "src/page-builder/add-panel-dialog.css": { "spacing": 26, "radii": 1, "timings": 1, "zIndex": 1 },
     "src/page-builder/add-panel.css": { "spacing": 18, "radii": 3, "shadows": 2, "timings": 8, "zIndex": 3, "fontSizes": 1 },
     "src/page-builder/block-drag.css": { "spacing": 1, "radii": 4, "shadows": 1 },
-    "src/page-builder/components.css": { "spacing": 46, "radii": 5, "shadows": 2, "timings": 2, "localProperties": 2, "zIndex": 1 },
+    "src/page-builder/components.css": { "spacing": 45, "radii": 5, "shadows": 2, "timings": 2, "localProperties": 2, "zIndex": 1 },
     "src/page-builder/edit-component-mode.css": { "spacing": 10, "radii": 1 },
     "src/page-builder/image-large-editor.css": { "spacing": 36, "radii": 2, "shadows": 4, "timings": 4, "localProperties": 4, "zIndex": 1, "fontSizes": 5 },
     "src/page-builder/image-popup.css": { "spacing": 36, "radii": 15, "shadows": 4, "localProperties": 11, "zIndex": 4 },
@@ -64,7 +64,7 @@
     "src/page-builder/media-picker.css": { "spacing": 134, "radii": 29, "shadows": 9, "timings": 6, "localProperties": 14, "zIndex": 16, "fontSizes": 3 },
     "src/page-builder/media-spot-popup.css": { "spacing": 4, "radii": 1 },
     "src/preview-visit.css": { "spacing": 2, "zIndex": 1 },
-    "src/style.css": { "spacing": 61, "radii": 4, "shadows": 1, "timings": 2, "fontSizes": 9 },
+    "src/style.css": { "spacing": 60, "radii": 4, "shadows": 1, "timings": 2, "fontSizes": 9 },
     "src/tokens/framework-editor.css": { "localProperties": 8 },
     "src/ui/editor-scrollbars.css": { "radii": 2 },
     "src/ui/inline-field.css": { "shadows": 4, "timings": 1 }

@@ -1,6 +1,7 @@
 import { GITHUB_PAGES_REDIRECT_NOTE } from "../../shared/github-pages";
 import { siteAddress } from "../../shared/site-path-prefix";
 import { button, node } from "../ui/dom";
+import { textButton } from "../ui/text-button/text-button";
 import { icon } from "../icons";
 import { formatBytes, uploadImageType } from "../uploads";
 import { input, check } from "./media-library-fields";
@@ -308,11 +309,11 @@ function renderInformation(
       if (row.original) {
         // The kept original (ticket 07): fetched only when asked for, then saved under its own name.
         const name = basename(row.path);
-        const open = button(name, () => void task(async () => {
+        const open = textButton(name, () => void task(async () => {
           const blob = await adapter.blob(row.path);
           if (!h.alive()) return;
           const link = node("a"); link.href = cache.objectUrl(blob); link.download = name; link.click();
-        }), "text-button media-detail__original");
+        }), { className: "media-detail__original" });
         open.setAttribute("aria-label", `Download original ${name}`);
         label.replaceChildren(open);
       }
@@ -415,7 +416,7 @@ function renameField(name: HTMLInputElement, path: string, paths: string[], gith
   const element = node("div", "media-detail__naming");
   const note = node("p", "media-library__problem"); note.id = `media-detail-name-${++fieldIds}`;
   note.setAttribute("aria-live", "polite"); name.setAttribute("aria-describedby", note.id);
-  const suggest = button("", () => { name.value = suggest.dataset.name!; paint(); name.focus(); }, "text-button media-detail__suggest");
+  const suggest = textButton("", () => { name.value = suggest.dataset.name!; paint(); name.focus(); }, { className: "media-detail__suggest" });
   suggest.hidden = true;
   const tidied = node("p", "media-library__hint");
   const forward = input("Keep the old address working", "checkbox");

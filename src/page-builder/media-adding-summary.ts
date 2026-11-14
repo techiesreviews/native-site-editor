@@ -1,6 +1,7 @@
 import type { MediaImageQuality } from "./media-optimise";
 import "./media-adding-summary.css";
 import { button, node } from "../ui/dom";
+import { textButton } from "../ui/text-button/text-button";
 import { icon } from "../icons";
 import { basename } from "./media-library-filter";
 import { mediaAddingWords, mediaAddingCancellable, mediaAddingFailedLine, mediaAddingOffers, mediaAddingStatus, type MediaAddingState } from "./media-adding-rules";
@@ -30,10 +31,10 @@ export function createMediaAddingSummary(root: HTMLElement, actions: MediaAdding
   const bar = node("progress", "media-library__adding-bar"); bar.setAttribute("aria-label", "Files added");
   const list = node("ul", "media-library__adding-rows"), failed = node("ul", "media-library__adding-failed");
   const notes = node("ul", "media-library__adding-notes");
-  const showNew = button("Show new files", () => actions.showNew?.(), "text-button");
-  const review = button("Review…", () => actions.review?.(), "text-button");
+  const showNew = textButton("Show new files", () => actions.showNew?.());
+  const review = textButton("Review…", () => actions.review?.());
   const retry = button("Retry", () => actions.retry());
-  const cancel = button("Cancel", () => actions.cancel(), "text-button");
+  const cancel = textButton("Cancel", () => actions.cancel());
   const dismiss = button("", () => actions.dismiss(), "media-library__adding-dismiss");
   dismiss.setAttribute("aria-label", "Dismiss"); dismiss.append(icon("x", 20));
   for (const control of [cancel, dismiss, showNew]) control.dataset.mediaCancel = "adding";

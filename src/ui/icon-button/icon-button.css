@@ -1,0 +1,35 @@
+/* The Icon button component: an icon alone on a quiet square, muted until hovered or pressed, filled while it is a
+   pressed toggle (aria-pressed). Its whole look in one file on the components layer, like the Button
+   (src/ui/parts/button.css). A screen places and sizes it with width and height in its own unlayered CSS, which wins
+   over this layer. Disabled fades, as every bare button does (src/style.css). Class: `icon-button`. */
+@layer tokens, elements, components;
+
+@layer components {
+  .icon-button {
+    display: inline-grid;
+    place-items: center;
+    width: var(--size-control);
+    height: var(--size-control);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--muted);
+
+    &[aria-pressed="true"] {
+      background: var(--pressed);
+      color: var(--on-pressed);
+    }
+    /* Touch gets the press; hover waits for a mouse, as a touch screen keeps :hover on the last tap. */
+    &:active:not(:disabled) {
+      background: var(--hover);
+      color: var(--text);
+    }
+    @media (hover: hover) and (pointer: fine) {
+      &:hover:not(:disabled) {
+        background: var(--hover);
+        color: var(--text);
+      }
+    }
+  }
+}
