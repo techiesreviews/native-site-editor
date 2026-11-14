@@ -135,9 +135,10 @@ test("every caret colour's letter reads on its circle (4.5:1) in a light and a d
   expect(dark.page).toEqual(light.page);
 });
 
-test("beside a one-letter name, an open tag's undo and its circle each take a press at their middle, with touch-sized press areas", async ({ page, baseURL }) => {
+test("beside a one-letter name, an open tag's undo and its circle each take a press at their middle, with touch-sized press areas; the undo never slides over the circle", async ({ page, baseURL }) => {
   await openEditor(page, baseURL);
   await editorMounted(page);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   const hit = await page.evaluate(async () => {
     const [{ caretFlag, placeTag }] = await Promise.all([import("/src/components/caret-flag.ts"), import("/src/components/live-carets.css")]);
     const root = Object.assign(document.createElement("span"), { className: "live-caret" });
@@ -149,6 +150,8 @@ test("beside a one-letter name, an open tag's undo and its circle each take a pr
     root.append(Object.assign(document.createElement("span"), { className: "live-caret__line" }), flag.element);
     document.body.append(root);
     placeTag({ root, flag }, 200, 200, 1000);
+    // Where motion is welcome, only the undo's icon slides out: the button, and its press area, stay where they settle.
+    const still = getComputedStyle(flag.element.querySelector(".live-caret__undo")!).translate === "none";
     flag.element.focus();
     // The tag shows once its fade has started (its visibility turns on with it), before any press could come.
     const undoShown = flag.element.querySelector(".live-caret__undo")!;
@@ -158,11 +161,11 @@ test("beside a one-letter name, an open tag's undo and its circle each take a pr
       return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
     };
     const undo = flag.element.querySelector(".live-caret__undo")!, mark = flag.element.querySelector(".live-caret__mark")!;
-    const found = { undo: at(undo)?.closest(".live-caret__undo") === undo, circle: at(mark)?.closest(".live-caret__mark") === mark };
+    const found = { still, undo: at(undo)?.closest(".live-caret__undo") === undo, circle: at(mark)?.closest(".live-caret__mark") === mark };
     root.remove();
     return found;
   });
-  expect(hit).toEqual({ undo: true, circle: true });
+  expect(hit).toEqual({ still: true, undo: true, circle: true });
 });
 
 test("Lex and Anna type in the code pane and see each other's carets; an agent shows its program; Anna's tag takes back only her words", async ({ browser, baseURL }) => {
