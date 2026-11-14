@@ -9,20 +9,24 @@ import { elementPathAt } from "../native-source-location";
 import { node } from "../ui/dom";
 import type { InboxItem } from "./inbox-item";
 import type { InboxPorts } from "./inbox-host";
-import { siteFile, siteItems } from "./site-items";
+import { markDecorative } from "./decorative";
+import { pictureVerdict, siteFile, siteItems } from "./site-items";
 
 /** The site's items now; `unsure` while a picture's verdict is not known yet. */
 function findItems(ports: InboxPorts) {
   let unsure = false;
   const prefix = nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH));
   const pages = ports.pages().map(file => ({ file, label: ports.label(file), route: ports.route(file) ?? file, source: ports.source(file) }));
+  let held: Set<string> | undefined;
   const items = siteItems(pages, {
     picture: (page, src, alt) => {
-      const state = ports.picture(page, src, alt);
-      if (!state) unsure = true;
-      return state;
+      // Unknown only while a picture stored in the site waits for the Media rules; one from another address is judged by its alt text.
+      const stored = siteFile(src, page, prefix, () => true) !== undefined;
+      const verdict = pictureVerdict(alt, alt === undefined ? undefined : ports.picture(page, src, alt), stored);
+      if (!verdict) unsure = true;
+      return verdict;
     },
-    file: (page, src) => siteFile(src, page, prefix, path => ports.isFile(path)),
+    file: (page, src) => siteFile(src, page, prefix, path => (held ??= new Set(ports.files())).has(path)),
   });
   return { items, unsure };
 }
@@ -43,17 +47,12 @@ async function goTo(item: InboxItem, ports: InboxPorts) {
   if (!shown) await ports.open(item.page);
 }
 
-/** A picture's Decorative: Media's own (alt="" on each of its pictures on that page, and the place's record), one Undo
- * step, written only to the site and branch it was pressed on. */
-async function decorative(item: InboxItem, ports: InboxPorts) {
-  const stamp = ports.stamp();
-  const live = () => { if (!stamp.holds()) throw new Error("The site changed before Decorative was saved. Nothing was changed."); };
-  const { createMediaWorkspace } = await import("../page-builder/media-workspace");
-  live();
-  const media = createMediaWorkspace(() => ports.media());
-  await media.load();
-  live();
-  await media.describe(item.media!, { decorative: true, page: item.page }, false);
+/** A picture's Decorative, on the session it was pressed in (src/inbox/decorative.ts). */
+function decorative(item: InboxItem, ports: InboxPorts) {
+  return markDecorative(item, ports.stamp(), async () => {
+    const { createMediaWorkspace } = await import("../page-builder/media-workspace");
+    return createMediaWorkspace(() => ports.media());
+  });
 }
 
 const kinds: Record<InboxItem["kind"], Parameters<typeof icon>[0]> = { picture: "image-square", title: "file" };
@@ -61,6 +60,8 @@ const kinds: Record<InboxItem["kind"], Parameters<typeof icon>[0]> = { picture: 
 export function createInboxList(ports: InboxPorts) {
   let items: readonly InboxItem[] = [];
   let retry: ReturnType<typeof setTimeout> | undefined, retries = 0, checked = false;
+  // The session of the last full check: its site and branch, until the next load.
+  let session: { holds(): boolean } | undefined;
   // Opened while the pages were still being checked: the first row takes the keyboard once it is there.
   let focusFirst = false;
   // The dots in Pages and Media: the rows and tiles named here wear theirs (inbox.css), however often they are drawn.
@@ -84,13 +85,17 @@ export function createInboxList(ports: InboxPorts) {
     clearTimeout(retry);
     if (!again) retries = 0;
     if (!ports.pages().length) { show([]); return; }
-    // Until every page is read the list would be partial (or another site's, after a switch): nothing is listed and
-    // the panel says it is checking; the text index asks again once it has them.
+    // Until every page is read the list would be partial; the text index asks again once it has them. A re-read of the
+    // same site (after a save) keeps its list; another site or branch, or a reload, lists nothing until it is read.
     if (!ports.indexed()) {
-      checked = false;
-      show([]);
+      if (!session?.holds()) {
+        session = undefined;
+        checked = false;
+        show([]);
+      }
       return;
     }
+    session = ports.stamp();
     const found = findItems(ports);
     // "All done" only once every picture's verdict is known.
     checked = !found.unsure;
@@ -120,8 +125,9 @@ export function createInboxList(ports: InboxPorts) {
     const active = document.activeElement instanceof HTMLElement && into.contains(document.activeElement) ? document.activeElement : undefined;
     const focusKey = active?.closest<HTMLElement>("[data-key]")?.dataset.key, focusWave = active?.classList.contains("inbox__wave");
     const title = node("h2", "inbox__title", "Inbox");
-    // Opened before the pages are read: busy, rather than an "All done" not yet known.
-    if (!checked) {
+    // Nothing found yet before the pages are read (or a picture's verdict is known): busy, rather than an "All done"
+    // not yet known.
+    if (!checked && !items.length) {
       const busy = node("p", "inbox__empty", "Checking pages…");
       busy.setAttribute("aria-busy", "true");
       into.replaceChildren(title, busy);

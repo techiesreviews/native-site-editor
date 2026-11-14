@@ -16,9 +16,9 @@ export interface InboxPorts {
   source(path: string): string | undefined;
   /** The site's text index has read every page. */
   indexed(): boolean;
-  /** The site holds this file (drafts first): a picture whose file is missing offers no Decorative. */
-  isFile(path: string): boolean;
-  /** The session now: a Decorative begun on it writes only while it holds (another site or branch, or a reload, ends it). */
+  /** The site's files (drafts first): a picture whose file is missing offers no Decorative. */
+  files(): readonly string[];
+  /** The session now: it holds until another site or branch, or a reload, opens (a Decorative writes only while it holds). */
   stamp(): { holds(): boolean };
   /** A page's name and address as the Pages tab shows them. */
   label(file: string): string;
