@@ -75,6 +75,12 @@ test("the old copies are gone: no screen styles the icon button's or the text bu
     assert.deepEqual(copiesInStyles(read(path)).filter(({ text }) => text.includes(cls)), [], `${path} sizes its icon and text buttons but gives them no look`);
 });
 
+test("the top bar sizes only its own icon buttons, never those in the menus that open inside it", () => {
+  const css = read("src/style.css");
+  assert.doesNotMatch(css, /\.topbar \.icon-button\b/, "the project menu opens inside .topbar, so this would grow its Reload and Refresh buttons");
+  assert.equal([...css.matchAll(/^\s*\.topbar-actions \.icon-button \{/gm)].length, 2, "the bar's own size, and its phone size");
+});
+
 test("the icon button's code makes its button element: it is the part's home in the copy count", () => {
   assert.ok(homes.buttons.includes("src/ui/icon-button/icon-button.ts"));
 });

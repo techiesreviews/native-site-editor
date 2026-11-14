@@ -49,7 +49,7 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **For:** A quiet action written as link-coloured words beside other text (Undo, Review…, Reset to defaults, Choose image…).
 - **Not for:** A main or secondary action (use the Button), a link that goes somewhere (an `<a>`), or a row in a menu (the menus draw their own rows until the Menu item part).
 - **Use:** `textButton(words, action, { size, className })` from `src/ui/text-button/text-button.ts`; `link(text, href, "text-button")` from `src/ui/dom.ts` for an `<a>` with the same look.
-- **Variants:** size: base (underlines on hover), compact (`text-button--compact`: smaller words in a padded box that fills on hover, for a panel row); disabled fades, as every bare button does; sizes: base, compact
+- **Variants:** compact (`text-button--compact`) has smaller words in a padded box that fills on hover or press, for a panel row; the base size underlines instead; disabled fades, as every bare button does; sizes: base, compact
 - **Code:** `src/ui/text-button/text-button.ts`
 - **Styles:** `src/ui/text-button/text-button.css`
 - **Options:** `src/ui/text-button/text-button-options.ts`
