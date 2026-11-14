@@ -23,6 +23,8 @@ export interface InboxPorts {
   /** A page's name and address as the Pages tab shows them. */
   label(file: string): string;
   route(file: string): string | undefined;
+  /** The address the canvas shows (a Ctrl+click on a link moves it alone, leaving the open file). */
+  showing(): string | undefined;
   /** The edit bar's verdict on a picture's description; undefined while the Media rules load. */
   picture(page: string, src: string, alt: string | undefined): "described" | "decorative" | "missing" | undefined;
   /** Opens a page in the editor. */

@@ -42,6 +42,13 @@ function pictureSource(source: string, tags: readonly StartTag[], at: number) {
   return undefined;
 }
 
+/** Whether a tag sits in a <template> the browser does not show (a declarative shadow root's is shown). */
+function inInactiveTemplate(source: string, at: number) {
+  const lower = source.toLowerCase(), open = lower.lastIndexOf("<template", at);
+  if (open < 0 || lower.lastIndexOf("</template", at) > open) return false;
+  return !/^<template\b[^>]*\bshadowrootmode\s*=/i.test(source.slice(open, at));
+}
+
 type Verdict = "described" | "decorative" | "missing";
 
 /** The edit bar's Alt text warning as a verdict (src/controllers/page-structure-controller.ts): no alt attribute is
@@ -62,7 +69,7 @@ export function siteItems(pages: readonly InboxPage[], rules: SiteItemRules): In
     const tags = startTags(source);
     // Each picture's address (its src, else its srcset, else its <picture>'s source), whether it waits, and its file.
     const pictures = tags.flatMap(tag => {
-      if (tag.name !== "img") return [];
+      if (tag.name !== "img" || inInactiveTemplate(source, tag.start)) return [];
       const src = startTagAttribute(source, tag, "src")?.value.trim();
       const shown = src || startTagAttribute(source, tag, "srcset")?.value.trim() || pictureSource(source, tags, tag.start);
       // No address at all is the edit bar's "No image", not a description to write.
