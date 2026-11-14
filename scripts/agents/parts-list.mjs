@@ -20,7 +20,7 @@ export const listPath = "docs/agents/parts.md";
 /** Not the editor's UI: the design board (preview only), web workers, the page builder's pure rules. */
 const outside = /^src\/catalogue\/|\.worker\.ts$|^src\/page-builder\/rules\/|\.d\.ts$/;
 /** A TypeScript file that builds elements (outside its comments): it is UI. One without (maths, protocols, state) is plumbing. */
-const buildsElements = /\bnode\(\s*["'`]|\b(?:button|link)\(|\bdocument\.createElement(?:NS)?\(|\.innerHTML\s*=|\binsertAdjacentHTML\(|<(?:div|span|button|dialog|section|ul|ol|li|label|input|form|p|a|svg|img|details)[\s>]/;
+const buildsElements = /\bnode\s*\(\s*["'`]|\b(?:button|link)\s*\(|\bdocument\.createElement(?:NS)?\s*\(|\.innerHTML\s*=|\binsertAdjacentHTML\s*\(|<(?:div|span|button|dialog|section|ul|ol|li|label|input|form|p|a|svg|img|details)[\s/>]/;
 
 
 function walk(root, dir) {

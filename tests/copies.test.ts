@@ -27,6 +27,17 @@ test("a button or dialog made by hand counts; the button() helper and comments n
   assert.deepEqual(kindsAndLines(found), [["buttons", 1], ["buttons", 3], ["buttons", 5], ["dialogs", 6], ["dialogs", 7]]);
 });
 
+test("spaces, line breaks or a comment before the bracket, and any case of the tag name, still count", () => {
+  const found: Found[] = copiesInScript([
+    'node ("button");',
+    "document.createElement /* modal */ ('dialog');",
+    "document.createElement(",
+    '  "BUTTON");',
+    "const m = `<Dialog/>`;",
+  ].join("\n"));
+  assert.deepEqual(kindsAndLines(found), [["buttons", 1], ["dialogs", 2], ["buttons", 3], ["dialogs", 5]]);
+});
+
 test("a comment opener inside a string, or a URL, never hides the code after it", () => {
   const found: Found[] = copiesInScript([
     'input.accept = "image/*";',
