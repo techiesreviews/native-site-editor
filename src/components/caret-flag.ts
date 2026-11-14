@@ -117,23 +117,18 @@ export function caretFlag(caret: CaretWho, undo?: { icon: Element; onUndo(): voi
   };
 }
 
-/** The theme's colours (src/theme.css) of a caret's colour as the carets name it: a synced session's guest (`g` and the
+/** The theme's caret shade (src/theme.css) of a caret's colour as the carets name it: a synced session's guest (`g` and the
  * index Lex's tab gave them) in their chip's colour, Lex on a guest's page in the editor's own; none for the presence
- * colours, which live-carets.css maps by index. A selection's tint takes the same colours there (`.live-caret-tint--g0`…). */
-const PAINTS: Record<string, [line: string, pin: string, ink: string]> = {
-  g0: ["--guest-1", "--guest-1-pin", "--guest-1-ink"], g1: ["--guest-2", "--guest-2-pin", "--guest-2-ink"],
-  g2: ["--guest-3", "--guest-3-pin", "--guest-3-ink"], g3: ["--guest-4", "--guest-4-pin", "--guest-4-ink"],
-  host: ["--primary", "--primary", "--on-primary"],
-};
+ * colours, which live-carets.css maps by index. The circle and its letter come from it there, and a selection's tint
+ * takes the same colours (`.live-caret-tint--g0`…). */
+const PAINTS: Record<string, string> = { g0: "--guest-1-caret", g1: "--guest-2-caret", g2: "--guest-3-caret", g3: "--guest-4-caret", host: "--primary-caret" };
 /** Gives a drawn caret (`root`, a `.live-caret`) its colour. */
 export function paintCaret(root: HTMLElement, colour: string) {
   if (root.dataset.colour === colour) return;
   root.dataset.colour = colour;
   const paint = PAINTS[colour];
-  ["--live-caret", "--live-caret-pin", "--live-caret-ink"].forEach((property, index) => {
-    if (paint) root.style.setProperty(property, `var(${paint[index]})`);
-    else root.style.removeProperty(property);
-  });
+  if (paint) root.style.setProperty("--live-caret", `var(${paint})`);
+  else root.style.removeProperty("--live-caret");
 }
 
 /** A caret as it is drawn: its element, its tag and the tag's measures (`placeTag`). */

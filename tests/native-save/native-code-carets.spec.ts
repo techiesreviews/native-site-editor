@@ -124,7 +124,7 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
     // The script editor's caret (TOOLS-219 follow-up): the circle is filled with the line's colour, no ring round it, and
     // its letter is white (in a light page); closed, the name waits blurred and tucked behind the circle.
     const paint = await caretPaint(annaAtLex);
-    expect(paint).toEqual({ line: paint.fill, fill: expect.stringMatching(/^(rgb|oklch|color)\(/), ring: "none", letter: "rgb(255, 255, 255)" });
+    expect(paint).toEqual({ line: paint.fill, fill: expect.stringMatching(/^(rgb|oklch|color)\(/), ring: "none", letter: expect.stringMatching(/^(rgb\(255, 255, 255\)|oklch\(1 0 none\))$/) });
     await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("filter", "blur(3px)");
     await annaAtLex.locator(".live-caret__mark").hover();
     await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("opacity", "1");

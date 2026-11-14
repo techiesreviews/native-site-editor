@@ -55,9 +55,9 @@ test("a guest's caret takes their chip's colour and Lex's the editor's own; the 
   const paint = (colour: string) => paintCaret(root as unknown as HTMLElement, colour);
   paint("g1");
   assert.equal(root.dataset.colour, "g1");
-  assert.deepEqual(Object.fromEntries(style), { "--live-caret": "var(--guest-2)" });
+  assert.deepEqual(Object.fromEntries(style), { "--live-caret": "var(--guest-2-caret)" });
   paint("host");
-  assert.deepEqual(Object.fromEntries(style), { "--live-caret": "var(--primary)" });
+  assert.deepEqual(Object.fromEntries(style), { "--live-caret": "var(--primary-caret)" });
   paint("1");
   assert.equal(root.dataset.colour, "1");
   assert.equal(style.size, 0, "the presence colours come from live-carets.css");
