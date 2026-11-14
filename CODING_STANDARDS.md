@@ -11,8 +11,8 @@ cite the rule with each finding. Mechanical rules live in the automated checks
   `docs/agents/parts.json` (then `node scripts/agents/parts-list.mjs write`).
 - A screen places and sizes a part (margin, grid placement, size); it never gives it a look of its own (background,
   border, corner, shadow, colour). It sets the part's hook (as `--btn-*`) or the part gets a variant.
-- Home-made copies (a button made with `node("button")`, a button, badge or dialog look styled in a screen) may only go
-  down: `scripts/agents/copies.json`. A lower count is committed with the change (`node scripts/agents/copies.mjs update`).
+- A screen that touches a home-made copy (a button made with `node("button")`, a button, badge or dialog look styled in
+  the screen) swaps it for the part when the part fits. The copy counter holds the count: [guardrails](docs/agents/guardrails.md).
 
 ## Controllers (`src/controllers/*-controller.ts`)
 

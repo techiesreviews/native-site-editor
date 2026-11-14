@@ -106,6 +106,7 @@ test("a look inside :is() or :where() counts, once per place a group names", () 
   assert.deepEqual(expandGroups(".panel :is(button, .other:where(.a, .b))"), [".panel button", ".panel .other.a", ".panel .other.b"]);
   assert.deepEqual(expandGroups(".row > .button:is(.panel .choice, .solo):hover"), [".row > .panel .button.choice:hover", ".row > .button.solo:hover"]);
   assert.deepEqual(expandGroups(".button:where(button, a)"), ["button.button", "a.button"]);
+  assert.deepEqual(expandGroups(".button:not(:is(.toolbar .x)) :is(.a, .b)"), [".button:not(:is(.toolbar .x)) .a", ".button:not(:is(.toolbar .x)) .b"], "a group inside :not() stays");
   const found: Found[] = copiesInStyles([
     ".panel :is(button, .other) { background: var(--surface); }",
     ":is(.a, .b) .button { background: var(--hover); }",

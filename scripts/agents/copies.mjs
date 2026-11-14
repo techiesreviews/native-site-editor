@@ -181,7 +181,7 @@ export function expandGroups(selector) {
   const out = [], queue = [selector];
   while (queue.length && out.length + queue.length <= 64) {
     const current = queue.shift();
-    const start = current.search(/:(?:is|where)\(/);
+    const start = topLevelGroup(current);
     if (start < 0) { out.push(current); continue; }
     const open = current.indexOf("(", start);
     let depth = 0, end = open;
@@ -201,6 +201,20 @@ export function expandGroups(selector) {
     }
   }
   return [...out, ...queue];
+}
+
+/**
+ * Where the first `:is(` or `:where(` outside any other argument starts, or -1. A group inside `:not()` or `:has()`
+ * names no subject, so it stays as it is (subject() empties it).
+ */
+function topLevelGroup(selector) {
+  let depth = 0;
+  for (let i = 0; i < selector.length; i++) {
+    if (depth === 0 && /^:(?:is|where)\(/.test(selector.slice(i, i + 7))) return i;
+    if (selector[i] === "(" || selector[i] === "[") depth++;
+    else if (selector[i] === ")" || selector[i] === "]") depth--;
+  }
+  return -1;
 }
 
 /** The index of the last combinator (a space, `>`, `+` or `~`) outside brackets and parentheses, or -1. */
