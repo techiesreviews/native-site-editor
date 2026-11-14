@@ -105,16 +105,21 @@ test("every border side counts as a look; the same look in another place is anot
 test("a look inside :is() or :where() counts, once per place a group names", () => {
   assert.deepEqual(expandGroups(".panel :is(button, .other:where(.a, .b))"), [".panel button", ".panel .other.a", ".panel .other.b"]);
   assert.deepEqual(expandGroups(".row > .button:is(.panel .choice, .solo):hover"), [".row > .panel .button.choice:hover", ".row > .button.solo:hover"]);
+  assert.deepEqual(expandGroups(".button:where(button, a)"), ["button.button", "a.button"]);
   const found: Found[] = copiesInStyles([
     ".panel :is(button, .other) { background: var(--surface); }",
     ":is(.a, .b) .button { background: var(--hover); }",
     ".bar :where(.bar__button:hover) { border: 0; }",
     ".button:is(.card .choice) { background: var(--surface); }",
     ".card.is-open .button { background: var(--hover); }",
+    ".button:is(button, a) { background: var(--surface); }",
+    "#login .button { border: 0; }",
+    "#settings .button { border: 0; }",
   ].join("\n"));
   assert.deepEqual(found.map(({ kind, line, text }) => [kind, line, text]), [
     ["buttonLooks", 1, ".panel button"], ["buttonLooks", 2, ".a .button"], ["buttonLooks", 2, ".b .button"], ["buttonLooks", 3, ".bar .bar__button:hover"],
-    ["buttonLooks", 4, ".card .button.choice"],
+    ["buttonLooks", 4, ".card .button.choice"], ["buttonLooks", 6, "button.button"], ["buttonLooks", 7, "#login .button"],
+    ["buttonLooks", 8, "#settings .button"],
   ], "`.card.is-open .button` is the look `.card .button.choice` already drew in that place");
 });
 
