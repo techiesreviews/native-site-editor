@@ -102,10 +102,13 @@ test("desktop: one head row, 32px rows, names without the site's name, guide lin
   await expect(item(page, "Home")).toBeHidden();
   await page.locator("#explorer-toggle").press("Escape");
   await expect(explorer(page)).toBeHidden();
-  await page.locator("#explorer-toggle").click();
-  await expect(explorer(page).getByLabel("Search pages", { exact: true })).toHaveValue("");
-  await expect(explorer(page).getByLabel("Search pages", { exact: true })).toBeFocused();
+  // A hover opens it afresh too, and leaves the focus where it was (someone may be typing); a click puts the cursor in the search.
+  await page.locator("#explorer-toggle").hover();
   await expect(item(page, "Home")).toBeVisible();
+  await expect(explorer(page).getByLabel("Search pages", { exact: true })).toHaveValue("");
+  await expect(page.locator("#explorer-toggle")).toBeFocused();
+  await page.locator("#explorer-toggle").click();
+  await expect(explorer(page).getByLabel("Search pages", { exact: true })).toBeFocused();
 
   // + and ⋯ rest hidden, and show on hover with a gentle tint.
   const add = row(page, "Journal").getByRole("button", { name: /^Add subpage to Journal/ });

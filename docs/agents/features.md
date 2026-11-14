@@ -213,7 +213,7 @@ its number unused.
 
 ### F-pages-01 Pages tab
 - Try: Open the explorer on Pages.
-- Good: One white panel, 760 px wide from the bar's left edge (mock-up 05 v2): one head row with Pages | Media | Files as a segmented switch, a search and + New page, no heading or count. The site by its address, each page by its title with its subpages under it, its URL at the row's end in small grey mono type; calm 32 px rows, 44 px with one ⋯ on touch (L3, L9). Typing in the search keeps the pages whose title or URL has it, and a screen reader hears how many were found, or "No page matches". Opened again, the panel starts afresh: the search empty, with the cursor in it after a click or the keyboard (a hover or touch leaves the focus alone).
+- Good: One white panel, 760 px wide from the bar's left edge (mock-up 05 v2): one head row with Pages | Media | Files as a segmented switch, a search and + New page, no heading or count. The site by its address, each page by its title with its subpages under it, its URL at the row's end in small grey mono type; calm 32 px rows, 44 px with one ⋯ on touch (L3, L9). Typing in the search keeps the pages whose title or URL has it, and a screen reader hears how many were found, or "No page matches". Opened again, the panel starts afresh: the search empty, with the cursor in it after a click, Enter or Space on the button (a hover or touch leaves the focus alone; ArrowDown goes to the tabs, as on every menu). Media keeps its own search.
 - Files: `src/components/pages-tree.ts`, `src/components/pages-tree.css`, `src/controllers/pages-controller.ts`, `src/controllers/pages-state.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-pages-look.spec.ts`
@@ -269,7 +269,7 @@ its number unused.
 
 ### F-pages-08 Files tab
 - Try: Open the explorer on Files.
-- Good: The head row's switch, search and + New, no heading row; rows one height with names lined up and icons by kind, a type column on a wide panel; the open file is tinted (L3, L9). Typing in the search lists the site's files whose name or folder has it, each opening on a click; a screen reader hears how many were found, or "No file matches". A file dropped on a found file marks that row and goes into its folder. Opened again, the panel starts afresh, as on Pages.
+- Good: The head row's switch, search and + New, no heading row; rows one height with names lined up and icons by kind, a type column on a wide panel; the open file is tinted (L3, L9). Typing in the search lists the site's files whose name or folder has it, each opening on a click; a screen reader hears how many were found, or "No file matches". A file dropped on a found file marks that row and goes into its folder (for a file at the top of the repository, the list is marked). Opened again, the panel starts afresh, as on Pages.
 - Files: `src/controllers/files-tree-controller.ts`, `src/components/files-tree.css`, `src/components/file-type-icons.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-files-tab.spec.ts`

@@ -381,27 +381,33 @@ test("a file dropped on a found file marks that row and goes into its folder: a 
   const foundRow = (path: string) => found.locator(`.file-row[data-path="${path}"]`);
   await search.fill("s");
   await expect(foundRow("robots.txt")).toBeVisible();
-  // Over `styles/site.css`: which row shows the drop mark, whether it can be seen, and whether the hidden tree is marked.
-  const over = (source: string | undefined) => foundRow("styles/site.css").evaluate((target, source) => {
+  // Over the found row `onto`, a found file (`source`) or a file from the computer (`upload`): what shows the drop mark (a row's
+  // path, or the id of a list), and whether it can be seen (the hidden tree cannot).
+  const over = (onto: string, from: { source?: string; upload?: string }) => foundRow(onto).evaluate((target, from) => {
     const transfer = new DataTransfer();
-    if (!source) transfer.items.add(new File(["%PDF-1.4\n"], "Guide.pdf", { type: "application/pdf" }));
+    if (from.upload) transfer.items.add(new File(["%PDF-1.4\n"], from.upload, { type: "application/pdf" }));
     const send = (element: Element, type: string) => element.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true }));
-    if (source) send(document.querySelector(`#files-found .file-row[data-path="${source}"]`)!, "dragstart");
+    if (from.source) send(document.querySelector(`#files-found .file-row[data-path="${from.source}"]`)!, "dragstart");
     send(target, "dragenter");
     send(target, "dragover");
     const marked = document.querySelector<HTMLElement>("#explorer .is-drop-target");
-    const result = { row: marked?.querySelector<HTMLElement>(":scope > .file-row")?.dataset.path, seen: Boolean(marked?.checkVisibility()), tree: document.getElementById("files")!.classList.contains("is-drop-target") };
+    const result = { mark: marked?.querySelector<HTMLElement>(":scope > .file-row")?.dataset.path ?? marked?.id, seen: Boolean(marked?.checkVisibility()) };
     send(target, "drop");
     return result;
-  }, source);
+  }, from);
+  // On a found file at the top of the repository, the found files' own space is marked: the file goes to the top.
+  expect(await over("robots.txt", { upload: "Notes.pdf" })).toEqual({ mark: "files-found", seen: true });
+  await expect(page.locator("#status")).toContainText("Added notes.pdf.");
+  await expect(foundRow("notes.pdf")).toBeVisible();
   // A found file dragged onto one in another folder (a move refused on a slow machine, as a rename can be, is sent again).
   await expect(async () => {
-    if (await foundRow("robots.txt").isVisible()) expect(await over("robots.txt")).toEqual({ row: "styles/site.css", seen: true, tree: false });
+    if (await foundRow("robots.txt").isVisible() && !(await foundRow("styles/robots.txt").isVisible()))
+      expect(await over("styles/site.css", { source: "robots.txt" })).toEqual({ mark: "styles/site.css", seen: true });
     await expect(foundRow("styles/robots.txt")).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 20_000 });
   await expect(found.locator(".is-drop-target")).toHaveCount(0);
   // A file from the computer.
-  expect(await over(undefined)).toEqual({ row: "styles/site.css", seen: true, tree: false });
+  expect(await over("styles/site.css", { upload: "Guide.pdf" })).toEqual({ mark: "styles/site.css", seen: true });
   await expect(page.locator("#status")).toContainText("Added styles/guide.pdf.");
   await expect(foundRow("styles/guide.pdf")).toBeVisible();
   await expect(search).toHaveValue("s");
