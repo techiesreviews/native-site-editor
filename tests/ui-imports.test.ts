@@ -40,6 +40,7 @@ test("a dynamic import with options or a trailing comma still counts", () => {
   assert.deepEqual(lines(importsInScript('import("../components/a", { with: { type: "json" } });\nimport("../components/b",);\nimport(\n  "../components/c"\n);\n')), [
     [1, "../components/a"], [2, "../components/b"], [3, "../components/c"],
   ]);
+  assert.deepEqual(lines(importsInScript('type P = import("../components/flyout").Flyout;\n')), [[1, "../components/flyout"]], "an import type counts too");
 });
 
 test("import-like text inside a string or a template never counts; an import inside a template's ${} does", () => {
@@ -72,9 +73,13 @@ test("a glob's base option is where its relative patterns start; a typed glob is
     'const e = import.meta.glob<Record<string, string>>("../workspace-shell.ts", { query: { raw: true } });',
     'const f = import.meta.glob<{ title: string; body: string }>("../components/*.ts");',
     "const g = import.meta.glob('./*.ts', { 'base': '../page-builder' });",
+    'const h = import.meta.glob("../components/*.ts", { query: { base: "./x" } });',
+    'const i = import.meta.glob("./*.ts", { query: { base: "./x" }, base: "../workspace" });',
+    'const j = import.meta.glob("./*.ts", { query: "base: \'./x\'" });',
   ].join("\n"))), [
     [1, "../components/*.ts"], [2, "/src/page-builder/*.ts"], [2, "/src/ui/x.ts"], [3, "./parts/*.css"], [4, "../components/*.ts"],
     [5, "../workspace-shell.ts"], [6, "../components/*.ts"], [7, "../page-builder/*.ts"],
+    [8, "../components/*.ts"], [9, "../workspace/*.ts"], [10, "./*.ts"],
   ]);
   assert.equal(wrongTarget("src/ui/dom.ts", "../components/*.ts"), "src/components/*.ts");
   assert.equal(wrongTarget("src/ui/dom.ts", "./parts/*.css"), "", "a base inside src/ui/ stays inside");
