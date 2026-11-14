@@ -144,16 +144,28 @@ test("the pointer keeps every heading the old kitchen.md had, each linking to th
   assert.match(read("AGENTS.md"), /`docs\/agents\/kitchen\.md` \(the kitchen rulebook\)/);
 });
 
+// TOOLS-235 (Lex, 2026-11-14): the kit cut ask, status and feedback (with its --after-release flag), moved learn to
+// sweep --learn and card into its hook, and dropped the Tuesday-only review and the UX confidence ladder. A line may
+// still name them, but only to say so: a bare "was" does not excuse it, "was cut" or "was `kit learn`" does.
+function staleTrimLine(line: string): boolean {
+  return (/`(?:scripts\/agents\/)?kit (?:learn|feedback|status|ask|card)\b|--after-release/.test(line)
+      && !/\b(?:cut|retired|merged|moved|until 2026-11-14)\b|was `kit learn`/.test(line))
+    || (/Tuesday[- ]only|Tuesday pack|Tuesday review day|UX confidence ladder/i.test(line) && !/^#+ |\bdropped\b/i.test(line));
+}
+
+test("the kit trim guard flags a working mention of a cut name and passes one that says where it went", () => {
+  assert.equal(staleTrimLine("A problem that was found on production adds `--after-release` to its line."), true);
+  assert.equal(staleTrimLine("Run `scripts/agents/kit learn --since 14d`; it was quick."), true);
+  assert.equal(staleTrimLine("Lex gets it in that day's Tuesday pack."), true);
+  assert.equal(staleTrimLine("`kit feedback` and its `--after-release` flag were cut on 2026-11-14."), false);
+  assert.equal(staleTrimLine("`kit sweep --learn` (was `kit learn`) gathers the corrections."), false);
+  assert.equal(staleTrimLine("## UX confidence ladder"), false);
+});
+
 test("live docs follow the kit trim: no cut or moved command as a working one, no Tuesday pack or UX ladder", () => {
-  // TOOLS-235 (Lex, 2026-11-14): the kit cut ask, status and feedback, moved learn to sweep --learn and card into its
-  // hook, and dropped the Tuesday-only review and the UX confidence ladder. A line may still name them to say so.
-  // kit feedback's --after-release flag went with it: no doc may still tell anyone to add it to a feedback line.
   const docs = readdirSync("docs/agents", { recursive: true, encoding: "utf8" }).filter(name => name.endsWith(".md"))
     .map(name => `docs/agents/${name}`).concat("AGENTS.md", "docs/work/learning/README.md");
-  const stale = docs.flatMap(path => read(path).split("\n").flatMap((line, index) =>
-    (/`(?:scripts\/agents\/)?kit (?:learn|feedback|status|ask|card)\b|--after-release/.test(line) && !/\b(?:cut|retired|merged|moved|was|until 2026-11-14)\b/.test(line))
-    || (/Tuesday[- ]only|Tuesday pack|Tuesday review day|UX confidence ladder/i.test(line) && !/^#+ |\bdropped\b/i.test(line))
-      ? [`${path}:${index + 1}`] : []));
+  const stale = docs.flatMap(path => read(path).split("\n").flatMap((line, index) => staleTrimLine(line) ? [`${path}:${index + 1}`] : []));
   assert.deepEqual(stale, []);
   assert.match(read("docs/agents/routines/learning.md"), /`scripts\/agents\/kit sweep --learn --since <its date>`/);
 });
