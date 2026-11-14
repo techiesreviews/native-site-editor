@@ -63,6 +63,21 @@ test("Vite's import.meta.glob (a string or a list, negations left out) and new U
   ]);
 });
 
+test("a glob's base option is where its relative patterns start; a typed glob is read whatever its type", () => {
+  assert.deepEqual(lines(importsInScript([
+    'const a = import.meta.glob("./*.ts", { base: "../components" });',
+    "const b = import.meta.glob(['./*.ts', '/src/ui/x.ts'], { eager: true, base: '/src/page-builder' });",
+    'const c = import.meta.glob("./*.css", { base: "./parts" });',
+    'const d = import.meta.glob<{ default: () => void }>("../components/*.ts");',
+    'const e = import.meta.glob<Record<string, string>>("../workspace-shell.ts", { query: { raw: true } });',
+  ].join("\n"))), [
+    [1, "../components/*.ts"], [2, "/src/page-builder/*.ts"], [2, "/src/ui/x.ts"], [3, "./parts/*.css"], [4, "../components/*.ts"],
+    [5, "../workspace-shell.ts"],
+  ]);
+  assert.equal(wrongTarget("src/ui/dom.ts", "../components/*.ts"), "src/components/*.ts");
+  assert.equal(wrongTarget("src/ui/dom.ts", "./parts/*.css"), "", "a base inside src/ui/ stays inside");
+});
+
 test("an import in a comment never counts", () => {
   assert.deepEqual(importsInScript('// import { x } from "../components/a";\n/* import("../workspace-shell") */\nconst a = 1;\n'), []);
 });
