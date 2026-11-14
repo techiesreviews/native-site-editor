@@ -11,11 +11,11 @@
   inset-inline-end: 4px;
   inline-size: 8px;
   block-size: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: var(--agent-question-strong);
-  box-shadow: 0 0 0 2px var(--surface);
+  outline: 2px solid var(--surface);
   scale: 0;
-  transition: scale 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: scale var(--dur-menu) var(--ease-out);
 }
 :root[data-inbox-waiting] .topbar :is(#inbox-button, #topbar-menu)::after {
   scale: 1;
@@ -42,24 +42,17 @@
   inline-size: 7px;
   block-size: 7px;
   margin-inline-start: var(--space-xs);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: var(--agent-question-strong);
   vertical-align: 1px;
 }
-/* A picture with something waiting in the Inbox (TOOLS-222): a small dot in its corner, nothing else
-   (inbox.ts sets --inbox-dot on its tile). */
-.media-library__card::before {
-  content: "";
-  display: var(--inbox-dot, none);
-  position: absolute;
-  inset: auto var(--space-2xs) var(--space-2xs) auto;
-  z-index: 2;
-  inline-size: 8px;
-  block-size: 8px;
-  border-radius: 50%;
-  background: var(--agent-question-strong);
-  box-shadow: 0 0 0 2px var(--surface);
-  pointer-events: none;
+/* A picture with something waiting in the Inbox (TOOLS-222): a small ringed dot in its corner, nothing else. It is
+   painted on the tile's top layer (its selection ring, media-picker.css), so it stays above the name; inbox.ts sets
+   --inbox-dot-size on its tile. */
+.media-library__card::after {
+  background: radial-gradient(circle at calc(100% - var(--space-s)) calc(100% - var(--space-s)),
+    var(--agent-question-strong) 3.5px, var(--surface) 4px 5.5px, transparent 6px) no-repeat;
+  background-size: var(--inbox-dot-size, 0 0);
 }
 .inbox__title {
   margin: 0;
@@ -81,10 +74,10 @@
 .inbox__item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  column-gap: 10px;
+  column-gap: var(--space-xs);
   align-items: center;
   min-inline-size: 0;
-  padding: 7px var(--space-xs);
+  padding: var(--space-2xs) var(--space-xs);
   border: 0;
   border-radius: inherit;
   background: transparent;
@@ -101,13 +94,12 @@
   margin-inline-end: var(--space-2xs);
   block-size: 24px;
   padding-inline: var(--space-xs);
-  border: 0;
+  border: 1px solid var(--control-line);
   border-radius: var(--radius-small);
   background: transparent;
   color: var(--muted);
   font: inherit;
   font-size: var(--type-small);
-  box-shadow: inset 0 0 0 1px var(--control-line);
   cursor: pointer;
 }
 .inbox__wave:disabled { cursor: progress; opacity: 0.6; }
@@ -121,7 +113,8 @@
   align-items: center;
   gap: var(--space-xs);
   margin: 0;
-  padding: 10px var(--space-xs);
+  padding: var(--space-xs);
   color: var(--muted);
 }
-.inbox__empty > svg { color: var(--success-fg); }
+/* The check sits beside its words, not centred as an icon alone in a control is (icons.css). */
+.inbox__empty > svg { margin-inline: 0; color: var(--success-fg); }
