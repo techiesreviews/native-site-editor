@@ -48,6 +48,13 @@ const scriptPatterns = {
   dialogs: /\bnode\(\s*["'`]dialog["'`]|\bcreateElement\(\s*["'`]dialog["'`]|<dialog[\s>]/g,
 };
 
+/** True when a value may start after `code` (so a `/` there opens a regex literal, not a division). */
+function startsValue(code) {
+  const before = code.trimEnd();
+  if (!before || /(?:\+\+|--)$/.test(before)) return !before;
+  return /[(,=:[!&|?{};+\-*%<>~^]$|\b(?:return|typeof|case|yield|await|throw|else|in|of|void|delete|new)$/.test(before);
+}
+
 /**
  * The text with its comments blanked (lines kept) and its strings and regex literals left as they are, so `"image/*"`
  * or a URL's `//` never starts a comment. A template's `${…}` is code again, nested templates included.
@@ -61,10 +68,10 @@ export function withoutComments(text) {
       if (char === "/" && next === "/") { const end = text.indexOf("\n", i); const stop = end < 0 ? text.length : end; out += blank(text.slice(i, stop)); i = stop; continue; }
       if (char === "/" && next === "*") { const end = text.indexOf("*/", i + 2); const stop = end < 0 ? text.length : end + 2; out += blank(text.slice(i, stop)); i = stop; continue; }
       // A regex literal (a `/` where a value starts) is skipped whole, so a quote or backtick in it opens no string.
-      if (char === "/" && /(?:^|[(,=:[!&|?{};+\-*%<>~^]|\breturn|\btypeof)\s*$/.test(out.slice(-40))) {
+      if (char === "/" && startsValue(out)) {
         let j = i + 1, inClass = false;
         for (; j < text.length && text[j] !== "\n"; j++) {
-          if (text[j] === "\\") j++;
+          if (text[j] === "\\" && text[j + 1] !== "\n") j++;
           else if (text[j] === "[") inClass = true;
           else if (text[j] === "]") inClass = false;
           else if (text[j] === "/" && !inClass) break;
