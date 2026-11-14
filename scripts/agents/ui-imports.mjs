@@ -64,8 +64,28 @@ const scriptPatterns = [
 // and a `base` option is where its relative patterns start.
 // The type argument ends at the first `>` the call's `(` follows, so an arrow (`=>`) or a `;` inside it is part of it.
 const globPattern = /\bimport\.meta\.glob\s*(?:<[\s\S]{0,500}?>)?\s*\(\s*(\[[^\]]*\]|(["'`])[^"'`\n$]+\2)/dg;
-// Read on the code itself, as its key may be quoted (`"base"`), and its strings are blanked in the bare text.
-const globBase = /^\s*,\s*\{[^)]*?(["']?)\bbase\1\s*:\s*(["'`])([^"'`\n$]+)\2/d;
+const baseKey = /^(["']?)base\1\s*:\s*(["'`])([^"'`\n$]+)\2/;
+
+/**
+ * The plain-string `base` key of the options object right after a glob's patterns (`bare` and `code` from there), or "".
+ * Only a key of the object itself counts, not one nested in it (`query: { base }`) or one inside a string.
+ */
+function globBase(bare, code) {
+  const open = /^\s*,\s*\{/.exec(bare);
+  if (!open) return "";
+  let depth = 1, after = true;
+  for (let i = open[0].length; i < bare.length && depth > 0; i++) {
+    const char = bare[i];
+    if (depth === 1 && after && /\S/.test(char)) {
+      const key = baseKey.exec(code.slice(i));
+      if (key) return key[3];
+    }
+    if ("{[(".includes(char)) depth++;
+    else if ("}])".includes(char)) depth--;
+    if (/\S/.test(char)) after = depth === 1 && (char === "," || char === "{");
+  }
+  return "";
+}
 
 /** Every module one script file's text imports, with the 1-based line its statement starts on. */
 export function importsInScript(text) {
@@ -75,7 +95,7 @@ export function importsInScript(text) {
     for (const match of bare.matchAll(pattern)) found.push({ line: lineAt(code, match.index), specifier: code.slice(...match.indices[2]) });
   for (const match of bare.matchAll(globPattern)) {
     const [start, end] = match.indices[1];
-    const base = globBase.exec(code.slice(end))?.[3] ?? "";
+    const base = globBase(bare.slice(end), code.slice(end));
     for (const quoted of bare.slice(start, end).matchAll(/(["'`])([^"'`\n]+)\1/dg)) {
       const pattern = code.slice(start + quoted.indices[2][0], start + quoted.indices[2][1]);
       if (pattern.startsWith("!")) continue;
