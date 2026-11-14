@@ -1,0 +1,50 @@
+# The weekly package check: npm audit over package-lock.json, every Monday on
+# dev and main, on "Run workflow" for the chosen branch, and on pull requests
+# that change the packages. A high or critical finding fails the check; the
+# full audit report is on the run's summary page. It opens no issues and no
+# pull requests, and it runs only in this repository: self-hosted copies of
+# the editor skip it. No Dependabot file either: those copies take every file
+# outside .github/workflows/ from here and would get its pull requests.
+name: Package check
+
+on:
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - package.json
+      - package-lock.json
+      - .github/workflows/package-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: audit (${{ matrix.ref || github.ref_name }})
+    if: github.repository == 'techiesreviews/native-site-editor'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: ${{ github.event_name == 'schedule' && fromJSON('["dev","main"]') || fromJSON('[""]') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.ref }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Audit report
+        run: |
+          {
+            echo '## npm audit (${{ matrix.ref || github.ref_name }})'
+            echo '```'
+            npm audit --package-lock-only || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Fail on a high or critical finding
+        run: npm audit --package-lock-only --audit-level=high
