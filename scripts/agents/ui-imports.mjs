@@ -10,7 +10,7 @@
 // `--root <dir>` reads that project instead of this one. Every other module under src/ counts as a screen:
 // src/components/, src/page-builder/, src/catalogue/ and the editor's own top-level files. Today no import breaks the
 // rule, so there is no allow-list: a part that needs a screen's piece gets it moved into src/ui/ or passed in. Not read:
-// TypeScript's `import x = require("…")` and `import(`…${x}`)`, which the editor does not use.
+// `require("…")` (TypeScript's `import x = require("…")` too) and `import(`…${x}`)`, which the editor does not use.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, posix, relative, sep } from "node:path";
@@ -31,7 +31,7 @@ const scriptPatterns = [
   /\bimport\s*\(\s*(["'`])([^"'`\n$]+)\1\s*\)/g,
 ];
 
-/** Every module one TypeScript file's text imports, with the 1-based line its statement starts on. */
+/** Every module one script file's text imports, with the 1-based line its statement starts on. */
 export function importsInScript(text) {
   const code = withoutComments(text);
   const found = [];
