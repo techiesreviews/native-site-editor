@@ -30,6 +30,17 @@ function pageTitle(source: string) {
   return /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i.exec(headEnd < 0 ? source : source.slice(0, headEnd))?.[1].trim() ?? "";
 }
 
+type Verdict = "described" | "decorative" | "missing";
+
+/** The edit bar's Alt text warning as a verdict (src/controllers/page-structure-controller.ts): no alt attribute is
+ * missing at once; then the Media record's state, or an empty alt not marked decorative; undefined only while the
+ * record of a picture `stored` in the site is not known yet. */
+export function pictureVerdict(alt: string | undefined, state: Verdict | undefined, stored: boolean): Verdict | undefined {
+  if (alt === undefined) return "missing";
+  if (state === undefined && stored) return undefined;
+  return state === "missing" || (!alt && state !== "decorative") ? "missing" : state ?? "described";
+}
+
 export function siteItems(pages: readonly InboxPage[], rules: SiteItemRules): InboxItem[] {
   const items: InboxItem[] = [];
   for (const page of pages) {

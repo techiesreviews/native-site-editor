@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { siteFile, siteItems, type InboxPage } from "../src/inbox/site-items.ts";
+import { pictureVerdict, siteFile, siteItems, type InboxPage } from "../src/inbox/site-items.ts";
 
 // The edit bar's verdict stands in: an absent alt or an unmarked empty one is not described yet.
 const rules = {
@@ -57,4 +57,19 @@ test("a picture's file counts only when the site holds it, so a broken picture o
   assert.equal(siteFile("../images/team.jpg", "about/index.html", undefined, path => held.has(path)), "images/team.jpg");
   assert.equal(siteFile("/images/gone.jpg", "index.html", undefined, path => held.has(path)), undefined);
   assert.equal(siteFile("https://example.com/x.jpg", "index.html", undefined, () => true), undefined);
+});
+
+test("a picture's verdict is the edit bar's Alt text warning, unknown only while a stored picture's Media rules load", () => {
+  // No alt attribute: "Alt text missing", known at once, wherever the picture comes from.
+  assert.equal(pictureVerdict(undefined, undefined, true), "missing");
+  assert.equal(pictureVerdict(undefined, undefined, false), "missing");
+  // A picture stored in the site waits for its Media record.
+  assert.equal(pictureVerdict("A desk", undefined, true), undefined);
+  assert.equal(pictureVerdict("A desk", "described", true), "described");
+  assert.equal(pictureVerdict("", "decorative", true), "decorative");
+  assert.equal(pictureVerdict("", "described", true), "missing");
+  assert.equal(pictureVerdict("A desk", "missing", true), "missing");
+  // A picture from another address has no record: its alt text alone decides, never "unknown".
+  assert.equal(pictureVerdict("A desk", undefined, false), "described");
+  assert.equal(pictureVerdict("", undefined, false), "missing");
 });
