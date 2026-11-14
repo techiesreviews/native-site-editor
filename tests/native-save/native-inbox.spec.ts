@@ -3,6 +3,7 @@
 // done" when empty), dots on the pages and pictures that have something waiting, and a row in the phone's Menu.
 // Default fixture: the home page's hero picture has no alt text.
 import { expect, test, type Page } from "@playwright/test";
+import { openMedia } from "../support/scenarios";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const banner = (page: Page) => page.getByRole("banner");
@@ -12,6 +13,9 @@ const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact:
 const picture = (page: Page) => inbox(page).getByRole("button", { name: /^Picture without a description/ });
 const dot = (page: Page, selector: string, pseudo = "::after") =>
   page.locator(selector).first().evaluate((el, which) => { const style = getComputedStyle(el, which); return style.content !== "none" && style.display !== "none" && style.scale !== "0"; }, pseudo);
+// A Media tile's dot is painted on its top layer (inbox.css), sized to the tile only while its picture waits.
+const tileDot = (page: Page, path: string) =>
+  page.locator(`.media-library__card[data-path="${path}"]`).first().evaluate(el => getComputedStyle(el, "::after").backgroundSize !== "0px 0px" && getComputedStyle(el, "::after").backgroundImage.includes("gradient"));
 const homeSource = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html") ?? "");
 
 async function open(page: Page, baseURL: string | undefined) {
@@ -52,6 +56,10 @@ test.describe("desktop", () => {
     await page.locator("#explorer-toggle").click();
     await expect.poll(() => dot(page, '#explorer .pages-item[data-file="index.html"] > .pages-row .pages-label')).toBe(true);
     await expect.poll(() => dot(page, '#explorer .pages-item[data-file="about/index.html"] > .pages-row .pages-label')).toBe(false);
+    // So does its picture on its Media tile, and only that one.
+    await openMedia(page);
+    await expect.poll(() => tileDot(page, "images/placeholder.svg")).toBe(true);
+    expect(await page.locator('.media-library__card[data-path]:not([data-path="images/placeholder.svg"])').evaluateAll(cards => cards.some(card => getComputedStyle(card, "::after").backgroundSize !== "0px 0px"))).toBe(false);
     await page.keyboard.press("Escape");
 
     // The item opens its spot: the picture selected, the edit bar on its missing alt text.
