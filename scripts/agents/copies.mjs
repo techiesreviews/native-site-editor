@@ -43,9 +43,11 @@ const blank = text => text.replace(/[^\n]/g, " ");
 
 // ---------- Scripts ----------
 
+// Comments are blanked to spaces first, so `node /* x */ ("button")` reads as `node ("button")`. Tag names ignore case,
+// as the browser does.
 const scriptPatterns = {
-  buttons: /\bnode\(\s*["'`]button["'`]|\bcreateElement\(\s*["'`]button["'`]|<button[\s>]/g,
-  dialogs: /\bnode\(\s*["'`]dialog["'`]|\bcreateElement\(\s*["'`]dialog["'`]|<dialog[\s>]/g,
+  buttons: /\b(?:node|createElement)\s*\(\s*["'`]button["'`]|<button[\s/>]/gi,
+  dialogs: /\b(?:node|createElement)\s*\(\s*["'`]dialog["'`]|<dialog[\s/>]/gi,
 };
 
 /** True when a value may start after `code` (so a `/` there opens a regex literal, not a division). */
