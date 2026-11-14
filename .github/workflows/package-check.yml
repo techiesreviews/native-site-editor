@@ -39,9 +39,11 @@ jobs:
         with:
           node-version: 24
       - name: Audit report
+        env:
+          REF: ${{ matrix.ref || github.ref_name }}
         run: |
           {
-            echo '## npm audit (${{ matrix.ref || github.ref_name }})'
+            echo "## npm audit ($REF)"
             echo '```'
             npm audit --package-lock-only || true
             echo '```'
