@@ -150,6 +150,8 @@ test("beside a one-letter name, an open tag's undo and its circle each take a pr
     document.body.append(root);
     placeTag({ root, flag }, 200, 200, 1000);
     flag.element.focus();
+    // The tag shows from the next frame on (its visibility turns on as its fade starts), before any press could come.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const at = (part: Element) => {
       const box = part.getBoundingClientRect();
       return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);

@@ -78,7 +78,7 @@
    on from the letter, and an agent's icon sits on a whole circle (the script editor's caret). */
 .live-caret__mark {
   position: relative;
-  z-index: 1;
+  z-index: var(--layer-raised);
   display: grid;
   place-items: center;
   flex: none;
@@ -125,10 +125,10 @@
 .live-caret__flag[data-whole] .live-caret__name { margin-inline: 2px 0; }
 .live-caret__flag[data-whole] .live-caret__initial { display: inline; }
 
-/* Above the circle, whose press area reaches it beside a short name ("J"): a press on Undo is Undo. */
+/* Above the circle (the same layer, later), whose press area reaches it beside a short name: a press on Undo is Undo. */
 .live-caret__undo {
   position: relative;
-  z-index: 2;
+  z-index: var(--layer-raised);
   display: grid;
   place-items: center;
   flex: none;
@@ -149,31 +149,32 @@
 .live-caret__undo:focus-visible { outline: 1.5px solid currentColor; outline-offset: -1.5px; }
 .live-caret__flag:focus-visible { outline: 2px solid var(--live-caret); outline-offset: 2px; }
 
-/* Closed, the name and Undo are not there for presses or Tab; open (focus, or hover where hover is real) they are.
+/* Closed, the name and Undo are not there for presses or Tab; open (focus, or hover where hover is real) they are (visibility
+   turns on at once and off at the fade's end).
    As in the script editor, they wait blurred and tucked behind the circle, and slide out of it as the tag opens. */
 .live-caret__name, .live-caret__undo {
   opacity: 0;
   visibility: hidden;
   translate: -0.55rem 0;
   filter: blur(3px);
-  transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1), translate 240ms cubic-bezier(0.23, 1, 0.32, 1), filter 240ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0s linear 240ms;
+  transition: opacity var(--dur-menu) var(--ease-out), translate var(--dur-menu) var(--ease-out), filter var(--dur-menu) var(--ease-out), visibility var(--dur-menu);
 }
 .live-caret[data-flip] :is(.live-caret__name, .live-caret__undo) { translate: 0.55rem 0; }
 .live-caret__flag:focus-within { pointer-events: auto; }
 .live-caret__flag:focus-within::before { clip-path: var(--live-caret-open); }
-.live-caret__flag:focus-within :is(.live-caret__name, .live-caret__undo) { opacity: 1; visibility: visible; translate: 0 0; filter: none; transition-delay: 0s; }
+.live-caret__flag:focus-within :is(.live-caret__name, .live-caret__undo) { opacity: 1; visibility: visible; translate: 0 0; filter: none; }
 @media (hover: hover) and (pointer: fine) {
   .live-caret:has(.live-caret__flag:hover) { z-index: 1; }
   .live-caret__flag:hover { pointer-events: auto; }
   .live-caret__flag:hover::before { clip-path: var(--live-caret-open); }
-  .live-caret__flag:hover :is(.live-caret__name, .live-caret__undo) { opacity: 1; visibility: visible; translate: 0 0; filter: none; transition-delay: 0s; }
+  .live-caret__flag:hover :is(.live-caret__name, .live-caret__undo) { opacity: 1; visibility: visible; translate: 0 0; filter: none; }
   .live-caret__undo:hover { background: color-mix(in oklch, currentColor 20%, transparent); }
 }
 @media (prefers-reduced-motion: no-preference) {
   .live-caret__flag::before { transition: clip-path 200ms cubic-bezier(0.23, 1, 0.32, 1); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .live-caret__name, .live-caret__undo, .live-caret[data-flip] :is(.live-caret__name, .live-caret__undo) { translate: 0 0; filter: none; transition: opacity 160ms ease-out, visibility 0s linear 160ms; }
+  .live-caret__name, .live-caret__undo, .live-caret[data-flip] :is(.live-caret__name, .live-caret__undo) { translate: 0 0; filter: none; transition: opacity var(--dur-menu) var(--ease-out), visibility var(--dur-menu); }
 }
 
 /* A selection: a light tint of their colour behind the text. */
