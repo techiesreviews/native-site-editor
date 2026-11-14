@@ -126,7 +126,7 @@ export function backgroundSite(pin: MediaPin, ports: BackgroundSitePorts, opened
     origins: () => mediaOwnOrigins(nativeSiteSettings(read(NATIVE_CONFIG_PATH)).url, read("CNAME")),
     branchPathProblem: tree.branchPathProblem, onBranchHere: path => pageOnBranchHere(path, tree.baseFiles(), tree.drafts()),
     readNativeRedirects: readRedirects, undoFileChanges: none, afterFileChanges: none, announce: none, refuse: none, errorMessage: none,
-    requestAnimationFrame: task => { setTimeout(task, 0); }, openFolder: none, fileRow: () => undefined, revealFile: () => undefined, focusFiles: none, renderFileTree: none, filesTabOpen: () => false,
+    requestAnimationFrame: task => { setTimeout(task, 0); }, openFolder: none, fileRow: () => undefined, revealFile: () => undefined, rowsBeside: () => [], focusFiles: none, filesSearch: () => "", renderFileTree: none, filesTabOpen: () => false,
   };
   const entries = ports.factories.createLazyFileOperationsController({ ...files, edits: { stamp: () => holds, run: () => Promise.reject(new Error("Reads only.")), peek: { source: read, exists, template: () => undefined, site: () => site } } },
     () => import("./controllers/file-operations-controller"));

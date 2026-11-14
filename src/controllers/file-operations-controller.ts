@@ -57,8 +57,12 @@ export interface FileOperationsPorts {
   fileRow(path: string): { focus(): void } | undefined;
   /** After a copy or rename the person made in Files: its row, shown even where a search would leave it out. */
   revealFile(path: string): { focus(): void } | undefined;
+  /** The rows beside a file's row as shown now, the next then the one before (none when it has no row). */
+  rowsBeside(path: string): string[];
   /** Where the focus goes in Files when no row is left to take it (a search's found files, or its field). */
   focusFiles(): void;
+  /** What the explorer's search holds: a person's copy or rename shows its file only while the search is as it was. */
+  filesSearch(): string;
   renderFileTree(): void;
   filesTabOpen(): boolean;
 }
@@ -125,7 +129,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
   async function moveFileTarget(source: FileRowTarget, to: string, operation: "rename" | "move", options?: { keepOldAddress?: boolean; reveal?: boolean }): Promise<string | undefined> {
     // The stamp, the file list and the target's drafts as the action began: held through the
     // index, the branch reads and the dialog (the guard is proved before the plan and at the write).
-    const since = ports.edits.stamp(), key = ports.nativeFiles().sort().join("\n"), drafts = targetDrafts(source);
+    const since = ports.edits.stamp(), key = ports.nativeFiles().sort().join("\n"), drafts = targetDrafts(source), typed = ports.filesSearch();
     // Media files (what the Media screen lists) rename by the media plan; fonts, archives and the rest keep the file rename.
     const media = isMediaTarget(source);
     if (media && operation === "rename") to = to.slice(0, to.lastIndexOf("/") + 1) + mediaFileName(source.path, to.split("/").at(-1)!);
@@ -198,17 +202,17 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       ? urlDialog ? `The site changed while the ${operation === "rename" ? "Rename" : "Move"} dialog was open, so nothing was ${operation === "rename" ? "renamed" : "moved"}. Try again to see the latest links.` : "The repository changed meanwhile. Try again."
       : outcome.message;
     if (outcome.message) return outcome.message;
-    focusMovedFile(to, options?.reveal);
+    focusMovedFile(to, options?.reveal ? typed : undefined);
     return undefined;
   }
 
-  /** `reveal`: the person moved or renamed it in Files, so it shows, focused, even where their search would leave it out. An
-   * agent's move (no `reveal`) leaves the person's search and focus alone. */
-  function focusMovedFile(to: string, reveal = false) {
+  /** `typed`: the person moved or renamed it in Files with that search, so it shows, focused, even where the search would leave
+   * it out, unless they typed another search meanwhile. An agent's move (none) leaves the person's search and focus alone. */
+  function focusMovedFile(to: string, typed?: string) {
     ports.requestAnimationFrame(() => {
       for (let part = ports.parentOf(to); part; part = ports.parentOf(part)) ports.openFolder(part);
       if (!ports.fileRow(to)) ports.renderFileTree();
-      if (reveal && ports.filesTabOpen()) ports.revealFile(to)?.focus();
+      if (typed === ports.filesSearch() && ports.filesTabOpen()) ports.revealFile(to)?.focus();
     });
   }
 
@@ -356,6 +360,8 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     let cancelled = false;
     const cancel = `Cancelled deleting ${target.path}`;
     const key = ports.nativeFiles().sort().join("\n"), drafts = targetDrafts(target);
+    // A person's delete: the rows beside it as Delete was pressed, where the focus goes once its own row has gone.
+    const beside = agent ? [] : ports.rowsBeside(target.path);
     const indexed = await ports.ensureNativeTextIndex();
     if (indexed && since.holds()) { ports.errorMessage(new Error(indexed)); return indexed; }
     // Uploaded and moved files hold no source to record: their draft revisions are the proof.
@@ -442,19 +448,22 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     if (cancelled) { if (!outcome.ok) ports.announce(cancel); return "Cancelled."; }
     const error = !outcome.ok && outcome.reason === "stale" ? changed : outcome.message;
     if (error) { ports.errorMessage(new Error(error)); if (!outcome.ok && outcome.reason === "refused") ports.refuse(error); return error; }
-    // An agent's delete leaves the person's focus where it is.
+    // An agent's delete leaves the person's focus where it is. A person's goes to the row still showing the file (deleted, with
+    // Restore), else the next row, else the one before, else its folder (ux-rulebook B2).
     ports.requestAnimationFrame(() => {
       if (agent || !ports.filesTabOpen()) return;
-      const row = ports.fileRow(target.path) ?? ports.fileRow(ports.parentOf(target.path));
-      if (row) row.focus();
-      else ports.focusFiles();
+      for (const path of [target.path, ...beside, ports.parentOf(target.path)]) {
+        const row = path ? ports.fileRow(path) : undefined;
+        if (row) return row.focus();
+      }
+      ports.focusFiles();
     });
     return undefined;
   }
 
   // A copy of a file beside it, `name-copy.ext`, as a new file.
   async function duplicateFileTarget(target: FileRowTarget) {
-    const since = ports.edits.stamp();
+    const since = ports.edits.stamp(), typed = ports.filesSearch();
     const scope = ports.draftScope();
     if (!scope || target.folder || target.gone) return;
     let found: MovableFile[];
@@ -473,7 +482,8 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     if (ports.draftStore().error) { ports.errorMessage(new Error(ports.draftStore().error!)); return; }
     ports.afterFileChanges();
     ports.announce(`Duplicated ${target.path} as ${to}.`);
-    ports.requestAnimationFrame(() => { if (ports.filesTabOpen()) ports.revealFile(to)?.focus(); });
+    // Shown and focused, unless the person typed another search meanwhile (it stays).
+    ports.requestAnimationFrame(() => { if (ports.filesTabOpen() && ports.filesSearch() === typed) ports.revealFile(to)?.focus(); });
   }
 
   return { deleteFileTarget, duplicateFileTarget, restoreFileTarget, protectedProblem, moveProblem, fileMoveProblem, targetFiles, pageLinks, moveFileTarget };

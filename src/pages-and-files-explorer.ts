@@ -317,9 +317,18 @@ export function revealFiles(ports: Parameters<typeof findFiles>[0], tree: TreeRo
   return fileRowNow(ports, tree, paths[0]) ?? field;
 }
 
-/** No row left to take the focus (a found file deleted): the first found file takes it, or the search field. */
+/** The rows beside `path`'s, as shown now (found files or the tree): the next, then the one before. Where the focus goes once
+ * its file is deleted (ux-rulebook B2). */
+export function rowsBeside(ports: Pick<PagesAndFilesPorts, "element" | "files">, tree: TreeRows, path: string) {
+  const item = fileRowNow(ports, tree, path)?.closest("li");
+  return [item?.nextElementSibling, item?.previousElementSibling].flatMap((next) => next?.querySelector<HTMLElement>(".file-row")?.dataset.path ?? []);
+}
+
+/** No row left to take the focus (a found file deleted, or the last file at the top of the tree): the first found file takes it,
+ * or the search field. */
 export function focusFiles(ports: Pick<PagesAndFilesPorts, "element" | "files">) {
-  if (ports.files.hidden) (ports.element("files-found").querySelector<HTMLElement>(".file-row") ?? ports.element("explorer-search")).focus();
+  const found = ports.files.hidden ? ports.element("files-found").querySelector<HTMLElement>(".file-row") : undefined;
+  (found ?? ports.element("explorer-search")).focus();
 }
 
 /** Keeps the switch's width on the explorer (--explorer-switch), where Media's One bar starts on the head row (media-picker.css). */

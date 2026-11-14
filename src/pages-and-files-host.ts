@@ -160,7 +160,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
       import("./components/create-dialog"), import("./components/file-row-actions"), ports.loadConfirmDialog(),
       import("./components/page-picker"), import("./controllers/files-tree-controller"), import("./pages-and-files-explorer"), loadPagesActions(), loadFileOps(),
     ]);
-    return { ...create, ...actions, ...confirm, ...picker, ...tree, createExplorerActions: explorer.createExplorerActions, findFiles: explorer.findFiles, measureSwitch: explorer.measureSwitch, fileRowNow: explorer.fileRowNow, revealFiles: explorer.revealFiles, focusFiles: explorer.focusFiles };
+    return { ...create, ...actions, ...confirm, ...picker, ...tree, createExplorerActions: explorer.createExplorerActions, findFiles: explorer.findFiles, measureSwitch: explorer.measureSwitch, fileRowNow: explorer.fileRowNow, revealFiles: explorer.revealFiles, rowsBeside: explorer.rowsBeside, focusFiles: explorer.focusFiles };
   });
 
   function treeState(scope = ports.draftScope()): TreeState {
@@ -195,14 +195,14 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     openFolder: (path: string) => filesTree?.openFolder(path), listings: () => filesTree?.listings() ?? spareListings, visible: filesShown,
   };
   let explorerMount: Promise<void> | undefined;
-  let rows: Pick<typeof import("./pages-and-files-explorer"), "fileRowNow" | "revealFiles" | "focusFiles"> | undefined;
+  let rows: Pick<typeof import("./pages-and-files-explorer"), "fileRowNow" | "revealFiles" | "rowsBeside" | "focusFiles"> | undefined;
   function ensureExplorer() {
     if (filesTree) return ensurePagesTree();
     if (explorerMount) return explorerMount;
     const host = ports.element("explorer");
-    const pending = loadExplorerModules().then(async ({ createCreateDialog, createFileRowActions, createConfirmDialog, createPagePicker, createFilesTreeController, createExplorerActions, measureSwitch, fileRowNow, revealFiles, focusFiles }) => {
+    const pending = loadExplorerModules().then(async ({ createCreateDialog, createFileRowActions, createConfirmDialog, createPagePicker, createFilesTreeController, createExplorerActions, measureSwitch, fileRowNow, revealFiles, rowsBeside, focusFiles }) => {
       if (!host.isConnected || host !== document.getElementById("explorer")) return;
-      rows = { fileRowNow, revealFiles, focusFiles };
+      rows = { fileRowNow, revealFiles, rowsBeside, focusFiles };
       measureSwitch(host, ports.element("explorer-tabs"));
       const { planCreation, createFromRequest, fileRowItems, renameProblem, renameFileTarget, dropProblem, dropFileTarget, upload } = createExplorerActions(ports, {
         get createDialog() { return createDialog; }, get fileActions() { return fileActions; }, get fileOps() { return fileOps; },
@@ -568,7 +568,8 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     duplicateFile: (scope, file, to) => duplicateFile(draftStore(), scope, file, to),
     afterFileChanges, announce: ports.announce, refuse, errorMessage: ports.errorMessage, requestAnimationFrame: callback => { requestAnimationFrame(callback); },
     openFolder: path => filesTreeController.openFolder(path), fileRow: path => filesTreeController.row(path), revealFile: path => filesTreeController.reveal([path]),
-    focusFiles: () => rows?.focusFiles(ports),
+    rowsBeside: path => rows?.rowsBeside(ports, filesTree, path) ?? [], focusFiles: () => rows?.focusFiles(ports),
+    filesSearch: () => ports.element<HTMLInputElement>("explorer-search").value,
     renderFileTree: () => filesTreeController.render(),
     filesTabOpen: () => filesTreeController.visible(),
   });
