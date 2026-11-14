@@ -52,3 +52,14 @@ test("at 1280 px, the welcome's Choose a project opens the project list, held op
   await page.locator(".welcome").getByRole("button", { name: "Choose a project", exact: true }).click();
   await stays(page);
 });
+
+test("with the project list not loaded, Choose a project from the keyboard puts the focus on Reload repositories", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.route("**/api/repositories**", (route) => route.fulfill({ status: 500, body: "{}" }));
+  await page.goto(baseURL!);
+  await page.locator("#explorer-toggle").click();
+  const choose = explorer(page).getByRole("button", { name: "Choose a project", exact: true });
+  await choose.focus();
+  await page.keyboard.press("Enter");
+  await expect(projects(page).getByRole("button", { name: "Reload repositories", exact: true })).toBeFocused();
+});
