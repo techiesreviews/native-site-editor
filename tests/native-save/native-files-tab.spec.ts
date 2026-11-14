@@ -117,6 +117,12 @@ test.describe("touch", () => {
   test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
   test("rows are 44 px with one ⋯ each; a folder's menu still adds", async ({ page, baseURL }) => {
     await openFiles(page, baseURL);
+    // Opened again on touch, the cursor stays out of the search: its keyboard would cover the list.
+    await page.locator("#explorer-toggle").press("Escape");
+    await expect(explorer(page)).toBeHidden();
+    await page.locator("#explorer-toggle").tap();
+    await expect(row(page, "index.html")).toBeVisible();
+    await expect(explorer(page).getByLabel("Search files", { exact: true })).not.toBeFocused();
     for (const path of ["index.html", "images"]) expect((await line(page, path).boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await expect(line(page, "images").getByRole("button", { name: "New in images", exact: true })).toBeHidden();
     const more = line(page, "images").getByRole("button", { name: "Actions for images", exact: true });
@@ -137,6 +143,9 @@ test("the search lists every file whose name or folder has it, closed folders to
   const found = explorer(page).getByRole("list", { name: "Files found", exact: true });
   await expect(found.locator('.file-row[data-path="styles/site.css"]')).toBeVisible();
   await expect(explorer(page).locator("#files")).toBeHidden();
+  // A screen reader hears what the search found (a polite live region), as the list shows it.
+  const said = explorer(page).locator("#explorer-files [role='status']");
+  await expect(said).toHaveText("1 file found");
   // A found row has the tree's actions: its menu renames it in place, and so does F2.
   const siteRow = found.locator('.file-row[data-path="styles/site.css"]');
   await siteRow.click({ button: "right" });
@@ -159,14 +168,22 @@ test("the search lists every file whose name or folder has it, closed folders to
   await expect(page.locator("#current-page")).toHaveText("styles/site.css");
   await expect(page.locator("#current-page .folder-part")).toHaveText("styles");
   await expect(page.locator("#current-page .file-part")).toHaveText("site.css");
-  // Opened again, the found file just opened carries the tint, as the tree's open file does.
-  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
-  await expect(found.locator('.file-row[data-path="styles/site.css"]')).toHaveClass(/\bselected\b/);
-  // Nothing found says so; clearing the search shows the tree again.
+  // Opened again, the panel starts afresh (mock-up 05 v2): the search empty with the cursor in it, the tree back.
+  if (await explorer(page).isVisible()) await page.locator("#explorer-toggle").press("Escape");
+  await expect(explorer(page)).toBeHidden();
+  await page.locator("#explorer-toggle").click();
+  await expect(explorer(page).getByLabel("Search files", { exact: true })).toHaveValue("");
+  await expect(explorer(page).getByLabel("Search files", { exact: true })).toBeFocused();
+  await expect(found).toBeHidden();
+  await expect(row(page, "index.html")).toBeVisible();
+  await expect(said).toHaveText("");
+  // Nothing found says so, to a screen reader too; clearing the search shows the tree again.
   await explorer(page).getByLabel("Search files", { exact: true }).fill("zzzz");
   await expect(found).toHaveText("No file matches");
+  await expect(said).toHaveText("No file matches");
   await explorer(page).getByLabel("Search files", { exact: true }).fill("");
   await expect(found).toBeHidden();
+  await expect(said).toHaveText("");
   await expect(row(page, "index.html")).toBeVisible();
   // A tab switch starts the search afresh.
   if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
@@ -239,9 +256,12 @@ test("in a repository with no site the search narrows the rows drawn, and cleari
   if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
   const readme = explorer(page).getByRole("button", { name: "README.md", exact: true });
   await expect(readme).toBeVisible({ timeout: 30_000 });
+  await explorer(page).getByLabel("Search files", { exact: true }).fill("readme");
+  await expect(explorer(page).locator("#explorer-files [role='status']")).toHaveText("1 found");
   await explorer(page).getByLabel("Search files", { exact: true }).fill("zzzz");
   await expect(readme).toBeHidden();
   await expect(explorer(page).getByRole("list", { name: "Files found", exact: true })).toHaveText("No file matches");
+  await expect(explorer(page).locator("#explorer-files [role='status']")).toHaveText("No file matches");
   await explorer(page).getByLabel("Search files", { exact: true }).fill("");
   await expect(readme).toBeVisible();
   // A file in a folder: the folder's name or the whole path finds it, with its folder kept.
@@ -351,6 +371,39 @@ test("a file dropped on the found files' empty space, or where no file matches, 
   await expect(page.locator("#status")).toContainText("Added second.pdf.");
   await expect(search).toHaveValue("");
   await expect(row(page, "second.pdf")).toBeVisible();
+});
+
+test("a file dropped on a found file marks that row and goes into its folder: a found file dragged there, or one from the computer", async ({ page, baseURL }) => {
+  await openFiles(page, baseURL);
+  await settled(page);
+  const search = explorer(page).getByLabel("Search files", { exact: true });
+  const found = explorer(page).locator("#files-found");
+  const foundRow = (path: string) => found.locator(`.file-row[data-path="${path}"]`);
+  await search.fill("s");
+  await expect(foundRow("robots.txt")).toBeVisible();
+  // Over `styles/site.css`: which row shows the drop mark, whether it can be seen, and whether the hidden tree is marked.
+  const over = (source: string | undefined) => foundRow("styles/site.css").evaluate((target, source) => {
+    const transfer = new DataTransfer();
+    if (!source) transfer.items.add(new File(["%PDF-1.4\n"], "Guide.pdf", { type: "application/pdf" }));
+    const send = (element: Element, type: string) => element.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true }));
+    if (source) send(document.querySelector(`#files-found .file-row[data-path="${source}"]`)!, "dragstart");
+    send(target, "dragenter");
+    send(target, "dragover");
+    const marked = document.querySelector<HTMLElement>("#explorer .is-drop-target");
+    const result = { row: marked?.querySelector<HTMLElement>(":scope > .file-row")?.dataset.path, seen: Boolean(marked?.checkVisibility()), tree: document.getElementById("files")!.classList.contains("is-drop-target") };
+    send(target, "drop");
+    return result;
+  }, source);
+  // A found file dragged onto one in another folder.
+  expect(await over("robots.txt")).toEqual({ row: "styles/site.css", seen: true, tree: false });
+  await expect(page.locator("#status")).toHaveText("Moved robots.txt to styles.");
+  await expect(foundRow("styles/robots.txt")).toBeVisible();
+  await expect(found.locator(".is-drop-target")).toHaveCount(0);
+  // A file from the computer.
+  expect(await over(undefined)).toEqual({ row: "styles/site.css", seen: true, tree: false });
+  await expect(page.locator("#status")).toContainText("Added guide.pdf.");
+  await expect(foundRow("styles/guide.pdf")).toBeVisible();
+  await expect(search).toHaveValue("s");
 });
 
 // A rename begun while the page is still loading is refused ("The repository changed meanwhile"): these wait for the preview,

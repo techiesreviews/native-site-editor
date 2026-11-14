@@ -83,15 +83,29 @@ test("desktop: one head row, 32px rows, names without the site's name, guide lin
   await expect(item(page, "Home")).toBeHidden();
   // The keyboard's tab stop moves to a row that shows.
   expect(await explorer(page).locator("[role='treeitem'][tabindex='0']").evaluate(row => row.checkVisibility())).toBe(true);
+  // A screen reader hears what the search found (a polite live region): the count, or that nothing matches.
+  const said = explorer(page).locator("#explorer-pages [role='status']");
+  await expect(said).toHaveText("1 page found");
   await explorer(page).getByLabel("Search pages", { exact: true }).fill("zzzz");
   await expect(explorer(page).getByText("No page matches", { exact: true })).toBeVisible();
+  await expect(said).toHaveText("No page matches");
   await explorer(page).getByLabel("Search pages", { exact: true }).fill("");
+  await expect(said).toHaveText("");
   await expect(item(page, "Home")).toBeVisible();
   await expect(item(page, "Journal")).toHaveAttribute("aria-expanded", "false");
   // Its arrow pointed down while the search opened it, and points right again now.
   await expect.poll(caret).not.toBe(opened);
   await item(page, "Journal").locator(":scope > .pages-row > .pages-twisty").click();
   await expect.poll(caret).toBe(opened);
+  // Opened again, the panel starts afresh (mock-up 05 v2): the search empty with the cursor in it, every page back.
+  await explorer(page).getByLabel("Search pages", { exact: true }).fill("spring");
+  await expect(item(page, "Home")).toBeHidden();
+  await page.locator("#explorer-toggle").press("Escape");
+  await expect(explorer(page)).toBeHidden();
+  await page.locator("#explorer-toggle").click();
+  await expect(explorer(page).getByLabel("Search pages", { exact: true })).toHaveValue("");
+  await expect(explorer(page).getByLabel("Search pages", { exact: true })).toBeFocused();
+  await expect(item(page, "Home")).toBeVisible();
 
   // + and ⋯ rest hidden, and show on hover with a gentle tint.
   const add = row(page, "Journal").getByRole("button", { name: /^Add subpage to Journal/ });
