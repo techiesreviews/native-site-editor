@@ -27,6 +27,17 @@ test("a button or dialog made by hand counts; the button() helper and comments n
   assert.deepEqual(kindsAndLines(found), [["buttons", 1], ["buttons", 3], ["buttons", 5], ["dialogs", 6], ["dialogs", 7]]);
 });
 
+test("a comment opener inside a string, or a URL, never hides the code after it", () => {
+  const found: Found[] = copiesInScript([
+    'input.accept = "image/*";',
+    'const a = node("button");',
+    "const url = `https://x.test/${node(\"dialog\")}`; // node(\"button\")",
+    "/** done */",
+    "const b = '<button>';",
+  ].join("\n"));
+  assert.deepEqual(kindsAndLines(found), [["buttons", 2], ["dialogs", 3], ["buttons", 5]]);
+});
+
 test("style rules resolve nesting, see through at-rules and keep their first line", () => {
   const rules = styleRules([
     "@layer components {",
@@ -58,6 +69,11 @@ test("a look on something named as a button, a badge or a dialog counts once per
   assert.deepEqual(kindsAndLines(found), [
     ["buttonLooks", 1], ["buttonLooks", 4], ["badgeLooks", 5], ["badgeLooks", 6], ["dialogLooks", 7], ["dialogLooks", 8],
   ]);
+});
+
+test("a look set straight inside a nested at-rule belongs to the rule around it", () => {
+  const found: Found[] = copiesInStyles(".bar__button {\n  margin: 0;\n  @media (hover: hover) { background: var(--hover); }\n}\n");
+  assert.deepEqual(kindsAndLines(found), [["buttonLooks", 1]]);
 });
 
 test("placing, sizing or setting a part's hooks never counts, nor a look on a name that only sounds alike", () => {

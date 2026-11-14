@@ -3,9 +3,13 @@
 // hand) and from the code (every other screen file, its leading comment, its styles, its tests, its options).
 //
 //   node scripts/agents/parts-list.mjs write     rewrite docs/agents/parts.md
-//   node scripts/agents/parts-list.mjs check     fail when it is out of date, or a file is missing or undescribed
+//   node scripts/agents/parts-list.mjs check [--then <script> [args…]]
+//       fail when it is out of date, or a file is missing or undescribed; --then runs one more node script after it
 //
-// `--root <dir>` reads that project instead of this one. npm test runs the check (tests/parts-list.test.ts).
+// `--root <dir>` reads that project instead of this one. The list reads every test and every UI file's leading
+// comment, so every tier of checks runs this: npm test (tests/parts-list.test.ts, also a docs guard), npm run check
+// (the tests tier) and the kit's css command.
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -248,10 +252,18 @@ function check(root, log) {
 }
 
 export function run(argv, { log = console, root: defaultRoot = fileURLToPath(new URL("../..", import.meta.url)) } = {}) {
-  const at = argv.indexOf("--root");
-  const root = at >= 0 ? argv[at + 1] : defaultRoot;
-  const command = argv.find(arg => arg === "write" || arg === "check") ?? "check";
-  return command === "write" ? write(root, log) : check(root, log);
+  // `--then <script> [args…]` runs one more node script with every argument after it, as copies.mjs does, so the
+  // kit's single css command can check this list before the counts.
+  const cut = argv.indexOf("--then");
+  const own = cut < 0 ? argv : argv.slice(0, cut), then = cut < 0 ? [] : argv.slice(cut + 1);
+  const at = own.indexOf("--root");
+  const root = at >= 0 ? own[at + 1] : defaultRoot;
+  const command = own.find(arg => arg === "write" || arg === "check") ?? "check";
+  let status = command === "write" ? write(root, log) : check(root, log);
+  if (command === "check" && then.length) {
+    try { execFileSync(process.execPath, [join(root, then[0]), ...then.slice(1)], { cwd: root, stdio: "inherit" }); } catch { status = 1; }
+  }
+  return status;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) process.exitCode = run(process.argv.slice(2));

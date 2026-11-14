@@ -222,12 +222,16 @@ test("the kit's own checks.css value runs as the kit runs it and never leaves th
   const p = project(".x { padding: 8px; }\n");
   try {
     copyFileSync(script, join(p.root, "scripts/agents/one-offs.mjs"));
-    // The command runs the copy counter first (scripts/agents/copies.mjs), which hands on to this count.
+    // The command checks the parts list and runs the copy counter first, which hand on to this count.
+    copyFileSync(join(repo, "scripts/agents/parts-list.mjs"), join(p.root, "scripts/agents/parts-list.mjs"));
     copyFileSync(join(repo, "scripts/agents/copies.mjs"), join(p.root, "scripts/agents/copies.mjs"));
+    mkdirSync(join(p.root, "docs/agents"), { recursive: true });
+    writeFileSync(join(p.root, "docs/agents/parts.json"), JSON.stringify({ parts: [], screens: { "src/a.css": "A sample." } }));
     copyFileSync(join(repo, "scripts/check-colours.mjs"), join(p.root, "scripts/check-colours.mjs"));
     writeFileSync(join(p.root, "scripts/check-colours.allow.json"), "[]\n");
     p.run("update");
     assert.equal(spawnSync(process.execPath, ["scripts/agents/copies.mjs", "update"], { cwd: p.root, encoding: "utf8" }).status, 0);
+    assert.equal(spawnSync(process.execPath, ["scripts/agents/parts-list.mjs", "write"], { cwd: p.root, encoding: "utf8" }).status, 0);
     const before = readFileSync(join(p.root, baselinePath), "utf8");
     const kit = () => spawnSync(process.execPath, [...argv, "src/a.css"], { cwd: p.root, encoding: "utf8" });
     const same = () => assert.equal(readFileSync(join(p.root, baselinePath), "utf8"), before, "the kit's command must not write the count");

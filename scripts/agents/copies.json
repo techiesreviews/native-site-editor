@@ -1,6 +1,6 @@
 {
   "about": "Home-made look-alikes of the editor's parts per file (kinds in scripts/agents/copies.mjs). They may only go down: node scripts/agents/copies.mjs check. A lead raises them with update --waive.",
-  "totals": { "buttons": 55, "dialogs": 15, "buttonLooks": 25, "badgeLooks": 14, "dialogLooks": 13 },
+  "totals": { "buttons": 58, "dialogs": 15, "buttonLooks": 25, "badgeLooks": 14, "dialogLooks": 13 },
   "files": {
     "src/components/agent-menu.css": { "badgeLooks": 1 },
     "src/components/agent-menu.ts": { "buttons": 1 },
@@ -59,6 +59,7 @@
     "src/page-builder/media-clean-up-review.css": { "buttonLooks": 1 },
     "src/page-builder/media-detail.css": { "buttonLooks": 3, "badgeLooks": 1 },
     "src/page-builder/media-improve.css": { "buttonLooks": 1 },
+    "src/page-builder/media-library-shell.ts": { "buttons": 3 },
     "src/page-builder/media-library-usage.ts": { "dialogs": 1 },
     "src/page-builder/media-picker.css": { "buttonLooks": 7, "dialogLooks": 2 },
     "src/page-builder/media-picker.ts": { "dialogs": 1 },
