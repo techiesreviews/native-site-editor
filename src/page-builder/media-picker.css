@@ -150,21 +150,6 @@
 }
 /* Rings sit above the shades: the selection's, and keyboard focus on the picture. */
 .media-library__card::after { content: ""; position: absolute; inset: 0; z-index: 3; border-radius: inherit; pointer-events: none; }
-/* A picture with something waiting in the Inbox (TOOLS-222): a small dot in its corner, nothing else
-   (src/inbox/inbox-host.ts sets --inbox-dot on its tile). */
-.media-library__card::before {
-  content: "";
-  display: var(--inbox-dot, none);
-  position: absolute;
-  inset: auto var(--space-2xs) var(--space-2xs) auto;
-  z-index: 2;
-  inline-size: 8px;
-  block-size: 8px;
-  border-radius: 50%;
-  background: var(--agent-question-strong);
-  box-shadow: 0 0 0 2px var(--surface);
-  pointer-events: none;
-}
 .media-library__card:has(input:checked)::after { box-shadow: inset 0 0 0 2px var(--primary); }
 .media-library .media-library__thumbnail:focus-visible { outline: none; }
 .media-library__card:has(.media-library__thumbnail:focus-visible)::after { outline: var(--focus-ring); outline-offset: -2px; }
