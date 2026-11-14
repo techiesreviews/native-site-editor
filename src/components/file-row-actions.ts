@@ -128,9 +128,10 @@ export function createFileRowActions(options: {
       if (dragging && event.dataTransfer?.dropEffect === "none") options.announce(`Cancelled moving ${dragging.path}`);
       dragging = undefined;
     });
-    // A folder row takes the drop; a file row passes it to its folder.
+    // A folder row takes the drop; a file row passes it to its folder. The mark shows where it goes: the folder's row, or the
+    // tree's own space at the top; a file row outside the tree (a found file, its folder beside its name) is marked itself.
     const folder = target.folder ? target.path : target.path.includes("/") ? target.path.slice(0, target.path.lastIndexOf("/")) : "";
-    const marked = () => target.folder ? line
+    const marked = () => target.folder || !rootArea?.contains(line) ? line
       : line.parentElement?.parentElement?.closest("li")?.querySelector<HTMLElement>(":scope > .file-row-line") ?? rootArea;
     const over = (event: DragEvent) => {
       if (!dragging) {
