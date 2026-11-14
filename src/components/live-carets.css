@@ -120,8 +120,10 @@
 .live-caret__flag[data-whole] .live-caret__name { margin-inline: 2px 0; }
 .live-caret__flag[data-whole] .live-caret__initial { display: inline; }
 
+/* Above the circle, whose press area reaches it beside a short name ("J"): a press on Undo is Undo. */
 .live-caret__undo {
   position: relative;
+  z-index: 2;
   display: grid;
   place-items: center;
   flex: none;
