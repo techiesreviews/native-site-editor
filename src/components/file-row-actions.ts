@@ -128,11 +128,15 @@ export function createFileRowActions(options: {
       if (dragging && event.dataTransfer?.dropEffect === "none") options.announce(`Cancelled moving ${dragging.path}`);
       dragging = undefined;
     });
-    // A folder row takes the drop; a file row passes it to its folder. The mark shows where it goes: the folder's row, or the
-    // tree's own space at the top; a file row outside the tree (a found file, its folder beside its name) is marked itself.
+    // A folder row takes the drop; a file row passes it to its folder. The mark shows where it goes: in the tree, the folder's
+    // row, or the tree's own space at the top. A found file sits outside the tree: its own row is marked (its folder is beside
+    // its name), and for one at the top of the repository, the found files' own space, as a drop there.
     const folder = target.folder ? target.path : target.path.includes("/") ? target.path.slice(0, target.path.lastIndexOf("/")) : "";
-    const marked = () => target.folder || !rootArea?.contains(line) ? line
-      : line.parentElement?.parentElement?.closest("li")?.querySelector<HTMLElement>(":scope > .file-row-line") ?? rootArea;
+    const marked = () => {
+      if (target.folder) return line;
+      if (rootArea?.contains(line)) return line.parentElement?.parentElement?.closest("li")?.querySelector<HTMLElement>(":scope > .file-row-line") ?? rootArea;
+      return folder ? line : line.closest<HTMLElement>("ul") ?? line;
+    };
     const over = (event: DragEvent) => {
       if (!dragging) {
         if (!options.dropFiles || !dragHasFiles(event)) return;
