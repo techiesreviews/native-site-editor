@@ -12,8 +12,8 @@ import type { InboxPorts } from "./inbox-host";
 import { markDecorative } from "./decorative";
 import { pictureVerdict, siteFile, siteItems } from "./site-items";
 
-/** The site's items now; `unsure` while a picture's verdict is not known yet. */
-function findItems(ports: InboxPorts) {
+/** The site's items now; `unsure` while a picture's verdict is not known yet (`settle`: judge it by its alt text). */
+function findItems(ports: InboxPorts, settle: boolean) {
   let unsure = false;
   const prefix = nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH));
   const pages = ports.pages().map(file => ({ file, label: ports.label(file), route: ports.route(file) ?? file, source: ports.source(file) }));
@@ -21,7 +21,7 @@ function findItems(ports: InboxPorts) {
   const items = siteItems(pages, {
     picture: (page, src, alt) => {
       // Unknown only while a picture stored in the site waits for the Media rules; one from another address is judged by its alt text.
-      const stored = siteFile(src, page, prefix, () => true) !== undefined;
+      const stored = !settle && siteFile(src, page, prefix, () => true) !== undefined;
       const verdict = pictureVerdict(alt, alt === undefined ? undefined : ports.picture(page, src, alt), stored);
       if (!verdict) unsure = true;
       return verdict;
@@ -85,23 +85,26 @@ export function createInboxList(ports: InboxPorts) {
     clearTimeout(retry);
     if (!again) retries = 0;
     if (!ports.pages().length) { show([]); return; }
-    // Until every page is read the list would be partial; the text index asks again once it has them. A re-read of the
-    // same site (after a save) keeps its list; another site or branch, or a reload, lists nothing until it is read.
-    if (!ports.indexed()) {
-      if (!session?.holds()) {
-        session = undefined;
-        checked = false;
-        show([]);
-      }
+    // Until a site's pages are all read the list would be partial (or another site's, after a switch): nothing is listed
+    // and the text index asks again once it has them. A re-read of the same site (after a save, even one that fails)
+    // goes on checking the pages it already holds.
+    if (!ports.indexed() && !session?.holds()) {
+      session = undefined;
+      checked = false;
+      show([]);
       return;
     }
-    session = ports.stamp();
-    const found = findItems(ports);
+    if (ports.indexed()) session = ports.stamp();
+    // A picture's verdict waits for the Media rules, which load on the first ask: look again shortly. Past ten looks
+    // (the rules or the records could not be read) a stored picture is judged by its alt text alone.
+    const found = findItems(ports, retries >= 10);
     // "All done" only once every picture's verdict is known.
     checked = !found.unsure;
     show(found.items);
-    // A picture's verdict waits for the Media rules, which load on the first ask: look again shortly.
-    if (found.unsure && retries++ < 10) retry = setTimeout(() => check(true), 1000);
+    if (found.unsure) {
+      retries++;
+      retry = setTimeout(() => check(true), 1000);
+    }
   }
 
   async function go(item: InboxItem) {
