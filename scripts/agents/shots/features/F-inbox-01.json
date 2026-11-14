@@ -1,0 +1,1 @@
+{"screen":"editor","name":"F-inbox-01","steps":["click \"Inbox\"","record open 600","expect visible \"Inbox\"","press Escape"]}
