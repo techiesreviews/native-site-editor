@@ -2,6 +2,7 @@
 
 Start here: `docs/agents/kitchen.md` (the kitchen rulebook) gives every station from idea to release, who decides, and the builder and reviewer pins; `scripts/agents/kit rulebook` prints the shared rulebook with this repo's extras.
 Finding code: read `docs/agents/code-map.md`.
+Building or changing UI: read the parts list `docs/agents/parts.md` first. Reuse before new: use a part that fits, extend one that nearly fits (a new option or variant in its own files), and add a new part only with a reason in the PR. A screen may place and size a part, never give it a look of its own. Copies of a part's look may only go down (`node scripts/agents/copies.mjs`). Target shape: `docs/agents/parts-plan.md`.
 Running a build slice: follow `docs/agents/runner.md` (order of steps: build, review, `kit pr`, report).
 Agent commands: `scripts/agents/kit --help`; `scripts/agents/kit <command> --help` for one; one line each in `docs/agents/agent-scripts.md#kit`.
 

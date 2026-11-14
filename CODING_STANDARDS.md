@@ -4,6 +4,16 @@ Read at review time. Apply every section whose subject the diff touches, and
 cite the rule with each finding. Mechanical rules live in the automated checks
 (`npm run check`, `docs/agents/guardrails.md`), not here.
 
+## UI parts (`docs/agents/parts.md`)
+
+- Reuse before new: a screen uses the part or shared piece from `docs/agents/parts.md` that fits, or extends it (a new
+  option, variant or default in the part's own files). A new part needs a reason in the PR and an entry in
+  `docs/agents/parts.json` (then `node scripts/agents/parts-list.mjs write`).
+- A screen places and sizes a part (margin, grid placement, size); it never gives it a look of its own (background,
+  border, corner, shadow, colour). It sets the part's hook (as `--btn-*`) or the part gets a variant.
+- Home-made copies (a button made with `node("button")`, a button, badge or dialog look styled in a screen) may only go
+  down: `scripts/agents/copies.json`. A lower count is committed with the change (`node scripts/agents/copies.mjs update`).
+
 ## Controllers (`src/controllers/*-controller.ts`)
 
 A controller owns a domain's orchestration; `src/main.ts` owns host state,
