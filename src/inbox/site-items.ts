@@ -61,33 +61,46 @@ export function pictureVerdict(alt: string | undefined, state: Verdict | undefin
   return state === "missing" || (!alt && state !== "decorative") ? "missing" : state ?? "described";
 }
 
+interface PagePicture { at: number; src: string | undefined; alt: string | undefined; shown: string; hidden: boolean }
+
+// A page's pictures by its text: a check after an edit reads again only the page that changed (the rest are reused).
+const read = new Map<string, readonly PagePicture[]>();
+
+/** Each picture of a page's text: its address (its src, else its srcset, else a source of the <picture> it is in, as
+ * the edit bar reads them) and whether it sits in a <template> the page does not show. Such a picture is never listed
+ * but counts as a use of its file, since Media's Decorative marks every img showing the file. No address at all is
+ * the edit bar's "No image", not a description to write. */
+function pagePictures(source: string): readonly PagePicture[] {
+  const known = read.get(source);
+  if (known) return known;
+  const pictures = [...descendants(parseSource(source))].flatMap(element => {
+    if (element.name.toLowerCase() !== "img") return [];
+    const { tag } = element;
+    const src = startTagAttribute(source, tag, "src")?.value.trim();
+    const shown = src || startTagAttribute(source, tag, "srcset")?.value.trim() || pictureSource(source, element);
+    return shown ? [{ at: tag.start, src, alt: startTagAttribute(source, tag, "alt")?.value, shown, hidden: inInactiveTemplate(source, element) }] : [];
+  });
+  if (read.size >= 500) read.delete(read.keys().next().value!);
+  read.set(source, pictures);
+  return pictures;
+}
+
 export function siteItems(pages: readonly InboxPage[], rules: SiteItemRules): InboxItem[] {
   const items: InboxItem[] = [];
   for (const page of pages) {
     const { source } = page;
     if (source === undefined) continue;
     if (!pageTitle(source)) items.push({ key: `title\n${page.file}`, kind: "title", what: "Page without a title", where: page.route, page: page.file });
-    // Each picture's address (its src, else its srcset, else a source of the <picture> it is in, as the edit bar reads
-    // them), whether it waits, and its file. One in a <template> the page does not show is never listed, but counts as
-    // a use of its file, since Media's Decorative marks every img showing the file.
-    const pictures = [...descendants(parseSource(source))].flatMap(element => {
-      if (element.name.toLowerCase() !== "img") return [];
-      const { tag } = element;
-      const src = startTagAttribute(source, tag, "src")?.value.trim();
-      const shown = src || startTagAttribute(source, tag, "srcset")?.value.trim() || pictureSource(source, element);
-      // No address at all is the edit bar's "No image", not a description to write.
-      if (!shown) return [];
-      // The edit bar asks Media about the src alone; Decorative, like Media's, marks pictures by their src.
-      const waits = rules.picture(page.file, src ?? "", startTagAttribute(source, tag, "alt")?.value) === "missing";
-      return [{ tag, shown, waits, hidden: inInactiveTemplate(source, element), media: src ? rules.file(page.file, src) : undefined }];
-    });
+    // The edit bar asks Media about the src alone; Decorative, like Media's, marks pictures by their src.
+    const pictures = pagePictures(source).map(picture => ({ ...picture,
+      waits: rules.picture(page.file, picture.src ?? "", picture.alt) === "missing", media: picture.src ? rules.file(page.file, picture.src) : undefined }));
     const seen = new Set<string>();
-    for (const { tag, shown, waits, hidden, media } of pictures) {
+    for (const { at, shown, waits, hidden, media } of pictures) {
       if (!waits || hidden) continue;
       const key = `picture\n${page.file}\n${media ?? shown}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      items.push({ key, kind: "picture", what: "Picture without a description", where: `${page.label} page`, page: page.file, at: tag.start,
+      items.push({ key, kind: "picture", what: "Picture without a description", where: `${page.label} page`, page: page.file, at,
         ...(media ? { media, wave: "Decorative", allUses: pictures.every(other => other.media !== media || other.waits), found: source } : {}) });
     }
   }

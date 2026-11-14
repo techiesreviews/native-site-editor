@@ -38,6 +38,8 @@ export interface InboxPorts {
   error(error: unknown): void;
 }
 
+const idle = (run: () => void) => typeof requestIdleCallback === "function" ? requestIdleCallback(run, { timeout: 2000 }) : setTimeout(run);
+
 export function createInbox(ports: InboxPorts) {
   let list: Promise<ReturnType<typeof import("./inbox").createInboxList>> | undefined;
   const load = () => (list ??= import("./inbox").then(module => module.createInboxList(ports)));
@@ -48,7 +50,8 @@ export function createInbox(ports: InboxPorts) {
     clearTimeout(timer);
     // Nothing loads for a site not yet read: the text index calls this again once it has every page.
     if (!list && !(ports.pages().length && ports.indexed())) return;
-    timer = setTimeout(() => void load().then(inbox => inbox.check()).catch(fail), 400);
+    // After a pause in the changes, in the browser's idle time, so an edit's own work never waits for it.
+    timer = setTimeout(() => idle(() => void load().then(inbox => inbox.check()).catch(fail)), 400);
   }
 
   // Drawn as it opens; its first row takes the keyboard once it shows (popovertarget opens it; Escape and a click
