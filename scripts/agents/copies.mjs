@@ -189,9 +189,27 @@ export function expandGroups(selector) {
       if (current[end] === "(") depth++;
       else if (current[end] === ")" && --depth === 0) break;
     }
-    for (const choice of splitList(current.slice(open + 1, end))) queue.push(`${current.slice(0, start)}${choice}${current.slice(end + 1)}`);
+    // A group glued to a compound (`.button:is(.panel .choice)`) puts an alternative's ancestors before that
+    // compound and its last compound onto it: `.panel .button.choice`.
+    const from = lastCombinator(current.slice(0, start)) + 1;
+    for (const choice of splitList(current.slice(open + 1, end))) {
+      const cut = lastCombinator(choice) + 1;
+      queue.push(`${current.slice(0, from)}${choice.slice(0, cut)}${current.slice(from, start)}${choice.slice(cut)}${current.slice(end + 1)}`);
+    }
   }
   return [...out, ...queue];
+}
+
+/** The index of the last combinator (a space, `>`, `+` or `~`) outside brackets and parentheses, or -1. */
+function lastCombinator(selector) {
+  let depth = 0, found = -1;
+  for (let i = 0; i < selector.length; i++) {
+    const char = selector[i];
+    if (char === "(" || char === "[") depth++;
+    else if (char === ")" || char === "]") depth--;
+    else if (depth === 0 && /[\s>+~]/.test(char)) found = i;
+  }
+  return found;
 }
 
 /**
@@ -208,8 +226,10 @@ function subject(selector) {
   const bare = compound => compound.replace(/::?[\w-]+(\(\))?/g, "").replace(/\[[^\]]*\]/g, "");
   const plain = bare(last);
   return {
-    // The context keeps its classes and drops its states, so `.row:hover .row__button` is the look `.row .row__button` draws.
-    backdrop: /::backdrop\b/.test(last), context: parts.slice(0, -1).map(bare).filter(Boolean).join(" "),
+    // Each compound of the context keeps its element and first class, the name of the thing; its states and further
+    // classes go, so `.row:hover .row__button` and `.row.is-open .row__button` draw the look `.row .row__button` does.
+    backdrop: /::backdrop\b/.test(last),
+    context: parts.slice(0, -1).map(compound => /^(?:[a-z][\w-]*)?(?:\.[\w-]+)?/i.exec(bare(compound))[0]).filter(Boolean).join(" "),
     element: /^[a-z][\w-]*/.exec(plain)?.[0] ?? "", classes: [...plain.matchAll(/\.([\w-]+)/g)].map(match => match[1]),
   };
 }
