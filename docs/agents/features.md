@@ -106,7 +106,7 @@ its number unused.
 ## Repositories and branches
 
 ### F-repo-01 Open a repository
-- Try: Open the project menu at the top left and choose a repository.
+- Try: Open the project menu at the top left (on a phone, Menu → Switch site) and choose a repository.
 - Good: A native site opens straight into the preview on its home page; a repository without index.html offers the Starter site and leaves its README alone.
 - Files: `src/components/repository-menu.ts`, `src/workspace-boot.ts`, `src/controllers/boot-controller.ts`
 - Phone: yes
@@ -209,6 +209,14 @@ its number unused.
 - Spec: `tests/native-save/native-outside-fold.spec.ts`, `tests/native-save/native-outside-live.spec.ts`
 - Steps: none yet (a scripted try cannot make a commit on GitHub part way through; the spec does)
 
+### F-repo-14 Choose a project with none open
+- Try: At 390 px with no project open, tap the page button, then Choose a project; or tap Choose a project on the welcome.
+- Good: The panel says no project is open and offers Choose a project, never an empty search box; both open the project list, and a project chosen there shows its Pages, Media and Files (U4).
+- Files: `src/workspace-mount.ts`, `src/workspace-shell.ts`, `src/repository-list.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-phone-project-choice.spec.ts`
+- Steps: none yet
+
 ## Pages and files
 
 ### F-pages-01 Pages tab
@@ -269,7 +277,7 @@ its number unused.
 
 ### F-pages-08 Files tab
 - Try: Open the explorer on Files.
-- Good: The head row's switch, search and + New, no heading row; rows one height with names lined up and icons by kind, a type column on a wide panel; the open file is tinted (L3, L9). Typing in the search lists the site's files whose name or folder has it, each opening on a click; a screen reader hears how many were found, or "No file matches". A file dropped on a found file marks that row and goes into its folder (for a file at the top of the repository, the list is marked). Opened again, the panel starts afresh, as on Pages.
+- Good: The head row's switch, search and + New, no heading row; rows one height with names lined up and icons by kind, a type column on a wide panel; the open file is tinted (L3, L9). Typing in the search lists the site's files whose name or folder has it, each opening on a click; a screen reader hears how many were found, or "No file matches". A file dropped on a found file marks that row and goes into its folder (for a file at the top of the repository, the list is marked). Opened again, the panel starts afresh, as on Pages. A rename or copy that finishes after another search was typed leaves that search alone.
 - Files: `src/controllers/files-tree-controller.ts`, `src/components/files-tree.css`, `src/components/file-type-icons.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-files-tab.spec.ts`
@@ -285,7 +293,7 @@ its number unused.
 
 ### F-pages-10 Rename, move and delete files
 - Try: F2 on a file row, drag a file onto a folder, delete one from ⋯ and Restore it.
-- Good: Links to a renamed file follow; a deleted file stays struck through with Restore until saved; a used image is refused with the page that uses it (B9).
+- Good: Links to a renamed file follow; a deleted file stays struck through with Restore until saved; a new file deleted gives the focus to the next row, else the one before, else its folder (B2); a used image is refused with the page that uses it (B9).
 - Files: `src/controllers/file-operations-controller.ts`, `src/controllers/file-operation-checks.ts`, `src/components/file-row-actions.ts`, `src/page-builder/asset-references.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-file-ops.spec.ts`
@@ -727,7 +735,7 @@ its number unused.
 
 ### F-media-01 Media tab
 - Try: Open the Media tab between Pages and Files.
-- Good: Tiles with rounded corners, four across on a computer with 12 px between, each with its name under it; the One bar of search, Filter, + and More on the head row beside Pages | Media | Files (mock-up 05 v2; L5, L7, S2).
+- Good: Tiles with rounded corners, four across on a computer with 12 px between, each with its name under it; a selected tile with keyboard focus shows the focus ring inside its selection ring (U7); the One bar of search, Filter, + and More on the head row beside Pages | Media | Files (mock-up 05 v2; L5, L7, S2).
 - Files: `src/page-builder/media-library-view.ts`, `src/page-builder/media-library-shell.ts`, `src/page-builder/media-library-grid.ts`, `src/page-builder/media-picker.css`
 - Phone: yes
 - Spec: `tests/native-save/native-media-tab.spec.ts`
