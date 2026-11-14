@@ -750,12 +750,14 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     return path;
   };
   return {
-    async describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }) {
+    /** An agent's describe_media; with `agent` false, the Inbox's Decorative (TOOLS-222), which Undo names as the user's. */
+    async describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }, agent = true) {
       const ctx = active(), words = change.text?.trim();
       if ((change.text !== undefined) === (change.decorative !== undefined)) throw new Error("Give exactly one of text or decorative.");
       if (words === "") throw new Error("Use decorative: true for a picture that adds nothing to the page.");
       if (!ctx.items.some(item => item.path === file)) throw new Error(OUTSIDE_MEDIA_REFUSED);
-      const { batch, metadata, text } = await prepare(ctx, words !== undefined ? `Agent described ${file.split("/").pop()}` : `Agent ${change.decorative ? "marked" : "unmarked"} ${file.split("/").pop()} Decorative`, true);
+      const name = file.split("/").pop();
+      const { batch, metadata, text } = await prepare(ctx, words !== undefined ? `Agent described ${name}` : agent ? `Agent ${change.decorative ? "marked" : "unmarked"} ${name} Decorative` : `${change.decorative ? "Marked" : "Unmarked"} ${name} Decorative`, true);
       let next: MediaRecords;
       if (!change.page) {
         next = metadataInto(batch, text, metadata, { [file]: words !== undefined ? { alt: words, decorative: false } : { decorative: change.decorative } });
@@ -1146,5 +1148,5 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       return type && blob.type !== type ? new Blob([blob], { type }) : blob;
     },
     async openPage(path) { await active().openPage(path); },
-  } satisfies MediaPickerHost & { improve(request: import("./improve-heavy").ImproveRequest, ports?: import("./improve-heavy").ImprovePorts): Promise<import("./improve-heavy").ImproveResult>; improveGifsAndPlayers(request: import("./improve-gifs-players").ImproveGifsPlayersRequest, ports?: import("./improve-gifs-players").ImproveGifsPlayersPorts): Promise<import("./improve-gifs-players").ImproveGifsPlayersResult>; onlineVideo(record: OnlineVideoRecord, place?: MediaPlacement): Promise<void>; onlineVideoStill(key: import("./online-video").OnlineVideoKey, still: import("./online-video").OnlineVideoStill): Promise<void>; onlineVideoServiceBar(key: import("./online-video").OnlineVideoKey, enabled: boolean): Promise<void>; removeOnlineVideo(key: import("./online-video").OnlineVideoKey): Promise<void>; share(request: MediaShareRequest): Promise<string>; replace(request: MediaReplaceRequest, agent?: boolean, ports?: { encode?: typeof import("./media-optimise").optimiseMedia }): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
+  } satisfies MediaPickerHost & { improve(request: import("./improve-heavy").ImproveRequest, ports?: import("./improve-heavy").ImprovePorts): Promise<import("./improve-heavy").ImproveResult>; improveGifsAndPlayers(request: import("./improve-gifs-players").ImproveGifsPlayersRequest, ports?: import("./improve-gifs-players").ImproveGifsPlayersPorts): Promise<import("./improve-gifs-players").ImproveGifsPlayersResult>; onlineVideo(record: OnlineVideoRecord, place?: MediaPlacement): Promise<void>; onlineVideoStill(key: import("./online-video").OnlineVideoKey, still: import("./online-video").OnlineVideoStill): Promise<void>; onlineVideoServiceBar(key: import("./online-video").OnlineVideoKey, enabled: boolean): Promise<void>; removeOnlineVideo(key: import("./online-video").OnlineVideoKey): Promise<void>; share(request: MediaShareRequest): Promise<string>; replace(request: MediaReplaceRequest, agent?: boolean, ports?: { encode?: typeof import("./media-optimise").optimiseMedia }): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }, agent?: boolean): Promise<void> };
 }

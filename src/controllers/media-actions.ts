@@ -266,6 +266,16 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
     } catch (error) { ports.error(error); }
   }
 
+  /** The Inbox's Decorative (TOOLS-222): `file` marked Decorative where `page` shows it, as Media's own Decorative
+   * does (alt="" on each of its pictures there, and the place's record), on any page, as one Undo step. */
+  async function markDecorative(file: string, page: string) {
+    const { createMediaWorkspace } = await import("../page-builder/media-workspace");
+    const host = createMediaWorkspace(() => workspaceContext());
+    await host.load();
+    await host.describe(file, { decorative: true, page }, false);
+    ports.refreshDescriptions();
+  }
+
   function records() {
     try { return recordIO && recordsScope === ports.identity() ? withBackFiles(recordIO.parseMediaRecords(ports.source(recordIO.MEDIA_RECORDS_PATH))) : undefined; } catch { return undefined; }
   }
@@ -359,7 +369,7 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
       },
     };
   }
-  return { workspaceContext, chooseImage, insertMedia, choosePath, placeState, changePlace, prepareFrame, records, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
+  return { workspaceContext, chooseImage, insertMedia, choosePath, placeState, changePlace, markDecorative, prepareFrame, records, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     busy: () => gallery?.element.getAttribute("aria-busy") === "true" };
 }
 
