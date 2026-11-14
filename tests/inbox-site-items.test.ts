@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { siteItems, type InboxPage } from "../src/inbox/site-items.ts";
+import { siteFile, siteItems, type InboxPage } from "../src/inbox/site-items.ts";
 
 // The edit bar's verdict stands in: an absent alt or an unmarked empty one is not described yet.
 const rules = {
@@ -49,4 +49,12 @@ test("a title inside the page's body (an SVG's) does not count as the page's tit
 test("each item has a key of its own, so the list and the dots follow it", () => {
   const items = siteItems([page("index.html", `<html><head></head><body><img src="/images/a.jpg"><img src="/images/b.jpg"></body>`)], rules);
   assert.equal(new Set(items.map(item => item.key)).size, items.length);
+});
+
+test("a picture's file counts only when the site holds it, so a broken picture offers no Decorative", () => {
+  const held = new Set(["images/team.jpg"]);
+  assert.equal(siteFile("/images/team.jpg", "about/index.html", undefined, path => held.has(path)), "images/team.jpg");
+  assert.equal(siteFile("../images/team.jpg", "about/index.html", undefined, path => held.has(path)), "images/team.jpg");
+  assert.equal(siteFile("/images/gone.jpg", "index.html", undefined, path => held.has(path)), undefined);
+  assert.equal(siteFile("https://example.com/x.jpg", "index.html", undefined, () => true), undefined);
 });
