@@ -109,7 +109,9 @@
 }
 /* A person's letter reads on into the rest of the name; opened to the left the name shows whole. */
 .live-caret__initial { display: none; }
-.live-caret__flag:not([data-agent]) .live-caret__name { margin-inline-start: -5px; }
+/* The name starts where the letter ends (`--live-caret-letter`, measured by caret-flag.ts `placeTag`), as its letter's
+   backing hides what is under it. */
+.live-caret__flag:not([data-agent]) .live-caret__name { margin-inline-start: calc((var(--live-caret-letter, 10px) - var(--live-caret-mark)) / 2); }
 .live-caret__flag[data-agent] .live-caret__name { margin-inline-start: 1px; }
 .live-caret[data-flip] .live-caret__name { margin-inline: 0 2px; }
 .live-caret[data-flip] .live-caret__initial { display: inline; }
@@ -184,7 +186,10 @@
    comes later in the pane than the bar (made with the preview; this layer when someone else is here), so it wins the tie.
    The agents' pins (25) and the card grid's Add (21) are under it, which their give-way below makes harmless; the insert points (20) were level with it.
    Below the bar's menus and fields, the cards and the pin conversations (z-index 31), which open over the page. */
+/* The page keeps the site's own colours whatever the editor's theme: its carets take the light shade, dark enough to read
+   on light and dark sites alike, with their white letter. */
 .live-carets-page {
+  color-scheme: light;
   position: absolute;
   z-index: var(--layer-bar);
   overflow: clip;
