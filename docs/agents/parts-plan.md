@@ -54,14 +54,14 @@ worktrees work on this repo at the same time).
 | 4 | Badge swap | Screens use the Badge part; badge looks in screens go |
 | 5 | Dialog | One Dialog part with its backdrop; dialogs made by hand swap to it |
 | 6 | Menu item and boxed field | Two parts from the menu rows and the boxed fields screens draw themselves |
-| 7 | Screen styles split | The screens' rules out of `src/style.css` into files of their own |
+| 7 | Screen styles split | The screens' rules out of `src/style.css` into files of their own; a pure move raises the copy count in each new file, so the slice needs `node scripts/agents/copies.mjs update --waive "<reason>"` from a `*-lead` owner |
 
 ## Each slice's proof
 
 - `kit shots --compare dev`: the editor in light and dark at 390 and 1280 px, identical to `dev` (or each difference
   listed in the PR).
 - `kit size`: the boot stays within its budget (355 KB).
-- The copy count goes down: `node scripts/agents/copies.mjs update`, and `scripts/agents/copies.json` committed with it.
+- The copy count goes down (slice 7, a pure move, keeps it with a lead's waiver): `node scripts/agents/copies.mjs update`, and `scripts/agents/copies.json` committed with it.
 - The parts list is current: `node scripts/agents/parts-list.mjs write`, and `docs/agents/parts.md` committed with it.
 - The affected unit tests and browser specs, and `npm run check`.
 
