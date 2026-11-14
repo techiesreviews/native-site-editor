@@ -170,7 +170,7 @@ Something the user asks connected agents to do about an element of the preview, 
 The numbered marker on the element of an agent request in the preview, showing whether it waits, is being worked on, asks the user a question (orange), or was done or answered (grey). An editor overlay, never part of the page.
 
 **Inbox**:
-The place in the top bar, behind one icon, that collects what needs the user: site improvements (a picture without a description, a page without a title), agent questions and finished asks, and the setup checklist. A dot shows something waits; items go away by themselves once fixed. (Planned in the site quality map.)
+The place in the top bar, behind one icon, that collects what needs the user: site improvements (a picture without a description, a page without a title), agent questions and finished asks, and the setup checklist. A dot shows something waits; items go away by themselves once fixed. Built today: a picture without a description (with Decorative) and a page without a title, on every page; agent questions and the setup checklist join later (site quality map, slices 43 and 44).
 _Avoid_: notifications, to-do list, alerts
 
 **Synced session**:

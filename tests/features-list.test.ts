@@ -8,11 +8,11 @@ const root = new URL("../", import.meta.url);
 const FIELDS = ["Try", "Good", "Files", "Phone", "Spec", "Steps"] as const;
 const SOURCE_ROOTS = ["src/", "shared/", "worker/"];
 const SPEC_PATH = /^tests\/native-(save|preview)\/[^/]+\.spec\.ts$/;
-// The areas factory slice 41 lists, in order; each holds at least one entry.
+// The areas factory slice 41 lists, in order, with the Inbox (TOOLS-222); each holds at least one entry.
 const AREAS = [
   "Sign-in and setup", "Repositories and branches", "Pages and files", "Page editing on the canvas",
   "Edit bar", "Page Structure", "Components and Edit component mode", "Media and the image popup",
-  "Code panes", "Versions and history", "Publish and discard", "Agents menu and agent connection",
+  "Code panes", "Versions and history", "Publish and discard", "Agents menu and agent connection", "Inbox",
   "Command palette", "Phone layout",
 ];
 

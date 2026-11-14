@@ -1237,6 +1237,48 @@ its number unused.
 - Spec: `tests/native-save/native-agent-chip-undo.spec.ts`
 - Steps: none yet (needs a connected agent)
 
+## Inbox
+
+### F-inbox-01 The Inbox in the top bar
+- Try: At 1280 px look between History and Publish, then click the tray button. Press Escape. Do it again on a site where nothing waits.
+- Good: A 28 px tray button sits between History and Publish (mock-up 05 v2). While something waits it wears a small orange dot, never a number. Its panel opens under it, headed "Inbox", one row per item: an icon, what needs doing ("Picture without a description") and where ("Home page", "/about/"), with the first row focused. Nothing waiting: no dot, and the panel says "All done" with a check in one line; opened before the pages are read it says "Checking pages…". Escape or a click outside closes it and the keyboard goes back to the tray. No toast and no explainer text. Light and dark (S1, S3, S4).
+- Files: `src/inbox/inbox-host.ts`, `src/inbox/inbox.ts`, `src/inbox/inbox.css`, `src/workspace-shell.ts`, `src/style.css`
+- Phone: no
+- Spec: `tests/native-save/native-inbox.spec.ts`
+- Steps: `scripts/agents/shots/features/F-inbox-01.json`
+
+### F-inbox-02 An Inbox item goes to its spot and goes away once fixed
+- Try: On a page with a picture that has no alt text, open the Inbox and click "Picture without a description". Write the alt text in the edit bar. Remove a page's title with F2 in Pages, then click its "Page without a title" row.
+- Good: Every page of the site is checked, not only the open one, after load and after each change. The picture's row opens its page if needed, closes the Inbox and selects the picture with the edit bar on its missing alt text; once a description is written the row and the dot go by themselves (no "mark as read"). The title's row opens that page's Page settings. Each picture is listed once per page, as the edit bar judges it.
+- Files: `src/inbox/site-items.ts`, `src/inbox/inbox.ts`, `src/inbox/inbox-item.ts`, `src/site-text-index.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-inbox.spec.ts`
+- Steps: none yet (the real starter has nothing waiting)
+
+### F-inbox-03 Decorative from the Inbox
+- Try: Open the Inbox on a site with a picture stored in the site that has no alt text, and choose Decorative on its row. Reload.
+- Good: Decorative turns busy while it works, then the row goes and the dot with it. The picture gets `alt=""` on that page and the place's Media record is marked decorative, exactly as Media's own Decorative writes it, as one Undo step; after a reload it stays done. A picture from another address offers no Decorative.
+- Files: `src/inbox/inbox.ts`, `src/page-builder/media-workspace.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-inbox.spec.ts`
+- Steps: none yet (the real starter has nothing waiting)
+
+### F-inbox-04 Dots in Pages and Media
+- Try: With something waiting in the Inbox, open Pages, then Media.
+- Good: The page with something waiting wears a small orange dot after its name in Pages, and a picture with no description wears one on its Media tile; the dots go when the Inbox item does.
+- Files: `src/inbox/inbox.ts`, `src/inbox/inbox.css`, `src/page-builder/media-workspace.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-inbox.spec.ts`
+- Steps: none yet (the real starter has nothing waiting)
+
+### F-inbox-05 The Inbox on a phone
+- Try: At 390 px, with something waiting, look at the bar's Menu button, open the Menu and tap Inbox.
+- Good: The tray button stays off the phone's bar; the Menu button wears the orange dot instead, and the Menu's Inbox row wears it too. Tapping the row closes the Menu and opens the Inbox panel within the screen; closing it brings the keyboard back to the Menu button.
+- Files: `src/components/top-bar-phone.ts`, `src/components/top-bar-phone.css`, `src/components/top-bar-menu-rules.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-inbox.spec.ts`
+- Steps: none yet (phone only; a feature try also runs at 1280 px, where the Menu is not shown)
+
 ## Command palette
 
 ### F-palette-01 Go to a page or file
