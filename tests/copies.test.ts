@@ -40,8 +40,10 @@ test("a comment opener inside a string, or a URL, never hides the code after it"
 
 test("a quote or backtick inside a regex literal opens no string", () => {
   const found: Found[] = copiesInScript(['s.replace(/[`*]/g, "");', '// node("button")', "const t = `a`;", 'node("button");', "const half = a / 2; node(\"dialog\");"].join("\n"));
-  assert.deepEqual(kindsAndLines(found), [["buttons", 4], ["dialogs", 5]]);  assert.deepEqual(copiesInScript('const half = a / 2; // node("dialog")\nn++ / 2; // node("button")\nwidth\n// a long comment between the two halves of a division\n/ height; // node("button")'), [], "a division is no regex");
+  assert.deepEqual(kindsAndLines(found), [["buttons", 4], ["dialogs", 5]]);  assert.deepEqual(copiesInScript('const half = a / 2; // node("dialog")\nn++ / 2; // node("button")\nwidth\n// a long comment between the two halves of a division\n/ height; // node("button")'), [],
+    "a division is no regex");
   assert.deepEqual(kindsAndLines(copiesInScript('if (x) return /"/.test(s); node("button");')), [["buttons", 1]]);
+  assert.deepEqual(copiesInScript('const r = /a\\\n"x"; // node("button")'), [], "a regex never runs past its line");
 });
 
 test("style rules resolve nesting, see through at-rules and keep their first line", () => {
@@ -90,8 +92,13 @@ test("every border side counts as a look; the same look in another place is anot
     ".publish-menu .button { background: var(--hover); }",
     ".publish-menu:hover .button:focus-visible { background: var(--surface); }",
     ".another-screen .button { background: var(--hover); }",
+    ".table__count { border-spacing: 0; }",
+    ".wizard__badge { border-radius: var(--radius-full); }",
+    ".wizard__step.is-done .wizard__badge, .wizard__step[aria-current] .wizard__badge { background: var(--primary); }",
+    ".image-popup .image-popup__button--primary { background: var(--primary); }",
+    ".image-popup__button { background: var(--surface); }",
   ].join("\n"));
-  assert.deepEqual(kindsAndLines(found), [["buttonLooks", 1], ["badgeLooks", 2], ["buttonLooks", 4], ["buttonLooks", 6]]);
+  assert.deepEqual(kindsAndLines(found), [["buttonLooks", 1], ["badgeLooks", 2], ["buttonLooks", 4], ["buttonLooks", 6], ["badgeLooks", 8], ["buttonLooks", 10]]);
 });
 
 test("placing, sizing or setting a part's hooks never counts, nor a look on a name that only sounds alike", () => {

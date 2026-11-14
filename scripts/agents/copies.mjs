@@ -50,7 +50,10 @@ const scriptPatterns = {
 
 /** True when a value may start after `code` (so a `/` there opens a regex literal, not a division). */
 function startsValue(code) {
-  const before = code.trimEnd();
+  // Only the last few characters before the `/` matter: step back over spaces, never trim the whole text.
+  let end = code.length;
+  while (end > 0 && /\s/.test(code[end - 1])) end--;
+  const before = code.slice(Math.max(0, end - 12), end);
   if (!before || /(?:\+\+|--)$/.test(before)) return !before;
   return /[(,=:[!&|?{};+\-*%<>~^]$|\b(?:return|typeof|case|yield|await|throw|else|in|of|void|delete|new)$/.test(before);
 }
@@ -204,6 +207,9 @@ function named(classes, list) {
 const looks = /^(?:background|background-color|background-image|box-shadow)$|^border(?:$|-(?!collapse$|spacing$)[a-z-]+$)/;
 const setsLook = rule => rule.declarations.some(({ name }) => looks.test(name));
 
+/** The names that say only what a thing is, not which one: their copies differ by where they stand. */
+const generic = new Set(["button", "btn", "badge", "pill", "chip", "count", "counter", "dialog", "modal", "backdrop", "scrim"]);
+
 /** Per kind: the name of the look a selector's subject draws, or "" when it draws none of that kind. */
 const styleKinds = {
   buttonLooks: ({ element, classes }) => named(classes, ["button", "btn"]) || (element === "button" ? "button" : ""),
@@ -218,7 +224,8 @@ const styleKinds = {
 /**
  * Every home-made look in one CSS file's text: a rule that sets a look (background, border, corner or shadow) on
  * something named as a button, a badge or a dialog. One copy per look and place, however many rules and states draw
- * it: `.x__button` and `.x__button:hover` count once, at the first line; `.a .button` and `.b .button` count twice. A rule that sets only a part's
+ * it: `.x__button`, `.x__button:hover` and `.x.is-on .x__button` count once, at the first line; a bare name counts once
+ * per place it stands, so `.a .button` and `.b .button` count twice. A rule that sets only a part's
  * hooks (`--btn-*`) uses the part and never counts.
  */
 export function copiesInStyles(text) {
@@ -230,8 +237,9 @@ export function copiesInStyles(text) {
       for (const [kind, look] of Object.entries(styleKinds)) {
         const name = look(target);
         if (!name) continue;
-        // The same look in another place (its context) is another copy; its states are the same one.
-        const key = `${kind} ${target.context} ${name}`;
+        // A name of its own (`wizard__badge`, `setup-pill`) is the place: its states and parents' states are the same
+        // copy. A bare name (`.button`, `button`, `dialog`) is told apart by where it stands: `.a .button`, `.b .button`.
+        const key = `${kind} ${generic.has(name.replace(/::backdrop$/, "")) ? `${target.context} ` : ""}${name}`;
         if (seen.has(key)) continue;
         seen.add(key);
         found.push({ kind, line: rule.line, text: selector.replace(/\s+/g, " ").slice(0, 120) });
