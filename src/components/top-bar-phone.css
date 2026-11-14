@@ -243,3 +243,18 @@ button.top-bar-menu__row:active {
   outline: var(--focus-ring);
   outline-offset: -2px;
 }
+
+/* The Inbox row's dot while something waits (TOOLS-222; the bar's in style.css). */
+.top-bar-menu__row[data-row="inbox"] .top-bar-menu__label::after {
+  content: "";
+  display: none;
+  inline-size: 7px;
+  block-size: 7px;
+  margin-inline-start: var(--space-xs);
+  border-radius: 50%;
+  background: var(--agent-question-strong);
+  vertical-align: 2px;
+}
+:root[data-inbox-waiting] .top-bar-menu__row[data-row="inbox"] .top-bar-menu__label::after {
+  display: inline-block;
+}

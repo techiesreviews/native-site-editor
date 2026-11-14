@@ -1,0 +1,65 @@
+/* The Inbox's rows (src/inbox/inbox.ts; mock-up 05 v2). The panel's place and surface load with the top bar (style.css). */
+.inbox__title {
+  margin: 0;
+  padding: var(--space-2xs) var(--space-xs);
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.inbox__list { display: grid; margin: 0; padding: 0; list-style: none; }
+.inbox__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-xs);
+  border-radius: var(--radius);
+}
+.inbox__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: center;
+  min-inline-size: 0;
+  padding: 7px var(--space-xs);
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.inbox__item > svg { grid-row: span 2; color: var(--muted); }
+.inbox__item > :is(b, small) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox__item > b { font-weight: 500; }
+.inbox__item > small { color: var(--muted); font-size: var(--type-small); }
+.inbox__wave {
+  margin-inline-end: var(--space-2xs);
+  block-size: 24px;
+  padding-inline: var(--space-xs);
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--type-small);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+  cursor: pointer;
+}
+.inbox__wave:disabled { cursor: progress; opacity: 0.6; }
+.inbox__item:focus-visible, .inbox__wave:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) {
+  .inbox__row:has(.inbox__item:hover) { background: var(--hover); }
+  .inbox__wave:not(:disabled):hover { color: var(--text); background: var(--surface-subtle); }
+}
+.inbox__empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 10px var(--space-xs);
+  color: var(--muted);
+}
+.inbox__empty > svg { color: var(--success-fg); }

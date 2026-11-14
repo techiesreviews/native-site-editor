@@ -18,7 +18,7 @@ import { menuRows, type MenuRow } from "./top-bar-menu-rules";
 // so a wide screen never fetches it). The bar's one row (style.css) holds the page button, Undo, Publish and the
 // Menu button; this adds the project's tile and name to the page button and the Menu: one bottom sheet holding what
 // the bar leaves out. Every row works the editor's own control for it (the page button, the block rail, the pull-up
-// sheet, the canvas's breakpoints, History, the project menu, Site settings), so behaviour stays theirs; the later
+// sheet, the canvas's breakpoints, History, the Inbox, the project menu, Site settings), so behaviour stays theirs; the later
 // organism slices (55 project menu, 58 save menu, 62 History) swap what those controls open, not this list. The
 // rows that show follow top-bar-menu-rules.ts.
 
@@ -181,6 +181,8 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
     code: () => rowButton("code", "Code", handOver(() => openSheet(() => find("#code-split")?.scrollIntoView({ block: "nearest" })))),
     screen: screenSize,
     history: () => rowButton("clock-counter-clockwise", "History", handOver(() => history()?.click())),
+    // The bar's Inbox button stays off a phone's bar: its panel opens from here (TOOLS-222).
+    inbox: () => rowButton("tray", "Inbox", handOver(() => find("#inbox")?.showPopover())),
     share: () => rowButton("shareNetwork", "Share a preview link", handOver(projectMenu)),
     settings: () => rowButton("gear", "Site settings", handOver(() => void ports.page.siteSettings())),
     switch: () => rowButton("arrowsLeftRight", "Switch site", handOver(projectMenu)),
@@ -243,7 +245,7 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
     body.scrollTop = 0;
   }
 
-  // The project menu, History and the setup checklist hand focus back to their own buttons, which a phone's bar
+  // The project menu, History, the Inbox and the setup checklist hand focus back to their own buttons, which a phone's bar
   // leaves out: focus comes back to the Menu they were opened from instead of being lost.
   const handBack = (event: Event) => {
     if (!trigger.isConnected) {
@@ -251,7 +253,7 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
       return;
     }
     const panel = event.target as HTMLElement;
-    if ((event as ToggleEvent).newState !== "closed" || !["repository-actions", "changes", "setup-checklist-panel"].includes(panel.id)) return;
+    if ((event as ToggleEvent).newState !== "closed" || !["repository-actions", "changes", "setup-checklist-panel", "inbox"].includes(panel.id)) return;
     queueMicrotask(() => {
       if ((document.activeElement === document.body || !document.activeElement) && getComputedStyle(trigger).display !== "none") trigger.focus();
     });
