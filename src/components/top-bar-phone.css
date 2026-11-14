@@ -251,7 +251,7 @@ button.top-bar-menu__row:active {
   inline-size: 7px;
   block-size: 7px;
   margin-inline-start: var(--space-xs);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: var(--agent-question-strong);
   vertical-align: 2px;
 }
