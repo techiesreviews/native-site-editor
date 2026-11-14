@@ -56,13 +56,15 @@ for (const [name, path, cls] of [
   ["icon button", "src/ui/icon-button/icon-button.css", ".icon-button"],
   ["text button", "src/ui/text-button/text-button.css", ".text-button"],
 ] as const) {
-  test(`${name}: its whole look in its own file on the components layer, loaded with the editor's styles`, () => {
+  test(`${name}: its whole look in its own file on the components layer, loaded by the editor and the board`, () => {
     const css = read(path);
     assert.match(css, /@layer tokens, elements, components;/);
     assert.match(css, new RegExp(`@layer components \\{\\s*\\${cls} \\{`), "the look sits inside the components layer");
     assert.match(css, /@media \(hover: hover\) and \(pointer: fine\)/, "hover waits for a mouse; touch gets the press");
     assert.ok(homes.buttonLooks.includes(path), "the part's file is its look's home in the copy count");
-    assert.ok(read("src/style.css").includes(`@import "./${path.slice("src/".length)}";`), "style.css loads it, so the editor and the design board both get it");
+    const file = path.slice("src/".length);
+    assert.match(read("src/main.ts"), new RegExp(`^import "\\./${file}";$`, "m"), "the editor loads it");
+    assert.match(read("src/catalogue/main.ts"), new RegExp(`^import "\\.\\./${file}";$`, "m"), "the design board loads it");
   });
 }
 

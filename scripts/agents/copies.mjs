@@ -20,9 +20,9 @@ import { fileURLToPath } from "node:url";
 
 export const kinds = ["buttons", "dialogs", "buttonLooks", "badgeLooks", "dialogLooks"];
 const what = {
-  buttons: "button element made by hand instead of button() from src/ui/dom.ts or a button part",
+  buttons: "button element made by hand instead of button() from src/ui/dom.ts",
   dialogs: "dialog element made by hand",
-  buttonLooks: "button look styled outside the button parts' own CSS",
+  buttonLooks: "button look styled outside src/ui/parts/button.css",
   badgeLooks: "badge look styled outside src/ui/parts/badge.css",
   dialogLooks: "dialog or backdrop look styled by hand",
 };

@@ -3,6 +3,9 @@
 // editor's boot. The editor's stylesheets load in the editor's order, so parts look exactly as they do there.
 import "../utilities.css";
 import "../style.css";
+// The Icon button and Text button are not on the board as parts yet: their looks load as plain styles.
+import "../ui/icon-button/icon-button.css";
+import "../ui/text-button/text-button.css";
 import "../theme.css";
 import "./board.css";
 import { loadComponentStyles } from "./component-css";
