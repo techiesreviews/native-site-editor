@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import { openEditor } from "../support/scenarios";
 import { circleOnTop } from "./caret-flags";
 import { editorMounted } from "./drafts";
@@ -80,6 +80,12 @@ async function agentAt(browser: Browser, baseURL: string, follow: string, { name
   return { room, context };
 }
 
+/** How a caret's tag is painted: its line's colour, its circle's fill and ring, and its letter's colour. */
+const caretPaint = (flag: Locator) => flag.evaluate((tag) => {
+  const line = getComputedStyle(tag.parentElement!.querySelector(".live-caret__line")!), circle = getComputedStyle(tag, "::before");
+  return { line: line.backgroundColor, fill: circle.backgroundColor, ring: circle.boxShadow, letter: getComputedStyle(tag.querySelector(".live-caret__mark b")!).color };
+});
+
 test.beforeEach(() => { pageErrors.length = 0; });
 test.afterEach(() => { expect(pageErrors).toEqual([]); });
 
@@ -115,8 +121,14 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
     await expect(annaAtLex.locator(".live-caret__name")).toHaveText("Anna");
     await expect(annaAtLex.locator(".live-caret__initial")).toBeHidden();
     await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("opacity", "0");
+    // The script editor's caret (TOOLS-219 follow-up): the circle is filled with the line's colour, no ring round it, and
+    // its letter is white (in a light page); closed, the name waits blurred and tucked behind the circle.
+    const paint = await caretPaint(annaAtLex);
+    expect(paint).toEqual({ line: paint.fill, fill: expect.stringMatching(/^(rgb|oklch|color)\(/), ring: "none", letter: "rgb(255, 255, 255)" });
+    await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("filter", "blur(3px)");
     await annaAtLex.locator(".live-caret__mark").hover();
     await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("opacity", "1");
+    await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("filter", "none");
     // An agent in the room: its circle holds the icon of its program, its name on hover.
     agent = await agentAt(browser, baseURL!, "Lex");
     const agentAtLex = lex.page.locator('.monaco-editor .live-caret__flag[data-agent][aria-label="Claude Code"]');
