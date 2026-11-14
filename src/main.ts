@@ -302,7 +302,7 @@ const { mediaPorts, mediaController, nativeImagePaths, uploadFilesTo, discardUpl
 const inbox = createInbox({ appStore, pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), indexed: () => runtime.state.textIndexed, // The Inbox (TOOLS-222)
   label: file => pagesController.pageLabel(file), route: file => nativeRouteForPath(file), picture: (...args) => mediaController.placeState(...args)?.state, open: page => openAfter(page),
   select: (request, later) => later ? nativePreview?.selectAfterUpdate(request, { reveal: "center" }) : nativePreview?.selectNode(request, false), error: errorMessage,
-  pageDetails: page => void openNativePageSettings(page), decorative: (file, page) => mediaController.markDecorative(file, page) });
+  pageDetails: page => void openNativePageSettings(page), media: () => mediaController.workspaceContext() });
 
 // `away`: another workspace is opening, so a picker's Use under way still lands in its own (ticket 27); closing the workspace cancels it.
 let deactivatingAway = false;
