@@ -321,9 +321,12 @@ export function revealFiles(ports: Parameters<typeof findFiles>[0], tree: TreeRo
  * its file is deleted (ux-rulebook B2). */
 export function rowsBeside(ports: Pick<PagesAndFilesPorts, "element" | "files">, tree: TreeRows, path: string) {
   const item = fileRowNow(ports, tree, path)?.closest("li");
-  const next = item?.nextElementSibling?.querySelector<HTMLElement>(".file-row");
-  // The row just above: in an open folder before it, that folder's last row shown.
-  const before = [...item?.previousElementSibling?.querySelectorAll<HTMLElement>(".file-row") ?? []].filter((row) => row.getClientRects().length).at(-1);
+  // Only rows shown count: a search in a repository with no site hides rows it leaves out; in an open folder before the file,
+  // the row just above is that folder's last row shown.
+  const shown = (entry: Element) => [...entry.querySelectorAll<HTMLElement>(".file-row")].filter((row) => row.getClientRects().length);
+  let next: HTMLElement | undefined, before: HTMLElement | undefined;
+  for (let entry = item?.nextElementSibling; entry && !next; entry = entry.nextElementSibling) next = shown(entry)[0];
+  for (let entry = item?.previousElementSibling; entry && !before; entry = entry.previousElementSibling) before = shown(entry).at(-1);
   return [next, before].flatMap((row) => row?.dataset.path ?? []);
 }
 
