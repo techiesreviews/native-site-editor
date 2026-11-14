@@ -108,6 +108,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* With an undo, a short name ("J") keeps room enough that the undo's press area ends where the circle does (the undo's
+   4px margin and the start margin below taken off): a press on the circle opens the tag, never Undo. */
+.live-caret__flag:has(.live-caret__undo:not([hidden])) .live-caret__name {
+  min-inline-size: calc((var(--live-caret-press) - 16px) / 2 - 4px - (var(--live-caret-letter, 10px) - var(--live-caret-mark)) / 2);
+}
 /* A person's letter reads on into the rest of the name; opened to the left the name shows whole. */
 .live-caret__initial { display: none; }
 /* The name starts where the letter ends (`--live-caret-letter`, measured by caret-flag.ts `placeTag`), as its letter's

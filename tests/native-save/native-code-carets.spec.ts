@@ -135,7 +135,7 @@ test("every caret colour's letter reads on its circle (4.5:1) in a light and a d
   expect(dark.page).toEqual(light.page);
 });
 
-test("an open tag's undo beside a one-letter name takes a press at its middle, with the circle's touch-sized press area beside it", async ({ page, baseURL }) => {
+test("beside a one-letter name, an open tag's undo and its circle each take a press at their middle, with touch-sized press areas", async ({ page, baseURL }) => {
   await openEditor(page, baseURL);
   await editorMounted(page);
   const hit = await page.evaluate(async () => {
@@ -150,12 +150,16 @@ test("an open tag's undo beside a one-letter name takes a press at its middle, w
     document.body.append(root);
     placeTag({ root, flag }, 200, 200, 1000);
     flag.element.focus();
-    const undo = flag.element.querySelector(".live-caret__undo")!, box = undo.getBoundingClientRect();
-    const found = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    const at = (part: Element) => {
+      const box = part.getBoundingClientRect();
+      return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    };
+    const undo = flag.element.querySelector(".live-caret__undo")!, mark = flag.element.querySelector(".live-caret__mark")!;
+    const found = { undo: at(undo)?.closest(".live-caret__undo") === undo, circle: at(mark)?.closest(".live-caret__mark") === mark };
     root.remove();
-    return found?.closest(".live-caret__undo") === undo;
+    return found;
   });
-  expect(hit).toBe(true);
+  expect(hit).toEqual({ undo: true, circle: true });
 });
 
 test("Lex and Anna type in the code pane and see each other's carets; an agent shows its program; Anna's tag takes back only her words", async ({ browser, baseURL }) => {
