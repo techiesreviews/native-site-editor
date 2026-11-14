@@ -36,7 +36,8 @@ beyond that stays as a named variant. Nothing else visible changes.
   editor and the design board load the two parts' styles as the Button's are loaded; Editor parts: the top bar sizes
   only its own icon buttons, never those in the project menu; Editor parts: ticket for slice 3, the Icon button and
   Text button parts (TOOLS-248); Review round 1: the compact Text button fills on press and waits for a mouse to fill
-  on hover; the top bar's sizing has a test.
+  on hover; the top bar's sizing has a test; Editor parts: slice 3 ticket closed with its differences list; Second look:
+  the Icon button and the Text button take their looks from their own --icon-btn-* and --text-btn-* defaults.
 - Tests: `tests/icon-button-text-button-parts.test.ts` (options, markup, CSS layer and loading, copy homes, parts list,
   the top bar's sizing); `kit unit --affected` 3147/3147.
 - Evidence: `kit shots --compare dev` for editor, structure, media-gallery, file-details and improve-images at 390 and
@@ -51,6 +52,13 @@ beyond that stays as a named variant. Nothing else visible changes.
   - Component panel's Choose image… (compact Text button): fills on press; the hover fill waits for a mouse.
   - Rows in the project menu and the agent menu that borrow the `text-button` class no longer underline on hover, as
     the editor's other menu rows (the share rows already removed it).
-- Review decisions: declined a DOM test of `iconButton()` and `textButton()`: the unit tests run without a DOM, and the
+- Review decisions: the second look's P2 on `media-detail.css:121` (the Download original button's border, background,
+  colour and underline) is declined: those declarations were there before this slice, which only swapped the call to
+  `textButton()`, and the border, background and colour are needed to cancel `.media-library button`
+  (`src/page-builder/media-picker.css:12`, unlayered), which gives every Media button a look and beats any part on
+  the components layer. Media's blanket button rule is the screen styles split's work (slice 7); an underlined
+  variant can join the Text button then. Declined its browser tests for the compact hover and touch states and for a
+  long file name at 320px: the unit test pins the CSS, and the file name's layout is unchanged by this slice.
+  Declined a DOM test of `iconButton()` and `textButton()`: the unit tests run without a DOM, and the
   browser specs already find these buttons by role and class (`tests/native-save/native-media-adding.spec.ts`).
 - Feature list: no change (the parts swap keeps every feature as it was)
