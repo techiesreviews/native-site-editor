@@ -201,12 +201,14 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   let explorerDropdown: ReturnType<typeof mountDropdown> | undefined;
   let stopNoProject: (() => void) | undefined;
   /** The project list: the project menu opened, the explorer closed (the welcome's and the empty panel's Choose a project).
-   * As its own button opens it, it is held open (a scroll or the pointer leaving keeps it); the focus goes to the first project. */
+   * As its own button opens it, it is held open (a scroll or the pointer leaving keeps it); the focus goes to the first project,
+   * or, with none listed yet (loading, or the list failed), to the first control shown, Reload repositories. */
   function chooseProject() {
     explorerDropdown?.close();
     const list = ports.element("repository-actions");
     if (!list.matches(":popover-open")) repositoryMenu?.trigger.click();
-    list.querySelector<HTMLElement>(".repository-menu__repo")?.focus();
+    const controls = [...list.querySelectorAll<HTMLElement>(".repository-menu__repo, button:not(:disabled), input:not(:disabled)")].filter((control) => control.getClientRects().length);
+    (controls.find((control) => control.matches(".repository-menu__repo")) ?? controls[0])?.focus();
   }
   let repositoryMenu: ReturnType<typeof createRepositoryMenu> | undefined;
   let siteActions: ReturnType<typeof mountSiteActions> | undefined;
