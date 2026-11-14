@@ -72,13 +72,22 @@ export function createInboxList(ports: InboxPorts) {
   document.adoptedStyleSheets = [...document.adoptedStyleSheets, dots];
   const panel = () => document.getElementById("inbox");
 
+  // What was last shown: the list, the dots' rules and the panel are written again only when they change, since each
+  // write makes the browser restyle the page (an edit's next layout would pay for it).
+  let shownKeys: string | undefined, shownChecked = false, dotRules = "";
   function show(next: readonly InboxItem[]) {
+    const keys = next.map(item => `${item.key}\n${item.where}\n${item.wave ?? ""}`).join("\n\n");
     items = next;
-    document.documentElement.toggleAttribute("data-inbox-waiting", items.length > 0);
+    if (keys === shownKeys && checked === shownChecked) return;
+    shownKeys = keys;
+    shownChecked = checked;
+    const root = document.documentElement;
+    if (root.hasAttribute("data-inbox-waiting") !== items.length > 0) root.toggleAttribute("data-inbox-waiting", items.length > 0);
     const any = (attribute: string, values: (string | undefined)[]) =>
       [...new Set(values.filter((value): value is string => Boolean(value)))].map(value => `[${attribute}="${CSS.escape(value)}"]`).join(",");
     const pages = any("data-file", items.map(item => item.page)), media = any("data-path", items.map(item => item.media));
-    dots.replaceSync(`${pages ? `.pages-item:is(${pages}) > .pages-row { --inbox-dot: block; }` : ""}${media ? `.media-library__card:is(${media}) { --inbox-dot-size: 100% 100%; }` : ""}`);
+    const rules = `${pages ? `.pages-item:is(${pages}) > .pages-row { --inbox-dot: block; }` : ""}${media ? `.media-library__card:is(${media}) { --inbox-dot-size: 100% 100%; }` : ""}`;
+    if (rules !== dotRules) dots.replaceSync(dotRules = rules);
     const open = panel();
     if (open?.matches(":popover-open")) draw(open);
   }
