@@ -51,6 +51,18 @@ test("import-like text inside a string or a template never counts; an import ins
   assert.deepEqual(lines(importsInScript('const later = `${await import("../components/a")}`;\n')), [[1, "../components/a"]]);
 });
 
+test("Vite's import.meta.glob (a string or a list, negations left out) and new URL(…, import.meta.url) count", () => {
+  assert.deepEqual(lines(importsInScript([
+    'const url = new URL("../../workspace-shell.ts", import.meta.url).href;',
+    'const one = import.meta.glob("../../components/*.ts");',
+    "const many = import.meta.glob<string>(['./*.css', '!./skip.css',",
+    '  "../../page-builder/*.ts"], { eager: true });',
+    'const plain = new URL("https://example.test/");',
+  ].join("\n"))), [
+    [1, "../../workspace-shell.ts"], [2, "../../components/*.ts"], [3, "./*.css"], [4, "../../page-builder/*.ts"],
+  ]);
+});
+
 test("an import in a comment never counts", () => {
   assert.deepEqual(importsInScript('// import { x } from "../components/a";\n/* import("../workspace-shell") */\nconst a = 1;\n'), []);
 });
@@ -106,14 +118,16 @@ test("a planted wrong import fails the check with its file, line and target; the
     p.write("src/ui/parts/badge.ts", 'import { escape } from "./escape";\nimport type { Pane } from "../../page-builder/pane";\n');
     p.write("src/ui/inline-field.css", '@import "../components/flyout.css";\n');
     p.write("src/ui/parts/later.mjs", 'export { shell } from "../../workspace-shell.ts";\n');
+    p.write("src/ui/parts/assets.ts", 'const all = import.meta.glob("../../components/*.ts");\n');
     const wrong = p.run("check");
     assert.equal(wrong.status, 1);
     assert.match(wrong.stderr, /^src\/ui\/parts\/badge\.ts:2: imports src\/page-builder\/pane \("\.\.\/\.\.\/page-builder\/pane"\)/m);
     assert.match(wrong.stderr, /^src\/ui\/inline-field\.css:1: imports src\/components\/flyout\.css/m);
     assert.match(wrong.stderr, /docs\/agents\/parts-plan\.md/);
     assert.match(wrong.stderr, /^src\/ui\/parts\/later\.mjs:1: imports src\/workspace-shell\.ts/m, "a JavaScript file under src/ui/ is read too");
-    assert.match(wrong.stdout, /RESULT: fail ui-imports 3 wrong imports in 3 files/);
-    assert.equal(scan(p.root).length, 3);
+    assert.match(wrong.stderr, /^src\/ui\/parts\/assets\.ts:1: imports src\/components\/\*\.ts/m);
+    assert.match(wrong.stdout, /RESULT: fail ui-imports 4 wrong imports in 4 files/);
+    assert.equal(scan(p.root).length, 4);
   } finally { rmSync(p.root, { recursive: true, force: true }); }
 });
 

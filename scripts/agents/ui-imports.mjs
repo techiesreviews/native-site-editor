@@ -10,7 +10,8 @@
 // `--root <dir>` reads that project instead of this one. Every other module under src/ counts as a screen:
 // src/components/, src/page-builder/, src/catalogue/ and the editor's own top-level files. Today no import breaks the
 // rule, so there is no allow-list: a part that needs a screen's piece gets it moved into src/ui/ or passed in. Not read:
-// `require("…")` (TypeScript's `import x = require("…")` too) and `import(`…${x}`)`, which the editor does not use.
+// `require("…")` (TypeScript's `import x = require("…")` too), `import(`…${x}`)` and imports in JSX text after an
+// apostrophe, which the editor does not use. Vite's `import.meta.glob` and `new URL(…, import.meta.url)` are read.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, posix, relative, sep } from "node:path";
@@ -55,7 +56,11 @@ const scriptPatterns = [
   /\b(?:import|export)\b(?:(?!\n\s*(?:import|export)\b)[^;'"`])*?\bfrom\s*(["'])([^"'\n]+)\1/dg,
   /\bimport\s*(["'])([^"'\n]+)\1/dg,
   /\bimport\s*\(\s*(["'`])([^"'`\n$]+)\1\s*[,)]/dg,
+  // Vite: a module's address (`new URL("../x.ts", import.meta.url)`).
+  /\bnew\s+URL\s*\(\s*(["'`])([^"'`\n$]+)\1\s*,\s*import\.meta\.url\b/dg,
 ];
+// Vite: `import.meta.glob("…")` or a list of patterns; a negated one (`!…`) imports nothing.
+const globPattern = /\bimport\.meta\.glob\s*(?:<[^>()]*>)?\s*\(\s*(\[[^\]]*\]|(["'`])[^"'`\n$]+\2)/dg;
 
 /** Every module one script file's text imports, with the 1-based line its statement starts on. */
 export function importsInScript(text) {
@@ -63,6 +68,13 @@ export function importsInScript(text) {
   const found = [];
   for (const pattern of scriptPatterns)
     for (const match of bare.matchAll(pattern)) found.push({ line: lineAt(code, match.index), specifier: code.slice(...match.indices[2]) });
+  for (const match of bare.matchAll(globPattern)) {
+    const [start] = match.indices[1];
+    for (const quoted of bare.slice(...match.indices[1]).matchAll(/(["'`])([^"'`\n]+)\1/dg)) {
+      const specifier = code.slice(start + quoted.indices[2][0], start + quoted.indices[2][1]);
+      if (!specifier.startsWith("!")) found.push({ line: lineAt(code, start + quoted.index), specifier });
+    }
+  }
   return found.sort((a, b) => a.line - b.line);
 }
 
