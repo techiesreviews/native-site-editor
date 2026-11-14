@@ -102,6 +102,12 @@
     --btn-font-size: var(--type-small);
     --btn-font-weight: 400;
   }
+  /* Busy: the part's plain disabled look (it keeps the keyboard, so it is aria-disabled, not disabled). */
+  .inbox__wave.button[aria-disabled="true"] {
+    --btn-background: var(--btn-disabled-background, var(--surface-subtle));
+    --btn-hover-background: var(--btn-background);
+    --btn-text-color: var(--btn-disabled-text-color, var(--muted));
+  }
   /* Touch: the row and Decorative are 44 px targets (U6). */
   @media (hover: none), (pointer: coarse), (width <= 768px) {
     .inbox__item.button, .inbox__wave.button { --btn-min-block-size: var(--size-touch); }

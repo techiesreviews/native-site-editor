@@ -63,16 +63,17 @@ export function pictureVerdict(alt: string | undefined, state: Verdict | undefin
 
 interface PagePicture { at: number; src: string | undefined; alt: string | undefined; shown: string; hidden: boolean }
 
-// A page's pictures by its text: a check after an edit reads again only the page that changed (the rest are reused).
-const read = new Map<string, readonly PagePicture[]>();
+// Each page file's pictures with the text they were read from: a check after an edit reads again only the page that
+// changed, and keeps one entry per page.
+const read = new Map<string, { source: string; pictures: readonly PagePicture[] }>();
 
 /** Each picture of a page's text: its address (its src, else its srcset, else a source of the <picture> it is in, as
  * the edit bar reads them) and whether it sits in a <template> the page does not show. Such a picture is never listed
  * but counts as a use of its file, since Media's Decorative marks every img showing the file. No address at all is
  * the edit bar's "No image", not a description to write. */
-function pagePictures(source: string): readonly PagePicture[] {
-  const known = read.get(source);
-  if (known) return known;
+function pagePictures(file: string, source: string): readonly PagePicture[] {
+  const known = read.get(file);
+  if (known?.source === source) return known.pictures;
   const pictures = [...descendants(parseSource(source))].flatMap(element => {
     if (element.name.toLowerCase() !== "img") return [];
     const { tag } = element;
@@ -80,8 +81,7 @@ function pagePictures(source: string): readonly PagePicture[] {
     const shown = src || startTagAttribute(source, tag, "srcset")?.value.trim() || pictureSource(source, element);
     return shown ? [{ at: tag.start, src, alt: startTagAttribute(source, tag, "alt")?.value, shown, hidden: inInactiveTemplate(source, element) }] : [];
   });
-  if (read.size >= 500) read.delete(read.keys().next().value!);
-  read.set(source, pictures);
+  read.set(file, { source, pictures });
   return pictures;
 }
 
@@ -92,7 +92,7 @@ export function siteItems(pages: readonly InboxPage[], rules: SiteItemRules): In
     if (source === undefined) continue;
     if (!pageTitle(source)) items.push({ key: `title\n${page.file}`, kind: "title", what: "Page without a title", where: page.route, page: page.file });
     // The edit bar asks Media about the src alone; Decorative, like Media's, marks pictures by their src.
-    const pictures = pagePictures(source).map(picture => ({ ...picture,
+    const pictures = pagePictures(page.file, source).map(picture => ({ ...picture,
       waits: rules.picture(page.file, picture.src ?? "", picture.alt) === "missing", media: picture.src ? rules.file(page.file, picture.src) : undefined }));
     const seen = new Set<string>();
     for (const { at, shown, waits, hidden, media } of pictures) {

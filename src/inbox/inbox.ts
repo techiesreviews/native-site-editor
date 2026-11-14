@@ -136,12 +136,14 @@ export function createInboxList(ports: InboxPorts) {
   }
 
   // Busy until the change, which checks the site again, takes the row away; a refusal leaves it ready for another go.
+  // Marked busy with aria-disabled rather than disabled, so the keyboard stays on it (a disabled button drops focus).
   async function wave(item: InboxItem, button: HTMLButtonElement, found: { holds(): boolean } | undefined) {
+    if (button.getAttribute("aria-disabled") === "true") return;
     if (!found?.holds()) { check(); return; }
-    button.disabled = true;
+    button.setAttribute("aria-disabled", "true");
     button.setAttribute("aria-busy", "true");
     try { await decorative(item, ports, found); } catch (error) {
-      button.disabled = false;
+      button.removeAttribute("aria-disabled");
       button.removeAttribute("aria-busy");
       ports.error(error);
     }
@@ -152,18 +154,24 @@ export function createInboxList(ports: InboxPorts) {
     const active = document.activeElement instanceof HTMLElement && into.contains(document.activeElement) ? document.activeElement : undefined;
     const focusKey = active?.closest<HTMLElement>("[data-key]")?.dataset.key, focusWave = active?.classList.contains("inbox__wave");
     const title = node("h2", "inbox__title", "Inbox");
+    // With no row left to take it (the last one fixed, or the list being read again), the keyboard stays in the panel
+    // on its heading, so Escape still hands it back to the tray.
+    title.tabIndex = -1;
+    const keep = () => { if (active) title.focus(); };
     // Nothing found yet before the pages are read (or a picture's verdict is known): busy, rather than an "All done"
     // not yet known.
     if (!checked && !items.length) {
       const busy = node("p", "inbox__empty", "Checking pages…");
       busy.setAttribute("aria-busy", "true");
       into.replaceChildren(title, busy);
+      keep();
       return;
     }
     if (!items.length) {
       const done = node("p", "inbox__empty");
       done.append(icon("check", 16), "All done");
       into.replaceChildren(title, done);
+      keep();
       return;
     }
     const list = node("ul", "inbox__list"), found = session;
