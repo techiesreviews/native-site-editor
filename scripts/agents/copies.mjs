@@ -61,8 +61,8 @@ function startsValue(code) {
 }
 
 /**
- * The text with its comments blanked (lines kept) and its strings and regex literals left as they are, so `"image/*"`
- * or a URL's `//` never starts a comment. A template's `${…}` is code again, nested templates included.
+ * The text with its comments and the bodies of its regex literals blanked (lines kept) and its strings left as they
+ * are, so `"image/*"` or a URL's `//` never starts a comment, and `/<button>/` is no button. A template's `${…}` is code again, nested templates included.
  */
 export function withoutComments(text) {
   let out = "";
@@ -81,7 +81,8 @@ export function withoutComments(text) {
           else if (text[j] === "]") inClass = false;
           else if (text[j] === "/" && !inClass) break;
         }
-        out += text.slice(i, j + 1); i = j + 1;
+        // Its body is pattern text, never markup: blanked, with its slashes kept so what follows reads the same.
+        out += `/${blank(text.slice(i + 1, j))}${text.slice(j, j + 1)}`; i = j + 1;
         continue;
       }
       if (char === '"' || char === "'") modes.push(char);
@@ -140,7 +141,9 @@ function resolve(parents, own) {
  * declarations and the line it starts on. Comments are blanked, lines kept.
  */
 export function styleRules(text) {
-  const code = text.replace(/\/\*[\s\S]*?\*\//g, blank);
+  // Comments go, and a quoted string keeps its quotes but not its text, so `content: "}"` never closes a rule.
+  const code = text.replace(/\/\*[\s\S]*?\*\/|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, match =>
+    (match.startsWith("/*") ? blank(match) : `${match[0]}${blank(match.slice(1, -1))}${match.at(-1)}`));
   const rules = [], stack = [{ selectors: [], rule: null }];
   let start = 0;
   for (let i = 0; i < code.length; i++) {

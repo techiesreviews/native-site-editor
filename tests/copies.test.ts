@@ -58,6 +58,15 @@ test("a quote or backtick inside a regex literal opens no string", () => {
   assert.deepEqual(copiesInScript('const r = /a\\\n"x"; // node("button")'), [], "a regex never runs past its line");
 });
 
+test("a regex literal is pattern text, never a hand-made element; markup in a template still counts", () => {
+  assert.deepEqual(kindsAndLines(copiesInScript("const openingTag = /<button>/i;\nconst m = `<button>`;")), [["buttons", 2]]);
+});
+
+test("a quoted brace in a declaration never closes the rule", () => {
+  const found: Found[] = copiesInStyles('.sample__button { content: "}"; background: var(--surface); }\n.next__badge::before { content: "{"; }\n.next__badge { border: 0; }\n');
+  assert.deepEqual(kindsAndLines(found), [["buttonLooks", 1], ["badgeLooks", 3]]);
+});
+
 test("style rules resolve nesting, see through at-rules and keep their first line", () => {
   const rules = styleRules([
     "@layer components {",
