@@ -4,7 +4,15 @@
 // tests/inbox-site-items.test.ts.
 
 import { startTagAttribute, startTags } from "../../shared/html-source";
+import { decodeHtmlEntities } from "../page-builder/html-entities";
+import { mediaResolvePath } from "../page-builder/media-references";
 import type { InboxItem } from "./inbox-item";
+
+/** The site's file a picture's address shows, when the site holds it: a broken picture or another address has none. */
+export function siteFile(src: string, page: string, prefix: string | undefined, holds: (path: string) => boolean) {
+  const path = mediaResolvePath(decodeHtmlEntities(src, true), page, undefined, prefix);
+  return path && holds(path) ? path : undefined;
+}
 
 /** A page of the site as the Inbox reads it: its file, the Pages tab's name and address, and its text now. */
 export interface InboxPage { file: string; label: string; route: string; source: string | undefined }
