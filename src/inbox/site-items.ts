@@ -3,7 +3,7 @@
 // warning, src/controllers/page-structure-controller.ts), handed in, so the two never disagree. Pure; tested in
 // tests/inbox-site-items.test.ts.
 
-import { startTagAttribute, startTags } from "../../shared/html-source";
+import { startTagAttribute, startTags, type StartTag } from "../../shared/html-source";
 import { decodeHtmlEntities } from "../page-builder/html-entities";
 import { mediaResolvePath } from "../page-builder/media-references";
 import type { InboxItem } from "./inbox-item";
@@ -30,6 +30,18 @@ function pageTitle(source: string) {
   return /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i.exec(headEnd < 0 ? source : source.slice(0, headEnd))?.[1].trim() ?? "";
 }
 
+/** The first source of the <picture> an img without src or srcset sits in (what the browser shows), if any. */
+function pictureSource(source: string, tags: readonly StartTag[], at: number) {
+  const open = source.toLowerCase().lastIndexOf("<picture", at);
+  if (open < 0 || source.toLowerCase().lastIndexOf("</picture", at) > open) return undefined;
+  for (const tag of tags) {
+    if (tag.start <= open || tag.start >= at || tag.name !== "source") continue;
+    const srcset = startTagAttribute(source, tag, "srcset")?.value.trim();
+    if (srcset) return srcset;
+  }
+  return undefined;
+}
+
 type Verdict = "described" | "decorative" | "missing";
 
 /** The edit bar's Alt text warning as a verdict (src/controllers/page-structure-controller.ts): no alt attribute is
@@ -47,18 +59,26 @@ export function siteItems(pages: readonly InboxPage[], rules: SiteItemRules): In
     const { source } = page;
     if (source === undefined) continue;
     if (!pageTitle(source)) items.push({ key: `title\n${page.file}`, kind: "title", what: "Page without a title", where: page.route, page: page.file });
-    const seen = new Set<string>();
-    for (const tag of startTags(source)) {
-      if (tag.name !== "img") continue;
+    const tags = startTags(source);
+    // Each picture's address (its src, else its srcset, else its <picture>'s source), whether it waits, and its file.
+    const pictures = tags.flatMap(tag => {
+      if (tag.name !== "img") return [];
       const src = startTagAttribute(source, tag, "src")?.value.trim();
+      const shown = src || startTagAttribute(source, tag, "srcset")?.value.trim() || pictureSource(source, tags, tag.start);
       // No address at all is the edit bar's "No image", not a description to write.
-      if (!src || rules.picture(page.file, src, startTagAttribute(source, tag, "alt")?.value) !== "missing") continue;
-      const media = rules.file(page.file, src);
-      const key = `picture\n${page.file}\n${media ?? src}`;
+      if (!shown) return [];
+      // The edit bar asks Media about the src alone; Decorative, like Media's, marks pictures by their src.
+      const waits = rules.picture(page.file, src ?? "", startTagAttribute(source, tag, "alt")?.value) === "missing";
+      return [{ tag, shown, waits, media: src ? rules.file(page.file, src) : undefined }];
+    });
+    const seen = new Set<string>();
+    for (const { tag, shown, waits, media } of pictures) {
+      if (!waits) continue;
+      const key = `picture\n${page.file}\n${media ?? shown}`;
       if (seen.has(key)) continue;
       seen.add(key);
       items.push({ key, kind: "picture", what: "Picture without a description", where: `${page.label} page`, page: page.file, at: tag.start,
-        ...(media ? { media, wave: "Decorative" } : {}) });
+        ...(media ? { media, wave: "Decorative", allUses: pictures.every(other => other.media !== media || other.waits) } : {}) });
     }
   }
   return items;

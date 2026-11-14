@@ -35,8 +35,10 @@ function findItems(ports: InboxPorts, settle: boolean) {
 async function goTo(item: InboxItem, ports: InboxPorts) {
   const shown = ports.appStore.openFile.value === item.page;
   if (item.kind === "title") {
+    // Page settings open only for the page opened, on the site it was asked on.
+    const stamp = ports.stamp();
     if (!shown) await ports.open(item.page);
-    ports.pageDetails(item.page);
+    if (stamp.holds() && ports.appStore.openFile.value === item.page) ports.pageDetails(item.page);
     return;
   }
   const source = ports.source(item.page);
@@ -49,7 +51,7 @@ async function goTo(item: InboxItem, ports: InboxPorts) {
 
 /** A picture's Decorative, on the session it was pressed in (src/inbox/decorative.ts). */
 function decorative(item: InboxItem, ports: InboxPorts) {
-  return markDecorative(item, ports.stamp(), async () => {
+  return markDecorative(item, ports.stamp(), ports.source(item.page), async () => {
     const { createMediaWorkspace } = await import("../page-builder/media-workspace");
     return createMediaWorkspace(() => ports.media());
   });
