@@ -40,7 +40,8 @@ test("a comment opener inside a string, or a URL, never hides the code after it"
 
 test("a quote or backtick inside a regex literal opens no string", () => {
   const found: Found[] = copiesInScript(['s.replace(/[`*]/g, "");', '// node("button")', "const t = `a`;", 'node("button");', "const half = a / 2; node(\"dialog\");"].join("\n"));
-  assert.deepEqual(kindsAndLines(found), [["buttons", 4], ["dialogs", 5]]);
+  assert.deepEqual(kindsAndLines(found), [["buttons", 4], ["dialogs", 5]]);  assert.deepEqual(copiesInScript('const half = a / 2; // node("dialog")\nn++ / 2; // node("button")\nwidth\n// a long comment between the two halves of a division\n/ height; // node("button")'), [], "a division is no regex");
+  assert.deepEqual(kindsAndLines(copiesInScript('if (x) return /"/.test(s); node("button");')), [["buttons", 1]]);
 });
 
 test("style rules resolve nesting, see through at-rules and keep their first line", () => {
