@@ -174,6 +174,27 @@ function declarations(text) {
 }
 
 /**
+ * A selector with each `:is()` and `:where()` spelled out as its alternatives (`.a :is(button, .b)` is `.a button` and
+ * `.a .b`), so a look inside a group still counts, once per place. At most 64 selectors come out of one.
+ */
+export function expandGroups(selector) {
+  const out = [], queue = [selector];
+  while (queue.length && out.length + queue.length <= 64) {
+    const current = queue.shift();
+    const start = current.search(/:(?:is|where)\(/);
+    if (start < 0) { out.push(current); continue; }
+    const open = current.indexOf("(", start);
+    let depth = 0, end = open;
+    for (; end < current.length; end++) {
+      if (current[end] === "(") depth++;
+      else if (current[end] === ")" && --depth === 0) break;
+    }
+    for (const choice of splitList(current.slice(open + 1, end))) queue.push(`${current.slice(0, start)}${choice}${current.slice(end + 1)}`);
+  }
+  return [...out, ...queue];
+}
+
+/**
  * What a selector styles: its last compound without pseudo-classes or attribute tests, that compound's element and
  * classes, and the compounds before it (the context).
  */
@@ -232,7 +253,7 @@ export function copiesInStyles(text) {
   const found = [], seen = new Set();
   for (const rule of styleRules(text)) {
     if (!setsLook(rule)) continue;
-    for (const selector of rule.selectors) {
+    for (const selector of rule.selectors.flatMap(expandGroups)) {
       const target = subject(selector);
       for (const [kind, look] of Object.entries(styleKinds)) {
         const name = look(target);
