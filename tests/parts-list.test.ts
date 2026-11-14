@@ -58,6 +58,7 @@ test("every UI file is listed: parts by hand, screens from the code with their s
     "src/components/publish-menu.ts": '// The Save menu: the changes to save.\nexport const m = () => node("div");\n',
     "src/components/publish-menu.css": ".publish-menu {}\n",
     "src/page-builder/maths.ts": "export const add = (a: number, b: number) => a + b;\n",
+    "src/page-builder/opener.ts": "// Opens the page's <dialog> from elsewhere.\nexport const open = (d: { showModal(): void }) => d.showModal();\n",
     "src/components/preview-menu.ts": "// The preview row, built from the sharing row.\nexport const row = () => shareRow();\n",
     "src/page-builder/busy-lock.ts": "// The busy lock's Cancel.\nexport const cancel = (label: string) => button(label, stop);\n",
     "src/catalogue/board.ts": 'node("div");\n',
@@ -75,7 +76,7 @@ test("every UI file is listed: parts by hand, screens from the code with their s
     assert.match(list, /- \*\*Options:\*\* `src\/ui\/parts\/badge-options\.ts`\n- \*\*Tests:\*\* `tests\/badge\.test\.ts`/);
     assert.match(list, /^\| Publish menu \| The Save menu: the changes to save\. \| `src\/components\/publish-menu\.ts` `src\/components\/publish-menu\.css` \| `tests\/publish\.test\.ts` \|$/m);
     assert.match(list, /^\| Preview menu \| The preview row, built from the sharing row\. \|/m);
-    assert.doesNotMatch(list, /maths|board/, "plumbing outside the component folders and the design board are not UI");
+    assert.doesNotMatch(list, /maths|opener|board/, "plumbing outside the component folders (an element named in a comment too) and the design board are not UI");
     assert.equal(p.run("check").status, 0);
   } finally { rmSync(p.root, { recursive: true, force: true }); }
 });
@@ -100,10 +101,10 @@ test("a new screen file makes the list out of date, and one with no purpose fail
   } finally { rmSync(p.root, { recursive: true, force: true }); }
 });
 
-test("a listed file that is gone, or a part without its purpose, is a problem", () => {
+test("a listed file that is gone, a part without its purpose, or a description of no screen file is a problem", () => {
   const p = project({
-    "docs/agents/parts.json": source([{ ...badge, for: "" }], { "src/gone.ts": "Gone." }),
-    "src/ui/parts/badge.ts": "", "src/ui/parts/badge-options.ts": "",
+    "docs/agents/parts.json": source([{ ...badge, for: "" }], { "src/gone.ts": "Gone.", "src/maths.ts": "Sums." }),
+    "src/ui/parts/badge.ts": "", "src/ui/parts/badge-options.ts": "", "src/maths.ts": "export const add = (a: number, b: number) => a + b;\n",
   });
   try {
     const { problems } = build(p.root);
@@ -111,6 +112,7 @@ test("a listed file that is gone, or a part without its purpose, is a problem", 
       "docs/agents/parts.json: badge has no for",
       "docs/agents/parts.json: badge lists src/ui/parts/badge.css, which does not exist",
       "docs/agents/parts.json: screens describes src/gone.ts, which does not exist",
+      "docs/agents/parts.json: screens describes src/maths.ts, which is not a screen file on the list; remove it",
     ]);
   } finally { rmSync(p.root, { recursive: true, force: true }); }
 });
