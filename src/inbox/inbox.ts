@@ -51,7 +51,7 @@ async function goTo(item: InboxItem, ports: InboxPorts) {
 
 /** A picture's Decorative, on the session it was pressed in (src/inbox/decorative.ts). */
 function decorative(item: InboxItem, ports: InboxPorts) {
-  return markDecorative(item, ports.stamp(), ports.source(item.page), async () => {
+  return markDecorative(item, ports.stamp(), async () => {
     const { createMediaWorkspace } = await import("../page-builder/media-workspace");
     return createMediaWorkspace(() => ports.media());
   });
