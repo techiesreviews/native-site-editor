@@ -449,11 +449,14 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     const error = !outcome.ok && outcome.reason === "stale" ? changed : outcome.message;
     if (error) { ports.errorMessage(new Error(error)); if (!outcome.ok && outcome.reason === "refused") ports.refuse(error); return error; }
     // An agent's delete leaves the person's focus where it is. A person's goes to the row still showing the file (deleted, with
-    // Restore), else the next row, else the one before, else its folder (ux-rulebook B2).
+    // Restore), else the next row, else the one before, else its folder (or the nearest one shown: a folder only new files
+    // were in goes with its last one) (ux-rulebook B2).
     ports.requestAnimationFrame(() => {
       if (agent || !ports.filesTabOpen()) return;
-      for (const path of [target.path, ...beside, ports.parentOf(target.path)]) {
-        const row = path ? ports.fileRow(path) : undefined;
+      const folders: string[] = [];
+      for (let folder = ports.parentOf(target.path); folder; folder = ports.parentOf(folder)) folders.push(folder);
+      for (const path of [target.path, ...beside, ...folders]) {
+        const row = ports.fileRow(path);
         if (row) return row.focus();
       }
       ports.focusFiles();

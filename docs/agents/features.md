@@ -212,7 +212,7 @@ its number unused.
 ### F-repo-14 Choose a project with none open
 - Try: At 390 px with no project open, tap the page button, then Choose a project; or tap Choose a project on the welcome.
 - Good: The panel says no project is open and offers Choose a project, never an empty search box; both open the project list, and a project chosen there shows its Pages, Media and Files (U4).
-- Files: `src/workspace-mount.ts`, `src/workspace-shell.ts`, `src/repository-list.ts`
+- Files: `src/workspace-mount.ts`, `src/workspace-shell.ts`, `src/repository-list.ts`, `src/style.css`
 - Phone: yes
 - Spec: `tests/native-save/native-phone-project-choice.spec.ts`
 - Steps: none yet

@@ -33,4 +33,8 @@ test("tabbing between two selected Media tiles shows a distinct focus ring on th
   await expect(secondThumbnail).toBeFocused();
   expect(await ring(second)).toBe(focusedSelected);
   expect(await ring(first)).toBe(selectedOnly);
+
+  // Forced colours drop box shadows: the focused one still differs.
+  await page.emulateMedia({ forcedColors: "active" });
+  expect(await ring(second)).not.toBe(await ring(first));
 });

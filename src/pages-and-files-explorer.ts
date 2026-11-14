@@ -321,7 +321,10 @@ export function revealFiles(ports: Parameters<typeof findFiles>[0], tree: TreeRo
  * its file is deleted (ux-rulebook B2). */
 export function rowsBeside(ports: Pick<PagesAndFilesPorts, "element" | "files">, tree: TreeRows, path: string) {
   const item = fileRowNow(ports, tree, path)?.closest("li");
-  return [item?.nextElementSibling, item?.previousElementSibling].flatMap((next) => next?.querySelector<HTMLElement>(".file-row")?.dataset.path ?? []);
+  const next = item?.nextElementSibling?.querySelector<HTMLElement>(".file-row");
+  // The row just above: in an open folder before it, that folder's last row shown.
+  const before = [...item?.previousElementSibling?.querySelectorAll<HTMLElement>(".file-row") ?? []].filter((row) => row.getClientRects().length).at(-1);
+  return [next, before].flatMap((row) => row?.dataset.path ?? []);
 }
 
 /** No row left to take the focus (a found file deleted, or the last file at the top of the tree): the first found file takes it,

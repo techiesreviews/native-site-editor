@@ -124,6 +124,11 @@ test("a person's delete focuses the row still showing the file, else the next ro
   nested.ports.fileRow = path => path === "folder" ? { focus: () => nested.focused.push(path) } : undefined;
   assert.equal(await nested.controller.deleteFileTarget({ path: "folder/x.txt", name: "x.txt", folder: false }), undefined);
   assert.deepEqual(nested.focused, ["folder"]);
+  // A folder only new files were in goes with its last one: the nearest folder shown takes the focus.
+  const deep = fixture(false, { "a/b/x.txt": "x" });
+  deep.ports.fileRow = path => path === "a" ? { focus: () => deep.focused.push(path) } : undefined;
+  assert.equal(await deep.controller.deleteFileTarget({ path: "a/b/x.txt", name: "x.txt", folder: false }), undefined);
+  assert.deepEqual(deep.focused, ["a"]);
 });
 
 test("a person's rename or copy that finishes after another search was typed leaves that search and the focus alone", async () => {
