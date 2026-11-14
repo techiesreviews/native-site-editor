@@ -48,16 +48,16 @@ test("a circle's press area reaches up from the caret's line (down from it for a
   assert.equal(overControlState({ left: 0, right: 10, top: 0, bottom: 10 }, { left: 0, right: 10, top: 0, bottom: 10 }, [control(10, 20, 0, 10)]), undefined, "boxes that only share an edge do not meet");
 });
 
-test("a guest's caret takes their chip's colours and Lex's the editor's own; a presence colour is left to the CSS (TOOLS-219)", () => {
+test("a guest's caret takes their chip's colour and Lex's the editor's own; the circle and its letter come from it in the CSS; a presence colour is left to the CSS (TOOLS-219)", () => {
   const style = new Map<string, string>();
   const root = { dataset: {} as Record<string, string>, style: { setProperty: (name: string, value: string) => style.set(name, value), removeProperty: (name: string) => style.delete(name) } };
   // eslint-disable-next-line no-restricted-syntax -- Node has no DOM; paintCaret reads only the dataset and style it is given.
   const paint = (colour: string) => paintCaret(root as unknown as HTMLElement, colour);
   paint("g1");
   assert.equal(root.dataset.colour, "g1");
-  assert.deepEqual(Object.fromEntries(style), { "--live-caret": "var(--guest-2)", "--live-caret-pin": "var(--guest-2-pin)", "--live-caret-ink": "var(--guest-2-ink)" });
+  assert.deepEqual(Object.fromEntries(style), { "--live-caret": "var(--guest-2)" });
   paint("host");
-  assert.deepEqual(Object.fromEntries(style), { "--live-caret": "var(--primary)", "--live-caret-pin": "var(--primary)", "--live-caret-ink": "var(--on-primary)" });
+  assert.deepEqual(Object.fromEntries(style), { "--live-caret": "var(--primary)" });
   paint("1");
   assert.equal(root.dataset.colour, "1");
   assert.equal(style.size, 0, "the presence colours come from live-carets.css");
