@@ -8,6 +8,6 @@ or a UX rulebook line with its wording.
 
 A learning file adds nothing by itself. Lex picks; his picked checks become tickets and his picked
 rulebook lines are added to [ux-rulebook.md](../../agents/ux-rulebook.md) after his yes. The file is not
-edited afterwards. The groups behind each list come from `scripts/agents/kit learn`
+edited afterwards. The groups behind each list come from `scripts/agents/kit sweep --learn` (`kit learn` until 2026-11-14)
 ([agent-scripts.md](../../agents/agent-scripts.md#kit)), which reads the chat project's corrections list
 and this repo's build feedback logs.

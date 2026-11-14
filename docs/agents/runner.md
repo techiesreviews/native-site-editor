@@ -36,7 +36,7 @@ and each `--help`. A build's own `runner-extras.md` (next to its map) wins where
   until the job's RESULT line. Never wait in the background and post no progress between waits.
 - `kit bg --list` shows state and log paths; `kit bg --stop <name>` stops only that group. Other owned processes, logs or CI: `scripts/agents/kit wait pid|output|ci`.
   Never look up pids with `ps | grep`; never write `until … sleep` or `pgrep -f` loops.
-- **After an app restart**, reconnect with `kit bg --list` and `kit go <name>` first (the lead then runs `kit heartbeat <map>`, its 30-minute check-in: [kitchen station 5](https://github.com/techiesreviews/agent-kit/blob/main/docs/kitchen.md#5-hand-out)); `scripts/agents/kit status [map]` shows landed work and open PRs.
+- **After an app restart**, reconnect with `kit bg --list` and `kit go <name>` first (the lead then runs `kit heartbeat <map>`, its 30-minute check-in: [kitchen station 5](https://github.com/techiesreviews/agent-kit/blob/main/docs/kitchen.md#5-hand-out)); `scripts/agents/kit ticket list` shows the cards and T3 the linked PRs and their checks (`kit status` was cut on 2026-11-14).
   `scripts/agents/agent.sh --resume <out-dir>` continues a builder; rerunning `kit pr --ticket <ticket>` reuses the open PR and saved review.
 
 ## Build and tests
@@ -70,7 +70,7 @@ append `## Done (YYYY-MM-DD)` to the ticket (behaviour, commits, tests, review d
 
 - Editor slices (`kit slice` does this, never with `--waive`): `scripts/agents/kit pr --ticket <ticket>` under `kit go`.
   It rebases, runs the checks for the change's tier (docs, css, tests or full; `--full` forces all), opens the PR into
-  `dev`, posts the review, waits for CI and merges. After three completed fix rounds, non-blocking findings go in a PR comment/body and the ticket's Done `### Follow-ups` in a new commit before CI; that ticket-only commit retains review coverage. A visible change (`paths.visible` in `scripts/agents/kit.json`) stops unless it changed the `featureList` file (here `docs/agents/features.md`) or the ticket's Done says `Feature list: no change (<reason>)`. Lead-only `--waive "<reason>"` still overrides blockers and is recorded separately; slices never pass it. The merged PR is the finish line; put its number and merge SHA in your Report's `landed:` line, not in the ticket (`scripts/agents/kit status [map]` shows each ticket's landing). Fix CI failures you caused.
+  `dev`, posts the review, waits for CI and merges. After three completed fix rounds, non-blocking findings go in a PR comment/body and the ticket's Done `### Follow-ups` in a new commit before CI; that ticket-only commit retains review coverage. A visible change (`paths.visible` in `scripts/agents/kit.json`) stops unless it changed the `featureList` file (here `docs/agents/features.md`) or the ticket's Done says `Feature list: no change (<reason>)`. Lead-only `--waive "<reason>"` still overrides blockers and is recorded separately; slices never pass it. The merged PR is the finish line; put its number and merge SHA in your Report's `landed:` line, not in the ticket (`kit pr` prints its `landed:` lines). Fix CI failures you caused.
 - Starter slices: rebase on `origin/dev` and push `HEAD:dev` under
   `flock /tmp/cb-starter-merge.lock`; rerun touched tests after overlapping upstream changes.
 - Prototypes finish with their branch and evidence; skip landing.

@@ -89,7 +89,8 @@ the atomic catalogue: [extras](kitchen-extras.md#visible-changes-feature-list-an
 
 ## UX confidence ladder
 
-[Shared](https://github.com/techiesreviews/agent-kit/blob/main/docs/kitchen.md#ux-confidence-ladder).
+Dropped on 2026-11-14 (TOOLS-235): Lex tries every visible change himself. The old link lands on the
+road every card takes: [Shared](https://github.com/techiesreviews/agent-kit/blob/main/docs/kitchen.md#ux-confidence-ladder).
 
 ## Weekly routines
 
@@ -97,7 +98,8 @@ the atomic catalogue: [extras](kitchen-extras.md#visible-changes-feature-list-an
 
 ## Tuesday review
 
-[Shared](https://github.com/techiesreviews/agent-kit/blob/main/docs/kitchen.md#tuesday-review).
+Dropped on 2026-11-14 (TOOLS-235), with its Tuesday pack: Lex answers in desk threads, any day. The old
+link lands on what waits for him: [Shared](https://github.com/techiesreviews/agent-kit/blob/main/docs/kitchen.md#tuesday-review).
 
 ## Small chores on free models
 

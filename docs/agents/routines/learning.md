@@ -10,9 +10,9 @@ The chat project's sync is the only reader of chats; it records each correction 
 This routine reads that list and never writes there.
 
 In even ISO weeks the sweep holds its top 3 for this routine, so this routine **always sends that
-the Tuesday pack**: the sweep's top 3, plus the learning proposals when there are any
+week's one message** to Lex in a desk thread: the sweep's top 3, plus the learning proposals when there are any
 ([factory 06](../../wayfinder/software-factory/tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22), item 4).
-Every stop after step 1 (an ✗ that `kit doctor` cannot fix, `kit learn` failing or finding nothing, `kit pr`
+Every stop after step 1 (an ✗ that `kit doctor` cannot fix, `kit sweep --learn` failing or finding nothing, `kit pr`
 failing) still sends it: the sweep's top 3, then one plain line saying the learning list did not come
 this time and why.
 
@@ -34,9 +34,9 @@ this time and why.
 3. **Gather.** Find the newest learning file: the latest date among `docs/work/learning/YYYY-MM-DD.md` on
    `origin/dev` and the `origin/docs/learning-YYYY-MM-DD` branches holding that file (a learning PR may
    still be open: `git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/docs/learning-*'`).
-   Run `scripts/agents/kit learn --since <its date>` (inclusive, so a correction from that Tuesday after
+   Run `scripts/agents/kit sweep --learn --since <its date>` (inclusive, so a correction from that Tuesday after
    its run is seen now); with no earlier learning file,
-   plain `scripts/agents/kit learn` (default `--since 14d`). `RESULT: ok learn nothing recorded yet`
+   plain `scripts/agents/kit sweep --learn` (default `--since 14d`; `kit learn` until 2026-11-14). `RESULT: ok learn nothing recorded yet`
    or `RESULT: ok learn 0 repeated of N groups` ends the learning part: no file, no PR; go to step 8,
    which says in one line why there is no learning list (nothing recorded, or nothing asked twice). Otherwise read its bundle,
    `.scratch/learn/<date>/bundle.md` in the main root: groups given more than once with their count,
