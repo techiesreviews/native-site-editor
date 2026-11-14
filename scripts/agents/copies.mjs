@@ -199,7 +199,11 @@ export function expandGroups(selector) {
  * classes, and the compounds before it (the context).
  */
 function subject(selector) {
-  const parts = selector.replace(/\([^()]*\)/g, "()").split(/\s*[\s>+~]\s*/).filter(Boolean);
+  // Arguments and attribute tests may hold spaces and combinator signs (`[aria-label="Open menu"]`, `:has(.a > .b)`):
+  // they are emptied first, nested ones included, so only real combinators split the selector.
+  let flat = selector.replace(/\[(?:[^\]"']|"[^"]*"|'[^']*')*\]/g, "[]");
+  for (let last = ""; last !== flat;) { last = flat; flat = flat.replace(/\([^()]*\)/g, "\u0000"); }
+  const parts = flat.replaceAll("\u0000", "()").split(/\s*[\s>+~]\s*/).filter(Boolean);
   const last = parts.at(-1) ?? "";
   const bare = compound => compound.replace(/::?[\w-]+(\(\))?/g, "").replace(/\[[^\]]*\]/g, "");
   const plain = bare(last);
