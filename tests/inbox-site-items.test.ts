@@ -110,3 +110,12 @@ test("template and picture rules read the page's elements, not its text: comment
   // The picture after the comment and script is listed; an img nested deeper than the <picture>'s child is the edit bar's "No image".
   assert.deepEqual(items.map(item => item.media ?? "none"), ["images/a.jpg"]);
 });
+
+test("the page's title is read from its elements: a commented-out or scripted title does not count", () => {
+  const items = siteItems([
+    page("index.html", `<!doctype html><html><head><!-- <title>Old</title> --></head><body></body></html>`),
+    page("about.html", `<!doctype html><html><head><script>const t = "<title>x</title>";</script></head><body></body></html>`, "About", "/about"),
+    page("ok.html", `<!doctype html><html><head><title>Fine</title></head><body></body></html>`, "Ok", "/ok"),
+  ], rules);
+  assert.deepEqual(items.map(item => item.page), ["index.html", "about.html"]);
+});

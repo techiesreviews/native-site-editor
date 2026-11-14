@@ -74,13 +74,15 @@ export function createInboxList(ports: InboxPorts) {
 
   // What was last shown: the list, the dots' rules and the panel are written again only when they change, since each
   // write makes the browser restyle the page (an edit's next layout would pay for it).
-  let shownKeys: string | undefined, shownChecked = false, dotRules = "";
+  let shownKeys: string | undefined, shownChecked = false, shownSession: typeof session, dotRules = "";
   function show(next: readonly InboxItem[]) {
     // A row's spot (`at`) and the page text it was found in are part of it: drawn rows act on the items they hold.
     const keys = next.map(item => `${item.key}\n${item.where}\n${item.wave ?? ""}\n${item.at ?? ""}`).join("\n\n");
-    const same = keys === shownKeys && checked === shownChecked && next.every((item, n) => item.found === items[n]?.found);
+    // Rows drawn on another session (a reload with the same items) act on it no more: they are drawn again.
+    const same = keys === shownKeys && checked === shownChecked && session === shownSession && next.every((item, n) => item.found === items[n]?.found);
     items = next;
     if (same) return;
+    shownSession = session;
     shownKeys = keys;
     shownChecked = checked;
     const root = document.documentElement;
@@ -114,7 +116,8 @@ export function createInboxList(ports: InboxPorts) {
       show([]);
       return;
     }
-    if (ports.indexed()) session = ports.stamp();
+    // One stamp per load, so the rows drawn on it stay its own until another site, branch or reload opens.
+    if (ports.indexed() && !session?.holds()) session = ports.stamp();
     // A picture's verdict waits for the Media rules, which load on the first ask: look again shortly. Past ten looks
     // (the rules or the records could not be read) a stored picture is judged by its alt text alone.
     const found = findItems(ports, retries >= 10);
