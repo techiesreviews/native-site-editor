@@ -141,7 +141,13 @@ export function placeTag(widget: Tagged, x: number, top: number, width: number) 
   const flag = widget.flag.element;
   if (flag.offsetParent === null) return;
   const name = flag.querySelector<HTMLElement>(".live-caret__name");
-  widget.width ??= flag.scrollWidth - (name?.clientWidth ?? 0) + (name?.scrollWidth ?? 0);
+  if (widget.width === undefined) {
+    // A person's name reads on from where their letter ends (live-carets.css), however wide the letter.
+    const letter = flag.querySelector<HTMLElement>(".live-caret__mark b");
+    if (letter) widget.root.style.setProperty("--live-caret-letter", `${letter.offsetWidth}px`);
+    else widget.root.style.removeProperty("--live-caret-letter");
+    widget.width = flag.scrollWidth - (name?.clientWidth ?? 0) + (name?.scrollWidth ?? 0);
+  }
   widget.half ??= flag.querySelector<HTMLElement>(".live-caret__mark")!.offsetWidth / 2;
   const half = widget.half;
   const right = width - x + half, left = x + half;

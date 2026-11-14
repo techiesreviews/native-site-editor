@@ -86,8 +86,54 @@ const caretPaint = (flag: Locator) => flag.evaluate((tag) => {
   return { line: line.backgroundColor, fill: circle.backgroundColor, ring: circle.boxShadow, letter: getComputedStyle(tag.querySelector(".live-caret__mark b")!).color };
 });
 
+/** The WCAG contrast of each caret colour's circle with its letter, in the code pane and in the page's layer, and whether
+ * the page's carets keep the light-theme shade: the page shows the site's own colours, not the editor's theme. */
+const caretContrasts = (page: Page) => page.evaluate(() => {
+  const luminance = (colour: string) => {
+    const context = Object.assign(document.createElement("canvas"), { width: 1, height: 1 }).getContext("2d", { willReadFrequently: true })!;
+    context.fillStyle = colour;
+    context.fillRect(0, 0, 1, 1);
+    const linear = [...context.getImageData(0, 0, 1, 1).data.slice(0, 3)].map(value => value / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  };
+  const colours = ["0", "1", "2", "3", "g0", "g1", "g2", "g3", "host"];
+  const paint = (layer: HTMLElement) => colours.map(colour => {
+    const root = document.createElement("span");
+    root.className = "live-caret";
+    root.innerHTML = '<span class="live-caret__line"></span><span class="live-caret__flag"><span class="live-caret__mark"><b>A</b></span></span>';
+    layer.append(root);
+    return { colour, root };
+  });
+  const pane = document.createElement("div"), onPage = Object.assign(document.createElement("div"), { className: "live-carets-page" });
+  document.body.append(pane, onPage);
+  return Promise.all([import("/src/components/caret-flag.ts"), import("/src/components/live-carets.css")]).then(([{ paintCaret }]) => {
+    const read = (layer: HTMLElement) => paint(layer).map(({ colour, root }) => {
+      if (colour !== "0") paintCaret(root, colour);
+      const fill = getComputedStyle(root.querySelector(".live-caret__line")!).backgroundColor, letter = getComputedStyle(root.querySelector("b")!).color;
+      const [a, b] = [luminance(fill), luminance(letter)];
+      return { colour, fill, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
+    });
+    const result = { pane: read(pane), page: read(onPage) };
+    pane.remove();
+    onPage.remove();
+    return result;
+  });
+});
+
 test.beforeEach(() => { pageErrors.length = 0; });
 test.afterEach(() => { expect(pageErrors).toEqual([]); });
+
+test("every caret colour's letter reads on its circle (4.5:1) in a light and a dark editor; the page's carets keep the light shade", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  await editorMounted(page);
+  const light = await caretContrasts(page);
+  await page.emulateMedia({ colorScheme: "dark" });
+  expect(await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches)).toBe(true);
+  const dark = await caretContrasts(page);
+  for (const { colour, ratio } of [...light.pane, ...light.page, ...dark.pane, ...dark.page]) expect(ratio, colour).toBeGreaterThanOrEqual(4.5);
+  expect(dark.pane.map(({ fill }) => fill)).not.toEqual(light.pane.map(({ fill }) => fill));
+  expect(dark.page).toEqual(light.page);
+});
 
 test("Lex and Anna type in the code pane and see each other's carets; an agent shows its program; Anna's tag takes back only her words", async ({ browser, baseURL }) => {
   const lex = await person(browser, "Lex"), anna = await person(browser, "Anna");
@@ -133,6 +179,18 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
     await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("opacity", "1");
     await expect(annaAtLex.locator(".live-caret__name")).toHaveCSS("filter", "none");
     await lex.page.emulateMedia({ reducedMotion: "reduce" });
+    // Open, the name reads on from the letter and starts where the letter ends: the letter's box hides none of it.
+    expect(await annaAtLex.evaluate((tag) => {
+      const letter = tag.querySelector(".live-caret__mark b")!.getBoundingClientRect(), name = tag.querySelector(".live-caret__name")!.getBoundingClientRect();
+      return name.left - letter.right;
+    })).toBeGreaterThanOrEqual(-0.5);
+    // In a dark editor the circle turns light with a dark letter, line and circle still one colour.
+    await lex.page.emulateMedia({ colorScheme: "dark" });
+    const dark = await caretPaint(annaAtLex);
+    expect(dark.fill).toBe(dark.line);
+    expect(dark.fill).not.toBe(paint.fill);
+    expect(dark.letter).not.toBe(paint.letter);
+    await lex.page.emulateMedia({ colorScheme: "light" });
     // An agent in the room: its circle holds the icon of its program, its name on hover.
     agent = await agentAt(browser, baseURL!, "Lex");
     const agentAtLex = lex.page.locator('.monaco-editor .live-caret__flag[data-agent][aria-label="Claude Code"]');
