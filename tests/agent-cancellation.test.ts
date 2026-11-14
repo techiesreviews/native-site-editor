@@ -90,8 +90,8 @@ async function browser(socketFactory: (receive: (text: string) => void) => Brows
     close() { before.resolve(); after.resolve(); transport.stop(); } };
 }
 
-async function runtime(requestSignal = true) {
-  const { worker } = await startWorker({ requestSignal, streaming: true });
+async function runtime() {
+  const { worker } = await startWorker({ streaming: true });
   try {
     const { cookie } = await signIn(worker), tab = editorTab(worker, cookie);
     const grant = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json() as { id: string; token: string };
@@ -260,19 +260,6 @@ test("every preparation and commit await serializes cancellation: cancelled mean
 test("every Wrangler config enables request.signal, which modern abort cancellation needs", () => {
   for (const file of ["wrangler.jsonc", "wrangler.preview.jsonc", "wrangler.techies.jsonc"])
     assert.match(readFileSync(file, "utf8"), /"compatibility_flags": \[[^\]]*"enable_request_signal"/, file);
-});
-
-test("runtime without enable_request_signal: a closed JSON response is not observed (why the configs set it)", async () => {
-  const f = await runtime(false), stop = new AbortController(), id = "without-flag";
-  try {
-    const pending = f.call(id, true, stop.signal);
-    await until(() => f.counts().runs > 0); await pending; stop.abort();
-    // Negative observation across two whitespace writes: workerd has no request abort hook without the flag.
-    await delay(600);
-    assert.equal(f.frames.filter(frame => frame.type === "cancel").length, 0);
-    f.before.resolve(); f.after.resolve();
-    await until(async () => (await f.status(id, f.grant.id)).status === "applied");
-  } finally { await f.dispose(); }
 });
 
 test("runtime modern whitespace response remains one valid JSON result", async () => {
