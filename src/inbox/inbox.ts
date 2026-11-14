@@ -50,9 +50,9 @@ async function goTo(item: InboxItem, ports: InboxPorts) {
   if (!shown) await ports.open(item.page);
 }
 
-/** A picture's Decorative, on the session it was pressed in (src/inbox/decorative.ts). */
-function decorative(item: InboxItem, ports: InboxPorts) {
-  return markDecorative(item, ports.stamp(), async () => {
+/** A picture's Decorative, on the session its row was found in (src/inbox/decorative.ts). */
+function decorative(item: InboxItem, ports: InboxPorts, found: { holds(): boolean }) {
+  return markDecorative(item, found, async () => {
     const { createMediaWorkspace } = await import("../page-builder/media-workspace");
     return createMediaWorkspace(() => ports.media());
   });
@@ -78,7 +78,7 @@ export function createInboxList(ports: InboxPorts) {
     const any = (attribute: string, values: (string | undefined)[]) =>
       [...new Set(values.filter((value): value is string => Boolean(value)))].map(value => `[${attribute}="${CSS.escape(value)}"]`).join(",");
     const pages = any("data-file", items.map(item => item.page)), media = any("data-path", items.map(item => item.media));
-    dots.replaceSync(`${pages ? `.pages-item:is(${pages}) > .pages-row { --inbox-dot: inline-block; }` : ""}${media ? `.media-library__card:is(${media}) { --inbox-dot-size: 100% 100%; }` : ""}`);
+    dots.replaceSync(`${pages ? `.pages-item:is(${pages}) > .pages-row { --inbox-dot: block; }` : ""}${media ? `.media-library__card:is(${media}) { --inbox-dot-size: 100% 100%; }` : ""}`);
     const open = panel();
     if (open?.matches(":popover-open")) draw(open);
   }
@@ -87,7 +87,13 @@ export function createInboxList(ports: InboxPorts) {
   function check(again = false) {
     clearTimeout(retry);
     if (!again) retries = 0;
-    if (!ports.pages().length) { show([]); return; }
+    // No pages: none yet while a site loads; a repository opened without a site has nothing waiting.
+    if (!ports.pages().length) {
+      session = undefined;
+      checked = Boolean(ports.appStore.snapshot.value);
+      show([]);
+      return;
+    }
     // Until a site's pages are all read the list would be partial (or another site's, after a switch): nothing is listed
     // and the text index asks again once it has them. A re-read of the same site (after a save, even one that fails)
     // goes on checking the pages it already holds.
@@ -110,16 +116,20 @@ export function createInboxList(ports: InboxPorts) {
     }
   }
 
-  async function go(item: InboxItem) {
+  // A row acts only on the session it was found in: drawn before a switch to another site or branch, it checks again
+  // instead (the new site's list replaces it).
+  async function go(item: InboxItem, found: { holds(): boolean } | undefined) {
+    if (!found?.holds()) { check(); return; }
     panel()?.hidePopover();
     try { await goTo(item, ports); } catch (error) { ports.error(error); }
   }
 
   // Busy until the change, which checks the site again, takes the row away; a refusal leaves it ready for another go.
-  async function wave(item: InboxItem, button: HTMLButtonElement) {
+  async function wave(item: InboxItem, button: HTMLButtonElement, found: { holds(): boolean } | undefined) {
+    if (!found?.holds()) { check(); return; }
     button.disabled = true;
     button.setAttribute("aria-busy", "true");
-    try { await decorative(item, ports); } catch (error) {
+    try { await decorative(item, ports, found); } catch (error) {
       button.disabled = false;
       button.removeAttribute("aria-busy");
       ports.error(error);
@@ -145,7 +155,7 @@ export function createInboxList(ports: InboxPorts) {
       into.replaceChildren(title, done);
       return;
     }
-    const list = node("ul", "inbox__list");
+    const list = node("ul", "inbox__list"), found = session;
     for (const item of items) {
       const row = node("li", "inbox__row");
       row.dataset.key = item.key;
@@ -154,13 +164,13 @@ export function createInboxList(ports: InboxPorts) {
       button.type = "button";
       button.append(icon(kinds[item.kind], 16), node("b", "", item.what), node("small", "", item.where));
       button.setAttribute("aria-label", `${item.what}, ${item.where}`);
-      button.addEventListener("click", () => void go(item));
+      button.addEventListener("click", () => void go(item, found));
       row.append(button);
       if (item.wave) {
         const off = node("button", "inbox__wave", item.wave);
         off.type = "button";
         off.setAttribute("aria-label", `${item.wave}: ${item.what}, ${item.where}`);
-        off.addEventListener("click", () => void wave(item, off));
+        off.addEventListener("click", () => void wave(item, off, found));
         row.append(off);
       }
       list.append(row);
@@ -176,7 +186,8 @@ export function createInboxList(ports: InboxPorts) {
     check,
     /** The panel opening: drawn before it shows, its first row focused once it does. */
     opened(into: HTMLElement, drawing: boolean) {
-      if (drawing && !checked) check();
+      // Not known yet, or found on a session a switch has since ended: checked again before it shows.
+      if (drawing && (!checked || !session?.holds())) check();
       if (drawing) draw(into);
       else if (into.matches(":popover-open")) {
         const first = into.querySelector<HTMLElement>(".inbox__item");

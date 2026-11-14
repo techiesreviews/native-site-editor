@@ -54,8 +54,8 @@ test.describe("desktop", () => {
 
     // The page with something waiting wears a dot in Pages.
     await page.locator("#explorer-toggle").click();
-    await expect.poll(() => dot(page, '#explorer .pages-item[data-file="index.html"] > .pages-row .pages-label')).toBe(true);
-    await expect.poll(() => dot(page, '#explorer .pages-item[data-file="about/index.html"] > .pages-row .pages-label')).toBe(false);
+    await expect.poll(() => dot(page, '#explorer .pages-item[data-file="index.html"] > .pages-row .pages-icon')).toBe(true);
+    await expect.poll(() => dot(page, '#explorer .pages-item[data-file="about/index.html"] > .pages-row .pages-icon')).toBe(false);
     // So does its picture on its Media tile, and only that one.
     await openMedia(page);
     await expect.poll(() => tileDot(page, "images/placeholder.svg")).toBe(true);
@@ -114,7 +114,7 @@ test.describe("desktop", () => {
     await about.getByRole("textbox").fill("");
     await page.keyboard.press("Enter");
     await expect(page.locator("#status")).toContainText("Removed the title");
-    await expect.poll(() => dot(page, '#explorer .pages-item[data-file="about/index.html"] > .pages-row .pages-label')).toBe(true);
+    await expect.poll(() => dot(page, '#explorer .pages-item[data-file="about/index.html"] > .pages-row .pages-icon')).toBe(true);
     await page.keyboard.press("Escape");
     await inboxButton(page).click();
     const untitled = inbox(page).getByRole("button", { name: /^Page without a title/ });

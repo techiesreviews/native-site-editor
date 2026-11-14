@@ -3,7 +3,8 @@
 // warning, src/controllers/page-structure-controller.ts), handed in, so the two never disagree. Pure; tested in
 // tests/inbox-site-items.test.ts.
 
-import { startTagAttribute, startTags, type StartTag } from "../../shared/html-source";
+import { startTagAttribute } from "../../shared/html-source";
+import { descendants, parseSource, type SourceElement } from "../page-builder/source-tree";
 import { decodeHtmlEntities } from "../page-builder/html-entities";
 import { mediaResolvePath } from "../page-builder/media-references";
 import type { InboxItem } from "./inbox-item";
@@ -30,23 +31,23 @@ function pageTitle(source: string) {
   return /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i.exec(headEnd < 0 ? source : source.slice(0, headEnd))?.[1].trim() ?? "";
 }
 
-/** The first source of the <picture> an img without src or srcset sits in (what the browser shows), if any. */
-function pictureSource(source: string, tags: readonly StartTag[], at: number) {
-  const open = source.toLowerCase().lastIndexOf("<picture", at);
-  if (open < 0 || source.toLowerCase().lastIndexOf("</picture", at) > open) return undefined;
-  for (const tag of tags) {
-    if (tag.start <= open || tag.start >= at || tag.name !== "source") continue;
-    const srcset = startTagAttribute(source, tag, "srcset")?.value.trim();
-    if (srcset) return srcset;
-  }
+/** A srcset of a <source> in the <picture> that is the img's parent (the edit bar's rule), if any. */
+function pictureSource(source: string, img: SourceElement) {
+  const parent = img.parent;
+  if (parent?.name.toLowerCase() !== "picture") return undefined;
+  for (const element of descendants(parent.children))
+    if (element.name.toLowerCase() === "source") {
+      const srcset = startTagAttribute(source, element.tag, "srcset")?.value.trim();
+      if (srcset) return srcset;
+    }
   return undefined;
 }
 
-/** Whether a tag sits in a <template> the browser does not show (a declarative shadow root's is shown). */
-function inInactiveTemplate(source: string, at: number) {
-  const lower = source.toLowerCase(), open = lower.lastIndexOf("<template", at);
-  if (open < 0 || lower.lastIndexOf("</template", at) > open) return false;
-  return !/^<template\b[^>]*\bshadowrootmode\s*=/i.test(source.slice(open, at));
+/** Whether an element sits in a <template> the browser does not show (a declarative shadow root's is shown). */
+function inInactiveTemplate(source: string, element: SourceElement) {
+  for (let up = element.parent; up; up = up.parent)
+    if (up.name.toLowerCase() === "template" && !startTagAttribute(source, up.tag, "shadowrootmode")) return true;
+  return false;
 }
 
 type Verdict = "described" | "decorative" | "missing";
@@ -66,21 +67,23 @@ export function siteItems(pages: readonly InboxPage[], rules: SiteItemRules): In
     const { source } = page;
     if (source === undefined) continue;
     if (!pageTitle(source)) items.push({ key: `title\n${page.file}`, kind: "title", what: "Page without a title", where: page.route, page: page.file });
-    const tags = startTags(source);
-    // Each picture's address (its src, else its srcset, else its <picture>'s source), whether it waits, and its file.
-    const pictures = tags.flatMap(tag => {
-      if (tag.name !== "img" || inInactiveTemplate(source, tag.start)) return [];
+    // Each picture's address (its src, else its srcset, else a source of the <picture> it is in, as the edit bar reads
+    // them), whether it waits, and its file. One in a <template> the page does not show is never listed, but counts as
+    // a use of its file, since Media's Decorative marks every img showing the file.
+    const pictures = [...descendants(parseSource(source))].flatMap(element => {
+      if (element.name.toLowerCase() !== "img") return [];
+      const { tag } = element;
       const src = startTagAttribute(source, tag, "src")?.value.trim();
-      const shown = src || startTagAttribute(source, tag, "srcset")?.value.trim() || pictureSource(source, tags, tag.start);
+      const shown = src || startTagAttribute(source, tag, "srcset")?.value.trim() || pictureSource(source, element);
       // No address at all is the edit bar's "No image", not a description to write.
       if (!shown) return [];
       // The edit bar asks Media about the src alone; Decorative, like Media's, marks pictures by their src.
       const waits = rules.picture(page.file, src ?? "", startTagAttribute(source, tag, "alt")?.value) === "missing";
-      return [{ tag, shown, waits, media: src ? rules.file(page.file, src) : undefined }];
+      return [{ tag, shown, waits, hidden: inInactiveTemplate(source, element), media: src ? rules.file(page.file, src) : undefined }];
     });
     const seen = new Set<string>();
-    for (const { tag, shown, waits, media } of pictures) {
-      if (!waits) continue;
+    for (const { tag, shown, waits, hidden, media } of pictures) {
+      if (!waits || hidden) continue;
       const key = `picture\n${page.file}\n${media ?? shown}`;
       if (seen.has(key)) continue;
       seen.add(key);
