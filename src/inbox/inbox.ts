@@ -76,9 +76,11 @@ export function createInboxList(ports: InboxPorts) {
   // write makes the browser restyle the page (an edit's next layout would pay for it).
   let shownKeys: string | undefined, shownChecked = false, dotRules = "";
   function show(next: readonly InboxItem[]) {
-    const keys = next.map(item => `${item.key}\n${item.where}\n${item.wave ?? ""}`).join("\n\n");
+    // A row's spot (`at`) and the page text it was found in are part of it: drawn rows act on the items they hold.
+    const keys = next.map(item => `${item.key}\n${item.where}\n${item.wave ?? ""}\n${item.at ?? ""}`).join("\n\n");
+    const same = keys === shownKeys && checked === shownChecked && next.every((item, n) => item.found === items[n]?.found);
     items = next;
-    if (keys === shownKeys && checked === shownChecked) return;
+    if (same) return;
     shownKeys = keys;
     shownChecked = checked;
     const root = document.documentElement;
@@ -170,12 +172,12 @@ export function createInboxList(ports: InboxPorts) {
       row.dataset.key = item.key;
       row.dataset.kind = item.kind;
       // The Button part (src/ui/dom.ts) in the panel's own row look.
-      const spot = button("", () => go(item, found), "inbox__item");
+      const spot = button("", () => go(item, found), "button secondary inbox__item");
       spot.append(icon(kinds[item.kind], 16), node("b", "", item.what), node("small", "", item.where));
       spot.setAttribute("aria-label", `${item.what}, ${item.where}`);
       row.append(spot);
       if (item.wave) {
-        const off: HTMLButtonElement = button(item.wave, () => wave(item, off, found), "inbox__wave");
+        const off: HTMLButtonElement = button(item.wave, () => wave(item, off, found), "button secondary inbox__wave");
         off.setAttribute("aria-label", `${item.wave}: ${item.what}, ${item.where}`);
         row.append(off);
       }

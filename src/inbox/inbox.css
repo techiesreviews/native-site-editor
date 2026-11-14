@@ -82,20 +82,38 @@
   gap: var(--space-xs);
   border-radius: var(--radius);
 }
+/* The rows and Decorative are the Button part's quiet tone (src/ui/parts/button.css), set through its hooks on its
+   own layer: a row is see-through until hovered and lays out its icon, what and where; Decorative is the compact
+   size. */
+@layer components {
+  .inbox__item.button {
+    --btn-background: transparent;
+    --btn-hover-background: var(--hover);
+    --btn-text-color: var(--text);
+    --btn-font-weight: 400;
+    --btn-padding-block: var(--space-2xs);
+    --btn-padding-inline: var(--space-xs);
+  }
+  .inbox__wave.button {
+    --btn-min-block-size: var(--size-icon);
+    --btn-padding-block: 0;
+    --btn-padding-inline: var(--space-xs);
+    --btn-radius: var(--radius-small);
+    --btn-font-size: var(--type-small);
+    --btn-font-weight: 400;
+  }
+  /* Touch: the row and Decorative are 44 px targets (U6). */
+  @media (hover: none), (pointer: coarse), (width <= 768px) {
+    .inbox__item.button, .inbox__wave.button { --btn-min-block-size: var(--size-touch); }
+  }
+}
 .inbox__item {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   column-gap: var(--space-xs);
-  align-items: center;
+  justify-content: stretch;
   min-inline-size: 0;
-  padding: var(--space-2xs) var(--space-xs);
-  border: 0;
-  border-radius: inherit;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
   text-align: start;
-  cursor: pointer;
 }
 .inbox__item > svg { grid-row: span 2; color: var(--muted); }
 .inbox__item > :is(b, small) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -103,27 +121,9 @@
 .inbox__item > small { color: var(--muted); font-size: var(--type-small); }
 .inbox__wave {
   margin-inline-end: var(--space-2xs);
-  block-size: 24px;
-  padding-inline: var(--space-xs);
-  border: 1px solid var(--control-line);
-  border-radius: var(--radius-small);
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: var(--type-small);
-  cursor: pointer;
-}
-.inbox__wave:disabled { cursor: progress; opacity: 0.6; }
-/* Touch: the row and Decorative are 44 px targets (U6). */
-@media (hover: none), (pointer: coarse), (width <= 768px) {
-  .inbox__item { min-block-size: var(--size-touch); }
-  .inbox__wave { block-size: var(--size-touch); }
 }
 .inbox__item:focus-visible, .inbox__wave:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
-@media (hover: hover) and (pointer: fine) {
-  .inbox__row:has(.inbox__item:hover) { background: var(--hover); }
-  .inbox__wave:not(:disabled):hover { color: var(--text); background: var(--surface-subtle); }
-}
+
 .inbox__empty {
   display: flex;
   align-items: center;

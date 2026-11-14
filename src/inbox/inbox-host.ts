@@ -5,6 +5,7 @@
 
 import { effect } from "@preact/signals-core";
 import type { AppStore } from "../app-store";
+import { lazyModule } from "../lazy-module";
 import type { NativeNodeRequest } from "../components/native-preview";
 import type { MediaWorkspaceContext } from "../page-builder/media-workspace";
 
@@ -41,15 +42,17 @@ export interface InboxPorts {
 const idle = (run: () => void) => typeof requestIdleCallback === "function" ? requestIdleCallback(run, { timeout: 2000 }) : setTimeout(run);
 
 export function createInbox(ports: InboxPorts) {
-  let list: Promise<ReturnType<typeof import("./inbox").createInboxList>> | undefined;
-  const load = () => (list ??= import("./inbox").then(module => module.createInboxList(ports)));
+  // A chunk that fails to load (a deploy since the editor opened) is tried again on the next change; chunk recovery
+  // decides on a reload.
+  let loaded = false;
+  const load = lazyModule(() => import("./inbox").then(module => { loaded = true; return module.createInboxList(ports); }));
   const fail = (error: unknown) => ports.error(error);
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   function changed() {
     clearTimeout(timer);
     // Nothing loads for a site not yet read: the text index calls this again once it has every page.
-    if (!list && !(ports.pages().length && ports.indexed())) return;
+    if (!loaded && !(ports.pages().length && ports.indexed())) return;
     // After a pause in the changes, in the browser's idle time, so an edit's own work never waits for it.
     timer = setTimeout(() => idle(() => void load().then(inbox => inbox.check()).catch(fail)), 400);
   }
