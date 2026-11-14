@@ -222,8 +222,9 @@ test("the kit's own checks.css value runs as the kit runs it and never leaves th
   const p = project(".x { padding: 8px; }\n");
   try {
     copyFileSync(script, join(p.root, "scripts/agents/one-offs.mjs"));
-    // The command checks the parts list and runs the copy counter first, which hand on to this count.
+    // The command checks the parts list, the import direction and the copy counter first, which hand on to this count.
     copyFileSync(join(repo, "scripts/agents/parts-list.mjs"), join(p.root, "scripts/agents/parts-list.mjs"));
+    copyFileSync(join(repo, "scripts/agents/ui-imports.mjs"), join(p.root, "scripts/agents/ui-imports.mjs"));
     copyFileSync(join(repo, "scripts/agents/copies.mjs"), join(p.root, "scripts/agents/copies.mjs"));
     mkdirSync(join(p.root, "docs/agents"), { recursive: true });
     writeFileSync(join(p.root, "docs/agents/parts.json"), JSON.stringify({ parts: [], screens: { "src/a.css": "A sample." } }));
