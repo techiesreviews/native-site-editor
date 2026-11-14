@@ -8,10 +8,12 @@ import { createMediaHistoryHome } from "../src/page-builder/media-history-home";
 import { memoryUploadBytes } from "../src/uploads";
 import type { SavedDraft, DraftScope } from "../src/drafts";
 
+// Removed files are kept 30 days from today, so the removed entry is dated yesterday rather than a fixed day that expires.
+const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 const source = JSON.stringify({ version: 2, collections: ["Logos", "Brand", "Empty"], files: {
   "images/logos/a.png": { collections: ["Brand", "Logos"], description: { text: "Mark", byAgent: true }, alwaysKeep: true, credit: "Artist" },
   "images/b.png": {},
-}, removed: [{ path: "old.png", sha: "old-sha", date: "2026-10-14", record: { collections: ["Brand", "Logos"], credit: "Old artist" } }], future: { keep: true } });
+}, removed: [{ path: "old.png", sha: "old-sha", date: yesterday, record: { collections: ["Brand", "Logos"], credit: "Old artist" } }], future: { keep: true } });
 const a = "images/logos/a.png", b = "images/b.png";
 
 test("new and add trim names, reject empty/taken names, keep sorted membership and immutable input", () => {
