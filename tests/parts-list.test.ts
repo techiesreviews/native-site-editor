@@ -21,6 +21,7 @@ test("a file's purpose is the first sentence of its leading comment, without tic
   assert.equal(purpose("/**\n * A splitter that resizes a panel\n * and toggles it.\n */\nexport {};"), "A splitter that resizes a panel and toggles it.");
   assert.equal(purpose("/* Inline fields (TOOLS-12): plain text until focus. */\n.x {}"), "Inline fields: plain text until focus.");
   assert.equal(purpose("export const x = 1;\n// Too late to count.\n"), "");
+  assert.equal(purpose('import {\n  a,\n  b,\n} from "./x";\nimport "./y.css";\n// The sheet: one row per file.\nexport {};'), "The sheet: one row per file.");
 });
 
 test("an options file's exported lists become its variants", () => {
@@ -105,6 +106,17 @@ test("a listed file that is gone, or a part without its purpose, is a problem", 
       "docs/agents/parts.json: badge lists src/ui/parts/badge.css, which does not exist",
       "docs/agents/parts.json: screens describes src/gone.ts, which does not exist",
     ]);
+  } finally { rmSync(p.root, { recursive: true, force: true }); }
+});
+
+test("--then runs the next script after the check, and its failure fails the command", () => {
+  const p = project({ "docs/agents/parts.json": source([]), "scripts/next.mjs": "console.log('next got', process.argv.slice(2).join(' '));\n", "scripts/bad.mjs": "process.exitCode = 1;\n" });
+  try {
+    p.run("write");
+    const ok = spawnSync(process.execPath, [script, "--root", p.root, "check", "--then", "scripts/next.mjs", "check", "src/a.css"], { encoding: "utf8" });
+    assert.equal(ok.status, 0);
+    assert.match(ok.stdout, /next got check src\/a\.css/);
+    assert.equal(spawnSync(process.execPath, [script, "--root", p.root, "check", "--then", "scripts/bad.mjs"], { encoding: "utf8" }).status, 1);
   } finally { rmSync(p.root, { recursive: true, force: true }); }
 });
 

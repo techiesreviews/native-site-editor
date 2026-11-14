@@ -48,9 +48,38 @@ const scriptPatterns = {
   dialogs: /\bnode\(\s*["'`]dialog["'`]|\bcreateElement\(\s*["'`]dialog["'`]|<dialog[\s>]/g,
 };
 
+/**
+ * The text with its comments blanked (lines kept) and its strings left as they are, so `"image/*"` or a URL's `//`
+ * never starts a comment. A template's `${…}` is code again, nested templates included.
+ */
+export function withoutComments(text) {
+  let out = "";
+  const modes = ["code"], depths = [0];
+  for (let i = 0; i < text.length;) {
+    const mode = modes.at(-1), char = text[i], next = text[i + 1];
+    if (mode === "code") {
+      if (char === "/" && next === "/") { const end = text.indexOf("\n", i); const stop = end < 0 ? text.length : end; out += blank(text.slice(i, stop)); i = stop; continue; }
+      if (char === "/" && next === "*") { const end = text.indexOf("*/", i + 2); const stop = end < 0 ? text.length : end + 2; out += blank(text.slice(i, stop)); i = stop; continue; }
+      if (char === '"' || char === "'") modes.push(char);
+      else if (char === "`") modes.push("`");
+      else if (char === "{") depths[depths.length - 1]++;
+      else if (char === "}" && modes.length > 1 && depths.at(-1) === 0) { modes.pop(); depths.pop(); }
+      else if (char === "}") depths[depths.length - 1]--;
+      out += char; i++;
+      continue;
+    }
+    if (char === "\\") { out += text.slice(i, i + 2); i += 2; continue; }
+    if (mode === "`" && char === "$" && next === "{") { modes.push("code"); depths.push(0); out += "${"; i += 2; continue; }
+    // A quote's string ends at its quote, or at a line end (an unclosed string never swallows the file).
+    if (char === mode || (mode !== "`" && char === "\n")) modes.pop();
+    out += char; i++;
+  }
+  return out;
+}
+
 /** Every hand-made button and dialog element in one TypeScript file's text, with its 1-based line. Comments never count. */
 export function copiesInScript(text) {
-  const code = text.replace(/\/\*[\s\S]*?\*\/|(?<![:"'`\\])\/\/[^\n]*/g, blank);
+  const code = withoutComments(text);
   const found = [];
   for (const [kind, pattern] of Object.entries(scriptPatterns))
     for (const match of code.matchAll(pattern)) {
@@ -99,7 +128,8 @@ export function styleRules(text) {
       const cut = prelude.lastIndexOf(";");
       if (cut >= 0 && parent.rule) parent.rule.declarations.push(...declarations(prelude.slice(0, cut)));
       const from = start + cut + 1, head = code.slice(from, i).trim();
-      if (head.startsWith("@")) stack.push({ selectors: parent.selectors, rule: null });
+      // An at-rule is see-through: inside a rule, what it holds still belongs to that rule.
+      if (head.startsWith("@")) stack.push({ selectors: parent.selectors, rule: parent.rule });
       else {
         const rule = { selectors: resolve(parent.selectors, head), declarations: [], line: lineAt(code, from + code.slice(from, i).search(/\S/)) };
         rules.push(rule);
@@ -259,7 +289,7 @@ function owner(root) {
 }
 
 const counts = scanned => Object.fromEntries(Object.entries(scanned).map(([file, found]) => [file, tally(found)]));
-const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const plural = (n, word) => `${n} ${n === 1 ? word : word === "copy" ? "copies" : `${word}s`}`;
 const lineList = lines => `lines ${lines.slice(0, 6).join(", ")}${lines.length > 6 ? ", …" : ""}`;
 
 function check(root, flags, log) {
