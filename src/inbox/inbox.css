@@ -40,17 +40,22 @@
 @supports (top: anchor(--topbar bottom)) {
   .inbox { inset-block-start: calc(anchor(--topbar bottom) + var(--space-2xs)); }
 }
-/* A page with something waiting in the Inbox (TOOLS-222): a small dot after its name, nothing else
-   (inbox.ts sets --inbox-dot on its row). */
-.pages-label::after {
+/* A page with something waiting in the Inbox (TOOLS-222): a small dot on its icon's corner, nothing else, so a name
+   cut short never hides it (inbox.ts sets --inbox-dot on its row). */
+.pages-icon {
+  position: relative;
+}
+.pages-icon::after {
   content: "";
   display: var(--inbox-dot, none);
+  position: absolute;
+  inset: auto calc(-1 * var(--space-4xs)) var(--space-4xs) auto;
   inline-size: 7px;
   block-size: 7px;
-  margin-inline-start: var(--space-xs);
   border-radius: var(--radius-full);
   background: var(--agent-question-strong);
-  vertical-align: 1px;
+  outline: 2px solid var(--panel-surface);
+  pointer-events: none;
 }
 /* A picture with something waiting in the Inbox (TOOLS-222): a small ringed dot in its corner, nothing else. It is
    painted on the tile's top layer (its selection ring, media-picker.css), so it stays above the name; inbox.ts sets
