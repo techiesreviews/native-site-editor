@@ -11,10 +11,12 @@ export interface DecorativeMedia {
 }
 
 export async function markDecorative(item: InboxItem, stamp: { holds(): boolean }, open: () => Promise<DecorativeMedia>) {
+  if (!item.media) throw new Error("This picture has no Media file to mark Decorative.");
+  const file = item.media;
   const live = () => { if (!stamp.holds()) throw new Error("The site changed before Decorative was saved. Nothing was changed."); };
   const media = await open();
   live();
   await media.load();
   live();
-  await media.describe(item.media!, { decorative: true, page: item.page }, false);
+  await media.describe(file, { decorative: true, page: item.page }, false);
 }
