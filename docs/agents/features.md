@@ -1257,7 +1257,7 @@ its number unused.
 
 ### F-inbox-03 Decorative from the Inbox
 - Try: Open the Inbox on a site with a picture stored in the site that has no alt text, and choose Decorative on its row. Reload.
-- Good: Decorative turns busy while it works, then the row goes and the dot with it. The picture gets `alt=""` on that page and the place's Media record is marked decorative, exactly as Media's own Decorative writes it, as one Undo step; when another use of the same picture on that page has words, only the waiting one is marked and the words stay. A change to the page after the press is never overwritten; after a reload it stays done. A picture from another address, or whose file the site does not hold, offers no Decorative. Pressed just before you switch site or branch, it changes nothing and says so.
+- Good: Decorative turns busy while it works, then the row goes and the dot with it. The picture gets `alt=""` on that page and the place's Media record is marked decorative, exactly as Media's own Decorative writes it, as one Undo step; when another use of the same picture on that page has words, only the waiting one is marked and the words stay (one press per waiting use). A change to the page since its row was drawn is never overwritten; after a reload it stays done. A picture from another address, or whose file the site does not hold, offers no Decorative. Pressed just before you switch site or branch, it changes nothing and says so.
 - Files: `src/inbox/inbox.ts`, `src/page-builder/media-workspace.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-inbox.spec.ts`

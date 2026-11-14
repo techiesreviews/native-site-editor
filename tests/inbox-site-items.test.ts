@@ -89,3 +89,8 @@ test("an item says whether every use of its file on the page waits, so Decorativ
   const [every] = siteItems([page("index.html", `${head("Home")}<img src="/images/team.jpg"><img src="/images/team.jpg"></body>`)], rules);
   assert.equal(every.allUses, true);
 });
+
+test("a picture offering Decorative carries the page text it was found in", () => {
+  const text = `${head("Home")}<img src="/images/team.jpg"></body>`;
+  assert.equal(siteItems([page("index.html", text)], rules)[0].found, text);
+});

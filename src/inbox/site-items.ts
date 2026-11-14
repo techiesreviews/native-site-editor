@@ -78,7 +78,7 @@ export function siteItems(pages: readonly InboxPage[], rules: SiteItemRules): In
       if (seen.has(key)) continue;
       seen.add(key);
       items.push({ key, kind: "picture", what: "Picture without a description", where: `${page.label} page`, page: page.file, at: tag.start,
-        ...(media ? { media, wave: "Decorative", allUses: pictures.every(other => other.media !== media || other.waits) } : {}) });
+        ...(media ? { media, wave: "Decorative", allUses: pictures.every(other => other.media !== media || other.waits), found: source } : {}) });
     }
   }
   return items;
