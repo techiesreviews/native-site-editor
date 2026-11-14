@@ -34,7 +34,7 @@ docs/agents/parts.md    the parts list, generated (scripts/agents/parts-list.mjs
 
 - **One source, every reader.** A folder's `part.json` replaces its entry in `docs/agents/parts.json`; the parts
   list, and later the design board, read it. The list stays generated and checked, so it cannot go stale.
-- **Nothing in `src/ui/` imports from a screen.** Screens import parts, never the other way round.
+- **Nothing in `src/ui/` imports from a screen.** Screens import parts, never the other way round (`node scripts/agents/ui-imports.mjs check`).
 - **A screen places and sizes a part; it never gives it a look.** Margin, grid placement and size are the screen's.
   Background, border, corner, shadow and colour are the part's: a screen that needs a difference sets a hook (as
   `--btn-*`), or the part gets a new variant in its own files.
@@ -49,7 +49,7 @@ worktrees work on this repo at the same time).
 | Order | Slice | What changes |
 | --- | --- | --- |
 | 1 | Folders for the eight parts | Pure moves into `src/ui/<part>/` with `part.json`; the parts list reads the folders; the unit test globs (`package.json` `test`, `unit.files` and `paths.unitTests` in `scripts/agents/kit.json`) learn tests beside code; the parts' own files in `homes` (`scripts/agents/copies.mjs`) follow the move |
-| 2 | Import direction | A guard: nothing in `src/ui/` imports from `src/components/`, `src/page-builder/` or a screen |
+| 2 | Import direction | A guard: nothing in `src/ui/` imports from `src/components/`, `src/page-builder/` or a screen. Done (TOOLS-247): `scripts/agents/ui-imports.mjs`, in `npm test` and the kit's css check; no import broke the rule, so it has no allow-list |
 | 3 | Icon button and text button | Two parts from `.icon-button` and `.text-button` in `src/style.css`; screens swap to them |
 | 4 | Badge swap | Screens use the Badge part; badge looks in screens go |
 | 5 | Dialog | One Dialog part with its backdrop; dialogs made by hand swap to it |

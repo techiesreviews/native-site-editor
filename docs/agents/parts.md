@@ -15,6 +15,10 @@ When copies of one look differ slightly, the most used look wins. Home-made copi
 go down (`node scripts/agents/copies.mjs report` lists them; `npm test` fails when they rise). The target shape and the
 plan for moving each part into its own folder: [parts-plan.md](parts-plan.md).
 
+Screens import parts, never the other way round: nothing in `src/ui/` imports from `src/components/`,
+`src/page-builder/` or another screen file (`node scripts/agents/ui-imports.mjs check`; `npm test` fails when one does).
+A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by the screen.
+
 ## Parts: reuse these first
 
 ### Button
