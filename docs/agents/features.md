@@ -215,7 +215,7 @@ its number unused.
 - Files: `src/workspace-mount.ts`, `src/workspace-shell.ts`, `src/repository-list.ts`, `src/style.css`
 - Phone: yes
 - Spec: `tests/native-save/native-phone-project-choice.spec.ts`
-- Steps: none yet
+- Steps: none yet (scripted tries start inside a project; the spec opens the editor with none)
 
 ## Pages and files
 
