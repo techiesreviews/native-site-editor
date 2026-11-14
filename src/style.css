@@ -80,7 +80,8 @@ pre:focus-visible {
   font-size: var(--type-title);
   font-weight: 300;
 }
-.topbar .icon-button {
+/* The bar's own icon buttons, not those in the menus that open from it. */
+.topbar-actions .icon-button {
   width: max(var(--size-compact), var(--size-tap));
   height: max(var(--size-compact), var(--size-tap));
 }
@@ -519,7 +520,7 @@ dd {
   .topbar .code-editor__toolbar {
     gap: var(--space-4xs);
   }
-  .topbar .icon-button {
+  .topbar-actions .icon-button {
     width: var(--size-touch);
     height: var(--size-touch);
   }
