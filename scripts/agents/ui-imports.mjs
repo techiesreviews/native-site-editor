@@ -23,20 +23,46 @@ export const foundations = ["src/icons"];
 
 const lineAt = (text, index) => text.slice(0, index).split("\n").length;
 
-// Read from the text with its comments blanked (lines kept). `from` imports and re-exports may span lines, but never
-// run past a line that starts the next statement, so an import after a statement with no semicolon keeps its own line.
+/**
+ * The comment-free code with the text of its strings and templates blanked (quotes, `${…}` and lines kept), so import-like
+ * text in a string never reads as an import. Regex bodies are blanked already by withoutComments.
+ */
+function withoutStringText(code) {
+  let out = "";
+  const modes = ["code"], depths = [0];
+  for (let i = 0; i < code.length;) {
+    const mode = modes.at(-1), char = code[i];
+    if (mode === "code") {
+      if (char === '"' || char === "'" || char === "`") modes.push(char);
+      else if (char === "{") depths[depths.length - 1]++;
+      else if (char === "}" && modes.length > 1 && depths.at(-1) === 0) { modes.pop(); depths.pop(); }
+      else if (char === "}") depths[depths.length - 1]--;
+      out += char; i++;
+      continue;
+    }
+    if (char === "\\") { out += code.slice(i, i + 2).replace(/[^\n]/g, " "); i += 2; continue; }
+    if (mode === "`" && char === "$" && code[i + 1] === "{") { modes.push("code"); depths.push(0); out += "${"; i += 2; continue; }
+    if (char === mode || (mode !== "`" && char === "\n")) { modes.pop(); out += char; i++; continue; }
+    out += char === "\n" ? "\n" : " "; i++;
+  }
+  return out;
+}
+
+// Matched on the code with string text blanked; the specifier is then read at the same place in the code. `from`
+// imports and re-exports may span lines, but never run past a line that starts the next statement, so an import after
+// a statement with no semicolon keeps its own line. A dynamic import reads its first argument only.
 const scriptPatterns = [
-  /\b(?:import|export)\b(?:(?!\n\s*(?:import|export)\b)[^;'"`])*?\bfrom\s*(["'])([^"'\n]+)\1/g,
-  /\bimport\s*(["'])([^"'\n]+)\1/g,
-  /\bimport\s*\(\s*(["'`])([^"'`\n$]+)\1\s*\)/g,
+  /\b(?:import|export)\b(?:(?!\n\s*(?:import|export)\b)[^;'"`])*?\bfrom\s*(["'])([^"'\n]+)\1/dg,
+  /\bimport\s*(["'])([^"'\n]+)\1/dg,
+  /\bimport\s*\(\s*(["'`])([^"'`\n$]+)\1\s*[,)]/dg,
 ];
 
 /** Every module one script file's text imports, with the 1-based line its statement starts on. */
 export function importsInScript(text) {
-  const code = withoutComments(text);
+  const code = withoutComments(text), bare = withoutStringText(code);
   const found = [];
   for (const pattern of scriptPatterns)
-    for (const match of code.matchAll(pattern)) found.push({ line: lineAt(code, match.index), specifier: match[2] });
+    for (const match of bare.matchAll(pattern)) found.push({ line: lineAt(code, match.index), specifier: code.slice(...match.indices[2]) });
   return found.sort((a, b) => a.line - b.line);
 }
 
