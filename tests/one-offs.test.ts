@@ -218,12 +218,16 @@ test("the kit's own checks.css value runs as the kit runs it and never leaves th
   const settings = JSON.parse(readFileSync(join(repo, "scripts/agents/kit.json"), "utf8"));
   const [name, ...argv] = String(settings.checks.css).trim().split(/\s+/);
   assert.equal(name, "node");
+  assert.ok(argv.includes("scripts/agents/one-offs.mjs"), "the css check still runs the one-offs count");
   const p = project(".x { padding: 8px; }\n");
   try {
     copyFileSync(script, join(p.root, "scripts/agents/one-offs.mjs"));
+    // The command runs the copy counter first (scripts/agents/copies.mjs), which hands on to this count.
+    copyFileSync(join(repo, "scripts/agents/copies.mjs"), join(p.root, "scripts/agents/copies.mjs"));
     copyFileSync(join(repo, "scripts/check-colours.mjs"), join(p.root, "scripts/check-colours.mjs"));
     writeFileSync(join(p.root, "scripts/check-colours.allow.json"), "[]\n");
     p.run("update");
+    assert.equal(spawnSync(process.execPath, ["scripts/agents/copies.mjs", "update"], { cwd: p.root, encoding: "utf8" }).status, 0);
     const before = readFileSync(join(p.root, baselinePath), "utf8");
     const kit = () => spawnSync(process.execPath, [...argv, "src/a.css"], { cwd: p.root, encoding: "utf8" });
     const same = () => assert.equal(readFileSync(join(p.root, baselinePath), "utf8"), before, "the kit's command must not write the count");
