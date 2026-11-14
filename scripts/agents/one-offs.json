@@ -22,7 +22,7 @@
     "src/components/flyout.css": { "spacing": 6 },
     "src/components/github-trip.css": { "spacing": 8, "radii": 1, "zIndex": 1 },
     "src/components/insert-controls.css": { "radii": 1, "timings": 2, "zIndex": 2 },
-    "src/components/live-carets.css": { "spacing": 8, "radii": 5, "shadows": 1, "timings": 5, "localProperties": 17, "zIndex": 3 },
+    "src/components/live-carets.css": { "spacing": 8, "radii": 5, "timings": 2, "localProperties": 10, "zIndex": 3 },
     "src/components/native-preview.css": { "spacing": 9, "zIndex": 2 },
     "src/components/onboarding.css": { "spacing": 27 },
     "src/components/page-structure.css": { "spacing": 17, "radii": 3, "timings": 1, "localProperties": 5, "zIndex": 1 },
