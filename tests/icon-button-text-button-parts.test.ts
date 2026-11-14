@@ -68,6 +68,20 @@ for (const [name, path, cls] of [
   });
 }
 
+test("each part's look comes from its own defaults, and the compact size changes only those", () => {
+  const icon = read("src/ui/icon-button/icon-button.css"), text = read("src/ui/text-button/text-button.css");
+  for (const hook of ["size", "radius", "background", "text-color", "hover-background", "hover-text-color"]) {
+    assert.match(icon, new RegExp(`--icon-btn-${hook}:`), `--icon-btn-${hook} has a default`);
+    assert.match(icon, new RegExp(`var\\(--icon-btn-${hook}\\)`), `--icon-btn-${hook} is used`);
+  }
+  assert.match(icon, /var\(--icon-btn-pressed-background, var\(--pressed\)\)/, "the pressed state has a hook of its own");
+  const compact = /\.text-button--compact \{([^}]*)\}/.exec(text)?.[1] ?? "";
+  const declared = [...compact.matchAll(/^\s*([\w-]+)\s*:/gm)].map((match) => match[1]);
+  assert.ok(declared.length > 0);
+  assert.deepEqual(declared.filter((name) => !name.startsWith("--text-btn-")), [], "compact sets only the part's hooks");
+  for (const name of declared) assert.match(text, new RegExp(`var\\(${name}\\)`), `${name} is used`);
+});
+
 test("the old copies are gone: no screen styles the icon button's or the text button's look", () => {
   const looks = copiesInStyles(read("src/style.css")).filter(({ kind }) => kind === "buttonLooks").map(({ text }) => text);
   assert.ok(!looks.some((text) => /\.(icon|text)-button\b/.test(text)), looks.join("\n"));
