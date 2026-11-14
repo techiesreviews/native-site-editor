@@ -48,8 +48,13 @@ const kinds: Record<InboxItem["kind"], Parameters<typeof icon>[0]> = { picture: 
 
 export interface InboxActions { go(item: InboxItem): void; wave(item: InboxItem): Promise<void> }
 
-/** Draws the list into the panel, keeping focus on the same row's control; `opening` focuses its first. */
-export function drawInbox(panel: HTMLElement, items: readonly InboxItem[], actions: InboxActions, opening = false) {
+/** The first row's button takes the keyboard once the panel shows (the empty line has none). */
+export function focusFirst(panel: HTMLElement) {
+  panel.querySelector<HTMLElement>(".inbox__item")?.focus();
+}
+
+/** Draws the list into the panel, keeping focus on the same row's control (or the first, when it had gone). */
+export function drawInbox(panel: HTMLElement, items: readonly InboxItem[], actions: InboxActions) {
   const active = document.activeElement instanceof HTMLElement && panel.contains(document.activeElement) ? document.activeElement : undefined;
   const focusKey = active?.closest<HTMLElement>("[data-key]")?.dataset.key, focusWave = active?.classList.contains("inbox__wave");
   const title = node("h2", "inbox__title", "Inbox");
@@ -67,6 +72,7 @@ export function drawInbox(panel: HTMLElement, items: readonly InboxItem[], actio
     const go = node("button", "inbox__item");
     go.type = "button";
     go.append(icon(kinds[item.kind], 16), node("b", "", item.what), node("small", "", item.where));
+    go.setAttribute("aria-label", `${item.what}, ${item.where}`);
     go.addEventListener("click", () => actions.go(item));
     row.append(go);
     if (item.wave) {
@@ -85,5 +91,5 @@ export function drawInbox(panel: HTMLElement, items: readonly InboxItem[], actio
   panel.replaceChildren(title, list);
   const back = focusKey && list.querySelector<HTMLElement>(`[data-key="${CSS.escape(focusKey)}"] ${focusWave ? ".inbox__wave" : ".inbox__item"}`);
   if (back) back.focus();
-  else if (opening || active) list.querySelector<HTMLElement>(".inbox__item")?.focus();
+  else if (active) focusFirst(panel);
 }
