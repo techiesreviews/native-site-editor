@@ -49,8 +49,8 @@ const scriptPatterns = {
 };
 
 /**
- * The text with its comments blanked (lines kept) and its strings left as they are, so `"image/*"` or a URL's `//`
- * never starts a comment. A template's `${…}` is code again, nested templates included.
+ * The text with its comments blanked (lines kept) and its strings and regex literals left as they are, so `"image/*"`
+ * or a URL's `//` never starts a comment. A template's `${…}` is code again, nested templates included.
  */
 export function withoutComments(text) {
   let out = "";
@@ -60,6 +60,18 @@ export function withoutComments(text) {
     if (mode === "code") {
       if (char === "/" && next === "/") { const end = text.indexOf("\n", i); const stop = end < 0 ? text.length : end; out += blank(text.slice(i, stop)); i = stop; continue; }
       if (char === "/" && next === "*") { const end = text.indexOf("*/", i + 2); const stop = end < 0 ? text.length : end + 2; out += blank(text.slice(i, stop)); i = stop; continue; }
+      // A regex literal (a `/` where a value starts) is skipped whole, so a quote or backtick in it opens no string.
+      if (char === "/" && /(?:^|[(,=:[!&|?{};+\-*%<>~^]|\breturn|\btypeof)\s*$/.test(out.slice(-40))) {
+        let j = i + 1, inClass = false;
+        for (; j < text.length && text[j] !== "\n"; j++) {
+          if (text[j] === "\\") j++;
+          else if (text[j] === "[") inClass = true;
+          else if (text[j] === "]") inClass = false;
+          else if (text[j] === "/" && !inClass) break;
+        }
+        out += text.slice(i, j + 1); i = j + 1;
+        continue;
+      }
       if (char === '"' || char === "'") modes.push(char);
       else if (char === "`") modes.push("`");
       else if (char === "{") depths[depths.length - 1]++;

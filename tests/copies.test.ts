@@ -38,6 +38,11 @@ test("a comment opener inside a string, or a URL, never hides the code after it"
   assert.deepEqual(kindsAndLines(found), [["buttons", 2], ["dialogs", 3], ["buttons", 5]]);
 });
 
+test("a quote or backtick inside a regex literal opens no string", () => {
+  const found: Found[] = copiesInScript(['s.replace(/[`*]/g, "");', '// node("button")', "const t = `a`;", 'node("button");', "const half = a / 2; node(\"dialog\");"].join("\n"));
+  assert.deepEqual(kindsAndLines(found), [["buttons", 4], ["dialogs", 5]]);
+});
+
 test("style rules resolve nesting, see through at-rules and keep their first line", () => {
   const rules = styleRules([
     "@layer components {",
