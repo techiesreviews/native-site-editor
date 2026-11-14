@@ -104,14 +104,18 @@ test("every border side counts as a look; the same look in another place is anot
 
 test("a look inside :is() or :where() counts, once per place a group names", () => {
   assert.deepEqual(expandGroups(".panel :is(button, .other:where(.a, .b))"), [".panel button", ".panel .other.a", ".panel .other.b"]);
+  assert.deepEqual(expandGroups(".row > .button:is(.panel .choice, .solo):hover"), [".row > .panel .button.choice:hover", ".row > .button.solo:hover"]);
   const found: Found[] = copiesInStyles([
     ".panel :is(button, .other) { background: var(--surface); }",
     ":is(.a, .b) .button { background: var(--hover); }",
     ".bar :where(.bar__button:hover) { border: 0; }",
+    ".button:is(.card .choice) { background: var(--surface); }",
+    ".card.is-open .button { background: var(--hover); }",
   ].join("\n"));
   assert.deepEqual(found.map(({ kind, line, text }) => [kind, line, text]), [
     ["buttonLooks", 1, ".panel button"], ["buttonLooks", 2, ".a .button"], ["buttonLooks", 2, ".b .button"], ["buttonLooks", 3, ".bar .bar__button:hover"],
-  ]);
+    ["buttonLooks", 4, ".card .button.choice"],
+  ], "`.card.is-open .button` is the look `.card .button.choice` already drew in that place");
 });
 
 test("spaces or combinator signs inside an attribute test or an argument never split the selector", () => {
