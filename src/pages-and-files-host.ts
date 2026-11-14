@@ -314,13 +314,20 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
   }
 
   function mountExplorerTabs() {
-    const explorer = ports.element("explorer");
-    ports.element("explorer-search").addEventListener("input", search);
+    const explorer = ports.element("explorer"), field = ports.element<HTMLInputElement>("explorer-search");
+    field.addEventListener("input", search);
+    // Opened again, the panel starts afresh (mock-up 05 v2): the search empty, before the panel shows.
+    explorer.addEventListener("beforetoggle", (event) => {
+      if ((event as ToggleEvent).newState === "open" && field.value) { field.value = ""; search(); }
+    });
+    // A click, Enter or Space on its button puts the cursor in the search. A hover that opens the panel leaves the focus
+    // where the person is typing, and so does touch, where the keyboard would cover the list.
+    ports.element("explorer-toggle").addEventListener("click", () => {
+      if (explorer.matches(":popover-open") && !matchMedia("(hover: none), (pointer: coarse)").matches) field.focus({ preventScroll: true });
+    });
     explorer.addEventListener("toggle", () => {
       // Closing a popover queues its toggle; session expiry may detach it before dispatch.
       if (!explorer.isConnected) return;
-      // Found files are drawn afresh on opening, so the file opened meanwhile carries the tint.
-      if (explorer.matches(":popover-open") && searchText("files")) search();
       if (ports.mediaController.galleryVisible() && pagesController.explorerTab() === "media") void ensureExplorer().then(() => ports.mediaController.ensureGallery()).catch(ports.errorMessage);
     });
     const tabs = { pages: ports.element<HTMLButtonElement>("explorer-tab-pages"), media: ports.element<HTMLButtonElement>("explorer-tab-media"), files: ports.element<HTMLButtonElement>("explorer-tab-files") };

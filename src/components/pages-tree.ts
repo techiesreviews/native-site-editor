@@ -928,7 +928,10 @@ export function createPagesTree(options: {
       revealing = [];
       query = text;
       if (query) applyFilter();
-      else if (was && model) this.render(model, current);
+      else {
+        sayFound(said, "");
+        if (was && model) this.render(model, current);
+      }
     },
     /** Starts a new page in place under `parent`, as + New page does at the top. */
     startNew(parent = "/") {
