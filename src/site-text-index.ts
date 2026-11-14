@@ -151,9 +151,10 @@ export function createSiteTextIndex(ports: SiteTextIndexPorts) {
   document.addEventListener("dragend", finishNativePageTitlePointer, true);
   window.addEventListener("blur", finishNativePageTitlePointer);
 
+  // The search is no row's interaction: the cursor rests in it from the panel's opening, and the rows drawn again keep what it found.
   function pagesBusy(explorer: HTMLElement) {
     return nativePageTitlePointer !== undefined || Boolean(ports.pagesAndFiles.pagesTree?.busy()) || explorer.matches(":popover-open") &&
-      Boolean(explorer.querySelector("[role=menu]:not([hidden]), input:focus, [popover]:popover-open"));
+      Boolean(explorer.querySelector("[role=menu]:not([hidden]), input:focus:not(#explorer-search), [popover]:popover-open"));
   }
   function flushPendingNativePageTitles() {
     const pending = pendingNativePageTitles;
