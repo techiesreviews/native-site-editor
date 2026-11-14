@@ -1241,7 +1241,7 @@ its number unused.
 
 ### F-inbox-01 The Inbox in the top bar
 - Try: At 1280 px look between History and Publish, then click the tray button. Press Escape. Do it again on a site where nothing waits.
-- Good: A 28 px tray button sits between History and Publish (mock-up 05 v2). While something waits it wears a small orange dot, never a number. Its panel opens under it, headed "Inbox", one row per item: an icon, what needs doing ("Picture without a description") and where ("Home page", "/about/"), with the first row focused. Nothing waiting: no dot, and the panel says "All done" with a check in one line; opened before the pages are read it says "Checking pages…". Escape or a click outside closes it and the keyboard goes back to the tray. No toast and no explainer text. Light and dark (S1, S3, S4).
+- Good: A 28 px tray button sits between History and Publish (mock-up 05 v2). While something waits it wears a small orange dot, never a number. Its panel opens under it, headed "Inbox", one row per item: an icon, what needs doing ("Picture without a description") and where ("Home page", "/about/"), with the first row focused. Nothing waiting: no dot, and the panel says "All done" with a check in one line; opened before the pages are read (or, after a switch, the new site's) it says "Checking pages…" and lists nothing. Escape or a click outside closes it and the keyboard goes back to the tray. No toast and no explainer text. Light and dark (S1, S3, S4).
 - Files: `src/inbox/inbox-host.ts`, `src/inbox/inbox.ts`, `src/inbox/inbox.css`, `src/workspace-shell.ts`, `src/style.css`
 - Phone: no
 - Spec: `tests/native-save/native-inbox.spec.ts`
@@ -1257,7 +1257,7 @@ its number unused.
 
 ### F-inbox-03 Decorative from the Inbox
 - Try: Open the Inbox on a site with a picture stored in the site that has no alt text, and choose Decorative on its row. Reload.
-- Good: Decorative turns busy while it works, then the row goes and the dot with it. The picture gets `alt=""` on that page and the place's Media record is marked decorative, exactly as Media's own Decorative writes it, as one Undo step; after a reload it stays done. A picture from another address offers no Decorative.
+- Good: Decorative turns busy while it works, then the row goes and the dot with it. The picture gets `alt=""` on that page and the place's Media record is marked decorative, exactly as Media's own Decorative writes it, as one Undo step; after a reload it stays done. A picture from another address, or whose file the site does not hold, offers no Decorative. Pressed just before you switch site or branch, it changes nothing and says so.
 - Files: `src/inbox/inbox.ts`, `src/page-builder/media-workspace.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-inbox.spec.ts`

@@ -300,6 +300,7 @@ const media = createMediaHost({
 });
 const { mediaPorts, mediaController, nativeImagePaths, uploadFilesTo, discardUpload, readMediaText, mediaOrigins } = media;
 const inbox = createInbox({ appStore, pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), indexed: () => runtime.state.textIndexed, // The Inbox (TOOLS-222)
+  isFile: path => runtime.files().includes(path), stamp: () => workspaceSession.begin(),
   label: file => pagesController.pageLabel(file), route: file => nativeRouteForPath(file), picture: (...args) => mediaController.placeState(...args)?.state, open: page => openAfter(page),
   select: (request, later) => later ? nativePreview?.selectAfterUpdate(request, { reveal: "center" }) : nativePreview?.selectNode(request, false), error: errorMessage,
   pageDetails: page => void openNativePageSettings(page), media: () => mediaController.workspaceContext() });

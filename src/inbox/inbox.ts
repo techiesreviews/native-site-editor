@@ -6,12 +6,10 @@ import "./inbox.css";
 import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 import { icon } from "../icons";
 import { elementPathAt } from "../native-source-location";
-import { decodeHtmlEntities } from "../page-builder/html-entities";
-import { mediaResolvePath } from "../page-builder/media-references";
 import { node } from "../ui/dom";
 import type { InboxItem } from "./inbox-item";
 import type { InboxPorts } from "./inbox-host";
-import { siteItems } from "./site-items";
+import { siteFile, siteItems } from "./site-items";
 
 /** The site's items now; `unsure` while a picture's verdict is not known yet. */
 function findItems(ports: InboxPorts) {
@@ -24,7 +22,7 @@ function findItems(ports: InboxPorts) {
       if (!state) unsure = true;
       return state;
     },
-    file: (page, src) => mediaResolvePath(decodeHtmlEntities(src, true), page, undefined, prefix),
+    file: (page, src) => siteFile(src, page, prefix, path => ports.isFile(path)),
   });
   return { items, unsure };
 }
@@ -45,11 +43,16 @@ async function goTo(item: InboxItem, ports: InboxPorts) {
   if (!shown) await ports.open(item.page);
 }
 
-/** A picture's Decorative: Media's own (alt="" on each of its pictures on that page, and the place's record), one Undo step. */
+/** A picture's Decorative: Media's own (alt="" on each of its pictures on that page, and the place's record), one Undo
+ * step, written only to the site and branch it was pressed on. */
 async function decorative(item: InboxItem, ports: InboxPorts) {
+  const stamp = ports.stamp();
+  const live = () => { if (!stamp.holds()) throw new Error("The site changed before Decorative was saved. Nothing was changed."); };
   const { createMediaWorkspace } = await import("../page-builder/media-workspace");
+  live();
   const media = createMediaWorkspace(() => ports.media());
   await media.load();
+  live();
   await media.describe(item.media!, { decorative: true, page: item.page }, false);
 }
 
@@ -81,10 +84,16 @@ export function createInboxList(ports: InboxPorts) {
     clearTimeout(retry);
     if (!again) retries = 0;
     if (!ports.pages().length) { show([]); return; }
-    // Until every page is read the list would be partial; the text index asks again once it has them.
-    if (!ports.indexed()) return;
+    // Until every page is read the list would be partial (or another site's, after a switch): nothing is listed and
+    // the panel says it is checking; the text index asks again once it has them.
+    if (!ports.indexed()) {
+      checked = false;
+      show([]);
+      return;
+    }
     const found = findItems(ports);
-    checked = true;
+    // "All done" only once every picture's verdict is known.
+    checked = !found.unsure;
     show(found.items);
     // A picture's verdict waits for the Media rules, which load on the first ask: look again shortly.
     if (found.unsure && retries++ < 10) retry = setTimeout(() => check(true), 1000);
