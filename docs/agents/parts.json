@@ -36,7 +36,7 @@
       "for": "A quiet action written as link-coloured words beside other text (Undo, Review…, Reset to defaults, Choose image…).",
       "notFor": "A main or secondary action (use the Button), a link that goes somewhere (an `<a>`), or a row in a menu (the menus draw their own rows until the Menu item part).",
       "use": "`textButton(words, action, { size, className })` from `src/ui/text-button/text-button.ts`; `link(text, href, \"text-button\")` from `src/ui/dom.ts` for an `<a>` with the same look.",
-      "variants": "size: base (underlines on hover), compact (`text-button--compact`: smaller words in a padded box that fills on hover, for a panel row); disabled fades, as every bare button does",
+      "variants": "compact (`text-button--compact`) has smaller words in a padded box that fills on hover or press, for a panel row; the base size underlines instead; disabled fades, as every bare button does",
       "files": [
         "src/ui/text-button/text-button.ts",
         "src/ui/text-button/text-button-options.ts",

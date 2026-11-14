@@ -31,11 +31,14 @@
     font-size: var(--type-small);
 
     &:active {
-      text-decoration: none;
-    }
-    &:hover {
       background: var(--hover);
       text-decoration: none;
+    }
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        background: var(--hover);
+        text-decoration: none;
+      }
     }
   }
 }
