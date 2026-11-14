@@ -324,6 +324,27 @@ test("in a repository with no site, a copy or a rename the search would hide is 
   await expect(row(page, "README.md")).toBeVisible();
 });
 
+test("in a repository with no site, deleting a found file passes the focus over the rows the search hides", async ({ page, baseURL }) => {
+  await openNoSite(page, baseURL, "search-delete");
+  const search = explorer(page).getByLabel("Search files", { exact: true });
+  for (const path of ["a-note.md", "b-other.md", "c-note.md"]) {
+    if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+    await explorer(page).getByRole("button", { name: "New file or folder", exact: true }).click();
+    await page.getByRole("dialog", { name: "New file or folder" }).getByRole("textbox", { name: "File name" }).fill(path);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
+  }
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  await search.fill("note");
+  await expect(row(page, "b-other.md")).toBeHidden();
+  await row(page, "a-note.md").click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for a-note.md" }).getByRole("menuitem", { name: "Delete" }).click();
+  await page.getByRole("dialog", { name: "Delete a-note.md?" }).getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(row(page, "a-note.md")).toHaveCount(0);
+  await expect(row(page, "c-note.md")).toBeFocused();
+  await expect(search).toHaveValue("note");
+});
+
 test("at 390 px, a file uploaded while the search would hide it is in view, the search started afresh", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openFiles(page, baseURL);
