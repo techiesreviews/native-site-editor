@@ -146,10 +146,11 @@ test("the pointer keeps every heading the old kitchen.md had, each linking to th
 
 // TOOLS-235 (Lex, 2026-11-14): the kit cut ask, status and feedback (with its --after-release flag), moved learn to
 // sweep --learn and card into its hook, and dropped the Tuesday-only review and the UX confidence ladder. A line may
-// still name them, but only to say so: a bare "was" does not excuse it, "was cut" or "was `kit learn`" does.
+// still name them, but only to say where they went, in the same clause: "`kit status` was cut", "(was `kit learn`".
 function staleTrimLine(line: string): boolean {
-  return (/`(?:scripts\/agents\/)?kit (?:learn|feedback|status|ask|card)\b|--after-release/.test(line)
-      && !/\b(?:cut|retired|merged|moved|until 2026-11-14)\b|was `kit learn`/.test(line))
+  const named = [...line.matchAll(/`(?:scripts\/agents\/)?kit (?:learn|feedback|status|ask|card)\b[^`]*`|--after-release/g)];
+  return named.some(({ 0: name, index }) => !line.slice(0, index).endsWith("was ")
+      && !/^[^.;]*?\b(?:cut|retired|merged|moved|until 2026-11-14)\b/.test(line.slice(index + name.length)))
     || (/Tuesday[- ]only|Tuesday pack|Tuesday review day|UX confidence ladder/i.test(line) && !/^#+ |\bdropped\b/i.test(line));
 }
 
@@ -157,6 +158,7 @@ test("the kit trim guard flags a working mention of a cut name and passes one th
   assert.equal(staleTrimLine("A problem that was found on production adds `--after-release` to its line."), true);
   assert.equal(staleTrimLine("Run `scripts/agents/kit learn --since 14d`; it was quick."), true);
   assert.equal(staleTrimLine("Lex gets it in that day's Tuesday pack."), true);
+  assert.equal(staleTrimLine("After the PR is merged, run `kit learn`."), true);
   assert.equal(staleTrimLine("`kit feedback` and its `--after-release` flag were cut on 2026-11-14."), false);
   assert.equal(staleTrimLine("`kit sweep --learn` (was `kit learn`) gathers the corrections."), false);
   assert.equal(staleTrimLine("## UX confidence ladder"), false);
