@@ -1,7 +1,7 @@
 /* The Text button component: an action written as link-coloured words. Its whole look in one file on the components
    layer, like the Button (src/ui/parts/button.css); a screen places and sizes it in its own unlayered CSS, which wins
    over this layer. Disabled fades, as every bare button does (src/style.css). Classes: `text-button` (the base size),
-   `text-button text-button--compact` (smaller words in a padded box that fills on hover, for a panel row). */
+   `text-button text-button--compact` (smaller words in a padded box that fills on hover or press, for a panel row). */
 @layer tokens, elements, components;
 
 @layer components {
