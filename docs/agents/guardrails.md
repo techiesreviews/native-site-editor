@@ -80,6 +80,8 @@ Use `tests/support/source-guard.ts` for parsing, bound names and aliases, destru
 
 `.github/workflows/ci.yml` (**CI / checks**, on every pull request into `dev` or `main`) and `.github/workflows/deploy-preview.yml` (on every push to `dev`) both run `check`, `test`, `lint`, the byte budget (`tests/perf/byte-budget.ts`, 355 KB, enforced) and the smoke browser tests. Branch rules that require the check: [github-settings.md](github-settings.md).
 
+`.github/workflows/package-check.yml` (**Package check**) runs `npm audit --package-lock-only --audit-level=high` every Monday on `dev` and `main`, on "Run workflow", and on pull requests that change `package.json` or `package-lock.json`; a high or critical finding fails it, and the full report is on the run's summary page. It is not a required check, opens no issues, and skips self-hosted copies. There is no Dependabot file on purpose: copies take every file outside `.github/workflows/` and would get its pull requests.
+
 ## Pre-commit hook
 
 `.githooks/pre-commit` is tracked in the repo. It runs only when the staged files (including deletions and both sides of a rename) touch `src/`, `shared/`, `worker/`, `tests/`, `scripts/`, `tools/` or config files (`package.json`, tsconfig, ESLint, Vite, Playwright, wrangler). It then runs `npm run check` and lints the staged `.ts` files. Commits that change only docs skip it. It never runs browser suites. If the worktree has no `node_modules`, it prints a one-line notice and skips. If `eslint`, `typescript-eslint` or `typescript-eslint-api` does not resolve (a shared `node_modules` from before this change), it prints "lint skipped: run npm ci to enable" and still runs `npm run check`, which needs no lint packages.
