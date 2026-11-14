@@ -80,7 +80,7 @@ Use `tests/support/source-guard.ts` for parsing, bound names and aliases, destru
 
 `.github/workflows/ci.yml` (**CI / checks**, on every pull request into `dev` or `main`) and `.github/workflows/deploy-preview.yml` (on every push to `dev`) both run `check`, `test`, `lint`, the byte budget (`tests/perf/byte-budget.ts`, 355 KB, enforced) and the smoke browser tests. Branch rules that require the check: [github-settings.md](github-settings.md).
 
-`.github/workflows/package-check.yml` (**Package check**) runs `npm audit --package-lock-only --audit-level=high` every Monday on `dev` and `main`, on "Run workflow", and on pull requests that change `package.json` or `package-lock.json`; a high or critical finding fails it, and the full report is on the run's summary page. It is not a required check, opens no issues, and skips self-hosted copies. There is no Dependabot file on purpose: copies take every file outside `.github/workflows/` and would get its pull requests.
+`.github/workflows/package-check.yml` (**Package check**) runs `npm audit --package-lock-only --audit-level=high` every Monday on `dev` and `main`, on "Run workflow", and on pull requests that change `package.json` or `package-lock.json`; a high or critical finding fails it, and the full report is on the run's summary page. GitHub starts the Monday runs only from the copy on the default branch (`main`), so they begin once a release brings the file there. It is not a required check, opens no issues, and skips self-hosted copies. There is no Dependabot file on purpose: copies take every file outside `.github/workflows/` and would get its pull requests.
 
 ## Pre-commit hook
 

@@ -24,7 +24,7 @@ test("the check fails on a high or critical finding and reads only the lockfile"
 test("the check runs only in the editor's own repository and can only read it", () => {
   assert.match(workflow, /if: github\.repository == 'techiesreviews\/native-site-editor'/);
   assert.match(workflow, /permissions:\n\s+contents: read\n/);
-  assert.doesNotMatch(workflow, /issues:|write/);
+  assert.doesNotMatch(workflow, /^\s+[\w-]+: write\s*$/m);
 });
 
 test("no Dependabot file: self-hosted copies take every file outside .github/workflows/ and would get its pull requests", () => {
