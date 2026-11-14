@@ -1,6 +1,6 @@
 ---
 title: Editor parts slice 3 - Icon button and Text button parts (TOOLS-248)
-status: closed
+status: ready-for-agent
 assignee: fleet-lead (claude-opus-5-5)
 blocked_by: []
 ---
@@ -52,12 +52,12 @@ beyond that stays as a named variant. Nothing else visible changes.
   - Component panel's Choose image… (compact Text button): fills on press; the hover fill waits for a mouse.
   - Rows in the project menu and the agent menu that borrow the `text-button` class no longer underline on hover, as
     the editor's other menu rows (the share rows already removed it).
-- Review decisions: the second look's P2 on `media-detail.css:121` (the Download original button's border, background,
-  colour and underline) is declined: those declarations were there before this slice, which only swapped the call to
-  `textButton()`, and the border, background and colour are needed to cancel `.media-library button`
-  (`src/page-builder/media-picker.css:12`, unlayered), which gives every Media button a look and beats any part on
-  the components layer. Media's blanket button rule is the screen styles split's work (slice 7); an underlined
-  variant can join the Text button then. Declined its browser tests for the compact hover and touch states and for a
+- Review decisions: OPEN (paused 2026-11-14): the second look's P2 on `media-detail.css:121` (the Download original
+  button's border, background, colour and underline set by the screen). An earlier decline said
+  `.media-library button` needed them cancelled; that was wrong (it sets only the corner, minimum height and cursor),
+  so the finding stands: remove the redundant look declarations, add an underlined Text button variant for the
+  permanent underline (`media-detail__original`, `media-detail__suggest`), and keep the placement and tap-area rules.
+  Declined its browser tests for the compact hover and touch states and for a
   long file name at 320px: the unit test pins the CSS, and the file name's layout is unchanged by this slice.
   Declined a DOM test of `iconButton()` and `textButton()`: the unit tests run without a DOM, and the
   browser specs already find these buttons by role and class (`tests/native-save/native-media-adding.spec.ts`).
