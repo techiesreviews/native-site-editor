@@ -423,6 +423,53 @@ async function submitRename(input: Locator) {
   }).toPass({ timeout: 20_000 });
 }
 
+test("a rename or a copy that finishes after the person typed another search leaves that search alone", async ({ page, baseURL }) => {
+  await openFiles(page, baseURL);
+  await settled(page);
+  const search = explorer(page).getByLabel("Search files", { exact: true });
+  const found = explorer(page).getByRole("list", { name: "Files found", exact: true });
+  const searchStays = async () => {
+    await expect(search).toHaveValue("index");
+    await expect(found.locator('.file-row[data-path="index.html"]')).toBeVisible();
+    await expect(search).toBeFocused();
+  };
+
+  // A slow rename: the module its plan loads waits on the server until released.
+  let release!: () => void, asked = 0;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/src/page-builder/asset-references.ts*", async (route) => { asked++; await held; await route.continue(); });
+  await search.fill("robots");
+  await found.locator('.file-row[data-path="robots.txt"]').focus();
+  await page.keyboard.press("F2");
+  const rename = found.getByRole("textbox", { name: "New name for robots.txt", exact: true });
+  await rename.fill("crawl.txt");
+  // Sent again while refused as the editor settles (see submitRename); the field stays while the rename runs.
+  await expect(async () => {
+    if (!asked && await rename.isVisible()) await rename.press("Enter");
+    expect(asked).toBe(1);
+  }).toPass({ timeout: 20_000 });
+  await search.fill("index");
+  await expect(found.locator('.file-row[data-path="index.html"]')).toBeVisible();
+  release();
+  await expect(page.locator("#status")).toContainText("Renamed robots.txt to crawl.txt");
+  await page.unroute("**/src/page-builder/asset-references.ts*");
+  await searchStays();
+
+  // A copy whose row is shown a frame later: the search typed before that frame stays.
+  await search.fill("crawl");
+  await found.locator('.file-row[data-path="crawl.txt"]').click({ button: "right" });
+  await page.evaluate(() => {
+    const frame = window.requestAnimationFrame, waiting: FrameRequestCallback[] = [];
+    window.requestAnimationFrame = (callback) => { waiting.push(callback); return 0; };
+    (window as unknown as { releaseFrames(): void }).releaseFrames = () => { window.requestAnimationFrame = frame; waiting.forEach(callback => frame(callback)); };
+  });
+  await page.getByRole("menu", { name: "Actions for crawl.txt" }).getByRole("menuitem", { name: "Duplicate" }).click();
+  await expect(page.locator("#status")).toContainText("Duplicated crawl.txt as crawl-copy.txt");
+  await search.fill("index");
+  await page.evaluate(() => (window as unknown as { releaseFrames(): void }).releaseFrames());
+  await searchStays();
+});
+
 test("Move back and Discard changes bring a renamed file back in view where the search would hide it", async ({ page, baseURL }) => {
   await openFiles(page, baseURL);
   await settled(page);
