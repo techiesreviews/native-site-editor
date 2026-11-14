@@ -147,10 +147,11 @@ test("the pointer keeps every heading the old kitchen.md had, each linking to th
 test("live docs follow the kit trim: no cut or moved command as a working one, no Tuesday pack or UX ladder", () => {
   // TOOLS-235 (Lex, 2026-11-14): the kit cut ask, status and feedback, moved learn to sweep --learn and card into its
   // hook, and dropped the Tuesday-only review and the UX confidence ladder. A line may still name them to say so.
+  // kit feedback's --after-release flag went with it: no doc may still tell anyone to add it to a feedback line.
   const docs = readdirSync("docs/agents", { recursive: true, encoding: "utf8" }).filter(name => name.endsWith(".md"))
     .map(name => `docs/agents/${name}`).concat("AGENTS.md", "docs/work/learning/README.md");
   const stale = docs.flatMap(path => read(path).split("\n").flatMap((line, index) =>
-    (/`(?:scripts\/agents\/)?kit (?:learn|feedback|status|ask|card)\b/.test(line) && !/\b(?:cut|retired|merged|moved|was|until 2026-11-14)\b/.test(line))
+    (/`(?:scripts\/agents\/)?kit (?:learn|feedback|status|ask|card)\b|--after-release/.test(line) && !/\b(?:cut|retired|merged|moved|was|until 2026-11-14)\b/.test(line))
     || (/Tuesday[- ]only|Tuesday pack|Tuesday review day|UX confidence ladder/i.test(line) && !/^#+ |\bdropped\b/i.test(line))
       ? [`${path}:${index + 1}`] : []));
   assert.deepEqual(stale, []);
