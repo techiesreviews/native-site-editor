@@ -80,8 +80,10 @@ pre:focus-visible {
   font-size: var(--type-title);
   font-weight: 300;
 }
-/* The bar's own icon buttons, not those in the menus that open from it. */
-.topbar-actions .icon-button {
+/* The bar's own icon buttons (the Inbox, the phone's Menu, the code editor's Undo, Redo and History), not those in
+   the menus and panels that open inside it (History, the Inbox). */
+.topbar-actions > .icon-button,
+.editor-toolbar-host .icon-button {
   width: max(var(--size-compact), var(--size-tap));
   height: max(var(--size-compact), var(--size-tap));
 }
@@ -520,7 +522,8 @@ dd {
   .topbar .code-editor__toolbar {
     gap: var(--space-4xs);
   }
-  .topbar-actions .icon-button {
+  .topbar-actions > .icon-button,
+  .editor-toolbar-host .icon-button {
     width: var(--size-touch);
     height: var(--size-touch);
   }

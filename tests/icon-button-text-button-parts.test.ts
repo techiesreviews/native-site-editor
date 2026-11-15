@@ -97,8 +97,8 @@ test("the underlined text button changes only the part's hooks, and its words st
   assert.match(text, /text-decoration: var\(--text-btn-decoration\);/);
   const underlined = /\.text-button--underlined \{([^}]*)\}/.exec(text)?.[1] ?? "";
   const declared = [...underlined.matchAll(/^\s*([\w-]+)\s*:/gm)].map((match) => match[1]);
-  assert.deepEqual(declared, ["--text-btn-decoration"]);
-  assert.match(underlined, /--text-btn-decoration: underline;/);
+  assert.deepEqual(declared, ["--text-btn-decoration", "--text-btn-hover-decoration"]);
+  assert.match(underlined, /--text-btn-decoration: underline;\s*--text-btn-hover-decoration: underline;/, "a compact underlined one keeps its underline on hover too");
 });
 
 test("Media's Download original and suggested name use the underlined text button and give it no look of their own", () => {
@@ -123,7 +123,8 @@ test("the old copies are gone: no screen styles the icon button's or the text bu
 test("the top bar sizes only its own icon buttons, never those in the menus that open inside it", () => {
   const css = read("src/style.css");
   assert.doesNotMatch(css, /\.topbar \.icon-button\b/, "the project menu opens inside .topbar, so this would grow its Reload and Refresh buttons");
-  assert.equal([...css.matchAll(/^\s*\.topbar-actions \.icon-button \{/gm)].length, 2, "the bar's own size, and its phone size");
+  assert.equal([...css.matchAll(/^\s*\.topbar-actions > \.icon-button,\n\s*\.editor-toolbar-host \.icon-button \{/gm)].length, 2, "the bar's own size, and its phone size");
+  assert.doesNotMatch(css, /\.topbar-actions \.icon-button/, "History (#changes) and the Inbox open inside .topbar-actions: their icon buttons keep their own size");
 });
 
 test("the editor loads the button parts' files in one line, in their order, after its own base styles", () => {
@@ -169,6 +170,17 @@ test("the Files tree and History build their icon and text buttons from the part
     }
   }
   assert.doesNotMatch(read("src/components/commit-history.css"), /--icon-btn-|\[aria-expanded="true"\][^{]*\{[^}]*(background|color)\s*:/, "an open menu shows no fill of its own, as the Files tree's and Page structure's ⋯");
+});
+
+test("the Pages tree's + and ⋯ are Icon buttons; its CSS sizes them and gives them no look", () => {
+  const ts = read("src/components/pages-tree.ts");
+  assert.match(ts, /const add = iconButton\(/);
+  assert.match(ts, /const more = iconButton\(label, null, /);
+  assert.doesNotMatch(ts, /node\("button", "pages-(add|more)"\)/);
+  const css = read("src/components/pages-tree.css").replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/[^{}]*\.pages-(?:more|add)\b[^{}]*\{([^}]*)\}/g)].map((match) => match[1]).join(";");
+  assert.ok(rules.length > 0);
+  assert.doesNotMatch(rules, /(^|[;\s])(border|border-radius|background|color)\s*:/, "the Pages tree gives its icon buttons no look");
 });
 
 test("a hidden slot's eye stays muted on hover: the Page structure guard adds no weight", () => {
