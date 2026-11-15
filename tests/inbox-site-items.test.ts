@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { heldPages, pictureVerdict, siteFile, siteItems, type InboxPage } from "../src/inbox/site-items.ts";
+import { forgetPages, heldPages, pictureVerdict, siteFile, siteItems, type InboxPage } from "../src/inbox/site-items.ts";
 
 // The edit bar's verdict stands in: an absent alt or an unmarked empty one is not described yet.
 const rules = {
@@ -125,4 +125,7 @@ test("pages no longer listed are let go: a switched site's pages leave memory (T
   assert.equal(heldPages(), 2);
   siteItems([page("shop/index.html", `${head("Shop")}</body>`, "Shop", "/shop/")], rules);
   assert.equal(heldPages(), 1);
+  // No site open, or another loading: the Inbox lets go of them all (src/inbox/inbox.ts never lists then).
+  forgetPages();
+  assert.equal(heldPages(), 0);
 });
