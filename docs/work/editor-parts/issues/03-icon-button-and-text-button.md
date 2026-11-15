@@ -38,12 +38,20 @@ beyond that stays as a named variant. Nothing else visible changes.
   Text button parts (TOOLS-248); Review round 1: the compact Text button fills on press and waits for a mouse to fill
   on hover; the top bar's sizing has a test; Editor parts: slice 3 ticket closed with its differences list; Second look:
   the Icon button and the Text button take their looks from their own --icon-btn-* and --text-btn-* defaults; Second
-  look: Media's Download original and suggested name use a new underlined Text button and give it no look of their own.
+  look: Media's Download original and suggested name use a new underlined Text button and give it no look of their own;
+  Editor parts: the editor loads the button parts' files through src/ui/parts.css, so src/main.ts stays within its line
+  ceiling.
 - Underlined variant (2026-11-15): `textButton(words, action, { underlined: true })` adds `text-button--underlined`,
   which sets only `--text-btn-decoration` (none at rest by default). Media's Download original
   (`media-detail__original`) and the suggested free name (`media-detail__suggest`) use it; their screen rules keep only
   placement and the tap area. Links that carry the `text-button` class (`repository-menu__action`) already set no
   underline themselves, so the new resting default changes nothing there.
+- Loading (2026-11-15): `kit pr`'s full run found `src/main.ts` at 542 lines over its ceiling of 540 (dev was at
+  540 and the two parts added an import each). Rather than raise the ceiling, `src/ui/parts.css` imports the Button,
+  Icon button and Text button files in that order and `src/main.ts` imports only it, in the Button's old place: the
+  built CSS holds each part once, in the same order. The design board still loads each file on its own.
+- Rebased on dev after the Inbox (TOOLS-222) landed: its top-bar Inbox button already wears the Icon button part's
+  class (its own CSS only places it and draws its dot) and its other buttons are the Button part, so nothing to swap.
 - Tests: `tests/icon-button-text-button-parts.test.ts` (options, markup, CSS layer and loading, copy homes, parts list,
   the top bar's sizing, the underlined variant, Media's two buttons without a look of their own); `kit unit --affected`
   3150/3151 on 2026-11-15, the one failure `tests/preview-menu.test.ts` (copy icon timing) passing 11/11 alone.
@@ -54,7 +62,10 @@ beyond that stays as a named variant. Nothing else visible changes.
   After the underlined variant (2026-11-15): `kit shots file-details media-gallery --compare dev` at 390 and 1280,
   light and dark, pixel-identical; a raw scenario that keeps an original and opens Copies and original shows the
   Download original row pixel-identical to dev in all four, with the same computed border, background, colour, size,
-  alignment and underline. Copies: 123 (unchanged).
+  alignment and underline. Copies: 123 (unchanged). After the rebase and the loading change:
+  `kit shots editor structure file-details media-gallery --compare dev` (dev with the Inbox) at 390 and 1280, light
+  and dark: 15 of 16 pixel-identical; file-details 1280 dark differs in a 3 by 3 px corner edge by one shade
+  (anti-aliasing, light identical). `kit unit --affected` 3152/3152. `kit size`: boot 355 KB (+1 KB), budget 355 KB.
 - Differences, the most used look winning (Lex's rule of 2026-11-14), none of them in a screenshot but the first:
   - Project menu, Reload repositories: its icon sat 2px right of centre (the browser's own button padding); now centred.
   - Branches flyout's Refresh from GitHub and Reload repositories: keyboard focus shows the focus ring only, without
