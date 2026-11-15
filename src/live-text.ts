@@ -176,9 +176,11 @@ export interface KeptCopy {
   /** This browser's saves made before its copy took part, as blob sha and text, one after the other: their text is the
    * draft's own, which the copy notes as that save when it starts (TOOLS-216). */
   saves?: string[];
-  /** When a page wrote it to IndexedDB (ms since the epoch) and the tab that did (`liveTabId`): `browserKeeper` reads it only
-   * as that tab's own (before and after its reloads) or as kept before this page began (a stamp equal to the start counts). */
-  at?: number; by?: string;
+  /** When a page wrote it to IndexedDB (ms since the epoch): `browserKeeper` reads another tab's copy only when it was kept
+   * before this page began (a stamp equal to the start counts as before). */
+  at?: number;
+  /** The tab that wrote it to IndexedDB (`liveTabId`): its own copy is read whenever it was kept, before or after a reload. */
+  by?: string;
 }
 /** Where kept copies live: this browser only (memory, then IndexedDB), never the server. */
 export interface CopyKeeper {
@@ -223,11 +225,15 @@ const isKept = (value: unknown): value is KeptCopy => {
     && (copy.saves === undefined || (Array.isArray(copy.saves) && copy.saves.every(item => typeof item === "string")))
     && (copy.at === undefined || Number.isFinite(copy.at)) && (copy.by === undefined || typeof copy.by === "string");
 };
-/** This tab's id, the same after a reload (sessionStorage is the tab's own), so the copy its page kept as it went is its own. */
-function liveTabId() {
+/** This tab's id: the same after a reload (sessionStorage is the tab's own), so the copy its page kept as it went is its own.
+ * Any other load takes a new one, as a duplicated tab copies the sessionStorage of the tab it came from. */
+export function liveTabId(reloaded = (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.type === "reload",
+  storage = (): Pick<Storage, "getItem" | "setItem"> => sessionStorage) {
   try {
-    let id = sessionStorage.getItem("native-site-editor-live-tab");
-    if (!id) sessionStorage.setItem("native-site-editor-live-tab", id = crypto.randomUUID());
+    const kept = reloaded ? storage().getItem("native-site-editor-live-tab") : null;
+    if (kept) return kept;
+    const id = crypto.randomUUID();
+    storage().setItem("native-site-editor-live-tab", id);
     return id;
   } catch { return crypto.randomUUID(); }
 }

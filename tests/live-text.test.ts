@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { signal } from "@preact/signals-core";
 import { createDraftStore, type DraftPersistence } from "../src/draft-store";
 import { draftKey, type DraftScope, type SavedDraft } from "../src/drafts";
-import { browserKeeper, LIVE_TEXT_CATCH_UP_MS, liveFold, liveState, startLiveText, typedSince, type CopyKeeper, type KeptCopy } from "../src/live-text";
+import { browserKeeper, LIVE_TEXT_CATCH_UP_MS, liveTabId, liveFold, liveState, startLiveText, typedSince, type CopyKeeper, type KeptCopy } from "../src/live-text";
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb";
 import { LIVE_MESSAGE_LIMIT } from "../shared/live-room";
 import { forEachAwait, type AwaitRace } from "./support/await-race";
@@ -1446,8 +1446,8 @@ test("the browser keeper never hands a tab the copy another tab kept while both 
   Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: fake.factory });
   try {
     // A second page, begun before the first kept its copy (an agent's change in it); it shares the file only later.
-    const second = browserKeeper(Date.now() - 1_000);
-    const first = browserKeeper(Date.now() - 2_000);
+    const second = browserKeeper(Date.now() - 1_000, "tab-second");
+    const first = browserKeeper(Date.now() - 2_000, "tab-first");
     const copy: KeptCopy = { tag: new Uint8Array(20).fill(9), update: Uint8Array.from([4, 5, 6]), draft: "Agent text" };
     first.write("file-a", copy);
     await until(() => fake.stores.get("copies")?.has("file-a") ?? false, "the write");
@@ -1461,9 +1461,9 @@ test("the browser keeper never hands a tab the copy another tab kept while both 
     assert.equal(await browserKeeper(Date.now() - 1_000, "tab-lex").read("file-b"), undefined, "another tab begun before that write does not");
     // By default a page began at its time origin: a copy kept before it is read, one another tab kept since is not.
     fake.stores.get("copies")!.set("file-c", { ...copy, at: performance.timeOrigin - 1, by: "closed-tab" });
-    fake.stores.get("copies")!.set("file-d", { ...copy, at: performance.timeOrigin + 60_000, by: "open-tab" });
-    assert.deepEqual(await browserKeeper().read("file-c"), copy, "a closed tab's copy, kept before this page began");
-    assert.equal(await browserKeeper().read("file-d"), undefined, "an open tab's copy, kept after this page began");
+    fake.stores.get("copies")!.set("file-d", { ...copy, at: Date.now() - 1, by: "open-tab" });
+    assert.deepEqual(await browserKeeper(undefined, "tab-new").read("file-c"), copy, "a closed tab's copy, kept before this page began");
+    assert.equal(await browserKeeper(undefined, "tab-new").read("file-d"), undefined, "an open tab's copy, kept after this page began");
     // The second tab keeps its own copy later: the first, still open, goes on reading its own (memory first).
     second.write("file-a", { ...copy, draft: "Second tab" });
     await until(() => fake.stores.get("copies")?.get("file-a")?.draft === "Second tab", "the second write");
@@ -1471,6 +1471,18 @@ test("the browser keeper never hands a tab the copy another tab kept while both 
   } finally {
     if (saved) Object.defineProperty(globalThis, "indexedDB", saved); else Reflect.deleteProperty(globalThis, "indexedDB");
   }
+});
+
+test("a tab's id stays through its reloads only: any other load, a duplicated tab's among them, takes a new one", () => {
+  const kept = new Map<string, string>();
+  const storage = () => ({ getItem: (key: string) => kept.get(key) ?? null, setItem: (key: string, value: string) => { kept.set(key, value); } });
+  const first = liveTabId(false, storage);
+  assert.equal(liveTabId(true, storage), first, "a reload keeps the tab's id");
+  const duplicate = liveTabId(false, storage);
+  assert.notEqual(duplicate, first, "a load that is no reload (a duplicated tab, holding a copy of the storage) takes its own");
+  assert.equal(liveTabId(true, storage), duplicate, "and keeps that one through its own reloads");
+  const broken = () => { throw new Error("Storage unavailable"); };
+  assert.notEqual(liveTabId(true, broken), liveTabId(true, broken), "without storage each page has an id of its own");
 });
 
 test("an update over the room's frame limit is not sent, and the joiner goes on from its own draft after the wait", async () => {
