@@ -1475,13 +1475,14 @@ test("the browser keeper never hands a tab the copy another tab kept while both 
 
 test("a tab's id stays through its reloads only: any other load, a duplicated tab's among them, takes a new one", () => {
   const kept = new Map<string, string>();
-  const storage = () => ({ getItem: (key: string) => kept.get(key) ?? null, setItem: (key: string, value: string) => { kept.set(key, value); } });
+  type Kept = () => Pick<Storage, "getItem" | "setItem">;
+  const storage = (() => ({ getItem: (key: string) => kept.get(key) ?? null, setItem: (key: string, value: string) => { kept.set(key, value); } })) satisfies Kept;
   const first = liveTabId(false, storage);
   assert.equal(liveTabId(true, storage), first, "a reload keeps the tab's id");
   const duplicate = liveTabId(false, storage);
   assert.notEqual(duplicate, first, "a load that is no reload (a duplicated tab, holding a copy of the storage) takes its own");
   assert.equal(liveTabId(true, storage), duplicate, "and keeps that one through its own reloads");
-  const broken = () => { throw new Error("Storage unavailable"); };
+  const broken: Kept = () => { throw new Error("Storage unavailable"); };
   assert.notEqual(liveTabId(true, broken), liveTabId(true, broken), "without storage each page has an id of its own");
 });
 
