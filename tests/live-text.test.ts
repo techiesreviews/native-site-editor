@@ -1453,6 +1453,17 @@ test("the browser keeper never hands a tab the copy another tab kept while both 
     await until(() => fake.stores.get("copies")?.has("file-a") ?? false, "the write");
     assert.equal(await second.read("file-a"), undefined, "the other tab's copy is not the second tab's own to resume");
     assert.deepEqual(await browserKeeper(Date.now()).read("file-a"), copy, "a reload after it reads it back");
+    // A reload: the page writes its copy as it goes, after the new page began; the tab's own copy is read all the same.
+    const reloaded = browserKeeper(Date.now() - 1_000, "tab-anna");
+    browserKeeper(Date.now() - 2_000, "tab-anna").write("file-b", copy);
+    await until(() => fake.stores.get("copies")?.has("file-b") ?? false, "the write as the page went");
+    assert.deepEqual(await reloaded.read("file-b"), copy, "the reloaded tab reads the copy its page kept as it went");
+    assert.equal(await browserKeeper(Date.now() - 1_000, "tab-lex").read("file-b"), undefined, "another tab begun before that write does not");
+    // By default a page began at its time origin: a copy kept before it is read, one another tab kept since is not.
+    fake.stores.get("copies")!.set("file-c", { ...copy, at: performance.timeOrigin - 1, by: "closed-tab" });
+    fake.stores.get("copies")!.set("file-d", { ...copy, at: performance.timeOrigin + 60_000, by: "open-tab" });
+    assert.deepEqual(await browserKeeper().read("file-c"), copy, "a closed tab's copy, kept before this page began");
+    assert.equal(await browserKeeper().read("file-d"), undefined, "an open tab's copy, kept after this page began");
     // The second tab keeps its own copy later: the first, still open, goes on reading its own (memory first).
     second.write("file-a", { ...copy, draft: "Second tab" });
     await until(() => fake.stores.get("copies")?.get("file-a")?.draft === "Second tab", "the second write");
