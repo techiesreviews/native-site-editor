@@ -375,7 +375,8 @@ test("the chip's Undo writes nothing once another branch is shown at any of its 
     const guardedEdits = unusedPort<AgentCommandPorts["guardedEdits"]>("guardedEdits", { run: runEdit });
     const f = commandsFixture({ guardedEdits, draftScope: () => shown, loadChanges: race.port("load", async () => changes) });
     const run = { id, written, shift: () => { shown = { ...SCOPE, branch: "dev" }; }, outcome: undefined as string | undefined, done: Promise.resolve() };
-    run.done = f.commands.undoLatest(who, "index.html", id).then(() => { run.outcome = "undone"; }, (error: Error) => { run.outcome = error.message; });
+    // The workspace the press was in, as the agent host takes it before any wait (src/agent-host.ts).
+    run.done = f.commands.undoLatest(who, "index.html", id, shown).then(() => { run.outcome = "undone"; }, (error: Error) => { run.outcome = error.message; });
     return run;
   }, run => run.shift(), run => {
     assert.deepEqual(run.written, [], "nothing written");

@@ -1,6 +1,6 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parse, ts } from "./support/source-guard.ts";
 import { createAppStore } from "../src/app-store.ts";
@@ -122,6 +122,15 @@ test("an Undo takes the workspace it was pressed in, not the one shown once the 
   assert.deepEqual(calls.slice(2), ["undo a g on main", "undo latest Copy editor index.html change-1 on main"]);
 });
 
+test("an Undo pressed with no workspace open hands the path none, though one opens while it loads", async () => {
+  const { host, calls, late } = setup();
+  late.scope = undefined;
+  const pressed = host.agentCommands.undo(["a"], "g");
+  late.scope = { account: "o", repoId: 1, repo: "o/site", branch: "main" };
+  await pressed;
+  assert.deepEqual(calls.slice(2), ["undo a g on undefined"]);
+});
+
 test("a command path that fails to load mounts no menu, and the next open loads it again", async () => {
   const { host, calls, mounts, late } = setup();
   late.fail = 1;
@@ -143,7 +152,8 @@ test("no menu mounts and no agent code loads before the session names an account
 // reach) never reaches the agent command path.
 test("startup's imports never reach the agent command path", () => {
   const reached = new Set<string>(), queue = [resolve("src/main.ts")];
-  const file = (from: string, specifier: string) => ["", ".ts", "/index.ts"].map(end => resolve(dirname(from), specifier) + end).find(existsSync);
+  // Only TypeScript modules are followed: no .ts file under src imports a .js one.
+  const file = (from: string, specifier: string) => [".ts", "/index.ts", ""].map(end => resolve(dirname(from), specifier) + end).find(path => statSync(path, { throwIfNoEntry: false })?.isFile());
   for (const at of queue) {
     if (reached.has(at)) continue;
     reached.add(at);
