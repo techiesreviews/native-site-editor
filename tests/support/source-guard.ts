@@ -339,10 +339,11 @@ export function staleEntries(hits: Finding[], entries: AllowlistEntry[]): Allowl
   return entries.filter(entry => !entry.reason.trim() || !Number.isInteger(entry.count ?? 1) || (entry.count ?? 1) < 1
     || hits.filter(hit => matches(hit, entry)).length !== (entry.count ?? 1));
 }
+/** The production source files under `directory`; a test beside its code (`src/ui/badge/badge.test.ts`) is none. */
 export function sourceFiles(directory = "src"): string[] {
   return readdirSync(new URL(`../../${directory}/`, import.meta.url), { withFileTypes: true }).flatMap(entry => {
     const file = `${directory}/${entry.name}`;
-    return entry.isDirectory() ? sourceFiles(file) : /\.(?:[cm]?[jt]s|tsx)$/.test(file) ? [file] : [];
+    return entry.isDirectory() ? sourceFiles(file) : /\.(?:[cm]?[jt]s|tsx)$/.test(file) && !/\.test\.ts$/.test(file) ? [file] : [];
   });
 }
 export function readSource(file: string): string {
