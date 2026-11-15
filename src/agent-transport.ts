@@ -6,7 +6,7 @@ import type { AgentRead, AgentReadResult } from "../shared/agent-read";
 import { requestTools, type AgentRequests } from "../shared/agent-requests";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
 import { AgentFailureError, classifyAgentFailure, type AgentFailure } from "../shared/agent-failure";
-import { AgentRecordsError, type AgentRecords } from "./agent-records";
+import { unknownOutcome, type AgentRecords } from "./agent-records";
 import { agentCommandSignals } from "./agent-tools";
 import { createAgentOwner } from "./agent-owner";
 import { browserAgentRecovery } from "./agent-recovery";
@@ -257,7 +257,7 @@ export function createLiveTransport(options: Options) {
                 return { state: "applied", message: outcome?.message ?? "Applied in the editor as an unsaved draft.", ...outcome, operationId };
               } catch (error) {
                 const message = error instanceof Error ? error.message : "The change could not be applied.";
-                return { state: error instanceof AgentRecordsError && error.code === "unknown" || /unproven|outcome.*unknown|could not prove|could not confirm whether/i.test(message) ? "unknown" : "conflict", message, operationId };
+                return { state: unknownOutcome(error) ? "unknown" : "conflict", message, operationId };
               }
             })() };
             flights.set(operationId, work);

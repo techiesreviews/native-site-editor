@@ -619,3 +619,13 @@ test("a Media change keeps the page open as it arrived with its pin", async () =
   assert.equal(seen?.opened, "index.html");
 });
 
+
+test("a media change whose storage could not confirm it was kept reports unknown even without its error class (TOOLS-263 B1)", async () => {
+  const f = await fixture(), commit = f.records.commit;
+  // The records store's own wording (src/agent-records.ts), as a plain Error: the class did not survive the way here.
+  f.records.commit = async () => { throw new Error("This browser's storage is full and could not confirm whether the change was kept; agent edits are stopped."); };
+  try {
+    const result = body(await f.run(request("adding_settings", { image: "smaller" })));
+    assert.equal(result.state, "unknown"); assert.match(String(result.message), /get_command_status.*do not replay/);
+  } finally { f.records.commit = commit; }
+});

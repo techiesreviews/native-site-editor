@@ -3,7 +3,7 @@ import { payloadIdentity, type AgentWorkspace, type JsonValue } from "../shared/
 import { mediaChanges, type AgentMedia } from "../shared/agent-media";
 import { agentToolsOn } from "../shared/agent-tool-table";
 import type { AgentReadResult } from "../shared/agent-read";
-import { AgentRecordsError, type AgentRecords } from "./agent-records";
+import { unknownOutcome, type AgentRecords } from "./agent-records";
 import { createAgentTools, mediaCommandPins } from "./agent-tools";
 import type { AgentReadPorts } from "./agent-tools-read";
 import { sameBranch } from "./workspace-session";
@@ -107,7 +107,7 @@ export function createAgentMediaTools(options: {
       if (settled?.status === "applied") return settled.receipt.payloadIdentity === identity ? reply(settled.receipt.outcome)
         : { ok: false, message: "This change's id was already used for different work. Nothing was changed." };
       if (settled?.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "This delivery was cancelled before it committed. Nothing was changed by it." } };
-      const unknown = error instanceof AgentRecordsError && error.code === "unknown" || /unproven|outcome.*unknown|could not.*prov/i.test(message);
+      const unknown = unknownOutcome(error);
       return { ok: true, value: { requestId: request.id, state: unknown ? "unknown" : "conflict",
         message: unknown ? `${message} Check get_command_status; do not replay the change.` : message } };
     }
