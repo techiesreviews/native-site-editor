@@ -54,5 +54,6 @@
 
   .text-button--underlined {
     --text-btn-decoration: underline;
+    --text-btn-hover-decoration: underline;
   }
 }

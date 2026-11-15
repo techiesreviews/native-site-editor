@@ -72,20 +72,13 @@
   font-weight: 400;
 }
 .pages-row.is-current .pages-url { color: inherit; opacity: 0.8; }
+/* A row's + and ⋯ are Icon buttons (src/ui/icon-button/), sized here. */
 .pages-more, .pages-add {
-  display: inline-grid;
-  place-items: center;
   flex-shrink: 0;
   width: var(--size-icon);
   height: var(--size-icon);
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
 }
 .pages-more:focus-visible, .pages-add:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
-.pages-more:active, .pages-add:active { background: var(--hover); color: var(--text); }
 .pages-url--button {
   border: 0;
   border-radius: var(--radius-small);
@@ -95,7 +88,6 @@
 }
 @media (hover: hover) and (pointer: fine) {
   :is(.pages-new, .explorer-new):hover, .pages-row:not(.is-current):hover { background: var(--hover); }
-  .pages-more:hover, .pages-add:hover { background: var(--hover); color: var(--text); }
   .pages-url--button:hover { color: var(--text); text-decoration: underline dotted; text-underline-offset: 3px; }
 }
 /* The URL sits at the row's end in small grey mono type (mock-up 05 v2). */

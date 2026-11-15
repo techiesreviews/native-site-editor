@@ -1,5 +1,6 @@
 import { refuse } from "./refusal-note";
 import { button, node } from "../ui/dom";
+import { iconButton } from "../ui/icon-button/icon-button";
 import { reported } from "../ui/report-failure";
 import { setIcon, type IconName } from "../icons";
 import { nativeSubpageCount, nativeTreePages, type NativePageNode, type NativeSiteTree } from "../native-pages";
@@ -696,12 +697,9 @@ export function createPagesTree(options: {
     } else row.append(node("span", "pages-url", page.route));
     const actions: HTMLElement[] = [];
     if (isFolderRoute(page.route)) {
-      const add = node("button", "pages-add");
+      const add = iconButton(page.special === "home" ? "Add a page at the top level" : `Add subpage to ${page.label}`, null, { title: page.special === "home" ? "Add a page at the top level" : "Add subpage", className: "pages-add" });
       setIcon(add, "plus");
-      add.type = "button";
       add.tabIndex = -1;
-      add.setAttribute("aria-label", page.special === "home" ? "Add a page at the top level" : `Add subpage to ${page.label}`);
-      add.title = page.special === "home" ? "Add a page at the top level" : "Add subpage";
       add.addEventListener("click", (event) => {
         event.stopPropagation();
         setActive(item);
@@ -749,14 +747,11 @@ export function createPagesTree(options: {
     return event.target instanceof Element && !event.target.closest(".pages-editing, .pages-rename, .pages-url-change") && event.target.closest("[role='treeitem']") === item;
   }
   function moreButton(label: string) {
-    const more = node("button", "pages-more");
+    const more = iconButton(label, null, { title: "Add subpage, rename, change URL, move, duplicate or delete", className: "pages-more" });
     setIcon(more, "dots-three", 16);
-    more.type = "button";
     more.tabIndex = -1;
-    more.setAttribute("aria-label", label);
     more.setAttribute("aria-haspopup", "menu");
     more.setAttribute("aria-expanded", "false");
-    more.title = "Add subpage, rename, change URL, move, duplicate or delete";
     return more;
   }
   function pageIcon(name: IconName) {
