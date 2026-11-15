@@ -122,6 +122,8 @@ test('Refresh of a shown site GitHub never answers offers Try again, which reloa
 });
 
 test('a remembered boot whose guessed snapshot GitHub never answers shows the panel after four tries, not eight', async ({ page, baseURL }) => {
+  // The guess is the path when the browser kept no copy of the site (src/warm-copy.ts): none is kept here.
+  await page.addInitScript(() => { indexedDB.deleteDatabase('native-site-editor-warm-copy'); });
   await page.clock.install();
   const reads = await snapshotRoute(page, () => {});
   reads.failing = false;

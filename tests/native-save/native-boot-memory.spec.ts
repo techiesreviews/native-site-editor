@@ -23,6 +23,12 @@ const editMemory = (page: Page, edit: (memory: Memory) => void, memory: Memory) 
 };
 const sha = (memory: Memory, path: string) => memory.files.find((file) => file.path === path)!.sha;
 
+// The guess is the path when the browser kept no copy of the site (src/warm-copy.ts, tested in
+// native-warm-open.spec.ts): every document here starts with none.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => { indexedDB.deleteDatabase('native-site-editor-warm-copy'); });
+});
+
 // Guessed reads go out before the boot, once it has its session, chooses the
 // repository (its branch list, seen as a request even where a test answers
 // it); `hold` keeps the session's answer until released. Their file contents
