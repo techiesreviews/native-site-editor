@@ -1425,14 +1425,16 @@ test("the browser keeper keeps copies in IndexedDB: a fresh keeper reads them, a
   Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: fake.factory });
   try {
     const copy: KeptCopy = { tag: new Uint8Array(20).fill(7), update: Uint8Array.from([1, 2, 3]) };
-    browserKeeper().write("file-a", copy);
+    browserKeeper(Date.now()).write("file-a", copy);
     await until(() => fake.stores.get("copies")?.has("file-a") ?? false, "the write");
-    assert.deepEqual(await browserKeeper().read("file-a"), copy, "a reload reads it back");
-    browserKeeper().write("file-a", undefined);
+    assert.deepEqual(await browserKeeper(Date.now()).read("file-a"), copy, "a reload reads it back");
+    browserKeeper(Date.now()).write("file-a", undefined);
     await until(() => !(fake.stores.get("copies")?.has("file-a") ?? true), "the removal");
-    assert.equal(await browserKeeper().read("file-a"), undefined);
+    assert.equal(await browserKeeper(Date.now()).read("file-a"), undefined);
     fake.stores.get("copies")!.set("file-b", { tag: "not bytes", update: [1] });
-    assert.equal(await browserKeeper().read("file-b"), undefined, "a record of the wrong shape");
+    assert.equal(await browserKeeper(Date.now()).read("file-b"), undefined, "a record of the wrong shape");
+    fake.stores.get("copies")!.set("file-c", { ...copy });
+    assert.deepEqual(await browserKeeper(Date.now()).read("file-c"), copy, "a copy kept before copies were stamped is read as before");
   } finally {
     if (saved) Object.defineProperty(globalThis, "indexedDB", saved); else Reflect.deleteProperty(globalThis, "indexedDB");
   }
@@ -1443,14 +1445,18 @@ test("the browser keeper never hands a tab the copy another tab kept while both 
   const saved = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
   Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: fake.factory });
   try {
-    // A second tab, open on the file before the first kept its copy (an agent's change in it).
-    const second = browserKeeper();
-    await new Promise(resolve => setTimeout(resolve, 5));
+    // A second page, begun before the first kept its copy (an agent's change in it); it shares the file only later.
+    const second = browserKeeper(Date.now() - 1_000);
+    const first = browserKeeper(Date.now() - 2_000);
     const copy: KeptCopy = { tag: new Uint8Array(20).fill(9), update: Uint8Array.from([4, 5, 6]), draft: "Agent text" };
-    browserKeeper().write("file-a", copy);
+    first.write("file-a", copy);
     await until(() => fake.stores.get("copies")?.has("file-a") ?? false, "the write");
     assert.equal(await second.read("file-a"), undefined, "the other tab's copy is not the second tab's own to resume");
-    assert.deepEqual(await browserKeeper().read("file-a"), copy, "a reload after it reads it back");
+    assert.deepEqual(await browserKeeper(Date.now()).read("file-a"), copy, "a reload after it reads it back");
+    // The second tab keeps its own copy later: the first, still open, goes on reading its own (memory first).
+    second.write("file-a", { ...copy, draft: "Second tab" });
+    await until(() => fake.stores.get("copies")?.get("file-a")?.draft === "Second tab", "the second write");
+    assert.deepEqual(await first.read("file-a"), copy, "the tab that kept a copy reads its own");
   } finally {
     if (saved) Object.defineProperty(globalThis, "indexedDB", saved); else Reflect.deleteProperty(globalThis, "indexedDB");
   }
