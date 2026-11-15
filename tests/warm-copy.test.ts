@@ -105,7 +105,29 @@ test("sign-out in another tab: this page keeps nothing more in the page's storag
     // fixed-wait: the channel delivers on a later turn and nothing marks its arrival.
     await new Promise((done) => setTimeout(done, 50));
     await writeWarmCopy(copy({ branch: "next", snapshot: { ...copy().snapshot, branch: "next" } }));
-    assert.equal((await readWarmCopy())?.branch, "main", "the later keep wrote nothing");
+    assert.equal(await readWarmCopy(), undefined, "hearing it removed the copy, and the later keep wrote nothing");
+  } finally {
+    if (saved) Object.defineProperty(globalThis, "indexedDB", saved);
+    else Reflect.deleteProperty(globalThis, "indexedDB");
+  }
+});
+
+test("a keep still opening the storage when another tab signs out writes nothing; hearing it undoes a keep that raced it", async () => {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  let open!: () => void;
+  const opening = new Promise<void>((done) => { open = done; });
+  const { factory } = fakeIndexedDB(undefined, () => opening);
+  Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: factory });
+  try {
+    const keep = writeWarmCopy(copy());
+    const other = new BroadcastChannel("native-site-editor-warm-copy");
+    other.postMessage("signed-out");
+    other.close();
+    // fixed-wait: the channel delivers on a later turn and nothing marks its arrival.
+    await new Promise((done) => setTimeout(done, 50));
+    open();
+    await keep;
+    assert.equal(await readWarmCopy(), undefined);
   } finally {
     if (saved) Object.defineProperty(globalThis, "indexedDB", saved);
     else Reflect.deleteProperty(globalThis, "indexedDB");

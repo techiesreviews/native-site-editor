@@ -85,7 +85,8 @@ const forgotten = new WeakSet<Factory>();
 const SIGNED_OUT = "native-site-editor-warm-copy";
 try {
   const heard = new BroadcastChannel(SIGNED_OUT);
-  heard.onmessage = () => { if (globalThis.indexedDB) forgotten.add(globalThis.indexedDB); };
+  // A keep of this tab that raced the other tab's delete is undone too.
+  heard.onmessage = () => { if (globalThis.indexedDB) { forgotten.add(globalThis.indexedDB); void remove(globalThis.indexedDB); } };
   // Node's channel would keep a process (the unit tests) running; a browser's has no unref.
   (heard as { unref?: () => void }).unref?.();
 } catch { /* no other tabs to hear */ }
@@ -94,7 +95,8 @@ const remove = (factory?: Factory) => run("readwrite", (store) => store.delete(K
 export function writeWarmCopy(copy: WarmCopy, factory: Factory | undefined = globalThis.indexedDB): Promise<unknown> {
   if (!factory || forgotten.has(factory)) return Promise.resolve();
   const fits = (copy.snapshot.tree?.length ?? Infinity) <= MAX_TREE_ENTRIES && copy.files.reduce((sum, file) => sum + file.text.length, 0) <= MAX_TEXT_LENGTH;
-  return fits && !copy.snapshot.empty ? run("readwrite", (store) => store.put(copy, KEY), factory) : remove(factory);
+  // Checked again once the storage is open: a sign-out may have come while it opened.
+  return fits && !copy.snapshot.empty ? run("readwrite", (store) => forgotten.has(factory) ? store.delete(KEY) : store.put(copy, KEY), factory) : remove(factory);
 }
 /** Sign-out: the copy goes, and neither this page nor another open tab keeps one again. */
 export function forgetWarmCopy(factory: Factory | undefined = globalThis.indexedDB): Promise<unknown> {
