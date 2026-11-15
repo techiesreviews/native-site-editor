@@ -626,3 +626,16 @@ test("takeWarmCopy gives the kept copy once, for the address's or the account's 
     else Reflect.deleteProperty(globalThis, "indexedDB");
   }
 });
+
+test("a kept copy without the file the address names (made since, elsewhere) opens GitHub's snapshot instead", async () => {
+  const f = fixture({ remember: false, native: true });
+  void f.boot.chooseRepository({ repoId: 501, branch: "main", path: "docs/new.md" }, kept());
+  await flush();
+  assert.deepEqual(f.paths(), ["branches", "snapshot"], "GitHub's snapshot is read");
+  assert.equal(f.ports.appStore.snapshot.value, undefined, "the kept snapshot is not shown");
+  const fresh = { ...KEPT_SNAPSHOT, commit: sha(10), tree: [...KEPT_SNAPSHOT.tree!, { path: "docs/new.md", mode: "100644", type: "blob" as const, sha: sha(3) }] };
+  f.pending("snapshot")[0].answer.resolve(fresh);
+  await flush();
+  assert.equal(f.ports.appStore.snapshot.value, fresh);
+  assert.deepEqual(f.heads, [sha(10)], "GitHub's own snapshot is trusted as any plain open's");
+});

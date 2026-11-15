@@ -210,6 +210,11 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         ports.draftsReady(),
       ]);
       if (!at.holds()) return;
+      // A file to reopen that the kept copy does not have (made since, elsewhere) and no draft holds: GitHub's
+      // snapshot opens instead, the plain way.
+      const scope = ports.draftScope();
+      if (warm && reopen && !(result.tree ?? []).some((entry) => entry.path === reopen) && !(scope && draftStore().get(scope, reopen)))
+        return await loadSnapshot(reopen);
       appStore.snapshot.value = result;
       repositoryIndex.seed(repo, result);
       if (!warm) savePublish.seeHead(result.commit);
