@@ -61,7 +61,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
   const reads: Read[] = [], seeded: string[] = [], cached = new Map<string, string>(), shown = { content: "", status: "", nodes: [] as unknown[] };
   let fileGeneration = 0, tag: string | null | undefined = "t1";
   const heads: string[] = [], headChecks: boolean[] = [];
-  let headAnswer: Promise<string | null | undefined> = Promise.resolve(undefined);
+  let headAnswers: Promise<string | null | undefined>[] = [Promise.resolve(undefined)];
   let drafts: SavedDraft[] = [];
   const read = (path: string, params?: Record<string, string>, early?: Promise<Response>) => {
     const answer = deferred<unknown>();
@@ -74,7 +74,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
   const ports = {
     appStore: createAppStore(createDraftStore()),
     savePublish: { trustedHead: () => heads.at(-1), seeHead: (commit: string) => { heads.push(commit); }, resetDeleted: () => {}, checkDeleted: async () => {}, isDeleted: () => false,
-      checkHead: (force?: boolean) => { headChecks.push(Boolean(force)); return headAnswer; } },
+      checkHead: (force?: boolean) => { headChecks.push(Boolean(force)); return headAnswers.length > 1 ? headAnswers.shift()! : headAnswers[0]; } },
     repositoryIndex: new RepositoryIndex(),
     cleanSources: {
       load: (_repo: string, revision: string, readText: () => Promise<string>) => {
@@ -143,7 +143,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
     pending,
     setTag: (value: string | null | undefined) => { tag = value; },
     /** What GitHub's head check behind a kept copy answers (src/controllers/save-publish-controller.ts checkHead). */
-    answerHead: (answer: Promise<string | null | undefined>) => { headAnswer = answer; },
+    answerHead: (...answers: Promise<string | null | undefined>[]) => { headAnswers = answers; },
     /** The browser's drafts of the workspace. */
     setDrafts: (value: SavedDraft[]) => { drafts = value; },
     /** The host's loadRepositories: a new listing starts the next load with no repository. */
@@ -822,10 +822,11 @@ test("two tabs keeping their own sites: the last one left owns the copy", async 
   }
 });
 
-test("a head check taken over by a newer one writes no status of its own", () => withDocument(async () => {
+test("a head check taken over by a newer one asks again at once while the tab is shown", () => withDocument(async () => {
   const f = fixture({ remember: false, native: true });
-  f.answerHead(Promise.resolve(null));
+  f.answerHead(Promise.resolve(null), Promise.resolve(undefined));
   await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
   await flush();
-  assert.equal(f.shown.status, "Checking GitHub for newer changes on main…");
+  assert.equal(f.headChecks.length, 2);
+  assert.equal(f.shown.status, "Could not check GitHub for newer changes on main. Refresh to check.");
 }));

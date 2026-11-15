@@ -332,7 +332,11 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     void savePublish.checkHead(true).then((commit) => {
       if (!at.holds()) return;
       // Taken over by a newer check (a push notice, a save): its outcome stands; the status waits for the next look.
-      if (commit === null) { onNextWake(() => { if (at.holds() && savePublish.trustedHead() !== appStore.snapshot.value?.commit) checkKept(at, branch); }); return; }
+      if (commit === null) {
+        const again = () => { if (at.holds() && savePublish.trustedHead() !== appStore.snapshot.value?.commit) checkKept(at, branch); };
+        if (typeof document !== "undefined" && document.visibilityState === "visible") again(); else onNextWake(again);
+        return;
+      }
       if (!commit) {
         if (typeof document !== "undefined" && document.visibilityState === "visible") {
           keptSaid = { at, text: `Could not check GitHub for newer changes on ${branch}. Refresh to check.` };
@@ -371,13 +375,16 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     let length = 0;
     for (const path of new Set([...ports.nativePaintedPaths, ...shas.keys()])) {
       const sha = shas.get(path), clean = sha === undefined ? undefined : ports.cleanSources.peek(repo.full_name, sha);
-      // The preview's base text is kept only when it is that blob (media and agent writes also land there).
-      const text = clean ?? (sha === undefined ? undefined : ports.baseText(path));
+      // The preview's base text is kept only when it is that blob (media and agent writes also land there); leaving
+      // the tab (`force`) writes at once, with GitHub's clean texts only.
+      const text = clean ?? (sha === undefined || force ? undefined : ports.baseText(path));
       if (sha === undefined || text === undefined || length + text.length > MAX_TEXT_LENGTH) continue;
       if (clean === undefined && await textBlobSha(text).catch(() => "") !== sha) continue;
       length += text.length;
       files.push({ path, sha, text });
     }
+    // A newer snapshot, repository or branch on show since: this keep is not the latest.
+    if (appStore.snapshot.value !== snapshot || appStore.repository.value !== repo || appStore.branch.value !== branch) return;
     // The same commit and texts as last kept: nothing to write.
     const signature = `${repo.id} ${branch} ${snapshot.commit} ${files.length} ${length}`;
     if (signature === kept && !force) return;
