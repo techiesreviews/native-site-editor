@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createAppStore } from "../src/app-store.ts";
 import { createDraftStore } from "../src/draft-store.ts";
 import { createAgentHost, type AgentHostPorts } from "../src/agent-host.ts";
-import type { AgentPath } from "../src/agent-path.ts";
+import type { AgentPath, AgentPathPorts } from "../src/agent-path.ts";
 import type { AgentMenuPort } from "../src/controllers/agent-controller.ts";
 import type { AgentWho } from "../shared/agent.ts";
 import type { Repository, SessionInfo, Snapshot } from "../shared/types.ts";
@@ -46,6 +46,7 @@ function setup() {
     menu: () => ({ context: async () => undefined, onCommand: async (command) => { calls.push(`command ${command.id}`); } }),
   };
   // The host reads only these ports itself and hands them all to the path, a stand-in here.
+  // eslint-disable-next-line no-restricted-syntax -- the command ports go to the path unread; the stand-in reads none.
   const ports = {
     appStore, errorMessage: (error: unknown) => { calls.push(`error ${String(error)}`); },
     get info() { return late.info; },
@@ -59,9 +60,9 @@ function setup() {
     },
     loadPath: async () => {
       calls.push("load path");
-      return { createAgentPath: (made: AgentHostPorts) => { calls.push(`path made with ${made === ports ? "the host's ports" : "other ports"}`); return path; } };
+      return { createAgentPath: (made: AgentPathPorts) => { calls.push(`path made with ${made === ports ? "the host's ports" : "other ports"}`); return path; } };
     },
-  } as unknown as AgentHostPorts; // eslint-disable-line no-restricted-syntax -- the command ports go to the path unread; the stand-in reads none.
+  } as unknown as AgentHostPorts;
   return { host: createAgentHost(ports), calls, mounts, late, appStore };
 }
 

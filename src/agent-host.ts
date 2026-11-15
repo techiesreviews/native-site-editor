@@ -13,16 +13,19 @@ type MenuOptions = ReturnType<AgentPath["menu"]> & AgentMenuMount;
 
 export interface AgentHostPorts extends AgentPathPorts {
   /** The agent menu's chunk (src/lazy-loaders.ts). */
-  loadAgentMenu(): Promise<{ createAgentMenu(options: MenuOptions): AgentMenuPort<HTMLElement> }>;
-  errorMessage(error: unknown): void;
+  loadAgentMenu: () => Promise<{ createAgentMenu: (options: MenuOptions) => AgentMenuPort<HTMLElement> }>;
+  errorMessage: (error: unknown) => void;
   /** The command path's chunk; a test may pass its own. */
-  loadPath?: () => Promise<{ createAgentPath(ports: AgentHostPorts): AgentPath }>;
+  loadPath?: () => Promise<typeof import("./agent-path")>;
 }
 
 export function createAgentHost(ports: AgentHostPorts) {
   // Kept once made: what acts and what can be undone are read without a wait once it is there.
   let path: AgentPath | undefined;
-  const loadPath = lazyModule(async () => path ??= (await (ports.loadPath?.() ?? import("./agent-path"))).createAgentPath(ports));
+  const loadPath = lazyModule(async () => {
+    const { createAgentPath } = await (ports.loadPath?.() ?? import("./agent-path"));
+    return path ??= createAgentPath(ports);
+  });
   // With the path there, a call runs at once: an Undo takes its workspace before any wait.
   const withPath = <T>(run: (path: AgentPath) => Promise<T>) => path ? run(path) : loadPath().then(run);
 
