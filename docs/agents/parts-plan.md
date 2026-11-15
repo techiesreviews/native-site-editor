@@ -7,11 +7,13 @@ reuse when they exist, and extend when needed.
 
 ## Today
 
-- **Parts:** eight on the design board, in `src/ui/parts/` (a flat folder) and `src/ui/inline-field.css`. Six have
-  their code (`<part>.ts`), their options (`<part>-options.ts`, pure, tested without a browser) and their styles
-  (`<part>.css`; the Icon's are `src/icons.css`); the Button's code is `button()` in `src/ui/dom.ts`, and the Inline
-  field is styles only. Their tests sit in the shared `tests/` folder.
-- **The Button pilot** (`src/ui/parts/button.css`, TOOLS-207) did the styles right: its whole look in one file on the
+- **Parts:** ten, each in its own folder `src/ui/<part>/` with a `part.json` (TOOLS-246, slice 1; the Icon button
+  and the Text button since slice 3). Most have their code (`<part>.ts`), their options (`<part>-options.ts`, pure,
+  tested without a browser, the test beside them) and their styles (`<part>.css`). A part's files outside its folder
+  are named in its `part.json` under `elsewhere`: the Button's code is still `button()` in `src/ui/dom.ts`, the
+  Icon's glyphs and styles are `src/icons.ts` and `src/icons.css`. The Inline field is styles only. The design
+  board's checks of the parts' options stay in `tests/catalogue-part-options.test.ts`.
+- **The Button pilot** (`src/ui/button/button.css`, TOOLS-207) did the styles right: its whole look in one file on the
   components layer, its own `--btn-*` defaults, a tone changes only those, and a screen that needs it to differ sets a
   hook in its own CSS. Its code is still `button()` in `src/ui/dom.ts`.
 - **Copies:** screens still make their own buttons, badges and dialogs. `scripts/agents/copies.json` counts them per
@@ -53,7 +55,7 @@ worktrees work on this repo at the same time).
 
 | Order | Slice | What changes |
 | --- | --- | --- |
-| 1 | Folders for the eight parts | Pure moves into `src/ui/<part>/` with `part.json`; the parts list reads the folders; the unit test globs (`package.json` `test`, `unit.files` and `paths.unitTests` in `scripts/agents/kit.json`) learn tests beside code; the parts' own files in `homes` (`scripts/agents/copies.mjs`) follow the move |
+| 1 | Folders for the eight parts | Done (TOOLS-246). Pure moves into `src/ui/<part>/` with `part.json`; the parts list reads the folders; the unit test globs (`package.json` `test`, `unit.files` and `paths.unitTests` in `scripts/agents/kit.json`) learn tests beside code; the parts' own files in `homes` (`scripts/agents/copies.mjs`) follow the move |
 | 2 | Import direction | A guard: nothing in `src/ui/` imports from `src/components/`, `src/page-builder/` or a screen. Done (TOOLS-247): `scripts/agents/ui-imports.mjs`, in `npm test` and the kit's css check; no import broke the rule, so it has no allow-list |
 | 3 | Icon button and text button | Two parts from `.icon-button` and `.text-button` in `src/style.css`; screens swap to them |
 | 4 | Badge swap | Screens use the Badge part; badge looks in screens go |

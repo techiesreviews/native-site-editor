@@ -1,0 +1,9 @@
+{
+  "name": "Icon",
+  "for": "A Phosphor Regular icon by name, alone or standing before or after words.",
+  "use": "`iconPart(name, { size, place, words })` from `src/ui/icon/icon.ts`; the screens still call `icon(name, size, className)` from `src/icons.ts` until the Icon swap.",
+  "elsewhere": [
+    "src/icons.ts",
+    "src/icons.css"
+  ]
+}

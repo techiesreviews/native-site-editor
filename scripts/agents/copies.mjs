@@ -324,11 +324,11 @@ export function copiesInStyles(text) {
 function sources(dir) {
   return readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1)).flatMap(entry => {
     const path = join(dir, entry.name);
-    return entry.isDirectory() ? sources(path) : /\.(ts|css)$/.test(entry.name) && !entry.name.endsWith(".d.ts") ? [path] : [];
+    return entry.isDirectory() ? sources(path) : /\.(ts|css)$/.test(entry.name) && !/\.(d|test)\.ts$/.test(entry.name) ? [path] : [];
   });
 }
 
-/** `{ "src/a.css": [found copies] }` for every TypeScript and CSS file under src, files with none left out. */
+/** `{ "src/a.css": [found copies] }` for every TypeScript and CSS file under src (a test beside its code is none), files with none left out. */
 export function scan(root) {
   const files = {};
   const src = join(root, "src");

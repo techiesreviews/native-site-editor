@@ -1,0 +1,5 @@
+{
+  "name": "Keyboard key",
+  "for": "A key cap, or several keys pressed together, in a menu row, a tooltip or the shortcuts sheet.",
+  "use": "`keyPart(keys)` from `src/ui/key/key.ts` (a string or a list of keys)."
+}

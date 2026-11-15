@@ -1,0 +1,11 @@
+{
+  "name": "Button",
+  "for": "Any action a person clicks: a filled primary action or a quiet secondary one, with words and optionally an icon.",
+  "notFor": "A link that leaves the editor (use `link()` beside it), an icon alone (use the Icon button), or a quiet action written as words (use the Text button).",
+  "use": "`button(text, action, className = \"button secondary\")` from `src/ui/dom.ts`; `link(text, href, className = \"button primary\")` for an `<a>` with the same look. A screen that needs it to differ sets a `--btn-*` hook in its own CSS.",
+  "variants": "tone: primary (class `button` or `button primary`), secondary (`button secondary`, the default of `button()`); disabled is plain, not a pale tone",
+  "elsewhere": [
+    "src/ui/dom.ts"
+  ],
+  "copies": "buttons made with `node(\"button\")` and button looks styled in screens (`node scripts/agents/copies.mjs report`)."
+}

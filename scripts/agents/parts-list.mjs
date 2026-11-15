@@ -1,6 +1,7 @@
 // The parts list: every UI component of the editor in one file agents read first (TOOLS-241). It is generated, so it
-// cannot go stale: docs/agents/parts.md comes from docs/agents/parts.json (the parts and shared pieces, described by
-// hand) and from the code (every other screen file, its leading comment, its styles, its tests, its options).
+// cannot go stale: docs/agents/parts.md comes from each part's folder (src/ui/<part>/ with its part.json, TOOLS-246),
+// from docs/agents/parts.json (the shared pieces, described by hand) and from the code (every other screen file, its
+// leading comment, its styles, its tests, its options).
 //
 //   node scripts/agents/parts-list.mjs write     rewrite docs/agents/parts.md
 //   node scripts/agents/parts-list.mjs check [--then <script> [args…]]
@@ -16,9 +17,11 @@ import { fileURLToPath } from "node:url";
 import { withoutComments } from "./copies.mjs";
 
 export const sourcePath = "docs/agents/parts.json";
+/** Each folder here is one part: its code, options, styles and tests, and a part.json that describes it. */
+export const partsDir = "src/ui";
 export const listPath = "docs/agents/parts.md";
-/** Not the editor's UI: the design board (preview only), web workers, the page builder's pure rules. */
-const outside = /^src\/catalogue\/|\.worker\.ts$|^src\/page-builder\/rules\/|\.d\.ts$/;
+/** Not the editor's UI: the design board (preview only), web workers, the page builder's pure rules, tests beside code. */
+const outside = /^src\/catalogue\/|\.worker\.ts$|^src\/page-builder\/rules\/|\.d\.ts$|\.test\.ts$/;
 /** A TypeScript file that builds elements (outside its comments): it is UI. One without (maths, protocols, state) is plumbing. */
 const buildsElements = /\bnode\s*\(\s*["'`]|\b(?:button|link)\s*\(|\bdocument\.createElement(?:NS)?\s*\(|\.innerHTML\s*=|\binsertAdjacentHTML\s*\(|<(?:div|span|button|dialog|section|ul|ol|li|label|input|form|p|a|svg|img|details)[\s/>]/;
 
@@ -91,9 +94,9 @@ function testTargets(root, test, text) {
   return found;
 }
 
-/** Test file → the files it imports or names. */
+/** Test file (in tests/ or beside its code in src/) → the files it imports or names. */
 function testMap(root) {
-  return new Map(walk(root, "tests").filter(path => path.endsWith(".test.ts"))
+  return new Map([...walk(root, "tests"), ...walk(root, "src")].filter(path => path.endsWith(".test.ts"))
     .map(test => [test, testTargets(root, test, readFileSync(join(root, test), "utf8"))]));
 }
 
@@ -104,6 +107,28 @@ function boardParts(root) {
   const text = readFileSync(path, "utf8");
   return [...text.matchAll(/id: "([\w-]+)", area: "(atoms|molecules|organisms)", name: "([^"]+)"[\s\S]*?files: \[([^\]]*)\]/g)]
     .map(([, id, area, name, files]) => ({ id, area, name, files: [...files.matchAll(/"([^"]+)"/g)].map(match => match[1]) }));
+}
+
+/**
+ * The parts, one per folder of src/ui/, from each folder's part.json: its name, what it is for and not for, how to call
+ * it, its variants and copies, and `elsewhere`, the files outside the folder that are the part's too (the Button's
+ * code in src/ui/dom.ts). Its files are the folder's code and styles, tests left out, then those.
+ */
+function partFolders(root, problems) {
+  const dir = join(root, partsDir);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name).sort().flatMap(id => {
+    const folder = posix.join(partsDir, id), source = posix.join(folder, "part.json");
+    if (!existsSync(join(root, source))) {
+      problems.push(`${folder}/: a part's folder has no part.json; add one (docs/agents/parts-plan.md)`);
+      return [];
+    }
+    let entry;
+    try { entry = JSON.parse(readFileSync(join(root, source), "utf8")); }
+    catch (error) { problems.push(`${source}: ${error.message}`); return []; }
+    const own = walk(root, folder).filter(path => /\.(ts|css)$/.test(path) && !outside.test(path));
+    return [{ ...entry, id, group: "part", source, files: [...own, ...(entry.elsewhere ?? [])] }];
+  });
 }
 
 const capital = text => text.charAt(0).toUpperCase() + text.slice(1);
@@ -131,11 +156,15 @@ export function build(root) {
   const boardOf = files => board.filter(part => files.includes(part.files[0]));
   const claimed = new Set();
 
-  const entries = (source.parts ?? []).map(entry => {
-    for (const field of ["id", "name", "group", "for", "files"]) if (!entry[field]) problems.push(`${sourcePath}: ${entry.id ?? entry.name ?? "an entry"} has no ${field}`);
-    if (!["part", "shared"].includes(entry.group)) problems.push(`${sourcePath}: ${entry.id}: group is part or shared, not ${entry.group}`);
+  const shared = (source.parts ?? []).map(entry => {
+    if (entry.group === "part") problems.push(`${sourcePath}: ${entry.id} is a part: give it a folder, ${partsDir}/${entry.id}/, with its part.json (this file holds the shared pieces, group shared)`);
+    else if (entry.group !== "shared") problems.push(`${sourcePath}: ${entry.id}: group is shared, not ${entry.group}`);
+    return { ...entry, source: sourcePath };
+  });
+  const entries = [...partFolders(root, problems), ...shared].map(entry => {
+    for (const field of ["id", "name", "group", "for", "files"]) if (!entry[field]) problems.push(`${entry.source}: ${entry.id ?? entry.name ?? "an entry"} has no ${field}`);
     for (const file of entry.files ?? []) {
-      if (!existsSync(join(root, file))) problems.push(`${sourcePath}: ${entry.id} lists ${file}, which does not exist`);
+      if (!existsSync(join(root, file))) problems.push(`${entry.source}: ${entry.id} lists ${file}, which does not exist`);
       claimed.add(file);
     }
     return entry;
@@ -203,8 +232,9 @@ export function build(root) {
     "",
     "1. A part or shared piece fits: use it.",
     "2. It nearly fits: extend it (a new option, a variant or a default in its own files), never copy its look into a screen.",
-    "3. Nothing fits: add a new part with a reason in the PR, as a new entry in `docs/agents/parts.json` (then run the write",
-    "   command above). A screen may place and size a part; it may not give it a look of its own.",
+    "3. Nothing fits: add a new part with a reason in the PR, as a new folder `src/ui/<part>/` with its code, styles, test",
+    "   and a `part.json` that describes it, as the parts below have (then run the write command above). A screen may place",
+    "   and size a part; it may not give it a look of its own.",
     "",
     "When copies of one look differ slightly, the most used look wins. Home-made copies are counted per file and may only",
     "go down (`node scripts/agents/copies.mjs report` lists them; `npm test` fails when they rise). The target shape and the",

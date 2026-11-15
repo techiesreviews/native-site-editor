@@ -1,0 +1,5 @@
+{
+  "name": "Section heading",
+  "for": "Small uppercase words naming a group in a panel or menu, with an optional end slot for a count or a button.",
+  "use": "`sectionHeadingPart(words, { level, end })` from `src/ui/section-heading/section-heading.ts`."
+}
