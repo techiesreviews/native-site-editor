@@ -18,8 +18,8 @@
 //   message and Try again, the site stays.
 // - head check (checkKept): the same commit: up to date, the head trusted; a newer one: folds in as an outside change
 //   (unsaved edits kept and merged) or loads the branch again; fails, never answers (given up as a failure) or the
-//   tab is hidden: "Could not check" while
-//   shown, asked again when next shown or focused; taken over by a newer check: that one's outcome stands.
+//   tab is hidden: "Could not check" while shown, asked again when next shown or focused; taken over by a newer
+//   check: that one's outcome stands, and the status follows it once it settles.
 // - leaving (a new listing, navigation, sign-out): the copy's texts not yet proven cache nothing and read nothing.
 
 import type { Repository, Snapshot } from "../shared/types";

@@ -647,3 +647,22 @@ test("a notice held through a save waits for the save's refreshed snapshot befor
   await flush();
   assert.equal(f.counts().loads, 1, "one load, of the other push");
 });
+
+test("checkHead tells its outcome apart, and headSettled waits for the check under way (TOOLS-242)", async () => {
+  const f = fixture();
+  const older = f.controller.checkHead(true), newer = f.controller.checkHead(true);
+  let settled = false;
+  void f.controller.headSettled().then(() => { settled = true; });
+  f.answers[0].resolve({ commit: "d".repeat(40) });
+  assert.equal(await older, null, "taken over by the newer check");
+  await flush();
+  assert.equal(settled, false, "the newer check is still under way");
+  f.answers[1].resolve({ commit: "a".repeat(40) });
+  assert.equal(await newer, "a".repeat(40), "the head on show");
+  await flush();
+  assert.equal(settled, true);
+  const hidden = fixture();
+  hidden.state.visible = false;
+  assert.equal(await hidden.controller.checkHead(true), undefined, "not checked while hidden");
+  await hidden.controller.headSettled();
+});

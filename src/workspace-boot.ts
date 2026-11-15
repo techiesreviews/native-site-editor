@@ -32,7 +32,7 @@ type Picker = { disabled: boolean; value: string };
 
 export interface WorkspaceBootPorts {
   appStore: AppStore;
-  savePublish: Pick<ReturnType<typeof createSavePublishController>, "trustedHead" | "seeHead" | "resetDeleted" | "checkDeleted" | "isDeleted" | "checkHead">;
+  savePublish: Pick<ReturnType<typeof createSavePublishController>, "trustedHead" | "seeHead" | "resetDeleted" | "checkDeleted" | "isDeleted" | "checkHead" | "headSettled">;
   repositoryIndex: Pick<RepositoryIndex, "clear" | "seed" | "entry">;
   cleanSources: Pick<CleanSourceCache, "load" | "peek">;
   filesTreeController: { reset(): void; render(): void };
@@ -321,20 +321,25 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       (!reopen || shas.has(reopen) || drafts.some((draft) => draft.path === reopen));
   }
   const upToDate = (branch: string, commit: string) => `Up to date with ${branch} · ${commit.slice(0, 7)}. Refresh to check for new commits.`;
-  /**
-   * GitHub's head behind a kept copy on show: a newer one folds in (or loads the branch again); the one shown is
-   * trusted from then on. A check with no answer (a hidden tab, a failed read, a newer check) asks again when the
-   * tab is next shown or focused.
-   */
   // What the last check behind a kept copy said, for its load's own final status.
   let keptSaid: { at: SessionStamp; text: string } | undefined;
+  /**
+   * GitHub's head behind a kept copy on show: a newer one folds in (or loads the branch again); the one shown is
+   * trusted from then on. A check with no answer (a hidden tab, a failed read) asks again when the tab is next
+   * shown or focused; one a newer check took over waits for it to settle.
+   */
   function checkKept(at: SessionStamp, branch: string) {
     void savePublish.checkHead(true).then((commit) => {
       if (!at.holds()) return;
-      // Taken over by a newer check (a push notice, a save): its outcome stands; the status waits for the next look.
+      // Taken over by a newer check (a push notice, a save): its outcome stands. Once no check is under way, the
+      // head it trusted says up to date; else this one asks again, cancelling none.
       if (commit === null) {
-        const again = () => { if (at.holds() && savePublish.trustedHead() !== appStore.snapshot.value?.commit) checkKept(at, branch); };
-        if (typeof document !== "undefined" && document.visibilityState === "visible") again(); else onNextWake(again);
+        void savePublish.headSettled().then(() => {
+          const shown = appStore.snapshot.value?.commit;
+          if (!at.holds() || !shown) return;
+          if (savePublish.trustedHead() === shown) ports.settleStatus(upToDate(branch, shown));
+          else checkKept(at, branch);
+        });
         return;
       }
       if (!commit) {
@@ -361,13 +366,13 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     document.addEventListener("visibilitychange", wake);
     globalThis.addEventListener?.("focus", wake);
   }
+  // `force`: written even when this tab kept the same before, as another tab may have kept its own site since
+  // (one copy for the whole browser): leaving the tab always writes.
+  let kept: string | undefined;
   /**
    * Keeps the site on show for the next visit (src/warm-copy.ts): its snapshot and every text of it this tab holds as
    * GitHub has it (the painted files first, then each page and file read so far), up to the copy's limit.
    */
-  // `force`: written even when this tab kept the same before, as another tab may have kept its own site since
-  // (one copy for the whole browser): leaving the tab always writes.
-  let kept: string | undefined;
   async function rememberShown(login: string, repo: Repository, branch: string, snapshot: Snapshot, force = false) {
     if (!snapshot.tree || snapshot.empty || snapshot.branch !== branch) return;
     const shas = new Map(snapshot.tree.filter((entry) => entry.type === "blob").map((entry) => [entry.path, entry.sha]));

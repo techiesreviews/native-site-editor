@@ -121,12 +121,21 @@ test("a saved change is what the next visit shows at once", async ({ page, baseU
   await expect(chip(page)).toHaveCount(0);
 });
 
-test("a listing that fails behind the kept page says so; the page stays", async ({ page }) => {
-  await page.route("**/api/repositories*", (route) => route.fulfill({ status: 503, json: { error: "GitHub is not answering." } }));
+test("a listing that fails behind the kept page says so; the page stays, and the project menu then lists without reopening it", async ({ page }) => {
+  let failing = true;
+  await page.route("**/api/repositories*", (route) => failing ? route.fulfill({ status: 503, json: { error: "GitHub is not answering." } }) : route.continue());
   await page.reload();
   await expect(frame(page).locator(".hero h1")).toHaveText(heading, { timeout: 15_000 });
   await expect(page.locator("#notice")).toBeVisible({ timeout: 30_000 });
   await expect(frame(page).locator(".hero h1")).toHaveText(heading);
+  failing = false;
+  const snapshots: string[] = [];
+  page.on("request", (request) => { if (new URL(request.url()).pathname === "/api/snapshot") snapshots.push(request.url()); });
+  await page.locator(".repository-menu__trigger").click();
+  await expect(page.getByRole("list", { name: "Repositories" }).getByRole("button", { name: /^native-cards / })).toBeVisible({ timeout: 15_000 });
+  await expect(frame(page).locator(".hero h1")).toHaveText(heading);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  expect(snapshots).toEqual([]);
 });
 
 test("a kept branch GitHub no longer lists opens the plain way, which says so", async ({ page }) => {
