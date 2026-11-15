@@ -54,15 +54,16 @@ export function helperCommand(url: string, token: string) {
   return `EDITOR_HELPER_TOKEN=${token} npx -y ${HELPER_PACKAGE} ${url}`;
 }
 /**
- * The same command started apart from the conversation that runs it, so it outlives it; each carries the token
- * itself. Linux: a user service (`systemd-run` passes no environment of its own, so the token and PATH are set, and
- * npx is found by its full path), stopped with `systemctl --user stop editor-helper`. Elsewhere: `nohup` through
- * `env`, which sets the token for the program it starts.
+ * The same command started apart from the conversation that runs it, so it outlives it. The token travels in the
+ * environment, never as an argument, so other programs do not see it in the process list. Linux: a user service
+ * (`systemd-run` passes no environment of its own: a bare `--setenv` copies the token from its own, PATH is set, and
+ * npx is found by its full path), stopped with `systemctl --user stop editor-helper`. Elsewhere: `nohup`, which hands
+ * its environment to npx.
  */
 export function helperDetached(url: string, token: string) {
   return {
-    systemd: `systemd-run --user --collect --unit editor-helper --setenv=EDITOR_HELPER_TOKEN=${token} --setenv=PATH="$PATH" "$(command -v npx)" -y ${HELPER_PACKAGE} ${url}`,
-    nohup: `nohup env EDITOR_HELPER_TOKEN=${token} npx -y ${HELPER_PACKAGE} ${url} >/dev/null 2>&1 &`,
+    systemd: `EDITOR_HELPER_TOKEN=${token} systemd-run --user --collect --unit editor-helper --setenv=EDITOR_HELPER_TOKEN --setenv=PATH="$PATH" "$(command -v npx)" -y ${HELPER_PACKAGE} ${url}`,
+    nohup: `EDITOR_HELPER_TOKEN=${token} nohup npx -y ${HELPER_PACKAGE} ${url} >/dev/null 2>&1 &`,
   };
 }
 
