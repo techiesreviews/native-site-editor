@@ -97,8 +97,8 @@ its number unused.
 
 ### F-setup-09 Sign out
 - Try: Open the project menu and press Sign out.
-- Good: Back to the sign-in screen; the next visit does not continue to GitHub by itself and forgets the remembered site.
-- Files: `src/components/repository-menu.ts`, `src/repository-list.ts`, `src/boot-memory.ts`
+- Good: Back to the sign-in screen; the next visit does not continue to GitHub by itself and forgets the remembered site and this browser's copy of it.
+- Files: `src/components/repository-menu.ts`, `src/repository-list.ts`, `src/boot-memory.ts`, `src/warm-copy.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-boot-memory.spec.ts`
 - Steps: `scripts/agents/shots/features/F-setup-09.json`
@@ -155,10 +155,10 @@ its number unused.
 
 ### F-repo-07 Fast reopen
 - Try: Reload the editor on a site you had open.
-- Good: The remembered page paints at once and is checked against GitHub; a file that moved on GitHub shows its fresh content.
-- Files: `src/boot-memory.ts`, `src/boot-reads.ts`, `src/native-boot.ts`
+- Good: The page this browser showed last opens at once, before GitHub answers, and works; GitHub is checked behind it. A newer version on GitHub replaces it when nothing is unsaved, its author's chip on the page; unsaved edits stay and GitHub's change merges in. Without a kept copy the remembered page paints once GitHub proves it; a file that moved on GitHub shows its fresh content.
+- Files: `src/warm-copy.ts`, `src/workspace-boot.ts`, `src/boot-memory.ts`, `src/boot-reads.ts`, `src/native-boot.ts`
 - Phone: yes
-- Spec: `tests/native-save/native-boot-memory.spec.ts`
+- Spec: `tests/native-save/native-warm-open.spec.ts`, `tests/native-save/native-boot-memory.spec.ts`
 - Steps: none yet (needs a reload)
 
 ### F-repo-08 Work held across a switch

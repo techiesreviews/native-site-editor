@@ -93,7 +93,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
     repositorySelect: { value: "501" },
     repositoryMenu: undefined, explorerDropdown: undefined, siteActions: undefined,
     // A native site paints at once when asked for (`native`), its home page among the painted files.
-    nativeSite: native ? ({ routes: {} } as unknown as WorkspaceBootPorts["nativeSite"]) : undefined,
+    nativeSite: native ? { routes: {}, components: {} } : undefined,
     nativeSourcesRequest: 0, nativePaintedRequest: native ? 0 : -1, nativePaintedPaths: native ? ["index.html"] : [],
     source: () => "https://editor.test/",
     sessionTag: () => tag,
