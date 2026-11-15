@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { asWarmCopy, forgetWarmCopy, gitBlobSha, MAX_TEXT_LENGTH, MAX_TREE_ENTRIES, provenTexts, readWarmCopy, warmFor, writeWarmCopy, type WarmCopy } from "../src/warm-copy.ts";
+import { asWarmCopy, forgetWarmCopy, MAX_TEXT_LENGTH, MAX_TREE_ENTRIES, provenTexts, readWarmCopy, warmFor, writeWarmCopy, type WarmCopy } from "../src/warm-copy.ts";
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb.ts";
 import type { Repository, TreeEntry } from "../shared/types.ts";
 
@@ -14,13 +14,6 @@ function copy(extra: Partial<WarmCopy> = {}): WarmCopy {
   return { login: "Lex", source: "https://editor.test/", repo, branch: "main",
     snapshot: { commit: "c".repeat(40), branch: "main", entries: tree, tree }, files: [{ path: "index.html", sha: HELLO_SHA, text: HELLO }], ...extra };
 }
-
-test("git's blob id of a text", async () => {
-  assert.equal(await gitBlobSha(HELLO), HELLO_SHA);
-  assert.equal(await gitBlobSha(""), "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
-  // Bytes, not characters: "é" is two UTF-8 bytes.
-  assert.equal(await gitBlobSha("é"), "4b04fff51468d8ab5201ab02b725dc477bc7cb45");
-});
 
 test("the copy round-trips and a new one replaces it; forgetting leaves none", async () => {
   const { factory } = fakeIndexedDB();

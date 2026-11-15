@@ -20,7 +20,7 @@ import { ReadUnansweredError } from "./read-retry";
 import type { RepositoryIndex } from "./repository-loading";
 import { githubScope, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import { readWorkspace, readWorkspaceUrl, rememberWorkspace, type WorkspaceLocation } from "./workspace-state";
-import { provenTexts, readWarmCopy, warmFor, writeWarmCopy, type WarmCopy } from "./warm-copy";
+import { MAX_TEXT_LENGTH, provenTexts, readWarmCopy, warmFor, writeWarmCopy, type WarmCopy } from "./warm-copy";
 
 // `retry`: the open this file is part of, offered as Try again when its read gets no answer.
 type OpenOptions = { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; retry?: () => void };
@@ -77,6 +77,8 @@ export interface WorkspaceBootPorts {
   /** `panel`: the failed panel the caller drew (what `node` made), which carries Try again. */
   errorMessage(error: unknown, retry?: () => void, panel?: HTMLElement): void;
   draftScope(): DraftScope | undefined;
+  /** The browser's drafts of `scope` (src/drafts.ts), loaded once draftsReady resolves. */
+  draftsOf(scope: DraftScope): SavedDraft[];
   entryAt(path: string): TreeEntry | undefined;
   setCurrentPage(path?: string): void;
   openNewDraft(draft: SavedDraft, options?: OpenOptions): Promise<void>;
@@ -210,11 +212,11 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         ports.draftsReady(),
       ]);
       if (!at.holds()) return;
-      // A file to reopen that the kept copy does not have (made since, elsewhere) and no draft holds: GitHub's
-      // snapshot opens instead, the plain way.
-      const scope = ports.draftScope();
-      if (warm && reopen && !(result.tree ?? []).some((entry) => entry.path === reopen) && !(scope && draftStore().get(scope, reopen)))
-        return await loadSnapshot(reopen);
+      // GitHub's snapshot opens instead, the plain way, when the kept copy is not the version this browser's drafts
+      // began from (another tab moved on, a keep that never landed): every draft's starting blob must be the copy's
+      // at its path (none for a new file), or the drafts' checks against the copy (a deletion GitHub "no longer
+      // has", a draft "back to" its base) could drop unsaved work. So does a file to reopen that the copy lacks.
+      if (warm && !keptAgrees(result, repo, branch, reopen)) return await loadSnapshot(reopen);
       appStore.snapshot.value = result;
       repositoryIndex.seed(repo, result);
       if (!warm) savePublish.seeHead(result.commit);
@@ -288,7 +290,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       }
       // A kept copy is up to date only once GitHub's head says so (checkKept), which may have answered already.
       const shown = appStore.snapshot.value?.commit ?? result.commit;
-      ports.settleStatus(warm && savePublish.trustedHead() !== shown ? `Checking GitHub for newer changes on ${branch}…` : upToDate(branch, shown));
+      ports.settleStatus(!warm || savePublish.trustedHead() === shown ? upToDate(branch, shown)
+        : keptSaid?.at === at ? keptSaid.text : `Checking GitHub for newer changes on ${branch}…`);
     } catch (error) {
       if (at.holds()) {
         ports.files.replaceChildren(
@@ -307,17 +310,31 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     }
   }
 
+  /** Whether the kept snapshot is the version every draft of `repo`'s `branch` began from, and holds `reopen`. */
+  function keptAgrees(kept: Snapshot, repo: Repository, branch: string, reopen: string | undefined) {
+    // The drafts' scope from the load itself: the shown one is none until a snapshot is on show.
+    const login = ports.user?.login, shas = new Map((kept.tree ?? []).map((entry) => [entry.path, entry.sha]));
+    if (!login) return false;
+    const drafts = ports.draftsOf({ account: login, repoId: repo.id, repo: repo.full_name, branch });
+    return drafts.every((draft) => (shas.get(draft.path) ?? null) === draft.baseSha) &&
+      (!reopen || shas.has(reopen) || drafts.some((draft) => draft.path === reopen));
+  }
   const upToDate = (branch: string, commit: string) => `Up to date with ${branch} · ${commit.slice(0, 7)}. Refresh to check for new commits.`;
   /**
    * GitHub's head behind a kept copy on show: a newer one folds in (or loads the branch again); the one shown is
    * trusted from then on. A check with no answer (a hidden tab, a failed read, a newer check) asks again when the
    * tab is next shown or focused.
    */
+  // What the last check behind a kept copy said, for its load's own final status.
+  let keptSaid: { at: SessionStamp; text: string } | undefined;
   function checkKept(at: SessionStamp, branch: string) {
     void savePublish.checkHead(true).then((commit) => {
       if (!at.holds()) return;
       if (!commit) {
-        if (typeof document !== "undefined" && document.visibilityState === "visible") ports.settleStatus(`Could not check GitHub for newer changes on ${branch}. Refresh to check.`);
+        if (typeof document !== "undefined" && document.visibilityState === "visible") {
+          keptSaid = { at, text: `Could not check GitHub for newer changes on ${branch}. Refresh to check.` };
+          ports.settleStatus(keptSaid.text);
+        }
         onNextWake(() => { if (at.holds()) checkKept(at, branch); });
         return;
       }
@@ -337,31 +354,43 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     document.addEventListener("visibilitychange", wake);
     globalThis.addEventListener?.("focus", wake);
   }
-  /** Keeps the site on show and GitHub's texts of the files its preview painted, for the next visit (src/warm-copy.ts). */
-  let kept: Snapshot | undefined;
+  /**
+   * Keeps the site on show for the next visit (src/warm-copy.ts): its snapshot and every text of it this tab holds as
+   * GitHub has it (the painted files first, then each page and file read so far), up to the copy's limit.
+   */
+  let kept: string | undefined;
   function rememberShown(login: string, repo: Repository, branch: string, snapshot: Snapshot) {
     if (!snapshot.tree || snapshot.empty || snapshot.branch !== branch) return;
-    kept = snapshot;
-    const files = ports.nativePaintedPaths.flatMap((path) => {
-      const sha = repositoryIndex.entry(repo, snapshot, path)?.sha;
-      const text = sha === undefined ? undefined : ports.cleanSources.peek(repo.full_name, sha) ?? ports.baseText(path);
-      return sha !== undefined && text !== undefined ? [{ path, sha, text }] : [];
-    });
+    const shas = new Map(snapshot.tree.filter((entry) => entry.type === "blob").map((entry) => [entry.path, entry.sha]));
+    const files: WarmCopy["files"] = [];
+    let length = 0;
+    for (const path of new Set([...ports.nativePaintedPaths, ...shas.keys()])) {
+      const sha = shas.get(path), text = sha === undefined ? undefined : ports.cleanSources.peek(repo.full_name, sha) ?? ports.baseText(path);
+      if (sha === undefined || text === undefined || length + text.length > MAX_TEXT_LENGTH) continue;
+      length += text.length;
+      files.push({ path, sha, text });
+    }
+    // The same commit and texts as last kept: nothing to write.
+    const signature = `${repo.id} ${branch} ${snapshot.commit} ${files.length} ${length}`;
+    if (signature === kept) return;
+    kept = signature;
     void writeWarmCopy({ login, source: ports.source(), repo, branch, snapshot, files });
   }
   // The site as it shows now, once painted (`wait`: after the paint under way, once): a save or an outside change
   // folded in since its first paint.
   function keepShown(wait = false) {
     const repo = appStore.repository.value, branch = appStore.branch.value, snapshot = appStore.snapshot.value, login = ports.user?.login;
-    if (!login || !repo || !branch || !snapshot || snapshot === kept || !ports.nativeSite) return;
+    if (!login || !repo || !branch || !snapshot || !ports.nativeSite) return;
     if (ports.nativePaintedRequest === ports.nativeSourcesRequest) rememberShown(login, repo, branch, snapshot);
     else if (wait) ports.afterNativePaint(ports.nativeSourcesRequest, () => { if (appStore.snapshot.value === snapshot) keepShown(); });
   }
-  // A new snapshot (a save, a fold) is kept a second after it, and leaving the tab keeps what it shows then.
+  // A new snapshot (a save, a fold) or another page opened is kept a second after it, and leaving the tab keeps
+  // what it shows then.
   let keeping: ReturnType<typeof setTimeout> | undefined;
   effect(() => {
     clearTimeout(keeping);
-    if (appStore.snapshot.value) keeping = setTimeout(() => keepShown(true), 1000);
+    const shown = appStore.snapshot.value, page = appStore.openFile.value;
+    if (shown && page !== null) keeping = setTimeout(() => keepShown(true), 1000);
     (keeping as { unref?: () => void } | undefined)?.unref?.();
   });
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") keepShown(); });
@@ -388,7 +417,10 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         const text = texts.get(sha);
         if (token.abandoned || text === undefined) throw gone();
         return text;
-      }).catch(() => token.abandoned ? Promise.reject(gone()) : api<{ content: string }>("file", { repo: repo.full_name, sha }).then((file) => file.content)));
+      }).catch(() => token.abandoned ? Promise.reject(gone()) : api<{ content: string }>("file", { repo: repo.full_name, sha }).then((file) => {
+        if (token.abandoned) throw gone();
+        return file.content;
+      })));
     return Promise.resolve(copy.snapshot);
   }
 

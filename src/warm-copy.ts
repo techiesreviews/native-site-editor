@@ -7,6 +7,7 @@
 // copy costs a read from GitHub, never a wrong base. Sign-out forgets it.
 
 import type { Repository, Snapshot } from "../shared/types";
+import { textBlobSha } from "./file-changes";
 
 export interface WarmCopy {
   login: string;
@@ -90,21 +91,12 @@ export function warmFor(copy: WarmCopy | undefined, at: { login: string; source:
   return Boolean(copy && copy.login.toLowerCase() === at.login.toLowerCase() && copy.source === at.source && copy.repo.id === at.repoId && copy.branch === at.branch);
 }
 
-/** Git's blob id of `text` (SHA-1 of "blob <bytes>\0" and its UTF-8 bytes). */
-export async function gitBlobSha(text: string) {
-  const body = new TextEncoder().encode(text), head = new TextEncoder().encode(`blob ${body.length}\0`);
-  const bytes = new Uint8Array(head.length + body.length);
-  bytes.set(head);
-  bytes.set(body, head.length);
-  return [...new Uint8Array(await crypto.subtle.digest("SHA-1", bytes))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 /** The copy's texts by SHA, each only when its snapshot still names that SHA at its path and the text hashes to it. */
 export async function provenTexts(copy: WarmCopy): Promise<Map<string, string>> {
   const shas = new Map((copy.snapshot.tree ?? []).map((entry) => [entry.path, entry.sha]));
   const proven = new Map<string, string>();
   await Promise.all(copy.files.map(async ({ path, sha, text }) => {
-    if (shas.get(path) === sha && /^[0-9a-f]{40}$/.test(sha) && await gitBlobSha(text).catch(() => "") === sha) proven.set(sha, text);
+    if (shas.get(path) === sha && /^[0-9a-f]{40}$/.test(sha) && await textBlobSha(text).catch(() => "") === sha) proven.set(sha, text);
   }));
   return proven;
 }

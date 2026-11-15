@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { publishButton } from "./publish";
+import { storedDraft } from "./drafts";
 
 // A repeat visit shows the last site at once (TOOLS-242, src/warm-copy.ts): the page this browser showed last opens
 // from its own copy as soon as the session names the same account, before GitHub answers anything; GitHub's head is
@@ -26,6 +28,14 @@ const keptCommit = (page: Page) => page.evaluate(() => new Promise<string | unde
     read.onerror = () => done(undefined);
   };
 }));
+const keptPaths = (page: Page) => page.evaluate(() => new Promise<string[]>((done) => {
+  const open = indexedDB.open("native-site-editor-warm-copy", 1);
+  open.onsuccess = () => {
+    const read = open.result.transaction("copy").objectStore("copy").get("last");
+    read.onsuccess = () => { done(((read.result as { files?: { path: string }[] } | undefined)?.files ?? []).map((file) => file.path)); open.result.close(); };
+  };
+}));
+const gitBlobSha = (text: string) => createHash("sha1").update(`blob ${Buffer.byteLength(text)}\0`).update(text).digest("hex");
 async function head(page: Page, baseURL: string | undefined) {
   return ((await (await page.request.get(`${baseURL}/__demo/head`)).json()) as { commit: string }).commit;
 }
@@ -197,4 +207,34 @@ test("sign-out right after a save: the keep that follows the save writes nothing
   // fixed-wait: past the second a late keep would have taken; nothing marks a write that does not happen.
   await page.waitForTimeout(1_500);
   expect(await keptCommit(page)).toBeUndefined();
+});
+
+test("another page opened before the reload shows at once too", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent("about/index.html")}`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html", { timeout: 30_000 });
+  await expect.poll(() => keptPaths(page), { timeout: 15_000 }).toContain("about/index.html");
+  const about = await frame(page).locator("h1").first().textContent();
+  const github = await holdGitHub(page);
+  await page.reload();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html", { timeout: 15_000 });
+  await expect(frame(page).locator("h1").first()).toHaveText(about!, { timeout: 15_000 });
+  await github.release();
+});
+
+test("an unsaved deletion of a file the kept copy does not have yet survives: the copy is not used", async ({ page, baseURL }) => {
+  // Sam adds a page on GitHub; this browser holds an unsaved deletion of it (made in a tab whose keep never landed).
+  const notes = "<!doctype html><html><body><h1>Notes</h1></body></html>\n";
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "notes.html", content: notes, author: "Sam" } })).status()).toBe(204);
+  await page.evaluate(([text, sha]) => {
+    const scope = { account: "native-demo-user", repoId: 501, repo: "native-demo-user/native-demo", branch: "main" };
+    const key = "astro-site-editor:draft:v1:" + JSON.stringify([scope.account, scope.repoId, scope.branch, "notes.html"]);
+    localStorage.setItem(key, JSON.stringify({ ...scope, version: 1, path: "notes.html", baseSha: sha, original: text, content: text, deleted: true, updatedAt: Date.now() }));
+  }, [notes, gitBlobSha(notes)] as const);
+  const github = await holdGitHub(page);
+  await page.reload();
+  // The kept page waits for GitHub: its version is older than the deletion's.
+  await expect(page.locator("#status")).not.toHaveText("Checking GitHub for newer changes on main…");
+  await github.release();
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  expect((await storedDraft(page, "notes.html"))?.deleted).toBe(true);
 });
