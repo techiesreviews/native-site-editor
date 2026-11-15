@@ -286,8 +286,9 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         ports.settleStatus(`${repo.name} is empty. Choose how to start your site.`);
         return;
       }
-      // A kept copy is up to date only once GitHub's head says so (checkKept).
-      ports.settleStatus(warm ? `Checking GitHub for newer changes on ${branch}…` : upToDate(branch, result.commit));
+      // A kept copy is up to date only once GitHub's head says so (checkKept), which may have answered already.
+      const shown = appStore.snapshot.value?.commit ?? result.commit;
+      ports.settleStatus(warm && savePublish.trustedHead() !== shown ? `Checking GitHub for newer changes on ${branch}…` : upToDate(branch, shown));
     } catch (error) {
       if (at.holds()) {
         ports.files.replaceChildren(
@@ -307,14 +308,30 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   }
 
   const upToDate = (branch: string, commit: string) => `Up to date with ${branch} · ${commit.slice(0, 7)}. Refresh to check for new commits.`;
-  /** GitHub's head behind a kept copy on show: a newer one folds in (or loads the branch again); the one shown is trusted from then on. */
+  /**
+   * GitHub's head behind a kept copy on show: a newer one folds in (or loads the branch again); the one shown is
+   * trusted from then on. A check with no answer (a hidden tab, a failed read, a newer check) asks again when the
+   * tab is next shown or focused.
+   */
   function checkKept(at: SessionStamp, branch: string) {
     void savePublish.checkHead(true).then((commit) => {
-      const shown = appStore.snapshot.value;
-      if (!commit || !at.holds() || shown?.commit !== commit) return;
+      if (!at.holds()) return;
+      if (!commit) { onNextWake(() => { if (at.holds()) checkKept(at, branch); }); return; }
+      if (appStore.snapshot.value?.commit !== commit) return;
       savePublish.seeHead(commit);
       ports.settleStatus(upToDate(branch, commit));
     });
+  }
+  function onNextWake(run: () => void) {
+    if (typeof document === "undefined") return;
+    const wake = () => {
+      if (document.visibilityState !== "visible") return;
+      document.removeEventListener("visibilitychange", wake);
+      globalThis.removeEventListener?.("focus", wake);
+      run();
+    };
+    document.addEventListener("visibilitychange", wake);
+    globalThis.addEventListener?.("focus", wake);
   }
   /** Keeps the site on show and GitHub's texts of the files its preview painted, for the next visit (src/warm-copy.ts). */
   let kept: Snapshot | undefined;

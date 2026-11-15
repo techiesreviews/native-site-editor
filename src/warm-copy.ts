@@ -68,6 +68,7 @@ const SIGNED_OUT = "native-site-editor-warm-copy";
 try {
   const heard = new BroadcastChannel(SIGNED_OUT);
   heard.onmessage = () => { if (globalThis.indexedDB) forgotten.add(globalThis.indexedDB); };
+  // Node's channel would keep a process (the unit tests) running; a browser's has no unref.
   (heard as { unref?: () => void }).unref?.();
 } catch { /* no other tabs to hear */ }
 const remove = (factory?: Factory) => run("readwrite", (store) => store.delete(KEY), factory);

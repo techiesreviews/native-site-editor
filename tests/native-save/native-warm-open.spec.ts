@@ -45,6 +45,14 @@ async function pasteSource(page: Page, source: string) {
  * Holds every read that waits on GitHub (the listing, branches, snapshot, head and file reads) until released; the
  * session, answered by the editor's own server, goes through. `seen` lists what was asked while held.
  */
+/** Signs out through the project menu; the editor's home then answers signed out (the test server would sign the demo user in again). */
+async function signOut(page: Page, baseURL: string | undefined) {
+  await page.route("**/api/session", (route) => route.fulfill({ json: { configured: true, user: null, installUrl: null } }));
+  await page.route("**/auth/login*", (route) => route.abort());
+  await page.locator(".repository-menu__trigger").click();
+  await page.getByRole("button", { name: /^Sign out/ }).click();
+  await page.waitForURL(`${baseURL}/`);
+}
 async function holdGitHub(page: Page) {
   const held: Route[] = [], seen: string[] = [];
   let open = false;
@@ -173,8 +181,19 @@ test("a repository no longer listed takes the kept page away and says so", async
 });
 
 test("sign-out forgets the kept copy before the editor leaves", async ({ page, baseURL }) => {
-  await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: /^Sign out/ }).click();
-  await page.waitForURL(`${baseURL}/`);
+  await signOut(page, baseURL);
+  expect(await keptCommit(page)).toBeUndefined();
+});
+
+test("sign-out right after a save: the keep that follows the save writes nothing back", async ({ page, baseURL }) => {
+  const before = await keptCommit(page);
+  await pasteSource(page, indexSource.replace(heading, "Saved just before signing out"));
+  await expect(frame(page).locator(".hero h1")).toHaveText("Saved just before signing out", { timeout: 15_000 });
+  await publishButton(page).click();
+  await expect.poll(() => head(page, baseURL), { timeout: 30_000 }).not.toBe(before);
+  // Within the second after the save, before its keep.
+  await signOut(page, baseURL);
+  // fixed-wait: past the second a late keep would have taken; nothing marks a write that does not happen.
+  await page.waitForTimeout(1_500);
   expect(await keptCommit(page)).toBeUndefined();
 });
