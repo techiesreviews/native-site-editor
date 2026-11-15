@@ -37,13 +37,24 @@ beyond that stays as a named variant. Nothing else visible changes.
   only its own icon buttons, never those in the project menu; Editor parts: ticket for slice 3, the Icon button and
   Text button parts (TOOLS-248); Review round 1: the compact Text button fills on press and waits for a mouse to fill
   on hover; the top bar's sizing has a test; Editor parts: slice 3 ticket closed with its differences list; Second look:
-  the Icon button and the Text button take their looks from their own --icon-btn-* and --text-btn-* defaults.
+  the Icon button and the Text button take their looks from their own --icon-btn-* and --text-btn-* defaults; Second
+  look: Media's Download original and suggested name use a new underlined Text button and give it no look of their own.
+- Underlined variant (2026-11-15): `textButton(words, action, { underlined: true })` adds `text-button--underlined`,
+  which sets only `--text-btn-decoration` (none at rest by default). Media's Download original
+  (`media-detail__original`) and the suggested free name (`media-detail__suggest`) use it; their screen rules keep only
+  placement and the tap area. Links that carry the `text-button` class (`repository-menu__action`) already set no
+  underline themselves, so the new resting default changes nothing there.
 - Tests: `tests/icon-button-text-button-parts.test.ts` (options, markup, CSS layer and loading, copy homes, parts list,
-  the top bar's sizing); `kit unit --affected` 3147/3147.
+  the top bar's sizing, the underlined variant, Media's two buttons without a look of their own); `kit unit --affected`
+  3150/3151 on 2026-11-15, the one failure `tests/preview-menu.test.ts` (copy icon timing) passing 11/11 alone.
 - Evidence: `kit shots --compare dev` for editor, structure, media-gallery, file-details and improve-images at 390 and
   1280, light and dark: pixel-identical but structure 390 light, where the cached dev shot caught the page tree before
   the header and footer carets drew (dark, and the retake, match). Steps tries: project menu with Branches at 1280 and
   the phone menu's Add a block view at 390, light and dark. `kit size`: boot 354 KB (±0), budget 355 KB.
+  After the underlined variant (2026-11-15): `kit shots file-details media-gallery --compare dev` at 390 and 1280,
+  light and dark, pixel-identical; a raw scenario that keeps an original and opens Copies and original shows the
+  Download original row pixel-identical to dev in all four, with the same computed border, background, colour, size,
+  alignment and underline. Copies: 123 (unchanged).
 - Differences, the most used look winning (Lex's rule of 2026-11-14), none of them in a screenshot but the first:
   - Project menu, Reload repositories: its icon sat 2px right of centre (the browser's own button padding); now centred.
   - Branches flyout's Refresh from GitHub and Reload repositories: keyboard focus shows the focus ring only, without
@@ -52,11 +63,11 @@ beyond that stays as a named variant. Nothing else visible changes.
   - Component panel's Choose image… (compact Text button): fills on press; the hover fill waits for a mouse.
   - Rows in the project menu and the agent menu that borrow the `text-button` class no longer underline on hover, as
     the editor's other menu rows (the share rows already removed it).
-- Review decisions: OPEN (paused 2026-11-14): the second look's P2 on `media-detail.css:121` (the Download original
+- Review decisions: fixed (2026-11-15) the second look's P2 on `media-detail.css:121` (the Download original
   button's border, background, colour and underline set by the screen). An earlier decline said
-  `.media-library button` needed them cancelled; that was wrong (it sets only the corner, minimum height and cursor),
-  so the finding stands: remove the redundant look declarations, add an underlined Text button variant for the
-  permanent underline (`media-detail__original`, `media-detail__suggest`), and keep the placement and tap-area rules.
+  `.media-library button` needed them cancelled; that was wrong (it sets only the font, corner, minimum height and
+  cursor), so the look declarations and the font size went, the underline became the Text button's underlined
+  variant (`media-detail__original`, `media-detail__suggest`), and the placement and tap-area rules stayed.
   Declined its browser tests for the compact hover and touch states and for a
   long file name at 320px: the unit test pins the CSS, and the file name's layout is unchanged by this slice.
   Declined a DOM test of `iconButton()` and `textButton()`: the unit tests run without a DOM, and the
