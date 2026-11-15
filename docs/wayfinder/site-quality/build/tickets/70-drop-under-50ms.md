@@ -27,4 +27,4 @@ Lex (2026-11-15): fix "A" for card TOOLS-261 (parent TOOLS-238): make the draggi
 - Tests: `native-section-drag.spec.ts` and `native-add-panel.spec.ts` check that the drag holder holds the mouse and shows the grabbing cursor; the edit-latency spec failed on dev ("drop a block": 69 and 70 ms) and passed 3 times in a row after.
 - Boot: 355 KB, ±0 KB against dev (code removed, none added).
 - Feature list: no change (the cursor moved to another element; no feature looks or works differently)
-- Commits: "Editor: the grabbing cursor rides on the drag holder, not the whole page (TOOLS-261)"
+- Commits: "Editor: the grabbing cursor rides on the drag holder, not the whole page (TOOLS-261)", "Editor: the drag spec checks the drag holder keeps the mouse, so its cursor shows (TOOLS-261)", "Editor: the Add panel spec checks the drag holder holds the mouse and shows the grabbing cursor (TOOLS-261)", "Ticket: site-quality 70, dropping a block under 50 ms (TOOLS-261)", "docs: 70-drop-under-50ms commits by subject", "Ticket: site-quality 70 proof lines and feature-list note (TOOLS-261)" and this commit.
