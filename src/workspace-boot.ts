@@ -1,6 +1,7 @@
 // Opening a repository: its choice and branch (chooseRepository), its
 // snapshot and first paint (loadSnapshot), a file reopened from a path
-// (restoreFile), and the remembered last boot's guess (src/boot-memory.ts).
+// (restoreFile), the remembered last boot's guess (src/boot-memory.ts) and the
+// last shown site kept in this browser (src/warm-copy.ts).
 // The host (src/main.ts) keeps the workspace session, the DOM and the native
 // site, and hands them in as live ports.
 
@@ -18,7 +19,8 @@ import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
 import { ReadUnansweredError } from "./read-retry";
 import type { RepositoryIndex } from "./repository-loading";
 import { githubScope, type SessionStamp, type WorkspaceScope } from "./workspace-session";
-import { readWorkspaceUrl, rememberWorkspace, type WorkspaceLocation } from "./workspace-state";
+import { readWorkspace, readWorkspaceUrl, rememberWorkspace, type WorkspaceLocation } from "./workspace-state";
+import { provenTexts, readWarmCopy, warmFor, writeWarmCopy, type WarmCopy } from "./warm-copy";
 
 // `retry`: the open this file is part of, offered as Try again when its read gets no answer.
 type OpenOptions = { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; retry?: () => void };
@@ -29,9 +31,9 @@ type Picker = { disabled: boolean; value: string };
 
 export interface WorkspaceBootPorts {
   appStore: AppStore;
-  savePublish: Pick<ReturnType<typeof createSavePublishController>, "trustedHead" | "seeHead" | "resetDeleted" | "checkDeleted" | "isDeleted">;
+  savePublish: Pick<ReturnType<typeof createSavePublishController>, "trustedHead" | "seeHead" | "resetDeleted" | "checkDeleted" | "isDeleted" | "checkHead">;
   repositoryIndex: Pick<RepositoryIndex, "clear" | "seed" | "entry">;
-  cleanSources: Pick<CleanSourceCache, "load">;
+  cleanSources: Pick<CleanSourceCache, "load" | "peek">;
   filesTreeController: { reset(): void; render(): void };
   pagesController: { updateTabs(force?: boolean): void };
   previewSelection: { recordIntent(path: string): void };
@@ -62,6 +64,8 @@ export interface WorkspaceBootPorts {
   /** `early`: the page's own first try of this read (src/boot-early.ts). */
   apiResponse<T>(path: string, params?: Record<string, string>, early?: Promise<Response>): Promise<ApiReceipt<T>>;
   readFile(repo: string, sha: string): Promise<string>;
+  /** GitHub's text of the shown site's `path`, as the preview holds it. */
+  baseText(path: string): string | undefined;
   storage(kind: "local" | "session"): Pick<Storage, "getItem" | "setItem" | "removeItem">;
   element(id: string): { textContent: string | null; title: string };
   node: (tag: "p", className?: string, text?: string) => HTMLElement;
@@ -155,9 +159,12 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     }
   }
 
+  // `warm`: `prefetched` is the copy this browser kept (src/warm-copy.ts), shown at once: its head is not
+  // trusted, and GitHub's is asked for once it is on screen.
   async function loadSnapshot(
     resumePath?: string,
     prefetched?: Promise<Snapshot>,
+    warm?: boolean,
   ) {
     if (!appStore.repository.value || !appStore.branch.value) return;
     ports.removeFinishStarter();
@@ -205,7 +212,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       if (!at.holds()) return;
       appStore.snapshot.value = result;
       repositoryIndex.seed(repo, result);
-      savePublish.seeHead(result.commit);
+      if (!warm) savePublish.seeHead(result.commit);
       ports.updateAgentContext();
       ports.updatePreview();
       // Start reading the file to reopen now, alongside the native site's files.
@@ -219,6 +226,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       if (isNative && ports.nativeSite) {
         ports.afterNativePaint(ports.nativeSourcesRequest, () => void savePublish.checkDeleted(at));
         const painted = ports.nativeSourcesRequest;
+        // A newer head folds in as an outside change does (src/outside-merge.ts), or loads the branch again.
+        if (warm) ports.afterNativePaint(painted, () => { if (at.holds()) void savePublish.checkHead(true); });
         let remembered = false;
         ports.afterNativePaint(painted, () => {
           const login = ports.user?.login;
@@ -228,10 +237,12 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
           if (!at.holds() || appStore.snapshot.value !== result || appStore.repository.value !== repo || appStore.branch.value !== branch || !login) return;
           writeBootMemory(ports.storage("local"), { login, repoId: repo.id, fullName: repo.full_name, branch, commit: result.commit,
             files: ports.nativePaintedPaths.flatMap((path) => { const sha = repositoryIndex.entry(repo, result, path)?.sha; return sha ? [{ path, sha }] : []; }) });
+          rememberShown(login, repo, branch, result);
         });
       } else {
         forgetBootMemory(ports.storage("local"), repo.id);
         void savePublish.checkDeleted(at);
+        if (warm) void savePublish.checkHead(true);
       }
       // A native project opens on its home page when nothing else is selected;
       // its source is already in memory from the site's prefetch.
@@ -291,6 +302,42 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     }
   }
 
+  /** Keeps the site on show and GitHub's texts of the files its preview painted, for the next visit (src/warm-copy.ts). */
+  function rememberShown(login: string, repo: Repository, branch: string, snapshot: Snapshot) {
+    if (!snapshot.tree || snapshot.empty || snapshot.branch !== branch) return;
+    const files = ports.nativePaintedPaths.flatMap((path) => {
+      const sha = repositoryIndex.entry(repo, snapshot, path)?.sha;
+      const text = sha === undefined ? undefined : ports.cleanSources.peek(repo.full_name, sha) ?? ports.baseText(path);
+      return sha !== undefined && text !== undefined ? [{ path, sha, text }] : [];
+    });
+    void writeWarmCopy({ login, source: ports.source(), repo, branch, snapshot, files });
+  }
+  // Leaving the tab keeps what it shows then: a save or an outside change folded in since its first paint.
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => {
+    const repo = appStore.repository.value, branch = appStore.branch.value, snapshot = appStore.snapshot.value, login = ports.user?.login;
+    if (document.visibilityState === "hidden" && login && repo && branch && snapshot && ports.nativeSite && ports.nativePaintedRequest === ports.nativeSourcesRequest)
+      rememberShown(login, repo, branch, snapshot);
+  });
+  // The kept copy, read from the start of the boot; taken once.
+  let warmRead: Promise<WarmCopy | undefined> | undefined;
+  /** The kept copy when it is the site this boot opens for `login`: the address's, else the account's last workspace. */
+  async function takeWarmCopy(login: string) {
+    const read = warmRead;
+    warmRead = undefined;
+    const link = readWorkspaceUrl();
+    const target = link ?? (location.hash ? undefined : readWorkspace(login));
+    const copy = target && await read;
+    return copy && warmFor(copy, { login, source: ports.source(), repoId: target.repoId, branch: target.branch }) ? copy : undefined;
+  }
+  /** The kept snapshot, at once; its proven texts go into the source cache, the rest is read from GitHub as before. */
+  function warmSnapshot(copy: WarmCopy, repo: Repository) {
+    const proven = provenTexts(copy);
+    for (const { sha } of copy.files)
+      void ports.cleanSources.load(repo.full_name, sha, () => proven.then((texts) => texts.get(sha) ?? Promise.reject(new Error("Not kept.")))
+        .catch(() => api<{ content: string }>("file", { repo: repo.full_name, sha }).then((file) => file.content)));
+    return Promise.resolve(copy.snapshot);
+  }
+
   // The address's snapshot, asked for before the session is known: by the page
   // itself (src/boot-early.ts), or here for the remembered last boot
   // (src/boot-memory.ts), whose files are asked for too. Nothing of it shows
@@ -310,6 +357,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   }
   let bootGuess: { memory?: BootMemory; source: string; snapshot: Promise<ApiReceipt<Snapshot> & { fullName: string }>; files?: Promise<ApiReceipt<FilesResult>> } | undefined;
   function startBootGuess() {
+    warmRead = readWarmCopy();
     const link = readWorkspaceUrl();
     if (!link) return;
     const remembered = readBootMemory(ports.storage("local"), link.repoId);
@@ -361,7 +409,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     return { snapshot, token };
   }
 
-  async function chooseRepository(resume?: WorkspaceLocation) {
+  /** `warm`: the copy this browser kept (takeWarmCopy), shown at once when it is this repository and branch. */
+  async function chooseRepository(resume?: WorkspaceLocation, warm?: WarmCopy) {
     ports.mediaHistoryHome.clear();
     const at = ports.nextLoad();
     ports.fileGeneration++;
@@ -395,9 +444,11 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     // Begin independent work together: the selected branch is already known from
     // the bookmark or repository metadata. Validate it before using its snapshot.
     const requestedBranch = resume?.branch ?? appStore.repository.value.default_branch;
-    const taken = takeBootGuess(appStore.repository.value, requestedBranch);
-    const guessed = taken?.snapshot;
     const opened = appStore.repository.value;
+    const warmed = warm?.repo.id === opened.id && warm.branch === requestedBranch ? warmSnapshot(warm, opened) : undefined;
+    if (warmed) dropBootGuess();
+    const taken = warmed ? undefined : takeBootGuess(opened, requestedBranch);
+    const guessed = warmed ?? taken?.snapshot;
     const snapshotRead = () => api<Snapshot>("snapshot", { repo: opened.full_name, branch: requestedBranch });
     // A rejected guess has already tried a fresh read (takeBootGuess).
     const prefetched = guessed ?? snapshotRead();
@@ -417,7 +468,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       let timer: ReturnType<typeof setTimeout> | undefined, decided = false;
       const guessedSnapshot = guessed && await Promise.race([guessed.catch(() => undefined), listing.then(() => undefined, () => decided ? undefined : Promise.race([
         guessed.catch(() => undefined),
-        new Promise<undefined>((resolve) => { timer = setTimeout(() => { taken!.token.abandoned = true; resolve(undefined); }, GUESS_AFTER_FAILED_LIST_MS); }),
+        new Promise<undefined>((resolve) => { timer = setTimeout(() => { if (taken) taken.token.abandoned = true; resolve(undefined); }, GUESS_AFTER_FAILED_LIST_MS); }),
       ]))]);
       decided = true;
       clearTimeout(timer);
@@ -428,13 +479,15 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         appStore.branch.value = branch;
         ports.branchSelect.value = branch;
         ports.branchSelect.disabled = true;
-        const opening = loadSnapshot(resume?.path, Promise.resolve(guessedSnapshot));
+        const opening = loadSnapshot(resume?.path, Promise.resolve(guessedSnapshot), Boolean(warmed));
         // The branch list fills and enables the selector when it comes. One that fails says so as the plain
         // path does, once the site is open: its message, and Try again (one GitHub never answered) reads it again.
         const current = () => appStore.repository.value === opened && appStore.branch.value === branch;
         let failed = false;
         const fill = (read: Promise<string[]>): Promise<void> => read.then((branches) => {
           if (!current()) return;
+          // A kept copy of a branch GitHub no longer has opens again the plain way, which says so.
+          if (warmed && branches.length && !branches.includes(branch)) { void chooseRepository(resume); return; }
           ports.options(ports.branchSelect, [...new Set([branch, ...branches])].map((name) => ({ value: name, label: `⑂ ${name}` })));
           ports.branchSelect.value = branch;
           ports.branchSelect.disabled = false;
@@ -506,6 +559,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     chooseRepository,
     /** Ask for (or take the page's early read of) the hash's snapshot, and its remembered files, before the session is known. */
     startGuess: startBootGuess,
+    /** The copy this browser kept, once, when it is the site this boot opens for `login` (src/warm-copy.ts). */
+    takeWarmCopy,
     /** Navigation or sign-out: forget the guess not yet taken and abandon a taken one. */
     dropGuess: dropBootGuess,
     /** The boot's listing is done: a guess it did not take is not kept for a later Reload. */

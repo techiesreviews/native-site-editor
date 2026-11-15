@@ -458,7 +458,7 @@ const workspaceBoot = createWorkspaceBoot({
   source: () => location.origin + location.pathname,
   sessionTag: () => boot.sessionTag(),
   draftsReady: () => boot.draftsReady(),
-  nextLoad, api, apiResponse, readFile, storage, element, node, options, status, settleStatus, clearError, errorMessage,
+  nextLoad, api, apiResponse, readFile, baseText: (path) => runtime.base.sources.get(path), storage, element, node, options, status, settleStatus, clearError, errorMessage,
   draftScope, entryAt, setCurrentPage, openNewDraft, openEntry, mountSource, deactivateNative, activateNativeSite, afterNativePaint,
   updateAgentContext, updatePreview: updateNativePreview, showDirectory, takeStartingPoint, writeStartingPoint, readPartialStart, offerFinishStarter,
   removeFinishStarter: () => removeFinishStarter(),
@@ -498,7 +498,7 @@ const boot = createBootController({
   assign: (url) => location.assign(url),
   readSession: (early) => apiResponse<SessionInfo>("session", undefined, early),
   readRepositories: (refresh, early) => apiResponse<Repository[]>("repositories", refresh ? { refresh: "1" } : undefined, early),
-  loadDrafts: (login) => draftStore().load(login),
+  loadDrafts: (login) => draftStore().load(login), warmCopy: (login) => workspaceBoot.takeWarmCopy(login),
   onDraftError: () => { draftStore().onError = (message) => errorMessage(new Error(message)); },
   session: () => info,
   // The source cache keys by account and drops another account's entries itself.

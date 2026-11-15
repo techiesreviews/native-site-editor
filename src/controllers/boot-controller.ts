@@ -4,6 +4,7 @@ import { startBootReads, takeEarlyRead } from "../boot-reads";
 import { autoSignInPlan, AUTO_SIGNIN_DELAY_MS, markAutoSignInTried, rememberSignedIn } from "../auto-signin";
 import type { Repository, SessionInfo } from "../../shared/types";
 import type { WorkspaceLocation } from "../workspace-state";
+import type { WarmCopy } from "../warm-copy";
 import type { SessionStamp } from "../workspace-session";
 
 export type Onboarding = "install" | "create";
@@ -69,7 +70,9 @@ export interface BootPorts {
   adoptSession(session: SessionInfo): void;
   /** Resume the link, mount the workspace and start the agent. */
   enterWorkspace(): void;
-  loadRepositories(prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void }): Promise<void>;
+  loadRepositories(prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void; warm?: { copy: WarmCopy; listing: Promise<Repository[] | undefined> } }): Promise<void>;
+  /** The site this browser showed last, when it is the one this boot opens for `login` (src/warm-copy.ts). */
+  warmCopy(login: string): Promise<WarmCopy | undefined>;
   renderLogin(mode?: LoginMode): void;
   retainLink(): void;
   showError(error: unknown): void;
@@ -177,14 +180,25 @@ export function createBootController(ports: BootPorts) {
           ports.replaceUrl(returned);
           openNew = true;
         }
-        const prefetched = installed ? undefined : await reads.takeRepositories(sessionResponse);
-        // Navigation or another boot won while the speculative list was arriving.
+        // Capture at the increment, before setup callbacks can throw or navigate.
+        const hooks = { onStarted: (started: SessionStamp) => { handoff = { at: started, session }; } };
+        // A repeat visit shows the site this browser showed last at once; the listing comes behind it (TOOLS-242),
+        // taken while this boot's session is the one adopted (the open itself begins loads of its own).
+        const copy = installed ? undefined : await ports.warmCopy(session.user.login);
         if (!current()) return;
-        if (prefetched) onboarding = prefetched.value.onboarding;
-        await ports.loadRepositories(installed ? undefined : prefetched?.value.repositories ?? session.repositories ?? undefined, {
-          // Capture at the increment, before setup callbacks can throw or navigate.
-          onStarted: started => { handoff = { at: started, session }; },
-        });
+        if (copy) {
+          const held = () => ports.source() === source && ports.session() === session;
+          await ports.loadRepositories(undefined, { ...hooks, warm: { copy, listing: reads.takeRepositories(sessionResponse, held).then((prefetched) => {
+            if (prefetched) onboarding = prefetched.value.onboarding;
+            return prefetched?.value.repositories ?? session.repositories ?? undefined;
+          }) } });
+        } else {
+          const prefetched = installed ? undefined : await reads.takeRepositories(sessionResponse);
+          // Navigation or another boot won while the speculative list was arriving.
+          if (!current()) return;
+          if (prefetched) onboarding = prefetched.value.onboarding;
+          await ports.loadRepositories(installed ? undefined : prefetched?.value.repositories ?? session.repositories ?? undefined, hooks);
+        }
       } else if (
         autoSignInPlan({ configured: session.configured, hasSession: false, pathname: new URL(ports.url()).pathname, search: new URL(ports.url()).search, local: ports.storage("local"), session: ports.storage("session") }) === "auto"
       ) {

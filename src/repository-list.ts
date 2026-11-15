@@ -14,8 +14,11 @@ import { clearWizard, readWizard } from "./setup-wizard";
 import { button, node } from "./ui/dom";
 import type { SessionStamp } from "./workspace-session";
 import { readWorkspace, readWorkspaceUrl, type WorkspaceLocation } from "./workspace-state";
+import { forgetWarmCopy, type WarmCopy } from "./warm-copy";
 
 type Setup = ReturnType<typeof createSetupHost>;
+/** A repeat visit's kept copy (src/warm-copy.ts), shown before `listing` (the session's listing; undefined: read it) answers. */
+export interface WarmOpen { copy: WarmCopy; listing: Promise<Repository[] | undefined> }
 type Box = Pick<HTMLElement, "replaceChildren">;
 
 export interface RepositoryListPorts {
@@ -40,7 +43,7 @@ export interface RepositoryListPorts {
   readonly repositoryMenu: { setRepository(repo?: Repository): void; setRepositories(list: Repository[], message?: string): void } | undefined;
   readonly siteActions: { revalidate(): void } | undefined;
   nextLoad(): SessionStamp;
-  chooseRepository(resume?: WorkspaceLocation): Promise<void>;
+  chooseRepository(resume?: WorkspaceLocation, warm?: WarmCopy): Promise<void>;
   storage: (kind: "local" | "session") => Pick<Storage, "getItem" | "setItem" | "removeItem">;
   options: (select: HTMLSelectElement, values: { value: string; label: string }[]) => void;
   status: (message: string) => void;
@@ -60,7 +63,10 @@ export function createRepositoryList(ports: RepositoryListPorts) {
   // Host services that live as long as the page (consts in the host).
   const { appStore, repositoryIndex, mediaHistoryHome, cleanSources, workspaceBoot, setup, setupEntry, setupController, storage, options, status, clearError, errorMessage } = ports;
 
-  async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void }) {
+  // Listings begun: a kept copy's listing installs only while no newer one began.
+  let listings = 0;
+  async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void; warm?: WarmOpen }) {
+    const listing = ++listings;
     ports.boot.loading();
     ports.removeFinishStarter();
     setup.waitingForRepositories = false;
@@ -86,6 +92,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
     );
     clearError();
     status("Loading selected repositories…");
+    if (hooks?.warm) return openWarm(listing, hooks.warm);
     try {
       const result = prefetched ?? (await ports.boot.fetchList(ports.boot.refreshPending()));
       if (!at.holds()) return;
@@ -175,6 +182,37 @@ export function createRepositoryList(ports: RepositoryListPorts) {
     }
   }
 
+  // The kept copy opens at once, its repository alone in the selector. The listing comes behind it: one that still
+  // has the repository as it was is installed; one without it (or with it renamed or moved) opens the plain way,
+  // which says what changed; one that fails says so, the site staying open.
+  async function openWarm(listing: number, { copy, listing: listed }: WarmOpen) {
+    ports.repositories = [copy.repo];
+    repositoryOptions();
+    ports.repositorySelect.value = String(copy.repo.id);
+    const current = () => listing === listings;
+    void listed.then((list) => list ?? ports.boot.fetchList(ports.boot.refreshPending())).then((list) => {
+      if (!current()) return;
+      const repo = list.find((item) => item.id === copy.repo.id);
+      if (!repo || !keptAsIs(repo, copy.repo)) { void loadRepositories(list); return; }
+      ports.repositories = list;
+      ports.boot.ready();
+      ports.repositoryMenu?.setRepositories(list);
+      ports.rememberRepositories(list);
+      repositoryOptions();
+      ports.repositorySelect.value = String(appStore.repository.value?.id ?? "");
+      ports.repositorySelect.disabled = false;
+    }, (error: unknown) => {
+      if (!current()) return;
+      ports.boot.failed();
+      ports.repositoryMenu?.setRepositories([], "Repositories could not be loaded. Use Reload to try again.");
+      errorMessage(error);
+    });
+    await ports.chooseRepository(readWorkspaceUrl() ?? (ports.user ? readWorkspace(ports.user.login) : undefined), copy);
+  }
+  const keptAsIs = (repo: Repository, kept: Repository) =>
+    repo.full_name === kept.full_name && repo.name === kept.name && repo.default_branch === kept.default_branch && repo.private === kept.private &&
+    repo.owner?.login === kept.owner?.login && repo.installation_id === kept.installation_id;
+
   function repositoryOptions() {
     options(ports.repositorySelect, [
       { value: "", label: "Select a repository…" },
@@ -252,6 +290,8 @@ export function createRepositoryList(ports: RepositoryListPorts) {
       // 204: that was the last account on this browser, so nothing continues by itself next time.
       if (response.status === 204) forgetSignedIn(storage("local"));
       forgetBootMemory(storage("local"));
+      // Gone before the page leaves: the next one on this browser sees none of this site.
+      await forgetWarmCopy();
       location.assign("/");
     } catch (error) {
       errorMessage(error);

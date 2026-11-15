@@ -4,6 +4,7 @@ import { createBootController, planRepositoryOpen, type BootMenu, type BootPorts
 import type { ApiReceipt } from "../src/boot-api-response.ts";
 import { createWorkspaceSession, type SessionStamp } from "../src/workspace-session.ts";
 import type { Repository, SessionInfo } from "../shared/types.ts";
+import type { WarmCopy } from "../src/warm-copy.ts";
 import { SIGN_IN_ERRORS } from "../shared/sign-in-error.ts";
 
 function deferred<T>() {
@@ -27,14 +28,15 @@ function fixture(href = "https://editor.test/") {
   const sessions: ReturnType<typeof deferred<ApiReceipt<SessionInfo>>>[] = [];
   const lists: { refresh: boolean; early?: Promise<Response>; read: ReturnType<typeof deferred<ApiReceipt<Repository[]>>> }[] = [];
   const sessionEarly: (Promise<Response> | undefined)[] = [];
-  const loads: { prefetched?: Repository[]; started?: number }[] = [];
+  const loads: { prefetched?: Repository[]; started?: number; warm?: { copy: WarmCopy; listing: Promise<Repository[] | undefined> } }[] = [];
+  let warm: WarmCopy | undefined;
   const errors: unknown[] = [];
   const drafts = deferred<void>();
-  let loadImpl: (prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void }) => Promise<void> = async (prefetched, hooks) => {
+  let loadImpl: (prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void; warm?: { copy: WarmCopy; listing: Promise<Repository[] | undefined> } }) => Promise<void> = async (prefetched, hooks) => {
     workspace.next(undefined);
     const at = workspace.begin();
     hooks?.onStarted(at);
-    loads.push({ prefetched, started: at.load });
+    loads.push({ prefetched, started: at.load, ...(hooks?.warm ? { warm: hooks.warm } : {}) });
   };
   const local = store(), session = store();
   let onLogin: (() => void) | undefined;
@@ -48,6 +50,7 @@ function fixture(href = "https://editor.test/") {
     readSession: early => { const read = deferred<ApiReceipt<SessionInfo>>(); sessions.push(read); sessionEarly.push(early); log.push("read session"); return read.promise; },
     readRepositories: (refresh, early) => { const read = deferred<ApiReceipt<Repository[]>>(); lists.push({ refresh, early, read }); log.push(`read repositories${refresh ? " refresh" : ""}`); return read.promise; },
     loadDrafts: () => { log.push("drafts"); return drafts.promise; },
+    warmCopy: async login => { log.push(`warm ${login}`); return warm; },
     onDraftError: () => { log.push("draft onError"); },
     session: () => info,
     adoptSession: value => { info = value; },
@@ -70,6 +73,7 @@ function fixture(href = "https://editor.test/") {
     setInfo: (value: SessionInfo) => { info = value; },
     setMenu: (value: BootMenu | undefined) => { menu = value; },
     setLoad: (impl: typeof loadImpl) => { loadImpl = impl; },
+    setWarm: (value: WarmCopy | undefined) => { warm = value; },
     /** Runs once each time the login is drawn. */
     setOnLogin: (hook: typeof onLogin) => { onLogin = hook; },
     url: () => url.href,
@@ -85,7 +89,44 @@ test("both reads start before the session resolves and a matching tag is adopted
   await started;
   assert.deepEqual(f.loads.map(load => load.prefetched?.map(item => item.id)), [[1]]);
   assert.equal(f.controller.onboarding(), "create");
-  assert.deepEqual(f.log.slice(2, 5), ["drafts", "enter", "load"]);
+  assert.deepEqual(f.log.slice(2, 6), ["drafts", "enter", "warm lex", "load"]);
+});
+
+test("a kept copy for the account opens before the listing answers; the listing and its onboarding follow (TOOLS-242)", async () => {
+  const f = fixture(), copy = { login: "lex", repo: repo(1) } as WarmCopy;
+  f.setWarm(copy);
+  const started = f.controller.start();
+  f.sessions[0].resolve(receipt(signedIn()));
+  await started;
+  assert.equal(f.loads.length, 1, "the workspace opens with the listing still unanswered");
+  assert.equal(f.loads[0].prefetched, undefined);
+  assert.equal(f.loads[0].warm?.copy, copy);
+  f.lists[0].read.resolve(receipt([repo(1), repo(2)], "t1", "create"));
+  assert.deepEqual((await f.loads[0].warm?.listing)?.map(item => item.id), [1, 2]);
+  assert.equal(f.controller.onboarding(), "create");
+});
+
+test("a kept copy's listing with another session's tag falls back to the session's listing", async () => {
+  const f = fixture();
+  f.setWarm({ login: "lex", repo: repo(1) } as WarmCopy);
+  const started = f.controller.start();
+  f.lists[0].read.resolve(receipt([repo(1)], "other", "install"));
+  f.sessions[0].resolve(receipt(signedIn([repo(3)])));
+  await started;
+  assert.deepEqual((await f.loads[0].warm?.listing)?.map(item => item.id), [3]);
+  assert.equal(f.controller.onboarding(), undefined);
+});
+
+test("back from installing the App, a kept copy is not asked for and the listing is read afresh", async () => {
+  const f = fixture("https://editor.test/?installation_id=5");
+  f.setWarm({ login: "lex", repo: repo(1) } as WarmCopy);
+  const started = f.controller.start();
+  f.lists[0].read.resolve(receipt([repo(1)]));
+  f.sessions[0].resolve(receipt(signedIn([repo(1)])));
+  await started;
+  assert.ok(!f.log.includes("warm lex"));
+  assert.equal(f.loads[0].warm, undefined);
+  assert.equal(f.loads[0].prefetched, undefined);
 });
 
 test("a mismatched tag falls back to the session's listing and ignores speculative onboarding", async () => {
