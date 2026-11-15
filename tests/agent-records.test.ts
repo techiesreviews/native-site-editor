@@ -1,6 +1,6 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { AgentRecordsError, indexedDbAgentRecords, unavailableAgentRecords } from "../src/agent-records.ts";
+import { AgentRecordsError, indexedDbAgentRecords, unavailableAgentRecords, unknownOutcome } from "../src/agent-records.ts";
 import { DraftStore, draftDatabaseName, draftDatabaseVersion, draftKey, draftStores, indexedDbDrafts, openDraftDatabase, type SavedDraft } from "../src/drafts.ts";
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb.ts";
 import { forEachAwait } from "./support/await-race.ts";
@@ -175,4 +175,13 @@ test("canonical payload identities ignore object order but preserve arrays and w
   assert.throws(() => payloadIdentity({ n: NaN }), TypeError);
   assert.equal(workspaceKey(draft), workspaceKey({ ...draft, account: "lex" }));
   assert.notEqual(workspaceKey({ ...draft, branch: "a/b" }), workspaceKey({ ...draft, account: "lex/a", branch: "b" }));
+});
+
+test("one rule tells an unknown outcome for edits, media and the transport alike (TOOLS-263 B1)", () => {
+  for (const message of ["The outcome is unproven.", "The edit outcome is unknown.", "The editor could not prove the change landed.",
+    "The media outcome could not be proven.", "This browser's storage is full and could not confirm whether the change was kept."])
+    assert.equal(unknownOutcome(new Error(message)), true, message);
+  assert.equal(unknownOutcome(new AgentRecordsError("unknown", "Anything.")), true);
+  for (const refused of [new Error("This file changed since it was read."), new AgentRecordsError("capacity", "Full."), "could not prove"])
+    assert.equal(unknownOutcome(refused), false, String(refused));
 });

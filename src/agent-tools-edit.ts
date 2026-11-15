@@ -5,7 +5,7 @@ import { agentTools, agentToolsOn } from "../shared/agent-tool-table";
 import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
 import { elementsNow, noteOwnChange, readText, rememberText } from "./agent-part";
-import { AgentRecordsError, type AgentRecords } from "./agent-records";
+import { unknownOutcome, type AgentRecords } from "./agent-records";
 import { agentCommandFiles, agentCommandSignals, createAgentTools, siteCommandPins } from "./agent-tools";
 import { agentFileReader, type AgentReadPorts } from "./agent-tools-read";
 import { changesWork, landWaited, preparedOn, waitedReplacements } from "./agent-site";
@@ -52,12 +52,6 @@ const WAIT_LOST = "The editor tab was reloaded or closed while this change waite
 
 /** The page commands whose elements are found again in the page as it is now (ticket 10). */
 const PAGE_COMMANDS = new Set<string>(["make_component", "add_section", "move_section", "remove_section"]);
-
-/** Whether a failed edit may have been kept all the same: never refused as nothing changed, nor run again. */
-function unknownOutcome(error: unknown) {
-  const message = error instanceof Error ? error.message : "";
-  return error instanceof AgentRecordsError && error.code === "unknown" || /unproven|outcome.*unknown|could not prove|could not confirm whether/i.test(message);
-}
 
 /**
  * The files a landed change made its agent's own, with the hash each was left with when known (ticket 10).

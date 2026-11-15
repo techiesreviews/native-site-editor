@@ -189,6 +189,16 @@ export class AgentRecordsError extends Error {
 }
 
 /**
+ * Whether a failed agent change may have been kept all the same: never refused as nothing changed, nor run again. One rule
+ * for edits, media and the transport: the records' own `unknown`, or words saying the outcome could not be proven, the
+ * records store's own (UNKNOWN_MESSAGE) included, when the error lost its class on the way.
+ */
+export function unknownOutcome(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  return error instanceof AgentRecordsError && error.code === "unknown" || /unproven|outcome.*unknown|could not.*prov|could not confirm whether/i.test(message);
+}
+
+/**
  * This browser's copy of a workspace's Ask agent requests (the source the agent menu and pins
  * read): completed ones (done, answered, dismissed) are kept up to seven days, and all of them
  * within one serialized byte budget; unfinished ones (at most OPEN_REQUESTS_LIMIT) are never evicted.
