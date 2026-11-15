@@ -44,6 +44,8 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 const flush = async () => { for (let i = 0; i < 20; i++) await new Promise<void>((resolve) => setImmediate(resolve)); };
+/** Waits until `ready` holds: a kept text's hash (crypto.subtle) settles on its own thread, not within a flush. */
+const until = async (ready: () => boolean) => { for (let i = 0; i < 400 && !ready(); i++) await new Promise<void>((resolve) => setTimeout(resolve, 5)); };
 const sha = (n: number) => n.toString(16).padStart(40, "0");
 const REPO = { id: 501, name: "site", full_name: "lex/site", private: false, default_branch: "main", owner: { login: "lex", type: "User" } } satisfies Repository;
 const MEMORY: BootMemory = { login: "lex", repoId: 501, fullName: "lex/site", branch: "main", commit: sha(9), files: [{ path: "index.html", sha: sha(1) }] };
@@ -567,7 +569,7 @@ test("a kept copy opens on its own snapshot at once: no snapshot read, its head 
   const f = fixture({ remember: false, native: true });
   f.boot.startGuess();
   await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
-  await flush();
+  await until(() => f.cached.has(HELLO_SHA));
   assert.deepEqual(f.paths(), ["branches"], "nothing read from GitHub before the page shows but the branch list");
   assert.equal(f.ports.appStore.snapshot.value, KEPT_SNAPSHOT);
   assert.equal(f.cached.get(HELLO_SHA), HELLO);
@@ -578,11 +580,11 @@ test("a kept copy opens on its own snapshot at once: no snapshot read, its head 
 test("a kept text that does not hash to its SHA is read from GitHub instead", async () => {
   const f = fixture({ remember: false, native: true });
   await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept({ files: [{ path: "index.html", sha: HELLO_SHA, text: "hello, changed\n" }] }));
-  await flush();
+  await until(() => f.pending("file").length > 0);
   const fresh = f.pending("file");
   assert.deepEqual(fresh.map((read) => read.params?.sha), [HELLO_SHA]);
   fresh[0].answer.resolve({ content: HELLO });
-  await flush();
+  await until(() => f.cached.has(HELLO_SHA));
   assert.equal(f.cached.get(HELLO_SHA), HELLO);
 });
 
@@ -674,7 +676,8 @@ test("a kept copy left for a new listing before its texts are proven caches noth
   const f = fixture({ remember: false, native: true });
   void f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept({ files: [{ path: "index.html", sha: HELLO_SHA, text: "damaged\n" }] }));
   f.newListing();
-  await flush();
+  // The hash settles on its own thread: give it time to have been proven wrong and to have asked for nothing.
+  await new Promise((done) => setTimeout(done, 200));
   assert.equal(f.cached.size, 0);
   assert.deepEqual(f.pending("file"), [], "no read from GitHub for it");
 });
@@ -766,7 +769,7 @@ test("a kept copy is shown only when every draft began from its version; otherwi
 test("a damaged kept text's GitHub read that lands after the copy was left caches nothing", async () => {
   const f = fixture({ remember: false, native: true });
   await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept({ files: [{ path: "index.html", sha: HELLO_SHA, text: "damaged\n" }] }));
-  await flush();
+  await until(() => f.pending("file").length > 0);
   const read = f.pending("file");
   assert.equal(read.length, 1);
   f.newListing();
