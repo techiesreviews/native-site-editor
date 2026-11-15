@@ -479,7 +479,6 @@ async function previewRoute(request: Request, env: Env, url: URL, fetcher: typeo
   const keys = await liveSessionKeys(env), address = previewOrigin(env);
   const path = url.pathname;
   if (path === "/api/live/preview" && request.method === "POST") {
-    if (request.headers.get("Origin") !== url.origin) throw new HttpError(403, "Invalid request origin.");
     const user = await session(request, env);
     if (!user) throw new SignedOutError(401, "Connect GitHub to share a preview.");
     const data = await requestJson(request, 4096);
@@ -510,7 +509,6 @@ async function previewRoute(request: Request, env: Env, url: URL, fetcher: typeo
   };
   if (path === "/api/live/preview/off") {
     if (request.method !== "POST") throw new HttpError(405, "Use POST.");
-    if (request.headers.get("Origin") !== url.origin) throw new HttpError(403, "Invalid request origin.");
     const data = await requestJson(request, 4096);
     await owner(String(data?.repo ?? ""), String(data?.host ?? ""));
     const done = await store.fetch(new Request("https://session.internal/live/preview-off", { method: "POST", headers: { [LiveRooms.identityHeader]: JSON.stringify({ ends }) } }));
@@ -581,11 +579,14 @@ async function route(
       html,
       fetcher,
     });
+  // Every changing request of the editor's own pages comes from its own address: one guard for all of them, so a new
+  // route cannot forget it. GitHub's deliveries and the agents' sign-in, above, carry no editor Origin.
+  if ((path.startsWith("/api/") || path.startsWith("/auth/")) && request.method !== "GET" && request.method !== "HEAD" &&
+    request.headers.get("Origin") !== url.origin)
+    throw new HttpError(403, "Invalid request origin.");
   if (path === "/auth/logout") {
     if (request.method !== "POST")
       throw new HttpError(405, "Use POST to disconnect.");
-    if (request.headers.get("Origin") !== url.origin)
-      throw new HttpError(403, "Invalid request origin.");
     // Signing out of one account moves to the next one still signed in.
     const id = cookie(request, "session");
     if (id) await endSessionGrants(env, id, () => store(env, id, "DELETE"));
@@ -614,8 +615,6 @@ async function route(
   if (path === "/api/accounts/switch") {
     if (request.method !== "POST")
       throw new HttpError(405, "Use POST to switch accounts.");
-    if (request.headers.get("Origin") !== url.origin)
-      throw new HttpError(403, "Invalid request origin.");
     const data = await requestJson(request, 1024);
     const login = typeof data?.login === "string" ? data.login.toLowerCase() : "";
     for (const id of accountIds(request)) {
@@ -664,12 +663,10 @@ async function route(
         },
       });
     if (path === "/auth/setup/unlock") {
-      if (request.headers.get("Origin") !== url.origin)
-        throw new HttpError(403, "Invalid request origin.");
       if (await config(env))
         throw new HttpError(409, "This editor already has a GitHub App.");
       const token = await setupPayload(request);
-      if (!validOwnerToken(token) || token !== env.OWNER_SETUP_TOKEN)
+      if (!validOwnerToken(token) || !sameHex(token, env.OWNER_SETUP_TOKEN ?? ""))
         throw new HttpError(403, "Invalid owner setup link.");
       const id = randomId();
       await store(env, id, "PUT", {
@@ -823,7 +820,6 @@ async function route(
     const sharing = path === "/api/live/share";
     const keys = await liveSessionKeys(env);
     if (sharing && request.method === "POST") {
-      if (request.headers.get("Origin") !== url.origin) throw new HttpError(403, "Invalid request origin.");
       const user = await session(request, env);
       if (!user) throw new SignedOutError(401, "Connect GitHub to share this site.");
       const data = await requestJson(request, 4096);
@@ -867,11 +863,6 @@ async function route(
     const user = await session(request, env);
     if (!user) throw new SignedOutError(401, "Connect GitHub to use agent context.");
     const sessionId = cookie(request, "session")!;
-    if (
-      request.method === "POST" &&
-      request.headers.get("Origin") !== url.origin
-    )
-      throw new HttpError(403, "Invalid request origin.");
     if ((path === "/api/agent/connect" || path === "/api/agent/rebind") && request.method === "POST") {
       const data = await requestJson(request, 4096);
       if (!validAgentBranch(data?.branch)) throw new HttpError(400, "Choose a valid branch.");
@@ -1139,8 +1130,6 @@ async function route(
   if (path === "/api/publish") {
     if (request.method !== "POST")
       throw new HttpError(405, "Use POST to publish.");
-    if (request.headers.get("Origin") !== url.origin)
-      throw new HttpError(403, "Invalid request origin.");
     if (!request.headers.get("Content-Type")?.startsWith("application/json"))
       throw new HttpError(415, "Send a JSON publish request.");
     const user = await session(request, env);
@@ -1156,8 +1145,6 @@ async function route(
   }
   if (path.startsWith("/api/publish/")) {
     // Publish to a host (worker/hosts.ts): Pages, Cloudflare and Spacefast pipelines.
-    if (request.method === "POST" && request.headers.get("Origin") !== url.origin)
-      throw new HttpError(403, "Invalid request origin.");
     const user = await session(request, env);
     if (!user) throw new HttpError(401, "Connect GitHub to publish your site.");
     return json(
@@ -1166,8 +1153,6 @@ async function route(
   }
   if (path === "/api/blob" && request.method !== "GET" && request.method !== "HEAD") {
     // An uploaded file's bytes, made a blob for the publish that follows.
-    if (request.headers.get("Origin") !== url.origin)
-      throw new HttpError(403, "Invalid request origin.");
     if (request.headers.get("Content-Type") !== "application/octet-stream")
       throw new HttpError(415, "Send the file's bytes.");
     const user = await session(request, env);
@@ -1184,8 +1169,6 @@ async function route(
   if (path === "/api/restore") {
     if (request.method !== "POST")
       throw new HttpError(405, "Use POST to restore.");
-    if (request.headers.get("Origin") !== url.origin)
-      throw new HttpError(403, "Invalid request origin.");
     if (!request.headers.get("Content-Type")?.startsWith("application/json"))
       throw new HttpError(415, "Send a JSON restore request.");
     const user = await session(request, env);
@@ -1205,8 +1188,6 @@ async function route(
     const github = sessionGitHub(user, env, fetcher);
     // Get started: a new, empty repository on the signed-in account.
     if (path === "/api/repositories" && request.method === "POST") {
-      if (request.headers.get("Origin") !== url.origin)
-        throw new HttpError(403, "Invalid request origin.");
       const data = await requestJson(request, 4096);
       const point = data?.startingPoint === "starter" || data?.startingPoint === "blank" ? data.startingPoint : undefined;
       if (data?.startingPoint !== undefined && !point) throw new HttpError(400, "Choose the Starter site or a blank page.");
