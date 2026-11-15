@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript-eslint-api";
 
 const slash = path => path.replaceAll("\\", "/");
-const subject = file => /^(src|shared|worker)\//.test(file);
+/** Production modules: src, shared and worker, but a test beside its code (src/ui/<part>/<part>.test.ts). */
+const subject = file => /^(src|shared|worker)\//.test(file) && !/\.test\.ts$/.test(file);
 const allowedSource = file => subject(file) || /^vite(?:\.config|-.*)\.ts$/.test(file);
 const allowFile = "scripts/check-exports.allow.json";
 

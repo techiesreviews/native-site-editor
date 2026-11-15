@@ -230,6 +230,14 @@ test("test-only callers do not rescue exports in reachable modules", () => {
   }), [{ file: "src/values.ts", line: 1, name: "onlyTests" }]);
 });
 
+test("a test beside its code in src/ is no production module: never unreachable, never a user", () => {
+  assert.deepEqual(fixture({
+    "src/main.ts": 'import "./ui/values";',
+    "src/ui/values.ts": "export function onlyTests() {}",
+    "src/ui/values.test.ts": 'import { onlyTests } from "./values"; onlyTests(); export const helper = 1;',
+  }), [{ file: "src/ui/values.ts", line: 1, name: "onlyTests" }]);
+});
+
 test("recursive references and local export clauses do not count as use", () => {
   assert.deepEqual(fixture({
     "src/main.ts": 'import "./values";',
