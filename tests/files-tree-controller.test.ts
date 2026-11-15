@@ -41,7 +41,8 @@ function harness(entries = [entry("a.txt")]) {
   const node = (_tag: string, className = "", text = "") => Object.assign(new Element(), { className, textContent: text });
   // eslint-disable-next-line no-restricted-syntax -- The minimal Element class models tree interactions; it deliberately omits the rest of the browser DOM.
   const ports = {
-    ui: { node, button: (text: string, action: () => void, className: string) => { const row = node("button", className, text); row.addEventListener("click", action); return row; }, setIcon: () => {} },
+    ui: { node, button: (text: string, action: () => void, className: string) => { const row = node("button", className, text); row.addEventListener("click", action); return row; }, setIcon: () => {},
+      iconButton: (label: string, _glyph: unknown, options: { className?: string; action?: () => void } = {}) => { const icon = node("button", `icon-button ${options.className ?? ""}`.trim()); icon.setAttribute("aria-label", label); if (options.action) icon.addEventListener("click", options.action); return icon; } },
     snapshot: () => snapshot, repo: () => repo, epoch: () => epoch, root: () => root,
     state: () => state, openFile: () => "a.txt", scope: () => undefined, draft: () => undefined,
     load: () => load(), images: () => calls.push("images"), clearError: () => calls.push("clear"),

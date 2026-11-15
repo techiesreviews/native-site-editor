@@ -42,7 +42,7 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Code:** `src/ui/icon-button/icon-button.ts`
 - **Styles:** `src/ui/icon-button/icon-button.css`
 - **Options:** `src/ui/icon-button/icon-button-options.ts`
-- **Tests:** `tests/icon-button-text-button-parts.test.ts`
+- **Tests:** `tests/icon-button-text-button-parts.test.ts`, `tests/icon-button.test.ts`
 
 ### Text button
 
@@ -53,7 +53,7 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Code:** `src/ui/text-button/text-button.ts`
 - **Styles:** `src/ui/text-button/text-button.css`
 - **Options:** `src/ui/text-button/text-button-options.ts`
-- **Tests:** `tests/icon-button-text-button-parts.test.ts`
+- **Tests:** `tests/icon-button-text-button-parts.test.ts`, `tests/icon-button.test.ts`
 
 ### Icon
 
@@ -421,7 +421,7 @@ and styles, and the tests that import or name them. A screen is built from the p
 | Theme | Hands the theme's colours to what cannot read CSS variables (Monaco, the preview overlay) and keeps them in step. | `src/theme.ts` | none yet |
 | Parts | The editor's parts' own files, in one import of src/main.ts (which keeps under its line ceiling). | `src/ui/parts.css` | `tests/editor-css-layers.test.ts` |
 | Escape | Text for markup strings: the parts' option modules turn words into HTML text, so every word passes through here. | `src/ui/parts/escape.ts` | `tests/badge-heading-key-parts.test.ts` |
-| Report failure | Where async UI work sends a rejection nobody awaits: main.ts points this at the editor's notice bar at start-up (setErrorReporter); before that it logs. | `src/ui/report-failure.ts` | `tests/report-failure.test.ts` |
+| Report failure | Where async UI work sends a rejection nobody awaits: main.ts points this at the editor's notice bar at start-up (setErrorReporter); before that it logs. | `src/ui/report-failure.ts` | `tests/icon-button.test.ts`, `tests/report-failure.test.ts` |
 | Select options | A select's options, replaced by `values`. | `src/ui/select-options.ts` | `tests/select-options.test.ts` |
 | Uploads | Uploaded files (images and other binary files) as publishable drafts. | `src/uploads.ts` | `tests/agent-local-recovery.test.ts`, `tests/agent-media-commit.test.ts`, `tests/agent-tools-media.test.ts`, `tests/audio-prepare.test.ts`, `tests/draft-views.test.ts` and 19 more |
 | Version view | History and the version on show: the History panel's wiring (src/controllers/history-controller.ts), an earlier version of the open file chosen there, and its restore. | `src/version-view.ts` | `tests/version-view.test.ts` |

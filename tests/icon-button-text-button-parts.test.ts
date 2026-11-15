@@ -149,7 +149,8 @@ test("Page structure's icon actions are Icon buttons; its own CSS sizes them and
 
 test("the Files tree and History build their icon and text buttons from the parts and give them no look", () => {
   const files = read("src/controllers/files-tree-controller.ts");
-  assert.match(files, /node\("button", iconButtonClass\("file-add"\)\)/);
+  assert.match(files, /const add = iconButton\(`New in \$\{path\}`, null, \{ title: `New file or folder in \$\{path\}`, className: "file-add", action: \(\) => ports\.create\(path, add\) \}\);\n\s*setIcon\(add, "plus"\);\n\s*add\.setAttribute\("aria-haspopup", "dialog"\);/);
+  assert.doesNotMatch(files, /node\("button"/, "the Files tree makes no button by hand");
   assert.match(files, /textButtonClass\(\{ size: "compact", className: "file-restore" \}\)/);
   assert.match(read("src/components/file-row-actions.ts"), /const more = iconButton\(`Actions for \$\{target\.path\}`/);
   const history = read("src/components/commit-history.ts");
