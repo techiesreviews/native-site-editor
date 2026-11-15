@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-bar-02","steps":["click \"Heading\"","click \"Bold\"","click \"Italic\"","press ArrowLeft","press ArrowLeft","press Shift+Tab","press h","record level 600"]}
+{"screen":"editor","name":"F-bar-02","steps":["on phone click exactly \"Menu\"","on phone click \"Add a block\"","click exactly \"Heading\"","click \"Bold\"","click \"Italic\"","press ArrowLeft","press ArrowLeft","press Shift+Tab","press h","record level 600"]}

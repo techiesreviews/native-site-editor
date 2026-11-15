@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-publish-05","steps":["click \"Paragraph\"","click \"More publish actions\"","click \"Discard changes\"","click \"Discard all\"","record discarded 800"]}
+{"screen":"editor","name":"F-publish-05","steps":["on phone click exactly \"Menu\"","on phone click \"Add a block\"","click exactly \"Paragraph\"","click \"More publish actions\"","click \"Discard changes\"","click \"Discard all\"","record discarded 800"]}

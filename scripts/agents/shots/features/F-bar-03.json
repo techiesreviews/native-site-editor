@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-bar-03","steps":["click \"Paragraph\"","click \"Bold\"","press ArrowLeft","press l","record size 600","expect visible \"p.text-l\""]}
+{"screen":"editor","name":"F-bar-03","steps":["on phone click exactly \"Menu\"","on phone click \"Add a block\"","click exactly \"Paragraph\"","click \"Bold\"","press ArrowLeft","press l","on wide expect visible \"p.text-l\"","record size 600"]}

@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-agent-01","steps":["click \"repository actions\"","click \"Connect to MCP\"","wait for \"Wait for MCP\""]}
+{"screen":"editor","name":"F-agent-01","steps":["on phone click exactly \"Menu\"","on phone click \"Switch site\"","on wide click \"repository actions\"","click \"Connect to MCP\"","wait for \"Wait for MCP\""]}
