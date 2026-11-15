@@ -573,6 +573,16 @@ test("new worktrees link the native-static fixture the browser suite reads", () 
   assert.ok(worktreeLinks?.includes(fixture), `worktreeLinks in scripts/agents/kit.json must name ${fixture}`);
 });
 
+test("kit.json tiers a part's part.json as docs and a test beside its code as tests; neither is a visible change", () => {
+  const { paths } = JSON.parse(read("scripts/agents/kit.json")) as { paths: Record<string, string[]> };
+  const hits = (name: string, path: string) => paths[name].some((source) => new RegExp(source).test(path));
+  assert.ok(hits("docs", "src/ui/badge/part.json") && !hits("visible", "src/ui/badge/part.json"));
+  assert.ok(hits("visible", "src/ui/badge/badge.ts") && !hits("docs", "src/ui/badge/badge.ts"));
+  assert.ok(hits("tests", "src/ui/badge/badge.test.ts") && !hits("visible", "src/ui/badge/badge.test.ts"));
+  assert.ok(hits("unitTests", "src/ui/badge/badge.test.ts") && hits("unitTests", "tests/parts-list.test.ts"));
+  assert.ok(hits("visible", "src/ui/badge/badge.css"), "a part's styles are visible");
+});
+
 test("every timing spec in kit.json names exactly one browser spec file, so a rename never drops it quietly", () => {
   const { timing } = JSON.parse(read("scripts/agents/kit.json")) as { timing?: string[] };
   assert.ok(timing?.length, "timing in scripts/agents/kit.json lists the speed and memory specs");
