@@ -35,6 +35,7 @@ import { starterProvider } from "./starter";
 import { StartingPointError, commitStartingPoint, startingPointFiles, startingSiteName } from "./first-commit";
 import { GitHub, HttpError, type RepositoryCache } from "./github";
 import { SIGNED_OUT, isDailyQuotaError, nextUtcMidnight, type AgentQuotaBody } from "../shared/agent-failure";
+import { SIGN_IN_ERRORS, signInErrorCode } from "../shared/sign-in-error";
 
 /** The editor session ended; the answer carries a code so the browser asks to sign in again. */
 class SignedOutError extends HttpError {
@@ -373,10 +374,10 @@ export async function handle(
     const message =
       error instanceof HttpError
         ? error.message
-        : quota ? "The editor's service has used up today's allowance. It resets at midnight UTC."
+        : quota ? SIGN_IN_ERRORS.quota
         : "Something went wrong. Please try again.";
     response = ["/auth/login", "/auth/install", "/auth/callback"].includes(url.pathname)
-      ? redirect(`/?error=${encodeURIComponent(message)}`, [
+      ? redirect(`/?error=${signInErrorCode(message)}`, [
           setCookie(url, "oauth", "", 0),
           setCookie(url, "install", "", 0),
         ])
@@ -926,10 +927,7 @@ async function route(
   if (path === "/auth/login") {
     const app = await config(env);
     if (!app)
-      throw new HttpError(
-        503,
-        "GitHub connection is not configured. Use the owner setup link for this editor.",
-      );
+      throw new HttpError(503, SIGN_IN_ERRORS.setup);
     const id = randomId();
     const returnTo = url.searchParams.get("return") ?? "";
     await store(env, id, "PUT", {
@@ -961,10 +959,7 @@ async function route(
   if (path === "/auth/install") {
     const app = await config(env);
     if (!app)
-      throw new HttpError(
-        503,
-        "GitHub connection is not configured. Use the owner setup link for this editor.",
-      );
+      throw new HttpError(503, SIGN_IN_ERRORS.setup);
     const state = randomId();
     const nonce = randomId();
     await store(env, state, "PUT", { kind: "oauth", expiresAt: Date.now() + 600_000, fromInstall: true });
@@ -999,25 +994,25 @@ async function route(
     if (returnedState !== null && returnedState !== "") {
       if (!oauthCookie || oauthCookie !== returnedState) {
         console.log(`auth callback refused: state does not match the browser (${seen})`);
-        throw new HttpError(400, "GitHub sign-in expired or could not be verified. Connect again.");
+        throw new HttpError(400, SIGN_IN_ERRORS.expired);
       }
       const stateResponse = await store(env, oauthCookie, "POST", undefined, true);
-      if (!stateResponse.ok) throw new HttpError(400, "GitHub sign-in expired. Connect again.");
+      if (!stateResponse.ok) throw new HttpError(400, SIGN_IN_ERRORS.expired);
       state = (await stateResponse.json()) as StoredSession;
       if (state.kind !== "oauth" || state.expiresAt <= Date.now())
-        throw new HttpError(400, "GitHub sign-in expired. Connect again.");
+        throw new HttpError(400, SIGN_IN_ERRORS.expired);
       // An install started this sign-in: its pending cookie is spent too.
       if (installCookie) await store(env, installCookie, "DELETE");
     } else {
       if (!installCookie) {
         console.log(`auth callback refused: no state and no install pending cookie (${seen})`);
-        throw new HttpError(400, "GitHub sign-in expired or could not be verified. Connect again.");
+        throw new HttpError(400, SIGN_IN_ERRORS.expired);
       }
       const pendingResponse = await store(env, installCookie, "POST", undefined, true);
       const pending = pendingResponse.ok ? ((await pendingResponse.json()) as StoredSession) : undefined;
       if (!pending || pending.kind !== "install" || pending.expiresAt <= Date.now()) {
         console.log(`auth callback refused: install pending cookie expired or already used (${seen})`);
-        throw new HttpError(400, "GitHub sign-in expired. Connect again.");
+        throw new HttpError(400, SIGN_IN_ERRORS.expired);
       }
       if (oauthCookie) await store(env, oauthCookie, "DELETE");
       console.log(`auth callback: stateless install return, code discarded, fresh login (${seen})`);
@@ -1027,10 +1022,7 @@ async function route(
     const code = url.searchParams.get("code");
     const app = await config(env);
     if (!code || code.length > 512 || !app)
-      throw new HttpError(
-        400,
-        "GitHub access was not granted. Connect again when ready.",
-      );
+      throw new HttpError(400, SIGN_IN_ERRORS.denied);
     const exchange = await fetcher(
       "https://github.com/login/oauth/access_token",
       {
@@ -1048,13 +1040,13 @@ async function route(
       },
     );
     if (!exchange.ok)
-      throw new HttpError(502, "GitHub sign-in failed. Try again.");
+      throw new HttpError(502, SIGN_IN_ERRORS.failed);
     const token = (await exchange.json()) as {
       access_token?: string;
       expires_in?: number;
     };
     if (!token.access_token)
-      throw new HttpError(401, "GitHub sign-in was not completed. Try again.");
+      throw new HttpError(401, SIGN_IN_ERRORS.failed);
     const user = await new GitHub(token.access_token, fetcher).get<{
       login: string;
       avatar_url: string;

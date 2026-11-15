@@ -117,22 +117,15 @@ export function createSetupHost(ports: SetupHostPorts) {
         "button primary login-button",
       );
       disabled.disabled = true;
-      action.append(
-        disabled,
-        node("p", "login-state", "GitHub sign-in has not been configured for this editor yet."),
-      );
-      const details = node("details", "login-setup");
-      details.append(
-        node("summary", "", "Owner setup"),
-        node(
-          "p",
-          "",
-          "Is this your editor? In its GitHub repository, set OWNER_GITHUB in wrangler.jsonc to your GitHub username and commit. Cloudflare deploys it again within a minute or two; then reload this page. (An editor with an OWNER_SETUP_TOKEN uses its private setup link instead.)",
-        ),
-      );
-      if (info?.ownerSetupUrl)
-        details.append(link("Open owner setup", info.ownerSetupUrl, "text-link"));
-      action.append(details);
+      action.append(disabled);
+      // Words only an editor without GitHub sign-in shows, loaded then (src/sign-in-words.ts).
+      void import("./sign-in-words").then(({ SIGN_IN_ERRORS, OWNER_SETUP_HELP }) => {
+        const details = node("details", "login-setup");
+        details.append(node("summary", "", "Owner setup"), node("p", "", OWNER_SETUP_HELP));
+        if (info?.ownerSetupUrl)
+          details.append(link("Open owner setup", info.ownerSetupUrl, "text-link"));
+        action.append(node("p", "login-state", SIGN_IN_ERRORS.setup), details);
+      }, (error: unknown) => ports.errorMessage(error));
     }
   }
 

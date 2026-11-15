@@ -230,10 +230,12 @@ test("a fresh self-hosted editor links to owner setup and opens the wizard only 
   assert.equal(f.wizards[0].connectUrl, "/owner/setup");
 });
 
-test("an unconfigured editor shows a disabled sign-in and the owner instructions", () => {
+test("an unconfigured editor shows a disabled sign-in and the owner instructions", async () => {
   const f = fixture();
   f.info({ configured: false, ownerSetupOpen: false, ownerSetupUrl: "/owner/private" });
   f.setup.renderLogin();
+  // The instructions load with the words only an unconfigured editor shows (src/sign-in-words.ts).
+  for (let wait = 0; wait < 200 && !/not been configured/.test(f.action.text()); wait++) await new Promise((resolve) => setTimeout(resolve, 5));
   const all = f.action.all();
   assert.equal(all.find((element) => element.textContent === "Continue with GitHub")!.disabled, true);
   assert.match(f.action.text(), /GitHub sign-in has not been configured/);

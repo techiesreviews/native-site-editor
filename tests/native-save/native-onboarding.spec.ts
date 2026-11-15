@@ -180,9 +180,9 @@ test("an error on return shows the button and the message, and does not try agai
     return route.fulfill({ status: 200, contentType: "text/html", body: "<p>GitHub</p>" });
   });
   await page.addInitScript(() => localStorage.setItem("ase:signed-in-before", "1"));
-  await page.goto(`${baseURL}/?error=${encodeURIComponent("GitHub access was not granted.")}`);
+  await page.goto(`${baseURL}/?error=denied`);
   await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
-  await expect(page.getByRole("alert").filter({ hasText: "GitHub access was not granted." })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "GitHub access was not granted. Connect again when ready." })).toBeVisible();
   // fixed-wait: Asserts an error return does not start automatic sign-in during its continuation delay.
   await page.waitForTimeout(2200);
   expect(logins).toBe(0);
