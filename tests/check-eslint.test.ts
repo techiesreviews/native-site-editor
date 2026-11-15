@@ -12,6 +12,7 @@ const lint = (source: string) => new Linter().verify(source, {
 });
 
 test("test lint rejects unknown double assertions while keeping receiver checks", () => {
+  assert.ok(testsConfig.files.includes("src/**/*.test.ts"), "a test beside its code gets the test rules too");
   for (const source of ['const fake = value as unknown as Ports;', 'const fake = (value as unknown) as Ports;', 'const fake = value as unknown as { call(): void };'])
     assert.ok(lint(source).some(message => message.ruleId === "no-restricted-syntax"), source);
   assert.ok(lint('const ports = { frame: requestAnimationFrame };').some(message => message.ruleId === "no-restricted-syntax"));

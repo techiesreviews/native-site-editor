@@ -139,6 +139,16 @@ test("each folder in src/ui/ is a part with its part.json; docs/agents/parts.jso
   } finally { rmSync(p.root, { recursive: true, force: true }); }
 });
 
+test("a part.json that is not JSON is a problem, and its part is left out of the list", () => {
+  const p = project({ "docs/agents/parts.json": source([]), "src/ui/chip/part.json": "{", "src/ui/chip/chip.ts": "// A chip.\nexport const chip = 1;\n" });
+  try {
+    const { problems, markdown } = build(p.root);
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /^src\/ui\/chip\/part\.json: /);
+    assert.doesNotMatch(markdown, /### Chip/);
+  } finally { rmSync(p.root, { recursive: true, force: true }); }
+});
+
 test("--then runs the next script after the check, and its failure fails the command", () => {
   const p = project({ "docs/agents/parts.json": source([]), "scripts/next.mjs": "console.log('next got', process.argv.slice(2).join(' '));\n", "scripts/bad.mjs": "process.exitCode = 1;\n" });
   try {

@@ -154,6 +154,20 @@ test("a planted wrong import fails the check with its file, line and target; the
   } finally { rmSync(p.root, { recursive: true, force: true }); }
 });
 
+test("a test beside a part's code is read too: it may import its part, never a screen such as the design board", () => {
+  const p = project({
+    "src/ui/badge/badge-options.ts": "export const tone = 1;\n",
+    "src/ui/badge/badge.test.ts": 'import test from "node:test";\nimport { tone } from "./badge-options.ts";\n',
+  });
+  try {
+    assert.equal(p.run("check").status, 0);
+    p.write("src/ui/badge/badge.test.ts", 'import test from "node:test";\nimport { PARTS } from "../../catalogue/parts.ts";\n');
+    const wrong = p.run("check");
+    assert.equal(wrong.status, 1);
+    assert.match(wrong.stderr, /^src\/ui\/badge\/badge\.test\.ts:2: imports src\/catalogue\/parts\.ts/m);
+  } finally { rmSync(p.root, { recursive: true, force: true }); }
+});
+
 test("--then runs the next script with every argument after it, and either failure fails the check", () => {
   const p = project({ "src/ui/dom.ts": "" });
   try {

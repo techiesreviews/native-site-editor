@@ -15,7 +15,7 @@ under the same names; the generated framework files are never edited by hand (th
 | --- | --- | --- |
 | `tokens` | Custom properties on `:root`: colours, spacing, type, corners, shadows, timings, layers | nothing |
 | `elements` | Bare HTML (`button`, `select`, `a`, headings, the reset), no classes | tokens |
-| `components` | One file per component in `src/ui/parts/<name>.css`, each with its own `--<name>-*` defaults | elements |
+| `components` | One file per component in `src/ui/<name>/<name>.css`, each with its own `--<name>-*` defaults | elements |
 | editor (unlayered) | Screen layout and one-off placement: the top bar, workspace, sidebar, login, panels, sheets | every layer |
 
 Rules that matter for every slice:
@@ -28,7 +28,7 @@ Rules that matter for every slice:
 - **The editor's entry loads each component file.** `src/main.ts` imports it, never `src/style.css` or the part's own
   module: the board loads the same file as a style of its own (`src/catalogue/component-css.ts`), so a live cell can
   leave it out.
-- **One component, one file, one block.** `src/ui/parts/<name>.css` holds the order line, then one
+- **One component, one file, one block.** `src/ui/<name>/<name>.css` holds the order line, then one
   `@layer components { … }` with native nesting: the root rule sets the `--<name>-*` defaults and uses them; a tone or
   size changes only those properties; a state's look (disabled) has hooks of its own, so a screen that sets a hook
   never takes it away; hover sits behind `@media (hover: hover) and (pointer: fine)`, touch gets `:active`. The
