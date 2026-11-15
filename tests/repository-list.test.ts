@@ -454,3 +454,16 @@ test("a kept copy's listing: a newer listing begun at any of its waits leaves on
   );
   assert.ok(replays >= 1);
 });
+
+test("a kept copy's listing landing after Refresh installed a newer list writes nothing", async () => {
+  const f = fixture([A, B]), listing = deferredList();
+  await f.list.loadRepositories(undefined, { onStarted: () => {}, warm: { copy: keptCopy(), listing: listing.promise } });
+  // The kept site is open (the fake chooseRepository opens nothing itself).
+  f.ports.appStore.repository.value = A;
+  await f.list.refreshRepositoryList();
+  assert.equal(f.calls.loading, 1, "Refresh kept the open site and installed its list");
+  assert.deepEqual(f.ports.repositories, [A, B]);
+  listing.resolve([A]);
+  await settle();
+  assert.deepEqual(f.ports.repositories, [A, B], "the older reply does not remove B");
+});
