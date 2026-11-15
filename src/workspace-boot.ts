@@ -16,6 +16,7 @@ import { forgetBootMemory, memoryMatches, provenFiles, readBootMemory, writeBoot
 import type { CleanSourceCache } from "./clean-source-cache";
 import type { createSavePublishController } from "./controllers/save-publish-controller";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
+import { textBlobSha } from "./file-changes";
 import { ReadUnansweredError } from "./read-retry";
 import type { RepositoryIndex } from "./repository-loading";
 import { githubScope, type SessionStamp, type WorkspaceScope } from "./workspace-session";
@@ -244,7 +245,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
           if (!at.holds() || appStore.snapshot.value !== result || appStore.repository.value !== repo || appStore.branch.value !== branch || !login) return;
           writeBootMemory(ports.storage("local"), { login, repoId: repo.id, fullName: repo.full_name, branch, commit: result.commit,
             files: ports.nativePaintedPaths.flatMap((path) => { const sha = repositoryIndex.entry(repo, result, path)?.sha; return sha ? [{ path, sha }] : []; }) });
-          rememberShown(login, repo, branch, result);
+          void rememberShown(login, repo, branch, result);
         });
       } else {
         forgetBootMemory(ports.storage("local"), repo.id);
@@ -330,6 +331,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   function checkKept(at: SessionStamp, branch: string) {
     void savePublish.checkHead(true).then((commit) => {
       if (!at.holds()) return;
+      // Taken over by a newer check (a push notice, a save): its outcome stands; the status waits for the next look.
+      if (commit === null) { onNextWake(() => { if (at.holds() && savePublish.trustedHead() !== appStore.snapshot.value?.commit) checkKept(at, branch); }); return; }
       if (!commit) {
         if (typeof document !== "undefined" && document.visibilityState === "visible") {
           keptSaid = { at, text: `Could not check GitHub for newer changes on ${branch}. Refresh to check.` };
@@ -358,30 +361,35 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
    * Keeps the site on show for the next visit (src/warm-copy.ts): its snapshot and every text of it this tab holds as
    * GitHub has it (the painted files first, then each page and file read so far), up to the copy's limit.
    */
+  // `force`: written even when this tab kept the same before, as another tab may have kept its own site since
+  // (one copy for the whole browser): leaving the tab always writes.
   let kept: string | undefined;
-  function rememberShown(login: string, repo: Repository, branch: string, snapshot: Snapshot) {
+  async function rememberShown(login: string, repo: Repository, branch: string, snapshot: Snapshot, force = false) {
     if (!snapshot.tree || snapshot.empty || snapshot.branch !== branch) return;
     const shas = new Map(snapshot.tree.filter((entry) => entry.type === "blob").map((entry) => [entry.path, entry.sha]));
     const files: WarmCopy["files"] = [];
     let length = 0;
     for (const path of new Set([...ports.nativePaintedPaths, ...shas.keys()])) {
-      const sha = shas.get(path), text = sha === undefined ? undefined : ports.cleanSources.peek(repo.full_name, sha) ?? ports.baseText(path);
+      const sha = shas.get(path), clean = sha === undefined ? undefined : ports.cleanSources.peek(repo.full_name, sha);
+      // The preview's base text is kept only when it is that blob (media and agent writes also land there).
+      const text = clean ?? (sha === undefined ? undefined : ports.baseText(path));
       if (sha === undefined || text === undefined || length + text.length > MAX_TEXT_LENGTH) continue;
+      if (clean === undefined && await textBlobSha(text).catch(() => "") !== sha) continue;
       length += text.length;
       files.push({ path, sha, text });
     }
     // The same commit and texts as last kept: nothing to write.
     const signature = `${repo.id} ${branch} ${snapshot.commit} ${files.length} ${length}`;
-    if (signature === kept) return;
+    if (signature === kept && !force) return;
     kept = signature;
     void writeWarmCopy({ login, source: ports.source(), repo, branch, snapshot, files });
   }
   // The site as it shows now, once painted (`wait`: after the paint under way, once): a save or an outside change
   // folded in since its first paint.
-  function keepShown(wait = false) {
+  function keepShown(wait = false, force = false) {
     const repo = appStore.repository.value, branch = appStore.branch.value, snapshot = appStore.snapshot.value, login = ports.user?.login;
     if (!login || !repo || !branch || !snapshot || !ports.nativeSite) return;
-    if (ports.nativePaintedRequest === ports.nativeSourcesRequest) rememberShown(login, repo, branch, snapshot);
+    if (ports.nativePaintedRequest === ports.nativeSourcesRequest) void rememberShown(login, repo, branch, snapshot, force);
     else if (wait) ports.afterNativePaint(ports.nativeSourcesRequest, () => { if (appStore.snapshot.value === snapshot) keepShown(); });
   }
   // A new snapshot (a save, a fold) or another page opened is kept a second after it, and leaving the tab keeps
@@ -393,7 +401,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     if (shown && page !== null) keeping = setTimeout(() => keepShown(true), 1000);
     (keeping as { unref?: () => void } | undefined)?.unref?.();
   });
-  if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") keepShown(); });
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") keepShown(false, true); });
   // The kept copy, read from the start of the boot; taken once.
   let warmRead: Promise<WarmCopy | undefined> | undefined;
   /** The kept copy when it is the site this boot opens for `login`: the address's, else the account's last workspace. */

@@ -30,9 +30,12 @@ const keptCommit = (page: Page) => page.evaluate(() => new Promise<string | unde
 }));
 const keptPaths = (page: Page) => page.evaluate(() => new Promise<string[]>((done) => {
   const open = indexedDB.open("native-site-editor-warm-copy", 1);
+  open.onupgradeneeded = () => open.result.createObjectStore("copy");
+  open.onerror = () => done([]);
   open.onsuccess = () => {
     const read = open.result.transaction("copy").objectStore("copy").get("last");
     read.onsuccess = () => { done(((read.result as { files?: { path: string }[] } | undefined)?.files ?? []).map((file) => file.path)); open.result.close(); };
+    read.onerror = () => done([]);
   };
 }));
 const gitBlobSha = (text: string) => createHash("sha1").update(`blob ${Buffer.byteLength(text)}\0`).update(text).digest("hex");
@@ -233,8 +236,29 @@ test("an unsaved deletion of a file the kept copy does not have yet survives: th
   const github = await holdGitHub(page);
   await page.reload();
   // The kept page waits for GitHub: its version is older than the deletion's.
-  await expect(page.locator("#status")).not.toHaveText("Checking GitHub for newer changes on main…");
+  await expect.poll(() => github.seen.includes("/api/snapshot"), { timeout: 15_000 }).toBe(true);
+  await expect(page.locator(".native-preview-frame")).toHaveCount(0);
   await github.release();
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   expect((await storedDraft(page, "notes.html"))?.deleted).toBe(true);
+});
+
+test("a head check that fails behind the kept page says so, and asks again when the tab is next shown", async ({ page }) => {
+  let failing = true;
+  await page.route("**/api/head*", (route) => failing ? route.fulfill({ status: 503, json: { error: "GitHub is not answering." } }) : route.continue());
+  await page.reload();
+  await expect(frame(page).locator(".hero h1")).toHaveText(heading, { timeout: 15_000 });
+  await expect(page.locator("#status")).toHaveText("Could not check GitHub for newer changes on main. Refresh to check.", { timeout: 30_000 });
+  failing = false;
+  await page.evaluate(() => dispatchEvent(new Event("focus")));
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 15_000 });
+});
+
+test("a branch list that fails behind the kept page says so; the page stays on its branch", async ({ page }) => {
+  await page.route("**/api/branches*", (route) => route.fulfill({ status: 503, json: { error: "GitHub is not answering." } }));
+  await page.reload();
+  await expect(frame(page).locator(".hero h1")).toHaveText(heading, { timeout: 15_000 });
+  await expect(page.locator("#notice")).toBeVisible({ timeout: 30_000 });
+  await expect(frame(page).locator(".hero h1")).toHaveText(heading);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
 });
