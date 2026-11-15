@@ -25,7 +25,7 @@ Each shard uses port.sh, which waits for a slot and its resource gates.
 KIT_SPECS_RUNNER: test executable replacing port.sh; skips probing (assumes 1 free slot).
 KIT_SPECS_FREE_SLOTS: test-only free-slot probe override.
 ASE_KNOWN_FAILURES: registry path (default tests/known-failures.json).
-KIT_BUILDER_TICKET (kit slice sets it for its builders): --affected keeps the ticket's named specs and
+KIT_BUILDER_TICKET (a builder sets it by hand; kit slice set it until it was cut on 2026-11-15): --affected keeps the ticket's named specs and
 specs that changed or import a changed file (plus the rest when at most ${BUILDER_SPEC_CAP} are affected), at most ${BUILDER_SPEC_CAP}; kit pr runs the others.
 `;
 

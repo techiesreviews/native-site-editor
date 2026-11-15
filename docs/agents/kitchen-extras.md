@@ -30,8 +30,8 @@ This editor's own facts for the shared rulebook ([`docs/kitchen.md` in the kit r
   `kit pr` stops it otherwise unless its Done says `Feature list: no change (<reason>)` (stations 7, 9).
 - **`kit ux`** is the user-level check: it tries the touched features from the feature list, runs
   scripted checks and has the Opus UX reviewer report fine / looks off / broken per feature with
-  screenshots; `kit slice` runs it on every visible change, as the UX gate after the code review
-  (stations 7, 8).
+  screenshots; the builder runs it on every visible change once it is built, and `kit pr` lands a visible change
+  only with a passed result for the branch as it is now (stations 7, 8).
 - **Before an end check** the lead runs `kit ux --all` on `dev` and sends its per-feature lines with
   the what-to-test list, which includes what to try on Lex's iPhone (station 11).
 - **Planned for mock-ups:** mock-ups assembled from approved parts of the atomic catalogue, an
@@ -43,8 +43,8 @@ This editor's own facts for the shared rulebook ([`docs/kitchen.md` in the kit r
 - **After each merge** the lead runs `kit preview`: it deploys `origin/dev` to the preview editor
   ([preview-editor.techies.tools](https://preview-editor.techies.tools)); CI cannot until Lex adds the
   Cloudflare token. Done when `RESULT: ok preview <version> <sha>` and the note is sent (station 10).
-  The heartbeat's after-merge step is the same `kit preview`. New work that starts while a release
-  waits for Lex goes to `dev` and its preview the same way (station 11).
+  New work that starts while a release waits for Lex goes to `dev` and its preview the same way
+  (station 11).
 - **End check:** Lex tries the change on the preview (station 11). A problem he finds on production
   goes to the chat memory as a correction that says it was found on production
   (`kit feedback` and its `--after-release` flag were cut on 2026-11-14).
@@ -72,7 +72,7 @@ closed tickets; planned items have their slices in
 - UX ladder and UX review (stations 8, 11; ladder): [factory 02](../wayfinder/software-factory/tickets/02-grill-ux-confidence-ladder.md#resolution-2026-10-22). The ladder was dropped on 2026-11-14 (TOOLS-235): Lex tries every visible change himself.
 - `kit ux` and the end check's `kit ux --all` (stations 7, 11): [factory 03](../wayfinder/software-factory/tickets/03-grill-checking-skill.md#resolution-2026-10-22).
 - Review evidence and the scoreboard (stations 8, 10): [factory 04](../wayfinder/software-factory/tickets/04-grill-scoreboard.md#resolution-2026-10-22).
-- `kit next` hand-out rules (station 5): [factory 05](../wayfinder/software-factory/tickets/05-grill-hand-out.md#resolution-2026-10-22).
+- Hand-out rules of `kit next`, cut on 2026-11-15 (station 5; the lead now hands each card to a T3 helper with `kit brief`): [factory 05](../wayfinder/software-factory/tickets/05-grill-hand-out.md#resolution-2026-10-22).
 - Triage, groups and the weekly routines (station 4; weekly routines): [factory 06](../wayfinder/software-factory/tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22).
 - Atomic catalogue (station 3, planned): [factory 09](../wayfinder/software-factory/tickets/09-grill-atomic-catalogue.md#resolution-2026-10-22).
 - The second look per review kind (pins): [kitchen-everywhere 01](../wayfinder/kitchen-everywhere/tickets/01-grill-how-the-kitchen-is-copied.md#resolution-2026-10-26),
