@@ -70,6 +70,10 @@ beyond that stays as a named variant. Nothing else visible changes.
   variant (`media-detail__original`, `media-detail__suggest`), and the placement and tap-area rules stayed.
   Declined its browser tests for the compact hover and touch states and for a
   long file name at 320px: the unit test pins the CSS, and the file name's layout is unchanged by this slice.
-  Declined a DOM test of `iconButton()` and `textButton()`: the unit tests run without a DOM, and the
-  browser specs already find these buttons by role and class (`tests/native-save/native-media-adding.spec.ts`).
+  Declined a DOM test of `iconButton()` and `textButton()` (review round 3 pointed at the fake `document` in
+  `tests/select-options.test.ts`): both are one-line wrappers over `button()` and the pure options, which the unit
+  tests pin, and the browser specs already find these buttons by role and class and press them
+  (`tests/native-save/native-media-adding.spec.ts`), so a fake DOM would test the fake.
+  Left as is (review round 3 nit): a compact underlined Text button would drop its underline on hover; no screen asks
+  for that pair, and the next part that needs it can set the hover hook then.
 - Feature list: no change (the parts swap keeps every feature as it was)
