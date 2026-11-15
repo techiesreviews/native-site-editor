@@ -355,3 +355,14 @@ test("Share preview stays out without a preview Worker or a sign-in, and says wh
   const signedOut = createPreviewShare({ workspace: () => ({ repo: "lex/bakery", branch: "main", site: "bakery", host: "" }), enabled: () => true, files: async () => undefined, start: () => "/" });
   assert.equal(signedOut.available(), false);
 });
+
+test("a file lookup that fails answers the waiting visitors at once with 502, not their own time limit (TOOLS-263 B2)", async () => {
+  let failing = true;
+  const site = siteFiles({ "index.html": "<h1>Fresh bread</h1>" });
+  const room = await serving(() => { if (failing) throw new Error("storage went away"); return site; });
+  await room.get("/");
+  assert.deepEqual(room.sent.map(message => message.t === "file" && { status: message.status, path: message.path, to: message.to }), [{ status: 502, path: "/", to: [ME] }]);
+  failing = false; room.sent.length = 0;
+  await room.get("/");
+  assert.equal((room.sent[0] as Extract<HostMessage, { t: "file" }>).status, 200, "the next ask is made anew");
+});
