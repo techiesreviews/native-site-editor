@@ -1,0 +1,6 @@
+{
+  "name": "Spinner",
+  "for": "A ring turning while something loads, inline or as an overlay over the panel that is loading.",
+  "notFor": "A control as small as its ring (overlay), or progress that can be measured (use the Progress bar).",
+  "use": "`spinner({ size, place, label })` from `src/ui/spinner/spinner.ts`; the caller marks the loading host `aria-busy=\"true\"` and `inert`."
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Badge",
+  "for": "A count, a status, a tag, a dot or a round mark, in one of six tones.",
+  "use": "`badgePart({ kind, tone, words, icon })` from `src/ui/badge/badge.ts`, or `badgeMarkup(options)` from `src/ui/badge/badge-options.ts` for markup text.",
+  "copies": "the shared `.badge` in `src/style.css` and the badge looks screens style themselves (`node scripts/agents/copies.mjs report`)."
+}

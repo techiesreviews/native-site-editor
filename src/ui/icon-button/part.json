@@ -1,0 +1,7 @@
+{
+  "name": "Icon button",
+  "for": "An action shown as an icon alone (Undo, Back, Refresh, the phone Menu): a quiet square, muted until hovered or pressed, filled while a toggle is pressed (`aria-pressed`).",
+  "notFor": "An action that needs words to be understood (use the Button or the Text button).",
+  "use": "`iconButton(label, glyph, { action, className, title })` from `src/ui/icon-button/icon-button.ts`: `label` names it for assistive technology and is its tooltip unless `title` says otherwise (`false` for none); `iconButtonMarkup(options)` from `src/ui/icon-button/icon-button-options.ts` for markup text. A screen sizes it with width and height in its own CSS (32px by default).",
+  "variants": "pressed: `aria-pressed=\"true\"`; disabled fades, as every bare button does"
+}

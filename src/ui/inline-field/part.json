@@ -1,0 +1,5 @@
+{
+  "name": "Inline field",
+  "for": "A text value in a panel row that reads as plain text and becomes a field on focus, with a red underline for an error.",
+  "use": "class `inline-field` on the input; the panels listed at the top of `src/ui/inline-field/inline-field.css` get it by selector."
+}

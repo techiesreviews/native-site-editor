@@ -1,0 +1,5 @@
+{
+  "name": "Progress bar",
+  "for": "A bar that fills as far as a value says, or slides while nobody can tell how long it takes.",
+  "use": "`progress({ value, max, label })` from `src/ui/progress/progress.ts`; move a bar already on the page with `setProgress(bar, options)` so it animates."
+}

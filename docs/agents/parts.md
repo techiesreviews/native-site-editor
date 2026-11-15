@@ -8,8 +8,9 @@ Every UI component of the editor, so you find the one that exists before you bui
 
 1. A part or shared piece fits: use it.
 2. It nearly fits: extend it (a new option, a variant or a default in its own files), never copy its look into a screen.
-3. Nothing fits: add a new part with a reason in the PR, as a new entry in `docs/agents/parts.json` (then run the write
-   command above). A screen may place and size a part; it may not give it a look of its own.
+3. Nothing fits: add a new part with a reason in the PR, as a new folder `src/ui/<part>/` with its code, styles, test
+   and a `part.json` that describes it, as the parts below have (then run the write command above). A screen may place
+   and size a part; it may not give it a look of its own.
 
 When copies of one look differ slightly, the most used look wins. Home-made copies are counted per file and may only
 go down (`node scripts/agents/copies.mjs report` lists them; `npm test` fails when they rise). The target shape and the
@@ -20,6 +21,18 @@ Screens import parts, never the other way round: nothing in `src/ui/` imports fr
 A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by the screen.
 
 ## Parts: reuse these first
+
+### Badge
+
+- **For:** A count, a status, a tag, a dot or a round mark, in one of six tones.
+- **Use:** `badgePart({ kind, tone, words, icon })` from `src/ui/badge/badge.ts`, or `badgeMarkup(options)` from `src/ui/badge/badge-options.ts` for markup text.
+- **Variants:** kinds: count, status, tag, dot, mark; tones: neutral, action, warning, question, success, danger
+- **Code:** `src/ui/badge/badge.ts`
+- **Styles:** `src/ui/badge/badge.css`
+- **Options:** `src/ui/badge/badge-options.ts`
+- **Tests:** `src/ui/badge/badge.test.ts`, `tests/catalogue-part-options.test.ts`, `tests/parts-list.test.ts`
+- **Design board:** Atoms › Badge
+- **Copies to swap:** the shared `.badge` in `src/style.css` and the badge looks screens style themselves (`node scripts/agents/copies.mjs report`).
 
 ### Button
 
@@ -33,6 +46,17 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Design board:** Atoms › Button
 - **Copies to swap:** buttons made with `node("button")` and button looks styled in screens (`node scripts/agents/copies.mjs report`).
 
+### Icon
+
+- **For:** A Phosphor Regular icon by name, alone or standing before or after words.
+- **Use:** `iconPart(name, { size, place, words })` from `src/ui/icon/icon.ts`; the screens still call `icon(name, size, className)` from `src/icons.ts` until the Icon swap.
+- **Variants:** sizes: 12, 16, 20, 24; places: alone, before, after
+- **Code:** `src/ui/icon/icon.ts`, `src/icons.ts`
+- **Styles:** `src/icons.css`
+- **Options:** `src/ui/icon/icon-options.ts`
+- **Tests:** `src/ui/icon/icon.test.ts`, `tests/catalogue-part-options.test.ts`
+- **Design board:** Atoms › Icon
+
 ### Icon button
 
 - **For:** An action shown as an icon alone (Undo, Back, Refresh, the phone Menu): a quiet square, muted until hovered or pressed, filled while a toggle is pressed (`aria-pressed`).
@@ -44,27 +68,46 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Options:** `src/ui/icon-button/icon-button-options.ts`
 - **Tests:** `tests/icon-button-text-button-parts.test.ts`, `tests/icon-button.test.ts`
 
-### Text button
+### Inline field
 
-- **For:** A quiet action written as link-coloured words beside other text (Undo, Review…, Reset to defaults, Choose image…).
-- **Not for:** A main or secondary action (use the Button), a link that goes somewhere (an `<a>`), or a row in a menu (the menus draw their own rows until the Menu item part).
-- **Use:** `textButton(words, action, { size, underlined, className })` from `src/ui/text-button/text-button.ts`; `link(text, href, "text-button")` from `src/ui/dom.ts` for an `<a>` with the same look.
-- **Variants:** compact (`text-button--compact`) has smaller words in a padded box that fills on hover or press, for a panel row; the base size underlines instead; underlined (`text-button--underlined`, `underlined: true`) stays underlined at rest, for words among plain text that must read as a link; disabled fades, as every bare button does; sizes: base, compact
-- **Code:** `src/ui/text-button/text-button.ts`
-- **Styles:** `src/ui/text-button/text-button.css`
-- **Options:** `src/ui/text-button/text-button-options.ts`
-- **Tests:** `tests/icon-button-text-button-parts.test.ts`, `tests/icon-button.test.ts`
+- **For:** A text value in a panel row that reads as plain text and becomes a field on focus, with a red underline for an error.
+- **Use:** class `inline-field` on the input; the panels listed at the top of `src/ui/inline-field/inline-field.css` get it by selector.
+- **Code:** none (styles only)
+- **Styles:** `src/ui/inline-field/inline-field.css`
+- **Tests:** none yet
+- **Design board:** Atoms › Inline field
 
-### Icon
+### Keyboard key
 
-- **For:** A Phosphor Regular icon by name, alone or standing before or after words.
-- **Use:** `iconPart(name, { size, place, words })` from `src/ui/icon/icon.ts`; the screens still call `icon(name, size, className)` from `src/icons.ts` until the Icon swap.
-- **Variants:** sizes: 12, 16, 20, 24; places: alone, before, after
-- **Code:** `src/ui/icon/icon.ts`, `src/icons.ts`
-- **Styles:** `src/icons.css`
-- **Options:** `src/ui/icon/icon-options.ts`
-- **Tests:** `tests/catalogue-part-options.test.ts`
-- **Design board:** Atoms › Icon
+- **For:** A key cap, or several keys pressed together, in a menu row, a tooltip or the shortcuts sheet.
+- **Use:** `keyPart(keys)` from `src/ui/key/key.ts` (a string or a list of keys).
+- **Code:** `src/ui/key/key.ts`
+- **Styles:** `src/ui/key/key.css`
+- **Options:** `src/ui/key/key-options.ts`
+- **Tests:** `src/ui/key/key.test.ts`, `tests/catalogue-part-options.test.ts`
+- **Design board:** Atoms › Keyboard key
+
+### Progress bar
+
+- **For:** A bar that fills as far as a value says, or slides while nobody can tell how long it takes.
+- **Use:** `progress({ value, max, label })` from `src/ui/progress/progress.ts`; move a bar already on the page with `setProgress(bar, options)` so it animates.
+- **Variants:** steps: 0, 30, 60, 100
+- **Code:** `src/ui/progress/progress.ts`
+- **Styles:** `src/ui/progress/progress.css`
+- **Options:** `src/ui/progress/progress-options.ts`
+- **Tests:** `src/ui/progress/progress.test.ts`, `tests/catalogue-part-options.test.ts`
+- **Design board:** Atoms › Progress bar
+
+### Section heading
+
+- **For:** Small uppercase words naming a group in a panel or menu, with an optional end slot for a count or a button.
+- **Use:** `sectionHeadingPart(words, { level, end })` from `src/ui/section-heading/section-heading.ts`.
+- **Variants:** levels: 2, 3, 4
+- **Code:** `src/ui/section-heading/section-heading.ts`
+- **Styles:** `src/ui/section-heading/section-heading.css`
+- **Options:** `src/ui/section-heading/section-heading-options.ts`
+- **Tests:** `src/ui/section-heading/section-heading.test.ts`, `tests/catalogue-part-options.test.ts`
+- **Design board:** Atoms › Section heading
 
 ### Spinner
 
@@ -75,61 +118,19 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Code:** `src/ui/spinner/spinner.ts`
 - **Styles:** `src/ui/spinner/spinner.css`
 - **Options:** `src/ui/spinner/spinner-options.ts`
-- **Tests:** `tests/catalogue-part-options.test.ts`
+- **Tests:** `src/ui/spinner/spinner.test.ts`, `tests/catalogue-part-options.test.ts`
 - **Design board:** Atoms › Spinner
 
-### Progress bar
+### Text button
 
-- **For:** A bar that fills as far as a value says, or slides while nobody can tell how long it takes.
-- **Use:** `progress({ value, max, label })` from `src/ui/progress/progress.ts`; move a bar already on the page with `setProgress(bar, options)` so it animates.
-- **Variants:** steps: 0, 30, 60, 100
-- **Code:** `src/ui/progress/progress.ts`
-- **Styles:** `src/ui/progress/progress.css`
-- **Options:** `src/ui/progress/progress-options.ts`
-- **Tests:** `tests/catalogue-part-options.test.ts`
-- **Design board:** Atoms › Progress bar
-
-### Badge
-
-- **For:** A count, a status, a tag, a dot or a round mark, in one of six tones.
-- **Use:** `badgePart({ kind, tone, words, icon })` from `src/ui/badge/badge.ts`, or `badgeMarkup(options)` from `src/ui/badge/badge-options.ts` for markup text.
-- **Variants:** kinds: count, status, tag, dot, mark; tones: neutral, action, warning, question, success, danger
-- **Code:** `src/ui/badge/badge.ts`
-- **Styles:** `src/ui/badge/badge.css`
-- **Options:** `src/ui/badge/badge-options.ts`
-- **Tests:** `tests/catalogue-part-options.test.ts`, `tests/parts-list.test.ts`
-- **Design board:** Atoms › Badge
-- **Copies to swap:** the shared `.badge` in `src/style.css` and the badge looks screens style themselves (`node scripts/agents/copies.mjs report`).
-
-### Section heading
-
-- **For:** Small uppercase words naming a group in a panel or menu, with an optional end slot for a count or a button.
-- **Use:** `sectionHeadingPart(words, { level, end })` from `src/ui/section-heading/section-heading.ts`.
-- **Variants:** levels: 2, 3, 4
-- **Code:** `src/ui/section-heading/section-heading.ts`
-- **Styles:** `src/ui/section-heading/section-heading.css`
-- **Options:** `src/ui/section-heading/section-heading-options.ts`
-- **Tests:** `tests/catalogue-part-options.test.ts`
-- **Design board:** Atoms › Section heading
-
-### Keyboard key
-
-- **For:** A key cap, or several keys pressed together, in a menu row, a tooltip or the shortcuts sheet.
-- **Use:** `keyPart(keys)` from `src/ui/key/key.ts` (a string or a list of keys).
-- **Code:** `src/ui/key/key.ts`
-- **Styles:** `src/ui/key/key.css`
-- **Options:** `src/ui/key/key-options.ts`
-- **Tests:** `tests/catalogue-part-options.test.ts`
-- **Design board:** Atoms › Keyboard key
-
-### Inline field
-
-- **For:** A text value in a panel row that reads as plain text and becomes a field on focus, with a red underline for an error.
-- **Use:** class `inline-field` on the input; the panels listed at the top of `src/ui/inline-field/inline-field.css` get it by selector.
-- **Code:** none (styles only)
-- **Styles:** `src/ui/inline-field/inline-field.css`
-- **Tests:** none yet
-- **Design board:** Atoms › Inline field
+- **For:** A quiet action written as link-coloured words beside other text (Undo, Review…, Reset to defaults, Choose image…).
+- **Not for:** A main or secondary action (use the Button), a link that goes somewhere (an `<a>`), or a row in a menu (the menus draw their own rows until the Menu item part).
+- **Use:** `textButton(words, action, { size, underlined, className })` from `src/ui/text-button/text-button.ts`; `link(text, href, "text-button")` from `src/ui/dom.ts` for an `<a>` with the same look.
+- **Variants:** compact (`text-button--compact`) has smaller words in a padded box that fills on hover or press, for a panel row; the base size underlines instead; underlined (`text-button--underlined`, `underlined: true`) stays underlined at rest, for words among plain text that must read as a link; disabled fades, as every bare button does; sizes: base, compact
+- **Code:** `src/ui/text-button/text-button.ts`
+- **Styles:** `src/ui/text-button/text-button.css`
+- **Options:** `src/ui/text-button/text-button-options.ts`
+- **Tests:** `tests/icon-button-text-button-parts.test.ts`, `tests/icon-button.test.ts`
 
 ## Shared pieces
 
@@ -419,17 +420,10 @@ and styles, and the tests that import or name them. A screen is built from the p
 | Site loading | Site loading: reading a native site's pages, templates, stylesheets, component styles and assets for the preview, its files for Download site, opening it (activateNativeSite), the top bar's page label, the file… | `src/site-loading.ts` | `tests/site-loading.test.ts` |
 | Style | The editor's CSS on the Techies Framework layers: theme tokens, bare elements, then components each in a file of its own. | `src/style.css` | `tests/editor-css-layers.test.ts`, `tests/preview-menu.test.ts` |
 | Theme | Hands the theme's colours to what cannot read CSS variables (Monaco, the preview overlay) and keeps them in step. | `src/theme.ts` | none yet |
-| Badge.test | The Badge part's options become markup: one class, the kind and the tone as data attributes, the words escaped. | `src/ui/badge/badge.test.ts` | none yet |
-| Escape | Text for markup strings: the parts' option modules turn words into HTML text, so every word passes through here. | `src/ui/escape.ts` | none yet |
-| Escape.test | The parts' one escape for words they put in markup. | `src/ui/escape.test.ts` | none yet |
-| Icon.test | The Icon part's options become markup: a size from a small set, a place beside words, one class, the variants as data attributes, hidden from assistive technology. | `src/ui/icon/icon.test.ts` | none yet |
-| Key.test | The Keyboard key part's options become markup: one class, one cap per key, the words escaped. | `src/ui/key/key.test.ts` | none yet |
+| Escape | Text for markup strings: the parts' option modules turn words into HTML text, so every word passes through here. | `src/ui/escape.ts` | `src/ui/escape.test.ts` |
 | Parts | The editor's parts' own files, in one import of src/main.ts (which keeps under its line ceiling). | `src/ui/parts.css` | `tests/editor-css-layers.test.ts` |
-| Progress.test | The Progress bar part's options become markup: one class, the variants as data attributes, a name for assistive technology. | `src/ui/progress/progress.test.ts` | none yet |
 | Report failure | Where async UI work sends a rejection nobody awaits: main.ts points this at the editor's notice bar at start-up (setErrorReporter); before that it logs. | `src/ui/report-failure.ts` | `tests/icon-button.test.ts`, `tests/report-failure.test.ts` |
-| Section heading.test | The Section heading part's options become markup: one class, a real heading, the words escaped. | `src/ui/section-heading/section-heading.test.ts` | none yet |
 | Select options | A select's options, replaced by `values`. | `src/ui/select-options.ts` | `tests/select-options.test.ts` |
-| Spinner.test | The Spinner part's options become markup: one class, the variants as data attributes, a name for assistive technology. | `src/ui/spinner/spinner.test.ts` | none yet |
 | Uploads | Uploaded files (images and other binary files) as publishable drafts. | `src/uploads.ts` | `tests/agent-local-recovery.test.ts`, `tests/agent-media-commit.test.ts`, `tests/agent-tools-media.test.ts`, `tests/audio-prepare.test.ts`, `tests/draft-views.test.ts` and 19 more |
 | Version view | History and the version on show: the History panel's wiring (src/controllers/history-controller.ts), an earlier version of the open file chosen there, and its restore. | `src/version-view.ts` | `tests/version-view.test.ts` |
 | Workspace boot | Opening a repository: its choice and branch (chooseRepository), its snapshot and first paint (loadSnapshot), a file reopened from a path (restoreFile), and the remembered last boot's guess (src/boot-memory.ts). | `src/workspace-boot.ts` | `tests/workspace-boot.test.ts`, `tests/workspace-session-guard.test.ts` |

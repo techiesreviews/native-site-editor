@@ -44,17 +44,18 @@ function project(files: Record<string, string>) {
 }
 
 const source = (parts: unknown[], screens: Record<string, string> = {}) => JSON.stringify({ parts, screens });
-const badge = {
-  id: "badge", name: "Badge", group: "part", for: "A count or a status.", use: "`badgePart(options)`",
-  files: ["src/ui/badge/badge.ts", "src/ui/badge/badge-options.ts", "src/ui/badge/badge.css"],
+const badgeFolder = {
+  "src/ui/badge/part.json": JSON.stringify({ name: "Badge", for: "A count or a status.", use: "`badgePart(options)`" }),
+  "src/ui/badge/badge.ts": 'export const badgePart = () => document.createElement("span");\n',
+  "src/ui/badge/badge-options.ts": 'export const BADGE_TONES = ["neutral", "danger"] as const;\n',
+  "src/ui/badge/badge.css": ".ui-badge {}\n",
+  "src/ui/badge/badge.test.ts": 'import { BADGE_TONES } from "./badge-options.ts";\n',
 };
 
-test("every UI file is listed: parts by hand, screens from the code with their styles and tests", () => {
+test("every UI file is listed: parts from their folders, screens from the code with their styles and tests", () => {
   const p = project({
-    "docs/agents/parts.json": source([badge]),
-    "src/ui/badge/badge.ts": 'export const badgePart = () => document.createElement("span");\n',
-    "src/ui/badge/badge-options.ts": 'export const BADGE_TONES = ["neutral", "danger"] as const;\n',
-    "src/ui/badge/badge.css": ".ui-badge {}\n",
+    "docs/agents/parts.json": source([]),
+    ...badgeFolder,
     "src/components/publish-menu.ts": '// The Save menu: the changes to save.\nexport const m = () => node("div");\n',
     "src/components/publish-menu.css": ".publish-menu {}\n",
     "src/page-builder/maths.ts": "export const add = (a: number, b: number) => a + b;\n",
@@ -69,11 +70,13 @@ test("every UI file is listed: parts by hand, screens from the code with their s
     assert.deepEqual(uiFiles(p.root), [
       "src/components/preview-menu.ts", "src/components/publish-menu.css", "src/components/publish-menu.ts", "src/page-builder/busy-lock.ts",
       "src/ui/badge/badge-options.ts", "src/ui/badge/badge.css", "src/ui/badge/badge.ts",
-    ], "every file in a component folder is UI; elsewhere, one that builds elements");
+    ], "every file in a component folder is UI, but its tests; elsewhere, one that builds elements");
     assert.equal(p.run("write").status, 0);
     const list = p.list();
     assert.match(list, /### Badge\n\n- \*\*For:\*\* A count or a status\.\n- \*\*Use:\*\* `badgePart\(options\)`\n- \*\*Variants:\*\* tones: neutral, danger\n/);
-    assert.match(list, /- \*\*Options:\*\* `src\/ui\/parts\/badge-options\.ts`\n- \*\*Tests:\*\* `tests\/badge\.test\.ts`/);
+    assert.match(list, /- \*\*Code:\*\* `src\/ui\/badge\/badge\.ts`\n- \*\*Styles:\*\* `src\/ui\/badge\/badge\.css`\n/);
+    assert.match(list, /- \*\*Options:\*\* `src\/ui\/badge\/badge-options\.ts`\n- \*\*Tests:\*\* `src\/ui\/badge\/badge\.test\.ts`, `tests\/badge\.test\.ts`/, "a test beside the code counts");
+    assert.doesNotMatch(list, /\| Badge\.test \|/, "a test is not a screen file");
     assert.match(list, /^\| Publish menu \| The Save menu: the changes to save\. \| `src\/components\/publish-menu\.ts` `src\/components\/publish-menu\.css` \| `tests\/publish\.test\.ts` \|$/m);
     assert.match(list, /^\| Preview menu \| The preview row, built from the sharing row\. \|/m);
     assert.doesNotMatch(list, /maths|opener|board/, "plumbing outside the component folders (an element named in a comment too) and the design board are not UI");
@@ -82,10 +85,7 @@ test("every UI file is listed: parts by hand, screens from the code with their s
 });
 
 test("a new screen file makes the list out of date, and one with no purpose fails until it is described", () => {
-  const p = project({
-    "docs/agents/parts.json": source([badge]),
-    "src/ui/badge/badge.ts": "", "src/ui/badge/badge-options.ts": "", "src/ui/badge/badge.css": "",
-  });
+  const p = project({ "docs/agents/parts.json": source([]), ...badgeFolder });
   try {
     p.run("write");
     p.write("src/components/new-sheet.css", ".new-sheet { padding: 0; }\n");
@@ -94,7 +94,7 @@ test("a new screen file makes the list out of date, and one with no purpose fail
     assert.match(stale.stderr, /src\/components\/new-sheet\.css: no leading comment says what it is for/);
     assert.match(stale.stderr, /docs\/agents\/parts\.md is out of date: run node scripts\/agents\/parts-list\.mjs write/);
 
-    p.write("docs/agents/parts.json", source([badge], { "src/components/new-sheet.css": "A sheet for new things." }));
+    p.write("docs/agents/parts.json", source([], { "src/components/new-sheet.css": "A sheet for new things." }));
     assert.equal(p.run("write").status, 0);
     assert.match(p.list(), /^\| New sheet \| A sheet for new things\. \|/m);
     assert.equal(p.run("check").status, 0);
@@ -103,17 +103,39 @@ test("a new screen file makes the list out of date, and one with no purpose fail
 
 test("a listed file that is gone, a part without its purpose, or a description of no screen file is a problem", () => {
   const p = project({
-    "docs/agents/parts.json": source([{ ...badge, for: "" }], { "src/gone.ts": "Gone.", "src/maths.ts": "Sums." }),
-    "src/ui/badge/badge.ts": "", "src/ui/badge/badge-options.ts": "", "src/maths.ts": "export const add = (a: number, b: number) => a + b;\n",
+    "docs/agents/parts.json": source([], { "src/gone.ts": "Gone.", "src/maths.ts": "Sums." }),
+    "src/ui/badge/part.json": JSON.stringify({ name: "Badge", for: "", elsewhere: ["src/ui/dom.ts"] }),
+    "src/ui/badge/badge.ts": "", "src/maths.ts": "export const add = (a: number, b: number) => a + b;\n",
   });
   try {
     const { problems } = build(p.root);
     assert.deepEqual(problems, [
-      "docs/agents/parts.json: badge has no for",
-      "docs/agents/parts.json: badge lists src/ui/badge/badge.css, which does not exist",
+      "src/ui/badge/part.json: badge has no for",
+      "src/ui/badge/part.json: badge lists src/ui/dom.ts, which does not exist",
       "docs/agents/parts.json: screens describes src/gone.ts, which does not exist",
       "docs/agents/parts.json: screens describes src/maths.ts, which is not a screen file on the list; remove it",
     ]);
+  } finally { rmSync(p.root, { recursive: true, force: true }); }
+});
+
+test("each folder in src/ui/ is a part with its part.json; docs/agents/parts.json holds the shared pieces only", () => {
+  const p = project({
+    "docs/agents/parts.json": source([{ id: "chip", name: "Chip", group: "part", for: "A chip.", files: ["src/ui/chip.ts"] }]),
+    "src/ui/chip.ts": "// A chip.\nexport const chip = 1;\n",
+    "src/ui/spinner/spinner.ts": "// A spinner.\nexport const spinner = 1;\n",
+    "src/ui/spinner/spinner.test.ts": "",
+    "src/ui/button/part.json": JSON.stringify({ name: "Button", for: "An action.", elsewhere: ["src/ui/dom.ts"] }),
+    "src/ui/button/button.css": ".button {}\n",
+    "src/ui/dom.ts": "// Elements.\nexport const button = () => 1;\n",
+  });
+  try {
+    const { problems, markdown } = build(p.root);
+    assert.deepEqual(problems, [
+      "docs/agents/parts.json: chip is a part: give it a folder, src/ui/chip/, with its part.json (this file holds the shared pieces, group shared)",
+      "src/ui/spinner/: a part's folder has no part.json; add one (docs/agents/parts-plan.md)",
+    ]);
+    assert.match(markdown, /### Button\n\n- \*\*For:\*\* An action\.\n- \*\*Code:\*\* `src\/ui\/dom\.ts`\n- \*\*Styles:\*\* `src\/ui\/button\/button\.css`\n/, "its folder's files and the ones it names elsewhere");
+    assert.doesNotMatch(markdown, /\| Dom \|/, "a file a part names elsewhere is the part's, not a screen file");
   } finally { rmSync(p.root, { recursive: true, force: true }); }
 });
 
