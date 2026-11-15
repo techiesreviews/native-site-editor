@@ -1,18 +1,11 @@
 /* The Files tree's row actions: ⋯, markers, rename in place, drag and drop. */
+/* ⋯ is an Icon button (src/ui/icon-button/), sized here. */
 .file-more {
-  display: inline-grid;
-  place-items: center;
   flex-shrink: 0;
   width: var(--size-icon);
   height: var(--size-icon);
   margin-right: 4px;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
 }
-.file-more:hover { background: var(--hover); color: var(--text); }
 .file-more:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 .file-row:focus-visible { outline: none; }
 
@@ -31,20 +24,8 @@
 .file-status.is-D { background: var(--warning-bg); color: var(--warning-fg); }
 .file-row.is-deleted .filename { text-decoration: line-through; color: var(--muted); }
 .file-row.is-deleted .file-icon { opacity: 0.6; }
-.file-restore {
-  flex-shrink: 0;
-  min-height: var(--size-icon);
-  padding: 0 8px;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--link);
-  font: inherit;
-  font-size: var(--type-small);
-  font-weight: 600;
-  cursor: pointer;
-}
-.file-restore:hover { background: var(--hover); }
+/* Restore is a compact Text button (src/ui/text-button/). */
+.file-restore { flex-shrink: 0; }
 .file-restore:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 
 /* Renaming in the row. */

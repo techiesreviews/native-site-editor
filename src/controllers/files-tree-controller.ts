@@ -5,6 +5,8 @@ import type { FileOperationsTreeState as TreeState } from "./file-operations-con
 import type { createFileRowActions, FileRowTarget } from "../components/file-row-actions";
 import type * as dom from "../ui/dom";
 import { reported } from "../ui/report-failure";
+import { iconButtonClass } from "../ui/icon-button/icon-button-options";
+import { textButtonClass } from "../ui/text-button/text-button-options";
 import type { setIcon } from "../icons";
 
 /** Getters read current host state; only folder UI and listing cache belong here. */
@@ -307,12 +309,12 @@ export function createFilesTreeController(ports: FilesTreePorts) {
       line.style.setProperty("--depth", String(parentPath ? parentPath.split("/").length : 0));
       line.append(row);
       if (gone) {
-        const restore = button("Restore", () => void ports.restore({ path, name: entry.path, folder: directory, gone: true }), "file-restore");
+        const restore = button("Restore", () => void ports.restore({ path, name: entry.path, folder: directory, gone: true }), textButtonClass({ size: "compact", className: "file-restore" }));
         restore.setAttribute("aria-label", `Restore ${path}`);
         line.append(restore);
       }
       if (directory && !gone) {
-        const add = node("button", "file-add");
+        const add = node("button", iconButtonClass("file-add"));
         setIcon(add, "plus");
         add.type = "button";
         add.setAttribute("aria-label", `New in ${path}`);
