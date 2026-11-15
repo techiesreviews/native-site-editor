@@ -31,7 +31,7 @@ beyond that stays as a named variant. Nothing else visible changes.
   made with `button(…, "text-button …")` (source editor, agent pins, page structure, structure card, media screens,
   the repository list's Cancel). The menus' rows that borrow the `text-button` class keep their own look until the
   Menu item part (slice 6).
-- Copies: 132 before, 121 after (buttons made by hand 58 to 53, button looks 32 to 26).
+- Copies: 132 before, 119 after (buttons made by hand 58 to 51, button looks 32 to 26).
 - Commits: "Editor parts: Icon button and Text button parts, screens swapped to them (TOOLS-248)", "Editor parts: the editor and the design board load the two parts' styles as the Button's are loaded", "Editor parts: the top bar sizes only its own icon buttons, never those in the project menu", "Editor parts: ticket for slice 3, the Icon button and Text button parts (TOOLS-248)", "Review round 1: the compact Text button fills on press and waits for a mouse to fill on hover; the top bar's sizing has a test", "Editor parts: slice 3 ticket closed with its differences list; the Text button's comment says compact fills on press too", "Second look: the Icon button and the Text button take their looks from their own --icon-btn-* and --text-btn-* defaults; the compact size changes only those", "Editor parts: slice 3 ticket records the second look's decisions", "Editor parts: slice 3 paused; its ticket keeps the second look's Download original finding open", "Second look: Media's Download original and suggested name use a new underlined Text button and give it no look of their own", "Editor parts: slice 3 ticket records the underlined Text button and its Media evidence", "Editor parts: slice 3 ticket records review round 3's decisions", "Editor parts: slice 3 ticket closed", "docs: 03-icon-button-and-text-button commits by subject", "Editor parts: the editor loads the button parts' files through src/ui/parts.css, so src/main.ts stays within its line ceiling", "Editor parts: slice 3 ticket records the loading change, the rebase on the Inbox and their evidence", "docs: 03-icon-button-and-text-button commits by subject", "PR review: Page structure's icon actions are Icon buttons; a disabled Text button stays still on hover and press", "Editor parts: slice 3 ticket records the PR review's fixes and decisions", "docs: 03-icon-button-and-text-button commits by subject", "docs: 03-icon-button-and-text-button follow-ups from review", "Second look: the Files tree's ⋯, + and Restore and History's Refresh and ⋯ use the parts; a hidden slot's eye stays muted on hover", "Copies: 122 after the Files tree's ⋯ uses the Icon button", "Editor parts: slice 3 ticket records the second look's fixes and decisions", "docs: 03-icon-button-and-text-button commits by subject", "Second look: History's ⋯ shows no fill of its own while its menu is open, as the other menu Icon buttons", "Second look: the History test reads only an open menu's fill, not its visibility", "docs: 03-icon-button-and-text-button commits by subject", "docs: 03-icon-button-and-text-button follow-ups from review", "Second look: the Files tree's folder + is the Icon button's own element; the two parts' elements have a test", "docs: 03-icon-button-and-text-button commits by subject" and this commit.
 - Page structure (2026-11-15, PR review): a row's icon actions (Edit, Reset to default, Attributes, Edit component,
   Disconnect this instance, More actions) are Icon buttons sized 22px by `.page-structure__action`; the Show toggle
@@ -120,15 +120,37 @@ beyond that stays as a named variant. Nothing else visible changes.
   for that pair, and the next part that needs it can set the hover hook then.
 - Feature list: no change (the parts swap keeps every feature as it was)
 
+- Boot budget (2026-11-15): after dev took the Inbox, dev boots in 363,274 of the 363,520 bytes the budget allows,
+  and this branch measured 363,681 (161 over; CI's Byte budget failed too). The two parts' code and styles load at
+  start, as Page structure draws with them. Trimmed without a visible change: each part's hook defaults are now read
+  as fallbacks where they are used (`var(--text-btn-radius, 0)`) instead of declared on the class; the Text button
+  underlines with plain keywords (the build added a `-webkit-` copy of every `var()` underline) and the compact size
+  hides its hover underline with a see-through colour; the class builders lost a duplicate runtime size check and
+  whitespace clean-up; `iconButton()` makes its element with `node()`; the top bar keeps its short
+  `.topbar-actions .icon-button` rule and History's panel sizes its own buttons over it in its lazily loaded
+  stylesheet. Now 363,518 bytes, 2 under the budget (exact cold median, three runs each, on this branch and on dev);
+  `kit size`: boot 355 KB (±0 KB) vs dev, ok. The next slice that adds boot bytes must take some out.
+- Second look (opencode/deepseek-v4.1-flash-free, 2026-11-15, third look): fixed the top bar's size reaching
+  History's buttons (P2: 28px instead of 24px), the Pages tree's + and ⋯ made by hand (P2; now Icon buttons, no
+  visible change, copies 119), the missing size evidence (P2, above), the compact underlined Text button losing its
+  underline on hover (P3) and the stale follow-ups (P3). Declined the typed ports fixture in
+  `tests/files-tree-controller.test.ts` (P3): its `as unknown as FilesTreePorts` cast predates this slice and covers
+  the fake DOM the ports return; this slice only added the `iconButton` entry, which `npm run check` types through the
+  controller.
+- Evidence after the trims: `kit shots editor structure file-details media-gallery files --compare dev` at 390 and
+  1280, light and dark: 18 of 20 pixel-identical, files 1280 dark one shade in the top bar's corner speck, structure
+  390 light the known caret timing (its retake identical). History opened in the starter at 390 and 1280: its panel
+  pixel-identical to dev, Refresh and ⋯ 24 by 24px on both. Download original row: three of four sizes
+  pixel-identical to dev with the same computed style (the fourth, 1280 light, timed out in the scenario's upload
+  step twice; it matched before the trims). `kit specs` files tab, history, pages look and structure compact 69/69;
+  `kit unit --affected` 3163/3163.
+
 ### Follow-ups
 
-- Left for later slices (PR review and second look nits): the Inbox button's hand-written markup (the markup options
-  take no `id` or `popovertarget` yet); Media's round 44px Back, Close and Dismiss buttons (a round Icon button
-  variant); snapping the Text button's 5px padding to the scale; keeping a pressed Icon button's fill on hover; the
-  phone top bar's Menu sets `title: false` and then its title by hand; a copy counter that also sees button looks
-  whose class names hold no `button`.
-- Not shot: History's Refresh and ⋯ and a deleted file's Restore (the starter has no history or deleted file to
-  open in `kit shots`); their differences are listed above and pinned in `tests/icon-button-text-button-parts.test.ts`.
-- Validation gaps (gap): R3-8 still open: The ticket now says why it was not shot (`03-icon-button-and-text-button.md:130-131`: "the starter has no history or deleted file to open in `kit shots`"). That reason is weak. The same ticket reports `kit specs` for "history, history action" passing (line 74), so the fake GitHub server already has…
-- Standards (P3): 759337d83:src/pages-and-files-host.ts:243 — P3 style. CODING_STANDARDS.md:41-42 says "Ports and API names cost bytes (property names are not minified): report the budget delta of a slice". This round adds a new `iconButton` port to `FilesTreePorts` and to the host's `ui` object. The ticket's note for this round (`03-icon-button-and-text-button.md:89-91`) reports only `kit unit --affected` and copies, with no `kit size`. The last reported boot was 355 KB against a 355 KB budget (line 69), so the size gate has no slack left. Fix: run `kit size` and record the boot figure and its change in the round-4 line.
-- Validation gaps (gap): R3-8 (above): add a raw scenario that opens the History panel on the fake GitHub server, at 1280, light and dark, compared with dev. Shoot three states: Refresh at rest and hovered. A commit's ⋯ hovered and with its menu open. A deleted file's Restore row in the Files tree (delete a file in the scenario first). These are the visible differences listed at lines 101-105 that no screenshot covers yet.
+- Left for later slices (review nits): the Inbox button's hand-written markup (the markup options take no `id` or
+  `popovertarget` yet); Media's round 44px Back, Close and Dismiss buttons (a round Icon button variant); snapping
+  the Text button's 5px padding to the scale; keeping a pressed Icon button's fill on hover; the phone top bar's Menu
+  sets `title: false` and then its title by hand; a copy counter that also sees button looks whose class names hold no
+  `button`; the boot budget has 2 bytes left.
+- Not shot: a deleted file's Restore (normal weight, 6px side padding, as the compact Text button); its difference is
+  listed above and pinned in `tests/icon-button-text-button-parts.test.ts`.
