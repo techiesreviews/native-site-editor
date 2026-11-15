@@ -142,6 +142,11 @@ beyond that stays as a named variant. Nothing else visible changes.
   button's comment on links, the High Contrast difference in the list, and a line in `docs/agents/parts-plan.md` on
   the fallback form. Left its shot gaps (the Pages tab's + and ⋯, a deleted file's Restore, Download original after
   the trims) to follow-ups: the specs and the CSS unit test cover them, and `kit ux` tried Pages, Files and Media.
+- Second look on the fixes (gpt-6.1-sol, 2026-11-15, asked with `--second gpt`): declined its P2 that History's
+  Refresh and ⋯ shrink from 44px to 24px on phones. On dev they are `commit-history__refresh` and
+  `commit-history__more`, not `.icon-button`, so the top bar's 44px phone rule never reached them: they are 24px at
+  every width on dev and stay so here. Giving them the touch size is a follow-up for the slice that takes up touch
+  sizes, as this one keeps their size. Its shot gaps are the ones left above.
 - Evidence after the trims: `kit shots editor structure file-details media-gallery files --compare dev` at 390 and
   1280, light and dark: 18 of 20 pixel-identical, files 1280 dark one shade in the top bar's corner speck, structure
   390 light the known caret timing (its retake identical). History opened in the starter at 390 and 1280: its panel
