@@ -177,7 +177,7 @@ test("canonical payload identities ignore object order but preserve arrays and w
   assert.notEqual(workspaceKey({ ...draft, branch: "a/b" }), workspaceKey({ ...draft, account: "lex/a", branch: "b" }));
 });
 
-test("one rule tells an unknown outcome for edits, media and the transport alike (TOOLS-263 B1)", () => {
+test("one rule tells an unknown outcome for edits, media and the transport alike (TOOLS-264 B1)", () => {
   for (const message of ["The outcome is unproven.", "The edit outcome is unknown.", "The editor could not prove the change landed.",
     "The media outcome could not be proven.", "This browser's storage is full and could not confirm whether the change was kept."])
     assert.equal(unknownOutcome(new Error(message)), true, message);

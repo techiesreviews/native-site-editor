@@ -148,16 +148,14 @@ export async function servePreview(ports: ServePorts) {
     if (waiting) { waiting.add(to); return; }
     const askers = new Set([to]);
     working.set(id, askers);
-    void (async () => look(await ports.files(), path, true))().then(({ made, answer: sent }) => {
+    void (async () => {
+      // A lookup that fails before the guarded read is answered 502 at once, not at the visitors' own time limit.
+      const found = await ports.files().then(site => look(site, path, true)).catch(() => undefined);
+      working.delete(id);
       if (closed) return;
-      if (at === version) answered.set(path, made);
-      working.delete(id);
-      wire.send({ t: "file", version: at, path, to: [...askers], ...sent } satisfies HostMessage);
-    }, () => {
-      // A lookup that failed before the guarded read: the visitors waiting hear it now, not at their own time limit.
-      working.delete(id);
-      if (!closed) wire.send({ t: "file", version: at, path, to: [...askers], status: 502 } satisfies HostMessage);
-    });
+      if (found && at === version) answered.set(path, found.made);
+      wire.send({ t: "file", version: at, path, to: [...askers], ...found?.answer ?? { status: 502 } } satisfies HostMessage);
+    })();
   }
   /** Any file answered changed: a new version, and visitors draw again. */
   async function lookAgain() {

@@ -212,8 +212,9 @@ export function createBootController(ports: BootPorts) {
       if (code) {
         url.searchParams.delete("error");
         ports.replaceUrl(url);
-        // Words that fail to load leave the sign-in button alone; a boot that started meanwhile owns the screen.
-        const words = await import("../sign-in-words").catch(() => undefined);
+        // Words that fail to load are reported as such (a stale page offers its reload), the sign-in button left alone;
+        // a boot that started meanwhile owns the screen.
+        const words = await import("../sign-in-words").catch((error: unknown) => { ports.showError(error); });
         if (words && boot === boots && ports.source() === source) ports.showError(new Error(words.signInErrorText(code)));
       }
     } catch (error) {

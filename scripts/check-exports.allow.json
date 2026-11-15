@@ -82,6 +82,6 @@
   {
     "file": "src/inbox/site-items.ts",
     "name": "heldPages",
-    "reason": "Seam for tests/inbox-site-items.test.ts: proves the Inbox lets go of a switched site's pages (TOOLS-263 B3); the cache itself stays private."
+    "reason": "Seam for tests/inbox-site-items.test.ts: proves the Inbox lets go of a switched site's pages (TOOLS-264 B3); the cache itself stays private."
   }
 ]

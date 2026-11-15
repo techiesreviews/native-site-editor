@@ -356,7 +356,7 @@ test("Share preview stays out without a preview Worker or a sign-in, and says wh
   assert.equal(signedOut.available(), false);
 });
 
-test("a file lookup that fails answers the waiting visitors at once with 502, not their own time limit (TOOLS-263 B2)", async () => {
+test("a file lookup that fails answers the waiting visitors at once with 502, not their own time limit (TOOLS-264 B2)", async () => {
   let failing = true;
   const site = siteFiles({ "index.html": "<h1>Fresh bread</h1>" });
   const room = await serving(() => { if (failing) throw new Error("storage went away"); return site; });
