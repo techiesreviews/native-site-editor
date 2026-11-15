@@ -64,6 +64,8 @@ interface PageRead { source: string; titled: boolean; pictures: readonly PagePic
 const read = new Map<string, PageRead>();
 /** How many pages' text is held (a seam for tests). */
 export const heldPages = () => read.size;
+/** Lets go of every page's text: no site is open, or another one is loading (src/inbox/inbox.ts). */
+export const forgetPages = () => read.clear();
 
 /** Whether the page's own <title> (not an SVG's, nor one in a comment or a script) has words. */
 function hasTitle(source: string, elements: readonly SourceElement[]) {

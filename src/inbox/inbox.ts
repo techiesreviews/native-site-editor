@@ -10,7 +10,7 @@ import { button, node } from "../ui/dom";
 import type { InboxItem } from "./inbox-item";
 import type { InboxPorts } from "./inbox-host";
 import { markDecorative } from "./decorative";
-import { pictureVerdict, siteFile, siteItems } from "./site-items";
+import { forgetPages, pictureVerdict, siteFile, siteItems } from "./site-items";
 
 /** The site's items now; `unsure` while a picture's verdict is not known yet (`settle`: judge it by its alt text). */
 function findItems(ports: InboxPorts, settle: boolean) {
@@ -102,6 +102,7 @@ export function createInboxList(ports: InboxPorts) {
     if (!again) retries = 0;
     // No pages: none yet while a site loads; a repository opened without a site has nothing waiting.
     if (!ports.pages().length) {
+      forgetPages();
       session = undefined;
       checked = Boolean(ports.appStore.snapshot.value);
       show([]);
@@ -111,6 +112,7 @@ export function createInboxList(ports: InboxPorts) {
     // and the text index asks again once it has them. A re-read of the same site (after a save, even one that fails)
     // goes on checking the pages it already holds.
     if (!ports.indexed() && !session?.holds()) {
+      forgetPages();
       session = undefined;
       checked = false;
       show([]);
