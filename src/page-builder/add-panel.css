@@ -31,12 +31,10 @@
   opacity: 1;
 }
 
-/* Dragging from the panel. */
-.pb-is-dragging,
-.pb-is-dragging * {
-  cursor: grabbing !important;
-}
-/* Holds the pointer (or, for a press in the page, the keys) while dragging. */
+/* Holds the pointer (or, for a press in the page, the keys) while dragging.
+   The browser shows the cursor of the element holding the pointer, so the
+   grabbing cursor sits here alone: a rule on the whole page restyled every
+   element as a drag began and ended (TOOLS-261). */
 .pb-drag-holder {
   position: fixed;
   top: 0;
@@ -44,6 +42,7 @@
   width: 0;
   height: 0;
   outline: none;
+  cursor: grabbing;
 }
 /* A lifted Structure row, over the page rather than in the sidebar: the
    row's surface, size and radius, its kind's icon, weight and colour

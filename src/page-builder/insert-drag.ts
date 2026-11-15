@@ -172,7 +172,6 @@ export function trackDrag<T>(press: DragPress, label: () => DragName,
       holder.focus({ preventScroll: true });
     } else capture(holder);
     source?.classList.add("is-dragging");
-    document.documentElement.classList.add("pb-is-dragging");
     ghost = node("div", "pb-drag-ghost");
     const text = node("span", "pb-drag-ghost__text");
     where = node("span", "pb-drag-ghost__where");
@@ -215,7 +214,6 @@ export function trackDrag<T>(press: DragPress, label: () => DragName,
     holder?.remove();
     if (refocus) before?.focus({ preventScroll: true });
     source?.classList.remove("is-dragging");
-    document.documentElement.classList.remove("pb-is-dragging");
     ghost?.remove();
     const at = target;
     ctx!.clear(drop);
