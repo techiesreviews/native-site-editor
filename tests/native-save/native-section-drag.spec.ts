@@ -199,6 +199,8 @@ test("the name in the edit bar drags a selected section between page bands, one 
   await expect(ghost(page).locator("svg.element-icon")).toHaveAttribute("width", "14");
   // The grabbing cursor rides on the element holding the pointer, not on the whole page.
   await expect(page.locator(".pb-drag-holder")).toHaveCSS("cursor", "grabbing");
+  // The mouse (pointer 1) is held there, so its cursor is the one shown everywhere.
+  expect(await page.locator(".pb-drag-holder").evaluate((el) => el.hasPointerCapture(1))).toBe(true);
   // Across the hero's heading text, then onto its upper half: the gap above it.
   await page.mouse.move(heading.x + heading.width - 4, heading.y + heading.height / 2, { steps: 6 });
   await page.mouse.move(heading.x + 4, heading.y + 4, { steps: 6 });
