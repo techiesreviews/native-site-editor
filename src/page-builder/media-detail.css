@@ -57,7 +57,7 @@
 /* Renaming (ticket 15): the taken name with the next free one, the tidied name, Keep the old address working. */
 .media-detail__naming { display: grid; gap: 2px; }
 .media-detail__naming:not(:has(> :not([hidden], :empty))) { display: none; }
-.media-library .media-detail__suggest { justify-self: start; min-block-size: 44px; padding: 0; text-decoration: underline; }
+.media-library .media-detail__suggest { justify-self: start; min-block-size: 44px; padding: 0; }
 .media-detail__forward { display: grid; }
 .media-detail__forward[hidden] { display: none; }
 
@@ -117,8 +117,8 @@
 .media-detail__row-name { overflow-wrap: anywhere; }
 .media-detail__row-size { color: var(--muted); font-size: var(--type-small); font-variant-numeric: tabular-nums; }
 .media-detail__row-kind { grid-column: 1; color: var(--muted); font-size: var(--type-small); }
-/* The kept original's name downloads it: a text link the size of its line, with a 44 px tap area. */
-.media-library .media-detail__original { position: relative; min-block-size: 0; padding: 0; border: 0; background: none; color: var(--link); font-size: inherit; text-align: start; text-decoration: underline; }
+/* The kept original's name downloads it: an underlined Text button the size of its line, with a 44 px tap area. */
+.media-library .media-detail__original { position: relative; min-block-size: 0; padding: 0; text-align: start; }
 .media-detail__original::after { content: ""; position: absolute; inset: min(0px, (100% - 44px) / 2) 0; }
 
 /* A video's Still picture and a video's or audio file's Subtitles (slice 66), now sections. */
