@@ -197,7 +197,8 @@ test("the name in the edit bar drags a selected section between page bands, one 
   await expect(ghost(page)).toBeVisible();
   await expect(ghost(page)).toHaveText("Section");
   await expect(ghost(page).locator("svg.element-icon")).toHaveAttribute("width", "14");
-  expect(await page.evaluate(() => document.documentElement.classList.contains("pb-is-dragging"))).toBe(true);
+  // The grabbing cursor rides on the element holding the pointer, not on the whole page.
+  await expect(page.locator(".pb-drag-holder")).toHaveCSS("cursor", "grabbing");
   // Across the hero's heading text, then onto its upper half: the gap above it.
   await page.mouse.move(heading.x + heading.width - 4, heading.y + heading.height / 2, { steps: 6 });
   await page.mouse.move(heading.x + 4, heading.y + 4, { steps: 6 });
@@ -246,7 +247,7 @@ test("a drag by the name needs 7 px, cancels on Escape and records nothing for a
   await page.mouse.up();
   await expect(sectionOrder(page)).resolves.toEqual(["hero", "cards", "filler"]);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
-  expect(await page.evaluate(() => document.documentElement.classList.contains("pb-is-dragging"))).toBe(false);
+  await expect(page.locator(".pb-drag-holder")).toHaveCount(0);
 
   // Released on the gap it already fills (the top half of itself): nothing recorded.
   await clearStatus(page);
