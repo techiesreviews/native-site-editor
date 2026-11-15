@@ -4,9 +4,8 @@ import { createAppStore } from "../src/app-store.ts";
 import { CleanSourceCache } from "../src/clean-source-cache.ts";
 import { createDraftStore } from "../src/draft-store.ts";
 import { draftStore, type DraftScope } from "../src/drafts.ts";
-import { createAgentMenuHost, type AgentMenuHostPorts } from "../src/agent-menu-host.ts";
+import { agentMenuOptions, type AgentMenuPorts } from "../src/agent-menu-host.ts";
 import type { AgentSiteInput, SharedContext } from "../src/agent-site.ts";
-import type { AgentMenuPort } from "../src/controllers/agent-controller.ts";
 import { createNativeSiteRuntime } from "../src/native-site-runtime.ts";
 import type { Stamp } from "../src/guarded-edit.ts";
 import type { NativePreviewSelection } from "../src/components/native-preview.ts";
@@ -14,14 +13,14 @@ import type { MediaPin } from "../src/controllers/media-controller.ts";
 import type { AgentCommand, AgentWho } from "../shared/agent.ts";
 import type { PinRequest } from "../src/components/agent-pins.ts";
 import { resolveNativeProject } from "../shared/native-project.ts";
-import type { Repository, SessionInfo, Snapshot } from "../shared/types.ts";
+import type { Repository, Snapshot } from "../shared/types.ts";
 
 // The draft store and the menu's host read these browser globals; no other tabs, so no channel keeps the process alive.
 const fakeGlobals = globalThis as Record<string, unknown>;
 const saved = ["window", "document", "localStorage", "addEventListener", "BroadcastChannel"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
-const values = new Map<string, string>(), menuHost = { roots: [] as unknown[], append(root: unknown) { this.roots.push(root); } };
+const values = new Map<string, string>();
 fakeGlobals.window = { addEventListener: () => {}, removeEventListener: () => {} };
-fakeGlobals.document = { addEventListener: () => {}, visibilityState: "visible", getElementById: (id: string) => (id === "agent-menu" ? menuHost : null) };
+fakeGlobals.document = { addEventListener: () => {}, visibilityState: "visible" };
 fakeGlobals.addEventListener = () => {};
 fakeGlobals.BroadcastChannel = undefined;
 fakeGlobals.localStorage = {
@@ -38,7 +37,6 @@ after(() => {
 const SCOPE: DraftScope = { account: "o", repoId: 1, repo: "o/site", branch: "main" };
 const REPO = { id: 1, full_name: "o/site" } as Repository; // eslint-disable-line no-restricted-syntax -- only the id and name are read.
 const SNAPSHOT = { branch: "main", commit: "c1" } as Snapshot; // eslint-disable-line no-restricted-syntax -- only the branch and commit are read.
-type MenuOptions = Parameters<Awaited<ReturnType<AgentMenuHostPorts["loadAgentMenu"]>>["createAgentMenu"]>[0];
 const SELECTION = { path: "index.html", tag: "p", text: "", reason: "click", selectors: [], node: [0] } satisfies NativePreviewSelection;
 const COMMAND = { id: "c1", operation: "write_file", path: "index.html", branch: "main", commit: "c1", content: "", state: "pending" } satisfies AgentCommand;
 const PIN = {} as MediaPin; // eslint-disable-line no-restricted-syntax -- handed on unread: the test checks only that it arrives.
@@ -47,8 +45,8 @@ const ON_PIN = new Map<string, AgentWho>([["req-now", { grant: "grant-Copy edito
 
 // The host over the real runtime, app store and drafts; the menu, the agent's site and the other ports record what they were asked.
 function setup(options: { draftScope?: () => DraftScope | undefined } = {}) {
-  const calls: string[] = [], inputs: AgentSiteInput[] = [], menus: MenuOptions[] = [];
-  const late: { info?: SessionInfo; requests?: unknown; indexed: boolean; holds: boolean; preview: boolean } = { info: { user: { login: "o" } } as SessionInfo, indexed: true, holds: true, preview: true }; // eslint-disable-line no-restricted-syntax -- only the login is read.
+  const calls: string[] = [], inputs: AgentSiteInput[] = [];
+  const late: { indexed: boolean; holds: boolean; preview: boolean } = { indexed: true, holds: true, preview: true };
   const stamp: Stamp = { holds: () => late.holds, changed: () => (late.holds ? undefined : "scope") } as unknown as Stamp; // eslint-disable-line no-restricted-syntax -- the site host asks only holds and changed.
   const cleanSources = new CleanSourceCache(() => "o");
   const runtime = createNativeSiteRuntime({
@@ -63,36 +61,27 @@ function setup(options: { draftScope?: () => DraftScope | undefined } = {}) {
   const record = (name: string) => (...args: unknown[]) => { calls.push(`${name} ${args.map((arg) => JSON.stringify(arg)).join(" ")}`.trim()); };
   const ports = {
     appStore, runtime, guardedEdits: { stamp: () => stamp }, cleanSources,
-    agentCommands: { apply: async (command) => { calls.push(`apply ${command.id}`); }, reload: async (snapshot) => { calls.push(`reload ${snapshot.revision}`); } },
     setupController: { noteAgent: record("noteAgent") }, pageStructureController: { renderEditBar: record("renderEditBar") },
     mediaPorts: { pin: () => { pins.push("pin"); return PIN; } },
     workspace: { activeFileContext: null, repositoryMenu: { setQuestions: record("questions"), close: record("close menu") } },
     agentPresence: { questions: record("questioned"), onPin: (id: string) => ON_PIN.get(id), colour: (who: AgentWho) => { calls.push(`colour ${who.name}`); return 2; }, atWork: () => [{ name: "Copy editor", file: "index.html", section: "1.0" }], agents: () => [], stop: () => {}, stopped: () => false, heard: () => {}, listen: () => () => {} },
     nativeTextIndexGate: { key: () => "k", indexed: () => late.indexed, settled: async () => true, ensure: async () => { calls.push("index"); late.indexed = true; return undefined; } },
-    get info() { return late.info; },
     get nativePreview() { return late.preview ? { route: () => "/", setRequests: record("requests"), showRequest: record("show") } : undefined; },
-    api: (async () => { throw new Error("no reads"); }) as unknown as AgentMenuHostPorts["api"], // eslint-disable-line no-restricted-syntax -- the menu never reads GitHub here.
+    api: (async () => { throw new Error("no reads"); }) as unknown as AgentMenuPorts["api"], // eslint-disable-line no-restricted-syntax -- the menu never reads GitHub here.
     readFile: async () => "", readFiles: async () => ({}),
     loadAgentSite: async () => ({ buildAgentContext: async (input: AgentSiteInput) => { inputs.push(input); return { input } as unknown as SharedContext; } }), // eslint-disable-line no-restricted-syntax -- the stand-in context only carries the input back.
-    loadAgentMenu: async () => ({ createAgentMenu: (options: MenuOptions) => {
-      menus.push(options);
-// eslint-disable-next-line no-restricted-syntax -- the menu root is only appended and removed; no DOM element here.
-      return { root: { remove() {} } as HTMLElement, connected: () => false, changed() {}, consentGranted() {}, destroy() {}, ask: async () => undefined, answer: async () => {}, dismiss: async () => {} } satisfies AgentMenuPort<HTMLElement>; } }),
     draftScope: options.draftScope ?? (() => SCOPE),
     nativeRouteInfo: (route: string) => ({ title: `title of ${route}` }),
     pathNow: (path: string) => (path === "index.html" ? "file" : undefined),
-    errorMessage: record("error"),
-  } satisfies AgentMenuHostPorts;
-  return { host: createAgentMenuHost(ports), calls, inputs, menus, late, runtime, appStore, cleanSources, pins };
+  } satisfies AgentMenuPorts;
+  const commands = { apply: async (command: AgentCommand) => { calls.push(`apply ${command.id}`); }, reload: async (snapshot: { revision: number }) => { calls.push(`reload ${snapshot.revision}`); } };
+  // The options each mount of the menu is made with (src/controllers/agent-controller.ts).
+  return { options: agentMenuOptions(ports, commands), calls, inputs, late, runtime, appStore, cleanSources, pins };
 }
 
-test("the menu mounts for the signed-in account and its connection, requests and questions reach the editor", async () => {
-  const { host, calls, menus, appStore } = setup();
-  await host.agentController.ensure();
-  assert.equal(menus.length, 1);
-  assert.equal(menuHost.roots.length, 1);
-  const [options] = menus;
-  assert.equal(options.account, "o");
+test("the menu's connection, requests and questions reach the editor, and its commands the agent's", async () => {
+  const { calls, appStore, ...made } = setup();
+  const options = made.options();
   options.onConnection?.(true);
   appStore.selection.value = SELECTION;
   options.onConnection?.(false);
@@ -104,15 +93,8 @@ test("the menu mounts for the signed-in account and its connection, requests and
   assert.deepEqual(calls, ["noteAgent true", "noteAgent false", `renderEditBar ${JSON.stringify(SELECTION)}`, "questioned []", "requests []", "questions 2", "close menu", 'show "r1"', "apply c1", "reload 2"]);
 });
 
-test("no menu mounts before the session names an account", async () => {
-  const { host, menus, late } = setup();
-  late.info = undefined;
-  await host.agentController.ensure();
-  assert.equal(menus.length, 0);
-});
-
 test("the context agents see waits for the whole site and describes the workspace, its site and the page open", async () => {
-  const { host, calls, inputs, menus, late, runtime, appStore } = setup();
+  const { calls, inputs, late, runtime, appStore, ...made } = setup();
   const resolved = resolveNativeProject(["index.html"]);
   assert.ok(resolved.ok);
   runtime.site = resolved.site;
@@ -120,8 +102,7 @@ test("the context agents see waits for the whole site and describes the workspac
   appStore.openFile.value = "index.html";
   appStore.selection.value = SELECTION;
   late.indexed = false;
-  await host.agentController.ensure();
-  const options = menus.at(-1)!;
+  const options = made.options();
   assert.ok(await options.context());
   assert.deepEqual(calls, ["index"]);
   const [input] = inputs;
@@ -139,16 +120,14 @@ test("the context agents see waits for the whole site and describes the workspac
 });
 
 test("with no draft scope the context is not built", async () => {
-  const { host, menus, inputs } = setup({ draftScope: () => undefined });
-  await host.agentController.ensure();
-  assert.equal(await menus.at(-1)!.context(), undefined);
+  const { options, inputs } = setup({ draftScope: () => undefined });
+  assert.equal(await options().context(), undefined);
   assert.equal(inputs.length, 0);
 });
 
 test("the files agents read are the open repository's, with the clean cache's blobs, and none with no snapshot", async () => {
-  const { host, menus, appStore, cleanSources } = setup();
-  await host.agentController.ensure();
-  const tools = menus.at(-1)!.tools!;
+  const { options, appStore, cleanSources } = setup();
+  const tools = options().tools!;
   cleanSources.put("o/site", "sha-1", "", "<p>home</p>");
   const files = tools.files();
   assert.deepEqual([files?.repo, files?.snapshot], [REPO, SNAPSHOT]);
@@ -160,17 +139,15 @@ test("the files agents read are the open repository's, with the clean cache's bl
 });
 
 test("work pinned for Media carries the pin the media ports give", async () => {
-  const { host, menus, pins } = setup();
-  await host.agentController.ensure();
-  assert.equal(menus.at(-1)!.tools!.pin?.()?.media, PIN);
+  const { options, pins } = setup();
+  assert.equal(options().tools!.pin?.()?.media, PIN);
   assert.deepEqual(pins, ["pin"]);
 });
 
 test("before the preview exists, requests and a shown request wait, and the selection carries no route", async () => {
-  const { host, calls, inputs, menus, late, runtime, appStore } = setup();
+  const { calls, inputs, late, runtime, appStore, ...made } = setup();
   late.preview = false;
-  await host.agentController.ensure();
-  const options = menus.at(-1)!;
+  const options = made.options();
   options.onRequests?.([]);
   options.onShowRequest?.("r1");
   // The questions' presence needs no preview (Page Structure and Pages and files show it too).
@@ -184,14 +161,13 @@ test("before the preview exists, requests and a shown request wait, and the sele
 });
 
 test("only a pin an agent works on asks for its colour (am-13): finished ones of earlier sessions, and a watchdog's take presence names no one for, take no place in the order of arrival", async () => {
-  const { host, calls, menus } = setup();
-  await host.agentController.ensure();
+  const { options, calls } = setup();
   const request = (id: string, state: PinRequest["state"], name: string): PinRequest => ({ id, text: id, state, createdAt: 1, repoId: 1, branch: "main",
     element: { file: "index.html", route: "/", id: "1.0", tag: "h1" }, agent: { grant: `grant-${name}`, name } });
   const took: PinRequest = { ...request("req-took", "seen", "Watchdog"), agentTook: true };
   // Ticket am-45: a take presence names its taker for shows that agent, in its colour.
   const named: PinRequest = { ...request("req-named", "seen", "Watchdog"), agentTook: true };
-  menus[0].onRequests?.([request("req-old", "done", "Old helper"), request("req-now", "seen", "Copy editor"), took, named]);
+  options().onRequests?.([request("req-old", "done", "Old helper"), request("req-now", "seen", "Copy editor"), took, named]);
   assert.deepEqual(calls.filter(call => call.startsWith("colour")), ["colour Copy editor", "colour Watchdog"]);
   const told = JSON.parse(calls.find(call => call.startsWith("requests "))!.slice("requests ".length)) as PinRequest[];
   assert.deepEqual(told.map(item => [item.id, item.colour, item.agent?.name, item.agentTook]),

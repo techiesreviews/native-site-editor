@@ -139,7 +139,6 @@ test("kept requests of the open workspace mount the agent menu at startup; none,
   let mounted = 0;
   const controller = createAgentController<{ remove(): void }>({
     account: () => "Lex", host: () => host, appStore,
-    createOptions: () => ({ context: async () => undefined, onCommand: async () => {} }),
     async load() {
       loads++;
       return { createAgentMenu: (options) => {

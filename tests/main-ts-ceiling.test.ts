@@ -104,7 +104,7 @@ test("setup, media, Pages & files, workspace, page-builder, site preview, lazy l
   assert.deepEqual(hostMembersUsedEarly(source, "sitePreview"), []);
   assert.deepEqual(hostMembersUsedEarly(source, "lazyLoaders"), []);
   // Destructured straight from their factory's call.
-  for (const factory of ["createAnnounce", "createDraftViews", "createAgentMenuHost", "createSiteLoading", "createSiteTextIndex", "createRepositoryList"])
+  for (const factory of ["createAnnounce", "createDraftViews", "createAgentHost", "createSiteLoading", "createSiteTextIndex", "createRepositoryList"])
     assert.deepEqual(hostMembersUsedEarly(source, factory), [], factory);
 });
 
@@ -131,7 +131,7 @@ test("a member destructured straight from a factory's call, reached through an e
   assert.deepEqual(hostMembersUsedEarly(source, "createDraftViews"), ["openNewDraft via early() (line 2)"]);
 });
 
-// The media, Pages & files, workspace, page-builder and agent menu hosts, the agent's commands, site loading, the text index, the site preview,
+// The media, Pages & files, workspace, page-builder and agent hosts, site loading, the text index, the site preview,
 // the draft views and the lazy loaders read main.ts's `let` state when they run: such a value goes in
 // as a getter (and a setter where the host writes it, as the Pages & files and page-builder hosts' and the draft views' `fileGeneration` and the text index's
 // `nativePreviewBehind`: a getter alone still type-checks, then throws on the first write), never as a
@@ -176,10 +176,10 @@ function letsHandedByValue(source: string, factory = "createPagesAndFilesHost"):
   return found;
 }
 
-test("main.ts hands its hosts, the agent's commands, site loading, the text index, the site preview, the draft views and the lazy loaders their let state through accessors and later consts through arrows", () => {
+test("main.ts hands its hosts, site loading, the text index, the site preview, the draft views and the lazy loaders their let state through accessors and later consts through arrows", () => {
   const source = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
   assert.deepEqual(letsHandedByValue(source), []);
-  for (const factory of ["createMediaHost", "createWorkspaceMount", "createAgentCommands", "createSiteLoading", "createSiteTextIndex", "createPageBuilderHost", "createSitePreview", "createDraftViews", "createAgentMenuHost", "createLazyLoaders"]) assert.deepEqual(letsHandedByValue(source, factory), [], factory);
+  for (const factory of ["createMediaHost", "createWorkspaceMount", "createAgentHost", "createSiteLoading", "createSiteTextIndex", "createPageBuilderHost", "createSitePreview", "createDraftViews", "createLazyLoaders"]) assert.deepEqual(letsHandedByValue(source, factory), [], factory);
 });
 
 test("a const handed to the agent's commands by name before it is declared is named", () => {
