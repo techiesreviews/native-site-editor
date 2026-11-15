@@ -6,9 +6,8 @@ for this build only. The lead's notes live in [lead-log.md](lead-log.md).
 
 - **Base.** Branch from `origin/<base>`; land into `<base>` with
   `scripts/agents/kit pr --ticket <ticket>` (or say why a slice cannot).
-- **Builder.** The model for this build's helper threads when it is not the pinned builder (the
-  `delegate_task` target beside each `kit brief <ticket>`); name any exception requiring the other-model
-  path in runner.md.
+- **Builder.** The model passed to `delegate_task` with each ticket's `kit brief`, when it is not the
+  pinned builder; name any exception requiring the other-model path in runner.md.
 - **Review.** Which slices get a second opinion beyond the Claude review, per the pins in
   [kitchen.md](../../agents/kitchen.md#who-cooks-pins-from-2026-10-22).
 - **Out of bounds.** Files, folders or services no runner may touch in this build
