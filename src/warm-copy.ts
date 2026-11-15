@@ -5,6 +5,20 @@
 // a newer head folds in as any outside change does (src/outside-merge.ts).
 // A text is used only when it hashes to its blob SHA, so a stale or damaged
 // copy costs a read from GitHub, never a wrong base. Sign-out forgets it.
+//
+// Settle matrix of a repeat visit with a matching copy (the session has named the same account first; tests:
+// tests/native-save/native-warm-open.spec.ts, tests/workspace-boot.test.ts, tests/repository-list.test.ts):
+// - drafts: every draft began from the copy's blob at its path, and the copy holds the file to reopen: the copy
+//   shows; otherwise GitHub's snapshot opens the plain way (nothing is checked against the copy).
+// - listing (src/repository-list.ts openWarm): has the repository as it was: installed, the site stays; lacks it,
+//   or it was renamed or moved: the plain listing runs and says so; fails or never answers: the menu says it could
+//   not load, the site stays; a newer listing began meanwhile: it installs nothing.
+// - branch list (src/workspace-boot.ts chooseRepository): has the branch: the selector fills; lacks it: the plain
+//   open runs and says the branch is gone; fails: its message and Try again, the site stays.
+// - head check (checkKept): the same commit: up to date, the head trusted; a newer one: folds in as an outside change
+//   (unsaved edits kept and merged) or loads the branch again; fails or the tab is hidden: "Could not check" while
+//   shown, asked again when next shown or focused; taken over by a newer check: that one's outcome stands.
+// - leaving (a new listing, navigation, sign-out): the copy's texts not yet proven cache nothing and read nothing.
 
 import type { Repository, Snapshot } from "../shared/types";
 import { textBlobSha } from "./file-changes";

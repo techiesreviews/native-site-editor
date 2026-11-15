@@ -437,3 +437,20 @@ test("a kept copy of a wizard's site keeps its checklist once the listing has it
     pageStorage.removeItem(WIZARD_KEY);
   }
 });
+
+test("a kept copy's listing: a newer listing begun at any of its waits leaves only its own writes", async () => {
+  const replays = await forEachAwait(
+    (race) => {
+      const f = fixture([C]);
+      const listing = race.port("listing", async () => [A, B])();
+      const done = f.list.loadRepositories(undefined, { onStarted: () => {}, warm: { copy: keptCopy(), listing } }).then(() => listing).then(settle);
+      return { f, done };
+    },
+    async ({ f }) => { await f.list.loadRepositories([C]); },
+    ({ f }) => {
+      assert.deepEqual(f.ports.repositories, [C]);
+      assert.deepEqual(f.menu.listed, [C]);
+    },
+  );
+  assert.ok(replays >= 1);
+});

@@ -61,7 +61,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
   const reads: Read[] = [], seeded: string[] = [], cached = new Map<string, string>(), shown = { content: "", status: "", nodes: [] as unknown[] };
   let fileGeneration = 0, tag: string | null | undefined = "t1";
   const heads: string[] = [], headChecks: boolean[] = [];
-  let headAnswer: Promise<string | undefined> = Promise.resolve(undefined);
+  let headAnswer: Promise<string | null | undefined> = Promise.resolve(undefined);
   let drafts: SavedDraft[] = [];
   const read = (path: string, params?: Record<string, string>, early?: Promise<Response>) => {
     const answer = deferred<unknown>();
@@ -143,7 +143,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
     pending,
     setTag: (value: string | null | undefined) => { tag = value; },
     /** What GitHub's head check behind a kept copy answers (src/controllers/save-publish-controller.ts checkHead). */
-    answerHead: (answer: Promise<string | undefined>) => { headAnswer = answer; },
+    answerHead: (answer: Promise<string | null | undefined>) => { headAnswer = answer; },
     /** The browser's drafts of the workspace. */
     setDrafts: (value: SavedDraft[]) => { drafts = value; },
     /** The host's loadRepositories: a new listing starts the next load with no repository. */
@@ -786,4 +786,46 @@ test("a head check that fails while the reopened file is still opening keeps say
   opened();
   await choosing;
   assert.equal(f.shown.status, "Could not check GitHub for newer changes on main. Refresh to check.");
+}));
+
+test("two tabs keeping their own sites: the last one left owns the copy", async () => {
+  const savedFactory = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  const { factory } = fakeIndexedDB();
+  Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: factory });
+  try {
+    const tab = async (branch: string) => {
+      let page!: EventTarget & { visibilityState: string };
+      let f!: ReturnType<typeof fixture>;
+      await withDocument(async (doc) => {
+        page = doc;
+        f = fixture({ remember: false, native: true });
+        await f.boot.chooseRepository({ repoId: 501, branch }, kept({ branch, snapshot: { ...KEPT_SNAPSHOT, branch } }));
+        await flush();
+      });
+      // The boot reads the page's visibility as the event fires: the tab's own page is the document then.
+      return { leave: () => withDocument(async (doc) => {
+        doc.visibilityState = page.visibilityState = "hidden";
+        page.dispatchEvent(new Event("visibilitychange"));
+        await flush();
+      }) };
+    };
+    const a = await tab("main"), b = await tab("next");
+    await a.leave();
+    assert.equal((await readWarmCopy(factory))?.branch, "main");
+    await b.leave();
+    assert.equal((await readWarmCopy(factory))?.branch, "next");
+    await a.leave();
+    assert.equal((await readWarmCopy(factory))?.branch, "main", "the same site as this tab kept before is written again");
+  } finally {
+    if (savedFactory) Object.defineProperty(globalThis, "indexedDB", savedFactory);
+    else Reflect.deleteProperty(globalThis, "indexedDB");
+  }
+});
+
+test("a head check taken over by a newer one writes no status of its own", () => withDocument(async () => {
+  const f = fixture({ remember: false, native: true });
+  f.answerHead(Promise.resolve(null));
+  await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
+  await flush();
+  assert.equal(f.shown.status, "Checking GitHub for newer changes on main…");
 }));

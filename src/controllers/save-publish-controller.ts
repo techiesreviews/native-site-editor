@@ -127,8 +127,10 @@ export function createSavePublishController(ports: SavePublishPorts) {
   // it. A trusted head other than the one on show (this tab's own newer save)
   // is asked about instead: a delayed notice may name an older commit. Every
   // load trusts the commit it shows, which says nothing newer than the push.
-  // Resolves to the head GitHub named once the check is done (the fold or load after it included), else undefined.
-  async function checkHead(force = false, pushed?: string): Promise<string | undefined> {
+  // Resolves to the head GitHub named once the check is done (the fold or load after it included); null when a
+  // newer check or another snapshot took over, whose outcome stands; undefined when it got no answer (not checked
+  // while hidden, or the read failed).
+  async function checkHead(force = false, pushed?: string): Promise<string | null | undefined> {
     const was = proof(), seen = was.snapshot, scope = ports.scope();
     if (!scope || !seen || !ports.visible() || (!force && Date.now() - headCheckedAt < 15_000)) return undefined;
     headCheckedAt = Date.now();
@@ -139,7 +141,7 @@ export function createSavePublishController(ports: SavePublishPorts) {
         repo: scope.repo, branch: seen.branch,
         ...(known ? { commit: known } : {}),
       });
-      if (token !== headCheck || !live(was)) return undefined;
+      if (token !== headCheck || !live(was)) return null;
       if (commit === seen.commit) return commit;
       seeHead(commit);
       // Changed pages and stylesheets fold in where they are; anything else loads the branch again.
