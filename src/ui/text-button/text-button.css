@@ -3,7 +3,8 @@
    only them. A screen places and sizes it in its own unlayered CSS, which wins over this layer, and may set a hook
    there. Disabled fades, as every bare button does (src/style.css). Classes: `text-button` (the base size: underlines
    on hover or press), `text-button text-button--compact` (smaller words in a padded box that fills on hover or press,
-   for a panel row). */
+   for a panel row), `text-button text-button--underlined` (underlined at rest too, for words among plain text that
+   must read as a link). */
 @layer tokens, elements, components;
 
 @layer components {
@@ -15,6 +16,7 @@
     --text-btn-radius: 0;
     --text-btn-text-color: var(--link);
     --text-btn-font-size: var(--type-base);
+    --text-btn-decoration: none;
     --text-btn-hover-background: none;
     --text-btn-hover-decoration: underline;
 
@@ -25,6 +27,7 @@
     background: none;
     color: var(--text-btn-text-color);
     font-size: var(--text-btn-font-size);
+    text-decoration: var(--text-btn-decoration);
 
     /* Touch gets the press; hover waits for a mouse, as a touch screen keeps :hover on the last tap. */
     &:active {
@@ -47,5 +50,9 @@
     --text-btn-font-size: var(--type-small);
     --text-btn-hover-background: var(--hover);
     --text-btn-hover-decoration: none;
+  }
+
+  .text-button--underlined {
+    --text-btn-decoration: underline;
   }
 }

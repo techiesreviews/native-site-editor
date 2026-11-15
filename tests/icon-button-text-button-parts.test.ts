@@ -50,6 +50,8 @@ test("text button: one part class, the compact size as a modifier, a screen's ow
   assert.equal(textButtonClass({ className: "media-settings__reset" }), "text-button media-settings__reset");
   assert.equal(textButtonClass({ size: "compact" }), "text-button text-button--compact");
   assert.equal(textButtonClass({ size: "compact", className: "component-panel__text-button" }), "text-button text-button--compact component-panel__text-button");
+  assert.equal(textButtonClass({ underlined: true }), "text-button text-button--underlined");
+  assert.equal(textButtonClass({ underlined: true, className: "media-detail__suggest" }), "text-button text-button--underlined media-detail__suggest");
 });
 
 for (const [name, path, cls] of [
@@ -80,6 +82,28 @@ test("each part's look comes from its own defaults, and the compact size changes
   assert.ok(declared.length > 0);
   assert.deepEqual(declared.filter((name) => !name.startsWith("--text-btn-")), [], "compact sets only the part's hooks");
   for (const name of declared) assert.match(text, new RegExp(`var\\(${name}\\)`), `${name} is used`);
+});
+
+test("the underlined text button changes only the part's hooks, and its words stay underlined at rest", () => {
+  const text = read("src/ui/text-button/text-button.css");
+  assert.match(text, /--text-btn-decoration: none;/, "the base size is not underlined at rest");
+  assert.match(text, /text-decoration: var\(--text-btn-decoration\);/);
+  const underlined = /\.text-button--underlined \{([^}]*)\}/.exec(text)?.[1] ?? "";
+  const declared = [...underlined.matchAll(/^\s*([\w-]+)\s*:/gm)].map((match) => match[1]);
+  assert.deepEqual(declared, ["--text-btn-decoration"]);
+  assert.match(underlined, /--text-btn-decoration: underline;/);
+});
+
+test("Media's Download original and suggested name use the underlined text button and give it no look of their own", () => {
+  const css = read("src/page-builder/media-detail.css");
+  for (const cls of ["media-detail__original", "media-detail__suggest"]) {
+    const rules = [...css.matchAll(new RegExp(`[^}]*\\.${cls}\\b[^{]*\\{([^}]*)\\}`, "g"))].map((match) => match[1]).join(";");
+    assert.ok(rules.length > 0, `${cls} still places itself`);
+    assert.doesNotMatch(rules, /(^|[;\s])(border|background|color|text-decoration)\s*:/, `${cls} gives the button no border, background, colour or underline`);
+  }
+  const ts = read("src/page-builder/media-library-details.ts");
+  assert.match(ts, /\{ underlined: true, className: "media-detail__original" \}/);
+  assert.match(ts, /\{ underlined: true, className: "media-detail__suggest" \}/);
 });
 
 test("the old copies are gone: no screen styles the icon button's or the text button's look", () => {

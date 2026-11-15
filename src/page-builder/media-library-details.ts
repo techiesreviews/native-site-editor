@@ -313,7 +313,7 @@ function renderInformation(
           const blob = await adapter.blob(row.path);
           if (!h.alive()) return;
           const link = node("a"); link.href = cache.objectUrl(blob); link.download = name; link.click();
-        }), { className: "media-detail__original" });
+        }), { underlined: true, className: "media-detail__original" });
         open.setAttribute("aria-label", `Download original ${name}`);
         label.replaceChildren(open);
       }
@@ -416,7 +416,7 @@ function renameField(name: HTMLInputElement, path: string, paths: string[], gith
   const element = node("div", "media-detail__naming");
   const note = node("p", "media-library__problem"); note.id = `media-detail-name-${++fieldIds}`;
   note.setAttribute("aria-live", "polite"); name.setAttribute("aria-describedby", note.id);
-  const suggest = textButton("", () => { name.value = suggest.dataset.name!; paint(); name.focus(); }, { className: "media-detail__suggest" });
+  const suggest = textButton("", () => { name.value = suggest.dataset.name!; paint(); name.focus(); }, { underlined: true, className: "media-detail__suggest" });
   suggest.hidden = true;
   const tidied = node("p", "media-library__hint");
   const forward = input("Keep the old address working", "checkbox");
