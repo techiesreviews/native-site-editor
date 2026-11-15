@@ -4,11 +4,11 @@
 // Shared values read the tokens in src/theme.css. Mock-ups for future features live in mockups.ts.
 
 import type { IconName } from "../icons";
-import { BADGE_KINDS, BADGE_TONES } from "../ui/parts/badge-options";
-import { ICON_PLACES, ICON_SIZES, type IconPlace } from "../ui/parts/icon-options";
-import { PROGRESS_STEPS } from "../ui/parts/progress-options";
-import { SPINNER_PLACES, SPINNER_SIZES, type SpinnerPlace, type SpinnerSize } from "../ui/parts/spinner-options";
-import { HEADING_LEVELS } from "../ui/parts/section-heading-options";
+import { BADGE_KINDS, BADGE_TONES } from "../ui/badge/badge-options";
+import { ICON_PLACES, ICON_SIZES, type IconPlace } from "../ui/icon/icon-options";
+import { PROGRESS_STEPS } from "../ui/progress/progress-options";
+import { SPINNER_PLACES, SPINNER_SIZES, type SpinnerPlace, type SpinnerSize } from "../ui/spinner/spinner-options";
+import { HEADING_LEVELS } from "../ui/section-heading/section-heading-options";
 import { iconButtonMarkup } from "../ui/icon-button/icon-button-options";
 
 export type AreaId = "values" | "atoms" | "molecules" | "organisms" | "screens" | "mockups";
@@ -261,7 +261,7 @@ const HEADING_ENDS: readonly Choice[] = [["none", "Nothing"], ["count", "A count
 
 const ATOMS: Part[] = [
   {
-    id: "button", area: "atoms", name: "Button", files: ["src/ui/parts/button.css", "src/ui/dom.ts"], css: "src/ui/parts/button.css",
+    id: "button", area: "atoms", name: "Button", files: ["src/ui/button/button.css", "src/ui/dom.ts"], css: "src/ui/button/button.css",
     defaults: { tone: "primary", label: "Save" },
     controls: [choice("tone", "Tone", [["primary", "Primary"], ["secondary", "Secondary"]]), text("label", "Label")],
     rows: [{ label: "Primary", values: { tone: "primary" } }, { label: "Secondary", values: { tone: "secondary" } }],
@@ -274,7 +274,7 @@ const ATOMS: Part[] = [
     },
   },
   {
-    id: "icon", area: "atoms", name: "Icon", files: ["src/ui/parts/icon.ts", "src/ui/parts/icon-options.ts", "src/icons.ts", "src/icons.css"],
+    id: "icon", area: "atoms", name: "Icon", files: ["src/ui/icon/icon.ts", "src/ui/icon/icon-options.ts", "src/icons.ts", "src/icons.css"],
     defaults: { name: "check", size: "16", place: "alone", words: "Save" },
     controls: [
       choice("name", "Icon", ICON_NAMES), choice("size", "Size", ICON_SIZE_CHOICES), choice("place", "Place", ICON_PLACE_CHOICES), text("words", "Words"),
@@ -286,18 +286,18 @@ const ATOMS: Part[] = [
     ],
     columns: ICON_SIZE_CHOICES.map(([size, label]) => ({ label, values: { size } })),
     async render(values) {
-      const { iconPart } = await import("../ui/parts/icon");
+      const { iconPart } = await import("../ui/icon/icon");
       return iconPart(str(values.name) as IconName, { size: str(values.size), place: str(values.place), words: str(values.words) });
     },
   },
   {
-    id: "spinner", area: "atoms", name: "Spinner", files: ["src/ui/parts/spinner.ts", "src/ui/parts/spinner-options.ts", "src/ui/parts/spinner.css"],
+    id: "spinner", area: "atoms", name: "Spinner", files: ["src/ui/spinner/spinner.ts", "src/ui/spinner/spinner-options.ts", "src/ui/spinner/spinner.css"],
     defaults: { size: "medium", place: "inline", label: "Loading" },
     controls: [choice("size", "Size", SPINNER_SIZE_CHOICES), choice("place", "Place", SPINNER_PLACE_CHOICES), text("label", "Label")],
     rows: SPINNER_PLACE_CHOICES.map(([place, label]) => ({ label, values: { place } })),
     columns: SPINNER_SIZE_CHOICES.map(([size, label]) => ({ label, values: { size } })),
     async render(values) {
-      const [{ spinner }, node] = await Promise.all([import("../ui/parts/spinner"), dom()]);
+      const [{ spinner }, node] = await Promise.all([import("../ui/spinner/spinner"), dom()]);
       const ring = spinner({ size: str(values.size), place: str(values.place), label: str(values.label) });
       if (values.place !== "overlay") return ring;
       // An overlay covers what is loading: a stand-in block of words for it to sit over.
@@ -307,20 +307,20 @@ const ATOMS: Part[] = [
     },
   },
   {
-    id: "progress", area: "atoms", name: "Progress bar", files: ["src/ui/parts/progress.ts", "src/ui/parts/progress-options.ts", "src/ui/parts/progress.css"],
+    id: "progress", area: "atoms", name: "Progress bar", files: ["src/ui/progress/progress.ts", "src/ui/progress/progress-options.ts", "src/ui/progress/progress.css"],
     defaults: { amount: "60", label: "Adding pictures" },
     controls: [choice("amount", "Amount", PROGRESS_AMOUNTS), text("label", "Label")],
     rows: PROGRESS_AMOUNTS.map(([amount, label]) => ({ label, values: { amount } })),
     columns: states("normal"),
     async render(values) {
-      const [{ progress }, node] = await Promise.all([import("../ui/parts/progress"), dom()]);
+      const [{ progress }, node] = await Promise.all([import("../ui/progress/progress"), dom()]);
       const stage = node("div", "cat-progress-stage");
       stage.append(progress({ value: values.amount === "unknown" ? null : str(values.amount), label: str(values.label) }));
       return stage;
     },
   },
   {
-    id: "badge", area: "atoms", name: "Badge", files: ["src/ui/parts/badge.ts", "src/ui/parts/badge-options.ts", "src/ui/parts/badge.css"],
+    id: "badge", area: "atoms", name: "Badge", files: ["src/ui/badge/badge.ts", "src/ui/badge/badge-options.ts", "src/ui/badge/badge.css"],
     defaults: { kind: "tag", tone: "neutral", words: "Draft", icon: "check" },
     controls: [
       choice("kind", "Kind", BADGE_KIND_CHOICES), choice("tone", "Tone", BADGE_TONE_CHOICES), text("words", "Words"), choice("icon", "Mark icon", ICON_NAMES),
@@ -338,12 +338,12 @@ const ATOMS: Part[] = [
     // A badge is read, not pressed: it has no hover, pressed, focus, disabled or busy look, so the columns are tones.
     columns: BADGE_TONE_CHOICES.map(([tone, label]) => ({ label, values: { tone } })),
     async render(values) {
-      const { badgePart } = await import("../ui/parts/badge");
+      const { badgePart } = await import("../ui/badge/badge");
       return badgePart({ kind: str(values.kind), tone: str(values.tone), words: str(values.words), icon: str(values.icon) as IconName });
     },
   },
   {
-    id: "section-heading", area: "atoms", name: "Section heading", files: ["src/ui/parts/section-heading.ts", "src/ui/parts/section-heading-options.ts", "src/ui/parts/section-heading.css"],
+    id: "section-heading", area: "atoms", name: "Section heading", files: ["src/ui/section-heading/section-heading.ts", "src/ui/section-heading/section-heading-options.ts", "src/ui/section-heading/section-heading.css"],
     defaults: { words: "Pages", level: "3", end: "none" },
     controls: [text("words", "Words"), choice("level", "Level", HEADING_LEVEL_CHOICES), choice("end", "End slot", HEADING_ENDS)],
     rows: [
@@ -356,7 +356,7 @@ const ATOMS: Part[] = [
     columns: states("normal"),
     async render(values) {
       const [{ sectionHeadingPart }, { badgePart }, { button }] = await Promise.all([
-        import("../ui/parts/section-heading"), import("../ui/parts/badge"), import("../ui/dom"),
+        import("../ui/section-heading/section-heading"), import("../ui/badge/badge"), import("../ui/dom"),
       ]);
       const end = values.end === "count" ? badgePart({ kind: "count", words: "12" }) : values.end === "button" ? button("Add", () => undefined, "button secondary") : undefined;
       const heading = sectionHeadingPart(str(values.words), { level: str(values.level), ...(end ? { end } : {}) });
@@ -365,7 +365,7 @@ const ATOMS: Part[] = [
     },
   },
   {
-    id: "key", area: "atoms", name: "Keyboard key", files: ["src/ui/parts/key.ts", "src/ui/parts/key-options.ts", "src/ui/parts/key.css"],
+    id: "key", area: "atoms", name: "Keyboard key", files: ["src/ui/key/key.ts", "src/ui/key/key-options.ts", "src/ui/key/key.css"],
     defaults: { keys: "Ctrl+K" },
     controls: [text("keys", "Keys (joined with +)")],
     rows: [
@@ -378,12 +378,12 @@ const ATOMS: Part[] = [
     // A key cap is a label: no hover, pressed, focus or disabled look of its own.
     columns: states("normal"),
     async render(values) {
-      const [{ keyPart }, node] = await Promise.all([import("../ui/parts/key"), dom()]);
+      const [{ keyPart }, node] = await Promise.all([import("../ui/key/key"), dom()]);
       return keyPart(str(values.keys)) ?? node("span", "cat-hint", "Type a key");
     },
   },
   {
-    id: "inline-field", area: "atoms", name: "Inline field", files: ["src/ui/inline-field.css"],
+    id: "inline-field", area: "atoms", name: "Inline field", files: ["src/ui/inline-field/inline-field.css"],
     defaults: { value: "About us", placeholder: "Page title" },
     controls: [text("value", "Value"), text("placeholder", "Placeholder")],
     rows: [{ label: "Filled" }, { label: "Empty", values: { value: "" } }],

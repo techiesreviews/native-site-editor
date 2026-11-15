@@ -5,7 +5,7 @@
 import { forcedSheet } from "./force-states";
 import { PARTS, isPart } from "./parts";
 
-const TEXTS = import.meta.glob<string>("../ui/parts/*.css", { query: "?raw", import: "default", eager: true });
+const TEXTS = import.meta.glob<string>("../ui/*/*.css", { query: "?raw", import: "default", eager: true });
 
 /** A component file's text as the code has it, by its repository path; undefined for a file that is not one. */
 export const componentText = (path: string): string | undefined => TEXTS[path.replace(/^src\//, "../")];

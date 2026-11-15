@@ -11,7 +11,7 @@
       "variants": "tone: primary (class `button` or `button primary`), secondary (`button secondary`, the default of `button()`); disabled is plain, not a pale tone",
       "files": [
         "src/ui/dom.ts",
-        "src/ui/parts/button.css"
+        "src/ui/button/button.css"
       ],
       "copies": "buttons made with `node(\"button\")` and button looks styled in screens (`node scripts/agents/copies.mjs report`)."
     },
@@ -48,10 +48,10 @@
       "name": "Icon",
       "group": "part",
       "for": "A Phosphor Regular icon by name, alone or standing before or after words.",
-      "use": "`iconPart(name, { size, place, words })` from `src/ui/parts/icon.ts`; the screens still call `icon(name, size, className)` from `src/icons.ts` until the Icon swap.",
+      "use": "`iconPart(name, { size, place, words })` from `src/ui/icon/icon.ts`; the screens still call `icon(name, size, className)` from `src/icons.ts` until the Icon swap.",
       "files": [
-        "src/ui/parts/icon.ts",
-        "src/ui/parts/icon-options.ts",
+        "src/ui/icon/icon.ts",
+        "src/ui/icon/icon-options.ts",
         "src/icons.ts",
         "src/icons.css"
       ]
@@ -62,11 +62,11 @@
       "group": "part",
       "for": "A ring turning while something loads, inline or as an overlay over the panel that is loading.",
       "notFor": "A control as small as its ring (overlay), or progress that can be measured (use the Progress bar).",
-      "use": "`spinner({ size, place, label })` from `src/ui/parts/spinner.ts`; the caller marks the loading host `aria-busy=\"true\"` and `inert`.",
+      "use": "`spinner({ size, place, label })` from `src/ui/spinner/spinner.ts`; the caller marks the loading host `aria-busy=\"true\"` and `inert`.",
       "files": [
-        "src/ui/parts/spinner.ts",
-        "src/ui/parts/spinner-options.ts",
-        "src/ui/parts/spinner.css"
+        "src/ui/spinner/spinner.ts",
+        "src/ui/spinner/spinner-options.ts",
+        "src/ui/spinner/spinner.css"
       ]
     },
     {
@@ -74,11 +74,11 @@
       "name": "Progress bar",
       "group": "part",
       "for": "A bar that fills as far as a value says, or slides while nobody can tell how long it takes.",
-      "use": "`progress({ value, max, label })` from `src/ui/parts/progress.ts`; move a bar already on the page with `setProgress(bar, options)` so it animates.",
+      "use": "`progress({ value, max, label })` from `src/ui/progress/progress.ts`; move a bar already on the page with `setProgress(bar, options)` so it animates.",
       "files": [
-        "src/ui/parts/progress.ts",
-        "src/ui/parts/progress-options.ts",
-        "src/ui/parts/progress.css"
+        "src/ui/progress/progress.ts",
+        "src/ui/progress/progress-options.ts",
+        "src/ui/progress/progress.css"
       ]
     },
     {
@@ -86,11 +86,11 @@
       "name": "Badge",
       "group": "part",
       "for": "A count, a status, a tag, a dot or a round mark, in one of six tones.",
-      "use": "`badgePart({ kind, tone, words, icon })` from `src/ui/parts/badge.ts`, or `badgeMarkup(options)` from `src/ui/parts/badge-options.ts` for markup text.",
+      "use": "`badgePart({ kind, tone, words, icon })` from `src/ui/badge/badge.ts`, or `badgeMarkup(options)` from `src/ui/badge/badge-options.ts` for markup text.",
       "files": [
-        "src/ui/parts/badge.ts",
-        "src/ui/parts/badge-options.ts",
-        "src/ui/parts/badge.css"
+        "src/ui/badge/badge.ts",
+        "src/ui/badge/badge-options.ts",
+        "src/ui/badge/badge.css"
       ],
       "copies": "the shared `.badge` in `src/style.css` and the badge looks screens style themselves (`node scripts/agents/copies.mjs report`)."
     },
@@ -99,11 +99,11 @@
       "name": "Section heading",
       "group": "part",
       "for": "Small uppercase words naming a group in a panel or menu, with an optional end slot for a count or a button.",
-      "use": "`sectionHeadingPart(words, { level, end })` from `src/ui/parts/section-heading.ts`.",
+      "use": "`sectionHeadingPart(words, { level, end })` from `src/ui/section-heading/section-heading.ts`.",
       "files": [
-        "src/ui/parts/section-heading.ts",
-        "src/ui/parts/section-heading-options.ts",
-        "src/ui/parts/section-heading.css"
+        "src/ui/section-heading/section-heading.ts",
+        "src/ui/section-heading/section-heading-options.ts",
+        "src/ui/section-heading/section-heading.css"
       ]
     },
     {
@@ -111,11 +111,11 @@
       "name": "Keyboard key",
       "group": "part",
       "for": "A key cap, or several keys pressed together, in a menu row, a tooltip or the shortcuts sheet.",
-      "use": "`keyPart(keys)` from `src/ui/parts/key.ts` (a string or a list of keys).",
+      "use": "`keyPart(keys)` from `src/ui/key/key.ts` (a string or a list of keys).",
       "files": [
-        "src/ui/parts/key.ts",
-        "src/ui/parts/key-options.ts",
-        "src/ui/parts/key.css"
+        "src/ui/key/key.ts",
+        "src/ui/key/key-options.ts",
+        "src/ui/key/key.css"
       ]
     },
     {
@@ -123,9 +123,9 @@
       "name": "Inline field",
       "group": "part",
       "for": "A text value in a panel row that reads as plain text and becomes a field on focus, with a red underline for an error.",
-      "use": "class `inline-field` on the input; the panels listed at the top of `src/ui/inline-field.css` get it by selector.",
+      "use": "class `inline-field` on the input; the panels listed at the top of `src/ui/inline-field/inline-field.css` get it by selector.",
       "files": [
-        "src/ui/inline-field.css"
+        "src/ui/inline-field/inline-field.css"
       ]
     },
     {

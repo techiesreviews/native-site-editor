@@ -1,5 +1,5 @@
 /* The Text button component: an action written as link-coloured words. Its whole look in one file on the components
-   layer, like the Button (src/ui/parts/button.css). Its --text-btn-* hooks hold their defaults as fallbacks where
+   layer, like the Button (src/ui/button/button.css). Its --text-btn-* hooks hold their defaults as fallbacks where
    they are read (the boot bundle carries this file, so it stays small), and the compact size sets only hooks and the
    underline's colour. A screen places and sizes it in its own unlayered CSS, which wins over this layer, and may set
    a hook there. Disabled fades, as every bare button does (src/style.css). Classes: `text-button` (the base size:

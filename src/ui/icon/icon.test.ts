@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_ICON_SIZE, ICON_PLACES, ICON_SIZES, drawSvg, iconPlace, iconSize, iconSvg } from "../src/ui/parts/icon-options.ts";
-import { PARTS } from "../src/catalogue/parts.ts";
+import { DEFAULT_ICON_SIZE, ICON_PLACES, ICON_SIZES, drawSvg, iconPlace, iconSize, iconSvg } from "./icon-options.ts";
 
-// The Icon part's options become markup (atomic catalogue ticket 10): a size from a small set, a place beside words,
-// one class, the variants as data attributes, hidden from assistive technology.
+// The Icon part's options become markup: a size from a small set, a place beside words, one class, the variants as
+// data attributes, hidden from assistive technology.
 
 // Phosphor Regular's check, as the package ships it.
 const check = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></svg>';
@@ -49,15 +48,4 @@ test("one way to draw: the editor's markup and the part's differ only in the dat
   assert.match(editor, /^<svg class="icon" width="20" height="20" aria-hidden="true" focusable="false" /);
   assert.ok(drawSvg(check, "icon wide", 12).startsWith('<svg class="icon wide" width="12" height="12" '));
   assert.equal(iconSvg(check, { size: 20 }), editor.replace(' aria-hidden', ' data-size="20" aria-hidden'));
-});
-
-test("the board's Icon shows every size and each place, and its options reach the part", () => {
-  const part = PARTS.find((entry) => entry.id === "icon");
-  assert.ok(part && "rows" in part);
-  assert.deepEqual(part.columns.map((column) => column.values?.size), ICON_SIZES.map(String));
-  const places = new Set(part.rows.map((row) => row.values?.place ?? part.defaults.place));
-  assert.deepEqual([...places].sort(), ["after", "alone", "before"]);
-  const choices = (key: string) => part.controls.flatMap((control) => (control.kind === "choice" && control.key === key ? control.choices.map(([value]) => value) : []));
-  assert.deepEqual(choices("size"), ICON_SIZES.map(String));
-  assert.deepEqual(choices("place"), [...ICON_PLACES]);
 });

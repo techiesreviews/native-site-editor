@@ -1,5 +1,5 @@
 // The Progress bar part's options and how they become markup (atomic catalogue ticket 14). Plain data in, plain data
-// out, so a unit test can pin it without a browser; src/ui/parts/progress.ts draws it.
+// out, so a unit test can pin it without a browser; src/ui/progress/progress.ts draws it.
 
 // Known: a `value` out of `max` fills the bar that far. Unknown: no `value`, a short bar slides along the track.
 

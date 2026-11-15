@@ -46,15 +46,15 @@ function project(files: Record<string, string>) {
 const source = (parts: unknown[], screens: Record<string, string> = {}) => JSON.stringify({ parts, screens });
 const badge = {
   id: "badge", name: "Badge", group: "part", for: "A count or a status.", use: "`badgePart(options)`",
-  files: ["src/ui/parts/badge.ts", "src/ui/parts/badge-options.ts", "src/ui/parts/badge.css"],
+  files: ["src/ui/badge/badge.ts", "src/ui/badge/badge-options.ts", "src/ui/badge/badge.css"],
 };
 
 test("every UI file is listed: parts by hand, screens from the code with their styles and tests", () => {
   const p = project({
     "docs/agents/parts.json": source([badge]),
-    "src/ui/parts/badge.ts": 'export const badgePart = () => document.createElement("span");\n',
-    "src/ui/parts/badge-options.ts": 'export const BADGE_TONES = ["neutral", "danger"] as const;\n',
-    "src/ui/parts/badge.css": ".ui-badge {}\n",
+    "src/ui/badge/badge.ts": 'export const badgePart = () => document.createElement("span");\n',
+    "src/ui/badge/badge-options.ts": 'export const BADGE_TONES = ["neutral", "danger"] as const;\n',
+    "src/ui/badge/badge.css": ".ui-badge {}\n",
     "src/components/publish-menu.ts": '// The Save menu: the changes to save.\nexport const m = () => node("div");\n',
     "src/components/publish-menu.css": ".publish-menu {}\n",
     "src/page-builder/maths.ts": "export const add = (a: number, b: number) => a + b;\n",
@@ -62,13 +62,13 @@ test("every UI file is listed: parts by hand, screens from the code with their s
     "src/components/preview-menu.ts": "// The preview row, built from the sharing row.\nexport const row = () => shareRow();\n",
     "src/page-builder/busy-lock.ts": "// The busy lock's Cancel.\nexport const cancel = (label: string) => button(label, stop);\n",
     "src/catalogue/board.ts": 'node("div");\n',
-    "tests/badge.test.ts": 'import { badgePart } from "../src/ui/parts/badge";\n',
+    "tests/badge.test.ts": 'import { badgePart } from "../src/ui/badge/badge";\n',
     "tests/publish.test.ts": 'readFileSync("src/components/publish-menu.css");\n',
   });
   try {
     assert.deepEqual(uiFiles(p.root), [
       "src/components/preview-menu.ts", "src/components/publish-menu.css", "src/components/publish-menu.ts", "src/page-builder/busy-lock.ts",
-      "src/ui/parts/badge-options.ts", "src/ui/parts/badge.css", "src/ui/parts/badge.ts",
+      "src/ui/badge/badge-options.ts", "src/ui/badge/badge.css", "src/ui/badge/badge.ts",
     ], "every file in a component folder is UI; elsewhere, one that builds elements");
     assert.equal(p.run("write").status, 0);
     const list = p.list();
@@ -84,7 +84,7 @@ test("every UI file is listed: parts by hand, screens from the code with their s
 test("a new screen file makes the list out of date, and one with no purpose fails until it is described", () => {
   const p = project({
     "docs/agents/parts.json": source([badge]),
-    "src/ui/parts/badge.ts": "", "src/ui/parts/badge-options.ts": "", "src/ui/parts/badge.css": "",
+    "src/ui/badge/badge.ts": "", "src/ui/badge/badge-options.ts": "", "src/ui/badge/badge.css": "",
   });
   try {
     p.run("write");
@@ -104,13 +104,13 @@ test("a new screen file makes the list out of date, and one with no purpose fail
 test("a listed file that is gone, a part without its purpose, or a description of no screen file is a problem", () => {
   const p = project({
     "docs/agents/parts.json": source([{ ...badge, for: "" }], { "src/gone.ts": "Gone.", "src/maths.ts": "Sums." }),
-    "src/ui/parts/badge.ts": "", "src/ui/parts/badge-options.ts": "", "src/maths.ts": "export const add = (a: number, b: number) => a + b;\n",
+    "src/ui/badge/badge.ts": "", "src/ui/badge/badge-options.ts": "", "src/maths.ts": "export const add = (a: number, b: number) => a + b;\n",
   });
   try {
     const { problems } = build(p.root);
     assert.deepEqual(problems, [
       "docs/agents/parts.json: badge has no for",
-      "docs/agents/parts.json: badge lists src/ui/parts/badge.css, which does not exist",
+      "docs/agents/parts.json: badge lists src/ui/badge/badge.css, which does not exist",
       "docs/agents/parts.json: screens describes src/gone.ts, which does not exist",
       "docs/agents/parts.json: screens describes src/maths.ts, which is not a screen file on the list; remove it",
     ]);

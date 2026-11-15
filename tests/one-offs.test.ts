@@ -76,7 +76,7 @@ test("a component's own hooks on the components layer count as the property they
   ].join("\n");
   // A hook that ends in a counted property counts as it (icon-gap as gap, hover-shadow as a shadow); one that ends in
   // none still counts as a local property when it holds a hand-typed length or time.
-  assert.deepEqual(oneOffs(component, { file: "src/ui/parts/button.css" }).map(({ kind, line }: Found) => [kind, line]), [
+  assert.deepEqual(oneOffs(component, { file: "src/ui/button/button.css" }).map(({ kind, line }: Found) => [kind, line]), [
     ["spacing", 3], ["radii", 5], ["fontSizes", 6], ["spacing", 10], ["shadows", 11], ["localProperties", 12], ["timings", 13],
   ]);
   // Any length unit counts, the newer viewport, line-height and container units too; a hex colour or a weight does not.

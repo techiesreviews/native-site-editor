@@ -15,16 +15,16 @@
   },
   "unit": {
     "run": "./node_modules/.bin/tsx --test --test-reporter=spec",
-    "files": "tests/**/*.test.ts",
+    "files": ["tests/**/*.test.ts", "src/**/*.test.ts"],
     "docsGuards": ["tests/kit-editor.test.ts", "tests/code-map.test.ts", "tests/mcp-runtime.test.ts", "tests/parts-list.test.ts"]
   },
   "paths": {
     "docs": ["^docs/", "(?i:\\.md)$"],
-    "tests": ["^(tests|fixtures)/"],
+    "tests": ["^(tests|fixtures)/", "^src/.+\\.test\\.ts$"],
     "css": ["(?i:\\.css)$"],
     "kit": ["^scripts/agents/", "^tests/kit-.*\\.test\\.ts$"],
-    "unitTests": ["^tests/[^/]+\\.test\\.ts$"],
-    "visible": ["^src/.+(?i:\\.css)$", "^src/components/", "^src/ui/", "^src/page-builder/(?!rules/)", "^src/icons\\.ts$", "^index\\.html$"]
+    "unitTests": ["^tests/[^/]+\\.test\\.ts$", "^src/.+\\.test\\.ts$"],
+    "visible": ["^src/.+(?i:\\.css)$", "^src/components/(?!.+\\.test\\.ts$)", "^src/ui/(?!.+\\.test\\.ts$)", "^src/page-builder/(?!rules/)", "^src/icons\\.ts$", "^index\\.html$"]
   },
   "featureList": "docs/agents/features.md",
   "techDebt": "docs/work/tech-debt/issues",

@@ -1,6 +1,6 @@
 /* The editor's parts' own files, in one import of src/main.ts (which keeps under its line ceiling). Each file sets
    the layers' order and keeps its look on the components layer; the design board loads them on its own
    (src/catalogue/main.ts), so a live cell can leave a part's file out. */
-@import "./parts/button.css";
+@import "./button/button.css";
 @import "./icon-button/icon-button.css";
 @import "./text-button/text-button.css";

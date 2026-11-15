@@ -1,8 +1,8 @@
 // The Section heading part's options and how they become markup (atomic catalogue ticket 13). Pure text in, text out;
-// src/ui/parts/section-heading.ts draws it and puts a node in the end slot. One class, `ui-section-heading`; the words
+// src/ui/section-heading/section-heading.ts draws it and puts a node in the end slot. One class, `ui-section-heading`; the words
 // are a real heading, the end slot (a count, a button) sits at the far end of the same line.
 
-import { escapeWords } from "./escape";
+import { escapeWords } from "../escape";
 
 /** Heading levels the part offers: a panel's section sits under the panel's own title, so it starts at 2. */
 export const HEADING_LEVELS = [2, 3, 4] as const;

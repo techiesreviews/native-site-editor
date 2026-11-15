@@ -82,7 +82,7 @@
   gap: var(--space-xs);
   border-radius: var(--radius);
 }
-/* The rows and Decorative are the Button part's quiet tone (src/ui/parts/button.css), set through its hooks on its
+/* The rows and Decorative are the Button part's quiet tone (src/ui/button/button.css), set through its hooks on its
    own layer: a row is see-through until hovered and lays out its icon, what and where; Decorative is the compact
    size. */
 @layer components {
