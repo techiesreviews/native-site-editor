@@ -32,15 +32,11 @@ beyond that stays as a named variant. Nothing else visible changes.
   the repository list's Cancel). The menus' rows that borrow the `text-button` class keep their own look until the
   Menu item part (slice 6).
 - Copies: 132 before, 123 after (buttons made by hand 58 to 55, button looks 32 to 26).
-- Commits: "Editor parts: Icon button and Text button parts, screens swapped to them (TOOLS-248)", "Editor parts: the editor and the design board load the two parts' styles as the Button's are loaded", "Editor parts: the top bar sizes only its own icon buttons, never those in the project menu", "Editor parts: ticket for slice 3, the Icon button and Text button parts (TOOLS-248)", "Review round 1: the compact Text button fills on press and waits for a mouse to fill on hover; the top bar's sizing has a test", "Editor parts: slice 3 ticket closed with its differences list; the Text button's comment says compact fills on press too", "Second look: the Icon button and the Text button take their looks from their own --icon-btn-* and --text-btn-* defaults; the compact size changes only those", "Editor parts: slice 3 ticket records the second look's decisions", "Editor parts: slice 3 paused; its ticket keeps the second look's Download original finding open", "Second look: Media's Download original and suggested name use a new underlined Text button and give it no look of their own", "Editor parts: slice 3 ticket records the underlined Text button and its Media evidence", "Editor parts: slice 3 ticket records review round 3's decisions", "Editor parts: slice 3 ticket closed", "docs: 03-icon-button-and-text-button commits by subject", "Editor parts: the editor loads the button parts' files through src/ui/parts.css, so src/main.ts stays within its line ceiling", "Editor parts: slice 3 ticket records the loading change, the rebase on the Inbox and their evidence" and this commit; Editor parts: the
-  editor and the design board load the two parts' styles as the Button's are loaded; Editor parts: the top bar sizes
-  only its own icon buttons, never those in the project menu; Editor parts: ticket for slice 3, the Icon button and
-  Text button parts (TOOLS-248); Review round 1: the compact Text button fills on press and waits for a mouse to fill
-  on hover; the top bar's sizing has a test; Editor parts: slice 3 ticket closed with its differences list; Second look:
-  the Icon button and the Text button take their looks from their own --icon-btn-* and --text-btn-* defaults; Second
-  look: Media's Download original and suggested name use a new underlined Text button and give it no look of their own;
-  Editor parts: the editor loads the button parts' files through src/ui/parts.css, so src/main.ts stays within its line
-  ceiling.
+- Commits: "Editor parts: Icon button and Text button parts, screens swapped to them (TOOLS-248)", "Editor parts: the editor and the design board load the two parts' styles as the Button's are loaded", "Editor parts: the top bar sizes only its own icon buttons, never those in the project menu", "Editor parts: ticket for slice 3, the Icon button and Text button parts (TOOLS-248)", "Review round 1: the compact Text button fills on press and waits for a mouse to fill on hover; the top bar's sizing has a test", "Editor parts: slice 3 ticket closed with its differences list; the Text button's comment says compact fills on press too", "Second look: the Icon button and the Text button take their looks from their own --icon-btn-* and --text-btn-* defaults; the compact size changes only those", "Editor parts: slice 3 ticket records the second look's decisions", "Editor parts: slice 3 paused; its ticket keeps the second look's Download original finding open", "Second look: Media's Download original and suggested name use a new underlined Text button and give it no look of their own", "Editor parts: slice 3 ticket records the underlined Text button and its Media evidence", "Editor parts: slice 3 ticket records review round 3's decisions", "Editor parts: slice 3 ticket closed", "docs: 03-icon-button-and-text-button commits by subject", "Editor parts: the editor loads the button parts' files through src/ui/parts.css, so src/main.ts stays within its line ceiling", "Editor parts: slice 3 ticket records the loading change, the rebase on the Inbox and their evidence" and this commit.
+- Page structure (2026-11-15, PR review): a row's icon actions (Edit, Reset to default, Attributes, Edit component,
+  Disconnect this instance, More actions) are Icon buttons sized 22px by `.page-structure__action`; the Show toggle
+  and Open › keep their own look (a toggle with its own on and off colours, and words) until a part takes them.
+  A disabled Text button no longer underlines or fills on hover or press, as a disabled Icon button.
 - Underlined variant (2026-11-15): `textButton(words, action, { underlined: true })` adds `text-button--underlined`,
   which sets only `--text-btn-decoration` (none at rest by default). Media's Download original
   (`media-detail__original`) and the suggested free name (`media-detail__suggest`) use it; their screen rules keep only
@@ -72,6 +68,9 @@ beyond that stays as a named variant. Nothing else visible changes.
     the hover fill, as every other icon button.
   - Component panel's icon buttons: the hover fill waits for a mouse and a touch press fills, as every other icon button.
   - Component panel's Choose image… (compact Text button): fills on press; the hover fill waits for a mouse.
+  - Page structure's row actions: their corner goes from 4px to the Icon button's 6px; the hover fill waits for a
+    mouse and a touch press fills; keyboard focus shows the focus ring with the icon muted, as every other icon button.
+  - Disabled Text buttons (an agent pin's Undone, Undo while undoing): no underline on hover, as disabled Icon buttons.
   - Rows in the project menu and the agent menu that borrow the `text-button` class no longer underline on hover, as
     the editor's other menu rows (the share rows already removed it).
 - Review decisions: fixed (2026-11-15) the second look's P2 on `media-detail.css:121` (the Download original

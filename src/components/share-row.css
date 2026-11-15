@@ -25,7 +25,7 @@
 .link-row__main {
   min-block-size: max(var(--size-control), var(--size-tap));
 }
-/* A row, not a link: no underline when pressed or hovered (src/style.css .text-button). */
+/* A row, not a link: no underline when pressed or hovered (the Text button, src/ui/text-button/text-button.css). */
 .link-row > .link-row__main:is(:hover, :active) {
   text-decoration: none;
 }

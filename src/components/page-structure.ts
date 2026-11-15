@@ -2,6 +2,7 @@ import { refuse } from "./refusal-note";
 import { createRowMenu, type MenuItem } from "./row-menu";
 import { setIcon } from "../icons";
 import { button, node } from "../ui/dom";
+import { iconButton } from "../ui/icon-button/icon-button";
 import { textButton } from "../ui/text-button/text-button";
 import type { NativeStructure, NativeStructureItem } from "./native-preview";
 import { createUrlChange, type UrlPlan } from "./url-change";
@@ -360,8 +361,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     return result;
   }
   function iconAction(label: string, icon: Parameters<typeof mark>[0], action: () => void) {
-    const result = button("", action, "page-structure__action");
-    result.title = label; result.setAttribute("aria-label", label); result.append(mark(icon, 14)); return result;
+    return iconButton(label, mark(icon, 14), { action, className: "page-structure__action" });
   }
 
   // The row to focus once the next render shows a section that just moved.
@@ -716,13 +716,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       return true;
     };
     if (hasMenu) {
-      const more = button("", () => {
+      const more = iconButton(`Actions for ${kind}${text ? ` ${text}` : ""}`, null, { title: "More actions", className: "page-structure__action", action: () => {
         if (menu.isOpen() && menu.opener === more) { menu.close(true); return; }
         openMenu(more);
-      }, "page-structure__action");
+      } });
       setIcon(more, "dots-three", 16);
-      more.title = "More actions";
-      more.setAttribute("aria-label", `Actions for ${kind}${text ? ` ${text}` : ""}`);
       more.setAttribute("aria-haspopup", "menu");
       more.setAttribute("aria-expanded", "false");
       addRowActions(el, [more]);
