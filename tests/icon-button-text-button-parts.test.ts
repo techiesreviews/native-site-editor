@@ -65,7 +65,7 @@ for (const [name, path, cls] of [
     assert.match(css, /@media \(hover: hover\) and \(pointer: fine\)/, "hover waits for a mouse; touch gets the press");
     assert.ok(homes.buttonLooks.includes(path), "the part's file is its look's home in the copy count");
     const file = path.slice("src/".length);
-    assert.match(read("src/main.ts"), new RegExp(`^import "\\./${file}";$`, "m"), "the editor loads it");
+    assert.match(read("src/ui/parts.css"), new RegExp(`^@import "\\./${path.slice("src/ui/".length)}";$`, "m"), "the editor loads it through src/ui/parts.css");
     assert.match(read("src/catalogue/main.ts"), new RegExp(`^import "\\.\\./${file}";$`, "m"), "the design board loads it");
   });
 }
@@ -117,6 +117,14 @@ test("the top bar sizes only its own icon buttons, never those in the menus that
   const css = read("src/style.css");
   assert.doesNotMatch(css, /\.topbar \.icon-button\b/, "the project menu opens inside .topbar, so this would grow its Reload and Refresh buttons");
   assert.equal([...css.matchAll(/^\s*\.topbar-actions \.icon-button \{/gm)].length, 2, "the bar's own size, and its phone size");
+});
+
+test("the editor loads the button parts' files in one line, in their order, after its own base styles", () => {
+  const main = read("src/main.ts");
+  assert.match(main, /^import "\.\/theme\.css";\nimport "\.\/ui\/parts\.css";$/m);
+  assert.doesNotMatch(main, /icon-button\.css|text-button\.css|parts\/button\.css/, "only through src/ui/parts.css");
+  const imports = [...read("src/ui/parts.css").matchAll(/^@import "([^"]+)";$/gm)].map((match) => match[1]);
+  assert.deepEqual(imports, ["./parts/button.css", "./icon-button/icon-button.css", "./text-button/text-button.css"]);
 });
 
 test("the icon button's code makes its button element: it is the part's home in the copy count", () => {

@@ -8,9 +8,7 @@ import { handleChunkLoadFailure, hasEditableRecoveryState, installChunkRecovery 
 import "./utilities.css";
 import "./style.css";
 import "./theme.css";
-import "./ui/parts/button.css";
-import "./ui/icon-button/icon-button.css";
-import "./ui/text-button/text-button.css";
+import "./ui/parts.css";
 import { node } from "./ui/dom";
 import { options } from "./ui/select-options";
 import { setErrorReporter } from "./ui/report-failure";

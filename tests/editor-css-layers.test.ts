@@ -91,7 +91,9 @@ test("the editor's bare element rules sit on the elements layer, below every com
 });
 
 test("the editor loads the Button's file; the board loads it as a style of its own", () => {
-  assert.match(read("src/main.ts"), /^import "\.\/ui\/parts\/button\.css";$/m);
+  // Through src/ui/parts.css, which loads the parts' files in one line of src/main.ts (its line ceiling).
+  assert.match(read("src/main.ts"), /^import "\.\/ui\/parts\.css";$/m);
+  assert.match(withoutComments(read("src/ui/parts.css")), /^@import "\.\/parts\/button\.css";$/m);
   // Not through style.css, which the board loads too: the board adds it itself, so a live cell can leave it out.
   assert.doesNotMatch(withoutComments(read("src/style.css")), /button\.css/);
   assert.match(read("src/catalogue/main.ts"), /^loadComponentStyles\(\);$/m);
