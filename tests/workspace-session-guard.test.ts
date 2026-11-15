@@ -156,6 +156,8 @@ const allowlist: AllowlistEntry[] = [
   { file: "shared/agent-read.ts", match: { rule: "same-workspace", function: "openRequests" }, reason: `${FOLLOW_UP} shared with the Worker, which does not load the session module yet.` },
   { file: "src/controllers/agent-controller.ts", match: { rule: "same-workspace", function: "ensure" }, reason: "Not two workspaces: a lazy menu load is joined only for the same signed-in login and host it began for." },
   { file: "src/workspace-boot.ts", match: { rule: "same-workspace", function: "startBootGuess" }, reason: `${FOLLOW_UP} the remembered workspace's branch against the link's; it should ask \`same\`.` },
+  { file: "src/warm-copy.ts", match: { rule: "same-workspace", function: "asWarmCopy" }, reason: "Not two workspaces: a stored kept copy is read back only when its snapshot's branch is the branch it was kept for (TOOLS-242)." },
+  { file: "src/repository-list.ts", match: { rule: "same-workspace", function: "keptAsIs" }, reason: "Not two workspaces: whether the listed repository's details (names, default branch, owner, installation) are still what the kept copy holds; the open repository is the same by id already (TOOLS-242)." },
   { file: "shared/agent-requests.ts", match: { rule: "same-workspace", function: "inWorkspace" }, reason: `${FOLLOW_UP} shared with the Worker, which does not load the session module yet.`, count: 2 },
 ];
 

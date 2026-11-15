@@ -19,7 +19,7 @@ import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
 import { textBlobSha } from "./file-changes";
 import { ReadUnansweredError } from "./read-retry";
 import type { RepositoryIndex } from "./repository-loading";
-import { githubScope, type SessionStamp, type WorkspaceScope } from "./workspace-session";
+import { githubScope, sameBranch, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import { readWorkspace, readWorkspaceUrl, rememberWorkspace, type WorkspaceLocation } from "./workspace-state";
 import { MAX_TEXT_LENGTH, provenTexts, readWarmCopy, warmFor, writeWarmCopy, type WarmCopy } from "./warm-copy";
 
@@ -546,7 +546,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     // the bookmark or repository metadata. Validate it before using its snapshot.
     const requestedBranch = resume?.branch ?? appStore.repository.value.default_branch;
     const opened = appStore.repository.value;
-    const kept = warm?.repo.id === opened.id && warm.branch === requestedBranch ? warm : undefined;
+    const kept = sameBranch({ repoId: warm?.repo.id, branch: warm?.branch ?? "" }, { repoId: opened.id, branch: requestedBranch }) ? warm : undefined;
     // The guess is not needed beside a kept copy (dropped first: the copy's own hold replaces it).
     if (kept) dropBootGuess();
     const warmed = kept && warmSnapshot(kept, opened);

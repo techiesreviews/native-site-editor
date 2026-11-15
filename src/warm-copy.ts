@@ -24,6 +24,7 @@
 
 import type { Repository, Snapshot } from "../shared/types";
 import { textBlobSha } from "./file-changes";
+import { githubScope, same } from "./workspace-session";
 
 export interface WarmCopy {
   login: string;
@@ -104,7 +105,8 @@ export function forgetWarmCopy(factory: Factory | undefined = globalThis.indexed
 
 /** Whether `copy` is the site this boot opens: the same account, editor, repository and branch. */
 export function warmFor(copy: WarmCopy | undefined, at: { login: string; source: string; repoId: number; branch: string }) {
-  return Boolean(copy && copy.login.toLowerCase() === at.login.toLowerCase() && copy.source === at.source && copy.repo.id === at.repoId && copy.branch === at.branch);
+  return Boolean(copy && copy.source === at.source &&
+    same(githubScope({ account: copy.login, repoId: copy.repo.id, branch: copy.branch }), githubScope({ account: at.login, repoId: at.repoId, branch: at.branch })));
 }
 
 /** The copy's texts by SHA, each only when its snapshot still names that SHA at its path and the text hashes to it. */
