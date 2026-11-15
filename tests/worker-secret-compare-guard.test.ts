@@ -1,4 +1,4 @@
-// Secrets the Worker holds are compared in constant time (`sameHex`), never with === or !== (TOOLS-263 S5). It reads
+// Secrets the Worker holds are compared in constant time (`sameHex`), never with === or !== (TOOLS-264 S5). It reads
 // `env.<…TOKEN|SECRET>` beside the operator on one line; a secret first copied into a local name is not caught.
 import { test } from "node:test";
 import assert from "node:assert/strict";

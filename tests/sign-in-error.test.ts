@@ -1,5 +1,5 @@
 // The Worker's failed sign-in redirect carries a short code, never words: the editor shows that code's fixed text
-// (shared/sign-in-error.ts), so a link cannot make the sign-in screen say what it likes (TOOLS-263 S1).
+// (shared/sign-in-error.ts), so a link cannot make the sign-in screen say what it likes (TOOLS-264 S1).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { handle, type Env, type StoredSession } from "../worker/app.ts";

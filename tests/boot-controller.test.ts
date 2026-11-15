@@ -290,7 +290,7 @@ test("the page's early session and listing (src/boot-early.ts) stand for the fir
   }
 });
 
-test("the sign-in screen shows only fixed words for an error code, never a link's own words (TOOLS-263 S1)", async () => {
+test("the sign-in screen shows only fixed words for an error code, never a link's own words (TOOLS-264 S1)", async () => {
   for (const [search, shown] of [
     ["?error=expired", SIGN_IN_ERRORS.expired],
     ["?error=Your%20account%20is%20locked%2C%20sign%20in%20at%20evil.example", SIGN_IN_ERRORS.failed],

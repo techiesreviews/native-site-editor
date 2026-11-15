@@ -1,4 +1,4 @@
-// Why a GitHub sign-in stopped (TOOLS-263 S1). The Worker sends only a code (`/?error=<code>`) and the sign-in screen
+// Why a GitHub sign-in stopped (TOOLS-264 S1). The Worker sends only a code (`/?error=<code>`) and the sign-in screen
 // shows that code's fixed words, so a link cannot make the editor say words of its own.
 export const SIGN_IN_ERRORS = {
   setup: "GitHub sign-in has not been configured for this editor yet.",

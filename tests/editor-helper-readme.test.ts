@@ -1,4 +1,4 @@
-// The helper's README says what it runs without asking and how its token travels (TOOLS-263 S2 and S3): each agent
+// The helper's README says what it runs without asking and how its token travels (TOOLS-264 S2 and S3): each agent
 // program it starts with `npx -y`, at the pinned version, and the start commands the editor copies.
 import { test } from "node:test";
 import assert from "node:assert/strict";

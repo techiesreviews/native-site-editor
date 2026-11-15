@@ -573,7 +573,7 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   // Ticket am-16: the helper's start command, on this connection, only when the user asks for it.
   assert.match(prompt, /If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog: `EDITOR_HELPER_TOKEN=ase_token npx -y @techiesreviews\/editor-helper@0\.1\.0 https:\/\/editor\.example\/mcp`/);
   // A background job of the conversation ends with it: the helper starts detached, or the user runs it themselves.
-  // Each detached form hands the token on through the environment, never as an argument (TOOLS-263 S2): systemd-run's
+  // Each detached form hands the token on through the environment, never as an argument (TOOLS-264 S2): systemd-run's
   // bare --setenv copies it from its own environment, and nohup passes its environment to npx. Other programs see no token
   // in the process list.
   const detached = helperDetached("https://editor.example/mcp", "ase_token");

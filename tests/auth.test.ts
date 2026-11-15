@@ -293,7 +293,7 @@ test("repository cache persistence failure keeps a successful GitHub listing sig
   assert.equal(switched.headers.has("set-cookie"), false);
 });
 
-test("every changing browser route refuses another site's request before anything else, signed in or not (TOOLS-263 S4)", async () => {
+test("every changing browser route refuses another site's request before anything else, signed in or not (TOOLS-264 S4)", async () => {
   const { env } = environment();
   const routes = ["/auth/logout", "/auth/setup/unlock", "/api/accounts/switch", "/api/publish", "/api/publish/abc", "/api/blob", "/api/restore",
     "/api/repositories", "/api/live/share", "/api/live/preview", "/api/live/preview/off", "/api/agent/connect", "/api/agent/rebind", "/api/some-new-route"];

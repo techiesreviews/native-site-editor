@@ -120,7 +120,7 @@ test("the page's title is read from its elements: a commented-out or scripted ti
   assert.deepEqual(items.map(item => item.page), ["index.html", "about.html"]);
 });
 
-test("pages no longer listed are let go: a switched site's pages leave memory (TOOLS-263 B3)", () => {
+test("pages no longer listed are let go: a switched site's pages leave memory (TOOLS-264 B3)", () => {
   siteItems([page("index.html", `${head("Home")}</body>`), page("about/index.html", `${head("About")}</body>`, "About", "/about/")], rules);
   assert.equal(heldPages(), 2);
   siteItems([page("shop/index.html", `${head("Shop")}</body>`, "Shop", "/shop/")], rules);
