@@ -60,6 +60,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
   const reads: Read[] = [], seeded: string[] = [], cached = new Map<string, string>(), shown = { content: "", status: "", nodes: [] as unknown[] };
   let fileGeneration = 0, tag: string | null | undefined = "t1";
   const heads: string[] = [], headChecks: boolean[] = [];
+  let headAnswer: Promise<string | undefined> = Promise.resolve(undefined);
   const read = (path: string, params?: Record<string, string>, early?: Promise<Response>) => {
     const answer = deferred<unknown>();
     void answer.promise.catch(() => {});
@@ -71,7 +72,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
   const ports = {
     appStore: createAppStore(createDraftStore()),
     savePublish: { trustedHead: () => undefined, seeHead: (commit: string) => { heads.push(commit); }, resetDeleted: () => {}, checkDeleted: async () => {}, isDeleted: () => false,
-      checkHead: async (force?: boolean) => { headChecks.push(Boolean(force)); } },
+      checkHead: (force?: boolean) => { headChecks.push(Boolean(force)); return headAnswer; } },
     repositoryIndex: new RepositoryIndex(),
     cleanSources: {
       load: (_repo: string, revision: string, readText: () => Promise<string>) => {
@@ -138,6 +139,8 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
     paths: () => reads.map((entry) => entry.path),
     pending,
     setTag: (value: string | null | undefined) => { tag = value; },
+    /** What GitHub's head check behind a kept copy answers (src/controllers/save-publish-controller.ts checkHead). */
+    answerHead: (answer: Promise<string | undefined>) => { headAnswer = answer; },
     /** The host's loadRepositories: a new listing starts the next load with no repository. */
     newListing: () => { boot.abandonGuess(); session.next(undefined); ports.appStore.reset(); },
   };
@@ -638,4 +641,35 @@ test("a kept copy without the file the address names (made since, elsewhere) ope
   await flush();
   assert.equal(f.ports.appStore.snapshot.value, fresh);
   assert.deepEqual(f.heads, [sha(10)], "GitHub's own snapshot is trusted as any plain open's");
+});
+
+test("a kept copy is not called up to date until GitHub's head says so; then its head is trusted", async () => {
+  const f = fixture({ remember: false, native: true });
+  let answer!: (commit: string | undefined) => void;
+  f.answerHead(new Promise((done) => { answer = done; }));
+  await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
+  await flush();
+  assert.equal(f.shown.status, "Checking GitHub for newer changes on main…");
+  answer(sha(9));
+  await flush();
+  assert.match(f.shown.status, /^Up to date with main · 0000000/);
+  assert.deepEqual(f.heads, [sha(9)]);
+});
+
+test("a kept copy whose head check gets no answer keeps saying it is checking", async () => {
+  const f = fixture({ remember: false, native: true });
+  f.answerHead(Promise.resolve(undefined));
+  await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
+  await flush();
+  assert.equal(f.shown.status, "Checking GitHub for newer changes on main…");
+  assert.deepEqual(f.heads, []);
+});
+
+test("a kept copy left for a new listing before its texts are proven caches nothing and reads nothing", async () => {
+  const f = fixture({ remember: false, native: true });
+  void f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept({ files: [{ path: "index.html", sha: HELLO_SHA, text: "damaged\n" }] }));
+  f.newListing();
+  await flush();
+  assert.equal(f.cached.size, 0);
+  assert.deepEqual(f.pending("file"), [], "no read from GitHub for it");
 });

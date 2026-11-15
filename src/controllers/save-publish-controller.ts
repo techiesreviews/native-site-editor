@@ -127,9 +127,10 @@ export function createSavePublishController(ports: SavePublishPorts) {
   // it. A trusted head other than the one on show (this tab's own newer save)
   // is asked about instead: a delayed notice may name an older commit. Every
   // load trusts the commit it shows, which says nothing newer than the push.
-  async function checkHead(force = false, pushed?: string) {
+  // Resolves to the head GitHub named once the check is done (the fold or load after it included), else undefined.
+  async function checkHead(force = false, pushed?: string): Promise<string | undefined> {
     const was = proof(), seen = was.snapshot, scope = ports.scope();
-    if (!scope || !seen || !ports.visible() || (!force && Date.now() - headCheckedAt < 15_000)) return;
+    if (!scope || !seen || !ports.visible() || (!force && Date.now() - headCheckedAt < 15_000)) return undefined;
     headCheckedAt = Date.now();
     const token = ++headCheck, trusted = trustedHead();
     const known = trusted && trusted !== seen.commit ? trusted : pushed ?? trusted;
@@ -138,14 +139,17 @@ export function createSavePublishController(ports: SavePublishPorts) {
         repo: scope.repo, branch: seen.branch,
         ...(known ? { commit: known } : {}),
       });
-      if (token !== headCheck || !live(was) || commit === seen.commit) return;
+      if (token !== headCheck || !live(was)) return undefined;
+      if (commit === seen.commit) return commit;
       seeHead(commit);
       // Changed pages and stylesheets fold in where they are; anything else loads the branch again.
       // A failed fold loads the branch again only while this check's load still holds.
       const holds = () => token === headCheck && live(was);
       if (!await ports.foldIn?.(commit, holds)?.catch(() => !holds())) await ports.reload();
+      return commit;
     } catch {
       // Checked again on the next focus.
+      return undefined;
     }
   }
 

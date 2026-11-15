@@ -1,7 +1,7 @@
 // Opening a repository: its choice and branch (chooseRepository), its
 // snapshot and first paint (loadSnapshot), a file reopened from a path
-// (restoreFile), the remembered last boot's guess (src/boot-memory.ts) and the
-// last shown site kept in this browser (src/warm-copy.ts).
+// (restoreFile), and the last boot's guess or kept copy (src/boot-memory.ts,
+// src/warm-copy.ts).
 // The host (src/main.ts) keeps the workspace session, the DOM and the native
 // site, and hands them in as live ports.
 
@@ -232,7 +232,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         ports.afterNativePaint(ports.nativeSourcesRequest, () => void savePublish.checkDeleted(at));
         const painted = ports.nativeSourcesRequest;
         // A newer head folds in as an outside change does (src/outside-merge.ts), or loads the branch again.
-        if (warm) ports.afterNativePaint(painted, () => { if (at.holds()) void savePublish.checkHead(true); });
+        if (warm) ports.afterNativePaint(painted, () => { if (at.holds()) checkKept(at, branch); });
         let remembered = false;
         ports.afterNativePaint(painted, () => {
           const login = ports.user?.login;
@@ -247,7 +247,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       } else {
         forgetBootMemory(ports.storage("local"), repo.id);
         void savePublish.checkDeleted(at);
-        if (warm) void savePublish.checkHead(true);
+        if (warm) checkKept(at, branch);
       }
       // A native project opens on its home page when nothing else is selected;
       // its source is already in memory from the site's prefetch.
@@ -286,9 +286,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         ports.settleStatus(`${repo.name} is empty. Choose how to start your site.`);
         return;
       }
-      ports.settleStatus(
-        `Up to date with ${branch} · ${result.commit.slice(0, 7)}. Refresh to check for new commits.`,
-      );
+      // A kept copy is up to date only once GitHub's head says so (checkKept).
+      ports.settleStatus(warm ? `Checking GitHub for newer changes on ${branch}…` : upToDate(branch, result.commit));
     } catch (error) {
       if (at.holds()) {
         ports.files.replaceChildren(
@@ -307,6 +306,16 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     }
   }
 
+  const upToDate = (branch: string, commit: string) => `Up to date with ${branch} · ${commit.slice(0, 7)}. Refresh to check for new commits.`;
+  /** GitHub's head behind a kept copy on show: a newer one folds in (or loads the branch again); the one shown is trusted from then on. */
+  function checkKept(at: SessionStamp, branch: string) {
+    void savePublish.checkHead(true).then((commit) => {
+      const shown = appStore.snapshot.value;
+      if (!commit || !at.holds() || shown?.commit !== commit) return;
+      savePublish.seeHead(commit);
+      ports.settleStatus(upToDate(branch, commit));
+    });
+  }
   /** Keeps the site on show and GitHub's texts of the files its preview painted, for the next visit (src/warm-copy.ts). */
   let kept: Snapshot | undefined;
   function rememberShown(login: string, repo: Repository, branch: string, snapshot: Snapshot) {
@@ -319,17 +328,19 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     });
     void writeWarmCopy({ login, source: ports.source(), repo, branch, snapshot, files });
   }
-  // The site as it shows now, once painted: a save or an outside change folded in since its first paint.
-  function keepShown() {
+  // The site as it shows now, once painted (`wait`: after the paint under way, once): a save or an outside change
+  // folded in since its first paint.
+  function keepShown(wait = false) {
     const repo = appStore.repository.value, branch = appStore.branch.value, snapshot = appStore.snapshot.value, login = ports.user?.login;
-    if (login && repo && branch && snapshot && snapshot !== kept && ports.nativeSite && ports.nativePaintedRequest === ports.nativeSourcesRequest)
-      rememberShown(login, repo, branch, snapshot);
+    if (!login || !repo || !branch || !snapshot || snapshot === kept || !ports.nativeSite) return;
+    if (ports.nativePaintedRequest === ports.nativeSourcesRequest) rememberShown(login, repo, branch, snapshot);
+    else if (wait) ports.afterNativePaint(ports.nativeSourcesRequest, () => { if (appStore.snapshot.value === snapshot) keepShown(); });
   }
   // A new snapshot (a save, a fold) is kept a second after it, and leaving the tab keeps what it shows then.
   let keeping: ReturnType<typeof setTimeout> | undefined;
   effect(() => {
     clearTimeout(keeping);
-    if (appStore.snapshot.value) keeping = setTimeout(keepShown, 1000);
+    if (appStore.snapshot.value) keeping = setTimeout(() => keepShown(true), 1000);
     (keeping as { unref?: () => void } | undefined)?.unref?.();
   });
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") keepShown(); });
@@ -344,12 +355,19 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     const copy = target && await read;
     return copy && warmFor(copy, { login, source: ports.source(), repoId: target.repoId, branch: target.branch }) ? copy : undefined;
   }
-  /** The kept snapshot, at once; its proven texts go into the source cache, the rest is read from GitHub as before. */
+  /**
+   * The kept snapshot, at once; its proven texts go into the source cache, the rest is read from GitHub as before.
+   * Held as a taken guess is: once a new listing, navigation or sign-out abandons it, nothing more is cached or read.
+   */
   function warmSnapshot(copy: WarmCopy, repo: Repository) {
-    const proven = provenTexts(copy);
+    const token = takenGuess = { abandoned: false }, proven = provenTexts(copy);
+    const gone = () => new Error("The kept copy was left.");
     for (const { sha } of copy.files)
-      void ports.cleanSources.load(repo.full_name, sha, () => proven.then((texts) => texts.get(sha) ?? Promise.reject(new Error("Not kept.")))
-        .catch(() => api<{ content: string }>("file", { repo: repo.full_name, sha }).then((file) => file.content)));
+      void ports.cleanSources.load(repo.full_name, sha, () => proven.then((texts) => {
+        const text = texts.get(sha);
+        if (token.abandoned || text === undefined) throw gone();
+        return text;
+      }).catch(() => token.abandoned ? Promise.reject(gone()) : api<{ content: string }>("file", { repo: repo.full_name, sha }).then((file) => file.content)));
     return Promise.resolve(copy.snapshot);
   }
 
@@ -460,8 +478,10 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     // the bookmark or repository metadata. Validate it before using its snapshot.
     const requestedBranch = resume?.branch ?? appStore.repository.value.default_branch;
     const opened = appStore.repository.value;
-    const warmed = warm?.repo.id === opened.id && warm.branch === requestedBranch ? warmSnapshot(warm, opened) : undefined;
-    if (warmed) dropBootGuess();
+    const kept = warm?.repo.id === opened.id && warm.branch === requestedBranch ? warm : undefined;
+    // The guess is not needed beside a kept copy (dropped first: the copy's own hold replaces it).
+    if (kept) dropBootGuess();
+    const warmed = kept && warmSnapshot(kept, opened);
     const taken = warmed ? undefined : takeBootGuess(opened, requestedBranch);
     const guessed = warmed ?? taken?.snapshot;
     const snapshotRead = () => api<Snapshot>("snapshot", { repo: opened.full_name, branch: requestedBranch });

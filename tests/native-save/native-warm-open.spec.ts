@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { publishButton } from "./publish";
 
 // A repeat visit shows the last site at once (TOOLS-242, src/warm-copy.ts): the page this browser showed last opens
 // from its own copy as soon as the session names the same account, before GitHub answers anything; GitHub's head is
@@ -74,10 +75,42 @@ test("a reload shows the kept page before GitHub answers anything, and the page 
   await expect(frame(page).locator(".hero h1")).toHaveText(heading, { timeout: 15_000 });
   await expect(page.locator('[role=tree][aria-label="Page structure"] [role=treeitem]').first()).toBeVisible();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
-  // Asked, never answered: the page did not wait on them.
+  // Asked, never answered: the page did not wait on them, and does not claim to be up to date.
   expect(github.seen).toEqual(expect.arrayContaining(["/api/repositories"]));
+  await expect(page.locator("#status")).toHaveText("Checking GitHub for newer changes on main…");
   await github.release();
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 15_000 });
+});
+
+test("a saved change is what the next visit shows at once", async ({ page, baseURL }) => {
+  await pasteSource(page, indexSource.replace(heading, "Saved by Lex"));
+  await expect(frame(page).locator(".hero h1")).toHaveText("Saved by Lex", { timeout: 15_000 });
+  await publishButton(page).click();
+  await expect.poll(() => head(page, baseURL), { timeout: 30_000 }).not.toBe(await keptCommit(page));
+  const saved = await head(page, baseURL);
+  await expect(page.locator("#revision")).toHaveText(saved.slice(0, 7), { timeout: 30_000 });
+  await expect.poll(() => keptCommit(page), { timeout: 15_000 }).toBe(saved);
+  const github = await holdGitHub(page);
+  await page.reload();
+  await expect(frame(page).locator(".hero h1")).toHaveText("Saved by Lex", { timeout: 15_000 });
+  await expect(page.locator("#revision")).toHaveText(saved.slice(0, 7));
+  await github.release();
+  await expect(page.locator("#status")).toContainText(`Up to date with main · ${saved.slice(0, 7)}`, { timeout: 15_000 });
+  await expect(chip(page)).toHaveCount(0);
+});
+
+test("a listing that fails behind the kept page says so; the page stays", async ({ page }) => {
+  await page.route("**/api/repositories*", (route) => route.fulfill({ status: 503, json: { error: "GitHub is not answering." } }));
+  await page.reload();
+  await expect(frame(page).locator(".hero h1")).toHaveText(heading, { timeout: 15_000 });
+  await expect(page.locator("#notice")).toBeVisible({ timeout: 30_000 });
+  await expect(frame(page).locator(".hero h1")).toHaveText(heading);
+});
+
+test("a kept branch GitHub no longer lists opens the plain way, which says so", async ({ page }) => {
+  await page.route("**/api/branches*", (route) => route.fulfill({ json: ["other"] }));
+  await page.reload();
+  await expect(page.locator("#content")).toContainText("The linked branch is no longer available.", { timeout: 15_000 });
 });
 
 test("GitHub has a newer version and nothing is unsaved: the shown copy is replaced by it", async ({ page, baseURL }) => {
