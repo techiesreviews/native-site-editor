@@ -176,8 +176,9 @@ export interface KeptCopy {
   /** This browser's saves made before its copy took part, as blob sha and text, one after the other: their text is the
    * draft's own, which the copy notes as that save when it starts (TOOLS-216). */
   saves?: string[];
-  /** When a page wrote it to IndexedDB (ms since the epoch), for `browserKeeper` to tell a reload's copy from another tab's. */
-  at?: number;
+  /** When a page wrote it to IndexedDB (ms since the epoch) and the tab that did (`liveTabId`): `browserKeeper` reads it only
+   * as that tab's own (before and after its reloads) or as kept before this page began (a stamp equal to the start counts). */
+  at?: number; by?: string;
 }
 /** Where kept copies live: this browser only (memory, then IndexedDB), never the server. */
 export interface CopyKeeper {
@@ -220,14 +221,23 @@ const isKept = (value: unknown): value is KeptCopy => {
     && (copy.draft === undefined || typeof copy.draft === "string") && (copy.base === undefined || typeof copy.base === "string")
     && [copy.mine, copy.took].every(ids => ids === undefined || (Array.isArray(ids) && ids.every(id => Number.isSafeInteger(id))))
     && (copy.saves === undefined || (Array.isArray(copy.saves) && copy.saves.every(item => typeof item === "string")))
-    && (copy.at === undefined || Number.isFinite(copy.at));
+    && (copy.at === undefined || Number.isFinite(copy.at)) && (copy.by === undefined || typeof copy.by === "string");
 };
+/** This tab's id, the same after a reload (sessionStorage is the tab's own), so the copy its page kept as it went is its own. */
+function liveTabId() {
+  try {
+    let id = sessionStorage.getItem("native-site-editor-live-tab");
+    if (!id) sessionStorage.setItem("native-site-editor-live-tab", id = crypto.randomUUID());
+    return id;
+  } catch { return crypto.randomUUID(); }
+}
 /** Memory first (this page's newest), then IndexedDB (a reload); writes go to both, best effort. The database opens at once,
- * so a write when the page hides starts its transaction then, as the drafts' does. IndexedDB gives only a copy kept before
- * this page began (`started`: by the page before a reload, or a tab closed since): one written later is another tab's, open
- * beside this one, and its draft as kept is not this tab's text, so resuming it would send this tab's older text as its
- * typing. A tab opened after another kept its copy, while that one is still open, may still read it. */
-export function browserKeeper(started = performance.timeOrigin): CopyKeeper {
+ * so a write when the page hides starts its transaction then, as the drafts' does. IndexedDB gives this tab's own copy (kept
+ * by its page before a reload, which writes as it goes, after the new page began) and any copy kept before this page began
+ * (`started`: a tab closed since). One another tab kept later is that tab's, open beside this one: its draft as kept is not
+ * this tab's text, so resuming it would send this tab's older text as its typing. A tab opened after another kept its
+ * copy, while that one is still open, may still read it. */
+export function browserKeeper(started = performance.timeOrigin, tab = liveTabId()): CopyKeeper {
   const memory = new Map<string, KeptCopy | undefined>();
   let opened: Promise<IDBDatabase | undefined> | undefined, ready: IDBDatabase | undefined;
   const open = () => opened ??= new Promise<IDBDatabase | undefined>(resolve => {
@@ -243,7 +253,7 @@ export function browserKeeper(started = performance.timeOrigin): CopyKeeper {
   const put = (db: IDBDatabase | undefined, key: string, copy: KeptCopy | undefined) => {
     try {
       const copies = db?.transaction("copies", "readwrite").objectStore("copies");
-      if (copy) copies?.put({ ...copy, at: Date.now() }, key); else copies?.delete(key);
+      if (copy) copies?.put({ ...copy, at: Date.now(), by: tab }, key); else copies?.delete(key);
     } catch { /* Kept in memory only: a reload starts as a joiner. */ }
   };
   return {
@@ -255,8 +265,8 @@ export function browserKeeper(started = performance.timeOrigin): CopyKeeper {
           const request = db.transaction("copies").objectStore("copies").get(key);
           request.onsuccess = () => {
             const found: unknown = request.result;
-            if (!isKept(found) || (found.at ?? 0) > started) { resolve(undefined); return; }
-            const { at: _at, ...copy } = found;
+            if (!isKept(found) || (found.by !== tab && (found.at ?? 0) > started)) { resolve(undefined); return; }
+            const { at: _at, by: _by, ...copy } = found;
             resolve(copy);
           };
           request.onerror = () => resolve(undefined);
