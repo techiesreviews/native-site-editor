@@ -1,8 +1,8 @@
 // The Badge part's options and how they become markup (atomic catalogue ticket 13). Pure text in, text out, so a unit
-// test can pin it without a browser; src/ui/parts/badge.ts draws it. One class, `ui-badge`; the kind and the tone are
+// test can pin it without a browser; src/ui/badge/badge.ts draws it. One class, `ui-badge`; the kind and the tone are
 // data attributes. Replaces the shared `.badge` and the look-alikes (research 04) once the editor's screens move over.
 
-import { escapeWords } from "./escape";
+import { escapeWords } from "../escape";
 
 /** What the badge is: a number, a state, a label, a bare dot, a round mark holding an icon. */
 export const BADGE_KINDS = ["count", "status", "tag", "dot", "mark"] as const;

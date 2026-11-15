@@ -191,7 +191,7 @@ function project(files: Record<string, string>) {
 test("a part's own files and the design board never count", () => {
   const p = project({
     "src/ui/dom.ts": 'export const b = () => node("button");\n',
-    "src/ui/parts/button.css": ".button { background: var(--primary); }\n",
+    "src/ui/button/button.css": ".button { background: var(--primary); }\n",
     "src/catalogue/board.ts": 'node("button");\n',
     "src/a.ts": 'node("button");\n',
   });

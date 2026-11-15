@@ -7,7 +7,7 @@ import { storedDraft } from "./drafts";
 requireActualFixture();
 
 // Against the real starter (read-only checkout given by ASE_NATIVE_SAVE_FIXTURE;
-// the fake GitHub holds every change in memory): the card combobox's create offers, and how editor panels' text fields look (src/ui/inline-field.css).
+// the fake GitHub holds every change in memory): the card combobox's create offers, and how editor panels' text fields look (src/ui/inline-field/inline-field.css).
 
 
 const pageErrors: string[] = [];

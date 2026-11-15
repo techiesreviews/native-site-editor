@@ -1,5 +1,5 @@
 // The Icon part's options and how they become markup (atomic catalogue ticket 10). Pure text in, text out, so a unit
-// test can pin it without a browser; src/ui/parts/icon.ts draws it. One way to draw a Phosphor Regular icon: the
+// test can pin it without a browser; src/ui/icon/icon.ts draws it. One way to draw a Phosphor Regular icon: the
 // markup of any icon (src/icons.ts or a lazy chunk) goes through drawSvg, which iconSvg and the editor's sizedSvg
 // both call.
 

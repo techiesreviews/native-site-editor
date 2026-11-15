@@ -4,7 +4,7 @@
 // (icons.css).
 
 import "./icons.css";
-import { drawSvg } from "./ui/parts/icon-options";
+import { drawSvg } from "./ui/icon/icon-options";
 
 import arrowDown from "@phosphor-icons/core/regular/arrow-down.svg?raw";
 import arrowLeft from "@phosphor-icons/core/regular/arrow-left.svg?raw";
@@ -86,7 +86,7 @@ const icons = {
 
 export type IconName = keyof typeof icons;
 
-/** A bundled icon's SVG markup as it is, for the Icon part (src/ui/parts/icon.ts) to size and mark. */
+/** A bundled icon's SVG markup as it is, for the Icon part (src/ui/icon/icon.ts) to size and mark. */
 export function iconSource(name: IconName) {
   return icons[name];
 }

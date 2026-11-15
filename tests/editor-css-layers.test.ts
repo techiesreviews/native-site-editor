@@ -11,7 +11,7 @@ import { splitSelectors } from "../src/catalogue/tweak.ts";
 
 const repo = new URL("..", import.meta.url).pathname;
 const read = (path: string) => readFileSync(join(repo, path), "utf8");
-const BUTTON = "src/ui/parts/button.css";
+const BUTTON = "src/ui/button/button.css";
 const ORDER = "@layer tokens, elements, components;";
 const withoutComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
@@ -93,7 +93,7 @@ test("the editor's bare element rules sit on the elements layer, below every com
 test("the editor loads the Button's file; the board loads it as a style of its own", () => {
   // Through src/ui/parts.css, which loads the parts' files in one line of src/main.ts (its line ceiling).
   assert.match(read("src/main.ts"), /^import "\.\/ui\/parts\.css";$/m);
-  assert.match(withoutComments(read("src/ui/parts.css")), /^@import "\.\/parts\/button\.css";$/m);
+  assert.match(withoutComments(read("src/ui/parts.css")), /^@import "\.\/button\/button\.css";$/m);
   // Not through style.css, which the board loads too: the board adds it itself, so a live cell can leave it out.
   assert.doesNotMatch(withoutComments(read("src/style.css")), /button\.css/);
   assert.match(read("src/catalogue/main.ts"), /^loadComponentStyles\(\);$/m);
@@ -109,7 +109,7 @@ test("the design board shows the Button's own CSS file", () => {
     if (!isPart(part) || !part.css) continue;
     assert.ok(part.files.includes(part.css), `${part.id} lists its CSS file`);
     // The board reads these files as text (component-css.ts) and draws their live cell inline, in a shadow root.
-    assert.match(part.css, /^src\/ui\/parts\/[\w-]+\.css$/, `${part.id}: its CSS file is a component file`);
+    assert.match(part.css, /^src\/ui\/([\w-]+)\/\1\.css$/, `${part.id}: its CSS file is a component file`);
     assert.equal(part.frame, undefined, `${part.id}: a part with its own CSS file draws its live cell inline`);
   }
 });

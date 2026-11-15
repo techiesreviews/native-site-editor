@@ -67,7 +67,7 @@
     "src/style.css": { "spacing": 60, "radii": 4, "shadows": 1, "timings": 2, "fontSizes": 9 },
     "src/tokens/framework-editor.css": { "localProperties": 8 },
     "src/ui/editor-scrollbars.css": { "radii": 2 },
-    "src/ui/inline-field.css": { "shadows": 4, "timings": 1 }
+    "src/ui/inline-field/inline-field.css": { "shadows": 4, "timings": 1 }
   },
   "waivers": []
 }

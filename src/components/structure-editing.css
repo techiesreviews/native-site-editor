@@ -174,7 +174,7 @@
   clip-path: inset(0 -40px -40px -40px);
 }
 /* The card's fields match the row's text: neutral, no outline, no accent
-   (over the shared inline-field underline, ui/inline-field.css). */
+   (over the shared inline-field underline, ui/inline-field/inline-field.css). */
 :root .page-structure .page-structure__inline[data-slot-editor] .page-structure__slot-field :is(input, textarea) {
   border: 0;
   background: var(--edit-field);

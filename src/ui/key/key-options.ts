@@ -1,8 +1,8 @@
 // The Keyboard key part's options and how they become markup (atomic catalogue ticket 13). Pure text in, text out;
-// src/ui/parts/key.ts draws it. One class, `ui-key`. One key is a single cap; several keys pressed together are a group
+// src/ui/key/key.ts draws it. One class, `ui-key`. One key is a single cap; several keys pressed together are a group
 // of caps (HTML's nested `kbd` for a keystroke), so a screen reader hears each key.
 
-import { escapeWords } from "./escape";
+import { escapeWords } from "../escape";
 
 /** The keys as a list: text splits at `+` (so `Ctrl+K` is two keys), a list is taken as it is. Blank keys are dropped.
  * A `+` key itself needs the list form (`["Ctrl", "+"]`): as text it is the separator. */

@@ -270,12 +270,12 @@ test("every card and every live cell carries its part's name", async ({ page, ba
 test("a preview annotation on a card names its files and its stylesheet, inside a frame too", async ({ page, baseURL }) => {
   await openBoard(page, baseURL);
   const button = page.locator("#card-button");
-  await expect(button).toHaveAttribute("data-css", "src/ui/parts/button.css");
-  await expect(button).toHaveAttribute("data-files", "src/ui/parts/button.css src/ui/dom.ts");
+  await expect(button).toHaveAttribute("data-css", "src/ui/button/button.css");
+  await expect(button).toHaveAttribute("data-files", "src/ui/button/button.css src/ui/dom.ts");
   // Off screen a card is not drawn: in view, it is an article named by its title.
   await flyTo(page, "Button");
   await expect(page.getByRole("article", { name: "Button" })).toHaveAttribute("data-part", "button");
-  await expect(page.locator("#card-badge")).toHaveAttribute("data-css", "src/ui/parts/badge.css");
+  await expect(page.locator("#card-badge")).toHaveAttribute("data-css", "src/ui/badge/badge.css");
   // Every card names a stylesheet, and it is one of its files.
   const sheets = await page.locator(".cat-card[data-id]").evaluateAll((cards) => cards.map((card) => [(card as HTMLElement).dataset.css ?? "", (card as HTMLElement).dataset.files ?? ""]));
   for (const [css, files] of sheets) { expect(css).toMatch(/\.css$/); expect(files.split(" ")).toContain(css); }
@@ -914,7 +914,7 @@ test("the Button's own CSS file edits its live cell only, resets, and Send to ag
   const options = page.getByRole("complementary", { name: "Options" });
   const section = options.getByRole("region", { name: "CSS" });
   await expect(options.getByRole("region", { name: "Tweak" })).toHaveCount(0);
-  const file = section.getByRole("textbox", { name: "src/ui/parts/button.css", exact: true });
+  const file = section.getByRole("textbox", { name: "src/ui/button/button.css", exact: true });
   const send = section.getByRole("button", { name: /^(Send to agent|Copied)$/ });
   const reset = section.getByRole("button", { name: "Reset" });
   await expect(file).toHaveValue(/@layer components \{/);
@@ -992,7 +992,7 @@ test("the Button's own CSS file edits its live cell only, resets, and Send to ag
   await expect(send).toBeEnabled();
   await send.click();
   await expect(send).toHaveText("Copied");
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("File: src/ui/parts/button.css");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("File: src/ui/button/button.css");
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toContain("Part: Button (data-part=\"button\")");
   expect(copied).toContain("\n-    --btn-radius: var(--radius);\n+    --btn-radius: 16px;\n");
@@ -1086,7 +1086,7 @@ test("the Icon's live cell puts its words on the side Place says, and draws a ba
 
   // The part itself: words may be an element, and Alone drops them.
   const drawn = await page.evaluate(async () => {
-    const { iconPart } = await import("/src/ui/parts/icon.ts");
+    const { iconPart } = await import("/src/ui/icon/icon.ts");
     const strong = document.createElement("strong");
     strong.textContent = "Next";
     const withElement = iconPart("check", { place: "after", words: strong });
@@ -1146,7 +1146,7 @@ test("the Progress bar's fill grows from where it was when moved, and its value 
   await openBoard(page, baseURL);
   await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Progress bar", exact: true }).click();
   const drawn = await page.evaluate(async () => {
-    const { progress, setProgress } = await import("/src/ui/parts/progress.ts");
+    const { progress, setProgress } = await import("/src/ui/progress/progress.ts");
     const bar = progress({ value: 30, label: "Adding" });
     bar.style.inlineSize = "200px";
     document.body.append(bar);
@@ -1324,7 +1324,7 @@ test("a long badge is cut inside its stage, a mark with no icon draws the check,
 
   // A mark called with no icon draws the check, at the mark's size.
   const mark = await page.evaluate(async () => {
-    const { badgePart } = await import("/src/ui/parts/badge.ts");
+    const { badgePart } = await import("/src/ui/badge/badge.ts");
     const element = badgePart({ kind: "mark" });
     const svg = element.querySelector("svg.icon");
     return { size: svg?.getAttribute("data-size") ?? null, hidden: element.getAttribute("aria-hidden") };

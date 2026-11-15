@@ -1,5 +1,5 @@
 // The Spinner part's options and how they become markup (atomic catalogue ticket 14). Plain data in, plain data out,
-// so a unit test can pin it without a browser; src/ui/parts/spinner.ts draws it.
+// so a unit test can pin it without a browser; src/ui/spinner/spinner.ts draws it.
 
 /** The sizes of the ring: beside small print, in a control, on its own above words. */
 export const SPINNER_SIZES = ["small", "medium", "large"] as const;

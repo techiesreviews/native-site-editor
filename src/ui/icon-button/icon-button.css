@@ -1,6 +1,6 @@
 /* The Icon button component: an icon alone on a quiet square, muted until hovered or pressed, filled while it is a
    pressed toggle (aria-pressed). Its whole look in one file on the components layer, like the Button
-   (src/ui/parts/button.css): its --icon-btn-* hooks hold their defaults as fallbacks where they are read (the boot
+   (src/ui/button/button.css): its --icon-btn-* hooks hold their defaults as fallbacks where they are read (the boot
    bundle carries this file, so it stays small), and the pressed state has hooks of its own.
    A screen places and sizes it with width and height in its own unlayered CSS, which wins over this layer, and may
    set a hook there. Disabled fades, as every bare button does (src/style.css). Class: `icon-button`. */

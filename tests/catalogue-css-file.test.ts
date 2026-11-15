@@ -41,10 +41,10 @@ test("a problem: a brace, quote, comment or url( that does not close is named, a
 
 test("Send to agent copies the changed lines and the whole file as edited; nothing when the file is unchanged", () => {
   const part = { id: "button", name: "Button" };
-  assert.equal(cssChangeRequest(part, "src/ui/parts/button.css", BUTTON, BUTTON), "");
+  assert.equal(cssChangeRequest(part, "src/ui/button/button.css", BUTTON, BUTTON), "");
   const edited = BUTTON.replace("var(--radius)", "20px");
-  const request = cssChangeRequest(part, "src/ui/parts/button.css", BUTTON, edited);
-  assert.match(request, /^Design board change request\nPart: Button \(data-part="button"\)\nFile: src\/ui\/parts\/button\.css\n/);
+  const request = cssChangeRequest(part, "src/ui/button/button.css", BUTTON, edited);
+  assert.match(request, /^Design board change request\nPart: Button \(data-part="button"\)\nFile: src\/ui\/button\/button\.css\n/);
   assert.match(request, /\n- {4}--btn-radius: var\(--radius\);\n\+ {4}--btn-radius: 20px;\n/);
   assert.ok(request.includes(`\`\`\`css\n${edited.trimEnd()}\n\`\`\``), "the whole file as edited");
   assert.match(request, /Tried on the board's live cell only; nothing is in the code yet\.$/);

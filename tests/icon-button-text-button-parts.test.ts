@@ -127,9 +127,9 @@ test("the top bar sizes only its own icon buttons, never those in the menus that
 test("the editor loads the button parts' files in one line, in their order, after its own base styles", () => {
   const main = read("src/main.ts");
   assert.match(main, /^import "\.\/theme\.css";\nimport "\.\/ui\/parts\.css";$/m);
-  assert.doesNotMatch(main, /icon-button\.css|text-button\.css|parts\/button\.css/, "only through src/ui/parts.css");
+  assert.doesNotMatch(main, /icon-button\.css|text-button\.css|ui\/button\/button\.css/, "only through src/ui/parts.css");
   const imports = [...read("src/ui/parts.css").matchAll(/^@import "([^"]+)";$/gm)].map((match) => match[1]);
-  assert.deepEqual(imports, ["./parts/button.css", "./icon-button/icon-button.css", "./text-button/text-button.css"]);
+  assert.deepEqual(imports, ["./button/button.css", "./icon-button/icon-button.css", "./text-button/text-button.css"]);
 });
 
 test("Page structure's icon actions are Icon buttons; its own CSS sizes them and keeps a look only for the Show toggle and Open", () => {

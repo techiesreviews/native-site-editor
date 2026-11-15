@@ -1,7 +1,7 @@
 // The Icon button part's options, pure: its class and its markup, so node tests and markup strings (the design board)
 // read the same button the editor draws.
 
-import { escapeWords } from "../parts/escape";
+import { escapeWords } from "../escape";
 
 export interface IconButtonMarkupOptions {
   /** What the button does, read out by assistive technology (`aria-label`). */

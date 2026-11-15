@@ -2,7 +2,7 @@
    tokens, bare elements, then components each in a file of its own. The editor's screen CSS stays unlayered, so it
    wins over all three. */
 @layer tokens, elements, components;
-@import "./ui/inline-field.css";
+@import "./ui/inline-field/inline-field.css";
 @import "./ui/editor-scrollbars.css";
 
 :root {
@@ -37,7 +37,7 @@ body {
     cursor: pointer;
   }
 }
-/* Bare icon and text buttons have no fill and fade; a Button is plain instead (src/ui/parts/button.css).
+/* Bare icon and text buttons have no fill and fade; a Button is plain instead (src/ui/button/button.css).
    Hover rules below sit behind (hover: hover) and (pointer: fine), as a touch
    screen keeps :hover on the last tap; touch gets the :active press instead. */
 button:disabled:where(:not(.button)),
