@@ -39,8 +39,8 @@ beyond that stays as a named variant. Nothing else visible changes.
   A disabled Text button no longer underlines or fills on hover or press, as a disabled Icon button.
 - Files tree and History (2026-11-15, second look): the Files tree's ⋯ (`file-more`) and a folder's + (`file-add`)
   are Icon buttons, Restore (`file-restore`) a compact Text button, and History's Refresh and a commit's ⋯ Icon
-  buttons; their screen CSS keeps only size and placement, and History's ⋯ keeps its fill while its menu is open
-  through the part's `--icon-btn-*` hooks. The copy counter missed these (their class names hold no `button`).
+  buttons; their screen CSS keeps only size and placement. The copy counter missed these (their class names hold no
+  `button`).
 - Underlined variant (2026-11-15): `textButton(words, action, { underlined: true })` adds `text-button--underlined`,
   which sets only `--text-btn-decoration` (none at rest by default). Media's Download original
   (`media-detail__original`) and the suggested free name (`media-detail__suggest`) use it; their screen rules keep only
@@ -95,6 +95,8 @@ beyond that stays as a named variant. Nothing else visible changes.
     mouse and a touch press fills; keyboard focus shows the focus ring with the icon muted, as every other icon button.
   - Disabled Text buttons (an agent pin's Undone, Undo while undoing): no underline on hover, as disabled Icon buttons.
   - Files tree's ⋯ and +, History's Refresh and ⋯: the hover fill waits for a mouse and a touch press fills.
+  - History's ⋯: no fill while its menu is open, as the Files tree's and Page structure's ⋯ (two of the three menu
+    Icon buttons; setting the part's hooks from the screen would add hand-set custom properties).
   - Files tree's Restore (a deleted file's row): normal weight instead of bold, 6px side padding instead of 8px, the
     hover fill waits for a mouse, as the compact Text button (Choose image…).
   - Rows in the project menu and the agent menu that borrow the `text-button` class no longer underline on hover, as

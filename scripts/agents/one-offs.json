@@ -17,7 +17,7 @@
     "src/components/dropdown.css": { "spacing": 1 },
     "src/components/edit-bar.css": { "spacing": 48, "radii": 4, "shadows": 3, "timings": 4, "zIndex": 3, "fontSizes": 1 },
     "src/components/field-suggestions.css": { "spacing": 3, "shadows": 1, "timings": 1 },
-    "src/components/file-row-actions.css": { "spacing": 6, "localProperties": 6 },
+    "src/components/file-row-actions.css": { "spacing": 5, "localProperties": 6 },
     "src/components/files-tree.css": { "spacing": 9, "timings": 1, "localProperties": 9 },
     "src/components/flyout.css": { "spacing": 6 },
     "src/components/github-trip.css": { "spacing": 8, "radii": 1, "zIndex": 1 },
