@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
-import { parseStep, parseSteps } from "../scripts/agents/shots/core";
+import { parseStep, parseSteps, type Step } from "../scripts/agents/shots/core";
 
 // The feature tries kit ux runs (factory slices 42 and 45): each file is its feature's scenario.
 const dir = new URL("../scripts/agents/shots/features/", import.meta.url);
@@ -20,8 +20,36 @@ function fieldByFeature(field = "Steps") {
   return values;
 }
 const stepsByFeature = () => fieldByFeature();
-// Controls the phone layout hides (src/style.css, max-width 650px); a phone user reaches them through Menu.
-const wideOnly = new Set(["repository actions", "Redo", "History", "Inbox", "Section", "Div", "Heading", "Paragraph", "Desktop, fills the canvas", "Tablet, 768 px", "Mobile, 390 px"]);
+const phoneByFeature = fieldByFeature("Phone");
+
+// What the phone layout hides (src/style.css, max-width 650px) and the step a phone user takes just before it.
+const phoneOpener = new Map([
+  ...["History", "Inbox"].map(name => [name, "Menu"] as const),
+  ...["Section", "Div", "Heading", "Paragraph"].map(name => [name, "Add a block"] as const),
+]);
+// No phone route has these names (the phone Menu says Switch site, Tablet, Mobile), so they are on wide only.
+const wideOnly = new Set(["repository actions", "Redo", "Desktop, fills the canvas", "Tablet, 768 px", "Mobile, 390 px"]);
+
+/** The first click a phone user cannot make as written, or undefined. */
+function phoneRouteProblem(steps: Step[]) {
+  for (const [index, step] of steps.entries()) {
+    if (step.kind !== "click" || step.only === "wide") continue;
+    if (wideOnly.has(step.name)) return `step ${index + 1} clicks "${step.name}", which a phone never shows; mark it on wide`;
+    const opener = phoneOpener.get(step.name);
+    const before = steps[index - 1];
+    if (opener && !(before?.kind === "click" && before.only === "phone" && before.name === opener)) return `step ${index + 1} clicks "${step.name}", hidden on a phone; put on phone click "${opener}" just before it`;
+  }
+}
+
+test("the phone route check refuses clicks a phone user cannot make", () => {
+  const check = (sources: string[]) => phoneRouteProblem(sources.map(parseStep));
+  assert.match(check(['on phone click exactly "Menu"', 'on phone click "Switch site"', 'click "repository actions"']) ?? "", /step 3 clicks "repository actions", which a phone never shows/);
+  assert.match(check(['on phone click exactly "Menu"', 'click exactly "Section"']) ?? "", /step 2 clicks "Section", hidden on a phone; put on phone click "Add a block"/);
+  assert.match(check(['click "History"']) ?? "", /step 1 clicks "History"/);
+  assert.equal(check(['on phone click exactly "Menu"', 'on phone click "Switch site"', 'on wide click "repository actions"']), undefined);
+  assert.equal(check(['on phone click exactly "Menu"', 'on phone click "Add a block"', 'click exactly "Section"']), undefined);
+  assert.equal(check(['on phone click exactly "Menu"', 'click "History"']), undefined);
+});
 
 test("there are feature tries to check", () => {
   assert.ok(files.length > 0);
@@ -52,14 +80,11 @@ for (const file of files) {
     const last = steps.at(-1)!;
     assert.ok(evidence.has(last.kind), `${file} ends on an expect, wait or record step, not ${last.kind}`);
     assert.ok(!last.only, `${file}: the closing step runs at every width, not only on ${last.only}`);
-    // kit ux tries 390 px only for Phone: yes, so a phone step elsewhere never runs; a phone try reaches wide-only controls through Menu.
-    const phone = fieldByFeature("Phone").get(id) === "yes";
+    // kit ux tries 390 px only for Phone: yes, so a phone step elsewhere never runs.
+    const phone = phoneByFeature.get(id) === "yes";
     assert.ok(phone || !steps.some(step => step.only === "phone"), `${file}: Phone: no, so its on phone steps never run`);
-    if (phone) steps.forEach((step, index) => {
-      if (step.kind !== "click" || !wideOnly.has(step.name) || step.only === "wide") return;
-      const menu = steps.slice(0, index).some(earlier => earlier.only === "phone" && earlier.kind === "click" && earlier.name === "Menu");
-      assert.ok(menu, `${file}: step ${index + 1} clicks "${step.name}", hidden on a phone; open Menu first (on phone click exactly "Menu") or mark it on wide`);
-    });
+    const problem = phone ? phoneRouteProblem(steps) : undefined;
+    assert.equal(problem, undefined, `${file}: ${problem}`);
     // A closing check that repeats one made before the last action proves nothing about that action,
     // unless a record after the earlier check, or another check after the action, shows what happened.
     if (last.kind === "expect" || last.kind === "wait") {
