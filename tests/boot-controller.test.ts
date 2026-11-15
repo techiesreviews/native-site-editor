@@ -16,6 +16,8 @@ const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 const repo = (id: number) => ({ id, name: `r${id}`, full_name: `lex/r${id}` }) as Repository;
 const signedIn = (repositories?: Repository[]): SessionInfo => ({ configured: true, user: { login: "lex", avatar_url: "" }, installUrl: null, repositories });
 const signedOut: SessionInfo = { configured: true, user: null, installUrl: null };
+const keptCopy = (id: number): WarmCopy => ({ login: "lex", source: "https://editor.test/", repo: repo(id), branch: "main",
+  snapshot: { commit: "c".repeat(40), branch: "main", entries: [], tree: [] }, files: [] });
 function store() {
   const values = new Map<string, string>();
   return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } };
@@ -93,7 +95,7 @@ test("both reads start before the session resolves and a matching tag is adopted
 });
 
 test("a kept copy for the account opens before the listing answers; the listing and its onboarding follow (TOOLS-242)", async () => {
-  const f = fixture(), copy = { login: "lex", repo: repo(1) } as WarmCopy;
+  const f = fixture(), copy = keptCopy(1);
   f.setWarm(copy);
   const started = f.controller.start();
   f.sessions[0].resolve(receipt(signedIn()));
@@ -108,7 +110,7 @@ test("a kept copy for the account opens before the listing answers; the listing 
 
 test("a kept copy's listing with another session's tag falls back to the session's listing", async () => {
   const f = fixture();
-  f.setWarm({ login: "lex", repo: repo(1) } as WarmCopy);
+  f.setWarm(keptCopy(1));
   const started = f.controller.start();
   f.lists[0].read.resolve(receipt([repo(1)], "other", "install"));
   f.sessions[0].resolve(receipt(signedIn([repo(3)])));
@@ -119,7 +121,7 @@ test("a kept copy's listing with another session's tag falls back to the session
 
 test("back from installing the App, a kept copy is not asked for and the listing is read afresh", async () => {
   const f = fixture("https://editor.test/?installation_id=5");
-  f.setWarm({ login: "lex", repo: repo(1) } as WarmCopy);
+  f.setWarm(keptCopy(1));
   const started = f.controller.start();
   f.lists[0].read.resolve(receipt([repo(1)]));
   f.sessions[0].resolve(receipt(signedIn([repo(1)])));

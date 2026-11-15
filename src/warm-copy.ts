@@ -57,18 +57,31 @@ export function readWarmCopy(factory?: Factory): Promise<WarmCopy | undefined> {
 }
 export function asWarmCopy(value: Partial<WarmCopy> | undefined): WarmCopy | undefined {
   const repo = value?.repo, snapshot = value?.snapshot, files = value?.files;
-  if (!value || !isText(value.login) || !isText(value.source) || !isText(value.branch) || !repo || !Number.isSafeInteger(repo.id) || !isText(repo.full_name) ||
+  if (!value || !isText(value.login) || !isText(value.source) || !isText(value.branch) || !repo || !Number.isSafeInteger(repo.id) || !isText(repo.full_name) || !isText(repo.name) ||
     !snapshot || !isText(snapshot.commit) || snapshot.branch !== value.branch || snapshot.empty || !Array.isArray(snapshot.tree) || !Array.isArray(snapshot.entries) ||
     !Array.isArray(files) || !files.every((file) => file && isText(file.path) && isText(file.sha) && typeof file.text === "string")) return undefined;
   return value as WarmCopy;
 }
-/** Keep `copy` in place of the last one; a site past the limits forgets the last one instead. */
-export function writeWarmCopy(copy: WarmCopy, factory?: Factory): Promise<unknown> {
+// Signed out here or in another tab: this page keeps nothing more in that storage (a tab leaving or a late timer included).
+const forgotten = new WeakSet<Factory>();
+const SIGNED_OUT = "native-site-editor-warm-copy";
+try {
+  const heard = new BroadcastChannel(SIGNED_OUT);
+  heard.onmessage = () => { if (globalThis.indexedDB) forgotten.add(globalThis.indexedDB); };
+  (heard as { unref?: () => void }).unref?.();
+} catch { /* no other tabs to hear */ }
+const remove = (factory?: Factory) => run("readwrite", (store) => store.delete(KEY), factory);
+/** Keep `copy` in place of the last one; a site past the limits forgets the last one instead. Nothing after sign-out. */
+export function writeWarmCopy(copy: WarmCopy, factory: Factory | undefined = globalThis.indexedDB): Promise<unknown> {
+  if (!factory || forgotten.has(factory)) return Promise.resolve();
   const fits = (copy.snapshot.tree?.length ?? Infinity) <= MAX_TREE_ENTRIES && copy.files.reduce((sum, file) => sum + file.text.length, 0) <= MAX_TEXT_LENGTH;
-  return fits && !copy.snapshot.empty ? run("readwrite", (store) => store.put(copy, KEY), factory) : forgetWarmCopy(factory);
+  return fits && !copy.snapshot.empty ? run("readwrite", (store) => store.put(copy, KEY), factory) : remove(factory);
 }
-export function forgetWarmCopy(factory?: Factory): Promise<unknown> {
-  return run("readwrite", (store) => store.delete(KEY), factory);
+/** Sign-out: the copy goes, and neither this page nor another open tab keeps one again. */
+export function forgetWarmCopy(factory: Factory | undefined = globalThis.indexedDB): Promise<unknown> {
+  if (factory) forgotten.add(factory);
+  try { const channel = new BroadcastChannel(SIGNED_OUT); channel.postMessage("signed-out"); channel.close(); } catch { /* no other tabs */ }
+  return remove(factory);
 }
 
 /** Whether `copy` is the site this boot opens: the same account, editor, repository and branch. */

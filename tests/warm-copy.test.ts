@@ -86,3 +86,15 @@ test("texts are proven by their blob SHA at their path in the kept snapshot", as
   const moved = copy({ snapshot: { ...copy().snapshot, tree: [blob("index.html", "b".repeat(40))] } });
   assert.equal((await provenTexts(moved)).size, 0);
 });
+
+test("after sign-out nothing is kept again in that storage: a late keep, a tab leaving", async () => {
+  const { factory } = fakeIndexedDB();
+  await writeWarmCopy(copy(), factory);
+  await forgetWarmCopy(factory);
+  await writeWarmCopy(copy(), factory);
+  assert.equal(await readWarmCopy(factory), undefined);
+  // Another storage (another test's, never the page's) keeps as before.
+  const other = fakeIndexedDB().factory;
+  await writeWarmCopy(copy(), other);
+  assert.ok(await readWarmCopy(other));
+});

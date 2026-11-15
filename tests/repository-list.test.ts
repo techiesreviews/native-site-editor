@@ -11,6 +11,7 @@ import type { Repository } from "../shared/types.ts";
 import type { WorkspaceLocation } from "../src/workspace-state.ts";
 import { readWizard, WIZARD_KEY } from "../src/setup-wizard.ts";
 import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
+import type { WarmCopy } from "../src/warm-copy.ts";
 
 // Just enough DOM for the welcome panel (node and button, src/ui/dom.ts).
 class FakeElement {
@@ -67,7 +68,8 @@ function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Pro
   const session = createWorkspaceSession(), local = store();
   const shown = { content: [] as (FakeElement | string)[], files: [] as (FakeElement | string)[] };
   const calls = { loading: 0, ready: 0, failed: 0, listed: 0, fetchList: 0, cleared: 0, gotStarted: 0, opened: 0, remembered: 0 };
-  const errors: unknown[] = [], announced: string[] = [], chosen: (WorkspaceLocation | undefined)[] = [], started: number[] = [];
+  const errors: unknown[] = [], announced: string[] = [], chosen: (WorkspaceLocation | undefined)[] = [], started: number[] = [], warmed: (WarmCopy | undefined)[] = [];
+  const menu: { listed?: Repository[]; message?: string } = {};
   const content = { replaceChildren: (...nodes: (FakeElement | string)[]) => { shown.content = nodes; } };
   const files = { replaceChildren: (...nodes: (FakeElement | string)[]) => { shown.files = nodes; } };
   // The list code reads and writes only disabled and value: the fake stands in for the select.
@@ -94,10 +96,10 @@ function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Pro
     get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
     content, files, refreshButton: { disabled: false },
     branchSelect: select(), repositorySelect: select(),
-    repositoryMenu: undefined,
+    repositoryMenu: { setRepository: () => {}, setRepositories: (repositories: Repository[], message?: string) => { menu.listed = repositories; menu.message = message; } },
     siteActions: undefined,
     nextLoad: () => { session.next(undefined); return session.begin(); },
-    chooseRepository: async (resume?: WorkspaceLocation) => { chosen.push(resume); },
+    chooseRepository: async (resume?: WorkspaceLocation, warm?: WarmCopy) => { chosen.push(resume); warmed.push(warm); },
     storage: () => local,
     options: () => {},
     status: () => {},
@@ -111,7 +113,7 @@ function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Pro
     knownRepositories: () => undefined,
     rememberRepositories: () => { calls.remembered++; },
   } satisfies RepositoryListPorts & Record<string, unknown>;
-  return { ports, list: createRepositoryList(ports), shown, calls, errors, announced, chosen, started };
+  return { ports, list: createRepositoryList(ports), shown, calls, errors, announced, chosen, started, warmed, menu };
 }
 
 test("sign-out of the last account forgets the signed-in mark and the boot memory", async () => {
@@ -358,4 +360,80 @@ test("a refresh with no repository open lists again without touching the address
   assert.equal(calls.loading, 1);
   assert.equal(calls.fetchList, 1);
   assert.deepEqual(ports.repositories, [A, C]);
+});
+
+// A repeat visit's kept copy (TOOLS-242, src/warm-copy.ts): the site opens before the listing, which follows.
+const keptCopy = (kept: Repository = A): WarmCopy => ({ login: "lex", source: "https://editor.test/", repo: kept, branch: "main",
+  snapshot: { commit: "c".repeat(40), branch: "main", entries: [], tree: [] }, files: [] });
+function deferredList() {
+  let resolve!: (value: Repository[] | undefined) => void, reject!: (error: unknown) => void;
+  const promise = new Promise<Repository[] | undefined>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+const settle = () => new Promise<void>((done) => setImmediate(done));
+
+test("a kept copy opens its site before the listing answers; a listing that still has it is installed", async () => {
+  page.hash = "#repo=1&branch=main";
+  try {
+    const f = fixture([A, B]), copy = keptCopy(), listing = deferredList();
+    await f.list.loadRepositories(undefined, { onStarted: () => {}, warm: { copy, listing: listing.promise } });
+    assert.deepEqual(f.warmed, [copy]);
+    assert.deepEqual(f.chosen, [{ repoId: 1, branch: "main", path: undefined }]);
+    assert.deepEqual(f.ports.repositories, [A], "its repository alone until the listing comes");
+    assert.equal(f.calls.ready, 0);
+    listing.resolve([A, B]);
+    await settle();
+    assert.deepEqual(f.ports.repositories, [A, B]);
+    assert.deepEqual(f.menu.listed, [A, B]);
+    assert.equal(f.calls.ready, 1);
+    assert.equal(f.calls.remembered, 1);
+    assert.equal(f.calls.fetchList, 0);
+  } finally { page.hash = ""; }
+});
+
+test("a kept copy's listing that never came from the session is read; one that fails says so, the site staying open", async () => {
+  const f = fixture([], async () => { throw new Error("GitHub is down"); }), listing = deferredList();
+  await f.list.loadRepositories(undefined, { onStarted: () => {}, warm: { copy: keptCopy(), listing: listing.promise } });
+  listing.resolve(undefined);
+  await settle();
+  assert.equal(f.calls.fetchList, 1);
+  assert.equal(f.calls.failed, 1);
+  assert.equal(f.menu.message, "Repositories could not be loaded. Use Reload to try again.");
+  assert.equal((f.errors[0] as Error).message, "GitHub is down");
+  assert.equal(f.chosen.length, 1, "the kept site is not opened again or closed");
+});
+
+test("a listing without the kept repository, or with it renamed, opens the plain way", async () => {
+  for (const listed of [[B], [{ ...A, full_name: "lex/renamed", name: "renamed" }], [{ ...A, default_branch: "trunk" }]]) {
+    const f = fixture(listed), listing = deferredList();
+    await f.list.loadRepositories(undefined, { onStarted: () => {}, warm: { copy: keptCopy(), listing: listing.promise } });
+    listing.resolve(listed);
+    await settle();
+    assert.equal(f.calls.loading, 2, `${JSON.stringify(listed)}: the plain listing runs`);
+    assert.deepEqual(f.ports.repositories, listed);
+    assert.equal(f.warmed.at(-1), undefined, "and opens without the kept copy");
+  }
+});
+
+test("a kept copy's listing landing after a newer listing began installs nothing", async () => {
+  const f = fixture([C]), listing = deferredList();
+  await f.list.loadRepositories(undefined, { onStarted: () => {}, warm: { copy: keptCopy(), listing: listing.promise } });
+  await f.list.loadRepositories([C]);
+  listing.resolve([A, B]);
+  await settle();
+  assert.deepEqual(f.ports.repositories, [C]);
+  assert.equal(f.calls.ready, 1, "only the newer listing's");
+});
+
+test("a kept copy of a wizard's site keeps its checklist once the listing has it", async () => {
+  pageStorage.setItem(WIZARD_KEY, wizardWith(A.id));
+  try {
+    const f = fixture([A]), listing = deferredList();
+    await f.list.loadRepositories(undefined, { onStarted: () => {}, warm: { copy: keptCopy(), listing: listing.promise } });
+    listing.resolve([A]);
+    await settle();
+    assert.deepEqual(f.started, [A.id]);
+  } finally {
+    pageStorage.removeItem(WIZARD_KEY);
+  }
 });

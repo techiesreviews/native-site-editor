@@ -121,10 +121,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
         }
         return;
       }
-      // A wizard that made a site and was interrupted: the checklist still follows it.
-      const unfinished = readWizard(localStorage)?.repo;
-      if (unfinished && ports.repositories.some((repo) => repo.id === unfinished.id)) setupController.start(unfinished.id);
-      if (!setupEntry.active()) clearWizard(localStorage);
+      resumeWizard();
       repositoryOptions();
       ports.repositorySelect.disabled = false;
       if (plan.kind === "invalid-link") {
@@ -182,6 +179,12 @@ export function createRepositoryList(ports: RepositoryListPorts) {
     }
   }
 
+  // A wizard that made a site and was interrupted: the checklist still follows it.
+  function resumeWizard() {
+    const unfinished = readWizard(localStorage)?.repo;
+    if (unfinished && ports.repositories.some((repo) => repo.id === unfinished.id)) setupController.start(unfinished.id);
+    if (!setupEntry.active()) clearWizard(localStorage);
+  }
   // The kept copy opens at once, its repository alone in the selector. The listing comes behind it: one that still
   // has the repository as it was is installed; one without it (or with it renamed or moved) opens the plain way,
   // which says what changed; one that fails says so, the site staying open.
@@ -198,10 +201,11 @@ export function createRepositoryList(ports: RepositoryListPorts) {
       ports.boot.ready();
       ports.repositoryMenu?.setRepositories(list);
       ports.rememberRepositories(list);
+      resumeWizard();
       repositoryOptions();
       ports.repositorySelect.value = String(appStore.repository.value?.id ?? "");
       ports.repositorySelect.disabled = false;
-    }, (error: unknown) => {
+    }).catch((error: unknown) => {
       if (!current()) return;
       ports.boot.failed();
       ports.repositoryMenu?.setRepositories([], "Repositories could not be loaded. Use Reload to try again.");
