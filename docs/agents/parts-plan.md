@@ -32,6 +32,11 @@ src/ui/
 docs/agents/parts.md    the parts list, generated (scripts/agents/parts-list.mjs)
 ```
 
+Parts that load at start (the Icon button and the Text button, TOOLS-248) read their hook defaults as fallbacks
+where they are used (`var(--text-btn-radius, 0)`) instead of declaring them on the class, to save boot bytes. Their
+hooks therefore reach every such button inside the element that sets them; keep this form when moving them into
+folders, as the boot budget has almost no room left.
+
 - **One source, every reader.** A folder's `part.json` replaces its entry in `docs/agents/parts.json`; the parts
   list, and later the design board, read it. The list stays generated and checked, so it cannot go stale.
 - **Nothing in `src/ui/` imports from a screen.** Screens import parts, never the other way round (`node scripts/agents/ui-imports.mjs check`).

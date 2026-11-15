@@ -1,5 +1,6 @@
 // The Text button part: an action written as link-coloured words, for a quiet action beside other text (Undo,
-// Review…, Reset to defaults). Its look is text-button.css; a link with the same look is `link(text, href, "text-button")`.
+// Review…, Reset to defaults). Its look is text-button.css; a link with the same look is `link(text, href, "text-button")`
+// and sets its own `text-decoration: none` (the part sets no resting underline, to save boot bytes).
 
 import { button } from "../dom";
 import { textButtonClass, type TextButtonClassOptions } from "./text-button-options";

@@ -43,7 +43,7 @@ beyond that stays as a named variant. Nothing else visible changes.
   `button`). The Files tree controller gets `iconButton` through its `ui` ports, as it gets `node` and
   `button`, so the + is the part's own element.
 - Underlined variant (2026-11-15): `textButton(words, action, { underlined: true })` adds `text-button--underlined`,
-  which sets only `--text-btn-decoration` (none at rest by default). Media's Download original
+  which sets its own `text-decoration: underline` (the base Text button has no underline at rest). Media's Download original
   (`media-detail__original`) and the suggested free name (`media-detail__suggest`) use it; their screen rules keep only
   placement and the tap area. Links that carry the `text-button` class (`repository-menu__action`) already set no
   underline themselves, so the new resting default changes nothing there.
@@ -105,6 +105,8 @@ beyond that stays as a named variant. Nothing else visible changes.
     hover fill waits for a mouse, as the compact Text button (Choose image…).
   - Rows in the project menu and the agent menu that borrow the `text-button` class no longer underline on hover, as
     the editor's other menu rows (the share rows already removed it).
+  - Compact Text buttons (Choose image…, Restore) in Windows High Contrast: the hover and press underline is drawn
+    see-through to save boot bytes, and forced colours may show it, where dev showed none.
 - Review decisions: fixed (2026-11-15) the second look's P2 on `media-detail.css:121` (the Download original
   button's border, background, colour and underline set by the screen). An earlier decline said
   `.media-library button` needed them cancelled; that was wrong (it sets only the font, corner, minimum height and
@@ -116,8 +118,6 @@ beyond that stays as a named variant. Nothing else visible changes.
   (2026-11-15), on the fake `document` of `tests/select-options.test.ts`: the label, the tooltip (its own, the
   label's, or none), the glyph, the action and a failing action reaching the error reporter, and the Text button's
   classes, words and click. Earlier declines called both parts one-line wrappers; that held only for `textButton()`.
-  Left as is (review round 3 nit): a compact underlined Text button would drop its underline on hover; no screen asks
-  for that pair, and the next part that needs it can set the hover hook then.
 - Feature list: no change (the parts swap keeps every feature as it was)
 
 - Boot budget (2026-11-15): after dev took the Inbox, dev boots in 363,274 of the 363,520 bytes the budget allows,
@@ -137,6 +137,11 @@ beyond that stays as a named variant. Nothing else visible changes.
   `tests/files-tree-controller.test.ts` (P3): its `as unknown as FilesTreePorts` cast predates this slice and covers
   the fake DOM the ports return; this slice only added the `iconButton` entry, which `npm run check` types through the
   controller.
+- Review after the rebase on dev (claude-opus-5-5, 2026-11-15, the code since the third second look): fixed its four
+  P3s in words only (no boot bytes): the underlined variant's line above, the stale "Left as is" note, the Text
+  button's comment on links, the High Contrast difference in the list, and a line in `docs/agents/parts-plan.md` on
+  the fallback form. Left its shot gaps (the Pages tab's + and ⋯, a deleted file's Restore, Download original after
+  the trims) to follow-ups: the specs and the CSS unit test cover them, and `kit ux` tried Pages, Files and Media.
 - Evidence after the trims: `kit shots editor structure file-details media-gallery files --compare dev` at 390 and
   1280, light and dark: 18 of 20 pixel-identical, files 1280 dark one shade in the top bar's corner speck, structure
   390 light the known caret timing (its retake identical). History opened in the starter at 390 and 1280: its panel
