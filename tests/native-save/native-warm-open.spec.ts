@@ -254,11 +254,18 @@ test("a head check that fails behind the kept page says so, and asks again when 
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 15_000 });
 });
 
-test("a branch list that fails behind the kept page says so; the page stays on its branch", async ({ page }) => {
-  await page.route("**/api/branches*", (route) => route.fulfill({ status: 503, json: { error: "GitHub is not answering." } }));
+test("a branch list that fails behind the kept page says so; the page stays on its branch, and Try again fills it", async ({ page }) => {
+  let failing = true;
+  await page.route("**/api/branches*", (route) => failing ? route.fulfill({ status: 503, json: { error: "GitHub is not answering." } }) : route.continue());
   await page.reload();
   await expect(frame(page).locator(".hero h1")).toHaveText(heading, { timeout: 15_000 });
-  await expect(page.locator("#notice")).toBeVisible({ timeout: 30_000 });
+  const again = page.locator("#notice").getByRole("button", { name: "Try again" });
+  await expect(again).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#branch")).toBeDisabled();
   await expect(frame(page).locator(".hero h1")).toHaveText(heading);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  failing = false;
+  await again.click();
+  await expect(page.locator("#branch")).toBeEnabled({ timeout: 15_000 });
+  await expect(page.locator("#branch")).toHaveValue("main");
 });

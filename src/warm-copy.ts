@@ -14,9 +14,11 @@
 //   or it was renamed or moved: the plain listing runs and says so; fails or never answers: the menu says it could
 //   not load, the site stays; a newer listing began meanwhile: it installs nothing.
 // - branch list (src/workspace-boot.ts chooseRepository): has the branch: the selector fills; lacks it: the plain
-//   open runs and says the branch is gone; fails: its message and Try again, the site stays.
+//   open runs and says the branch is gone; fails or never answers (src/read-retry.ts gives up, a failure): its
+//   message and Try again, the site stays.
 // - head check (checkKept): the same commit: up to date, the head trusted; a newer one: folds in as an outside change
-//   (unsaved edits kept and merged) or loads the branch again; fails or the tab is hidden: "Could not check" while
+//   (unsaved edits kept and merged) or loads the branch again; fails, never answers (given up as a failure) or the
+//   tab is hidden: "Could not check" while
 //   shown, asked again when next shown or focused; taken over by a newer check: that one's outcome stands.
 // - leaving (a new listing, navigation, sign-out): the copy's texts not yet proven cache nothing and read nothing.
 
