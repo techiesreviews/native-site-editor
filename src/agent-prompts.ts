@@ -55,7 +55,7 @@ export function helperCommand(url: string, token: string) {
 }
 /**
  * The same command started apart from the conversation that runs it, so it outlives it. The token travels in the
- * environment, never as an argument, so other programs do not see it in the process list. Linux: a user service
+ * environment, never as an argument: the started helper's arguments never hold it. Linux: a user service
  * (`systemd-run` passes no environment of its own: a bare `--setenv` copies the token from its own, PATH is set, and
  * npx is found by its full path), stopped with `systemctl --user stop editor-helper`. Elsewhere: `nohup`, which hands
  * its environment to npx.

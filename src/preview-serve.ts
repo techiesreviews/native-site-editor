@@ -148,13 +148,12 @@ export async function servePreview(ports: ServePorts) {
     if (waiting) { waiting.add(to); return; }
     const askers = new Set([to]);
     working.set(id, askers);
-    void (async () => {
-      const { made, answer: sent } = await look(await ports.files(), path, true);
+    void (async () => look(await ports.files(), path, true))().then(({ made, answer: sent }) => {
       if (closed) return;
       if (at === version) answered.set(path, made);
       working.delete(id);
       wire.send({ t: "file", version: at, path, to: [...askers], ...sent } satisfies HostMessage);
-    })().catch(() => {
+    }, () => {
       // A lookup that failed before the guarded read: the visitors waiting hear it now, not at their own time limit.
       working.delete(id);
       if (!closed) wire.send({ t: "file", version: at, path, to: [...askers], status: 502 } satisfies HostMessage);

@@ -2,6 +2,7 @@ import { repositoryCacheRequest } from "./session-cache-fake";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { handle, type Env, type StoredSession } from "../worker/app.ts";
+import { GITHUB_WEBHOOK_PATH } from "../worker/github-webhook.ts";
 
 function environment() {
   const records = new Map<string, StoredSession>();
@@ -301,4 +302,14 @@ test("every changing browser route refuses another site's request before anythin
       const response = await handle(new Request(origin + path, { method: "POST", headers: { ...from, "Content-Type": "application/json" }, body: "{}" }), env);
       assert.equal(response.status, 403, `${path} ${JSON.stringify(from)}`);
     }
+});
+
+test("requests that carry no editor Origin by design still pass the origin guard: agents, GitHub's deliveries and agent sign-in", async () => {
+  const { env } = environment();
+  const post = (path: string, headers: Record<string, string> = {}) =>
+    handle(new Request(origin + path, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: "{}" }), env);
+  for (const [path, headers] of [["/mcp", { Authorization: "Bearer ase_nothing" }], [GITHUB_WEBHOOK_PATH, {}], ["/auth/mcp/token", {}], ["/auth/mcp/register", {}]] as const) {
+    const response = await post(path, headers);
+    assert.notEqual(response.status, 403, `${path}: ${await response.text()}`);
+  }
 });

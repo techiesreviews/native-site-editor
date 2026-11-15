@@ -90,6 +90,8 @@ export function createBootController(ports: BootPorts) {
   let state: "uninitialized" | "loading" | "ready" | "failed" = "uninitialized";
   let listRequest: Promise<void> | undefined;
   let cancelAuto: (() => void) | undefined;
+  /** Boots started: the sign-in screen belongs to the latest (its login drawing ends the session stamp's hold). */
+  let boots = 0;
   let sessionTag: string | null | undefined;
 
   /** Read the array endpoint and its onboarding hint without expanding the session. */
@@ -131,7 +133,7 @@ export function createBootController(ports: BootPorts) {
   }
 
   async function start() {
-    const at = ports.begin();
+    const boot = ++boots, at = ports.begin();
     let handoff: { at: SessionStamp; session: SessionInfo } | undefined;
     const source = ports.source();
     const current = () => at.holds() && ports.source() === source;
@@ -210,7 +212,9 @@ export function createBootController(ports: BootPorts) {
       if (code) {
         url.searchParams.delete("error");
         ports.replaceUrl(url);
-        ports.showError(new Error((await import("../sign-in-words")).signInErrorText(code)));
+        // Words that fail to load leave the sign-in button alone; a boot that started meanwhile owns the screen.
+        const words = await import("../sign-in-words").catch(() => undefined);
+        if (words && boot === boots && ports.source() === source) ports.showError(new Error(words.signInErrorText(code)));
       }
     } catch (error) {
       const ownsFailure = handoff
