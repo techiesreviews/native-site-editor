@@ -71,7 +71,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
   const branchSelect = { disabled: false, value: "" }, refreshButton = { disabled: false };
   const ports = {
     appStore: createAppStore(createDraftStore()),
-    savePublish: { trustedHead: () => undefined, seeHead: (commit: string) => { heads.push(commit); }, resetDeleted: () => {}, checkDeleted: async () => {}, isDeleted: () => false,
+    savePublish: { trustedHead: () => heads.at(-1), seeHead: (commit: string) => { heads.push(commit); }, resetDeleted: () => {}, checkDeleted: async () => {}, isDeleted: () => false,
       checkHead: (force?: boolean) => { headChecks.push(Boolean(force)); return headAnswer; } },
     repositoryIndex: new RepositoryIndex(),
     cleanSources: {
@@ -673,3 +673,67 @@ test("a kept copy left for a new listing before its texts are proven caches noth
   assert.equal(f.cached.size, 0);
   assert.deepEqual(f.pending("file"), [], "no read from GitHub for it");
 });
+
+test("a head check that answers before the reopened file is done still leaves the status up to date", async () => {
+  const f = fixture({ remember: false, native: true });
+  let opened!: () => void;
+  f.ports.entryAt = (path: string) => KEPT_SNAPSHOT.tree!.find((entry) => entry.path === path);
+  f.ports.openEntry = () => new Promise<void>((done) => { opened = done; });
+  f.answerHead(Promise.resolve(sha(9)));
+  const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main", path: "index.html" }, kept());
+  await flush();
+  assert.match(f.shown.status, /^Up to date with main/, "the check answered while the file was still opening");
+  opened();
+  await choosing;
+  assert.match(f.shown.status, /^Up to date with main · 0000000/);
+});
+
+/** A page whose visibility a test sets; the boot listens to it from its creation. */
+function withDocument(run: (page: EventTarget & { visibilityState: string }) => Promise<void>) {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const page = Object.assign(new EventTarget(), { visibilityState: "visible" });
+  Object.defineProperty(globalThis, "document", { configurable: true, value: page });
+  return run(page).finally(() => {
+    if (saved) Object.defineProperty(globalThis, "document", saved);
+    else Reflect.deleteProperty(globalThis, "document");
+  });
+}
+
+test("a kept copy whose head check got no answer (a hidden tab) asks again when the tab is shown", () => withDocument(async (page) => {
+  const f = fixture({ remember: false, native: true });
+  await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
+  await flush();
+  assert.equal(f.headChecks.length, 1);
+  assert.equal(f.shown.status, "Checking GitHub for newer changes on main…");
+  f.answerHead(Promise.resolve(sha(9)));
+  page.visibilityState = "hidden";
+  page.dispatchEvent(new Event("visibilitychange"));
+  await flush();
+  assert.equal(f.headChecks.length, 1, "not while hidden");
+  page.visibilityState = "visible";
+  page.dispatchEvent(new Event("visibilitychange"));
+  await flush();
+  assert.equal(f.headChecks.length, 2);
+  assert.match(f.shown.status, /^Up to date with main/);
+  assert.deepEqual(f.heads, [sha(9)]);
+}));
+
+test("leaving the tab keeps the site as it shows then (a save since its first paint)", () => withDocument(async (page) => {
+  const savedFactory = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  const { factory } = fakeIndexedDB();
+  Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: factory });
+  try {
+    const f = fixture({ remember: false, native: true });
+    await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
+    await flush();
+    const after = { ...KEPT_SNAPSHOT, commit: sha(11) };
+    f.ports.appStore.snapshot.value = after;
+    page.visibilityState = "hidden";
+    page.dispatchEvent(new Event("visibilitychange"));
+    await flush();
+    assert.equal((await readWarmCopy(factory))?.snapshot.commit, sha(11), "kept at once, before the second's timer");
+  } finally {
+    if (savedFactory) Object.defineProperty(globalThis, "indexedDB", savedFactory);
+    else Reflect.deleteProperty(globalThis, "indexedDB");
+  }
+}));

@@ -98,3 +98,23 @@ test("after sign-out nothing is kept again in that storage: a late keep, a tab l
   await writeWarmCopy(copy(), other);
   assert.ok(await readWarmCopy(other));
 });
+
+test("sign-out in another tab: this page keeps nothing more in the page's storage", async () => {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  const { factory } = fakeIndexedDB();
+  Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: factory });
+  try {
+    await writeWarmCopy(copy());
+    assert.ok(await readWarmCopy());
+    const other = new BroadcastChannel("native-site-editor-warm-copy");
+    other.postMessage("signed-out");
+    other.close();
+    // fixed-wait: the channel delivers on a later turn and nothing marks its arrival.
+    await new Promise((done) => setTimeout(done, 50));
+    await writeWarmCopy(copy({ branch: "next", snapshot: { ...copy().snapshot, branch: "next" } }));
+    assert.equal((await readWarmCopy())?.branch, "main", "the later keep wrote nothing");
+  } finally {
+    if (saved) Object.defineProperty(globalThis, "indexedDB", saved);
+    else Reflect.deleteProperty(globalThis, "indexedDB");
+  }
+});
