@@ -55,9 +55,9 @@ Rules that matter for every slice:
 | `src/style.css`: `select` box, focus rings | `elements` (slice 5) |
 | `src/utilities.css`: the reset (`*` box sizing, `body`, headings) | `elements` (slice 5) |
 | `src/utilities.css`: the old site foundation (`.section`, `.container`, `.image`, `.content`) and its examples | removed in the pilot: nothing in the editor or on the board used them |
-| `src/style.css` and `src/theme.css`: `.button`, `.primary`, `.secondary`; `src/utilities.css` `.button` | `src/ui/parts/button.css`: done in the pilot |
-| `src/style.css`: `.icon-button`, `.text-button`, `.text-link` | `src/ui/parts/icon-button.css`, `text-button.css` (slice 2) |
-| `src/ui/parts/badge.css`, `key.css`, `spinner.css`, `progress.css`, `section-heading.css`; `src/ui/inline-field.css` | the same files on `components`, each with `--<name>-*` defaults (slice 3) |
+| `src/style.css` and `src/theme.css`: `.button`, `.primary`, `.secondary`; `src/utilities.css` `.button` | `src/ui/button/button.css`: done in the pilot |
+| `src/style.css`: `.icon-button`, `.text-button`, `.text-link` | `src/ui/icon-button/icon-button.css`, `src/ui/text-button/text-button.css` (slice 2) |
+| `src/ui/badge/badge.css`, `src/ui/key/key.css`, `src/ui/spinner/spinner.css`, `src/ui/progress/progress.css`, `src/ui/section-heading/section-heading.css`; `src/ui/inline-field/inline-field.css` | the same files on `components`, each with `--<name>-*` defaults (slice 3) |
 | `src/components/row-menu.css`, `dropdown.css`, `flyout.css`, `share-row.css`, `create-dialog.css` (the confirm dialog) | component files on `components` (slice 6) |
 | `src/style.css`: top bar, workspace, sidebar, explorer, login, notices | editor CSS, split by screen, unlayered (slice 7) |
 | `src/components/*.css` and `src/page-builder/*.css` for screens (pages tree, files tree, edit bar, phone sheet, media library, …) | editor CSS, unlayered as now; their own copies of a part swap to the part as each part lands |
