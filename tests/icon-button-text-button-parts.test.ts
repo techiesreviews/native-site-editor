@@ -84,6 +84,13 @@ test("each part's look comes from its own defaults, and the compact size changes
   for (const name of declared) assert.match(text, new RegExp(`var\\(${name}\\)`), `${name} is used`);
 });
 
+test("a disabled text button neither underlines nor fills on hover or press, as a disabled icon button", () => {
+  const text = read("src/ui/text-button/text-button.css");
+  assert.match(text, /&:active:not\(:disabled\) \{/);
+  assert.match(text, /&:hover:not\(:disabled\) \{/);
+  assert.doesNotMatch(text, /&:(active|hover) \{/);
+});
+
 test("the underlined text button changes only the part's hooks, and its words stay underlined at rest", () => {
   const text = read("src/ui/text-button/text-button.css");
   assert.match(text, /--text-btn-decoration: none;/, "the base size is not underlined at rest");
@@ -102,8 +109,8 @@ test("Media's Download original and suggested name use the underlined text butto
     assert.doesNotMatch(rules, /(^|[;\s])(border|background|color|text-decoration)\s*:/, `${cls} gives the button no border, background, colour or underline`);
   }
   const ts = read("src/page-builder/media-library-details.ts");
-  assert.match(ts, /\{ underlined: true, className: "media-detail__original" \}/);
-  assert.match(ts, /\{ underlined: true, className: "media-detail__suggest" \}/);
+  for (const cls of ["media-detail__original", "media-detail__suggest"])
+    assert.match(ts, new RegExp(`\\{(?=[^}]*\\bunderlined: true\\b)[^}]*className: "${cls}"[^}]*\\}`), `${cls} asks for the underlined Text button`);
 });
 
 test("the old copies are gone: no screen styles the icon button's or the text button's look", () => {
@@ -125,6 +132,19 @@ test("the editor loads the button parts' files in one line, in their order, afte
   assert.doesNotMatch(main, /icon-button\.css|text-button\.css|parts\/button\.css/, "only through src/ui/parts.css");
   const imports = [...read("src/ui/parts.css").matchAll(/^@import "([^"]+)";$/gm)].map((match) => match[1]);
   assert.deepEqual(imports, ["./parts/button.css", "./icon-button/icon-button.css", "./text-button/text-button.css"]);
+});
+
+test("Page structure's icon actions are Icon buttons; its own CSS sizes them and keeps a look only for the Show toggle and Open", () => {
+  const ts = read("src/components/page-structure.ts");
+  assert.match(ts, /iconButton\(label, mark\(icon, 14\), \{ action, className: "page-structure__action" \}\)/);
+  assert.match(ts, /const more = iconButton\(`Actions for /);
+  const css = read("src/components/page-structure.css");
+  const base = /^\.page-structure__action \{([^}]*)\}/m.exec(css)?.[1] ?? "";
+  assert.ok(base.length > 0);
+  assert.doesNotMatch(base, /(^|[;\s])(border|border-radius|background|color)\s*:/, "the shared rule only places and sizes");
+  for (const rule of css.matchAll(/^([^{}\n]*\.page-structure__action\b[^{}\n]*)\{([^}]*)\}/gm))
+    if (/(^|[;\s])(background|color|border-radius)\s*:/.test(rule[2]))
+      assert.match(rule[1], /:not\(\.icon-button\)|--open|slot-toggle/, `${rule[1].trim()} gives the Icon button no look`);
 });
 
 test("the icon button's code makes its button element: it is the part's home in the copy count", () => {

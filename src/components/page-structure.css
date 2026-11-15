@@ -252,20 +252,25 @@
   .page-structure__row.row-action-host { overflow: visible; flex-wrap: wrap; }
   .page-structure__row.row-action-host > .row-action-overlay { flex-shrink: 1; flex-wrap: wrap; justify-content: flex-end; min-width: 0; max-width: 100%; margin-left: auto; }
 }
+/* A row's actions: Icon buttons (src/ui/icon-button/) sized here, and the Show toggle and Open › with a look of
+   their own until a part takes them. */
 .page-structure__action {
   display: grid;
   place-items: center;
   width: 22px;
   height: 22px;
   padding: 0;
+  cursor: pointer;
+}
+.page-structure__action:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
+.page-structure__action:not(.icon-button) {
   border: 0;
   border-radius: var(--radius-small, 4px);
   background: transparent;
   color: var(--muted);
-  cursor: pointer;
 }
-.page-structure__action:hover { color: var(--text); background: var(--hover); }
-.page-structure__action:focus-visible { outline: var(--focus-ring); outline-offset: -1px; color: var(--text); }
+.page-structure__action:not(.icon-button):hover { color: var(--text); background: var(--hover); }
+.page-structure__action:not(.icon-button):focus-visible { color: var(--text); }
 
 /* The slot a row fills: an actual badge button replaces the drawn name. */
 .page-structure__row--slot[data-slot]::after { content: none; }
