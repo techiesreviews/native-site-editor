@@ -41,6 +41,7 @@ import { createLinkedStylesController } from "./controllers/linked-styles-contro
 import { createSourcePaneController } from "./controllers/source-pane-controller";
 import type { ComponentTools } from "./page-builder/components";
 import { createAgentHost } from "./agent-host";
+import { createBlockMoves } from "./page-builder/block-move";
 import { createPagesAndFilesHost } from "./pages-and-files-host";
 import { createPageBuilderHost } from "./page-builder-host";
 import { createSiteLoading } from "./site-loading";
@@ -435,7 +436,7 @@ function updateAgentContext() {
 // By value: consts declared above and hoisted functions; `let` state goes in as getters (tests/main-ts-ceiling.test.ts).
 const { agentController, agentCommands } = createAgentHost({
   appStore, runtime, workspaceSession, guardedEdits, editorModule, editorWorkspace, versions, finishedWork, parkedSteps, repositoryIndex,
-  mediaController, mediaPorts, blockMoves, agentPresence, pagesAndFiles, api, loadAgentSite, draftScope, shownScope, openNewDraft,
+  mediaController, mediaPorts, blockMoves, createBlockMoves, agentPresence, pagesAndFiles, api, loadAgentSite, draftScope, shownScope, openNewDraft,
   nativeComponentLoaderPlan, writeNativePageMeta, nativeSectionChoices, componentPorts, refreshNativeRoutes, updateCurrentPageLabel, updateAgentContext,
   cleanSources, setupController, pageStructureController, workspace, nativeTextIndexGate, readFile, readFiles, loadAgentMenu, nativeRouteInfo, pathNow, errorMessage,
   // Declared further down: read at call time.

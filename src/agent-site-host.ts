@@ -10,7 +10,7 @@ import { nativePageRoute } from "../shared/native-routes";
 import { isNewDraft } from "../shared/site-overlay";
 import { parentProblem } from "../shared/site-rules";
 import { draftKey, draftStore, type DraftScope, type SavedDraft } from "./drafts";
-import { createBlockMoves } from "./page-builder/block-move";
+import type { createBlockMoves } from "./page-builder/block-move";
 import { withPageField } from "./page-builder/site-head";
 import { githubScope, holdsDraftScope, sameBranch, type WorkspaceScope, type WorkspaceSession } from "./workspace-session";
 import type { AppStore } from "./app-store";
@@ -93,6 +93,9 @@ export interface AgentCommandPorts {
   mediaController: ReturnType<typeof createMediaController>;
   mediaPorts: MediaControllerPorts;
   blockMoves: Pick<ReturnType<typeof createBlockMoves>, "move">;
+  /** The block moves of work finishing elsewhere are made with this. A port: imported here, the module and its
+   * neighbours left the startup chunk for a chunk of their own (one more request before the first paint). */
+  createBlockMoves: typeof createBlockMoves;
   agentPresence: Pick<ReturnType<typeof createAgentPresence>, "show" | "begin" | "stopped">;
   /** The Pages & files host (src/pages-and-files-host.ts): `nativeResyncDone` and `pageActions` read at call time, the rest taken as it is made. */
   pagesAndFiles: Pick<PagesAndFiles, "nativeResyncDone" | "pageActions" | "loadPagesActions" | "loadFileOps" | "pagePorts" | "filePorts"
@@ -284,7 +287,7 @@ export function createAgentCommands(ports: AgentCommandPorts) {
   }; }
   async function applyAgentSiteCommand(command: AgentCommand) {
     const [{ applySiteCommand, applyStructural, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, holdWorkspace, retryProof, pinnedMedia, pinnedMediaActions, pinnedMediaAway }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
-    const factories = { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField };
+    const factories = { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves: ports.createBlockMoves, withPageField };
     // Ticket 27: a Media change runs in its own workspace's background page, whatever is shown.
     // Finished while another workspace is shown, its note waits on that one (ticket 24), as an agent's text write's does.
     if (pinnedMedia(command)) {
