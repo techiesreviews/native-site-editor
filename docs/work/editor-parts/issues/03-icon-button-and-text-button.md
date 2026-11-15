@@ -1,7 +1,7 @@
 ---
 title: Editor parts slice 3 - Icon button and Text button parts (TOOLS-248)
-status: ready-for-agent
-assignee: fleet-lead (claude-opus-5-5)
+status: closed
+assignee: fleet-lead
 blocked_by: []
 ---
 
