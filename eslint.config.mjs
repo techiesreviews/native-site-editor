@@ -56,7 +56,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["tests/**/*.ts"],
+    files: ["tests/**/*.ts", "src/**/*.test.ts"],
     rules: { "no-restricted-syntax": ["error", RECEIVER_RULE, DOUBLE_UNKNOWN] },
   },
 );

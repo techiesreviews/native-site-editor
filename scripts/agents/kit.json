@@ -19,12 +19,12 @@
     "docsGuards": ["tests/kit-editor.test.ts", "tests/code-map.test.ts", "tests/mcp-runtime.test.ts", "tests/parts-list.test.ts"]
   },
   "paths": {
-    "docs": ["^docs/", "(?i:\\.md)$"],
+    "docs": ["^docs/", "(?i:\\.md)$", "^src/ui/[^/]+/part\\.json$"],
     "tests": ["^(tests|fixtures)/", "^src/.+\\.test\\.ts$"],
     "css": ["(?i:\\.css)$"],
     "kit": ["^scripts/agents/", "^tests/kit-.*\\.test\\.ts$"],
     "unitTests": ["^tests/[^/]+\\.test\\.ts$", "^src/.+\\.test\\.ts$"],
-    "visible": ["^src/.+(?i:\\.css)$", "^src/components/(?!.+\\.test\\.ts$)", "^src/ui/(?!.+\\.test\\.ts$)", "^src/page-builder/(?!rules/)", "^src/icons\\.ts$", "^index\\.html$"]
+    "visible": ["^src/.+(?i:\\.css)$", "^src/components/(?!.+\\.test\\.ts$)", "^src/ui/(?!.+\\.test\\.ts$|[^/]+/part\\.json$)", "^src/page-builder/(?!rules/)", "^src/icons\\.ts$", "^index\\.html$"]
   },
   "featureList": "docs/agents/features.md",
   "techDebt": "docs/work/tech-debt/issues",

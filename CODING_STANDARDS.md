@@ -73,7 +73,7 @@ files), settles every outcome by design.
 
 ## Test fixtures
 
-- Type fakes with `satisfies` or a declared type; document deliberate double assertions (enforced by `no-restricted-syntax` in `tests/**`).
+- Type fakes with `satisfies` or a declared type; document deliberate double assertions (enforced by `no-restricted-syntax` in tests: `tests/**` and `src/**/*.test.ts`).
 
 ## Browser specs
 
