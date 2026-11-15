@@ -142,11 +142,15 @@ beyond that stays as a named variant. Nothing else visible changes.
   button's comment on links, the High Contrast difference in the list, and a line in `docs/agents/parts-plan.md` on
   the fallback form. Left its shot gaps (the Pages tab's + and ⋯, a deleted file's Restore, Download original after
   the trims) to follow-ups: the specs and the CSS unit test cover them, and `kit ux` tried Pages, Files and Media.
-- Second look on the fixes (gpt-6.1-sol, 2026-11-15, asked with `--second gpt`): declined its P2 that History's
+- Second look on the fixes (gpt-6.1-sol, 2026-11-15): declined its P2 that History's
   Refresh and ⋯ shrink from 44px to 24px on phones. On dev they are `commit-history__refresh` and
   `commit-history__more`, not `.icon-button`, so the top bar's 44px phone rule never reached them: they are 24px at
   every width on dev and stay so here. Giving them the touch size is a follow-up for the slice that takes up touch
   sizes, as this one keeps their size. Its shot gaps are the ones left above.
+- Review of the ticket note (claude-opus-5-5, 2026-11-15, after the rebase on dev with the UX step fix): fixed its
+  P3 by listing History's touch size and the shots not taken under Follow-ups. The rebase changed no code of this
+  slice (same patch); `kit ux` on the rebased branch: 0 broken, 4 looks off that plain dev shows too (22px row
+  buttons, 16px slot tags and the 23px Add in Page structure at 390; the Branches flyout over the repository list).
 - Evidence after the trims: `kit shots editor structure file-details media-gallery files --compare dev` at 390 and
   1280, light and dark: 18 of 20 pixel-identical, files 1280 dark one shade in the top bar's corner speck, structure
   390 light the known caret timing (its retake identical). History opened in the starter at 390 and 1280: its panel
@@ -162,5 +166,8 @@ beyond that stays as a named variant. Nothing else visible changes.
   the Text button's 5px padding to the scale; keeping a pressed Icon button's fill on hover; the phone top bar's Menu
   sets `title: false` and then its title by hand; a copy counter that also sees button looks whose class names hold no
   `button`; the boot budget has 2 bytes left.
+- Left for the slice that takes up touch sizes: History's Refresh and ⋯ get the 44px touch size on phones
+  (`src/components/commit-history.css:43` holds them at `--size-icon`, 24px at every width, as on dev).
+- Not shot after the trims: the Pages tab's + and ⋯, and Download original at 1280 light.
 - Not shot: a deleted file's Restore (normal weight, 6px side padding, as the compact Text button); its difference is
   listed above and pinned in `tests/icon-button-text-button-parts.test.ts`.
