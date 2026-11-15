@@ -8,17 +8,20 @@ const dir = new URL("../scripts/agents/shots/features/", import.meta.url);
 const files = readdirSync(dir).filter(file => file.endsWith(".json")).sort();
 const evidence = new Set(["expect", "wait", "record"]);
 
-/** Each feature's Steps value in docs/agents/features.md, by id. */
-function stepsByFeature() {
-  const steps = new Map<string, string>();
+/** One field ("Steps", "Phone") of each feature in docs/agents/features.md, by id. */
+function fieldByFeature(field = "Steps") {
+  const values = new Map<string, string>();
   let id: string | undefined;
   for (const line of readFileSync(new URL("../docs/agents/features.md", import.meta.url), "utf8").split("\n")) {
     const heading = /^### (F-[a-z]+-\d{2}) /.exec(line);
     if (heading) id = heading[1];
-    else if (id && line.startsWith("- Steps: ")) steps.set(id, line.slice("- Steps: ".length));
+    else if (id && line.startsWith(`- ${field}: `)) values.set(id, line.slice(`- ${field}: `.length));
   }
-  return steps;
+  return values;
 }
+const stepsByFeature = () => fieldByFeature();
+// Controls the phone layout hides (src/style.css, max-width 650px); a phone user reaches them through Menu.
+const wideOnly = new Set(["repository actions", "Redo", "History", "Inbox", "Section", "Div", "Heading", "Paragraph", "Desktop, fills the canvas", "Tablet, 768 px", "Mobile, 390 px"]);
 
 test("there are feature tries to check", () => {
   assert.ok(files.length > 0);
@@ -49,6 +52,14 @@ for (const file of files) {
     const last = steps.at(-1)!;
     assert.ok(evidence.has(last.kind), `${file} ends on an expect, wait or record step, not ${last.kind}`);
     assert.ok(!last.only, `${file}: the closing step runs at every width, not only on ${last.only}`);
+    // kit ux tries 390 px only for Phone: yes, so a phone step elsewhere never runs; a phone try reaches wide-only controls through Menu.
+    const phone = fieldByFeature("Phone").get(id) === "yes";
+    assert.ok(phone || !steps.some(step => step.only === "phone"), `${file}: Phone: no, so its on phone steps never run`);
+    if (phone) steps.forEach((step, index) => {
+      if (step.kind !== "click" || !wideOnly.has(step.name) || step.only === "wide") return;
+      const menu = steps.slice(0, index).some(earlier => earlier.only === "phone" && earlier.kind === "click" && earlier.name === "Menu");
+      assert.ok(menu, `${file}: step ${index + 1} clicks "${step.name}", hidden on a phone; open Menu first (on phone click exactly "Menu") or mark it on wide`);
+    });
     // A closing check that repeats one made before the last action proves nothing about that action,
     // unless a record after the earlier check, or another check after the action, shows what happened.
     if (last.kind === "expect" || last.kind === "wait") {

@@ -33,8 +33,8 @@ drag "<name>" to "<target>" [edge top|bottom|left|right] (pointer to 3 px inside
 record <name> <ms> (8 frames over 100-9999 ms, saved as <shot>-<name>-strip.webp);
 expect visible "<text>" (a visible element whose whole text, or a button whose name, is exactly
 <text>; otherwise fails the try: expect visible "<text>" failed: nothing visible says "<text>").
-on phone <step> runs it only in the editor's phone layout (650 px wide or less), on wide <step> only
-wider: a phone user opens Menu first ("on phone click \"Menu\"").
+on phone <step> runs it only in the editor's phone layout (650 px wide or less); on wide <step>
+runs it only above 650 px. A phone user opens Menu first: on phone click exactly "Menu".
 nth is 1-based. 'search' means the searchbox. Button names can match a substring.
 Before/after: use name "before" and "after" with the same screen, width, theme
 and --out across runs; contact sheet includes both. Each screen retries at most once.

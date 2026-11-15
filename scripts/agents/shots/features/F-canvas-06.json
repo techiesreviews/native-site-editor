@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-canvas-06","steps":["on phone click exactly \"Menu\"","on phone click \"Add a block\"","click exactly \"Section\"","expect visible \"No heading or label\"","click \"Move up\"","press Alt+ArrowUp","record up 600","press Alt+ArrowDown","record down 600"]}
+{"screen":"editor","name":"F-canvas-06","steps":["click exactly \"Section\"","expect visible \"No heading or label\"","click \"Move up\"","press Alt+ArrowUp","record up 600","press Alt+ArrowDown","record down 600"]}
