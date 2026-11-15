@@ -31,12 +31,16 @@ beyond that stays as a named variant. Nothing else visible changes.
   made with `button(…, "text-button …")` (source editor, agent pins, page structure, structure card, media screens,
   the repository list's Cancel). The menus' rows that borrow the `text-button` class keep their own look until the
   Menu item part (slice 6).
-- Copies: 132 before, 123 after (buttons made by hand 58 to 55, button looks 32 to 26).
+- Copies: 132 before, 122 after (buttons made by hand 58 to 54, button looks 32 to 26).
 - Commits: "Editor parts: Icon button and Text button parts, screens swapped to them (TOOLS-248)", "Editor parts: the editor and the design board load the two parts' styles as the Button's are loaded", "Editor parts: the top bar sizes only its own icon buttons, never those in the project menu", "Editor parts: ticket for slice 3, the Icon button and Text button parts (TOOLS-248)", "Review round 1: the compact Text button fills on press and waits for a mouse to fill on hover; the top bar's sizing has a test", "Editor parts: slice 3 ticket closed with its differences list; the Text button's comment says compact fills on press too", "Second look: the Icon button and the Text button take their looks from their own --icon-btn-* and --text-btn-* defaults; the compact size changes only those", "Editor parts: slice 3 ticket records the second look's decisions", "Editor parts: slice 3 paused; its ticket keeps the second look's Download original finding open", "Second look: Media's Download original and suggested name use a new underlined Text button and give it no look of their own", "Editor parts: slice 3 ticket records the underlined Text button and its Media evidence", "Editor parts: slice 3 ticket records review round 3's decisions", "Editor parts: slice 3 ticket closed", "docs: 03-icon-button-and-text-button commits by subject", "Editor parts: the editor loads the button parts' files through src/ui/parts.css, so src/main.ts stays within its line ceiling", "Editor parts: slice 3 ticket records the loading change, the rebase on the Inbox and their evidence", "docs: 03-icon-button-and-text-button commits by subject", "PR review: Page structure's icon actions are Icon buttons; a disabled Text button stays still on hover and press", "Editor parts: slice 3 ticket records the PR review's fixes and decisions", "docs: 03-icon-button-and-text-button commits by subject" and this commit.
 - Page structure (2026-11-15, PR review): a row's icon actions (Edit, Reset to default, Attributes, Edit component,
   Disconnect this instance, More actions) are Icon buttons sized 22px by `.page-structure__action`; the Show toggle
   and Open › keep their own look (a toggle with its own on and off colours, and words) until a part takes them.
   A disabled Text button no longer underlines or fills on hover or press, as a disabled Icon button.
+- Files tree and History (2026-11-15, second look): the Files tree's ⋯ (`file-more`) and a folder's + (`file-add`)
+  are Icon buttons, Restore (`file-restore`) a compact Text button, and History's Refresh and a commit's ⋯ Icon
+  buttons; their screen CSS keeps only size and placement, and History's ⋯ keeps its fill while its menu is open
+  through the part's `--icon-btn-*` hooks. The copy counter missed these (their class names hold no `button`).
 - Underlined variant (2026-11-15): `textButton(words, action, { underlined: true })` adds `text-button--underlined`,
   which sets only `--text-btn-decoration` (none at rest by default). Media's Download original
   (`media-detail__original`) and the suggested free name (`media-detail__suggest`) use it; their screen rules keep only
@@ -66,6 +70,9 @@ beyond that stays as a named variant. Nothing else visible changes.
   light and dark, against dev: at rest pixel-identical; with Disconnect this instance hovered only that 22px button's
   corner differs (4px to 6px), with the same size, fill and colour. `kit specs` for the structure compact, card paths
   and published slot specs 46/46; `kit unit --affected` 3154/3154; copies 123.
+  Files tree and History swap: `kit specs` files tab, history, history action and structure compact 72/72;
+  `kit unit --affected` 3156/3156; `kit shots files --compare dev` at 390 and 1280, light and dark: 390 identical,
+  1280 differs only by one shade in a corner speck of the top bar (the same anti-aliasing as file-details); copies 122.
 - Review decisions (PR review, 2026-11-15): fixed the Page structure icon actions (P2), the Commits list (P3) and
   the disabled Text button's hover and press (P3), and the share row's stale comment. Media test reworked to accept
   any key order. Declined again the DOM test of `iconButton()` (reason above). Left for later slices, as the review
@@ -73,6 +80,11 @@ beyond that stays as a named variant. Nothing else visible changes.
   round 44px Back, Close and Dismiss buttons (a round Icon button variant); snapping the Text button's 5px padding to
   the scale; keeping a pressed Icon button's fill on hover; `src/ui/parts.css` beside the `src/ui/parts/` folder
   until slice 1 moves the parts into folders.
+- Review decisions (second look, opencode/deepseek-v4.1-flash-free, 2026-11-15): fixed the hidden slot eye's hover
+  colour (P3: the Page structure guard is `:where(:not(.icon-button))`, adding no weight, so the muted rule wins again)
+  and the three hand-made copies in the Files tree and History (P2). Declined again its DOM test of the two parts
+  (reason above) and its counter change for class names without `button` (a copy-counter change for its own slice;
+  the swapped files are pinned in `tests/icon-button-text-button-parts.test.ts`).
 - Differences, the most used look winning (Lex's rule of 2026-11-14), none of them in a screenshot but the first:
   - Project menu, Reload repositories: its icon sat 2px right of centre (the browser's own button padding); now centred.
   - Branches flyout's Refresh from GitHub and Reload repositories: keyboard focus shows the focus ring only, without
@@ -82,6 +94,9 @@ beyond that stays as a named variant. Nothing else visible changes.
   - Page structure's row actions: their corner goes from 4px to the Icon button's 6px; the hover fill waits for a
     mouse and a touch press fills; keyboard focus shows the focus ring with the icon muted, as every other icon button.
   - Disabled Text buttons (an agent pin's Undone, Undo while undoing): no underline on hover, as disabled Icon buttons.
+  - Files tree's ⋯ and +, History's Refresh and ⋯: the hover fill waits for a mouse and a touch press fills.
+  - Files tree's Restore (a deleted file's row): normal weight instead of bold, 6px side padding instead of 8px, the
+    hover fill waits for a mouse, as the compact Text button (Choose image…).
   - Rows in the project menu and the agent menu that borrow the `text-button` class no longer underline on hover, as
     the editor's other menu rows (the share rows already removed it).
 - Review decisions: fixed (2026-11-15) the second look's P2 on `media-detail.css:121` (the Download original
