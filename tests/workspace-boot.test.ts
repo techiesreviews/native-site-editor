@@ -65,6 +65,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
   const heads: string[] = [], headChecks: boolean[] = [];
   let headAnswers: Promise<string | null | undefined>[] = [Promise.resolve(undefined)];
   let drafts: SavedDraft[] = [];
+  let settled: () => Promise<void> = async () => {};
   const read = (path: string, params?: Record<string, string>, early?: Promise<Response>) => {
     const answer = deferred<unknown>();
     void answer.promise.catch(() => {});
@@ -76,7 +77,8 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
   const ports = {
     appStore: createAppStore(createDraftStore()),
     savePublish: { trustedHead: () => heads.at(-1), seeHead: (commit: string) => { heads.push(commit); }, resetDeleted: () => {}, checkDeleted: async () => {}, isDeleted: () => false,
-      checkHead: (force?: boolean) => { headChecks.push(Boolean(force)); return headAnswers.length > 1 ? headAnswers.shift()! : headAnswers[0]; } },
+      checkHead: (force?: boolean) => { headChecks.push(Boolean(force)); return headAnswers.length > 1 ? headAnswers.shift()! : headAnswers[0]; },
+      headSettled: () => settled() },
     repositoryIndex: new RepositoryIndex(),
     cleanSources: {
       load: (_repo: string, revision: string, readText: () => Promise<string>) => {
@@ -146,6 +148,8 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
     setTag: (value: string | null | undefined) => { tag = value; },
     /** What GitHub's head check behind a kept copy answers (src/controllers/save-publish-controller.ts checkHead). */
     answerHead: (...answers: Promise<string | null | undefined>[]) => { headAnswers = answers; },
+    /** What the newer head check that took one over does before it settles. */
+    whenSettled: (run: () => Promise<void>) => { settled = run; },
     /** The browser's drafts of the workspace. */
     setDrafts: (value: SavedDraft[]) => { drafts = value; },
     /** The host's loadRepositories: a new listing starts the next load with no repository. */
@@ -825,7 +829,17 @@ test("two tabs keeping their own sites: the last one left owns the copy", async 
   }
 });
 
-test("a head check taken over by a newer one asks again at once while the tab is shown", () => withDocument(async () => {
+test("a head check taken over by a newer one: once that one settles on the head shown, up to date, with no check of its own", () => withDocument(async () => {
+  const f = fixture({ remember: false, native: true });
+  f.answerHead(Promise.resolve(null));
+  f.whenSettled(async () => { f.ports.savePublish.seeHead(sha(9)); });
+  await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
+  await flush();
+  assert.equal(f.headChecks.length, 1, "nothing that would cancel the newer check");
+  assert.match(f.shown.status, /^Up to date with main · 0000000/);
+}));
+
+test("a head check taken over by a newer one that settled without the head shown asks again once it is done", () => withDocument(async () => {
   const f = fixture({ remember: false, native: true });
   f.answerHead(Promise.resolve(null), Promise.resolve(undefined));
   await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());

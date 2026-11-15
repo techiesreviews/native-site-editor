@@ -397,7 +397,7 @@ test("a kept copy's listing that never came from the session is read; one that f
   listing.resolve(undefined);
   await settle();
   assert.equal(f.calls.fetchList, 1);
-  assert.equal(f.calls.failed, 1);
+  assert.equal(f.calls.failed, 0, "the boot stays loading: opening the menu lists the repositories without reopening the site");
   assert.equal(f.menu.message, "Repositories could not be loaded. Use Reload to try again.");
   assert.equal((f.errors[0] as Error).message, "GitHub is down");
   assert.equal(f.chosen.length, 1, "the kept site is not opened again or closed");

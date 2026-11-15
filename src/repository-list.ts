@@ -186,8 +186,8 @@ export function createRepositoryList(ports: RepositoryListPorts) {
     if (!setupEntry.active()) clearWizard(localStorage);
   }
   // The kept copy opens at once, its repository alone in the selector. The listing comes behind it: one that still
-  // has the repository as it was is installed; one without it (or with it renamed or moved) opens the plain way,
-  // which says what changed; one that fails says so, the site staying open.
+  // has the repository as it was is installed; one without it opens the plain way, which says so, and one with it
+  // renamed, moved or otherwise changed opens it again the plain way; one that fails says so, the site staying open.
   async function openWarm(listing: number, { copy, listing: listed }: WarmOpen) {
     ports.repositories = [copy.repo];
     repositoryOptions();
@@ -207,7 +207,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
       ports.repositorySelect.disabled = false;
     }).catch((error: unknown) => {
       if (!current()) return;
-      ports.boot.failed();
+      // The boot stays loading, not failed: opening the menu then lists the repositories, and nothing reopens the site.
       ports.repositoryMenu?.setRepositories([], "Repositories could not be loaded. Use Reload to try again.");
       errorMessage(error);
     });

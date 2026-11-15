@@ -130,10 +130,22 @@ export function createSavePublishController(ports: SavePublishPorts) {
   // Resolves to the head GitHub named once the check is done (the fold or load after it included); null when a
   // newer check or another snapshot took over, whose outcome stands; undefined when it got no answer (not checked
   // while hidden, or the read failed).
-  async function checkHead(force = false, pushed?: string): Promise<string | null | undefined> {
+  // The check under way, if any, until it settles (its fold or load included).
+  let checking: Promise<unknown> | undefined;
+  function checkHead(force = false, pushed?: string): Promise<string | null | undefined> {
+    const run = headCheckRun(force, pushed);
+    if (run) {
+      const done = checking = run.finally(() => { if (checking === done) checking = undefined; });
+    }
+    return run ?? Promise.resolve(undefined);
+  }
+  function headCheckRun(force: boolean, pushed?: string) {
     const was = proof(), seen = was.snapshot, scope = ports.scope();
     if (!scope || !seen || !ports.visible() || (!force && Date.now() - headCheckedAt < 15_000)) return undefined;
     headCheckedAt = Date.now();
+    return headCheckAnswer(was, seen, scope, pushed);
+  }
+  async function headCheckAnswer(was: SaveProof, seen: Snapshot, scope: DraftScope, pushed?: string): Promise<string | null | undefined> {
     const token = ++headCheck, trusted = trustedHead();
     const known = trusted && trusted !== seen.commit ? trusted : pushed ?? trusted;
     try {
@@ -375,7 +387,9 @@ export function createSavePublishController(ports: SavePublishPorts) {
   }
 
   return {
-    proof, seeHead, trustedHead, headFor, checkHead, pushed, beginSave, checkDeleted, settleDeleted,
+    proof, seeHead, trustedHead, headFor, checkHead, pushed, beginSave,
+    /** Resolves once no head check is under way (a fold or load after it included). */
+    headSettled: async () => { while (checking) await checking.catch(() => undefined); }, checkDeleted, settleDeleted,
     discard, discardFile, discardAll, published, dispose,
     isDeleted: (path: string) => deletedUpstream.has(path),
     /** A new snapshot loads: nothing is known deleted until it is checked. */
