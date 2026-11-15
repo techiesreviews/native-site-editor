@@ -144,7 +144,36 @@ test("Page structure's icon actions are Icon buttons; its own CSS sizes them and
   assert.doesNotMatch(base, /(^|[;\s])(border|border-radius|background|color)\s*:/, "the shared rule only places and sizes");
   for (const rule of css.matchAll(/^([^{}\n]*\.page-structure__action\b[^{}\n]*)\{([^}]*)\}/gm))
     if (/(^|[;\s])(background|color|border-radius)\s*:/.test(rule[2]))
-      assert.match(rule[1], /:not\(\.icon-button\)|--open|slot-toggle/, `${rule[1].trim()} gives the Icon button no look`);
+      assert.match(rule[1], /:where\(:not\(\.icon-button\)\)|--open|slot-toggle/, `${rule[1].trim()} gives the Icon button no look`);
+});
+
+test("the Files tree and History build their icon and text buttons from the parts and give them no look", () => {
+  const files = read("src/controllers/files-tree-controller.ts");
+  assert.match(files, /node\("button", iconButtonClass\("file-add"\)\)/);
+  assert.match(files, /textButtonClass\(\{ size: "compact", className: "file-restore" \}\)/);
+  assert.match(read("src/components/file-row-actions.ts"), /const more = iconButton\(`Actions for \$\{target\.path\}`/);
+  const history = read("src/components/commit-history.ts");
+  assert.match(history, /const reload = iconButton\("Refresh history"/);
+  assert.match(history, /const actions = iconButton\(`Actions for /);
+  for (const [path, classes] of [
+    ["src/components/file-row-actions.css", ["file-more", "file-restore"]],
+    ["src/components/create-dialog.css", ["file-add"]],
+    ["src/components/commit-history.css", ["commit-history__refresh", "commit-history__more"]],
+  ] as const) {
+    const css = read(path);
+    for (const cls of classes) {
+      const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(new RegExp(`[^{}]*\\.${cls}\\b[^{}]*\\{([^}]*)\\}`, "g"))].map((match) => match[1]).join(";");
+      assert.ok(rules.length > 0, `${cls} is still placed and sized`);
+      assert.doesNotMatch(rules, /(^|[;\s])(border|border-radius|background|color|font-size|font-weight)\s*:/, `${path}: ${cls} gives the part no look`);
+    }
+  }
+  assert.match(read("src/components/commit-history.css"), /\.commit-history__more\[aria-expanded="true"\] \{\s*--icon-btn-background: var\(--hover\);\s*--icon-btn-text-color: var\(--text\);\s*\}/, "an open menu keeps its fill through the part's hooks");
+});
+
+test("a hidden slot's eye stays muted on hover: the Page structure guard adds no weight", () => {
+  const css = read("src/components/page-structure.css");
+  assert.doesNotMatch(css, /\.page-structure__action:not\(\.icon-button\)/);
+  assert.equal([...css.matchAll(/\.page-structure__action:where\(:not\(\.icon-button\)\)/g)].length, 3);
 });
 
 test("the icon button's code makes its button element: it is the part's home in the copy count", () => {

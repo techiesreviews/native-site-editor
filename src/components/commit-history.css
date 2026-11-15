@@ -38,25 +38,17 @@
   justify-content: space-between;
   padding-right: 4px;
 }
+/* Refresh and a commit's ⋯ are Icon buttons (src/ui/icon-button/), sized here; ⋯ keeps the hover fill while its
+   menu is open, through the part's hooks. */
 .commit-history__refresh,
 .commit-history__more {
-  display: inline-grid;
-  place-items: center;
   flex: none;
   width: var(--size-icon);
   height: var(--size-icon);
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
 }
-.commit-history__refresh:hover:not(:disabled),
-.commit-history__more:hover,
 .commit-history__more[aria-expanded="true"] {
-  background: var(--hover);
-  color: var(--text);
+  --icon-btn-background: var(--hover);
+  --icon-btn-text-color: var(--text);
 }
 .commit-history__refresh:focus-visible,
 .commit-history__more:focus-visible {

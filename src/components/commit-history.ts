@@ -1,6 +1,7 @@
 import type { CommitFile, CommitFiles, HistoryCommit, HistoryPage, RestoreResult } from "../../shared/types";
 import { button, node } from "../ui/dom";
 import { setIcon } from "../icons";
+import { iconButton } from "../ui/icon-button/icon-button";
 import { avatar, initial } from "./repository-menu";
 import { createRowMenu } from "./row-menu";
 import "./commit-history.css";
@@ -66,10 +67,8 @@ export function createCommitHistory(options: {
 }) {
   const root = node("section", "commit-history");
   const header = node("div", "commit-history__header");
-  const reload = button("", () => void load(1), "commit-history__refresh");
+  const reload = iconButton("Refresh history", null, { action: () => void load(1), className: "commit-history__refresh" });
   setIcon(reload, "arrows-clockwise");
-  reload.setAttribute("aria-label", "Refresh history");
-  reload.title = "Refresh history";
   header.append(node("h2", "changes-window__title", "History"), reload);
   const site = options.scope === "site";
   const scopes = node("div", "commit-history__scopes");
@@ -235,9 +234,8 @@ export function createCommitHistory(options: {
     line.append(time);
     if (known) line.append(node("span", "commit-history__ago", ago(date)));
     if (current) line.append(node("span", "commit-history__badge", site ? "Latest" : "Current"));
-    const actions = button("", () => openMenu(commit, actions), "commit-history__more");
+    const actions = iconButton(`Actions for ${commit.message || commit.sha.slice(0, 7)}`, null, { title: false, action: () => openMenu(commit, actions), className: "commit-history__more" });
     setIcon(actions, "dots-three");
-    actions.setAttribute("aria-label", `Actions for ${commit.message || commit.sha.slice(0, 7)}`);
     actions.setAttribute("aria-haspopup", "menu");
     actions.setAttribute("aria-expanded", "false");
     const author = node("span", "commit-history__author");

@@ -1,6 +1,7 @@
 import { refuse } from "./refusal-note";
 import { node } from "../ui/dom";
 import { setIcon } from "../icons";
+import { iconButton } from "../ui/icon-button/icon-button";
 import { renameSelection } from "../native-files";
 import { dragHasFiles } from "../uploads";
 import { createRowMenu, type MenuItem } from "./row-menu";
@@ -79,14 +80,11 @@ export function createFileRowActions(options: {
   /** Makes the tree's row `row` (in its line `line`) act on `target`. */
   function attach(row: HTMLButtonElement, line: HTMLElement, target: FileRowTarget) {
     (row as HTMLButtonElement & { fileTarget?: FileRowTarget }).fileTarget = target;
-    const more = node("button", "file-more");
+    const more = iconButton(`Actions for ${target.path}`, null, { title: target.gone ? "Restore" : "Rename, duplicate, delete…", className: "file-more" });
     setIcon(more, "dots-three");
-    more.type = "button";
     more.tabIndex = -1;
-    more.setAttribute("aria-label", `Actions for ${target.path}`);
     more.setAttribute("aria-haspopup", "menu");
     more.setAttribute("aria-expanded", "false");
-    more.title = target.gone ? "Restore" : "Rename, duplicate, delete…";
     more.addEventListener("click", (event) => {
       event.stopPropagation();
       if (menu.isOpen() && menu.opener === more) { menu.close(false); row.focus(); return; }
