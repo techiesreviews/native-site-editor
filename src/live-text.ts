@@ -226,7 +226,9 @@ const isKept = (value: unknown): value is KeptCopy => {
     && (copy.at === undefined || Number.isFinite(copy.at)) && (copy.by === undefined || typeof copy.by === "string");
 };
 /** This tab's id: the same after a reload (sessionStorage is the tab's own), so the copy its page kept as it went is its own.
- * Any other load takes a new one, as a duplicated tab copies the sessionStorage of the tab it came from. */
+ * Any other load takes a new one, as a duplicated tab copies the sessionStorage of the tab it came from (Chrome may call that
+ * load back/forward, so only a reload keeps it): a page that comes back another way joins its room afresh. Called once per
+ * page (the page's keeper, `pageKeeper`): a second call on a load that is no reload would store another id. */
 export function liveTabId(reloaded = (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.type === "reload",
   storage = (): Pick<Storage, "getItem" | "setItem"> => sessionStorage) {
   try {
