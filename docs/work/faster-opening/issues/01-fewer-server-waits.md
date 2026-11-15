@@ -45,7 +45,7 @@ Expected (confirm while designing): `index.html`, `src/controllers/boot-controll
 
 ## Kit commands and evidence
 
-Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../agents/runner.md)). `kit go slice-fo01 -- scripts/agents/kit slice --ticket <this ticket> --builder claude-opus-5-5`. Measure with `kit bg` for the test server (`ASE_NATIVE_SAVE_DIST=1 ASE_NATIVE_SAVE_PORT=<port> npx tsx tests/native-save/server.ts`) and `ASE_COLD_BASE=… ASE_COLD_NET=… npx tsx tests/perf/cold-start.ts 3`.
+Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../agents/runner.md)). Built by a T3 helper thread with `scripts/agents/kit brief <this ticket>` as its task (`kit slice` was cut on 2026-11-15). Measure with `kit bg` for the test server (`ASE_NATIVE_SAVE_DIST=1 ASE_NATIVE_SAVE_PORT=<port> npx tsx tests/native-save/server.ts`) and `ASE_COLD_BASE=… ASE_COLD_NET=… npx tsx tests/perf/cold-start.ts 3`.
 
 ## Done (2026-11-10)
 

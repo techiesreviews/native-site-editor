@@ -151,7 +151,7 @@ test("the pointer keeps every heading the old kitchen.md had, each linking to th
 function staleTrimLine(line: string): boolean {
   const named = [...line.matchAll(/`(?:scripts\/agents\/)?kit (?:learn|feedback|status|ask|card|slice|fix|next|heartbeat)\b[^`]*`|--after-release/g)];
   return named.some(({ 0: name, index }) => !line.slice(0, index).endsWith("was ")
-      && !/^[^.;]*?\b(?:cut|retired|merged|moved|until 2026-11-14)\b/.test(line.slice(index + name.length)))
+      && !/^[^.;]*?\b(?:cut|retired|merged into|moved|until 2026-11-14)\b/.test(line.slice(index + name.length)))
     || (/Tuesday[- ]only|Tuesday pack|Tuesday review day|UX confidence ladder/i.test(line) && !/^#+ |\bdropped\b/i.test(line));
 }
 
@@ -167,6 +167,8 @@ test("the kit trim guard flags a working mention of a cut name and passes one th
   assert.equal(staleTrimLine("Then `kit heartbeat <map>`, every 30 minutes."), true);
   assert.equal(staleTrimLine("Hand the map out with `scripts/agents/kit next <map>`."), true);
   assert.equal(staleTrimLine("Up to three `kit fix` rounds; then `kit pr`."), true);
+  assert.equal(staleTrimLine("`kit next` starts the next slice once the last one merged."), true);
+  assert.equal(staleTrimLine("`kit card` was merged into the session-start hook."), false);
   assert.equal(staleTrimLine("`kit slice`, `kit fix`, `kit next` and `kit heartbeat` were cut on 2026-11-15."), false);
   assert.equal(staleTrimLine("A new helper gets `kit brief <ticket> --stage fix`; `kit fix`, cut on 2026-11-15, appended them."), false);
 });
@@ -176,7 +178,7 @@ test("live docs follow the kit trim: no cut or moved command as a working one, n
     .map(name => `docs/agents/${name}`).concat("AGENTS.md", "docs/work/learning/README.md", "docs/wayfinder/README.md");
   const stale = docs.flatMap(path => read(path).split("\n").flatMap((line, index) => staleTrimLine(line) ? [`${path}:${index + 1}`] : []));
   assert.deepEqual(stale, []);
-  assert.doesNotMatch(read("scripts/agents/project.d/specs"), /kit slice sets/);
+  assert.match(read("scripts/agents/project.d/specs").split("\n").find(line => line.startsWith("KIT_BUILDER_TICKET")) ?? "", /kit slice[^:]*cut on 2026-11-15/);
   assert.match(read("docs/agents/routines/learning.md"), /`scripts\/agents\/kit sweep --learn --since <its date>`/);
 });
 
