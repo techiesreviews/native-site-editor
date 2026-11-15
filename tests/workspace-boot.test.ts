@@ -847,3 +847,11 @@ test("a head check taken over by a newer one that settled without the head shown
   assert.equal(f.headChecks.length, 2);
   assert.equal(f.shown.status, "Could not check GitHub for newer changes on main. Refresh to check.");
 }));
+
+test("the paint and its fallback timer both reporting start one head check behind a kept copy", async () => {
+  const f = fixture({ remember: false, native: true });
+  f.ports.afterNativePaint = (_request: number, run: () => void) => { run(); run(); };
+  await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
+  await flush();
+  assert.equal(f.headChecks.length, 1);
+});

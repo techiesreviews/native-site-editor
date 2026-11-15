@@ -189,10 +189,11 @@ export function createRepositoryList(ports: RepositoryListPorts) {
   // has the repository as it was is installed; one without it opens the plain way, which says so, and one with it
   // renamed, moved or otherwise changed opens it again the plain way; one that fails says so, the site staying open.
   async function openWarm(listing: number, { copy, listing: listed }: WarmOpen) {
-    ports.repositories = [copy.repo];
+    const kept = ports.repositories = [copy.repo];
     repositoryOptions();
     ports.repositorySelect.value = String(copy.repo.id);
-    const current = () => listing === listings;
+    // Superseded by a newer listing, or by any list installed meanwhile (Refresh, the menu's own read).
+    const current = () => listing === listings && ports.repositories === kept;
     void listed.then((list) => list ?? ports.boot.fetchList(ports.boot.refreshPending())).then((list) => {
       if (!current()) return;
       const repo = list.find((item) => item.id === copy.repo.id);

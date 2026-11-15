@@ -235,7 +235,9 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         ports.afterNativePaint(ports.nativeSourcesRequest, () => void savePublish.checkDeleted(at));
         const painted = ports.nativeSourcesRequest;
         // A newer head folds in as an outside change does (src/outside-merge.ts), or loads the branch again.
-        if (warm) ports.afterNativePaint(painted, () => { if (at.holds()) checkKept(at, branch); });
+        // Once: the paint and its fallback timer both run this.
+        let checked = false;
+        if (warm) ports.afterNativePaint(painted, () => { if (!checked && at.holds()) { checked = true; checkKept(at, branch); } });
         let remembered = false;
         ports.afterNativePaint(painted, () => {
           const login = ports.user?.login;
