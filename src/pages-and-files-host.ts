@@ -39,6 +39,7 @@ import type { createNativeSiteRuntime } from "./native-site-runtime";
 import type { Cards } from "./page-builder/cards";
 import type { RepositoryIndex } from "./repository-loading";
 import { button, node } from "./ui/dom";
+import { iconButton } from "./ui/icon-button/icon-button";
 import { sweepUploads, uploadBytes } from "./uploads";
 import type { createWorkspaceBoot } from "./workspace-boot";
 import { holdsDraftScope, type SessionStamp, type WorkspaceSession } from "./workspace-session";
@@ -239,7 +240,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
       // Pages and Media leave a drop on their head row alone.
       fileActions.attachRoot(host.querySelector<HTMLElement>(".explorer-head")!, undefined, () => host.dataset.tab === "files");
       filesTree = createFilesTreeController({
-        ui: { node, button, setIcon },
+        ui: { node, button, setIcon, iconButton },
         snapshot: () => ports.appStore.snapshot.value, repo: () => ports.appStore.repository.value,
         openFile: () => ports.appStore.openFile.value, epoch: ports.currentLoad, root: () => ports.files,
         state: treeState, scope: ports.draftScope, draft: (scope, path) => draftStore().get(scope, path),

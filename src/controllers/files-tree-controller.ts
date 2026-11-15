@@ -5,13 +5,13 @@ import type { FileOperationsTreeState as TreeState } from "./file-operations-con
 import type { createFileRowActions, FileRowTarget } from "../components/file-row-actions";
 import type * as dom from "../ui/dom";
 import { reported } from "../ui/report-failure";
-import { iconButtonClass } from "../ui/icon-button/icon-button-options";
+import type { iconButton } from "../ui/icon-button/icon-button";
 import { textButtonClass } from "../ui/text-button/text-button-options";
 import type { setIcon } from "../icons";
 
 /** Getters read current host state; only folder UI and listing cache belong here. */
 export interface FilesTreePorts {
-  ui: Pick<typeof dom, "node" | "button"> & { setIcon: typeof setIcon };
+  ui: Pick<typeof dom, "node" | "button"> & { setIcon: typeof setIcon; iconButton: typeof iconButton };
   snapshot(): { entries: TreeEntry[]; tree?: TreeEntry[] } | undefined;
   repo(): { full_name: string } | undefined;
   openFile(): string | undefined;
@@ -40,7 +40,7 @@ export interface FilesTreePorts {
 type FileTypeIcons = typeof import("../components/file-type-icons");
 
 export function createFilesTreeController(ports: FilesTreePorts) {
-  const { node, button, setIcon } = ports.ui;
+  const { node, button, setIcon, iconButton } = ports.ui;
   // Folders open in the file tree, by path, so drawing it again (a file
   // created or discarded, a save) keeps them open; and the folder listings
   // read, by tree sha.
@@ -314,13 +314,9 @@ export function createFilesTreeController(ports: FilesTreePorts) {
         line.append(restore);
       }
       if (directory && !gone) {
-        const add = node("button", iconButtonClass("file-add"));
+        const add = iconButton(`New in ${path}`, null, { title: `New file or folder in ${path}`, className: "file-add", action: () => ports.create(path, add) });
         setIcon(add, "plus");
-        add.type = "button";
-        add.setAttribute("aria-label", `New in ${path}`);
-        add.title = `New file or folder in ${path}`;
         add.setAttribute("aria-haspopup", "dialog");
-        add.addEventListener("click", () => ports.create(path, add));
         line.append(add);
       }
       ports.actions()?.attach(row, line, { path, name: entry.path, folder: directory, gone: Boolean(gone) });

@@ -36,7 +36,6 @@
 .create-dialog__result.is-error { color: var(--warning-fg); }
 .create-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; }
 
-/* The "+" beside a folder, and at the top of the tree. */
 /* The "+" beside a folder is an Icon button (src/ui/icon-button/), sized here. */
 .file-add {
   flex-shrink: 0;
