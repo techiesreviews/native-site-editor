@@ -1,9 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createAgentController, type AgentMenuPort } from "../src/controllers/agent-controller.ts";
+import { createAgentController, type AgentMenuMount, type AgentMenuPort } from "../src/controllers/agent-controller.ts";
 import { createAppStore } from "../src/app-store.ts";
 import { createDraftStore } from "../src/draft-store.ts";
-import type { createAgentMenu } from "../src/components/agent-menu.ts";
 import type { AgentElement } from "../shared/agent.ts";
 
 function deferred<T>() {
@@ -29,13 +28,13 @@ function fixture() {
   const appStore = createAppStore(createDraftStore());
   const windowEvents = new Events();
   const loads: ReturnType<typeof deferred<{ createAgentMenu: typeof createMenu }>>[] = [];
-  const menuOptions: Parameters<typeof createAgentMenu>[0][] = [];
+  const menuOptions: AgentMenuMount[] = [];
   const menus: (AgentMenuPort<Root> & { calls: string[] })[] = [];
   const attached: Root[] = [];
   const initialHost = { append: (root: Root) => { attached.push(root); } };
   const state = { account: "lex" as string | undefined, host: initialHost as typeof initialHost | undefined };
   const errors: unknown[] = [];
-  function createMenu(options: Parameters<typeof createAgentMenu>[0]) {
+  function createMenu(options: AgentMenuMount) {
     menuOptions.push(options);
     const calls: string[] = [];
     const menu = {
@@ -54,7 +53,6 @@ function fixture() {
   }
   const controller = createAgentController<Root>({
     account: () => state.account, host: () => state.host, appStore,
-    createOptions: () => ({ context: async () => undefined, onCommand: async () => {} }),
     load() { const pending = deferred<{ createAgentMenu: typeof createMenu }>(); loads.push(pending); return pending.promise; },
     onError: error => { errors.push(error); },
     environment: { window: windowEvents },

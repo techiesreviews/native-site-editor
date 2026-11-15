@@ -9,6 +9,8 @@ import { sameBranch } from "../workspace-session";
 const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
 
 type MenuOptions = Parameters<typeof createAgentMenu>[0];
+/** What the controller makes each menu with: the account and the workspace it is for; the host adds the rest (src/agent-host.ts). */
+export type AgentMenuMount = Pick<MenuOptions, "account" | "repository">;
 /** Only the menu surface the host uses; its implementation stays lazy. */
 export interface AgentMenuPort<Root> {
   root: Root;
@@ -47,8 +49,7 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
   account(): string | undefined;
   host(): { append(root: Root): void } | undefined;
   appStore: AppStore;
-  createOptions(account: string): Omit<MenuOptions, "account" | "repository">;
-  load(): Promise<{ createAgentMenu: (options: MenuOptions) => AgentMenuPort<Root> }>;
+  load(): Promise<{ createAgentMenu: (options: AgentMenuMount) => AgentMenuPort<Root> }>;
   onError(error: unknown): void;
   environment?: AgentEnvironment;
   /** Whether the browser keeps requests for a workspace; tests inject it. */
@@ -78,7 +79,7 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
       menu?.destroy();
       menu?.root.remove();
       menu = createAgentMenu({
-        ...options.createOptions(account), account,
+        account,
         repository: () => {
           const repository = options.appStore.repository.value;
           return isCurrent(account, host, mount) && repository && options.appStore.snapshot.value

@@ -26,7 +26,7 @@ import type { ElementMenuTarget } from "./components/element-menu";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import type { BlockInsertPorts, createBlockInsertController } from "./controllers/block-insert-controller";
 import type { createAgentController } from "./controllers/agent-controller";
-import type { createAgentCommands } from "./agent-site-host";
+import type { createAgentHost } from "./agent-host";
 import type { createBootController } from "./controllers/boot-controller";
 import { createCodePanesController } from "./controllers/code-panes-controller";
 import type { createCommandPaletteController } from "./controllers/command-palette-controller";
@@ -175,7 +175,7 @@ export interface WorkspaceMountPorts {
   readonly boot: Pick<ReturnType<typeof createBootController>, "ensureList" | "reset">;
   readonly agentController: Pick<ReturnType<typeof createAgentController>, "ensure" | "dismiss" | "answer" | "destroy">;
   /** The user's Undo of an agent's changes from its pin card (ticket am-15). */
-  readonly agentCommands: Pick<ReturnType<typeof createAgentCommands>, "undo" | "undoable" | "undoLatest" | "latestUndoable">;
+  readonly agentCommands: Pick<ReturnType<typeof createAgentHost>["agentCommands"], "undo" | "undoable" | "undoLatest" | "latestUndoable">;
   readonly workspaceBoot: { dropGuess(): void };
   draftScope: () => DraftScope | undefined;
   shownScope: () => WorkspaceScope | undefined;

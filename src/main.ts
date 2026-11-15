@@ -40,8 +40,7 @@ import { createNativeSiteRuntime } from "./native-site-runtime";
 import { createLinkedStylesController } from "./controllers/linked-styles-controller";
 import { createSourcePaneController } from "./controllers/source-pane-controller";
 import type { ComponentTools } from "./page-builder/components";
-import { createAgentCommands } from "./agent-site-host";
-import { createAgentMenuHost } from "./agent-menu-host";
+import { createAgentHost } from "./agent-host";
 import { createPagesAndFilesHost } from "./pages-and-files-host";
 import { createPageBuilderHost } from "./page-builder-host";
 import { createSiteLoading } from "./site-loading";
@@ -432,22 +431,17 @@ function updateAgentContext() {
   setupController.refresh();
 }
 
-// The agent's commands, run through the editor's own actions (src/agent-site-host.ts).
+// The agent menu's controller; the agent's commands and the menu's wiring load with the menu (src/agent-host.ts, src/agent-path.ts).
 // By value: consts declared above and hoisted functions; `let` state goes in as getters (tests/main-ts-ceiling.test.ts).
-const agentCommands = createAgentCommands({
+const { agentController, agentCommands } = createAgentHost({
   appStore, runtime, workspaceSession, guardedEdits, editorModule, editorWorkspace, versions, finishedWork, parkedSteps, repositoryIndex,
   mediaController, mediaPorts, blockMoves, agentPresence, pagesAndFiles, api, loadAgentSite, draftScope, shownScope, openNewDraft,
   nativeComponentLoaderPlan, writeNativePageMeta, nativeSectionChoices, componentPorts, refreshNativeRoutes, updateCurrentPageLabel, updateAgentContext,
+  cleanSources, setupController, pageStructureController, workspace, nativeTextIndexGate, readFile, readFiles, loadAgentMenu, nativeRouteInfo, pathNow, errorMessage,
   // Declared further down: read at call time.
   restoreFile: (...args) => restoreFile(...args), loadComponentTools: workspace.loadComponentTools,
   get info() { return info; }, get componentTools() { return componentTools; }, get pageStructure() { return pageStructure; },
   get nativePreview() { return nativePreview; },
-});
-// The agent menu, the context agents are shown and the files they read (src/agent-menu-host.ts).
-const { agentController } = createAgentMenuHost({
-  appStore, runtime, guardedEdits, cleanSources, agentCommands, setupController, pageStructureController, mediaPorts, workspace, nativeTextIndexGate,
-  agentPresence, api, readFile, readFiles, loadAgentSite, loadAgentMenu, draftScope, nativeRouteInfo, pathNow, errorMessage,
-  get info() { return info; }, get nativePreview() { return nativePreview; },
 });
 // Opening a repository, its snapshot and the remembered boot's guess (src/workspace-boot.ts).
 const workspaceBoot = createWorkspaceBoot({
