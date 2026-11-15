@@ -5,7 +5,7 @@
 // The host (src/main.ts) keeps the workspace session, the DOM and the native
 // site, and hands them in as live ports.
 
-import { batch } from "@preact/signals-core";
+import { batch, effect } from "@preact/signals-core";
 import type { Directory, FilesResult, Repository, Snapshot, TreeEntry } from "../shared/types";
 import type { NativeSite } from "../shared/native-project";
 import type { StartingPoint } from "../shared/starting-point";
@@ -303,8 +303,10 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   }
 
   /** Keeps the site on show and GitHub's texts of the files its preview painted, for the next visit (src/warm-copy.ts). */
+  let kept: Snapshot | undefined;
   function rememberShown(login: string, repo: Repository, branch: string, snapshot: Snapshot) {
     if (!snapshot.tree || snapshot.empty || snapshot.branch !== branch) return;
+    kept = snapshot;
     const files = ports.nativePaintedPaths.flatMap((path) => {
       const sha = repositoryIndex.entry(repo, snapshot, path)?.sha;
       const text = sha === undefined ? undefined : ports.cleanSources.peek(repo.full_name, sha) ?? ports.baseText(path);
@@ -312,12 +314,20 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     });
     void writeWarmCopy({ login, source: ports.source(), repo, branch, snapshot, files });
   }
-  // Leaving the tab keeps what it shows then: a save or an outside change folded in since its first paint.
-  if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => {
+  // The site as it shows now, once painted: a save or an outside change folded in since its first paint.
+  function keepShown() {
     const repo = appStore.repository.value, branch = appStore.branch.value, snapshot = appStore.snapshot.value, login = ports.user?.login;
-    if (document.visibilityState === "hidden" && login && repo && branch && snapshot && ports.nativeSite && ports.nativePaintedRequest === ports.nativeSourcesRequest)
+    if (login && repo && branch && snapshot && snapshot !== kept && ports.nativeSite && ports.nativePaintedRequest === ports.nativeSourcesRequest)
       rememberShown(login, repo, branch, snapshot);
+  }
+  // A new snapshot (a save, a fold) is kept a second after it, and leaving the tab keeps what it shows then.
+  let keeping: ReturnType<typeof setTimeout> | undefined;
+  effect(() => {
+    clearTimeout(keeping);
+    if (appStore.snapshot.value) keeping = setTimeout(keepShown, 1000);
+    (keeping as { unref?: () => void } | undefined)?.unref?.();
   });
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") keepShown(); });
   // The kept copy, read from the start of the boot; taken once.
   let warmRead: Promise<WarmCopy | undefined> | undefined;
   /** The kept copy when it is the site this boot opens for `login`: the address's, else the account's last workspace. */
