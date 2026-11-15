@@ -554,6 +554,10 @@ function starterArchive(): Uint8Array {
   return starterTarball;
 }
 
+// GitHub's answering time, for timing runs only (ASE_FAKE_GITHUB_MS, e.g. 300):
+// each fake GitHub call waits that long first, as the real one's network does.
+const GITHUB_MS = Math.max(0, Number(process.env.ASE_FAKE_GITHUB_MS ?? 0) || 0);
+
 // A fake `fetch` bound to one session's git models: the demo repository's,
 // and the fixture repositories' (cloned on first use).
 function githubFetch(
@@ -565,6 +569,7 @@ function githubFetch(
 ): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === "string" ? input : input.toString());
+    if (GITHUB_MS && url.hostname !== "api.cloudflare.com") await new Promise((done) => setTimeout(done, GITHUB_MS));
     const path = url.pathname;
     const method = (init?.method ?? "GET").toUpperCase();
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
