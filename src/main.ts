@@ -459,7 +459,7 @@ const workspaceBoot = createWorkspaceBoot({
   sessionTag: () => boot.sessionTag(),
   draftsReady: () => boot.draftsReady(),
   nextLoad, api, apiResponse, readFile, baseText: (path) => runtime.base.sources.get(path), storage, element, node, options, status, settleStatus, clearError, errorMessage,
-  draftScope, entryAt, setCurrentPage, openNewDraft, openEntry, mountSource, deactivateNative, activateNativeSite, afterNativePaint,
+  draftScope, draftsOf: (scope) => draftStore().list(scope), entryAt, setCurrentPage, openNewDraft, openEntry, mountSource, deactivateNative, activateNativeSite, afterNativePaint,
   updateAgentContext, updatePreview: updateNativePreview, showDirectory, takeStartingPoint, writeStartingPoint, readPartialStart, offerFinishStarter,
   removeFinishStarter: () => removeFinishStarter(),
 });

@@ -12,6 +12,7 @@ import { ReadUnansweredError } from "../src/read-retry.ts";
 import type { EarlyReads } from "../src/boot-reads.ts";
 import { readWarmCopy, writeWarmCopy, type WarmCopy } from "../src/warm-copy.ts";
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb.ts";
+import type { SavedDraft } from "../src/drafts.ts";
 
 // readWorkspaceUrl and rememberWorkspace (src/workspace-state.ts) use the page's location, history and localStorage.
 const saved = ["location", "history", "localStorage"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
@@ -61,6 +62,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
   let fileGeneration = 0, tag: string | null | undefined = "t1";
   const heads: string[] = [], headChecks: boolean[] = [];
   let headAnswer: Promise<string | undefined> = Promise.resolve(undefined);
+  let drafts: SavedDraft[] = [];
   const read = (path: string, params?: Record<string, string>, early?: Promise<Response>) => {
     const answer = deferred<unknown>();
     void answer.promise.catch(() => {});
@@ -115,6 +117,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
     clearError: () => {},
     errorMessage: (error) => { shown.status = `error: ${error instanceof Error ? error.message : error}`; },
     draftScope: () => undefined,
+    draftsOf: () => drafts,
     entryAt: () => undefined,
     setCurrentPage: () => {},
     openNewDraft: async () => {},
@@ -141,6 +144,8 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
     setTag: (value: string | null | undefined) => { tag = value; },
     /** What GitHub's head check behind a kept copy answers (src/controllers/save-publish-controller.ts checkHead). */
     answerHead: (answer: Promise<string | undefined>) => { headAnswer = answer; },
+    /** The browser's drafts of the workspace. */
+    setDrafts: (value: SavedDraft[]) => { drafts = value; },
     /** The host's loadRepositories: a new listing starts the next load with no repository. */
     newListing: () => { boot.abandonGuess(); session.next(undefined); ports.appStore.reset(); },
   };
@@ -736,4 +741,49 @@ test("leaving the tab keeps the site as it shows then (a save since its first pa
     if (savedFactory) Object.defineProperty(globalThis, "indexedDB", savedFactory);
     else Reflect.deleteProperty(globalThis, "indexedDB");
   }
+}));
+
+const draftOf = (path: string, baseSha: string | null, extra: Partial<SavedDraft> = {}): SavedDraft => ({
+  account: "lex", repoId: 501, repo: "lex/site", branch: "main", version: 1, path, baseSha, original: "", content: "x", updatedAt: 0, ...extra });
+
+test("a kept copy is shown only when every draft began from its version; otherwise GitHub's snapshot opens", async () => {
+  for (const [name, drafts, shown] of [
+    ["an edit begun on the kept blob", [draftOf("index.html", HELLO_SHA)], true],
+    ["a new file the copy does not have", [draftOf("new.html", null)], true],
+    ["an edit begun on another blob", [draftOf("index.html", sha(5))], false],
+    ["a deletion of a file the copy does not have yet", [draftOf("notes.html", sha(6), { deleted: true })], false],
+    ["a new file the copy already has", [draftOf("index.html", null)], false],
+  ] as const) {
+    const f = fixture({ remember: false, native: true });
+    f.setDrafts([...drafts]);
+    void f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
+    await flush();
+    assert.equal(f.ports.appStore.snapshot.value === KEPT_SNAPSHOT, shown, name);
+    assert.equal(f.pending("snapshot").length, shown ? 0 : 1, `${name}: GitHub's snapshot read`);
+  }
+});
+
+test("a damaged kept text's GitHub read that lands after the copy was left caches nothing", async () => {
+  const f = fixture({ remember: false, native: true });
+  await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept({ files: [{ path: "index.html", sha: HELLO_SHA, text: "damaged\n" }] }));
+  await flush();
+  const read = f.pending("file");
+  assert.equal(read.length, 1);
+  f.newListing();
+  read[0].answer.resolve({ content: HELLO });
+  await flush();
+  assert.equal(f.cached.has(HELLO_SHA), false);
+});
+
+test("a head check that fails while the reopened file is still opening keeps saying so after the open", () => withDocument(async () => {
+  const f = fixture({ remember: false, native: true });
+  let opened!: () => void;
+  f.ports.entryAt = (path: string) => KEPT_SNAPSHOT.tree!.find((entry) => entry.path === path);
+  f.ports.openEntry = () => new Promise<void>((done) => { opened = done; });
+  f.answerHead(Promise.resolve(undefined));
+  const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main", path: "index.html" }, kept());
+  await flush();
+  opened();
+  await choosing;
+  assert.equal(f.shown.status, "Could not check GitHub for newer changes on main. Refresh to check.");
 }));
