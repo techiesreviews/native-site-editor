@@ -220,14 +220,15 @@ const isKept = (value: unknown): value is KeptCopy => {
     && (copy.draft === undefined || typeof copy.draft === "string") && (copy.base === undefined || typeof copy.base === "string")
     && [copy.mine, copy.took].every(ids => ids === undefined || (Array.isArray(ids) && ids.every(id => Number.isSafeInteger(id))))
     && (copy.saves === undefined || (Array.isArray(copy.saves) && copy.saves.every(item => typeof item === "string")))
-    && (copy.at === undefined || typeof copy.at === "number");
+    && (copy.at === undefined || Number.isFinite(copy.at));
 };
 /** Memory first (this page's newest), then IndexedDB (a reload); writes go to both, best effort. The database opens at once,
  * so a write when the page hides starts its transaction then, as the drafts' does. IndexedDB gives only a copy kept before
- * this keeper started (by a page before a reload, or a tab since closed): one written later is another tab's, open beside
- * this one, and its draft as kept is not this tab's text, so resuming it would send this tab's older text as its typing. */
-export function browserKeeper(): CopyKeeper {
-  const memory = new Map<string, KeptCopy | undefined>(), started = Date.now();
+ * this page began (`started`: by the page before a reload, or a tab closed since): one written later is another tab's, open
+ * beside this one, and its draft as kept is not this tab's text, so resuming it would send this tab's older text as its
+ * typing. A tab opened after another kept its copy, while that one is still open, may still read it. */
+export function browserKeeper(started = performance.timeOrigin): CopyKeeper {
+  const memory = new Map<string, KeptCopy | undefined>();
   let opened: Promise<IDBDatabase | undefined> | undefined, ready: IDBDatabase | undefined;
   const open = () => opened ??= new Promise<IDBDatabase | undefined>(resolve => {
     if (typeof indexedDB === "undefined") { resolve(undefined); return; }
