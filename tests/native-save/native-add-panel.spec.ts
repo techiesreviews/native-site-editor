@@ -103,6 +103,10 @@ test("an item dragged onto the canvas goes into the gap under the pointer; Escap
   await expect(target.locator(".insert-point__drop")).toHaveText("Add “Feature block” here");
   await expect(page.locator(".pb-drag-ghost")).toHaveText("Feature block");
   await expect(page.locator(".pb-drag-ghost svg.component-mark")).toHaveAttribute("width", "12");
+  // The drag holder, not the pressed option, holds the mouse (pointer 1) and shows the grabbing cursor.
+  await expect(page.locator(".pb-drag-holder")).toHaveCSS("cursor", "grabbing");
+  expect(await page.locator(".pb-drag-holder").evaluate((el) => el.hasPointerCapture(1))).toBe(true);
+  expect(await option.evaluate((el) => el.hasPointerCapture(1))).toBe(false);
   await page.keyboard.press("Escape");
   await expect(target).toHaveCount(0);
   await expect(page.locator(".pb-drag-ghost")).toHaveCount(0);
