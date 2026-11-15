@@ -137,7 +137,7 @@ function commandsFixture(overrides: Partial<AgentCommandPorts> = {}, files: Part
     appStore, runtime: unusedPort("runtime"), workspaceSession: unusedPort("workspaceSession"), guardedEdits: unusedPort("guardedEdits"),
     editorWorkspace: unusedPort("editorWorkspace"), versions: unusedPort("versions"), finishedWork: unusedPort("finishedWork"),
     parkedSteps: unusedPort("parkedSteps"), repositoryIndex: unusedPort("repositoryIndex"), mediaController: unusedPort("mediaController"),
-    mediaPorts: unusedPort("mediaPorts"), blockMoves: unusedPort("blockMoves"), agentPresence: unusedPort("agentPresence"),
+    mediaPorts: unusedPort("mediaPorts"), blockMoves: unusedPort("blockMoves"), createBlockMoves: unusedPort("createBlockMoves"), agentPresence: unusedPort("agentPresence"),
     pagesAndFiles: withPorts(pagesAndFiles, files), api: unused,
     editorModule: { isMounted: () => false, getMountedSource: unused, dropDraft: unused, forgetDraftModel: unused, prepareHistorySources: unused,
       flushAgentTyping: unused, applyAgentDraft: async command => { calls.push(`draft ${command.path}`); } },
