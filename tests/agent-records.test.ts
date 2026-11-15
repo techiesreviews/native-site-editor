@@ -182,6 +182,7 @@ test("one rule tells an unknown outcome for edits, media and the transport alike
     "The media outcome could not be proven.", "This browser's storage is full and could not confirm whether the change was kept."])
     assert.equal(unknownOutcome(new Error(message)), true, message);
   assert.equal(unknownOutcome(new AgentRecordsError("unknown", "Anything.")), true);
-  for (const refused of [new Error("This file changed since it was read."), new AgentRecordsError("capacity", "Full."), "could not prove"])
+  for (const refused of [new Error("This file changed since it was read."), new Error("Could not read hero.jpg's dimensions. Nothing was improved."),
+    new AgentRecordsError("capacity", "Full."), "could not prove"])
     assert.equal(unknownOutcome(refused), false, String(refused));
 });

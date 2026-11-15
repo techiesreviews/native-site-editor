@@ -45,6 +45,16 @@ test("a failed sign-in redirects with a code the editor knows, never the error's
   for (const response of [expired, failing, unconfigured]) assert.ok(Object.hasOwn(SIGN_IN_ERRORS, code(response)!));
 });
 
+test("access not granted and a used-up daily allowance each have their own code", async () => {
+  const { env, records } = environment();
+  records.set("c".repeat(64), { kind: "oauth", expiresAt: Date.now() + 60_000 });
+  const denied = await handle(new Request(`${origin}/auth/callback?state=${"c".repeat(64)}`, { headers: { Cookie: `__Host-ase_oauth=${"c".repeat(64)}` } }), env);
+  assert.equal(code(denied), "denied");
+  const full = environment().env;
+  full.SESSIONS = { idFromName: (name) => name, get: () => ({ fetch: async () => { throw new Error("Exceeded allowed rows written in Durable Objects free tier."); } }) };
+  assert.equal(code(await handle(new Request(`${origin}/auth/login`), full)), "quota");
+});
+
 test("an unknown code shows the general failure, never its own words", () => {
   assert.equal(signInErrorText("expired"), SIGN_IN_ERRORS.expired);
   for (const unknown of ["Your account is locked", "__proto__", "toString", ""]) assert.equal(signInErrorText(unknown), SIGN_IN_ERRORS.failed);

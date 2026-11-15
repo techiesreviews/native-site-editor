@@ -195,7 +195,7 @@ export class AgentRecordsError extends Error {
  */
 export function unknownOutcome(error: unknown) {
   const message = error instanceof Error ? error.message : "";
-  return error instanceof AgentRecordsError && error.code === "unknown" || /unproven|outcome.*unknown|could not.*prov|could not confirm whether/i.test(message);
+  return error instanceof AgentRecordsError && error.code === "unknown" || /unproven|outcome.*unknown|could not (?:be )?prov(?:e|en)\b|could not confirm whether/i.test(message);
 }
 
 /**

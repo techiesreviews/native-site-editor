@@ -37,6 +37,7 @@ function fixture(href = "https://editor.test/") {
     loads.push({ prefetched, started: at.load });
   };
   const local = store(), session = store();
+  let onLogin: (() => void) | undefined;
   const ports: BootPorts = {
     begin: () => workspace.begin(),
     source: () => `${url.origin}${url.pathname}`,
@@ -52,7 +53,7 @@ function fixture(href = "https://editor.test/") {
     adoptSession: value => { info = value; },
     enterWorkspace: () => { log.push("enter"); },
     loadRepositories: (prefetched, hooks) => { log.push("load"); return loadImpl(prefetched, hooks); },
-    renderLogin: mode => { workspace.next(undefined); log.push(`login ${mode ?? "ready"}`); controller.reset(); },
+    renderLogin: mode => { workspace.next(undefined); log.push(`login ${mode ?? "ready"}`); controller.reset(); onLogin?.(); },
     retainLink: () => { log.push("retain"); },
     showError: error => { errors.push(error); },
     storage: kind => kind === "local" ? local : session,
@@ -69,6 +70,8 @@ function fixture(href = "https://editor.test/") {
     setInfo: (value: SessionInfo) => { info = value; },
     setMenu: (value: BootMenu | undefined) => { menu = value; },
     setLoad: (impl: typeof loadImpl) => { loadImpl = impl; },
+    /** Runs once each time the login is drawn. */
+    setOnLogin: (hook: typeof onLogin) => { onLogin = hook; },
     url: () => url.href,
   };
 }
@@ -300,4 +303,20 @@ test("the sign-in screen shows only fixed words for an error code, never a link'
     assert.equal((f.errors[0] as Error).message, shown, search);
     assert.equal(f.url(), "https://editor.test/", "the code leaves the address");
   }
+});
+
+test("a boot that wins while the sign-in words load owns the screen: the first boot's error is not shown", async () => {
+  const f = fixture("https://editor.test/?error=expired"), first = f.controller.start();
+  // The first boot draws its login and then loads the words; a second boot starts before they arrive.
+  let second: Promise<void> | undefined;
+  f.setOnLogin(() => { f.setOnLogin(undefined); second = f.controller.start(); });
+  f.sessions[0].resolve(receipt(signedOut));
+  f.lists[0].read.resolve(receipt([]));
+  await first;
+  assert.ok(second, "the second boot started while the first drew its login");
+  assert.equal(f.errors.length, 0, "the replaced boot shows nothing");
+  f.sessions[1].resolve(receipt(signedOut));
+  f.lists[1].read.resolve(receipt([]));
+  await second;
+  assert.equal(f.errors.length, 0, "the address no longer carries the code");
 });
