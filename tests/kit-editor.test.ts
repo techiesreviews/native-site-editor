@@ -147,8 +147,9 @@ test("the pointer keeps every heading the old kitchen.md had, each linking to th
 // TOOLS-235 (Lex, 2026-11-14): the kit cut ask, status and feedback (with its --after-release flag), moved learn to
 // sweep --learn and card into its hook, and dropped the Tuesday-only review and the UX confidence ladder. A line may
 // still name them, but only to say where they went, in the same clause: "`kit status` was cut", "(was `kit learn`".
+// TOOLS-257: release 2 (2026-11-15) cut the old factory too: slice, fix, next and heartbeat.
 function staleTrimLine(line: string): boolean {
-  const named = [...line.matchAll(/`(?:scripts\/agents\/)?kit (?:learn|feedback|status|ask|card)\b[^`]*`|--after-release/g)];
+  const named = [...line.matchAll(/`(?:scripts\/agents\/)?kit (?:learn|feedback|status|ask|card|slice|fix|next|heartbeat)\b[^`]*`|--after-release/g)];
   return named.some(({ 0: name, index }) => !line.slice(0, index).endsWith("was ")
       && !/^[^.;]*?\b(?:cut|retired|merged|moved|until 2026-11-14)\b/.test(line.slice(index + name.length)))
     || (/Tuesday[- ]only|Tuesday pack|Tuesday review day|UX confidence ladder/i.test(line) && !/^#+ |\bdropped\b/i.test(line));
@@ -162,13 +163,20 @@ test("the kit trim guard flags a working mention of a cut name and passes one th
   assert.equal(staleTrimLine("`kit feedback` and its `--after-release` flag were cut on 2026-11-14."), false);
   assert.equal(staleTrimLine("`kit sweep --learn` (was `kit learn`) gathers the corrections."), false);
   assert.equal(staleTrimLine("## UX confidence ladder"), false);
+  assert.equal(staleTrimLine("Start it with `scripts/agents/kit slice --ticket <ticket> --builder claude-opus-5-5`."), true);
+  assert.equal(staleTrimLine("Then `kit heartbeat <map>`, every 30 minutes."), true);
+  assert.equal(staleTrimLine("Hand the map out with `scripts/agents/kit next <map>`."), true);
+  assert.equal(staleTrimLine("Up to three `kit fix` rounds; then `kit pr`."), true);
+  assert.equal(staleTrimLine("`kit slice`, `kit fix`, `kit next` and `kit heartbeat` were cut on 2026-11-15."), false);
+  assert.equal(staleTrimLine("A new helper gets `kit brief <ticket> --stage fix`; `kit fix`, cut on 2026-11-15, appended them."), false);
 });
 
 test("live docs follow the kit trim: no cut or moved command as a working one, no Tuesday pack or UX ladder", () => {
   const docs = readdirSync("docs/agents", { recursive: true, encoding: "utf8" }).filter(name => name.endsWith(".md"))
-    .map(name => `docs/agents/${name}`).concat("AGENTS.md", "docs/work/learning/README.md");
+    .map(name => `docs/agents/${name}`).concat("AGENTS.md", "docs/work/learning/README.md", "docs/wayfinder/README.md");
   const stale = docs.flatMap(path => read(path).split("\n").flatMap((line, index) => staleTrimLine(line) ? [`${path}:${index + 1}`] : []));
   assert.deepEqual(stale, []);
+  assert.doesNotMatch(read("scripts/agents/project.d/specs"), /kit slice sets/);
   assert.match(read("docs/agents/routines/learning.md"), /`scripts\/agents\/kit sweep --learn --since <its date>`/);
 });
 
