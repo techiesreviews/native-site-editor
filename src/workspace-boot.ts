@@ -316,7 +316,11 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   function checkKept(at: SessionStamp, branch: string) {
     void savePublish.checkHead(true).then((commit) => {
       if (!at.holds()) return;
-      if (!commit) { onNextWake(() => { if (at.holds()) checkKept(at, branch); }); return; }
+      if (!commit) {
+        if (typeof document !== "undefined" && document.visibilityState === "visible") ports.settleStatus(`Could not check GitHub for newer changes on ${branch}. Refresh to check.`);
+        onNextWake(() => { if (at.holds()) checkKept(at, branch); });
+        return;
+      }
       if (appStore.snapshot.value?.commit !== commit) return;
       savePublish.seeHead(commit);
       ports.settleStatus(upToDate(branch, commit));

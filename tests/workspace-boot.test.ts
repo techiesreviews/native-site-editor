@@ -699,12 +699,12 @@ function withDocument(run: (page: EventTarget & { visibilityState: string }) => 
   });
 }
 
-test("a kept copy whose head check got no answer (a hidden tab) asks again when the tab is shown", () => withDocument(async (page) => {
+test("a kept copy whose head check got no answer asks again when the tab is next shown", () => withDocument(async (page) => {
   const f = fixture({ remember: false, native: true });
   await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
   await flush();
   assert.equal(f.headChecks.length, 1);
-  assert.equal(f.shown.status, "Checking GitHub for newer changes on main…");
+  assert.equal(f.shown.status, "Could not check GitHub for newer changes on main. Refresh to check.", "no answer while shown says so");
   f.answerHead(Promise.resolve(sha(9)));
   page.visibilityState = "hidden";
   page.dispatchEvent(new Event("visibilitychange"));
