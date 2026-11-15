@@ -60,8 +60,10 @@ interface PagePicture { at: number; src: string | undefined; alt: string | undef
 interface PageRead { source: string; titled: boolean; pictures: readonly PagePicture[] }
 
 // Each page file as read from its text: a check after an edit reads again only the page that changed, and keeps one
-// entry per page.
+// entry per page of the site listed last (another site's pages are let go).
 const read = new Map<string, PageRead>();
+/** How many pages' text is held (a seam for tests). */
+export const heldPages = () => read.size;
 
 /** Whether the page's own <title> (not an SVG's, nor one in a comment or a script) has words. */
 function hasTitle(source: string, elements: readonly SourceElement[]) {
@@ -95,6 +97,8 @@ function readPage(file: string, source: string): PageRead {
 
 export function siteItems(pages: readonly InboxPage[], rules: SiteItemRules): InboxItem[] {
   const items: InboxItem[] = [];
+  const listed = new Set(pages.map(page => page.file));
+  for (const file of read.keys()) if (!listed.has(file)) read.delete(file);
   for (const page of pages) {
     const { source } = page;
     if (source === undefined) continue;
