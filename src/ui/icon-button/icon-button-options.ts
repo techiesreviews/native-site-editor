@@ -16,7 +16,7 @@ export interface IconButtonMarkupOptions {
 
 /** The part's class first, then a screen's own classes. */
 export function iconButtonClass(className = ""): string {
-  return ["icon-button", ...className.split(/\s+/).filter(Boolean)].join(" ");
+  return className ? `icon-button ${className}` : "icon-button";
 }
 
 /** The tooltip an icon button shows: its label unless one is given, or none. */

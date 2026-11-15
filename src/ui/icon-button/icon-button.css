@@ -1,28 +1,22 @@
 /* The Icon button component: an icon alone on a quiet square, muted until hovered or pressed, filled while it is a
    pressed toggle (aria-pressed). Its whole look in one file on the components layer, like the Button
-   (src/ui/parts/button.css): the --icon-btn-* properties are its defaults, and the pressed state has hooks of its own.
+   (src/ui/parts/button.css): its --icon-btn-* hooks hold their defaults as fallbacks where they are read (the boot
+   bundle carries this file, so it stays small), and the pressed state has hooks of its own.
    A screen places and sizes it with width and height in its own unlayered CSS, which wins over this layer, and may
    set a hook there. Disabled fades, as every bare button does (src/style.css). Class: `icon-button`. */
 @layer tokens, elements, components;
 
 @layer components {
   .icon-button {
-    --icon-btn-size: var(--size-control);
-    --icon-btn-radius: var(--radius);
-    --icon-btn-background: transparent;
-    --icon-btn-text-color: var(--muted);
-    --icon-btn-hover-background: var(--hover);
-    --icon-btn-hover-text-color: var(--text);
-
     display: inline-grid;
     place-items: center;
-    width: var(--icon-btn-size);
-    height: var(--icon-btn-size);
+    width: var(--icon-btn-size, var(--size-control));
+    height: var(--icon-btn-size, var(--size-control));
     padding: 0;
     border: 0;
-    border-radius: var(--icon-btn-radius);
-    background: var(--icon-btn-background);
-    color: var(--icon-btn-text-color);
+    border-radius: var(--icon-btn-radius, var(--radius));
+    background: var(--icon-btn-background, none);
+    color: var(--icon-btn-text-color, var(--muted));
 
     &[aria-pressed="true"] {
       background: var(--icon-btn-pressed-background, var(--pressed));
@@ -30,13 +24,13 @@
     }
     /* Touch gets the press; hover waits for a mouse, as a touch screen keeps :hover on the last tap. */
     &:active:not(:disabled) {
-      background: var(--icon-btn-hover-background);
-      color: var(--icon-btn-hover-text-color);
+      background: var(--icon-btn-hover-background, var(--hover));
+      color: var(--icon-btn-hover-text-color, var(--text));
     }
     @media (hover: hover) and (pointer: fine) {
       &:hover:not(:disabled) {
-        background: var(--icon-btn-hover-background);
-        color: var(--icon-btn-hover-text-color);
+        background: var(--icon-btn-hover-background, var(--hover));
+        color: var(--icon-btn-hover-text-color, var(--text));
       }
     }
   }
