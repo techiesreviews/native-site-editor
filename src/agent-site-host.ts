@@ -400,9 +400,9 @@ export function createAgentCommands(ports: AgentCommandPorts) {
   // The agent changes this tab keeps for their undo (ticket am-15), loaded with the first agent command.
   let changes: typeof import("./agent-changes") | undefined;
   const loadChanges = async () => changes ??= await (ports.loadChanges?.() ?? import("./agent-changes"));
-  /** The user's Undo on a done pin's card: its agent's (connection `grant`) changes for it, newest first, put back as one step (src/agent-changes.ts). */
-  async function undo(ids: readonly string[], grant: string | undefined, scope = draftScope()) {
-    // The workspace the click was in, taken before any wait (by the caller, when it waited for this module).
+  /** The user's Undo on a done pin's card: its agent's (connection `grant`) changes for it, newest first, put back as one step (src/agent-changes.ts).
+   * `scope`: the workspace the click was in, taken by the caller before any wait (src/agent-host.ts). */
+  async function undo(ids: readonly string[], grant: string | undefined, scope: DraftScope | undefined) {
     const { undoAgentChanges } = await loadChanges();
     await undoAgentChanges(ids, grant, { scope, shown: draftScope, edits: guardedEdits, draft: (scope, path) => draftStore().get(scope, path), openFile: () => appStore.openFile.value });
   }
@@ -411,9 +411,9 @@ export function createAgentCommands(ports: AgentCommandPorts) {
     const scope = draftScope();
     return scope && changes ? changes.undoState(scope, ids, path => draftStore().get(scope, path), grant) : undefined;
   };
-  /** The user's Undo on an agent's chip (ticket am-49): the change `change` it offered, `who`'s latest to the page `page`, put back as the pin card's Undo does. */
-  async function undoLatest(who: AgentWho, page: string, change: string, scope = draftScope()) {
-    // The workspace the press was in, taken before any wait (by the caller, when it waited for this module).
+  /** The user's Undo on an agent's chip (ticket am-49): the change `change` it offered, `who`'s latest to the page `page`, put back as the pin card's Undo does.
+   * `scope`: the workspace the press was in, taken by the caller before any wait (src/agent-host.ts). */
+  async function undoLatest(who: AgentWho, page: string, change: string, scope: DraftScope | undefined) {
     const { undoLatestChange } = await loadChanges();
     await undoLatestChange(who, page, change, { scope, shown: draftScope, edits: guardedEdits, draft: (scope, path) => draftStore().get(scope, path), openFile: () => appStore.openFile.value });
   }
