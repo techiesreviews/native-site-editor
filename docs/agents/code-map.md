@@ -267,8 +267,8 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 | Pages & files and workspace host ports (src/pages-and-files-host.ts, src/workspace-mount.ts) | 356–401 | pagesAndFiles, pagesController, savePublish, workspace, mountWorkspace, setupScope |
 | Source pane ports (src/controllers/source-pane-controller.ts) | 402–422 | sourcePane, openEntry, mountSource, updateAgentContext |
 | Agent host ports (src/agent-host.ts; the command path, src/agent-path.ts, loads with the menu) | 435–446 | agentCommands, agentController |
-| Workspace boot and repository list ports (src/workspace-boot.ts, src/repository-list.ts) | 440–477 | workspaceBoot, restoreFile, loadSnapshot, loadRepositories, disconnect |
-| Draft baseline, boot ports and startup | 478–531 | boot, renderLogin("loading"), workspaceBoot.startGuess |
+| Workspace boot and repository list ports (src/workspace-boot.ts, src/repository-list.ts) | 447–484 | workspaceBoot, restoreFile, loadSnapshot, loadRepositories, disconnect |
+| Draft baseline, boot ports and startup | 485–535 | boot, renderLogin("loading"), workspaceBoot.startGuess |
 
 ## Main entry points
 
