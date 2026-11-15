@@ -419,6 +419,7 @@ and styles, and the tests that import or name them. A screen is built from the p
 | Site loading | Site loading: reading a native site's pages, templates, stylesheets, component styles and assets for the preview, its files for Download site, opening it (activateNativeSite), the top bar's page label, the file… | `src/site-loading.ts` | `tests/site-loading.test.ts` |
 | Style | The editor's CSS on the Techies Framework layers: theme tokens, bare elements, then components each in a file of its own. | `src/style.css` | `tests/editor-css-layers.test.ts`, `tests/preview-menu.test.ts` |
 | Theme | Hands the theme's colours to what cannot read CSS variables (Monaco, the preview overlay) and keeps them in step. | `src/theme.ts` | none yet |
+| Parts | The editor's parts' own files, in one import of src/main.ts (which keeps under its line ceiling). | `src/ui/parts.css` | `tests/editor-css-layers.test.ts` |
 | Escape | Text for markup strings: the parts' option modules turn words into HTML text, so every word passes through here. | `src/ui/parts/escape.ts` | `tests/badge-heading-key-parts.test.ts` |
 | Report failure | Where async UI work sends a rejection nobody awaits: main.ts points this at the editor's notice bar at start-up (setErrorReporter); before that it logs. | `src/ui/report-failure.ts` | `tests/report-failure.test.ts` |
 | Select options | A select's options, replaced by `values`. | `src/ui/select-options.ts` | `tests/select-options.test.ts` |
