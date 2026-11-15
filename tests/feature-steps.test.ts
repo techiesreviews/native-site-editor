@@ -24,10 +24,10 @@ const phoneByFeature = fieldByFeature("Phone");
 
 // What the phone layout hides (src/style.css, max-width 650px) and the step a phone user takes just before it.
 const phoneOpener = new Map([
-  ...["History", "Inbox"].map(name => [name, "Menu"] as const),
+  ...["History", "Inbox", "Switch site", "Share a preview link", "Add a block", "Tablet", "Mobile"].map(name => [name, "Menu"] as const),
   ...["Section", "Div", "Heading", "Paragraph"].map(name => [name, "Add a block"] as const),
 ]);
-// No phone route has these names (the phone Menu says Switch site, Tablet, Mobile), so they are on wide only.
+// No phone route has these names (the phone Menu says Switch site or Share a preview link, Tablet, Mobile), so they are on wide only.
 const wideOnly = new Set(["repository actions", "Redo", "Desktop, fills the canvas", "Tablet, 768 px", "Mobile, 390 px"]);
 
 /** The first click a phone user cannot make as written, or undefined. */
@@ -37,15 +37,17 @@ function phoneRouteProblem(steps: Step[]) {
     if (wideOnly.has(step.name)) return `step ${index + 1} clicks "${step.name}", which a phone never shows; mark it on wide`;
     const opener = phoneOpener.get(step.name);
     const before = steps[index - 1];
-    if (opener && !(before?.kind === "click" && before.only === "phone" && before.name === opener)) return `step ${index + 1} clicks "${step.name}", hidden on a phone; put on phone click "${opener}" just before it`;
+    if (opener && !(before?.kind === "click" && before.only === "phone" && before.name === opener)) return `step ${index + 1} clicks "${step.name}", which a phone shows only just after on phone click "${opener}"`;
   }
 }
 
 test("the phone route check refuses clicks a phone user cannot make", () => {
   const check = (sources: string[]) => phoneRouteProblem(sources.map(parseStep));
   assert.match(check(['on phone click exactly "Menu"', 'on phone click "Switch site"', 'click "repository actions"']) ?? "", /step 3 clicks "repository actions", which a phone never shows/);
-  assert.match(check(['on phone click exactly "Menu"', 'click exactly "Section"']) ?? "", /step 2 clicks "Section", hidden on a phone; put on phone click "Add a block"/);
+  assert.match(check(['on phone click exactly "Menu"', 'click exactly "Section"']) ?? "", /step 2 clicks "Section", which a phone shows only just after on phone click "Add a block"/);
   assert.match(check(['click "History"']) ?? "", /step 1 clicks "History"/);
+  assert.match(check(['on phone click exactly "Menu"', 'on phone click "Switch site"', 'click "History"']) ?? "", /step 3 clicks "History", which a phone shows only just after on phone click "Menu"/);
+  assert.match(check(['on phone click "Add a block"', 'click exactly "Section"']) ?? "", /step 1 clicks "Add a block", which a phone shows only just after on phone click "Menu"/);
   assert.equal(check(['on phone click exactly "Menu"', 'on phone click "Switch site"', 'on wide click "repository actions"']), undefined);
   assert.equal(check(['on phone click exactly "Menu"', 'on phone click "Add a block"', 'click exactly "Section"']), undefined);
   assert.equal(check(['on phone click exactly "Menu"', 'click "History"']), undefined);
