@@ -167,7 +167,7 @@ test("the Files tree and History build their icon and text buttons from the part
       assert.doesNotMatch(rules, /(^|[;\s])(border|border-radius|background|color|font-size|font-weight)\s*:/, `${path}: ${cls} gives the part no look`);
     }
   }
-  assert.match(read("src/components/commit-history.css"), /\.commit-history__more\[aria-expanded="true"\] \{\s*--icon-btn-background: var\(--hover\);\s*--icon-btn-text-color: var\(--text\);\s*\}/, "an open menu keeps its fill through the part's hooks");
+  assert.doesNotMatch(read("src/components/commit-history.css"), /--icon-btn-|aria-expanded/, "an open menu shows no fill of its own, as the Files tree's and Page structure's ⋯");
 });
 
 test("a hidden slot's eye stays muted on hover: the Page structure guard adds no weight", () => {
