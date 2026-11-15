@@ -62,6 +62,17 @@ beyond that stays as a named variant. Nothing else visible changes.
   `kit shots editor structure file-details media-gallery --compare dev` (dev with the Inbox) at 390 and 1280, light
   and dark: 15 of 16 pixel-identical; file-details 1280 dark differs in a 3 by 3 px corner edge by one shade
   (anti-aliasing, light identical). `kit unit --affected` 3152/3152. `kit size`: boot 355 KB (+1 KB), budget 355 KB.
+  Page structure's icon actions (PR review fix): a raw scenario hovering a component row in the starter at 1280,
+  light and dark, against dev: at rest pixel-identical; with Disconnect this instance hovered only that 22px button's
+  corner differs (4px to 6px), with the same size, fill and colour. `kit specs` for the structure compact, card paths
+  and published slot specs 46/46; `kit unit --affected` 3154/3154; copies 123.
+- Review decisions (PR review, 2026-11-15): fixed the Page structure icon actions (P2), the Commits list (P3) and
+  the disabled Text button's hover and press (P3), and the share row's stale comment. Media test reworked to accept
+  any key order. Declined again the DOM test of `iconButton()` (reason above). Left for later slices, as the review
+  suggests: the Inbox button's hand-written markup (the markup options take no `id` or `popovertarget` yet); Media's
+  round 44px Back, Close and Dismiss buttons (a round Icon button variant); snapping the Text button's 5px padding to
+  the scale; keeping a pressed Icon button's fill on hover; `src/ui/parts.css` beside the `src/ui/parts/` folder
+  until slice 1 moves the parts into folders.
 - Differences, the most used look winning (Lex's rule of 2026-11-14), none of them in a screenshot but the first:
   - Project menu, Reload repositories: its icon sat 2px right of centre (the browser's own button padding); now centred.
   - Branches flyout's Refresh from GitHub and Reload repositories: keyboard focus shows the focus ring only, without
