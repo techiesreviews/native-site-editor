@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-history-04","steps":["click \"History\"","click \"Whole site\"","click \"Latest Start the site\"","expect visible \"Added index.html\""]}
+{"screen":"editor","name":"F-history-04","steps":["on phone click exactly \"Menu\"","click \"History\"","click \"Whole site\"","click \"Latest Start the site\"","expect visible \"Added index.html\""]}

@@ -1,8 +1,10 @@
 export const screens = ["editor", "media-gallery", "media-select", "file-details", "image-popup", "picker", "files", "pages", "site-settings", "cleanup", "improve-images", "add-panel", "structure", "catalogue"] as const;
 export type Screen = typeof screens[number];
 export type Theme = "light" | "dark";
-export type Step =
-  | { kind: "click"; name: string }
+/** A step marked `on phone` runs only in the editor's phone layout, `on wide` only outside it. */
+export type Layout = "phone" | "wide";
+export type Step = (
+  | { kind: "click"; name: string; exact?: true }
   | { kind: "type"; text: string; label: string }
   | { kind: "hover"; target: string | number }
   | { kind: "press"; key: string }
@@ -10,7 +12,8 @@ export type Step =
   | { kind: "wait"; text: string }
   | { kind: "drag"; name: string; target: string; edge?: Edge }
   | { kind: "record"; name: string; ms: number }
-  | { kind: "expect"; text: string };
+  | { kind: "expect"; text: string }
+) & { only?: Layout };
 export type Edge = "top" | "bottom" | "left" | "right";
 export type Scenario = { screen: Screen; name?: string; steps: string[] };
 export type Options = { screens: Screen[]; widths: number[]; themes: Theme[]; steps?: string; spec?: string; out?: string; files?: boolean };
@@ -55,8 +58,18 @@ export function expandMatrix(widths: number[], themes: Theme[]) {
 }
 
 export function parseStep(source: string): Step {
+  const layout = /^on (phone|wide) (.+)$/.exec(source);
+  if (layout) {
+    let step: Step;
+    try { step = parseStep(layout[2]); }
+    catch { throw new Error(`Unknown step: ${source}`); }
+    if (step.only) throw new Error(`Unknown step: ${source}`);
+    return { ...step, only: layout[1] as Layout };
+  }
   let match: RegExpExecArray | null;
   if ((match = /^click "([^"]+)"$/.exec(source))) return { kind: "click", name: match[1] };
+  // "More" alone, not also "More publish actions".
+  if ((match = /^click exactly "([^"]+)"$/.exec(source))) return { kind: "click", name: match[1], exact: true };
   if ((match = /^type "([^"]*)" in (.+)$/.exec(source))) return { kind: "type", text: match[1], label: match[2] };
   if ((match = /^hover "([^"]+)"$/.exec(source))) return { kind: "hover", target: match[1] };
   if ((match = /^hover (first|last|nth ([1-9]\d*)) tile$/.exec(source))) return { kind: "hover", target: match[1] === "first" ? 0 : match[1] === "last" ? -1 : Number(match[2]) - 1 };

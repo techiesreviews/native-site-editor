@@ -48,6 +48,7 @@ for (const file of files) {
     const steps = scenario.steps.map(parseStep);
     const last = steps.at(-1)!;
     assert.ok(evidence.has(last.kind), `${file} ends on an expect, wait or record step, not ${last.kind}`);
+    assert.ok(!last.only, `${file}: the closing step runs at every width, not only on ${last.only}`);
     // A closing check that repeats one made before the last action proves nothing about that action,
     // unless a record after the earlier check, or another check after the action, shows what happened.
     if (last.kind === "expect" || last.kind === "wait") {

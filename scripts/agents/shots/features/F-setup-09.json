@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-setup-09","steps":["click \"repository actions\"","expect visible \"Sign out of native-demo-user\""]}
+{"screen":"editor","name":"F-setup-09","steps":["on phone click exactly \"Menu\"","on phone click \"Switch site\"","on wide click \"repository actions\"","expect visible \"Sign out of native-demo-user\""]}

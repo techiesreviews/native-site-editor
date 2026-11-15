@@ -24,7 +24,10 @@ test("steps parse every grammar form and name unknown instructions", () => {
   assert.deepEqual(parseStep('drag "Card" to "Drop zone" edge top'), { kind: "drag", name: "Card", target: "Drop zone", edge: "top" });
   assert.deepEqual(parseStep("record upload-1 800"), { kind: "record", name: "upload-1", ms: 800 });
   assert.deepEqual(parseStep('expect visible "1 selected"'), { kind: "expect", text: "1 selected" });
-  for (const source of ["explode logo", "hover nth 0 tile", "scroll sideways", "wait 300", 'drag "a" to "b" edge middle', "record ../x 800", "record flicker 50", "record flicker 10000", "expect visible Filter"]) assert.throws(() => parseStep(source), { message: `Unknown step: ${source}` });
+  assert.deepEqual(parseStep('click exactly "More"'), { kind: "click", name: "More", exact: true });
+  assert.deepEqual(parseStep('on phone click exactly "Menu"'), { kind: "click", name: "Menu", exact: true, only: "phone" });
+  assert.deepEqual(parseStep('on wide click "repository actions"'), { kind: "click", name: "repository actions", only: "wide" });
+  for (const source of ["on tablet press Tab", "on phone explode logo", "on phone on wide press Tab", "explode logo", "hover nth 0 tile", "scroll sideways", "wait 300", 'drag "a" to "b" edge middle', "record ../x 800", "record flicker 50", "record flicker 10000", "expect visible Filter"]) assert.throws(() => parseStep(source), { message: `Unknown step: ${source}` });
 });
 
 test("JSON and documented YAML subset yield the same validated scenario", () => {
@@ -255,7 +258,7 @@ console.log("capture diagnostic");
   }
 });
 
-test("drag, record and expect steps act like a user in Chromium", async t => {
+test("drag, record, expect and layout steps act like a user in Chromium", async t => {
   const temporary = await mkdtemp(join(tmpdir(), "kit-shots-steps-"));
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const browser = await chromium.launch({ headless: true, env: { ...process.env, TMPDIR: temporary, TMP: temporary, TEMP: temporary } });
@@ -301,4 +304,16 @@ test("drag, record and expect steps act like a user in Chromium", async t => {
   await runStep(page, 'expect visible "Here"');
   await assert.rejects(runStep(page, 'expect visible "Nowhere"'), { message: 'expect visible "Nowhere" failed: nothing visible says "Nowhere"' });
   await assert.rejects(runStep(page, 'drag "Nowhere" to "Here"'), { message: 'drag failed: nothing visible named "Nowhere"' });
+
+  // "exactly" skips longer names; "on phone" and "on wide" follow the editor's 650 px phone layout.
+  await page.setContent(`<button onclick="window.pressed=(window.pressed||'')+'publish,'">More publish actions</button><button onclick="window.pressed=(window.pressed||'')+'more,'">More</button>`);
+  await assert.rejects(runStep(page, 'click "More"'), /strict mode violation/);
+  await runStep(page, 'click exactly "More"');
+  await page.setViewportSize({ width: 650, height: 400 });
+  await runStep(page, 'on wide click exactly "More publish actions"');
+  await runStep(page, 'on phone click exactly "More"');
+  await page.setViewportSize({ width: 651, height: 400 });
+  await runStep(page, 'on phone click exactly "More publish actions"');
+  await runStep(page, 'on wide click exactly "More"');
+  assert.equal(await page.evaluate(() => Reflect.get(window, "pressed")), "more,more,more,");
 });
