@@ -176,6 +176,8 @@ export interface KeptCopy {
   /** This browser's saves made before its copy took part, as blob sha and text, one after the other: their text is the
    * draft's own, which the copy notes as that save when it starts (TOOLS-216). */
   saves?: string[];
+  /** When a page wrote it to IndexedDB (ms since the epoch), for `browserKeeper` to tell a reload's copy from another tab's. */
+  at?: number;
 }
 /** Where kept copies live: this browser only (memory, then IndexedDB), never the server. */
 export interface CopyKeeper {
@@ -217,12 +219,15 @@ const isKept = (value: unknown): value is KeptCopy => {
   return !!copy && copy.tag instanceof Uint8Array && copy.tag.length === 20 && copy.update instanceof Uint8Array
     && (copy.draft === undefined || typeof copy.draft === "string") && (copy.base === undefined || typeof copy.base === "string")
     && [copy.mine, copy.took].every(ids => ids === undefined || (Array.isArray(ids) && ids.every(id => Number.isSafeInteger(id))))
-    && (copy.saves === undefined || (Array.isArray(copy.saves) && copy.saves.every(item => typeof item === "string")));
+    && (copy.saves === undefined || (Array.isArray(copy.saves) && copy.saves.every(item => typeof item === "string")))
+    && (copy.at === undefined || typeof copy.at === "number");
 };
 /** Memory first (this page's newest), then IndexedDB (a reload); writes go to both, best effort. The database opens at once,
- * so a write when the page hides starts its transaction then, as the drafts' does. */
+ * so a write when the page hides starts its transaction then, as the drafts' does. IndexedDB gives only a copy kept before
+ * this keeper started (by a page before a reload, or a tab since closed): one written later is another tab's, open beside
+ * this one, and its draft as kept is not this tab's text, so resuming it would send this tab's older text as its typing. */
 export function browserKeeper(): CopyKeeper {
-  const memory = new Map<string, KeptCopy | undefined>();
+  const memory = new Map<string, KeptCopy | undefined>(), started = Date.now();
   let opened: Promise<IDBDatabase | undefined> | undefined, ready: IDBDatabase | undefined;
   const open = () => opened ??= new Promise<IDBDatabase | undefined>(resolve => {
     if (typeof indexedDB === "undefined") { resolve(undefined); return; }
@@ -237,7 +242,7 @@ export function browserKeeper(): CopyKeeper {
   const put = (db: IDBDatabase | undefined, key: string, copy: KeptCopy | undefined) => {
     try {
       const copies = db?.transaction("copies", "readwrite").objectStore("copies");
-      if (copy) copies?.put(copy, key); else copies?.delete(key);
+      if (copy) copies?.put({ ...copy, at: Date.now() }, key); else copies?.delete(key);
     } catch { /* Kept in memory only: a reload starts as a joiner. */ }
   };
   return {
@@ -247,7 +252,12 @@ export function browserKeeper(): CopyKeeper {
       return db && new Promise<KeptCopy | undefined>(resolve => {
         try {
           const request = db.transaction("copies").objectStore("copies").get(key);
-          request.onsuccess = () => resolve(isKept(request.result) ? request.result : undefined);
+          request.onsuccess = () => {
+            const found: unknown = request.result;
+            if (!isKept(found) || (found.at ?? 0) > started) { resolve(undefined); return; }
+            const { at: _at, ...copy } = found;
+            resolve(copy);
+          };
           request.onerror = () => resolve(undefined);
         } catch { resolve(undefined); }
       });

@@ -1438,6 +1438,24 @@ test("the browser keeper keeps copies in IndexedDB: a fresh keeper reads them, a
   }
 });
 
+test("the browser keeper never hands a tab the copy another tab kept while both ran: only a page that came later reads it", async () => {
+  const fake = fakeIndexedDB();
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: fake.factory });
+  try {
+    // A second tab, open on the file before the first kept its copy (an agent's change in it).
+    const second = browserKeeper();
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const copy: KeptCopy = { tag: new Uint8Array(20).fill(9), update: Uint8Array.from([4, 5, 6]), draft: "Agent text" };
+    browserKeeper().write("file-a", copy);
+    await until(() => fake.stores.get("copies")?.has("file-a") ?? false, "the write");
+    assert.equal(await second.read("file-a"), undefined, "the other tab's copy is not the second tab's own to resume");
+    assert.deepEqual(await browserKeeper().read("file-a"), copy, "a reload after it reads it back");
+  } finally {
+    if (saved) Object.defineProperty(globalThis, "indexedDB", saved); else Reflect.deleteProperty(globalThis, "indexedDB");
+  }
+});
+
 test("an update over the room's frame limit is not sent, and the joiner goes on from its own draft after the wait", async () => {
   const time = fakeTimers(), room = fakeRoom();
   const anna = tab(room);
