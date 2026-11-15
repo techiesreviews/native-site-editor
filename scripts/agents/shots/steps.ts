@@ -7,16 +7,19 @@ type Recorder = (name: string, frames: Buffer[]) => Promise<void>;
 
 const stripFrames = 8;
 const expectTimeout = 5_000;
+/** The editor's phone layout: the same query as src/workspace-mount.ts. */
+const phoneQuery = "(max-width: 650px)";
 
 export async function runStep(page: Page, source: string, record?: Recorder) {
   const step = parseStep(source);
-  const named = (name: string) => page.getByRole("button", { name })
+  if (step.only && (step.only === "phone") !== await page.evaluate(query => matchMedia(query).matches, phoneQuery)) return;
+  const named = (name: string, exactButton = false) => page.getByRole("button", { name, exact: exactButton })
     .or(page.getByRole("tab", { name, exact: true }))
     .or(page.getByRole("menuitem", { name, exact: true }))
     .or(page.getByRole("menuitemradio", { name, exact: true }))
     .or(page.getByRole("link", { name, exact: true }));
   switch (step.kind) {
-    case "click": await named(step.name).click(); return;
+    case "click": await named(step.name, step.exact).click(); return;
     case "type": {
       const field = step.label === "search" ? page.getByRole("searchbox") : page.getByLabel(step.label, { exact: true });
       await field.fill(step.text); return;

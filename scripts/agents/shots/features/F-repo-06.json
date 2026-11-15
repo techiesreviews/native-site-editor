@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-repo-06","steps":["click \"repository actions\"","click \"⑂ main\"","click \"Refresh from GitHub\"","record refresh 1200"]}
+{"screen":"editor","name":"F-repo-06","steps":["on phone click exactly \"Menu\"","on phone click \"Switch site\"","on wide click \"repository actions\"","click \"⑂ main\"","click \"Refresh from GitHub\"","record refresh 1200"]}

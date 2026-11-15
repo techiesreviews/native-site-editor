@@ -27,12 +27,14 @@ or this checkout's ${featuresFolder}/ (feature tries; kit ux runs them).
 JSON: {"screen":"media-gallery","steps":["hover first tile"],"name":"after"}
 YAML subset: one mapping with screen/name scalars and an indented steps list;
 plain, single-quoted or JSON double-quoted strings, comments on separate lines.
-Steps: click "<name>"; type "<text>" in <label>; hover first|last|nth N tile;
-hover "<name>"; press <key>; scroll down|up; wait for "<text>";
+Steps: click "<name>"; click exactly "<name>" (not a longer button name); type "<text>" in <label>;
+hover first|last|nth N tile; hover "<name>"; press <key>; scroll down|up; wait for "<text>";
 drag "<name>" to "<target>" [edge top|bottom|left|right] (pointer to 3 px inside that edge);
 record <name> <ms> (8 frames over 100-9999 ms, saved as <shot>-<name>-strip.webp);
 expect visible "<text>" (a visible element whose whole text, or a button whose name, is exactly
 <text>; otherwise fails the try: expect visible "<text>" failed: nothing visible says "<text>").
+on phone <step> runs it only in the editor's phone layout (650 px wide or less), on wide <step> only
+wider: a phone user opens Menu first ("on phone click \"Menu\"").
 nth is 1-based. 'search' means the searchbox. Button names can match a substring.
 Before/after: use name "before" and "after" with the same screen, width, theme
 and --out across runs; contact sheet includes both. Each screen retries at most once.

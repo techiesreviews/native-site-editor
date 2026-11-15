@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-repo-03","steps":["click \"repository actions\"","expect visible \"+ Add repositories\""]}
+{"screen":"editor","name":"F-repo-03","steps":["on phone click exactly \"Menu\"","on phone click \"Switch site\"","on wide click \"repository actions\"","expect visible \"+ Add repositories\""]}
