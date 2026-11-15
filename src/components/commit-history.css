@@ -38,9 +38,9 @@
   justify-content: space-between;
   padding-right: 4px;
 }
-/* Refresh and a commit's ⋯ are Icon buttons (src/ui/icon-button/), sized here. */
-.commit-history__refresh,
-.commit-history__more {
+/* Refresh and a commit's ⋯ are Icon buttons (src/ui/icon-button/), sized here, over the top bar's size for its own
+   (the panel opens inside .topbar-actions). */
+.commit-history :is(.commit-history__refresh, .commit-history__more).icon-button {
   flex: none;
   width: var(--size-icon);
   height: var(--size-icon);

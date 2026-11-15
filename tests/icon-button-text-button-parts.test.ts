@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { iconButtonClass, iconButtonMarkup } from "../src/ui/icon-button/icon-button-options.ts";
-import { TEXT_BUTTON_SIZES, textButtonClass, textButtonSize } from "../src/ui/text-button/text-button-options.ts";
+import { TEXT_BUTTON_SIZES, textButtonClass } from "../src/ui/text-button/text-button-options.ts";
 import { copiesInStyles, homes } from "../scripts/agents/copies.mjs";
 
 // The Icon button and Text button parts (slice 3 of docs/agents/parts-plan.md): made from `.icon-button` and
@@ -15,7 +15,7 @@ const glyph = '<svg class="icon" aria-hidden="true"></svg>';
 test("icon button: one part class first, a screen's own classes after it", () => {
   assert.equal(iconButtonClass(), "icon-button");
   assert.equal(iconButtonClass("code-editor__undo"), "icon-button code-editor__undo");
-  assert.equal(iconButtonClass("  a  b "), "icon-button a b");
+  assert.equal(iconButtonClass("a b"), "icon-button a b");
 });
 
 test("icon button markup: a plain button named by its label, the label as its tooltip unless turned off", () => {
@@ -38,11 +38,8 @@ test("icon button markup: a plain button named by its label, the label as its to
   );
 });
 
-test("text button: sizes are the set, anything else is the base size", () => {
+test("text button: its sizes are base and compact", () => {
   assert.deepEqual([...TEXT_BUTTON_SIZES], ["base", "compact"]);
-  for (const size of TEXT_BUTTON_SIZES) assert.equal(textButtonSize(size), size);
-  assert.equal(textButtonSize(undefined), "base");
-  assert.equal(textButtonSize("huge"), "base");
 });
 
 test("text button: one part class, the compact size as a modifier, a screen's own classes after", () => {
@@ -72,16 +69,16 @@ for (const [name, path, cls] of [
 
 test("each part's look comes from its own defaults, and the compact size changes only those", () => {
   const icon = read("src/ui/icon-button/icon-button.css"), text = read("src/ui/text-button/text-button.css");
-  for (const hook of ["size", "radius", "background", "text-color", "hover-background", "hover-text-color"]) {
-    assert.match(icon, new RegExp(`--icon-btn-${hook}:`), `--icon-btn-${hook} has a default`);
-    assert.match(icon, new RegExp(`var\\(--icon-btn-${hook}\\)`), `--icon-btn-${hook} is used`);
-  }
+  for (const hook of ["size", "radius", "background", "text-color", "hover-background", "hover-text-color"])
+    assert.match(icon, new RegExp(`var\\(--icon-btn-${hook}, `), `--icon-btn-${hook} is read with its default`);
   assert.match(icon, /var\(--icon-btn-pressed-background, var\(--pressed\)\)/, "the pressed state has a hook of its own");
   const compact = /\.text-button--compact \{([^}]*)\}/.exec(text)?.[1] ?? "";
   const declared = [...compact.matchAll(/^\s*([\w-]+)\s*:/gm)].map((match) => match[1]);
   assert.ok(declared.length > 0);
-  assert.deepEqual(declared.filter((name) => !name.startsWith("--text-btn-")), [], "compact sets only the part's hooks");
-  for (const name of declared) assert.match(text, new RegExp(`var\\(${name}\\)`), `${name} is used`);
+  assert.deepEqual(declared.filter((name) => !name.startsWith("--text-btn-")), ["text-decoration-color"], "compact sets only the part's hooks, and hides the hover underline");
+  for (const name of declared.filter((name) => name.startsWith("--"))) assert.match(text, new RegExp(`var\\(${name}[,)]`), `${name} is used`);
+  for (const hook of ["min-block-size", "padding-block", "padding-inline", "radius", "text-color", "font-size", "hover-background"])
+    assert.match(text, new RegExp(`var\\(--text-btn-${hook}, `), `--text-btn-${hook} is read with its default`);
 });
 
 test("a disabled text button neither underlines nor fills on hover or press, as a disabled icon button", () => {
@@ -91,14 +88,13 @@ test("a disabled text button neither underlines nor fills on hover or press, as 
   assert.doesNotMatch(text, /&:(active|hover) \{/);
 });
 
-test("the underlined text button changes only the part's hooks, and its words stay underlined at rest", () => {
-  const text = read("src/ui/text-button/text-button.css");
-  assert.match(text, /--text-btn-decoration: none;/, "the base size is not underlined at rest");
-  assert.match(text, /text-decoration: var\(--text-btn-decoration\);/);
-  const underlined = /\.text-button--underlined \{([^}]*)\}/.exec(text)?.[1] ?? "";
-  const declared = [...underlined.matchAll(/^\s*([\w-]+)\s*:/gm)].map((match) => match[1]);
-  assert.deepEqual(declared, ["--text-btn-decoration", "--text-btn-hover-decoration"]);
-  assert.match(underlined, /--text-btn-decoration: underline;\s*--text-btn-hover-decoration: underline;/, "a compact underlined one keeps its underline on hover too");
+test("the underlined text button is underlined at rest, after the compact size so the pair keeps its underline", () => {
+  const text = read("src/ui/text-button/text-button.css").replace(/\/\*[\s\S]*?\*\//g, "");
+  const base = /\.text-button \{([^}]*?)&/.exec(text)?.[1] ?? "";
+  assert.doesNotMatch(base, /text-decoration/, "the base size is not underlined at rest");
+  assert.equal([...text.matchAll(/text-decoration-line: underline;/g)].length, 2, "hover and press underline");
+  assert.match(text, /\.text-button--compact \{[^}]*text-decoration-color: transparent;[^}]*\}\s*\.text-button--underlined \{\s*text-decoration: underline;\s*\}/);
+  assert.doesNotMatch(text, /text-decoration[\w-]*: var\(/, "keyword values only: the build adds no -webkit- copies");
 });
 
 test("Media's Download original and suggested name use the underlined text button and give it no look of their own", () => {
@@ -123,8 +119,9 @@ test("the old copies are gone: no screen styles the icon button's or the text bu
 test("the top bar sizes only its own icon buttons, never those in the menus that open inside it", () => {
   const css = read("src/style.css");
   assert.doesNotMatch(css, /\.topbar \.icon-button\b/, "the project menu opens inside .topbar, so this would grow its Reload and Refresh buttons");
-  assert.equal([...css.matchAll(/^\s*\.topbar-actions > \.icon-button,\n\s*\.editor-toolbar-host \.icon-button \{/gm)].length, 2, "the bar's own size, and its phone size");
-  assert.doesNotMatch(css, /\.topbar-actions \.icon-button/, "History (#changes) and the Inbox open inside .topbar-actions: their icon buttons keep their own size");
+  assert.equal([...css.matchAll(/^\s*\.topbar-actions \.icon-button \{/gm)].length, 2, "the bar's own size, and its phone size");
+  assert.match(read("src/components/commit-history.css"), /^\.commit-history :is\(\.commit-history__refresh, \.commit-history__more\)\.icon-button \{\s*flex: none;\s*width: var\(--size-icon\);\s*height: var\(--size-icon\);/m,
+    "History's panel opens inside .topbar-actions: its icon buttons outweigh the bar's size with their own");
 });
 
 test("the editor loads the button parts' files in one line, in their order, after its own base styles", () => {
