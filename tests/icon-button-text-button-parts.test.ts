@@ -190,12 +190,11 @@ test("the icon button's code makes its button element: it is the part's home in 
   assert.ok(homes.buttons.includes("src/ui/icon-button/icon-button.ts"));
 });
 
-test("the parts list names both parts with their files", () => {
-  const parts = JSON.parse(read("docs/agents/parts.json")).parts as { id: string; group: string; files: string[] }[];
-  const iconButton = parts.find((part) => part.id === "icon-button");
-  const textButton = parts.find((part) => part.id === "text-button");
-  assert.deepEqual(iconButton?.files, ["src/ui/icon-button/icon-button.ts", "src/ui/icon-button/icon-button-options.ts", "src/ui/icon-button/icon-button.css"]);
-  assert.deepEqual(textButton?.files, ["src/ui/text-button/text-button.ts", "src/ui/text-button/text-button-options.ts", "src/ui/text-button/text-button.css"]);
-  assert.equal(iconButton?.group, "part");
-  assert.equal(textButton?.group, "part");
+test("the parts list names both parts with their files, from their folders' part.json", () => {
+  const list = read("docs/agents/parts.md");
+  for (const [id, name] of [["icon-button", "Icon button"], ["text-button", "Text button"]]) {
+    assert.equal((JSON.parse(read(`src/ui/${id}/part.json`)) as { name: string }).name, name);
+    const entry = list.slice(list.indexOf(`### ${name}\n`), list.indexOf("\n### ", list.indexOf(`### ${name}\n`) + 1));
+    assert.match(entry, new RegExp(`- \\*\\*Code:\\*\\* \`src/ui/${id}/${id}\\.ts\`\n- \\*\\*Styles:\\*\\* \`src/ui/${id}/${id}\\.css\`\n- \\*\\*Options:\\*\\* \`src/ui/${id}/${id}-options\\.ts\`\n`));
+  }
 });
