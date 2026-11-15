@@ -205,12 +205,12 @@ export function createBootController(ports: BootPorts) {
       } else {
         ports.renderLogin();
       }
-      const error = new URL(ports.url()).searchParams.get("error");
-      if (error) {
-        ports.showError(new Error(error));
-        const cleanUrl = new URL(ports.url());
-        cleanUrl.searchParams.delete("error");
-        ports.replaceUrl(cleanUrl);
+      // A failed sign-in's code: its fixed words, never words from the link (src/sign-in-words.ts, loaded only then).
+      const url = new URL(ports.url()), code = url.searchParams.get("error");
+      if (code) {
+        url.searchParams.delete("error");
+        ports.replaceUrl(url);
+        ports.showError(new Error((await import("../sign-in-words")).signInErrorText(code)));
       }
     } catch (error) {
       const ownsFailure = handoff

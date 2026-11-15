@@ -78,5 +78,10 @@
     "file": "src/live-text.ts",
     "name": "liveState",
     "reason": "Test seam: tests/live-text.test.ts and tests/live-text-converge.test.ts read whether a file is shared, its room copy and the GitHub versions its copy holds (ticket am-59)."
+  },
+  {
+    "file": "src/inbox/site-items.ts",
+    "name": "heldPages",
+    "reason": "Seam for tests/inbox-site-items.test.ts: proves the Inbox lets go of a switched site's pages (TOOLS-263 B3); the cache itself stays private."
   }
 ]

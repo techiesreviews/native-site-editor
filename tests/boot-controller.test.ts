@@ -4,6 +4,7 @@ import { createBootController, planRepositoryOpen, type BootMenu, type BootPorts
 import type { ApiReceipt } from "../src/boot-api-response.ts";
 import { createWorkspaceSession, type SessionStamp } from "../src/workspace-session.ts";
 import type { Repository, SessionInfo } from "../shared/types.ts";
+import { SIGN_IN_ERRORS } from "../shared/sign-in-error.ts";
 
 function deferred<T>() {
   let resolve!: (value: T) => void, reject!: (error: unknown) => void;
@@ -283,5 +284,20 @@ test("the page's early session and listing (src/boot-early.ts) stand for the fir
     assert.equal(f.lists[1].early, undefined);
   } finally {
     globalThis.aseEarlyReads = undefined;
+  }
+});
+
+test("the sign-in screen shows only fixed words for an error code, never a link's own words (TOOLS-263 S1)", async () => {
+  for (const [search, shown] of [
+    ["?error=expired", SIGN_IN_ERRORS.expired],
+    ["?error=Your%20account%20is%20locked%2C%20sign%20in%20at%20evil.example", SIGN_IN_ERRORS.failed],
+    ["?error=constructor", SIGN_IN_ERRORS.failed],
+  ] as const) {
+    const f = fixture(`https://editor.test/${search}`), started = f.controller.start();
+    f.sessions[0].resolve(receipt(signedOut));
+    f.lists[0].read.resolve(receipt([]));
+    await started;
+    assert.equal((f.errors[0] as Error).message, shown, search);
+    assert.equal(f.url(), "https://editor.test/", "the code leaves the address");
   }
 });
