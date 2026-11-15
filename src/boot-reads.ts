@@ -19,8 +19,12 @@ export interface BootReadScope {
 
 export interface BootReads<S extends BootSession, R> {
   session: Promise<BootResponse<S>>;
-  /** Undefined means discard the speculative result and use the normal read. */
-  takeRepositories(session: BootResponse<S>): Promise<BootResponse<R> | undefined>;
+  /**
+   * Undefined means discard the speculative result and use the normal read. `held`: whether this boot still holds,
+   * for a boot whose workspace opens before the listing lands (a kept copy, src/warm-copy.ts); by default no load
+   * may have begun since.
+   */
+  takeRepositories(session: BootResponse<S>, held?: () => boolean): Promise<BootResponse<R> | undefined>;
 }
 
 /**
@@ -47,11 +51,11 @@ export function startBootReads<S extends BootSession, R>(options: {
   );
   return {
     session,
-    async takeRepositories(resolvedSession) {
+    async takeRepositories(resolvedSession, held = () => options.isCurrent(scope)) {
       const original = await session;
-      if (original !== resolvedSession || !original.value.user || !original.sessionTag || !options.isCurrent(scope)) return undefined;
+      if (original !== resolvedSession || !original.value.user || !original.sessionTag || !held()) return undefined;
       const { response } = await repositories;
-      if (!options.isCurrent(scope) || !response?.sessionTag || response.sessionTag !== original.sessionTag) return undefined;
+      if (!held() || !response?.sessionTag || response.sessionTag !== original.sessionTag) return undefined;
       return response;
     },
   };

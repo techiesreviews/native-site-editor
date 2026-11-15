@@ -10,6 +10,8 @@ import type { ApiReceipt } from "../src/boot-api-response.ts";
 import type { FilesResult, Repository, Snapshot } from "../shared/types.ts";
 import { ReadUnansweredError } from "../src/read-retry.ts";
 import type { EarlyReads } from "../src/boot-reads.ts";
+import { readWarmCopy, writeWarmCopy, type WarmCopy } from "../src/warm-copy.ts";
+import { fakeIndexedDB } from "./support/fake-agent-indexeddb.ts";
 
 // readWorkspaceUrl and rememberWorkspace (src/workspace-state.ts) use the page's location, history and localStorage.
 const saved = ["location", "history", "localStorage"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
@@ -49,7 +51,7 @@ const receipt = <T>(value: T, sessionTag: string | null = "t1"): ApiReceipt<T> =
 
 type Read = { path: string; params?: Record<string, string>; early?: Promise<Response>; answer: ReturnType<typeof deferred<unknown>> };
 
-function fixture({ remember = true, early }: { remember?: boolean; early?: EarlyReads } = {}) {
+function fixture({ remember = true, early, native = false }: { remember?: boolean; early?: EarlyReads; native?: boolean } = {}) {
   hash = "#repo=501&branch=main";
   globalThis.aseEarlyReads = early;
   const session = createWorkspaceSession();
@@ -57,6 +59,7 @@ function fixture({ remember = true, early }: { remember?: boolean; early?: Early
   if (remember) writeBootMemory(local, MEMORY);
   const reads: Read[] = [], seeded: string[] = [], cached = new Map<string, string>(), shown = { content: "", status: "", nodes: [] as unknown[] };
   let fileGeneration = 0, tag: string | null | undefined = "t1";
+  const heads: string[] = [], headChecks: boolean[] = [];
   const read = (path: string, params?: Record<string, string>, early?: Promise<Response>) => {
     const answer = deferred<unknown>();
     void answer.promise.catch(() => {});
@@ -67,7 +70,8 @@ function fixture({ remember = true, early }: { remember?: boolean; early?: Early
   const branchSelect = { disabled: false, value: "" }, refreshButton = { disabled: false };
   const ports = {
     appStore: createAppStore(createDraftStore()),
-    savePublish: { trustedHead: () => undefined, seeHead: () => {}, resetDeleted: () => {}, checkDeleted: async () => {}, isDeleted: () => false },
+    savePublish: { trustedHead: () => undefined, seeHead: (commit: string) => { heads.push(commit); }, resetDeleted: () => {}, checkDeleted: async () => {}, isDeleted: () => false,
+      checkHead: async (force?: boolean) => { headChecks.push(Boolean(force)); } },
     repositoryIndex: new RepositoryIndex(),
     cleanSources: {
       load: (_repo: string, revision: string, readText: () => Promise<string>) => {
@@ -76,6 +80,7 @@ function fixture({ remember = true, early }: { remember?: boolean; early?: Early
         text.then((value) => { cached.set(revision, value); }, () => {});
         return text;
       },
+      peek: (_repo: string, revision: string) => cached.get(revision),
     },
     filesTreeController: { reset: () => {}, render: () => {} },
     pagesController: { updateTabs: () => {} },
@@ -86,8 +91,10 @@ function fixture({ remember = true, early }: { remember?: boolean; early?: Early
     repositories: [REPO],
     content: box, files: { replaceChildren: () => {} }, refreshButton, branchSelect,
     repositorySelect: { value: "501" },
-    repositoryMenu: undefined, explorerDropdown: undefined, siteActions: undefined, nativeSite: undefined,
-    nativeSourcesRequest: 0, nativePaintedRequest: -1, nativePaintedPaths: [],
+    repositoryMenu: undefined, explorerDropdown: undefined, siteActions: undefined,
+    // A native site paints at once when asked for (`native`), its home page among the painted files.
+    nativeSite: native ? ({ routes: {} } as unknown as WorkspaceBootPorts["nativeSite"]) : undefined,
+    nativeSourcesRequest: 0, nativePaintedRequest: native ? 0 : -1, nativePaintedPaths: native ? ["index.html"] : [],
     source: () => "https://editor.test/",
     sessionTag: () => tag,
     draftsReady: async () => {},
@@ -95,6 +102,7 @@ function fixture({ remember = true, early }: { remember?: boolean; early?: Early
     api: <T>(path: string, params?: Record<string, string>) => read(path, params) as Promise<T>,
     apiResponse: <T>(path: string, params?: Record<string, string>, early?: Promise<Response>) => read(path, params, early) as Promise<ApiReceipt<T>>,
     readFile: async () => "",
+    baseText: () => undefined,
     storage: () => local,
     element: () => ({ textContent: "", title: "" }),
     // A partial element: only the words are read back.
@@ -112,8 +120,8 @@ function fixture({ remember = true, early }: { remember?: boolean; early?: Early
     openEntry: async () => {},
     mountSource: async () => {},
     deactivateNative: () => {},
-    activateNativeSite: async () => false,
-    afterNativePaint: () => {},
+    activateNativeSite: async () => native,
+    afterNativePaint: (_request, run) => { if (native) run(); },
     updateAgentContext: () => {},
     updatePreview: () => {},
     showDirectory: () => {},
@@ -126,7 +134,7 @@ function fixture({ remember = true, early }: { remember?: boolean; early?: Early
   const boot = createWorkspaceBoot(ports);
   const pending = (path: string) => reads.filter((entry) => entry.path === path);
   return {
-    boot, ports, reads, seeded, cached, shown, branchSelect,
+    boot, ports, reads, seeded, cached, shown, branchSelect, heads, headChecks,
     paths: () => reads.map((entry) => entry.path),
     pending,
     setTag: (value: string | null | undefined) => { tag = value; },
@@ -538,4 +546,83 @@ test("a branch list that answers enables the selector on the linked branch, with
   assert.equal(f.branchSelect.disabled, false);
   assert.equal(f.branchSelect.value, "main");
   assert.deepEqual(said, []);
+});
+
+// A repeat visit's kept copy (TOOLS-242, src/warm-copy.ts).
+const HELLO = "hello\n", HELLO_SHA = "ce013625030ba8dba906f756967f9e9ca394464a"; // git hash-object of "hello\n"
+const KEPT_SNAPSHOT: Snapshot = { commit: sha(9), branch: "main", entries: [{ path: "index.html", mode: "100644", type: "blob", sha: HELLO_SHA }],
+  tree: [{ path: "index.html", mode: "100644", type: "blob", sha: HELLO_SHA }] };
+const kept = (extra: Partial<WarmCopy> = {}): WarmCopy => ({ login: "lex", source: "https://editor.test/", repo: REPO, branch: "main", snapshot: KEPT_SNAPSHOT,
+  files: [{ path: "index.html", sha: HELLO_SHA, text: HELLO }], ...extra });
+
+test("a kept copy opens on its own snapshot at once: no snapshot read, its head untrusted, its proven text cached, GitHub's head asked once painted", async () => {
+  const f = fixture({ remember: false, native: true });
+  f.boot.startGuess();
+  await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
+  await flush();
+  assert.deepEqual(f.paths(), ["branches"], "nothing read from GitHub before the page shows but the branch list");
+  assert.equal(f.ports.appStore.snapshot.value, KEPT_SNAPSHOT);
+  assert.equal(f.cached.get(HELLO_SHA), HELLO);
+  assert.deepEqual(f.heads, [], "the kept head is not trusted over GitHub's");
+  assert.deepEqual(f.headChecks, [true], "GitHub's head is asked for once the page is on screen");
+});
+
+test("a kept text that does not hash to its SHA is read from GitHub instead", async () => {
+  const f = fixture({ remember: false, native: true });
+  await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept({ files: [{ path: "index.html", sha: HELLO_SHA, text: "hello, changed\n" }] }));
+  await flush();
+  const fresh = f.pending("file");
+  assert.deepEqual(fresh.map((read) => read.params?.sha), [HELLO_SHA]);
+  fresh[0].answer.resolve({ content: HELLO });
+  await flush();
+  assert.equal(f.cached.get(HELLO_SHA), HELLO);
+});
+
+test("a kept copy of another branch than the one asked for is not shown; the plain reads run", async () => {
+  const f = fixture({ remember: false, native: true });
+  void f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept({ branch: "next", snapshot: { ...KEPT_SNAPSHOT, branch: "next" } }));
+  await flush();
+  assert.deepEqual(f.paths(), ["snapshot", "branches"]);
+  assert.equal(f.ports.appStore.snapshot.value, undefined);
+});
+
+test("a kept copy of a branch GitHub no longer lists opens again the plain way, which says so", async () => {
+  const f = fixture({ remember: false, native: true });
+  await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
+  f.pending("branches")[0].answer.resolve(["other"]);
+  await flush();
+  assert.deepEqual(f.paths(), ["branches", "snapshot", "branches"], "the plain open reads the snapshot and the branches again");
+  f.pending("snapshot")[0].answer.reject(new Error("Not found"));
+  f.pending("branches")[1].answer.resolve(["other"]);
+  await flush();
+  assert.equal(f.shown.content, "The linked branch is no longer available. Choose a branch from Pages & files.");
+});
+
+test("takeWarmCopy gives the kept copy once, for the address's or the account's last site, the same account and editor only", async () => {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  const { factory } = fakeIndexedDB();
+  Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: factory });
+  try {
+    await writeWarmCopy(kept(), factory);
+    assert.ok(await readWarmCopy(factory));
+    const take = async (login: string, link: string, workspace?: { repoId: number; branch: string }) => {
+      const f = fixture({ remember: false });
+      localStorage.removeItem("astro-site-editor:workspace:v1:lex");
+      if (workspace) localStorage.setItem("astro-site-editor:workspace:v1:lex", JSON.stringify(workspace));
+      hash = link;
+      f.boot.startGuess();
+      return [await f.boot.takeWarmCopy(login), await f.boot.takeWarmCopy(login)];
+    };
+    assert.deepEqual((await take("lex", "#repo=501&branch=main")).map(Boolean), [true, false], "once");
+    assert.deepEqual((await take("Lex", "", { repoId: 501, branch: "main" })).map(Boolean), [true, false], "the account's last site, whatever the login's case");
+    assert.equal((await take("sam", "#repo=501&branch=main"))[0], undefined, "another account");
+    assert.equal((await take("lex", "#repo=502&branch=main"))[0], undefined, "another repository");
+    assert.equal((await take("lex", "#repo=501&branch=next"))[0], undefined, "another branch");
+    assert.equal((await take("lex", "#repo=nope"))[0], undefined, "an invalid link");
+    assert.equal((await take("lex", ""))[0], undefined, "no site to open");
+  } finally {
+    localStorage.removeItem("astro-site-editor:workspace:v1:lex");
+    if (saved) Object.defineProperty(globalThis, "indexedDB", saved);
+    else Reflect.deleteProperty(globalThis, "indexedDB");
+  }
 });

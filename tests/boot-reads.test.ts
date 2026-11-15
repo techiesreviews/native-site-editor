@@ -254,3 +254,15 @@ test("the boot takes only what the early script could have put there: anything e
   assert.equal(takeEarlyRead("session"), undefined);
   globalThis.aseEarlyReads = undefined;
 });
+
+test("a boot whose workspace opened first takes the listing while its own hold stands, never another tag's (TOOLS-242)", async () => {
+  let current = true;
+  const reads = () => startBootReads({ scope, isCurrent: () => current, readSession: async () => signedIn, readRepositories: async () => listing });
+  const opened = reads();
+  current = false;
+  assert.equal(await opened.takeRepositories(await opened.session), undefined, "by default a load begun since discards it");
+  assert.equal(await opened.takeRepositories(await opened.session, () => true), listing);
+  assert.equal(await opened.takeRepositories(await opened.session, () => false), undefined, "a sign-out or another boot discards it");
+  const other = startBootReads({ scope, isCurrent: () => false, readSession: async () => signedIn, readRepositories: async () => ({ ...listing, sessionTag: "session-b" }) });
+  assert.equal(await other.takeRepositories(await other.session, () => true), undefined);
+});
