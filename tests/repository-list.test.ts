@@ -502,3 +502,19 @@ test("a kept copy's listing adopts its onboarding hint only while it is the late
   await settle();
   assert.deepEqual(g.calls.hints, ["create"]);
 });
+
+test("sign-out goes on to the editor's home though the kept copy's storage never answers", async () => {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  const stalled = { open: () => ({}) as IDBOpenDBRequest };
+  Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: stalled });
+  try {
+    const { list } = fixture();
+    answer = () => new Response(null, { status: 200 });
+    assigned.length = 0;
+    await list.disconnect();
+    assert.deepEqual(assigned, ["/"]);
+  } finally {
+    if (saved) Object.defineProperty(globalThis, "indexedDB", saved);
+    else Reflect.deleteProperty(globalThis, "indexedDB");
+  }
+});

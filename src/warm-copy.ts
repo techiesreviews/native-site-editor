@@ -45,6 +45,8 @@ const DATABASE = "native-site-editor-warm-copy", STORE = "copy", KEY = "last";
 /** Past these the copy is not kept: a very large site opens as before. */
 export const MAX_TREE_ENTRIES = 20_000;
 export const MAX_TEXT_LENGTH = 2_000_000;
+/** How long the boot (and sign-out) waits on this storage before going on without it. */
+export const WARM_READ_MS = 500;
 
 type Factory = Pick<IDBFactory, "open">;
 const databases = new WeakMap<Factory, Promise<IDBDatabase | undefined>>();
@@ -56,7 +58,11 @@ function open(factory: Factory | undefined = globalThis.indexedDB) {
       const request = factory.open(DATABASE, 1);
       request.onupgradeneeded = () => request.result.createObjectStore(STORE);
       // A newer version or a delete elsewhere waits for no open connection of this page.
-      request.onsuccess = () => { request.result.onversionchange = () => request.result.close(); resolve(request.result); };
+      request.onsuccess = () => {
+        // Closed for it and forgotten here: the next keep or sign-out opens the storage again.
+        request.result.onversionchange = () => { request.result.close(); databases.delete(factory); };
+        resolve(request.result);
+      };
       request.onerror = () => resolve(undefined);
     } catch { resolve(undefined); }
   }));
