@@ -182,9 +182,12 @@ function foldSetup(next: TreeEntry[], options: { texts?: Record<string, string>;
   const port = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => options.race ? options.race.port(name, work) : work;
   const ports = {
     appStore: { snapshot: { value: was }, repository: { value: { full_name: "lex/site" } } },
-    api: port("api", async (action: string) => { calls.push(action); return action === "snapshot" ? after : { files: [], truncated: false, author: options.author }; }),
-    readFiles: port("readFiles", async (_repo: string, shas: string[]) => Object.fromEntries(shas.map(sha => [sha, options.texts?.[sha] ?? newPage]))),
-    draftScope: () => scope,
+    // The shared host modules (src/host-modules.ts): only the members foldIn reads.
+    repo: {
+      api: port("api", async (action: string) => { calls.push(action); return action === "snapshot" ? after : { files: [], truncated: false, author: options.author }; }),
+      readFiles: port("readFiles", async (_repo: string, shas: string[]) => Object.fromEntries(shas.map(sha => [sha, options.texts?.[sha] ?? newPage]))),
+    },
+    session: { draftScope: () => scope },
     runtime: {
       source: (path: string) => base.get(path),
       site: { routes: { "/": "index.html" } },
@@ -283,12 +286,12 @@ test("foldIn: a changed mode, or more text files than one batch read, loads the 
 
 test("foldIn: the chip says Someone when the commit read fails, and does not wait for one that never answers", async () => {
   const failed = foldSetup(changedIndex());
-  const api = failed.ports.api;
-  failed.ports.api = (async (action: string, params?: Record<string, string>) => action === "commit" ? Promise.reject(new Error("down")) : api(action, params)) as typeof api;
+  const api = failed.ports.repo.api;
+  failed.ports.repo.api = (async (action: string, params?: Record<string, string>) => action === "commit" ? Promise.reject(new Error("down")) : api(action, params)) as typeof api;
   assert.equal(await foldIn(failed.ports, failed.host, failed.after.commit, () => true), true);
   assert.equal(failed.visits[0][2], "Someone · GitHub");
   const never = foldSetup(changedIndex());
-  never.ports.api = (async (action: string, params?: Record<string, string>) => action === "commit" ? new Promise(() => {}) : api(action, params)) as typeof api;
+  never.ports.repo.api = (async (action: string, params?: Record<string, string>) => action === "commit" ? new Promise(() => {}) : api(action, params)) as typeof api;
   const started = Date.now();
   assert.equal(await foldIn(never.ports, never.host, never.after.commit, () => true), true);
   assert.ok(Date.now() - started < AUTHOR_WAIT_MS + 1_000, "folded once the wait passed");

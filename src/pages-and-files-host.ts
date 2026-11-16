@@ -85,17 +85,17 @@ export interface PagesAndFilesPorts {
     mediaController: Pick<ReturnType<typeof createMediaController>, "requestGalleryRefresh" | "disposeGallery" | "ensureGallery" | "galleryVisible">;
     readMediaText: NonNullable<FilePorts["readMediaText"]>;
     mediaOrigins: NonNullable<FilePorts["origins"]>;
-    discardUpload(path: string): Promise<void>;
-    uploadFilesTo(folder: string, files: File[]): Promise<string[]>;
+    discardUpload: (path: string) => Promise<void>;
+    uploadFilesTo: (folder: string, files: File[]) => Promise<string[]>;
   };
   /** The page builder's host (src/page-builder-host.ts): cards, page meta, navigation and settings. */
   pageBuilder: {
     cards: Pick<Cards, "cardOffer" | "cardsLinkingTo" | "createWithCard">;
-    nativeNavigationTarget(pagePath: string | undefined, r?: Reads): ReturnType<PagesPorts["navigationTarget"]>;
+    nativeNavigationTarget: (pagePath: string | undefined, r?: Reads) => ReturnType<PagesPorts["navigationTarget"]>;
     writeNativePageMeta: PagesPorts["writeMeta"];
-    refreshNativeRoutes(): void;
-    openNativePageSettings(path: string): Promise<void>;
-    openNativeNavigation(path: string): Promise<void>;
+    refreshNativeRoutes: () => void;
+    openNativePageSettings: (path: string) => Promise<void>;
+    openNativeNavigation: (path: string) => Promise<void>;
   };
   app: HTMLElement;
   /** Host state, read at call time. */
