@@ -19,8 +19,6 @@ export const MAX_PUBLISH_FILES = 2000;
 /** Text one commit may carry, per file and in all; beyond what browser drafts can hold. */
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_BATCH_BYTES = 24 * 1024 * 1024;
-/** The publish request, unpacked: the files' text and their JSON around it. */
-export const MAX_PUBLISH_REQUEST_BYTES = 32 * 1024 * 1024;
 /** One git/trees request stays small; a larger commit's tree is built in steps. */
 const TREE_STEP_ENTRIES = 200;
 const TREE_STEP_BYTES = 4 * 1024 * 1024;

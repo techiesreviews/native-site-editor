@@ -21,6 +21,7 @@ import { createGrant, validAgentBranch } from "./agent-context";
 import type { Env, StoredSession } from "./app";
 import { GitHub, HttpError } from "./github";
 import { requestJson, requestText } from "./http";
+import { bodyLimit } from "./routes";
 import { NO_IP_BUCKET, REGISTRATION_BUDGET, REGISTRATION_BYTES, REGISTRATION_ROUTE, type BudgetResult } from "./oauth-registration";
 import { PENDING_ROUTE, type PendingAction } from "./oauth-pending";
 import { escapeHtml } from "./owner-setup";
@@ -197,40 +198,26 @@ export async function handleOAuth(request: Request, env: Env, url: URL, deps: OA
   if (request.method === "OPTIONS" && !path.startsWith("/auth/mcp/authorize"))
     return new Response(null, { status: 204, headers: cors });
   if (!agentControls(env).relay && ["/auth/mcp/register", "/auth/mcp/authorize", "/auth/mcp/token"].includes(path)) return agentsPaused(cors);
-  if (path.startsWith("/.well-known/oauth-protected-resource")) {
-    if (path !== "/.well-known/oauth-protected-resource" && path !== "/.well-known/oauth-protected-resource/mcp")
-      return json({ error: "Not found." }, 404);
+  // The route table (worker/routes.ts) lists each address with its methods, so only those reach here.
+  if (path.startsWith("/.well-known/oauth-protected-resource"))
     return json(protectedResourceMetadata(origin), 200, { "Cache-Control": "public, max-age=3600" });
-  }
-  if (path.startsWith("/.well-known/oauth-authorization-server")) {
-    if (path !== "/.well-known/oauth-authorization-server" && path !== "/.well-known/oauth-authorization-server/mcp")
-      return json({ error: "Not found." }, 404);
+  if (path.startsWith("/.well-known/oauth-authorization-server"))
     return json(authorizationServerMetadata(origin), 200, { "Cache-Control": "public, max-age=3600" });
-  }
-  if (path === "/auth/mcp/register") {
-    if (request.method !== "POST") return oauthError("invalid_request", "Use POST.", 405);
-    return register(request, env);
-  }
-  if (path === "/auth/mcp/token") {
-    if (request.method !== "POST") return oauthError("invalid_request", "Use POST.", 405);
-    return token(request, env);
-  }
+  if (path === "/auth/mcp/register") return register(request, env);
+  if (path === "/auth/mcp/token") return token(request, env);
   if (path === "/auth/mcp/consent.js")
     return new Response(consentScript, {
       headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" },
     });
-  if (path === "/auth/mcp/authorize") {
-    if (request.method === "GET") return authorize(request, env, url, deps);
-    if (request.method === "POST") return consent(request, env, url, deps);
-    return new Response(null, { status: 405, headers: { Allow: "GET, POST" } });
-  }
+  if (path === "/auth/mcp/authorize")
+    return request.method === "POST" ? consent(request, env, url, deps) : authorize(request, env, url, deps);
   return json({ error: "Not found." }, 404);
 }
 
 async function register(request: Request, env: Env) {
   let body: any;
   try {
-    body = await requestJson(request, 16 * 1024);
+    body = await requestJson(request, bodyLimit(request));
   } catch (error) {
     return oauthError("invalid_client_metadata", error instanceof HttpError ? error.message : "Send JSON client metadata.");
   }
@@ -416,17 +403,13 @@ async function authorize(request: Request, env: Env, url: URL, deps: OAuthDeps) 
 }
 
 async function consent(request: Request, env: Env, url: URL, deps: OAuthDeps) {
-  // The consent form posts from this origin (its page sends the Origin
-  // header under a same-origin referrer policy); the request nonce, bound to
-  // the signed-in session, is checked below as well.
-  const origin = request.headers.get("Origin");
-  if (origin !== url.origin && !(origin === null && request.headers.get("Sec-Fetch-Site") === "same-origin"))
-    return errorPage(deps, "Request refused", "This request did not come from the editor's consent page.", 403);
+  // The consent form posts from this origin (the route table's "consent-form" rule checked its Origin); the
+  // request nonce, bound to the signed-in session, is checked below as well.
   if (!request.headers.get("Content-Type")?.startsWith("application/x-www-form-urlencoded"))
     return errorPage(deps, "Request refused", "Send the consent form.", 415);
   let text: string;
   try {
-    text = await requestText(request, 4096);
+    text = await requestText(request, bodyLimit(request));
   } catch (error) {
     const status = error instanceof HttpError ? error.status : 400;
     return errorPage(deps, "Request refused", error instanceof HttpError ? error.message : "The form is invalid.", status);
@@ -493,14 +476,14 @@ async function token(request: Request, env: Env) {
   if (type.startsWith("application/x-www-form-urlencoded")) {
     let text: string;
     try {
-      text = await requestText(request, 8192);
+      text = await requestText(request, bodyLimit(request));
     } catch (error) {
       const status = error instanceof HttpError ? error.status : 400;
       return oauthError("invalid_request", error instanceof HttpError ? error.message : "The request is invalid.", status === 413 || status === 415 ? status : 400);
     }
     form = new URLSearchParams(text);
   } else if (type.startsWith("application/json")) {
-    const body = await requestJson(request, 8192).catch(() => undefined);
+    const body = await requestJson(request, bodyLimit(request)).catch(() => undefined);
     if (!body || typeof body !== "object") return oauthError("invalid_request", "Send the token request as a form.");
     form = new URLSearchParams(Object.entries(body).map(([key, value]) => [key, String(value)]));
   } else return oauthError("invalid_request", "Send the token request as application/x-www-form-urlencoded.");

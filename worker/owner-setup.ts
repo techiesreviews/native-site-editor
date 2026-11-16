@@ -1,4 +1,5 @@
 import { requestJson } from "./http";
+import { bodyLimit } from "./routes";
 import { HttpError, boundedJson } from "./github";
 import type { Env, StoredValue } from "./app";
 
@@ -295,7 +296,7 @@ export async function convertManifest(
 }
 
 export async function setupPayload(request: Request) {
-  const data = await requestJson(request, 1024);
+  const data = await requestJson(request, bodyLimit(request));
   return typeof data?.token === "string" ? data.token : "";
 }
 

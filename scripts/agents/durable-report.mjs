@@ -11,7 +11,7 @@ const endpoint = "https://api.cloudflare.com/client/v4/graphql";
 const hour = 3_600_000;
 const week = 7 * 24 * hour;
 const groupLimit = 1000;
-/** Kept equal to OBSOLETE_AGENT_ROUTES in worker/app.ts (tests check it): 410 editor-updated, zero DO work. */
+/** Kept equal to OBSOLETE_AGENT_ROUTES in worker/routes.ts (tests check it): 410 editor-updated, zero DO work. */
 export const OBSOLETE_ROUTES = ["/api/agent/hub", "/api/agent/context", "/api/agent/drafts", "/api/agent/claim",
   "/api/agent/ack", "/api/agent/pause", "/api/agent/ask", "/api/agent/answer", "/api/agent/dismiss"];
 /** Each maintenance HTTP request makes at most one DO fetch (tickets 27-28). */

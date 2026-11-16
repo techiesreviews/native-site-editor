@@ -105,7 +105,8 @@ test("connections and MCP authentication read grant metadata without context, dr
     assert.ok(!h.counters.readKeys.some(key => /^(context|draft:|drafts|requests)/.test(key)));
     assert.ok(h.counters.log.some(row => row.path === "/?context=0"));
     assert.equal((await h.dispatchFetch(origin + "/api/agent/connections")).status, 401);
-    assert.equal((await h.dispatchFetch(origin + "/api/agent/connections", { method: "POST", headers: { Cookie: h.cookie, Origin: "https://evil.example" } })).status, 403);
+    // The route table takes only GET there: a POST is refused before anything else (TOOLS-267).
+    assert.equal((await h.dispatchFetch(origin + "/api/agent/connections", { method: "POST", headers: { Cookie: h.cookie, Origin: "https://evil.example" } })).status, 405);
   } finally { await h.worker.dispose(); }
 });
 

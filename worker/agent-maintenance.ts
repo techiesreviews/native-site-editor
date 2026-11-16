@@ -2,6 +2,8 @@
 // expired records or include credentials. All output is constructed explicitly.
 import { agentControls } from "./agent-controls";
 import type { Env } from "./app";
+import { requestText } from "./http";
+import { bodyLimit } from "./routes";
 
 interface InventoryStorage {
   list(options: { startAfter?: string; limit: number }): Promise<Map<string, unknown>>;
@@ -46,7 +48,6 @@ async function authorize(request: Request, token: string | undefined) {
   let difference = 0;
   for (let index = 0; index < 32; index++) difference |= digests[0][index] ^ digests[1][index];
   if (!supplied || difference !== 0) return response({ error: "Unauthorized" }, 401);
-  if (request.method !== "POST") return response({ error: "Use POST" }, 405);
 }
 const hex = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const utcDay = (at: number) => new Date(at).toISOString().slice(0, 10);
@@ -62,7 +63,7 @@ async function maintenanceRoute(request: Request, sessions: Env["SESSIONS"], tok
   const denied = await authorize(request, token);
   if (denied) return denied;
   let input: unknown;
-  try { input = await request.json(); } catch { return response({ error: "Invalid body" }, 400); }
+  try { input = JSON.parse(await requestText(request, bodyLimit(request))); } catch { return response({ error: "Invalid body" }, 400); }
   const id = object(input)?.id;
   const deletion = cleanup ? cleanupInput(input) : undefined;
   if (!hex(id) || (cleanup && !deletion)) return response({ error: "Invalid body" }, 400);

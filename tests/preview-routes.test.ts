@@ -67,6 +67,8 @@ test("Miniflare: a preview link is minted with its end signed, visitors join onl
     const serveAs = (headers: Record<string, string>, proof?: string) => worker.dispatchFetch(serveUrl(proof), { headers: { Upgrade: "websocket", ...headers } });
     assert.equal((await serveAs({ Origin: origin })).status, 401);
     assert.equal((await serveAs({ Origin: previews, Cookie: anna.cookie })).status, 403, "a page on the preview's address");
+    // Like every socket of the editor's pages, serving needs the editor's Origin; none is not the editor's page (TOOLS-267).
+    assert.equal((await serveAs({ Cookie: anna.cookie })).status, 403, "an upgrade with no Origin");
     assert.equal((await serveAs({ Origin: origin, Cookie: anna.cookie }, "f".repeat(64))).status, 403, "someone else's proof");
     const served = await serveAs({ Origin: origin, Cookie: anna.cookie });
     assert.equal(served.status, 101);
