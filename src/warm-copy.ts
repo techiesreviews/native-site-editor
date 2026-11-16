@@ -25,7 +25,7 @@
 //   check" while shown, asked again on the next look).
 // - leaving (a new listing, navigation, sign-out): the copy's texts not yet proven cache nothing and read nothing.
 
-import type { Repository, Snapshot } from "../shared/types";
+import type { Repository, Snapshot, TreeEntry } from "../shared/types";
 import { textBlobSha } from "./file-changes";
 import { githubScope, same } from "./workspace-session";
 
@@ -45,8 +45,17 @@ const DATABASE = "native-site-editor-warm-copy", STORE = "copy", KEY = "last";
 /** Past these the copy is not kept: a very large site opens as before. */
 export const MAX_TREE_ENTRIES = 20_000;
 export const MAX_TEXT_LENGTH = 2_000_000;
-/** How long the boot (and sign-out) waits on this storage before going on without it. */
-export const WARM_READ_MS = 500;
+/** How long the boot's read and sign-out's delete wait on this storage before going on without it. */
+export const WARM_WAIT_MS = 500;
+/** `work`, or undefined once WARM_WAIT_MS passed; the timer goes on either outcome. */
+export async function withinWait<T>(work: Promise<T>): Promise<T | undefined> {
+  let timer: Parameters<typeof clearTimeout>[0];
+  try {
+    return await Promise.race([work, new Promise<undefined>((done) => { timer = setTimeout(done, WARM_WAIT_MS); })]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 type Factory = Pick<IDBFactory, "open">;
 const databases = new WeakMap<Factory, Promise<IDBDatabase | undefined>>();
@@ -80,6 +89,8 @@ function run<T>(mode: IDBTransactionMode, ask: (store: IDBObjectStore) => IDBReq
 }
 
 const isText = (value: unknown): value is string => typeof value === "string" && value.length > 0;
+const entriesOk = (entries: unknown) => Array.isArray(entries) &&
+  entries.every((entry: Partial<TreeEntry> | null) => entry && isText(entry.path) && isText(entry.sha) && isText(entry.type) && isText(entry.mode));
 /** The stored copy when well formed; anything else reads as none. */
 export function readWarmCopy(factory?: Factory): Promise<WarmCopy | undefined> {
   return run<Partial<WarmCopy>>("readonly", (store) => store.get(KEY), factory).then(asWarmCopy, () => undefined);
@@ -87,7 +98,7 @@ export function readWarmCopy(factory?: Factory): Promise<WarmCopy | undefined> {
 export function asWarmCopy(value: Partial<WarmCopy> | undefined): WarmCopy | undefined {
   const repo = value?.repo, snapshot = value?.snapshot, files = value?.files;
   if (!value || !isText(value.login) || !isText(value.source) || !isText(value.branch) || !repo || !Number.isSafeInteger(repo.id) || !isText(repo.full_name) || !isText(repo.name) ||
-    !snapshot || !isText(snapshot.commit) || snapshot.branch !== value.branch || snapshot.empty || !Array.isArray(snapshot.tree) || !Array.isArray(snapshot.entries) ||
+    !snapshot || !isText(snapshot.commit) || snapshot.branch !== value.branch || snapshot.empty || !entriesOk(snapshot.tree) || !entriesOk(snapshot.entries) ||
     !Array.isArray(files) || !files.every((file) => file && isText(file.path) && isText(file.sha) && typeof file.text === "string")) return undefined;
   // A time from the future (a clock moved back) counts as now; anything else that is not a time, as none.
   const at = typeof value.at === "number" && Number.isFinite(value.at) ? Math.min(value.at, Date.now()) : undefined;

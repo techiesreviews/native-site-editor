@@ -100,7 +100,7 @@ its number unused.
 - Good: Back to the sign-in screen; the next visit does not continue to GitHub by itself and forgets the remembered site and this browser's copy of it.
 - Files: `src/components/repository-menu.ts`, `src/repository-list.ts`, `src/boot-memory.ts`, `src/warm-copy.ts`
 - Phone: yes
-- Spec: `tests/native-save/native-boot-memory.spec.ts`
+- Spec: `tests/native-save/native-boot-memory.spec.ts`, `tests/native-save/native-warm-open.spec.ts`
 - Steps: `scripts/agents/shots/features/F-setup-09.json`
 
 ## Repositories and branches

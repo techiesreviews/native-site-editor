@@ -14,7 +14,7 @@ import { clearWizard, readWizard } from "./setup-wizard";
 import { button, node } from "./ui/dom";
 import { sameRepository, type SessionStamp } from "./workspace-session";
 import { readWorkspace, readWorkspaceUrl, type WorkspaceLocation } from "./workspace-state";
-import { forgetWarmCopy, WARM_READ_MS, type WarmCopy } from "./warm-copy";
+import { forgetWarmCopy, withinWait, type WarmCopy } from "./warm-copy";
 
 type Setup = ReturnType<typeof createSetupHost>;
 /** A repeat visit's kept copy (src/warm-copy.ts), shown before `listing` (the session's listing; undefined: read it) answers. */
@@ -310,7 +310,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
       forgetBootMemory(storage("local"));
       // Gone before the page leaves: the next one on this browser sees none of this site. A storage that never
       // answers holds the sign-out back no longer than the boot's own bound (other tabs heard it already).
-      await Promise.race([forgetWarmCopy(), new Promise((done) => setTimeout(done, WARM_READ_MS))]);
+      await withinWait(forgetWarmCopy());
       location.assign("/");
     } catch (error) {
       errorMessage(error);

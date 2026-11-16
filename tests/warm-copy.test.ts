@@ -56,6 +56,7 @@ test("a malformed record reads as none", () => {
     undefined, { ...copy(), login: "" }, { ...copy(), source: undefined }, { ...copy(), repo: { ...repo, id: "7" } },
     { ...copy(), branch: "other" }, { ...copy(), snapshot: { ...copy().snapshot, tree: undefined } }, { ...copy(), snapshot: { ...copy().snapshot, empty: true } },
     { ...copy(), files: [{ path: "index.html", sha: HELLO_SHA }] }, { ...copy(), files: "index.html" },
+    { ...copy(), snapshot: { ...copy().snapshot, tree: [null] } }, { ...copy(), snapshot: { ...copy().snapshot, entries: [{ path: "index.html" }] } },
   ]) assert.equal(asWarmCopy(bad as Partial<WarmCopy> | undefined), undefined, JSON.stringify(bad)?.slice(0, 80));
 });
 
