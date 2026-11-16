@@ -209,3 +209,13 @@ test("each new item's key stays the same while its cause does, so a fix's state 
   const after = siteItems([page("index.html", `${head("Home")}<p>New words above.</p><a href="/x/">click here</a><h2>A</h2><h4>B</h4></body>`)], rules);
   assert.deepEqual(after.map(item => item.key), before.map(item => item.key));
 });
+
+test("in a shared part, what a page may give instead (a slot's fallback, a link around a slot) is not listed there", () => {
+  const button = `<a class="site-button" href="/about/"><slot>Learn more</slot></a>`;
+  const split = `<div><slot name="image"><img src="/images/desk.svg"></slot><img src="/images/mark.svg"></div>`;
+  const items = siteItems([page("index.html", `${head("Home")}<site-button>Contact us</site-button><section-split></section-split></body>`)], rules, [
+    part("components/site-button/site-button.html", "site-button", button, ["index.html"], "Site button"),
+    part("components/section-split/section-split.html", "section-split", split, ["index.html"], "Section split"),
+  ]);
+  assert.deepEqual(items.map(({ kind, where, at }) => ({ kind, where, at })), [{ kind: "picture", where: "Section split", at: split.indexOf(`<img src="/images/mark.svg">`) }]);
+});
