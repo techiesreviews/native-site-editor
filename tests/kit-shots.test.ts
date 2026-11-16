@@ -43,7 +43,7 @@ test("JSON and documented YAML subset yield the same validated scenario", () => 
 
 test("screen flags and default matrix expand predictably", () => {
   const options = parseArgs(["editor", "media-gallery"]);
-  assert.equal(screens.length, 14);
+  assert.equal(screens.length, 15);
   assert.equal(screens.at(-1), "catalogue");
   assert.deepEqual(expandMatrix(options.widths, options.themes), [
     { width: 390, theme: "light" }, { width: 390, theme: "dark" },
@@ -239,10 +239,11 @@ console.log("capture diagnostic");
     });
     assert.equal(result.status, 0, result.stderr);
     const lines = result.stdout.trim().split("\n");
-    const count = many ? 7 : 1;
+    // Two screens' rows (three widths each) per contact sheet.
+    const count = many ? Math.ceil(screens.length / 2) : 1;
     const contacts = Array.from({ length: count }, (_, i) => join(out, many ? `contact-${i + 1}.webp` : "contact.webp"));
     assert.deepEqual(lines.slice(0, count), contacts.map(path => `contact: ${path}`));
-    assert.ok(lines.at(-1)?.includes(`contact ${contacts[0]}${many ? " +6 more" : ""}`));
+    assert.ok(lines.at(-1)?.includes(`contact ${contacts[0]}${many ? ` +${count - 1} more` : ""}`));
     assert.match(result.stderr, /capture diagnostic/);
     assert.doesNotMatch(result.stdout, /capture diagnostic/);
     const index = JSON.parse(await readFile(join(out, "index.json"), "utf8"));

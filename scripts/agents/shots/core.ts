@@ -1,4 +1,4 @@
-export const screens = ["editor", "media-gallery", "media-select", "file-details", "image-popup", "picker", "files", "pages", "site-settings", "cleanup", "improve-images", "add-panel", "structure", "catalogue", "inbox"] as const;
+export const screens = ["editor", "media-gallery", "media-select", "file-details", "image-popup", "picker", "files", "pages", "site-settings", "cleanup", "improve-images", "add-panel", "structure", "inbox", "catalogue"] as const;
 export type Screen = typeof screens[number];
 export type Theme = "light" | "dark";
 /** A step marked `on phone` runs only in the editor's phone layout, `on wide` only outside it. */
