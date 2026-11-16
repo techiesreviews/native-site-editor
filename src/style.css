@@ -283,15 +283,16 @@ pre:focus-visible {
   text-decoration: line-through;
 }
 /* On a phone (theme.css's --size-tap switch) a chip is 44 px to tap and 28 px to see: a clear band above and below the
-   pill takes the finger, and the title's own padding makes room for it. Both panes' titles are one 44 px line, so their
-   code starts level. */
+   pill takes the finger. The title keeps its top padding, where the code's resize grip (code-resize.css) reaches over
+   it, so all 44 px are the chip's; the band below takes the bottom padding. With the second pane open both titles are
+   that tall, so their code starts level. */
 @media (hover: none), (pointer: coarse), (width <= 768px) {
-  .code-pane__title {
+  .has-secondary .code-pane__title {
     box-sizing: border-box;
-    min-block-size: var(--size-tap);
+    min-block-size: calc(var(--size-tap) + var(--space-2xs));
   }
   .code-pane__rules {
-    margin-block: calc(-1 * var(--space-2xs));
+    margin-block-end: calc(-1 * var(--space-2xs));
   }
   .code-pane__rule {
     box-sizing: border-box;
@@ -300,7 +301,13 @@ pre:focus-visible {
     padding-block: 0;
     padding-inline: calc(var(--space-xs) + var(--space-4xs));
     border-block: calc((var(--size-tap) - var(--size-compact)) / 2) solid transparent;
+    /* Round ends on the 28 px pill inside the clear band: the browser halves these radii to fit the box, so the
+       corners are as wide as half the pill and as tall as half the band, and round once the band is taken off. */
+    border-radius: var(--size-compact) / var(--size-tap);
     background-clip: padding-box;
+  }
+  .code-pane__rule:focus-visible {
+    outline-offset: calc((var(--size-compact) - var(--size-tap)) / 2);
   }
 }
 .code-pane > .workspace-content {
