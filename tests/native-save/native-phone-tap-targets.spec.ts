@@ -49,13 +49,13 @@ async function branchFlyout(page: Page) {
 
 /** 6-7: Page structure's Add, and a rule chip over the linked styles pane. */
 async function structureAndCode(page: Page) {
-  await page.keyboard.press("ControlOrMeta+k");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByRole("combobox", { name: "Search commands" }).fill("Show code");
-  await palette.getByRole("option", { name: /Show code/ }).click();
-  if (phone(page)) await sheetReady(page);
   const hero = page.frameLocator(".native-preview-frame").locator(".hero h1");
-  await (phone(page) ? hero.tap() : hero.click());
+  if (phone(page)) {
+    await sheetReady(page);
+    await hero.tap();
+    const handle = page.getByRole("button", { name: "Page structure and code" });
+    if ((await handle.getAttribute("aria-expanded")) !== "true") await handle.tap();
+  } else await hero.click();
   const chip = page.locator("#secondary-rules .code-pane__rule").first();
   const add = page.locator("#add-panel-toggle");
   await add.scrollIntoViewIfNeeded();
@@ -78,7 +78,7 @@ async function historyFiles(page: Page) {
   await latest.hover();
   return {
     file: await box(latest.locator(".commit-history__file").first()),
-    more: await box(latest.getByRole("button", { name: /^More/ })),
+    more: await box(latest.getByRole("button", { name: /^Actions for / })),
   };
 }
 
