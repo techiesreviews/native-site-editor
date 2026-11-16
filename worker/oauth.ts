@@ -211,7 +211,7 @@ export async function handleOAuth(request: Request, env: Env, url: URL, deps: OA
     });
   if (path === "/auth/mcp/authorize")
     return request.method === "POST" ? consent(request, env, url, deps) : authorize(request, env, url, deps);
-  return json({ error: "Not found." }, 404);
+  throw new HttpError(501, `${path} is listed in worker/routes.ts without a handler.`);
 }
 
 async function register(request: Request, env: Env) {

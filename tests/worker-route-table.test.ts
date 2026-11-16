@@ -209,7 +209,12 @@ test("every request that carries a body says how big it may be, and every handle
   assert.deepEqual(problems, []);
 });
 
-test("every listed route reaches a handler", async () => {
+test("every listed route has a handler that names it, and reaches one", async () => {
+  // Statically: the handler's comparison names the address (the OAuth metadata's /mcp forms share their base's).
+  const sources = readdirSync(new URL("../worker/", import.meta.url)).filter(name => name.endsWith(".ts") && name !== "routes.ts")
+    .map(name => readFileSync(new URL(`../worker/${name}`, import.meta.url), "utf8")).join("\n");
+  const unnamed = listed.map(route => route.path).filter(path => !sources.includes(`"${path.replace(/^(\/\.well-known\/.*)\/mcp$/, "$1")}"`));
+  assert.deepEqual(unnamed, []);
   for (const { path, method, rule } of rules) {
     const headers: Record<string, string> = { Origin: rule.from === "preview-socket" ? "https://previews.example" : origin, Cookie: cookie,
       ...(rule.upgradeOnly ? { Upgrade: "websocket" } : {}) };
@@ -218,4 +223,23 @@ test("every listed route reaches a handler", async () => {
     assert.notEqual(response.status, 501, `${method} ${path}: ${text}`);
     assert.ok(!(response.status === 404 && text.includes("Endpoint not found.")), `${method} ${path}: ${text}`);
   }
+});
+
+test("a maintenance request over its body limit is refused before the namespace is touched", async () => {
+  const { env, reads } = environment();
+  const token = "t".repeat(32);
+  Object.assign(env, { AGENT_LEGACY_MAINTENANCE: "on", MAINTENANCE_INVENTORY_TOKEN: token, MAINTENANCE_CLEANUP_TOKEN: token });
+  for (const path of ["/__maintenance/inventory", "/__maintenance/cleanup"]) {
+    const response = await handle(new Request(origin + path, {
+      method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "a".repeat(64), pad: "x".repeat(5 * 1024) }),
+    }), env);
+    assert.equal(response.status, 400, path);
+    assert.equal(reads(), 0, `${path} touched nothing`);
+  }
+});
+
+test("a method name that is a property of every object is still a method the route does not take", async () => {
+  for (const method of ["constructor", "toString"])
+    assert.equal((await send("/api/publish", method, { Origin: origin })).status, 405, method);
 });

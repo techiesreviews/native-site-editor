@@ -166,10 +166,10 @@ function serverPath(path: string) {
 export class EditorUpdatedError extends HttpError {
   readonly code = "editor-updated";
 }
-/** A method the route does not take; `allow` names the ones it does. */
+/** A method the route does not take; `allow` names the ones it does (the message leaves out a CORS preflight). */
 export class MethodNotAllowedError extends HttpError {
   constructor(readonly allow: string) {
-    super(405, `Use ${allow.replace(", ", " or ")}.`);
+    super(405, `Use ${allow.split(", ").filter(method => method !== "OPTIONS").join(" or ")}.`);
   }
 }
 
@@ -208,7 +208,7 @@ export function guard(request: Request, url: URL, addresses: { editor: () => str
   const route = byPath.get(path);
   if (!route) throw new HttpError(404, "Endpoint not found.");
   if (obsolete.has(path)) throw new EditorUpdatedError(410, "This editor was updated. Reload this tab to keep using agents.");
-  const rule = route.methods[request.method as Method];
+  const rule = Object.hasOwn(route.methods, request.method) ? route.methods[request.method as Method] : undefined;
   if (!rule) throw new MethodNotAllowedError(Object.keys(route.methods).join(", "));
   if (route.editorAddress && url.origin !== addresses.editor())
     throw new HttpError(403, "Owner setup uses the editor's own address (EDITOR_ORIGIN).");
