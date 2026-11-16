@@ -18,19 +18,49 @@ import type { createSavePublishController } from "./controllers/save-publish-con
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
 import { textBlobSha } from "./file-changes";
 import { ReadUnansweredError } from "./read-retry";
+import type { Notices, OpenOptions, Preview, Repo, Session, TextIndex, View } from "./host-modules";
 import type { RepositoryIndex } from "./repository-loading";
-import { githubScope, sameBranch, type SessionStamp, type WorkspaceScope } from "./workspace-session";
+import { githubScope, sameBranch, type SessionStamp } from "./workspace-session";
 import { readWorkspace, readWorkspaceUrl, rememberWorkspace, type WorkspaceLocation } from "./workspace-state";
 import { MAX_TEXT_LENGTH, provenTexts, readWarmCopy, warmFor, withinWait, writeWarmCopy, type WarmCopy } from "./warm-copy";
 
-// `retry`: the open this file is part of, offered as Try again when its read gets no answer.
-type OpenOptions = { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; retry?: () => void };
-type Api = <T>(path: string, params?: Record<string, string>) => Promise<T>;
 type PartialStart = { point: StartingPoint; committed: string[] };
 type Box = Pick<HTMLElement, "replaceChildren">;
 type Picker = { disabled: boolean; value: string };
 
 export interface WorkspaceBootPorts {
+  /** The shared host modules (src/host-modules.ts), read at call time. */
+  notices: Pick<Notices, "status" | "settleStatus" | "clearError" | "errorMessage">;
+  session: Pick<Session, "nextLoad" | "draftScope">;
+  repo: Pick<Repo, "api" | "apiResponse" | "readFile" | "entryAt">;
+  view: Pick<View, "fileGeneration" | "setCurrentPage" | "openNewDraft" | "openEntry" | "mountSource" | "updateAgentContext" | "showDirectory">;
+  preview: Pick<Preview, "updateNativePreview">;
+  textIndex: Pick<TextIndex, "afterNativePaint">;
+  /** The workspace screen's parts (src/workspace-mount.ts), made when it mounts. */
+  readonly panels: {
+    readonly content: Box;
+    readonly files: Box;
+    readonly refreshButton: { disabled: boolean };
+    readonly branchSelect: Picker;
+    readonly repositorySelect: { value: string };
+    readonly repositoryMenu: { setRepository(repo?: Repository): void } | undefined;
+    readonly explorerDropdown: { close(): void } | undefined;
+    readonly siteActions: { revalidate(): void } | undefined;
+  };
+  /** The open native site (src/native-site-runtime.ts): its site, the request painted and GitHub's texts the preview holds. */
+  runtime: {
+    readonly site: NativeSite | undefined;
+    readonly state: { readonly request: number; readonly paintedRequest: number; readonly paintedPaths: string[] };
+    readonly base: { readonly sources: Pick<Map<string, string>, "get"> };
+  };
+  /** Start your site's starting point and its unfinished start (src/setup-host.ts). */
+  setup: {
+    removeFinishStarter(): void;
+    takeStartingPoint(repo: Repository): StartingPoint | undefined;
+    writeStartingPoint(point: StartingPoint): Promise<string | undefined>;
+    readPartialStart(repoId: number): PartialStart | undefined;
+    offerFinishStarter(repo: Repository, partial: PartialStart): void;
+  };
   appStore: AppStore;
   savePublish: Pick<ReturnType<typeof createSavePublishController>, "trustedHead" | "seeHead" | "resetDeleted" | "checkDeleted" | "isDeleted" | "checkHead" | "headSettled" | "headSeen">;
   repositoryIndex: Pick<RepositoryIndex, "clear" | "seed" | "entry">;
@@ -39,64 +69,23 @@ export interface WorkspaceBootPorts {
   pagesController: { updateTabs(force?: boolean): void };
   previewSelection: { recordIntent(path: string): void };
   mediaHistoryHome: { clear(): void };
-  /** Host state, read (and the file selection counter written) at call time. */
+  /** Host state, read at call time. */
   readonly user: { login: string } | null | undefined;
-  fileGeneration: number;
   readonly repositories: Repository[];
-  readonly content: Box;
-  readonly files: Box;
-  readonly refreshButton: { disabled: boolean };
-  readonly branchSelect: Picker;
-  readonly repositorySelect: { value: string };
-  readonly repositoryMenu: { setRepository(repo?: Repository): void } | undefined;
-  readonly explorerDropdown: { close(): void } | undefined;
-  readonly siteActions: { revalidate(): void } | undefined;
-  readonly nativeSite: NativeSite | undefined;
-  readonly nativeSourcesRequest: number;
-  readonly nativePaintedRequest: number;
-  readonly nativePaintedPaths: string[];
   /** Editor endpoint identity: origin plus pathname. */
   source(): string;
   /** The adopted session's correlation tag (src/controllers/boot-controller.ts). */
   sessionTag(): string | null | undefined;
   draftsReady(): Promise<void>;
-  nextLoad(scope?: WorkspaceScope): SessionStamp;
-  api: Api;
-  /** `early`: the page's own first try of this read (src/boot-early.ts). */
-  apiResponse<T>(path: string, params?: Record<string, string>, early?: Promise<Response>): Promise<ApiReceipt<T>>;
-  readFile(repo: string, sha: string): Promise<string>;
-  /** GitHub's text of the shown site's `path`, as the preview holds it. */
-  baseText(path: string): string | undefined;
   storage(kind: "local" | "session"): Pick<Storage, "getItem" | "setItem" | "removeItem">;
   element(id: string): { textContent: string | null; title: string };
   node: (tag: "p", className?: string, text?: string) => HTMLElement;
   options(select: Picker, values: { value: string; label: string }[]): void;
-  status(message: string): void;
-  settleStatus(message: string): void;
-  clearError(): void;
-  /** `retry` repeats the open that failed: a read GitHub never answered in it offers Try again. */
-  /** `panel`: the failed panel the caller drew (what `node` made), which carries Try again. */
-  errorMessage(error: unknown, retry?: () => void, panel?: HTMLElement): void;
-  draftScope(): DraftScope | undefined;
   /** The browser's drafts of `scope` (src/drafts.ts), loaded once draftsReady resolves. */
   draftsOf(scope: DraftScope): SavedDraft[];
-  entryAt(path: string): TreeEntry | undefined;
-  setCurrentPage(path?: string): void;
-  openNewDraft(draft: SavedDraft, options?: OpenOptions): Promise<void>;
-  openEntry(entry: TreeEntry, path: string, at: SessionStamp, options?: OpenOptions): Promise<void>;
-  mountSource(path: string, source: string, baseSha: string | null, readOnly: boolean, at: SessionStamp, selection: number, options?: OpenOptions): Promise<void>;
   /** `away`: another workspace is opening (a picker's Use under way still lands in its own, ticket 27). */
   deactivateNative(away?: boolean): void;
   activateNativeSite(repo: Repository, result: Snapshot, at: SessionStamp, openPath?: string): Promise<boolean>;
-  afterNativePaint(request: number, run: () => void): void;
-  updateAgentContext(): void;
-  updatePreview(): void;
-  showDirectory(directory: Directory): void;
-  removeFinishStarter(): void;
-  takeStartingPoint(repo: Repository): StartingPoint | undefined;
-  writeStartingPoint(point: StartingPoint): Promise<string | undefined>;
-  readPartialStart(repoId: number): PartialStart | undefined;
-  offerFinishStarter(repo: Repository, partial: PartialStart): void;
 }
 
 // How long a failed branch list waits for a guessed snapshot (the only read with a bound).
@@ -104,29 +93,30 @@ export const GUESS_AFTER_FAILED_LIST_MS = 5000;
 
 export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   // Host services that live as long as the page (consts in the host).
-  const { api, appStore, savePublish, repositoryIndex, filesTreeController, node } = ports;
+  const { appStore, savePublish, repositoryIndex, filesTreeController, node } = ports;
+  const { api } = ports.repo;
 
   async function restoreFile(
     path: string,
     at: SessionStamp,
     options: OpenOptions = {},
   ) {
-    const selection = ++ports.fileGeneration;
+    const selection = ++ports.view.fileGeneration;
     const repo = appStore.repository.value!;
     const unavailable = () =>
       new Error("The previously open file is no longer available. Choose another file.");
     const nowFolder = () =>
       new Error("The previously open file is now a folder. Choose another file.");
-    const savedDraft = () => { const scope = ports.draftScope(); return scope && draftStore().get(scope, path); };
+    const savedDraft = () => { const scope = ports.session.draftScope(); return scope && draftStore().get(scope, path); };
     try {
       let entry: TreeEntry | undefined;
       if (appStore.snapshot.value?.tree) {
-        entry = ports.entryAt(path);
+        entry = ports.repo.entryAt(path);
       } else {
         let entries = appStore.snapshot.value!.entries;
         const parts = path.split("/");
         for (let index = 0; index < parts.length; index++) {
-          if (!at.holds() || selection !== ports.fileGeneration) return;
+          if (!at.holds() || selection !== ports.view.fileGeneration) return;
           entry = entries.find((entry) => entry.path === parts[index]);
           if (!entry) break;
           if (index === parts.length - 1) break;
@@ -136,29 +126,29 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
           ).entries;
         }
       }
-      if (!at.holds() || selection !== ports.fileGeneration) return;
+      if (!at.holds() || selection !== ports.view.fileGeneration) return;
       if (!entry) {
         const saved = savedDraft();
         if (saved?.baseSha === null) {
-          await ports.openNewDraft(saved, options);
+          await ports.view.openNewDraft(saved, options);
           return;
         }
         // An edit of a file GitHub deleted: opened to be settled.
         if (saved && !saved.deleted) await savePublish.checkDeleted(at);
-        if (!at.holds() || selection !== ports.fileGeneration) return;
+        if (!at.holds() || selection !== ports.view.fileGeneration) return;
         if (saved && !saved.deleted && savePublish.isDeleted(path)) {
-          if (!options.keepExplorer) ports.explorerDropdown?.close();
-          ports.setCurrentPage(path);
-          await ports.mountSource(path, saved.original, saved.baseSha, false, at, selection, options);
+          if (!options.keepExplorer) ports.panels.explorerDropdown?.close();
+          ports.view.setCurrentPage(path);
+          await ports.view.mountSource(path, saved.original, saved.baseSha, false, at, selection, options);
           return;
         }
         throw unavailable();
       }
       if (entry.type === "tree") throw nowFolder();
-      await ports.openEntry(entry, path, at, options);
+      await ports.view.openEntry(entry, path, at, options);
     } catch (error) {
-      if (at.holds() && selection === ports.fileGeneration)
-        ports.errorMessage(error, options.retry);
+      if (at.holds() && selection === ports.view.fileGeneration)
+        ports.notices.errorMessage(error, options.retry);
     }
   }
 
@@ -171,37 +161,37 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     warm?: { at?: number },
   ) {
     if (!appStore.repository.value || !appStore.branch.value) return;
-    ports.removeFinishStarter();
+    ports.setup.removeFinishStarter();
     const reopen =
       resumePath ??
       (appStore.snapshot.value?.branch === appStore.branch.value ? appStore.openFile.value : undefined);
     // The head this tab saw on the branch: a lagging read never steps back from it.
     const known = appStore.snapshot.value && appStore.snapshot.value.branch === appStore.branch.value ? savePublish.trustedHead() : undefined;
     ports.mediaHistoryHome.clear();
-    const at = ports.nextLoad(ports.user ? githubScope({ account: ports.user.login, repoId: appStore.repository.value.id, repo: appStore.repository.value.full_name, branch: appStore.branch.value }) : undefined);
-    ports.fileGeneration++;
-    ports.clearError();
+    const at = ports.session.nextLoad(ports.user ? githubScope({ account: ports.user.login, repoId: appStore.repository.value.id, repo: appStore.repository.value.full_name, branch: appStore.branch.value }) : undefined);
+    ports.view.fileGeneration++;
+    ports.notices.clearError();
     batch(() => {
       appStore.snapshot.value = undefined;
       repositoryIndex.clear();
       savePublish.resetDeleted();
-      ports.siteActions?.revalidate();
+      ports.panels.siteActions?.revalidate();
       filesTreeController.reset();
       ports.deactivateNative(true);
-      ports.setCurrentPage();
+      ports.view.setCurrentPage();
       appStore.selection.value = undefined;
     });
     const repo = appStore.repository.value;
     const branch = appStore.branch.value;
     // Try again repeats this load with a fresh read, until another load (a repository or branch chosen) supersedes it.
     const retry = () => { if (at.holds()) void loadSnapshot(reopen); };
-    ports.refreshButton.disabled = true;
+    ports.panels.refreshButton.disabled = true;
     ports.element("revision").textContent = "…";
-    ports.files.replaceChildren(node("p", "muted sidebar-hint", "Loading files…"));
-    ports.content.replaceChildren(
+    ports.panels.files.replaceChildren(node("p", "muted sidebar-hint", "Loading files…"));
+    ports.panels.content.replaceChildren(
       node("p", "empty-message", "Opening your repository…"),
     );
-    ports.status(`Loading ${repo.name} / ${branch}…`);
+    ports.notices.status(`Loading ${repo.name} / ${branch}…`);
     try {
       // The browser's drafts load alongside the snapshot (start()).
       const [result] = await Promise.all([
@@ -223,32 +213,32 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       repositoryIndex.seed(repo, result);
       if (!warm) savePublish.seeHead(result.commit);
       else if (warm.at !== undefined) savePublish.seeHead(result.commit, warm.at);
-      ports.updateAgentContext();
-      ports.updatePreview();
+      ports.view.updateAgentContext();
+      ports.preview.updateNativePreview();
       // Start reading the file to reopen now, alongside the native site's files.
-      const reopenEntry = reopen ? ports.entryAt(reopen) : undefined;
+      const reopenEntry = reopen ? ports.repo.entryAt(reopen) : undefined;
       if (reopenEntry?.type === "blob" && (reopenEntry.size ?? 0) <= 1024 * 1024)
-        void ports.readFile(repo.full_name, reopenEntry.sha).catch(() => {});
+        void ports.repo.readFile(repo.full_name, reopenEntry.sha).catch(() => {});
       const isNative = await ports.activateNativeSite(repo, result, at, reopen);
       if (!at.holds()) return;
       // Drafts of files GitHub deleted or now holds are looked for once the
       // page is on screen (a file opened before then that needs it waits).
-      if (isNative && ports.nativeSite) {
-        ports.afterNativePaint(ports.nativeSourcesRequest, () => void savePublish.checkDeleted(at));
-        const painted = ports.nativeSourcesRequest;
+      if (isNative && ports.runtime.site) {
+        ports.textIndex.afterNativePaint(ports.runtime.state.request, () => void savePublish.checkDeleted(at));
+        const painted = ports.runtime.state.request;
         // A newer head folds in as an outside change does (src/outside-merge.ts), or loads the branch again.
         // Once: the paint and its fallback timer both run this.
         let checked = false;
-        if (warm) ports.afterNativePaint(painted, () => { if (!checked && at.holds()) { checked = true; checkKept(at, branch); } });
+        if (warm) ports.textIndex.afterNativePaint(painted, () => { if (!checked && at.holds()) { checked = true; checkKept(at, branch); } });
         let remembered = false;
-        ports.afterNativePaint(painted, () => {
+        ports.textIndex.afterNativePaint(painted, () => {
           const login = ports.user?.login;
           // Only after a real paint (not the 10 s fallback), once.
-          if (remembered || ports.nativePaintedRequest !== painted) return;
+          if (remembered || ports.runtime.state.paintedRequest !== painted) return;
           remembered = true;
           if (!at.holds() || appStore.snapshot.value !== result || appStore.repository.value !== repo || appStore.branch.value !== branch || !login) return;
           writeBootMemory(ports.storage("local"), { login, repoId: repo.id, fullName: repo.full_name, branch, commit: result.commit,
-            files: ports.nativePaintedPaths.flatMap((path) => { const sha = repositoryIndex.entry(repo, result, path)?.sha; return sha ? [{ path, sha }] : []; }) });
+            files: ports.runtime.state.paintedPaths.flatMap((path) => { const sha = repositoryIndex.entry(repo, result, path)?.sha; return sha ? [{ path, sha }] : []; }) });
           void rememberShown(login, repo, branch, result);
         });
       } else {
@@ -258,22 +248,22 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       }
       // A native project opens on its home page when nothing else is selected;
       // its source is already in memory from the site's prefetch.
-      const open = reopen ?? (isNative ? ports.nativeSite?.routes["/"] : undefined);
+      const open = reopen ?? (isNative ? ports.runtime.site?.routes["/"] : undefined);
       ports.element("revision").textContent = result.empty ? "—" : result.commit.slice(0, 7);
       ports.element("revision").title = result.empty ? "No commits yet" : result.commit;
       filesTreeController.render();
       ports.pagesController.updateTabs(true);
-      ports.showDirectory(result);
+      ports.view.showDirectory(result);
       // Agents see the site as it is now (pages found, or none yet).
-      ports.updateAgentContext();
+      ports.view.updateAgentContext();
       // A repository made on GitHub's own page for a chosen starting point gets it now.
       // Only an empty repository gets it unasked; for any other the remembered choice is dropped.
-      const remembered = !isNative ? ports.takeStartingPoint(repo) : undefined;
+      const remembered = !isNative ? ports.setup.takeStartingPoint(repo) : undefined;
       const chosenPoint = result.empty ? remembered : undefined;
-      if (chosenPoint) void ports.writeStartingPoint(chosenPoint).then((problem) => { if (problem) ports.errorMessage(new Error(problem)); });
+      if (chosenPoint) void ports.setup.writeStartingPoint(chosenPoint).then((problem) => { if (problem) ports.notices.errorMessage(new Error(problem)); });
       // A starting point that stopped part way is offered to be finished.
-      const partialStart = result.empty ? undefined : ports.readPartialStart(repo.id);
-      if (partialStart) ports.offerFinishStarter(repo, partialStart);
+      const partialStart = result.empty ? undefined : ports.setup.readPartialStart(repo.id);
+      if (partialStart) ports.setup.offerFinishStarter(repo, partialStart);
       if (ports.user)
         rememberWorkspace(ports.user.login, {
           repoId: repo.id,
@@ -282,23 +272,23 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         });
       if (open) {
         ports.previewSelection.recordIntent(open);
-        const opening = restoreFile(open, at, { retry }), selection = ports.fileGeneration;
+        const opening = restoreFile(open, at, { retry }), selection = ports.view.fileGeneration;
         await opening;
         // Its code pane waits for Monaco: a file opened meanwhile (a new page,
         // a rename) has said what happened, and that stands.
-        if (selection !== ports.fileGeneration) return;
+        if (selection !== ports.view.fileGeneration) return;
       }
       if (!at.holds()) return;
       if (result.empty) {
-        ports.settleStatus(`${repo.name} is empty. Choose how to start your site.`);
+        ports.notices.settleStatus(`${repo.name} is empty. Choose how to start your site.`);
         return;
       }
       // A kept copy is up to date only once GitHub's head says so (checkKept), which may have answered already.
       const shown = appStore.snapshot.value?.commit ?? result.commit;
-      ports.settleStatus(!warm ? upToDate(branch, shown) : keptSaid?.at === at ? keptSaid.text : `Checking GitHub for newer changes on ${branch}…`);
+      ports.notices.settleStatus(!warm ? upToDate(branch, shown) : keptSaid?.at === at ? keptSaid.text : `Checking GitHub for newer changes on ${branch}…`);
     } catch (error) {
       if (at.holds()) {
-        ports.files.replaceChildren(
+        ports.panels.files.replaceChildren(
           node(
             "p",
             "muted sidebar-hint",
@@ -306,11 +296,11 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
           ),
         );
         const failed = node("p", "empty-message", "Your repository could not be opened.");
-        ports.content.replaceChildren(failed);
-        ports.errorMessage(error, retry, failed);
+        ports.panels.content.replaceChildren(failed);
+        ports.notices.errorMessage(error, retry, failed);
       }
     } finally {
-      if (at.holds()) ports.refreshButton.disabled = false;
+      if (at.holds()) ports.panels.refreshButton.disabled = false;
     }
   }
 
@@ -343,7 +333,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
           // Taken over a third time: no answer of its own, said as such; asked again on the next look.
           if (typeof document !== "undefined" && document.visibilityState === "visible") {
             keptSaid = { at, text: `Could not check GitHub for newer changes on ${branch}. Refresh to check.` };
-            ports.settleStatus(keptSaid.text);
+            ports.notices.settleStatus(keptSaid.text);
           }
           onNextWake(() => { if (at.holds()) checkKept(at, branch); });
         });
@@ -352,7 +342,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       if (!commit) {
         if (typeof document !== "undefined" && document.visibilityState === "visible") {
           keptSaid = { at, text: `Could not check GitHub for newer changes on ${branch}. Refresh to check.` };
-          ports.settleStatus(keptSaid.text);
+          ports.notices.settleStatus(keptSaid.text);
         }
         onNextWake(() => { if (at.holds()) checkKept(at, branch); });
         return;
@@ -360,7 +350,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       if (appStore.snapshot.value?.commit !== commit) return;
       savePublish.seeHead(commit);
       keptSaid = { at, text: upToDate(branch, commit) };
-      ports.settleStatus(keptSaid.text);
+      ports.notices.settleStatus(keptSaid.text);
     });
   }
   function onNextWake(run: () => void) {
@@ -386,11 +376,11 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     const shas = new Map(snapshot.tree.filter((entry) => entry.type === "blob").map((entry) => [entry.path, entry.sha]));
     const files: WarmCopy["files"] = [];
     let length = 0;
-    for (const path of new Set([...ports.nativePaintedPaths, ...shas.keys()])) {
+    for (const path of new Set([...ports.runtime.state.paintedPaths, ...shas.keys()])) {
       const sha = shas.get(path), clean = sha === undefined ? undefined : ports.cleanSources.peek(repo.full_name, sha);
       // The preview's base text is kept only when it is that blob (media and agent writes also land there); leaving
       // the tab (`force`) writes at once, with GitHub's clean texts only.
-      const text = clean ?? (sha === undefined || force ? undefined : ports.baseText(path));
+      const text = clean ?? (sha === undefined || force ? undefined : ports.runtime.base.sources.get(path));
       if (sha === undefined || text === undefined || length + text.length > MAX_TEXT_LENGTH) continue;
       if (clean === undefined && await textBlobSha(text).catch(() => "") !== sha) continue;
       length += text.length;
@@ -410,9 +400,9 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   // folded in since its first paint.
   function keepShown(wait = false, force = false) {
     const repo = appStore.repository.value, branch = appStore.branch.value, snapshot = appStore.snapshot.value, login = ports.user?.login;
-    if (!login || !repo || !branch || !snapshot || !ports.nativeSite) return;
-    if (ports.nativePaintedRequest === ports.nativeSourcesRequest) void rememberShown(login, repo, branch, snapshot, force);
-    else if (wait) ports.afterNativePaint(ports.nativeSourcesRequest, () => { if (appStore.snapshot.value === snapshot) keepShown(); });
+    if (!login || !repo || !branch || !snapshot || !ports.runtime.site) return;
+    if (ports.runtime.state.paintedRequest === ports.runtime.state.request) void rememberShown(login, repo, branch, snapshot, force);
+    else if (wait) ports.textIndex.afterNativePaint(ports.runtime.state.request, () => { if (appStore.snapshot.value === snapshot) keepShown(); });
   }
   // A new snapshot (a save, a fold) or another page opened is kept a second after it, and leaving the tab keeps
   // what it shows then.
@@ -484,7 +474,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     if (!memory && !early) return;
     const quiet = <T,>(read: Promise<T>) => { void read.catch(() => {}); return read; };
     const ask = (fullName: string, response?: Promise<Response>) =>
-      ports.apiResponse<Snapshot>("snapshot", { repo: fullName, branch: link.branch }, response).then((receipt) => ({ ...receipt, fullName }));
+      ports.repo.apiResponse<Snapshot>("snapshot", { repo: fullName, branch: link.branch }, response).then((receipt) => ({ ...receipt, fullName }));
     bootGuess = {
       memory,
       source: ports.source(),
@@ -492,7 +482,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         // Not listed: a bare rejection, which only makes takeBootGuess read afresh.
         ? early.then((found) => found ? ask(found.fullName, found.response) : memory ? ask(memory.fullName) : Promise.reject())
         : ask(memory!.fullName)),
-      files: memory?.files.length ? quiet(ports.apiResponse<FilesResult>("files", { repo: memory.fullName, shas: memory.files.map((file) => file.sha).join(",") })) : undefined,
+      files: memory?.files.length ? quiet(ports.repo.apiResponse<FilesResult>("files", { repo: memory.fullName, shas: memory.files.map((file) => file.sha).join(",") })) : undefined,
     };
   }
   /** The guessed snapshot for `repo`/`branch`, once only, when this session and listing prove it (and the memory, when remembered). */
@@ -533,33 +523,33 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   async function chooseRepository(resume?: WorkspaceLocation, warm?: WarmCopy) {
     const choice = ++choices;
     ports.mediaHistoryHome.clear();
-    const at = ports.nextLoad();
-    ports.fileGeneration++;
+    const at = ports.session.nextLoad();
+    ports.view.fileGeneration++;
     appStore.reset(ports.repositories.find(
-      (repo) => String(repo.id) === ports.repositorySelect.value,
+      (repo) => String(repo.id) === ports.panels.repositorySelect.value,
     ));
-    ports.repositoryMenu?.setRepository(appStore.repository.value);
+    ports.panels.repositoryMenu?.setRepository(appStore.repository.value);
     // Try again repeats this choice, until another load supersedes it.
     const retry = () => { if (at.holds()) void chooseRepository(resume); };
     repositoryIndex.clear();
-    ports.setCurrentPage();
-    ports.branchSelect.disabled = true;
-    ports.refreshButton.disabled = true;
-    ports.options(ports.branchSelect, [{ value: "", label: "Loading branches…" }]);
-    ports.files.replaceChildren();
-    ports.content.replaceChildren(node("p", "empty-message", "Loading branches…"));
-    ports.clearError();
+    ports.view.setCurrentPage();
+    ports.panels.branchSelect.disabled = true;
+    ports.panels.refreshButton.disabled = true;
+    ports.options(ports.panels.branchSelect, [{ value: "", label: "Loading branches…" }]);
+    ports.panels.files.replaceChildren();
+    ports.panels.content.replaceChildren(node("p", "empty-message", "Loading branches…"));
+    ports.notices.clearError();
     if (!appStore.repository.value) {
-      ports.options(ports.branchSelect, [{ value: "", label: "—" }]);
+      ports.options(ports.panels.branchSelect, [{ value: "", label: "—" }]);
       ports.element("revision").textContent = "—";
-      ports.content.replaceChildren(
+      ports.panels.content.replaceChildren(
         node(
           "p",
           "empty-message",
           "Select a repository from Pages & files to open a project.",
         ),
       );
-      ports.status("Choose a project to continue.");
+      ports.notices.status("Choose a project to continue.");
       return;
     }
     // Begin independent work together: the selected branch is already known from
@@ -598,10 +588,10 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       if (!at.holds()) return;
       if (guessedSnapshot) {
         const branch = requestedBranch;
-        ports.options(ports.branchSelect, [{ value: branch, label: `⑂ ${branch}` }]);
+        ports.options(ports.panels.branchSelect, [{ value: branch, label: `⑂ ${branch}` }]);
         appStore.branch.value = branch;
-        ports.branchSelect.value = branch;
-        ports.branchSelect.disabled = true;
+        ports.panels.branchSelect.value = branch;
+        ports.panels.branchSelect.disabled = true;
         const opening = loadSnapshot(resume?.path, Promise.resolve(guessedSnapshot), warmed ? { at: kept.at } : undefined);
         // The branch list fills and enables the selector when it comes. One that fails says so as the plain
         // path does, once the site is open: its message, and Try again (one GitHub never answered) reads it again.
@@ -611,15 +601,15 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
           if (!current()) return;
           // A kept copy of a branch GitHub no longer has opens again the plain way, which says so.
           if (warmed && branches.length && !branches.includes(branch)) { if (choice === choices) void chooseRepository(resume); return; }
-          ports.options(ports.branchSelect, [...new Set([branch, ...branches])].map((name) => ({ value: name, label: `⑂ ${name}` })));
-          ports.branchSelect.value = branch;
-          ports.branchSelect.disabled = false;
-          if (failed) ports.clearError();
+          ports.options(ports.panels.branchSelect, [...new Set([branch, ...branches])].map((name) => ({ value: name, label: `⑂ ${name}` })));
+          ports.panels.branchSelect.value = branch;
+          ports.panels.branchSelect.disabled = false;
+          if (failed) ports.notices.clearError();
         }, async (error: unknown) => {
           await opening;
           if (!current()) return;
           failed = true;
-          ports.errorMessage(error, () => void fill(api<string[]>("branches", { repo: opened.full_name })));
+          ports.notices.errorMessage(error, () => void fill(api<string[]>("branches", { repo: opened.full_name })));
         });
         void fill(listing);
         await opening;
@@ -631,21 +621,21 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         // An empty repository opens on its default branch with no files, so
         // drafts work; its first save makes the branch.
         const branch = appStore.repository.value.default_branch || "main";
-        ports.options(ports.branchSelect, [{ value: branch, label: `⑂ ${branch}` }]);
+        ports.options(ports.panels.branchSelect, [{ value: branch, label: `⑂ ${branch}` }]);
         appStore.branch.value = branch;
-        ports.branchSelect.value = branch;
-        ports.branchSelect.disabled = false;
+        ports.panels.branchSelect.value = branch;
+        ports.panels.branchSelect.disabled = false;
         // The Worker answers for it with an empty snapshot at EMPTY_COMMIT.
         await loadSnapshot(undefined, branch === requestedBranch ? prefetched : undefined);
         return;
       }
       ports.options(
-        ports.branchSelect,
+        ports.panels.branchSelect,
         branches.map((name) => ({ value: name, label: `⑂ ${name}` })),
       );
       if (resume && !branches.includes(resume.branch)) {
-        ports.branchSelect.disabled = false;
-        ports.content.replaceChildren(
+        ports.panels.branchSelect.disabled = false;
+        ports.panels.content.replaceChildren(
           node(
             "p",
             "empty-message",
@@ -660,18 +650,18 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
           : branches.includes(appStore.repository.value.default_branch)
             ? appStore.repository.value.default_branch
             : branches[0];
-      ports.branchSelect.value = appStore.branch.value ?? "";
-      ports.branchSelect.disabled = false;
+      ports.panels.branchSelect.value = appStore.branch.value ?? "";
+      ports.panels.branchSelect.disabled = false;
       await loadSnapshot(
         resume?.branch === appStore.branch.value ? resume.path : undefined,
         appStore.branch.value === requestedBranch ? prefetched : undefined,
       );
     } catch (error) {
       if (at.holds()) {
-        ports.options(ports.branchSelect, [{ value: "", label: "Branches unavailable" }]);
+        ports.options(ports.panels.branchSelect, [{ value: "", label: "Branches unavailable" }]);
         const failed = node("p", "empty-message", "Branches could not be loaded.");
-        ports.content.replaceChildren(failed);
-        ports.errorMessage(error, retry, failed);
+        ports.panels.content.replaceChildren(failed);
+        ports.notices.errorMessage(error, retry, failed);
       }
     }
   }

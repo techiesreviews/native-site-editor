@@ -7,6 +7,7 @@ import { createDraftStore } from "../src/draft-store.ts";
 import { draftStore, type DraftScope, type SavedDraft } from "../src/drafts.ts";
 import { createNativeSiteRuntime } from "../src/native-site-runtime.ts";
 import type { ExplorerHost, PagesAndFilesPorts } from "../src/pages-and-files-host.ts";
+import type { Notices, Repo, Session, View } from "../src/host-modules.ts";
 import { newFilePath, newFolderPath, renamedPath } from "../src/native-create.ts";
 import { NATIVE_HOME_PAGE } from "../shared/native-project.ts";
 import { nativePageRoute } from "../shared/native-routes.ts";
@@ -86,7 +87,7 @@ function setup() {
   const calls: string[] = [];
   let scope: DraftScope | undefined;
   let generation = 0;
-  const late: { restoreFile?: PagesAndFilesPorts["restoreFile"]; loadSnapshot?: PagesAndFilesPorts["loadSnapshot"] } = {};
+  const late: { restoreFile?: View["restoreFile"]; loadSnapshot?: View["loadSnapshot"] } = {};
   const status = asElement({ textContent: "" });
   const appStore = createAppStore(createDraftStore());
   const record = (name: string) => () => { calls.push(name); };
@@ -97,34 +98,45 @@ function setup() {
     readTexts: async () => ({ texts: new Map(), unreadable: [] }), unreadable: () => {}, changed: () => {}, closed: () => {},
   });
   runtime.base.files = ["notes.txt"];
-  const ports = {
-    app: asElement({}), explorerDropdown: undefined, files: asElement({ querySelectorAll: () => [] }), pageStructure: undefined, siteActions: undefined,
+  // The shared host modules (src/host-modules.ts), one fake each.
+  const notices = { status: () => {}, settleStatus: () => {}, clearError: () => {}, errorMessage: (error: unknown) => { calls.push(`error ${String(error)}`); },
+    announce: (text: string) => { calls.push(`announce ${text}`); } } satisfies Notices;
+  const workspaceSession = createWorkspaceSession();
+  const session = { begin: () => workspaceSession.begin(), current: () => workspaceSession.current(), nextLoad: () => holds, currentLoad: () => 1, stampOf: () => holds,
+    draftScope: () => scope } satisfies Session;
+  const repo = { api: async <T>() => ({}) as T, apiResponse: async () => ({ value: undefined as never, sessionTag: null }), readFile: async () => "", readFiles: async () => ({}),
+    entryAt: () => undefined, findEntry: async () => undefined } satisfies Repo;
+  const preview = { nativeRouteForPath: () => undefined, nativeRouteInfo: () => ({}), nativeTitles: () => ({}), nativeFallbackPage: () => undefined, nativeModeActive: () => false,
+    nativeComponentTagForPath: () => undefined, updateNativePreviewSources: () => {}, updateNativePreview: () => {} } satisfies PagesAndFilesPorts["preview"];
+  const panels = { explorerDropdown: undefined, files: asElement({ querySelectorAll: () => [] }), siteActions: undefined } satisfies PagesAndFilesPorts["panels"];
+  const view = {
     get fileGeneration() { return generation; }, set fileGeneration(value) { generation = value; },
-    appStore, workspaceSession: createWorkspaceSession(),
-    runtime,
+    setCurrentPage: record("setCurrentPage"), showDirectory: () => { calls.push("directory"); }, openNewDraft: async () => {}, openEntry: async () => {}, mountSource: async () => {},
+    restoreFile: (...args) => late.restoreFile!(...args), loadSnapshot: (...args) => late.loadSnapshot!(...args),
+    updateAgentContext: record("agent"), updateCurrentPageLabel: () => {},
+  } satisfies View;
+  const media = {
+    mediaController: { requestGalleryRefresh: record("gallery"), disposeGallery: () => {}, ensureGallery: async () => {}, galleryVisible: () => false },
+    readMediaText: async () => undefined, mediaOrigins: () => [], uploadFilesTo: async () => [], discardUpload: async (path: string) => { calls.push(`discardUpload ${path}`); },
+  } satisfies PagesAndFilesPorts["media"];
+  const pageBuilder = {
+    cards: { cardOffer: () => undefined, cardsLinkingTo: () => undefined, createWithCard: () => undefined },
+    nativeNavigationTarget: () => undefined, writeNativePageMeta: async () => undefined, refreshNativeRoutes: () => {}, openNativePageSettings: async () => {}, openNativeNavigation: async () => {},
+  } satisfies PagesAndFilesPorts["pageBuilder"];
+  const textIndex = { ensureNativeTextIndex: async () => undefined, startNativeTextIndex: () => {}, flushPendingNativePageTitles: () => {}, clearPendingTitles: () => {} } satisfies PagesAndFilesPorts["textIndex"];
+  const ports = {
+    app: asElement({}), pageStructure: undefined,
+    appStore, runtime, notices, session, repo, preview, panels, view, media, pageBuilder, textIndex,
     editorModule: { isMounted: () => false, refreshDrafts: record("refreshDrafts"), forgetDraftModel: () => {}, dropDraft: () => false, clearHistory: () => {} },
     // Nothing here writes: a plan is refused, the reads find nothing.
     guardedEdits: { stamp: () => holds, run: async () => ({ ok: false, reason: "refused", message: "No writes here." }),
       peek: { source: () => undefined, exists: () => false, template: () => undefined, site: () => undefined } },
-    mediaController: { requestGalleryRefresh: record("gallery"), disposeGallery: () => {}, ensureGallery: async () => {}, galleryVisible: () => false },
-    cards: { cardOffer: () => undefined, cardsLinkingTo: () => undefined, createWithCard: () => undefined },
     linkedStyles: { secondaryPath: () => undefined, unlink: () => {}, openComponentLinkedStyle: async () => {}, openDefaultLinkedStyle: async () => {} },
     versions: { history: { refresh: record("history") } }, previewSelection: { recordIntent: () => {} },
     repositoryIndex: { seed: () => {} }, finishedWork: { add: () => {} },
     element: <T extends HTMLElement>(id: string) => (id === "status" ? status : asElement<T>(elementById(id))) as T,
     lazyModule: <T>(load: () => Promise<T>) => load, loadConfirmDialog: () => import("../src/components/confirm-dialog.ts"),
-    api: async <T>() => ({}) as T, status: () => {}, clearError: () => {}, errorMessage: (error: unknown) => { calls.push(`error ${String(error)}`); },
-    announce: (text: string) => { calls.push(`announce ${text}`); },
-    currentLoad: () => 1, stampOf: () => holds, draftScope: () => scope,
-    entryAt: () => undefined, findEntry: async () => undefined, readFile: async () => "", readFiles: async () => ({}), readMediaText: async () => undefined, mediaOrigins: () => [],
-    ensureNativeTextIndex: async () => undefined, nativeRouteForPath: () => undefined, nativeRouteInfo: () => ({}), nativeTitles: () => ({}),
-    nativeNavigationTarget: () => undefined, writeNativePageMeta: async () => undefined,
-    refreshNativeRoutes: () => {}, forgetDraftedAssets: () => {}, loadNativeComponentStyles: async () => {},
-    updateAgentContext: record("agent"), updateCurrentPageLabel: () => {}, updateNativePreviewSources: () => {}, updatePreview: () => {},
-    setCurrentPage: record("setCurrentPage"), showDirectory: () => { calls.push("directory"); }, openNewDraft: async () => {}, discardUpload: async (path: string) => { calls.push(`discardUpload ${path}`); },
-    uploadFilesTo: async () => [], nativeFallbackPage: () => undefined, nativeModeActive: () => false, nativeComponentTagForPath: () => undefined,
-    startNativeTextIndex: () => {}, openNativePageSettings: async () => {}, openNativeNavigation: async () => {}, flushPendingNativePageTitles: () => {}, clearPendingTitles: () => {},
-    restoreFile: (...args) => late.restoreFile!(...args), loadSnapshot: (...args) => late.loadSnapshot!(...args), openEntry: async () => {},
+    forgetDraftedAssets: () => {}, loadNativeComponentStyles: async () => {},
   } satisfies PagesAndFilesPorts;
   const host = createPagesAndFilesHost(ports);
   return { host, ports, calls, appStore, runtime, late, status, generation: () => generation, open: (next: DraftScope | undefined) => { scope = next; } };
