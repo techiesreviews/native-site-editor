@@ -129,7 +129,7 @@ export interface WorkspaceAccountPorts {
 }
 
 export interface WorkspaceMountPorts {
-  // The shared host modules (src/host-modules.ts), made before the workspace and read at call time.
+  // The shared host modules (src/host-modules.ts), made before the workspace: read once, their members at call time.
   notices: Pick<Notices, "errorMessage" | "announce">;
   session: Pick<Session, "begin" | "nextLoad" | "draftScope" | "shownScope">;
   view: Pick<View, "fileGeneration" | "setCurrentPage">;

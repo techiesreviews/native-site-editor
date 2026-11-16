@@ -5,7 +5,7 @@ import { parse, ts } from "./support/source-guard.ts";
 
 // The hosts that take the shared host modules (src/host-modules.ts) whole, in place of their loose callbacks.
 const SHARED = ["notices", "session", "repo", "view", "panels", "preview", "textIndex"];
-// `shared`: the modules a host takes, when not all of them (the workspace mount makes the panels and reads no repository).
+// `shared`: the modules each host must take (the workspace mount makes the panels and reads no repository, so takes neither).
 const HOSTS = [
   { file: "src/pages-and-files-host.ts", ports: "PagesAndFilesPorts", ceiling: 30, shared: SHARED },
   { file: "src/workspace-boot.ts", ports: "WorkspaceBootPorts", ceiling: 30, shared: SHARED },
