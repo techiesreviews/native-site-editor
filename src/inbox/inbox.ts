@@ -275,7 +275,6 @@ export function createInboxList(ports: InboxPorts) {
     if (!fixes.connected()) {
       const off = hold(act("No agent connected", () => undefined, "inbox__ai"), false);
       off.prepend(icon("sparkle", 16));
-      off.title = "Connect an agent from the project menu to use Fix with AI. Choose the row to fix it by hand.";
       off.setAttribute("aria-label", `Fix with AI: no agent connected. ${label}`);
       return off;
     }
@@ -357,7 +356,6 @@ export function createInboxList(ports: InboxPorts) {
     else if (!fixes.connected()) {
       made = hold(act("Fix all with AI: no agent connected", () => undefined), false);
       made.prepend(icon("sparkle", 16));
-      made.title = "Connect an agent from the project menu to use Fix with AI. Each row can still be fixed by hand.";
     } else {
       made = act("Fix all with AI", () => {
         if (held(made)) return;
