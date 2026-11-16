@@ -134,13 +134,13 @@ test("a member destructured straight from a factory's call, reached through an e
 
 // The media, Pages & files, workspace, page-builder and agent hosts, site loading, the text index, the site preview,
 // the draft views and the lazy loaders read main.ts's `let` state when they run: such a value goes in
-// as a getter (and a setter where the host writes it, as the Pages & files and page-builder hosts' and the draft views' `fileGeneration` and the text index's
+// as a getter (and a setter where the host writes it, as the view's and the draft views' `fileGeneration` and the text index's
 // `nativePreviewBehind`: a getter alone still type-checks, then throws on the first write), never as a
 // copy taken when the host is made. A `const` declared after the call is not there yet when the host is made
 // (CODING_STANDARDS "Module order holds"): it goes in as an arrow, never by name.
 // A shared host module (src/host-modules.ts) is an object main.ts makes by name (`const view: View = { … }`): it is checked as a factory's ports are.
 // The `let` state each factory or shared module writes through its ports, so needs a getter and a setter.
-const WRITTEN: Record<string, string> = { view: "fileGeneration", createSiteTextIndex: "nativePreviewBehind", createPageBuilderHost: "fileGeneration", createDraftViews: "fileGeneration" };
+const WRITTEN: Record<string, string> = { view: "fileGeneration", createSiteTextIndex: "nativePreviewBehind", createDraftViews: "fileGeneration" };
 function letsHandedByValue(source: string, factory = "createPagesAndFilesHost"): string[] {
   const tree = parse(source, "src/main.ts");
   const lets = new Set<string>(), consts = new Map<string, number>();
@@ -164,7 +164,7 @@ function letsHandedByValue(source: string, factory = "createPagesAndFilesHost"):
     const accessors = (kind: TS.SyntaxKind) => new Set(ports.properties.filter((item) => item.kind === kind).map((item) => item.name?.getText(tree)));
     const written = WRITTEN[factory];
     if (written && (!accessors(ts.SyntaxKind.GetAccessor).has(written) || !accessors(ts.SyntaxKind.SetAccessor).has(written))) found.push(`${written} (no getter and setter)`);
-    // A group of ports (the workspace host's `site`, `builder`, …) is checked as the ports are.
+    // A group of ports (the workspace host's `site`, `account`, …) is checked as the ports are.
     const check = (properties: TS.NodeArray<TS.ObjectLiteralElementLike>) => {
       for (const item of properties) {
         const value = ts.isShorthandPropertyAssignment(item) ? item.name : ts.isPropertyAssignment(item) ? item.initializer : undefined;

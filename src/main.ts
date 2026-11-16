@@ -80,7 +80,7 @@ const appStore = createAppStore(editorModule.sourceStore());
 // What is open and which load of it (src/workspace-session.ts): signing out and each load below start the next.
 const workspaceSession = createWorkspaceSession();
 function currentLoad() { return workspaceSession.current().load; }
-const session: Session = { begin: () => workspaceSession.begin(), current: () => workspaceSession.current(), nextLoad, currentLoad, stampOf, draftScope };
+const session: Session = { begin: () => workspaceSession.begin(), current: () => workspaceSession.current(), nextLoad, currentLoad, stampOf, draftScope, shownScope };
 // Tickets 33, am-11 (src/agent-presence.ts): the agents at work on the site's pages, drawn while their workspace is.
 const agentPresence = createAgentPresence({
   pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), begin: () => workspaceSession.begin(),
@@ -132,6 +132,10 @@ const { readFile, readFiles, readBlob, readNativeTexts, noteNativeUnreadable, na
   startNativeTextIndex: (...args) => startNativeTextIndex(...args),
 });
 const repo: Repo = { api, apiResponse, readFile, readFiles, entryAt, findEntry };
+// What the editor shows, a shared host module: later functions go in as arrows, the file counter as accessors.
+const view: View = { setCurrentPage, updateAgentContext, updateCurrentPageLabel, openNewDraft: (...args) => openNewDraft(...args), showDirectory: (...args) => showDirectory(...args),
+  openEntry: (...args) => openEntry(...args), mountSource: (...args) => mountSource(...args), restoreFile: (...args) => restoreFile(...args), loadSnapshot: (...args) => loadSnapshot(...args),
+  get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; } };
 // The site's text index, the first-paint wait and the Pages titles held back while a row is in use (src/site-text-index.ts).
 const textIndex = createSiteTextIndex({
   runtime, appStore, workspaceSession, element, currentLoad, draftScope, findEntry, updateNativePreviewSources, updateAgentContext,
@@ -140,7 +144,7 @@ const textIndex = createSiteTextIndex({
   get componentTools() { return componentTools; }, get nativePreview() { return nativePreview; }, get pageStructure() { return pageStructure; },
   get nativePreviewBehind() { return sitePreview.nativePreviewBehind; }, set nativePreviewBehind(value) { sitePreview.nativePreviewBehind = value; },
 });
-const { nativeTextIndexScopeKey, startNativeTextIndex, wantNativeTextIndex, nativeTextIndexGate, noteNativePainted, ensureNativeTextIndex, clearPendingTitles } = textIndex;
+const { nativeTextIndexScopeKey, startNativeTextIndex, nativeTextIndexGate, clearPendingTitles } = textIndex;
 // A controller's load number as a stamp (until the follow-ups in ticket 22's Done section); once that load moved on, a deny-all stand-in that says the scope changed.
 function stampOf(epoch: number): SessionStamp {
   const stamp = workspaceSession.begin();
@@ -234,26 +238,17 @@ const parkedSteps = createParkedSteps({ transitions: step => parkedTransitions(e
 // preview selection, the edit bar and Page Structure controller, page meta and settings, and the card grids.
 // By value: consts and hoisted functions declared above; `let` state and later consts go in as getters, later functions as arrows.
 const pageBuilder = createPageBuilderHost({
-  app, appStore, runtime, workspaceSession, editorModule, guardedEdits, element, lazyModule, loadSiteSettings, errorMessage, announce, api,
-  currentLoad, draftScope, stampOf, nativeRouteInfo, nativeRouteForPath, nativeComponentTagForPath,
-  nativePageStyles, nativeImagePaths: (...args) => nativeImagePaths(...args), ensureNativeTextIndex, wantNativeTextIndex, showNativeWarnings, updateCurrentPageLabel,
-  updateNativePreviewSources, updateAgentContext,
-  get workspace() { return workspace; }, get codePanes() { return codePanes; }, get nativeHistoryShares() { return nativeHistoryShares; },
-  get nativePreview() { return nativePreview; },
+  app, appStore, runtime, editorModule, guardedEdits, element, lazyModule, loadSiteSettings, showNativeWarnings,
+  notices, session, repo, view, preview: sitePreview, textIndex,
+  get nativeHistoryShares() { return nativeHistoryShares; }, get nativePreview() { return nativePreview; },
   get pageStructure() { return pageStructure; }, get componentTools() { return componentTools; },
-  get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
-  get versions() { return versions; }, get linkedStyles() { return linkedStyles; }, get mediaController() { return mediaController; },
-  get pagesController() { return pagesController; }, get pagesAndFiles() { return pagesAndFiles; }, get agentController() { return agentController; },
+  get versions() { return versions; }, get linkedStyles() { return linkedStyles; }, get agentController() { return agentController; },
   // Declared further down: read at call time.
+  get panels() { return workspace; }, get media() { return media; }, get pagesAndFiles() { return pagesAndFiles; },
   setupScope: () => setupScope(), nativeHistorySession: (scope, path) => nativeHistorySession(scope, path),
-  restoreFile: (...args) => restoreFile(...args), ensureExplorer: () => ensureExplorer(), openCreate: (...args) => openCreate(...args),
-  nativeSiteReadForCreate: () => nativeSiteReadForCreate(),
 });
-const { paletteController, mountComponentTools, componentPorts, nativeSectionChoices, nativeAddPoints, nativeElementAddPoint, nativeComponentLoaderPlan,
-  insertNativeComponent, finishRailTyping, blockMoves, blockInsertPorts, loadBlockDrag, structureDrop, dragPageBlock, loadBlockInsert,
-  previewSelection, nativeVariantFiles, nativeCssWorkspace, pageStructureController, nativeComponentFieldsRevision, elementMenuItems,
-  nativePageMeta, writeNativePageMeta, openNativePageSettings, openNativeSiteSettings, openNativeNavigation,
-  refreshNativeRoutes, nativeMoveItems, cards } = pageBuilder;
+const { componentPorts, nativeSectionChoices, nativeComponentLoaderPlan,
+  blockMoves, previewSelection, nativeVariantFiles, nativeCssWorkspace, pageStructureController, writeNativePageMeta, openNativePageSettings, refreshNativeRoutes } = pageBuilder;
 
 const versions = createVersionView({
   appStore, workspaceSession, guardedEdits, editorModule,
@@ -303,7 +298,7 @@ const media = createMediaHost({
   get nativePreview() { return nativePreview; }, get pagesController() { return pagesController; }, get workspace() { return workspace; },
   setupScope: () => setupScope(), afterFileChanges: () => afterFileChanges(), openAfter: (...args) => openAfter(...args), restoreFile: (...args) => restoreFile(...args),
 });
-const { mediaPorts, mediaController, nativeImagePaths, discardUpload, readMediaText } = media;
+const { mediaPorts, mediaController, discardUpload, readMediaText } = media;
 const inbox = createInbox({ appStore, pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), indexed: () => runtime.state.textIndexed, // The Inbox (TOOLS-222)
   files: () => runtime.files(), stamp: () => workspaceSession.begin(),
   label: file => pagesController.pageLabel(file), route: file => nativeRouteForPath(file), showing: () => nativePreview?.route(), picture: (...args) => mediaController.placeState(...args)?.state, open: page => openAfter(page),
@@ -371,10 +366,6 @@ const { openNewDraft, showDeletedFile } = createDraftViews({
 
 // Pages & files: the trees and explorer tabs, Create, file operations, resync and save/publish (src/pages-and-files-host.ts).
 // By value: consts and hoisted functions declared above; `let` state goes in as getters (tests/main-ts-ceiling.test.ts).
-// What the editor shows, a shared host module: later functions go in as arrows, the file counter as accessors.
-const view: View = { setCurrentPage, openNewDraft, updateAgentContext, updateCurrentPageLabel, showDirectory: (...args) => showDirectory(...args), openEntry: (...args) => openEntry(...args),
-  mountSource: (...args) => mountSource(...args), restoreFile: (...args) => restoreFile(...args), loadSnapshot: (...args) => loadSnapshot(...args),
-  get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; } };
 const pagesAndFiles = createPagesAndFilesHost({
   app, element, appStore, runtime, editorModule, guardedEdits, agentPresence, nativeHistorySession: (scope, path) => nativeHistorySession(scope, path), linkedStyles, versions,
   previewSelection, repositoryIndex, finishedWork, lazyModule, loadConfirmDialog, forgetDraftedAssets, loadNativeComponentStyles,
@@ -382,28 +373,20 @@ const pagesAndFiles = createPagesAndFilesHost({
   // Declared further down: read at call time.
   get panels() { return workspace; }, get pageStructure() { return pageStructure; },
 });
-const { loadPagesActions, loadFileOps, pagesController, savePublish, filesTreeController, ensureExplorer,
-  openCreate, treeState, pathNow, nativePathExists, nativeSiteReadForCreate, branchText, branchPathProblem, discardedNewPages, afterFileChanges,
-  openAfter, undoFileChanges, discardFileChange } = pagesAndFiles;
+const { loadPagesActions, loadFileOps, pagesController, savePublish, filesTreeController, treeState, pathNow, nativePathExists, nativeSiteReadForCreate,
+  branchText, branchPathProblem, discardedNewPages, afterFileChanges, openAfter, undoFileChanges, discardFileChange } = pagesAndFiles;
 
 // The workspace's screen, the code panes and the source editor, a folder's summary, and closing it all (src/workspace-mount.ts).
 // By value: consts declared above and hoisted functions; `let` state goes in as accessors (tests/main-ts-ceiling.test.ts).
 const workspace = createWorkspaceMount({
-  app, element, appStore, editorModule, workspaceSession, runtime, finishedWork, mediaHistoryHome, parkedSteps, guardedEdits, mediaController,
-  paletteController, previewSelection, pageStructureController, linkedStyles, versions, cards, pagesAndFiles, setup, repositoryIndex, cleanSources,
-  draftScope, shownScope, nextLoad, setCurrentPage, errorMessage, announce, share, preview,
-  site: { active: nativeModeActive, deactivate: deactivateNative, update: updateNativePreviewSources, painted: noteNativePainted, assets: loadNativeAssets,
-    shown: loadNativeShownFiles, routeSources: nativeRouteShownSources, styles: loadNativeComponentStyles, files: nativeSiteFiles, route: nativeRouteForPath },
-  builder: { choices: nativeSectionChoices, addPoint: nativeElementAddPoint, addPoints: nativeAddPoints, insert: insertNativeComponent, drag: dragPageBlock,
-    dropTree: structureDrop, loadDrag: loadBlockDrag, loadInsert: loadBlockInsert, insertPorts: blockInsertPorts, finishTyping: finishRailTyping,
-    menuItems: elementMenuItems, fields: nativeComponentFieldsRevision, moveItems: nativeMoveItems, tools: mountComponentTools },
-  page: { meta: nativePageMeta, writeMeta: writeNativePageMeta, settings: openNativePageSettings, navigation: openNativeNavigation, siteSettings: openNativeSiteSettings },
+  app, element, appStore, editorModule, runtime, finishedWork, mediaHistoryHome, parkedSteps, guardedEdits, linkedStyles, versions, pagesAndFiles, setup, repositoryIndex, cleanSources,
+  notices, session, view, preview: sitePreview, textIndex, media, pageBuilder, share, previewShare: preview,
+  site: { deactivate: deactivateNative, assets: loadNativeAssets, shown: loadNativeShownFiles, routeSources: nativeRouteShownSources, styles: loadNativeComponentStyles, files: nativeSiteFiles },
   get info() { return info; }, get repositories() { return repositories; }, set repositories(value) { repositories = value; },
-  get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
   get nativePreview() { return nativePreview; }, set nativePreview(value) { nativePreview = value; },
   get pageStructure() { return pageStructure; }, set pageStructure(value) { pageStructure = value; },
   get componentTools() { return componentTools; }, set componentTools(value) { componentTools = value; },
-  get nativePreviewBehind() { return sitePreview.nativePreviewBehind; }, get nativeMountListener() { return nativeMountListener; },
+  get nativeMountListener() { return nativeMountListener; },
   // Declared further down: read at call time.
   get boot() { return boot; }, get agentController() { return agentController; }, get workspaceBoot() { return workspaceBoot; }, get agentCommands() { return agentCommands; },
   account: { reload: () => refreshRepositoryList(), switchTo: (login) => switchAccount(login), signOut: () => disconnect(),

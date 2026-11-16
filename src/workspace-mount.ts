@@ -56,7 +56,8 @@ import type { createVersionView } from "./version-view";
 import { button, node } from "./ui/dom";
 import { reported } from "./ui/report-failure";
 import { workingPart } from "./working-part";
-import { setupKeyOf, type SessionStamp, type WorkspaceSession, type WorkspaceScope } from "./workspace-session";
+import { setupKeyOf, type SessionStamp } from "./workspace-session";
+import type { Notices, Preview, Session, TextIndex, View } from "./host-modules";
 
 type BlockDrag = typeof import("./page-builder/block-drag");
 type SetupHost = ReturnType<typeof createSetupHost>;
@@ -78,46 +79,44 @@ const STILL_DRAWING = "The source changed. Wait for the preview before using thi
 // An Add rail pick or drop while the page's typing has not landed yet.
 const STILL_UPDATING = "The page is still updating. Try again in a moment.";
 
-/** The open site's loading and preview (src/main.ts until slice 87). */
+/** The open site's files and styles as the preview loads them (src/site-loading.ts), and leaving it. */
 export interface WorkspaceSitePorts {
-  active: () => boolean;
   deactivate: () => void;
-  update: () => void;
-  painted: () => void;
   assets: (sources: Record<string, string>) => Promise<unknown>;
   shown: (route: string) => Promise<unknown>;
   routeSources: (route: string | undefined) => Record<string, string>;
   styles: (tags: string[]) => Promise<unknown>;
   files: () => Promise<SiteFiles | undefined>;
-  route: (path: string | undefined) => string | undefined;
 }
 
-/** The page builder: the Add panel and rail, block drags, element menus and component tools (src/main.ts until slice 89). */
+/** The page builder's host (src/page-builder-host.ts): the palette, the Add panel and rail, block drags, element menus,
+ * the component tools, a page's details and the settings dialogs. */
 export interface WorkspaceBuilderPorts {
-  choices: () => InsertChoice[];
-  addPoint: Handler<"insertPointFor">;
-  addPoints: WeakMap<InsertPoint, { description?: string }>;
-  insert: (point: InsertPoint, choice: InsertChoice) => Promise<unknown>;
-  drag: Handler<"onBlockPress">;
-  dropTree: (drag: BlockDrag, block: DraggedBlock, template?: { template: string; tag: string }) => ReturnType<BlockDrag["structureDrop"]> | undefined;
-  loadDrag: () => Promise<BlockDrag>;
-  loadInsert: () => Promise<Pick<ReturnType<typeof createBlockInsertController>, "click" | "drop">>;
-  insertPorts: Pick<BlockInsertPorts, "target" | "refuse">;
-  finishTyping: (current: () => boolean) => Promise<boolean>;
-  menuItems: (target: ElementMenuTarget) => ReturnType<StructureHandler<"menuItems">>;
-  fields: () => string;
-  moveItems: StructureHandler<"itemsSlots">;
+  paletteController: Pick<ReturnType<typeof createCommandPaletteController>, "shortcut" | "mount" | "dispose">;
+  previewSelection: Pick<PreviewSelectionController, "handlers">;
+  pageStructureController: Pick<ReturnType<typeof createPageStructureController>, "nativeFormatActions" | "applyNativeTextEdit" | "textEdits"
+    | "nativeElementMoveAction" | "removeRow" | "isNativeSectionTag" | "moveBlock" | "renderEditBar">;
+  cards: Cards;
+  nativeSectionChoices: () => InsertChoice[];
+  nativeElementAddPoint: Handler<"insertPointFor">;
+  nativeAddPoints: WeakMap<InsertPoint, { description?: string }>;
+  insertNativeComponent: (point: InsertPoint, choice: InsertChoice) => Promise<unknown>;
+  dragPageBlock: Handler<"onBlockPress">;
+  structureDrop: (drag: BlockDrag, block: DraggedBlock, template?: { template: string; tag: string }) => ReturnType<BlockDrag["structureDrop"]> | undefined;
+  loadBlockDrag: () => Promise<BlockDrag>;
+  loadBlockInsert: () => Promise<Pick<ReturnType<typeof createBlockInsertController>, "click" | "drop">>;
+  blockInsertPorts: Pick<BlockInsertPorts, "target" | "refuse">;
+  finishRailTyping: (current: () => boolean) => Promise<boolean>;
+  elementMenuItems: (target: ElementMenuTarget) => ReturnType<StructureHandler<"menuItems">>;
+  nativeComponentFieldsRevision: () => string;
+  nativeMoveItems: StructureHandler<"itemsSlots">;
   /** The component tools, made once their module has loaded. */
-  tools: () => Promise<ComponentTools>;
-}
-
-/** A page's details and the settings dialogs. */
-export interface WorkspacePagePorts {
-  meta: StructureHandler<"pageMeta">;
-  writeMeta: (path: string, field: Parameters<StructureHandler<"onPageMeta">>[1], value: string) => Promise<string | undefined>;
-  settings: (path: string) => Promise<unknown>;
-  navigation: (path: string) => Promise<unknown>;
-  siteSettings: () => Promise<unknown>;
+  mountComponentTools: () => Promise<ComponentTools>;
+  nativePageMeta: StructureHandler<"pageMeta">;
+  writeNativePageMeta: (path: string, field: Parameters<StructureHandler<"onPageMeta">>[1], value: string) => Promise<string | undefined>;
+  openNativePageSettings: (path: string) => Promise<unknown>;
+  openNativeNavigation: (path: string) => Promise<unknown>;
+  openNativeSiteSettings: () => Promise<unknown>;
 }
 
 /** The repository list, account switching and sign-out, and the workspace boot: declared after the host, so arrows. */
@@ -130,45 +129,43 @@ export interface WorkspaceAccountPorts {
 }
 
 export interface WorkspaceMountPorts {
+  // The shared host modules (src/host-modules.ts), made before the workspace and read at call time.
+  notices: Pick<Notices, "errorMessage" | "announce">;
+  session: Pick<Session, "begin" | "nextLoad" | "draftScope" | "shownScope">;
+  view: Pick<View, "fileGeneration" | "setCurrentPage">;
+  preview: Pick<Preview, "nativeModeActive" | "updateNativePreviewSources" | "nativeRouteForPath" | "nativePreviewBehind">;
+  textIndex: Pick<TextIndex, "noteNativePainted">;
+  /** Media's host (src/controllers/media-host.ts). */
+  media: { mediaController: Pick<ReturnType<typeof createMediaController>, "disposeGallery" | "mediaEnded" | "chooseImage"> };
+  pageBuilder: WorkspaceBuilderPorts;
   app: HTMLElement;
   element: <T extends HTMLElement>(id: string) => T;
   appStore: Pick<AppStore, "openFile" | "branch" | "repository" | "snapshot" | "reset" | "selection">;
   editorModule: Pick<typeof SourceEditor, "onUnmountedText" | "setViewLoader" | "mountSourceEditor" | "captureHistoryHost" | "recordHistoryAction"
     | "isMounted" | "captureFileModelState" | "closeActiveEditGroup" | "clearDrafts">;
-  workspaceSession: Pick<WorkspaceSession, "begin">;
   runtime: Pick<ReturnType<typeof createNativeSiteRuntime>, "site" | "engaged" | "source">;
   finishedWork: Pick<ReturnType<typeof createFinishedElsewhere>, "open" | "shown">;
   mediaHistoryHome: Pick<ReturnType<typeof createMediaHistoryHome>, "adopt" | "clear">;
   parkedSteps: Pick<ReturnType<typeof createParkedSteps>, "adopt" | "clear">;
   guardedEdits: Pick<GuardedEdits, "stamp" | "peek">;
-  mediaController: Pick<ReturnType<typeof createMediaController>, "disposeGallery" | "mediaEnded" | "chooseImage">;
-  paletteController: Pick<ReturnType<typeof createCommandPaletteController>, "shortcut" | "mount" | "dispose">;
-  previewSelection: Pick<PreviewSelectionController, "handlers">;
-  pageStructureController: Pick<ReturnType<typeof createPageStructureController>, "nativeFormatActions" | "applyNativeTextEdit" | "textEdits"
-    | "nativeElementMoveAction" | "removeRow" | "isNativeSectionTag" | "moveBlock" | "renderEditBar">;
   linkedStyles: Pick<ReturnType<typeof createLinkedStylesController>, "updateBodyStyles" | "clearSources">;
   versions: { readonly view: ReturnType<typeof createVersionView>["view"]; history: Pick<ReturnType<typeof createVersionView>["history"], "destroy"> };
-  cards: Cards;
   pagesAndFiles: Pick<PagesAndFiles, "pageActions" | "mountExplorer"> & { loadPagesActions(): Promise<unknown>; filesTreeController: Pick<PagesAndFiles["filesTreeController"], "refresh"> };
   setup: { setupController: Pick<SetupHost["setupController"], "mount" | "dispose">; setupEntry: Pick<SetupHost["setupEntry"], "remove">; startSitePanel: () => Promise<HTMLElement> };
   site: WorkspaceSitePorts;
-  builder: WorkspaceBuilderPorts;
-  page: WorkspacePagePorts;
   account: WorkspaceAccountPorts;
   repositoryIndex: Pick<RepositoryIndex, "clear">;
   cleanSources: Pick<CleanSourceCache, "clear">;
   /** Edit together in the project menu (slice 30, ticket 58; src/workspace-shares.ts). */
   share?: SharesMenuPort;
   /** Preview link in the project menu (slice 35, ticket 58; src/preview-share.ts); told after each paint, so the site shown serves its link. */
-  preview?: SharesMenuPort & { painted(): void };
+  previewShare?: SharesMenuPort & { painted(): void };
   /** Host state, read (and written) at call time. */
   readonly info: SessionInfo;
   repositories: Repository[];
-  fileGeneration: number;
   nativePreview: NativePreview | undefined;
   pageStructure: PageStructure | undefined;
   componentTools: ComponentTools | undefined;
-  readonly nativePreviewBehind: boolean;
   /** The guarded edit module's, told of each file a pane mounts. */
   readonly nativeMountListener: ((path: string, pane: boolean) => void) | undefined;
   /** Declared after the host. */
@@ -177,17 +174,12 @@ export interface WorkspaceMountPorts {
   /** The user's Undo of an agent's changes from its pin card (ticket am-15). */
   readonly agentCommands: Pick<ReturnType<typeof createAgentHost>["agentCommands"], "undo" | "undoable" | "undoLatest" | "latestUndoable">;
   readonly workspaceBoot: { dropGuess(): void };
-  draftScope: () => DraftScope | undefined;
-  shownScope: () => WorkspaceScope | undefined;
-  nextLoad: () => SessionStamp;
-  setCurrentPage: (path?: string) => void;
-  errorMessage: (error: unknown) => void;
-  announce: (text: string) => void;
   /** Scheduling seam for the component tools' load; production waits two frames and a beat. Returns its cancel. */
   afterPaint?: (callback: () => void) => () => void;
 }
 
 export function createWorkspaceMount(ports: WorkspaceMountPorts) {
+  const { notices, session, view, preview, textIndex, media, pageBuilder } = ports;
   const afterPaint = ports.afterPaint ?? ((callback: () => void) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { frame = 0; timer = setTimeout(callback, 100); }); });
@@ -233,10 +225,10 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   });
   // Undo or Redo of a file no pane shows still redraws the preview and syncs the framed instance.
   ports.editorModule.onUnmountedText(({ scope, path }) => {
-    const live = ports.draftScope();
+    const live = session.draftScope();
     if (!live || draftKey(live, path) !== draftKey(scope, path)) return;
     ports.pagesAndFiles.filesTreeController.refresh();
-    if (ports.site.active()) ports.site.update();
+    if (preview.nativeModeActive()) preview.updateNativePreviewSources();
     ports.componentTools?.refresh();
   });
   // A pane that needs the code now (Review, focusing the code) asks for Monaco.
@@ -251,7 +243,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   const nativeHistoryAliases = new Map<string, { stamp: SessionStamp; session: string }>();
   // Edit component's shares (components' shareHistory): a template records its steps in a page's journal, the latest share first.
   const nativeHistoryShares = new Map<string, { stamp: SessionStamp; session: string }[]>();
-  function nativeHistorySession(scope: NonNullable<ReturnType<typeof ports.draftScope>>, path: string) {
+  function nativeHistorySession(scope: DraftScope, path: string) {
     const key = draftKey(scope, path), share = nativeHistoryShares.get(key)?.at(-1), alias = nativeHistoryAliases.get(key);
     const live = (bound: typeof alias): bound is NonNullable<typeof alias> => !!bound && bound.stamp.holds();
     return live(share) ? share.session : live(alias) ? alias.session : key;
@@ -278,15 +270,15 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       return Promise.resolve();
     }
     // A stylesheet or script picked beside the page: show its code.
-    if (ports.site.active() && !ports.site.route(file.path)) codePanes.reveal();
-    const defer = codePanes.deferPane(ports.site.active());
+    if (preview.nativeModeActive() && !preview.nativeRouteForPath(file.path)) codePanes.reveal();
+    const defer = codePanes.deferPane(preview.nativeModeActive());
     const historyScope = file.scope ? nativeHistorySession(file.scope, file.path) : undefined;
     disposeEditor = ports.editorModule.mountSourceEditor(
       content,
       { ...file, historyScope },
       ports.element("editor-toolbar-host"),
     );
-    const historyHost = ports.editorModule.captureHistoryHost(file.path), liveScope = ports.draftScope();
+    const historyHost = ports.editorModule.captureHistoryHost(file.path), liveScope = session.draftScope();
     if (ports.appStore.openFile.value === file.path && historyHost) {
       ports.mediaHistoryHome.adopt((undo, redo, dispose) => ports.editorModule.recordHistoryAction(file.path, undo, redo, dispose));
       if (file.scope) ports.parkedSteps.adopt(file.scope, file.path, (undo, redo, dispose) => ports.editorModule.recordHistoryAction(file.path, undo, redo, dispose));
@@ -300,9 +292,9 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       if (request !== editorRequest) return;
       content.querySelector(".code-editor__body")?.replaceChildren(
         node("p", "empty-message", "The code editor could not load."),
-        button("Retry editor", () => void codePanes.want().catch(ports.errorMessage)),
+        button("Retry editor", () => void codePanes.want().catch(notices.errorMessage)),
       );
-      ports.errorMessage(error);
+      notices.errorMessage(error);
     });
     return Promise.resolve();
   }
@@ -323,30 +315,30 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       onSwitchAccount: (login) => void ports.account.switchTo(login),
       onSignOut: reported(ports.account.signOut), onNote: (note) => { ports.finishedWork.open(note); handOver(); },
       // The settings dialog closes the menu as it opens, and gives focus back to the project button.
-      onSiteSettings: () => void ports.page.siteSettings(),
+      onSiteSettings: () => void pageBuilder.openNativeSiteSettings(),
       ...ports.share ? { share: ports.share } : {},
-      preview: ports.preview,
+      preview: ports.previewShare,
     });
     ports.element("repository-menu").append(repositoryMenu.root);
     // This top bar, while it is shown (the project tile stays in it).
     const topBar = repositoryMenu.root;
-    ports.mediaController.disposeGallery();
-    siteActions = mountSiteActions({ statusHost: ports.element("change-status"), menuHost: ports.element("site-actions"), siteFiles: () => ports.site.files(), announce: ports.announce });
+    media.mediaController.disposeGallery();
+    siteActions = mountSiteActions({ statusHost: ports.element("change-status"), menuHost: ports.element("site-actions"), siteFiles: () => ports.site.files(), announce: notices.announce });
     const menuPanel = ports.element("repository-actions");
     menuPanel.addEventListener("toggle", () => {
-      if (menuPanel.matches(":popover-open")) { void ports.agentController.ensure().catch(ports.errorMessage); void ports.setup.setupController.mount().catch(ports.errorMessage); }
+      if (menuPanel.matches(":popover-open")) { void ports.agentController.ensure().catch(notices.errorMessage); void ports.setup.setupController.mount().catch(notices.errorMessage); }
     });
     repositorySelect = ports.element<HTMLSelectElement>("repository");
     blockRail = mountBlockRail(ports.app.querySelector<HTMLElement>(".workspace")!, ports.element<HTMLButtonElement>("add-panel-toggle"), {
       onPick: kind => {
         // The click's page, selection and repository, held while typing finishes and the insert code loads.
-        const since = ports.guardedEdits.stamp(), at = ports.builder.insertPorts.target();
-        void ports.builder.finishTyping(() => since.holds()).then(async finished => {
+        const since = ports.guardedEdits.stamp(), at = pageBuilder.blockInsertPorts.target();
+        void pageBuilder.finishRailTyping(() => since.holds()).then(async finished => {
           if (!since.holds()) return;
-          if (!finished) { ports.builder.insertPorts.refuse(STILL_UPDATING); return; }
-          const blocks = await ports.builder.loadInsert();
+          if (!finished) { pageBuilder.blockInsertPorts.refuse(STILL_UPDATING); return; }
+          const blocks = await pageBuilder.loadBlockInsert();
           if (since.holds()) await blocks.click(kind, at, since);
-        }).catch(ports.errorMessage);
+        }).catch(notices.errorMessage);
       },
       onUp: () => ports.nativePreview?.selectParent(),
       // The drag's targets and drawing load with the first press on a block;
@@ -357,20 +349,20 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
         const template = ports.componentTools?.mode.now();
         const block = { kind: "new", block: kind, ...(template ? { template: true } : {}) } as const;
         // In Edit component mode Page Structure takes it into the template edited, as the canvas does.
-        return ports.builder.loadDrag().then(drag => since.holds() ? ports.nativePreview?.blockDrag(block, {
-          tree: ports.builder.dropTree(drag, block, template),
+        return pageBuilder.loadBlockDrag().then(drag => since.holds() ? ports.nativePreview?.blockDrag(block, {
+          tree: pageBuilder.structureDrop(drag, block, template),
           drop: (target, where, painted, pointer) => {
             const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" && !template ? { slot: target.container.slot } : {}) };
-            const at = ports.builder.insertPorts.target();
+            const at = pageBuilder.blockInsertPorts.target();
             if (template && at?.path !== template.template) { refuse("Edit component mode was left meanwhile: nothing was added.", { pointer }); return; }
-            if (since.holds()) void ports.builder.finishTyping(() => since.holds()).then(async finished => {
+            if (since.holds()) void pageBuilder.finishRailTyping(() => since.holds()).then(async finished => {
               if (!since.holds()) return;
-              if (!finished) { ports.builder.insertPorts.refuse(STILL_UPDATING, pointer); return; }
-              const blocks = await ports.builder.loadInsert();
+              if (!finished) { pageBuilder.blockInsertPorts.refuse(STILL_UPDATING, pointer); return; }
+              const blocks = await pageBuilder.loadBlockInsert();
               if (since.holds()) await blocks.drop(kind, place, painted, at, pointer, since);
-            }).catch(ports.errorMessage);
+            }).catch(notices.errorMessage);
           },
-          announce: ports.announce,
+          announce: notices.announce,
         }, drag.createBlockDrag, template?.template) : undefined);
       },
     });
@@ -386,7 +378,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       if (!phone.matches && topBar.isConnected) return;
       phone.removeEventListener("change", onPhone);
       if (!topBar.isConnected) return;
-      void import("./components/top-bar-phone").then((module) => topBar.isConnected && module.mountTopBarPhone(ports)).catch(ports.errorMessage);
+      void import("./components/top-bar-phone").then((module) => topBar.isConnected && module.mountTopBarPhone(ports)).catch(notices.errorMessage);
     };
     phone.addEventListener("change", onPhone);
     onPhone();
@@ -442,18 +434,18 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     const toolsAfterPaint = () => {
       if (toolsDue) return;
       toolsDue = true;
-      const preview = ports.nativePreview;
+      const painted = ports.nativePreview;
       cancelToolsWait = afterPaint(() => {
         cancelToolsWait = undefined;
-        if (ports.nativePreview !== preview) return;
+        if (ports.nativePreview !== painted) return;
         void loadComponentTools();
       });
     };
     ports.nativePreview = createNativePreview(ports.element("main"), {
-      onShortcut: name => ports.paletteController.shortcut(name),
+      onShortcut: name => pageBuilder.paletteController.shortcut(name),
       onRefusalNoteAction: dismissRefusalNote,
-      onMediaEnded: (id) => ports.mediaController.mediaEnded(id),
-      ...ports.previewSelection.handlers(),
+      onMediaEnded: (id) => media.mediaController.mediaEnded(id),
+      ...pageBuilder.previewSelection.handlers(),
       onDismissContextMenu: () => { contextMenuAsk++; previewElementMenu?.close(false); },
       // The right-clicked element as the edit bar takes it (a shared template's part maps to its instance).
       // Its entries are the component tools': a right-click before they land loads them at once and
@@ -461,7 +453,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       onContextMenu: (point, anchor, selection) => {
         const open = (tools: ComponentTools) => {
           const target = tools.mode.opened() ? selection : tools.instanceSelection(selection);
-          const entries = target ? ports.builder.menuItems(target) : [];
+          const entries = target ? pageBuilder.elementMenuItems(target) : [];
           if (entries.length) previewElementMenu?.open(anchor, entries, point, "Element actions");
         };
         const ask = ++contextMenuAsk;
@@ -476,32 +468,32 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       onRouteShown: (route) => {
         ports.componentTools?.mode.sync();
         if (!ports.runtime.site) return;
-        if (ports.nativePreviewBehind) ports.site.update();
+        if (preview.nativePreviewBehind) preview.updateNativePreviewSources();
         void ports.site.assets(ports.site.routeSources(route));
         void ports.site.shown(route);
       },
-      cards: ports.cards,
+      cards: pageBuilder.cards,
       onComponentStyles: (tags) => void ports.site.styles(tags),
       onDefaultStyles: (styles) => ports.linkedStyles.updateBodyStyles({ rules: styles.selectors, cascade: styles.cascade }),
-      onFormat: (format) => ports.pageStructureController.nativeFormatActions[format]?.(),
-      onImageDrop: (target, files) => void ports.mediaController.chooseImage(target, files),
-      onImageEdit: (target) => void ports.mediaController.chooseImage(target),
+      onFormat: (format) => pageBuilder.pageStructureController.nativeFormatActions[format]?.(),
+      onImageDrop: (target, files) => void media.mediaController.chooseImage(target, files),
+      onImageEdit: (target) => void media.mediaController.chooseImage(target),
       // The write's promise goes back: the page lets renders redraw the text typed in only once it has landed (am-23).
-      onTextEdit: (edit) => ports.pageStructureController.applyNativeTextEdit(edit),
-      onTyping: (at, left) => left ? workingPart.left(at, ports.pageStructureController.textEdits()) : workingPart.typed(at),
-      insertChoices: ports.builder.choices,
-      insertPointFor: ports.builder.addPoint,
-      insertDestinationText: point => point ? ports.builder.addPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
-      onInsert: (point, choice) => void ports.builder.insert(point, choice),
+      onTextEdit: (edit) => pageBuilder.pageStructureController.applyNativeTextEdit(edit),
+      onTyping: (at, left) => left ? workingPart.left(at, pageBuilder.pageStructureController.textEdits()) : workingPart.typed(at),
+      insertChoices: pageBuilder.nativeSectionChoices,
+      insertPointFor: pageBuilder.nativeElementAddPoint,
+      insertDestinationText: point => point ? pageBuilder.nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
+      onInsert: (point, choice) => void pageBuilder.insertNativeComponent(point, choice),
       // The Add panel's New component waits for the component tools when it comes before them.
       onNewComponent: async (tag, point) => (await loadComponentTools())?.newComponent(tag, point) ?? false,
       onStructure: (structure) => {
         if (!structure) { ports.pageStructure?.update(undefined); return; }
         toolsAfterPaint();
         codePanes.notePreviewPainted();
-        ports.site.painted();
-        ports.preview?.painted();
-        const path = structure.path, source = structure.paintedSource, scope = ports.draftScope();
+        textIndex.noteNativePainted();
+        ports.previewShare?.painted();
+        const path = structure.path, source = structure.paintedSource, scope = session.draftScope();
         // A row's move holds the workspace from this paint, and the page's editor model if it is mounted.
         const paint = { since: ports.guardedEdits.stamp(), model: scope && ports.editorModule?.isMounted(path) ? ports.editorModule.captureFileModelState(scope, path) : undefined };
         const capture = (item: NativeStructureItem) => {
@@ -514,8 +506,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
         ports.pageStructure?.update(shown);
       },
       // Alt+arrows on the canvas: the edit bar's step for the selection.
-      onMove: (direction) => ports.pageStructureController.nativeElementMoveAction?.(direction),
-      onBlockPress: ports.builder.drag,
+      onMove: (direction) => pageBuilder.pageStructureController.nativeElementMoveAction?.(direction),
+      onBlockPress: pageBuilder.dragPageBlock,
       onDismissRequest: (id) => void ports.agentController.dismiss(id),
       onAnswerRequest: async (id, text) => {
         await ports.agentController.answer(id, text);
@@ -541,7 +533,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
           if (opening) refuse(STILL_DRAWING, { anchor: opening.anchor, ...opening.at ? { pointer: opening.at } : {} });
           return [];
         }
-        return ports.builder.menuItems({ path, node: template ? template.node : item.node, tag: item.tag, paintedSource: painted, renameChip: template?.chip }).map(entry => ({ ...entry, run: opener => {
+        return pageBuilder.elementMenuItems({ path, node: template ? template.node : item.node, tag: item.tag, paintedSource: painted, renameChip: template?.chip }).map(entry => ({ ...entry, run: opener => {
           if (!fresh()) { refuse(STILL_DRAWING, { anchor: opener }); return; }
           entry.run(opener);
         } }));
@@ -552,25 +544,25 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
         return { ...structureLabel(item, component), component };
       },
       onSelect: (path, node, edit) => ports.nativePreview?.selectNode({ path, node }, edit),
-      onRemove: (path, node, source) => ports.pageStructureController.removeRow(path, node, source),
+      onRemove: (path, node, source) => pageBuilder.pageStructureController.removeRow(path, node, source),
       componentSlots: (path, node) => ports.componentTools?.structure(path, node),
       textRow: (path, node, tag) => TEXT_LINE_TAGS.has(tag) ? ports.componentTools?.textRow(path, node) : undefined,
       templateRows: (path, node) => ports.componentTools?.templateRows(path, node),
-      componentFieldsRevision: ports.builder.fields,
-      pageMeta: ports.page.meta,
-      onPageSettings: (path) => void ports.page.settings(path),
-      onNavigation: (path) => void ports.page.navigation(path),
-      onPageMeta: (path, field, value) => void ports.page.writeMeta(path, field, value).then((error) => { if (error) ports.errorMessage(new Error(error)); }),
+      componentFieldsRevision: pageBuilder.nativeComponentFieldsRevision,
+      pageMeta: pageBuilder.nativePageMeta,
+      onPageSettings: (path) => void pageBuilder.openNativePageSettings(path),
+      onNavigation: (path) => void pageBuilder.openNativeNavigation(path),
+      onPageMeta: (path, field, value) => void pageBuilder.writeNativePageMeta(path, field, value).then((error) => { if (error) notices.errorMessage(new Error(error)); }),
       pageUrl: (path) => {
-        const route = ports.site.route(path);
+        const route = preview.nativeRouteForPath(path);
         if (!route) return undefined;
         return route === "/" ? { route, fixed: "The home page's URL is always /." } : { route };
       },
       planUrl: (file, value) => {
         // The sidebar's URL field is hidden while Page settings holds the URL; this keeps it calm if it shows again.
         if (ports.pagesAndFiles.pageActions) return ports.pagesAndFiles.pageActions.urlPlan(file, value);
-        if (value === ports.site.route(file)) return { ok: false, error: "", unchanged: true };
-        void ports.pagesAndFiles.loadPagesActions().then(() => ports.pageStructure?.refreshMeta()).catch(ports.errorMessage);
+        if (value === preview.nativeRouteForPath(file)) return { ok: false, error: "", unchanged: true };
+        void ports.pagesAndFiles.loadPagesActions().then(() => ports.pageStructure?.refreshMeta()).catch(notices.errorMessage);
         return { ok: false, error: "Loading page actions…", pending: true };
       },
       applyUrl: async (file, value, keep) => {
@@ -584,27 +576,27 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       // that is not open opens first (the model held from the paint is then not its editor's).
       onMove: (path, item, direction, template) => {
         const paint = nativeStructurePaints.get(item), opens = !ports.editorModule?.isMounted(path) || ports.appStore.openFile.value !== path;
-        const stale = !opens ? STRUCTURE_MOVE_STALE : ports.pageStructureController.isNativeSectionTag(item.tag) ? SECTION_OPEN_STALE : BLOCK_OPEN_STALE;
+        const stale = !opens ? STRUCTURE_MOVE_STALE : pageBuilder.pageStructureController.isNativeSectionTag(item.tag) ? SECTION_OPEN_STALE : BLOCK_OPEN_STALE;
         const at = { path, node: item.node, painted: template ? template.painted : nativeStructurePaintedSources.get(item) };
-        return ports.pageStructureController.moveBlock(at, direction, template
+        return pageBuilder.pageStructureController.moveBlock(at, direction, template
           ? { guard: () => ports.componentTools?.mode.now()?.template === path, stale }
           : { since: paint?.since, guard: () => opens || !paint?.model || paint.model.isCurrent(), stale });
       },
       // A row drags as its block does on the page: the same targets, in the tree as well.
-      itemsSlots: ports.builder.moveItems,
+      itemsSlots: pageBuilder.nativeMoveItems,
       // In Edit component mode a row of the template edited (`template`: the bytes it was painted from).
-      onRowDrag: (press, item, template) => ports.builder.drag(press, {
-        node: item.node, tag: item.tag, cls: item.className ?? "", band: !template && ports.pageStructureController.isNativeSectionTag(item.tag),
+      onRowDrag: (press, item, template) => pageBuilder.dragPageBlock(press, {
+        node: item.node, tag: item.tag, cls: item.className ?? "", band: !template && pageBuilder.pageStructureController.isNativeSectionTag(item.tag),
         painted: template ? template.painted : nativeStructurePaintedSources.get(item), ...(template ? { template: true } : {}),
       }),
-      announce: ports.announce,
+      announce: notices.announce,
     });
     ports.componentTools?.destroy();
     ports.componentTools = undefined;
     toolsLoad = undefined;
     cancelToolsWait?.();
     cancelToolsWait = undefined;
-    ports.paletteController.mount();
+    pageBuilder.paletteController.mount();
   }
 
   // The component tools for the preview shown, made once their module has loaded: Page Structure's
@@ -613,11 +605,11 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   // once and not tried again for this preview (the browser keeps a failed module import failed until
   // the page reloads, which chunk recovery's notice asks for): every later ask gets undefined. Never rejects.
   function loadComponentTools(): Promise<ComponentTools | undefined> {
-    const preview = ports.nativePreview;
-    if (!preview) return Promise.resolve(undefined);
+    const shown = ports.nativePreview;
+    if (!shown) return Promise.resolve(undefined);
     if (ports.componentTools) return Promise.resolve(ports.componentTools);
-    const load: Promise<ComponentTools | undefined> = toolsLoad ??= ports.builder.tools().then((tools) => {
-      if (ports.nativePreview !== preview || toolsLoad !== load) { tools.destroy(); return undefined; }
+    const load: Promise<ComponentTools | undefined> = toolsLoad ??= pageBuilder.mountComponentTools().then((tools) => {
+      if (ports.nativePreview !== shown || toolsLoad !== load) { tools.destroy(); return undefined; }
       ports.componentTools = tools;
       ports.pageStructure?.refresh();
       // The edit bar draws again for the selection held only while the page it was painted from is
@@ -625,10 +617,10 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       // would read bytes the edit replaced; the preview's next selection draws it, tools and all.
       const selection = ports.appStore.selection.value;
       if (selection && selection.paintedSource !== undefined && ports.guardedEdits.peek.source(selection.path) === selection.paintedSource)
-        ports.pageStructureController.renderEditBar(selection);
+        pageBuilder.pageStructureController.renderEditBar(selection);
       return tools;
     }, (error: unknown) => {
-      if (ports.nativePreview === preview && toolsLoad === load) ports.errorMessage(error);
+      if (ports.nativePreview === shown && toolsLoad === load) notices.errorMessage(error);
       return undefined;
     });
     return load;
@@ -642,7 +634,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     toolsLoad = undefined;
     ports.componentTools?.destroy();
     ports.componentTools = undefined;
-    ports.paletteController.dispose();
+    pageBuilder.paletteController.dispose();
     ports.agentController.destroy();
     ports.setup.setupController.dispose();
     ports.setup.setupEntry.remove();
@@ -664,8 +656,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     ports.editorModule?.clearDrafts();
     ports.mediaHistoryHome.clear();
     ports.parkedSteps.clear();
-    ports.nextLoad();
-    ports.fileGeneration++;
+    session.nextLoad();
+    view.fileGeneration++;
     repositoryMenu?.destroy();
     repositoryMenu = undefined;
     siteActions?.destroy();
@@ -678,17 +670,17 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   }
 
   /** Account, repository and branch the checklist is of. */
-  function setupScope() { return setupKeyOf(ports.shownScope()); }
+  function setupScope() { return setupKeyOf(session.shownScope()); }
 
   function showDirectory(directory: Directory, path = "") {
-    ports.fileGeneration++;
-    ports.setCurrentPage();
-    ports.finishedWork.shown(ports.draftScope(), ports.element("editor-toolbar-host"));
+    view.fileGeneration++;
+    view.setCurrentPage();
+    ports.finishedWork.shown(session.draftScope(), ports.element("editor-toolbar-host"));
     if (!path && !ports.runtime.engaged && ports.appStore.repository.value && ports.appStore.snapshot.value) {
-      const host = content, at = ports.workspaceSession.begin(), fileEpoch = ports.fileGeneration;
+      const host = content, at = session.begin(), fileEpoch = view.fileGeneration;
       void ports.setup.startSitePanel().then((panel) => {
-        if (host === content && at.holds() && ports.fileGeneration === fileEpoch) host.replaceChildren(panel);
-      }).catch(ports.errorMessage);
+        if (host === content && at.holds() && view.fileGeneration === fileEpoch) host.replaceChildren(panel);
+      }).catch(notices.errorMessage);
       return;
     }
     const panel = node("section", "directory-summary");
